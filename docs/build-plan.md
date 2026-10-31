@@ -23,12 +23,12 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 - [x] Months and time zone: budget month math in America/Los_Angeles without a date library. *Verify:* property tests (round trips, DST boundaries).
 - [x] `computeBudget()`: the only Ready to Assign implementation; carry-forward with Money rules 1–9, 11, 12; snapshot start for incremental recompute. *Verify:* property test per rule; incremental-from-snapshot equals full recompute (property).
 - [x] Rule 10 identity checker, asserted in tests and in the daily recompute. *Verify:* property test over random ledgers.
-- [ ] Rule 13 projected fronts; funding statuses (Overspent, Underfunded, Funded, Overfunded, Low, Covered/Short, Invested, Late/Tracking). *Verify:* unit + property tests.
-- [ ] Targets: Refill, Set aside, Balance by date, Balance no date; versioned. *Verify:* property tests for each formula and the remainder-to-last-month rule.
-- [ ] Rules engine (conditions, actions, first match wins, never overwrite user). *Verify:* unit + property tests.
-- [ ] Pending and re-issue matcher; transfer pairing. *Verify:* unit tests per table row in Matching mechanics.
-- [ ] Payee normalizer (clean, key, cluster). *Verify:* unit tests with the doc's examples.
-- [ ] Budget lines: logical transactions + overlay → the lines `computeBudget()` consumes (pending, won't-clear, splits, owed parts, close/cancel, Waiting to match, transfers, history before `budget_from`). *Verify:* unit + property tests.
+- [x] Rule 13 projected fronts; funding statuses (Overspent, Underfunded, Funded, Overfunded, Low, Covered/Short, Invested, Late/Tracking). *Verify:* unit + property tests.
+- [x] Targets: Refill, Set aside, Balance by date, Balance no date; versioned. *Verify:* property tests for each formula and the remainder-to-last-month rule.
+- [x] Rules engine (conditions, actions, first match wins, never overwrite user). *Verify:* unit + property tests.
+- [x] Pending and re-issue matcher; transfer pairing. *Verify:* unit tests per table row in Matching mechanics.
+- [x] Payee normalizer (clean, key, cluster). *Verify:* unit tests with the doc's examples.
+- [x] Budget lines: logical transactions + overlay → the lines `computeBudget()` consumes (pending, won't-clear, splits, owed parts, close/cancel, Waiting to match, transfers, history before `budget_from`). *Verify:* unit + property tests.
 - [x] **Canonical November fixture** reproducing the prototype's numbers, kept as a permanent regression test. *Verify:* `packages/domain/test/november.test.ts` asserts every listed number.
 
 ## 3. Bank layer (design Phase 3)
