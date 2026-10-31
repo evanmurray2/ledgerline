@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ledgerline over-assigned</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accent, #1D4ED8)}a:hover{color:var(--c1E3A8A, #1E3A8A)}
+.hit{position:relative}.hit::after{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}:root[data-theme="dark"]{--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; display: flex; flex-direction: column; background: var(--cF5F6F8, #F5F6F8); font-family: 'Public Sans', system-ui, sans-serif; color: var(--c111827, #111827); overflow: hidden">
+<header style="display: flex; flex-direction: column; background: var(--cFFFFFF, #FFFFFF); border-bottom: 1px solid var(--cE5E7EB, #E5E7EB)">
+<div style="display: flex; align-items: center; justify-content: center; height: 56px"><h1 style="margin: 0; font-size: 17px; font-weight: 700">November 2026</h1></div>
+<sc-if value="{{over}}" hint-placeholder-val="{{ true }}">
+<div role="alert" style="display: flex; flex-direction: column; gap: 2px; padding: 10px 16px; background: var(--cFEE4E2, #FEE4E2); color: var(--cB42318, #B42318)">
+<span style="font-size: 14px; font-weight: 700">You assigned $18.10 more than you have</span>
+<span style="font-size: 12px; line-height: 1.4">Vacation got $1,000 but Ready to Assign only had $981.90. Take $18.10 back from a category below. Nothing else is blocked meanwhile.</span>
+</div>
+</sc-if>
+</header>
+<main style="flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px">
+<sc-if value="{{over}}" hint-placeholder-val="{{ true }}">
+<h2 style="margin: 0; font-size: 12px; font-weight: 700; color: var(--c374151, #374151); text-transform: uppercase; letter-spacing: 0.4px">Take it back from</h2>
+<div style="background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 14px; overflow: hidden; flex-shrink: 0">
+<sc-for list="{{opts}}" as="o" hint-placeholder-count="3">
+<div style="display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 8px 12px; border-top: 1px solid var(--cF0F1F3, #F0F1F3)">
+<span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 600">{{o.name}}</span><span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{o.why}}</span></span>
+<button class="hit" onClick="{{o.pick}}" aria-label="{{o.aria}}" style="height: 36px; padding: 0 12px; border-radius: 999px; border: none; background: var(--cEEF2FF, #EEF2FF); color: {{accent}}; font-family: inherit; font-size: 13px; font-weight: 700">Take $18.10</button>
+</div>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{fixed}}" hint-placeholder-val="{{ false }}">
+<div role="status" style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border-radius: 12px; background: var(--cECFDF3, #ECFDF3); color: var(--c085D3A, #085D3A); font-size: 14px"><span>{{fixedText}}</span><button class="hit" onClick="{{undo}}" style="height: 36px; padding: 0 8px; border: none; background: transparent; color: var(--c085D3A, #085D3A); font-family: inherit; font-size: 14px; font-weight: 700; text-decoration: underline">Undo</button></div>
+</sc-if>
+<p style="margin: 0; font-size: 12px; color: var(--c4B5563, #4B5563); line-height: 1.4">Ready to Assign can go below zero when you assign more than you have, when money you front for someone is more than it holds, or when a pending deposit is reversed. Each shows here as a Needs attention item; the app never takes money from your categories on its own.</p>
+</main>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; background: {{rtaBg}}; color: var(--cFFFFFF, #FFFFFF)">
+<div style="display: flex; flex-direction: column; gap: 1px"><span style="font-size: 12px; font-weight: 600">Ready to Assign</span><span style="font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums">{{rta}}</span></div>
+<a class="hit" href="Assign.dc.html" style="display: flex; align-items: center; height: 40px; padding: 0 22px; border-radius: 999px; background: var(--cFFFFFF, #FFFFFF); color: {{rtaInk}}; text-decoration: none; font-size: 15px; font-weight: 700">Assign</a>
+</div>
+<dc-import name="TabBar" active="budget" accent="{{accent}}" hint-size="390px,72px"></dc-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["app","light","dark"],"default":"app"},"accent":{"editor":"color","default":"#1D4ED8","options":["#1D4ED8","#0F766E","#6D28D9","#111827"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  llGetPref() { try { return localStorage.getItem('ledgerline-theme') || this.llMem || 'device'; } catch (e) { return this.llMem || 'device'; } }
+  llSetPref(v) { this.llMem = v; try { localStorage.setItem('ledgerline-theme', v); } catch (e) {} this.llApply(); }
+  llApply() {
+    const forced = this.props.theme && this.props.theme !== 'app' ? this.props.theme : null;
+    const p = forced || this.llGetPref();
+    let dark = p === 'dark';
+    if (p === 'device') { try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {} }
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    const acc = { '#1D4ED8': '#8AB4FF', '#0F766E': '#5EEAD4', '#6D28D9': '#C4B5FD', '#111827': '#F2F4F7' };
+    const a = String(this.props.accent || 'var(--c1D4ED8, #1D4ED8)').toUpperCase();
+    if (a.charAt(0) === '#') { try { document.documentElement.style.setProperty('--accent', dark ? (acc[a] || '#8AB4FF') : a); } catch (e) {} }
+  }
+  componentDidMount() {
+    this.llApply();
+    this.llOn = () => { this.llApply(); this.forceUpdate(); };
+    try { window.addEventListener('storage', this.llOn); this.llMq = window.matchMedia('(prefers-color-scheme: dark)'); this.llMq.addEventListener('change', this.llOn); } catch (e) {}
+  }
+  componentDidUpdate() { this.llApply(); }
+  componentWillUnmount() { try { window.removeEventListener('storage', this.llOn); this.llMq.removeEventListener('change', this.llOn); } catch (e) {} }
+
+  constructor(props) {
+    super(props);
+    this.state = { from: null };
+  }
+  renderVals() {
+    const accent = ('var(--accent, ' + (this.props.accent ?? 'var(--c1D4ED8, #1D4ED8)') + ')');
+    const from = this.state.from;
+    const opts = [['Vacation', 'You just gave it $1,000 · $2,250 now'], ['Home repairs', '$2,057.63 · no target'], ['Gifts', '$210 · $40 over target']];
+    return {
+      accent: accent,
+      over: !from, fixed: !!from,
+      opts: opts.map((o) => ({ name: o[0], why: o[1], aria: 'Take $18.10 from ' + o[0], pick: () => this.setState({ from: o[0] }) })),
+      fixedText: from ? 'Took $18.10 from ' + from + '. Ready to Assign is back to $0.00.' : '',
+      undo: () => this.setState({ from: null }),
+      rta: from ? '$0.00' : '−$18.10',
+      rtaBg: from ? accent : 'var(--cB42318, #B42318)', rtaInk: from ? accent : 'var(--cB42318, #B42318)'
+    };
+  }
+}
+</script>
+</body>
+</html>

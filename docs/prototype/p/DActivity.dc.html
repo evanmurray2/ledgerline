@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ledgerline desktop activity</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accent, #1D4ED8)}a:hover{color:var(--c1E3A8A, #1E3A8A)}
+.hit{position:relative}.hit::after{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}:root[data-theme="dark"]{--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}}
+</style>
+</helmet>
+<div style="box-sizing: border-box; width: 100%; min-height: 800px; display: flex; flex-wrap: wrap; background: var(--cF5F6F8, #F5F6F8); font-family: 'Public Sans', system-ui, sans-serif; color: var(--c111827, #111827)">
+<div style="flex: 1 1 200px; display: flex"><dc-import name="DNav" active="activity" accent="{{accent}}" hint-size="100%,800px"></dc-import></div>
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 64px; padding: 8px 24px; background: var(--cFFFFFF, #FFFFFF); border-bottom: 1px solid var(--cE5E7EB, #E5E7EB)">
+<h1 style="margin: 0; font-size: 20px; font-weight: 700">Activity</h1>
+<label style="flex: 1 1 220px; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 10px; background: var(--cF2F4F7, #F2F4F7); color: var(--c4B5563, #4B5563)"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg><input aria-label="Search payee or amount" value="{{q}}" onChange="{{onQ}}" placeholder="Search payee or amount" style="flex: 1; min-width: 0; border: none; background: transparent; font-family: inherit; font-size: 15px; color: var(--c111827, #111827)"></label>
+<div role="group" aria-label="Filter" style="display: flex; flex-wrap: wrap; gap: 8px">
+<sc-for list="{{chips}}" as="c" hint-placeholder-count="4">
+<button class="hit" onClick="{{c.pick}}" aria-pressed="{{c.pressed}}" style="height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid {{c.border}}; background: {{c.bg}}; color: {{c.fg}}; font-family: inherit; font-size: 13px; font-weight: 600; white-space: nowrap">{{c.name}}</button>
+</sc-for>
+</div>
+<button class="hit" onClick="{{startAdd}}" style="height: 36px; padding: 0 14px; border-radius: 999px; border: none; background: {{accent}}; color: var(--cFFFFFF, #FFFFFF); font-family: inherit; font-size: 13px; font-weight: 700">+ Add transaction</button>
+</header>
+<div style="flex: 1; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 20px; padding: 20px 24px">
+<div style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+<sc-if value="{{showAttnHead}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; align-items: center; gap: 8px; padding: 0 2px"><h2 style="margin: 0; font-size: 16px; font-weight: 700">Needs attention</h2><span style="min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 10px; background: var(--cB42318, #B42318); color: var(--cFFFFFF, #FFFFFF); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{attnCount}}</span></div>
+</sc-if>
+<sc-if value="{{attnDone}}" hint-placeholder-val="{{ false }}">
+<p style="margin: 0; padding: 16px; border-radius: 12px; background: var(--cDCFAE6, #DCFAE6); color: var(--c085D3A, #085D3A); font-size: 15px; font-weight: 600; text-align: center">Nothing needs attention.</p>
+</sc-if>
+<sc-for list="{{sections}}" as="sec" hint-placeholder-count="4">
+<section style="display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 0 2px; min-height: 32px"><h2 style="margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--c374151, #374151)">{{sec.title}}</h2><span style="flex: 1; font-size: 12px; color: var(--c4B5563, #4B5563)">{{sec.note}}</span><sc-if value="{{sec.hasSelect}}" hint-placeholder-val="{{ false }}"><button class="hit" onClick="{{sec.toggleSelect}}" style="height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--cD0D5DD, #D0D5DD); background: var(--cFFFFFF, #FFFFFF); color: var(--c374151, #374151); font-family: inherit; font-size: 13px; font-weight: 700">{{sec.selectLabel}}</button></sc-if></div>
+<div style="background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 12px; overflow: hidden">
+<sc-for list="{{sec.rows}}" as="r" hint-placeholder-count="3">
+<div style="display: flex; align-items: center; gap: 12px; padding: 4px 14px; border-top: 1px solid var(--cF0F1F3, #F0F1F3); background: {{r.bg}}">
+<sc-if value="{{r.showCheck}}" hint-placeholder-val="{{ false }}"><input class="hit" type="checkbox" aria-label="{{r.checkLabel}}" checked="{{r.checked}}" onChange="{{r.toggleCheck}}" style="width: 20px; height: 20px; flex-shrink: 0; accent-color: {{accent}}"></sc-if>
+<button onClick="{{r.pick}}" aria-pressed="{{r.pressed}}" style="flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 48px; padding: 0; border: none; background: transparent; font-family: inherit; text-align: left; color: var(--c111827, #111827)">
+<span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-size: 14px; font-weight: 600; text-decoration: {{r.strike}}">{{r.payee}}</span><span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{r.meta}}</span></span>
+<span style="font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; color: {{r.ink}}; text-decoration: {{r.strike}}">{{r.amount}}</span>
+</button>
+<sc-if value="{{r.hasBadge}}" hint-placeholder-val="{{ false }}"><span style="flex-shrink: 0; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; background: {{r.badgeBg}}; color: {{r.badgeFg}}">{{r.badge}}</span></sc-if>
+<sc-if value="{{r.canOk}}" hint-placeholder-val="{{ false }}"><button class="hit" onClick="{{r.ok}}" aria-label="{{r.okAria}}" style="flex-shrink: 0; height: 32px; padding: 0 12px; border-radius: 999px; border: none; background: var(--cEEF2FF, #EEF2FF); color: {{accent}}; font-family: inherit; font-size: 13px; font-weight: 700">{{r.okLabel}}</button></sc-if>
+<sc-if value="{{r.needsCat}}" hint-placeholder-val="{{ false }}">
+<select class="hit" aria-label="{{r.catLabel}}" onChange="{{r.setCat}}" style="flex-shrink: 0; width: 150px; height: 36px; padding: 0 8px; border: 1px dashed {{accent}}; border-radius: 8px; font-family: inherit; font-size: 13px; color: var(--c111827, #111827); background: var(--cFFFFFF, #FFFFFF)"><option>Choose category…</option><option>Groceries</option><option>Dining out</option><option>Gas</option><option>Shopping</option><option>Household</option><option>Health</option><option>Personal care</option><option>Rent</option><option>Electric</option><option>Internet</option><option>Subscriptions</option><option>Investments</option><option>Car insurance</option><option>Vacation</option><option>Gifts</option><option>Emergency fund</option><option>Home repairs</option></select>
+</sc-if>
+</div>
+</sc-for>
+</div>
+</section>
+</sc-for>
+</div>
+<aside aria-label="Transaction details" style="flex: 1 1 320px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; padding: 16px; background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 12px">
+<sc-if value="{{bulk}}" hint-placeholder-val="{{ false }}">
+<h2 style="margin: 0; font-size: 18px; font-weight: 700">{{bulkTitle}}</h2>
+<span style="font-size: 13px; color: var(--c4B5563, #4B5563); line-height: 1.4">Tick the transactions on the left, then pick one category for all of them. To give them different categories, set each row’s own menu instead.</span>
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Category<select onChange="{{bulkPick}}" style="height: 44px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 15px; color: var(--c111827, #111827); background: var(--cFFFFFF, #FFFFFF)"><option>Choose…</option><option>Groceries</option><option>Dining out</option><option>Gas</option><option>Shopping</option><option>Household</option><option>Health</option><option>Personal care</option><option>Rent</option><option>Electric</option><option>Internet</option><option>Subscriptions</option><option>Investments</option><option>Car insurance</option><option>Vacation</option><option>Gifts</option><option>Emergency fund</option><option>Home repairs</option></select></label>
+<button onClick="{{bulkApply}}" style="height: 44px; border-radius: 10px; border: none; background: {{bulkBg}}; color: {{bulkFg}}; font-family: inherit; font-size: 15px; font-weight: 700">{{bulkCta}}</button>
+</sc-if>
+<sc-if value="{{showDetail}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; font-weight: 700; color: {{d.tagInk}}">{{d.tag}}</span><h2 style="margin: 0; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; color: {{d.ink}}">{{d.amount}}</h2><span style="font-size: 13px; color: var(--c4B5563, #4B5563)">{{d.meta}}</span></div>
+</sc-if>
+<sc-if value="{{d.isMatch}}" hint-placeholder-val="{{ false }}">
+<span style="font-size: 12px; color: var(--c4B5563, #4B5563); line-height: 1.4">Held in Waiting to match, outside Ready to Assign, until you decide.</span>
+<span style="font-size: 13px; font-weight: 700; color: var(--c374151, #374151)">Money back for</span>
+<div style="border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 10px; overflow: hidden">
+<sc-for list="{{matchItems}}" as="m" hint-placeholder-count="3">
+<label style="display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 4px 12px; border-top: 1px solid var(--cF0F1F3, #F0F1F3); font-size: 14px"><input class="hit" type="checkbox" checked="{{m.on}}" onChange="{{m.toggle}}" style="width: 20px; height: 20px; accent-color: {{accent}}"><span style="flex: 1">{{m.name}}<span style="display: block; font-size: 12px; color: var(--c4B5563, #4B5563)">{{m.meta}}</span></span><span style="font-weight: 700; font-variant-numeric: tabular-nums">{{m.amount}}</span></label>
+</sc-for>
+</div>
+<span style="font-size: 13px; color: var(--c374151, #374151)">{{matchLeft}}</span>
+<div style="display: flex; gap: 8px"><button class="hit" onClick="{{notBack}}" style="height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); background: var(--cFFFFFF, #FFFFFF); color: var(--c374151, #374151); font-family: inherit; font-size: 14px; font-weight: 700">It’s income</button><button class="hit" onClick="{{doMatch}}" aria-disabled="{{noMatchAria}}" style="flex: 1; height: 40px; border-radius: 10px; border: none; background: {{matchBg}}; color: {{matchFg}}; font-family: inherit; font-size: 14px; font-weight: 700">{{matchCta}}</button></div>
+</sc-if>
+<sc-if value="{{d.isTransfer}}" hint-placeholder-val="{{ false }}">
+<span style="font-size: 13px; color: var(--c374151, #374151); line-height: 1.4">Two accounts received $200 within a few days. Which one is the other side?</span>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<sc-for list="{{xferOpts}}" as="o" hint-placeholder-count="3">
+<button onClick="{{o.pick}}" style="display: flex; justify-content: space-between; align-items: center; min-height: 48px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); background: var(--cFFFFFF, #FFFFFF); font-family: inherit; font-size: 14px; color: var(--c111827, #111827); text-align: left"><span>{{o.name}}<span style="display: block; font-size: 12px; color: var(--c4B5563, #4B5563)">{{o.meta}}</span></span><span style="font-weight: 700; color: var(--c085D3A, #085D3A)">{{o.amount}}</span></button>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{d.isEdit}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; justify-content: space-between; align-items: center"><label for="d-cat" style="font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Category</label><button class="hit" onClick="{{toggleSplit}}" style="height: 28px; padding: 0; border: none; background: transparent; color: {{accent}}; font-family: inherit; font-size: 13px; font-weight: 700">{{splitLabel}}</button></div>
+<sc-if value="{{notSplit}}" hint-placeholder-val="{{ true }}">
+<select id="d-cat" style="height: 44px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 15px; color: var(--c111827, #111827); background: var(--cFFFFFF, #FFFFFF)"><option>{{d.cat}}</option><option>Groceries</option><option>Dining out</option><option>Gas</option><option>Shopping</option><option>Household</option><option>Health</option><option>Personal care</option><option>Rent</option><option>Electric</option><option>Internet</option><option>Subscriptions</option><option>Investments</option><option>Car insurance</option><option>Vacation</option><option>Gifts</option><option>Emergency fund</option><option>Home repairs</option></select>
+</sc-if>
+<sc-if value="{{splitting}}" hint-placeholder-val="{{ false }}">
+<sc-for list="{{splitLines}}" as="l" hint-placeholder-count="2">
+<div style="display: flex; gap: 8px"><select class="hit" aria-label="{{l.label}}" style="flex: 2; height: 40px; padding: 0 8px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 8px; font-family: inherit; font-size: 14px; color: var(--c111827, #111827); background: var(--cFFFFFF, #FFFFFF)"><option>{{l.cat}}</option><option>Owed to you (someone pays you back)</option><option>Groceries</option><option>Dining out</option><option>Gas</option><option>Shopping</option><option>Household</option><option>Health</option><option>Personal care</option><option>Rent</option><option>Electric</option><option>Internet</option><option>Subscriptions</option><option>Investments</option><option>Car insurance</option><option>Vacation</option><option>Gifts</option><option>Emergency fund</option><option>Home repairs</option></select><input class="hit" aria-label="{{l.amtLabel}}" value="{{l.amt}}" style="flex: 1; min-width: 0; height: 40px; padding: 0 8px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 8px; font-family: inherit; font-size: 14px; text-align: right; color: var(--c111827, #111827); background: var(--cFFFFFF, #FFFFFF)"></div>
+</sc-for>
+<span style="font-size: 12px; color: var(--c085D3A, #085D3A)">Lines add up to the total.</span>
+</sc-if>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Owed to you</span>
+<div role="group" aria-label="Owed to you" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; padding: 3px; border-radius: 10px; background: var(--cF2F4F7, #F2F4F7)">
+<sc-for list="{{owedOpts}}" as="o" hint-placeholder-count="4">
+<button class="hit" onClick="{{o.pick}}" aria-pressed="{{o.pressed}}" style="height: 32px; border-radius: 8px; border: none; background: {{o.bg}}; font-family: inherit; font-size: 13px; font-weight: 700; color: var(--c111827, #111827)">{{o.name}}</button>
+</sc-for>
+</div>
+</div>
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Memo<input class="hit" placeholder="Add a note" style="height: 40px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 15px; color: var(--c111827, #111827); background: var(--cFFFFFF, #FFFFFF)"></label>
+<span style="font-size: 12px; color: var(--c4B5563, #4B5563)">Bank says: {{d.raw}}</span>
+<button onClick="{{save}}" style="height: 44px; border-radius: 10px; border: none; background: {{accent}}; color: var(--cFFFFFF, #FFFFFF); font-family: inherit; font-size: 15px; font-weight: 700">Save</button>
+</sc-if>
+<sc-if value="{{isAdd}}" hint-placeholder-val="{{ false }}">
+<h2 style="margin: 0; font-size: 18px; font-weight: 700">Add a transaction</h2>
+<div role="group" aria-label="When" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; padding: 3px; border-radius: 10px; background: var(--cF2F4F7, #F2F4F7)">
+<sc-for list="{{addKinds}}" as="k" hint-placeholder-count="2">
+<button class="hit" onClick="{{k.pick}}" aria-pressed="{{k.pressed}}" style="height: 32px; border-radius: 8px; border: none; background: {{k.bg}}; font-family: inherit; font-size: 13px; font-weight: 700; color: var(--c111827, #111827)">{{k.name}}</button>
+</sc-for>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Amount<input class="hit" value="120.00" inputmode="decimal" style="height: 40px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 15px; color: var(--c111827, #111827); background: var(--cFFFFFF, #FFFFFF)"></label>
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Date<input class="hit" type="date" value="{{addDate}}" style="height: 40px; padding: 0 8px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 14px; color: var(--c111827, #111827); background: var(--cFFFFFF, #FFFFFF)"></label>
+</div>
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Payee<input class="hit" value="Check #1044" style="height: 40px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 15px; color: var(--c111827, #111827); background: var(--cFFFFFF, #FFFFFF)"></label>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Account<select class="hit" style="height: 40px; padding: 0 8px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 14px; color: var(--c111827, #111827); background: var(--cFFFFFF, #FFFFFF)"><option>Everyday Checking</option><option>Sapphire Preferred</option></select></label>
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Category<select class="hit" style="height: 40px; padding: 0 8px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 14px; color: var(--c111827, #111827); background: var(--cFFFFFF, #FFFFFF)"><option>Gifts</option><option>Groceries</option><option>Dining out</option><option>Gas</option><option>Shopping</option><option>Household</option><option>Health</option><option>Personal care</option><option>Rent</option><option>Electric</option><option>Internet</option><option>Subscriptions</option><option>Investments</option><option>Car insurance</option><option>Vacation</option><option>Emergency fund</option><option>Home repairs</option></select></label>
+</div>
+<span style="font-size: 12px; color: var(--c4B5563, #4B5563); line-height: 1.4">{{addHelp}}</span>
+<button onClick="{{doAdd}}" style="height: 44px; border-radius: 10px; border: none; background: {{accent}}; color: var(--cFFFFFF, #FFFFFF); font-family: inherit; font-size: 15px; font-weight: 700">Add</button>
+</sc-if>
+<sc-if value="{{hasToast}}" hint-placeholder-val="{{ false }}">
+<div role="status" style="display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: var(--c111827, #111827); color: var(--cFFFFFF, #FFFFFF); font-size: 13px"><span style="flex: 1">{{toast}}</span><sc-if value="{{hasAlways}}" hint-placeholder-val="{{ false }}"><button class="hit" onClick="{{always}}" style="height: 32px; padding: 0 10px; border-radius: 999px; border: none; background: var(--cFFFFFF, #FFFFFF); color: var(--c111827, #111827); font-family: inherit; font-size: 13px; font-weight: 700">Always</button></sc-if><button class="hit" onClick="{{undo}}" style="height: 32px; padding: 0 8px; border: none; background: transparent; color: var(--cFFFFFF, #FFFFFF); font-family: inherit; font-size: 13px; font-weight: 700; text-decoration: underline">Undo</button></div>
+</sc-if>
+</aside>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["app","light","dark"],"default":"app"},"accent":{"editor":"color","default":"#1D4ED8","options":["#1D4ED8","#0F766E","#6D28D9","#111827"]},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  llGetPref() { try { return localStorage.getItem('ledgerline-theme') || this.llMem || 'device'; } catch (e) { return this.llMem || 'device'; } }
+  llSetPref(v) { this.llMem = v; try { localStorage.setItem('ledgerline-theme', v); } catch (e) {} this.llApply(); }
+  llApply() {
+    const forced = this.props.theme && this.props.theme !== 'app' ? this.props.theme : null;
+    const p = forced || this.llGetPref();
+    let dark = p === 'dark';
+    if (p === 'device') { try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {} }
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    const acc = { '#1D4ED8': '#8AB4FF', '#0F766E': '#5EEAD4', '#6D28D9': '#C4B5FD', '#111827': '#F2F4F7' };
+    const a = String(this.props.accent || 'var(--c1D4ED8, #1D4ED8)').toUpperCase();
+    if (a.charAt(0) === '#') { try { document.documentElement.style.setProperty('--accent', dark ? (acc[a] || '#8AB4FF') : a); } catch (e) {} }
+  }
+  componentDidMount() {
+    this.llApply();
+    this.llOn = () => { this.llApply(); this.forceUpdate(); };
+    try { window.addEventListener('storage', this.llOn); this.llMq = window.matchMedia('(prefers-color-scheme: dark)'); this.llMq.addEventListener('change', this.llOn); } catch (e) {}
+  }
+  componentDidUpdate() { this.llApply(); }
+  componentWillUnmount() { try { window.removeEventListener('storage', this.llOn); this.llMq.removeEventListener('change', this.llOn); } catch (e) {} }
+
+  llDemo() { try { const v = localStorage.getItem('ledgerline-demo'); if (v) return JSON.parse(v); } catch (e) {} return this.llDemoMem || {}; }
+  llSaveDemo(patch) { const d = Object.assign({}, this.llDemo(), patch); this.llDemoMem = d; try { localStorage.setItem('ledgerline-demo', JSON.stringify(d)); } catch (e) {} this.setState({ llTick: Date.now() }); }
+  llModel() {
+    const d = this.llDemo();
+    const done = d.done || {}, closed = d.closed || {}, canceled = d.canceled || {}, snoozed = d.snoozed || {}, cleared = d.cleared || {}, cats = d.cats || {}, custom = d.custom || {};
+    const fmt = (c) => (c < 0 ? '−$' : '$') + (Math.abs(c) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const paid = d.venmo === 'matched' ? (d.paidIds || { rent: true, nopa: true }) : {};
+    const owed = { rent: 100000 + (d.zelleUnlinked ? 100000 : 0), nopa: 1800, united: 41260 };
+    const owedCat = { rent: 'rent', nopa: 'dining', united: 'vacation' };
+    const settled = (k) => !!(paid[k] || closed[k] || canceled[k]);
+    const chargedNow = (k) => !paid[k] && (closed[k] || (canceled[k] && k !== 'rent'));
+    // base categories (cents): avail, assigned, spent this month
+    const B = [
+      ['rent', 'Rent', 'bills', 100000, 100000, 0, { bill: true, target: 100000, detail: 'your $1,000 of $3,000 · Nov 30', tgt: 'Refill to $1,000 every month' }],
+      ['electric', 'Electric', 'bills', 4130, 9500, 5370, { bill: true, target: 9500, tgt: 'Refill to $95 every month' }],
+      ['internet', 'Internet', 'bills', 8000, 8000, 0, { bill: true, target: 8000, detail: 'Comcast $79.99 on Nov 16', tgt: 'Refill to $80 every month' }],
+      ['subs', 'Subscriptions', 'bills', 55, 6500, 6445, { bill: true, target: 6500, tgt: 'Refill to $65 every month' }],
+      ['groceries', 'Groceries', 'everyday', 21240, 60000, 38760, { target: 60000, tgt: 'Refill to $600 every month' }],
+      ['dining', 'Dining out', 'everyday', -1825, 20000, 21825, { target: 20000, tgt: 'Refill to $200 every month', overNote: 'Shake Shack on Freedom overspent it' }],
+      ['gas', 'Gas', 'everyday', 6410, 12000, 5590, { target: 12000, tgt: 'Refill to $120 every month' }],
+      ['shopping', 'Shopping', 'everyday', 5320, 20000, 14680, { target: 20000, tgt: 'Refill to $200 every month' }],
+      ['household', 'Household', 'everyday', 4000, 10000, 9155, { target: 10000, tgt: 'Refill to $100 every month', carry: '$31.55 carried from October' }],
+      ['health', 'Health', 'everyday', 7500, 7500, 0, { target: 7500, tgt: 'Refill to $75 every month' }],
+      ['personal', 'Personal care', 'everyday', 1500, 10000, 8500, { target: 10000, tgt: 'Refill to $100 every month' }],
+      ['invest', 'Investments', 'savings', 0, 150000, 150000, { invest: true, detail: '$1,500 to Vanguard on Nov 1', tgt: 'Invest $1,500 every month' }],
+      ['car', 'Car insurance', 'savings', 36000, 0, 0, { need: 9000, goal: '$540 by Jan 15', tgt: '$540 by Jan 15, every 6 months' }],
+      ['vacation', 'Vacation', 'savings', 125000, 0, 0, { need: 25000, goal: '$3,000 by Jun 2027', tgt: '$3,000 by Jun 2027 (funded by the start of June)' }],
+      ['gifts', 'Gifts', 'savings', 21000, 17000, 21600, { target: 17000, overTarget: true, tgt: 'Refill to $170 every month' }],
+      ['emergency', 'Emergency fund', 'savings', 1500000, 0, 0, { reached: true, detail: 'goal $15,000 reached', tgt: '$15,000 by Dec 2026' }],
+      ['home', 'Home repairs', 'savings', 205763, 0, 0, { none: true, detail: 'kept for repairs', tgt: 'No target' }]
+    ];
+    const C = {};
+    const order = [];
+    B.forEach((b) => { C[b[0]] = Object.assign({ id: b[0], name: b[1], group: b[2], avail: b[3], assigned: b[4], spent: b[5] }, b[6]); order.push(b[0]); });
+    if (d.checkDeleted) { C.gifts.avail += 12000; C.gifts.spent -= 12000; }
+    Object.keys(owed).forEach((k) => { if (chargedNow(k)) { const c = C[owedCat[k]]; c.avail -= owed[k]; c.spent += owed[k]; c.charged = (c.charged || 0) + owed[k]; } });
+    Object.keys(custom).forEach((k) => { if (C[k]) { C[k].avail += custom[k]; C[k].assigned += custom[k]; } });
+    Object.keys(done).forEach((k) => { if (C[k]) { C[k].avail += done[k]; C[k].assigned += done[k]; } });
+    // categorizing uncategorized card spending, in date order
+    const U = [['a2', 'freedom', 2320], ['cvs', 'freedom', 1843], ['a1', 'sapphire', 3810], ['bb', 'sapphire', 675]];
+    const byName = {};
+    order.forEach((k) => { byName[C[k].name] = k; });
+    const cardFund = { sapphire: 0, freedom: 0 }, waits = { sapphire: 0, freedom: 0 };
+    U.forEach((u) => {
+      const k = cats[u[0]] ? byName[cats[u[0]]] : null;
+      if (!k) { waits[u[1]] += u[2]; return; }
+      const before = C[k].avail;
+      cardFund[u[1]] += Math.max(0, Math.min(before, u[2]));
+      C[k].avail -= u[2]; C[k].spent += u[2];
+    });
+    // card payment categories (cents)
+    const diningCover = done.dining || 0;
+    const cards = {
+      sapphire: { name: 'Sapphire Preferred', pay: 87832 + cardFund.sapphire, need: 92317 - waits.sapphire, stmt: 'statement $611.40 due Nov 25', waits: waits.sapphire, href: 'Register.dc.html' },
+      freedom: { name: 'Freedom Unlimited', pay: 15500 + Math.min(diningCover, 1825) + cardFund.freedom, need: 21488 - waits.freedom, stmt: 'statement $145.15 due Dec 2', waits: waits.freedom, href: 'RegisterFreedom.dc.html' }
+    };
+    // Ready to Assign
+    let rta = 98190 + (d.zelleUnlinked ? -100000 : 0);
+    Object.keys(done).forEach((k) => { rta -= done[k]; });
+    Object.keys(custom).forEach((k) => { rta -= custom[k]; });
+    if (d.venmo) rta += (d.venmoIn === undefined ? 101800 : d.venmoIn);
+    if (d.xferPick) rta += d.xferPick === 'none' ? 40000 : 20000;
+    Object.keys(owed).forEach((k) => { if (chargedNow(k)) rta += owed[k]; });
+    let out = 0;
+    Object.keys(owed).forEach((k) => { if (!settled(k)) out += owed[k]; });
+    const nopaLate = !settled('nopa') && !snoozed.nopa;
+    // statuses
+    order.forEach((k) => {
+      const c = C[k];
+      if (c.avail < 0) { c.t = 'over'; c.fix = -c.avail; c.fixVerb = 'Cover'; return; }
+      if (c.invest) { c.t = 'invested'; return; }
+      if (c.none) { c.t = 'none'; return; }
+      if (c.reached) { c.t = 'funded'; return; }
+      if (c.need) { const left = c.need - (done[k] || 0); if (left > 0) { c.t = 'under'; c.fix = left; c.fixVerb = 'Fund'; } else c.t = 'funded'; return; }
+      if (k === 'rent' && c.avail < 100000) { c.t = 'under'; c.fix = 100000 - c.avail; c.fixVerb = 'Fund'; return; }
+      if (c.overTarget && c.avail > c.target) { c.t = 'overfunded'; c.fix = -(c.avail - c.target); c.fixVerb = 'Move'; return; }
+      if (!c.bill && c.target) {
+        const pace = c.spent / Math.max(1, c.spent + c.avail) - 0.47;
+        if (c.avail < 0.2 * c.target || pace > 0.30) { c.t = 'low'; c.fix = Math.max(100, Math.ceil((0.35 * c.target - c.avail) / 100) * 100); c.fixVerb = 'Add'; return; }
+      }
+      c.t = 'funded';
+    });
+    order.forEach((k) => {
+      const c = C[k];
+      let det = c.detail || '';
+      if (c.t === 'over') det = c.charged ? 'charged ' + fmt(c.charged) + ' after a close-out · overspent' : (c.overNote || 'overspent');
+      else if (k === 'rent' && c.t === 'under') det = 'charged $1,000 for Sam’s unpaid share · needs $1,000 by Nov 30';
+      else if (c.need) det = (c.charged ? 'charged ' + fmt(c.charged) + ' after a close-out · ' : '') + (c.t === 'under' ? 'needs ' + fmt(c.fix) + ' this month · ' + c.goal : 'this month’s share is in · ' + c.goal);
+      else if (c.overTarget) det = c.t === 'overfunded' ? fmt(-c.fix) + ' more than this month’s ' + fmt(c.target) : 'back to this month’s target';
+      else if (c.target && !det) det = fmt(c.spent) + ' of ' + fmt(c.target) + ' spent' + (c.t === 'low' ? ' · ' + fmt(c.avail) + ' left' : '') + (c.carry ? ' · ' + c.carry : '');
+      if (c.bill && k === 'subs') det = fmt(c.spent) + ' of ' + fmt(c.target) + ' spent · bills are never Low';
+      if (done[k] && c.t === 'funded') det = det + ' · added ' + fmt(done[k]);
+      c.detailText = det;
+    });
+    // projected shortfall from the Nov 30 rent front
+    const rentRule = !d.zelleUnlinked || true;
+    const front = 200000;
+    const shortBy = rentRule && rta < front ? front - rta : 0;
+    // attention list
+    const attn = [];
+    const secOf = { over: 'Overspent', under: 'Underfunded', low: 'Low', overfunded: 'Overfunded' };
+    order.forEach((k) => {
+      const c = C[k];
+      if (secOf[c.t]) attn.push({ sec: secOf[c.t], id: k, name: c.name, avail: c.avail, detail: c.detailText, fix: c.fix, action: c.fixVerb + ' ' + fmt(Math.abs(c.fix)) });
+      else if (done[k]) attn.push({ sec: 'Done', id: k, name: c.name, avail: c.avail, detail: (done[k] < 0 ? 'Moved ' + fmt(-done[k]) + ' back to' : 'Added ' + fmt(done[k]) + ' from') + ' Ready to Assign', doneItem: true });
+    });
+    if (nopaLate) attn.push({ sec: 'Owed to you', id: 'nopa-late', name: 'Nopa · Alex', availText: '$18.00', detail: 'Late: expected back by Nov 10', link: 'Owed.dc.html', action: 'Review' });
+    if (shortBy > 0) attn.push({ sec: 'Owed to you', id: 'rent-front', name: 'Rent on Nov 30', availText: fmt(-shortBy), detail: 'Fronts $2,000 for Sam. Ready to Assign has ' + fmt(rta) + ', so it would go ' + fmt(rta - front) + (d.venmo ? '.' : '. Matching the Venmo money adds $1,018.'), link: 'Owed.dc.html', action: 'Review' });
+    if (rta < 0) attn.push({ sec: 'Ready to Assign', id: 'rta-neg', name: 'Ready to Assign', availText: fmt(rta), detail: 'More is assigned than you have. Take it back from a category.', link: 'Category.dc.html', action: 'Move money' });
+    const open = attn.filter((a) => !a.doneItem).length;
+    const waitingLeft = d.venmo ? (d.venmoLeft || 0) : 101800;
+    const uncatIds = ['a1', 'a2', 'cvs', 'bb'];
+    const activityLeft = (!d.venmo || (d.venmoLeft || 0) > 0 ? 1 : 0) + (d.zelleUnlinked ? 1 : 0) + (cleared.xfer ? 0 : 1) + (cleared.shake ? 0 : 1) + (cleared.check || d.checkDeleted ? 0 : 1) + uncatIds.filter((i) => !cats[i]).length;
+    return { d: d, fmt: fmt, done: done, closed: closed, canceled: canceled, snoozed: snoozed, cleared: cleared, cats: cats, custom: custom, owed: owed, paid: paid, settled: settled, C: C, order: order, cards: cards, rta: rta, out: out, nopaLate: nopaLate, shortBy: shortBy, attn: attn, open: open, waitingLeft: waitingLeft, activityLeft: activityLeft };
+  }
+  constructor(props) {
+    super(props);
+    this.state = { f: 'all', q: '', sel: 'uber', cats: {}, toast: null, owed: 'none', split: false, on: { rent: true, nopa: true }, gone: {}, selMode: false, multi: {}, bulkCat: null, rules: {} };
+  }
+  llToast(next) {
+    const token = Date.now();
+    next = Object.assign({}, next);
+    const store = {};
+    if (next.cats) { store.cats = next.cats; delete next.cats; }
+    if (next.gone) { const g = Object.assign({}, next.gone); store.venmo = g.venmo ? (this.llDemo().venmo || 'matched') : null; delete g.venmo; store.cleared = g; delete next.gone; }
+    if (next.venmoAs) { store.venmo = next.venmoAs; delete next.venmoAs; }
+    if (Object.keys(store).length) this.llSaveDemo(store);
+    if (next.toast && next.toast.undo) { const u = Object.assign({}, next.toast.undo); const st = {}; if (u.cats) { st.cats = u.cats; delete u.cats; } if (u.gone) { const g = Object.assign({}, u.gone); st.venmo = g.venmo ? this.llDemo().venmo : null; delete g.venmo; st.cleared = g; delete u.gone; } if ('xferPick' in u) { st.xferPick = u.xferPick; delete u.xferPick; } u.llStore = st; next.toast = Object.assign({}, next.toast, { undo: u }); }
+    this.setState(Object.assign({}, next, next.toast ? { toast: Object.assign({}, next.toast, { token: token }) } : {}));
+    clearTimeout(this.llT);
+    this.llT = setTimeout(() => { if (this.state.toast && this.state.toast.token === token) this.setState({ toast: null }); }, 8000);
+  }
+  renderVals() {
+    const s0 = this.state;
+    const M = this.llModel();
+    const s = Object.assign({}, s0, { cats: M.cats, gone: Object.assign({}, M.cleared, M.d.venmo && !(M.d.venmoLeft > 0) ? { venmo: true } : {}, M.d.checkDeleted ? { check: true, check2: true } : {}) });
+    const accent = ('var(--accent, ' + (this.props.accent ?? 'var(--c1D4ED8, #1D4ED8)') + ')');
+    const badges = { alert: ['var(--cFEF0C7, #FEF0C7)', 'var(--c93370D, #93370D)'], match: ['var(--cECFDF3, #ECFDF3)', 'var(--c085D3A, #085D3A)'], est: ['var(--cEEF4FF, #EEF4FF)', 'var(--c3538CD, #3538CD)'], owed: ['var(--cE0F2FE, #E0F2FE)', 'var(--c026AA2, #026AA2)'], gray: ['var(--cF2F4F7, #F2F4F7)', 'var(--c344054, #344054)'] };
+    const R = (id, sec, payee, meta, amount, o) => Object.assign({ id: id, sec: sec, payee: payee, meta: meta, amount: amount, kind: 'edit', badge: '', tone: 'gray', cat: '', raw: payee.toUpperCase(), wont: false }, o || {});
+    const all = [
+      R('venmo', 'match', 'Venmo cashout', 'Everyday Checking · Nov 14 · not in Ready to Assign', '+$1,018.00', { kind: 'match', badge: 'Waiting to match', tone: 'match', raw: 'VENMO CASHOUT' }),
+      R('xfer', 'xfer', 'Transfer out of Everyday Checking', 'Nov 10 · 2 accounts got $200', '−$200.00', { kind: 'transfer', badge: 'Pick the other side', tone: 'alert' }),
+      R('shake', 'check', 'Shake Shack', 'Freedom · posted Nov 14 · you estimated $24.00', '−$28.10', { badge: 'Cleared $4.10 higher', tone: 'alert', cat: 'Dining out' }),
+      R('check', 'check', 'Check #1043', 'Added by you Nov 5 · Gifts · not at bank', '−$120.00', { badge: 'Not matched after 9 days', tone: 'alert', cat: 'Gifts', raw: 'Added by you' }),
+      R('a1', 'cat', 'Amazon', 'Sapphire · Nov 13', '−$38.10', { kind: 'cat', raw: 'AMZN MKTP US*2K4' }),
+      R('a2', 'cat', 'Amazon', 'Freedom · Nov 11', '−$23.20', { kind: 'cat', raw: 'AMAZON.COM*9X1' }),
+      R('cvs', 'cat', 'CVS Pharmacy', 'Freedom · Nov 11', '−$18.43', { kind: 'cat', raw: 'CVS/PHARMACY #0812' }),
+      R('bb', 'cat', 'Blue Bottle Coffee', 'Sapphire · Nov 14 · always Dining out before', '−$6.75', { kind: 'cat', raw: 'SQ *BLUE BOTTLE COFFEE', usual: 'Dining out' }),
+      R('uber', 'pending', 'Uber Eats', 'Sapphire · Nov 13 · Dining out', '−$36.00', { badge: 'Your estimate', tone: 'est', cat: 'Dining out', raw: 'UBER *EATS PENDING' }),
+      R('shell', 'pending', 'Shell', 'Sapphire · Nov 14 · Gas', '−$45.00', { badge: 'Card hold', cat: 'Gas' }),
+      R('check2', 'pending', 'Check #1043', 'Everyday Checking · Nov 5 · Gifts', '−$120.00', { badge: 'Added by you', cat: 'Gifts', raw: 'Added by you' }),
+      R('marriott', 'pending', 'Marriott Downtown', 'Sapphire · Nov 12 · Vacation', '−$200.00', { badge: 'Won’t clear', cat: 'Vacation', wont: true }),
+      R('rent', 'upcoming', 'Rent', 'Nov 30 · monthly · $2,000 fronted for Sam', '−$3,000.00', { badge: 'Owed to you', tone: 'owed', cat: 'Rent' }),
+      ...(M.d.venmo ? [R('venmo2', 'posted', 'Venmo cashout', 'Nov 14 · Everyday Checking · ' + (M.d.venmo === 'matched' ? 'paid back Rent and Nopa' : 'income'), '+$1,018.00', { badge: M.d.venmo === 'matched' ? 'Paid back' : 'Income', tone: 'match', cat: 'Ready to Assign', raw: 'VENMO CASHOUT' })] : []),
+      R('tj', 'posted', 'Trader Joe’s', 'Nov 14 · Sapphire · Groceries', '−$64.22', { badge: 'By rule', cat: 'Groceries', raw: 'TRADER JOE S #236' }),
+      R('payroll', 'posted', 'Acme Corp payroll', 'Nov 13 · Everyday Checking · Ready to Assign', '+$3,100.00', { cat: 'Ready to Assign' }),
+      R('auto', 'posted', 'Everyday Checking → Marcus', 'Nov 12 · paired automatically', '$500.00', { badge: 'Transfer', cat: 'Transfer' }),
+      R('nopa', 'posted', 'Nopa', 'Nov 8 · Sapphire · Dining out', '−$36.00', { badge: 'Owed · Half', tone: 'owed', cat: 'Dining out' }),
+      R('vanguard', 'posted', 'Everyday Checking → Vanguard', 'Nov 1 · Investments', '−$1,500.00', { badge: 'Invested', cat: 'Investments', raw: 'VANGUARD BUY INVESTMENT' }),
+      R('zelle', 'posted', 'Zelle from Sam', 'Nov 3 · Everyday Checking · paid back Rent', '+$1,000.00', { badge: 'Paid back', tone: 'match', cat: 'Ready to Assign', raw: 'ZELLE FROM SAM' })
+    ];
+    const titles = { match: ['Money to match', 'not in Ready to Assign'], xfer: ['Transfers to sort out', ''], cat: ['Needs category', ''], check: ['Check these', ''], pending: ['Pending', 'counts now'], upcoming: ['Upcoming', 'counts on its date'], posted: ['Posted', 'newest first'] };
+    const attnKeys = { match: 1, xfer: 1, cat: 1, check: 1 };
+    const q = s.q.trim().toLowerCase();
+    const keep = (r) => {
+      if (s.gone[r.id]) return false;
+      if (r.id === 'check2' && s.f !== 'pending') return false;
+      if (q && (r.payee + ' ' + r.amount).toLowerCase().indexOf(q) < 0) return false;
+      if (s.f === 'attn') return !!attnKeys[r.sec] && !(r.sec === 'cat' && s.cats[r.id]);
+      if (s.f === 'pending') return r.sec === 'pending' || r.sec === 'upcoming';
+      return true;
+    };
+    const uncat = all.filter((r) => r.sec === 'cat' && !s.cats[r.id]).length;
+    const attnCount = all.filter((r) => attnKeys[r.sec] && !s.gone[r.id] && !(r.sec === 'cat' && s.cats[r.id])).length;
+    const sections = Object.keys(titles).map((k) => ({ title: titles[k][0], note: k === 'cat' ? uncat + ' left' : titles[k][1], hasSelect: k === 'cat' && uncat > 1, selectLabel: s.selMode ? 'Cancel' : 'Select several', toggleSelect: () => this.setState({ selMode: !s.selMode, multi: {}, bulkCat: null, adding: false }), rows: all.filter((r) => r.sec === k && keep(r)).map((r) => {
+      const b = badges[r.tone];
+      const chosen = s.cats[r.id];
+      return {
+        payee: r.payee, meta: chosen ? r.meta + ' · ' + chosen : r.meta, amount: r.amount,
+        ink: r.wont ? 'var(--c667085, #667085)' : (r.amount.charAt(0) === '+' ? 'var(--c085D3A, #085D3A)' : 'var(--c111827, #111827)'), strike: r.wont ? 'line-through' : 'none',
+        hasBadge: !!r.badge, badge: r.badge, badgeBg: b[0], badgeFg: b[1],
+        canOk: r.sec === 'check', okLabel: r.id === 'check' ? 'Keep waiting' : 'OK', okAria: (r.id === 'check' ? 'Keep waiting for ' : 'OK, ') + r.payee,
+        ok: () => this.llToast({ gone: Object.assign({}, s.gone, { [r.id]: true }), toast: { text: r.id === 'check' ? 'Check #1043 will be flagged again after 14 more days' : 'Shake Shack’s new amount accepted', undo: { gone: s.gone } } }),
+        needsCat: r.kind === 'cat' && !chosen, catLabel: 'Category for ' + r.payee + ' ' + r.amount,
+        showCheck: s.selMode && r.kind === 'cat' && !chosen, checked: !!s.multi[r.id], checkLabel: 'Select ' + r.payee + ' ' + r.amount,
+        toggleCheck: () => this.setState({ multi: Object.assign({}, s.multi, { [r.id]: !s.multi[r.id] }) }),
+        setCat: (e) => { const v = e.target.value; if (v.indexOf('Choose') === 0) return; this.llToast({ cats: Object.assign({}, s.cats, { [r.id]: v }), toast: { text: r.payee + ' → ' + v, always: r.usual === v && !s.rules[r.payee] ? r.payee : null, cat: v, undo: { cats: s.cats, rules: s.rules } } }); },
+        bg: s.sel === r.id ? 'var(--cEEF2FF, #EEF2FF)' : 'transparent', pressed: s.sel === r.id ? 'true' : 'false',
+        pick: () => (s.selMode && r.kind === 'cat' && !chosen) ? this.setState({ multi: Object.assign({}, s.multi, { [r.id]: !s.multi[r.id] }) }) : this.setState({ sel: r.id, split: false, owed: 'none', adding: false })
+      };
+    }) })).filter((x) => x.rows.length > 0);
+    const sel = all.find((r) => r.id === s.sel) || all[7];
+    const fmt = (c) => '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const mdefs = [{ id: 'rent', name: 'Rent', meta: 'Oct 31 · by Nov 15', c: 100000 }, { id: 'nopa', name: 'Nopa', meta: 'Nov 8 · Half', c: 1800 }, { id: 'united', name: 'United Airlines', meta: 'Oct 20 · work trip', c: 41260 }];
+    let left = 101800;
+    const matchItems = mdefs.map((m) => { const on = !!s.on[m.id]; const used = on ? Math.min(m.c, Math.max(left, 0)) : 0; left -= used; return { name: m.name, meta: m.meta, amount: on ? fmt(used) : fmt(m.c), on: on, toggle: () => this.setState({ on: Object.assign({}, s.on, { [m.id]: !on }) }) }; });
+    const chip = (id, name) => { const on = s.f === id; return { name: name, pressed: on ? 'true' : 'false', bg: on ? 'var(--c111827, #111827)' : 'var(--cFFFFFF, #FFFFFF)', fg: on ? 'var(--cFFFFFF, #FFFFFF)' : 'var(--c374151, #374151)', border: on ? 'var(--c111827, #111827)' : 'var(--cD0D5DD, #D0D5DD)', pick: () => this.setState({ f: id }) }; };
+    const multiIds = all.filter((r) => s.multi[r.id] && !s.cats[r.id]).map((r) => r.id);
+    const canBulk = multiIds.length > 0 && !!s.bulkCat;
+    const matchCents = 101800 - left;
+    const tot = Math.round(parseFloat(sel.amount.replace(/[−+$,]/g, '')) * 100) || 0;
+    const half = Math.round(tot / 2);
+    return {
+      bulk: s.selMode, showDetail: !s.adding && !s.selMode,
+      bulkTitle: multiIds.length === 0 ? 'Select transactions' : multiIds.length + ' selected',
+      bulkPick: (e) => this.setState({ bulkCat: e.target.value.indexOf('Choose') === 0 ? null : e.target.value }),
+      bulkCta: canBulk ? 'Set ' + multiIds.length + ' to ' + s.bulkCat : 'Choose a category',
+      bulkBg: canBulk ? accent : 'var(--cE5E7EB, #E5E7EB)', bulkFg: canBulk ? 'var(--cFFFFFF, #FFFFFF)' : 'var(--c4B5563, #4B5563)',
+      bulkApply: () => { if (!canBulk) return; const c = Object.assign({}, s.cats); multiIds.forEach((id) => { c[id] = s.bulkCat; }); this.llToast({ cats: c, selMode: false, multi: {}, bulkCat: null, toast: { text: multiIds.length + ' transactions → ' + s.bulkCat, undo: { cats: s.cats } } }); },
+      hasAlways: !!(s.toast && s.toast.always),
+      always: () => s.toast && s.toast.always && this.llToast({ rules: Object.assign({}, s.rules, { [s.toast.always]: true }), toast: Object.assign({}, s.toast, { always: null, text: s.toast.text + ' · every ' + s.toast.always + ' from now on' }) }),
+      noMatchAria: matchCents === 0 ? 'true' : 'false',
+      matchBg: matchCents === 0 ? 'var(--cE5E7EB, #E5E7EB)' : accent, matchFg: matchCents === 0 ? 'var(--c4B5563, #4B5563)' : 'var(--cFFFFFF, #FFFFFF)',
+      matchCta: matchCents === 0 ? 'Pick what it pays back' : 'Match ' + fmt(matchCents),
+      accent: accent,
+      q: s.q, onQ: (e) => this.setState({ q: e.target.value }),
+      chips: [chip('all', 'All'), chip('attn', 'Needs attention ' + attnCount), chip('pending', 'Not posted yet')],
+      attnCount: attnCount,
+      showAttnHead: (s.f === 'all' || s.f === 'attn') && !q && attnCount > 0,
+      attnDone: s.f === 'attn' && !q && attnCount === 0,
+      sections: sections,
+      d: {
+        tag: sel.kind === 'match' ? 'Money in · could be money back' : sel.kind === 'transfer' ? 'Transfer · other side unclear' : sel.sec === 'pending' ? 'Pending' : sel.sec === 'upcoming' ? 'Upcoming' : sel.kind === 'cat' ? 'Needs category' : 'Posted',
+        tagInk: sel.kind === 'transfer' || sel.kind === 'cat' ? 'var(--c93370D, #93370D)' : 'var(--c085D3A, #085D3A)',
+        amount: sel.amount, ink: sel.amount.charAt(0) === '+' ? 'var(--c085D3A, #085D3A)' : 'var(--c111827, #111827)',
+        meta: sel.payee + ' · ' + sel.meta, raw: sel.raw, cat: s.cats[sel.id] || sel.cat || 'Choose…',
+        isMatch: !s.adding && !s.selMode && sel.kind === 'match', isTransfer: !s.adding && !s.selMode && sel.kind === 'transfer', isEdit: !s.adding && !s.selMode && (sel.kind === 'edit' || sel.kind === 'cat')
+      },
+      isAdd: !!s.adding, notAdd: !s.adding,
+      startAdd: () => this.setState({ adding: true, selMode: false, addKind: s.addKind || 'pending' }),
+      addKinds: [['pending', 'Already happened'], ['upcoming', 'Coming up']].map((k) => ({ name: k[1], pressed: (s.addKind || 'pending') === k[0] ? 'true' : 'false', bg: (s.addKind || 'pending') === k[0] ? 'var(--cFFFFFF, #FFFFFF)' : 'transparent', pick: () => this.setState({ addKind: k[0] }) })),
+      addDate: (s.addKind || 'pending') === 'pending' ? '2026-11-14' : '2026-11-30',
+      addHelp: (s.addKind || 'pending') === 'pending' ? 'Counts in your budget now. When the bank shows a match, the two merge and the bank amount wins.' : 'Counts in your budget from its date. Can repeat monthly or yearly.',
+      doAdd: () => this.llToast({ adding: false, toast: { text: 'Added Check #1044', undo: { adding: true } } }),
+      matchItems: matchItems,
+      matchTotal: fmt(101800 - left),
+      matchLeft: left > 0 ? 'The other ' + fmt(left) + ' keeps waiting to match until you decide.' : 'All of it pays back what you’re owed.',
+      doMatch: () => { if (matchCents <= 0) return; const p = {}; let l2 = 101800; mdefs.forEach((m) => { if (s.on[m.id]) { const u = Math.min(m.c, Math.max(l2, 0)); l2 -= u; if (u >= m.c) p[m.id] = true; } }); this.llSaveDemo({ paidIds: p, venmoIn: matchCents, venmoLeft: left }); this.llToast({ venmoAs: 'matched', sel: 'uber', toast: { text: 'Matched ' + fmt(101800 - left) + '. It went to Ready to Assign and settled what it paid back', undo: { gone: s.gone, sel: 'venmo' } } }); },
+      notBack: () => { this.llSaveDemo({ venmoIn: 101800, venmoLeft: 0 }); this.llToast({ venmoAs: 'income', sel: 'uber', toast: { text: 'Venmo cashout moved to Ready to Assign', undo: { gone: s.gone, sel: 'venmo' } } }); },
+      xferOpts: [['marcus', 'Marcus Savings', 'Nov 11', '+$200.00'], ['ally', 'Ally Savings', 'Nov 12', '+$200.00'], ['none', 'Neither, it was a payment', 'Categorize it instead', '']].map((o) => ({ name: o[1], meta: o[2], amount: o[3], pick: () => this.llSaveDemo({ xferPick: o[0] }) || this.llToast({ gone: Object.assign({}, s.gone, { xfer: true }), sel: 'uber', toast: { text: o[0] === 'none' ? 'Kept as spending' : 'Paired with ' + o[1], undo: { gone: s.gone, sel: 'xfer', xferPick: null } } }) })),
+      splitting: s.split, notSplit: !s.split,
+      splitLabel: s.split ? 'Back to one category' : 'Split',
+      toggleSplit: () => this.setState({ split: !s.split }),
+      splitLines: [{ cat: s.cats[sel.id] || sel.cat || 'Groceries', amt: ((tot - half) / 100).toFixed(2) }, { cat: 'Household', amt: (half / 100).toFixed(2) }].map((l, i) => ({ cat: l.cat, amt: l.amt, label: 'Category for line ' + (i + 1), amtLabel: 'Amount for line ' + (i + 1) })),
+      owedOpts: [['none', 'None'], ['half', 'Half'], ['all', 'All'], ['custom', 'Custom']].map((o) => ({ name: o[1], pressed: s.owed === o[0] ? 'true' : 'false', bg: s.owed === o[0] ? 'var(--cFFFFFF, #FFFFFF)' : 'transparent', pick: () => this.setState({ owed: o[0] }) })),
+      save: () => this.llToast({ toast: { text: 'Saved ' + sel.payee, undo: {} } }),
+      hasToast: !!s.toast, toast: s.toast ? s.toast.text : '',
+      undo: () => { const u = Object.assign({}, s.toast ? s.toast.undo : {}); if (u.llStore) { if (Object.keys(u.llStore).length) this.llSaveDemo(u.llStore); delete u.llStore; } this.setState(Object.assign({ toast: null }, u)); }
+    };
+  }
+}
+</script>
+</body>
+</html>

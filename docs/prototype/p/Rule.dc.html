@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ledgerline edit rule</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accent, #1D4ED8)}a:hover{color:var(--c1E3A8A, #1E3A8A)}
+.hit{position:relative}.hit::after{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}:root[data-theme="dark"]{--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; display: flex; flex-direction: column; background: var(--cFFFFFF, #FFFFFF); font-family: 'Public Sans', system-ui, sans-serif; color: var(--c111827, #111827); overflow: hidden">
+<header style="display: flex; align-items: center; gap: 4px; padding: 8px 16px 8px 4px; border-bottom: 1px solid var(--cE5E7EB, #E5E7EB)">
+<a href="Rules.dc.html" aria-label="Back to rules" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: var(--c374151, #374151)"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg></a>
+<h1 style="margin: 0; font-size: 19px; font-weight: 700">Rule 1 · Rent</h1>
+</header>
+<main style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px">
+<section style="display: flex; flex-direction: column; gap: 8px">
+<h2 style="margin: 0; font-size: 12px; font-weight: 700; color: var(--c374151, #374151); text-transform: uppercase; letter-spacing: 0.4px">When all of these match</h2>
+<div style="display: flex; gap: 8px">
+<select aria-label="Field" style="flex: 1; height: 44px; padding: 0 8px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 15px; background: var(--cFFFFFF, #FFFFFF)"><option>Payee is</option><option>Description contains</option><option>Account is</option><option>Amount between</option></select>
+<input aria-label="Value" value="Bay Prop Mgmt" style="flex: 1.3; min-width: 0; height: 44px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 15px">
+</div>
+<div style="display: flex; gap: 8px">
+<select aria-label="Field" style="flex: 1; height: 44px; padding: 0 8px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 15px; background: var(--cFFFFFF, #FFFFFF)"><option>Amount between</option><option>Payee is</option></select>
+<input aria-label="Value" value="$2,900 – $3,100" style="flex: 1.3; min-width: 0; height: 44px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 15px">
+</div>
+<sc-for list="{{extra}}" as="x" hint-placeholder-count="1">
+<div style="display: flex; gap: 8px">
+<select aria-label="{{x.fieldLabel}}" style="flex: 1; height: 44px; padding: 0 8px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 15px; background: var(--cFFFFFF, #FFFFFF); color: var(--c111827, #111827)"><option>Account is</option><option>Description contains</option><option>Amount between</option><option>Payee is</option></select>
+<input aria-label="{{x.valueLabel}}" placeholder="Everyday Checking" style="flex: 1.3; min-width: 0; height: 44px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 15px; color: var(--c111827, #111827); background: var(--cFFFFFF, #FFFFFF)">
+<button onClick="{{x.remove}}" aria-label="{{x.removeLabel}}" style="width: 44px; height: 44px; flex-shrink: 0; border: none; background: transparent; color: var(--c4B5563, #4B5563); font-size: 20px">×</button>
+</div>
+</sc-for>
+<button class="hit" onClick="{{addCond}}" style="align-self: flex-start; height: 36px; padding: 0; border: none; background: transparent; color: {{accent}}; font-family: inherit; font-size: 14px; font-weight: 700">+ Add condition</button>
+</section>
+<section style="display: flex; flex-direction: column; gap: 8px">
+<h2 style="margin: 0; font-size: 12px; font-weight: 700; color: var(--c374151, #374151); text-transform: uppercase; letter-spacing: 0.4px">Then</h2>
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Category
+<select style="height: 44px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 16px; background: var(--cFFFFFF, #FFFFFF)"><option>Rent</option><option>Groceries</option></select></label>
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 10px 0; border-top: 1px solid var(--cF0F1F3, #F0F1F3)">
+<span style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 600">Owed to you</span><span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{owedHelp}}</span></span>
+<div role="group" aria-label="Owed to you" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; padding: 3px; border-radius: 10px; background: var(--cF2F4F7, #F2F4F7)">
+<sc-for list="{{owedOpts}}" as="o" hint-placeholder-count="4">
+<button class="hit" onClick="{{o.pick}}" aria-pressed="{{o.pressed}}" style="height: 36px; padding: 0 10px; border-radius: 8px; border: none; background: {{o.bg}}; font-family: inherit; font-size: 13px; font-weight: 700; color: var(--c111827, #111827)">{{o.name}}</button>
+</sc-for>
+</div>
+</div>
+<label style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; border-top: 1px solid var(--cF0F1F3, #F0F1F3)">
+<span style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 600">Count in the previous month</span><span style="font-size: 12px; color: var(--c4B5563, #4B5563)">If it posts on day 1–5 of a month</span></span>
+<input class="hit" type="checkbox" checked="{{prev}}" onChange="{{togglePrev}}" style="width: 22px; height: 22px; accent-color: {{accent}}"></label>
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Rename payee to (optional)
+<input value="Rent" style="height: 44px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 16px"></label>
+</section>
+<section style="display: flex; flex-direction: column; gap: 6px">
+<h2 style="margin: 0; font-size: 12px; font-weight: 700; color: var(--c374151, #374151); text-transform: uppercase; letter-spacing: 0.4px">Matches in the last 90 days · 3</h2>
+<div style="border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 12px; overflow: hidden">
+<sc-for list="{{matches}}" as="m" hint-placeholder-count="3">
+<div style="display: flex; justify-content: space-between; align-items: center; min-height: 48px; padding: 4px 12px; border-top: 1px solid var(--cF0F1F3, #F0F1F3); font-size: 14px"><span style="display: flex; flex-direction: column; gap: 1px"><span style="font-weight: 600">{{m.d}}</span><span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{m.note}}</span></span><span style="font-weight: 700; font-variant-numeric: tabular-nums">−$3,000.00</span></div>
+</sc-for>
+</div>
+<span style="font-size: 12px; color: var(--c4B5563, #4B5563)">Already-categorized matches keep their category. Changes apply to new transactions.</span>
+</section>
+<sc-if value="{{askIdle}}" hint-placeholder-val="{{ true }}">
+<button onClick="{{ask}}" class="hit" style="align-self: flex-start; height: 36px; padding: 0; border: none; background: transparent; color: var(--cB42318, #B42318); font-family: inherit; font-size: 14px; font-weight: 700">Delete rule</button>
+</sc-if>
+<sc-if value="{{asking}}" hint-placeholder-val="{{ false }}">
+<div role="alertdialog" aria-label="Delete rule" style="display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 12px; background: var(--cFEE4E2, #FEE4E2); color: var(--cB42318, #B42318)">
+<span style="font-size: 14px; line-height: 1.4">Delete this rule? Transactions it already categorized keep their categories; new ones from this payee will need a category.</span>
+<div style="display: flex; gap: 8px">
+<button onClick="{{cancelAsk}}" style="flex: 1; height: 44px; border-radius: 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); background: var(--cFFFFFF, #FFFFFF); color: var(--c374151, #374151); font-family: inherit; font-size: 14px; font-weight: 700">Keep it</button>
+<a href="Rules.dc.html" style="flex: 1; display: flex; align-items: center; justify-content: center; height: 44px; border-radius: 10px; background: var(--cB42318, #B42318); color: var(--cFFFFFF, #FFFFFF); text-decoration: none; font-size: 14px; font-weight: 700">Delete rule</a>
+</div>
+</div>
+</sc-if>
+</main>
+<div style="padding: 12px 16px 24px; border-top: 1px solid var(--cE5E7EB, #E5E7EB)">
+<a href="Rules.dc.html" style="display: flex; align-items: center; justify-content: center; height: 48px; border-radius: 12px; background: {{accent}}; color: var(--cFFFFFF, #FFFFFF); text-decoration: none; font-size: 16px; font-weight: 700">Save rule</a>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["app","light","dark"],"default":"app"},"accent":{"editor":"color","default":"#1D4ED8","options":["#1D4ED8","#0F766E","#6D28D9","#111827"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  llGetPref() { try { return localStorage.getItem('ledgerline-theme') || this.llMem || 'device'; } catch (e) { return this.llMem || 'device'; } }
+  llSetPref(v) { this.llMem = v; try { localStorage.setItem('ledgerline-theme', v); } catch (e) {} this.llApply(); }
+  llApply() {
+    const forced = this.props.theme && this.props.theme !== 'app' ? this.props.theme : null;
+    const p = forced || this.llGetPref();
+    let dark = p === 'dark';
+    if (p === 'device') { try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {} }
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    const acc = { '#1D4ED8': '#8AB4FF', '#0F766E': '#5EEAD4', '#6D28D9': '#C4B5FD', '#111827': '#F2F4F7' };
+    const a = String(this.props.accent || 'var(--c1D4ED8, #1D4ED8)').toUpperCase();
+    if (a.charAt(0) === '#') { try { document.documentElement.style.setProperty('--accent', dark ? (acc[a] || '#8AB4FF') : a); } catch (e) {} }
+  }
+  componentDidMount() {
+    this.llApply();
+    this.llOn = () => { this.llApply(); this.forceUpdate(); };
+    try { window.addEventListener('storage', this.llOn); this.llMq = window.matchMedia('(prefers-color-scheme: dark)'); this.llMq.addEventListener('change', this.llOn); } catch (e) {}
+  }
+  componentDidUpdate() { this.llApply(); }
+  componentWillUnmount() { try { window.removeEventListener('storage', this.llOn); this.llMq.removeEventListener('change', this.llOn); } catch (e) {} }
+
+  constructor(props) {
+    super(props);
+    this.state = { owed: 'custom', prev: true, asking: false, extra: [], nx: 1 };
+  }
+  renderVals() {
+    const s = this.state;
+    const help = { none: 'Nothing owed', half: 'Half of each payment', all: 'All of it', custom: '$2,000 of each payment' };
+    const st = this.state;
+    return {
+      askIdle: !st.asking, asking: st.asking, ask: () => this.setState({ asking: true }), cancelAsk: () => this.setState({ asking: false }),
+      addCond: () => this.setState({ extra: st.extra.concat([st.nx]), nx: st.nx + 1 }),
+      extra: st.extra.map((id, i) => ({ fieldLabel: 'Field for condition ' + (i + 3), valueLabel: 'Value for condition ' + (i + 3), removeLabel: 'Remove condition ' + (i + 3), remove: () => this.setState({ extra: st.extra.filter((x) => x !== id) }) })),
+      accent: ('var(--accent, ' + (this.props.accent ?? 'var(--c1D4ED8, #1D4ED8)') + ')'),
+      owedHelp: help[s.owed],
+      owedOpts: [['none', 'None'], ['half', 'Half'], ['all', 'All'], ['custom', '$2,000']].map((o) => ({ name: o[1], pressed: s.owed === o[0] ? 'true' : 'false', bg: s.owed === o[0] ? 'var(--cFFFFFF, #FFFFFF)' : 'transparent', pick: () => this.setState({ owed: o[0] }) })),
+      prev: s.prev,
+      togglePrev: () => this.setState({ prev: !s.prev }),
+      matches: [
+        { d: 'Oct 31', note: 'Counted in October' },
+        { d: 'Oct 1', note: 'Posted day 1, counted in September' },
+        { d: 'Aug 30', note: 'Counted in August' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

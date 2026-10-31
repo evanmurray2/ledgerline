@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ledgerline desktop settings</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accent, #1D4ED8)}a:hover{color:var(--c1E3A8A, #1E3A8A)}
+.hit{position:relative}.hit::after{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}:root[data-theme="dark"]{--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}}
+</style>
+</helmet>
+<div style="box-sizing: border-box; width: 100%; min-height: 800px; display: flex; flex-wrap: wrap; background: var(--cF5F6F8, #F5F6F8); font-family: 'Public Sans', system-ui, sans-serif; color: var(--c111827, #111827)">
+<div style="flex: 1 1 200px; display: flex"><dc-import name="DNav" active="settings" accent="{{accent}}" hint-size="100%,800px"></dc-import></div>
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<header style="display: flex; align-items: center; min-height: 64px; padding: 8px 24px; background: var(--cFFFFFF, #FFFFFF); border-bottom: 1px solid var(--cE5E7EB, #E5E7EB)"><h1 style="margin: 0; font-size: 20px; font-weight: 700">Settings</h1></header>
+<div style="flex: 1; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 20px; padding: 20px 24px">
+<nav aria-label="Settings sections" style="flex: 1 1 200px; display: flex; flex-direction: column; gap: 2px; padding: 8px; background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 12px">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="7">
+<button class="hit" onClick="{{t.pick}}" aria-pressed="{{t.pressed}}" style="display: flex; justify-content: space-between; align-items: center; height: 40px; padding: 0 10px; border: none; border-radius: 8px; background: {{t.bg}}; font-family: inherit; font-size: 14px; font-weight: 600; color: {{t.fg}}; text-align: left"><span>{{t.name}}</span><span style="font-size: 12px; font-weight: 600; color: {{t.noteInk}}">{{t.note}}</span></button>
+</sc-for>
+</nav>
+<section style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 18px; background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 12px">
+<sc-if value="{{is.appearance}}" hint-placeholder-val="{{ true }}">
+<h2 style="margin: 0; font-size: 18px; font-weight: 700">Appearance</h2>
+<div role="radiogroup" aria-label="Theme" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px">
+<sc-for list="{{themes}}" as="t" hint-placeholder-count="3">
+<button onClick="{{t.pick}}" role="radio" aria-checked="{{t.checked}}" style="display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; border: 2px solid {{t.border}}; background: var(--cFFFFFF, #FFFFFF); font-family: inherit; text-align: left; color: var(--c111827, #111827)">
+<span aria-hidden="true" style="display: flex; height: 64px; border-radius: 8px; overflow: hidden; border: 1px solid var(--cE5E7EB, #E5E7EB)"><span style="flex: 1; background: {{t.left}}"></span><span style="flex: 1; background: {{t.right}}"></span></span>
+<span style="font-size: 14px; font-weight: 700">{{t.name}}</span><span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{t.desc}}</span>
+</button>
+</sc-for>
+</div>
+<p style="margin: 0; font-size: 13px; color: var(--c4B5563, #4B5563); line-height: 1.45">Saved on this device. Every screen follows it, on phone and desktop.</p>
+</sc-if>
+<sc-if value="{{is.categories}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; justify-content: space-between; align-items: center"><h2 style="margin: 0; font-size: 18px; font-weight: 700">Categories and groups</h2><button class="hit" onClick="{{addCat}}" style="height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--cD0D5DD, #D0D5DD); background: var(--cFFFFFF, #FFFFFF); color: var(--c374151, #374151); font-family: inherit; font-size: 13px; font-weight: 700">+ Category</button></div>
+<sc-if value="{{adding}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; padding: 12px; border-radius: 10px; background: var(--cF5F6F8, #F5F6F8)">
+<label style="flex: 2 1 160px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Name<input class="hit" placeholder="e.g. Climbing" style="height: 40px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 15px; color: var(--c111827, #111827); background: var(--cFFFFFF, #FFFFFF)"></label>
+<label style="flex: 1 1 140px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Group<select class="hit" style="height: 40px; padding: 0 8px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 14px; color: var(--c111827, #111827); background: var(--cFFFFFF, #FFFFFF)"><option>Everyday</option><option>Bills</option><option>Savings</option></select></label>
+<button class="hit" onClick="{{addCat}}" style="height: 40px; padding: 0 16px; border-radius: 10px; border: none; background: {{accent}}; color: var(--cFFFFFF, #FFFFFF); font-family: inherit; font-size: 14px; font-weight: 700">Add</button>
+</div>
+</sc-if>
+<sc-for list="{{catGroups}}" as="g" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column">
+<span style="font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--c374151, #374151); padding: 6px 0">{{g.name}}</span>
+<sc-for list="{{g.cats}}" as="c" hint-placeholder-count="3">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 44px; border-top: 1px solid var(--cF0F1F3, #F0F1F3); font-size: 14px"><span style="font-weight: 600">{{c.name}}<span style="display: block; font-size: 12px; font-weight: 400; color: var(--c4B5563, #4B5563)">{{c.meta}}</span></span><sc-if value="{{c.mine}}" hint-placeholder-val="{{ true }}"><span style="display: flex; gap: 6px"><button class="hit" style="height: 32px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--cD0D5DD, #D0D5DD); background: var(--cFFFFFF, #FFFFFF); color: var(--c374151, #374151); font-family: inherit; font-size: 12px; font-weight: 700">Rename</button><button class="hit" style="height: 32px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--cD0D5DD, #D0D5DD); background: var(--cFFFFFF, #FFFFFF); color: var(--c374151, #374151); font-family: inherit; font-size: 12px; font-weight: 700">Archive</button></span></sc-if></div>
+</sc-for>
+</div>
+</sc-for>
+</sc-if>
+<sc-if value="{{is.rules}}" hint-placeholder-val="{{ false }}">
+<h2 style="margin: 0; font-size: 18px; font-weight: 700">Rules</h2>
+<p style="margin: 0; font-size: 13px; color: var(--c4B5563, #4B5563)">Checked top to bottom on each new transaction; the first match wins. They never change a category you set yourself.</p>
+<sc-for list="{{rules}}" as="r" hint-placeholder-count="6">
+<div style="display: grid; grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 44px; border-top: 1px solid var(--cF0F1F3, #F0F1F3); font-size: 13px"><span style="color: var(--c4B5563, #4B5563); font-weight: 700">{{r.n}}</span><span style="font-weight: 600">{{r.when}}</span><span>→ {{r.then}}</span><span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{r.meta}}</span></div>
+</sc-for>
+</sc-if>
+<sc-if value="{{is.payees}}" hint-placeholder-val="{{ false }}">
+<h2 style="margin: 0; font-size: 18px; font-weight: 700">Payees</h2>
+<sc-if value="{{showMerge}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; padding: 12px; border-radius: 10px; background: var(--cF5F6F8, #F5F6F8)"><span style="font-size: 13px">3 bank names look like <strong>Blue Bottle Coffee</strong>: SQ *BLUE BOTTLE COFFEE, TST* BLUE BOTTLE, BLUEBOTTLECOFFEE OAKLAND</span><button class="hit" onClick="{{merge}}" style="height: 36px; padding: 0 14px; border-radius: 999px; border: none; background: {{accent}}; color: var(--cFFFFFF, #FFFFFF); font-family: inherit; font-size: 13px; font-weight: 700">Merge 3</button></div>
+</sc-if>
+<sc-for list="{{payees}}" as="p" hint-placeholder-count="6">
+<div style="display: flex; justify-content: space-between; align-items: center; min-height: 44px; border-top: 1px solid var(--cF0F1F3, #F0F1F3); font-size: 14px"><span style="font-weight: 600">{{p.name}}<span style="display: block; font-size: 12px; font-weight: 400; color: var(--c4B5563, #4B5563)">{{p.meta}}</span></span><button class="hit" style="height: 32px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--cD0D5DD, #D0D5DD); background: var(--cFFFFFF, #FFFFFF); color: var(--c374151, #374151); font-family: inherit; font-size: 12px; font-weight: 700">Rename</button></div>
+</sc-for>
+</sc-if>
+<sc-if value="{{is.connections}}" hint-placeholder-val="{{ false }}">
+<h2 style="margin: 0; font-size: 18px; font-weight: 700">Bank connections · 4 of 10 used</h2>
+<p style="margin: 0; font-size: 13px; color: var(--c4B5563, #4B5563)">The free Plaid plan allows 10 bank logins ever; removing one doesn't give it back.</p>
+<sc-for list="{{conns}}" as="c" hint-placeholder-count="4">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 52px; border-top: 1px solid var(--cF0F1F3, #F0F1F3); font-size: 14px"><span style="font-weight: 600">{{c.name}}<span style="display: block; font-size: 12px; font-weight: 400; color: var(--c4B5563, #4B5563)">{{c.meta}}</span></span><span style="padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; background: {{c.bg}}; color: {{c.fg}}">{{c.status}}</span></div>
+</sc-for>
+<a class="hit" href="DAccounts.dc.html" style="align-self: flex-start; display: flex; align-items: center; height: 32px; font-size: 13px; font-weight: 700; text-decoration: none">Repair Ally in Accounts</a>
+</sc-if>
+<sc-if value="{{is.data}}" hint-placeholder-val="{{ false }}">
+<h2 style="margin: 0; font-size: 18px; font-weight: 700">Import and export</h2>
+<sc-for list="{{exports}}" as="e" hint-placeholder-count="5">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 52px; border-top: 1px solid var(--cF0F1F3, #F0F1F3); font-size: 14px"><span style="font-weight: 600">{{e.name}}<span style="display: block; font-size: 12px; font-weight: 400; color: var(--c4B5563, #4B5563)">{{e.meta}}</span></span><button class="hit" style="height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--cD0D5DD, #D0D5DD); background: var(--cFFFFFF, #FFFFFF); color: var(--c374151, #374151); font-family: inherit; font-size: 12px; font-weight: 700">{{e.action}}</button></div>
+</sc-for>
+<p style="margin: 0; font-size: 12px; color: var(--c4B5563, #4B5563)">Nightly encrypted backup kept 90 days; the database can be rewound to any minute in the last 7 days.</p>
+<button onClick="{{resetDemo}}" style="align-self: flex-start; height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); background: var(--cFFFFFF, #FFFFFF); color: var(--cB42318, #B42318); font-family: inherit; font-size: 14px; font-weight: 700">{{resetLabel}}</button>
+</sc-if>
+<sc-if value="{{is.prefs}}" hint-placeholder-val="{{ false }}">
+<h2 style="margin: 0; font-size: 18px; font-weight: 700">Preferences and sign-in</h2>
+<sc-for list="{{prefs}}" as="p" hint-placeholder-count="5">
+<label style="display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 52px; border-top: 1px solid var(--cF0F1F3, #F0F1F3); font-size: 14px"><span style="font-weight: 600">{{p.name}}<span style="display: block; font-size: 12px; font-weight: 400; color: var(--c4B5563, #4B5563)">{{p.meta}}</span></span><input class="hit" type="checkbox" checked="{{p.on}}" onChange="{{p.toggle}}" style="width: 20px; height: 20px; accent-color: {{accent}}"></label>
+</sc-for>
+<div style="display: flex; justify-content: space-between; align-items: center; min-height: 52px; border-top: 1px solid var(--cF0F1F3, #F0F1F3); font-size: 14px"><span style="font-weight: 600">Sign-in<span style="display: block; font-size: 12px; font-weight: 400; color: var(--c4B5563, #4B5563)">GitHub with passkey · session ends after 24 hours</span></span><a class="hit" href="Welcome.dc.html" style="display: flex; align-items: center; height: 32px; color: var(--cB42318, #B42318); font-size: 13px; font-weight: 700; text-decoration: none">Sign out</a></div>
+</sc-if>
+</section>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["app","light","dark"],"default":"app"},"accent":{"editor":"color","default":"#1D4ED8","options":["#1D4ED8","#0F766E","#6D28D9","#111827"]},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  llGetPref() { try { return localStorage.getItem('ledgerline-theme') || this.llMem || 'device'; } catch (e) { return this.llMem || 'device'; } }
+  llSetPref(v) { this.llMem = v; try { localStorage.setItem('ledgerline-theme', v); } catch (e) {} this.llApply(); }
+  llApply() {
+    const forced = this.props.theme && this.props.theme !== 'app' ? this.props.theme : null;
+    const p = forced || this.llGetPref();
+    let dark = p === 'dark';
+    if (p === 'device') { try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {} }
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    const acc = { '#1D4ED8': '#8AB4FF', '#0F766E': '#5EEAD4', '#6D28D9': '#C4B5FD', '#111827': '#F2F4F7' };
+    const a = String(this.props.accent || 'var(--c1D4ED8, #1D4ED8)').toUpperCase();
+    if (a.charAt(0) === '#') { try { document.documentElement.style.setProperty('--accent', dark ? (acc[a] || '#8AB4FF') : a); } catch (e) {} }
+  }
+  componentDidMount() {
+    this.llApply();
+    this.llOn = () => { this.llApply(); this.forceUpdate(); };
+    try { window.addEventListener('storage', this.llOn); this.llMq = window.matchMedia('(prefers-color-scheme: dark)'); this.llMq.addEventListener('change', this.llOn); } catch (e) {}
+  }
+  componentDidUpdate() { this.llApply(); }
+  componentWillUnmount() { try { window.removeEventListener('storage', this.llOn); this.llMq.removeEventListener('change', this.llOn); } catch (e) {} }
+
+  constructor(props) {
+    super(props);
+    this.state = { tab: 'appearance', adding: false, merged: false, prefs: { tz: true, email: true, track: true, note: false } };
+  }
+  renderVals() {
+    const s = this.state;
+    const accent = ('var(--accent, ' + (this.props.accent ?? 'var(--c1D4ED8, #1D4ED8)') + ')');
+    const pref = this.llGetPref ? this.llGetPref() : 'device';
+    const tabDefs = [['appearance', 'Appearance', ''], ['categories', 'Categories', '17'], ['rules', 'Rules', '12'], ['payees', 'Payees', s.merged ? '' : '3 to merge'], ['connections', 'Bank connections', '1 to repair'], ['data', 'Import and export', ''], ['prefs', 'Preferences and sign-in', '']];
+    const is = {};
+    tabDefs.forEach((t) => { is[t[0]] = s.tab === t[0]; });
+    const u = (name, meta) => ({ name: name, meta: meta, mine: true });
+    const a = (name, meta) => ({ name: name, meta: meta, mine: false });
+    return {
+      resetLabel: this.state.didReset ? 'Prototype numbers reset' : 'Reset prototype numbers (demo only)',
+      resetDemo: () => { try { localStorage.removeItem('ledgerline-demo'); } catch (e) {} this.setState({ didReset: true }); },
+      accent: accent,
+      is: is,
+      tabs: tabDefs.map((t) => ({ name: t[1], note: t[2], noteInk: t[0] === 'connections' ? 'var(--c93370D, #93370D)' : 'var(--c4B5563, #4B5563)', bg: s.tab === t[0] ? 'var(--cEEF2FF, #EEF2FF)' : 'transparent', fg: s.tab === t[0] ? accent : 'var(--c374151, #374151)', pressed: s.tab === t[0] ? 'true' : 'false', pick: () => this.setState({ tab: t[0] }) })),
+      themes: [['light', 'Light', 'Always light', 'rgb(255, 255, 255)', 'rgb(245, 246, 248)'], ['dark', 'Dark', 'Always dark', 'rgb(24, 27, 33)', 'rgb(14, 16, 20)'], ['device', 'Match device', 'Follows your phone or computer', 'rgb(255, 255, 255)', 'rgb(24, 27, 33)']].map((t) => ({ name: t[1], desc: t[2], left: t[3], right: t[4], checked: pref === t[0] ? 'true' : 'false', border: pref === t[0] ? accent : 'var(--cE5E7EB, #E5E7EB)', pick: () => { if (this.llSetPref) this.llSetPref(t[0]); this.forceUpdate(); } })),
+      adding: s.adding, addCat: () => this.setState({ adding: !s.adding }),
+      catGroups: [
+        { name: 'Made by the app', cats: [a('Sapphire Preferred', 'Card payment'), a('Freedom Unlimited', 'Card payment')] },
+        { name: 'Bills', cats: [u('Rent', 'Refill monthly · $1,000'), u('Electric', 'Refill monthly · $95'), u('Internet', 'Refill monthly · $80'), u('Subscriptions', 'Refill monthly · $65')] },
+        { name: 'Everyday', cats: [u('Groceries', 'Refill monthly · $600'), u('Dining out', 'Refill monthly · $200'), u('Gas', 'Refill monthly · $120'), u('Shopping', 'Refill monthly · $200'), u('Household', 'Refill monthly · $100'), u('Health', 'Refill monthly · $75'), u('Personal care', 'Refill monthly · $100')] },
+        { name: 'Savings', cats: [u('Investments', 'Saving or investing · invest $1,500 monthly'), u('Car insurance', '$540 by Jan 15'), u('Vacation', '$3,000 by Jun 2027'), u('Gifts', 'Refill monthly · $170'), u('Emergency fund', '$15,000 · reached'), u('Home repairs', 'No target')] }
+      ],
+      rules: [[1, 'Payee is Bay Prop Mgmt, $2,900–$3,100', 'Rent · $2,000 owed to you · previous month if day 1–5', 'Used 3 times'], [2, 'Payee is Acme Corp payroll', 'Ready to Assign', 'Used 6 times'], [3, 'Payee is Trader Joe’s', 'Groceries', 'Used 14 times'], [4, 'Payee is Comcast', 'Internet', 'Used 2 times'], [7, 'Description contains “VANGUARD”', 'Investments', 'Used 2 times'], [11, 'Payee is Blue Bottle Coffee', 'Dining out', 'Made from Activity']].map((r) => ({ n: r[0], when: r[1], then: r[2], meta: r[3] })),
+      showMerge: !s.merged, merge: () => this.setState({ merged: true }),
+      payees: [['Amazon', '3 bank names · no rule'], ['Blue Bottle Coffee', s.merged ? '3 bank names · rule 11' : '1 bank name · rule 11'], ['CVS Pharmacy', '2 bank names'], ['Rent', 'from ZELLE TO BAY PROP MGMT · rule 1'], ['Trader Joe’s', '2 bank names · rule 3'], ['Uber Eats', '2 bank names · rule 8']].map((p) => ({ name: p[0], meta: p[1] })),
+      conns: [['Chase', 'Everyday Checking, Sapphire, Freedom', 'Synced 9:42 AM', 'var(--cDCFAE6, #DCFAE6)', 'var(--c085D3A, #085D3A)'], ['Ally', 'Ally Savings', 'Sign in again', 'var(--cFEF0C7, #FEF0C7)', 'var(--c93370D, #93370D)'], ['Marcus', 'Marcus Savings', 'Synced 9:42 AM', 'var(--cDCFAE6, #DCFAE6)', 'var(--c085D3A, #085D3A)'], ['Chase (removed)', 'Duplicate from setup', 'Still counts', 'var(--cF2F4F7, #F2F4F7)', 'var(--c344054, #344054)']].map((c) => ({ name: c[0], meta: c[1], status: c[2], bg: c[3], fg: c[4] })),
+      exports: [['Import past transactions', 'CSV from your old budgeting app or bank, imported as history', 'Choose file'], ['Transactions (CSV)', 'Every transaction with category, memo and owed amounts', 'Download'], ['Budget by month (CSV)', 'Assigned, spent and available per category', 'Download'], ['Everything (JSON)', 'Including rules and payee merges', 'Download'], ['Usage and notes (JSON)', 'How you use the app, for reviewing what to change', 'Download']].map((e) => ({ name: e[0], meta: e[1], action: e[2] })),
+      prefs: [['email', 'Email me when a bank needs repair', 'Sent by the daily health check'], ['track', 'Record how I use the app', 'Taps and timings only, no amounts or names'], ['note', 'Show Note button', 'Quick feedback notes on any screen']].map((p) => ({ name: p[1], meta: p[2], on: !!s.prefs[p[0]], toggle: () => this.setState({ prefs: Object.assign({}, s.prefs, { [p[0]]: !s.prefs[p[0]] }) }) }))
+    };
+  }
+}
+</script>
+</body>
+</html>

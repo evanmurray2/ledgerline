@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ledgerline split transaction</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accent, #1D4ED8)}a:hover{color:var(--c1E3A8A, #1E3A8A)}
+.hit{position:relative}.hit::after{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}:root[data-theme="dark"]{--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; display: flex; flex-direction: column; background: var(--cFFFFFF, #FFFFFF); font-family: 'Public Sans', system-ui, sans-serif; color: var(--c111827, #111827); overflow: hidden">
+<header style="display: flex; align-items: center; gap: 4px; padding: 8px 16px 8px 4px; border-bottom: 1px solid var(--cE5E7EB, #E5E7EB)">
+<a href="Txn.dc.html" aria-label="Back to transaction" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: var(--c374151, #374151)"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg></a>
+<div style="display: flex; flex-direction: column"><h1 style="margin: 0; font-size: 19px; font-weight: 700">Split −$182.40</h1><span style="font-size: 13px; color: var(--c4B5563, #4B5563)">Costco · Sapphire Preferred · Nov 3</span></div>
+</header>
+<main style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px">
+<sc-for list="{{lines}}" as="l" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 14px; border: 1px solid var(--cE5E7EB, #E5E7EB); flex-shrink: 0">
+<div style="display: flex; gap: 8px; align-items: flex-end">
+<label style="flex: 3; display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--c374151, #374151)">Category
+<select aria-label="{{l.catLabel}}" onChange="{{l.setCat}}" style="height: 44px; padding: 0 8px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 15px; background: var(--cFFFFFF, #FFFFFF)"><option>{{l.cat}}</option><option>Groceries</option><option>Dining out</option><option>Gas</option><option>Shopping</option><option>Household</option><option>Health</option><option>Personal care</option><option>Gifts</option><option>Vacation</option><option>Home repairs</option><option>Owed to you</option></select></label>
+<label style="flex: 2; display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--c374151, #374151)">Amount
+<input value="{{l.amount}}" aria-label="{{l.amtLabel}}" onChange="{{l.setAmt}}" inputmode="decimal" style="height: 44px; padding: 0 8px; border: 1px solid {{l.amtBorder}}; border-radius: 10px; font-family: inherit; font-size: 15px; text-align: right; font-variant-numeric: tabular-nums; background: {{l.amtBg}}; color: var(--c111827, #111827)"></label>
+</div>
+<div style="display: flex; justify-content: space-between; align-items: center">
+<label style="display: flex; align-items: center; gap: 8px; min-height: 40px; font-size: 13px; color: var(--c374151, #374151)"><input class="hit" type="radio" name="rem" checked="{{l.rem}}" onChange="{{l.pickRem}}" style="width: 20px; height: 20px; accent-color: {{accent}}">Takes any difference</label>
+<sc-if value="{{l.canRemove}}" hint-placeholder-val="{{ false }}">
+<button class="hit" onClick="{{l.remove}}" aria-label="{{l.removeLabel}}" style="height: 36px; padding: 0 10px; border: none; background: transparent; color: var(--cB42318, #B42318); font-family: inherit; font-size: 13px; font-weight: 700">Remove</button>
+</sc-if>
+</div>
+<sc-if value="{{l.isOwed}}" hint-placeholder-val="{{ false }}">
+<span style="font-size: 12px; color: var(--c026AA2, #026AA2)">This line is owed to you. Expected by Nov 30.</span>
+</sc-if>
+<sc-if value="{{l.rem}}" hint-placeholder-val="{{ false }}">
+<span style="font-size: 12px; color: var(--c4B5563, #4B5563)">Fills in automatically with whatever the other lines leave.</span>
+</sc-if>
+</div>
+</sc-for>
+<button onClick="{{add}}" style="height: 44px; border-radius: 12px; border: 1px dashed var(--c98A2B3, #98A2B3); background: var(--cFFFFFF, #FFFFFF); color: var(--c374151, #374151); font-family: inherit; font-size: 15px; font-weight: 600">+ Add a line</button>
+<div style="display: flex; justify-content: space-between; padding: 12px; border-radius: 12px; background: {{remBg}}; color: {{remFg}}; font-size: 14px; font-weight: 700"><span>{{remLabel}}</span><span style="font-variant-numeric: tabular-nums">{{remAmt}}</span></div>
+</main>
+<div style="padding: 12px 16px 24px; border-top: 1px solid var(--cE5E7EB, #E5E7EB)">
+<sc-if value="{{ok}}" hint-placeholder-val="{{ true }}">
+<a href="Register.dc.html" style="display: flex; align-items: center; justify-content: center; height: 48px; border-radius: 12px; background: {{accent}}; color: var(--cFFFFFF, #FFFFFF); text-decoration: none; font-size: 16px; font-weight: 700">Save split</a>
+</sc-if>
+<sc-if value="{{bad}}" hint-placeholder-val="{{ false }}">
+<button aria-disabled="true" style="width: 100%; height: 48px; border-radius: 12px; border: none; background: var(--cE5E7EB, #E5E7EB); color: var(--c4B5563, #4B5563); font-family: inherit; font-size: 16px; font-weight: 700">{{badLabel}}</button>
+</sc-if>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["app","light","dark"],"default":"app"},"accent":{"editor":"color","default":"#1D4ED8","options":["#1D4ED8","#0F766E","#6D28D9","#111827"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  llGetPref() { try { return localStorage.getItem('ledgerline-theme') || this.llMem || 'device'; } catch (e) { return this.llMem || 'device'; } }
+  llSetPref(v) { this.llMem = v; try { localStorage.setItem('ledgerline-theme', v); } catch (e) {} this.llApply(); }
+  llApply() {
+    const forced = this.props.theme && this.props.theme !== 'app' ? this.props.theme : null;
+    const p = forced || this.llGetPref();
+    let dark = p === 'dark';
+    if (p === 'device') { try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {} }
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    const acc = { '#1D4ED8': '#8AB4FF', '#0F766E': '#5EEAD4', '#6D28D9': '#C4B5FD', '#111827': '#F2F4F7' };
+    const a = String(this.props.accent || 'var(--c1D4ED8, #1D4ED8)').toUpperCase();
+    if (a.charAt(0) === '#') { try { document.documentElement.style.setProperty('--accent', dark ? (acc[a] || '#8AB4FF') : a); } catch (e) {} }
+  }
+  componentDidMount() {
+    this.llApply();
+    this.llOn = () => { this.llApply(); this.forceUpdate(); };
+    try { window.addEventListener('storage', this.llOn); this.llMq = window.matchMedia('(prefers-color-scheme: dark)'); this.llMq.addEventListener('change', this.llOn); } catch (e) {}
+  }
+  componentDidUpdate() { this.llApply(); }
+  componentWillUnmount() { try { window.removeEventListener('storage', this.llOn); this.llMq.removeEventListener('change', this.llOn); } catch (e) {} }
+
+  constructor(props) {
+    super(props);
+    this.state = { lines: [{ id: 1, cat: 'Groceries', cents: 14000 }, { id: 2, cat: 'Household', cents: 4240 }], rem: 2, next: 3 };
+  }
+  renderVals() {
+    const s = this.state;
+    const total = 18240;
+    const others = s.lines.filter((l) => l.id !== s.rem).reduce((a, l) => a + l.cents, 0);
+    const remCents = total - others;
+    const amt = (l) => (l.id === s.rem ? remCents : l.cents);
+    const fmt = (c) => (c < 0 ? '−' : '') + (Math.abs(c) / 100).toFixed(2);
+    const unchosen = s.lines.some((l) => l.cat.indexOf('Choose') === 0);
+    const neg = remCents < 0;
+    const ok = !neg && !unchosen;
+    const upd = (id, patch) => this.setState({ lines: s.lines.map((x) => (x.id === id ? Object.assign({}, x, patch) : x)) });
+    return {
+      accent: ('var(--accent, ' + (this.props.accent ?? 'var(--c1D4ED8, #1D4ED8)') + ')'),
+      lines: s.lines.map((l, i) => ({
+        cat: l.cat, amount: fmt(amt(l)), rem: s.rem === l.id, isOwed: l.cat === 'Owed to you',
+        catLabel: 'Category for line ' + (i + 1), amtLabel: 'Amount for line ' + (i + 1), removeLabel: 'Remove line ' + (i + 1),
+        amtBg: s.rem === l.id ? 'var(--cF2F4F7, #F2F4F7)' : 'var(--cFFFFFF, #FFFFFF)', amtBorder: s.rem === l.id && neg ? 'var(--cB42318, #B42318)' : 'var(--cD0D5DD, #D0D5DD)',
+        canRemove: s.lines.length > 2,
+        setCat: (e) => upd(l.id, { cat: e.target.value }),
+        setAmt: (e) => { if (l.id === s.rem) return; const v = Math.round(parseFloat(String(e.target.value).replace(/[^0-9.]/g, '')) * 100); upd(l.id, { cents: isNaN(v) ? 0 : v }); },
+        pickRem: () => this.setState({ rem: l.id }),
+        remove: () => { if (s.lines.length <= 2) return; const rest = s.lines.filter((x) => x.id !== l.id); this.setState({ lines: rest, rem: s.rem === l.id ? rest[rest.length - 1].id : s.rem }); }
+      })),
+      add: () => this.setState({ lines: s.lines.concat([{ id: s.next, cat: 'Choose…', cents: 0 }]), next: s.next + 1 }),
+      remLabel: neg ? 'Lines are more than the total by' : 'Lines add up to the total',
+      remAmt: neg ? '$' + fmt(-remCents) : '$182.40',
+      remBg: neg ? 'var(--cFEE4E2, #FEE4E2)' : 'var(--cECFDF3, #ECFDF3)',
+      remFg: neg ? 'var(--cB42318, #B42318)' : 'var(--c085D3A, #085D3A)',
+      ok: ok, bad: !ok,
+      badLabel: neg ? 'Lines are over the total' : 'Choose a category for every line'
+    };
+  }
+}
+</script>
+</body>
+</html>

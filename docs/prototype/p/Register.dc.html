@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ledgerline account register</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accent, #1D4ED8)}a:hover{color:var(--c1E3A8A, #1E3A8A)}
+.hit{position:relative}.hit::after{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}:root[data-theme="dark"]{--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; display: flex; flex-direction: column; background: var(--cF5F6F8, #F5F6F8); font-family: 'Public Sans', system-ui, sans-serif; color: var(--c111827, #111827); overflow: hidden">
+<header style="display: flex; align-items: center; gap: 4px; padding: 8px 16px 8px 4px; background: var(--cFFFFFF, #FFFFFF); border-bottom: 1px solid var(--cE5E7EB, #E5E7EB)">
+<a href="Accounts.dc.html" aria-label="Back to accounts" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: var(--c374151, #374151)"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg></a>
+<div style="display: flex; flex-direction: column"><h1 style="margin: 0; font-size: 19px; font-weight: 700">{{name}}</h1><span style="font-size: 13px; color: var(--c4B5563, #4B5563)">{{sub}}</span></div>
+</header>
+<main style="flex: 1; overflow-y: auto; padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 12px">
+<section style="background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0">
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px">
+<div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: var(--c4B5563, #4B5563)">You owe the bank</span><span style="font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums">{{owe}}</span><span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{pend}}</span></div>
+<div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{stmtLabel}}</span><span style="font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums">{{stmt}}</span><span style="font-size: 12px; font-weight: 600; color: var(--c085D3A, #085D3A)">Covered by payment category</span></div>
+</div>
+<a href="Budget.dc.html" style="display: flex; justify-content: space-between; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 10px; background: var(--cF5F6F8, #F5F6F8); text-decoration: none; color: var(--c111827, #111827); font-size: 14px"><span>{{catName}}</span><span style="font-weight: 700; font-variant-numeric: tabular-nums; color: {{catInk}}">{{catAvail}}</span></a>
+<sc-if value="{{hasNote}}" hint-placeholder-val="{{ false }}"><p style="margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--cFEE4E2, #FEE4E2); color: var(--cB42318, #B42318); font-size: 13px; line-height: 1.4">{{note}}</p></sc-if>
+<p style="margin: 0; font-size: 12px; color: var(--c4B5563, #4B5563); line-height: 1.4">Balances come from the bank and can't be edited here. Everything you change on a transaction is saved on top of the bank's record.</p>
+</section>
+<div role="group" aria-label="Show" style="display: flex; gap: 8px; flex-shrink: 0">
+<sc-for list="{{chips}}" as="c" hint-placeholder-count="3">
+<button class="hit" onClick="{{c.pick}}" aria-pressed="{{c.pressed}}" style="height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid {{c.border}}; background: {{c.bg}}; color: {{c.fg}}; font-family: inherit; font-size: 13px; font-weight: 600">{{c.name}}</button>
+</sc-for>
+</div>
+<sc-for list="{{days}}" as="d" hint-placeholder-count="3">
+<section style="display: flex; flex-direction: column; gap: 6px; flex-shrink: 0">
+<div style="display: flex; justify-content: space-between; padding: 0 2px; font-size: 12px; font-weight: 700; color: var(--c374151, #374151); text-transform: uppercase; letter-spacing: 0.4px"><span>{{d.label}}</span><span style="font-variant-numeric: tabular-nums; text-transform: none; font-weight: 600; color: var(--c4B5563, #4B5563)">{{d.bal}}</span></div>
+<div style="background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 14px; overflow: hidden">
+<sc-for list="{{d.rows}}" as="t" hint-placeholder-count="2">
+<a href="{{t.href}}" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 8px 12px; border-top: 1px solid var(--cF0F1F3, #F0F1F3); text-decoration: none; color: var(--c111827, #111827)">
+<span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-size: 15px; font-weight: 600">{{t.payee}}</span><span style="font-size: 12px; color: {{t.metaInk}}">{{t.meta}}</span></span>
+<span style="font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; color: {{t.ink}}; flex-shrink: 0">{{t.amount}}</span>
+</a>
+</sc-for>
+</div>
+</section>
+</sc-for>
+</main>
+<dc-import name="TabBar" active="accounts" accent="{{accent}}" hint-size="390px,72px"></dc-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"card":{"editor":"enum","options":["sapphire","freedom"],"default":"sapphire"},"theme":{"editor":"enum","options":["app","light","dark"],"default":"app"},"accent":{"editor":"color","default":"#1D4ED8","options":["#1D4ED8","#0F766E","#6D28D9","#111827"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  llGetPref() { try { return localStorage.getItem('ledgerline-theme') || this.llMem || 'device'; } catch (e) { return this.llMem || 'device'; } }
+  llSetPref(v) { this.llMem = v; try { localStorage.setItem('ledgerline-theme', v); } catch (e) {} this.llApply(); }
+  llApply() {
+    const forced = this.props.theme && this.props.theme !== 'app' ? this.props.theme : null;
+    const p = forced || this.llGetPref();
+    let dark = p === 'dark';
+    if (p === 'device') { try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {} }
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    const acc = { '#1D4ED8': '#8AB4FF', '#0F766E': '#5EEAD4', '#6D28D9': '#C4B5FD', '#111827': '#F2F4F7' };
+    const a = String(this.props.accent || 'var(--c1D4ED8, #1D4ED8)').toUpperCase();
+    if (a.charAt(0) === '#') { try { document.documentElement.style.setProperty('--accent', dark ? (acc[a] || '#8AB4FF') : a); } catch (e) {} }
+  }
+  componentDidMount() {
+    this.llApply();
+    this.llOn = () => { this.llApply(); this.forceUpdate(); };
+    try { window.addEventListener('storage', this.llOn); this.llMq = window.matchMedia('(prefers-color-scheme: dark)'); this.llMq.addEventListener('change', this.llOn); } catch (e) {}
+  }
+  componentDidUpdate() { this.llApply(); }
+  componentWillUnmount() { try { window.removeEventListener('storage', this.llOn); this.llMq.removeEventListener('change', this.llOn); } catch (e) {} }
+
+  constructor(props) {
+    super(props);
+    this.state = { show: 'all' };
+  }
+  renderVals() {
+    const s = this.state;
+    const accent = ('var(--accent, ' + (this.props.accent ?? 'var(--c1D4ED8, #1D4ED8)') + ')');
+    const card = this.props.card === 'freedom' ? 'freedom' : 'sapphire';
+    const t = (payee, meta, amount, o) => { o = o || {}; return { payee: payee, meta: meta, amount: amount, kind: o.kind || 'posted', href: o.href || 'Txn.dc.html', ink: o.wont ? 'var(--c667085, #667085)' : (amount.charAt(0) === '+' ? 'var(--c085D3A, #085D3A)' : 'var(--c111827, #111827)'), metaInk: o.kind === 'pending' ? 'var(--c93370D, #93370D)' : (o.kind === 'needs' ? 'var(--cB42318, #B42318)' : 'var(--c4B5563, #4B5563)') }; };
+    const data = {
+      sapphire: {
+        name: 'Sapphire Preferred', sub: 'Chase · ending 4417 · synced 9:42 AM',
+        owe: '$842.17', pend: '+ $276.40 pending at the bank', stmtLabel: 'Statement due Nov 25', stmt: '$611.40',
+        catName: 'Sapphire payment category', catAvail: '$878.32 available', catInk: 'var(--c111827, #111827)', note: '',
+        days: [
+          { label: 'Pending', bal: 'counts now', rows: [
+            t('Uber Eats', 'Pending · Dining out · your $36 estimate (bank $31.40)', '−$36.00', { kind: 'pending' }),
+            t('Shell', 'Pending · Gas · card hold', '−$45.00', { kind: 'pending' }),
+            t('Marriott Downtown', 'Pending · won’t clear · not counted', '−$200.00', { kind: 'pending', wont: true })
+          ] },
+          { label: 'Nov 14', bal: 'Owed $842.17', rows: [
+            t('Trader Joe’s', 'Groceries · by rule', '−$64.22', { href: 'TxnPosted.dc.html' }),
+            t('Blue Bottle Coffee', 'Needs category', '−$6.75', { kind: 'needs', href: 'Activity.dc.html' })
+          ] },
+          { label: 'Nov 13', bal: 'Owed $771.20', rows: [
+            t('Amazon', 'Needs category', '−$38.10', { kind: 'needs', href: 'Activity.dc.html' })
+          ] },
+          { label: 'Nov 8', bal: 'Owed $733.10', rows: [
+            t('Nopa', 'Dining out · $18 owed to you', '−$36.00'),
+            t('Points back', 'Rewards · to Ready to Assign', '+$24.10')
+          ] },
+          { label: 'Nov 4', bal: 'Owed $721.20', rows: [
+            t('Payment, thank you', 'Transfer from Everyday Checking', '+$1,288.30', { href: 'RegisterCash.dc.html' }),
+            t('REI', 'Refund · Shopping', '+$54.00', { href: 'TxnRefund.dc.html' })
+          ] },
+          { label: 'Nov 3', bal: 'Owed $2,063.50', rows: [
+            t('Costco', 'Split · Groceries $140.00 · Household $42.40', '−$182.40', { href: 'Split.dc.html' })
+          ] }
+        ]
+      },
+      freedom: {
+        name: 'Freedom Unlimited', sub: 'Chase · ending 8820 · synced 9:42 AM',
+        owe: '$214.88', pend: 'nothing pending', stmtLabel: 'Statement due Dec 2', stmt: '$145.15',
+        catName: 'Freedom payment category', catAvail: '$155.00 · $18.25 short', catInk: 'var(--cB42318, #B42318)',
+        note: 'Dining out is $18.25 overspent on this card, so the payment category is $18.25 short of the card spending. Shake Shack (Nov 14) was the purchase that went over. Cover Dining out on the Budget to fix both.',
+        days: [
+          { label: 'Nov 14', bal: 'Owed $214.88', rows: [
+            t('Shake Shack', 'Dining out · cleared $4.10 above your estimate', '−$28.10')
+          ] },
+          { label: 'Nov 11', bal: 'Owed $186.78', rows: [
+            t('Amazon', 'Needs category', '−$23.20', { kind: 'needs', href: 'Activity.dc.html' }),
+            t('CVS Pharmacy', 'Needs category', '−$18.43', { kind: 'needs', href: 'Activity.dc.html' })
+          ] },
+          { label: 'Nov 6', bal: 'Owed $145.15', rows: [
+            t('Target', 'Household', '−$49.15')
+          ] },
+          { label: 'Nov 2', bal: 'Owed $96.00', rows: [
+            t('Ticketmaster', 'Gifts', '−$96.00')
+          ] }
+        ]
+      }
+    }[card];
+    const all = [].concat.apply([], data.days.map((d) => d.rows));
+    const nPend = all.filter((r) => r.kind === 'pending').length;
+    const nNeeds = all.filter((r) => r.kind === 'needs').length;
+    const keep = (r) => s.show === 'all' || (s.show === 'pending' ? r.kind === 'pending' : r.kind === 'needs');
+    const days = data.days.map((d) => ({ label: d.label, bal: d.bal, rows: d.rows.filter(keep) })).filter((d) => d.rows.length > 0);
+    const chips = [['all', 'All']].concat(nPend ? [['pending', 'Pending ' + nPend]] : []).concat(nNeeds ? [['needs', 'Needs category ' + nNeeds]] : []);
+    return {
+      accent: accent,
+      name: data.name, sub: data.sub, owe: data.owe, pend: data.pend, stmtLabel: data.stmtLabel, stmt: data.stmt,
+      catName: data.catName, catAvail: data.catAvail, catInk: data.catInk, hasNote: !!data.note, note: data.note,
+      chips: chips.map((c) => { const on = s.show === c[0]; return { name: c[1], pressed: on ? 'true' : 'false', bg: on ? 'var(--c111827, #111827)' : 'var(--cFFFFFF, #FFFFFF)', fg: on ? 'var(--cFFFFFF, #FFFFFF)' : 'var(--c374151, #374151)', border: on ? 'var(--c111827, #111827)' : 'var(--cD0D5DD, #D0D5DD)', pick: () => this.setState({ show: c[0] }) }; }),
+      days: days
+    };
+  }
+}
+</script>
+</body>
+</html>

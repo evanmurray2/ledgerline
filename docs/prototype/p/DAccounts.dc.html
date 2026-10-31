@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ledgerline desktop accounts</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accent, #1D4ED8)}a:hover{color:var(--c1E3A8A, #1E3A8A)}
+.hit{position:relative}.hit::after{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}:root[data-theme="dark"]{--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}}
+</style>
+</helmet>
+<div style="box-sizing: border-box; width: 100%; min-height: 800px; display: flex; flex-wrap: wrap; background: var(--cF5F6F8, #F5F6F8); font-family: 'Public Sans', system-ui, sans-serif; color: var(--c111827, #111827)">
+<div style="flex: 1 1 200px; display: flex"><dc-import name="DNav" active="accounts" accent="{{accent}}" hint-size="100%,800px"></dc-import></div>
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<header style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; padding: 8px 24px; background: var(--cFFFFFF, #FFFFFF); border-bottom: 1px solid var(--cE5E7EB, #E5E7EB)">
+<div style="display: flex; align-items: baseline; gap: 12px"><h1 style="margin: 0; font-size: 20px; font-weight: 700">Accounts</h1><span style="font-size: 14px; color: var(--c4B5563, #4B5563)">Net worth <strong style="color: var(--c111827, #111827)">$22,555.35</strong> · <span style="color: var(--c085D3A, #085D3A); font-weight: 600">+$2,310.42 in November</span></span></div>
+
+</header>
+<div style="flex: 1; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 20px; padding: 20px 24px">
+<div style="flex: 1 1 300px; display: flex; flex-direction: column; gap: 14px">
+<sc-for list="{{groups}}" as="g" hint-placeholder-count="3">
+<section style="display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; justify-content: space-between; padding: 0 2px; font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--c374151, #374151)"><h2 style="margin: 0; font-size: 12px">{{g.name}}</h2><span style="font-variant-numeric: tabular-nums">{{g.total}}</span></div>
+<div style="background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 12px; overflow: hidden">
+<sc-for list="{{g.rows}}" as="r" hint-placeholder-count="3">
+<button onClick="{{r.pick}}" aria-pressed="{{r.pressed}}" style="width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 52px; padding: 6px 12px; border: none; border-top: 1px solid var(--cF0F1F3, #F0F1F3); background: {{r.bg}}; font-family: inherit; text-align: left; color: var(--c111827, #111827)">
+<span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-size: 14px; font-weight: 600">{{r.name}}</span><span style="font-size: 12px; color: {{r.metaInk}}">{{r.meta}}</span></span>
+<span style="font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; color: {{r.ink}}">{{r.amount}}</span>
+</button>
+</sc-for>
+</div>
+</section>
+</sc-for>
+<a href="DBudget.dc.html" style="display: flex; justify-content: space-between; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 12px; background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); text-decoration: none; color: var(--c374151, #374151); font-size: 13px"><span>Owed to you · not in net worth</span><strong style="font-variant-numeric: tabular-nums">{{owedOut}}</strong></a>
+</div>
+<section aria-label="Account details" style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 16px; background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 12px">
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 2px"><h2 style="margin: 0; font-size: 18px; font-weight: 700">{{d.name}}</h2><span style="font-size: 13px; color: var(--c4B5563, #4B5563)">{{d.sub}}</span></div>
+<sc-if value="{{d.isRepair}}" hint-placeholder-val="{{ false }}">
+<button class="hit" onClick="{{repair}}" style="height: 36px; padding: 0 14px; border-radius: 999px; border: none; background: {{accent}}; color: var(--cFFFFFF, #FFFFFF); font-family: inherit; font-size: 13px; font-weight: 700">{{repairLabel}}</button>
+</sc-if>
+</div>
+<sc-if value="{{d.isRepair}}" hint-placeholder-val="{{ false }}">
+<p role="status" style="margin: 0; padding: 10px 12px; border-radius: 10px; background: {{repairBg}}; color: {{repairFg}}; font-size: 13px; line-height: 1.4">{{repairText}}</p>
+</sc-if>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px">
+<sc-for list="{{d.stats}}" as="st" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 10px; background: var(--cF5F6F8, #F5F6F8)"><span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{st.k}}</span><span style="font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; color: {{st.ink}}">{{st.v}}</span></div>
+</sc-for>
+</div>
+<div style="display: flex; flex-direction: column">
+<span style="font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--c374151, #374151); padding-bottom: 6px">{{d.listTitle}}</span>
+<sc-for list="{{d.rows}}" as="t" hint-placeholder-count="5">
+<div style="display: grid; grid-template-columns: 90px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 44px; border-top: 1px solid var(--cF0F1F3, #F0F1F3); font-size: 13px">
+<span style="color: var(--c4B5563, #4B5563)">{{t.date}}</span>
+<span style="display: flex; flex-direction: column; min-width: 0"><span style="font-weight: 600">{{t.payee}}</span><span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{t.meta}}</span></span>
+<span style="font-weight: 700; font-variant-numeric: tabular-nums; color: {{t.ink}}">{{t.amount}}</span>
+</div>
+</sc-for>
+</div>
+</section>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["app","light","dark"],"default":"app"},"accent":{"editor":"color","default":"#1D4ED8","options":["#1D4ED8","#0F766E","#6D28D9","#111827"]},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  llGetPref() { try { return localStorage.getItem('ledgerline-theme') || this.llMem || 'device'; } catch (e) { return this.llMem || 'device'; } }
+  llSetPref(v) { this.llMem = v; try { localStorage.setItem('ledgerline-theme', v); } catch (e) {} this.llApply(); }
+  llApply() {
+    const forced = this.props.theme && this.props.theme !== 'app' ? this.props.theme : null;
+    const p = forced || this.llGetPref();
+    let dark = p === 'dark';
+    if (p === 'device') { try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {} }
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    const acc = { '#1D4ED8': '#8AB4FF', '#0F766E': '#5EEAD4', '#6D28D9': '#C4B5FD', '#111827': '#F2F4F7' };
+    const a = String(this.props.accent || 'var(--c1D4ED8, #1D4ED8)').toUpperCase();
+    if (a.charAt(0) === '#') { try { document.documentElement.style.setProperty('--accent', dark ? (acc[a] || '#8AB4FF') : a); } catch (e) {} }
+  }
+  componentDidMount() {
+    this.llApply();
+    this.llOn = () => { this.llApply(); this.forceUpdate(); };
+    try { window.addEventListener('storage', this.llOn); this.llMq = window.matchMedia('(prefers-color-scheme: dark)'); this.llMq.addEventListener('change', this.llOn); } catch (e) {}
+  }
+  componentDidUpdate() { this.llApply(); }
+  componentWillUnmount() { try { window.removeEventListener('storage', this.llOn); this.llMq.removeEventListener('change', this.llOn); } catch (e) {} }
+
+  llDemo() { try { const v = localStorage.getItem('ledgerline-demo'); if (v) return JSON.parse(v); } catch (e) {} return this.llDemoMem || {}; }
+  llSaveDemo(patch) { const d = Object.assign({}, this.llDemo(), patch); this.llDemoMem = d; try { localStorage.setItem('ledgerline-demo', JSON.stringify(d)); } catch (e) {} this.setState({ llTick: Date.now() }); }
+  llModel() {
+    const d = this.llDemo();
+    const done = d.done || {}, closed = d.closed || {}, canceled = d.canceled || {}, snoozed = d.snoozed || {}, cleared = d.cleared || {}, cats = d.cats || {}, custom = d.custom || {};
+    const fmt = (c) => (c < 0 ? '−$' : '$') + (Math.abs(c) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const paid = d.venmo === 'matched' ? (d.paidIds || { rent: true, nopa: true }) : {};
+    const owed = { rent: 100000 + (d.zelleUnlinked ? 100000 : 0), nopa: 1800, united: 41260 };
+    const owedCat = { rent: 'rent', nopa: 'dining', united: 'vacation' };
+    const settled = (k) => !!(paid[k] || closed[k] || canceled[k]);
+    const chargedNow = (k) => !paid[k] && (closed[k] || (canceled[k] && k !== 'rent'));
+    // base categories (cents): avail, assigned, spent this month
+    const B = [
+      ['rent', 'Rent', 'bills', 100000, 100000, 0, { bill: true, target: 100000, detail: 'your $1,000 of $3,000 · Nov 30', tgt: 'Refill to $1,000 every month' }],
+      ['electric', 'Electric', 'bills', 4130, 9500, 5370, { bill: true, target: 9500, tgt: 'Refill to $95 every month' }],
+      ['internet', 'Internet', 'bills', 8000, 8000, 0, { bill: true, target: 8000, detail: 'Comcast $79.99 on Nov 16', tgt: 'Refill to $80 every month' }],
+      ['subs', 'Subscriptions', 'bills', 55, 6500, 6445, { bill: true, target: 6500, tgt: 'Refill to $65 every month' }],
+      ['groceries', 'Groceries', 'everyday', 21240, 60000, 38760, { target: 60000, tgt: 'Refill to $600 every month' }],
+      ['dining', 'Dining out', 'everyday', -1825, 20000, 21825, { target: 20000, tgt: 'Refill to $200 every month', overNote: 'Shake Shack on Freedom overspent it' }],
+      ['gas', 'Gas', 'everyday', 6410, 12000, 5590, { target: 12000, tgt: 'Refill to $120 every month' }],
+      ['shopping', 'Shopping', 'everyday', 5320, 20000, 14680, { target: 20000, tgt: 'Refill to $200 every month' }],
+      ['household', 'Household', 'everyday', 4000, 10000, 9155, { target: 10000, tgt: 'Refill to $100 every month', carry: '$31.55 carried from October' }],
+      ['health', 'Health', 'everyday', 7500, 7500, 0, { target: 7500, tgt: 'Refill to $75 every month' }],
+      ['personal', 'Personal care', 'everyday', 1500, 10000, 8500, { target: 10000, tgt: 'Refill to $100 every month' }],
+      ['invest', 'Investments', 'savings', 0, 150000, 150000, { invest: true, detail: '$1,500 to Vanguard on Nov 1', tgt: 'Invest $1,500 every month' }],
+      ['car', 'Car insurance', 'savings', 36000, 0, 0, { need: 9000, goal: '$540 by Jan 15', tgt: '$540 by Jan 15, every 6 months' }],
+      ['vacation', 'Vacation', 'savings', 125000, 0, 0, { need: 25000, goal: '$3,000 by Jun 2027', tgt: '$3,000 by Jun 2027 (funded by the start of June)' }],
+      ['gifts', 'Gifts', 'savings', 21000, 17000, 21600, { target: 17000, overTarget: true, tgt: 'Refill to $170 every month' }],
+      ['emergency', 'Emergency fund', 'savings', 1500000, 0, 0, { reached: true, detail: 'goal $15,000 reached', tgt: '$15,000 by Dec 2026' }],
+      ['home', 'Home repairs', 'savings', 205763, 0, 0, { none: true, detail: 'kept for repairs', tgt: 'No target' }]
+    ];
+    const C = {};
+    const order = [];
+    B.forEach((b) => { C[b[0]] = Object.assign({ id: b[0], name: b[1], group: b[2], avail: b[3], assigned: b[4], spent: b[5] }, b[6]); order.push(b[0]); });
+    if (d.checkDeleted) { C.gifts.avail += 12000; C.gifts.spent -= 12000; }
+    Object.keys(owed).forEach((k) => { if (chargedNow(k)) { const c = C[owedCat[k]]; c.avail -= owed[k]; c.spent += owed[k]; c.charged = (c.charged || 0) + owed[k]; } });
+    Object.keys(custom).forEach((k) => { if (C[k]) { C[k].avail += custom[k]; C[k].assigned += custom[k]; } });
+    Object.keys(done).forEach((k) => { if (C[k]) { C[k].avail += done[k]; C[k].assigned += done[k]; } });
+    // categorizing uncategorized card spending, in date order
+    const U = [['a2', 'freedom', 2320], ['cvs', 'freedom', 1843], ['a1', 'sapphire', 3810], ['bb', 'sapphire', 675]];
+    const byName = {};
+    order.forEach((k) => { byName[C[k].name] = k; });
+    const cardFund = { sapphire: 0, freedom: 0 }, waits = { sapphire: 0, freedom: 0 };
+    U.forEach((u) => {
+      const k = cats[u[0]] ? byName[cats[u[0]]] : null;
+      if (!k) { waits[u[1]] += u[2]; return; }
+      const before = C[k].avail;
+      cardFund[u[1]] += Math.max(0, Math.min(before, u[2]));
+      C[k].avail -= u[2]; C[k].spent += u[2];
+    });
+    // card payment categories (cents)
+    const diningCover = done.dining || 0;
+    const cards = {
+      sapphire: { name: 'Sapphire Preferred', pay: 87832 + cardFund.sapphire, need: 92317 - waits.sapphire, stmt: 'statement $611.40 due Nov 25', waits: waits.sapphire, href: 'Register.dc.html' },
+      freedom: { name: 'Freedom Unlimited', pay: 15500 + Math.min(diningCover, 1825) + cardFund.freedom, need: 21488 - waits.freedom, stmt: 'statement $145.15 due Dec 2', waits: waits.freedom, href: 'RegisterFreedom.dc.html' }
+    };
+    // Ready to Assign
+    let rta = 98190 + (d.zelleUnlinked ? -100000 : 0);
+    Object.keys(done).forEach((k) => { rta -= done[k]; });
+    Object.keys(custom).forEach((k) => { rta -= custom[k]; });
+    if (d.venmo) rta += (d.venmoIn === undefined ? 101800 : d.venmoIn);
+    if (d.xferPick) rta += d.xferPick === 'none' ? 40000 : 20000;
+    Object.keys(owed).forEach((k) => { if (chargedNow(k)) rta += owed[k]; });
+    let out = 0;
+    Object.keys(owed).forEach((k) => { if (!settled(k)) out += owed[k]; });
+    const nopaLate = !settled('nopa') && !snoozed.nopa;
+    // statuses
+    order.forEach((k) => {
+      const c = C[k];
+      if (c.avail < 0) { c.t = 'over'; c.fix = -c.avail; c.fixVerb = 'Cover'; return; }
+      if (c.invest) { c.t = 'invested'; return; }
+      if (c.none) { c.t = 'none'; return; }
+      if (c.reached) { c.t = 'funded'; return; }
+      if (c.need) { const left = c.need - (done[k] || 0); if (left > 0) { c.t = 'under'; c.fix = left; c.fixVerb = 'Fund'; } else c.t = 'funded'; return; }
+      if (k === 'rent' && c.avail < 100000) { c.t = 'under'; c.fix = 100000 - c.avail; c.fixVerb = 'Fund'; return; }
+      if (c.overTarget && c.avail > c.target) { c.t = 'overfunded'; c.fix = -(c.avail - c.target); c.fixVerb = 'Move'; return; }
+      if (!c.bill && c.target) {
+        const pace = c.spent / Math.max(1, c.spent + c.avail) - 0.47;
+        if (c.avail < 0.2 * c.target || pace > 0.30) { c.t = 'low'; c.fix = Math.max(100, Math.ceil((0.35 * c.target - c.avail) / 100) * 100); c.fixVerb = 'Add'; return; }
+      }
+      c.t = 'funded';
+    });
+    order.forEach((k) => {
+      const c = C[k];
+      let det = c.detail || '';
+      if (c.t === 'over') det = c.charged ? 'charged ' + fmt(c.charged) + ' after a close-out · overspent' : (c.overNote || 'overspent');
+      else if (k === 'rent' && c.t === 'under') det = 'charged $1,000 for Sam’s unpaid share · needs $1,000 by Nov 30';
+      else if (c.need) det = (c.charged ? 'charged ' + fmt(c.charged) + ' after a close-out · ' : '') + (c.t === 'under' ? 'needs ' + fmt(c.fix) + ' this month · ' + c.goal : 'this month’s share is in · ' + c.goal);
+      else if (c.overTarget) det = c.t === 'overfunded' ? fmt(-c.fix) + ' more than this month’s ' + fmt(c.target) : 'back to this month’s target';
+      else if (c.target && !det) det = fmt(c.spent) + ' of ' + fmt(c.target) + ' spent' + (c.t === 'low' ? ' · ' + fmt(c.avail) + ' left' : '') + (c.carry ? ' · ' + c.carry : '');
+      if (c.bill && k === 'subs') det = fmt(c.spent) + ' of ' + fmt(c.target) + ' spent · bills are never Low';
+      if (done[k] && c.t === 'funded') det = det + ' · added ' + fmt(done[k]);
+      c.detailText = det;
+    });
+    // projected shortfall from the Nov 30 rent front
+    const rentRule = !d.zelleUnlinked || true;
+    const front = 200000;
+    const shortBy = rentRule && rta < front ? front - rta : 0;
+    // attention list
+    const attn = [];
+    const secOf = { over: 'Overspent', under: 'Underfunded', low: 'Low', overfunded: 'Overfunded' };
+    order.forEach((k) => {
+      const c = C[k];
+      if (secOf[c.t]) attn.push({ sec: secOf[c.t], id: k, name: c.name, avail: c.avail, detail: c.detailText, fix: c.fix, action: c.fixVerb + ' ' + fmt(Math.abs(c.fix)) });
+      else if (done[k]) attn.push({ sec: 'Done', id: k, name: c.name, avail: c.avail, detail: (done[k] < 0 ? 'Moved ' + fmt(-done[k]) + ' back to' : 'Added ' + fmt(done[k]) + ' from') + ' Ready to Assign', doneItem: true });
+    });
+    if (nopaLate) attn.push({ sec: 'Owed to you', id: 'nopa-late', name: 'Nopa · Alex', availText: '$18.00', detail: 'Late: expected back by Nov 10', link: 'Owed.dc.html', action: 'Review' });
+    if (shortBy > 0) attn.push({ sec: 'Owed to you', id: 'rent-front', name: 'Rent on Nov 30', availText: fmt(-shortBy), detail: 'Fronts $2,000 for Sam. Ready to Assign has ' + fmt(rta) + ', so it would go ' + fmt(rta - front) + (d.venmo ? '.' : '. Matching the Venmo money adds $1,018.'), link: 'Owed.dc.html', action: 'Review' });
+    if (rta < 0) attn.push({ sec: 'Ready to Assign', id: 'rta-neg', name: 'Ready to Assign', availText: fmt(rta), detail: 'More is assigned than you have. Take it back from a category.', link: 'Category.dc.html', action: 'Move money' });
+    const open = attn.filter((a) => !a.doneItem).length;
+    const waitingLeft = d.venmo ? (d.venmoLeft || 0) : 101800;
+    const uncatIds = ['a1', 'a2', 'cvs', 'bb'];
+    const activityLeft = (!d.venmo || (d.venmoLeft || 0) > 0 ? 1 : 0) + (d.zelleUnlinked ? 1 : 0) + (cleared.xfer ? 0 : 1) + (cleared.shake ? 0 : 1) + (cleared.check || d.checkDeleted ? 0 : 1) + uncatIds.filter((i) => !cats[i]).length;
+    return { d: d, fmt: fmt, done: done, closed: closed, canceled: canceled, snoozed: snoozed, cleared: cleared, cats: cats, custom: custom, owed: owed, paid: paid, settled: settled, C: C, order: order, cards: cards, rta: rta, out: out, nopaLate: nopaLate, shortBy: shortBy, attn: attn, open: open, waitingLeft: waitingLeft, activityLeft: activityLeft };
+  }
+  constructor(props) {
+    super(props);
+    this.state = { sel: 'chk', repair: 'need', saved: false };
+  }
+  renderVals() {
+    const s = this.state;
+    const accent = ('var(--accent, ' + (this.props.accent ?? 'var(--c1D4ED8, #1D4ED8)') + ')');
+    const neg = 'var(--cB42318, #B42318)', pos = 'var(--c085D3A, #085D3A)', ink = 'var(--c111827, #111827)';
+    const T = (date, payee, meta, amount) => ({ date: date, payee: payee, meta: meta, amount: amount, ink: amount.charAt(0) === '+' ? pos : ink });
+    const acct = {
+      chk: { name: 'Everyday Checking', sub: 'Chase · ending 0912 · synced 9:42 AM', group: 'cash', meta: 'Chase · synced 9:42 AM', amount: '$4,212.40',
+        stats: [['Balance at bank', '$4,212.40'], ['After pending and your checks', '$4,092.40']], listTitle: 'Transactions',
+        rows: [T('Pending', 'Check #1043', 'Gifts · added by you', '−$120.00'), T('Nov 14', 'Venmo cashout', 'Waiting to match · not in Ready to Assign', '+$1,018.00'), T('Nov 13', 'Acme Corp payroll', 'Ready to Assign', '+$3,100.00'), T('Nov 12', 'Transfer to Marcus Savings', 'Paired automatically', '−$500.00'), T('Nov 10', 'Transfer out', 'Pick the other side in Activity', '−$200.00'), T('Nov 10', 'Safeway', 'Groceries · rule 10', '−$41.18'), T('Nov 4', 'Chase card payment', 'Sapphire payment', '−$1,288.30'), T('Nov 3', 'Zelle from Sam', 'Paid back Rent', '+$1,000.00'), T('Nov 1', 'Vanguard', 'Investments · invested', '−$1,500.00')] },
+      ally: { name: 'Ally Savings', sub: 'Ally · last synced Nov 12', group: 'cash', meta: 'Ally · last synced Nov 12', amount: '$9,400.00', repair: true,
+        stats: [['Balance at bank', '$9,400.00']], listTitle: 'Transactions', rows: [T('Nov 1', 'Interest', 'Ready to Assign', '+$31.20')] },
+      marcus: { name: 'Marcus Savings', sub: 'Marcus · synced 9:42 AM', group: 'cash', meta: 'Marcus · synced 9:42 AM', amount: '$10,000.00',
+        stats: [['Balance at bank', '$10,000.00']], listTitle: 'Transactions', rows: [T('Nov 12', 'Transfer from Everyday Checking', 'Paired automatically', '+$500.00')] },
+      sapphire: { name: 'Sapphire Preferred', sub: 'Chase · ending 4417 · synced 9:42 AM', group: 'card', meta: 'Statement $611.40 due Nov 25 · covered', amount: '−$842.17', neg: true,
+        stats: [['You owe the bank', '$842.17'], ['Statement due Nov 25', '$611.40'], ['Payment category', '$878.32 · covered']], listTitle: 'Transactions',
+        rows: [T('Pending', 'Uber Eats', 'Nov 13 · Dining out · your $36 estimate', '−$36.00'), T('Pending', 'Shell', 'Gas · card hold', '−$45.00'), T('Pending', 'Marriott Downtown', 'Won’t clear · not counted', '−$200.00'), T('Nov 14', 'Trader Joe’s', 'Groceries · rule 3', '−$64.22'), T('Nov 14', 'Blue Bottle Coffee', 'Needs category', '−$6.75'), T('Nov 13', 'Amazon', 'Needs category', '−$38.10'), T('Nov 8', 'Nopa', 'Dining out · $18 owed to you', '−$36.00'), T('Nov 8', 'Points back', 'Rewards · to Ready to Assign', '+$24.10'), T('Nov 4', 'REI', 'Refund · Shopping', '+$54.00'), T('Nov 4', 'Payment, thank you', 'From Everyday Checking', '+$1,288.30'), T('Nov 3', 'Costco', 'Split · Groceries $140 · Household $42.40', '−$182.40')] },
+      freedom: { name: 'Freedom Unlimited', sub: 'Chase · ending 7720 · synced 9:42 AM', group: 'card', meta: 'Statement $145.15 due Dec 2 · $18.25 short', amount: '−$214.88', neg: true,
+        stats: [['You owe the bank', '$214.88'], ['Statement due Dec 2', '$145.15'], ['Payment category', '$155.00 · $18.25 short']], listTitle: 'Transactions',
+        rows: [T('Nov 14', 'Shake Shack', 'Dining out · $4.10 over your estimate', '−$28.10'), T('Nov 11', 'Amazon', 'Needs category', '−$23.20'), T('Nov 11', 'CVS Pharmacy', 'Needs category', '−$18.43'), T('Nov 6', 'Target', 'Household', '−$49.15'), T('Nov 2', 'Ticketmaster', 'Gifts', '−$96.00')] },
+    };
+    const groupDefs = [['cash', 'Cash', '$23,612.40'], ['card', 'Credit cards', '−$1,057.05']];
+    const allyFixed = s.repair === 'done';
+    const d = acct[s.sel];
+    return {
+      owedOut: this.llModel().fmt(this.llModel().out),
+      accent: accent,
+      groups: groupDefs.map((g) => ({ name: g[1], total: g[2], rows: Object.keys(acct).filter((k) => acct[k].group === g[0]).map((k) => {
+        const a = acct[k];
+        const warn = k === 'ally' && !allyFixed;
+        return { name: a.name, meta: k === 'ally' && allyFixed ? 'Ally · synced just now' : a.meta, metaInk: warn ? 'var(--c93370D, #93370D)' : 'var(--c4B5563, #4B5563)', amount: a.amount, ink: a.neg ? neg : ink, bg: s.sel === k ? 'var(--cEEF2FF, #EEF2FF)' : 'transparent', pressed: s.sel === k ? 'true' : 'false', pick: () => this.setState({ sel: k, saved: false }) };
+      }) })),
+      d: { name: d.name, sub: d.repair && allyFixed ? 'Ally · synced just now' : d.sub, isRepair: !!d.repair, listTitle: d.listTitle,
+        stats: d.stats.map((x) => ({ k: x[0], v: x[1], ink: x[1].indexOf('short') >= 0 ? neg : ink })), rows: d.rows },
+      repairLabel: s.repair === 'need' ? 'Sign in to Ally' : s.repair === 'working' ? 'Catching up…' : 'Connected',
+      repairText: s.repair === 'need' ? 'Ally asked you to sign in again. Nothing is lost: everything up to Nov 12 is kept, and repairing doesn’t use another of your 10 links.' : s.repair === 'working' ? 'Pulling transactions since Nov 12…' : 'Ally is connected again. 3 new transactions: 2 categorized by rules, 1 waiting in Activity.',
+      repairBg: s.repair === 'done' ? 'var(--cECFDF3, #ECFDF3)' : 'var(--cFFFAEB, #FFFAEB)', repairFg: s.repair === 'done' ? 'var(--c085D3A, #085D3A)' : 'var(--c7A2E0E, #7A2E0E)',
+      repair: () => { if (s.repair !== 'need') return; this.setState({ repair: 'working' }); setTimeout(() => this.setState({ repair: 'done' }), 1200); },
+    };
+  }
+}
+</script>
+</body>
+</html>

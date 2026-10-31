@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ledgerline categories</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accent, #1D4ED8)}a:hover{color:var(--c1E3A8A, #1E3A8A)}
+.hit{position:relative}.hit::after{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}:root[data-theme="dark"]{--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; display: flex; flex-direction: column; background: var(--cF5F6F8, #F5F6F8); font-family: 'Public Sans', system-ui, sans-serif; color: var(--c111827, #111827); overflow: hidden">
+<header style="display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 8px 4px; background: var(--cFFFFFF, #FFFFFF); border-bottom: 1px solid var(--cE5E7EB, #E5E7EB)">
+<div style="display: flex; align-items: center; gap: 4px">
+<a href="Settings.dc.html" aria-label="Back to settings" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: var(--c374151, #374151)"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg></a>
+<h1 style="margin: 0; font-size: 19px; font-weight: 700">Categories</h1>
+</div>
+<button class="hit" onClick="{{toggleEdit}}" style="height: 36px; padding: 0 12px; border: none; background: transparent; color: {{accent}}; font-family: inherit; font-size: 14px; font-weight: 700">{{editLabel}}</button>
+</header>
+<main style="flex: 1; overflow-y: auto; padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 14px">
+<p style="margin: 0; font-size: 13px; color: var(--c4B5563, #4B5563); line-height: 1.4">You make all categories. The only ones the app makes are card payments, one per card. Money you front for others isn’t a category: it’s tracked on the Owed to you list.</p>
+<sc-for list="{{groups}}" as="g" hint-placeholder-count="4">
+<section style="display: flex; flex-direction: column; gap: 6px; flex-shrink: 0">
+<div style="display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 0 2px">
+<h2 style="margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--c374151, #374151)">{{g.name}}</h2>
+<span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{g.note}}</span>
+</div>
+<div style="background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 14px; overflow: hidden">
+<sc-for list="{{g.cats}}" as="c" hint-placeholder-count="3">
+<div style="display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 4px 12px; border-top: 1px solid var(--cF0F1F3, #F0F1F3)">
+<sc-if value="{{editing}}" hint-placeholder-val="{{ false }}">
+<span aria-hidden="true" style="color: var(--c98A2B3, #98A2B3); font-size: 16px; letter-spacing: -2px">⋮⋮</span>
+</sc-if>
+<a href="CategoryEdit.dc.html" style="flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; text-decoration: none"><span style="font-size: 15px; font-weight: 600; color: {{c.ink}}">{{c.name}}</span><span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{c.meta}}</span></a>
+<sc-if value="{{c.canArchive}}" hint-placeholder-val="{{ false }}">
+<button class="hit" onClick="{{c.archive}}" aria-label="{{c.archiveLabel}}" style="flex-shrink: 0; height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--cD0D5DD, #D0D5DD); background: var(--cFFFFFF, #FFFFFF); color: var(--c374151, #374151); font-family: inherit; font-size: 13px; font-weight: 700">{{c.archiveText}}</button>
+</sc-if>
+</div>
+</sc-for>
+</div>
+</section>
+</sc-for>
+<sc-if value="{{editing}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; gap: 8px">
+<a href="CategoryEdit.dc.html" style="flex: 1; display: flex; align-items: center; justify-content: center; height: 44px; border-radius: 12px; border: 1px dashed var(--c98A2B3, #98A2B3); background: var(--cFFFFFF, #FFFFFF); color: var(--c374151, #374151); text-decoration: none; font-size: 14px; font-weight: 700">+ Category</a>
+<a href="CategoryEdit.dc.html" style="flex: 1; display: flex; align-items: center; justify-content: center; height: 44px; box-sizing: border-box; border-radius: 12px; border: 1px dashed var(--c98A2B3, #98A2B3); background: var(--cFFFFFF, #FFFFFF); color: var(--c374151, #374151); text-decoration: none; font-size: 14px; font-weight: 700">+ Group</a>
+</div>
+</sc-if>
+<button class="hit" onClick="{{toggleArchived}}" style="align-self: flex-start; height: 36px; padding: 0; border: none; background: transparent; color: {{accent}}; font-family: inherit; font-size: 14px; font-weight: 700">{{archivedLabel}}</button>
+<sc-if value="{{showArchived}}" hint-placeholder-val="{{ false }}">
+<div style="background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 14px; overflow: hidden; flex-shrink: 0">
+<sc-for list="{{archived}}" as="a" hint-placeholder-count="2">
+<div style="display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 4px 12px; border-top: 1px solid var(--cF0F1F3, #F0F1F3)">
+<span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 600; color: var(--c4B5563, #4B5563)">{{a.name}}</span><span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{a.meta}}</span></span>
+<button class="hit" onClick="{{a.restore}}" style="height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--cD0D5DD, #D0D5DD); background: var(--cFFFFFF, #FFFFFF); color: var(--c374151, #374151); font-family: inherit; font-size: 13px; font-weight: 700">Restore</button>
+</div>
+</sc-for>
+</div>
+<p style="margin: 0; font-size: 12px; color: var(--c4B5563, #4B5563); line-height: 1.4">Archived categories keep their history in reports. Archiving one that still has money moves the money to Ready to Assign first.</p>
+</sc-if>
+</main>
+<sc-if value="{{hasToast}}" hint-placeholder-val="{{ false }}">
+<div role="status" style="position: absolute; left: 16px; right: 16px; bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 6px 6px 12px; border-radius: 14px; background: var(--c111827, #111827); color: var(--cFFFFFF, #FFFFFF); font-size: 14px"><span>{{toast}}</span><button class="hit" onClick="{{undo}}" style="height: 36px; padding: 0 10px; border: none; background: transparent; color: var(--cFFFFFF, #FFFFFF); font-family: inherit; font-size: 14px; font-weight: 700; text-decoration: underline">Undo</button></div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["app","light","dark"],"default":"app"},"accent":{"editor":"color","default":"#1D4ED8","options":["#1D4ED8","#0F766E","#6D28D9","#111827"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  llGetPref() { try { return localStorage.getItem('ledgerline-theme') || this.llMem || 'device'; } catch (e) { return this.llMem || 'device'; } }
+  llSetPref(v) { this.llMem = v; try { localStorage.setItem('ledgerline-theme', v); } catch (e) {} this.llApply(); }
+  llApply() {
+    const forced = this.props.theme && this.props.theme !== 'app' ? this.props.theme : null;
+    const p = forced || this.llGetPref();
+    let dark = p === 'dark';
+    if (p === 'device') { try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {} }
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    const acc = { '#1D4ED8': '#8AB4FF', '#0F766E': '#5EEAD4', '#6D28D9': '#C4B5FD', '#111827': '#F2F4F7' };
+    const a = String(this.props.accent || 'var(--c1D4ED8, #1D4ED8)').toUpperCase();
+    if (a.charAt(0) === '#') { try { document.documentElement.style.setProperty('--accent', dark ? (acc[a] || '#8AB4FF') : a); } catch (e) {} }
+  }
+  componentDidMount() {
+    this.llApply();
+    this.llOn = () => { this.llApply(); this.forceUpdate(); };
+    try { window.addEventListener('storage', this.llOn); this.llMq = window.matchMedia('(prefers-color-scheme: dark)'); this.llMq.addEventListener('change', this.llOn); } catch (e) {}
+  }
+  componentDidUpdate() { this.llApply(); }
+  componentWillUnmount() { try { window.removeEventListener('storage', this.llOn); this.llMq.removeEventListener('change', this.llOn); } catch (e) {} }
+
+  constructor(props) {
+    super(props);
+    this.state = { editing: false, gone: {}, back: {}, showArchived: false, last: null };
+  }
+  renderVals() {
+    const s = this.state;
+    const sys = (name, meta) => ({ name: name, meta: meta, sys: true });
+    const u = (name, meta) => ({ name: name, meta: meta });
+    const defs = [
+      { name: 'Credit card payments', note: 'made by the app', cats: [sys('Sapphire Preferred', 'One per card'), sys('Freedom Unlimited', 'One per card')] },
+      { name: 'Bills', note: '4', cats: [u('Rent', 'Refill monthly · $1,000'), u('Electric', 'Refill monthly · $95'), u('Internet', 'Refill monthly · $80'), u('Subscriptions', 'Refill monthly · $65')] },
+      { name: 'Everyday', note: '7', cats: [u('Groceries', 'Refill monthly · $600'), u('Dining out', 'Refill monthly · $200'), u('Gas', 'Refill monthly · $120'), u('Shopping', 'Refill monthly · $200'), u('Household', 'Refill monthly · $100'), u('Health', 'Refill monthly · $75'), u('Personal care', 'Refill monthly · $100')] },
+      { name: 'Savings', note: '6', cats: [u('Investments', 'Saving or investing · invest $1,500 monthly'), u('Car insurance', '$540 by Jan 15, every 6 months'), u('Vacation', '$3,000 by Jun 2027'), u('Gifts', 'Refill monthly · $170'), u('Emergency fund', '$15,000 · reached'), u('Home repairs', 'No target')] }
+    ];
+    const restored = Object.keys(s.back).filter((k) => s.back[k]);
+    if (restored.indexOf('Pet') >= 0) defs[2].cats.push(u('Pet', 'No target'));
+    if (restored.indexOf('Gym') >= 0) defs[2].cats.push(u('Gym', 'No target'));
+    const archivedDefs = [{ name: 'Pet', meta: 'Archived Oct 2026' }, { name: 'Gym', meta: 'Archived Nov 2026' }].filter((a) => !s.back[a.name]);
+    const extraArchived = Object.keys(s.gone).filter((k) => s.gone[k]).map((k) => ({ name: k, meta: 'Archived today' }));
+    return {
+      accent: ('var(--accent, ' + (this.props.accent ?? 'var(--c1D4ED8, #1D4ED8)') + ')'),
+      editing: s.editing,
+      editLabel: s.editing ? 'Done' : 'Edit',
+      toggleEdit: () => this.setState({ editing: !s.editing }),
+      groups: defs.map((g) => ({ name: g.name, note: g.note, cats: g.cats.filter((c) => !s.gone[c.name]).map((c) => ({
+        name: c.name, meta: c.meta, ink: 'var(--c111827, #111827)',
+        canArchive: s.editing && !c.sys,
+        archiveText: 'Archive', archiveLabel: 'Archive ' + c.name,
+        archive: () => this.setState({ gone: Object.assign({}, s.gone, { [c.name]: true }), last: { name: c.name, text: c.name + ' archived' } })
+      })) })).filter((g) => g.cats.length > 0),
+      showArchived: s.showArchived,
+      archivedLabel: s.showArchived ? 'Hide archived' : 'Show archived (' + (archivedDefs.length + extraArchived.length) + ')',
+      toggleArchived: () => this.setState({ showArchived: !s.showArchived }),
+      archived: archivedDefs.concat(extraArchived).map((a) => ({ name: a.name, meta: a.meta, restore: () => {
+        if (s.gone[a.name]) this.setState({ gone: Object.assign({}, s.gone, { [a.name]: false }) });
+        else this.setState({ back: Object.assign({}, s.back, { [a.name]: true }) });
+      } })),
+      hasToast: !!s.last,
+      toast: s.last ? s.last.text : '',
+      undo: () => s.last && this.setState({ gone: Object.assign({}, s.gone, { [s.last.name]: false }), last: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

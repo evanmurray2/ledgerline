@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ledgerline add pending</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accent, #1D4ED8)}a:hover{color:var(--c1E3A8A, #1E3A8A)}
+.hit{position:relative}.hit::after{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}:root[data-theme="dark"]{--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; display: flex; flex-direction: column; background: var(--cFFFFFF, #FFFFFF); font-family: 'Public Sans', system-ui, sans-serif; color: var(--c111827, #111827); overflow: hidden">
+<header style="display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--cE5E7EB, #E5E7EB)">
+<h1 style="margin: 0; font-size: 19px; font-weight: 700">Add a transaction</h1>
+<a href="Activity.dc.html" aria-label="Cancel" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: var(--c374151, #374151)"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></a>
+</header>
+<main style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px">
+<div role="group" aria-label="When" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 3px; border-radius: 10px; background: var(--cF2F4F7, #F2F4F7)">
+<sc-for list="{{kinds}}" as="k" hint-placeholder-count="2">
+<button class="hit" onClick="{{k.pick}}" aria-pressed="{{k.pressed}}" style="height: 36px; border-radius: 8px; border: none; background: {{k.bg}}; font-family: inherit; font-size: 14px; font-weight: 700; color: var(--c111827, #111827)">{{k.name}}</button>
+</sc-for>
+</div>
+<p style="margin: 0; font-size: 13px; color: var(--c4B5563, #4B5563); line-height: 1.4">{{help}}</p>
+<div style="display: flex; gap: 8px">
+<label style="flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Amount
+<input placeholder="0.00" value="120.00" inputmode="decimal" style="height: 44px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums"></label>
+<div role="group" aria-label="Direction" style="display: flex; align-self: flex-end; gap: 4px; padding: 3px; border-radius: 10px; background: var(--cF2F4F7, #F2F4F7)">
+<sc-for list="{{dirs}}" as="d" hint-placeholder-count="2">
+<button class="hit" onClick="{{d.pick}}" aria-pressed="{{d.pressed}}" style="height: 36px; padding: 0 12px; border-radius: 8px; border: none; background: {{d.bg}}; font-family: inherit; font-size: 13px; font-weight: 700; color: var(--c111827, #111827)">{{d.name}}</button>
+</sc-for>
+</div>
+</div>
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Payee
+<input value="Check #1044" style="height: 44px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 16px"></label>
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Account
+<select style="height: 44px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 16px; background: var(--cFFFFFF, #FFFFFF)"><option>Everyday Checking</option><option>Sapphire Preferred</option><option>Freedom Unlimited</option></select></label>
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Category
+<select style="height: 44px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 16px; background: var(--cFFFFFF, #FFFFFF)"><option>Gifts</option><option>Groceries</option><option>Rent</option></select></label>
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">{{dateLabel}}
+<input type="date" value="{{date}}" style="height: 44px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 16px"></label>
+<sc-if value="{{isUpcoming}}" hint-placeholder-val="{{ false }}">
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Repeats
+<select style="height: 44px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 16px; background: var(--cFFFFFF, #FFFFFF)"><option>Never</option><option>Every month</option><option>Every year</option></select></label>
+</sc-if>
+<p style="margin: 0; padding: 12px; border-radius: 12px; background: var(--cF5F6F8, #F5F6F8); font-size: 13px; line-height: 1.45">When the bank shows a matching transaction, the two are merged and the bank's amount wins. If nothing matches in {{stale}} days, you'll see an alert.</p>
+</main>
+<div style="padding: 12px 16px 24px; border-top: 1px solid var(--cE5E7EB, #E5E7EB)">
+<a href="Activity.dc.html" style="display: flex; align-items: center; justify-content: center; height: 48px; border-radius: 12px; background: {{accent}}; color: var(--cFFFFFF, #FFFFFF); text-decoration: none; font-size: 16px; font-weight: 700">Add</a>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["app","light","dark"],"default":"app"},"accent":{"editor":"color","default":"#1D4ED8","options":["#1D4ED8","#0F766E","#6D28D9","#111827"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  llGetPref() { try { return localStorage.getItem('ledgerline-theme') || this.llMem || 'device'; } catch (e) { return this.llMem || 'device'; } }
+  llSetPref(v) { this.llMem = v; try { localStorage.setItem('ledgerline-theme', v); } catch (e) {} this.llApply(); }
+  llApply() {
+    const forced = this.props.theme && this.props.theme !== 'app' ? this.props.theme : null;
+    const p = forced || this.llGetPref();
+    let dark = p === 'dark';
+    if (p === 'device') { try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {} }
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    const acc = { '#1D4ED8': '#8AB4FF', '#0F766E': '#5EEAD4', '#6D28D9': '#C4B5FD', '#111827': '#F2F4F7' };
+    const a = String(this.props.accent || 'var(--c1D4ED8, #1D4ED8)').toUpperCase();
+    if (a.charAt(0) === '#') { try { document.documentElement.style.setProperty('--accent', dark ? (acc[a] || '#8AB4FF') : a); } catch (e) {} }
+  }
+  componentDidMount() {
+    this.llApply();
+    this.llOn = () => { this.llApply(); this.forceUpdate(); };
+    try { window.addEventListener('storage', this.llOn); this.llMq = window.matchMedia('(prefers-color-scheme: dark)'); this.llMq.addEventListener('change', this.llOn); } catch (e) {}
+  }
+  componentDidUpdate() { this.llApply(); }
+  componentWillUnmount() { try { window.removeEventListener('storage', this.llOn); this.llMq.removeEventListener('change', this.llOn); } catch (e) {} }
+
+  constructor(props) {
+    super(props);
+    this.state = { kind: 'pending', dir: 'out' };
+  }
+  renderVals() {
+    const s = this.state;
+    const seg = (list, cur, key) => list.map((x) => ({ name: x[1], pressed: cur === x[0] ? 'true' : 'false', bg: cur === x[0] ? 'var(--cFFFFFF, #FFFFFF)' : 'transparent', pick: () => this.setState({ [key]: x[0] }) }));
+    const pending = s.kind === 'pending';
+    return {
+      accent: ('var(--accent, ' + (this.props.accent ?? 'var(--c1D4ED8, #1D4ED8)') + ')'),
+      kinds: seg([['pending', 'Already happened'], ['upcoming', 'Coming up']], s.kind, 'kind'),
+      dirs: seg([['out', 'Out'], ['in', 'In']], s.dir, 'dir'),
+      help: pending ? 'Something you paid that the bank hasn’t shown yet, like a check. It counts in your budget now.' : 'A bill or paycheck on a future date. It counts in your budget from that date.',
+      isUpcoming: !pending,
+      dateLabel: pending ? 'Date' : 'On',
+      date: pending ? '2026-11-14' : '2026-11-30',
+      stale: pending ? 7 : 3
+    };
+  }
+}
+</script>
+</body>
+</html>

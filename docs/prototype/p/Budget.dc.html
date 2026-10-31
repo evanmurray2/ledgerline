@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ledgerline budget</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accent, #1D4ED8)}a:hover{color:var(--c1E3A8A, #1E3A8A)}
+.hit{position:relative}.hit::after{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}:root[data-theme="dark"]{--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; display: flex; flex-direction: column; background: var(--cF5F6F8, #F5F6F8); font-family: 'Public Sans', system-ui, sans-serif; color: var(--c111827, #111827); overflow: hidden">
+<header style="display: flex; flex-direction: column; background: var(--cFFFFFF, #FFFFFF); border-bottom: 1px solid var(--cE5E7EB, #E5E7EB)">
+<div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 8px">
+<button onClick="{{prev}}" aria-label="Previous month" style="width: 44px; height: 44px; border: none; background: transparent; color: {{prevInk}}; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg></button>
+<h1 style="margin: 0; font-size: 17px; font-weight: 700">{{month}}</h1>
+<button onClick="{{next}}" aria-label="Next month" style="width: 44px; height: 44px; border: none; background: transparent; color: {{nextInk}}; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg></button>
+</div>
+<div role="group" aria-label="Show" style="display: flex; gap: 8px; padding: 4px 16px 12px">
+<button class="hit" onClick="{{showAll}}" aria-pressed="{{allPressed}}" style="display: flex; align-items: center; height: 36px; padding: 0 16px; border-radius: 999px; border: 1px solid {{allBorder}}; background: {{allBg}}; color: {{allFg}}; font-family: inherit; font-size: 13px; font-weight: 600">All</button>
+<button class="hit" onClick="{{showAttn}}" aria-pressed="{{attnPressed}}" style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 16px; border-radius: 999px; border: 1px solid {{attnBorder}}; background: {{attnBg}}; color: {{attnFg}}; font-family: inherit; font-size: 13px; font-weight: 600">Needs attention<span style="min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 10px; background: {{countBg}}; color: {{countFg}}; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{left}}</span></button>
+</div>
+</header>
+<main style="flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px">
+<sc-if value="{{isPast}}" hint-placeholder-val="{{ false }}">
+<p style="margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--cEEF4FF, #EEF4FF); color: var(--c3538CD, #3538CD); font-size: 13px; line-height: 1.4">October. You can still change what was assigned; the change carries into November. (This prototype keeps November's figures.)</p>
+</sc-if>
+<sc-if value="{{isAll}}" hint-placeholder-val="{{ true }}">
+<sc-for list="{{groups}}" as="group" hint-placeholder-count="5">
+<section style="background: var(--cFFFFFF, #FFFFFF); border-radius: 14px; overflow: hidden; border: 1px solid var(--cE5E7EB, #E5E7EB); flex-shrink: 0">
+<button onClick="{{group.toggle}}" aria-expanded="{{group.expanded}}" style="width: 100%; display: flex; justify-content: space-between; align-items: center; min-height: 44px; padding: 0 12px; background: var(--cF9FAFB, #F9FAFB); border: none; border-bottom: 1px solid var(--cE5E7EB, #E5E7EB); font-family: inherit">
+<span style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--c374151, #374151)"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="{{group.chev}}"></path></svg>{{group.name}}</span>
+<span style="font-size: 12px; color: var(--c4B5563, #4B5563); font-variant-numeric: tabular-nums">{{group.total}}</span>
+</button>
+<sc-if value="{{group.open}}" hint-placeholder-val="{{ true }}">
+<sc-for list="{{group.cats}}" as="cat" hint-placeholder-count="3">
+<a href="{{cat.href}}" style="display: flex; flex-direction: column; gap: 7px; padding: 10px 12px; border-top: 1px solid var(--cF0F1F3, #F0F1F3); text-decoration: none; color: var(--c111827, #111827); min-height: 44px">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 3px; min-width: 0">
+<span style="font-size: 15px; font-weight: 600">{{cat.name}}</span>
+<span style="display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--c4B5563, #4B5563)"><span style="display: inline-flex; align-items: center; gap: 4px; font-weight: 700; color: {{cat.fg}}"><svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="{{cat.icon}}"></path></svg>{{cat.status}}</span>· {{cat.detail}}</span>
+</div>
+<span style="flex-shrink: 0; padding: 4px 10px; border-radius: 999px; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; background: {{cat.bg}}; color: {{cat.fg}}">{{cat.available}}</span>
+</div>
+<sc-if value="{{cat.hasBar}}" hint-placeholder-val="{{ true }}">
+<div aria-hidden="true" style="height: 4px; background: var(--cEEF0F3, #EEF0F3); border-radius: 2px; overflow: hidden"><div style="height: 4px; border-radius: 2px; width: {{cat.left}}; background: {{cat.bar}}"></div></div>
+</sc-if>
+</a>
+</sc-for>
+</sc-if>
+</section>
+</sc-for>
+<p style="margin: 0; font-size: 12px; color: var(--c4B5563, #4B5563)">Bars show how much of this month's money is left. Each category sheet in this prototype shows Groceries as the example.</p>
+</sc-if>
+<sc-if value="{{isAttn}}" hint-placeholder-val="{{ false }}">
+<sc-if value="{{allDone}}" hint-placeholder-val="{{ false }}">
+<p style="margin: 0; padding: 16px; border-radius: 14px; background: var(--cDCFAE6, #DCFAE6); color: var(--c085D3A, #085D3A); font-size: 15px; font-weight: 600; text-align: center">Nothing needs attention.</p>
+</sc-if>
+<sc-for list="{{sections}}" as="sec" hint-placeholder-count="4">
+<section style="background: var(--cFFFFFF, #FFFFFF); border-radius: 14px; overflow: hidden; border: 1px solid var(--cE5E7EB, #E5E7EB); flex-shrink: 0">
+<div style="display: flex; justify-content: space-between; align-items: center; min-height: 44px; padding: 0 8px 0 12px; background: var(--cF9FAFB, #F9FAFB); border-bottom: 1px solid var(--cE5E7EB, #E5E7EB)">
+<h2 style="margin: 0; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: {{sec.fg}}"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="{{sec.icon}}"></path></svg>{{sec.title}}</h2>
+<sc-if value="{{sec.hasAll}}" hint-placeholder-val="{{ false }}">
+<button class="hit" onClick="{{sec.doAll}}" style="height: 36px; padding: 0 12px; border-radius: 999px; border: none; background: {{accent}}; color: var(--cFFFFFF, #FFFFFF); font-family: inherit; font-size: 13px; font-weight: 700">{{sec.all}}</button>
+</sc-if>
+</div>
+<sc-for list="{{sec.items}}" as="it" hint-placeholder-count="1">
+<div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--cF0F1F3, #F0F1F3)">
+<a href="{{it.href}}" style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; text-decoration: none; color: var(--c111827, #111827); min-height: 44px; justify-content: center">
+<span style="display: flex; justify-content: space-between; gap: 8px"><span style="font-size: 15px; font-weight: 600">{{it.name}}</span><span style="font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; color: {{it.amountInk}}">{{it.available}}</span></span>
+<span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{it.detail}}</span>
+</a>
+<sc-if value="{{it.open}}" hint-placeholder-val="{{ true }}">
+<button class="hit" onClick="{{it.act}}" aria-label="{{it.aria}}" style="flex-shrink: 0; height: 36px; min-width: 92px; padding: 0 12px; border-radius: 999px; border: none; background: var(--cEEF2FF, #EEF2FF); color: {{accent}}; font-family: inherit; font-size: 13px; font-weight: 700">{{it.action}}</button>
+</sc-if>
+<sc-if value="{{it.isLink}}" hint-placeholder-val="{{ false }}">
+<a class="hit" href="{{it.href}}" aria-label="{{it.aria}}" style="flex-shrink: 0; display: flex; align-items: center; justify-content: center; height: 36px; min-width: 92px; box-sizing: border-box; padding: 0 12px; border-radius: 999px; background: var(--cEEF2FF, #EEF2FF); color: {{accent}}; text-decoration: none; font-size: 13px; font-weight: 700">{{it.action}}</a>
+</sc-if>
+<sc-if value="{{it.done}}" hint-placeholder-val="{{ false }}">
+<button class="hit" onClick="{{it.undo}}" style="flex-shrink: 0; height: 36px; min-width: 92px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--cD0D5DD, #D0D5DD); background: var(--cFFFFFF, #FFFFFF); color: var(--c374151, #374151); font-family: inherit; font-size: 13px; font-weight: 700">Undo</button>
+</sc-if>
+</div>
+</sc-for>
+</section>
+</sc-for>
+</sc-if>
+</main>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; background: {{rtaBg}}; color: var(--cFFFFFF, #FFFFFF)">
+<div style="display: flex; flex-direction: column; gap: 1px">
+<span style="font-size: 12px; font-weight: 600">Ready to Assign</span>
+<span style="font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums">{{rta}}</span>
+</div>
+<a class="hit" href="Assign.dc.html" style="display: flex; align-items: center; height: 40px; padding: 0 22px; border-radius: 999px; background: var(--cFFFFFF, #FFFFFF); color: {{rtaInk}}; text-decoration: none; font-size: 15px; font-weight: 700">Assign</a>
+</div>
+<dc-import name="TabBar" active="budget" accent="{{accent}}" hint-size="390px,72px"></dc-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["app","light","dark"],"default":"app"},"accent":{"editor":"color","default":"#1D4ED8","options":["#1D4ED8","#0F766E","#6D28D9","#111827"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  llGetPref() { try { return localStorage.getItem('ledgerline-theme') || this.llMem || 'device'; } catch (e) { return this.llMem || 'device'; } }
+  llSetPref(v) { this.llMem = v; try { localStorage.setItem('ledgerline-theme', v); } catch (e) {} this.llApply(); }
+  llApply() {
+    const forced = this.props.theme && this.props.theme !== 'app' ? this.props.theme : null;
+    const p = forced || this.llGetPref();
+    let dark = p === 'dark';
+    if (p === 'device') { try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {} }
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    const acc = { '#1D4ED8': '#8AB4FF', '#0F766E': '#5EEAD4', '#6D28D9': '#C4B5FD', '#111827': '#F2F4F7' };
+    const a = String(this.props.accent || 'var(--c1D4ED8, #1D4ED8)').toUpperCase();
+    if (a.charAt(0) === '#') { try { document.documentElement.style.setProperty('--accent', dark ? (acc[a] || '#8AB4FF') : a); } catch (e) {} }
+  }
+  componentDidMount() {
+    this.llApply();
+    this.llOn = () => { this.llApply(); this.forceUpdate(); };
+    try { window.addEventListener('storage', this.llOn); this.llMq = window.matchMedia('(prefers-color-scheme: dark)'); this.llMq.addEventListener('change', this.llOn); } catch (e) {}
+  }
+  componentDidUpdate() { this.llApply(); }
+  componentWillUnmount() { try { window.removeEventListener('storage', this.llOn); this.llMq.removeEventListener('change', this.llOn); } catch (e) {} }
+
+  llDemo() { try { const v = localStorage.getItem('ledgerline-demo'); if (v) return JSON.parse(v); } catch (e) {} return this.llDemoMem || {}; }
+  llSaveDemo(patch) { const d = Object.assign({}, this.llDemo(), patch); this.llDemoMem = d; try { localStorage.setItem('ledgerline-demo', JSON.stringify(d)); } catch (e) {} this.setState({ llTick: Date.now() }); }
+  llModel() {
+    const d = this.llDemo();
+    const done = d.done || {}, closed = d.closed || {}, canceled = d.canceled || {}, snoozed = d.snoozed || {}, cleared = d.cleared || {}, cats = d.cats || {}, custom = d.custom || {};
+    const fmt = (c) => (c < 0 ? '−$' : '$') + (Math.abs(c) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const paid = d.venmo === 'matched' ? (d.paidIds || { rent: true, nopa: true }) : {};
+    const owed = { rent: 100000 + (d.zelleUnlinked ? 100000 : 0), nopa: 1800, united: 41260 };
+    const owedCat = { rent: 'rent', nopa: 'dining', united: 'vacation' };
+    const settled = (k) => !!(paid[k] || closed[k] || canceled[k]);
+    const chargedNow = (k) => !paid[k] && (closed[k] || (canceled[k] && k !== 'rent'));
+    // base categories (cents): avail, assigned, spent this month
+    const B = [
+      ['rent', 'Rent', 'bills', 100000, 100000, 0, { bill: true, target: 100000, detail: 'your $1,000 of $3,000 · Nov 30', tgt: 'Refill to $1,000 every month' }],
+      ['electric', 'Electric', 'bills', 4130, 9500, 5370, { bill: true, target: 9500, tgt: 'Refill to $95 every month' }],
+      ['internet', 'Internet', 'bills', 8000, 8000, 0, { bill: true, target: 8000, detail: 'Comcast $79.99 on Nov 16', tgt: 'Refill to $80 every month' }],
+      ['subs', 'Subscriptions', 'bills', 55, 6500, 6445, { bill: true, target: 6500, tgt: 'Refill to $65 every month' }],
+      ['groceries', 'Groceries', 'everyday', 21240, 60000, 38760, { target: 60000, tgt: 'Refill to $600 every month' }],
+      ['dining', 'Dining out', 'everyday', -1825, 20000, 21825, { target: 20000, tgt: 'Refill to $200 every month', overNote: 'Shake Shack on Freedom overspent it' }],
+      ['gas', 'Gas', 'everyday', 6410, 12000, 5590, { target: 12000, tgt: 'Refill to $120 every month' }],
+      ['shopping', 'Shopping', 'everyday', 5320, 20000, 14680, { target: 20000, tgt: 'Refill to $200 every month' }],
+      ['household', 'Household', 'everyday', 4000, 10000, 9155, { target: 10000, tgt: 'Refill to $100 every month', carry: '$31.55 carried from October' }],
+      ['health', 'Health', 'everyday', 7500, 7500, 0, { target: 7500, tgt: 'Refill to $75 every month' }],
+      ['personal', 'Personal care', 'everyday', 1500, 10000, 8500, { target: 10000, tgt: 'Refill to $100 every month' }],
+      ['invest', 'Investments', 'savings', 0, 150000, 150000, { invest: true, detail: '$1,500 to Vanguard on Nov 1', tgt: 'Invest $1,500 every month' }],
+      ['car', 'Car insurance', 'savings', 36000, 0, 0, { need: 9000, goal: '$540 by Jan 15', tgt: '$540 by Jan 15, every 6 months' }],
+      ['vacation', 'Vacation', 'savings', 125000, 0, 0, { need: 25000, goal: '$3,000 by Jun 2027', tgt: '$3,000 by Jun 2027 (funded by the start of June)' }],
+      ['gifts', 'Gifts', 'savings', 21000, 17000, 21600, { target: 17000, overTarget: true, tgt: 'Refill to $170 every month' }],
+      ['emergency', 'Emergency fund', 'savings', 1500000, 0, 0, { reached: true, detail: 'goal $15,000 reached', tgt: '$15,000 by Dec 2026' }],
+      ['home', 'Home repairs', 'savings', 205763, 0, 0, { none: true, detail: 'kept for repairs', tgt: 'No target' }]
+    ];
+    const C = {};
+    const order = [];
+    B.forEach((b) => { C[b[0]] = Object.assign({ id: b[0], name: b[1], group: b[2], avail: b[3], assigned: b[4], spent: b[5] }, b[6]); order.push(b[0]); });
+    if (d.checkDeleted) { C.gifts.avail += 12000; C.gifts.spent -= 12000; }
+    Object.keys(owed).forEach((k) => { if (chargedNow(k)) { const c = C[owedCat[k]]; c.avail -= owed[k]; c.spent += owed[k]; c.charged = (c.charged || 0) + owed[k]; } });
+    Object.keys(custom).forEach((k) => { if (C[k]) { C[k].avail += custom[k]; C[k].assigned += custom[k]; } });
+    Object.keys(done).forEach((k) => { if (C[k]) { C[k].avail += done[k]; C[k].assigned += done[k]; } });
+    // categorizing uncategorized card spending, in date order
+    const U = [['a2', 'freedom', 2320], ['cvs', 'freedom', 1843], ['a1', 'sapphire', 3810], ['bb', 'sapphire', 675]];
+    const byName = {};
+    order.forEach((k) => { byName[C[k].name] = k; });
+    const cardFund = { sapphire: 0, freedom: 0 }, waits = { sapphire: 0, freedom: 0 };
+    U.forEach((u) => {
+      const k = cats[u[0]] ? byName[cats[u[0]]] : null;
+      if (!k) { waits[u[1]] += u[2]; return; }
+      const before = C[k].avail;
+      cardFund[u[1]] += Math.max(0, Math.min(before, u[2]));
+      C[k].avail -= u[2]; C[k].spent += u[2];
+    });
+    // card payment categories (cents)
+    const diningCover = done.dining || 0;
+    const cards = {
+      sapphire: { name: 'Sapphire Preferred', pay: 87832 + cardFund.sapphire, need: 92317 - waits.sapphire, stmt: 'statement $611.40 due Nov 25', waits: waits.sapphire, href: 'Register.dc.html' },
+      freedom: { name: 'Freedom Unlimited', pay: 15500 + Math.min(diningCover, 1825) + cardFund.freedom, need: 21488 - waits.freedom, stmt: 'statement $145.15 due Dec 2', waits: waits.freedom, href: 'RegisterFreedom.dc.html' }
+    };
+    // Ready to Assign
+    let rta = 98190 + (d.zelleUnlinked ? -100000 : 0);
+    Object.keys(done).forEach((k) => { rta -= done[k]; });
+    Object.keys(custom).forEach((k) => { rta -= custom[k]; });
+    if (d.venmo) rta += (d.venmoIn === undefined ? 101800 : d.venmoIn);
+    if (d.xferPick) rta += d.xferPick === 'none' ? 40000 : 20000;
+    Object.keys(owed).forEach((k) => { if (chargedNow(k)) rta += owed[k]; });
+    let out = 0;
+    Object.keys(owed).forEach((k) => { if (!settled(k)) out += owed[k]; });
+    const nopaLate = !settled('nopa') && !snoozed.nopa;
+    // statuses
+    order.forEach((k) => {
+      const c = C[k];
+      if (c.avail < 0) { c.t = 'over'; c.fix = -c.avail; c.fixVerb = 'Cover'; return; }
+      if (c.invest) { c.t = 'invested'; return; }
+      if (c.none) { c.t = 'none'; return; }
+      if (c.reached) { c.t = 'funded'; return; }
+      if (c.need) { const left = c.need - (done[k] || 0); if (left > 0) { c.t = 'under'; c.fix = left; c.fixVerb = 'Fund'; } else c.t = 'funded'; return; }
+      if (k === 'rent' && c.avail < 100000) { c.t = 'under'; c.fix = 100000 - c.avail; c.fixVerb = 'Fund'; return; }
+      if (c.overTarget && c.avail > c.target) { c.t = 'overfunded'; c.fix = -(c.avail - c.target); c.fixVerb = 'Move'; return; }
+      if (!c.bill && c.target) {
+        const pace = c.spent / Math.max(1, c.spent + c.avail) - 0.47;
+        if (c.avail < 0.2 * c.target || pace > 0.30) { c.t = 'low'; c.fix = Math.max(100, Math.ceil((0.35 * c.target - c.avail) / 100) * 100); c.fixVerb = 'Add'; return; }
+      }
+      c.t = 'funded';
+    });
+    order.forEach((k) => {
+      const c = C[k];
+      let det = c.detail || '';
+      if (c.t === 'over') det = c.charged ? 'charged ' + fmt(c.charged) + ' after a close-out · overspent' : (c.overNote || 'overspent');
+      else if (k === 'rent' && c.t === 'under') det = 'charged $1,000 for Sam’s unpaid share · needs $1,000 by Nov 30';
+      else if (c.need) det = (c.charged ? 'charged ' + fmt(c.charged) + ' after a close-out · ' : '') + (c.t === 'under' ? 'needs ' + fmt(c.fix) + ' this month · ' + c.goal : 'this month’s share is in · ' + c.goal);
+      else if (c.overTarget) det = c.t === 'overfunded' ? fmt(-c.fix) + ' more than this month’s ' + fmt(c.target) : 'back to this month’s target';
+      else if (c.target && !det) det = fmt(c.spent) + ' of ' + fmt(c.target) + ' spent' + (c.t === 'low' ? ' · ' + fmt(c.avail) + ' left' : '') + (c.carry ? ' · ' + c.carry : '');
+      if (c.bill && k === 'subs') det = fmt(c.spent) + ' of ' + fmt(c.target) + ' spent · bills are never Low';
+      if (done[k] && c.t === 'funded') det = det + ' · added ' + fmt(done[k]);
+      c.detailText = det;
+    });
+    // projected shortfall from the Nov 30 rent front
+    const rentRule = !d.zelleUnlinked || true;
+    const front = 200000;
+    const shortBy = rentRule && rta < front ? front - rta : 0;
+    // attention list
+    const attn = [];
+    const secOf = { over: 'Overspent', under: 'Underfunded', low: 'Low', overfunded: 'Overfunded' };
+    order.forEach((k) => {
+      const c = C[k];
+      if (secOf[c.t]) attn.push({ sec: secOf[c.t], id: k, name: c.name, avail: c.avail, detail: c.detailText, fix: c.fix, action: c.fixVerb + ' ' + fmt(Math.abs(c.fix)) });
+      else if (done[k]) attn.push({ sec: 'Done', id: k, name: c.name, avail: c.avail, detail: (done[k] < 0 ? 'Moved ' + fmt(-done[k]) + ' back to' : 'Added ' + fmt(done[k]) + ' from') + ' Ready to Assign', doneItem: true });
+    });
+    if (nopaLate) attn.push({ sec: 'Owed to you', id: 'nopa-late', name: 'Nopa · Alex', availText: '$18.00', detail: 'Late: expected back by Nov 10', link: 'Owed.dc.html', action: 'Review' });
+    if (shortBy > 0) attn.push({ sec: 'Owed to you', id: 'rent-front', name: 'Rent on Nov 30', availText: fmt(-shortBy), detail: 'Fronts $2,000 for Sam. Ready to Assign has ' + fmt(rta) + ', so it would go ' + fmt(rta - front) + (d.venmo ? '.' : '. Matching the Venmo money adds $1,018.'), link: 'Owed.dc.html', action: 'Review' });
+    if (rta < 0) attn.push({ sec: 'Ready to Assign', id: 'rta-neg', name: 'Ready to Assign', availText: fmt(rta), detail: 'More is assigned than you have. Take it back from a category.', link: 'Category.dc.html', action: 'Move money' });
+    const open = attn.filter((a) => !a.doneItem).length;
+    const waitingLeft = d.venmo ? (d.venmoLeft || 0) : 101800;
+    const uncatIds = ['a1', 'a2', 'cvs', 'bb'];
+    const activityLeft = (!d.venmo || (d.venmoLeft || 0) > 0 ? 1 : 0) + (d.zelleUnlinked ? 1 : 0) + (cleared.xfer ? 0 : 1) + (cleared.shake ? 0 : 1) + (cleared.check || d.checkDeleted ? 0 : 1) + uncatIds.filter((i) => !cats[i]).length;
+    return { d: d, fmt: fmt, done: done, closed: closed, canceled: canceled, snoozed: snoozed, cleared: cleared, cats: cats, custom: custom, owed: owed, paid: paid, settled: settled, C: C, order: order, cards: cards, rta: rta, out: out, nopaLate: nopaLate, shortBy: shortBy, attn: attn, open: open, waitingLeft: waitingLeft, activityLeft: activityLeft };
+  }
+  constructor(props) {
+    super(props);
+    this.state = { m: 1, closed: {}, view: 'all' };
+  }
+  renderVals() {
+    const s = this.state;
+    const M = this.llModel();
+    const fmt = M.fmt;
+    const accent = this.props.accent ?? 'var(--c1D4ED8, #1D4ED8)';
+    const tone = {
+      funded: { status: 'Funded', bg: 'var(--cDCFAE6, #DCFAE6)', fg: 'var(--c085D3A, #085D3A)', bar: 'var(--c12B76A, #12B76A)', icon: 'M5 12l5 5L20 7' },
+      covered: { status: 'Covered', bg: 'var(--cDCFAE6, #DCFAE6)', fg: 'var(--c085D3A, #085D3A)', bar: 'var(--c12B76A, #12B76A)', icon: 'M5 12l5 5L20 7' },
+      invested: { status: 'Invested', bg: 'var(--cDCFAE6, #DCFAE6)', fg: 'var(--c085D3A, #085D3A)', bar: 'var(--c12B76A, #12B76A)', icon: 'M5 12l5 5L20 7' },
+      low: { status: 'Low', bg: 'var(--cF4EBFF, #F4EBFF)', fg: 'var(--c6941C6, #6941C6)', bar: 'var(--c9E77ED, #9E77ED)', icon: 'M12 5v14M5 12l7 7 7-7' },
+      over: { status: 'Overspent', bg: 'var(--cFEE4E2, #FEE4E2)', fg: 'var(--cB42318, #B42318)', bar: 'var(--cD92D20, #D92D20)', icon: 'M12 7v6M12 17h.01' },
+      short: { status: 'Short', bg: 'var(--cFEE4E2, #FEE4E2)', fg: 'var(--cB42318, #B42318)', bar: 'var(--cD92D20, #D92D20)', icon: 'M12 7v6M12 17h.01' },
+      under: { status: 'Underfunded', bg: 'var(--cFEF0C7, #FEF0C7)', fg: 'var(--c93370D, #93370D)', bar: 'var(--cF79009, #F79009)', icon: 'M12 3a9 9 0 1 0 0 18V3z' },
+      overfunded: { status: 'Overfunded', bg: 'var(--cD1E9FF, #D1E9FF)', fg: 'var(--c175CD3, #175CD3)', bar: 'var(--c2E90FA, #2E90FA)', icon: 'M12 19V5M5 12l7-7 7 7' },
+      none: { status: 'No target', bg: 'var(--cF2F4F7, #F2F4F7)', fg: 'var(--c344054, #344054)', bar: 'var(--c98A2B3, #98A2B3)', icon: 'M5 12h14' },
+      late: { status: '1 late', bg: 'var(--cFEF0C7, #FEF0C7)', fg: 'var(--c93370D, #93370D)', bar: 'var(--cF79009, #F79009)', icon: 'M12 7v5l3 3' },
+      track: { status: 'Tracking', bg: 'var(--cF2F4F7, #F2F4F7)', fg: 'var(--c344054, #344054)', bar: 'var(--c98A2B3, #98A2B3)', icon: 'M5 12h14' },
+      done: { status: 'Done', bg: 'var(--cDCFAE6, #DCFAE6)', fg: 'var(--c085D3A, #085D3A)', bar: 'var(--c12B76A, #12B76A)', icon: 'M5 12l5 5L20 7' },
+      warn: { status: '', bg: 'var(--cFEF0C7, #FEF0C7)', fg: 'var(--c93370D, #93370D)', bar: 'var(--cF79009, #F79009)', icon: 'M12 7v6M12 17h.01' }
+    };
+    const row = (c) => {
+      const left = c.target ? Math.max(0, Math.min(100, Math.round(c.avail / Math.max(1, c.spent + c.avail) * 100))) : 0;
+      return Object.assign({ name: c.name, detail: c.detailText, available: fmt(c.avail), hasBar: !!c.target && !c.overTarget, left: left + '%', href: 'Category.dc.html' }, tone[c.t]);
+    };
+    const cardRow = (k) => {
+      const c = M.cards[k];
+      const short = c.need - c.pay;
+      return Object.assign({ name: c.name, detail: short > 0 ? fmt(short) + ' of card spending not covered' : c.stmt + (c.waits ? ' · ' + fmt(c.waits) + ' waits for a category' : ''), available: fmt(c.pay), hasBar: false, left: '0%', href: c.href }, tone[short > 0 ? 'short' : 'covered']);
+    };
+    const groupDefs = [
+      { id: 'cards', name: 'Credit card payments', rows: [cardRow('sapphire'), cardRow('freedom')], total: fmt(M.cards.sapphire.pay + M.cards.freedom.pay) },
+      { id: 'owed', name: 'Owed to you', rows: [Object.assign({ name: 'Owed to you', detail: fmt(M.out) + ' out · comes back to Ready to Assign', available: fmt(M.out) + ' out', hasBar: false, left: '0%', href: 'Owed.dc.html' }, tone[M.nopaLate ? 'late' : 'track'])], total: 'not a category' }
+    ];
+    [['bills', 'Bills'], ['everyday', 'Everyday'], ['savings', 'Savings']].forEach((g) => {
+      const ks = M.order.filter((k) => M.C[k].group === g[0]);
+      groupDefs.push({ id: g[0], name: g[1], rows: ks.map((k) => row(M.C[k])), total: fmt(ks.reduce((a, k) => a + M.C[k].avail, 0)) });
+    });
+    const save = (k, delta) => { const n = Object.assign({}, M.done); n[k] = (n[k] || 0) + delta; if (!n[k]) delete n[k]; this.llSaveDemo({ done: n }); };
+    const secOrder = ['Ready to Assign', 'Overspent', 'Underfunded', 'Low', 'Overfunded', 'Owed to you', 'Done'];
+    const secTone = { 'Ready to Assign': tone.over, Overspent: tone.over, Underfunded: tone.under, Low: tone.low, Overfunded: tone.overfunded, 'Owed to you': tone.warn, Done: tone.done };
+    const sections = secOrder.map((title) => {
+      const items = M.attn.filter((a) => a.sec === title);
+      const under = items.filter((a) => title === 'Underfunded' && a.fix);
+      const sum = under.reduce((x, a) => x + a.fix, 0);
+      return {
+        title: title === 'Done' ? 'Done just now' : title, fg: secTone[title].fg, icon: secTone[title].icon,
+        hasAll: under.length > 1, all: 'Fund all · ' + fmt(sum), doAll: () => { const n = Object.assign({}, M.done); under.forEach((a) => { n[a.id] = (n[a.id] || 0) + a.fix; }); this.llSaveDemo({ done: n }); },
+        items: items.map((a) => ({
+          name: a.name, href: a.link || 'Category.dc.html', available: a.availText || fmt(a.avail), amountInk: a.doneItem ? 'var(--c4B5563, #4B5563)' : secTone[title].fg, detail: a.detail,
+          action: a.action || '', aria: (a.action || '') + ' for ' + a.name,
+          open: !a.doneItem && !a.link, isLink: !!a.link, done: !!a.doneItem,
+          act: () => { if (a.fix) save(a.id, a.fix); }, undo: () => { const n = Object.assign({}, M.done); delete n[a.id]; this.llSaveDemo({ done: n }); }
+        }))
+      };
+    }).filter((x) => x.items.length > 0);
+    const isAll = s.view === 'all';
+    const closed = s.closed;
+    const rta = M.rta;
+    return {
+      accent: accent,
+      month: ['October 2026', 'November 2026'][s.m],
+      isPast: s.m === 0,
+      prev: () => this.setState({ m: 0 }), next: () => this.setState({ m: 1 }),
+      prevInk: s.m === 0 ? 'var(--cD0D5DD, #D0D5DD)' : 'var(--c374151, #374151)', nextInk: s.m === 1 ? 'var(--cD0D5DD, #D0D5DD)' : 'var(--c374151, #374151)',
+      isAll: isAll, isAttn: !isAll,
+      showAll: () => this.setState({ view: 'all' }), showAttn: () => this.setState({ view: 'attn' }),
+      allPressed: isAll ? 'true' : 'false', attnPressed: isAll ? 'false' : 'true',
+      allBg: isAll ? 'var(--c111827, #111827)' : 'var(--cFFFFFF, #FFFFFF)', allFg: isAll ? 'var(--cFFFFFF, #FFFFFF)' : 'var(--c111827, #111827)', allBorder: isAll ? 'var(--c111827, #111827)' : 'var(--cD0D5DD, #D0D5DD)',
+      attnBg: isAll ? 'var(--cFFFFFF, #FFFFFF)' : 'var(--c111827, #111827)', attnFg: isAll ? 'var(--c111827, #111827)' : 'var(--cFFFFFF, #FFFFFF)', attnBorder: isAll ? 'var(--cD0D5DD, #D0D5DD)' : 'var(--c111827, #111827)',
+      countBg: isAll ? 'var(--cB42318, #B42318)' : 'var(--cFFFFFF, #FFFFFF)', countFg: isAll ? 'var(--cFFFFFF, #FFFFFF)' : 'var(--c111827, #111827)',
+      left: M.open, allDone: M.open === 0, sections: sections,
+      rta: fmt(rta), rtaBg: rta < 0 ? 'var(--cB42318, #B42318)' : accent, rtaInk: rta < 0 ? 'var(--cB42318, #B42318)' : accent,
+      groups: groupDefs.map((g) => {
+        const open = !closed[g.id];
+        return {
+          name: g.name, total: g.total, open: open, expanded: open ? 'true' : 'false', chev: open ? 'M6 9l6 6 6-6' : 'M9 6l6 6-6 6',
+          toggle: () => this.setState({ closed: Object.assign({}, closed, { [g.id]: open }) }),
+          cats: g.rows
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

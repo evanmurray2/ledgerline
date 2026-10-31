@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ledgerline Freedom register</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<dc-import name="Register" card="freedom" theme="{{theme}}" accent="{{accent}}" hint-size="390px,844px"></dc-import>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["app","light","dark"],"default":"app"},"accent":{"editor":"color","default":"#1D4ED8","options":["#1D4ED8","#0F766E","#6D28D9","#111827"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  // Wrapper board: the imported screen runs llApply for theme and accent.
+  renderVals() {
+    return { theme: this.props.theme ?? 'app', accent: this.props.accent ?? 'var(--c1D4ED8, #1D4ED8)' };
+  }
+}
+</script>
+</body>
+</html>

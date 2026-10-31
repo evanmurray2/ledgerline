@@ -1,0 +1,886 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-10-31T16:00:00Z"
+  },
+  "title": "Ledgerline mobile mockups",
+  "launch": {
+    "view": "canvas",
+    "page": "proto"
+  },
+  "pages": [
+    {
+      "id": "proto",
+      "name": "Prototype (clickable)"
+    },
+    {
+      "id": "v2",
+      "name": "v2 · after review"
+    },
+    {
+      "id": "v1",
+      "name": "v1 · reviewed"
+    }
+  ],
+  "boards": {
+    "p/Welcome.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Welcome and sign-in",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/StartMonth.dc.html": {
+      "x": 470,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "1 · Budget start",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/LinkBanks.dc.html": {
+      "x": 940,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "2 · Link banks",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/FirstSort.dc.html": {
+      "x": 1410,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "3 · Make your categories",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Budget.dc.html": {
+      "x": 0,
+      "y": 1320,
+      "w": 390,
+      "h": 844,
+      "title": "Budget (home) · All / Needs attention filter",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Category.dc.html": {
+      "x": 470,
+      "y": 1320,
+      "w": 390,
+      "h": 844,
+      "title": "Category sheet",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Target.dc.html": {
+      "x": 940,
+      "y": 1320,
+      "w": 390,
+      "h": 844,
+      "title": "Edit target",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Assign.dc.html": {
+      "x": 1410,
+      "y": 1320,
+      "w": 390,
+      "h": 844,
+      "title": "Assign",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Owed.dc.html": {
+      "x": 1880,
+      "y": 1320,
+      "w": 390,
+      "h": 844,
+      "title": "Owed to you (a list, not a category)",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Close.dc.html": {
+      "x": 2350,
+      "y": 1320,
+      "w": 390,
+      "h": 844,
+      "title": "Close out what's owed",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Activity.dc.html": {
+      "x": 0,
+      "y": 2640,
+      "w": 390,
+      "h": 844,
+      "title": "Activity · All / Needs attention / Not posted yet",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Txn.dc.html": {
+      "x": 470,
+      "y": 2640,
+      "w": 390,
+      "h": 844,
+      "title": "Transaction sheet",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Split.dc.html": {
+      "x": 940,
+      "y": 2640,
+      "w": 390,
+      "h": 844,
+      "title": "Split",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Match.dc.html": {
+      "x": 1410,
+      "y": 2640,
+      "w": 390,
+      "h": 844,
+      "title": "Match money back",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/AddPending.dc.html": {
+      "x": 2350,
+      "y": 2640,
+      "w": 390,
+      "h": 844,
+      "title": "Add pending or upcoming",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Transfer.dc.html": {
+      "x": 1880,
+      "y": 2640,
+      "w": 390,
+      "h": 844,
+      "title": "Transfer: pick the other side (only when unclear)",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Accounts.dc.html": {
+      "x": 0,
+      "y": 3960,
+      "w": 390,
+      "h": 844,
+      "title": "Accounts",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Register.dc.html": {
+      "x": 470,
+      "y": 3960,
+      "w": 390,
+      "h": 844,
+      "title": "Card register · Sapphire",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Repair.dc.html": {
+      "x": 1410,
+      "y": 3960,
+      "w": 390,
+      "h": 844,
+      "title": "Repair a connection",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Reports.dc.html": {
+      "x": 1880,
+      "y": 3960,
+      "w": 390,
+      "h": 844,
+      "title": "Reports",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Settings.dc.html": {
+      "x": 0,
+      "y": 5280,
+      "w": 390,
+      "h": 844,
+      "title": "Settings",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Categories.dc.html": {
+      "x": 470,
+      "y": 5280,
+      "w": 390,
+      "h": 844,
+      "title": "Categories and groups",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Rules.dc.html": {
+      "x": 940,
+      "y": 5280,
+      "w": 390,
+      "h": 844,
+      "title": "Rules",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Rule.dc.html": {
+      "x": 1410,
+      "y": 5280,
+      "w": 390,
+      "h": 844,
+      "title": "Edit rule",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Payees.dc.html": {
+      "x": 1880,
+      "y": 5280,
+      "w": 390,
+      "h": 844,
+      "title": "Payees and merging",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Connections.dc.html": {
+      "x": 2350,
+      "y": 5280,
+      "w": 390,
+      "h": 844,
+      "title": "Bank connections",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Data.dc.html": {
+      "x": 2820,
+      "y": 5280,
+      "w": 390,
+      "h": 844,
+      "title": "Import and export",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/TabBar.dc.html": {
+      "x": 3290,
+      "y": 5280,
+      "w": 390,
+      "h": 72,
+      "title": "Tab bar (shared component)",
+      "page": "proto"
+    },
+    "Budget.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Budget (home)",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "v2"
+    },
+    "BudgetAttention.dc.html": {
+      "x": 470,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Budget · Needs attention filter",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "v2"
+    },
+    "CategorySheet.dc.html": {
+      "x": 940,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Category sheet (tap a row)",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "v2"
+    },
+    "AssignSheet.dc.html": {
+      "x": 1410,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Assign from Ready to Assign",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "v2"
+    },
+    "Activity.dc.html": {
+      "x": 0,
+      "y": 1320,
+      "w": 390,
+      "h": 844,
+      "title": "Activity",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "v2"
+    },
+    "TransactionSheet.dc.html": {
+      "x": 470,
+      "y": 1320,
+      "w": 390,
+      "h": 844,
+      "title": "Transaction sheet (pending)",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "v2"
+    },
+    "Accounts.dc.html": {
+      "x": 940,
+      "y": 1320,
+      "w": 390,
+      "h": 844,
+      "title": "Accounts",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "v2"
+    },
+    "Reports.dc.html": {
+      "x": 1410,
+      "y": 1320,
+      "w": 390,
+      "h": 844,
+      "title": "Reports",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "v2"
+    },
+    "Settings.dc.html": {
+      "x": 1880,
+      "y": 1320,
+      "w": 390,
+      "h": 844,
+      "title": "Settings",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "v2"
+    },
+    "TabBar.dc.html": {
+      "x": 2350,
+      "y": 1320,
+      "w": 390,
+      "h": 72,
+      "title": "Tab bar (shared component)",
+      "page": "v2"
+    },
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "v1 Budget",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "v1"
+    },
+    "Attention.dc.html": {
+      "x": 470,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "v1 Needs attention",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "v1"
+    },
+    "Pending.dc.html": {
+      "x": 940,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "v1 Pending",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "v1"
+    },
+    "Inbox.dc.html": {
+      "x": 1410,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "v1 Inbox",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "v1"
+    },
+    "Analytics.dc.html": {
+      "x": 1880,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "v1 Analytics",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "v1"
+    },
+    "p/TxnPosted.dc.html": {
+      "x": 0,
+      "y": 6600,
+      "w": 390,
+      "h": 844,
+      "title": "Transaction · posted (set by rule)",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/TxnIncome.dc.html": {
+      "x": 470,
+      "y": 6600,
+      "w": 390,
+      "h": 844,
+      "title": "Transaction · income",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/TxnRefund.dc.html": {
+      "x": 940,
+      "y": 6600,
+      "w": 390,
+      "h": 844,
+      "title": "Transaction · card refund",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/TxnPaid.dc.html": {
+      "x": 1410,
+      "y": 6600,
+      "w": 390,
+      "h": 844,
+      "title": "Transaction · paid back, with Unlink",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/RegisterCash.dc.html": {
+      "x": 1880,
+      "y": 6600,
+      "w": 390,
+      "h": 844,
+      "title": "Checking register",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/CategoryEdit.dc.html": {
+      "x": 2350,
+      "y": 6600,
+      "w": 390,
+      "h": 844,
+      "title": "New / edit category",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/RenamePayee.dc.html": {
+      "x": 2820,
+      "y": 6600,
+      "w": 390,
+      "h": 844,
+      "title": "Rename payee",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/Note.dc.html": {
+      "x": 3290,
+      "y": 6600,
+      "w": 390,
+      "h": 844,
+      "title": "Feedback note",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/StateEmpty.dc.html": {
+      "x": 0,
+      "y": 7920,
+      "w": 390,
+      "h": 844,
+      "title": "First budget (nothing assigned yet)",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/StateLimited.dc.html": {
+      "x": 470,
+      "y": 7920,
+      "w": 390,
+      "h": 844,
+      "title": "Offline / daily limit reached",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/StateSync.dc.html": {
+      "x": 940,
+      "y": 7920,
+      "w": 390,
+      "h": 844,
+      "title": "Bank sync failed, retry",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/StateBlocked.dc.html": {
+      "x": 1410,
+      "y": 7920,
+      "w": 390,
+      "h": 844,
+      "title": "Wrong account signed in",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/DBudget.dc.html": {
+      "x": 0,
+      "y": 9240,
+      "w": 1280,
+      "h": 800,
+      "title": "Desktop · Budget",
+      "is_interactive": true,
+      "expand": "fill",
+      "radius": 12,
+      "page": "proto"
+    },
+    "p/DActivity.dc.html": {
+      "x": 1360,
+      "y": 9240,
+      "w": 1280,
+      "h": 800,
+      "title": "Desktop · Activity",
+      "is_interactive": true,
+      "expand": "fill",
+      "radius": 12,
+      "page": "proto"
+    },
+    "p/DAccounts.dc.html": {
+      "x": 2720,
+      "y": 9240,
+      "w": 1280,
+      "h": 800,
+      "title": "Desktop · Accounts",
+      "is_interactive": true,
+      "expand": "fill",
+      "radius": 12,
+      "page": "proto"
+    },
+    "p/DReports.dc.html": {
+      "x": 4080,
+      "y": 9240,
+      "w": 1280,
+      "h": 800,
+      "title": "Desktop · Reports",
+      "is_interactive": true,
+      "expand": "fill",
+      "radius": 12,
+      "page": "proto"
+    },
+    "p/DSettings.dc.html": {
+      "x": 5440,
+      "y": 9240,
+      "w": 1280,
+      "h": 800,
+      "title": "Desktop · Settings and Appearance",
+      "is_interactive": true,
+      "expand": "fill",
+      "radius": 12,
+      "page": "proto"
+    },
+    "p/DNav.dc.html": {
+      "x": 6800,
+      "y": 9240,
+      "w": 220,
+      "h": 800,
+      "title": "Desktop sidebar (shared)",
+      "page": "proto"
+    },
+    "p/RegisterFreedom.dc.html": {
+      "x": 2350,
+      "y": 3960,
+      "w": 390,
+      "h": 844,
+      "title": "Card register · Freedom (same screen, card=\"freedom\")",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/XferPaired.dc.html": {
+      "x": 3760,
+      "y": 6600,
+      "w": 390,
+      "h": 844,
+      "title": "Transfer · paired automatically",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/StateOverAssigned.dc.html": {
+      "x": 1880,
+      "y": 7920,
+      "w": 390,
+      "h": 844,
+      "title": "Assigned more than you have",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/StateNewMonth.dc.html": {
+      "x": 2350,
+      "y": 7920,
+      "w": 390,
+      "h": 844,
+      "title": "New month starts (December)",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/RegisterAlly.dc.html": {
+      "x": 940,
+      "y": 3960,
+      "w": 390,
+      "h": 844,
+      "title": "Savings register · Ally (RegisterCash, account=\"ally\")",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/RegisterMarcus.dc.html": {
+      "x": 2820,
+      "y": 3960,
+      "w": 390,
+      "h": 844,
+      "title": "Savings register · Marcus",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    },
+    "p/CheckPending.dc.html": {
+      "x": 2820,
+      "y": 2640,
+      "w": 390,
+      "h": 844,
+      "title": "Check not cleared: keep waiting, fix, match, delete",
+      "is_interactive": true,
+      "radius": 28,
+      "page": "proto"
+    }
+  },
+  "order": [
+    "p/Welcome.dc.html",
+    "p/StartMonth.dc.html",
+    "p/LinkBanks.dc.html",
+    "p/FirstSort.dc.html",
+    "p/Budget.dc.html",
+    "p/Category.dc.html",
+    "p/Target.dc.html",
+    "p/Assign.dc.html",
+    "p/Owed.dc.html",
+    "p/Close.dc.html",
+    "p/Activity.dc.html",
+    "p/Txn.dc.html",
+    "p/Split.dc.html",
+    "p/Match.dc.html",
+    "p/AddPending.dc.html",
+    "p/Transfer.dc.html",
+    "p/Accounts.dc.html",
+    "p/Register.dc.html",
+    "p/Repair.dc.html",
+    "p/Reports.dc.html",
+    "p/Settings.dc.html",
+    "p/Categories.dc.html",
+    "p/Rules.dc.html",
+    "p/Rule.dc.html",
+    "p/Payees.dc.html",
+    "p/Connections.dc.html",
+    "p/Data.dc.html",
+    "p/TxnPosted.dc.html",
+    "p/TxnIncome.dc.html",
+    "p/TxnRefund.dc.html",
+    "p/TxnPaid.dc.html",
+    "p/RegisterCash.dc.html",
+    "p/CategoryEdit.dc.html",
+    "p/RenamePayee.dc.html",
+    "p/Note.dc.html",
+    "p/StateEmpty.dc.html",
+    "p/StateLimited.dc.html",
+    "p/StateSync.dc.html",
+    "p/StateBlocked.dc.html",
+    "p/DBudget.dc.html",
+    "p/DActivity.dc.html",
+    "p/DAccounts.dc.html",
+    "p/DReports.dc.html",
+    "p/DSettings.dc.html",
+    "p/DNav.dc.html",
+    "p/TabBar.dc.html",
+    "Budget.dc.html",
+    "BudgetAttention.dc.html",
+    "CategorySheet.dc.html",
+    "AssignSheet.dc.html",
+    "Activity.dc.html",
+    "TransactionSheet.dc.html",
+    "Accounts.dc.html",
+    "Reports.dc.html",
+    "Settings.dc.html",
+    "TabBar.dc.html",
+    "Main.dc.html",
+    "Attention.dc.html",
+    "Pending.dc.html",
+    "Inbox.dc.html",
+    "Analytics.dc.html",
+    "p/RegisterFreedom.dc.html",
+    "p/XferPaired.dc.html",
+    "p/StateOverAssigned.dc.html",
+    "p/StateNewMonth.dc.html",
+    "p/RegisterAlly.dc.html",
+    "p/RegisterMarcus.dc.html",
+    "p/CheckPending.dc.html"
+  ],
+  "notes": {
+    "heading": {
+      "x": 0,
+      "y": -260,
+      "text": "Ledgerline · mobile web, 390 px · v1 as first drawn",
+      "kind": "title1",
+      "maxW": 2270,
+      "page": "v1"
+    },
+    "v2budget": {
+      "x": 0,
+      "y": -260,
+      "text": "Budget: home, Needs attention filter, and its sheets",
+      "kind": "title1",
+      "maxW": 1800,
+      "page": "v2"
+    },
+    "v2rest": {
+      "x": 0,
+      "y": 1060,
+      "text": "Activity, Accounts, Reports, Settings",
+      "kind": "title1",
+      "maxW": 2740,
+      "page": "v2"
+    },
+    "pOnboard": {
+      "x": 0,
+      "y": -260,
+      "text": "First run: sign in, budget start, link banks, make categories",
+      "kind": "title1",
+      "maxW": 1800,
+      "page": "proto"
+    },
+    "pBudget": {
+      "x": 0,
+      "y": 1060,
+      "text": "Budget: assign, move, targets, owed to you",
+      "kind": "title1",
+      "maxW": 2740,
+      "page": "proto"
+    },
+    "pActivity": {
+      "x": 0,
+      "y": 2380,
+      "text": "Activity: categorize, pending, splits, matching, transfers",
+      "kind": "title1",
+      "maxW": 2740,
+      "page": "proto"
+    },
+    "pAccounts": {
+      "x": 0,
+      "y": 3700,
+      "text": "Accounts and Reports",
+      "kind": "title1",
+      "maxW": 3210,
+      "page": "proto"
+    },
+    "pSettings": {
+      "x": 0,
+      "y": 5020,
+      "text": "Settings",
+      "kind": "title1",
+      "maxW": 3680,
+      "page": "proto"
+    },
+    "pVariants": {
+      "x": 0,
+      "y": 6340,
+      "text": "Transaction variants, editing sheets, feedback note",
+      "kind": "title1",
+      "maxW": 4150,
+      "page": "proto"
+    },
+    "pStates": {
+      "x": 0,
+      "y": 7660,
+      "text": "States",
+      "kind": "title1",
+      "maxW": 2740,
+      "page": "proto"
+    },
+    "pDesktop": {
+      "x": 0,
+      "y": 8980,
+      "text": "Desktop: click through Budget, Activity, Accounts, Reports, Settings",
+      "kind": "title1",
+      "maxW": 7020,
+      "page": "proto"
+    },
+    "darkHow": {
+      "x": -520,
+      "y": 0,
+      "w": 420,
+      "text": "Dark mode: open Settings (phone or desktop) and pick Light, Dark or Match device. Every screen follows it. Each artboard's Tweaks also has a theme switch to force one screen light or dark.",
+      "size": "m",
+      "fill": "blue",
+      "page": "proto"
+    },
+    "sheetsNote": {
+      "x": -520,
+      "y": 1320,
+      "w": 420,
+      "text": "Shared sheets show one example item: most categories open the Groceries sheet and most transactions the Uber Eats sheet. The main numbers are live and shared between screens (Budget, Assign, Activity, Match, Owed, Close, badges). Settings › Reset prototype numbers puts them back.",
+      "size": "m",
+      "fill": "blue",
+      "page": "proto"
+    }
+  },
+  "designSystems": []
+}

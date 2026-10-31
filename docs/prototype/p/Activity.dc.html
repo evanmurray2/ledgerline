@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ledgerline activity</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accent, #1D4ED8)}a:hover{color:var(--c1E3A8A, #1E3A8A)}
+.hit{position:relative}.hit::after{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}:root[data-theme="dark"]{--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; display: flex; flex-direction: column; background: var(--cF5F6F8, #F5F6F8); font-family: 'Public Sans', system-ui, sans-serif; color: var(--c111827, #111827); overflow: hidden">
+<header style="display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 10px; background: var(--cFFFFFF, #FFFFFF); border-bottom: 1px solid var(--cE5E7EB, #E5E7EB)">
+<h1 style="margin: 0; font-size: 22px; font-weight: 700">Activity</h1>
+<label style="display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border-radius: 12px; background: var(--cF2F4F7, #F2F4F7); color: var(--c4B5563, #4B5563)"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search transactions</span><input value="{{q}}" onChange="{{onQ}}" placeholder="Search payee or amount" style="flex: 1; border: none; background: transparent; font-family: inherit; font-size: 16px; color: var(--c111827, #111827); min-height: 40px"></label>
+<div role="group" aria-label="Filter" style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px">
+<sc-for list="{{chips}}" as="ch" hint-placeholder-count="4">
+<button class="hit" onClick="{{ch.pick}}" aria-pressed="{{ch.pressed}}" style="flex-shrink: 0; height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid {{ch.border}}; background: {{ch.bg}}; color: {{ch.fg}}; font-family: inherit; font-size: 13px; font-weight: 600; white-space: nowrap">{{ch.label}}</button>
+</sc-for>
+</div>
+</header>
+<main style="flex: 1; overflow-y: auto; padding: 12px 16px 96px; display: flex; flex-direction: column; gap: 14px">
+<sc-if value="{{empty}}" hint-placeholder-val="{{ false }}">
+<p style="margin: 0; padding: 16px; text-align: center; color: var(--c4B5563, #4B5563); font-size: 14px">No transactions match.</p>
+</sc-if>
+<sc-if value="{{showAttnHead}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; align-items: center; gap: 8px; padding: 0 2px"><h2 style="margin: 0; font-size: 15px; font-weight: 700">Needs attention</h2><span style="min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 10px; background: var(--cB42318, #B42318); color: var(--cFFFFFF, #FFFFFF); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{attnCount}}</span></div>
+</sc-if>
+<sc-if value="{{attnDone}}" hint-placeholder-val="{{ false }}">
+<p style="margin: 0; padding: 16px; border-radius: 14px; background: var(--cDCFAE6, #DCFAE6); color: var(--c085D3A, #085D3A); font-size: 15px; font-weight: 600; text-align: center">Nothing needs attention.</p>
+</sc-if>
+<sc-for list="{{topSections}}" as="sec" hint-placeholder-count="2">
+<section style="display: flex; flex-direction: column; gap: 6px; flex-shrink: 0">
+<div style="display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 0 2px">
+<h2 style="margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--c374151, #374151)">{{sec.title}}</h2>
+<span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{sec.note}}</span>
+</div>
+<div style="background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 14px; overflow: hidden">
+<sc-for list="{{sec.rows}}" as="r" hint-placeholder-count="2">
+<div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--cF0F1F3, #F0F1F3)">
+<a href="{{r.href}}" style="flex: 1; min-width: 0; display: flex; justify-content: space-between; gap: 10px; min-height: 44px; align-items: center; text-decoration: none; color: var(--c111827, #111827)">
+<span style="display: flex; flex-direction: column; gap: 3px; min-width: 0">
+<span style="font-size: 15px; font-weight: 600; text-decoration: {{r.strike}}; color: {{r.ink}}">{{r.payee}}</span>
+<span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{r.meta}}</span>
+<sc-if value="{{r.hasBadge}}" hint-placeholder-val="{{ false }}"><span style="align-self: flex-start; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; background: {{r.badgeBg}}; color: {{r.badgeFg}}">{{r.badge}}</span></sc-if>
+</span>
+<span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0">
+<span style="font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; text-decoration: {{r.strike}}; color: {{r.amountInk}}">{{r.amount}}</span>
+<span style="font-size: 11px; color: var(--c4B5563, #4B5563)">{{r.sub}}</span>
+</span>
+</a>
+<sc-if value="{{r.hasLink}}" hint-placeholder-val="{{ false }}">
+<a class="hit" href="{{r.actHref}}" aria-label="{{r.actLabel}}" style="flex-shrink: 0; display: flex; align-items: center; height: 36px; padding: 0 12px; border-radius: 999px; background: var(--cEEF2FF, #EEF2FF); color: {{accent}}; text-decoration: none; font-size: 13px; font-weight: 700">{{r.action}}</a>
+</sc-if>
+<sc-if value="{{r.hasDismiss}}" hint-placeholder-val="{{ false }}">
+<button class="hit" onClick="{{r.dismiss}}" aria-label="{{r.actLabel}}" style="flex-shrink: 0; height: 36px; padding: 0 12px; border-radius: 999px; border: none; background: var(--cEEF2FF, #EEF2FF); color: {{accent}}; font-family: inherit; font-size: 13px; font-weight: 700">OK</button>
+</sc-if>
+</div>
+</sc-for>
+</div>
+</section>
+</sc-for>
+<sc-if value="{{showCat}}" hint-placeholder-val="{{ true }}">
+<section style="display: flex; flex-direction: column; gap: 6px; flex-shrink: 0">
+<div style="display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 0 2px">
+<h2 style="margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--c374151, #374151)">Needs category <span style="font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--c4B5563, #4B5563)">· {{catLeft}}</span></h2>
+<sc-if value="{{hasUncat}}" hint-placeholder-val="{{ true }}">
+<button class="hit" onClick="{{toggleSelect}}" style="height: 36px; padding: 0 10px; border: none; background: transparent; color: {{accent}}; font-family: inherit; font-size: 14px; font-weight: 700">{{selectLabel}}</button>
+</sc-if>
+</div>
+<div style="background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 14px; overflow: hidden">
+<sc-if value="{{catDone}}" hint-placeholder-val="{{ false }}">
+<p style="margin: 0; padding: 14px 12px; font-size: 14px; color: var(--c085D3A, #085D3A); font-weight: 600">Everything has a category.</p>
+</sc-if>
+<sc-for list="{{uncat}}" as="u" hint-placeholder-count="4">
+<div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--cF0F1F3, #F0F1F3); background: {{u.rowBg}}">
+<sc-if value="{{selecting}}" hint-placeholder-val="{{ false }}">
+<input class="hit" type="checkbox" checked="{{u.on}}" onChange="{{u.toggle}}" aria-label="{{u.selLabel}}" style="width: 22px; height: 22px; flex-shrink: 0; accent-color: {{accent}}">
+</sc-if>
+<a href="Txn.dc.html" style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; min-height: 44px; justify-content: center; text-decoration: none; color: var(--c111827, #111827)">
+<span style="display: flex; justify-content: space-between; gap: 8px"><span style="font-size: 15px; font-weight: 600">{{u.payee}}</span><span style="font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums">{{u.amount}}</span></span>
+<span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{u.meta}}</span>
+</a>
+<sc-if value="{{notSelecting}}" hint-placeholder-val="{{ true }}">
+<button class="hit" onClick="{{u.choose}}" aria-label="{{u.chooseLabel}}" style="flex-shrink: 0; height: 36px; max-width: 112px; padding: 0 12px; border-radius: 999px; border: 1px {{u.chipStyle}} {{u.chipBorder}}; background: {{u.chipBg}}; color: {{u.chipFg}}; font-family: inherit; font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{u.chip}}</button>
+</sc-if>
+</div>
+</sc-for>
+</div>
+</section>
+</sc-if>
+<sc-for list="{{sections}}" as="sec" hint-placeholder-count="4">
+<section style="display: flex; flex-direction: column; gap: 6px; flex-shrink: 0">
+<div style="display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 0 2px">
+<h2 style="margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--c374151, #374151)">{{sec.title}}</h2>
+<span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{sec.note}}</span>
+</div>
+<div style="background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 14px; overflow: hidden">
+<sc-for list="{{sec.rows}}" as="r" hint-placeholder-count="2">
+<div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--cF0F1F3, #F0F1F3)">
+<a href="{{r.href}}" style="flex: 1; min-width: 0; display: flex; justify-content: space-between; gap: 10px; min-height: 44px; align-items: center; text-decoration: none; color: var(--c111827, #111827)">
+<span style="display: flex; flex-direction: column; gap: 3px; min-width: 0">
+<span style="font-size: 15px; font-weight: 600; text-decoration: {{r.strike}}; color: {{r.ink}}">{{r.payee}}</span>
+<span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{r.meta}}</span>
+<sc-if value="{{r.hasBadge}}" hint-placeholder-val="{{ false }}"><span style="align-self: flex-start; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; background: {{r.badgeBg}}; color: {{r.badgeFg}}">{{r.badge}}</span></sc-if>
+</span>
+<span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0">
+<span style="font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; text-decoration: {{r.strike}}; color: {{r.amountInk}}">{{r.amount}}</span>
+<span style="font-size: 11px; color: var(--c4B5563, #4B5563)">{{r.sub}}</span>
+</span>
+</a>
+<sc-if value="{{r.hasLink}}" hint-placeholder-val="{{ false }}">
+<a class="hit" href="{{r.actHref}}" aria-label="{{r.actLabel}}" style="flex-shrink: 0; display: flex; align-items: center; height: 36px; padding: 0 12px; border-radius: 999px; background: var(--cEEF2FF, #EEF2FF); color: {{accent}}; text-decoration: none; font-size: 13px; font-weight: 700">{{r.action}}</a>
+</sc-if>
+<sc-if value="{{r.hasDismiss}}" hint-placeholder-val="{{ false }}">
+<button class="hit" onClick="{{r.dismiss}}" aria-label="{{r.actLabel}}" style="flex-shrink: 0; height: 36px; padding: 0 12px; border-radius: 999px; border: none; background: var(--cEEF2FF, #EEF2FF); color: {{accent}}; font-family: inherit; font-size: 13px; font-weight: 700">OK</button>
+</sc-if>
+</div>
+</sc-for>
+</div>
+</section>
+</sc-for>
+</main>
+<sc-if value="{{showFab}}" hint-placeholder-val="{{ true }}">
+<a href="AddPending.dc.html" style="position: absolute; right: 16px; bottom: 88px; display: flex; align-items: center; gap: 6px; height: 48px; padding: 0 18px; border-radius: 24px; background: {{accent}}; color: var(--cFFFFFF, #FFFFFF); text-decoration: none; font-size: 15px; font-weight: 700; box-shadow: 0 4px 12px rgba(16, 24, 40, 0.25)"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>Add</a>
+</sc-if>
+<sc-if value="{{hasToast}}" hint-placeholder-val="{{ false }}">
+<div role="status" style="position: absolute; left: 16px; right: 16px; bottom: 88px; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 14px; background: var(--c111827, #111827); color: var(--cFFFFFF, #FFFFFF); box-shadow: 0 4px 12px rgba(16, 24, 40, 0.25)">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px"><span>{{toast}}</span><button class="hit" onClick="{{undo}}" style="height: 36px; padding: 0 8px; border: none; background: transparent; color: var(--cFFFFFF, #FFFFFF); font-family: inherit; font-size: 14px; font-weight: 700; text-decoration: underline">Undo</button></div>
+<sc-if value="{{hasRuleOffer}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 6px; border-top: 1px solid var(--c344054, #344054); font-size: 13px; color: var(--cD0D5DD, #D0D5DD)"><span>{{ruleOffer}}</span><button class="hit" onClick="{{makeRule}}" style="flex-shrink: 0; height: 36px; padding: 0 12px; border-radius: 999px; border: none; background: var(--cFFFFFF, #FFFFFF); color: var(--c111827, #111827); font-family: inherit; font-size: 13px; font-weight: 700">Always</button></div>
+</sc-if>
+</div>
+</sc-if>
+<sc-if value="{{selectBar}}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; left: 0; right: 0; bottom: 72px; display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--cFFFFFF, #FFFFFF); border-top: 1px solid var(--cE5E7EB, #E5E7EB)">
+<span style="flex: 1; font-size: 14px; font-weight: 600">{{selCount}} selected</span>
+<button onClick="{{chooseSelected}}" disabled="{{noneSelected}}" style="height: 44px; padding: 0 18px; border-radius: 12px; border: none; background: {{selBtnBg}}; color: var(--cFFFFFF, #FFFFFF); font-family: inherit; font-size: 15px; font-weight: 700">Choose category</button>
+</div>
+</sc-if>
+<sc-if value="{{picking}}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; inset: 0; display: flex; flex-direction: column; background: rgba(17, 24, 39, 0.55)">
+<button onClick="{{closePicker}}" aria-label="Close category picker" style="flex: 1; min-height: 120px; border: none; background: transparent"></button>
+<section role="dialog" aria-label="Choose a category" style="max-height: 640px; display: flex; flex-direction: column; background: var(--cFFFFFF, #FFFFFF); border-radius: 20px 20px 0 0; overflow: hidden">
+<div aria-hidden="true" style="align-self: center; width: 40px; height: 4px; margin-top: 8px; border-radius: 2px; background: var(--cD0D5DD, #D0D5DD)"></div>
+<div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 6px 16px">
+<div style="display: flex; flex-direction: column; gap: 1px"><h2 style="margin: 0; font-size: 17px; font-weight: 700">Choose a category</h2><span style="font-size: 13px; color: var(--c4B5563, #4B5563)">{{pickFor}}</span></div>
+<button onClick="{{closePicker}}" aria-label="Close" style="width: 44px; height: 44px; border: none; background: transparent; color: var(--c374151, #374151); display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+</div>
+<div style="flex: 1; overflow-y: auto; padding: 0 16px 16px; display: flex; flex-direction: column; gap: 10px">
+<sc-if value="{{hasSuggest}}" hint-placeholder-val="{{ true }}">
+<span style="font-size: 12px; font-weight: 700; color: var(--c374151, #374151); text-transform: uppercase; letter-spacing: 0.4px">{{suggestTitle}}</span>
+<div style="display: flex; gap: 8px; flex-wrap: wrap">
+<sc-for list="{{suggest}}" as="c" hint-placeholder-count="2">
+<button class="hit" onClick="{{c.pick}}" style="height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid {{accent}}; background: var(--cEEF2FF, #EEF2FF); color: {{accent}}; font-family: inherit; font-size: 14px; font-weight: 700">{{c.name}}</button>
+</sc-for>
+</div>
+</sc-if>
+<sc-for list="{{catGroups}}" as="g" hint-placeholder-count="3">
+<span style="font-size: 12px; font-weight: 700; color: var(--c374151, #374151); text-transform: uppercase; letter-spacing: 0.4px; padding-top: 4px">{{g.name}}</span>
+<div style="border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 12px; overflow: hidden; flex-shrink: 0">
+<sc-for list="{{g.cats}}" as="c" hint-placeholder-count="3">
+<button onClick="{{c.pick}}" style="width: 100%; display: flex; justify-content: space-between; align-items: center; height: 48px; padding: 0 12px; border: none; border-top: 1px solid var(--cF0F1F3, #F0F1F3); background: var(--cFFFFFF, #FFFFFF); font-family: inherit; font-size: 15px; color: var(--c111827, #111827); text-align: left"><span>{{c.name}}</span><span style="font-size: 13px; color: var(--c4B5563, #4B5563); font-variant-numeric: tabular-nums">{{c.avail}}</span></button>
+</sc-for>
+</div>
+</sc-for>
+<sc-if value="{{single}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; gap: 16px; padding-top: 4px">
+<a class="hit" href="Split.dc.html" style="display: flex; align-items: center; height: 40px; color: {{accent}}; text-decoration: none; font-size: 14px; font-weight: 700">Split it…</a>
+<a class="hit" href="Txn.dc.html" style="display: flex; align-items: center; height: 40px; color: {{accent}}; text-decoration: none; font-size: 14px; font-weight: 700">It's a transfer…</a>
+</div>
+</sc-if>
+</div>
+</section>
+</div>
+</sc-if>
+<dc-import name="TabBar" active="activity" accent="{{accent}}" hint-size="390px,72px"></dc-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["app","light","dark"],"default":"app"},"accent":{"editor":"color","default":"#1D4ED8","options":["#1D4ED8","#0F766E","#6D28D9","#111827"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  llGetPref() { try { return localStorage.getItem('ledgerline-theme') || this.llMem || 'device'; } catch (e) { return this.llMem || 'device'; } }
+  llSetPref(v) { this.llMem = v; try { localStorage.setItem('ledgerline-theme', v); } catch (e) {} this.llApply(); }
+  llApply() {
+    const forced = this.props.theme && this.props.theme !== 'app' ? this.props.theme : null;
+    const p = forced || this.llGetPref();
+    let dark = p === 'dark';
+    if (p === 'device') { try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {} }
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    const acc = { '#1D4ED8': '#8AB4FF', '#0F766E': '#5EEAD4', '#6D28D9': '#C4B5FD', '#111827': '#F2F4F7' };
+    const a = String(this.props.accent || 'var(--c1D4ED8, #1D4ED8)').toUpperCase();
+    if (a.charAt(0) === '#') { try { document.documentElement.style.setProperty('--accent', dark ? (acc[a] || '#8AB4FF') : a); } catch (e) {} }
+  }
+  componentDidMount() {
+    this.llApply();
+    this.llOn = () => { this.llApply(); this.forceUpdate(); };
+    try { window.addEventListener('storage', this.llOn); this.llMq = window.matchMedia('(prefers-color-scheme: dark)'); this.llMq.addEventListener('change', this.llOn); } catch (e) {}
+  }
+  componentDidUpdate() { this.llApply(); }
+  componentWillUnmount() { try { window.removeEventListener('storage', this.llOn); this.llMq.removeEventListener('change', this.llOn); } catch (e) {} }
+
+  llDemo() { try { const v = localStorage.getItem('ledgerline-demo'); if (v) return JSON.parse(v); } catch (e) {} return this.llDemoMem || {}; }
+  llSaveDemo(patch) { const d = Object.assign({}, this.llDemo(), patch); this.llDemoMem = d; try { localStorage.setItem('ledgerline-demo', JSON.stringify(d)); } catch (e) {} this.setState({ llTick: Date.now() }); }
+  llModel() {
+    const d = this.llDemo();
+    const done = d.done || {}, closed = d.closed || {}, canceled = d.canceled || {}, snoozed = d.snoozed || {}, cleared = d.cleared || {}, cats = d.cats || {}, custom = d.custom || {};
+    const fmt = (c) => (c < 0 ? '−$' : '$') + (Math.abs(c) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const paid = d.venmo === 'matched' ? (d.paidIds || { rent: true, nopa: true }) : {};
+    const owed = { rent: 100000 + (d.zelleUnlinked ? 100000 : 0), nopa: 1800, united: 41260 };
+    const owedCat = { rent: 'rent', nopa: 'dining', united: 'vacation' };
+    const settled = (k) => !!(paid[k] || closed[k] || canceled[k]);
+    const chargedNow = (k) => !paid[k] && (closed[k] || (canceled[k] && k !== 'rent'));
+    // base categories (cents): avail, assigned, spent this month
+    const B = [
+      ['rent', 'Rent', 'bills', 100000, 100000, 0, { bill: true, target: 100000, detail: 'your $1,000 of $3,000 · Nov 30', tgt: 'Refill to $1,000 every month' }],
+      ['electric', 'Electric', 'bills', 4130, 9500, 5370, { bill: true, target: 9500, tgt: 'Refill to $95 every month' }],
+      ['internet', 'Internet', 'bills', 8000, 8000, 0, { bill: true, target: 8000, detail: 'Comcast $79.99 on Nov 16', tgt: 'Refill to $80 every month' }],
+      ['subs', 'Subscriptions', 'bills', 55, 6500, 6445, { bill: true, target: 6500, tgt: 'Refill to $65 every month' }],
+      ['groceries', 'Groceries', 'everyday', 21240, 60000, 38760, { target: 60000, tgt: 'Refill to $600 every month' }],
+      ['dining', 'Dining out', 'everyday', -1825, 20000, 21825, { target: 20000, tgt: 'Refill to $200 every month', overNote: 'Shake Shack on Freedom overspent it' }],
+      ['gas', 'Gas', 'everyday', 6410, 12000, 5590, { target: 12000, tgt: 'Refill to $120 every month' }],
+      ['shopping', 'Shopping', 'everyday', 5320, 20000, 14680, { target: 20000, tgt: 'Refill to $200 every month' }],
+      ['household', 'Household', 'everyday', 4000, 10000, 9155, { target: 10000, tgt: 'Refill to $100 every month', carry: '$31.55 carried from October' }],
+      ['health', 'Health', 'everyday', 7500, 7500, 0, { target: 7500, tgt: 'Refill to $75 every month' }],
+      ['personal', 'Personal care', 'everyday', 1500, 10000, 8500, { target: 10000, tgt: 'Refill to $100 every month' }],
+      ['invest', 'Investments', 'savings', 0, 150000, 150000, { invest: true, detail: '$1,500 to Vanguard on Nov 1', tgt: 'Invest $1,500 every month' }],
+      ['car', 'Car insurance', 'savings', 36000, 0, 0, { need: 9000, goal: '$540 by Jan 15', tgt: '$540 by Jan 15, every 6 months' }],
+      ['vacation', 'Vacation', 'savings', 125000, 0, 0, { need: 25000, goal: '$3,000 by Jun 2027', tgt: '$3,000 by Jun 2027 (funded by the start of June)' }],
+      ['gifts', 'Gifts', 'savings', 21000, 17000, 21600, { target: 17000, overTarget: true, tgt: 'Refill to $170 every month' }],
+      ['emergency', 'Emergency fund', 'savings', 1500000, 0, 0, { reached: true, detail: 'goal $15,000 reached', tgt: '$15,000 by Dec 2026' }],
+      ['home', 'Home repairs', 'savings', 205763, 0, 0, { none: true, detail: 'kept for repairs', tgt: 'No target' }]
+    ];
+    const C = {};
+    const order = [];
+    B.forEach((b) => { C[b[0]] = Object.assign({ id: b[0], name: b[1], group: b[2], avail: b[3], assigned: b[4], spent: b[5] }, b[6]); order.push(b[0]); });
+    if (d.checkDeleted) { C.gifts.avail += 12000; C.gifts.spent -= 12000; }
+    Object.keys(owed).forEach((k) => { if (chargedNow(k)) { const c = C[owedCat[k]]; c.avail -= owed[k]; c.spent += owed[k]; c.charged = (c.charged || 0) + owed[k]; } });
+    Object.keys(custom).forEach((k) => { if (C[k]) { C[k].avail += custom[k]; C[k].assigned += custom[k]; } });
+    Object.keys(done).forEach((k) => { if (C[k]) { C[k].avail += done[k]; C[k].assigned += done[k]; } });
+    // categorizing uncategorized card spending, in date order
+    const U = [['a2', 'freedom', 2320], ['cvs', 'freedom', 1843], ['a1', 'sapphire', 3810], ['bb', 'sapphire', 675]];
+    const byName = {};
+    order.forEach((k) => { byName[C[k].name] = k; });
+    const cardFund = { sapphire: 0, freedom: 0 }, waits = { sapphire: 0, freedom: 0 };
+    U.forEach((u) => {
+      const k = cats[u[0]] ? byName[cats[u[0]]] : null;
+      if (!k) { waits[u[1]] += u[2]; return; }
+      const before = C[k].avail;
+      cardFund[u[1]] += Math.max(0, Math.min(before, u[2]));
+      C[k].avail -= u[2]; C[k].spent += u[2];
+    });
+    // card payment categories (cents)
+    const diningCover = done.dining || 0;
+    const cards = {
+      sapphire: { name: 'Sapphire Preferred', pay: 87832 + cardFund.sapphire, need: 92317 - waits.sapphire, stmt: 'statement $611.40 due Nov 25', waits: waits.sapphire, href: 'Register.dc.html' },
+      freedom: { name: 'Freedom Unlimited', pay: 15500 + Math.min(diningCover, 1825) + cardFund.freedom, need: 21488 - waits.freedom, stmt: 'statement $145.15 due Dec 2', waits: waits.freedom, href: 'RegisterFreedom.dc.html' }
+    };
+    // Ready to Assign
+    let rta = 98190 + (d.zelleUnlinked ? -100000 : 0);
+    Object.keys(done).forEach((k) => { rta -= done[k]; });
+    Object.keys(custom).forEach((k) => { rta -= custom[k]; });
+    if (d.venmo) rta += (d.venmoIn === undefined ? 101800 : d.venmoIn);
+    if (d.xferPick) rta += d.xferPick === 'none' ? 40000 : 20000;
+    Object.keys(owed).forEach((k) => { if (chargedNow(k)) rta += owed[k]; });
+    let out = 0;
+    Object.keys(owed).forEach((k) => { if (!settled(k)) out += owed[k]; });
+    const nopaLate = !settled('nopa') && !snoozed.nopa;
+    // statuses
+    order.forEach((k) => {
+      const c = C[k];
+      if (c.avail < 0) { c.t = 'over'; c.fix = -c.avail; c.fixVerb = 'Cover'; return; }
+      if (c.invest) { c.t = 'invested'; return; }
+      if (c.none) { c.t = 'none'; return; }
+      if (c.reached) { c.t = 'funded'; return; }
+      if (c.need) { const left = c.need - (done[k] || 0); if (left > 0) { c.t = 'under'; c.fix = left; c.fixVerb = 'Fund'; } else c.t = 'funded'; return; }
+      if (k === 'rent' && c.avail < 100000) { c.t = 'under'; c.fix = 100000 - c.avail; c.fixVerb = 'Fund'; return; }
+      if (c.overTarget && c.avail > c.target) { c.t = 'overfunded'; c.fix = -(c.avail - c.target); c.fixVerb = 'Move'; return; }
+      if (!c.bill && c.target) {
+        const pace = c.spent / Math.max(1, c.spent + c.avail) - 0.47;
+        if (c.avail < 0.2 * c.target || pace > 0.30) { c.t = 'low'; c.fix = Math.max(100, Math.ceil((0.35 * c.target - c.avail) / 100) * 100); c.fixVerb = 'Add'; return; }
+      }
+      c.t = 'funded';
+    });
+    order.forEach((k) => {
+      const c = C[k];
+      let det = c.detail || '';
+      if (c.t === 'over') det = c.charged ? 'charged ' + fmt(c.charged) + ' after a close-out · overspent' : (c.overNote || 'overspent');
+      else if (k === 'rent' && c.t === 'under') det = 'charged $1,000 for Sam’s unpaid share · needs $1,000 by Nov 30';
+      else if (c.need) det = (c.charged ? 'charged ' + fmt(c.charged) + ' after a close-out · ' : '') + (c.t === 'under' ? 'needs ' + fmt(c.fix) + ' this month · ' + c.goal : 'this month’s share is in · ' + c.goal);
+      else if (c.overTarget) det = c.t === 'overfunded' ? fmt(-c.fix) + ' more than this month’s ' + fmt(c.target) : 'back to this month’s target';
+      else if (c.target && !det) det = fmt(c.spent) + ' of ' + fmt(c.target) + ' spent' + (c.t === 'low' ? ' · ' + fmt(c.avail) + ' left' : '') + (c.carry ? ' · ' + c.carry : '');
+      if (c.bill && k === 'subs') det = fmt(c.spent) + ' of ' + fmt(c.target) + ' spent · bills are never Low';
+      if (done[k] && c.t === 'funded') det = det + ' · added ' + fmt(done[k]);
+      c.detailText = det;
+    });
+    // projected shortfall from the Nov 30 rent front
+    const rentRule = !d.zelleUnlinked || true;
+    const front = 200000;
+    const shortBy = rentRule && rta < front ? front - rta : 0;
+    // attention list
+    const attn = [];
+    const secOf = { over: 'Overspent', under: 'Underfunded', low: 'Low', overfunded: 'Overfunded' };
+    order.forEach((k) => {
+      const c = C[k];
+      if (secOf[c.t]) attn.push({ sec: secOf[c.t], id: k, name: c.name, avail: c.avail, detail: c.detailText, fix: c.fix, action: c.fixVerb + ' ' + fmt(Math.abs(c.fix)) });
+      else if (done[k]) attn.push({ sec: 'Done', id: k, name: c.name, avail: c.avail, detail: (done[k] < 0 ? 'Moved ' + fmt(-done[k]) + ' back to' : 'Added ' + fmt(done[k]) + ' from') + ' Ready to Assign', doneItem: true });
+    });
+    if (nopaLate) attn.push({ sec: 'Owed to you', id: 'nopa-late', name: 'Nopa · Alex', availText: '$18.00', detail: 'Late: expected back by Nov 10', link: 'Owed.dc.html', action: 'Review' });
+    if (shortBy > 0) attn.push({ sec: 'Owed to you', id: 'rent-front', name: 'Rent on Nov 30', availText: fmt(-shortBy), detail: 'Fronts $2,000 for Sam. Ready to Assign has ' + fmt(rta) + ', so it would go ' + fmt(rta - front) + (d.venmo ? '.' : '. Matching the Venmo money adds $1,018.'), link: 'Owed.dc.html', action: 'Review' });
+    if (rta < 0) attn.push({ sec: 'Ready to Assign', id: 'rta-neg', name: 'Ready to Assign', availText: fmt(rta), detail: 'More is assigned than you have. Take it back from a category.', link: 'Category.dc.html', action: 'Move money' });
+    const open = attn.filter((a) => !a.doneItem).length;
+    const waitingLeft = d.venmo ? (d.venmoLeft || 0) : 101800;
+    const uncatIds = ['a1', 'a2', 'cvs', 'bb'];
+    const activityLeft = (!d.venmo || (d.venmoLeft || 0) > 0 ? 1 : 0) + (d.zelleUnlinked ? 1 : 0) + (cleared.xfer ? 0 : 1) + (cleared.shake ? 0 : 1) + (cleared.check || d.checkDeleted ? 0 : 1) + uncatIds.filter((i) => !cats[i]).length;
+    return { d: d, fmt: fmt, done: done, closed: closed, canceled: canceled, snoozed: snoozed, cleared: cleared, cats: cats, custom: custom, owed: owed, paid: paid, settled: settled, C: C, order: order, cards: cards, rta: rta, out: out, nopaLate: nopaLate, shortBy: shortBy, attn: attn, open: open, waitingLeft: waitingLeft, activityLeft: activityLeft };
+  }
+  constructor(props) {
+    super(props);
+    this.state = { f: 'all', q: '', selecting: false, sel: {}, pick: null, last: null, rules: {} };
+  }
+  llToast(token, ms) {
+    clearTimeout(this.llT);
+    this.llT = setTimeout(() => { if (this.state.last && this.state.last.token === token) this.setState({ last: null }); }, ms);
+  }
+  renderVals() {
+    const s = this.state;
+    const accent = ('var(--accent, ' + (this.props.accent ?? 'var(--c1D4ED8, #1D4ED8)') + ')');
+    const badge = {
+      alert: { badgeBg: 'var(--cFEF0C7, #FEF0C7)', badgeFg: 'var(--c93370D, #93370D)' },
+      match: { badgeBg: 'var(--cECFDF3, #ECFDF3)', badgeFg: 'var(--c085D3A, #085D3A)' },
+      est: { badgeBg: 'var(--cEEF4FF, #EEF4FF)', badgeFg: 'var(--c3538CD, #3538CD)' },
+      hold: { badgeBg: 'var(--cF2F4F7, #F2F4F7)', badgeFg: 'var(--c344054, #344054)' },
+      mine: { badgeBg: 'var(--cF2F4F7, #F2F4F7)', badgeFg: 'var(--c344054, #344054)' },
+      owed: { badgeBg: 'var(--cE0F2FE, #E0F2FE)', badgeFg: 'var(--c026AA2, #026AA2)' },
+      rule: { badgeBg: 'var(--cF2F4F7, #F2F4F7)', badgeFg: 'var(--c344054, #344054)' }
+    };
+    const M = this.llModel();
+    const dismissed = Object.assign({}, M.cleared, M.d.venmo && !(M.d.venmoLeft > 0) ? { venmo: true } : {}, M.d.checkDeleted ? { check: true, check2: true } : {});
+    const row = (id, payee, meta, amount, sub, o) => {
+      o = o || {};
+      const b = o.kind ? badge[o.kind] : {};
+      return Object.assign({
+        id: id, payee: payee, meta: meta, amount: amount, sub: sub || '', href: o.href || 'Txn.dc.html', owed: !!o.owed,
+        hasBadge: !!o.badge, badge: o.badge || '',
+        hasLink: !!o.actHref, actHref: o.actHref || '', action: o.action || '', actLabel: (o.action || 'OK') + ' ' + payee,
+        hasDismiss: !!o.dismiss, dismiss: () => { const token = Date.now(); this.llSaveDemo({ cleared: Object.assign({}, M.cleared, { [id]: true }) }); this.setState({ last: { ids: [], prev: {}, prevRules: s.rules, token: token, dismissId: id, text: payee + ' · new amount accepted' } }); this.llToast(token, 6000); },
+        strike: o.wont ? 'line-through' : 'none',
+        ink: o.wont ? 'var(--c667085, #667085)' : 'var(--c111827, #111827)',
+        amountInk: o.wont ? 'var(--c667085, #667085)' : (amount.charAt(0) === '+' ? 'var(--c085D3A, #085D3A)' : 'var(--c111827, #111827)')
+      }, b);
+    };
+    const all = [
+      { key: 'match', title: 'Money to match', attn: true, rows: [
+        row('venmo', 'Venmo cashout', 'Everyday Checking · Nov 14 · not in Ready to Assign', '+$1,018.00', 'held', { kind: 'match', badge: 'Waiting to match · Rent and Nopa?', href: 'Match.dc.html', actHref: 'Match.dc.html', action: 'Match', owed: true }),
+        ...(M.d.zelleUnlinked ? [row('zelleW', 'Zelle from Sam', 'Everyday Checking · Nov 3 · unlinked from Rent', '+$1,000.00', 'held', { kind: 'match', badge: 'Waiting to match', href: 'TxnPaid.dc.html', actHref: 'TxnPaid.dc.html', action: 'Match' })] : []),
+      ] },
+      { key: 'xfer', title: 'Transfers to sort out', attn: true, rows: [
+        row('xfer', 'Transfer out of Everyday Checking', 'Nov 10 · 2 accounts got $200', '−$200.00', 'which one?', { kind: 'alert', badge: 'Pick the other side', href: 'Transfer.dc.html', actHref: 'Transfer.dc.html', action: 'Pick' }),
+      ] },
+      { key: 'check', title: 'Check these', attn: true, rows: [
+        row('shake', 'Shake Shack', 'Freedom · posted Nov 14 · Dining out', '−$28.10', 'you estimated $24.00', { kind: 'alert', badge: 'Cleared $4.10 higher', dismiss: true }),
+        row('check', 'Check #1043', 'Added by you Nov 5 · Gifts', '−$120.00', 'not at bank', { kind: 'alert', badge: 'Not at the bank after 9 days', href: 'CheckPending.dc.html', actHref: 'CheckPending.dc.html', action: 'Review' })
+      ] },
+      { key: 'pending', title: 'Pending', note: 'counts now · $201.00', rows: [
+        row('uber', 'Uber Eats', 'Sapphire · Nov 13 · Dining out', '−$36.00', 'bank $31.40', { kind: 'est', badge: 'Your estimate' }),
+        row('shell', 'Shell', 'Sapphire · Nov 14 · Gas', '−$45.00', 'card hold', { kind: 'hold', badge: 'Card hold' }),
+        row('check2', 'Check #1043', 'Everyday Checking · Nov 5 · Gifts', '−$120.00', 'added by you', { kind: 'mine', badge: 'Added by you' }),
+        row('marriott', 'Marriott Downtown', 'Sapphire · Nov 12 · Vacation', '−$200.00', 'not counted', { wont: true, kind: 'hold', badge: 'Won’t clear' })
+      ] },
+      { key: 'upcoming', title: 'Upcoming', note: 'counts on its date', rows: [
+        row('comcast', 'Comcast', 'Nov 16 · Internet · monthly', '−$79.99', ''),
+        row('rent', 'Rent', 'Nov 30 · Rent · monthly', '−$3,000.00', '$2,000 fronted for Sam', { kind: 'owed', badge: 'Owed to you · rule', owed: true })
+      ] },
+      { key: 'posted', title: 'Posted', note: 'newest first', rows: [
+        ...(M.d.venmo ? [row('venmo2', 'Venmo cashout', 'Nov 14 · Everyday Checking · Ready to Assign', '+$1,018.00', M.d.venmo === 'matched' ? 'paid back Rent and Nopa' : 'income', { kind: 'match', badge: M.d.venmo === 'matched' ? 'Paid back' : 'Income', href: 'Match.dc.html' })] : []),
+        row('tj', 'Trader Joe’s', 'Nov 14 · Sapphire · Groceries', '−$64.22', '', { kind: 'rule', badge: 'By rule', href: 'TxnPosted.dc.html' }),
+        row('payroll', 'Acme Corp payroll', 'Nov 13 · Everyday Checking · Ready to Assign', '+$3,100.00', '', { href: 'TxnIncome.dc.html' }),
+        row('auto', 'Everyday Checking → Marcus', 'Nov 12 · paired automatically', '$500.00', 'transfer', { kind: 'rule', badge: 'Transfer', href: 'RegisterCash.dc.html' }),
+        row('nopa', 'Nopa', 'Nov 8 · Sapphire · Dining out', '−$36.00', '$18 owed to you', { kind: 'owed', badge: 'Owed to you · Half', owed: true }),
+        ...(M.d.zelleUnlinked ? [] : [row('zelle', 'Zelle from Sam', 'Nov 3 · Everyday Checking · Ready to Assign', '+$1,000.00', 'paid back Rent', { kind: 'match', badge: 'Paid back', owed: true, href: 'TxnPaid.dc.html' })])
+      ] }
+    ];
+    const f = s.f, q = s.q.trim().toLowerCase();
+    const keep = (sec, r) => {
+      if (dismissed[r.id]) return false;
+      if (r.id === 'check2' && f !== 'pending') return false;
+      if (q && (r.payee + ' ' + r.amount).toLowerCase().indexOf(q) < 0) return false;
+      if (f === 'attn') return !!sec.attn;
+      if (f === 'pending') return sec.key === 'pending' || sec.key === 'upcoming';
+      return true;
+    };
+    const shownSecs = all.map((sec) => Object.assign({}, sec, { note: sec.note || '', rows: sec.rows.filter((r) => keep(sec, r)) })).filter((sec) => sec.rows.length > 0);
+    const topSections = shownSecs.filter((sec) => sec.key === 'match' || sec.key === 'xfer');
+    const sections = shownSecs.filter((sec) => sec.key !== 'match' && sec.key !== 'xfer');
+    const alertsLeft = all.filter((sec) => sec.attn).reduce((a, sec) => a + sec.rows.filter((r) => !dismissed[r.id]).length, 0);
+
+    const uDefs = [
+      { id: 'a1', payee: 'Amazon', meta: 'Sapphire · Nov 13', amount: '−$38.10', cents: 3810, hist: { title: 'You’ve used for Amazon', cats: ['Shopping', 'Household'] } },
+      { id: 'a2', payee: 'Amazon', meta: 'Freedom · Nov 11', amount: '−$23.20', cents: 2320, hist: { title: 'You’ve used for Amazon', cats: ['Shopping', 'Household'] } },
+      { id: 'cvs', payee: 'CVS Pharmacy', meta: 'Freedom · Nov 11', amount: '−$18.43', cents: 1843, hist: null },
+      { id: 'bb', payee: 'Blue Bottle Coffee', meta: 'Sapphire · Nov 14', amount: '−$6.75', cents: 675, hist: { title: 'Every past Blue Bottle Coffee', cats: ['Dining out'], consistent: true } }
+    ];
+    const cat = M.cats;
+    const open = uDefs.filter((d) => !cat[d.id]);
+    const leftCents = open.reduce((a, d) => a + d.cents, 0);
+    const selIds = uDefs.filter((d) => s.sel[d.id] && !cat[d.id]).map((d) => d.id);
+    const qMatch = (d) => !q || (d.payee + ' ' + d.amount).toLowerCase().indexOf(q) >= 0;
+    const showCat = (f === 'all' || f === 'attn') && open.filter(qMatch).length > 0;
+    const assign = (ids, name) => {
+      const c = Object.assign({}, cat);
+      ids.forEach((id) => { c[id] = name; });
+      const first = uDefs.find((d) => d.id === ids[0]);
+      const offer = ids.length === 1 && first.hist && first.hist.consistent && first.hist.cats[0] === name && !s.rules[first.payee] ? first.payee : null;
+      const prev = {};
+      ids.forEach((id) => { prev[id] = cat[id] || null; });
+      const token = Date.now();
+      const availOf = {}; groupsDef.forEach((g) => g.cats.forEach((x) => { availOf[x[0]] = Math.round(parseFloat(x[1].replace(/[^0-9.]/g, '')) * 100) * (x[1].indexOf('−') === 0 ? -1 : 1); }));
+      const total = ids.reduce((a, id) => a + uDefs.find((d) => d.id === id).cents, 0);
+      const after = availOf[name] === undefined ? null : availOf[name] - total;
+      const warn = after !== null && after < 0 ? ' · ' + name + ' is now overspent by $' + (-after / 100).toFixed(2) + '. Cover it on Budget.' : '';
+      this.llSaveDemo({ cats: c });
+      this.setState({ pick: null, selecting: false, sel: {}, last: { ids: ids, prev: prev, prevRules: s.rules, token: token, text: (ids.length === 1 ? first.payee : ids.length + ' transactions') + ' → ' + name + warn, offer: offer, name: name } });
+      this.llToast(token, offer ? 10000 : 6000);
+    };
+    const pickIds = s.pick || [];
+    const pickDef = pickIds.length === 1 ? uDefs.find((d) => d.id === pickIds[0]) : null;
+    const groupsDef = [
+      { name: 'Everyday', cats: [['Groceries', '$212.40'], ['Dining out', M.done.dining ? '$0.00' : '−$18.25'], ['Gas', '$64.10'], ['Shopping', '$53.20'], ['Household', '$40.00'], ['Health', '$75.00'], ['Personal care', M.done.personal ? '$35.00' : '$15.00']] },
+      { name: 'Bills', cats: [['Rent', '$1,000.00'], ['Electric', '$41.30'], ['Internet', '$80.00'], ['Subscriptions', '$0.55']] },
+      { name: 'Savings', cats: [['Investments', '$0.00'], ['Car insurance', '$360.00'], ['Vacation', '$1,250.00'], ['Gifts', '$210.00'], ['Emergency fund', '$15,000.00'], ['Home repairs', '$2,057.63']] }
+    ];
+    const fmt = (c) => '−$' + (c / 100).toFixed(2);
+    const chip = (id, label) => { const on = f === id; return { label: label, pressed: on ? 'true' : 'false', bg: on ? 'var(--c111827, #111827)' : 'var(--cFFFFFF, #FFFFFF)', fg: on ? 'var(--cFFFFFF, #FFFFFF)' : 'var(--c374151, #374151)', border: on ? 'var(--c111827, #111827)' : 'var(--cD0D5DD, #D0D5DD)', pick: () => this.setState({ f: id }) }; };
+    return {
+      accent: accent,
+      q: s.q,
+      onQ: (e) => this.setState({ q: e.target.value }),
+      chips: [chip('all', 'All'), chip('attn', 'Needs attention ' + (alertsLeft + open.length)), chip('pending', 'Not posted yet')],
+      topSections: topSections,
+      attnCount: alertsLeft + open.length,
+      showAttnHead: (f === 'all' || f === 'attn') && !q && alertsLeft + open.length > 0,
+      attnDone: f === 'attn' && !q && alertsLeft + open.length === 0,
+      sections: sections,
+      empty: shownSecs.length === 0 && !showCat && !(f === 'attn' && alertsLeft + open.length === 0),
+      showCat: showCat,
+      catLeft: open.length === 0 ? 'done' : open.length + ' · ' + fmt(leftCents),
+      hasUncat: open.length > 1,
+      catDone: open.length === 0,
+      selecting: s.selecting, notSelecting: !s.selecting,
+      selectLabel: s.selecting ? 'Cancel' : 'Select',
+      toggleSelect: () => this.setState({ selecting: !s.selecting, sel: {} }),
+      uncat: uDefs.filter(qMatch).map((d) => {
+        const chosen = cat[d.id];
+        return {
+          payee: d.payee, meta: d.meta, amount: d.amount,
+          rowBg: s.sel[d.id] && s.selecting ? 'var(--cEEF2FF, #EEF2FF)' : 'var(--cFFFFFF, #FFFFFF)',
+          on: !!s.sel[d.id],
+          selLabel: 'Select ' + d.payee + ' ' + d.amount,
+          toggle: () => this.setState({ sel: Object.assign({}, s.sel, { [d.id]: !s.sel[d.id] }) }),
+          chip: chosen || 'Choose',
+          chipStyle: chosen ? 'solid' : 'dashed',
+          chipBorder: chosen ? 'var(--cD0D5DD, #D0D5DD)' : accent,
+          chipBg: chosen ? 'var(--cF2F4F7, #F2F4F7)' : 'var(--cFFFFFF, #FFFFFF)',
+          chipFg: chosen ? 'var(--c344054, #344054)' : accent,
+          chooseLabel: (chosen ? 'Change category for ' : 'Choose category for ') + d.payee + ' ' + d.amount,
+          choose: () => this.setState({ pick: [d.id] })
+        };
+      }),
+      showFab: !s.selecting && !s.last && !s.pick,
+      selectBar: s.selecting,
+      selCount: selIds.length,
+      noneSelected: selIds.length === 0,
+      selBtnBg: selIds.length === 0 ? 'var(--c98A2B3, #98A2B3)' : accent,
+      chooseSelected: () => { if (selIds.length) this.setState({ pick: selIds }); },
+      picking: !!s.pick,
+      closePicker: () => this.setState({ pick: null }),
+      pickFor: pickDef ? pickDef.payee + ' · ' + pickDef.amount + ' · ' + pickDef.meta : pickIds.length + ' transactions',
+      single: !!pickDef,
+      hasSuggest: !!(pickDef && pickDef.hist),
+      suggestTitle: pickDef && pickDef.hist ? pickDef.hist.title : '',
+      suggest: pickDef && pickDef.hist ? pickDef.hist.cats.map((n) => ({ name: n, pick: () => assign(pickIds, n) })) : [],
+      catGroups: groupsDef.map((g) => ({ name: g.name, cats: g.cats.map((c) => ({ name: c[0], avail: c[1], pick: () => assign(pickIds, c[0]) })) })),
+      hasToast: !!s.last,
+      toast: s.last ? s.last.text : '',
+      undo: () => { if (!s.last) return; if (s.last.dismissId) { const cl = Object.assign({}, M.cleared); delete cl[s.last.dismissId]; this.llSaveDemo({ cleared: cl }); this.setState({ last: null }); return; } const c = Object.assign({}, cat); s.last.ids.forEach((id) => { if (s.last.prev[id]) c[id] = s.last.prev[id]; else delete c[id]; }); this.llSaveDemo({ cats: c }); this.setState({ rules: s.last.prevRules, last: null }); },
+      hasRuleOffer: !!(s.last && s.last.offer),
+      ruleOffer: s.last && s.last.offer ? 'Put every ' + s.last.offer + ' in ' + s.last.name + ' from now on?' : '',
+      makeRule: () => { if (!s.last || !s.last.offer) return; this.setState({ rules: Object.assign({}, s.rules, { [s.last.offer]: true }), last: Object.assign({}, s.last, { offer: null, text: s.last.text + ' · rule made' }) }); this.llToast(s.last.token, 6000); }
+    };
+  }
+}
+</script>
+</body>
+</html>

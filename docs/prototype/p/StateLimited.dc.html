@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ledgerline offline and read-only</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accent, #1D4ED8)}a:hover{color:var(--c1E3A8A, #1E3A8A)}
+.hit{position:relative}.hit::after{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}:root[data-theme="dark"]{--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; display: flex; flex-direction: column; background: var(--cF5F6F8, #F5F6F8); font-family: 'Public Sans', system-ui, sans-serif; color: var(--c111827, #111827); overflow: hidden">
+<header style="display: flex; flex-direction: column; background: var(--cFFFFFF, #FFFFFF); border-bottom: 1px solid var(--cE5E7EB, #E5E7EB)">
+<div style="display: flex; align-items: center; justify-content: center; height: 56px"><h1 style="margin: 0; font-size: 17px; font-weight: 700">November 2026</h1></div>
+<div role="status" style="display: flex; flex-direction: column; gap: 2px; padding: 10px 16px; background: {{bannerBg}}; border-top: 1px solid {{bannerBorder}}; color: {{bannerFg}}">
+<span style="font-size: 14px; font-weight: 700">{{bannerTitle}}</span>
+<span style="font-size: 12px; line-height: 1.4">{{bannerText}}</span>
+</div>
+<div role="group" aria-label="Prototype state" style="display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin: 10px 16px; padding: 3px; border-radius: 10px; background: var(--cF2F4F7, #F2F4F7)">
+<sc-for list="{{modes}}" as="m" hint-placeholder-count="2">
+<button class="hit" onClick="{{m.pick}}" aria-pressed="{{m.pressed}}" style="height: 36px; border-radius: 8px; border: none; background: {{m.bg}}; font-family: inherit; font-size: 13px; font-weight: 700; color: var(--c111827, #111827)">{{m.name}}</button>
+</sc-for>
+</div>
+</header>
+<main style="flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px">
+<section style="background: var(--cFFFFFF, #FFFFFF); border-radius: 14px; overflow: hidden; border: 1px solid var(--cE5E7EB, #E5E7EB); flex-shrink: 0">
+<div style="display: flex; justify-content: space-between; align-items: center; height: 44px; padding: 0 12px; background: var(--cF9FAFB, #F9FAFB); border-bottom: 1px solid var(--cE5E7EB, #E5E7EB); font-size: 12px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--c374151, #374151)"><span>Everyday</span><span style="font-weight: 400; color: var(--c4B5563, #4B5563)">$441.45</span></div>
+<sc-for list="{{cats}}" as="c" hint-placeholder-count="3">
+<div style="display: flex; justify-content: space-between; align-items: center; min-height: 56px; padding: 8px 12px; border-top: 1px solid var(--cF0F1F3, #F0F1F3)">
+<span style="display: flex; flex-direction: column; gap: 3px"><span style="font-size: 15px; font-weight: 600">{{c.name}}</span><span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{c.detail}}</span></span>
+<span style="padding: 4px 10px; border-radius: 999px; font-size: 14px; font-weight: 700; background: var(--cF2F4F7, #F2F4F7); color: var(--c344054, #344054); font-variant-numeric: tabular-nums">{{c.amt}}</span>
+</div>
+</sc-for>
+</section>
+<p style="margin: 0; font-size: 12px; color: var(--c4B5563, #4B5563); line-height: 1.4">{{footer}}</p>
+</main>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; background: var(--c667085, #667085); color: var(--cFFFFFF, #FFFFFF)">
+<div style="display: flex; flex-direction: column; gap: 1px"><span style="font-size: 12px; font-weight: 600">Ready to Assign</span><span style="font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums">$981.90</span></div>
+<span aria-disabled="true" style="display: flex; align-items: center; height: 40px; padding: 0 22px; border-radius: 999px; background: var(--cD0D5DD, #D0D5DD); color: var(--c667085, #667085); font-size: 15px; font-weight: 700">Assign</span>
+</div>
+<dc-import name="TabBar" active="budget" accent="{{accent}}" hint-size="390px,72px"></dc-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["app","light","dark"],"default":"app"},"accent":{"editor":"color","default":"#1D4ED8","options":["#1D4ED8","#0F766E","#6D28D9","#111827"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  llGetPref() { try { return localStorage.getItem('ledgerline-theme') || this.llMem || 'device'; } catch (e) { return this.llMem || 'device'; } }
+  llSetPref(v) { this.llMem = v; try { localStorage.setItem('ledgerline-theme', v); } catch (e) {} this.llApply(); }
+  llApply() {
+    const forced = this.props.theme && this.props.theme !== 'app' ? this.props.theme : null;
+    const p = forced || this.llGetPref();
+    let dark = p === 'dark';
+    if (p === 'device') { try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {} }
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    const acc = { '#1D4ED8': '#8AB4FF', '#0F766E': '#5EEAD4', '#6D28D9': '#C4B5FD', '#111827': '#F2F4F7' };
+    const a = String(this.props.accent || 'var(--c1D4ED8, #1D4ED8)').toUpperCase();
+    if (a.charAt(0) === '#') { try { document.documentElement.style.setProperty('--accent', dark ? (acc[a] || '#8AB4FF') : a); } catch (e) {} }
+  }
+  componentDidMount() {
+    this.llApply();
+    this.llOn = () => { this.llApply(); this.forceUpdate(); };
+    try { window.addEventListener('storage', this.llOn); this.llMq = window.matchMedia('(prefers-color-scheme: dark)'); this.llMq.addEventListener('change', this.llOn); } catch (e) {}
+  }
+  componentDidUpdate() { this.llApply(); }
+  componentWillUnmount() { try { window.removeEventListener('storage', this.llOn); this.llMq.removeEventListener('change', this.llOn); } catch (e) {} }
+
+  constructor(props) {
+    super(props);
+    this.state = { mode: 'offline' };
+  }
+  renderVals() {
+    const off = this.state.mode === 'offline';
+    return {
+      accent: ('var(--accent, ' + (this.props.accent ?? 'var(--c1D4ED8, #1D4ED8)') + ')'),
+      modes: [['offline', 'Offline'], ['limit', 'Daily limit reached']].map((m) => ({ name: m[1], pressed: this.state.mode === m[0] ? 'true' : 'false', bg: this.state.mode === m[0] ? 'var(--cFFFFFF, #FFFFFF)' : 'transparent', pick: () => this.setState({ mode: m[0] }) })),
+      bannerTitle: off ? 'You’re offline' : 'View only until 4:00 PM',
+      bannerText: off ? 'Showing what was loaded at 9:42 AM. Changes are turned off until you’re back online, so nothing gets lost or saved twice.' : 'Today’s free database writes are used up, so changes are paused until the limit resets at 4:00 PM Pacific (midnight UTC). Bank sync catches up after that. Nothing is lost.',
+      bannerBg: off ? 'var(--cF2F4F7, #F2F4F7)' : 'var(--cFFFAEB, #FFFAEB)',
+      bannerBorder: off ? 'var(--cE4E7EC, #E4E7EC)' : 'var(--cFEDF89, #FEDF89)',
+      bannerFg: off ? 'var(--c344054, #344054)' : 'var(--c7A2E0E, #7A2E0E)',
+      cats: [{ name: 'Groceries', detail: '$387.60 of $600 spent', amt: '$212.40' }, { name: 'Dining out', detail: 'on Freedom card', amt: '−$18.25' }, { name: 'Gas', detail: '$55.90 of $120 spent', amt: '$64.10' }],
+      footer: off ? 'Buttons that change things are greyed out. Browsing, search and reports still work.' : 'This should almost never happen: normal use is a tiny fraction of the daily limit. If it does, the health check emails you with what used it up.'
+    };
+  }
+}
+</script>
+</body>
+</html>

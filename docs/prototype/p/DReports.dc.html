@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ledgerline desktop reports</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accent, #1D4ED8)}a:hover{color:var(--c1E3A8A, #1E3A8A)}
+.hit{position:relative}.hit::after{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}:root[data-theme="dark"]{--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}}
+</style>
+</helmet>
+<div style="box-sizing: border-box; width: 100%; min-height: 800px; display: flex; flex-wrap: wrap; background: var(--cF5F6F8, #F5F6F8); font-family: 'Public Sans', system-ui, sans-serif; color: var(--c111827, #111827)">
+<div style="flex: 1 1 200px; display: flex"><dc-import name="DNav" active="reports" accent="{{accent}}" hint-size="100%,800px"></dc-import></div>
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<header style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; padding: 8px 24px; background: var(--cFFFFFF, #FFFFFF); border-bottom: 1px solid var(--cE5E7EB, #E5E7EB)">
+<h1 style="margin: 0; font-size: 20px; font-weight: 700">Reports</h1>
+<div style="display: flex; align-items: center; gap: 4px">
+<button class="hit" onClick="{{prev}}" aria-label="Previous month" style="width: 36px; height: 36px; border: none; border-radius: 8px; background: transparent; color: {{prevInk}}; font-size: 20px">‹</button>
+<span style="min-width: 110px; text-align: center; font-size: 15px; font-weight: 700">{{month}}</span>
+<button class="hit" onClick="{{next}}" aria-label="Next month" style="width: 36px; height: 36px; border: none; border-radius: 8px; background: transparent; color: {{nextInk}}; font-size: 20px">›</button>
+</div>
+</header>
+<div style="flex: 1; display: flex; flex-direction: column; gap: 20px; padding: 20px 24px">
+<section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px">
+<sc-for list="{{tiles}}" as="t" hint-placeholder-count="5">
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 14px; border-radius: 12px; background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB)"><span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{t.k}}</span><span style="font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums">{{t.v}}</span><span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{t.note}}</span></div>
+</sc-for>
+</section>
+<div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+<section style="flex: 1 1 380px; display: flex; flex-direction: column; gap: 8px; padding: 16px; background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 12px">
+<h2 style="margin: 0; font-size: 15px; font-weight: 700">Spending by category</h2>
+<span style="font-size: 12px; color: var(--c4B5563, #4B5563)">{{note}}</span>
+<sc-for list="{{cats}}" as="c" hint-placeholder-count="7">
+<button onClick="{{c.pick}}" aria-pressed="{{c.pressed}}" style="display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: none; border-radius: 8px; background: {{c.bg}}; font-family: inherit; text-align: left; color: var(--c111827, #111827)">
+<span style="display: flex; justify-content: space-between; width: 100%; font-size: 14px"><span style="font-weight: 600">{{c.name}}</span><span style="font-weight: 700; font-variant-numeric: tabular-nums">{{c.amt}}</span></span>
+<span aria-hidden="true" style="display: block; width: 100%; height: 8px; border-radius: 4px; background: var(--cF0F1F3, #F0F1F3)"><span style="display: block; height: 8px; width: {{c.w}}; border-radius: 4px; background: {{accent}}"></span></span>
+</button>
+</sc-for>
+</section>
+<section style="flex: 1 1 380px; display: flex; flex-direction: column; gap: 10px; padding: 16px; background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 12px">
+<h2 style="margin: 0; font-size: 15px; font-weight: 700">{{trendTitle}}</h2>
+<div role="img" aria-label="{{trendLabel}}" style="display: flex; align-items: flex-end; gap: 12px; height: 200px; padding-top: 8px">
+<sc-for list="{{bars}}" as="b" hint-placeholder-count="6">
+<div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end"><span style="font-size: 11px; color: var(--c4B5563, #4B5563); font-variant-numeric: tabular-nums">{{b.v}}</span><span style="display: block; width: 100%; height: {{b.h}}; border-radius: 6px 6px 0 0; background: {{b.c}}"></span><span style="font-size: 12px; color: var(--c374151, #374151)">{{b.m}}</span></div>
+</sc-for>
+</div>
+<span style="font-size: 12px; color: var(--c4B5563, #4B5563)">Nov is month to date. Click a category on the left to see its own trend.</span>
+<a class="hit" href="DActivity.dc.html" style="align-self: flex-start; display: flex; align-items: center; height: 32px; font-size: 13px; font-weight: 700; text-decoration: none">See {{selName}} transactions</a>
+</section>
+</div>
+<section style="display: flex; flex-direction: column; gap: 10px; padding: 16px; background: var(--cFFFFFF, #FFFFFF); border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 12px">
+<div style="display: flex; justify-content: space-between; align-items: baseline"><h2 style="margin: 0; font-size: 15px; font-weight: 700">Net worth</h2><span style="font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums">$22,555.35</span></div>
+<svg role="img" aria-label="Net worth over 12 months, from about $16,900 to $22,555" width="100%" height="120" viewBox="0 0 600 120" preserveAspectRatio="none"><polyline fill="none" style="stroke: {{accent}}" stroke-width="2.5" stroke-linejoin="round" points="0,110 55,104 110,106 165,94 220,88 275,80 330,72 385,64 440,56 495,40 550,30 600,14"></polyline></svg>
+<div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--c4B5563, #4B5563)"><span>Dec 2025</span><span>Bank and card accounts only · Owed to you not counted</span><span>Nov 2026</span></div>
+</section>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["app","light","dark"],"default":"app"},"accent":{"editor":"color","default":"#1D4ED8","options":["#1D4ED8","#0F766E","#6D28D9","#111827"]},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  llGetPref() { try { return localStorage.getItem('ledgerline-theme') || this.llMem || 'device'; } catch (e) { return this.llMem || 'device'; } }
+  llSetPref(v) { this.llMem = v; try { localStorage.setItem('ledgerline-theme', v); } catch (e) {} this.llApply(); }
+  llApply() {
+    const forced = this.props.theme && this.props.theme !== 'app' ? this.props.theme : null;
+    const p = forced || this.llGetPref();
+    let dark = p === 'dark';
+    if (p === 'device') { try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {} }
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    const acc = { '#1D4ED8': '#8AB4FF', '#0F766E': '#5EEAD4', '#6D28D9': '#C4B5FD', '#111827': '#F2F4F7' };
+    const a = String(this.props.accent || 'var(--c1D4ED8, #1D4ED8)').toUpperCase();
+    if (a.charAt(0) === '#') { try { document.documentElement.style.setProperty('--accent', dark ? (acc[a] || '#8AB4FF') : a); } catch (e) {} }
+  }
+  componentDidMount() {
+    this.llApply();
+    this.llOn = () => { this.llApply(); this.forceUpdate(); };
+    try { window.addEventListener('storage', this.llOn); this.llMq = window.matchMedia('(prefers-color-scheme: dark)'); this.llMq.addEventListener('change', this.llOn); } catch (e) {}
+  }
+  componentDidUpdate() { this.llApply(); }
+  componentWillUnmount() { try { window.removeEventListener('storage', this.llOn); this.llMq.removeEventListener('change', this.llOn); } catch (e) {} }
+
+  constructor(props) {
+    super(props);
+    this.state = { m: 1, sel: null };
+  }
+  renderVals() {
+    const s = this.state;
+    const accent = ('var(--accent, ' + (this.props.accent ?? 'var(--c1D4ED8, #1D4ED8)') + ')');
+    const months = [
+      { name: 'October 2026', tiles: [['Spent', '$2,520.40', 'whole month'], ['Income', '$6,200.00', '2 paychecks'], ['Invested', '$1,500.00', 'to Vanguard'], ['Rewards', '$31.80', 'card points'], ['Saved', '$2,179.60', 'income − spent − invested']], note: 'Whole month. Your share only.',
+        cats: [['Rent', 1000], ['Groceries', 612.30], ['Dining out', 341.10], ['Shopping', 208.00], ['Gas', 121.40], ['Personal care', 115.00], ['Subscriptions', 64.45], ['Electric', 58.15]] },
+      { name: 'November 2026', tiles: [['Spent', '$1,319.25', 'through Nov 14'], ['Income', '$3,131.20', 'paycheck + Ally interest'], ['Invested', '$1,500.00', 'to Vanguard'], ['Rewards', '$24.10', 'card points'], ['Uncategorized', '$86.48', 'not in these totals']], note: 'Month to date. Your share only: amounts owed to you are left out.',
+        cats: [['Groceries', 387.60], ['Dining out', 218.25], ['Gifts', 216.00], ['Shopping', 146.80], ['Household', 91.55], ['Personal care', 85.00], ['Subscriptions', 64.45], ['Gas', 55.90], ['Electric', 53.70]] }
+    ];
+    const cur = months[s.m];
+    const sorted = cur.cats.slice().sort((a, b) => b[1] - a[1]);
+    const max = sorted[0][1];
+    const fmt = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const trends = { all: [2410, 2880, 2190, 2640, 2520, 1319], Groceries: [580, 640, 560, 610, 612, 388], 'Dining out': [260, 410, 220, 300, 341, 218] };
+    const key = s.sel && trends[s.sel] ? s.sel : (s.sel ? null : 'all');
+    const series = key ? trends[key] : [180, 220, 140, 200, 208, 147].map((v) => v * (s.sel === 'Rent' ? 5 : 1));
+    const top = Math.max.apply(null, series);
+    const ms = ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov'];
+    return {
+      accent: accent,
+      month: cur.name,
+      prev: () => this.setState({ m: 0 }), next: () => this.setState({ m: 1 }),
+      prevInk: s.m === 0 ? 'var(--c98A2B3, #98A2B3)' : 'var(--c374151, #374151)', nextInk: s.m === 1 ? 'var(--c98A2B3, #98A2B3)' : 'var(--c374151, #374151)',
+      tiles: cur.tiles.map((t) => ({ k: t[0], v: t[1], note: t[2] })),
+      note: cur.note,
+      cats: sorted.map((c) => ({ name: c[0], amt: fmt(c[1]), w: Math.round(c[1] / max * 100) + '%', bg: s.sel === c[0] ? 'var(--cEEF2FF, #EEF2FF)' : 'transparent', pressed: s.sel === c[0] ? 'true' : 'false', pick: () => this.setState({ sel: s.sel === c[0] ? null : c[0] }) })),
+      trendTitle: s.sel ? s.sel + ', last 6 months' : 'All spending, last 6 months',
+      trendLabel: (s.sel || 'All spending') + ' by month: ' + ms.map((m, i) => m + ' $' + series[i]).join(', '),
+      bars: series.map((v, i) => ({ m: ms[i], v: '$' + (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v), h: Math.round(v / top * 150) + 'px', c: i === 5 ? 'var(--c98A2B3, #98A2B3)' : accent })),
+      selName: s.sel || 'all'
+    };
+  }
+}
+</script>
+</body>
+</html>

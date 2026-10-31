@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ledgerline transaction</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--accent, #1D4ED8)}a:hover{color:var(--c1E3A8A, #1E3A8A)}
+.hit{position:relative}.hit::after{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}:root[data-theme="dark"]{--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--cFFFFFF:#181B21;--cF5F6F8:#0E1014;--cF9FAFB:#1D2128;--cF2F4F7:#252A32;--cF0F1F3:#262B33;--cE5E7EB:#2C323B;--cE4E7EC:#333A44;--cEEF0F3:#2A2F37;--cE9EBEF:#252A32;--cD0D5DD:#4A525E;--c98A2B3:#7C8695;--c667085:#949DAB;--c5B6170:#05060A;--c4B5563:#A7AFBB;--c374151:#D0D5DD;--c344054:#D0D5DD;--c111827:#F2F4F7;--c1D4ED8:#8AB4FF;--c1E3A8A:#B9D1FF;--c085D3A:#6CE9A6;--cECFDF3:#10291D;--cDCFAE6:#12301F;--cABEFC6:#1F5135;--c12B76A:#32D583;--cB42318:#F97066;--cFEE4E2:#3A1614;--cD92D20:#F04438;--c93370D:#FDB022;--c7A2E0E:#FEC84B;--cFEF0C7:#3A2A0A;--cFFFAEB:#2B2108;--cFEDF89:#5C4410;--cF79009:#F79009;--c6941C6:#BDB4FE;--cF4EBFF:#2A1F45;--c9E77ED:#9E77ED;--c3538CD:#A4BCFD;--cEEF4FF:#1C2547;--cEEF2FF:#1C2547;--c175CD3:#84CAFF;--cD1E9FF:#102A45;--c2E90FA:#53B1FD;--c026AA2:#7CD4FD;--cE0F2FE:#0B2A3D;--c0F766E:#5EEAD4;--c6D28D9:#C4B5FD;--accent:#8AB4FF;color-scheme:dark}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; display: flex; flex-direction: column; background: var(--c5B6170, #5B6170); font-family: 'Public Sans', system-ui, sans-serif; color: var(--c111827, #111827); overflow: hidden">
+<a class="hit" href="Activity.dc.html" aria-label="Close and return to activity" style="display: block; height: 32px; flex-shrink: 0"></a>
+<section role="dialog" aria-label="Uber Eats transaction" style="flex: 1; display: flex; flex-direction: column; background: var(--cFFFFFF, #FFFFFF); border-radius: 20px 20px 0 0; overflow: hidden">
+<div aria-hidden="true" style="align-self: center; width: 40px; height: 4px; margin-top: 8px; border-radius: 2px; background: var(--cD0D5DD, #D0D5DD)"></div>
+<div style="display: flex; align-items: flex-start; justify-content: space-between; padding: 8px 8px 0 16px">
+<div style="display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 13px; font-weight: 700; color: var(--c3538CD, #3538CD)">Pending · your estimate</span>
+<h1 style="margin: 0; font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums">−${{est}}</h1>
+<span style="font-size: 14px; color: var(--c4B5563, #4B5563)">Uber Eats · Sapphire Preferred · Nov 14</span>
+</div>
+<a href="Activity.dc.html" aria-label="Close" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: var(--c374151, #374151)"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></a>
+</div>
+<div style="flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 14px; background: var(--cF5F6F8, #F5F6F8); flex-shrink: 0">
+<div style="display: flex; justify-content: space-between; font-size: 14px"><span style="color: var(--c4B5563, #4B5563)">Bank amount</span><span style="font-weight: 700; font-variant-numeric: tabular-nums">$31.40</span></div>
+<label style="display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; font-weight: 600; color: var(--c374151, #374151)">Your estimate
+<input value="{{est}}" inputmode="decimal" style="width: 120px; height: 44px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 17px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; color: var(--c111827, #111827); background: var(--cFFFFFF, #FFFFFF)"></label>
+<div style="display: flex; gap: 6px; flex-wrap: wrap">
+<sc-for list="{{tips}}" as="t" hint-placeholder-count="4">
+<button class="hit" onClick="{{t.pick}}" style="height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--cD0D5DD, #D0D5DD); background: var(--cFFFFFF, #FFFFFF); font-family: inherit; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">{{t.label}}</button>
+</sc-for>
+</div>
+<span style="font-size: 12px; color: var(--c4B5563, #4B5563)">When it posts, the bank amount replaces yours and you'll see an alert if they differ.</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; justify-content: space-between; align-items: center; height: 24px"><label for="txn-cat" style="font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Category</label><a class="hit" href="Split.dc.html" style="display: flex; align-items: center; height: 24px; color: {{accent}}; text-decoration: none; font-size: 13px; font-weight: 700">Split into categories</a></div>
+<select id="txn-cat" style="height: 44px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 16px; color: var(--c111827, #111827); background: var(--cFFFFFF, #FFFFFF)"><optgroup label="Categories"><option>Dining out</option><option>Groceries</option></optgroup><optgroup label="Transfer to account…"><option>Everyday Checking</option><option>Marcus Savings</option><option>Venmo (not linked)</option></optgroup></select>
+</div>
+<div style="border: 1px solid var(--cE5E7EB, #E5E7EB); border-radius: 14px; overflow: hidden; flex-shrink: 0">
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 12px">
+<span style="display: flex; flex-direction: column; gap: 1px; font-size: 15px; font-weight: 600">Owed to you<span style="font-size: 12px; font-weight: 400; color: var(--c4B5563, #4B5563)">Part you'll get back from someone</span></span>
+<div role="group" aria-label="Owed to you" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 3px; border-radius: 10px; background: var(--cF2F4F7, #F2F4F7)">
+<sc-for list="{{owedOpts}}" as="o" hint-placeholder-count="4">
+<button class="hit" onClick="{{o.pick}}" aria-pressed="{{o.pressed}}" style="height: 36px; border-radius: 8px; border: none; background: {{o.bg}}; font-family: inherit; font-size: 13px; font-weight: 700; color: var(--c111827, #111827)">{{o.name}}</button>
+</sc-for>
+</div>
+<sc-if value="{{hasOwed}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; gap: 8px">
+<label style="flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--c374151, #374151)">Amount owed
+<input value="{{owedAmt}}" inputmode="decimal" style="height: 44px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 16px; font-variant-numeric: tabular-nums"></label>
+<label style="flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--c374151, #374151)">Expect by
+<input type="date" value="2026-11-28" style="height: 44px; padding: 0 8px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 15px"></label>
+</div>
+<span style="font-size: 12px; color: var(--c4B5563, #4B5563); line-height: 1.4">Dining out is charged only your share. The rest comes out of Ready to Assign until it’s paid back, and still covers the Sapphire payment. Half stays half if the amount changes when it posts.</span>
+</sc-if>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; min-height: 56px; padding: 0 12px; border-top: 1px solid var(--cF0F1F3, #F0F1F3); font-size: 15px; font-weight: 600">
+<span style="display: flex; flex-direction: column; gap: 1px">Counts in<span style="font-size: 12px; font-weight: 400; color: var(--c4B5563, #4B5563)">Budget month</span></span>
+<div role="group" aria-label="Counts in" style="display: flex; gap: 4px">
+<sc-for list="{{months}}" as="m" hint-placeholder-count="3">
+<button class="hit" onClick="{{m.pick}}" aria-pressed="{{m.pressed}}" style="height: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid {{m.border}}; background: {{m.bg}}; color: {{m.fg}}; font-family: inherit; font-size: 13px; font-weight: 700">{{m.name}}</button>
+</sc-for>
+</div>
+</div>
+<label style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 0 12px; border-top: 1px solid var(--cF0F1F3, #F0F1F3); font-size: 15px; font-weight: 600">
+<span style="display: flex; flex-direction: column; gap: 1px">Won't clear<span style="font-size: 12px; font-weight: 400; color: var(--c4B5563, #4B5563)">{{wontHelp}}</span></span>
+<input class="hit" type="checkbox" checked="{{wont}}" onChange="{{toggleWont}}" style="width: 24px; height: 24px; accent-color: {{accent}}"></label>
+</div>
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--c374151, #374151)">Memo
+<input placeholder="e.g. split with Jordan" style="height: 44px; padding: 0 10px; border: 1px solid var(--cD0D5DD, #D0D5DD); border-radius: 10px; font-family: inherit; font-size: 16px"></label>
+<div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--c4B5563, #4B5563)"><span>Bank says: UBER *EATS PENDING</span><a href="RenamePayee.dc.html" style="display: flex; align-items: center; min-height: 36px; font-weight: 700; text-decoration: none">Rename payee</a></div>
+</div>
+<div style="padding: 12px 16px 24px; border-top: 1px solid var(--cE5E7EB, #E5E7EB)">
+<a href="Activity.dc.html" style="display: flex; align-items: center; justify-content: center; height: 48px; border-radius: 12px; background: {{accent}}; color: var(--cFFFFFF, #FFFFFF); text-decoration: none; font-size: 16px; font-weight: 700">Save</a>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["app","light","dark"],"default":"app"},"accent":{"editor":"color","default":"#1D4ED8","options":["#1D4ED8","#0F766E","#6D28D9","#111827"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  llGetPref() { try { return localStorage.getItem('ledgerline-theme') || this.llMem || 'device'; } catch (e) { return this.llMem || 'device'; } }
+  llSetPref(v) { this.llMem = v; try { localStorage.setItem('ledgerline-theme', v); } catch (e) {} this.llApply(); }
+  llApply() {
+    const forced = this.props.theme && this.props.theme !== 'app' ? this.props.theme : null;
+    const p = forced || this.llGetPref();
+    let dark = p === 'dark';
+    if (p === 'device') { try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {} }
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    const acc = { '#1D4ED8': '#8AB4FF', '#0F766E': '#5EEAD4', '#6D28D9': '#C4B5FD', '#111827': '#F2F4F7' };
+    const a = String(this.props.accent || 'var(--c1D4ED8, #1D4ED8)').toUpperCase();
+    if (a.charAt(0) === '#') { try { document.documentElement.style.setProperty('--accent', dark ? (acc[a] || '#8AB4FF') : a); } catch (e) {} }
+  }
+  componentDidMount() {
+    this.llApply();
+    this.llOn = () => { this.llApply(); this.forceUpdate(); };
+    try { window.addEventListener('storage', this.llOn); this.llMq = window.matchMedia('(prefers-color-scheme: dark)'); this.llMq.addEventListener('change', this.llOn); } catch (e) {}
+  }
+  componentDidUpdate() { this.llApply(); }
+  componentWillUnmount() { try { window.removeEventListener('storage', this.llOn); this.llMq.removeEventListener('change', this.llOn); } catch (e) {} }
+
+  constructor(props) {
+    super(props);
+    this.state = { est: 3600, owed: 'none', month: 'Nov', wont: false };
+  }
+  renderVals() {
+    const accent = ('var(--accent, ' + (this.props.accent ?? 'var(--c1D4ED8, #1D4ED8)') + ')');
+    const s = this.state;
+    const fmt = (c) => (c / 100).toFixed(2);
+    const tip = (label, c) => ({ label: label, pick: () => this.setState({ est: c }) });
+    const owedCents = s.owed === 'half' ? Math.round(s.est / 2) : s.owed === 'all' ? s.est : s.owed === 'custom' ? 1000 : 0;
+    return {
+      accent: accent,
+      est: fmt(s.est),
+      tips: [tip('+15% · $36.11', 3611), tip('+18% · $37.05', 3705), tip('+20% · $37.68', 3768), tip('Bank $31.40', 3140)],
+      owedOpts: [['none', 'None'], ['half', 'Half'], ['all', 'All'], ['custom', 'Custom']].map((o) => ({ name: o[1], pressed: s.owed === o[0] ? 'true' : 'false', bg: s.owed === o[0] ? 'var(--cFFFFFF, #FFFFFF)' : 'transparent', pick: () => this.setState({ owed: o[0], wont: false }) })),
+      hasOwed: s.owed !== 'none',
+      owedAmt: fmt(owedCents),
+      months: ['Oct', 'Nov', 'Dec'].map((m) => { const on = s.month === m; return { name: m, pressed: on ? 'true' : 'false', border: on ? accent : 'var(--cD0D5DD, #D0D5DD)', bg: on ? 'var(--cEEF2FF, #EEF2FF)' : 'var(--cFFFFFF, #FFFFFF)', fg: on ? accent : 'var(--c374151, #374151)', pick: () => this.setState({ month: m }) }; }),
+      wont: s.wont,
+      wontHelp: s.owed !== 'none' ? 'Turning this on removes what’s owed' : 'Stop counting this hold',
+      toggleWont: () => this.setState({ wont: !s.wont, owed: !s.wont ? 'none' : s.owed })
+    };
+  }
+}
+</script>
+</body>
+</html>
