@@ -649,3 +649,6 @@ export const HealthView = z.object({
 export type HealthView = z.infer<typeof HealthView>;
 
 export const ApiError = z.object({ error: z.string(), message: z.string() });
+
+export type ImportResult = z.infer<typeof ImportResult>;
+export type RulePreview = z.infer<typeof RulePreview>;

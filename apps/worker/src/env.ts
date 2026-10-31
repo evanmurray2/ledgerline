@@ -6,6 +6,7 @@ export interface Env {
   BACKUPS?: R2Bucket;
   SYNC: Workflow<SyncParams>;
   MAINTENANCE: Workflow<MaintenanceParams>;
+  RECOMPUTE: Workflow<RecomputeParams>;
   ASSETS?: Fetcher;
   /** 'sandbox' | 'production'. Production keys exist only in the production Worker. */
   PLAID_ENV: string;
@@ -22,6 +23,14 @@ export interface Env {
   ACCESS_AUD?: string;
   /** Local development only: trust this email instead of an Access JWT. Refused when PLAID_ENV is production. */
   DEV_AUTH_EMAIL?: string;
+  /** The owner's sign-in email: the first sign-in by this address creates the budget (single user at launch). */
+  OWNER_EMAIL?: string;
+  /** Access service token client id allowed to read /api/health (the GitHub monitor). */
+  ACCESS_SERVICE_CLIENT_ID?: string;
+  /** Local development and tests only: a fixed "now" (ISO time). Ignored in production. */
+  FAKE_NOW?: string;
+  /** Enables /__dev routes (seed data) in local development. Ignored in production. */
+  DEV_ROUTES?: string;
   /** Account-wide D1 usage via GraphQL Analytics (read-only token). */
   CF_ACCOUNT_ID?: string;
   CF_ANALYTICS_TOKEN?: string;
@@ -44,4 +53,9 @@ export interface SyncParams {
 
 export interface MaintenanceParams {
   day: string;
+  budgetId: string;
+}
+
+export interface RecomputeParams {
+  budgetId: string;
 }

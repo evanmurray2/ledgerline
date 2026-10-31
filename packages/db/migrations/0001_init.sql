@@ -357,6 +357,8 @@ CREATE TABLE txn_overlay (
   field_edits TEXT,                  -- JSON {field: epoch ms} for most-recent-edit-wins merges
   reviewed_at INTEGER,
   orphaned_at INTEGER,               -- edits held after the row was removed (14 days)
+  pending_at_link INTEGER NOT NULL DEFAULT 0, -- pending when its account was linked: budgeted even if dated earlier
+  alert TEXT,                        -- JSON: amount changed on clearing, cleared despite won't-clear, conflict
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -438,7 +440,9 @@ CREATE TABLE budget_line (
   month TEXT NOT NULL,
   date TEXT NOT NULL,
   seq INTEGER NOT NULL,              -- time added, for same-day ordering
-  kind TEXT NOT NULL CHECK (kind IN ('rta', 'cat', 'owed', 'close', 'payment', 'debt')),
+  -- Budget kinds (read by computeBudget) and three totals for the rule 10 identity and card coverage:
+  -- 'wait' (Waiting to match), 'unsorted' (transfer sides not yet sorted), 'uncat' (uncategorized amounts).
+  kind TEXT NOT NULL CHECK (kind IN ('rta', 'cat', 'owed', 'close', 'payment', 'debt', 'wait', 'unsorted', 'uncat')),
   account_id TEXT NOT NULL,          -- for payment and debt lines: the card account
   card INTEGER NOT NULL,             -- 1 when the account is a credit card
   category_id TEXT,
@@ -447,6 +451,42 @@ CREATE TABLE budget_line (
   PRIMARY KEY (budget_id, txn_key, line)
 ) WITHOUT ROWID;
 CREATE INDEX budget_line_month ON budget_line(budget_id, month);
+
+-- The read model for transactions (design: Data model): one row per logical transaction from bank_txn (not
+-- removed) and manual_pending (unmatched, not deleted), with the overlay applied. Every screen queries this view.
+CREATE VIEW v_transaction AS
+SELECT
+  b.budget_id, b.txn_key AS key, 'bank' AS source, a.id AS account_id, a.kind AS account_kind, a.name AS account_name,
+  a.budget_from,
+  CASE WHEN b.pending = 1 AND o.estimated_amount IS NOT NULL THEN o.estimated_amount ELSE b.amount END AS amount,
+  b.amount AS bank_amount,
+  CASE WHEN a.kind = 'credit' AND b.amount < 0 AND b.authorized_date IS NOT NULL THEN b.authorized_date ELSE b.date END AS date,
+  b.date AS posted_date,
+  CASE WHEN b.pending = 1 THEN 'pending' ELSE 'posted' END AS status,
+  coalesce(p.name, b.merchant_name, b.raw_name) AS payee, b.raw_name, b.merchant_entity_id, b.provider_category,
+  b.payment_channel, b.provider_txn_id, b.pending_provider_txn_id, b.created_at AS seq, NULL AS repeats,
+  o.category_id, o.to_rta, o.income_tag, o.memo, o.budget_month, o.estimated_amount, coalesce(o.wont_clear, 0) AS wont_clear,
+  o.transfer_state, o.transfer_account_id, o.wtm_state, o.categorized_by, o.rule_id, o.reviewed_at,
+  coalesce(o.pending_at_link, 0) AS pending_at_link, o.alert, o.payee_id
+FROM bank_txn b
+JOIN account a ON a.budget_id = b.budget_id AND a.provider_account_id = b.provider_account_id
+LEFT JOIN txn_overlay o ON o.txn_key = b.txn_key
+LEFT JOIN payee p ON p.id = o.payee_id
+WHERE b.removed_at IS NULL
+UNION ALL
+SELECT
+  m.budget_id, m.txn_key, 'manual', a.id, a.kind, a.name, a.budget_from,
+  m.amount, NULL, m.date, NULL,
+  CASE WHEN m.kind = 'upcoming' THEN 'upcoming' ELSE 'pending' END,
+  coalesce(p.name, m.payee_name), m.payee_name, NULL, NULL, NULL, NULL, NULL, m.created_at, m.repeats,
+  o.category_id, o.to_rta, o.income_tag, o.memo, o.budget_month, NULL, coalesce(o.wont_clear, 0),
+  o.transfer_state, o.transfer_account_id, o.wtm_state, o.categorized_by, o.rule_id, o.reviewed_at,
+  0, o.alert, o.payee_id
+FROM manual_pending m
+JOIN account a ON a.id = m.account_id
+LEFT JOIN txn_overlay o ON o.txn_key = m.txn_key
+LEFT JOIN payee p ON p.id = o.payee_id
+WHERE m.deleted_at IS NULL AND m.matched_txn_key IS NULL;
 
 -- One row per budget month: that month's category and card cells plus the carry-forward state and running Ready to
 -- Assign components at its end (packages/domain MonthResult). One row per month keeps a first-month edit to about

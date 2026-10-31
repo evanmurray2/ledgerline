@@ -161,7 +161,8 @@ export async function recompute(
       db
         .prepare(
           `SELECT txn_key, line, month, date, seq, kind, account_id, card, category_id, amount, ref
-           FROM budget_line WHERE budget_id = ?1 AND month >= ?2 AND month <= ?3`,
+           FROM budget_line WHERE budget_id = ?1 AND month >= ?2 AND month <= ?3
+             AND kind IN ('rta', 'cat', 'owed', 'close', 'payment', 'debt')`,
         )
         .bind(budgetId, from, until),
       db

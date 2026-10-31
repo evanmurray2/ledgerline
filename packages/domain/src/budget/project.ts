@@ -30,8 +30,11 @@ export type TxnUse =
   | { type: 'unsorted' }
   /** Marked by hand as a transfer to or from an account that isn't linked (decisions.md D-20). */
   | { type: 'offbudget' }
-  /** A person-to-person inflow held for matching (rule 9). */
-  | { type: 'waiting' };
+  /**
+   * A person-to-person inflow held for matching (rule 9). `matched` is the part already matched to owed items
+   * (it goes to RTA); the rest waits.
+   */
+  | { type: 'waiting'; matched?: Cents };
 
 export interface OwedMark {
   itemId: string;
@@ -89,162 +92,203 @@ export function isHistory(t: LogicalTxn, acct: LedgerAccount): boolean {
   return t.date < acct.budgetFrom && !t.pendingAtLink;
 }
 
+/** Lines for an account's starting balance (rule 8). */
+export function startLines(a: LedgerAccount, startMonth: Month): BudgetLine[] {
+  const m = clampMonth(monthOfDate(a.budgetFrom), startMonth);
+  if (a.kind === 'credit') {
+    // Rule 8: a card's starting debt never touches RTA; P starts at 0.
+    return a.startingBalance < 0
+      ? [
+          {
+            kind: 'debt',
+            id: `start:${a.id}`,
+            month: m,
+            date: a.budgetFrom,
+            seq: -1,
+            cardAccountId: a.id,
+            amount: cents(-a.startingBalance),
+          },
+        ]
+      : [];
+  }
+  // Rule 8: checking and savings become RTA inflows at budget start (or link).
+  return a.startingBalance !== 0
+    ? [
+        {
+          kind: 'rta',
+          id: `start:${a.id}`,
+          month: m,
+          date: a.budgetFrom,
+          seq: -1,
+          accountId: a.id,
+          card: false,
+          amount: a.startingBalance,
+        },
+      ]
+    : [];
+}
+
+export interface TxnEffect {
+  /** False when the transaction doesn't count (history, won't clear, upcoming not yet due). */
+  counts: boolean;
+  lines: BudgetLine[];
+  waiting: number;
+  unsorted: number;
+  uncategorized: number;
+}
+
+/** One transaction's effect on the budget. Transactions are independent of each other, so lines can be rebuilt per transaction. */
+export function linesForTxn(
+  t: LogicalTxn,
+  acct: LedgerAccount,
+  accountKinds: ReadonlyMap<string, AccountKind>,
+  startMonth: Month,
+  today: IsoDate,
+): TxnEffect {
+  const none: TxnEffect = { counts: false, lines: [], waiting: 0, unsorted: 0, uncategorized: 0 };
+  if (isHistory(t, acct)) return none;
+  if (t.wontClear) return none;
+  if (t.status === 'upcoming' && t.date > today) return none;
+  const lines: BudgetLine[] = [];
+  let waiting = 0;
+  let unsorted = 0;
+  let uncategorized = 0;
+  const card = acct.kind === 'credit';
+  const month = clampMonth(t.budgetMonth ?? monthOfDate(t.date), startMonth);
+  const base = { month, date: t.date, seq: t.seq };
+  const u = t.use;
+
+  // Owed parts of an outflow (Reimbursement links): out of RTA, not the category. Cancelled marks are ignored.
+  const owedBySplit = new Map<string, number>();
+  let owedWhole = 0;
+  for (const ow of t.owed ?? []) {
+    if (ow.canceled || t.amount >= 0) continue;
+    lines.push({
+      kind: 'owed',
+      id: `${t.key}:owed:${ow.itemId}`,
+      ...base,
+      accountId: acct.id,
+      card,
+      amount: ow.amount,
+      itemId: ow.itemId,
+    });
+    if (ow.splitLineId) owedBySplit.set(ow.splitLineId, (owedBySplit.get(ow.splitLineId) ?? 0) + ow.amount);
+    else owedWhole += ow.amount;
+    if (ow.closed) {
+      const catId = owedCategory(u, ow.splitLineId);
+      if (catId) {
+        lines.push({
+          kind: 'close',
+          id: `${t.key}:close:${ow.itemId}`,
+          month: ow.closed.month,
+          date: ow.closed.date,
+          seq: t.seq,
+          categoryId: catId,
+          amount: ow.closed.amount,
+          itemId: ow.itemId,
+        });
+      }
+    }
+  }
+
+  switch (u.type) {
+    case 'category': {
+      const amt = t.amount < 0 ? t.amount + owedWhole : t.amount;
+      if (amt !== 0) {
+        lines.push({
+          kind: 'cat',
+          id: `${t.key}:0`,
+          ...base,
+          accountId: acct.id,
+          card,
+          categoryId: u.categoryId,
+          amount: cents(amt),
+          ...(t.refundOf ? { refundOf: `${t.refundOf}:0` } : {}),
+        });
+      }
+      break;
+    }
+    case 'split': {
+      u.lines.forEach((sl, n) => {
+        const amt =
+          sl.amount < 0 ? sl.amount + (owedBySplit.get(sl.id) ?? 0) + (n === 0 ? owedWhole : 0) : sl.amount;
+        if (sl.categoryId === null) uncategorized += amt;
+        else if (amt !== 0) {
+          lines.push({
+            kind: 'cat',
+            id: `${t.key}:${n}`,
+            ...base,
+            accountId: acct.id,
+            card,
+            categoryId: sl.categoryId,
+            amount: cents(amt),
+          });
+        }
+      });
+      break;
+    }
+    case 'rta':
+      lines.push({ kind: 'rta', id: `${t.key}:0`, ...base, accountId: acct.id, card, amount: t.amount });
+      break;
+    case 'uncategorized':
+      uncategorized += t.amount + (t.amount < 0 ? owedWhole : 0);
+      break;
+    case 'transfer': {
+      // Budget → budget: no category. Cash out to a card is a card payment and draws down its payment category.
+      if (!card && accountKinds.get(u.otherAccountId) === 'credit' && t.amount < 0) {
+        lines.push({
+          kind: 'payment',
+          id: `${t.key}:0`,
+          ...base,
+          cardAccountId: u.otherAccountId,
+          amount: cents(-t.amount),
+        });
+      }
+      break;
+    }
+    case 'offbudget':
+      // Money leaving or entering the budget accounts with no category: it comes from or goes to RTA.
+      lines.push({ kind: 'rta', id: `${t.key}:0`, ...base, accountId: acct.id, card, amount: t.amount });
+      break;
+    case 'unsorted':
+      unsorted += t.amount;
+      break;
+    case 'waiting': {
+      const m = Math.min(u.matched ?? 0, t.amount);
+      if (m > 0)
+        lines.push({ kind: 'rta', id: `${t.key}:0`, ...base, accountId: acct.id, card, amount: cents(m) });
+      waiting += t.amount - m;
+      break;
+    }
+  }
+  return { counts: true, lines, waiting, unsorted, uncategorized };
+}
+
 export function project(o: ProjectOptions): Projection {
   const accounts = new Map(o.accounts.map((a) => [a.id, a]));
+  const kinds = new Map(o.accounts.map((a) => [a.id, a.kind]));
   const lines: BudgetLine[] = [];
   const working: Record<string, number> = {};
   let waiting = 0;
   let unsorted = 0;
   let uncategorized = 0;
   let counted = 0;
-
   for (const a of o.accounts) {
     working[a.id] = a.startingBalance;
-    const m = clampMonth(monthOfDate(a.budgetFrom), o.startMonth);
-    if (a.kind === 'credit') {
-      // Rule 8: a card's starting debt never touches RTA; P starts at 0.
-      if (a.startingBalance < 0) {
-        lines.push({
-          kind: 'debt',
-          id: `start:${a.id}`,
-          month: m,
-          date: a.budgetFrom,
-          seq: -1,
-          cardAccountId: a.id,
-          amount: cents(-a.startingBalance),
-        });
-      }
-    } else if (a.startingBalance !== 0) {
-      // Rule 8: checking and savings become RTA inflows at budget start (or link).
-      lines.push({
-        kind: 'rta',
-        id: `start:${a.id}`,
-        month: m,
-        date: a.budgetFrom,
-        seq: -1,
-        accountId: a.id,
-        card: false,
-        amount: a.startingBalance,
-      });
-    }
+    lines.push(...startLines(a, o.startMonth));
   }
-
   for (const t of o.txns) {
     const acct = accounts.get(t.accountId);
     if (!acct) continue;
-    if (isHistory(t, acct)) continue;
-    if (t.wontClear) continue;
-    if (t.status === 'upcoming' && t.date > o.today) continue;
+    const e = linesForTxn(t, acct, kinds, o.startMonth, o.today);
+    if (!e.counts) continue;
     counted++;
     working[acct.id] = (working[acct.id] ?? 0) + t.amount;
-    const card = acct.kind === 'credit';
-    const month = clampMonth(t.budgetMonth ?? monthOfDate(t.date), o.startMonth);
-    const base = { month, date: t.date, seq: t.seq };
-    const u = t.use;
-
-    // Owed parts of an outflow (Reimbursement links): out of RTA, not the category. Cancelled marks are ignored.
-    const owedBySplit = new Map<string, number>();
-    let owedWhole = 0;
-    for (const ow of t.owed ?? []) {
-      if (ow.canceled || t.amount >= 0) continue;
-      lines.push({
-        kind: 'owed',
-        id: `${t.key}:owed:${ow.itemId}`,
-        ...base,
-        accountId: acct.id,
-        card,
-        amount: ow.amount,
-        itemId: ow.itemId,
-      });
-      if (ow.splitLineId) owedBySplit.set(ow.splitLineId, (owedBySplit.get(ow.splitLineId) ?? 0) + ow.amount);
-      else owedWhole += ow.amount;
-      if (ow.closed) {
-        const catId = owedCategory(u, ow.splitLineId);
-        if (catId) {
-          lines.push({
-            kind: 'close',
-            id: `${t.key}:close:${ow.itemId}`,
-            month: ow.closed.month,
-            date: ow.closed.date,
-            seq: t.seq,
-            categoryId: catId,
-            amount: ow.closed.amount,
-            itemId: ow.itemId,
-          });
-        }
-      }
-    }
-
-    switch (u.type) {
-      case 'category': {
-        const amt = t.amount < 0 ? t.amount + owedWhole : t.amount;
-        if (amt !== 0) {
-          lines.push({
-            kind: 'cat',
-            id: `${t.key}:0`,
-            ...base,
-            accountId: acct.id,
-            card,
-            categoryId: u.categoryId,
-            amount: cents(amt),
-            ...(t.refundOf ? { refundOf: `${t.refundOf}:0` } : {}),
-          });
-        }
-        break;
-      }
-      case 'split': {
-        u.lines.forEach((sl, n) => {
-          const amt =
-            sl.amount < 0 ? sl.amount + (owedBySplit.get(sl.id) ?? 0) + (n === 0 ? owedWhole : 0) : sl.amount;
-          if (sl.categoryId === null) {
-            uncategorized += amt;
-          } else if (amt !== 0) {
-            lines.push({
-              kind: 'cat',
-              id: `${t.key}:${n}`,
-              ...base,
-              accountId: acct.id,
-              card,
-              categoryId: sl.categoryId,
-              amount: cents(amt),
-            });
-          }
-        });
-        break;
-      }
-      case 'rta':
-        lines.push({ kind: 'rta', id: `${t.key}:0`, ...base, accountId: acct.id, card, amount: t.amount });
-        break;
-      case 'uncategorized':
-        uncategorized += t.amount + (t.amount < 0 ? owedWhole : 0);
-        break;
-      case 'transfer': {
-        const other = accounts.get(u.otherAccountId);
-        // Budget → budget: no category. Cash out to a card is a card payment and draws down its payment category.
-        if (!card && other?.kind === 'credit' && t.amount < 0) {
-          lines.push({
-            kind: 'payment',
-            id: `${t.key}:0`,
-            ...base,
-            cardAccountId: other.id,
-            amount: cents(-t.amount),
-          });
-        }
-        break;
-      }
-      case 'offbudget':
-        // Money leaving or entering the budget accounts with no category: it comes from or goes to RTA.
-        lines.push({ kind: 'rta', id: `${t.key}:0`, ...base, accountId: acct.id, card, amount: t.amount });
-        break;
-      case 'unsorted':
-        unsorted += t.amount;
-        break;
-      case 'waiting':
-        waiting += t.amount;
-        break;
-    }
+    lines.push(...e.lines);
+    waiting += e.waiting;
+    unsorted += e.unsorted;
+    uncategorized += e.uncategorized;
   }
-
   const w: Record<string, Cents> = {};
   for (const [k, v] of Object.entries(working)) w[k] = cents(v);
   return {
