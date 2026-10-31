@@ -89,13 +89,17 @@ export async function processPending(env: Env, budgetId: string, now = Date.now(
     const through = evs[evs.length - 1]!.id;
     const today = localDate(now, b.time_zone);
     const meta = await budgetMeta(s);
-    const stmts = meta ? await planProcessing(s, evs, today, now) : { stmts: [], keys: [] as string[] };
-    const lineStmts = meta ? (await planLineRebuild(s, stmts.keys, meta, today, now)).stmts : [];
+    const plan = meta ? await planProcessing(s, evs, today, now) : { stmts: [], keys: [] as string[] };
+    const fence = () =>
+      conditionFence(env.DB, `SELECT processed_through = ?1 FROM budget WHERE id = ?2`, expected, budgetId);
     try {
+      // 1. Matches, categorization and transfers (idempotent: reprocessing the same events writes the same rows).
+      if (plan.stmts.length) await env.DB.batch([fence(), ...plan.stmts]);
+      // 2. Budget lines from the updated rows, and the new watermark, behind the same fence.
+      const lines = meta ? (await planLineRebuild(s, plan.keys, meta, today, now)).stmts : [];
       await env.DB.batch([
-        conditionFence(env.DB, `SELECT processed_through = ?1 FROM budget WHERE id = ?2`, expected, budgetId),
-        ...stmts.stmts,
-        ...lineStmts,
+        fence(),
+        ...lines,
         s.q(`UPDATE budget SET processed_through = ?2, updated_at = ?3 WHERE id = ?1`, through, now),
       ]);
       return { caughtUp: evs.length < PROCESS_BATCH, processed: evs.length };
