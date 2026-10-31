@@ -1,0 +1,12 @@
+# Copy to .dev.vars (gitignored) for local development. Never put Production keys here.
+PLAID_ENV=sandbox
+PLAID_CLIENT_ID=your-sandbox-client-id
+PLAID_SECRET=your-sandbox-secret
+# Leave PLAID_BASE_URL unset to use Plaid Sandbox; set it to use the local mock (node tools/plaid-mock/server.mjs).
+# PLAID_BASE_URL=http://127.0.0.1:8788
+# 32 random bytes, base64: openssl rand -base64 32
+TOKEN_KEYS=1:REPLACE_WITH_BASE64_KEY
+TOKEN_KEY_CURRENT=1
+DEV_AUTH_EMAIL=you@example.com
+DEV_ROUTES=1
+# FAKE_NOW=2026-11-14T20:00:00Z

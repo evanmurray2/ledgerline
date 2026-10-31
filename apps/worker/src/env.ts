@@ -15,6 +15,7 @@ export interface Env {
   /** Local Plaid-shaped mock (development and tests only). */
   PLAID_BASE_URL?: string;
   PLAID_WEBHOOK_URL?: string;
+  PLAID_REDIRECT_URI?: string;
   /** "1:base64key,2:base64key" and the current version. */
   TOKEN_KEYS?: string;
   TOKEN_KEY_CURRENT?: string;

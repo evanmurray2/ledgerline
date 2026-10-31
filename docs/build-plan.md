@@ -33,16 +33,16 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 
 ## 3. Bank layer (design Phase 3)
 
-- [ ] D1 schema and forward-only migrations (all layers + Sync spec additions; `bank_event` immutability trigger; `lease_guard`; `v_transaction`). *Verify:* migrations apply to a fresh local D1 and to the previous schema in CI; trigger test.
-- [ ] Budget-scoped data-access layer (every query requires a budget id checked against membership). *Verify:* integration tests.
-- [ ] `BankDataProvider` port with fake, Plaid and CSV adapters; sign flip test; 180-day `days_requested` test. *Verify:* unit tests.
-- [ ] Sync Workflow: lease acquire/renew/fence/release/hand-off, staged fetch with restart, page apply with `apply_seq`, adopt, watermark post-processing, write breaker. *Verify:* integration tests on local D1 + Workflows.
-- [ ] Plaid webhook verification (ES256 JWT, body hash, 5-minute `iat`), starts a sync only. *Verify:* unit tests with generated keys.
-- [ ] Cron triggers: 4-hour backstop, stale-pending scan, daily maintenance Workflow. *Verify:* integration tests invoking `scheduled()`.
+- [x] D1 schema and forward-only migrations (all layers + Sync spec additions; `bank_event` immutability trigger; `lease_guard`; `v_transaction`). *Verify:* migrations apply to a fresh local D1 and to the previous schema in CI; trigger test.
+- [x] Budget-scoped data-access layer (every query requires a budget id checked against membership). *Verify:* integration tests.
+- [x] `BankDataProvider` port with the Plaid adapter (plus a Plaid-shaped local mock for development and tests) and CSV history import; sign flip test; 180-day `days_requested` test. *Verify:* unit tests.
+- [x] Sync Workflow: lease acquire/renew/fence/release/hand-off, staged fetch with restart, page apply with `apply_seq`, adopt, watermark post-processing, write breaker. *Verify:* integration tests on local D1 + Workflows.
+- [x] Plaid webhook verification (ES256 JWT, body hash, 5-minute `iat`), starts a sync only. *Verify:* unit tests with generated keys.
+- [x] Cron triggers: 4-hour backstop, stale-pending scan, daily maintenance Workflow. *Verify:* integration tests invoking `scheduled()`.
 
 ## 4. API and UI (design Phase 4)
 
-- [ ] Hono API with Access JWT verification, CSRF (JSON + custom header + Origin), Zod on every request, security headers. *Verify:* integration tests incl. auth rejection.
+- [x] Hono API with Access JWT verification, CSRF (JSON + custom header + Origin), Zod on every request, security headers. *Verify:* integration tests incl. auth rejection.
 - [ ] Budget: month switcher, All / Needs attention, groups, statuses, card rows, Owed to you row, RTA bar, Assign sheet, Category sheet (assign/move/target). *Verify:* component tests + Playwright against `wrangler dev` with the fake provider.
 - [ ] Activity: search, All / Needs attention / Not posted yet, categorize in place, select several, split, transaction sheets (pending, posted, income, refund, paid back), match, transfer pick, add expected/upcoming, check-pending. *Verify:* Playwright.
 - [ ] Accounts: net worth, cash and cards, registers, Owed to you, repair prompt, health alerts. *Verify:* Playwright.
@@ -54,25 +54,27 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 
 - [ ] First run: welcome, budget start, link banks (Item meter + confirm), make categories. *Verify:* Playwright.
 - [ ] Settings: categories and groups (archive/restore), rules (preview, JSON export), payees (merge, rename), connections, import/export, appearance, tracking, note button. *Verify:* Playwright + API tests.
-- [ ] CSV history import (history only) and full export (JSON + CSV). *Verify:* integration tests.
+- [x] CSV history import (history only) and full export (JSON + CSV). *Verify:* integration tests.
 
 ## 6. Reports, net worth, reimbursements (design Phase 6)
 
+- [x] Reports API (Spending, Invested, Income, Rewards, by category, trend, net worth); UI pending in phase 4 work.
 - [ ] Reports: month to date, Spent / Invested / Income / Rewards, spending by category net of paybacks, still owed line, drill-down. *Verify:* domain tests + Playwright.
-- [ ] Owed to you: mark, match (split across items), close, cancel, unlink, expect-by, overdue. *Verify:* domain property tests (rules 9, 11, 12) + Playwright.
+- [x] Owed to you: mark, match (split across items), close, cancel, unlink, expect-by, overdue. *Verify:* domain property tests (rules 9, 11, 12) and the API integration test; Playwright with the UI.
 
 ## 7. Usage tracking
 
+- [x] Server side: `POST /api/usage` (2,000/day cap, dropped from the breaker's 70% tier), notes, daily roll-up into `usage_daily`, 90-day prune, Export usage (JSON), delete on request.
 - [ ] Client buffer (30 s flush + `keepalive` on hide), `data-track` ids only, 2,000/day cap, breaker drop at 70%, `usage_event` table, daily roll-up into `usage_daily`, 90-day prune, Export usage (JSON), Note button, off switch with delete. *Verify:* unit + integration tests; a test asserts no amounts/names can be recorded.
 
 ## 8. Backups, monitoring, operations (design Phase 5 prerequisites)
 
-- [ ] `/api/health` (statuses only), watchdog in `health_status`, Accounts alerts. *Verify:* integration tests.
-- [ ] GitHub Actions: nightly backup (D1 export → age public key → R2 with manifest), monitor every 6 hours, monthly keepalive. *Verify:* `actionlint`; dry-run scripts tested locally.
-- [ ] Runbooks: first deploy, Access, Plaid Production link, restore drill. *Verify:* reviewed against the doc.
+- [x] `/api/health` (statuses only), watchdog in `health_status`, Accounts alerts. *Verify:* integration tests.
+- [x] GitHub Actions: nightly backup (D1 export → age public key → R2 with manifest), monitor every 6 hours, monthly keepalive. *Verify:* `actionlint`; dry-run scripts tested locally.
+- [x] Runbooks: first deploy, Access, Plaid Production link, restore drill. *Verify:* reviewed against the doc.
 - [ ] **(manual)** Create Cloudflare resources, Access app and policy, secrets, R2 bucket, first production deploy, confirm Plaid Trial status and 180-day window.
 
 ## 9. CI and supply chain
 
-- [ ] `ci.yml`: frozen install → lint, typecheck, format → unit → integration (local D1) → build → migration check → bundle budget → Playwright (fake provider). *Verify:* green run on GitHub.
-- [ ] `security.yml` (CodeQL, Gitleaks, OSV-Scanner, dependency review, zizmor, actionlint), `deploy.yml` (staging → production with approval, rollback), `release.yml`, `nightly.yml`, `monitor.yml`, `keepalive.yml`, Dependabot, CODEOWNERS, PR template; actions pinned to SHAs. *Verify:* `actionlint` clean; CI green.
+- [x] `ci.yml`: frozen install → lint, typecheck, format → unit → integration (local D1) → build → migration check → bundle budget → Playwright (fake provider). *Verify:* green run on GitHub.
+- [x] `security.yml` (CodeQL, Gitleaks, OSV-Scanner, dependency review, zizmor, actionlint), `deploy.yml` (staging → production with approval, rollback), `release.yml`, `nightly.yml`, `monitor.yml`, `keepalive.yml`, Dependabot, CODEOWNERS, PR template; actions pinned to SHAs. *Verify:* `actionlint` clean; CI green.

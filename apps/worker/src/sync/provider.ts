@@ -13,6 +13,7 @@ export function makeProvider(env: Env): BankDataProvider & PlaidProvider {
     env: plaidEnv,
     ...(env.PLAID_BASE_URL ? { baseUrl: env.PLAID_BASE_URL } : {}),
     ...(env.PLAID_WEBHOOK_URL ? { webhookUrl: env.PLAID_WEBHOOK_URL } : {}),
+    ...(env.PLAID_REDIRECT_URI ? { redirectUri: env.PLAID_REDIRECT_URI } : {}),
   });
 }
 

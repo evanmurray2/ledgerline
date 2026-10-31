@@ -13,6 +13,7 @@ export default defineConfig(async () => {
         miniflare: {
           bindings: {
             TEST_MIGRATIONS: migrations,
+            PLAID_ENV: 'sandbox',
             PLAID_CLIENT_ID: 'test-client',
             PLAID_SECRET: 'test-secret',
             PLAID_BASE_URL: 'http://plaid.test',

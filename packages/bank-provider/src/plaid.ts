@@ -26,6 +26,8 @@ export interface PlaidConfig {
   /** Overrides the API origin (tests and the local Plaid-shaped mock). */
   baseUrl?: string;
   webhookUrl?: string;
+  /** Registered OAuth redirect URI (needed by OAuth institutions in some browsers). */
+  redirectUri?: string;
   clientName?: string;
   fetch?: typeof fetch;
   now?: () => number;
@@ -216,6 +218,7 @@ export class PlaidProvider implements BankDataProvider {
       transactions: { days_requested: PLAID_DAYS_REQUESTED },
     };
     if (this.cfg.webhookUrl) req.webhook = this.cfg.webhookUrl;
+    if (this.cfg.redirectUri) req.redirect_uri = this.cfg.redirectUri;
     if (opts.mode === 'repair') {
       if (!opts.accessToken)
         throw new ProviderError('REPAIR_NEEDS_TOKEN', 'update mode needs the existing Item', false);
