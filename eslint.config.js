@@ -5,6 +5,9 @@ import tseslint from 'typescript-eslint';
 export default tseslint.config(
   {
     ignores: [
+      '**/.bundle/**',
+      '.claude/**',
+      '**/.measure/**',
       '**/dist/**',
       '**/.wrangler/**',
       '**/node_modules/**',
