@@ -1,1 +1,651 @@
-export {};
+// API contract shared by the Worker (apps/worker) and the SPA (apps/web). Zod schemas validate every request in
+// the Worker; the SPA uses the inferred types. Money is integer cents everywhere; months are 'YYYY-MM', dates
+// 'YYYY-MM-DD'. Mutations require `content-type: application/json` and the `x-ledgerline: 1` header.
+import { z } from 'zod';
+
+export const CSRF_HEADER = 'x-ledgerline';
+
+const cents = z.number().int();
+const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
+const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const id = z.string().min(1).max(80);
+
+// ---------------------------------------------------------------- session
+
+export const Session = z.object({
+  user: z.object({ email: z.string(), login: z.string().nullable() }),
+  budget: z.object({
+    id,
+    name: z.string(),
+    startMonth: month.nullable(),
+    timeZone: z.string(),
+    currentMonth: month,
+    today: date,
+    setupStep: z.enum(['start', 'link', 'categories', 'done']),
+  }),
+  appVersion: z.string(),
+  /** 'ok' | 'paused' (70% of a daily D1 limit) | 'readonly' (90%: banner, writes refused). */
+  writeState: z.enum(['ok', 'paused', 'readonly']),
+  readOnlyUntil: z.string().nullable(),
+  settings: z.object({ tracking: z.boolean(), noteButton: z.boolean() }),
+});
+export type Session = z.infer<typeof Session>;
+
+// ---------------------------------------------------------------- budget
+
+export const CategoryStatus = z.enum([
+  'overspent',
+  'underfunded',
+  'funded',
+  'overfunded',
+  'low',
+  'invested',
+  'no_target',
+]);
+export type CategoryStatus = z.infer<typeof CategoryStatus>;
+
+export const BudgetCategoryRow = z.object({
+  id,
+  name: z.string(),
+  kind: z.enum(['spending', 'saving']),
+  assigned: cents,
+  /** Outflows this month, your share, positive. */
+  spent: cents,
+  activity: cents,
+  available: cents,
+  status: CategoryStatus,
+  /** The row's second line, e.g. "$387.60 of $600.00 spent", "needs $90.00 this month · $540 by Jan 15". */
+  detail: z.string(),
+  /** Share of this month's money left, 0–100, or null when the row shows no bar. */
+  leftPercent: z.number().int().min(0).max(100).nullable(),
+  need: cents,
+  /** The one-tap fix for Needs attention (positive = into the category). */
+  fix: z.object({ verb: z.enum(['Cover', 'Fund', 'Add', 'Move']), amount: cents }).nullable(),
+  targetText: z.string(),
+  /** Card overspending explained: which card's payment category is short because of this category. */
+  creditOverspent: z.array(z.object({ cardAccountId: id, cardName: z.string(), amount: cents })),
+});
+export type BudgetCategoryRow = z.infer<typeof BudgetCategoryRow>;
+
+export const CardRow = z.object({
+  accountId: id,
+  categoryId: id,
+  name: z.string(),
+  /** Payment category available (P). */
+  available: cents,
+  /** Card bank balance (amount owed, positive). */
+  owed: cents,
+  budgetedPending: cents,
+  uncategorized: cents,
+  need: cents,
+  short: cents,
+  status: z.enum(['covered', 'short']),
+  statement: z.object({ balance: cents, due: date.nullable(), covered: z.boolean() }).nullable(),
+  detail: z.string(),
+});
+export type CardRow = z.infer<typeof CardRow>;
+
+export const AttentionItem = z.object({
+  section: z.enum(['Ready to Assign', 'Overspent', 'Underfunded', 'Low', 'Overfunded', 'Owed to you']),
+  key: z.string(),
+  name: z.string(),
+  amount: cents,
+  detail: z.string(),
+  /** Category to fix with `fix.amount`, or a screen link. */
+  categoryId: id.nullable(),
+  fix: z
+    .object({ verb: z.enum(['Cover', 'Fund', 'Add', 'Move', 'Review', 'Move money']), amount: cents })
+    .nullable(),
+  link: z.enum(['owed', 'category', 'assign']).nullable(),
+});
+export type AttentionItem = z.infer<typeof AttentionItem>;
+
+export const BudgetView = z.object({
+  month,
+  currentMonth: month,
+  minMonth: month,
+  maxMonth: month,
+  rta: cents,
+  /** True while an older edit is still being recalculated (decisions.md D-22). */
+  rtaUpdating: z.boolean(),
+  cards: z.array(CardRow),
+  owed: z.object({ out: cents, late: z.number().int(), status: z.enum(['late', 'tracking']) }),
+  groups: z.array(
+    z.object({
+      id,
+      name: z.string(),
+      isBills: z.boolean(),
+      total: cents,
+      categories: z.array(BudgetCategoryRow),
+    }),
+  ),
+  archived: z.array(BudgetCategoryRow),
+  attention: z.array(AttentionItem),
+  /** Fund-all total for the Underfunded section. */
+  underfundedTotal: cents,
+  syncProblem: z.string().nullable(),
+});
+export type BudgetView = z.infer<typeof BudgetView>;
+
+export const AssignRequest = z.object({
+  month,
+  /** Each item adds `amount` (may be negative) to the category's assignment for the month. */
+  items: z
+    .array(z.object({ categoryId: id, amount: cents }))
+    .min(1)
+    .max(100),
+});
+export const MoveRequest = z.object({
+  month,
+  from: id.or(z.literal('rta')),
+  to: id.or(z.literal('rta')),
+  amount: cents.positive(),
+});
+export const SetAssignedRequest = z.object({ month, categoryId: id, assigned: cents });
+export const MutationResult = z.object({ ok: z.literal(true), rta: cents, rtaUpdating: z.boolean() });
+export type MutationResult = z.infer<typeof MutationResult>;
+
+export const AssignSuggestion = z.object({
+  categoryId: id,
+  name: z.string(),
+  reason: z.enum(['cover', 'target', 'card']),
+  detail: z.string(),
+  amount: cents,
+});
+export const AssignView = z.object({ month, rta: cents, suggestions: z.array(AssignSuggestion) });
+export type AssignView = z.infer<typeof AssignView>;
+
+export const Target = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('refill'),
+    amount: cents,
+    periodMonths: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12)]),
+    anchor: month,
+  }),
+  z.object({ type: z.literal('set_aside'), amount: cents }),
+  z.object({ type: z.literal('by_date'), amount: cents, targetMonth: month }),
+  z.object({ type: z.literal('no_date'), amount: cents, monthly: cents.nullable() }),
+  z.object({ type: z.literal('none') }),
+]);
+export type Target = z.infer<typeof Target>;
+
+export const TxnListRow = z.object({
+  key: z.string(),
+  payee: z.string(),
+  accountId: id,
+  accountName: z.string(),
+  date,
+  amount: cents,
+  status: z.enum(['pending', 'posted', 'upcoming']),
+  wontClear: z.boolean(),
+  categoryLabel: z.string().nullable(),
+  /** Short badge, e.g. "By rule", "Your estimate", "Card hold", "Owed to you · Half". */
+  badge: z.string().nullable(),
+  badgeKind: z.enum(['alert', 'match', 'est', 'hold', 'mine', 'owed', 'rule']).nullable(),
+  sub: z.string().nullable(),
+  /** Which sheet opens: pending, posted, income, refund, paid back, transfer pick, match, check pending. */
+  sheet: z.enum(['txn', 'transfer', 'match', 'checkPending']),
+});
+export type TxnListRow = z.infer<typeof TxnListRow>;
+
+export const CategorySheet = z.object({
+  id,
+  name: z.string(),
+  month,
+  status: CategoryStatus,
+  statusText: z.string(),
+  assigned: cents,
+  spent: cents,
+  available: cents,
+  target: Target,
+  targetText: z.string(),
+  targetHelp: z.string(),
+  lastMonthAssigned: cents,
+  rta: cents,
+  recent: z.array(TxnListRow),
+  recentTotal: z.number().int(),
+  moveOptions: z.array(z.object({ id: id.or(z.literal('rta')), label: z.string() })),
+});
+export type CategorySheet = z.infer<typeof CategorySheet>;
+
+export const TargetRequest = z.object({ categoryId: id, month, target: Target });
+
+// ---------------------------------------------------------------- activity
+
+export const ActivityView = z.object({
+  attentionCount: z.number().int(),
+  moneyToMatch: z.array(TxnListRow),
+  transfersToSort: z.array(TxnListRow),
+  needsCategory: z.array(
+    TxnListRow.extend({
+      history: z
+        .object({ title: z.string(), categories: z.array(z.string()), consistent: z.boolean() })
+        .nullable(),
+    }),
+  ),
+  checkThese: z.array(TxnListRow.extend({ action: z.enum(['dismiss', 'review']) })),
+  pending: z.array(TxnListRow),
+  pendingTotal: cents,
+  upcoming: z.array(TxnListRow),
+  posted: z.array(TxnListRow),
+  nextCursor: z.string().nullable(),
+  categoryPicker: z.array(
+    z.object({
+      group: z.string(),
+      categories: z.array(z.object({ id, name: z.string(), available: cents })),
+    }),
+  ),
+});
+export type ActivityView = z.infer<typeof ActivityView>;
+
+export const TxnSheet = z.object({
+  key: z.string(),
+  kind: z.enum(['pending', 'posted', 'income', 'refund', 'paidBack', 'transfer', 'manual', 'upcoming']),
+  payee: z.string(),
+  rawName: z.string(),
+  accountId: id,
+  accountName: z.string(),
+  date,
+  postedDate: date.nullable(),
+  amount: cents,
+  bankAmount: cents.nullable(),
+  estimatedAmount: cents.nullable(),
+  status: z.enum(['pending', 'posted', 'upcoming']),
+  wontClear: z.boolean(),
+  categoryId: id.nullable(),
+  categoryLabel: z.string().nullable(),
+  categorizedBy: z.string().nullable(),
+  split: z
+    .array(
+      z.object({
+        id,
+        categoryId: id.nullable(),
+        amount: cents,
+        memo: z.string().nullable(),
+        absorbsRemainder: z.boolean(),
+      }),
+    )
+    .nullable(),
+  memo: z.string().nullable(),
+  budgetMonth: month,
+  budgetMonthOverridden: z.boolean(),
+  owed: z.array(
+    z.object({ id, amount: cents, matched: cents, expectBy: date.nullable(), status: z.string() }),
+  ),
+  paybacks: z.array(z.object({ inflowKey: z.string(), itemId: id, amount: cents, label: z.string() })),
+  refundOf: z.object({ key: z.string(), label: z.string() }).nullable(),
+  alerts: z.array(z.string()),
+});
+export type TxnSheet = z.infer<typeof TxnSheet>;
+
+export const TxnPatch = z.object({
+  categoryId: id.nullable().optional(),
+  toRta: z.boolean().optional(),
+  split: z
+    .array(
+      z.object({
+        categoryId: id.nullable(),
+        amount: cents,
+        memo: z.string().max(200).nullable(),
+        absorbsRemainder: z.boolean(),
+      }),
+    )
+    .nullable()
+    .optional(),
+  memo: z.string().max(500).nullable().optional(),
+  estimatedAmount: cents.nullable().optional(),
+  wontClear: z.boolean().optional(),
+  budgetMonth: month.nullable().optional(),
+  payeeName: z.string().min(1).max(120).optional(),
+  markOwed: z
+    .object({
+      mode: z.enum(['half', 'even', 'all', 'fraction', 'fixed']),
+      n: z.number().int().positive().optional(),
+      num: z.number().int().optional(),
+      den: z.number().int().optional(),
+      amount: cents.optional(),
+      expectBy: date.nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+export const CategorizeRequest = z.object({
+  keys: z.array(z.string()).min(1).max(200),
+  categoryId: id.nullable(),
+  toRta: z.boolean().optional(),
+});
+export const NewTxnRequest = z.object({
+  kind: z.enum(['pending', 'upcoming']),
+  accountId: id,
+  date,
+  /** Outflow negative. */
+  amount: cents,
+  payee: z.string().min(1).max(120),
+  categoryId: id.nullable(),
+  repeats: z.enum(['never', 'monthly', 'yearly']),
+});
+export const MatchRequest = z.object({
+  inflowKey: z.string(),
+  items: z.array(z.object({ itemId: id, amount: cents.positive() })),
+  /** The rest of the inflow: Income goes to RTA; Keep waiting and I'll send it back stay in Waiting to match. */
+  rest: z.enum(['income', 'keep', 'send_back']),
+});
+export const TransferPick = z.object({ otherKey: z.string().nullable() });
+export const PendingCheckAction = z.object({ action: z.enum(['keep_waiting', 'delete']) });
+
+export const MatchView = z.object({
+  inflow: TxnListRow,
+  open: z.array(
+    z.object({
+      id,
+      label: z.string(),
+      still: cents,
+      expectBy: date.nullable(),
+      late: z.boolean(),
+      suggested: cents,
+    }),
+  ),
+});
+export type MatchView = z.infer<typeof MatchView>;
+
+// ---------------------------------------------------------------- owed
+
+export const OwedView = z.object({
+  out: cents,
+  items: z.array(
+    z.object({
+      id,
+      txnKey: z.string(),
+      label: z.string(),
+      sub: z.string(),
+      categoryName: z.string().nullable(),
+      amount: cents,
+      matched: cents,
+      still: cents,
+      expectBy: date.nullable(),
+      status: z.enum(['open', 'late', 'paid_back', 'closed', 'canceled']),
+    }),
+  ),
+  projected: z.array(z.object({ key: z.string(), date, owed: cents, shortfall: cents, label: z.string() })),
+});
+export type OwedView = z.infer<typeof OwedView>;
+export const OwedAction = z.object({
+  action: z.enum(['close', 'cancel', 'snooze']),
+  expectBy: date.optional(),
+});
+
+// ---------------------------------------------------------------- accounts
+
+export const AccountRow = z.object({
+  id,
+  name: z.string(),
+  kind: z.enum(['checking', 'savings', 'credit']),
+  institution: z.string(),
+  mask: z.string().nullable(),
+  /** Bank-reported (cleared). Cards: amount owed, positive. */
+  bank: cents,
+  pending: cents,
+  /** Cleared + pending, excluding won't-clear. */
+  working: cents,
+  syncedAt: z.number().int().nullable(),
+  connectionStatus: z.enum(['ok', 'login_required', 'error']),
+  drift: cents.nullable(),
+  statement: z.object({ balance: cents, due: date.nullable(), covered: z.boolean() }).nullable(),
+  meta: z.string(),
+});
+export type AccountRow = z.infer<typeof AccountRow>;
+
+export const AccountsView = z.object({
+  netWorth: cents,
+  netWorthChange: cents,
+  month,
+  owedOut: cents,
+  groups: z.array(z.object({ name: z.string(), total: cents, accounts: z.array(AccountRow) })),
+  repairs: z.array(
+    z.object({ connectionId: id, institution: z.string(), lastSynced: z.number().int().nullable() }),
+  ),
+  failures: z.array(
+    z.object({
+      connectionId: id,
+      institution: z.string(),
+      lastGood: z.number().int().nullable(),
+      nextRetry: z.number().int().nullable(),
+    }),
+  ),
+  alerts: z.array(
+    z.object({ kind: z.enum(['backup', 'monitor', 'sync', 'history_changed']), text: z.string() }),
+  ),
+});
+export type AccountsView = z.infer<typeof AccountsView>;
+
+export const RegisterView = z.object({
+  account: AccountRow,
+  days: z.array(z.object({ label: z.string(), balance: cents.nullable(), rows: z.array(TxnListRow) })),
+  note: z.string().nullable(),
+});
+export type RegisterView = z.infer<typeof RegisterView>;
+
+// ---------------------------------------------------------------- reports
+
+export const ReportsView = z.object({
+  month,
+  monthToDate: z.boolean(),
+  tiles: z.object({ spent: cents, invested: cents, income: cents, rewards: cents }),
+  byCategory: z.array(z.object({ categoryId: id, name: z.string(), spent: cents })),
+  stillOwed: cents,
+  trend: z.array(z.object({ month, spent: cents, income: cents, invested: cents })),
+  netWorth: z.array(z.object({ month, value: cents })),
+});
+export type ReportsView = z.infer<typeof ReportsView>;
+
+// ---------------------------------------------------------------- settings
+
+export const CategoriesView = z.object({
+  groups: z.array(
+    z.object({
+      id,
+      name: z.string(),
+      isBills: z.boolean(),
+      system: z.boolean(),
+      categories: z.array(
+        z.object({
+          id,
+          name: z.string(),
+          kind: z.enum(['spending', 'saving', 'cc_payment']),
+          meta: z.string(),
+          available: cents,
+        }),
+      ),
+    }),
+  ),
+  archived: z.array(z.object({ id, name: z.string(), meta: z.string() })),
+});
+export type CategoriesView = z.infer<typeof CategoriesView>;
+export const CategoryUpsert = z.object({
+  id: id.optional(),
+  name: z.string().min(1).max(60),
+  groupId: id.nullable(),
+  kind: z.enum(['spending', 'saving']),
+  dueDay: z.number().int().min(1).max(31).nullable().optional(),
+  lowThreshold: cents.nullable().optional(),
+});
+export const GroupUpsert = z.object({
+  id: id.optional(),
+  name: z.string().min(1).max(60),
+  isBills: z.boolean(),
+});
+export const ArchiveRequest = z.object({ archived: z.boolean() });
+export const ReorderRequest = z.object({ ids: z.array(id).max(500) });
+
+export const RuleCondition = z.discriminatedUnion('field', [
+  z.object({ field: z.literal('payee'), op: z.enum(['is', 'contains']), value: z.string().max(120) }),
+  z.object({
+    field: z.literal('description'),
+    op: z.enum(['contains', 'matches']),
+    value: z.string().max(200),
+  }),
+  z.object({ field: z.literal('account'), op: z.literal('is'), value: id }),
+  z.object({ field: z.literal('amount'), op: z.literal('equals'), value: cents }),
+  z.object({ field: z.literal('amount'), op: z.literal('between'), min: cents, max: cents }),
+  z.object({ field: z.literal('direction'), op: z.literal('is'), value: z.enum(['in', 'out']) }),
+  z.object({ field: z.literal('provider_category'), op: z.literal('is'), value: z.string().max(80) }),
+  z.object({
+    field: z.literal('day_of_month'),
+    op: z.literal('between'),
+    min: z.number().int(),
+    max: z.number().int(),
+  }),
+]);
+export const RuleAction = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('set_category'), categoryId: id }),
+  z.object({ type: z.literal('set_payee'), payeeId: id }),
+  z.object({ type: z.literal('set_memo'), memo: z.string().max(200) }),
+  z.object({
+    type: z.literal('split'),
+    lines: z.array(
+      z.object({
+        categoryId: id,
+        fixed: cents.optional(),
+        percent: z.number().optional(),
+        absorbsRemainder: z.boolean().optional(),
+      }),
+    ),
+  }),
+  z.object({ type: z.literal('mark_transfer'), accountId: id }),
+  z.object({
+    type: z.literal('mark_owed'),
+    num: z.number().int().optional(),
+    den: z.number().int().optional(),
+    fixed: cents.optional(),
+    minAmount: cents.optional(),
+    expectByDay: z.number().int().optional(),
+    expectByDays: z.number().int().optional(),
+  }),
+  z.object({ type: z.literal('previous_month_if_within_days'), days: z.number().int().min(1).max(15) }),
+  z.object({ type: z.literal('flag_review') }),
+]);
+export const RuleBody = z.object({
+  id: id.optional(),
+  name: z.string().min(1).max(80),
+  conditions: z.object({ all: z.array(RuleCondition), any: z.array(z.array(RuleCondition)).optional() }),
+  actions: z.array(RuleAction).min(1),
+  applyToPending: z.boolean(),
+  stopAfter: z.boolean(),
+  enabled: z.boolean(),
+});
+export type RuleBody = z.infer<typeof RuleBody>;
+export const RulesView = z.object({
+  rules: z.array(RuleBody.extend({ id, summary: z.string(), matches90d: z.number().int() })),
+});
+export type RulesView = z.infer<typeof RulesView>;
+export const RulePreview = z.object({ matches: z.array(TxnListRow), uncategorizedMatches: z.number().int() });
+
+export const PayeesView = z.object({
+  suggestions: z.array(
+    z.object({
+      name: z.string(),
+      rawNames: z.array(z.string()),
+      transactions: z.number().int(),
+      payeeIds: z.array(id),
+    }),
+  ),
+  payees: z.array(
+    z.object({
+      id,
+      name: z.string(),
+      transactions: z.number().int(),
+      remember: z.boolean(),
+      defaultCategory: z.string().nullable(),
+    }),
+  ),
+});
+export type PayeesView = z.infer<typeof PayeesView>;
+export const MergePayees = z.object({ ids: z.array(id).min(2), name: z.string().min(1).max(120) });
+export const RenamePayee = z.object({ name: z.string().min(1).max(120), remember: z.boolean().optional() });
+
+export const ConnectionsView = z.object({
+  used: z.number().int(),
+  limit: z.number().int(),
+  environment: z.enum(['sandbox', 'production']),
+  items: z.array(
+    z.object({
+      id,
+      institution: z.string(),
+      accounts: z.string(),
+      status: z.enum(['ok', 'login_required', 'error', 'removed']),
+      lastSynced: z.number().int().nullable(),
+      linkedAt: z.number().int(),
+    }),
+  ),
+});
+export type ConnectionsView = z.infer<typeof ConnectionsView>;
+export const LinkTokenRequest = z.object({
+  mode: z.enum(['new', 'repair']),
+  connectionId: id.optional(),
+  confirmSlot: z.boolean().optional(),
+});
+export const LinkExchange = z.object({ publicToken: z.string().min(1).max(400) });
+export const StartingBalances = z.object({
+  accounts: z.array(z.object({ accountId: id, startingBalance: cents })),
+});
+export const SetupStart = z.object({ startMonth: month });
+
+export const UsageBatch = z.object({
+  sessionId: z.string().max(40),
+  appVersion: z.string().max(20),
+  events: z
+    .array(
+      z.object({
+        at: z.number().int(),
+        screen: z
+          .string()
+          .max(60)
+          .regex(/^[a-z0-9_.-]+$/),
+        event: z
+          .string()
+          .max(60)
+          .regex(/^[a-z0-9_.-]+$/),
+        target: z
+          .string()
+          .max(60)
+          .regex(/^[a-z0-9_.-]+$/)
+          .nullable(),
+        value: z.number().int().nullable(),
+      }),
+    )
+    .max(500),
+});
+export type UsageBatch = z.infer<typeof UsageBatch>;
+export const NoteRequest = z.object({
+  screen: z.string().max(60),
+  text: z.string().min(1).max(2000),
+  recentEvents: z.array(z.string().max(80)).max(20),
+});
+export const SettingsPatch = z.object({
+  tracking: z.boolean().optional(),
+  noteButton: z.boolean().optional(),
+});
+
+export const ImportCsvRequest = z.object({ accountId: id, csv: z.string().max(5_000_000) });
+export const ImportResult = z.object({
+  imported: z.number().int(),
+  skipped: z.number().int(),
+  history: z.number().int(),
+});
+
+export const HealthView = z.object({
+  ok: z.boolean(),
+  connections: z.array(z.object({ id, lastSyncedAt: z.number().int().nullable(), stale: z.boolean() })),
+  lastBackupAt: z.number().int().nullable(),
+  watermarkLag: z.number().int(),
+  usage: z.object({
+    day: z.string(),
+    rowsRead: z.number().int(),
+    rowsWritten: z.number().int(),
+    readPct: z.number(),
+    writePct: z.number(),
+  }),
+});
+export type HealthView = z.infer<typeof HealthView>;
+
+export const ApiError = z.object({ error: z.string(), message: z.string() });
