@@ -1,0 +1,6 @@
+docs/prototype/
+docs/design.md
+docs/sync-spec.md
+pnpm-lock.yaml
+.wrangler/
+dist/
