@@ -1,0 +1,184 @@
+import { describe, expect, it } from 'vitest';
+import fc from 'fast-check';
+import {
+  PLAID_DAYS_REQUESTED,
+  PlaidProvider,
+  classifyWebhook,
+  parsePlaidSyncPage,
+  plaidAmountToCents,
+  scanSyncTail,
+  scanSyncTailBytes,
+  sha256Hex,
+} from '../src/plaid.js';
+
+describe('Plaid adapter', () => {
+  it('flips the sign: Plaid outflows are positive, ours are negative cents', () => {
+    expect(plaidAmountToCents(64.22)).toBe(-6422);
+    expect(plaidAmountToCents(-1000)).toBe(100000);
+    expect(Object.is(plaidAmountToCents(0), 0)).toBe(true);
+    fc.assert(
+      fc.property(
+        fc.integer({ min: -10_000_000, max: 10_000_000 }),
+        (c) => plaidAmountToCents(c / 100) === -c,
+      ),
+    );
+  });
+
+  it('asks for the same 180-day history window in every Link session, and repairs in update mode', () => {
+    const p = new PlaidProvider({
+      clientId: 'c',
+      secret: 's',
+      env: 'production',
+      webhookUrl: 'https://x/api/webhooks/plaid',
+    });
+    const fresh = p.linkTokenRequest({ mode: 'new', userId: 'u' });
+    expect(PLAID_DAYS_REQUESTED).toBe(180);
+    expect(fresh.transactions).toEqual({ days_requested: 180 });
+    expect(fresh.products).toEqual(['transactions']);
+    const repair = p.linkTokenRequest({ mode: 'repair', accessToken: 'access-x', userId: 'u' });
+    expect(repair.access_token).toBe('access-x');
+    expect(repair.products).toBeUndefined();
+    expect(repair.transactions).toEqual({ days_requested: 180 });
+    expect(() => p.linkTokenRequest({ mode: 'repair', userId: 'u' })).toThrow();
+  });
+
+  it('parses a sync page into normalized events with raw paths', () => {
+    const body = JSON.stringify({
+      added: [
+        {
+          transaction_id: 't1',
+          account_id: 'a',
+          amount: 12.5,
+          date: '2026-11-01',
+          pending: true,
+          name: 'X',
+          merchant_name: 'Shop',
+        },
+      ],
+      modified: [],
+      removed: [{ transaction_id: 't0', account_id: 'a' }],
+      next_cursor: 'c2',
+      has_more: false,
+    });
+    const p = parsePlaidSyncPage(body);
+    expect(p.events.map((e) => [e.kind, e.providerTxnId, e.rawPath])).toEqual([
+      ['added', 't1', 'added/0'],
+      ['removed', 't0', 'removed/0'],
+    ]);
+    expect(p.events[0]!.payload).toMatchObject({ amount: -1250, pending: true, merchantName: 'Shop' });
+    expect(() =>
+      parsePlaidSyncPage(
+        JSON.stringify({
+          added: [{ transaction_id: 1 }],
+          modified: [],
+          removed: [],
+          next_cursor: '',
+          has_more: false,
+        }),
+      ),
+    ).toThrow();
+  });
+
+  it('reads next_cursor and has_more from the tail without parsing, ignoring escaped look-alikes', () => {
+    const tricky = JSON.stringify(
+      { added: [{ name: '"next_cursor": "evil"' }], next_cursor: 'real', has_more: true },
+      null,
+      2,
+    );
+    expect(scanSyncTail(tricky)).toEqual({ nextCursor: 'real', hasMore: true });
+    const big = JSON.stringify({
+      added: Array.from({ length: 200 }, (_, i) => ({ i, pad: 'x'.repeat(50) })),
+      next_cursor: 'tail',
+      has_more: false,
+    });
+    expect(scanSyncTailBytes(new TextEncoder().encode(big))).toEqual({ nextCursor: 'tail', hasMore: false });
+  });
+
+  it('classifies webhooks: only SYNC_UPDATES_AVAILABLE starts a sync', () => {
+    expect(
+      classifyWebhook({ webhook_type: 'TRANSACTIONS', webhook_code: 'SYNC_UPDATES_AVAILABLE', item_id: 'i' })
+        .type,
+    ).toBe('sync_updates_available');
+    expect(classifyWebhook({ webhook_type: 'ITEM', webhook_code: 'ERROR' }).type).toBe('item_error');
+    expect(classifyWebhook({ webhook_type: 'TRANSACTIONS', webhook_code: 'DEFAULT_UPDATE' }).type).toBe(
+      'other',
+    );
+  });
+});
+
+describe('Plaid webhook verification (ES256, body hash, 5-minute iat)', () => {
+  const enc = (o: unknown) =>
+    btoa(JSON.stringify(o)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const b64u = (b: ArrayBuffer) =>
+    btoa(String.fromCharCode(...new Uint8Array(b)))
+      .replace(/=+$/, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+
+  async function setup(now: number) {
+    const kp = (await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+      'sign',
+      'verify',
+    ])) as CryptoKeyPair;
+    const jwk = await crypto.subtle.exportKey('jwk', kp.publicKey);
+    let keyCalls = 0;
+    const provider = new PlaidProvider({
+      clientId: 'c',
+      secret: 's',
+      env: 'sandbox',
+      now: () => now,
+      fetch: async () => {
+        keyCalls++;
+        return new Response(JSON.stringify({ key: { ...jwk, kid: 'k1', expired_at: null } }), {
+          status: 200,
+        });
+      },
+    });
+    const sign = async (body: string, claims: Record<string, unknown> = {}) => {
+      const h = enc({ alg: 'ES256', kid: 'k1', typ: 'JWT' });
+      const p = enc({ iat: Math.floor(now / 1000), request_body_sha256: await sha256Hex(body), ...claims });
+      const sig = await crypto.subtle.sign(
+        { name: 'ECDSA', hash: 'SHA-256' },
+        kp.privateKey,
+        new TextEncoder().encode(`${h}.${p}`),
+      );
+      return `${h}.${p}.${b64u(sig)}`;
+    };
+    return { provider, sign, keyCalls: () => keyCalls };
+  }
+  const body = JSON.stringify({
+    webhook_type: 'TRANSACTIONS',
+    webhook_code: 'SYNC_UPDATES_AVAILABLE',
+    item_id: 'item-1',
+  });
+  const req = (jwt: string | null, b = body) =>
+    new Request('https://x/api/webhooks/plaid', {
+      method: 'POST',
+      body: b,
+      headers: jwt ? { 'plaid-verification': jwt } : {},
+    });
+
+  it('accepts a valid signature and caches the key', async () => {
+    const now = Date.now();
+    const { provider, sign, keyCalls } = await setup(now);
+    expect(await provider.verifyWebhook(req(await sign(body)))).toEqual({
+      type: 'sync_updates_available',
+      providerItemId: 'item-1',
+      code: 'TRANSACTIONS:SYNC_UPDATES_AVAILABLE',
+    });
+    await provider.verifyWebhook(req(await sign(body)));
+    expect(keyCalls()).toBe(1);
+  });
+
+  it('rejects a missing header, a tampered body, an old iat and a bad signature', async () => {
+    const now = Date.now();
+    const { provider, sign } = await setup(now);
+    expect(await provider.verifyWebhook(req(null))).toBeNull();
+    expect(await provider.verifyWebhook(req(await sign(body), body.replace('item-1', 'item-2')))).toBeNull();
+    expect(
+      await provider.verifyWebhook(req(await sign(body, { iat: Math.floor(now / 1000) - 301 }))),
+    ).toBeNull();
+    const other = await setup(now);
+    expect(await provider.verifyWebhook(req(await other.sign(body)))).toBeNull();
+  });
+});
