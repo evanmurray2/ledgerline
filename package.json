@@ -13,7 +13,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "pnpm -r --if-present test",
-    "test:unit": "pnpm --filter ./packages/* --if-present test",
+    "test:unit": "pnpm --filter \"./packages/**\" --if-present test",
     "test:integration": "pnpm --filter @ledgerline/worker test",
     "test:e2e": "pnpm --filter @ledgerline/e2e test"
   },
