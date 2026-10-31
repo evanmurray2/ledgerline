@@ -1,0 +1,23 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "ledgerline",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ledgerline",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../../packages/db/migrations",
+    },
+  ],
+  "r2_buckets": [{ "binding": "RAW", "bucket_name": "ledgerline-raw" }],
+  "workflows": [
+    { "name": "ledgerline-sync", "binding": "SYNC", "class_name": "SyncWorkflow" },
+    { "name": "ledgerline-maintenance", "binding": "MAINTENANCE", "class_name": "MaintenanceWorkflow" },
+  ],
+  "vars": { "PLAID_ENV": "sandbox", "APP_VERSION": "0.1.0" },
+}

@@ -1,0 +1,26 @@
+{
+  "name": "@ledgerline/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local"
+  },
+  "dependencies": {
+    "@ledgerline/bank-provider": "workspace:*",
+    "@ledgerline/contracts": "workspace:*",
+    "@ledgerline/db": "workspace:*",
+    "@ledgerline/domain": "workspace:*",
+    "@ledgerline/platform": "workspace:*",
+    "hono": "4.13.14",
+    "wrangler": "4.156.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.4.11",
+    "vitest": "4.1.12"
+  }
+}

@@ -1,0 +1,236 @@
+// Local go/no-go harness routes (Phase 1). Mounted only when MEASURE=1, never in deployed Workers.
+import { Hono } from 'hono';
+import { encryptToken, parseKeyring, ulid } from '@ledgerline/platform';
+import type { Env } from './env.js';
+import { acquire } from './sync/lease.js';
+import { applyPage, beginRun, fetchPage, planApply, planStage, type StepContext } from './sync/steps.js';
+import { connectionToken, makeProvider } from './sync/provider.js';
+
+export const measure = new Hono<{ Bindings: Env }>();
+
+measure.post('/seed', async (c) => {
+  const env = c.env;
+  const now = Date.now();
+  const budgetId = 'bud_measure';
+  const connectionId = `con_${ulid()}`;
+  const provider = makeProvider(env);
+  const link = await provider.sandboxCreateItem();
+  const { enc, keyVersion } = await encryptToken(
+    parseKeyring(env.TOKEN_KEYS, env.TOKEN_KEY_CURRENT),
+    link.accessToken,
+    connectionId,
+  );
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO budget (id, name, budget_start_month, created_at, updated_at) VALUES (?1, 'Measure', '2023-11', ?2, ?2)`,
+    ).bind(budgetId, now),
+    env.DB.prepare(
+      `INSERT INTO connection (id, budget_id, provider, provider_item_id, institution_name, access_token_enc, key_version, linked_at, created_at, updated_at)
+       VALUES (?1, ?2, 'plaid', ?3, 'Sandbox', ?4, ?5, ?6, ?6, ?6)`,
+    ).bind(connectionId, budgetId, link.providerItemId, enc, keyVersion, now),
+  ]);
+  return c.json({ budgetId, connectionId });
+});
+
+function ctx(env: Env, b: { connectionId: string; budgetId: string; holder: string }): StepContext {
+  return {
+    db: env.DB,
+    raw: env.RAW,
+    connectionId: b.connectionId,
+    budgetId: b.budgetId,
+    holder: b.holder,
+    now: Date.now(),
+  };
+}
+
+measure.post('/acquire', async (c) => {
+  const b = await c.req.json<{ connectionId: string; budgetId: string }>();
+  const holder = `run_${ulid()}`;
+  const ok = await acquire(c.env.DB, b.connectionId, holder, Date.now());
+  if (!ok) return c.json({ ok }, 409);
+  const st = await beginRun(ctx(c.env, { ...b, holder }), 'measure');
+  return c.json({ holder, state: st });
+});
+
+measure.post('/fetch', async (c) => {
+  const b = await c.req.json<{
+    connectionId: string;
+    budgetId: string;
+    holder: string;
+    page: number;
+    cursor: string | null;
+    count: number;
+  }>();
+  const token = await connectionToken(c.env, b.connectionId);
+  const r = await fetchPage(
+    ctx(c.env, b),
+    makeProvider(c.env),
+    token,
+    b.holder,
+    0,
+    b.page,
+    b.cursor,
+    b.count,
+  );
+  return c.json(r);
+});
+
+measure.post('/apply', async (c) => {
+  const b = await c.req.json<{
+    connectionId: string;
+    budgetId: string;
+    holder: string;
+    page: number;
+    chunk?: number;
+  }>();
+  const r = await applyPage(ctx(c.env, b), makeProvider(c.env), b.holder, b.page, b.chunk ?? 0);
+  return c.json(r);
+});
+
+measure.post('/workflow', async (c) => {
+  const b = await c.req.json<{ connectionId: string; budgetId: string }>();
+  const runId = `run_${ulid()}`;
+  if (!(await acquire(c.env.DB, b.connectionId, runId, Date.now()))) return c.json({ ok: false }, 409);
+  const inst = await c.env.SYNC.create({ id: runId, params: { ...b, runId, trigger: 'measure' } });
+  return c.json({ id: inst.id });
+});
+
+measure.get('/workflow/:id', async (c) => {
+  const inst = await c.env.SYNC.get(c.req.param('id'));
+  return c.json(await inst.status());
+});
+
+measure.get('/count', async (c) => {
+  const r = await c.env.DB.batch([
+    c.env.DB.prepare(`SELECT count(*) AS n FROM bank_event`),
+    c.env.DB.prepare(`SELECT count(*) AS n FROM bank_txn`),
+    c.env.DB.prepare(
+      `SELECT phase, pages_fetched, applied_through, restart_count FROM sync_run ORDER BY started_at DESC LIMIT 1`,
+    ),
+    c.env.DB.prepare(`SELECT cursor, sync_lock FROM connection ORDER BY created_at DESC LIMIT 1`),
+  ]);
+  return c.json(r.map((x) => x.results));
+});
+
+measure.post('/noop', (c) => c.json({ ok: true }));
+measure.post('/burn', async (c) => {
+  const { iters } = await c.req.json<{ iters: number }>();
+  let x = 0;
+  for (let i = 0; i < iters; i++) x = (x * 31 + i) % 1000003;
+  return c.json({ x });
+});
+
+// Kernel timing: the step's own compute repeated `reps` times inside one request, so local emulator noise
+// (in-process D1/R2 simulators, tracing) averages out. D1 statements are recorded and serialized the way the D1
+// client does (JSON request body), without I/O.
+const recorder = {
+  prepare(sql: string) {
+    const st = {
+      sql,
+      params: [] as unknown[],
+      bind(...p: unknown[]) {
+        return { ...st, params: p };
+      },
+    };
+    return st;
+  },
+} as unknown as Pick<D1Database, 'prepare'>;
+
+measure.post('/kernel', async (c) => {
+  const { count, reps, kind } = await c.req.json<{ count: number; reps: number; kind: 'apply' | 'fetch' }>();
+  // One real page from the mock (or Sandbox), fetched outside the timed loop by the harness first.
+  const res = await fetch(`${c.env.PLAID_BASE_URL}/transactions/sync`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ client_id: 'x', secret: 'y', access_token: 'z', count }),
+  });
+  const bodyBytes = new Uint8Array(await res.arrayBuffer());
+  return c.json(await runKernel(kind, bodyBytes, reps, makeProvider(c.env)));
+});
+
+async function runKernel(
+  kind: 'apply' | 'fetch',
+  bodyBytes: Uint8Array,
+  reps: number,
+  provider: ReturnType<typeof makeProvider>,
+) {
+  let bytes = 0;
+  let stmtCount = 0;
+  for (let r = 0; r < reps; r++) {
+    if (kind === 'fetch') {
+      // The fetch step only scans the tail of the bytes it hands to R2.
+      const st = planStage(bodyBytes);
+      const req = JSON.stringify({
+        statements: [
+          {
+            sql: 'INSERT INTO sync_page ...',
+            params: ['run', 0, 'b', 0, 'k', 'md5:x', bodyBytes.length, st.nextCursor, 1, 0],
+          },
+        ],
+      });
+      bytes += req.length;
+      stmtCount = 3;
+    } else {
+      // The apply step decodes the R2 object, then plans the batch.
+      const body = new TextDecoder().decode(bodyBytes);
+      const { stmts } = await planApply(
+        recorder,
+        { connectionId: 'con', budgetId: 'bud', holder: 'run', now: 1 },
+        'run',
+        r,
+        0,
+        false,
+        {
+          r2_key: 'raw/b/c/run/0-0000.json',
+          sha256: 'x',
+          bytes: bodyBytes.length,
+          next_cursor: 'c',
+          has_more: 1,
+        },
+        provider,
+        body,
+      );
+      // ... and the D1 client's request serialization of the batch.
+      const req = JSON.stringify({
+        statements: (stmts as unknown as { sql: string; params: unknown[] }[]).map((s) => ({
+          sql: s.sql,
+          params: s.params,
+        })),
+      });
+      bytes += req.length;
+      stmtCount = stmts.length;
+    }
+  }
+  return {
+    reps,
+    requestBytesPerRep: Math.round(bytes / reps),
+    statements: stmtCount,
+    bodyBytes: bodyBytes.length,
+  };
+}
+
+// The I/O a sync step makes besides its compute, with trivial payloads: lease renewal, one read batch, one R2 get,
+// one write batch. Repeated `reps` times so the per-step overhead can be separated from request overhead.
+measure.post('/io-shell', async (c) => {
+  const { reps } = await c.req.json<{ reps: number }>();
+  const db = c.env.DB;
+  await c.env.RAW.put('measure/tiny', '{}');
+  for (let r = 0; r < reps; r++) {
+    await db
+      .prepare(`UPDATE connection SET lock_expires = lock_expires WHERE id = ?1 AND sync_lock IN (?2, ?3)`)
+      .bind('x', 'y', 'z')
+      .run();
+    await db.batch([
+      db.prepare(`SELECT r2_key, sha256 FROM sync_page WHERE sync_run_id = ?1 AND page = ?2`).bind('r', r),
+      db.prepare(`SELECT applied_through FROM sync_run WHERE id = ?1`).bind('r'),
+    ]);
+    const o = await c.env.RAW.get('measure/tiny');
+    await o?.text();
+    await db.batch([
+      db.prepare(`INSERT OR REPLACE INTO lease_guard (id, ok) VALUES (2, 1)`),
+      db.prepare(`UPDATE sync_run SET updated_at = ?1 WHERE id = ?2`).bind(r, 'none'),
+      db.prepare(`UPDATE apply_counter SET seq = seq WHERE id = 1`),
+    ]);
+  }
+  return c.json({ reps });
+});
