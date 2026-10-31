@@ -12,3 +12,4 @@ test-results/
 *.tsbuildinfo
 .measure/
 .claude/
+.bundle/

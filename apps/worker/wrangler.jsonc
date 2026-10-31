@@ -1,5 +1,6 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
+  // Production. Fill in the D1 database id after `wrangler d1 create ledgerline` (docs/runbooks/setup.md).
   "name": "ledgerline",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-01",
@@ -14,10 +15,53 @@
       "migrations_dir": "../../packages/db/migrations",
     },
   ],
-  "r2_buckets": [{ "binding": "RAW", "bucket_name": "ledgerline-raw" }],
+  "r2_buckets": [
+    { "binding": "RAW", "bucket_name": "ledgerline-raw" },
+    { "binding": "BACKUPS", "bucket_name": "ledgerline-backups" },
+  ],
   "workflows": [
     { "name": "ledgerline-sync", "binding": "SYNC", "class_name": "SyncWorkflow" },
     { "name": "ledgerline-maintenance", "binding": "MAINTENANCE", "class_name": "MaintenanceWorkflow" },
+    { "name": "ledgerline-recompute", "binding": "RECOMPUTE", "class_name": "RecomputeWorkflow" },
   ],
+  // 3 of the 5 free cron triggers: sync backstop, daily stale-pending scan, daily maintenance (10:20 UTC).
+  "triggers": { "crons": ["7 */4 * * *", "10 8 * * *", "20 10 * * *"] },
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/__dev/*", "/__measure/*"],
+  },
   "vars": { "PLAID_ENV": "sandbox", "APP_VERSION": "0.1.0" },
+  // Staging: a separate Worker with its own D1, R2, secrets and Plaid Sandbox, behind Access (design: One
+  // Cloudflare account). Fill in its database id after `wrangler d1 create ledgerline-staging`.
+  "env": {
+    "staging": {
+      "name": "ledgerline-staging",
+      "workers_dev": true,
+      "preview_urls": false,
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "ledgerline-staging",
+          "database_id": "00000000-0000-0000-0000-000000000001",
+          "migrations_dir": "../../packages/db/migrations",
+        },
+      ],
+      "r2_buckets": [{ "binding": "RAW", "bucket_name": "ledgerline-raw-staging" }],
+      "workflows": [
+        { "name": "ledgerline-staging-sync", "binding": "SYNC", "class_name": "SyncWorkflow" },
+        { "name": "ledgerline-staging-maintenance", "binding": "MAINTENANCE", "class_name": "MaintenanceWorkflow" },
+        { "name": "ledgerline-staging-recompute", "binding": "RECOMPUTE", "class_name": "RecomputeWorkflow" },
+      ],
+      "triggers": { "crons": [] },
+      "assets": {
+        "directory": "../web/dist",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": ["/api/*"],
+      },
+      "vars": { "PLAID_ENV": "sandbox", "APP_VERSION": "0.1.0" },
+    },
+  },
 }

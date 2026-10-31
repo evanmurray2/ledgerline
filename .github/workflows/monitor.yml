@@ -1,0 +1,24 @@
+name: monitor
+# Every 6 hours: fails (and GitHub emails you) if a connection is more than 24 hours stale, the last backup is more
+# than 36 hours old, or usage passes 70% of a daily limit. Each call is recorded, so the app shows "Monitoring
+# stopped" if this job stops running.
+on:
+  schedule:
+    - cron: '29 */6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    environment: monitor
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: node tools/ci/monitor.mjs
+        env:
+          BASE_URL: ${{ vars.PRODUCTION_URL }}
+          ACCESS_CLIENT_ID: ${{ secrets.ACCESS_CLIENT_ID }}
+          ACCESS_CLIENT_SECRET: ${{ secrets.ACCESS_CLIENT_SECRET }}
