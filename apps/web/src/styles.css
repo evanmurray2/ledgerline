@@ -1,0 +1,270 @@
+@import 'tailwindcss';
+@import '@fontsource/public-sans/400.css';
+@import '@fontsource/public-sans/500.css';
+@import '@fontsource/public-sans/600.css';
+@import '@fontsource/public-sans/700.css';
+
+/*
+ * One token set for the whole app. Light values first; the dark block swaps them. data-theme on <html> is
+ * always resolved to 'light' or 'dark' by src/lib/theme.ts (Match device follows prefers-color-scheme there).
+ */
+:root {
+  --ll-page: #f5f6f8;
+  --ll-surface: #ffffff;
+  --ll-surface-2: #f9fafb;
+  --ll-sunken: #f2f4f7;
+  --ll-divider: #f0f1f3;
+  --ll-border: #e5e7eb;
+  --ll-border-strong: #d0d5dd;
+  --ll-track: #eef0f3;
+  --ll-ink: #111827;
+  --ll-ink-2: #374151;
+  --ll-muted: #4b5563;
+  --ll-faint: #667085;
+  --ll-disabled: #98a2b3;
+  --ll-disabled-bg: #e5e7eb;
+  --ll-scrim: #5b6170;
+  --ll-accent: #1d4ed8;
+  --ll-accent-strong: #1e3a8a;
+  --ll-accent-soft: #eef2ff;
+  --ll-on-accent: #ffffff;
+  --ll-inverse: #111827;
+  --ll-on-inverse: #ffffff;
+  --ll-inverse-line: #344054;
+  --ll-inverse-muted: #d0d5dd;
+
+  --ll-funded-bg: #dcfae6;
+  --ll-funded-fg: #085d3a;
+  --ll-funded-bar: #12b76a;
+  --ll-low-bg: #f4ebff;
+  --ll-low-fg: #6941c6;
+  --ll-low-bar: #9e77ed;
+  --ll-over-bg: #fee4e2;
+  --ll-over-fg: #b42318;
+  --ll-over-bar: #d92d20;
+  --ll-under-bg: #fef0c7;
+  --ll-under-fg: #93370d;
+  --ll-under-bar: #f79009;
+  --ll-overfunded-bg: #d1e9ff;
+  --ll-overfunded-fg: #175cd3;
+  --ll-overfunded-bar: #2e90fa;
+  --ll-none-bg: #f2f4f7;
+  --ll-none-fg: #344054;
+  --ll-none-bar: #98a2b3;
+
+  --ll-success-soft: #ecfdf3;
+  --ll-success-border: #abefc6;
+  --ll-info-bg: #eef4ff;
+  --ll-info-fg: #3538cd;
+  --ll-owed-bg: #e0f2fe;
+  --ll-owed-fg: #026aa2;
+  --ll-warn-bg: #fffaeb;
+  --ll-warn-border: #fedf89;
+  --ll-warn-fg: #7a2e0e;
+  --ll-danger: #b42318;
+  --ll-on-danger: #ffffff;
+  --ll-shadow: rgba(16, 24, 40, 0.25);
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --ll-page: #0e1014;
+  --ll-surface: #181b21;
+  --ll-surface-2: #1d2128;
+  --ll-sunken: #252a32;
+  --ll-divider: #262b33;
+  --ll-border: #2c323b;
+  --ll-border-strong: #4a525e;
+  --ll-track: #2a2f37;
+  --ll-ink: #f2f4f7;
+  --ll-ink-2: #d0d5dd;
+  --ll-muted: #a7afbb;
+  --ll-faint: #949dab;
+  --ll-disabled: #7c8695;
+  --ll-disabled-bg: #2c323b;
+  --ll-scrim: #05060a;
+  --ll-accent: #8ab4ff;
+  --ll-accent-strong: #b9d1ff;
+  --ll-accent-soft: #1c2547;
+  --ll-on-accent: #181b21;
+  --ll-inverse: #f2f4f7;
+  --ll-on-inverse: #181b21;
+  --ll-inverse-line: #d0d5dd;
+  --ll-inverse-muted: #374151;
+
+  --ll-funded-bg: #12301f;
+  --ll-funded-fg: #6ce9a6;
+  --ll-funded-bar: #32d583;
+  --ll-low-bg: #2a1f45;
+  --ll-low-fg: #bdb4fe;
+  --ll-low-bar: #9e77ed;
+  --ll-over-bg: #3a1614;
+  --ll-over-fg: #f97066;
+  --ll-over-bar: #f04438;
+  --ll-under-bg: #3a2a0a;
+  --ll-under-fg: #fdb022;
+  --ll-under-bar: #f79009;
+  --ll-overfunded-bg: #102a45;
+  --ll-overfunded-fg: #84caff;
+  --ll-overfunded-bar: #53b1fd;
+  --ll-none-bg: #252a32;
+  --ll-none-fg: #d0d5dd;
+  --ll-none-bar: #7c8695;
+
+  --ll-success-soft: #10291d;
+  --ll-success-border: #1f5135;
+  --ll-info-bg: #1c2547;
+  --ll-info-fg: #a4bcfd;
+  --ll-owed-bg: #0b2a3d;
+  --ll-owed-fg: #7cd4fd;
+  --ll-warn-bg: #2b2108;
+  --ll-warn-border: #5c4410;
+  --ll-warn-fg: #fec84b;
+  --ll-danger: #f97066;
+  --ll-on-danger: #181b21;
+  --ll-shadow: rgba(0, 0, 0, 0.6);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: 'Public Sans', system-ui, sans-serif;
+  --color-page: var(--ll-page);
+  --color-surface: var(--ll-surface);
+  --color-surface-2: var(--ll-surface-2);
+  --color-sunken: var(--ll-sunken);
+  --color-divider: var(--ll-divider);
+  --color-line: var(--ll-border);
+  --color-line-strong: var(--ll-border-strong);
+  --color-track: var(--ll-track);
+  --color-ink: var(--ll-ink);
+  --color-ink-2: var(--ll-ink-2);
+  --color-muted: var(--ll-muted);
+  --color-faint: var(--ll-faint);
+  --color-disabled: var(--ll-disabled);
+  --color-disabled-bg: var(--ll-disabled-bg);
+  --color-scrim: var(--ll-scrim);
+  --color-accent: var(--ll-accent);
+  --color-accent-strong: var(--ll-accent-strong);
+  --color-accent-soft: var(--ll-accent-soft);
+  --color-on-accent: var(--ll-on-accent);
+  --color-inverse: var(--ll-inverse);
+  --color-on-inverse: var(--ll-on-inverse);
+  --color-inverse-line: var(--ll-inverse-line);
+  --color-inverse-muted: var(--ll-inverse-muted);
+  --color-funded-bg: var(--ll-funded-bg);
+  --color-funded-fg: var(--ll-funded-fg);
+  --color-funded-bar: var(--ll-funded-bar);
+  --color-low-bg: var(--ll-low-bg);
+  --color-low-fg: var(--ll-low-fg);
+  --color-low-bar: var(--ll-low-bar);
+  --color-over-bg: var(--ll-over-bg);
+  --color-over-fg: var(--ll-over-fg);
+  --color-over-bar: var(--ll-over-bar);
+  --color-under-bg: var(--ll-under-bg);
+  --color-under-fg: var(--ll-under-fg);
+  --color-under-bar: var(--ll-under-bar);
+  --color-overfunded-bg: var(--ll-overfunded-bg);
+  --color-overfunded-fg: var(--ll-overfunded-fg);
+  --color-overfunded-bar: var(--ll-overfunded-bar);
+  --color-none-bg: var(--ll-none-bg);
+  --color-none-fg: var(--ll-none-fg);
+  --color-none-bar: var(--ll-none-bar);
+  --color-success-soft: var(--ll-success-soft);
+  --color-success-border: var(--ll-success-border);
+  --color-info-bg: var(--ll-info-bg);
+  --color-info-fg: var(--ll-info-fg);
+  --color-owed-bg: var(--ll-owed-bg);
+  --color-owed-fg: var(--ll-owed-fg);
+  --color-warn-bg: var(--ll-warn-bg);
+  --color-warn-border: var(--ll-warn-border);
+  --color-warn-fg: var(--ll-warn-fg);
+  --color-danger: var(--ll-danger);
+  --color-on-danger: var(--ll-on-danger);
+  --breakpoint-lg: 64rem;
+}
+
+@layer base {
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ll-page);
+  color: var(--ll-ink);
+  font-family: 'Public Sans', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+a {
+  color: var(--ll-accent);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button:not(:disabled),
+[role='button'] {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ll-accent);
+  outline-offset: 2px;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* At least 44 x 44 px of touch target around small controls. */
+.hit {
+  position: relative;
+}
+.hit::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+}
+}
+
+@keyframes ll-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes ll-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.ll-sheet {
+  animation: ll-sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ll-scrim {
+  animation: ll-fade 180ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ll-sheet,
+  .ll-scrim {
+    animation: none;
+  }
+}
