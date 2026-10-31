@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from './env.js';
-import { measure } from './measure.js';
+import { measure } from './measure/routes.js';
 export { SyncWorkflow } from './sync/workflow.js';
 export { MaintenanceWorkflow } from './maintenance.js';
 

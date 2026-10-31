@@ -1,6 +1,9 @@
 # Phase 1 measurements (go/no-go)
 
-Result so far: **go** for the sync path after one redesign. At the design's page sizes (500, falling back to 250) the apply step could not fit in 10 ms of CPU. With raw pages moved to R2, the `bank_txn` projection built inside D1, and 100-transaction pages applied in 50-event steps, every sync step's own compute is 0.1–2.9 ms. The budget-edit measurement is in the second table, added once `computeBudget()` existed.
+Result: **go**, after two redesigns that the measurements forced. Each hot path's own compute is now under 3 ms in workerd, about 5 ms with the estimated I/O, against the 10 ms limit:
+
+- **Sync apply step.** It could not fit at the design's 500 or 250 transactions per page. With raw pages in R2, the `bank_txn` projection built inside D1, and 100-transaction pages applied in 50-event steps, it is 2.5–2.9 ms.
+- **Budget edit in the first month of a 36-month budget.** It could not fit as one recompute: about 20 ms, roughly 0.6 ms per month of history. It now recomputes at most 6 months per invocation (2.3–2.75 ms). Edits within the last 6 months finish in the request; older ones finish in the recompute Workflow, 6 months per step.
 
 Measured on local `wrangler dev` (workerd, wrangler 4.156.0), against a Plaid-shaped mock (`tools/plaid-mock`), because no Plaid Sandbox keys were available in the build environment (decisions.md D-4). The mock serves the same request and response shapes as `/transactions/sync`, with transaction objects sized like Sandbox's (about 2 KB each, pretty-printed). With Sandbox keys in `apps/worker/.dev.vars`, the same harness runs against Sandbox.
 
@@ -56,8 +59,38 @@ All pass:
 - A processing batch rolls back when another processor moved the watermark.
 - `bank_event` rejects UPDATE and DELETE.
 
+## Budget edit (36 months, 60 categories)
+
+Dataset (`apps/worker/src/measure/budget-seed.ts`): 36 months, 60 categories (58 spending or saving plus 2 card payment categories), 5,402 budget lines (about 150 a month on 4 cash and 2 card accounts), and 2,124 assignments. The edit changes one category's assignment in the first budget month.
+
+Per-edit compute in workerd (`/__measure/kernel-budget`, `tools/measure/budget-kernel.mjs`) covers parsing D1's response, mapping rows, `computeBudget()`, encoding and hashing every month, and serializing the write batch:
+
+| Months recomputed in one invocation | CPU, ms (median, best) | D1 response size |
+| --- | --- | --- |
+| 36 (the edit in one go, as designed) | 22.7 (20.9) | 1.0 MB |
+| 12 | 5.1 (5.0) | 350 KB |
+| **6 (chosen chunk)** | **2.75 (2.3)** | 176 KB |
+| 3 | 1.1 (1.4) | 90 KB |
+| 1 | 1.2 (1.3) | 32 KB |
+
+Half the 36-month cost is parsing the 1 MB of activity rows. SQL grouping doesn't shrink it much at about 2.5 transactions per category per month, and funding card purchases needs date order inside each month. So the recompute is chunked (decisions.md D-22).
+
+The whole first-month edit on SQLite (`apps/worker/measure/budget.measure.ts`, the same code path through `node:sqlite`):
+
+| | Value |
+| --- | --- |
+| Invocations | 6: the edit request (6 months) plus 5 recompute-Workflow steps (6 months each) |
+| D1 calls per invocation | 4: budget row, one read batch, one write batch, plus the edit itself in the request |
+| Rows written for the edit | about 50: the assignment, 36 month rows, and budget-row updates; one row per month because each month's cells are stored together (D-21) |
+| Rows read for the edit | about 8,000 |
+| An edit in the current month | 1 invocation, about 1 ms of compute |
+
+## D1 export (backup) row reads, estimated
+
+A D1 export reads every row once. The 36-month dataset holds about 5,400 transactions, at roughly 5 rows each across `bank_event`, `bank_txn`, `budget_line`, `txn_overlay` and links, plus 2,124 assignments and the month rows. That is about 30,000 rows, under 1% of the 5,000,000 daily read limit. Confirm with the first nightly backup's manifest, which records row counts.
+
 ## Still to confirm on Cloudflare after the first deploy (owner)
 
 - CPU time per Workflow step and per request in Workers Logs: fetch about 2 ms, apply about 5 ms expected.
 - Whether the 50 external subrequests apply per invocation or per Workflow instance.
-- Rows read by a D1 export of the 36-month dataset (backup fits the daily read limit). The local estimate is in the next section.
+- Rows read by the first D1 export (estimate above).

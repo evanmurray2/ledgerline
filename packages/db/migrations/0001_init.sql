@@ -429,42 +429,35 @@ CREATE TABLE expected_reimbursement (
 CREATE INDEX expected_reimbursement_key ON expected_reimbursement(txn_key);
 
 -- ---------------------------------------------------------------- derived caches
--- Budget lines: each logical transaction's effect on the budget, rebuilt on write for the transactions that change.
+-- Budget lines: each logical transaction's effect on the budget (packages/domain BudgetLine), rebuilt on write
+-- for the transactions that change. The recompute reads them by month.
 CREATE TABLE budget_line (
   budget_id TEXT NOT NULL,
   txn_key TEXT NOT NULL,
-  n INTEGER NOT NULL,                -- line number within the transaction
+  line TEXT NOT NULL,                -- suffix of the line id: '0', '1', 'owed:<item>', 'close:<item>', 'start'
   month TEXT NOT NULL,
   date TEXT NOT NULL,
   seq INTEGER NOT NULL,              -- time added, for same-day ordering
-  kind TEXT NOT NULL,                -- see packages/domain BudgetLine
-  account_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('rta', 'cat', 'owed', 'close', 'payment', 'debt')),
+  account_id TEXT NOT NULL,          -- for payment and debt lines: the card account
   card INTEGER NOT NULL,             -- 1 when the account is a credit card
   category_id TEXT,
   amount INTEGER NOT NULL,
-  ref TEXT,                          -- linked purchase txn_key (refunds) or owed item id
-  PRIMARY KEY (budget_id, txn_key, n)
-);
-CREATE INDEX budget_line_month ON budget_line(budget_id, month, date, card, seq);
+  ref TEXT,                          -- refunds: the purchase line id; owed and close: the owed item id
+  PRIMARY KEY (budget_id, txn_key, line)
+) WITHOUT ROWID;
+CREATE INDEX budget_line_month ON budget_line(budget_id, month);
 
-CREATE TABLE month_category_summary (
-  budget_id TEXT NOT NULL,
-  month TEXT NOT NULL,
-  category_id TEXT NOT NULL,
-  assigned INTEGER NOT NULL,
-  activity INTEGER NOT NULL,
-  available INTEGER NOT NULL,
-  credit_overspent INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (budget_id, month, category_id)
-);
-
--- Carry-forward state at the end of each month plus the running Ready to Assign components.
+-- One row per budget month: that month's category and card cells plus the carry-forward state and running Ready to
+-- Assign components at its end (packages/domain MonthResult). One row per month keeps a first-month edit to about
+-- 36 row writes instead of one per category per month.
 CREATE TABLE month_snapshot (
   budget_id TEXT NOT NULL,
   month TEXT NOT NULL,
-  state TEXT NOT NULL,               -- JSON, see packages/domain MonthSnapshot
+  state TEXT NOT NULL,               -- JSON (packages/domain StoredMonth)
+  hash TEXT NOT NULL,                -- change hash of state; recomputes read only this to decide what to write
   PRIMARY KEY (budget_id, month)
-);
+) WITHOUT ROWID;
 
 -- ---------------------------------------------------------------- ops
 CREATE TABLE alert (

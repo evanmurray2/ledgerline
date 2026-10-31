@@ -13,9 +13,9 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 
 - [x] pnpm monorepo skeleton: `apps/web`, `apps/worker`, `packages/{domain,contracts,db,bank-provider,platform}`, `e2e`; strict TypeScript, ESLint, Prettier. *Verify:* `pnpm -r typecheck`, `pnpm lint` clean.
 - [x] Go/no-go harness on local `wrangler dev`: sync Workflow (fetch step + apply step) against a Plaid-shaped mock (no Sandbox keys available; D-4); CPU per step measured with workerd's V8 CPU profiler. *Verify:* `docs/measurements.md` — 500 and 250 per page did not fit; redesigned (R2 raw pages, projection in D1, 100 per page in 50-event steps; D-5–D-7) to ~2 ms fetch and ~5 ms apply; 3,000-transaction backfill ran end to end in 109 steps and 30 Plaid calls.
-- [ ] Assignment edit in the first budget month with 36 months × 60 categories: CPU, D1 queries, rows written. *Verify:* same harness, numbers in `docs/measurements.md`; every hot path ≤ ~5 ms CPU and ≤ 40 queries, otherwise redesign before continuing.
+- [x] Assignment edit in the first budget month with 36 months × 60 categories: CPU, D1 queries, rows written. *Verify:* `docs/measurements.md` — about 20 ms as one recompute, so the recompute is chunked at 6 months (2.3–2.75 ms each, 4 D1 calls, about 50 rows written per first-month edit; D-21, D-22).
 - [x] Fence tests in local D1: apply batch rolls back when the lease is released, expired, held by another run, or the connection row is missing; processing batch rolls back when the watermark moved; version fence. *Verify:* integration tests.
-- [ ] D1 export row-read measurement on the 36-month dataset. *Verify:* rows counted from the export, recorded in `docs/measurements.md` (local estimate; production number checked by hand).
+- [x] D1 export row-read estimate on the 36-month dataset. *Verify:* about 30,000 rows (< 1% of the daily read limit) in `docs/measurements.md`; the first nightly manifest confirms it.
 
 ## 2. Domain core (design Phase 2) — `packages/domain`
 

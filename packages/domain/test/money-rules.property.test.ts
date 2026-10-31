@@ -850,3 +850,47 @@ describe('open owner decisions (literal rules today)', () => {
     expect(checkIdentity(p, r, cur).ok).toBe(true);
   });
 });
+
+describe('chunked recompute (decisions.md D-22)', () => {
+  it('a chain of chunks, each starting from the previous chunk’s snapshot, equals one full recompute', () => {
+    fc.assert(
+      fc.property(ledgerArb, fc.integer({ min: 1, max: 3 }), (g, size) => {
+        const p = project({
+          accounts: g.accounts,
+          txns: g.txns,
+          startMonth: START,
+          today: `${g.current}-14`,
+        });
+        const base = {
+          startMonth: START,
+          currentMonth: g.current,
+          categories: g.categories,
+          assignments: g.assignments,
+          lines: p.lines,
+        };
+        const full = computeBudget(base);
+        const months: ComputeResult['months'] = [];
+        let snapshot: ComputeResult['months'][number]['snapshot'] | undefined;
+        let last: ComputeResult | undefined;
+        for (let from = START; ;) {
+          const until = addMonths(from, size - 1);
+          // As the recompute does: a chunk that reaches the current month runs to the end.
+          const isFinal = until >= full.through || until >= g.current;
+          const r = computeBudget({
+            ...base,
+            ...(snapshot ? { snapshot } : {}),
+            ...(isFinal ? {} : { until }),
+          });
+          months.push(...r.months);
+          last = r;
+          if (isFinal) break;
+          snapshot = r.months[r.months.length - 1]!.snapshot;
+          from = addMonths(until, 1);
+        }
+        expect(last!.rta).toBe(full.rta);
+        for (const m of full.months) expect(months.find((x) => x.month === m.month)).toEqual(m);
+      }),
+      { numRuns: RUNS },
+    );
+  });
+});

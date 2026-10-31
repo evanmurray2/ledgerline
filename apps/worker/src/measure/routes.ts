@@ -1,10 +1,13 @@
 // Local go/no-go harness routes (Phase 1). Mounted only when MEASURE=1, never in deployed Workers.
 import { Hono } from 'hono';
 import { encryptToken, parseKeyring, ulid } from '@ledgerline/platform';
-import type { Env } from './env.js';
-import { acquire } from './sync/lease.js';
-import { applyPage, beginRun, fetchPage, planApply, planStage, type StepContext } from './sync/steps.js';
-import { connectionToken, makeProvider } from './sync/provider.js';
+import type { Env } from '../env.js';
+import { cents, changeHash, computeBudget, encodeMonth, type Month } from '@ledgerline/domain';
+import { lineFromRow } from '../budget/recompute.js';
+import { seedBudget } from './budget-seed.js';
+import { acquire } from '../sync/lease.js';
+import { applyPage, beginRun, fetchPage, planApply, planStage, type StepContext } from '../sync/steps.js';
+import { connectionToken, makeProvider } from '../sync/provider.js';
 
 export const measure = new Hono<{ Bindings: Env }>();
 
@@ -233,4 +236,75 @@ measure.post('/io-shell', async (c) => {
     ]);
   }
   return c.json({ reps });
+});
+
+// Budget-edit kernel: everything the recompute does in Worker CPU for a first-month edit on the 36-month,
+// 60-category dataset, repeated `reps` times: parse D1's response JSON, map rows to lines, computeBudget(), encode
+// and hash every month, and serialize the write batch.
+measure.post('/kernel-budget', async (c) => {
+  const { reps, months } = await c.req.json<{ reps: number; months?: number }>();
+  const seed = seedBudget(months ?? 36);
+  // The read batch's response as D1 returns it (rows as objects).
+  const cols = [
+    'txn_key',
+    'line',
+    'month',
+    'date',
+    'seq',
+    'kind',
+    'account_id',
+    'card',
+    'category_id',
+    'amount',
+    'ref',
+  ];
+  const response = JSON.stringify([
+    { results: [] },
+    { results: seed.categories },
+    { results: seed.lines.map((l) => Object.fromEntries(cols.map((k, i) => [k, l[i]]))) },
+    { results: seed.assignments },
+    { results: seed.months.map((m) => ({ month: m, hash: '00000000' })) },
+    { results: [] },
+  ]);
+  let written = 0;
+  for (let r = 0; r < reps; r++) {
+    const [, cats, lines, asg] = JSON.parse(response) as { results: Record<string, unknown>[] }[];
+    const result = computeBudget({
+      startMonth: seed.startMonth as Month,
+      currentMonth: seed.months[seed.months.length - 1] as Month,
+      categories: cats!.results.map((x) => ({
+        id: x.id as string,
+        kind: x.kind as 'spending',
+        cardAccountId: x.card_account_id as string | null,
+      })),
+      assignments: asg!.results.map((a) => ({
+        categoryId: a.category_id as string,
+        month: a.month as Month,
+        amount: cents(a.amount as number),
+      })),
+      lines: lines!.results.map((x) =>
+        lineFromRow([
+          x.txn_key,
+          x.line,
+          x.month,
+          x.date,
+          x.seq,
+          x.kind,
+          x.account_id,
+          x.card,
+          x.category_id,
+          x.amount,
+          x.ref,
+        ]),
+      ),
+      refundTargets: new Set(),
+    });
+    const stmts: { sql: string; params: unknown[] }[] = [];
+    for (const m of result.months) {
+      const json = JSON.stringify(encodeMonth(m));
+      stmts.push({ sql: 'INSERT INTO month_snapshot ...', params: ['b', m.month, json, changeHash(json)] });
+    }
+    written += JSON.stringify({ statements: stmts }).length;
+  }
+  return c.json({ reps, responseBytes: response.length, requestBytesPerRep: Math.round(written / reps) });
 });

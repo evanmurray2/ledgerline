@@ -98,6 +98,11 @@ export interface ComputeInput {
    * when omitted, every card purchase is kept (fine for tests and full recomputes).
    */
   refundTargets?: ReadonlySet<string>;
+  /**
+   * Stop after this month even if later months have data (a chunk of a long recompute). When it is before the
+   * current month the result's RTA is not meaningful; callers keep the cached figure until the last chunk.
+   */
+  until?: Month;
 }
 
 export interface RtaParts {
@@ -163,14 +168,17 @@ export function computeBudget(input: ComputeInput): ComputeResult {
   const asgByMonth = new Map<Month, Map<string, number>>();
   for (const a of input.assignments) {
     if (a.month < from) continue;
+    if (input.until && a.month > input.until) continue;
     if (a.month > through) through = a.month;
     let m = asgByMonth.get(a.month);
     if (!m) asgByMonth.set(a.month, (m = new Map()));
     m.set(a.categoryId, (m.get(a.categoryId) ?? 0) + a.amount);
   }
+  if (input.until && input.until < through) through = input.until < from ? from : input.until;
   const linesByMonth = new Map<Month, BudgetLine[]>();
   for (const l of input.lines) {
     if (l.month < from) continue;
+    if (input.until && l.month > through) continue;
     if (l.month > through) through = l.month;
     if (l.kind === 'payment' || l.kind === 'debt') cardIds.add(l.cardAccountId);
     else if ((l.kind === 'cat' || l.kind === 'owed' || l.kind === 'rta') && l.card) cardIds.add(l.accountId);
@@ -288,15 +296,16 @@ export function computeBudget(input: ComputeInput): ComputeResult {
                 if (!arr) chunks.set(c, (arr = []));
                 arr.push({ line: l.id, card: l.accountId, amount: x - f });
               }
-              funded.set(l.id, {
-                x,
-                f,
-                forgiven: 0,
-                refundedFunded: 0,
-                refundedForgiven: 0,
-                month: m,
-                card: l.accountId,
-              });
+              if (!input.refundTargets || input.refundTargets.has(l.id))
+                funded.set(l.id, {
+                  x,
+                  f,
+                  forgiven: 0,
+                  refundedFunded: 0,
+                  refundedForgiven: 0,
+                  month: m,
+                  card: l.accountId,
+                });
             }
           } else if (l.amount > 0) {
             const r = l.amount;

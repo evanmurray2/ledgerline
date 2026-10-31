@@ -6,3 +6,4 @@ export * from './budget/project.js';
 export * from './budget/identity.js';
 export * from './reimburse.js';
 export * from './budget/fronts.js';
+export * from './budget/store.js';
