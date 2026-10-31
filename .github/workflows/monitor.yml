@@ -10,6 +10,7 @@ permissions:
   contents: read
 jobs:
   health:
+    if: vars.PRODUCTION_URL != ''
     runs-on: ubuntu-latest
     environment: monitor
     timeout-minutes: 5

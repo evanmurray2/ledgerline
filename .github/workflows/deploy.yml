@@ -12,6 +12,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   staging:
+    # Nothing deploys until you finish docs/runbooks/setup.md and set the repository variable DEPLOY_ENABLED=true.
+    if: vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: staging
     timeout-minutes: 20

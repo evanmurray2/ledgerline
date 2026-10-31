@@ -98,6 +98,8 @@ Check whether Cloudflare lets you limit a D1 permission to one database. If not,
 
 ## 7. First production deploy (by hand, once)
 
+Workflows that touch Cloudflare stay off until you set repository variables: `DEPLOY_ENABLED=true` (deploy), `BACKUP_AGE_RECIPIENT` (nightly backup), `PRODUCTION_URL` (monitor), `SANDBOX_E2E=true` (nightly Plaid Sandbox run).
+
 ```sh
 pnpm install --frozen-lockfile
 pnpm --filter @ledgerline/web build

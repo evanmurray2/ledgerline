@@ -9,6 +9,7 @@ jobs:
   backup:
     # A full D1 export can't fit a Worker's 10 ms of CPU, so it runs here. The dump is encrypted to an age PUBLIC key;
     # the private key is never in GitHub.
+    if: vars.BACKUP_AGE_RECIPIENT != ''
     runs-on: ubuntu-latest
     environment: backup
     timeout-minutes: 20
@@ -29,6 +30,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           BACKUP_AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
   e2e-sandbox:
+    if: vars.SANDBOX_E2E == 'true'
     runs-on: ubuntu-latest
     environment: sandbox
     timeout-minutes: 30
