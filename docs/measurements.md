@@ -20,14 +20,14 @@ Whole-request profiles of a step on local dev are not usable on their own. Local
 
 Per-step compute in workerd, ms (median of 5; best in brackets):
 
-| Design | Fetch step | Apply step | Fits 10 ms with 2 ms I/O? |
-| --- | --- | --- | --- |
-| As designed, 500 per page (raw JSON per event in D1, projection params from JS) | 10–16 | 20–21 | No |
-| As designed, 250 per page | ~7 | 7.5–9.5 | No |
-| As designed, 100 per page | 2.4–3.5 | 3.8 | Borderline (~5.8) |
-| Redesign, 500 per page, 50-event apply steps | 0.05 | 7.5 (6.8) | No: parsing the 1 MB page alone is ~4 ms |
-| Redesign, 250 per page, 50-event apply steps | 0.01 | 4.9 (4.4) | Yes, but over the ~5 ms design threshold |
-| **Redesign, 100 per page, 50-event apply steps (chosen)** | **0.07** | **2.9 (2.5)** | **Yes: ~2 ms fetch, ~4.9 ms apply** |
+| Design                                                                          | Fetch step | Apply step    | Fits 10 ms with 2 ms I/O?                |
+| ------------------------------------------------------------------------------- | ---------- | ------------- | ---------------------------------------- |
+| As designed, 500 per page (raw JSON per event in D1, projection params from JS) | 10–16      | 20–21         | No                                       |
+| As designed, 250 per page                                                       | ~7         | 7.5–9.5       | No                                       |
+| As designed, 100 per page                                                       | 2.4–3.5    | 3.8           | Borderline (~5.8)                        |
+| Redesign, 500 per page, 50-event apply steps                                    | 0.05       | 7.5 (6.8)     | No: parsing the 1 MB page alone is ~4 ms |
+| Redesign, 250 per page, 50-event apply steps                                    | 0.01       | 4.9 (4.4)     | Yes, but over the ~5 ms design threshold |
+| **Redesign, 100 per page, 50-event apply steps (chosen)**                       | **0.07**   | **2.9 (2.5)** | **Yes: ~2 ms fetch, ~4.9 ms apply**      |
 
 Where the apply step's time went before the redesign, at 100 per page: 1.2 ms in the D1 client's JSON serialization of a batch that carried every transaction twice (event payload plus projection parameters), 0.85 ms parsing and normalizing the page, 0.9 ms hashing 100 payloads, 0.4 ms decoding. The redesign:
 
@@ -38,14 +38,14 @@ Where the apply step's time went before the redesign, at 100 per page: 1.2 ms in
 
 ## Backfill of 3,000 transactions
 
-| | Value |
-| --- | --- |
-| Plaid calls (`count` 100) | 30, one per fetch step (under 50 even if the external-subrequest limit is per Workflow instance) |
-| Workflow steps, end to end on local `wrangler dev` | 109 (limit 1,024 per instance; 3,000 per day per account) |
-| D1 queries per fetch step / apply step | 2 / 3 (plus 1 for the write-budget check) |
-| Statements per apply batch | 10–11 |
-| D1 rows written | ~4.1 per transaction including index writes, about 12,300 for the backfill before post-processing |
-| Result | 3,000 events and 3,000 `bank_txn` rows; cursor moved once, after the last page; lease released |
+|                                                    | Value                                                                                             |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Plaid calls (`count` 100)                          | 30, one per fetch step (under 50 even if the external-subrequest limit is per Workflow instance)  |
+| Workflow steps, end to end on local `wrangler dev` | 109 (limit 1,024 per instance; 3,000 per day per account)                                         |
+| D1 queries per fetch step / apply step             | 2 / 3 (plus 1 for the write-budget check)                                                         |
+| Statements per apply batch                         | 10–11                                                                                             |
+| D1 rows written                                    | ~4.1 per transaction including index writes, about 12,300 for the backfill before post-processing |
+| Result                                             | 3,000 events and 3,000 `bank_txn` rows; cursor moved once, after the last page; lease released    |
 
 The subrequest limit (per invocation or per Workflow instance) and the step limits can only be confirmed on Cloudflare. With 100 per page, a run stays under 50 Plaid calls up to 5,000 transactions, and a 180-day backfill per bank login is normally well under that.
 
@@ -65,25 +65,25 @@ Dataset (`apps/worker/src/measure/budget-seed.ts`): 36 months, 60 categories (58
 
 Per-edit compute in workerd (`/__measure/kernel-budget`, `tools/measure/budget-kernel.mjs`) covers parsing D1's response, mapping rows, `computeBudget()`, encoding and hashing every month, and serializing the write batch:
 
-| Months recomputed in one invocation | CPU, ms (median, best) | D1 response size |
-| --- | --- | --- |
-| 36 (the edit in one go, as designed) | 22.7 (20.9) | 1.0 MB |
-| 12 | 5.1 (5.0) | 350 KB |
-| **6 (chosen chunk)** | **2.75 (2.3)** | 176 KB |
-| 3 | 1.1 (1.4) | 90 KB |
-| 1 | 1.2 (1.3) | 32 KB |
+| Months recomputed in one invocation  | CPU, ms (median, best) | D1 response size |
+| ------------------------------------ | ---------------------- | ---------------- |
+| 36 (the edit in one go, as designed) | 22.7 (20.9)            | 1.0 MB           |
+| 12                                   | 5.1 (5.0)              | 350 KB           |
+| **6 (chosen chunk)**                 | **2.75 (2.3)**         | 176 KB           |
+| 3                                    | 1.1 (1.4)              | 90 KB            |
+| 1                                    | 1.2 (1.3)              | 32 KB            |
 
 Half the 36-month cost is parsing the 1 MB of activity rows. SQL grouping doesn't shrink it much at about 2.5 transactions per category per month, and funding card purchases needs date order inside each month. So the recompute is chunked (decisions.md D-22).
 
 The whole first-month edit on SQLite (`apps/worker/measure/budget.measure.ts`, the same code path through `node:sqlite`):
 
-| | Value |
-| --- | --- |
-| Invocations | 6: the edit request (6 months) plus 5 recompute-Workflow steps (6 months each) |
-| D1 calls per invocation | 4: budget row, one read batch, one write batch, plus the edit itself in the request |
-| Rows written for the edit | about 50: the assignment, 36 month rows, and budget-row updates; one row per month because each month's cells are stored together (D-21) |
-| Rows read for the edit | about 8,000 |
-| An edit in the current month | 1 invocation, about 1 ms of compute |
+|                              | Value                                                                                                                                    |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Invocations                  | 6: the edit request (6 months) plus 5 recompute-Workflow steps (6 months each)                                                           |
+| D1 calls per invocation      | 4: budget row, one read batch, one write batch, plus the edit itself in the request                                                      |
+| Rows written for the edit    | about 50: the assignment, 36 month rows, and budget-row updates; one row per month because each month's cells are stored together (D-21) |
+| Rows read for the edit       | about 8,000                                                                                                                              |
+| An edit in the current month | 1 invocation, about 1 ms of compute                                                                                                      |
 
 ## D1 export (backup) row reads, estimated
 

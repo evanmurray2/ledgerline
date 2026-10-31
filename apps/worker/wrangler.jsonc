@@ -52,7 +52,11 @@
       "r2_buckets": [{ "binding": "RAW", "bucket_name": "ledgerline-raw-staging" }],
       "workflows": [
         { "name": "ledgerline-staging-sync", "binding": "SYNC", "class_name": "SyncWorkflow" },
-        { "name": "ledgerline-staging-maintenance", "binding": "MAINTENANCE", "class_name": "MaintenanceWorkflow" },
+        {
+          "name": "ledgerline-staging-maintenance",
+          "binding": "MAINTENANCE",
+          "class_name": "MaintenanceWorkflow",
+        },
         { "name": "ledgerline-staging-recompute", "binding": "RECOMPUTE", "class_name": "RecomputeWorkflow" },
       ],
       "triggers": { "crons": [] },
