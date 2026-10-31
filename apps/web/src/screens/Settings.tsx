@@ -732,10 +732,10 @@ export function RuleEditScreen() {
       <section className="flex flex-col gap-2">
         <h2 className="m-0 text-[13px] font-bold text-ink-2">When all of these match</h2>
         {conds.map((c, i) => (
-          <div key={c.id} className="flex flex-wrap items-center gap-2">
+          <div key={c.id} className="grid grid-cols-[minmax(0,140px)_minmax(0,1fr)_32px] items-center gap-2">
             <select
               aria-label={`Field for condition ${i + 1}`}
-              className={cx(inputClass, 'w-[170px] flex-none')}
+              className={cx(inputClass, 'px-2 text-[14px]')}
               value={c.field}
               onChange={(e) => upd(c.id, { field: e.target.value as CondField })}
             >
@@ -744,18 +744,20 @@ export function RuleEditScreen() {
               <option value="amount">Amount between</option>
             </select>
             {c.field === 'amount' ? (
-              <span className="flex min-w-0 flex-1 items-center gap-1">
+              <span className="flex min-w-0 items-center gap-1">
                 <input aria-label={`Lowest amount for condition ${i + 1}`} inputMode="decimal" className={cx(inputClass, 'tnum')} placeholder="0.00" value={c.min} onChange={(e) => upd(c.id, { min: e.target.value })} />
                 <span className="text-muted">–</span>
                 <input aria-label={`Highest amount for condition ${i + 1}`} inputMode="decimal" className={cx(inputClass, 'tnum')} placeholder="0.00" value={c.max} onChange={(e) => upd(c.id, { max: e.target.value })} />
               </span>
             ) : (
-              <input aria-label={`Value for condition ${i + 1}`} className={cx(inputClass, 'min-w-0 flex-1')} value={c.value} onChange={(e) => upd(c.id, { value: e.target.value })} />
+              <input aria-label={`Value for condition ${i + 1}`} className={cx(inputClass, 'min-w-0')} value={c.value} onChange={(e) => upd(c.id, { value: e.target.value })} />
             )}
-            {conds.length > 1 && (
+            {conds.length > 1 ? (
               <button type="button" aria-label={`Remove condition ${i + 1}`} onClick={() => setConds(conds.filter((x) => x.id !== c.id))} className="hit h-11 w-8 text-[20px] text-muted">
                 ×
               </button>
+            ) : (
+              <span />
             )}
           </div>
         ))}

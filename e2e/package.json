@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
-    "screenshots": "playwright test screenshots.spec.ts"
+    "screenshots": "playwright test screenshots.spec.ts",
+    "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"
