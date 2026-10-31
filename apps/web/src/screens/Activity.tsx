@@ -51,7 +51,7 @@ export function TxnRow({
           <span className={cx('tnum text-[15px] font-bold', amountClass(r))}>
             {r.sheet === 'txn' && r.badge === 'Transfer' ? formatCents(Math.abs(r.amount)) : formatCents(r.amount, { plus: true })}
           </span>
-          {r.sub && <span className="text-[11px] text-muted">{r.sub}</span>}
+          {r.sub && style !== 'register' && <span className="text-[11px] text-muted">{r.sub}</span>}
         </span>
       </Link>
       {action}

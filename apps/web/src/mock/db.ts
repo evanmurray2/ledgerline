@@ -351,7 +351,6 @@ export class MockDb {
       c.spent = 0;
       c.added = 0;
     }
-    this.txns = this.txns.filter((x) => x.section === 'register' || x.section === 'posted');
     this.rta = 276165;
   }
 
@@ -518,7 +517,7 @@ export class MockDb {
     if (nopa) out.push({ section: 'Owed to you', key: 'owed-nopa', name: 'Nopa · Alex', amount: 1800, detail: 'Late: expected back by Nov 10', categoryId: null, fix: { verb: 'Review', amount: 1800 }, link: 'owed' });
     const rentOpen = this.owed.some((o) => o.id === 'rent');
     const short = 200000 - this.rta;
-    if (rentOpen && short > 0 && this.scenario === 'default') {
+    if (rentOpen && short > 0 && this.currentMonth === '2026-11') {
       const venmoWaiting = this.txns.some((x) => x.key === 'venmo' && !x.hidden);
       out.push({ section: 'Owed to you', key: 'owed-rent-front', name: 'Rent on Nov 30', amount: -short, detail: `Fronts $2,000 for Sam. Ready to Assign has ${fmt(this.rta)}, so it would go ${fmt(this.rta - 200000)}.${venmoWaiting ? ' Matching the Venmo money adds $1,018.' : ''}`, categoryId: null, fix: { verb: 'Review', amount: short }, link: 'owed' });
     }
@@ -764,7 +763,7 @@ export class MockDb {
         expectBy: o.expectBy,
         status: o.status,
       })),
-      projected: this.owed.some((o) => o.id === 'rent' && (o.status === 'open' || o.status === 'late')) && this.scenario === 'default'
+      projected: this.owed.some((o) => o.id === 'rent' && (o.status === 'open' || o.status === 'late')) && this.currentMonth === '2026-11'
         ? [{ key: 'rent-nov30', date: '2026-11-30', owed: 200000, shortfall, label: 'Rent on Nov 30' }]
         : [],
     };

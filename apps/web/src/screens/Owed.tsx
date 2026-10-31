@@ -66,7 +66,7 @@ export function OwedScreen() {
             {v.projected.map((p) => (
               <p key={p.key} className="m-0 shrink-0 rounded-xl bg-under-bg px-3 py-2.5 text-[13px] leading-[1.45] text-under-fg">
                 {p.label} takes {formatCents(p.owed, { whole: true })} out of Ready to Assign until it’s paid back. You have {formatCents(rta)}
-                {waiting ? ` now, ${formatCents(rta + waiting.amount)} once the ${waiting.payee} money is matched` : ''}
+                {waiting ? ` now, ${formatCents(rta + waiting.amount)} once the ${waiting.payee.split(' ')[0]} money is matched` : ''}
                 {rta + (waiting?.amount ?? 0) >= p.owed
                   ? ', enough to cover it.'
                   : `. Keep ${formatCents(p.owed, { whole: true })} unassigned, or Ready to Assign will go negative on ${dayLabel(p.date)}.`}

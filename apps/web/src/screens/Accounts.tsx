@@ -232,7 +232,7 @@ export function RegisterScreen() {
                       )}
                     </div>
                     {card && (
-                      <Link to="/budget" className="flex min-h-10 items-center justify-between rounded-xl bg-page px-3 text-[14px] text-ink no-underline">
+                      <Link to="/budget" className="flex min-h-10 items-center justify-between gap-3 rounded-xl bg-page px-3 py-2 text-[14px] text-ink no-underline">
                         <span className="font-semibold">{a.name.split(' ')[0]} payment category</span>
                         <span className={cx('tnum font-bold', card.short > 0 ? 'text-over-fg' : 'text-ink')}>
                           {formatCents(card.available)}
