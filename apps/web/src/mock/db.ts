@@ -1711,6 +1711,7 @@ export class MockDb {
               status: 'ok' as const,
               lastSynced: SYNC_TODAY,
               linkedAt: SYNC_TODAY,
+              setupDone: true,
             }))
           : [
               {
@@ -1720,6 +1721,7 @@ export class MockDb {
                 status: this.syncFailed ? 'error' : 'ok',
                 lastSynced: SYNC_TODAY,
                 linkedAt: Date.UTC(2026, 9, 1, 16),
+                setupDone: true,
               },
               {
                 id: 'c-ally',
@@ -1728,6 +1730,7 @@ export class MockDb {
                 status: this.allyRepaired ? 'ok' : 'login_required',
                 lastSynced: this.allyRepaired ? SYNC_TODAY : SYNC_ALLY,
                 linkedAt: Date.UTC(2026, 9, 1, 16),
+                setupDone: true,
               },
               {
                 id: 'c-marcus',
@@ -1736,6 +1739,7 @@ export class MockDb {
                 status: 'ok',
                 lastSynced: SYNC_TODAY,
                 linkedAt: Date.UTC(2026, 9, 3, 16),
+                setupDone: true,
               },
               {
                 id: 'c-chase-old',
@@ -1744,6 +1748,7 @@ export class MockDb {
                 status: 'removed',
                 lastSynced: null,
                 linkedAt: Date.UTC(2026, 9, 1, 15),
+                setupDone: true,
               },
               ...Array.from({ length: Math.max(0, this.linked - 4) }, (_, i) => ({
                 id: `c-new-${i}`,
@@ -1752,6 +1757,7 @@ export class MockDb {
                 status: 'ok' as const,
                 lastSynced: SYNC_TODAY,
                 linkedAt: SYNC_TODAY,
+                setupDone: true,
               })),
             ],
     };

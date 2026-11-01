@@ -574,6 +574,8 @@ export const ConnectionsView = z.object({
       status: z.enum(['ok', 'login_required', 'error', 'removed']),
       lastSynced: z.number().int().nullable(),
       linkedAt: z.number().int(),
+      /** False while a saved link's accounts still need setting up (Finish setup). */
+      setupDone: z.boolean(),
     }),
   ),
 });

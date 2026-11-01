@@ -45,8 +45,8 @@ import {
   type AccountRowDb,
   type TxRow,
 } from '../ledger/ledger.js';
-import { makeProvider } from '../sync/provider.js';
-import { acquire, requestSync } from '../sync/lease.js';
+import { acquire, isFenceAbort, requestSync } from '../sync/lease.js';
+import { connectionToken, makeProvider } from '../sync/provider.js';
 import { markDirty } from '../budget/recompute.js';
 import type { Scoped } from '../db/scoped.js';
 import type { Env } from '../env.js';
@@ -681,8 +681,9 @@ settingsRoutes.get('/settings/connections', async (c) => {
     linked_at: number;
     accounts: string | null;
     removed_at: number | null;
+    setup_done: number;
   }>(
-    `SELECT c.id, c.institution_name, c.status, c.last_synced_at, c.linked_at, c.removed_at,
+    `SELECT c.id, c.institution_name, c.status, c.last_synced_at, c.linked_at, c.removed_at, c.setup_done,
        (SELECT group_concat(name, ', ') FROM provider_account p WHERE p.connection_id = c.id) AS accounts
      FROM connection c WHERE c.budget_id = ?1 AND c.provider = 'plaid' ORDER BY c.linked_at`,
   );
@@ -697,6 +698,7 @@ settingsRoutes.get('/settings/connections', async (c) => {
       status: r.removed_at ? 'removed' : (r.status as 'ok' | 'login_required' | 'error'),
       lastSynced: r.last_synced_at,
       linkedAt: r.linked_at,
+      setupDone: r.setup_done === 1,
     })),
   };
   return c.json(view);
@@ -709,7 +711,6 @@ settingsRoutes.post('/settings/connections/link-token', async (c) => {
   if (r.mode === 'repair') {
     // Update mode reuses the Item; it never uses a new slot.
     if (!r.connectionId) throw new HttpError(400, 'invalid', 'connectionId');
-    const { connectionToken } = await import('../sync/provider.js');
     const token = await connectionToken(c.env, r.connectionId);
     const lt = await provider.createLinkSession({
       mode: 'repair',
@@ -738,23 +739,61 @@ export function accountKind(type: string, subtype: string | null): 'checking' | 
   return null;
 }
 
-export async function completeLink(
+/**
+ * Step 1 of a new link, run as soon as Plaid returns the access token: save the connection with its encrypted token
+ * and setup_done = 0. From here on the link is never lost, even if setting up its accounts fails.
+ */
+export async function saveLinkedItem(
   env: Env,
   s: Scoped,
   accessToken: string,
   itemId: string,
   institution: string,
   now: number,
-): Promise<{
-  connectionId: string;
-  accounts: { id: string; name: string; kind: string; startingBalance: number }[];
-}> {
+): Promise<string> {
   const connectionId = `con_${ulid(now)}`;
   const enc = await encryptToken(
     parseKeyring(env.TOKEN_KEYS, env.TOKEN_KEY_CURRENT),
     accessToken,
     connectionId,
   );
+  await s.batch([
+    s.q(
+      `INSERT INTO connection (id, budget_id, provider, provider_item_id, institution_name, access_token_enc, key_version, days_requested, setup_done, linked_at, created_at, updated_at)
+       VALUES (?2, ?1, 'plaid', ?3, ?4, ?5, ?6, 180, 0, ?7, ?7, ?7)`,
+      connectionId,
+      itemId,
+      institution,
+      enc.enc,
+      enc.keyVersion,
+      now,
+    ),
+    s.audit('connection.link', 'connection', connectionId, null, { institution }, now),
+  ]);
+  return connectionId;
+}
+
+/**
+ * Step 2: fetch the link's accounts and set them up (accounts, card payment categories, starting balances) in one
+ * atomic batch that also sets setup_done = 1. Safe to retry: it does nothing once setup is done.
+ */
+export async function setUpLinkedAccounts(
+  env: Env,
+  s: Scoped,
+  connectionId: string,
+  accessToken: string,
+  now: number,
+): Promise<{
+  connectionId: string;
+  accounts: { id: string; name: string; kind: string; startingBalance: number }[];
+}> {
+  const conn = await s.first<{ provider_item_id: string; setup_done: number }>(
+    `SELECT provider_item_id, setup_done FROM connection WHERE budget_id = ?1 AND id = ?2`,
+    connectionId,
+  );
+  if (!conn) throw new HttpError(404, 'not_found', 'connection');
+  if (conn.setup_done === 1) return { connectionId, accounts: [] };
+  const itemId = conn.provider_item_id;
   const provider = makeProvider(env);
   const accts = await provider.getAccounts({ id: connectionId, accessToken, providerItemId: itemId });
   const b = await s.first<{ budget_start_month: string | null; time_zone: string }>(
@@ -764,16 +803,11 @@ export async function completeLink(
   const startDate = b?.budget_start_month ? `${b.budget_start_month}-01` : today;
   // Each account budgets from the later of the budget start and the date it was linked (Budget start).
   const budgetFrom = today > startDate ? today : startDate;
+  // The guard makes the whole batch a no-op if another attempt already finished setup.
   const w: D1PreparedStatement[] = [
     s.q(
-      `INSERT INTO connection (id, budget_id, provider, provider_item_id, institution_name, access_token_enc, key_version, days_requested, linked_at, created_at, updated_at)
-       VALUES (?2, ?1, 'plaid', ?3, ?4, ?5, ?6, 180, ?7, ?7, ?7)`,
+      `INSERT OR REPLACE INTO lease_guard (id, ok) VALUES (3, (SELECT setup_done = 0 FROM connection WHERE id = ?2 AND budget_id = ?1))`,
       connectionId,
-      itemId,
-      institution,
-      enc.enc,
-      enc.keyVersion,
-      now,
     ),
   ];
   const out: { id: string; name: string; kind: string; startingBalance: number }[] = [];
@@ -830,9 +864,19 @@ export async function completeLink(
     out.push({ id, name: a.name, kind, startingBalance });
   }
   w.push(
-    s.audit('connection.link', 'connection', connectionId, null, { institution, accounts: out.length }, now),
+    s.q(
+      `UPDATE connection SET setup_done = 1, updated_at = ?3 WHERE budget_id = ?1 AND id = ?2`,
+      connectionId,
+      now,
+    ),
+    s.audit('connection.setup', 'connection', connectionId, null, { accounts: out.length }, now),
   );
-  await s.batch(w);
+  try {
+    await s.batch(w);
+  } catch (e) {
+    if (isFenceAbort(e)) return { connectionId, accounts: [] };
+    throw e;
+  }
   const meta = await budgetMeta(s);
   if (meta) {
     const rows = await s.all<AccountRowDb>(
@@ -851,6 +895,12 @@ export async function startSync(
   trigger: 'webhook' | 'cron' | 'refresh' | 'link',
 ): Promise<boolean> {
   const now = clock(env);
+  // A link whose accounts aren't set up yet would sync transactions no account can take (and the watermark would pass
+  // them by), so it waits until "Finish setup".
+  const ready = await env.DB.prepare(`SELECT setup_done FROM connection WHERE id = ?1`)
+    .bind(connectionId)
+    .first<{ setup_done: number }>();
+  if (!ready || ready.setup_done !== 1) return false;
   await requestSync(env.DB, connectionId, now);
   const runId = `run_${ulid(now)}`;
   if (!(await acquire(env.DB, connectionId, runId, now))) return false;
@@ -884,7 +934,7 @@ settingsRoutes.post('/settings/connections/exchange', async (c) => {
     await startSync(c.env, s.budgetId, existing.id, 'link');
     return c.json({ ok: true, connectionId: existing.id, accounts: [] });
   }
-  const res = await completeLink(
+  const connectionId = await saveLinkedItem(
     c.env,
     s,
     done.accessToken,
@@ -892,17 +942,32 @@ settingsRoutes.post('/settings/connections/exchange', async (c) => {
     done.institutionName ?? 'Bank',
     now,
   );
-  await startSync(c.env, s.budgetId, res.connectionId, 'link');
+  let res;
+  try {
+    res = await setUpLinkedAccounts(c.env, s, connectionId, done.accessToken, now);
+  } catch {
+    throw new HttpError(
+      503,
+      'setup_incomplete',
+      'Your bank is linked, but setting up its accounts didn’t finish. Open Bank connections and tap Finish setup. It won’t use another link.',
+    );
+  }
+  await startSync(c.env, s.budgetId, connectionId, 'link');
   return c.json({ ok: true, ...res });
 });
 
 settingsRoutes.post('/settings/connections/:id/refresh', async (c) => {
   const s = scoped(c);
-  const conn = await s.first<{ id: string }>(
-    `SELECT id FROM connection WHERE budget_id = ?1 AND id = ?2 AND removed_at IS NULL`,
+  const conn = await s.first<{ id: string; setup_done: number }>(
+    `SELECT id, setup_done FROM connection WHERE budget_id = ?1 AND id = ?2 AND removed_at IS NULL`,
     c.req.param('id'),
   );
   if (!conn) throw new HttpError(404, 'not_found', 'connection');
+  if (conn.setup_done !== 1) {
+    // Finish setup of a link saved before its accounts were set up.
+    const token = await connectionToken(c.env, conn.id);
+    await setUpLinkedAccounts(c.env, s, conn.id, token, clock(c.env));
+  }
   await startSync(c.env, s.budgetId, conn.id, 'refresh');
   return c.json({ ok: true });
 });

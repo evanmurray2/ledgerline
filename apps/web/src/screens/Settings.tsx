@@ -1610,6 +1610,36 @@ export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label
   );
 }
 
+/** A link Plaid confirmed whose accounts didn't get set up: finishing it never uses another link. */
+function FinishSetup({ id, institution }: { id: string; institution: string }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      mutates
+      track="connections.finish_setup"
+      disabled={busy}
+      onClick={() => {
+        setBusy(true);
+        api.refreshConnection(id).then(
+          () => {
+            setBusy(false);
+            toast.show({ text: `${institution} is set up. Its transactions are on the way.` });
+            void qc.invalidateQueries();
+          },
+          (e: unknown) => {
+            setBusy(false);
+            toast.show({ text: e instanceof Error ? e.message : 'Couldn’t finish setup. Try again.' });
+          },
+        );
+      }}
+      className="hit flex h-9 items-center self-start rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent"
+    >
+      {busy ? 'Finishing…' : 'Finish setup'}
+    </Button>
+  );
+}
+
 export function ConnectionsScreen() {
   useScreen('settings.connections');
   const q = useConnections();
@@ -1653,11 +1683,16 @@ export function ConnectionsScreen() {
                       </span>
                     </span>
                     <span className={cx('shrink-0 rounded-full px-2.5 py-1 text-[12px] font-bold', st.cls)}>
-                      {it.status === 'ok' && it.lastSynced
-                        ? `Synced ${syncedLabel(it.lastSynced, today)}`
-                        : st.text}
+                      {!it.setupDone
+                        ? 'Setup unfinished'
+                        : it.status === 'ok' && it.lastSynced
+                          ? `Synced ${syncedLabel(it.lastSynced, today)}`
+                          : st.text}
                     </span>
                   </div>
+                  {!it.setupDone && it.status !== 'removed' && (
+                    <FinishSetup id={it.id} institution={it.institution} />
+                  )}
                   {repair && (
                     <Link
                       to={`/accounts/repair/${it.id}`}
