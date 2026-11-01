@@ -234,6 +234,32 @@ export function computeBudget(input: ComputeInput): ComputeResult {
     if (asg) for (const v of asg.values()) monthAssigned += v;
 
     const chunks = new Map<string, Chunk[]>();
+    /**
+     * Money arriving on a card pays off its unbudgeted debt before anything else gets it (decisions.md D-12):
+     * first unfunded purchases on that card this month in categories other than `except` (which covers their
+     * overspending, so it isn't forgiven at month end as debt the card no longer has), then debt from earlier
+     * months (forgiven overspending or starting debt not yet assigned), which was never taken from any category.
+     * Returns how much of `amount` it used.
+     */
+    const payUnbudgeted = (card: string, amount: number, except: string | null): number => {
+      let rest = amount;
+      for (const [oc, oarr] of chunks) {
+        if (oc === except) continue;
+        for (let i = oarr.length - 1; i >= 0 && rest > 0; i--) {
+          const k = oarr[i]!;
+          if (k.card !== card) continue;
+          const t = Math.min(rest, k.amount);
+          if (t <= 0) continue;
+          k.amount -= t;
+          rest -= t;
+          A.set(oc, (A.get(oc) ?? carry.get(oc) ?? 0) + t);
+          act.set(oc, (act.get(oc) ?? 0) + t);
+        }
+      }
+      const k0 = Math.min(rest, Math.max(K.get(card) ?? 0, 0));
+      if (k0 > 0) K.set(card, (K.get(card) ?? 0) - k0);
+      return amount - rest + k0;
+    };
     let inflows = 0;
     let owed = 0;
     const lines = (linesByMonth.get(m) ?? []).sort(lineOrder);
@@ -248,6 +274,8 @@ export function computeBudget(input: ComputeInput): ComputeResult {
             const g = Math.min(l.amount, Math.max(Pv, 0));
             P.set(l.accountId, Pv - g);
             cardAct.set(l.accountId, (cardAct.get(l.accountId) ?? 0) - g);
+            // Beyond that, it pays off the card's unbudgeted debt first, as a refund does (D-12); RTA gets the rest.
+            inflows -= payUnbudgeted(l.accountId, l.amount - g, null);
           }
           break;
         case 'debt':
@@ -309,32 +337,74 @@ export function computeBudget(input: ComputeInput): ComputeResult {
             }
           } else if (l.amount > 0) {
             const r = l.amount;
-            spent.set(c, (spent.get(c) ?? 0) - r);
-            if (!l.card) {
-              a += r;
-            } else {
+            const aOld = a;
+            // Money in that pays debt rather than adding cash: it never reaches the category (decisions.md D-12).
+            let h = 0;
+            if (l.card) {
               // Rule 3: card refund. P gives back what it had set aside for the purchase.
               const card = l.accountId;
               const p = l.refundOf ? funded.get(l.refundOf) : undefined;
               const Pv = P.get(card) ?? 0;
-              if (p) {
-                const g = Math.min(r, p.f - p.refundedFunded);
-                p.refundedFunded += g;
-                P.set(card, Pv - g);
-                cardAct.set(card, (cardAct.get(card) ?? 0) - g);
-                const rest = r - g;
-                if (p.month === m) {
-                  // Same month: the refund cancels that purchase's credit overspending, so it no longer counts in
-                  // the credit/cash split at month end.
-                  const ch = chunks.get(c)?.find((k) => k.line === l.refundOf);
-                  if (ch) ch.amount -= Math.min(rest, ch.amount);
+              const g = p ? Math.min(r, p.f - p.refundedFunded) : Math.min(r, Math.max(Pv, 0));
+              if (p) p.refundedFunded += g;
+              P.set(card, Pv - g);
+              cardAct.set(card, (cardAct.get(card) ?? 0) - g);
+              let rest = r - g;
+              // The refund cancels this category's unfunded purchases on the same card this month, the linked
+              // one first (D-19), so they no longer count in the credit/cash split at month end.
+              const arr = chunks.get(c);
+              if (arr) {
+                const own = l.refundOf ? arr.find((k) => k.line === l.refundOf) : undefined;
+                const order = [
+                  ...(own ? [own] : []),
+                  ...arr.filter((k) => k !== own && k.card === card).reverse(),
+                ];
+                for (const k of order) {
+                  if (rest <= 0) break;
+                  const t = Math.min(rest, k.amount);
+                  k.amount -= t;
+                  rest -= t;
                 }
-                a += r;
-              } else {
-                const g = Math.min(r, Math.max(Pv, 0));
-                P.set(card, Pv - g);
-                cardAct.set(card, (cardAct.get(card) ?? 0) - g);
-                a += r;
+              }
+              // What is left first pays off the card's unbudgeted debt, so this category doesn't get that part.
+              const forgivenBefore = K.get(card) ?? 0;
+              h = payUnbudgeted(card, rest, c);
+              if (p) {
+                const k0 = Math.max(forgivenBefore, 0) - Math.max(K.get(card) ?? 0, 0);
+                p.refundedForgiven += Math.min(k0, p.forgiven - p.refundedForgiven);
+              }
+              rest -= h;
+              // A linked refund of a purchase whose forgiven debt you later assigned money to: the payment
+              // category gives that back too, as for an unlinked refund.
+              const P2 = P.get(card) ?? 0;
+              const g2 = Math.min(rest, Math.max(P2, 0));
+              if (g2 > 0) {
+                P.set(card, P2 - g2);
+                cardAct.set(card, (cardAct.get(card) ?? 0) - g2);
+              }
+            }
+            spent.set(c, (spent.get(c) ?? 0) - (r - h));
+            act.set(c, (act.get(c) ?? 0) - h);
+            a += r - h;
+            // Money that brings the category back up funds its unfunded card purchases from earlier this month,
+            // as an assignment would (D-17): the card's payment category gets it (decisions.md D-11). Overspending
+            // counts as credit first, as at month end.
+            const arr = chunks.get(c);
+            if (arr) {
+              let co = 0;
+              for (const k of arr) co += k.amount;
+              // co is after any cancellation above, so credit overspending before vs after this inflow:
+              let u = Math.min(Math.max(-aOld, 0), co) - Math.min(Math.max(-a, 0), co);
+              for (const k of arr) {
+                if (u <= 0) break;
+                const t = Math.min(u, k.amount);
+                if (t <= 0) continue;
+                k.amount -= t;
+                u -= t;
+                P.set(k.card, (P.get(k.card) ?? 0) + t);
+                cardAct.set(k.card, (cardAct.get(k.card) ?? 0) + t);
+                const fd = funded.get(k.line);
+                if (fd) fd.f += t;
               }
             }
           }

@@ -451,9 +451,11 @@ describe('rule 3: card refund', () => {
           txns: [p, tx('card', '2026-01-20', r0, cat('c0'), { refundOf: p.key })],
           current: START,
         });
-        const f = Math.min(a, x);
-        expect(cell(r, START, 'c0').available).toBe(a - x + r0);
-        expect(card(r, START, 'card').available).toBe(f - Math.min(r0, f));
+        const left = a - x + r0;
+        expect(cell(r, START, 'c0').available).toBe(left);
+        // P holds the debt left on the card, except what is still credit overspending (D-11: money that brings
+        // the category back up funds the purchase).
+        expect(card(r, START, 'card').available).toBe(x - r0 - Math.max(-left, 0));
       }),
       { numRuns: RUNS },
     );
@@ -814,11 +816,10 @@ describe('rule 13: projected fronts', () => {
   });
 });
 
-// The rules as written leave these two cases counting money differently from the cash you hold. They are open
-// questions for the owner (decisions.md D-11, D-12); these tests pin today's literal behaviour so a decision
-// shows up as a deliberate change.
-describe('open owner decisions (literal rules today)', () => {
-  it('D-11: money a category receives after credit overspending does not reach the card', () => {
+// Refunds and inflows after credit overspending (decisions.md D-11, D-12): the budget counts exactly the money
+// you have.
+describe('money back after credit overspending (decisions.md D-11, D-12)', () => {
+  it('D-11: money a category receives after credit overspending funds the card', () => {
     const cur = addMonths(START, 1);
     const { r, p } = run({
       accounts: [{ ...CHK, startingBalance: cents(100_000) }, CARD],
@@ -828,13 +829,14 @@ describe('open owner decisions (literal rules today)', () => {
       current: cur,
     });
     expect(cell(r, cur, 'c0').available).toBe(1_000); // carries $10
-    expect(card(r, cur, 'card').available).toBe(0); // card stays $30 short
-    expect(-p.working.card! - card(r, cur, 'card').available).toBe(3_000);
-    expect(r.unbudgetedCardDebt.card).toBe(0); // nothing was forgiven, so covering the card takes RTA again
+    expect(card(r, cur, 'card').available).toBe(3_000); // the card is covered
+    expect(p.working.card).toBe(-3_000);
+    expect(r.unbudgetedCardDebt.card).toBe(0);
+    expect(r.rta).toBe(100_000); // RTA is never charged for the $30
     expect(checkIdentity(p, r, cur).ok).toBe(true);
   });
 
-  it('D-12: a refund of a purchase forgiven in an earlier month goes to the category in full (rule 3)', () => {
+  it('D-12: a refund of a purchase forgiven in an earlier month pays off that debt, not the category', () => {
     const p0 = tx('card', '2026-01-05', -3_000, cat('c0'));
     const cur = addMonths(START, 1);
     const { r, p } = run({
@@ -844,10 +846,107 @@ describe('open owner decisions (literal rules today)', () => {
       txns: [p0, tx('card', `${cur}-05`, 3_000, cat('c0'), { refundOf: p0.key })],
       current: cur,
     });
-    expect(cell(r, cur, 'c0').available).toBe(3_000);
+    expect(cell(r, cur, 'c0').available).toBe(0);
+    expect(cell(r, cur, 'c0').activity).toBe(0);
     expect(p.working.card).toBe(0); // the debt is gone
-    expect(r.unbudgetedCardDebt.card).toBe(3_000); // but the forgiven $30 is still counted as unbudgeted debt
+    expect(r.unbudgetedCardDebt.card).toBe(0); // and so is the unbudgeted debt
+    expect(r.rta).toBe(100_000);
     expect(checkIdentity(p, r, cur).ok).toBe(true);
+  });
+
+  it('D-12: an unlinked refund on a card with unassigned starting debt pays that debt first', () => {
+    const { r, p } = run({
+      accounts: [
+        { ...CHK, startingBalance: cents(100_000) },
+        { ...CARD, startingBalance: cents(-5_000) },
+      ],
+      categories: cats(1, ['card']),
+      assignments: [],
+      txns: [tx('card', '2026-01-10', 7_000, cat('c0'))],
+      current: START,
+    });
+    expect(cell(r, START, 'c0').available).toBe(2_000); // only the part beyond the $50 debt
+    expect(r.unbudgetedCardDebt.card).toBe(0);
+    expect(p.working.card).toBe(2_000);
+    expect(checkIdentity(p, r, START).ok).toBe(true);
+  });
+
+  it('on any mix of card spending, refunds, statement credits, cash inflows and payments, card debt = payment category + unbudgeted debt', () => {
+    const ev = fc.record({
+      kind: fc.constantFrom('buy', 'refund', 'linked', 'cashIn', 'cashOut', 'pay', 'credit'),
+      x: amt(1, 20_000),
+      c: fc.integer({ min: 0, max: 1 }),
+      m: fc.integer({ min: 0, max: 1 }),
+      d: fc.integer({ min: 1, max: 28 }),
+    });
+    fc.assert(
+      fc.property(
+        amt(0, 30_000),
+        fc.array(ev, { maxLength: 14 }),
+        fc.array(fc.record({ c: fc.integer({ min: 0, max: 2 }), x: amt(0, 10_000) }), { maxLength: 3 }),
+        (debt, evs, asg) => {
+          const cur = addMonths(START, 2);
+          const buys: LogicalTxn[] = [];
+          const sorted = [...evs].sort((a, b) => a.m - b.m || a.d - b.d);
+          const txns: LogicalTxn[] = [];
+          // Keep the card from going into credit: spending a card credit balance is a separate open question
+          // (decisions.md D-25).
+          let bal = -debt;
+          const onCard = (n: number) => {
+            if (bal + n > 0) return false;
+            bal += n;
+            return true;
+          };
+          for (const e of sorted) {
+            const date = `${addMonths(START, e.m)}-${String(e.d).padStart(2, '0')}`;
+            const c = `c${e.c}`;
+            if (e.kind === 'buy') {
+              bal -= e.x;
+              const t = tx('card', date, -e.x, cat(c));
+              buys.push(t);
+              txns.push(t);
+            } else if (e.kind === 'credit') {
+              if (onCard(e.x)) txns.push(tx('card', date, e.x, { type: 'rta' }));
+            } else if (e.kind === 'refund') {
+              if (onCard(e.x)) txns.push(tx('card', date, e.x, cat(c)));
+            } else if (e.kind === 'linked' && buys.length > 0) {
+              const b = buys[e.x % buys.length]!;
+              const back = txns.filter((t) => t.refundOf === b.key).reduce((s, t) => s + t.amount, 0);
+              const r0 = Math.min(e.x, -b.amount - back);
+              const bc = b.use.type === 'category' ? b.use.categoryId : c;
+              if (r0 > 0 && onCard(r0)) txns.push(tx('card', date, r0, cat(bc), { refundOf: b.key }));
+            } else if (e.kind === 'cashIn') txns.push(tx('chk', date, e.x, cat(c)));
+            else if (e.kind === 'cashOut') txns.push(tx('chk', date, -e.x, cat(c)));
+            else if (e.kind === 'pay' && onCard(e.x)) {
+              txns.push(tx('chk', date, -e.x, { type: 'transfer', otherAccountId: 'card' }));
+              txns.push(tx('card', date, e.x, { type: 'transfer', otherAccountId: 'chk' }));
+            }
+          }
+          const assignments: Assignment[] = asg.map((a) => ({
+            categoryId: a.c === 2 ? 'pay_card' : `c${a.c}`,
+            month: START,
+            amount: a.x,
+          }));
+          const { r, p } = run({
+            accounts: [
+              { ...CHK, startingBalance: cents(500_000) },
+              { ...CARD, startingBalance: cents(-debt) },
+            ],
+            categories: cats(2, ['card']),
+            assignments,
+            txns,
+            current: cur,
+          });
+          expect(checkIdentity(p, r, cur).ok).toBe(true);
+          const owed = -p.working.card!;
+          const P = card(r, cur, 'card').available;
+          const K = r.unbudgetedCardDebt.card!;
+          // While the card owes money, every dollar of it is either set aside or tracked as unbudgeted debt.
+          expect(P + K + 0).toBe(owed + 0);
+        },
+      ),
+      { numRuns: RUNS },
+    );
   });
 });
 
