@@ -127,7 +127,19 @@ opsRoutes.get('/health', async (c) => {
   return c.json(view);
 });
 
-/** The one Access bypass: requires a valid Plaid webhook signature and does nothing except start a sync. */
+/** The nightly GitHub Actions backup reports here after it uploaded an encrypted dump (ops token only). */
+opsRoutes.post('/ops/backup-done', async (c) => {
+  if (c.get('userId') !== 'service') return c.json({ error: 'forbidden', message: 'ops token only' }, 403);
+  const s = scoped(c);
+  const now = clock(c.env);
+  await s.run(
+    `INSERT INTO health_status (budget_id, key, value, at) VALUES (?1, 'last_backup_at', ?2, ?2) ON CONFLICT (budget_id, key) DO UPDATE SET value = excluded.value, at = excluded.at`,
+    String(now),
+  );
+  return c.json({ ok: true });
+});
+
+/** The one public path besides sign-in: requires a valid Plaid webhook signature and only starts a sync. */
 opsRoutes.post('/webhooks/plaid', async (c) => {
   const ev = await makeProvider(c.env).verifyWebhook(c.req.raw);
   if (!ev) return c.json({ error: 'unauthorized' }, 401);

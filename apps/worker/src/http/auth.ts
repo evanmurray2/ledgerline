@@ -1,125 +1,90 @@
-// Authentication: Cloudflare Access sits in front of the whole hostname, and the Worker independently verifies the
-// Access JWT on every API request (design: Security and authentication). Local development may trust a fixed email
-// instead, never in production.
+// Authentication without Cloudflare Access (decisions.md D-27: Zero Trust needs a payment card on file). The Worker
+// verifies passkeys itself (routes/auth.ts) and keeps sessions server-side: the browser holds a random token in an
+// HttpOnly cookie and the database stores only its SHA-256. The two GitHub jobs (monitor, backup) use a bearer
+// token that can reach two endpoints. Local development may trust a fixed email instead, never in production.
+import { sha256Hex } from '@ledgerline/bank-provider';
 import type { Env } from '../env.js';
 
-export interface Identity {
-  email: string;
-  /** Access service tokens (the GitHub monitor) have a client id instead of an email. */
-  serviceClientId: string | null;
+export const SESSION_COOKIE = '__Host-ledgerline';
+export const CHALLENGE_COOKIE = '__Host-ledgerline-challenge';
+/** Absolute session length: sign in again with your passkey once a day (design: Security and authentication). */
+export const SESSION_MS = 24 * 60 * 60 * 1000;
+/** Linking banks and exporting data need a passkey check this recent. */
+export const REAUTH_MS = 15 * 60 * 1000;
+export const CHALLENGE_MS = 5 * 60 * 1000;
+export const DEVICE_LINK_MS = 10 * 60 * 1000;
+/** Secrets shorter than this are refused, so they can't be guessed. */
+export const MIN_SECRET_LENGTH = 32;
+
+export type Identity =
+  { kind: 'owner'; email: string; sessionId: string | null; verifiedAt: number } | { kind: 'ops' };
+
+/** The one user's identity in the membership tables. */
+export function ownerEmail(env: Env): string {
+  const dev = env.PLAID_ENV !== 'production' ? env.DEV_AUTH_EMAIL : undefined;
+  return (env.OWNER_EMAIL ?? dev ?? 'owner').toLowerCase();
 }
 
-interface Jwk {
-  kid: string;
-  kty: string;
-  n: string;
-  e: string;
-  alg?: string;
-}
-
-let certCache: { team: string; keys: Map<string, CryptoKey>; fetchedAt: number } | null = null;
-const CERT_TTL_MS = 60 * 60 * 1000;
-
-function b64url(s: string): Uint8Array<ArrayBuffer> {
-  const b = s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4);
-  const bin = atob(b);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-async function accessKeys(team: string, now: number, fetcher: typeof fetch): Promise<Map<string, CryptoKey>> {
-  if (certCache && certCache.team === team && now - certCache.fetchedAt < CERT_TTL_MS) return certCache.keys;
-  const res = await fetcher(`${team}/cdn-cgi/access/certs`);
-  if (!res.ok) throw new Error(`access certs ${res.status}`);
-  const body = (await res.json()) as { keys: Jwk[] };
-  const keys = new Map<string, CryptoKey>();
-  for (const k of body.keys) {
-    keys.set(
-      k.kid,
-      await crypto.subtle.importKey(
-        'jwk',
-        { kty: k.kty, n: k.n, e: k.e, alg: 'RS256', ext: true },
-        { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-        false,
-        ['verify'],
-      ),
-    );
+export function readCookie(req: Request, name: string): string | null {
+  const h = req.headers.get('cookie');
+  if (!h) return null;
+  for (const part of h.split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim() || null;
   }
-  certCache = { team, keys, fetchedAt: now };
-  return keys;
-}
-
-/** Verifies `Cf-Access-Jwt-Assertion`: RS256 signature by the team's keys, issuer, audience and expiry. */
-export async function verifyAccessJwt(
-  token: string,
-  opts: { team: string; aud: string; now?: number; fetcher?: typeof fetch },
-): Promise<Identity | null> {
-  const now = opts.now ?? Date.now();
-  const parts = token.split('.');
-  if (parts.length !== 3) return null;
-  const [h, p, s] = parts as [string, string, string];
-  let header: { alg?: string; kid?: string };
-  let claims: {
-    iss?: string;
-    aud?: string | string[];
-    exp?: number;
-    nbf?: number;
-    email?: string;
-    common_name?: string;
-    type?: string;
-  };
-  try {
-    header = JSON.parse(new TextDecoder().decode(b64url(h)));
-    claims = JSON.parse(new TextDecoder().decode(b64url(p)));
-  } catch {
-    return null;
-  }
-  if (header.alg !== 'RS256' || !header.kid) return null;
-  let keys: Map<string, CryptoKey>;
-  try {
-    keys = await accessKeys(opts.team, now, opts.fetcher ?? fetch);
-  } catch {
-    return null;
-  }
-  let key = keys.get(header.kid);
-  if (!key) {
-    // Keys rotate: refetch once.
-    certCache = null;
-    keys = await accessKeys(opts.team, now, opts.fetcher ?? fetch).catch(() => new Map());
-    key = keys.get(header.kid);
-    if (!key) return null;
-  }
-  const ok = await crypto.subtle.verify(
-    'RSASSA-PKCS1-v1_5',
-    key,
-    b64url(s),
-    new TextEncoder().encode(`${h}.${p}`),
-  );
-  if (!ok) return null;
-  if (claims.iss !== opts.team) return null;
-  const auds = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-  if (!auds.includes(opts.aud)) return null;
-  const sec = now / 1000;
-  if (typeof claims.exp !== 'number' || claims.exp < sec) return null;
-  if (typeof claims.nbf === 'number' && claims.nbf > sec + 60) return null;
-  if (claims.email) return { email: claims.email.toLowerCase(), serviceClientId: null };
-  if (claims.common_name) return { email: '', serviceClientId: claims.common_name };
   return null;
 }
 
-export async function identify(req: Request, env: Env): Promise<Identity | null> {
-  const prod = env.PLAID_ENV === 'production';
-  if (env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD) {
-    const token = req.headers.get('cf-access-jwt-assertion');
-    if (!token) return null;
-    return verifyAccessJwt(token, { team: env.ACCESS_TEAM_DOMAIN.replace(/\/$/, ''), aud: env.ACCESS_AUD });
+export function cookie(name: string, value: string, maxAgeMs: number): string {
+  return `${name}=${value}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=${Math.max(0, Math.floor(maxAgeMs / 1000))}`;
+}
+
+export function randomToken(bytes = 32): string {
+  const b = crypto.getRandomValues(new Uint8Array(bytes));
+  let s = '';
+  for (const x of b) s += String.fromCharCode(x);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+export const tokenHash = (token: string): Promise<string> => sha256Hex(token);
+
+/** Constant-time comparison of a presented secret with a configured one. */
+export async function secretMatches(presented: string, configured: string | undefined): Promise<boolean> {
+  if (!configured || configured.length < MIN_SECRET_LENGTH) return false;
+  const enc = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest('SHA-256', enc.encode(presented)),
+    crypto.subtle.digest('SHA-256', enc.encode(configured)),
+  ]);
+  return crypto.subtle.timingSafeEqual(a, b);
+}
+
+/** Paths the ops token may reach: the monitor reads health, the backup job reports a finished backup. */
+export const OPS_PATHS = new Set(['GET /api/health', 'POST /api/ops/backup-done']);
+
+export async function identify(req: Request, env: Env, now: number): Promise<Identity | null> {
+  const auth = req.headers.get('authorization');
+  if (auth?.startsWith('Bearer '))
+    return (await secretMatches(auth.slice(7), env.OPS_TOKEN)) ? { kind: 'ops' } : null;
+  const token = readCookie(req, SESSION_COOKIE);
+  if (token) {
+    const row = await env.DB.prepare(`SELECT id, expires_at, verified_at FROM auth_session WHERE id = ?1`)
+      .bind(await tokenHash(token))
+      .first<{ id: string; expires_at: number; verified_at: number }>();
+    if (row && row.expires_at > now)
+      return { kind: 'owner', email: ownerEmail(env), sessionId: row.id, verifiedAt: row.verified_at };
+    return null;
   }
-  // No Access configuration: only allowed outside production (local dev, tests).
-  if (!prod && env.DEV_AUTH_EMAIL) return { email: env.DEV_AUTH_EMAIL.toLowerCase(), serviceClientId: null };
+  // Local development and tests only: no passkey, a fixed owner.
+  if (env.PLAID_ENV !== 'production' && env.DEV_AUTH_EMAIL)
+    return { kind: 'owner', email: ownerEmail(env), sessionId: null, verifiedAt: now };
   return null;
 }
 
-export function resetAccessKeyCache(): void {
-  certCache = null;
+/** Linking or repairing a bank, removing a connection, exports, and managing passkeys need a recent passkey check. */
+export function needsRecentPasskey(method: string, path: string): boolean {
+  if (path.startsWith('/api/export/')) return true;
+  if (path === '/api/settings/rules/export') return false;
+  if (method === 'GET') return false;
+  return path.startsWith('/api/settings/connections') || path.startsWith('/api/settings/security/');
 }

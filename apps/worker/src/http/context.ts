@@ -6,6 +6,8 @@ export interface Vars {
   email: string;
   budgetId: string;
   requestId: string;
+  /** Hash id of the signed-in session ('' for the ops token and local development). */
+  sessionId: string;
 }
 
 export type AppEnv = { Bindings: Env; Variables: Vars };

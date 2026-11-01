@@ -15,15 +15,19 @@ export interface Env {
   /** "1:base64key,2:base64key" and the current version. */
   TOKEN_KEYS?: string;
   TOKEN_KEY_CURRENT?: string;
-  /** Cloudflare Access: team domain (https://<team>.cloudflareaccess.com) and application audience tag. */
-  ACCESS_TEAM_DOMAIN?: string;
-  ACCESS_AUD?: string;
-  /** Local development only: trust this email instead of an Access JWT. Refused when PLAID_ENV is production. */
+  /**
+   * One-time code (32+ characters) that allows adding the first passkey while none exists (decisions.md D-27).
+   * After that it does nothing; remove it if you like.
+   */
+  SETUP_CODE?: string;
+  /** Bearer token (32+ characters) for the GitHub monitor (GET /api/health) and backup (POST /api/ops/backup-done). */
+  OPS_TOKEN?: string;
+  /** WebAuthn relying party id; defaults to the request's host name. */
+  RP_ID?: string;
+  /** Local development only: sign in as this email without a passkey. Refused when PLAID_ENV is production. */
   DEV_AUTH_EMAIL?: string;
-  /** The owner's sign-in email: the first sign-in by this address creates the budget (single user at launch). */
+  /** Optional: the owner's identity in the membership tables (defaults to "owner"). */
   OWNER_EMAIL?: string;
-  /** Access service token client id allowed to read /api/health (the GitHub monitor). */
-  ACCESS_SERVICE_CLIENT_ID?: string;
   /** Local development and tests only: a fixed "now" (ISO time). Ignored in production. */
   FAKE_NOW?: string;
   /** Enables /__dev routes (seed data) in local development. Ignored in production. */

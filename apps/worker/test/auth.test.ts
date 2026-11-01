@@ -1,71 +1,166 @@
+// Passkey sign-in, sessions, the recent-passkey rule, device links and the ops token (decisions.md D-27), through
+// the real Worker with a software passkey.
+import { createExecutionContext, env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
-import { resetAccessKeyCache, verifyAccessJwt } from '../src/http/auth.js';
+import worker from '../src/index.js';
 import { Scoped } from '../src/db/scoped.js';
-import { env } from 'cloudflare:test';
+import { SoftAuthenticator } from './soft-authenticator.js';
 
-const TEAM = 'https://team.cloudflareaccess.com';
-const AUD = 'aud-tag';
-const enc = (o: unknown) =>
-  btoa(JSON.stringify(o)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
-const b64u = (b: ArrayBuffer) =>
-  btoa(String.fromCharCode(...new Uint8Array(b)))
-    .replace(/=+$/, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_');
+const ORIGIN = 'https://ledgerline.test';
+const SETUP = 's'.repeat(40);
+const OPS = 'o'.repeat(40);
+let now = Date.parse('2026-11-14T20:00:00Z');
 
-async function keys() {
-  const kp = (await crypto.subtle.generateKey(
-    {
-      name: 'RSASSA-PKCS1-v1_5',
-      modulusLength: 2048,
-      publicExponent: new Uint8Array([1, 0, 1]),
-      hash: 'SHA-256',
-    },
-    true,
-    ['sign', 'verify'],
-  )) as CryptoKeyPair;
-  const jwk = (await crypto.subtle.exportKey('jwk', kp.publicKey)) as JsonWebKey;
-  const fetcher = (async () =>
-    new Response(
-      JSON.stringify({ keys: [{ kid: 'k1', kty: 'RSA', n: jwk.n, e: jwk.e }] }),
-    )) as unknown as typeof fetch;
-  const sign = async (claims: Record<string, unknown>, kid = 'k1') => {
-    const h = enc({ alg: 'RS256', kid });
-    const p = enc(claims);
-    const s = await crypto.subtle.sign(
-      'RSASSA-PKCS1-v1_5',
-      kp.privateKey,
-      new TextEncoder().encode(`${h}.${p}`),
+/** The Worker's env as production would have it: no dev sign-in. */
+const prodEnv = () =>
+  ({
+    ...env,
+    DEV_AUTH_EMAIL: undefined,
+    DEV_ROUTES: undefined,
+    SETUP_CODE: SETUP,
+    OPS_TOKEN: OPS,
+    FAKE_NOW: new Date(now).toISOString(),
+  }) as never;
+
+/** One browser: a cookie jar. */
+class Browser {
+  jar = new Map<string, string>();
+  async call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
+    const h: Record<string, string> = { origin: ORIGIN, ...headers };
+    if (this.jar.size) h.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
+    if (method !== 'GET') {
+      h['content-type'] = 'application/json';
+      h['x-ledgerline'] = '1';
+    }
+    const res = await worker.fetch(
+      new Request(ORIGIN + path, {
+        method,
+        headers: h,
+        body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),
+      }),
+      prodEnv(),
+      createExecutionContext(),
     );
-    return `${h}.${p}.${b64u(s)}`;
-  };
-  return { fetcher, sign };
+    const sc = res.headers.get('set-cookie');
+    if (sc) {
+      const [pair, ...attrs] = sc.split(';');
+      const [k, v] = pair!.split('=') as [string, string];
+      if (attrs.some((a) => a.trim() === 'Max-Age=0')) this.jar.delete(k.trim());
+      else this.jar.set(k.trim(), v);
+    }
+    const text = await res.text();
+    return { status: res.status, json: (text ? JSON.parse(text) : null) as Record<string, unknown> };
+  }
+  async register(a: SoftAuthenticator, start: Record<string, unknown>) {
+    const o = await this.call('POST', '/api/auth/register/options', start);
+    if (o.status !== 200) return o;
+    return this.call('POST', '/api/auth/register/verify', {
+      response: await a.create(o.json as never),
+      name: 'Test',
+    });
+  }
+  async signIn(a: SoftAuthenticator, opts: Parameters<SoftAuthenticator['get']>[1] = {}) {
+    const o = await this.call('POST', '/api/auth/login/options');
+    return this.call('POST', '/api/auth/login/verify', { response: await a.get(o.json as never, opts) });
+  }
 }
 
-describe('Cloudflare Access JWT verification', () => {
-  it('accepts a valid token and rejects wrong audience, issuer, expiry and signature', async () => {
-    resetAccessKeyCache();
-    const now = 1_800_000_000_000;
-    const { fetcher, sign } = await keys();
-    const good = { iss: TEAM, aud: [AUD], exp: now / 1000 + 600, email: 'Owner@Example.com' };
-    const opts = { team: TEAM, aud: AUD, now, fetcher };
-    expect(await verifyAccessJwt(await sign(good), opts)).toEqual({
-      email: 'owner@example.com',
-      serviceClientId: null,
+const phone = new SoftAuthenticator(ORIGIN, 'ledgerline.test');
+const laptop = new SoftAuthenticator(ORIGIN, 'ledgerline.test');
+const b = new Browser();
+
+describe('passkey sign-in', () => {
+  it('nothing is reachable before setup, and setup needs the setup code', async () => {
+    expect((await b.call('GET', '/api/session')).status).toBe(401);
+    expect((await b.call('GET', '/api/auth/status')).json).toEqual({
+      signedIn: false,
+      hasPasskey: false,
+      setupOpen: true,
     });
-    expect(await verifyAccessJwt(await sign({ ...good, aud: ['other'] }), opts)).toBeNull();
-    expect(
-      await verifyAccessJwt(await sign({ ...good, iss: 'https://evil.cloudflareaccess.com' }), opts),
-    ).toBeNull();
-    expect(await verifyAccessJwt(await sign({ ...good, exp: now / 1000 - 1 }), opts)).toBeNull();
-    const other = await keys();
-    expect(await verifyAccessJwt(await other.sign(good), opts)).toBeNull();
-    expect(await verifyAccessJwt('not.a.jwt', opts)).toBeNull();
-    const svc = await verifyAccessJwt(
-      await sign({ iss: TEAM, aud: AUD, exp: now / 1000 + 600, common_name: 'svc.access' }),
-      opts,
+    expect((await b.register(phone, { setupCode: 'wrong'.repeat(10) })).status).toBe(403);
+    expect((await b.register(phone, { setupCode: SETUP })).status).toBe(200);
+    expect(b.jar.has('__Host-ledgerline')).toBe(true);
+    expect((await b.call('GET', '/api/session')).status).toBe(200);
+  });
+
+  it('the setup code stops working once a passkey exists', async () => {
+    const other = new Browser();
+    expect((await other.register(laptop, { setupCode: SETUP })).status).toBe(403);
+    expect((await other.call('GET', '/api/auth/status')).json).toMatchObject({
+      hasPasskey: true,
+      setupOpen: false,
+    });
+  });
+
+  it('sign out, then sign in with the passkey; a wrong key or origin is refused', async () => {
+    await b.call('POST', '/api/auth/logout');
+    expect((await b.call('GET', '/api/session')).status).toBe(401);
+    const stranger = new SoftAuthenticator(ORIGIN, 'ledgerline.test');
+    await stranger.create({ challenge: 'x' });
+    expect((await b.signIn(phone, { signWith: stranger })).status).toBe(403);
+    expect((await b.signIn(phone, { origin: 'https://evil.test' })).status).toBe(403);
+    expect((await b.call('GET', '/api/session')).status).toBe(401);
+    expect((await b.signIn(phone)).status).toBe(200);
+    expect((await b.call('GET', '/api/session')).status).toBe(200);
+  });
+
+  it('a challenge is single-use', async () => {
+    const o = await b.call('POST', '/api/auth/login/options');
+    const resp = await phone.get(o.json as never);
+    const jar = new Map(b.jar);
+    expect((await b.call('POST', '/api/auth/login/verify', { response: resp })).status).toBe(200);
+    b.jar = jar;
+    expect((await b.call('POST', '/api/auth/login/verify', { response: resp })).status).toBe(400);
+  });
+
+  it('linking a bank and exports need a passkey check within 15 minutes', async () => {
+    now += 16 * 60 * 1000;
+    const r = await b.call('POST', '/api/settings/connections/link-token', {});
+    expect(r).toMatchObject({ status: 401, json: { error: 'reauth' } });
+    expect((await b.call('GET', '/api/export/json')).json).toMatchObject({ error: 'reauth' });
+    expect((await b.call('GET', '/api/session')).status).toBe(200); // everything else still works
+    expect((await b.signIn(phone)).status).toBe(200); // same session, fresh check
+    expect((await b.call('GET', '/api/export/json')).status).toBe(200);
+  });
+
+  it('a device link adds a passkey once, then stops working', async () => {
+    const link = await b.call('POST', '/api/settings/security/device-link');
+    expect(link.status).toBe(200);
+    const token = String(link.json.url).split('#')[1]!;
+    const newDevice = new Browser();
+    expect((await newDevice.register(laptop, { deviceToken: token })).status).toBe(200);
+    expect((await newDevice.call('GET', '/api/session')).status).toBe(200);
+    const third = new Browser();
+    const again = new SoftAuthenticator(ORIGIN, 'ledgerline.test');
+    expect((await third.register(again, { deviceToken: token })).status).toBe(403);
+    const sec = await b.call('GET', '/api/settings/security');
+    expect((sec.json.passkeys as unknown[]).length).toBe(2);
+  });
+
+  it('a session ends after 24 hours', async () => {
+    now += 24 * 60 * 60 * 1000;
+    expect((await b.call('GET', '/api/session')).status).toBe(401);
+    expect((await b.signIn(phone)).status).toBe(200);
+  });
+
+  it('you can remove a passkey but never the last one', async () => {
+    expect((await b.call('POST', `/api/settings/security/passkeys/${laptop.id}/remove`)).status).toBe(200);
+    expect((await b.call('POST', `/api/settings/security/passkeys/${phone.id}/remove`)).status).toBe(409);
+  });
+
+  it('the ops token reads health and reports backups, nothing else', async () => {
+    const ops = new Browser();
+    const bearer = { authorization: `Bearer ${OPS}` };
+    expect((await ops.call('GET', '/api/health', undefined, bearer)).status).toBe(200);
+    expect((await ops.call('POST', '/api/ops/backup-done', {}, bearer)).status).toBe(200);
+    const h = await ops.call('GET', '/api/health', undefined, bearer);
+    expect(h.json.lastBackupAt).toBe(now);
+    expect((await ops.call('GET', '/api/session', undefined, bearer)).status).toBe(403);
+    expect((await ops.call('GET', '/api/health', undefined, { authorization: 'Bearer nope' })).status).toBe(
+      401,
     );
-    expect(svc).toEqual({ email: '', serviceClientId: 'svc.access' });
+    // A signed-in session can't fake a backup.
+    expect((await b.call('POST', '/api/ops/backup-done', {})).status).toBe(403);
   });
 });
 

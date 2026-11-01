@@ -206,7 +206,13 @@ async function watchdog(env: Env, budgetId: string, now: number): Promise<void> 
     env.DB.prepare(
       `INSERT INTO health_status (budget_id, key, value, at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (budget_id, key) DO UPDATE SET value = excluded.value, at = excluded.at`,
     ).bind(budgetId, k, v, now);
-  await env.DB.batch([up('watchdog_ran_at', String(now))]);
+  await env.DB.batch([
+    up('watchdog_ran_at', String(now)),
+    // Expired sign-in state (decisions.md D-27).
+    env.DB.prepare(`DELETE FROM auth_session WHERE expires_at <= ?1`).bind(now),
+    env.DB.prepare(`DELETE FROM auth_challenge WHERE expires_at <= ?1`).bind(now),
+    env.DB.prepare(`DELETE FROM device_link WHERE expires_at <= ?1`).bind(now),
+  ]);
 }
 
 export { addMonths };

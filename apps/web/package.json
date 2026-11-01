@@ -14,6 +14,7 @@
   "dependencies": {
     "@fontsource/public-sans": "5.3.0",
     "@ledgerline/contracts": "workspace:*",
+    "@simplewebauthn/browser": "14.0.0",
     "@tanstack/react-query": "5.105.0",
     "@tanstack/react-router": "1.170.46",
     "react": "19.3.1",

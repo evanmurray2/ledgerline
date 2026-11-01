@@ -12,7 +12,9 @@ import {
 import { type Month, addMonths, cents, isMonth } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
-import { identify } from '../http/auth.js';
+import { OPS_PATHS, REAUTH_MS, identify, needsRecentPasskey } from '../http/auth.js';
+import { authRoutes } from './auth.js';
+import { securityRoutes } from './security.js';
 import { csrf } from '../http/security.js';
 import { Scoped, resolveMembership } from '../db/scoped.js';
 import { markDirty, recompute } from '../budget/recompute.js';
@@ -27,37 +29,35 @@ import { categorySheet, assignView } from '../views/category.js';
 
 export const api = new Hono<AppEnv>();
 
-/** Every API request: a verified Access identity, then membership in a budget. */
+/** Sign-in routes are public (they verify passkeys themselves). */
+api.route('/auth', authRoutes);
+
+/** Every other API request: a signed-in session (or the ops token), then membership in a budget. */
 api.use('*', async (c, next) => {
   c.set('requestId', crypto.randomUUID());
   const path = new URL(c.req.url).pathname;
-  if (path === '/api/webhooks/plaid') return next();
-  const who = await identify(c.req.raw, c.env);
-  if (!who) return c.json({ error: 'unauthenticated', message: 'Sign in through Cloudflare Access' }, 401);
-  if (who.serviceClientId) {
-    // Access service tokens may only read the health endpoint (the GitHub monitor).
-    if (
-      path !== '/api/health' ||
-      (c.env.ACCESS_SERVICE_CLIENT_ID && who.serviceClientId !== c.env.ACCESS_SERVICE_CLIENT_ID)
-    ) {
-      return c.json({ error: 'forbidden', message: 'service token' }, 403);
-    }
+  if (path === '/api/webhooks/plaid' || path.startsWith('/api/auth/')) return next();
+  const now = clock(c.env);
+  const who = await identify(c.req.raw, c.env, now);
+  if (!who) return c.json({ error: 'unauthenticated', message: 'Sign in with your passkey' }, 401);
+  if (who.kind === 'ops') {
+    // The GitHub jobs' token reaches only health and the backup report.
+    if (!OPS_PATHS.has(`${c.req.method} ${path}`))
+      return c.json({ error: 'forbidden', message: 'ops token' }, 403);
     c.set('userId', 'service');
     c.set('email', '');
+    c.set('sessionId', '');
     const b = await c.env.DB.prepare(`SELECT id FROM budget ORDER BY created_at LIMIT 1`).first<{
       id: string;
     }>();
     c.set('budgetId', b?.id ?? '');
     return next();
   }
-  const m = await resolveMembership(
-    c.env.DB,
-    who.email,
-    c.env.OWNER_EMAIL ?? c.env.DEV_AUTH_EMAIL,
-    clock(c.env),
-    () => ulid(),
-  );
+  if (needsRecentPasskey(c.req.method, path) && now - who.verifiedAt > REAUTH_MS)
+    return c.json({ error: 'reauth', message: 'Confirm it’s you with your passkey' }, 401);
+  const m = await resolveMembership(c.env.DB, who.email, who.email, now, () => ulid());
   if (!m) return c.json({ error: 'forbidden', message: 'Not a member of this budget' }, 403);
+  c.set('sessionId', who.sessionId ?? '');
   c.set('userId', m.userId);
   c.set('email', who.email);
   c.set('budgetId', m.budgetId);
@@ -326,5 +326,6 @@ api.route('/', activityRoutes);
 api.route('/', accountRoutes);
 api.route('/', settingsRoutes);
 api.route('/', opsRoutes);
+api.route('/', securityRoutes);
 
 export { addMonths };

@@ -20,7 +20,7 @@ app.use('/__measure/*', async (c, next) => {
 });
 app.route('/__measure', measure as never);
 app.use('/__dev/*', async (c, next) => {
-  if (c.env.DEV_ROUTES !== '1' || c.env.PLAID_ENV === 'production' || c.env.ACCESS_AUD) return c.notFound();
+  if (c.env.DEV_ROUTES !== '1' || c.env.PLAID_ENV === 'production' || c.env.SETUP_CODE) return c.notFound();
   await next();
 });
 app.route('/__dev', dev);
