@@ -1,6 +1,7 @@
 // Settings: categories and groups (archive / restore with Undo), rules (with live preview), payees (merge,
 // rename), bank connections (Item meter, confirm before Link), import and export, appearance and preferences.
 // There is no email setting: the app sends no email (decisions.md D-24).
+import { SignInSection } from './Auth';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, Outlet, useNavigate, useParams, useRouterState } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -256,23 +257,7 @@ function Preferences() {
           {trackNote}
         </p>
       )}
-      <h2 className="m-0 mt-1 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">Sign-in</h2>
-      <Card className="p-3">
-        <div className="flex flex-col gap-1">
-          <span className="text-[15px] font-semibold">GitHub with passkey</span>
-          <span className="text-[13px] leading-snug text-muted">
-            Signed in as {s.user.login ?? s.user.email} · session ends after 24 hours. Sign-in is handled by
-            Cloudflare Access, so Ledgerline never stores a password.
-          </span>
-        </div>
-      </Card>
-      <a
-        href="/cdn-cgi/access/logout"
-        data-track="settings.sign_out"
-        className="flex h-12 items-center justify-center rounded-xl border border-line-strong bg-surface text-[16px] font-bold text-over-fg no-underline"
-      >
-        Sign out
-      </a>
+      <SignInSection />
     </>
   );
 }

@@ -66,7 +66,7 @@ const SCREENS: { name: string; path: string; ready?: string; prepare?: (page: Pa
       await p.getByText('more than you have').first().waitFor();
     },
   },
-  { name: 'welcome', path: '/welcome?mock=firstrun', ready: 'Continue with GitHub' },
+  { name: 'welcome', path: '/welcome?mock=firstrun', ready: 'Get started' },
   { name: 'setup-start', path: '/setup/start?mock=firstrun', ready: 'When does your budget start?' },
   { name: 'setup-link', path: '/setup/link?mock=firstrun', ready: 'Link your banks and cards' },
   { name: 'setup-categories', path: '/setup/categories?mock=firstrun', ready: 'Make your categories' },

@@ -1,4 +1,4 @@
-// Thin fetch wrapper for the Worker API. Same-origin cookies (Cloudflare Access), JSON in and out, every
+// Thin fetch wrapper for the Worker API. Same-origin session cookie (passkey sign-in), JSON in and out, every
 // response parsed with the shared Zod schema. Mutations carry the CSRF header; the Worker also checks Origin.
 import { ApiError as ApiErrorBody, CSRF_HEADER } from '@ledgerline/contracts';
 import type { z } from 'zod';
@@ -31,7 +31,9 @@ const FRIENDLY: Record<string, string> = {
   read_only: 'Changes are paused until the daily limit resets.',
   readonly: 'Changes are paused until the daily limit resets.',
   bad_response: 'Ledgerline sent something unexpected. Try again.',
-  unauthorized: 'Your session ended. Reload to sign in again.',
+  unauthorized: 'Your session ended. Sign in again.',
+  unauthenticated: 'Your session ended. Sign in again.',
+  reauth: 'Confirm it’s you with your passkey, then try again.',
 };
 
 export function errorMessage(err: unknown): string {
@@ -86,6 +88,10 @@ export async function request<S extends z.ZodType>(
     const code = parsed.success ? parsed.data.error : `http_${res.status}`;
     const message = parsed.success ? parsed.data.message : res.statusText || 'Request failed';
     if (code === 'read_only' || code === 'readonly') onReadOnly?.();
+    // Signed out (session ended) or a fresh passkey check is needed: the app shows sign-in or "Confirm it's you".
+    if (code === 'unauthenticated' && !path.startsWith('/api/auth/'))
+      window.dispatchEvent(new Event('ledgerline:signedout'));
+    if (code === 'reauth') window.dispatchEvent(new Event('ledgerline:reauth'));
     throw new ApiError(code, message, res.status);
   }
   const parsed = schema.safeParse(json);

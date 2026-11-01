@@ -22,7 +22,7 @@ export type Identity =
 /** The one user's identity in the membership tables. */
 export function ownerEmail(env: Env): string {
   const dev = env.PLAID_ENV !== 'production' ? env.DEV_AUTH_EMAIL : undefined;
-  return (env.OWNER_EMAIL ?? dev ?? 'owner').toLowerCase();
+  return (env.OWNER_EMAIL || dev || 'owner').toLowerCase();
 }
 
 export function readCookie(req: Request, name: string): string | null {

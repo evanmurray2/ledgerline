@@ -1,5 +1,8 @@
 // One function per endpoint in docs/api.md. Types come from @ledgerline/contracts.
 import {
+  AuthStatus,
+  DeviceLink,
+  SecurityView,
   AccountsView,
   ActivityView,
   AssignView,
@@ -60,6 +63,19 @@ const enc = encodeURIComponent;
 
 export const api = {
   session: () => get('/api/session', Session),
+
+  // Sign-in (decisions.md D-27). Ceremony options and responses are WebAuthn JSON, passed through as-is.
+  authStatus: () => get('/api/auth/status', AuthStatus),
+  registerOptions: (body: { setupCode?: string; deviceToken?: string }) =>
+    post('/api/auth/register/options', z.unknown(), body),
+  registerVerify: (body: { response: unknown; name: string }) => post('/api/auth/register/verify', Ok, body),
+  loginOptions: () => post('/api/auth/login/options', z.unknown()),
+  loginVerify: (body: { response: unknown }) => post('/api/auth/login/verify', Ok, body),
+  security: () => get('/api/settings/security', SecurityView),
+  deviceLink: () => post('/api/settings/security/device-link', DeviceLink),
+  removePasskey: (id: string) => post(`/api/settings/security/passkeys/${enc(id)}/remove`, Ok),
+  signOutOthers: () => post('/api/settings/security/sign-out-others', Ok),
+  signOut: () => post('/api/settings/security/sign-out', Ok),
 
   budget: (month: string) => get(`/api/budget/${enc(month)}`, BudgetView),
   assign: (body: In<typeof AssignRequest>) => post('/api/budget/assign', MutationResult, body),

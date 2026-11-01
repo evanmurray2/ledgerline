@@ -38,6 +38,8 @@ import {
   SettingsLayout,
 } from './screens/Settings';
 import { FirstSortScreen, LinkBanksScreen, StartMonthScreen, WelcomeScreen } from './screens/Setup';
+import { AddDeviceScreen, ReauthDialog, SignInScreen } from './screens/Auth';
+import { ApiError } from './api/client';
 
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
 
@@ -51,7 +53,16 @@ function Root() {
     // The Worker refused a write because the daily limit was reached: refresh writeState and readOnlyUntil.
     const onReadOnly = () => void qc.invalidateQueries({ queryKey: qk.session });
     window.addEventListener('ledgerline:readonly', onReadOnly);
-    return () => window.removeEventListener('ledgerline:readonly', onReadOnly);
+    // The session ended (24 hours, or signed out elsewhere): show sign-in.
+    const onSignedOut = () => {
+      // Only when the app was showing data; on the sign-in screen the session query already failed.
+      if (qc.getQueryData(qk.session)) void qc.resetQueries({ queryKey: qk.session });
+    };
+    window.addEventListener('ledgerline:signedout', onSignedOut);
+    return () => {
+      window.removeEventListener('ledgerline:readonly', onReadOnly);
+      window.removeEventListener('ledgerline:signedout', onSignedOut);
+    };
   }, [qc]);
 
   useEffect(() => {
@@ -62,7 +73,9 @@ function Root() {
   }, [s]);
 
   const setupPath = path.startsWith('/setup') || path.startsWith('/welcome');
+  if (path === '/add-device') return <AddDeviceScreen />;
   if (!s) {
+    if (session.error instanceof ApiError && session.error.status === 401) return <SignInScreen />;
     if (session.error)
       return (
         <div className="p-4">
@@ -80,10 +93,17 @@ function Root() {
           : '/setup/categories';
     return <Navigate to={to} replace />;
   }
-  if (setupPath) return <Outlet />;
+  if (setupPath)
+    return (
+      <>
+        <Outlet />
+        <ReauthDialog />
+      </>
+    );
   return (
     <AppShell>
       <Outlet />
+      <ReauthDialog />
     </AppShell>
   );
 }
@@ -96,6 +116,14 @@ const indexRoute = createRoute({
   beforeLoad: () => {
     throw redirect({ to: '/budget' });
   },
+});
+
+// ------------------------------------------------------------------ sign-in
+// Root renders the add-device screen itself, before any session check; this route only makes the path known.
+const addDeviceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/add-device',
+  component: () => null,
 });
 
 // ------------------------------------------------------------------ first run
@@ -302,6 +330,7 @@ const connectionsRoute = createRoute({
 const dataRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'data', component: DataScreen });
 
 const routeTree = rootRoute.addChildren([
+  addDeviceRoute,
   indexRoute,
   welcomeRoute,
   setupStartRoute,

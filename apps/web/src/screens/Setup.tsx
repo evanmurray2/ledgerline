@@ -56,7 +56,7 @@ export function WelcomeScreen() {
         </div>
         <ul className="m-0 flex list-none flex-col gap-2.5 p-0 text-[15px]">
           {[
-            'Private to you. Only your GitHub account can sign in.',
+            'Private to you. Only your passkeys can sign in.',
             'Read-only bank access. Nothing can move money.',
             'Your bank’s records are never edited, only labeled.',
           ].map((t) => (
@@ -78,11 +78,9 @@ export function WelcomeScreen() {
           data-track="welcome.continue"
           className="flex h-12 items-center justify-center rounded-xl bg-inverse text-[16px] font-bold text-on-inverse no-underline"
         >
-          Continue with GitHub
+          Get started
         </Link>
-        <span className="text-center text-[12px] text-muted">
-          You’ll confirm with your passkey. Sign-in is handled by Cloudflare Access.
-        </span>
+        <span className="text-center text-[12px] text-muted">Next, pick the month your budget starts.</span>
       </div>
     </div>
   );

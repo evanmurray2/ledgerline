@@ -5,7 +5,7 @@ const PORT = 5179;
 
 export default defineConfig({
   testDir: './tests',
-  testIgnore: /worker\.spec\.ts/,
+  testIgnore: /(worker|passkey)\.spec\.ts/,
   fullyParallel: true,
   workers: 4,
   timeout: 30_000,

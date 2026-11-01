@@ -430,6 +430,26 @@ export class MockServer {
         parse(RenamePayee, body);
         return { ok: true };
       }
+      // Sign-in (decisions.md D-27): the mock is always signed in with one passkey.
+      case 'GET auth/status':
+        return { signedIn: true, hasPasskey: true, setupOpen: false };
+      case 'GET settings/security':
+        return {
+          passkeys: [
+            {
+              id: 'pk_mock',
+              name: 'iPhone',
+              createdAt: '2026-10-31T18:00:00Z',
+              lastUsedAt: '2026-11-14T08:00:00Z',
+            },
+          ],
+          sessions: 1,
+        };
+      case 'POST settings/security/device-link':
+        return { url: `${location.origin}/add-device#mock-token`, expiresAt: '2026-11-14T20:10:00Z' };
+      case 'POST settings/security/sign-out':
+      case 'POST settings/security/sign-out-others':
+        return { ok: true };
       case 'GET settings/connections':
         return db.connectionsView();
       case 'POST settings/connections/link-token': {
@@ -493,5 +513,15 @@ function isParam(a: string | undefined, b: string): boolean {
 /** Third path segment is an id under /settings/{categories,rules,payees,connections}. */
 function isParam2(a: string | undefined, c: string): boolean {
   if (a !== 'settings') return false;
-  return !['merge', 'preview', 'export', 'reorder', 'link-token', 'exchange'].includes(c);
+  return ![
+    'merge',
+    'preview',
+    'export',
+    'reorder',
+    'link-token',
+    'exchange',
+    'device-link',
+    'sign-out',
+    'sign-out-others',
+  ].includes(c);
 }

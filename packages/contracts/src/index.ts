@@ -651,5 +651,27 @@ export type HealthView = z.infer<typeof HealthView>;
 
 export const ApiError = z.object({ error: z.string(), message: z.string() });
 
+// ---------------------------------------------------------------- sign-in (decisions.md D-27)
+
+export const AuthStatus = z.object({
+  signedIn: z.boolean(),
+  hasPasskey: z.boolean(),
+  /** No passkey yet and a setup code is configured: show first-time setup. */
+  setupOpen: z.boolean(),
+});
+export type AuthStatus = z.infer<typeof AuthStatus>;
+
+export const SecurityView = z.object({
+  passkeys: z.array(
+    z.object({ id: z.string(), name: z.string(), createdAt: z.string(), lastUsedAt: z.string().nullable() }),
+  ),
+  /** Signed-in sessions on all devices. */
+  sessions: z.number().int(),
+});
+export type SecurityView = z.infer<typeof SecurityView>;
+
+export const DeviceLink = z.object({ url: z.string(), expiresAt: z.string() });
+export type DeviceLink = z.infer<typeof DeviceLink>;
+
 export type ImportResult = z.infer<typeof ImportResult>;
 export type RulePreview = z.infer<typeof RulePreview>;
