@@ -54,7 +54,7 @@ GitHub only needs the `production` environment with the secret `CLOUDFLARE_API_T
 - **Deploy now:** Actions → **deploy** → **Run workflow**. Claude can start it for you too.
 - **Deploy on every merge:** add the repository variable `DEPLOY_ON_MERGE` = `true`. Add yourself under **Required reviewers** then, so each merge waits for your tap.
 
-The account id and app address default to this account's (`f2d39c71e2c0819833de7942cdcc1222`, `https://ledgerline.m62hdjmtg4.workers.dev`); the variables `CLOUDFLARE_ACCOUNT_ID` and `PRODUCTION_URL` override them.
+The account id and app address default to this account's (`f2d39c71e2c0819833de7942cdcc1222`, `https://ledgerline.ledger-line.workers.dev`); the variables `CLOUDFLARE_ACCOUNT_ID` and `PRODUCTION_URL` override them.
 
 ## 6. Create your passkey (right away)
 

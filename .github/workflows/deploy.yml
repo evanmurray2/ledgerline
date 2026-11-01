@@ -90,7 +90,7 @@ jobs:
       - name: Worker secrets
         run: node tools/ci/worker-secrets.mjs "$RUNNER_TEMP/secrets.json"
         env:
-          APP_URL: ${{ vars.PRODUCTION_URL || 'https://ledgerline.m62hdjmtg4.workers.dev' }}
+          APP_URL: ${{ vars.PRODUCTION_URL || 'https://ledgerline.ledger-line.workers.dev' }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || 'f2d39c71e2c0819833de7942cdcc1222' }}
           PLAID_CLIENT_ID: ${{ secrets.PLAID_CLIENT_ID }}
           PLAID_SECRET: ${{ secrets.PLAID_SECRET }}
@@ -113,7 +113,7 @@ jobs:
         id: smoke
         run: node tools/ci/smoke.mjs
         env:
-          BASE_URL: ${{ vars.PRODUCTION_URL || 'https://ledgerline.m62hdjmtg4.workers.dev' }}
+          BASE_URL: ${{ vars.PRODUCTION_URL || 'https://ledgerline.ledger-line.workers.dev' }}
           OPS_TOKEN: ${{ secrets.OPS_TOKEN }}
       - name: Roll back on failure
         if: failure() && steps.smoke.conclusion == 'failure'
