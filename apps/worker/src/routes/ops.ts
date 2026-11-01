@@ -16,6 +16,7 @@ import { classifyUsage, noteUsage, usageToday, utcDay, READ_LIMIT, WRITE_LIMIT }
 import { makeProvider } from '../sync/provider.js';
 import { startSync } from './settings.js';
 import { TX_COLUMNS, budgetMeta, planLineRebuild, type TxRow } from '../ledger/ledger.js';
+import { clearTotals } from '../ledger/totals.js';
 
 export const opsRoutes = new Hono<AppEnv>();
 
@@ -355,6 +356,8 @@ opsRoutes.post('/import/csv', async (c) => {
         ),
       );
   }
+  // New history rows, and possibly an account re-pointed at them: stored month totals start over (ledger/totals.ts).
+  stmts.push(clearTotals(s));
   for (let i = 0; i < stmts.length; i += 100) await s.batch(stmts.slice(i, i + 100));
   const meta = await budgetMeta(s);
   void meta;

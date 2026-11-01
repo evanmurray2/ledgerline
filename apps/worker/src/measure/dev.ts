@@ -165,6 +165,8 @@ dev.post('/seed-november', async (c) => {
       'payee_alias',
       'payee',
       'liability_snapshot',
+      'account_month_total',
+      'month_total_done',
       'alert',
       'setting',
       'budget_member',

@@ -7,6 +7,9 @@ import { acquire } from '../src/sync/lease.js';
 import { applyPage, beginRun, rawPageKey } from '../src/sync/steps.js';
 import { processPending } from '../src/sync/process.js';
 import { recompute } from '../src/budget/recompute.js';
+import { Scoped } from '../src/db/scoped.js';
+import { inBudgetByAccount, monthTotals } from '../src/ledger/totals.js';
+import type { Month } from '@ledgerline/domain';
 
 const db = env.DB;
 const NOW = Date.parse('2026-11-14T20:00:00Z');
@@ -268,6 +271,59 @@ describe('sync pipeline', () => {
       )
       .first<{ n: number }>();
     expect(lines!.n).toBe(0);
+  });
+
+  it('stored month totals always equal a full recount, through syncs that change, move and remove old rows', async () => {
+    const s = new Scoped(db, B, 'test');
+    const direct = async () => {
+      const byMonth = (
+        await db
+          .prepare(
+            `SELECT substr(date, 1, 7) AS m, sum(amount) AS a FROM v_txn_bank WHERE budget_id = ?1 AND status = 'posted' GROUP BY m`,
+          )
+          .bind(B)
+          .all<{ m: string; a: number }>()
+      ).results;
+      const byAccount = (
+        await db
+          .prepare(
+            `SELECT account_id, sum(amount) AS a FROM v_transaction WHERE budget_id = ?1 AND status = 'posted'
+               AND (date >= budget_from OR pending_at_link = 1) GROUP BY account_id`,
+          )
+          .bind(B)
+          .all<{ account_id: string; a: number }>()
+      ).results;
+      return {
+        months: Object.fromEntries(byMonth.filter((r) => r.m >= '2026-01').map((r) => [r.m, r.a])),
+        accounts: Object.fromEntries(byAccount.map((r) => [r.account_id, r.a])),
+      };
+    };
+    const stored = async () => {
+      const t = await monthTotals(s, '2026-01' as Month, '2026-11' as Month, NOW);
+      const months: Record<string, number> = {};
+      for (const [m, accts] of t) {
+        const sum = [...accts.values()].reduce((x, v) => x + v.all, 0);
+        if (accts.size) months[m] = sum;
+      }
+      return { months, accounts: Object.fromEntries(inBudgetByAccount(t)) };
+    };
+    expect(await stored()).toEqual(await direct());
+    const done = await db
+      .prepare(`SELECT count(*) AS n FROM month_total_done WHERE budget_id = ?1`)
+      .bind(B)
+      .first<{ n: number }>();
+    expect(done!.n).toBeGreaterThan(5); // finished months are now stored
+    expect(await stored()).toEqual(await direct()); // and read back the same
+
+    // A sync changes an old row's amount, moves another to a different month, and removes a third.
+    await sync(
+      [
+        plaidTxn('old-out', 'pa_chk', 333, '2026-08-12', 'ONLINE TRANSFER TO SAVINGS'),
+        plaidTxn('old-venmo', 'pa_chk', 40, '2026-07-02', 'VENMO PAYMENT'),
+      ],
+      [{ transaction_id: 'old-in', account_id: 'pa_sav' }],
+    );
+    expect(await stored()).toEqual(await direct());
   });
 
   it('recompute after the sync: RTA excludes Waiting to match', async () => {

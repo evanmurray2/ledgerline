@@ -49,6 +49,15 @@ shows the change and the counts are adjusted locally. Estimates for a very heavy
 1,500 categorizations): visits mostly 304s (a few rows each), each categorization about 130 reads plus the version
 bump, so well under 1 million reads; a normal day stays a few percent of the limit.
 
+Then (migration 0008): posted totals per account per finished month are stored the first time they're needed and
+reused until a write that could change them clears them (`apps/worker/src/ledger/totals.ts`; the sync's apply step
+clears the months of every row it touches, before and after; processing clears from the earliest month it touched;
+CSV import clears everything). The current month is always added up live. Accounts and Reports read these instead of
+re-adding every posted row: on the test data, later visits cost about 960 and 1,080 reads (were 1,300 and 4,600, and
+growing with history); the first visit after a change to a finished month stores it again. `apps/worker/test/sync.test.ts`
+checks the stored totals equal a full recount after syncs that change, move and remove old rows, and fails if the
+clearing is switched off.
+
 The sections below are the original go/no-go, measured with R2.
 
 Result: **go**, after two redesigns that the measurements forced. Each hot path's own compute is now under 3 ms in workerd, about 5 ms with the estimated I/O, against the 10 ms limit:

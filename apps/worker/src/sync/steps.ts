@@ -241,6 +241,9 @@ export async function restartFetch(
   return { restartCount: r.restart_count, failed: r.phase === 'failed' };
 }
 
+/** This apply chunk's rows (binds ?1 run, ?2 page, ?3 first position, ?4 end position). */
+const TOUCHED = `SELECT provider_txn_id FROM bank_event WHERE sync_run_id = ?1 AND page = ?2 AND position >= ?3 AND position < ?4`;
+
 /** Columns per bank_event row and bank_txn row; statements are chunked to stay within 100 bound parameters. */
 const EVENT_PARAMS = 10;
 const EVENTS_PER_STMT = Math.floor(100 / EVENT_PARAMS);
@@ -409,6 +412,17 @@ export async function planApply(
     );
   }
 
+  // Stored month totals (ledger/totals.ts) for every month these rows are dated in, before and after the change.
+  const clearTouchedMonths = () =>
+    db
+      .prepare(
+        `DELETE FROM month_total_done WHERE budget_id = ?5 AND month IN (
+         SELECT substr(date, 1, 7) FROM bank_txn WHERE provider_txn_id IN (${TOUCHED})
+         UNION SELECT substr(authorized_date, 1, 7) FROM bank_txn WHERE authorized_date IS NOT NULL AND provider_txn_id IN (${TOUCHED}))`,
+      )
+      .bind(runId, page, from, to, c.budgetId);
+  stmts.push(clearTouchedMonths());
+
   // Projection, built inside D1 from the events just inserted (in page order), so the transactions cross the wire
   // once and the SQL work happens in D1 rather than in Worker CPU.
   stmts.push(
@@ -448,6 +462,7 @@ export async function planApply(
     );
   }
 
+  stmts.push(clearTouchedMonths());
   stmts.push(db.prepare(`UPDATE apply_counter SET seq = seq + ?1 WHERE id = 1`).bind(evs.length));
   if (pageDone) {
     stmts.push(

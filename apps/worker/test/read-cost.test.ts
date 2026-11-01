@@ -134,6 +134,9 @@ describe('database reads per request', () => {
     const cat = await env.DB.prepare(
       `SELECT id, name, group_id FROM category WHERE kind = 'spending' LIMIT 1`,
     ).first<{ id: string; name: string; group_id: string }>();
+    // Accounts and Reports again: finished months' totals are stored now (ledger/totals.ts).
+    out.push({ ...(await call('/api/accounts')), p: 'accounts again' });
+    out.push({ ...(await call('/api/reports?month=2026-11')), p: 'reports again' });
     out.push(await call('/api/transactions/categorize', 'POST', { keys: [t!.key], categoryId: cat!.id }));
     out.push(
       await call('/api/budget/assign', 'POST', {
@@ -175,12 +178,15 @@ describe('database reads per request', () => {
     // Screens: what you budget is November, so history must not be read.
     expect(reads['/api/budget/2026-11'], report()).toBeLessThan(1_500);
     expect(reads['/api/activity?filter=attention'], report()).toBeLessThan(1_500);
-    expect(reads['/api/accounts'], report()).toBeLessThan(1_500);
+    expect(reads['/api/accounts'], report()).toBeLessThan(4_000);
     expect(reads['/api/owed'], report()).toBeLessThan(1_500);
-    // Reports sum up to 13 months of posted rows (bounded; opened less often).
-    expect(reads['/api/reports?month=2026-11'], report()).toBeLessThan(6_000);
+    // The first Reports visit stores 13 months of totals (bounded; once per change to those months).
+    expect(reads['/api/reports?month=2026-11'], report()).toBeLessThan(7_000);
     // The full Activity list pages through history 50 rows at a time.
     expect(reads['/api/activity'], report()).toBeLessThan(2_500);
+    // Later visits read stored month totals; the first one after a change stores them.
+    expect(reads['accounts again'], report()).toBeLessThan(1_200);
+    expect(reads['reports again'], report()).toBeLessThan(1_500);
     // Edits.
     expect(reads['/api/transactions/categorize'], report()).toBeLessThan(500);
     expect(reads['/api/budget/assign'], report()).toBeLessThan(500);

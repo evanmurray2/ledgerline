@@ -17,6 +17,7 @@ import { HttpError, scoped, startRecompute } from './api.js';
 import { cards as loadCards, fresh, monthResult, shortDate, structure } from '../views/common.js';
 import { listRow } from '../views/rows.js';
 import { RECENT_TX, TX_COLUMNS, type TxRow } from '../ledger/ledger.js';
+import { inBudgetByAccount, monthTotals } from '../ledger/totals.js';
 import type { Scoped } from '../db/scoped.js';
 
 export const accountRoutes = new Hono<AppEnv>();
@@ -37,7 +38,7 @@ interface AcctDb {
 }
 
 async function accountRows(s: Scoped, today: string): Promise<{ rows: AccountRow[]; raw: AcctDb[] }> {
-  const [acc, pend, posted] = await s.batch([
+  const [acc, pend] = await s.batch([
     s.q(
       `SELECT a.id, a.name, a.kind, a.budget_from, a.starting_balance, a.provider_account_id, pa.mask, pa.current_balance AS bank,
          c.institution_name AS institution, c.status, c.last_synced_at, c.id AS connection_id
@@ -51,15 +52,21 @@ async function accountRows(s: Scoped, today: string): Promise<{ rows: AccountRow
          AND (status != 'upcoming' OR date <= ?2) GROUP BY account_id`,
       today,
     ),
-    s.q(
-      `SELECT account_id, sum(amount) AS p FROM ${RECENT_TX} WHERE budget_id = ?1 AND status = 'posted' AND (date >= budget_from OR pending_at_link = 1) GROUP BY account_id`,
-    ),
   ]);
   const pending = new Map(
     (pend!.results as { account_id: string; p: number }[]).map((r) => [r.account_id, r.p]),
   );
-  const postedSum = new Map(
-    (posted!.results as { account_id: string; p: number }[]).map((r) => [r.account_id, r.p]),
+  // Posted rows the budget counts, per account: stored totals for finished months plus the current month live
+  // (ledger/totals.ts). From two months before the earliest budget start, for rows pending at link.
+  const raw0 = acc!.results as AcctDb[];
+  const earliest = raw0.reduce((m, a) => (a.budget_from < m ? a.budget_from : m), today);
+  const postedSum = inBudgetByAccount(
+    await monthTotals(
+      s,
+      addMonths(earliest.slice(0, 7) as Month, -2),
+      today.slice(0, 7) as Month,
+      Date.now(),
+    ),
   );
   const cardInfo = new Map((await loadCards(s, today)).map((c) => [c.accountId, c]));
   const raw = acc!.results as AcctDb[];
@@ -288,7 +295,7 @@ accountRoutes.get('/reports', async (c) => {
   }
   const results = new Map<Month, Awaited<ReturnType<typeof monthResult>>>();
   for (const mm of months) results.set(mm, await monthResult(s, mm, start));
-  const [inc, rew, nwRows, owedI, owedL] = await s.batch([
+  const [inc, rew, owedI, owedL] = await s.batch([
     s.q(
       `SELECT l.month, sum(l.amount) AS a FROM budget_line l LEFT JOIN txn_overlay o ON o.txn_key = l.txn_key
        WHERE l.budget_id = ?1 AND l.kind = 'rta' AND l.card = 0 AND l.txn_key NOT LIKE 'start:%' AND coalesce(o.income_tag, '') != 'rewards'
@@ -302,11 +309,6 @@ accountRoutes.get('/reports', async (c) => {
        WHERE l.budget_id = ?1 AND l.kind = 'rta' AND (l.card = 1 OR o.income_tag = 'rewards') AND l.month >= ?2 AND l.month <= ?3 GROUP BY l.month`,
       months[0] ?? m,
       m,
-    ),
-    s.q(
-      // At most the last 13 months, read through the date index.
-      `SELECT substr(date, 1, 7) AS m, sum(amount) AS a FROM v_txn_bank WHERE budget_id = ?1 AND status = 'posted'
-         AND posted_date >= date('now', 'start of month', '-13 months') GROUP BY substr(date, 1, 7)`,
     ),
     s.q(
       `SELECT id, txn_key, amount, expect_by, closed_at, canceled_at FROM expected_reimbursement e WHERE budget_id = ?1 AND NOT EXISTS (SELECT 1 FROM manual_pending mp WHERE mp.budget_id = e.budget_id AND mp.txn_key = e.txn_key AND mp.kind = 'upcoming' AND mp.matched_txn_key IS NULL)`,
@@ -330,7 +332,12 @@ accountRoutes.get('/reports', async (c) => {
   // Net worth at each month end: today's figure minus everything posted after that month.
   const { rows } = await accountRows(s, f.today);
   const nwNow = rows.reduce((a, r) => a + (r.kind === 'credit' ? -r.bank : r.bank), 0);
-  const posted = (nwRows!.results as { m: string; a: number }[]).sort((a, b) => (a.m < b.m ? 1 : -1));
+  // Posted totals per month over the last 13 months (ledger/totals.ts: stored for finished months).
+  const totals = await monthTotals(s, addMonths(f.current, -12), f.current, Date.now());
+  const posted = [...totals].map(([mm, accts]) => ({
+    m: mm,
+    a: [...accts.values()].reduce((x, v) => x + v.all, 0),
+  }));
   const netWorth: ReportsView['netWorth'] = [];
   let after = 0;
   for (let i = 0; i < 12; i++) {

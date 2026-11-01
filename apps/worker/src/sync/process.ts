@@ -5,6 +5,7 @@
 import {
   type IsoDate,
   type Month,
+  addMonths,
   type Rule,
   cents,
   cleanDescription,
@@ -26,6 +27,7 @@ import { Scoped } from '../db/scoped.js';
 import { conditionFence, isFenceAbort } from './lease.js';
 import type { StepContext } from './steps.js';
 import { budgetMeta, chunks, planLineRebuild } from '../ledger/ledger.js';
+import { clearTotals } from '../ledger/totals.js';
 import { recompute } from '../budget/recompute.js';
 import { makeProvider, connectionToken } from './provider.js';
 
@@ -551,6 +553,10 @@ async function planProcessing(
     }
   }
   void today;
+  // Stored month totals (ledger/totals.ts) from the earliest month touched: re-keying a row onto a pending-at-link
+  // overlay can change which posted rows the budget counts. A month earlier covers card rows dated by authorization.
+  const earliest = rows.reduce<string | null>((m, r) => (m === null || r.date < m ? r.date : m), null);
+  if (earliest) stmts.push(clearTotals(s, addMonths(earliest.slice(0, 7) as Month, -1)));
   return { stmts, keys: [...keys] };
 }
 
