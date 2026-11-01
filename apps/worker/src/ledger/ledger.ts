@@ -175,6 +175,15 @@ function inList(keys: readonly string[], first: number): string {
   return keys.map((_, i) => `?${first + i}`).join(',');
 }
 
+/** D1 allows at most 100 bound parameters per statement; IN lists are split into chunks of this size. */
+export const IN_CHUNK = 90;
+
+export function chunks<T>(xs: readonly T[], n = IN_CHUNK): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n));
+  return out;
+}
+
 /** Loads the given transactions (by key) with their splits, owed marks and refund links. */
 export async function loadTxns(
   s: Scoped,
@@ -358,21 +367,28 @@ export async function planLineRebuild(
   override?: (t: LogicalTxn) => LogicalTxn | null,
 ): Promise<{ stmts: D1PreparedStatement[]; dirtyFrom: Month | null }> {
   if (keys.length === 0) return { stmts: [], dirtyFrom: null };
-  const [accts, oldMonths] = await s.batch([
+  const keyChunks = chunks(keys);
+  const [accts, ...oldMonths] = await s.batch([
     s.q(`SELECT id, kind FROM account WHERE budget_id = ?1`),
-    s.q(
-      `SELECT min(month) AS m FROM budget_line WHERE budget_id = ?1 AND txn_key IN (${inList(keys, 2)})`,
-      ...keys,
+    ...keyChunks.map((k) =>
+      s.q(
+        `SELECT min(month) AS m FROM budget_line WHERE budget_id = ?1 AND txn_key IN (${inList(k, 2)})`,
+        ...k,
+      ),
     ),
   ]);
   const kinds = new Map((accts!.results as { id: string; kind: AccountKind }[]).map((a) => [a.id, a.kind]));
   const accountRows = await s.all<AccountRowDb>(`SELECT * FROM account WHERE budget_id = ?1`);
   const acctMap = new Map(accountRows.map((a) => [a.id, toLedgerAccount(a)]));
   const loaded = await loadTxns(s, keys);
-  let dirty = (oldMonths!.results[0] as { m: string | null } | undefined)?.m ?? null;
-  const stmts: D1PreparedStatement[] = [
-    s.q(`DELETE FROM budget_line WHERE budget_id = ?1 AND txn_key IN (${inList(keys, 2)})`, ...keys),
-  ];
+  let dirty: string | null = null;
+  for (const r of oldMonths) {
+    const m = (r.results[0] as { m: string | null } | undefined)?.m ?? null;
+    if (m && (!dirty || m < dirty)) dirty = m;
+  }
+  const stmts: D1PreparedStatement[] = keyChunks.map((k) =>
+    s.q(`DELETE FROM budget_line WHERE budget_id = ?1 AND txn_key IN (${inList(k, 2)})`, ...k),
+  );
   const rows: LineRow[] = [];
   for (const key of keys) {
     let t = loaded.logical.get(key) ?? null;

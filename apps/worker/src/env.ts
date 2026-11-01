@@ -1,9 +1,5 @@
 export interface Env {
   DB: D1Database;
-  /** Raw provider pages (staging and permanent archive). */
-  RAW: R2Bucket;
-  /** Nightly backups land here from GitHub Actions; the Worker only reads manifests for the watchdog. */
-  BACKUPS?: R2Bucket;
   SYNC: Workflow<SyncParams>;
   MAINTENANCE: Workflow<MaintenanceParams>;
   RECOMPUTE: Workflow<RecomputeParams>;

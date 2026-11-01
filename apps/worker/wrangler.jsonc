@@ -15,10 +15,6 @@
       "migrations_dir": "../../packages/db/migrations",
     },
   ],
-  "r2_buckets": [
-    { "binding": "RAW", "bucket_name": "ledgerline-raw" },
-    { "binding": "BACKUPS", "bucket_name": "ledgerline-backups" },
-  ],
   "workflows": [
     { "name": "ledgerline-sync", "binding": "SYNC", "class_name": "SyncWorkflow" },
     { "name": "ledgerline-maintenance", "binding": "MAINTENANCE", "class_name": "MaintenanceWorkflow" },
@@ -49,7 +45,6 @@
           "migrations_dir": "../../packages/db/migrations",
         },
       ],
-      "r2_buckets": [{ "binding": "RAW", "bucket_name": "ledgerline-raw-staging" }],
       "workflows": [
         { "name": "ledgerline-staging-sync", "binding": "SYNC", "class_name": "SyncWorkflow" },
         {

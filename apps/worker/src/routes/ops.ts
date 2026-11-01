@@ -180,7 +180,7 @@ opsRoutes.get('/export/json', async (c) => {
     out[t] = await s.all(
       t === 'budget' ? `SELECT * FROM budget WHERE id = ?1` : `SELECT * FROM ${t} WHERE budget_id = ?1`,
     );
-  // Bank data: the projection (raw provider pages stay in R2; the access token is never exported).
+  // Bank data: the projection (raw provider pages stay in raw_page; the access token is never exported).
   out.transactions = await s.all(
     `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 ORDER BY date`,
   );

@@ -38,7 +38,6 @@ measure.post('/seed', async (c) => {
 function ctx(env: Env, b: { connectionId: string; budgetId: string; holder: string }): StepContext {
   return {
     db: env.DB,
-    raw: env.RAW,
     connectionId: b.connectionId,
     budgetId: b.budgetId,
     holder: b.holder,
@@ -124,7 +123,7 @@ measure.post('/burn', async (c) => {
 });
 
 // Kernel timing: the step's own compute repeated `reps` times inside one request, so local emulator noise
-// (in-process D1/R2 simulators, tracing) averages out. D1 statements are recorded and serialized the way the D1
+// (in-process D1 simulator, tracing) averages out. D1 statements are recorded and serialized the way the D1
 // client does (JSON request body), without I/O.
 const recorder = {
   prepare(sql: string) {
@@ -161,21 +160,25 @@ async function runKernel(
   let stmtCount = 0;
   for (let r = 0; r < reps; r++) {
     if (kind === 'fetch') {
-      // The fetch step only scans the tail of the bytes it hands to R2.
+      // The fetch step scans the tail of the bytes, decodes them once and sends the text to D1 as one parameter
+      // (decisions.md D-26).
       const st = planStage(bodyBytes);
+      const text = new TextDecoder().decode(bodyBytes);
+      const sha = 'none';
       const req = JSON.stringify({
         statements: [
+          { sql: 'INSERT INTO raw_page ...', params: ['k', 'b', text, sha, bodyBytes.length, 0] },
           {
             sql: 'INSERT INTO sync_page ...',
-            params: ['run', 0, 'b', 0, 'k', 'md5:x', bodyBytes.length, st.nextCursor, 1, 0],
+            params: ['run', 0, 'b', 0, 'k', sha, bodyBytes.length, st.nextCursor, 1, 0],
           },
         ],
       });
       bytes += req.length;
       stmtCount = 3;
     } else {
-      // The apply step decodes the R2 object, then plans the batch.
-      const body = new TextDecoder().decode(bodyBytes);
+      // The apply step gets the page text from D1 (parsed out of the D1 response), then plans the batch.
+      const body = JSON.parse(JSON.stringify(new TextDecoder().decode(bodyBytes))) as string;
       const { stmts } = await planApply(
         recorder,
         { connectionId: 'con', budgetId: 'bud', holder: 'run', now: 1 },
@@ -184,7 +187,7 @@ async function runKernel(
         0,
         false,
         {
-          r2_key: 'raw/b/c/run/0-0000.json',
+          raw_key: 'raw/b/c/run/0-0000-x',
           sha256: 'x',
           bytes: bodyBytes.length,
           next_cursor: 'c',
@@ -212,23 +215,20 @@ async function runKernel(
   };
 }
 
-// The I/O a sync step makes besides its compute, with trivial payloads: lease renewal, one read batch, one R2 get,
-// one write batch. Repeated `reps` times so the per-step overhead can be separated from request overhead.
+// The I/O a sync step makes besides its compute, with trivial payloads: lease renewal, one read batch and one
+// write batch. Repeated `reps` times so the per-step overhead can be separated from request overhead.
 measure.post('/io-shell', async (c) => {
   const { reps } = await c.req.json<{ reps: number }>();
   const db = c.env.DB;
-  await c.env.RAW.put('measure/tiny', '{}');
   for (let r = 0; r < reps; r++) {
     await db
       .prepare(`UPDATE connection SET lock_expires = lock_expires WHERE id = ?1 AND sync_lock IN (?2, ?3)`)
       .bind('x', 'y', 'z')
       .run();
     await db.batch([
-      db.prepare(`SELECT r2_key, sha256 FROM sync_page WHERE sync_run_id = ?1 AND page = ?2`).bind('r', r),
+      db.prepare(`SELECT raw_key, sha256 FROM sync_page WHERE sync_run_id = ?1 AND page = ?2`).bind('r', r),
       db.prepare(`SELECT applied_through FROM sync_run WHERE id = ?1`).bind('r'),
     ]);
-    const o = await c.env.RAW.get('measure/tiny');
-    await o?.text();
     await db.batch([
       db.prepare(`INSERT OR REPLACE INTO lease_guard (id, ok) VALUES (2, 1)`),
       db.prepare(`UPDATE sync_run SET updated_at = ?1 WHERE id = ?2`).bind(r, 'none'),

@@ -6,7 +6,7 @@ import {
   scanSyncTailBytes,
   type BankDataProvider,
 } from '@ledgerline/bank-provider';
-import { sha256Hex, hex } from '@ledgerline/bank-provider';
+import { sha256Hex } from '@ledgerline/bank-provider';
 import { leaseFence, conditionFence, isFenceAbort, renew, MAX_FETCH_RESTARTS } from './lease.js';
 
 export class LeaseLost extends Error {
@@ -29,8 +29,6 @@ export interface RunState {
 
 interface Ctx {
   db: D1Database;
-  /** Raw page archive (R2). */
-  raw: R2Bucket;
   connectionId: string;
   budgetId: string;
   holder: string;
@@ -145,12 +143,6 @@ function toState(r: SyncRunRow): RunState {
   };
 }
 
-/** R2's server-side MD5 of the stored page ('md5:<hex>'); integrity evidence that costs no Worker CPU. */
-function checksumOf(obj: R2Object | null): string {
-  const md5 = obj?.checksums?.md5;
-  return md5 ? `md5:${hex(new Uint8Array(md5))}` : `etag:${obj?.etag ?? 'unknown'}`;
-}
-
 export function rawPageKey(
   budgetId: string,
   connectionId: string,
@@ -158,7 +150,9 @@ export function rawPageKey(
   restart: number,
   page: number,
 ): string {
-  return `raw/${budgetId}/${connectionId}/${runId}/${restart}-${String(page).padStart(4, '0')}.json`;
+  // The suffix makes every attempt's key unique, so a retried fetch step never collides with an earlier attempt.
+  const attempt = crypto.randomUUID().slice(0, 8);
+  return `raw/${budgetId}/${connectionId}/${runId}/${restart}-${String(page).padStart(4, '0')}-${attempt}`;
 }
 
 export type FetchResult =
@@ -187,17 +181,23 @@ export async function fetchPage(
     if (e instanceof ProviderError && e.code === MUTATION_DURING_PAGINATION) return { kind: 'mutation' };
     throw e;
   }
-  // The body goes to R2 as bytes, never decoded or re-encoded here; R2 computes its checksum server-side. D1 keeps
-  // only metadata. Keys never repeat, so an object is written once and never changed.
+  // The body is stored once in raw_page as Plaid sent it, never parsed here, and without a checksum: hashing a
+  // 200 KB page costs over 1 ms of CPU and D1 already protects what it stores (decisions.md D-26). The page row
+  // and its body are written in the same fenced batch.
   const bytes = staged.body;
+  const text = new TextDecoder().decode(bytes);
+  const sha = 'none';
   const key = rawPageKey(c.budgetId, c.connectionId, runId, restart, page);
-  const obj = await c.raw.put(key, bytes, { httpMetadata: { contentType: 'application/json' } });
-  const sha = checksumOf(obj);
   await c.db.batch([
     leaseFence(c.db, c.connectionId, c.holder, c.now),
     c.db
       .prepare(
-        `INSERT OR REPLACE INTO sync_page (sync_run_id, page, budget_id, restart, r2_key, sha256, bytes, next_cursor, has_more, created_at)
+        `INSERT INTO raw_page (key, budget_id, body, sha256, bytes, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+      )
+      .bind(key, c.budgetId, text, sha, bytes.length, c.now),
+    c.db
+      .prepare(
+        `INSERT OR REPLACE INTO sync_page (sync_run_id, page, budget_id, restart, raw_key, sha256, bytes, next_cursor, has_more, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
       )
       .bind(
@@ -261,7 +261,7 @@ export interface ApplyResult {
 }
 
 interface PageRow {
-  r2_key: string;
+  raw_key: string;
   sha256: string;
   bytes: number;
   next_cursor: string;
@@ -280,7 +280,8 @@ export async function applyPage(
   const [pg, run] = await c.db.batch([
     c.db
       .prepare(
-        `SELECT r2_key, sha256, bytes, next_cursor, has_more FROM sync_page WHERE sync_run_id = ?1 AND page = ?2`,
+        `SELECT p.raw_key, p.sha256, p.bytes, p.next_cursor, p.has_more, r.body
+         FROM sync_page p JOIN raw_page r ON r.key = p.raw_key WHERE p.sync_run_id = ?1 AND p.page = ?2`,
       )
       .bind(runId, page),
     c.db
@@ -300,11 +301,9 @@ export async function applyPage(
   });
   if (runRow.applied_through >= page) return done(true);
   if (runRow.applied_through === page - 1 && runRow.applied_events > chunk * APPLY_CHUNK) return done(false);
-  const pageRow = pg?.results[0] as PageRow | undefined;
+  const pageRow = pg?.results[0] as (PageRow & { body: string }) | undefined;
   if (!pageRow) throw new Error(`staged page ${page} missing`);
-  const obj = await c.raw.get(pageRow.r2_key);
-  if (!obj) throw new Error(`raw page ${pageRow.r2_key} missing`);
-  const body = await obj.text();
+  const body = pageRow.body;
   const lastPage = pageRow.has_more === 0 && page === runRow.pages_fetched - 1;
   const plan = await planApply(c.db, c, runId, page, chunk, lastPage, pageRow, provider, body);
   try {
@@ -396,7 +395,7 @@ export async function planApply(
         e.providerTxnId,
         e.providerAccountId,
         payloads[rel],
-        `${pageRow.r2_key}#${e.rawPath}`,
+        `${pageRow.raw_key}#${e.rawPath}`,
         hashes[rel],
       );
     }
@@ -454,7 +453,7 @@ export async function planApply(
     stmts.push(
       db
         .prepare(
-          `INSERT INTO bank_page (sync_run_id, page, budget_id, connection_id, r2_key, sha256, bytes, events, created_at)
+          `INSERT INTO bank_page (sync_run_id, page, budget_id, connection_id, raw_key, sha256, bytes, events, created_at)
            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
         )
         .bind(
@@ -462,7 +461,7 @@ export async function planApply(
           page,
           c.budgetId,
           c.connectionId,
-          pageRow.r2_key,
+          pageRow.raw_key,
           pageRow.sha256,
           pageRow.bytes,
           parsed.events.length,

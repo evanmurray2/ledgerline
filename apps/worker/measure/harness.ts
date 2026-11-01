@@ -15,23 +15,6 @@ export function freshDb(): NodeD1 {
   return d;
 }
 
-/** In-memory R2: put/get bodies are bytes, as in production. */
-export class MemR2 {
-  objects = new Map<string, Uint8Array>();
-  async put(key: string, value: Uint8Array | string): Promise<unknown> {
-    this.objects.set(key, typeof value === 'string' ? new TextEncoder().encode(value) : value);
-    return {};
-  }
-  async get(key: string): Promise<{ text(): Promise<string> } | null> {
-    const v = this.objects.get(key);
-    if (!v) return null;
-    return { text: async () => new TextDecoder().decode(v) };
-  }
-  async delete(key: string): Promise<void> {
-    this.objects.delete(key);
-  }
-}
-
 function micros(): number {
   const u = cpuUsage();
   return u.user + u.system;

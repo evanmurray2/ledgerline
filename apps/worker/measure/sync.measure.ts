@@ -8,7 +8,7 @@ import { generate, syncBody } from '../../../tools/plaid-mock/data.mjs';
 import { acquire } from '../src/sync/lease.js';
 import { applyPage, beginRun, fetchPage } from '../src/sync/steps.js';
 import { processPending } from '../src/sync/process.js';
-import { cpu, freshDb, MemR2, stats } from './harness.js';
+import { cpu, freshDb, stats } from './harness.js';
 
 const TOTAL = 3000;
 const DATA = generate(TOTAL, 1);
@@ -36,7 +36,6 @@ test('sync steps CPU', async () => {
   const out: Record<string, unknown> = {};
   for (const count of [500, 250, 100]) {
     const db = freshDb();
-    const raw = new MemR2();
     const d1 = db as unknown as D1Database;
     const now = Date.now();
     const ring = parseKeyring('1:' + Buffer.alloc(32, 7).toString('base64'), '1');
@@ -58,7 +57,6 @@ test('sync steps CPU', async () => {
     await acquire(d1, 'con1', holder, now);
     const ctx = () => ({
       db: d1,
-      raw: raw as unknown as R2Bucket,
       connectionId: 'con1',
       budgetId: 'b1',
       holder,

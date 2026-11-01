@@ -1,4 +1,4 @@
-// The sync pipeline on a local D1 + R2 inside workerd: staged pages → apply (fenced, chunked) → watermark
+// The sync pipeline on a local D1 inside workerd: staged pages → apply (fenced, chunked) → watermark
 // processing (rules, matcher, transfers, Waiting to match) → budget lines → recompute.
 import { env } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -48,15 +48,19 @@ async function sync(
 ): Promise<void> {
   const run = `run_${++runN}`;
   expect(await acquire(db, C, run, NOW)).toBe(true);
-  const ctx = { db, raw: env.RAW, connectionId: C, budgetId: B, holder: run, now: NOW };
+  const ctx = { db, connectionId: C, budgetId: B, holder: run, now: NOW };
   await beginRun(ctx, 'test');
   const body = JSON.stringify({ added, modified: [], removed, next_cursor: `cur${runN}`, has_more: false });
   const key = rawPageKey(B, C, run, 0, 0);
-  await env.RAW.put(key, body);
   await db.batch([
     db
       .prepare(
-        `INSERT INTO sync_page (sync_run_id, page, budget_id, restart, r2_key, sha256, bytes, next_cursor, has_more, created_at) VALUES (?1, 0, ?2, 0, ?3, 'x', ?4, ?5, 0, ?6)`,
+        `INSERT INTO raw_page (key, budget_id, body, sha256, bytes, created_at) VALUES (?1, ?2, ?3, 'x', ?4, ?5)`,
+      )
+      .bind(key, B, body, body.length, NOW),
+    db
+      .prepare(
+        `INSERT INTO sync_page (sync_run_id, page, budget_id, restart, raw_key, sha256, bytes, next_cursor, has_more, created_at) VALUES (?1, 0, ?2, 0, ?3, 'x', ?4, ?5, 0, ?6)`,
       )
       .bind(run, B, key, body.length, `cur${runN}`, NOW),
     db.prepare(`UPDATE sync_run SET pages_fetched = 1 WHERE id = ?1`).bind(run),
@@ -211,6 +215,40 @@ describe('sync pipeline', () => {
       [{ transaction_id: 'tj', account_id: 'pa_card' }],
     );
     expect(await keyOf('tj2')).toBe(old);
+  });
+
+  it('a page of 150 transactions with 100 different payees processes (D1 allows 100 bound parameters)', async () => {
+    const added = Array.from({ length: 150 }, (_, i) =>
+      plaidTxn(`bulk${i}`, 'pa_card', 1 + i / 100, '2026-11-13', `SHOP ${i % 100}`, {
+        merchant: `Shop ${i % 100}`,
+        pending: i % 2 === 0,
+      }),
+    );
+    await sync(added);
+    const n = await db
+      .prepare(
+        `SELECT count(*) AS n FROM budget_line WHERE budget_id = ?1 AND txn_key IN (SELECT txn_key FROM bank_txn WHERE provider_txn_id LIKE 'bulk%')`,
+      )
+      .bind(B)
+      .first<{ n: number }>();
+    expect(n!.n).toBeGreaterThanOrEqual(150);
+    const raw = await db
+      .prepare(`SELECT count(*) AS n FROM raw_page WHERE budget_id = ?1`)
+      .bind(B)
+      .first<{ n: number }>();
+    expect(raw!.n).toBeGreaterThan(0);
+    // The archive is append-only.
+    await expect(db.prepare(`DELETE FROM raw_page`).run()).rejects.toThrow(/append-only/);
+    // The posted rows that name these pending rows are linked in chunks too.
+    await sync(
+      Array.from({ length: 75 }, (_, i) =>
+        plaidTxn(`bulkp${i}`, 'pa_card', 1 + (i * 2) / 100, '2026-11-14', `SHOP ${(i * 2) % 100}`, {
+          pending_transaction_id: `bulk${i * 2}`,
+        }),
+      ),
+      Array.from({ length: 75 }, (_, i) => ({ transaction_id: `bulk${i * 2}`, account_id: 'pa_card' })),
+    );
+    expect(await keyOf('bulkp10')).toBe(await keyOf('bulk20'));
   });
 
   it('recompute after the sync: RTA excludes Waiting to match', async () => {

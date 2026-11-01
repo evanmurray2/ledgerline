@@ -30,7 +30,6 @@ export class SyncWorkflow extends WorkflowEntrypoint<Env, SyncParams> {
     const env = this.env;
     const ctx = (alsoAccept?: string): StepContext => ({
       db: env.DB,
-      raw: env.RAW,
       connectionId: p.connectionId,
       budgetId: p.budgetId,
       holder: p.runId,

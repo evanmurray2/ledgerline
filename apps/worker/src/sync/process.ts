@@ -25,7 +25,7 @@ import type { Env } from '../env.js';
 import { Scoped } from '../db/scoped.js';
 import { conditionFence, isFenceAbort } from './lease.js';
 import type { StepContext } from './steps.js';
-import { budgetMeta, planLineRebuild } from '../ledger/ledger.js';
+import { budgetMeta, chunks, planLineRebuild } from '../ledger/ledger.js';
 import { recompute } from '../budget/recompute.js';
 import { makeProvider, connectionToken } from './provider.js';
 
@@ -151,7 +151,7 @@ async function planProcessing(
     string,
     { txn_key: string; amount: number; estimated: number | null; wont: number }
   >();
-  if (pendingIds.length) {
+  for (const ids of chunks(pendingIds)) {
     const p = await s.all<{
       provider_txn_id: string;
       txn_key: string;
@@ -160,8 +160,8 @@ async function planProcessing(
       wont_clear: number | null;
     }>(
       `SELECT b.provider_txn_id, b.txn_key, b.amount, o.estimated_amount, o.wont_clear FROM bank_txn b LEFT JOIN txn_overlay o ON o.txn_key = b.txn_key
-       WHERE b.budget_id = ?1 AND b.provider_txn_id IN (${pendingIds.map((_, i) => `?${i + 2}`).join(',')})`,
-      ...pendingIds,
+       WHERE b.budget_id = ?1 AND b.provider_txn_id IN (${ids.map((_, i) => `?${i + 2}`).join(',')})`,
+      ...ids,
     );
     for (const x of p)
       pendingByProvider.set(x.provider_txn_id, {
@@ -359,16 +359,20 @@ async function planProcessing(
   // ---- 4. Categorization for rows without your categorization: payee, rules, payee default; transfers; Waiting to match.
   const fresh = live.filter((r) => !inherited.has(r.provider_txn_id));
   if (fresh.length) {
-    const [ruleRows, overlays, aliases] = await s.batch([
+    const freshChunks = chunks(fresh.map((r) => r.txn_key));
+    const [ruleRows, aliases, ...overlayChunks] = await s.batch([
       s.q(`SELECT * FROM rule WHERE budget_id = ?1 AND enabled = 1 ORDER BY sort`),
-      s.q(
-        `SELECT txn_key, categorized_by FROM txn_overlay WHERE budget_id = ?1 AND txn_key IN (${fresh.map((_, i) => `?${i + 2}`).join(',')})`,
-        ...fresh.map((r) => r.txn_key),
-      ),
       s.q(
         `SELECT a.pattern, a.merchant_entity_id, p.id, p.name, p.remember_category, p.default_category_id FROM payee_alias a JOIN payee p ON p.id = a.payee_id WHERE a.budget_id = ?1`,
       ),
+      ...freshChunks.map((k) =>
+        s.q(
+          `SELECT txn_key, categorized_by FROM txn_overlay WHERE budget_id = ?1 AND txn_key IN (${k.map((_, i) => `?${i + 2}`).join(',')})`,
+          ...k,
+        ),
+      ),
     ]);
+    const overlays = { results: overlayChunks.flatMap((r) => r.results) };
     const rules: Rule[] = (
       ruleRows!.results as {
         id: string;
@@ -389,7 +393,7 @@ async function planProcessing(
       enabled: r.enabled === 1,
     }));
     const userSet = new Set(
-      (overlays!.results as { txn_key: string; categorized_by: string | null }[])
+      (overlays.results as { txn_key: string; categorized_by: string | null }[])
         .filter((o) => o.categorized_by === 'user')
         .map((o) => o.txn_key),
     );

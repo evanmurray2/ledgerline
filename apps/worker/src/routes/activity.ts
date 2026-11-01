@@ -33,7 +33,7 @@ import type { AppEnv } from '../http/context.js';
 import { HttpError, afterWrite, parse, scoped, startRecompute } from './api.js';
 import { fresh, monthResult, shortDate, structure } from '../views/common.js';
 import { categoryLabel, listRow } from '../views/rows.js';
-import { TX_COLUMNS, budgetMeta, planLineRebuild, type TxRow } from '../ledger/ledger.js';
+import { TX_COLUMNS, budgetMeta, chunks, planLineRebuild, type TxRow } from '../ledger/ledger.js';
 import type { Scoped } from '../db/scoped.js';
 import { accountNames } from '../views/category.js';
 
@@ -148,10 +148,10 @@ activityRoutes.get('/activity', async (c) => {
   // Past categories of each payee, for the picker ("You’ve used for Amazon") and the Always offer.
   const payeeIds = [...new Set(uncats.map((t) => t.payee_id).filter((x): x is string => !!x))];
   const hist = new Map<string, (string | null)[]>();
-  if (payeeIds.length) {
+  for (const ids of chunks(payeeIds)) {
     const h = await s.all<{ payee_id: string; category_id: string | null }>(
-      `SELECT payee_id, category_id FROM txn_overlay WHERE budget_id = ?1 AND categorized_by = 'user' AND payee_id IN (${payeeIds.map((_, i) => `?${i + 2}`).join(',')})`,
-      ...payeeIds,
+      `SELECT payee_id, category_id FROM txn_overlay WHERE budget_id = ?1 AND categorized_by = 'user' AND payee_id IN (${ids.map((_, i) => `?${i + 2}`).join(',')})`,
+      ...ids,
     );
     for (const r of h) hist.set(r.payee_id, [...(hist.get(r.payee_id) ?? []), r.category_id]);
   }

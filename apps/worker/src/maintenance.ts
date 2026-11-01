@@ -200,23 +200,13 @@ async function rollUpUsage(env: Env, budgetId: string, now: number): Promise<voi
 }
 
 async function watchdog(env: Env, budgetId: string, now: number): Promise<void> {
-  // The nightly GitHub Actions backup writes a manifest to R2; its time is the last backup.
-  let lastBackup: number | null = null;
-  if (env.BACKUPS) {
-    const m = await env.BACKUPS.get('manifests/latest.json');
-    if (m) {
-      const j = (await m.json()) as { finishedAt?: string };
-      if (j.finishedAt) lastBackup = Date.parse(j.finishedAt);
-    }
-  }
+  // The nightly GitHub Actions backup reports its finish time itself (POST /api/ops/backup-done), into
+  // health_status.last_backup_at; the watchdog only records that it ran.
   const up = (k: string, v: string | null) =>
     env.DB.prepare(
       `INSERT INTO health_status (budget_id, key, value, at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (budget_id, key) DO UPDATE SET value = excluded.value, at = excluded.at`,
     ).bind(budgetId, k, v, now);
-  await env.DB.batch([
-    up('watchdog_ran_at', String(now)),
-    ...(lastBackup ? [up('last_backup_at', String(lastBackup))] : []),
-  ]);
+  await env.DB.batch([up('watchdog_ran_at', String(now))]);
 }
 
 export { addMonths };
