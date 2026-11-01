@@ -40,7 +40,6 @@ In the **Passwords** app, tap **+** and use the suggested strong password; then 
 3. **Secrets and variables → Actions → Variables → New repository variable**, three times:
    - `CLOUDFLARE_ACCOUNT_ID`: your Account ID
    - `PRODUCTION_URL`: `https://ledgerline.<subdomain>.workers.dev`
-   - `DEPLOY_ENABLED`: `true`
 
 ## 5. Deploy
 
@@ -48,7 +47,14 @@ In the **Passwords** app, tap **+** and use the suggested strong password; then 
 2. GitHub asks you to approve the production deployment (a notification in the GitHub app, or on the run page): **Review deployments → production → Approve and deploy**.
 3. Wait for the green check (a few minutes). It applies the database migrations, deploys the app with your secrets, and checks it.
 
-From now on, every change merged to `master` deploys the same way after you approve.
+## Redeploying later
+
+GitHub only needs the `production` environment with the secret `CLOUDFLARE_API_TOKEN` (the Deploy token). Under the environment's **Deployment branches and tags**, choose **Selected branches** and add `master`. The Worker keeps every secret it already has; add others to the environment only to change them.
+
+- **Deploy now:** Actions → **deploy** → **Run workflow**. Claude can start it for you too.
+- **Deploy on every merge:** add the repository variable `DEPLOY_ON_MERGE` = `true`. Add yourself under **Required reviewers** then, so each merge waits for your tap.
+
+The account id and app address default to this account's (`f2d39c71e2c0819833de7942cdcc1222`, `https://ledgerline.m62hdjmtg4.workers.dev`); the variables `CLOUDFLARE_ACCOUNT_ID` and `PRODUCTION_URL` override them.
 
 ## 6. Create your passkey (right away)
 
