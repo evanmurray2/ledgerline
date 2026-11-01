@@ -2,9 +2,9 @@
 
 Done by hand on your computer, once a month, into a local D1. The private backup key never leaves your machine or password manager. Backups are GitHub Actions artifacts of the **nightly** workflow, kept 90 days (decisions.md D-26).
 
-1. Download the latest backup: Actions → nightly → the latest successful run → Artifacts → `backup` (or `gh run download <run id> -n backup`). Unzip it; it holds `ledgerline-<time>.sql.age` and `manifest.json`.
-2. Check the encrypted file: `sha256sum ledgerline-*.sql.age` must equal `sha256` in `manifest.json`.
-3. Decrypt: `age -d -i ledgerline-backup.key -o backup.sql ledgerline-*.sql.age`. `sha256sum backup.sql` must equal `plaintextSha256`.
+1. Download the latest backup: Actions → nightly → the latest successful run → Artifacts → `backup` (or `gh run download <run id> -n backup`). Unzip it; it holds `ledgerline-<time>.sql.gpg` (passphrase) or `.sql.age` (age key), and `manifest.json`.
+2. Check the encrypted file: `sha256sum ledgerline-*` must equal `sha256` in `manifest.json`.
+3. Decrypt with your `BACKUP_PASSPHRASE`: `gpg -o backup.sql -d ledgerline-*.sql.gpg` (or `age -d -i ledgerline-backup.key -o backup.sql ledgerline-*.sql.age`). `sha256sum backup.sql` must equal `plaintextSha256`.
 4. Restore into a throwaway local database (from `apps/worker`):
    ```sh
    rm -rf .wrangler/state

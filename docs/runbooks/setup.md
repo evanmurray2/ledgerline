@@ -1,128 +1,88 @@
 # Setup and first production deploy
 
-Everything below is done by you, by hand, once. The build never deployed anything, linked a real bank or created Cloudflare resources. Nothing here needs a payment card: the app uses only Workers, D1 and Workflows on the free plan, with no R2 and no Zero Trust (decisions.md D-26, D-27). Do the steps in order: backups and monitoring must be running before the first Production bank link (design: Backups).
+Everything below is done by you, once, and works from an iPhone in Safari (no command line; decisions.md D-28). Nothing needs a payment card: the app uses only Workers, D1 and Workflows on the free plan, with no R2 and no Zero Trust (D-26, D-27). The two D1 databases already exist (created Nov 1, 2026; ids in `apps/worker/wrangler.jsonc`). Do the steps in order: backups and monitoring must be running before the first bank link (design: Backups).
 
-You need: a free Cloudflare account, the GitHub repo, the Plaid team on the Trial plan, Node 22, pnpm 10, `age`, and 2FA on Cloudflare, GitHub and Plaid (hardware key or passkey).
+On GitHub's mobile site some settings pages are easier with **aA → Request Desktop Website**. Turn on 2FA (passkey or security key) for Cloudflare, GitHub and Plaid first.
 
-## 1. Check the Plaid Trial before anything else
+## 1. Plaid (dashboard.plaid.com)
 
-On the Plaid Dashboard, confirm three things:
+1. Check the team is on the **Trial** plan, its lifetime Item count is **0**, and it never had a Production plan. Removed Items still count toward the 10.
+2. Developers → Keys: copy the **client_id** and the **Production secret**.
+3. Optional: if you'll link OAuth banks such as Chase, add `https://ledgerline.<your-subdomain>.workers.dev/` under Team settings → API → Allowed redirect URIs, and save the same value as the GitHub secret `PLAID_REDIRECT_URI` in step 4.
 
-1. The team is on the **Trial** plan.
-2. Its lifetime Item count is **0**.
-3. It has never had a Production or Limited Production plan.
+The history window is 180 days and can't change after the first link (`PLAID_DAYS_REQUESTED` in `packages/bank-provider/src/plaid.ts`).
 
-Removed Items still count toward the 10, so every link matters. Note the Sandbox keys and the Production secret. Production keys go only into the production Worker's secrets (step 4), never into GitHub or `.dev.vars`.
+## 2. Make four long random secrets
 
-The history window is 180 days (`PLAID_DAYS_REQUESTED` in `packages/bank-provider/src/plaid.ts`). It can't be changed after an Item is created. If you want a different window, change it now, before the first Production link.
+In the **Passwords** app, tap **+** and use the suggested strong password; then add a second suggested password after it, so each secret is about 40 characters. Save four entries:
 
-If you'll link OAuth institutions such as Chase, register a redirect URI in the Plaid Dashboard (Team settings → API → Allowed redirect URIs), for example `https://ledgerline.<your-subdomain>.workers.dev/`, and set `PLAID_REDIRECT_URI` to the same value in step 4.
+| Entry               | Used for                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------ |
+| `TOKEN_KEYS`        | encrypts your bank access tokens. **Never lose or change it**, or every bank must re-link. |
+| `SETUP_CODE`        | creates your first passkey, once                                                           |
+| `OPS_TOKEN`         | lets GitHub's monitor and backup talk to the app                                           |
+| `BACKUP_PASSPHRASE` | encrypts the nightly backups. Without it, backups can't be opened.                         |
 
-## 2. Create the Cloudflare databases (one account, free plan)
+## 3. Cloudflare (dash.cloudflare.com)
 
-**Done on Nov 1, 2026:** `ledgerline` (`52a5b8a6-09b1-4b27-b0bd-ddfaefd943b3`) and `ledgerline-staging` (`dd5f73ff-487b-4fb3-a975-3c9b4531047e`), both in western North America, with their ids in `wrangler.jsonc`. Migrations are applied by the first deploy (step 6). The steps below are for reference.
+1. **Workers & Pages**: note your **Account ID** and your **workers.dev subdomain** (set one if asked). Your app's address will be `https://ledgerline.<subdomain>.workers.dev`.
+2. **My Profile → API Tokens → Create Token**, three times:
+   - "Deploy": template **Edit Cloudflare Workers**, then add **Account → D1 → Edit**. Account Resources: your account.
+   - "Backup": Custom token with only **Account → D1 → Edit**.
+   - "Analytics": Custom token with only **Account → Account Analytics → Read**.
 
-```sh
-pnpm install
-cd apps/worker
-pnpm exec wrangler login
-pnpm exec wrangler d1 create ledgerline           # copy the database_id
-pnpm exec wrangler d1 create ledgerline-staging   # copy the database_id
-```
+## 4. GitHub (github.com/evanmurray2/ledgerline → Settings)
 
-Put the two `database_id` values into `apps/worker/wrangler.jsonc`: the top-level `d1_databases` is production, `env.staging.d1_databases` is staging. Commit that change; the ids aren't secrets.
+1. **Environments → New environment** `production`. Tick **Required reviewers** and add yourself. Then **Add environment secret** for each:
+   - `CLOUDFLARE_API_TOKEN`: the Deploy token
+   - `PLAID_CLIENT_ID`, `PLAID_SECRET` (Production secret), and `PLAID_REDIRECT_URI` if you set one
+   - `TOKEN_KEYS`, `SETUP_CODE`, `OPS_TOKEN`
+   - `CF_ANALYTICS_TOKEN`: the Analytics token
+2. **Environments → New environment** `ops` (no reviewer). Secrets:
+   - `CLOUDFLARE_API_TOKEN`: the Backup token
+   - `OPS_TOKEN`, `BACKUP_PASSPHRASE`
+3. **Secrets and variables → Actions → Variables → New repository variable**, three times:
+   - `CLOUDFLARE_ACCOUNT_ID`: your Account ID
+   - `PRODUCTION_URL`: `https://ledgerline.<subdomain>.workers.dev`
+   - `DEPLOY_ENABLED`: `true`
 
-That's all Cloudflare needs. There is no R2 bucket and no Zero Trust application to create.
+## 5. Deploy
 
-## 3. Generate secrets
+1. **Actions → deploy → Run workflow** (branch `master`).
+2. GitHub asks you to approve the production deployment (a notification in the GitHub app, or on the run page): **Review deployments → production → Approve and deploy**.
+3. Wait for the green check (a few minutes). It applies the database migrations, deploys the app with your secrets, and checks it.
 
-Run each line and keep the output in your password manager:
+From now on, every change merged to `master` deploys the same way after you approve.
 
-```sh
-openssl rand -base64 32        # TOKEN_KEYS for production:  1:<this>
-openssl rand -base64 32        # TOKEN_KEYS for staging:     1:<this>
-openssl rand -base64 32        # SETUP_CODE for production (one-time, creates your first passkey)
-openssl rand -base64 32        # SETUP_CODE for staging
-openssl rand -base64 32        # OPS_TOKEN (shared by the Worker and the GitHub monitor and backup jobs)
-age-keygen -o ledgerline-backup.key   # keep this file in your password manager, never in GitHub
-grep public ledgerline-backup.key     # the age public key (age1...) for BACKUP_AGE_RECIPIENT
-```
+## 6. Create your passkey (right away)
 
-## 4. Worker secrets
+1. Open your app's address in Safari. It shows **Set up sign-in**.
+2. Paste `SETUP_CODE`, tap **Create passkey**, and confirm with Face ID. The passkey is saved in iCloud Keychain, so your other Apple devices can sign in too.
+3. Pick the month your budget starts.
 
-Production (`cd apps/worker`, then for each: `pnpm exec wrangler secret put NAME`):
-
-| Name                 | Value                                                                              |
-| -------------------- | ---------------------------------------------------------------------------------- |
-| `PLAID_CLIENT_ID`    | Plaid client id                                                                    |
-| `PLAID_SECRET`       | Plaid **Production** secret                                                        |
-| `PLAID_WEBHOOK_URL`  | `https://ledgerline.<your-subdomain>.workers.dev/api/webhooks/plaid`               |
-| `PLAID_REDIRECT_URI` | optional, as registered in step 1                                                  |
-| `TOKEN_KEYS`         | `1:<base64 key>`                                                                   |
-| `TOKEN_KEY_CURRENT`  | `1`                                                                                |
-| `SETUP_CODE`         | the production setup code from step 3                                              |
-| `OPS_TOKEN`          | the ops token from step 3                                                          |
-| `CF_ACCOUNT_ID`      | your Cloudflare account id                                                         |
-| `CF_ANALYTICS_TOKEN` | an API token with **Account Analytics: Read** only (for the write circuit breaker) |
-
-Staging: the same names with `--env staging`. Use the **Sandbox** secret, the staging webhook URL, its own `TOKEN_KEYS` and `SETUP_CODE`, and the same or a separate `OPS_TOKEN`. `PLAID_ENV` is a plain variable in `wrangler.jsonc`: `production` at the top level and `sandbox` for staging.
-
-To rotate the token key later, add `2:<new key>` to `TOKEN_KEYS` and set `TOKEN_KEY_CURRENT=2`. Old rows keep decrypting with key 1.
-
-## 5. GitHub
-
-1. Make the repo **public**, as the design decided, or keep it private: both work on the free plan. In a public repo anyone signed in to GitHub can download the backup artifacts; they are age-encrypted, so only your private key opens them. Turn on secret scanning with push protection, Dependabot alerts and code scanning.
-2. Add a ruleset on the default branch (`master`; rename it to `main` if you prefer, since the workflows accept both): require a PR, require all checks green, linear history, signed commits, no force pushes, and a CODEOWNERS review.
-3. Create **environments**, with secrets and variables:
-
-| Environment  | Protection                 | Secrets                                                                    | Variables                                                         |
-| ------------ | -------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `staging`    | none                       | `CLOUDFLARE_API_TOKEN` (Workers and D1 edit), `OPS_TOKEN`                  | `CLOUDFLARE_ACCOUNT_ID`, `STAGING_URL`                            |
-| `production` | **required reviewer: you** | `CLOUDFLARE_API_TOKEN` (Workers and D1 edit), `OPS_TOKEN`                  | `CLOUDFLARE_ACCOUNT_ID`, `PRODUCTION_URL`                         |
-| `backup`     | none                       | `CLOUDFLARE_BACKUP_TOKEN` (D1 read, for `wrangler d1 export`), `OPS_TOKEN` | `CLOUDFLARE_ACCOUNT_ID`, `BACKUP_AGE_RECIPIENT`, `PRODUCTION_URL` |
-| `monitor`    | none                       | `OPS_TOKEN`                                                                | `PRODUCTION_URL`                                                  |
-| `sandbox`    | none                       | `PLAID_SANDBOX_CLIENT_ID`, `PLAID_SANDBOX_SECRET`                          |                                                                   |
-
-Create the Cloudflare API tokens under My Profile → API Tokens, with the narrowest permissions Cloudflare offers. If it can't limit D1 to one database, keep the production environment's required reviewer as the guard.
-
-## 6. First production deploy (by hand, once)
-
-Workflows that touch Cloudflare stay off until you set repository variables: `DEPLOY_ENABLED=true` (deploy), `BACKUP_AGE_RECIPIENT` (nightly backup), `PRODUCTION_URL` (monitor), `SANDBOX_E2E=true` (nightly Plaid Sandbox run).
-
-```sh
-pnpm install --frozen-lockfile
-pnpm --filter @ledgerline/web build
-cd apps/worker
-pnpm exec wrangler d1 migrations apply DB --remote
-pnpm exec wrangler deploy
-```
-
-Open `https://ledgerline.<your-subdomain>.workers.dev` **on your phone or computer**. It shows "Set up sign-in": enter the production `SETUP_CODE` and create a passkey (Face ID, Touch ID, Windows Hello or a security key). That creates your budget; then set the budget start month in first-run setup.
-
-Add your other devices from Settings → Sign-in → **Add a device**: it makes a single-use link valid for 10 minutes. Open it on the other device and create a passkey there. Passkeys synced by iCloud Keychain or Google Password Manager also work on your other devices without a link.
-
-The setup code stops working once a passkey exists. You can delete the `SETUP_CODE` secret then, or keep it for recovery (below).
-
-After that, merges to the default branch deploy through `deploy.yml`: staging first, then production after you approve.
-
-**Lost every passkey?** Delete them and use the setup code again:
-
-```sh
-cd apps/worker
-pnpm exec wrangler d1 execute DB --remote --command "DELETE FROM passkey; DELETE FROM auth_session;"
-pnpm exec wrangler secret put SETUP_CODE   # a new one if the old one may be known
-```
+The setup code stops working once a passkey exists. For a non-Apple device, use Settings → Sign-in → **Add a device** (a link that works once, for 10 minutes).
 
 ## 7. Before linking a real bank
 
-1. Run **nightly** by hand (Actions → nightly → Run workflow). Check that the run has a `backup` artifact and that its last step reported the backup.
-2. Run **monitor** by hand and check it's green (it fails if the app has no backup from the last 36 hours).
-3. Do one restore drill (`docs/runbooks/restore.md`).
-4. In Workers Logs (Observability), check CPU time per request and per Workflow step: fetch about 3.5 ms, apply about 5.5 ms (`docs/measurements.md`). Check whether the 50-subrequest limit is per invocation or per Workflow instance.
-5. Link the first 1–2 Items **from a desktop browser**. Linking needs a passkey check within the last 15 minutes; the app asks for one. Confirm the starting balance the link screen shows, and confirm the 180-day window in the Plaid Dashboard's Item details.
-6. Run beside your current budgeting tool for a month and reconcile.
+1. **Actions → nightly → Run workflow**, then **Actions → monitor → Run workflow**. Both should be green; the monitor fails if there's no backup from the last 36 hours.
+2. Link your first bank: **Settings → Bank connections**. Each link uses 1 of your 10, for good. Confirm the starting balance it shows.
+3. In Cloudflare: **Workers & Pages → ledgerline → Logs**. After that first sync, check CPU time per step: fetch about 3.5 ms, apply about 5.5 ms (`docs/measurements.md`).
+4. Run it beside your current budgeting tool for a month and reconcile.
+5. When you're next at a computer, do one restore drill (`docs/runbooks/restore.md`). It's the only check that proves a backup opens.
 
-## 8. Local development
+## Optional extras
+
+- **Branch protection** (Settings → Rules → New ruleset on `master`): require a PR, passing checks, linear history, no force pushes.
+- **Staging**: an environment `staging` with the same secret names (Plaid **Sandbox** secret, its own `TOKEN_KEYS` and `SETUP_CODE`), and the repository variable `STAGING_URL` (`https://ledgerline-staging.<subdomain>.workers.dev`). Deploys then go to staging first.
+- **Nightly Plaid Sandbox test**: environment `sandbox` with `PLAID_SANDBOX_CLIENT_ID` and `PLAID_SANDBOX_SECRET`, and the variable `SANDBOX_E2E=true`.
+- **Backups to an age key** instead of a passphrase (needs a computer): `age-keygen`, keep the private key offline, and set the repository variable `BACKUP_AGE_RECIPIENT` to the public key. Then GitHub can't decrypt backups.
+
+## Recovery
+
+- **Lost every passkey?** From a computer, in `apps/worker`: `pnpm exec wrangler d1 execute DB --remote --command "DELETE FROM passkey; DELETE FROM auth_session;"`, then use the setup code again. If the old code may be known, change `SETUP_CODE` in the `production` environment and re-run deploy first.
+- **Rotating `TOKEN_KEYS`**: set it to `1:<old>,2:<new>` and add the secret `TOKEN_KEY_CURRENT` = `2` in the `production` environment, then deploy. Old rows keep decrypting with key 1.
+
+## Local development (computer)
 
 ```sh
 cp apps/worker/.dev.vars.example apps/worker/.dev.vars   # fill in Sandbox keys and a token key
@@ -132,4 +92,4 @@ pnpm exec wrangler dev
 curl -X POST localhost:8787/__dev/seed-november -H 'content-type: application/json' -H 'x-ledgerline: 1' -d '{}'
 ```
 
-`DEV_AUTH_EMAIL` in `.dev.vars` signs you in without a passkey locally; it is refused when `PLAID_ENV=production`. To try passkey sign-in locally, remove it, set `SETUP_CODE`, and open `http://localhost:8787` (not `127.0.0.1`: passkeys need a host name).
+`DEV_AUTH_EMAIL` in `.dev.vars` signs you in without a passkey locally; it is refused when `PLAID_ENV=production`. To try passkey sign-in locally, remove it, set `SETUP_CODE`, and open `http://localhost:8787` (not `127.0.0.1`).

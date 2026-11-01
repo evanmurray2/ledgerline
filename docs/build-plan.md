@@ -72,7 +72,8 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 - [x] `/api/health` (statuses only), watchdog in `health_status`, Accounts alerts. _Verify:_ integration tests.
 - [x] GitHub Actions: nightly backup (D1 export → age public key → Actions artifact with manifest, D-26), monitor every 6 hours, monthly keepalive. _Verify:_ `actionlint`; dry-run scripts tested locally.
 - [x] Runbooks: first deploy, passkey setup, Plaid Production link, restore drill. _Verify:_ reviewed against the doc.
-- [ ] **(manual)** Create the two D1 databases, secrets (including `SETUP_CODE` and `OPS_TOKEN`), GitHub environments, first production deploy and first passkey, confirm Plaid Trial status (docs/runbooks/setup.md).
+- [x] Create the two D1 databases (Nov 1, 2026; ids in `wrangler.jsonc`).
+- [ ] **(manual)** Plaid keys, secrets, Cloudflare API tokens, GitHub environments and variables, first deploy (Actions → deploy) and first passkey (docs/runbooks/setup.md).
 
 ## 9. CI and supply chain
 
@@ -97,3 +98,4 @@ The UI works around these contract gaps (details in `apps/web/CONTRACT_NOTES.md`
 - [x] Backups as encrypted GitHub Actions artifacts (90 days), reported to the app with the ops token. _Verify:_ zizmor; script syntax; endpoint test.
 - [x] Passkey sign-in in the Worker instead of Cloudflare Access (migration 0003): setup code, sessions, 15-minute check for banks/exports/passkeys, device links, ops token. _Verify:_ 11 Worker tests with a software passkey; Playwright with Chromium's virtual authenticator against the real Worker.
 - [x] Sign-in, add-device and "Confirm it's you" screens; Settings → Sign-in. _Verify:_ Playwright (passkey, mock and Worker suites).
+- [x] Setup from a phone (D-28): secrets in GitHub environments uploaded by each deploy, passphrase token keys, passphrase backups, optional staging. _Verify:_ token-crypto tests; secrets-file script run with sample values; gpg encrypt/decrypt round trip; zizmor.

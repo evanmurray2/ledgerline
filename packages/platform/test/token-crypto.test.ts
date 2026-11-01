@@ -25,6 +25,17 @@ describe('access token encryption (AES-256-GCM, versioned keys)', () => {
     await expect(decryptToken(ring, a.enc, 3, 'con_1')).rejects.toThrow(/version 3/);
   });
 
+  it('accepts a passphrase of 32+ characters as key version 1, with or without the prefix', async () => {
+    const pass = 'abcdef-ghijk2-lmNopq-rstuvw-xyz123-ABCdef';
+    const a = await encryptToken(parseKeyring(pass, undefined), 'tok', 'con_1');
+    expect(a.keyVersion).toBe(1);
+    expect(await decryptToken(parseKeyring(`1:${pass}`, '1'), a.enc, 1, 'con_1')).toBe('tok');
+    await expect(encryptToken(parseKeyring('too-short', '1'), 'tok', 'con_1')).rejects.toThrow(/32/);
+    // An existing base64 key still decrypts as before.
+    const b = await encryptToken(parseKeyring(`1:${k1}`, '1'), 'tok', 'con_1');
+    expect(await decryptToken(parseKeyring(`1:${k1},2:${pass}`, '2'), b.enc, 1, 'con_1')).toBe('tok');
+  });
+
   it('ULIDs sort by time', () => {
     expect(ulid(1000) < ulid(2000)).toBe(true);
     expect(ulid()).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
