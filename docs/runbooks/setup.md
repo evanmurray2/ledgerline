@@ -20,6 +20,8 @@ If you'll link OAuth institutions such as Chase, register a redirect URI in the 
 
 ## 2. Create the Cloudflare databases (one account, free plan)
 
+**Done on Nov 1, 2026:** `ledgerline` (`52a5b8a6-09b1-4b27-b0bd-ddfaefd943b3`) and `ledgerline-staging` (`dd5f73ff-487b-4fb3-a975-3c9b4531047e`), both in western North America, with their ids in `wrangler.jsonc`. Migrations are applied by the first deploy (step 6). The steps below are for reference.
+
 ```sh
 pnpm install
 cd apps/worker

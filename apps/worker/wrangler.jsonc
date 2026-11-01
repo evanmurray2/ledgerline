@@ -1,6 +1,6 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  // Production. Fill in the D1 database id after `wrangler d1 create ledgerline` (docs/runbooks/setup.md).
+  // Production. D1 database created Nov 1, 2026 (docs/runbooks/setup.md).
   "name": "ledgerline",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-01",
@@ -11,7 +11,7 @@
     {
       "binding": "DB",
       "database_name": "ledgerline",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "52a5b8a6-09b1-4b27-b0bd-ddfaefd943b3",
       "migrations_dir": "../../packages/db/migrations",
     },
   ],
@@ -31,7 +31,7 @@
   // Production runs Plaid Production. Local dev (.dev.vars) and tests set PLAID_ENV=sandbox explicitly.
   "vars": { "PLAID_ENV": "production", "APP_VERSION": "0.1.0" },
   // Staging: a separate Worker with its own D1, secrets, setup code and Plaid Sandbox (design: One
-  // Cloudflare account). Fill in its database id after `wrangler d1 create ledgerline-staging`.
+  // Cloudflare account). D1 database created Nov 1, 2026.
   "env": {
     "staging": {
       "name": "ledgerline-staging",
@@ -41,7 +41,7 @@
         {
           "binding": "DB",
           "database_name": "ledgerline-staging",
-          "database_id": "00000000-0000-0000-0000-000000000001",
+          "database_id": "dd5f73ff-487b-4fb3-a975-3c9b4531047e",
           "migrations_dir": "../../packages/db/migrations",
         },
       ],
