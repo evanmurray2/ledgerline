@@ -7,6 +7,10 @@ PLAID_SECRET=your-sandbox-secret
 # 32 random bytes, base64: openssl rand -base64 32
 TOKEN_KEYS=1:REPLACE_WITH_BASE64_KEY
 TOKEN_KEY_CURRENT=1
+# Local development signs you in without a passkey. Remove DEV_AUTH_EMAIL and set SETUP_CODE (32+ characters) to try
+# passkey sign-in locally at http://localhost:8787 (passkeys need a host name, not 127.0.0.1).
 DEV_AUTH_EMAIL=you@example.com
+# SETUP_CODE=
+# OPS_TOKEN=
 DEV_ROUTES=1
 # FAKE_NOW=2026-11-14T20:00:00Z

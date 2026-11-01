@@ -58,7 +58,7 @@ export class CpuProfiler {
   }
 }
 
-// Frames that only exist in local emulation: workerd's native fetch into the in-process D1/R2 simulators and
+// Frames that only exist in local emulation: workerd's native fetch into the in-process D1 simulator and
 // wrangler's local tracing. In production those are I/O waits on remote services, not this isolate's CPU.
 const LOCAL_ONLY = new Set(['fetch', 'enterSpan', 'set tracing', 'setAttributes', 'get tracing', 'exitSpan']);
 

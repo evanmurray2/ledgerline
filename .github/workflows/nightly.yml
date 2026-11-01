@@ -7,8 +7,8 @@ permissions:
   contents: read
 jobs:
   backup:
-    # A full D1 export can't fit a Worker's 10 ms of CPU, so it runs here. The dump is encrypted to an age PUBLIC key;
-    # the private key is never in GitHub.
+    # A full D1 export can't fit a Worker's 10 ms of CPU, so it runs here. The dump is encrypted to an age PUBLIC key
+    # (the private key is never in GitHub) and kept as an Actions artifact for 90 days (decisions.md D-26: no R2).
     if: vars.BACKUP_AGE_RECIPIENT != ''
     runs-on: ubuntu-latest
     environment: backup
@@ -29,6 +29,18 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_BACKUP_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           BACKUP_AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+          OUT: ${{ runner.temp }}/backup
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: backup
+          path: ${{ runner.temp }}/backup/
+          retention-days: 90
+          if-no-files-found: error
+      - name: Report the backup to the app
+        run: node tools/ci/backup-done.mjs
+        env:
+          BASE_URL: ${{ vars.PRODUCTION_URL }}
+          OPS_TOKEN: ${{ secrets.OPS_TOKEN }}
   e2e-sandbox:
     if: vars.SANDBOX_E2E == 'true'
     runs-on: ubuntu-latest

@@ -2,10 +2,7 @@
 const base = process.env.BASE_URL;
 if (!base) throw new Error('BASE_URL is not set');
 const res = await fetch(`${base}/api/health`, {
-  headers: {
-    'cf-access-client-id': process.env.ACCESS_CLIENT_ID ?? '',
-    'cf-access-client-secret': process.env.ACCESS_CLIENT_SECRET ?? '',
-  },
+  headers: { authorization: `Bearer ${process.env.OPS_TOKEN ?? ''}` },
 });
 if (res.status !== 200) throw new Error(`health returned ${res.status}`);
 const h = await res.json();

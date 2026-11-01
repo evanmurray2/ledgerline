@@ -2,7 +2,7 @@
 
 Every phase in `docs/design.md` (Risks, open questions and plan → Build plan) broken into steps, each with how it is verified. Work runs in the order the owner set: go/no-go first, then the domain package and the November fixture, then the remaining phases. A phase is done only when its tests pass. Ticked boxes are done and verified; decisions taken along the way are in `docs/decisions.md`.
 
-Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owner (Cloudflare, Access, Plaid Production, GitHub settings).
+Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub settings).
 
 ## 0. Design in the repo
 
@@ -42,7 +42,7 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 
 ## 4. API and UI (design Phase 4)
 
-- [x] Hono API with Access JWT verification, CSRF (JSON + custom header + Origin), Zod on every request, security headers. _Verify:_ integration tests incl. auth rejection.
+- [x] Hono API with session checks (originally Access JWT verification; passkeys since D-27), CSRF (JSON + custom header + Origin), Zod on every request, security headers. _Verify:_ integration tests incl. auth rejection.
 - [x] Budget: month switcher, All / Needs attention, groups, statuses, card rows, Owed to you row, RTA bar, Assign sheet, Category sheet (assign/move/target). _Verify:_ component tests + Playwright against `wrangler dev` with the fake provider.
 - [x] Activity: search, All / Needs attention / Not posted yet, categorize in place, select several, split, transaction sheets (pending, posted, income, refund, paid back), match, transfer pick, add expected/upcoming, check-pending. _Verify:_ Playwright.
 - [x] Accounts: net worth, cash and cards, registers, Owed to you, repair prompt, health alerts. _Verify:_ Playwright.
@@ -70,9 +70,9 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 ## 8. Backups, monitoring, operations (design Phase 5 prerequisites)
 
 - [x] `/api/health` (statuses only), watchdog in `health_status`, Accounts alerts. _Verify:_ integration tests.
-- [x] GitHub Actions: nightly backup (D1 export → age public key → R2 with manifest), monitor every 6 hours, monthly keepalive. _Verify:_ `actionlint`; dry-run scripts tested locally.
-- [x] Runbooks: first deploy, Access, Plaid Production link, restore drill. _Verify:_ reviewed against the doc.
-- [ ] **(manual)** Create Cloudflare resources, Access app and policy, secrets, R2 bucket, first production deploy, confirm Plaid Trial status and 180-day window.
+- [x] GitHub Actions: nightly backup (D1 export → age public key → Actions artifact with manifest, D-26), monitor every 6 hours, monthly keepalive. _Verify:_ `actionlint`; dry-run scripts tested locally.
+- [x] Runbooks: first deploy, passkey setup, Plaid Production link, restore drill. _Verify:_ reviewed against the doc.
+- [ ] **(manual)** Create the two D1 databases, secrets (including `SETUP_CODE` and `OPS_TOKEN`), GitHub environments, first production deploy and first passkey, confirm Plaid Trial status (docs/runbooks/setup.md).
 
 ## 9. CI and supply chain
 
@@ -89,3 +89,11 @@ The UI works around these contract gaps (details in `apps/web/CONTRACT_NOTES.md`
 - [ ] Desktop: account registers in the side panel, and a per-row category dropdown in Activity.
 - [x] Owner decisions D-11 and D-12 (decisions.md): both fixed, with property tests.
 - [x] Owner decision D-25 (decisions.md): spending a card credit balance, fixed.
+
+## No payment card (decisions.md D-26, D-27)
+
+- [x] Raw Plaid pages in an append-only D1 table instead of R2 (migration 0002). _Verify:_ sync tests; 3,000-transaction backfill through the Workflow on local `wrangler dev`; CPU re-measured (fetch 1.2–1.4 ms, apply 3.1–3.4 ms).
+- [x] Chunk SQL `IN` lists to D1's 100-parameter limit (found by the backfill). _Verify:_ regression test with 150 transactions and 100 payees, failing before the fix.
+- [x] Backups as encrypted GitHub Actions artifacts (90 days), reported to the app with the ops token. _Verify:_ zizmor; script syntax; endpoint test.
+- [x] Passkey sign-in in the Worker instead of Cloudflare Access (migration 0003): setup code, sessions, 15-minute check for banks/exports/passkeys, device links, ops token. _Verify:_ 11 Worker tests with a software passkey; Playwright with Chromium's virtual authenticator against the real Worker.
+- [x] Sign-in, add-device and "Confirm it's you" screens; Settings → Sign-in. _Verify:_ Playwright (passkey, mock and Worker suites).

@@ -29,7 +29,7 @@ jobs:
         run: pnpm test:unit
       - name: Build the SPA
         run: pnpm --filter @ledgerline/web build
-      - name: Integration tests (Worker + local D1 and R2 in workerd)
+      - name: Integration tests (Worker + local D1 in workerd)
         run: pnpm --filter @ledgerline/worker test
       - name: Migration check
         run: node tools/ci/migration-check.mjs

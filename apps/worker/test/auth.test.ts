@@ -119,6 +119,9 @@ describe('passkey sign-in', () => {
     expect(r).toMatchObject({ status: 401, json: { error: 'reauth' } });
     expect((await b.call('GET', '/api/export/json')).json).toMatchObject({ error: 'reauth' });
     expect((await b.call('GET', '/api/session')).status).toBe(200); // everything else still works
+    expect((await b.call('POST', '/api/settings/security/device-link')).json).toMatchObject({
+      error: 'reauth',
+    });
     expect((await b.signIn(phone)).status).toBe(200); // same session, fresh check
     expect((await b.call('GET', '/api/export/json')).status).toBe(200);
   });
@@ -161,6 +164,15 @@ describe('passkey sign-in', () => {
     );
     // A signed-in session can't fake a backup.
     expect((await b.call('POST', '/api/ops/backup-done', {})).status).toBe(403);
+  });
+});
+
+describe('signing out', () => {
+  it('needs no fresh passkey check, and ends the session', async () => {
+    now += 60 * 60 * 1000;
+    expect((await b.call('GET', '/api/session')).status).toBe(200);
+    expect((await b.call('POST', '/api/settings/security/sign-out')).status).toBe(200);
+    expect((await b.call('GET', '/api/session')).status).toBe(401);
   });
 });
 

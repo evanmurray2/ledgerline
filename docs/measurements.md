@@ -1,5 +1,20 @@
 # Phase 1 measurements (go/no-go)
 
+## Update: no R2 (decisions.md D-26)
+
+Raw pages moved from R2 into D1, so the fetch step now decodes the page once and sends its text to D1 as one parameter, and the apply step parses the page text out of D1's response. Re-measured the same way (kernel method, 30 reps, median of 5, 100 transactions per page):
+
+| Step  | Before (R2)  | Now (D1)   | With ~2 ms I/O |
+| ----- | ------------ | ---------- | -------------- |
+| Fetch | 0.07 ms      | 1.2–1.4 ms | about 3.5 ms   |
+| Apply | 2.9 (2.5) ms | 3.1–3.4 ms | about 5.5 ms   |
+
+A first try that also hashed each page measured 3.3–4.1 ms for fetch; SHA-256 of a 200 KB page alone was about 1.3 ms, so the page hash was dropped. The 3,000-transaction backfill through the real Workflow on local `wrangler dev` completed in 153 steps (30 fetch, 60 apply, plus processing and recompute), with 3,000 `bank_txn` rows, the cursor moved once and the lease released. That run also found a bug unrelated to R2: processing built SQL `IN` lists with one parameter per transaction, over D1's 100-parameter limit on large syncs; they are now chunked (regression test in `apps/worker/test/sync.test.ts`).
+
+Sign-in (D-27) adds one D1 read per API request (the session row) and, at sign-in only, one ECDSA verification.
+
+The sections below are the original go/no-go, measured with R2.
+
 Result: **go**, after two redesigns that the measurements forced. Each hot path's own compute is now under 3 ms in workerd, about 5 ms with the estimated I/O, against the 10 ms limit:
 
 - **Sync apply step.** It could not fit at the design's 500 or 250 transactions per page. With raw pages in R2, the `bank_txn` projection built inside D1, and 100-transaction pages applied in 50-event steps, it is 2.5–2.9 ms.

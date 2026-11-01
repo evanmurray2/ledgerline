@@ -30,7 +30,7 @@
   },
   // Production runs Plaid Production. Local dev (.dev.vars) and tests set PLAID_ENV=sandbox explicitly.
   "vars": { "PLAID_ENV": "production", "APP_VERSION": "0.1.0" },
-  // Staging: a separate Worker with its own D1, R2, secrets and Plaid Sandbox, behind Access (design: One
+  // Staging: a separate Worker with its own D1, secrets, setup code and Plaid Sandbox (design: One
   // Cloudflare account). Fill in its database id after `wrangler d1 create ledgerline-staging`.
   "env": {
     "staging": {

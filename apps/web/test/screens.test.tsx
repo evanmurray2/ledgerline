@@ -206,6 +206,6 @@ describe('States', () => {
 
   it('first run starts at Welcome', async () => {
     renderAt('/budget', 'firstrun');
-    await text('Continue with GitHub');
+    await text('Get started');
   });
 });

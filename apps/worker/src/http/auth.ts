@@ -85,6 +85,6 @@ export async function identify(req: Request, env: Env, now: number): Promise<Ide
 export function needsRecentPasskey(method: string, path: string): boolean {
   if (path.startsWith('/api/export/')) return true;
   if (path === '/api/settings/rules/export') return false;
-  if (method === 'GET') return false;
+  if (method === 'GET' || path === '/api/settings/security/sign-out') return false;
   return path.startsWith('/api/settings/connections') || path.startsWith('/api/settings/security/');
 }

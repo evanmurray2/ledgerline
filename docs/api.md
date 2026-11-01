@@ -1,6 +1,6 @@
 # API
 
-The Worker serves the SPA and a JSON API under `/api`. Every request must pass Cloudflare Access; the Worker also verifies the Access JWT itself. Mutations (`POST`, `PUT`, `PATCH`, `DELETE`) require `content-type: application/json`, the header `x-ledgerline: 1` and a same-origin `Origin`. Schemas and types are in `packages/contracts`. Money is integer cents; months are `YYYY-MM`.
+The Worker serves the SPA and a JSON API under `/api`. Every request needs a signed-in session (passkey sign-in, decisions.md D-27): an HttpOnly cookie whose SHA-256 the Worker looks up in `auth_session`. The sign-in routes and the Plaid webhook are the only public ones. Linking or repairing banks, exports and passkey changes need a passkey check within the last 15 minutes, or they return `401 { error: "reauth" }`. The GitHub monitor and backup jobs use `Authorization: Bearer <OPS_TOKEN>`, which reaches only the two endpoints marked below. Mutations (`POST`, `PUT`, `PATCH`, `DELETE`) require `content-type: application/json`, the header `x-ledgerline: 1` and a same-origin `Origin`. Schemas and types are in `packages/contracts`. Money is integer cents; months are `YYYY-MM`.
 
 | Method and path                                                          | Request                                             | Response                                            |
 | ------------------------------------------------------------------------ | --------------------------------------------------- | --------------------------------------------------- |
@@ -55,5 +55,17 @@ The Worker serves the SPA and a JSON API under `/api`. Every request must pass C
 | `POST /api/usage`                                                        | `UsageBatch`                                        | `204`                                               |
 | `DELETE /api/usage`                                                      |                                                     | `{ ok }` (deletes the stored usage log)             |
 | `POST /api/notes`                                                        | `NoteRequest`                                       | `{ ok }`                                            |
-| `GET /api/health`                                                        | (Access service token)                              | `HealthView`                                        |
-| `POST /api/webhooks/plaid`                                               | Plaid webhook (Access bypass; signature required)   | `200`                                               |
+| `GET /api/health`                                                        | (ops token)                                         | `HealthView`                                        |
+| `POST /api/ops/backup-done`                                              | (ops token)                                         | `{ ok }` (records the nightly backup's time)        |
+| `POST /api/webhooks/plaid`                                               | Plaid webhook (public; signature required)          | `200`                                               |
+| `GET /api/auth/status`                                                   | (public)                                            | `AuthStatus`                                        |
+| `POST /api/auth/register/options`                                        | `{ setupCode }` or `{ deviceToken }` or a session   | WebAuthn creation options                           |
+| `POST /api/auth/register/verify`                                         | `{ response, name }`                                | `{ ok }` and a session cookie                       |
+| `POST /api/auth/login/options`                                           | (public)                                            | WebAuthn request options                            |
+| `POST /api/auth/login/verify`                                            | `{ response }`                                      | `{ ok }`; a new session, or a fresh check on one    |
+| `POST /api/auth/logout`                                                  |                                                     | `{ ok }`                                            |
+| `GET /api/settings/security`                                             |                                                     | `SecurityView`                                      |
+| `POST /api/settings/security/device-link`                                | (recent passkey check)                              | `DeviceLink` (single use, 10 minutes)               |
+| `POST /api/settings/security/passkeys/:id/remove`                        | (recent passkey check; never the last one)          | `{ ok }`                                            |
+| `POST /api/settings/security/sign-out-others`                            | (recent passkey check)                              | `{ ok }`                                            |
+| `POST /api/settings/security/sign-out`                                   |                                                     | `{ ok }`                                            |
