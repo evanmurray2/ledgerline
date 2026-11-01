@@ -13,6 +13,18 @@ A first try that also hashed each page measured 3.3–4.1 ms for fetch; SHA-256 
 
 Sign-in (D-27) adds one D1 read per API request (the session row) and, at sign-in only, one ECDSA verification.
 
+## Update: database reads per screen (Nov 1, 2026)
+
+On the first day with 7 banks (578 transactions) the account passed D1's free 5 million rows read per day. Each screen reads every transaction (about 4 rows per transaction through `v_transaction`), and the tab badges loaded the full Activity and Accounts views on every screen, so each visit or edit cost about 16,000 reads. Measured on about 600 transactions (`apps/worker/test/read-cost.test.ts`, which now fails if these grow):
+
+| Request                                                                                                       | Before                                   | After                                                      |
+| ------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------- |
+| Tab badges (every screen; new `/api/badges`, also carries the cached Ready to Assign for the desktop sidebar) | about 12,600 (Activity + Accounts views) | 2,200                                                      |
+| Activity, Needs attention                                                                                     | 7,200                                    | 3,600 (skips the posted and upcoming scans it never shows) |
+| Budget                                                                                                        | 4,100                                    | 4,100                                                      |
+
+Data now stays fresh for 2 minutes before switching back to the app refetches it (was 15 seconds). Next: make the heavy screens read recent rows only instead of all history.
+
 The sections below are the original go/no-go, measured with R2.
 
 Result: **go**, after two redesigns that the measurements forced. Each hot path's own compute is now under 3 ms in workerd, about 5 ms with the estimated I/O, against the 10 ms limit:

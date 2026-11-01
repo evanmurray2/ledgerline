@@ -6,7 +6,7 @@ import { PanelSlotContext } from './Sheet';
 import { ToastHost } from './Toast';
 import { cx, Icon, useIsDesktop, type IconName } from './ui';
 import { NoteSheet } from '../screens/Note';
-import { useAccounts, useActivity, useBudget, useSession } from '../api/hooks';
+import { useBadgeCounts, useSession } from '../api/hooks';
 import { useConnectivity } from '../state/connectivity';
 import { pacificTime } from '../lib/dates';
 import { formatCents } from '../lib/money';
@@ -21,12 +21,14 @@ export function tabFor(path: string): Tab {
   return 'budget';
 }
 
+/** The tab badges come from a cheap endpoint: the full Activity and Accounts views read every transaction. */
 function useBadges() {
-  const activity = useActivity('attention', '');
-  const accounts = useAccounts();
+  const b = useBadgeCounts();
   return {
-    activity: activity.data?.attentionCount ?? 0,
-    accounts: (accounts.data?.repairs.length ?? 0) + (accounts.data?.failures.length ?? 0),
+    activity: b.data?.activity ?? 0,
+    accounts: b.data?.accounts ?? 0,
+    rta: b.data?.rta,
+    rtaUpdating: b.data?.rtaUpdating ?? false,
   };
 }
 
@@ -79,9 +81,7 @@ function TabBar({ active }: { active: Tab }) {
 
 function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void; noteButton: boolean }) {
   const badges = useBadges();
-  const session = useSession();
-  const budget = useBudget(session.data?.budget.currentMonth);
-  const rta = budget.data?.rta;
+  const rta = badges.rta;
   const items: { id: Tab; name: string; to: string; badge: number }[] = [
     { id: 'budget', name: 'Budget', to: '/budget', badge: 0 },
     { id: 'activity', name: 'Activity', to: '/activity', badge: badges.activity },
@@ -136,7 +136,7 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
       >
         <span className="text-[12px] font-semibold">Ready to Assign</span>
         <span className="tnum text-[22px] font-bold" data-testid="nav-rta">
-          {budget.data?.rtaUpdating ? 'Updating' : rta === undefined ? '—' : formatCents(rta)}
+          {badges.rtaUpdating ? 'Updating' : rta === undefined ? '—' : formatCents(rta)}
         </span>
         {active !== 'budget' && (
           <Link

@@ -89,6 +89,15 @@ export class MockServer {
     switch (key) {
       case 'GET session':
         return db.session();
+      case 'GET badges': {
+        const a = db.accounts();
+        return {
+          activity: db.activity('attention', '').attentionCount,
+          accounts: a.repairs.length + a.failures.length,
+          rta: db.rta,
+          rtaUpdating: false,
+        };
+      }
       case 'GET budget/:x':
         return db.budget(b!);
       case 'GET budget/:x/assign':

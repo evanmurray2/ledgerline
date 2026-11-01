@@ -60,6 +60,10 @@ export function useMatchView(key: string) {
 export function useOwed() {
   return useQuery({ queryKey: qk.owed, queryFn: api.owed });
 }
+/** Tab badges. Keyed under 'activity' so every money change refreshes them too. */
+export function useBadgeCounts() {
+  return useQuery({ queryKey: ['activity', 'badges'], queryFn: api.badges, staleTime: 60_000 });
+}
 export function useAccounts() {
   return useQuery({ queryKey: qk.accounts, queryFn: api.accounts });
 }

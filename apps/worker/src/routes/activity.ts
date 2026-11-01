@@ -64,6 +64,58 @@ async function commit(
 
 // ---------------------------------------------------------------- Activity
 
+/** Rows that need you: Waiting to match, transfers to sort out, alerts, and uncategorized rows in the budget. */
+const ATTENTION_SQL = `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1
+         AND (date >= budget_from OR pending_at_link = 1 OR status != 'posted') AND (
+         wtm_state IN ('waiting', 'send_back') OR transfer_state = 'unsorted' OR (alert IS NOT NULL AND reviewed_at IS NULL)
+         OR (category_id IS NULL AND coalesce(to_rta, 0) = 0 AND transfer_state IS NULL AND wtm_state IS NULL AND wont_clear = 0
+             AND status != 'upcoming'
+             AND key NOT IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1)))
+       ORDER BY date DESC, seq DESC LIMIT 200`;
+
+/**
+ * The tab badges, cheaply (they show on every screen): the Activity attention count and the Accounts connection
+ * problems. The full Activity and Accounts views read every transaction, so badges must not use them.
+ */
+activityRoutes.get('/badges', async (c) => {
+  const s = scoped(c);
+  const tz = await s.first<{
+    time_zone: string;
+    rta: number;
+    summary_month: string | null;
+    summary_dirty_from: string | null;
+  }>(`SELECT time_zone, rta, summary_month, summary_dirty_from FROM budget WHERE id = ?1`);
+  const today = localDate(clock(c.env), tz?.time_zone ?? 'America/Los_Angeles');
+  const [attn, stale, conns] = await s.batch([
+    s.q(ATTENTION_SQL),
+    s.q(
+      `SELECT count(*) AS n FROM manual_pending m JOIN account a ON a.id = m.account_id WHERE m.budget_id = ?1 AND m.kind = 'pending' AND m.deleted_at IS NULL
+         AND m.matched_txn_key IS NULL AND julianday(?2) - julianday(m.date) >= a.stale_pending_days AND (m.stale_snooze_until IS NULL OR m.stale_snooze_until <= ?2)`,
+      today,
+    ),
+    s.q(
+      `SELECT count(*) AS n FROM connection WHERE budget_id = ?1 AND removed_at IS NULL AND status IN ('login_required', 'error')`,
+    ),
+  ]);
+  const rows = attn!.results as TxRow[];
+  const activity =
+    rows.filter((t) => t.wtm_state === 'waiting' || t.wtm_state === 'send_back').length +
+    rows.filter((t) => t.transfer_state === 'unsorted' && t.amount < 0).length +
+    rows.filter(
+      (t) => !t.category_id && !t.to_rta && !t.transfer_state && !t.wtm_state && !(t.alert && !t.reviewed_at),
+    ).length +
+    rows.filter((t) => t.alert && !t.reviewed_at).length +
+    ((stale!.results[0] as { n: number } | undefined)?.n ?? 0);
+  return c.json({
+    activity,
+    accounts: (conns!.results[0] as { n: number } | undefined)?.n ?? 0,
+    // The cached Ready to Assign for the current month, for the desktop sidebar.
+    rta: tz?.rta ?? 0,
+    // Not final yet: a recompute is running, or the month rolled over since it was computed.
+    rtaUpdating: !!tz?.summary_dirty_from || tz?.summary_month !== today.slice(0, 7),
+  });
+});
+
 activityRoutes.get('/activity', async (c) => {
   const s = scoped(c);
   const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env, s.budgetId));
@@ -72,24 +124,18 @@ activityRoutes.get('/activity', async (c) => {
   const cursor = c.req.query('cursor');
   const { cats, accts } = await names(s);
   const [attn, pend, upc, posted, splits, owed, links, stale] = await s.batch([
-    s.q(
-      `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1
-         AND (date >= budget_from OR pending_at_link = 1 OR status != 'posted') AND (
-         wtm_state IN ('waiting', 'send_back') OR transfer_state = 'unsorted' OR (alert IS NOT NULL AND reviewed_at IS NULL)
-         OR (category_id IS NULL AND coalesce(to_rta, 0) = 0 AND transfer_state IS NULL AND wtm_state IS NULL AND wont_clear = 0
-             AND status != 'upcoming'
-             AND key NOT IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1)))
-       ORDER BY date DESC, seq DESC LIMIT 200`,
-    ),
+    s.q(ATTENTION_SQL),
     s.q(
       `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND status = 'pending' ORDER BY date DESC, seq DESC LIMIT 200`,
     ),
+    // The attention view shows no upcoming or posted rows: skip those scans (they cost reads on every visit).
     s.q(
-      `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND status = 'upcoming' AND date > ?2 ORDER BY date LIMIT 100`,
+      `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND ?3 = 0 AND status = 'upcoming' AND date > ?2 ORDER BY date LIMIT 100`,
       f.today,
+      filter === 'attention' ? 1 : 0,
     ),
     s.q(
-      `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND status = 'posted' AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
+      `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND ${filter === 'attention' ? '0 AND ' : ''}status = 'posted' AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
          ${q ? `AND (lower(payee) LIKE ?3 OR printf('%.2f', abs(amount) / 100.0) LIKE ?3)` : ''}
        ORDER BY date DESC, seq DESC LIMIT 50`,
       cursor ?? null,

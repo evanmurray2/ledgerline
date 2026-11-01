@@ -10,7 +10,8 @@ export function makeQueryClient() {
       queries: {
         // Keep showing the last loaded data when offline; don't retry client errors.
         networkMode: 'offlineFirst',
-        staleTime: 15_000,
+        // Each screen reads every transaction from the database, so refetch on focus only when data is older than this.
+        staleTime: 120_000,
         gcTime: 24 * 60 * 60 * 1000,
         refetchOnWindowFocus: true,
         retry: (count, err) =>

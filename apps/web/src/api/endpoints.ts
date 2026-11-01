@@ -63,6 +63,17 @@ const enc = encodeURIComponent;
 
 export const api = {
   session: () => get('/api/session', Session),
+  /** Tab badge counts, cheaply: shown on every screen. */
+  badges: () =>
+    get(
+      '/api/badges',
+      z.object({
+        activity: z.number().int(),
+        accounts: z.number().int(),
+        rta: z.number().int(),
+        rtaUpdating: z.boolean(),
+      }),
+    ),
 
   // Sign-in (decisions.md D-27). Ceremony options and responses are WebAuthn JSON, passed through as-is.
   authStatus: () => get('/api/auth/status', AuthStatus),
