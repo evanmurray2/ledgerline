@@ -1,6 +1,6 @@
 // Authentication without Cloudflare Access (decisions.md D-27: Zero Trust needs a payment card on file). The Worker
 // verifies passkeys itself (routes/auth.ts) and keeps sessions server-side: the browser holds a random token in an
-// HttpOnly cookie and the database stores only its SHA-256. The two GitHub jobs (monitor, backup) use a bearer
+// HttpOnly cookie and the database stores only its SHA-256. The GitHub monitor and deploy smoke test use a bearer
 // token that can reach two endpoints. Local development may trust a fixed email instead, never in production.
 import { sha256Hex } from '@ledgerline/bank-provider';
 import type { Env } from '../env.js';
@@ -59,8 +59,8 @@ export async function secretMatches(presented: string, configured: string | unde
   return crypto.subtle.timingSafeEqual(a, b);
 }
 
-/** Paths the ops token may reach: the monitor reads health, the backup job reports a finished backup. */
-export const OPS_PATHS = new Set(['GET /api/health', 'POST /api/ops/backup-done']);
+/** The only path the ops token may reach: the monitor and the deploy smoke test read health. */
+export const OPS_PATHS = new Set(['GET /api/health']);
 
 export async function identify(req: Request, env: Env, now: number): Promise<Identity | null> {
   const auth = req.headers.get('authorization');

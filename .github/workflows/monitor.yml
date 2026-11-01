@@ -1,7 +1,6 @@
 name: monitor
-# Every 6 hours: fails (and GitHub emails you) if a connection is more than 24 hours stale, the last backup is more
-# than 36 hours old, or usage passes 70% of a daily limit. Each call is recorded, so the app shows "Monitoring
-# stopped" if this job stops running.
+# Every 6 hours: fails (and GitHub emails you) if a bank connection is more than 24 hours stale or usage passes 70%
+# of a daily D1 limit. Each check is recorded, so the app shows "Monitoring stopped" if this job stops running.
 on:
   schedule:
     - cron: '29 */6 * * *'

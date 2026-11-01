@@ -86,30 +86,21 @@ opsRoutes.post('/notes', async (c) => {
 opsRoutes.get('/health', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
-  const [conns, h, lag] = await s.batch([
+  const [conns, lag] = await s.batch([
     s.q(`SELECT id, last_synced_at FROM connection WHERE budget_id = ?1 AND removed_at IS NULL`),
-    s.q(`SELECT key, value FROM health_status WHERE budget_id = ?1`),
     s.q(
       `SELECT (SELECT coalesce(max(id), 0) FROM bank_event WHERE budget_id = ?1) - processed_through AS lag FROM budget WHERE id = ?1`,
     ),
   ]);
-  const hs = new Map((h!.results as { key: string; value: string | null }[]).map((r) => [r.key, r.value]));
   const u = await usageToday(c.env, now);
   const connections = (conns!.results as { id: string; last_synced_at: number | null }[]).map((x) => ({
     id: x.id,
     lastSyncedAt: x.last_synced_at,
     stale: !x.last_synced_at || now - x.last_synced_at > 24 * 3_600_000,
   }));
-  const lastBackupAt = hs.get('last_backup_at') ? Number(hs.get('last_backup_at')) : null;
   const view: HealthView = {
-    ok:
-      connections.every((x) => !x.stale) &&
-      lastBackupAt !== null &&
-      now - lastBackupAt < 36 * 3_600_000 &&
-      u.written < WRITE_LIMIT * 0.7 &&
-      u.read < READ_LIMIT * 0.7,
+    ok: connections.every((x) => !x.stale) && u.written < WRITE_LIMIT * 0.7 && u.read < READ_LIMIT * 0.7,
     connections,
-    lastBackupAt,
     watermarkLag: Math.max(0, (lag!.results[0] as { lag: number } | undefined)?.lag ?? 0),
     usage: {
       day: utcDay(now),
@@ -119,24 +110,13 @@ opsRoutes.get('/health', async (c) => {
       writePct: Math.round((u.written * 1000) / WRITE_LIMIT) / 10,
     },
   };
-  // Each check is recorded, so the in-app watchdog can tell when monitoring stops.
-  await s.run(
-    `INSERT INTO health_status (budget_id, key, value, at) VALUES (?1, 'last_monitor_at', ?2, ?2) ON CONFLICT (budget_id, key) DO UPDATE SET value = excluded.value, at = excluded.at`,
-    String(now),
-  );
+  // The GitHub monitor's checks are recorded (it sends this header), so the app can tell when monitoring stops.
+  if (c.req.header('x-ledgerline-monitor') === '1')
+    await s.run(
+      `INSERT INTO health_status (budget_id, key, value, at) VALUES (?1, 'last_monitor_check_at', ?2, ?2) ON CONFLICT (budget_id, key) DO UPDATE SET value = excluded.value, at = excluded.at`,
+      String(now),
+    );
   return c.json(view);
-});
-
-/** The nightly GitHub Actions backup reports here after it uploaded an encrypted dump (ops token only). */
-opsRoutes.post('/ops/backup-done', async (c) => {
-  if (c.get('userId') !== 'service') return c.json({ error: 'forbidden', message: 'ops token only' }, 403);
-  const s = scoped(c);
-  const now = clock(c.env);
-  await s.run(
-    `INSERT INTO health_status (budget_id, key, value, at) VALUES (?1, 'last_backup_at', ?2, ?2) ON CONFLICT (budget_id, key) DO UPDATE SET value = excluded.value, at = excluded.at`,
-    String(now),
-  );
-  return c.json({ ok: true });
 });
 
 /** The one public path besides sign-in: requires a valid Plaid webhook signature and only starts a sync. */

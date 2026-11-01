@@ -71,7 +71,7 @@ function useSectionMeta() {
     connections: conns
       ? `${conns.used} of ${conns.limit} links used${needRepair[0] ? ` · ${needRepair[0].institution} needs repair` : ''}`
       : '',
-    data: 'History import · CSV and JSON export · backups',
+    data: 'History import · CSV and JSON export · recovery',
   } as Record<string, string>;
 }
 
@@ -1689,15 +1689,11 @@ export function DataScreen() {
           </div>
         ))}
       </Card>
-      <h2 className="m-0 mt-1 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">Backups</h2>
+      <h2 className="m-0 mt-1 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
+        Recovery
+      </h2>
       <Card>
         <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
-          <span className="flex flex-col gap-0.5">
-            <span className="text-[15px] font-semibold">Nightly backup</span>
-            <span className="text-[12px] text-muted">Encrypted copy kept for 90 days</span>
-          </span>
-        </div>
-        <div className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 py-2">
           <span className="flex flex-col gap-0.5">
             <span className="text-[15px] font-semibold">Undo window</span>
             <span className="text-[12px] text-muted">The database can be rewound to any minute</span>
@@ -1706,7 +1702,8 @@ export function DataScreen() {
         </div>
       </Card>
       <span className="text-[12px] text-muted">
-        Restores are done from the repository, not from this screen, so a stolen session can’t wipe your data.
+        Rewinding is done in Cloudflare, not from this screen, so a stolen session can’t wipe your data. For a
+        copy older than 7 days, download the JSON export above and keep it somewhere safe.
       </span>
     </Page>
   );

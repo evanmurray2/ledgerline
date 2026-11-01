@@ -41,7 +41,7 @@ api.use('*', async (c, next) => {
   const who = await identify(c.req.raw, c.env, now);
   if (!who) return c.json({ error: 'unauthenticated', message: 'Sign in with your passkey' }, 401);
   if (who.kind === 'ops') {
-    // The GitHub jobs' token reaches only health and the backup report.
+    // The ops token reaches only the health endpoint.
     if (!OPS_PATHS.has(`${c.req.method} ${path}`))
       return c.json({ error: 'forbidden', message: 'ops token' }, 403);
     c.set('userId', 'service');

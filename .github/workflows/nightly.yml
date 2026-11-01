@@ -6,43 +6,6 @@ on:
 permissions:
   contents: read
 jobs:
-  backup:
-    # A full D1 export can't fit a Worker's 10 ms of CPU, so it runs here. The dump is encrypted (an age public key, or
-    # the BACKUP_PASSPHRASE secret) and kept as an Actions artifact for 90 days (decisions.md D-26, D-28).
-    if: vars.PRODUCTION_URL != ''
-    runs-on: ubuntu-latest
-    environment: ops
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - if: vars.BACKUP_AGE_RECIPIENT != ''
-        run: sudo apt-get install -y age
-      - run: bash tools/backup/backup.sh
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          BACKUP_AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
-          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
-          OUT: ${{ runner.temp }}/backup
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: backup
-          path: ${{ runner.temp }}/backup/
-          retention-days: 90
-          if-no-files-found: error
-      - name: Report the backup to the app
-        run: node tools/ci/backup-done.mjs
-        env:
-          BASE_URL: ${{ vars.PRODUCTION_URL }}
-          OPS_TOKEN: ${{ secrets.OPS_TOKEN }}
   e2e-sandbox:
     if: vars.SANDBOX_E2E == 'true'
     runs-on: ubuntu-latest

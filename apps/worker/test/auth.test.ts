@@ -151,19 +151,23 @@ describe('passkey sign-in', () => {
     expect((await b.call('POST', `/api/settings/security/passkeys/${phone.id}/remove`)).status).toBe(409);
   });
 
-  it('the ops token reads health and reports backups, nothing else', async () => {
+  it('the ops token reads health, nothing else', async () => {
     const ops = new Browser();
     const bearer = { authorization: `Bearer ${OPS}` };
     expect((await ops.call('GET', '/api/health', undefined, bearer)).status).toBe(200);
-    expect((await ops.call('POST', '/api/ops/backup-done', {}, bearer)).status).toBe(200);
-    const h = await ops.call('GET', '/api/health', undefined, bearer);
-    expect(h.json.lastBackupAt).toBe(now);
+    expect((await ops.call('POST', '/api/ops/backup-done', {}, bearer)).status).toBe(403);
+    // Only the monitor's own checks count for the "Monitoring stopped" alert.
+    const checks = () =>
+      env.DB.prepare(`SELECT count(*) AS n FROM health_status WHERE key = 'last_monitor_check_at'`).first<{
+        n: number;
+      }>();
+    expect((await checks())!.n).toBe(0);
+    await ops.call('GET', '/api/health', undefined, { ...bearer, 'x-ledgerline-monitor': '1' });
+    expect((await checks())!.n).toBe(1);
     expect((await ops.call('GET', '/api/session', undefined, bearer)).status).toBe(403);
     expect((await ops.call('GET', '/api/health', undefined, { authorization: 'Bearer nope' })).status).toBe(
       401,
     );
-    // A signed-in session can't fake a backup.
-    expect((await b.call('POST', '/api/ops/backup-done', {})).status).toBe(403);
   });
 });
 

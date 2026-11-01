@@ -1,18 +1,22 @@
-# Monthly restore drill
+# Recovery
 
-Done by hand on your computer, once a month, into a local D1. The private backup key never leaves your machine or password manager. Backups are GitHub Actions artifacts of the **nightly** workflow, kept 90 days (decisions.md D-26).
+There is no off-site backup (decisions.md D-29). Recovery uses what Cloudflare keeps for D1 on the free plan.
 
-1. Download the latest backup: Actions → nightly → the latest successful run → Artifacts → `backup` (or `gh run download <run id> -n backup`). Unzip it; it holds `ledgerline-<time>.sql.gpg` (passphrase) or `.sql.age` (age key), and `manifest.json`.
-2. Check the encrypted file: `sha256sum ledgerline-*` must equal `sha256` in `manifest.json`.
-3. Decrypt with your `BACKUP_PASSPHRASE`: `gpg -o backup.sql -d ledgerline-*.sql.gpg` (or `age -d -i ledgerline-backup.key -o backup.sql ledgerline-*.sql.age`). `sha256sum backup.sql` must equal `plaintextSha256`.
-4. Restore into a throwaway local database (from `apps/worker`):
-   ```sh
-   rm -rf .wrangler/state
-   pnpm exec wrangler d1 execute DB --local --file backup.sql
-   ```
-5. Spot-check: run `wrangler dev` with `DEV_AUTH_EMAIL` set (and `PLAID_ENV=sandbox`), open the app, and compare Ready to Assign and account balances with production.
-6. Delete `backup.sql`, the downloaded files and the local state.
+## Undo recent damage (last 7 days)
 
-For recent mistakes, D1 Time Travel restores any minute in the last 7 days (free plan) without a backup: `wrangler d1 time-travel restore ledgerline --timestamp=<ISO time>`.
+D1 Time Travel restores the production database to any minute in the last 7 days. From a computer, in `apps/worker`:
 
-To restore production itself from a backup, create a new D1 database, run `wrangler d1 execute <new db> --remote --file backup.sql`, point `wrangler.jsonc` at it and deploy.
+```sh
+pnpm exec wrangler d1 time-travel info ledgerline                       # current bookmark
+pnpm exec wrangler d1 time-travel restore ledgerline --timestamp=<ISO time before the damage>
+```
+
+A restore replaces the whole database, including everything after that time. Bank transactions after it come back on the next sync; your own edits after it are lost.
+
+## A deleted database (within 7 days)
+
+Use Cloudflare's D1 undelete API as soon as possible; requests for databases deleted more than 7 days ago fail.
+
+## Your own copy
+
+Settings → Import and export → **JSON export** downloads your budget (categories, assignments, transactions, rules, payees). Save it to Files or iCloud now and then: it is the only copy that survives losing the Cloudflare account or damage noticed after 7 days. Ledgerline can't yet re-import a JSON export into a new database; the file keeps your data readable until it can.

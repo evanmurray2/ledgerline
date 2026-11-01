@@ -176,13 +176,9 @@ accountRoutes.get('/accounts', async (c) => {
     const v = h.get(k)?.value;
     return v ? (now - Number(v)) / 3_600_000 : null;
   };
-  const backupAge = hours('last_backup_at');
-  if (h.has('last_backup_at') && backupAge !== null && backupAge > 36)
-    alerts.push({ kind: 'backup', text: `Last backup was ${Math.round(backupAge)} hours ago` });
-  if (h.has('watchdog_ran_at') && !h.get('last_backup_at')?.value)
-    alerts.push({ kind: 'backup', text: 'No backup has run yet' });
-  const monitorAge = hours('last_monitor_at');
-  if (h.has('watchdog_ran_at') && (monitorAge === null || monitorAge > 24))
+  // Only once the GitHub monitor has checked in at least once: it is optional (decisions.md D-29).
+  const monitorAge = hours('last_monitor_check_at');
+  if (h.has('watchdog_ran_at') && monitorAge !== null && monitorAge > 24)
     alerts.push({ kind: 'monitor', text: 'Monitoring stopped: no health check in the last 24 hours' });
   for (const cn of connRows)
     if (cn.status === 'ok' && cn.last_synced_at && now - cn.last_synced_at > 24 * 3_600_000)

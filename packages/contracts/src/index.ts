@@ -412,9 +412,7 @@ export const AccountsView = z.object({
       nextRetry: z.number().int().nullable(),
     }),
   ),
-  alerts: z.array(
-    z.object({ kind: z.enum(['backup', 'monitor', 'sync', 'history_changed']), text: z.string() }),
-  ),
+  alerts: z.array(z.object({ kind: z.enum(['monitor', 'sync', 'history_changed']), text: z.string() })),
 });
 export type AccountsView = z.infer<typeof AccountsView>;
 
@@ -637,7 +635,6 @@ export const ImportResult = z.object({
 export const HealthView = z.object({
   ok: z.boolean(),
   connections: z.array(z.object({ id, lastSyncedAt: z.number().int().nullable(), stale: z.boolean() })),
-  lastBackupAt: z.number().int().nullable(),
   watermarkLag: z.number().int(),
   usage: z.object({
     day: z.string(),

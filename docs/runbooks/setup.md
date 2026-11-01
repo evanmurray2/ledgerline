@@ -1,6 +1,6 @@
 # Setup and first production deploy
 
-Everything below is done by you, once, and works from an iPhone in Safari (no command line; decisions.md D-28). Nothing needs a payment card: the app uses only Workers, D1 and Workflows on the free plan, with no R2 and no Zero Trust (D-26, D-27). The two D1 databases already exist (created Nov 1, 2026; ids in `apps/worker/wrangler.jsonc`). Do the steps in order: backups and monitoring must be running before the first bank link (design: Backups).
+Everything below is done by you, once, and works from an iPhone in Safari (no command line; decisions.md D-28). Nothing needs a payment card: the app uses only Workers, D1 and Workflows on the free plan, with no R2 and no Zero Trust (D-26, D-27). The two D1 databases already exist (created Nov 1, 2026; ids in `apps/worker/wrangler.jsonc`). There is no off-site backup (D-29): recovery uses Cloudflare's 7-day Time Travel and your own JSON exports.
 
 On GitHub's mobile site some settings pages are easier with **aA → Request Desktop Website**. Turn on 2FA (passkey or security key) for Cloudflare, GitHub and Plaid first.
 
@@ -12,23 +12,21 @@ On GitHub's mobile site some settings pages are easier with **aA → Request Des
 
 The history window is 180 days and can't change after the first link (`PLAID_DAYS_REQUESTED` in `packages/bank-provider/src/plaid.ts`).
 
-## 2. Make four long random secrets
+## 2. Make three long random secrets
 
-In the **Passwords** app, tap **+** and use the suggested strong password; then add a second suggested password after it, so each secret is about 40 characters. Save four entries:
+In the **Passwords** app, tap **+** and use the suggested strong password; then add a second suggested password after it, so each secret is about 40 characters. Save three entries:
 
-| Entry               | Used for                                                                                   |
-| ------------------- | ------------------------------------------------------------------------------------------ |
-| `TOKEN_KEYS`        | encrypts your bank access tokens. **Never lose or change it**, or every bank must re-link. |
-| `SETUP_CODE`        | creates your first passkey, once                                                           |
-| `OPS_TOKEN`         | lets GitHub's monitor and backup talk to the app                                           |
-| `BACKUP_PASSPHRASE` | encrypts the nightly backups. Without it, backups can't be opened.                         |
+| Entry        | Used for                                                                                   |
+| ------------ | ------------------------------------------------------------------------------------------ |
+| `TOKEN_KEYS` | encrypts your bank access tokens. **Never lose or change it**, or every bank must re-link. |
+| `SETUP_CODE` | creates your first passkey, once                                                           |
+| `OPS_TOKEN`  | lets GitHub's monitor and the deploy check read the app's health                           |
 
 ## 3. Cloudflare (dash.cloudflare.com)
 
 1. **Workers & Pages**: note your **Account ID** and your **workers.dev subdomain** (set one if asked). Your app's address will be `https://ledgerline.<subdomain>.workers.dev`.
-2. **My Profile → API Tokens → Create Token**, three times:
+2. **My Profile → API Tokens → Create Token**, twice:
    - "Deploy": template **Edit Cloudflare Workers**, then add **Account → D1 → Edit**. Account Resources: your account.
-   - "Backup": Custom token with only **Account → D1 → Edit**.
    - "Analytics": Custom token with only **Account → Account Analytics → Read**.
 
 ## 4. GitHub (github.com/evanmurray2/ledgerline → Settings)
@@ -38,9 +36,7 @@ In the **Passwords** app, tap **+** and use the suggested strong password; then 
    - `PLAID_CLIENT_ID`, `PLAID_SECRET` (Production secret), and `PLAID_REDIRECT_URI` if you set one
    - `TOKEN_KEYS`, `SETUP_CODE`, `OPS_TOKEN`
    - `CF_ANALYTICS_TOKEN`: the Analytics token
-2. **Environments → New environment** `ops` (no reviewer). Secrets:
-   - `CLOUDFLARE_API_TOKEN`: the Backup token
-   - `OPS_TOKEN`, `BACKUP_PASSPHRASE`
+2. Optional, for the monitor: **Environments → New environment** `ops` (no reviewer) with the secret `OPS_TOKEN`.
 3. **Secrets and variables → Actions → Variables → New repository variable**, three times:
    - `CLOUDFLARE_ACCOUNT_ID`: your Account ID
    - `PRODUCTION_URL`: `https://ledgerline.<subdomain>.workers.dev`
@@ -64,18 +60,17 @@ The setup code stops working once a passkey exists. For a non-Apple device, use 
 
 ## 7. Before linking a real bank
 
-1. **Actions → nightly → Run workflow**, then **Actions → monitor → Run workflow**. Both should be green; the monitor fails if there's no backup from the last 36 hours.
+1. Optional: **Actions → monitor → Run workflow**. It emails you (as a failed run) when a bank stops syncing for a day or usage passes 70% of a free limit.
 2. Link your first bank: **Settings → Bank connections**. Each link uses 1 of your 10, for good. Confirm the starting balance it shows.
 3. In Cloudflare: **Workers & Pages → ledgerline → Logs**. After that first sync, check CPU time per step: fetch about 3.5 ms, apply about 5.5 ms (`docs/measurements.md`).
 4. Run it beside your current budgeting tool for a month and reconcile.
-5. When you're next at a computer, do one restore drill (`docs/runbooks/restore.md`). It's the only check that proves a backup opens.
+5. Now and then, download Settings → Import and export → JSON export and keep it in Files or iCloud (`docs/runbooks/restore.md`).
 
 ## Optional extras
 
 - **Branch protection** (Settings → Rules → New ruleset on `master`): require a PR, passing checks, linear history, no force pushes.
 - **Staging**: an environment `staging` with the same secret names (Plaid **Sandbox** secret, its own `TOKEN_KEYS` and `SETUP_CODE`), and the repository variable `STAGING_URL` (`https://ledgerline-staging.<subdomain>.workers.dev`). Deploys then go to staging first.
 - **Nightly Plaid Sandbox test**: environment `sandbox` with `PLAID_SANDBOX_CLIENT_ID` and `PLAID_SANDBOX_SECRET`, and the variable `SANDBOX_E2E=true`.
-- **Backups to an age key** instead of a passphrase (needs a computer): `age-keygen`, keep the private key offline, and set the repository variable `BACKUP_AGE_RECIPIENT` to the public key. Then GitHub can't decrypt backups.
 
 ## Recovery
 

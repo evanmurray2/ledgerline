@@ -20,7 +20,7 @@ export interface Env {
    * After that it does nothing; remove it if you like.
    */
   SETUP_CODE?: string;
-  /** Bearer token (32+ characters) for the GitHub monitor (GET /api/health) and backup (POST /api/ops/backup-done). */
+  /** Bearer token (32+ characters) for the GitHub monitor and deploy smoke test (GET /api/health only). */
   OPS_TOKEN?: string;
   /** WebAuthn relying party id; defaults to the request's host name. */
   RP_ID?: string;
