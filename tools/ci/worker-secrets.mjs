@@ -19,8 +19,9 @@ for (const n of [
   if (env[n]) s[n] = env[n];
 if (env.APP_URL) s.PLAID_WEBHOOK_URL = `${env.APP_URL.replace(/\/$/, '')}/api/webhooks/plaid`;
 if (env.CLOUDFLARE_ACCOUNT_ID) s.CF_ACCOUNT_ID = env.CLOUDFLARE_ACCOUNT_ID;
+// Missing ones are fine: the Worker keeps secrets uploaded earlier (for example by a first deploy from a session).
 for (const n of ['TOKEN_KEYS', 'OPS_TOKEN'])
-  if (!s[n]) throw new Error(`${n} is not set in this GitHub environment`);
+  if (!s[n]) console.log(`${n} is not set here; the Worker keeps its current value`);
 for (const n of ['TOKEN_KEYS', 'OPS_TOKEN', 'SETUP_CODE'])
   if (s[n] && s[n].length < 32) throw new Error(`${n} must be at least 32 characters`);
 writeFileSync(out, JSON.stringify(s), { mode: 0o600 });
