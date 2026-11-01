@@ -120,6 +120,14 @@ export const api = {
   archiveCategory: (id: string, archived: boolean) =>
     post(`/api/settings/categories/${enc(id)}/archive`, MutationResult, { archived }),
   reorderCategories: (ids: string[]) => post('/api/settings/categories/reorder', Ok, { ids }),
+  reorderGroups: (ids: string[]) => post('/api/settings/groups/reorder', Ok, { ids }),
+  /** Deleted when never used; otherwise archived, keeping its history. */
+  removeCategory: (id: string) =>
+    post(
+      `/api/settings/categories/${enc(id)}/remove`,
+      z.object({ ok: z.literal(true), outcome: z.enum(['deleted', 'archived']) }),
+    ),
+  removeGroup: (id: string) => post(`/api/settings/groups/${enc(id)}/remove`, Ok),
 
   rules: () => get('/api/settings/rules', RulesViewLenient),
   saveRule: (body: In<typeof RuleBody>) => post('/api/settings/rules', OkId, body),

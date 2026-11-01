@@ -220,17 +220,28 @@ settingsRoutes.post('/settings/categories/:id/archive', async (c) => {
   if (!cat) throw new HttpError(404, 'not_found', 'category');
   if (cat.kind === 'cc_payment')
     throw new HttpError(422, 'system', 'Card payment categories can’t be archived');
+  await archiveCategory(c.env, s, id, r.archived, now);
+  return c.json(await afterWrite(c.env, s.budgetId, now));
+});
+
+/** Archive (or restore) a category. Archiving one that still has money moves the money to Ready to Assign first. */
+async function archiveCategory(
+  env: Env,
+  s: Scoped,
+  id: string,
+  archived: boolean,
+  now: number,
+): Promise<void> {
   const w: D1PreparedStatement[] = [
     s.q(
       `UPDATE category SET archived_at = ?3, updated_at = ?4 WHERE budget_id = ?1 AND id = ?2`,
       id,
-      r.archived ? now : null,
+      archived ? now : null,
       now,
     ),
   ];
-  if (r.archived) {
-    // Archiving one that still has money moves the money to Ready to Assign first.
-    const f = await fresh(c.env, s, now);
+  if (archived) {
+    const f = await fresh(env, s, now);
     const start = (f.budget.budget_start_month ?? f.current) as Month;
     const mr = await monthResult(s, f.current, start);
     const avail = mr?.categories[id]?.available ?? 0;
@@ -248,9 +259,78 @@ settingsRoutes.post('/settings/categories/:id/archive', async (c) => {
       );
     }
   }
-  w.push(s.audit(r.archived ? 'category.archive' : 'category.restore', 'category', id, null, null, now));
+  w.push(s.audit(archived ? 'category.archive' : 'category.restore', 'category', id, null, null, now));
   await s.batch(w);
-  return c.json(await afterWrite(c.env, s.budgetId, now));
+}
+
+settingsRoutes.post('/settings/categories/:id/remove', async (c) => {
+  const s = scoped(c);
+  const now = clock(c.env);
+  const id = c.req.param('id');
+  const cat = await s.first<{ kind: string; name: string }>(
+    `SELECT kind, name FROM category WHERE budget_id = ?1 AND id = ?2`,
+    id,
+  );
+  if (!cat) throw new HttpError(404, 'not_found', 'category');
+  if (cat.kind === 'cc_payment')
+    throw new HttpError(422, 'system', 'Card payment categories are made by the app');
+  const used = await s.first<{ n: number }>(
+    `SELECT
+       (SELECT count(*) FROM assignment WHERE budget_id = ?1 AND category_id = ?2 AND amount != 0)
+     + (SELECT count(*) FROM txn_overlay WHERE budget_id = ?1 AND category_id = ?2)
+     + (SELECT count(*) FROM txn_split WHERE budget_id = ?1 AND category_id = ?2)
+     + (SELECT count(*) FROM budget_line WHERE budget_id = ?1 AND category_id = ?2)
+     + (SELECT count(*) FROM payee WHERE budget_id = ?1 AND default_category_id = ?2)
+     + (SELECT count(*) FROM rule WHERE budget_id = ?1 AND actions LIKE '%' || ?2 || '%') AS n`,
+    id,
+  );
+  if ((used?.n ?? 0) > 0) {
+    await archiveCategory(c.env, s, id, true, now);
+    return c.json({ ok: true as const, outcome: 'archived' as const });
+  }
+  await s.batch([
+    s.q(`DELETE FROM assignment WHERE budget_id = ?1 AND category_id = ?2`, id),
+    s.q(`DELETE FROM target WHERE budget_id = ?1 AND category_id = ?2`, id),
+    s.q(`DELETE FROM category WHERE budget_id = ?1 AND id = ?2`, id),
+    s.audit('category.delete', 'category', id, { name: cat.name }, null, now),
+  ]);
+  return c.json({ ok: true as const, outcome: 'deleted' as const });
+});
+
+/** Remove an empty group (it's archived, so nothing that points at it breaks). */
+settingsRoutes.post('/settings/groups/:id/remove', async (c) => {
+  const s = scoped(c);
+  const now = clock(c.env);
+  const id = c.req.param('id');
+  const g = await s.first<{ id: string }>(
+    `SELECT id FROM category_group WHERE budget_id = ?1 AND id = ?2`,
+    id,
+  );
+  if (!g) throw new HttpError(404, 'not_found', 'group');
+  const left = await s.first<{ n: number }>(
+    `SELECT count(*) AS n FROM category WHERE budget_id = ?1 AND group_id = ?2 AND archived_at IS NULL`,
+    id,
+  );
+  if ((left?.n ?? 0) > 0)
+    throw new HttpError(409, 'not_empty', 'Move or remove the categories in this group first.');
+  await s.batch([
+    s.q(
+      `UPDATE category_group SET archived_at = ?3, updated_at = ?3 WHERE budget_id = ?1 AND id = ?2`,
+      id,
+      now,
+    ),
+    s.audit('group.remove', 'category_group', id, null, null, now),
+  ]);
+  return c.json({ ok: true as const });
+});
+
+settingsRoutes.post('/settings/groups/reorder', async (c) => {
+  const r = await parse(ReorderRequest, c.req.raw);
+  const s = scoped(c);
+  await s.batch(
+    r.ids.map((id, i) => s.q(`UPDATE category_group SET sort = ?3 WHERE budget_id = ?1 AND id = ?2`, id, i)),
+  );
+  return c.json({ ok: true });
 });
 
 settingsRoutes.post('/settings/categories/reorder', async (c) => {

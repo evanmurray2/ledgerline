@@ -389,6 +389,54 @@ export function CategoriesScreen() {
   const [editing, setEditing] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const v = q.data;
+  const qc = useQueryClient();
+  const canWrite = useCanWrite();
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: qk.categories });
+    void qc.invalidateQueries({ queryKey: ['budget'] });
+  };
+  const fail = (e: unknown) =>
+    toast.show({ text: e instanceof Error ? e.message : 'Couldn’t save that. Try again.' });
+  const mine = (v?.groups ?? []).filter((g) => !g.system);
+  /** Move a category up or down within its group; the server keeps one order for all categories. */
+  const moveCategory = (groupId: string, index: number, dir: -1 | 1) => {
+    const order = mine.map((g) => g.categories.map((c) => c.id));
+    const gi = mine.findIndex((g) => g.id === groupId);
+    const list = order[gi]!;
+    const j = index + dir;
+    if (j < 0 || j >= list.length) return;
+    [list[index], list[j]] = [list[j]!, list[index]!];
+    api.reorderCategories(order.flat()).then(refresh, fail);
+  };
+  const moveGroup = (index: number, dir: -1 | 1) => {
+    const ids = mine.map((g) => g.id);
+    const j = index + dir;
+    if (j < 0 || j >= ids.length) return;
+    [ids[index], ids[j]] = [ids[j]!, ids[index]!];
+    api.reorderGroups(ids).then(refresh, fail);
+  };
+  const removeCategory = (id: string, name: string) => {
+    api.removeCategory(id).then((r) => {
+      refresh();
+      if (r.outcome === 'deleted') toast.show({ text: `${name} deleted` });
+      else
+        toast.show({
+          text: `${name} archived: it has history, so reports keep it`,
+          undo: async () => {
+            await api.archiveCategory(id, false);
+            usage.undo('archive');
+            refresh();
+          },
+        });
+    }, fail);
+  };
+  const removeGroup = (id: string, name: string) =>
+    api.removeGroup(id).then(() => {
+      refresh();
+      toast.show({ text: `${name} removed` });
+    }, fail);
+  const arrow =
+    'hit flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line-strong text-[15px] font-bold text-ink-2 disabled:text-disabled';
   const doArchive = async (id: string, name: string, archived: boolean) => {
     try {
       await archive.mutateAsync({ id, archived });
@@ -424,56 +472,127 @@ export function CategoriesScreen() {
         for others isn’t a category: it’s tracked on the Owed to you list.
       </p>
       {!v && (q.error ? <ErrorNote error={q.error} /> : <Loading />)}
-      {v?.groups.map((g) => (
-        <section key={g.id} className="flex shrink-0 flex-col gap-1.5">
-          <div className="flex min-h-9 items-center justify-between px-0.5">
-            <h2 className="m-0 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">{g.name}</h2>
-            <span className="text-[12px] text-muted">
-              {g.system ? 'made by the app' : g.categories.length}
-            </span>
-          </div>
-          <Card>
-            {g.categories.map((c) => (
-              <div
-                key={c.id}
-                className="flex min-h-14 items-center gap-2 border-t border-divider px-3 first:border-t-0"
-              >
-                {editing && !g.system && (
-                  <span aria-hidden="true" className="text-faint">
-                    ⋮⋮
-                  </span>
-                )}
-                {g.system ? (
-                  <span className="flex flex-1 flex-col gap-0.5 py-2">
-                    <span className="text-[15px] font-semibold">{c.name}</span>
-                    <span className="text-[12px] text-muted">{c.meta}</span>
-                  </span>
-                ) : (
-                  <Link
-                    to={`/settings/categories/${c.id}`}
-                    data-track="categories.open"
-                    className="flex flex-1 flex-col gap-0.5 py-2 text-ink no-underline"
+      {v && !editing && (
+        <p className="m-0 text-[13px] text-muted">
+          Tap a category to rename it or move it to another group. Tap Edit to reorder, rename groups, or
+          remove things.
+        </p>
+      )}
+      {v?.groups.map((g) => {
+        const gi = mine.findIndex((x) => x.id === g.id);
+        return (
+          <section key={g.id} className="flex shrink-0 flex-col gap-1.5">
+            <div className="flex min-h-9 items-center justify-between gap-2 px-0.5">
+              <h2 className="m-0 min-w-0 flex-1 truncate text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
+                {g.name}
+              </h2>
+              {editing && !g.system ? (
+                <span className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    className={arrow}
+                    aria-label={`Move group ${g.name} up`}
+                    disabled={!canWrite || gi === 0}
+                    onClick={() => moveGroup(gi, -1)}
                   >
-                    <span className="text-[15px] font-semibold">{c.name}</span>
-                    <span className="text-[12px] text-muted">{c.meta}</span>
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    className={arrow}
+                    aria-label={`Move group ${g.name} down`}
+                    disabled={!canWrite || gi === mine.length - 1}
+                    onClick={() => moveGroup(gi, 1)}
+                  >
+                    ↓
+                  </button>
+                  <Link
+                    to={`/settings/categories/group:${g.id}`}
+                    data-track="categories.rename_group"
+                    aria-label={`Rename group ${g.name}`}
+                    className="hit flex h-9 items-center rounded-full border border-line-strong px-3 text-[13px] font-bold text-ink-2 no-underline"
+                  >
+                    Rename
                   </Link>
-                )}
-                {editing && !g.system && (
                   <Button
                     mutates
-                    track="categories.archive"
-                    aria-label={`Archive ${c.name}`}
-                    onClick={() => void doArchive(c.id, c.name, true)}
-                    className="hit h-9 shrink-0 rounded-full border border-line-strong px-3 text-[13px] font-bold text-ink-2"
+                    track="categories.remove_group"
+                    aria-label={`Remove group ${g.name}`}
+                    onClick={() => void removeGroup(g.id, g.name)}
+                    className="hit h-9 rounded-full border border-line-strong px-3 text-[13px] font-bold text-over-fg"
                   >
-                    Archive
+                    Remove
                   </Button>
-                )}
-              </div>
-            ))}
-          </Card>
-        </section>
-      ))}
+                </span>
+              ) : (
+                <span className="text-[12px] text-muted">
+                  {g.system ? 'made by the app' : g.categories.length}
+                </span>
+              )}
+            </div>
+            <Card>
+              {g.categories.length === 0 && !g.system && (
+                <p className="m-0 px-3 py-3 text-[13px] text-muted">No categories yet.</p>
+              )}
+              {g.categories.map((c, ci) => (
+                <div
+                  key={c.id}
+                  className="flex min-h-14 items-center gap-2 border-t border-divider px-3 first:border-t-0"
+                >
+                  {editing && !g.system && (
+                    <span className="flex shrink-0 gap-1">
+                      <button
+                        type="button"
+                        className={arrow}
+                        aria-label={`Move ${c.name} up`}
+                        disabled={!canWrite || ci === 0}
+                        onClick={() => moveCategory(g.id, ci, -1)}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className={arrow}
+                        aria-label={`Move ${c.name} down`}
+                        disabled={!canWrite || ci === g.categories.length - 1}
+                        onClick={() => moveCategory(g.id, ci, 1)}
+                      >
+                        ↓
+                      </button>
+                    </span>
+                  )}
+                  {g.system ? (
+                    <span className="flex flex-1 flex-col gap-0.5 py-2">
+                      <span className="text-[15px] font-semibold">{c.name}</span>
+                      <span className="text-[12px] text-muted">{c.meta}</span>
+                    </span>
+                  ) : (
+                    <Link
+                      to={`/settings/categories/${c.id}`}
+                      data-track="categories.open"
+                      className="flex flex-1 flex-col gap-0.5 py-2 text-ink no-underline"
+                    >
+                      <span className="text-[15px] font-semibold">{c.name}</span>
+                      <span className="text-[12px] text-muted">{c.meta}</span>
+                    </Link>
+                  )}
+                  {editing && !g.system && (
+                    <Button
+                      mutates
+                      track="categories.remove"
+                      aria-label={`Remove ${c.name}`}
+                      onClick={() => void removeCategory(c.id, c.name)}
+                      className="hit h-9 shrink-0 rounded-full border border-line-strong px-3 text-[13px] font-bold text-over-fg"
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </Card>
+          </section>
+        );
+      })}
       {v && editing && (
         <div className="flex gap-2">
           <Link
@@ -528,8 +647,9 @@ export function CategoriesScreen() {
         </>
       )}
       <p className="m-0 text-[12px] leading-snug text-muted">
-        Archived categories keep their history in reports. Archiving one that still has money moves the money
-        to Ready to Assign first.
+        Removing a category you never used deletes it. One with history is archived instead, so past
+        transactions and reports keep it; any money in it goes back to Ready to Assign. A group can be removed
+        once it’s empty.
       </p>
       <Outlet />
     </Page>
@@ -538,8 +658,9 @@ export function CategoriesScreen() {
 
 export function CategoryEditSheet() {
   const { categoryId } = useParams({ strict: false }) as { categoryId: string };
-  const isGroup = categoryId === 'new-group';
-  const isNew = categoryId === 'new' || isGroup;
+  const groupEditId = categoryId.startsWith('group:') ? categoryId.slice(6) : null;
+  const isGroup = categoryId === 'new-group' || groupEditId !== null;
+  const isNew = categoryId === 'new' || categoryId === 'new-group';
   useScreen(isGroup ? 'settings.group.new' : isNew ? 'settings.category.new' : 'settings.category.edit');
   const q = useCategoriesSettings();
   const navigate = useNavigate();
@@ -549,21 +670,23 @@ export function CategoryEditSheet() {
     .flatMap((g) => g.categories.map((c) => ({ ...c, groupId: g.id })))
     .find((c) => c.id === categoryId);
   const groups = (q.data?.groups ?? []).filter((g) => !g.system);
+  const editingGroup = groupEditId ? groups.find((x) => x.id === groupEditId) : undefined;
   const [name, setName] = useState<string | null>(null);
   const [groupId, setGroupId] = useState<string | null>(null);
   const [kind, setKind] = useState<'spending' | 'saving' | null>(null);
-  const [isBills, setIsBills] = useState(false);
+  const [isBills, setIsBills] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const canWrite = useCanWrite();
-  const n = name ?? existing?.name ?? '';
+  const n = name ?? existing?.name ?? editingGroup?.name ?? '';
+  const bills = isBills ?? editingGroup?.isBills ?? false;
   const g = groupId ?? existing?.groupId ?? groups[0]?.id ?? '';
   const k = kind ?? (existing?.kind === 'saving' ? 'saving' : 'spending');
   const save = async () => {
     setBusy(true);
     setError(null);
     try {
-      if (isGroup) await api.upsertGroup({ name: n.trim(), isBills });
+      if (isGroup) await api.upsertGroup({ id: groupEditId ?? undefined, name: n.trim(), isBills: bills });
       else
         await api.upsertCategory({
           id: isNew ? undefined : categoryId,
@@ -597,7 +720,13 @@ export function CategoryEditSheet() {
     });
     close();
   };
-  const title = isGroup ? 'New group' : isNew ? 'New category' : 'Edit category';
+  const title = groupEditId
+    ? 'Rename group'
+    : isGroup
+      ? 'New group'
+      : isNew
+        ? 'New category'
+        : 'Edit category';
   return (
     <Sheet
       label={title}
@@ -620,7 +749,7 @@ export function CategoryEditSheet() {
           <Toggle
             label="Bills group"
             help="Bills are never shown as Low"
-            checked={isBills}
+            checked={bills}
             onChange={setIsBills}
           />
         ) : (

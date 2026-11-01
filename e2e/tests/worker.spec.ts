@@ -64,3 +64,25 @@ test('Accounts: net worth and the Ally repair prompt', async ({ page }) => {
   await expect(page.getByText('$22,555.35').first()).toBeVisible();
   await expect(page.getByText(/Ally/).first()).toBeVisible();
 });
+
+test('Settings → Categories: rename a group, reorder, and remove a category', async ({ page }) => {
+  await page.goto('/settings/categories');
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  const groups = page.locator('section').getByRole('heading', { level: 2 });
+  // Card payments come first and are made by the app; your groups follow.
+  await expect(groups.nth(1)).toHaveText('Bills');
+  await expect(groups.nth(2)).toHaveText('Everyday');
+  await page.getByRole('button', { name: 'Move group Bills down' }).click();
+  await expect(groups.nth(1)).toHaveText('Everyday');
+  await expect(groups.nth(2)).toHaveText('Bills');
+
+  await page.getByRole('link', { name: 'Rename group Everyday' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Rename group' });
+  await sheet.getByLabel('Name').fill('Day to day');
+  await sheet.getByRole('button', { name: 'Save' }).click();
+  await expect(groups.nth(1)).toHaveText('Day to day');
+
+  await page.getByRole('button', { name: 'Remove Dining out' }).click();
+  await expect(page.getByText('Dining out archived: it has history, so reports keep it')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Remove Dining out' })).toHaveCount(0);
+});

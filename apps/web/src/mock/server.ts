@@ -381,7 +381,22 @@ export class MockServer {
         return this.ok();
       }
       case 'POST settings/categories/reorder':
+      case 'POST settings/groups/reorder':
         return { ok: true };
+      case 'POST settings/categories/:y/remove': {
+        const cat = db.catById(c!);
+        if (!cat) throw new MockHttpError(404, 'not_found', 'No such category');
+        if (cat.available !== 0) {
+          db.rta += cat.available;
+          cat.assigned -= cat.available;
+          cat.available = 0;
+        }
+        cat.archived = true;
+        cat.archivedMeta = 'Archived today';
+        return { ok: true, outcome: 'archived' };
+      }
+      case 'POST settings/groups/:y/remove':
+        throw new MockHttpError(409, 'not_empty', 'Move or remove the categories in this group first.');
       case 'GET settings/rules':
         return db.rulesView();
       case 'POST settings/rules': {
