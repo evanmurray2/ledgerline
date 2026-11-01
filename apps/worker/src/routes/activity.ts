@@ -73,10 +73,11 @@ activityRoutes.get('/activity', async (c) => {
   const { cats, accts } = await names(s);
   const [attn, pend, upc, posted, splits, owed, links, stale] = await s.batch([
     s.q(
-      `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND (
+      `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1
+         AND (date >= budget_from OR pending_at_link = 1 OR status != 'posted') AND (
          wtm_state IN ('waiting', 'send_back') OR transfer_state = 'unsorted' OR (alert IS NOT NULL AND reviewed_at IS NULL)
          OR (category_id IS NULL AND coalesce(to_rta, 0) = 0 AND transfer_state IS NULL AND wtm_state IS NULL AND wont_clear = 0
-             AND status != 'upcoming' AND (date >= budget_from OR pending_at_link = 1)
+             AND status != 'upcoming'
              AND key NOT IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1)))
        ORDER BY date DESC, seq DESC LIMIT 200`,
     ),

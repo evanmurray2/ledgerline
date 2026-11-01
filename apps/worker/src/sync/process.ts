@@ -410,16 +410,21 @@ async function planProcessing(
       if (a.merchant_entity_id) byKey.set(`m:${a.merchant_entity_id}`, v);
       if (a.pattern) byKey.set(`d:${a.pattern}`, v);
     }
+    // History (dated before the account's budget start, and not pending at link) is shown but never budgeted, so it
+    // gets no transfer or Waiting-to-match state: nothing about it needs your attention.
+    const isHistory = (r: BankRow) => r.budget_from !== null && r.date < r.budget_from && r.pending !== 1;
     const transfers = new Map<string, { other: string; state: 'paired' | 'unsorted' }>();
     for (const d of detectTransfers(
-      fresh.map((r) => ({
-        key: r.txn_key,
-        accountId: r.account_id!,
-        amount: cents(r.amount),
-        date: r.date,
-        description: r.raw_name,
-        providerCategory: r.provider_category,
-      })),
+      fresh
+        .filter((r) => !isHistory(r))
+        .map((r) => ({
+          key: r.txn_key,
+          accountId: r.account_id!,
+          amount: cents(r.amount),
+          date: r.date,
+          description: r.raw_name,
+          providerCategory: r.provider_category,
+        })),
     )) {
       if (d.kind === 'paired') {
         const o = fresh.find((r) => r.txn_key === d.outKey)!;
@@ -474,7 +479,9 @@ async function planProcessing(
         payee.def ? { categoryId: payee.def, remember: payee.remember === 1 } : null,
       );
       const waiting =
-        !tr && r.amount > 0 && res.categoryId === undefined && P2P.test(r.raw_name) ? 'waiting' : null;
+        !tr && !isHistory(r) && r.amount > 0 && res.categoryId === undefined && P2P.test(r.raw_name)
+          ? 'waiting'
+          : null;
       const pendingAtLink = r.pending === 1 && r.budget_from !== null && r.date < r.budget_from ? 1 : 0;
       const by = res.by === 'payee' ? 'payee' : res.by ? 'rule' : null;
       stmts.push(

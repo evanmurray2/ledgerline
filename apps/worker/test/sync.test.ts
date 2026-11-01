@@ -251,6 +251,25 @@ describe('sync pipeline', () => {
     expect(await keyOf('bulkp10')).toBe(await keyOf('bulk20'));
   });
 
+  it('history before the budget start needs nothing: no Waiting to match, no transfer to sort out', async () => {
+    await sync([
+      plaidTxn('old-zelle', 'pa_chk', -250, '2026-08-03', 'ZELLE FROM ALEX'),
+      plaidTxn('old-out', 'pa_chk', 300, '2026-08-12', 'ONLINE TRANSFER TO SAVINGS'),
+      plaidTxn('old-in', 'pa_sav', -300, '2026-08-12', 'ONLINE TRANSFER FROM CHECKING'),
+      plaidTxn('old-venmo', 'pa_chk', 40, '2026-09-02', 'VENMO PAYMENT'),
+    ]);
+    for (const id of ['old-zelle', 'old-out', 'old-in', 'old-venmo']) {
+      const o = await overlay(await keyOf(id));
+      expect(o).toMatchObject({ wtm_state: null, transfer_state: null });
+    }
+    const lines = await db
+      .prepare(
+        `SELECT count(*) AS n FROM budget_line WHERE txn_key IN (SELECT txn_key FROM bank_txn WHERE provider_txn_id LIKE 'old-%')`,
+      )
+      .first<{ n: number }>();
+    expect(lines!.n).toBe(0);
+  });
+
   it('recompute after the sync: RTA excludes Waiting to match', async () => {
     const r = await recompute(db, B, NOW, { force: true, fullFrom: true });
     expect(r.ok).toBe(true);

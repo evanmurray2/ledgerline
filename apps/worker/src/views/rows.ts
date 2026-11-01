@@ -5,6 +5,11 @@ import type { TxRow } from '../ledger/ledger.js';
 
 export type ListSource = TxRow;
 
+/** Posted before its account's budget start and not pending at link: history, outside the budget (Budget start). */
+export function isHistory(t: Pick<TxRow, 'status' | 'date' | 'budget_from' | 'pending_at_link'>): boolean {
+  return t.status === 'posted' && !!t.budget_from && t.date < t.budget_from && !t.pending_at_link;
+}
+
 export function categoryLabel(
   t: TxRow,
   categoryNames: ReadonlyMap<string, string>,
@@ -35,7 +40,13 @@ export function listRow(
   let badgeKind: TxnListRow['badgeKind'] = null;
   let sub: string | null = null;
   let sheet: TxnListRow['sheet'] = 'txn';
-  if (t.wont_clear) {
+  const history = isHistory(t);
+  if (history) {
+    // Before the account's budget start: shown for reference, never budgeted, never needs anything.
+    badge = 'Before your budget';
+    badgeKind = 'hold';
+    sub = 'not budgeted';
+  } else if (t.wont_clear) {
     badge = 'Won’t clear';
     badgeKind = 'hold';
     sub = 'not counted';
@@ -77,7 +88,7 @@ export function listRow(
     badge = 'By rule';
     badgeKind = 'rule';
   }
-  if (t.alert && !t.reviewed_at) {
+  if (t.alert && !t.reviewed_at && !history) {
     const a = JSON.parse(t.alert) as string[];
     const changed = a.find((x) => x.startsWith('amount_changed'));
     if (changed) {
@@ -100,7 +111,7 @@ export function listRow(
     amount: cents(t.amount),
     status: t.status,
     wontClear: t.wont_clear === 1,
-    categoryLabel: categoryLabel(t, categoryNames, extra.split),
+    categoryLabel: categoryLabel(t, categoryNames, extra.split) ?? (history ? 'Not budgeted' : null),
     badge,
     badgeKind,
     sub,
