@@ -43,29 +43,29 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 ## 4. API and UI (design Phase 4)
 
 - [x] Hono API with Access JWT verification, CSRF (JSON + custom header + Origin), Zod on every request, security headers. _Verify:_ integration tests incl. auth rejection.
-- [ ] Budget: month switcher, All / Needs attention, groups, statuses, card rows, Owed to you row, RTA bar, Assign sheet, Category sheet (assign/move/target). _Verify:_ component tests + Playwright against `wrangler dev` with the fake provider.
-- [ ] Activity: search, All / Needs attention / Not posted yet, categorize in place, select several, split, transaction sheets (pending, posted, income, refund, paid back), match, transfer pick, add expected/upcoming, check-pending. _Verify:_ Playwright.
-- [ ] Accounts: net worth, cash and cards, registers, Owed to you, repair prompt, health alerts. _Verify:_ Playwright.
-- [ ] Desktop layout (sidebar, budget table, side panel). _Verify:_ Playwright at 1280 × 800.
-- [ ] Themes: Light / Dark / Match device from one token set. _Verify:_ Playwright screenshots in both themes; contrast check on status colors.
-- [ ] States: offline (read-only), daily limit reached, failed sync, over-assigned, new month, first budget. _Verify:_ Playwright.
+- [x] Budget: month switcher, All / Needs attention, groups, statuses, card rows, Owed to you row, RTA bar, Assign sheet, Category sheet (assign/move/target). _Verify:_ component tests + Playwright against `wrangler dev` with the fake provider.
+- [x] Activity: search, All / Needs attention / Not posted yet, categorize in place, select several, split, transaction sheets (pending, posted, income, refund, paid back), match, transfer pick, add expected/upcoming, check-pending. _Verify:_ Playwright.
+- [x] Accounts: net worth, cash and cards, registers, Owed to you, repair prompt, health alerts. _Verify:_ Playwright.
+- [x] Desktop layout (sidebar, budget table, side panel). _Verify:_ Playwright at 1280 × 800.
+- [x] Themes: Light / Dark / Match device from one token set. _Verify:_ Playwright screenshots in both themes; contrast check on status colors.
+- [x] States: offline (read-only), daily limit reached, failed sync, over-assigned, new month, first budget. _Verify:_ Playwright.
 
 ## 5. Settings, onboarding and data
 
-- [ ] First run: welcome, budget start, link banks (Item meter + confirm), make categories. _Verify:_ Playwright.
-- [ ] Settings: categories and groups (archive/restore), rules (preview, JSON export), payees (merge, rename), connections, import/export, appearance, tracking, note button. _Verify:_ Playwright + API tests.
+- [x] First run: welcome, budget start, link banks (Item meter + confirm), make categories. _Verify:_ Playwright.
+- [x] Settings: categories and groups (archive/restore), rules (preview, JSON export), payees (merge, rename), connections, import/export, appearance, tracking, note button. _Verify:_ Playwright + API tests.
 - [x] CSV history import (history only) and full export (JSON + CSV). _Verify:_ integration tests.
 
 ## 6. Reports, net worth, reimbursements (design Phase 6)
 
 - [x] Reports API (Spending, Invested, Income, Rewards, by category, trend, net worth); UI pending in phase 4 work.
-- [ ] Reports: month to date, Spent / Invested / Income / Rewards, spending by category net of paybacks, still owed line, drill-down. _Verify:_ domain tests + Playwright.
+- [x] Reports: month to date, Spent / Invested / Income / Rewards, spending by category net of paybacks, still owed line, drill-down. _Verify:_ domain tests + Playwright.
 - [x] Owed to you: mark, match (split across items), close, cancel, unlink, expect-by, overdue. _Verify:_ domain property tests (rules 9, 11, 12) and the API integration test; Playwright with the UI.
 
 ## 7. Usage tracking
 
 - [x] Server side: `POST /api/usage` (2,000/day cap, dropped from the breaker's 70% tier), notes, daily roll-up into `usage_daily`, 90-day prune, Export usage (JSON), delete on request.
-- [ ] Client buffer (30 s flush + `keepalive` on hide), `data-track` ids only, 2,000/day cap, breaker drop at 70%, `usage_event` table, daily roll-up into `usage_daily`, 90-day prune, Export usage (JSON), Note button, off switch with delete. _Verify:_ unit + integration tests; a test asserts no amounts/names can be recorded.
+- [x] Client buffer (30 s flush + `keepalive` on hide), `data-track` ids only, 2,000/day cap, breaker drop at 70%, `usage_event` table, daily roll-up into `usage_daily`, 90-day prune, Export usage (JSON), Note button, off switch with delete. _Verify:_ unit + integration tests; a test asserts no amounts/names can be recorded.
 
 ## 8. Backups, monitoring, operations (design Phase 5 prerequisites)
 
@@ -78,3 +78,13 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 
 - [x] `ci.yml`: frozen install → lint, typecheck, format → unit → integration (local D1) → build → migration check → bundle budget → Playwright (fake provider). _Verify:_ green run on GitHub.
 - [x] `security.yml` (CodeQL, Gitleaks, OSV-Scanner, dependency review, zizmor, actionlint), `deploy.yml` (staging → production with approval, rollback), `release.yml`, `nightly.yml`, `monitor.yml`, `keepalive.yml`, Dependabot, CODEOWNERS, PR template; actions pinned to SHAs. _Verify:_ `actionlint` clean; CI green.
+
+## Follow-ups (not blocking go-live)
+
+The UI works around these contract gaps (details in `apps/web/CONTRACT_NOTES.md`):
+
+- [ ] Candidate deposits for an unclear transfer in the API (the UI searches other registers today).
+- [ ] Endpoints: reopen an owed item, accept a changed amount, edit a manual entry's amount or date, unlink a refund, mark a transfer to an unlinked account by hand, create a payee from a rule.
+- [ ] Extra fields: default selection on Assign suggestions, the new-month carry-over summary, recent paybacks, the repeat interval on upcoming rows, per-filter register counts, amounts on Move money options.
+- [ ] Desktop: account registers in the side panel, and a per-row category dropdown in Activity.
+- [ ] Owner decisions D-11 and D-12 (decisions.md).

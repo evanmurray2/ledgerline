@@ -53,6 +53,7 @@ The Worker serves the SPA and a JSON API under `/api`. Every request must pass C
 | `POST /api/import/csv`                                                   | `ImportCsvRequest`                                  | `ImportResult`                                      |
 | `GET /api/export/json` · `GET /api/export/csv` · `GET /api/export/usage` |                                                     | file download                                       |
 | `POST /api/usage`                                                        | `UsageBatch`                                        | `204`                                               |
+| `DELETE /api/usage`                                                      |                                                     | `{ ok }` (deletes the stored usage log)             |
 | `POST /api/notes`                                                        | `NoteRequest`                                       | `{ ok }`                                            |
 | `GET /api/health`                                                        | (Access service token)                              | `HealthView`                                        |
 | `POST /api/webhooks/plaid`                                               | Plaid webhook (Access bypass; signature required)   | `200`                                               |
