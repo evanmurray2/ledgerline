@@ -44,6 +44,11 @@ export interface MonthSnapshot {
   cum: { inflows: number; owed: number; assigned: number; uncovered: number };
   /** Unbudgeted card debt per card account at the end of this month. */
   unbudgeted?: Record<string, number>;
+  /**
+   * Card credit balance per card account that a category or RTA already holds (refunds and credits beyond what
+   * the card owed). Spending it moves nothing to the payment category (decisions.md D-25).
+   */
+  credit?: Record<string, number>;
   /** Funding of card purchases that refunds may link to later. */
   funded: Record<string, Funded>;
 }
@@ -133,6 +138,7 @@ export function emptySnapshot(month: Month): MonthSnapshot {
     pay: {},
     cum: { inflows: 0, owed: 0, assigned: 0, uncovered: 0 },
     unbudgeted: {},
+    credit: {},
     funded: {},
   };
 }
@@ -194,6 +200,17 @@ export function computeBudget(input: ComputeInput): ComputeResult {
   // Unbudgeted card debt per card (see identity.ts): starting debt, minus assignments to the payment category,
   // plus credit overspending forgiven at month end, minus negative payment balances moved to RTA.
   const K = new Map<string, number>(Object.entries(prev.unbudgeted ?? {}));
+  const Cr = new Map<string, number>(Object.entries(prev.credit ?? {}));
+  /** Use up to `x` of a card's credit balance; returns the part it paid. */
+  const useCredit = (card: string, x: number): number => {
+    const c = Cr.get(card) ?? 0;
+    const t = Math.min(x, c);
+    if (t > 0) Cr.set(card, c - t);
+    return t;
+  };
+  const addCredit = (card: string, x: number) => {
+    if (x > 0) Cr.set(card, (Cr.get(card) ?? 0) + x);
+  };
   let kAtCurrent: Record<string, number> | null = null;
   // RTA components as of the current month, captured while walking forward.
   let inflowsAtCurrent = 0;
@@ -275,7 +292,10 @@ export function computeBudget(input: ComputeInput): ComputeResult {
             P.set(l.accountId, Pv - g);
             cardAct.set(l.accountId, (cardAct.get(l.accountId) ?? 0) - g);
             // Beyond that, it pays off the card's unbudgeted debt first, as a refund does (D-12); RTA gets the rest.
-            inflows -= payUnbudgeted(l.accountId, l.amount - g, null);
+            const used = payUnbudgeted(l.accountId, l.amount - g, null);
+            inflows -= used;
+            // Anything beyond that leaves the card in credit, which RTA now holds.
+            addCredit(l.accountId, l.amount - g - used);
           }
           break;
         case 'debt':
@@ -284,9 +304,11 @@ export function computeBudget(input: ComputeInput): ComputeResult {
         case 'owed': {
           owed += l.amount;
           if (l.card) {
-            // Rule 5: moved to the card's payment category in full, not capped by what RTA holds.
-            P.set(l.accountId, (P.get(l.accountId) ?? 0) + l.amount);
-            cardAct.set(l.accountId, (cardAct.get(l.accountId) ?? 0) + l.amount);
+            // Rule 5: moved to the card's payment category in full, not capped by what RTA holds, except any part
+            // the card's credit balance paid (D-25).
+            const toP = l.amount - useCredit(l.accountId, l.amount);
+            P.set(l.accountId, (P.get(l.accountId) ?? 0) + toP);
+            cardAct.set(l.accountId, (cardAct.get(l.accountId) ?? 0) + toP);
           }
           break;
         }
@@ -314,15 +336,20 @@ export function computeBudget(input: ComputeInput): ComputeResult {
             if (!l.card) {
               a -= x; // rule 1
             } else {
+              // A card credit balance pays first, like cash: nothing for that part goes to the payment category
+              // and it can't become credit overspending (decisions.md D-25).
+              const cr = useCredit(l.accountId, x);
+              a -= cr;
+              const xc = x - cr;
               // Rule 2: funded f = clamp(A, 0, x); A −= x; P += f; the rest is credit overspending.
-              const f = Math.min(Math.max(a, 0), x);
-              a -= x;
+              const f = Math.min(Math.max(a, 0), xc);
+              a -= xc;
               P.set(l.accountId, (P.get(l.accountId) ?? 0) + f);
               cardAct.set(l.accountId, (cardAct.get(l.accountId) ?? 0) + f);
-              if (x - f > 0) {
+              if (xc - f > 0) {
                 let arr = chunks.get(c);
                 if (!arr) chunks.set(c, (arr = []));
-                arr.push({ line: l.id, card: l.accountId, amount: x - f });
+                arr.push({ line: l.id, card: l.accountId, amount: xc - f });
               }
               if (!input.refundTargets || input.refundTargets.has(l.id))
                 funded.set(l.id, {
@@ -382,6 +409,8 @@ export function computeBudget(input: ComputeInput): ComputeResult {
                 P.set(card, P2 - g2);
                 cardAct.set(card, (cardAct.get(card) ?? 0) - g2);
               }
+              // Anything beyond that leaves the card in credit, which this category now holds (D-25).
+              addCredit(card, rest - g2);
             }
             spent.set(c, (spent.get(c) ?? 0) - (r - h));
             act.set(c, (act.get(c) ?? 0) - h);
@@ -495,6 +524,7 @@ export function computeBudget(input: ComputeInput): ComputeResult {
         pay: Object.fromEntries(pay),
         cum: { ...cum },
         unbudgeted: Object.fromEntries(K),
+        credit: Object.fromEntries(Cr),
         funded: snapFunded,
       },
     });

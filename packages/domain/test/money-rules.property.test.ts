@@ -871,7 +871,21 @@ describe('money back after credit overspending (decisions.md D-11, D-12)', () =>
     expect(checkIdentity(p, r, START).ok).toBe(true);
   });
 
-  it('on any mix of card spending, refunds, statement credits, cash inflows and payments, card debt = payment category + unbudgeted debt', () => {
+  it('D-25: spending a card credit balance sets nothing aside for the card', () => {
+    const { r, p } = run({
+      accounts: [{ ...CHK, startingBalance: cents(100_000) }, CARD],
+      categories: cats(1, ['card']),
+      assignments: [],
+      txns: [tx('card', '2026-01-05', 1_000, cat('c0')), tx('card', '2026-01-10', -1_000, cat('c0'))],
+      current: START,
+    });
+    expect(p.working.card).toBe(0);
+    expect(cell(r, START, 'c0').available).toBe(0);
+    expect(card(r, START, 'card').available).toBe(0); // was $10 under rule 2 as written
+    expect(checkIdentity(p, r, START).ok).toBe(true);
+  });
+
+  it('on any mix of card spending, refunds, statement credits, cash inflows and payments, card debt = payment category + unbudgeted debt − credit held', () => {
     const ev = fc.record({
       kind: fc.constantFrom('buy', 'refund', 'linked', 'cashIn', 'cashOut', 'pay', 'credit'),
       x: amt(1, 20_000),
@@ -889,11 +903,8 @@ describe('money back after credit overspending (decisions.md D-11, D-12)', () =>
           const buys: LogicalTxn[] = [];
           const sorted = [...evs].sort((a, b) => a.m - b.m || a.d - b.d);
           const txns: LogicalTxn[] = [];
-          // Keep the card from going into credit: spending a card credit balance is a separate open question
-          // (decisions.md D-25).
           let bal = -debt;
           const onCard = (n: number) => {
-            if (bal + n > 0) return false;
             bal += n;
             return true;
           };
@@ -941,8 +952,11 @@ describe('money back after credit overspending (decisions.md D-11, D-12)', () =>
           const owed = -p.working.card!;
           const P = card(r, cur, 'card').available;
           const K = r.unbudgetedCardDebt.card!;
-          // While the card owes money, every dollar of it is either set aside or tracked as unbudgeted debt.
-          expect(P + K + 0).toBe(owed + 0);
+          const Cr = r.months.at(-1)!.snapshot.credit?.card ?? 0;
+          // Every dollar the card owes is set aside or tracked as unbudgeted debt; a credit balance is held by
+          // the category or RTA that received it (D-25).
+          expect(P + K - Cr + 0).toBe(owed + 0);
+          expect(bal + 0).toBe(p.working.card! + 0);
         },
       ),
       { numRuns: RUNS },
