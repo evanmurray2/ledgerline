@@ -53,7 +53,10 @@ export async function request<S extends z.ZodType>(
 ): Promise<z.infer<S>> {
   const mutation = method !== 'GET';
   if (mutation && !connectivity.canWrite()) {
-    throw new ApiError(connectivity.isOffline() ? 'offline' : 'read_only', 'Changes are turned off right now.');
+    throw new ApiError(
+      connectivity.isOffline() ? 'offline' : 'read_only',
+      'Changes are turned off right now.',
+    );
   }
   let res: Response;
   try {
@@ -103,7 +106,8 @@ export const del = <S extends z.ZodType>(path: string, schema: S) => request('DE
 
 export function qs(params: Record<string, string | number | undefined | null>): string {
   const sp = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') sp.set(k, String(v));
+  for (const [k, v] of Object.entries(params))
+    if (v !== undefined && v !== null && v !== '') sp.set(k, String(v));
   const s = sp.toString();
   return s ? `?${s}` : '';
 }

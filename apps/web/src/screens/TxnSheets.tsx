@@ -7,7 +7,18 @@ import type { TxnSheet } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
 import { useAccounts, useMoneyMutation, useTxn, usePayees, qk } from '../api/hooks';
 import { Sheet } from '../components/Sheet';
-import { Button, cx, ErrorNote, Field, inputClass, Label, Loading, PrimaryButton, SecondaryButton, Segmented } from '../components/ui';
+import {
+  Button,
+  cx,
+  ErrorNote,
+  Field,
+  inputClass,
+  Label,
+  Loading,
+  PrimaryButton,
+  SecondaryButton,
+  Segmented,
+} from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { addMonths, dayLabel, monthName, monthShort } from '../lib/dates';
 import { useCategoryOptions, useScreen } from '../lib/common';
@@ -39,7 +50,19 @@ const TAG: Record<TxnSheet['kind'], string> = {
 
 type OwedMode = 'none' | 'half' | 'all' | 'custom';
 
-function CategorySelect({ value, onChange, id, allowRta, transferAccounts }: { value: string; onChange: (v: string) => void; id: string; allowRta?: boolean; transferAccounts?: { id: string; name: string }[] }) {
+function CategorySelect({
+  value,
+  onChange,
+  id,
+  allowRta,
+  transferAccounts,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  id: string;
+  allowRta?: boolean;
+  transferAccounts?: { id: string; name: string }[];
+}) {
   const { groups } = useCategoryOptions();
   return (
     <select id={id} className={inputClass} value={value} onChange={(e) => onChange(e.target.value)}>
@@ -71,7 +94,12 @@ function Header({ t }: { t: TxnSheet }) {
   const est = t.kind === 'pending' && t.estimatedAmount !== null;
   return (
     <div className="flex flex-col gap-0.5">
-      <span className={cx('text-[13px] font-bold', est ? 'text-info-fg' : t.kind === 'paidBack' ? 'text-owed-fg' : 'text-muted')}>
+      <span
+        className={cx(
+          'text-[13px] font-bold',
+          est ? 'text-info-fg' : t.kind === 'paidBack' ? 'text-owed-fg' : 'text-muted',
+        )}
+      >
         {est ? 'Pending · your estimate' : t.wontClear ? 'Pending · won’t clear' : TAG[t.kind]}
       </span>
       <h1 className={cx('tnum m-0 text-[28px] font-bold', t.amount > 0 && 'text-funded-fg')}>
@@ -91,11 +119,19 @@ function BankSays({ t, extra, ruleLink }: { t: TxnSheet; extra?: string; ruleLin
       <span>Bank says: {t.rawName}</span>
       {extra && <span>{extra}</span>}
       <div className="flex gap-4">
-        <Link to={`${parent}/txn/${encodeURIComponent(t.key)}/rename`} data-track="txn.rename" className="flex min-h-9 items-center font-bold no-underline">
+        <Link
+          to={`${parent}/txn/${encodeURIComponent(t.key)}/rename`}
+          data-track="txn.rename"
+          className="flex min-h-9 items-center font-bold no-underline"
+        >
           Rename payee
         </Link>
         {ruleLink && t.categorizedBy?.startsWith('rule') && (
-          <Link to="/settings/rules" data-track="txn.see_rule" className="flex min-h-9 items-center font-bold no-underline">
+          <Link
+            to="/settings/rules"
+            data-track="txn.see_rule"
+            className="flex min-h-9 items-center font-bold no-underline"
+          >
             See {t.categorizedBy}
           </Link>
         )}
@@ -124,7 +160,9 @@ export function TxnSheetScreen() {
 function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const parent = useParentPath();
   const accounts = useAccounts();
-  const patch = useMoneyMutation((v: { key: string; body: Parameters<typeof api.patchTxn>[1] }) => api.patchTxn(v.key, v.body));
+  const patch = useMoneyMutation((v: { key: string; body: Parameters<typeof api.patchTxn>[1] }) =>
+    api.patchTxn(v.key, v.body),
+  );
   const del = useMoneyMutation(api.deleteTxn);
   const [cat, setCat] = useState(t.categoryId ?? (t.categoryLabel === 'Ready to Assign' ? 'rta' : ''));
   const [est, setEst] = useState(t.estimatedAmount !== null ? centsToInput(t.estimatedAmount) : '');
@@ -143,13 +181,23 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
 
   const estCents = parseCents(est);
   const bank = t.bankAmount;
-  const tips = bank !== null && t.kind === 'pending' && t.estimatedAmount !== null
-    ? [15, 18, 20].map((p) => ({ label: `+${p}% · ${formatCents(Math.round((bank * (100 + p)) / 100))}`, cents: Math.round((bank * (100 + p)) / 100) })).concat([{ label: `Bank ${formatCents(bank)}`, cents: bank }])
-    : [];
+  const tips =
+    bank !== null && t.kind === 'pending' && t.estimatedAmount !== null
+      ? [15, 18, 20]
+          .map((p) => ({
+            label: `+${p}% · ${formatCents(Math.round((bank * (100 + p)) / 100))}`,
+            cents: Math.round((bank * (100 + p)) / 100),
+          }))
+          .concat([{ label: `Bank ${formatCents(bank)}`, cents: bank }])
+      : [];
   const spendCents = Math.abs(estCents ?? t.amount);
-  const owedCents = owed === 'half' ? Math.round(spendCents / 2) : owed === 'all' ? spendCents : parseCents(owedAmt) ?? 0;
+  const owedCents =
+    owed === 'half' ? Math.round(spendCents / 2) : owed === 'all' ? spendCents : (parseCents(owedAmt) ?? 0);
   const catName = useCategoryOptions().byId.get(cat) ?? 'The category';
-  const transferAccounts = (accounts.data?.groups ?? []).flatMap((g) => g.accounts).filter((a) => a.id !== t.accountId).map((a) => ({ id: a.id, name: a.name }));
+  const transferAccounts = (accounts.data?.groups ?? [])
+    .flatMap((g) => g.accounts)
+    .filter((a) => a.id !== t.accountId)
+    .map((a) => ({ id: a.id, name: a.name }));
   const months = [addMonths(t.date.slice(0, 7), -1), t.date.slice(0, 7), addMonths(t.date.slice(0, 7), 1)];
   const isIncome = t.kind === 'income';
   const isRefund = t.kind === 'refund';
@@ -162,12 +210,16 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       if (cat === 'rta') body.toRta = true;
       else body.categoryId = cat || null;
     }
-    if (t.estimatedAmount !== null && estCents !== null && estCents !== t.estimatedAmount) body.estimatedAmount = estCents;
+    if (t.estimatedAmount !== null && estCents !== null && estCents !== t.estimatedAmount)
+      body.estimatedAmount = estCents;
     if (memo !== (t.memo ?? '')) body.memo = memo || null;
     if (wont !== t.wontClear) body.wontClear = wont;
     if (month !== t.budgetMonth) body.budgetMonth = month;
     const hadOwed = t.owed.length > 0;
-    if (outflow && (owed !== 'none') !== hadOwed || (owed !== 'none' && owed !== (hadOwed ? 'half' : 'none'))) {
+    if (
+      (outflow && (owed !== 'none') !== hadOwed) ||
+      (owed !== 'none' && owed !== (hadOwed ? 'half' : 'none'))
+    ) {
       body.markOwed =
         owed === 'none'
           ? null
@@ -219,12 +271,20 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           </label>
           <div className="flex flex-wrap gap-1.5">
             {tips.map((tip) => (
-              <button key={tip.label} type="button" data-track="txn.tip" onClick={() => setEst(centsToInput(tip.cents))} className="hit h-9 rounded-full border border-line-strong bg-surface px-3 text-[13px] font-semibold text-ink-2">
+              <button
+                key={tip.label}
+                type="button"
+                data-track="txn.tip"
+                onClick={() => setEst(centsToInput(tip.cents))}
+                className="hit h-9 rounded-full border border-line-strong bg-surface px-3 text-[13px] font-semibold text-ink-2"
+              >
                 {tip.label}
               </button>
             ))}
           </div>
-          <span className="text-[12px] text-muted">When it posts, the bank amount replaces yours and you’ll see an alert if they differ.</span>
+          <span className="text-[12px] text-muted">
+            When it posts, the bank amount replaces yours and you’ll see an alert if they differ.
+          </span>
         </div>
       )}
       {isRefund && t.refundOf && (
@@ -238,14 +298,23 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
                   {t.categoryLabel} · {t.accountName}
                 </span>
               </span>
-              <button type="button" data-track="txn.refund.unlink" onClick={() => setLinked(false)} className="hit h-9 shrink-0 rounded-full border border-line-strong px-3 text-[13px] font-bold text-ink-2">
+              <button
+                type="button"
+                data-track="txn.refund.unlink"
+                onClick={() => setLinked(false)}
+                className="hit h-9 shrink-0 rounded-full border border-line-strong px-3 text-[13px] font-bold text-ink-2"
+              >
                 Not this purchase
               </button>
             </div>
           ) : (
             <div className="flex items-center justify-between gap-2 rounded-xl bg-page p-3 text-[13px] text-muted">
               <span>Not linked. It still counts as {t.categoryLabel} money back.</span>
-              <button type="button" onClick={() => setLinked(true)} className="hit h-9 shrink-0 text-[13px] font-bold text-accent">
+              <button
+                type="button"
+                onClick={() => setLinked(true)}
+                className="hit h-9 shrink-0 text-[13px] font-bold text-accent"
+              >
                 Link to {t.refundOf.label}
               </button>
             </div>
@@ -278,36 +347,58 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
               Category
             </label>
             {outflow && (
-              <Link to={`${parent}/txn/${encodeURIComponent(t.key)}/split`} data-track="txn.split" className="hit flex h-6 items-center text-[13px] font-bold text-accent no-underline">
+              <Link
+                to={`${parent}/txn/${encodeURIComponent(t.key)}/split`}
+                data-track="txn.split"
+                className="hit flex h-6 items-center text-[13px] font-bold text-accent no-underline"
+              >
                 Split into categories
               </Link>
             )}
           </div>
           {t.split ? (
-            <Link to={`${parent}/txn/${encodeURIComponent(t.key)}/split`} className="flex min-h-11 items-center rounded-[10px] border border-line-strong px-3 text-[15px] text-ink no-underline">
+            <Link
+              to={`${parent}/txn/${encodeURIComponent(t.key)}/split`}
+              className="flex min-h-11 items-center rounded-[10px] border border-line-strong px-3 text-[15px] text-ink no-underline"
+            >
               {t.categoryLabel ?? 'Split'}
             </Link>
           ) : (
-            <CategorySelect id="txn-cat" value={cat} onChange={setCat} allowRta={isRefund || t.amount > 0} transferAccounts={transferAccounts} />
+            <CategorySelect
+              id="txn-cat"
+              value={cat}
+              onChange={setCat}
+              allowRta={isRefund || t.amount > 0}
+              transferAccounts={transferAccounts}
+            />
           )}
           {t.categorizedBy && (
-            <span className="text-[12px] text-muted">{cat === (t.categoryId ?? '') ? `Set by ${t.categorizedBy}.` : `Set by you. ${t.categorizedBy.replace(/^r/, 'R')} won’t change it back.`}</span>
+            <span className="text-[12px] text-muted">
+              {cat === (t.categoryId ?? '')
+                ? `Set by ${t.categorizedBy}.`
+                : `Set by you. ${t.categorizedBy.replace(/^r/, 'R')} won’t change it back.`}
+            </span>
           )}
         </div>
       )}
       {isRefund && (
         <p className="m-0 text-[13px] leading-snug text-muted">
-          The {formatCents(t.amount)} goes back to {catName}, the category that paid for it. On a card it also lowers what you owe, so the card’s payment
-          category needs {formatCents(t.amount)} less.
+          The {formatCents(t.amount)} goes back to {catName}, the category that paid for it. On a card it also
+          lowers what you owe, so the card’s payment category needs {formatCents(t.amount)} less.
         </p>
       )}
       {isIncome && (
         <div className="flex flex-col gap-1.5 rounded-[14px] border border-line p-3">
           <span className="text-[15px] font-semibold">Part of this is money back?</span>
           <span className="text-[12px] text-muted">
-            If a reimbursement came in this deposit, match that part so it leaves your Owed to you list. All of it still goes to Ready to Assign.
+            If a reimbursement came in this deposit, match that part so it leaves your Owed to you list. All
+            of it still goes to Ready to Assign.
           </span>
-          <Link to="/owed" data-track="txn.income.match" className="hit flex h-9 items-center self-start rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline">
+          <Link
+            to="/owed"
+            data-track="txn.income.match"
+            className="hit flex h-9 items-center self-start rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline"
+          >
             Match part of it
           </Link>
         </div>
@@ -347,13 +438,21 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
                     />
                   </Field>
                   <Field label="Expect by" className="flex-1 text-[12px]">
-                    <input type="date" className={inputClass} value={expectBy} onChange={(e) => setExpectBy(e.target.value)} />
+                    <input
+                      type="date"
+                      className={inputClass}
+                      value={expectBy}
+                      onChange={(e) => setExpectBy(e.target.value)}
+                    />
                   </Field>
                 </div>
                 <span className="text-[12px] leading-snug text-muted">
-                  {catName} is charged only your share. The rest comes out of Ready to Assign until it’s paid back
-                  {t.accountName.match(/Sapphire|Freedom|card/i) ? `, and still covers the ${t.accountName.split(' ')[0]} payment` : ''}. Half stays half if the
-                  amount changes when it posts.
+                  {catName} is charged only your share. The rest comes out of Ready to Assign until it’s paid
+                  back
+                  {t.accountName.match(/Sapphire|Freedom|card/i)
+                    ? `, and still covers the ${t.accountName.split(' ')[0]} payment`
+                    : ''}
+                  . Half stays half if the amount changes when it posts.
                 </span>
               </>
             )}
@@ -372,7 +471,9 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
                   onClick={() => setMonth(m)}
                   className={cx(
                     'hit h-9 rounded-lg border px-2.5 text-[13px] font-bold',
-                    month === m ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong bg-surface text-ink-2',
+                    month === m
+                      ? 'border-accent bg-accent-soft text-accent'
+                      : 'border-line-strong bg-surface text-ink-2',
                   )}
                 >
                   {monthShort(m)}
@@ -384,7 +485,9 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
             <label className="flex min-h-14 items-center justify-between gap-3 border-t border-divider px-3 text-[15px] font-semibold">
               <span className="flex flex-col gap-px">
                 Won’t clear
-                <span className="text-[12px] font-normal text-muted">{owed !== 'none' ? 'Turning this on removes what’s owed' : 'Stop counting this hold'}</span>
+                <span className="text-[12px] font-normal text-muted">
+                  {owed !== 'none' ? 'Turning this on removes what’s owed' : 'Stop counting this hold'}
+                </span>
               </span>
               <input
                 type="checkbox"
@@ -401,7 +504,12 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
         </div>
       )}
       <Field label="Memo">
-        <input className={inputClass} placeholder="Add a note" value={memo} onChange={(e) => setMemo(e.target.value)} />
+        <input
+          className={inputClass}
+          placeholder="Add a note"
+          value={memo}
+          onChange={(e) => setMemo(e.target.value)}
+        />
       </Field>
       <BankSays
         t={t}
@@ -446,8 +554,12 @@ function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
       gap="small"
       header={
         <div className="flex flex-col gap-0.5">
-          <span className={cx('text-[13px] font-bold', unlinked ? 'text-funded-fg' : 'text-owed-fg')}>{unlinked ? 'Waiting to match' : 'Paid back'}</span>
-          <h1 className="tnum m-0 text-[28px] font-bold text-funded-fg">{formatCents(t.amount, { plus: true })}</h1>
+          <span className={cx('text-[13px] font-bold', unlinked ? 'text-funded-fg' : 'text-owed-fg')}>
+            {unlinked ? 'Waiting to match' : 'Paid back'}
+          </span>
+          <h1 className="tnum m-0 text-[28px] font-bold text-funded-fg">
+            {formatCents(t.amount, { plus: true })}
+          </h1>
           <span className="text-[14px] text-muted">
             {t.payee} · {t.accountName} · {dayLabel(t.date)}
           </span>
@@ -462,7 +574,10 @@ function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
       {!unlinked && pb ? (
         <div className="flex flex-col gap-2">
           <Label>Pays back</Label>
-          <Link to="/owed" className="flex items-center justify-between gap-2 rounded-xl border border-line p-3 text-ink no-underline">
+          <Link
+            to="/owed"
+            className="flex items-center justify-between gap-2 rounded-xl border border-line p-3 text-ink no-underline"
+          >
             <span className="flex flex-col">
               <span className="text-[14px] font-semibold">{pb.label}</span>
               <span className="text-[12px] text-muted">{formatCents(pb.amount)} matched</span>
@@ -482,15 +597,16 @@ function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
             Unlink
           </Button>
           <p className="m-0 text-[13px] leading-snug text-muted">
-            It went to Ready to Assign and settled {formatCents(pb.amount, { whole: true })} of what was owed for {pb.label.split(' · ')[0]}.
+            It went to Ready to Assign and settled {formatCents(pb.amount, { whole: true })} of what was owed
+            for {pb.label.split(' · ')[0]}.
           </p>
         </div>
       ) : (
         <div role="status" className="flex flex-col gap-2 rounded-xl bg-success-soft p-3 text-funded-fg">
           <span className="text-[14px] font-bold">Unlinked</span>
           <span className="text-[13px] leading-snug">
-            {pb?.label.split(' · ')[0]} is owed again. This {formatCents(t.amount)} is back in Waiting to match, outside Ready to Assign, until you match it
-            again or call it income.
+            {pb?.label.split(' · ')[0]} is owed again. This {formatCents(t.amount)} is back in Waiting to
+            match, outside Ready to Assign, until you match it again or call it income.
           </span>
           <div className="flex gap-2">
             {pb && (
@@ -498,7 +614,11 @@ function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
                 mutates
                 track="txn.paid.undo"
                 onClick={async () => {
-                  await match.mutateAsync({ inflowKey: pb.inflowKey, items: [{ itemId: pb.itemId, amount: pb.amount }], rest: 'income' });
+                  await match.mutateAsync({
+                    inflowKey: pb.inflowKey,
+                    items: [{ itemId: pb.itemId, amount: pb.amount }],
+                    rest: 'income',
+                  });
                   usage.undo('unlink');
                   setUnlinked(false);
                 }}
@@ -507,7 +627,10 @@ function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
                 Undo
               </Button>
             )}
-            <Link to={`${parent}/match/${encodeURIComponent(t.key)}`} className="hit flex h-9 items-center rounded-full bg-accent px-3 text-[13px] font-bold text-on-accent no-underline">
+            <Link
+              to={`${parent}/match/${encodeURIComponent(t.key)}`}
+              className="hit flex h-9 items-center rounded-full bg-accent px-3 text-[13px] font-bold text-on-accent no-underline"
+            >
               Match to something else
             </Link>
           </div>
@@ -566,8 +689,8 @@ function PairedTransfer({ t, close }: { t: TxnSheet; close: () => void }) {
               </div>
             </div>
             <p className="m-0 text-[13px] leading-snug text-muted">
-              Paired automatically: same amount, opposite sides, within 5 days, and no other account had a match. Both accounts are in your budget, so this
-              moves money without changing any category.
+              Paired automatically: same amount, opposite sides, within 5 days, and no other account had a
+              match. Both accounts are in your budget, so this moves money without changing any category.
             </p>
             <Button
               mutates
@@ -608,7 +731,9 @@ export function SplitScreen() {
   const navigate = useNavigate();
   const parent = useParentPath();
   const back = () => void navigate({ to: `${parent}/txn/${encodeURIComponent(key)}` });
-  const patch = useMoneyMutation((v: { key: string; body: Parameters<typeof api.patchTxn>[1] }) => api.patchTxn(v.key, v.body));
+  const patch = useMoneyMutation((v: { key: string; body: Parameters<typeof api.patchTxn>[1] }) =>
+    api.patchTxn(v.key, v.body),
+  );
   const { groups } = useCategoryOptions();
   const t = q.data;
   const [lines, setLines] = useState<Line[] | null>(null);
@@ -619,7 +744,13 @@ export function SplitScreen() {
     if (!t || lines) return;
     const total = Math.abs(t.amount);
     if (t.split && t.split.length) {
-      setLines(t.split.map((s, i) => ({ id: i + 1, categoryId: s.categoryId ?? '', input: centsToInput(Math.abs(s.amount)) })));
+      setLines(
+        t.split.map((s, i) => ({
+          id: i + 1,
+          categoryId: s.categoryId ?? '',
+          input: centsToInput(Math.abs(s.amount)),
+        })),
+      );
       setRem(t.split.findIndex((s) => s.absorbsRemainder) + 1 || t.split.length);
       setNext(t.split.length + 1);
     } else {
@@ -632,7 +763,9 @@ export function SplitScreen() {
   }, [t, lines]);
 
   const total = t ? Math.abs(t.amount) : 0;
-  const others = (lines ?? []).filter((l) => l.id !== rem).reduce((s, l) => s + (parseCents(l.input) ?? 0), 0);
+  const others = (lines ?? [])
+    .filter((l) => l.id !== rem)
+    .reduce((s, l) => s + (parseCents(l.input) ?? 0), 0);
   const remCents = total - others;
   const amountOf = (l: Line) => (l.id === rem ? remCents : (parseCents(l.input) ?? 0));
   const unchosen = (lines ?? []).some((l) => !l.categoryId);
@@ -646,12 +779,20 @@ export function SplitScreen() {
         {q.error ? <ErrorNote error={q.error} /> : <Loading />}
       </Sheet>
     );
-  const upd = (id: number, p: Partial<Line>) => setLines(lines.map((l) => (l.id === id ? { ...l, ...p } : l)));
+  const upd = (id: number, p: Partial<Line>) =>
+    setLines(lines.map((l) => (l.id === id ? { ...l, ...p } : l)));
   const sign = t.amount < 0 ? -1 : 1;
   const save = async () => {
     await patch.mutateAsync({
       key: t.key,
-      body: { split: lines.map((l) => ({ categoryId: l.categoryId === 'owed' ? null : l.categoryId, amount: sign * amountOf(l), memo: l.categoryId === 'owed' ? 'Owed to you' : null, absorbsRemainder: l.id === rem })) },
+      body: {
+        split: lines.map((l) => ({
+          categoryId: l.categoryId === 'owed' ? null : l.categoryId,
+          amount: sign * amountOf(l),
+          memo: l.categoryId === 'owed' ? 'Owed to you' : null,
+          absorbsRemainder: l.id === rem,
+        })),
+      },
     });
     usage.record('task', 'split');
     void navigate({ to: parent });
@@ -681,7 +822,12 @@ export function SplitScreen() {
         <div key={l.id} className="flex shrink-0 flex-col gap-2 rounded-[14px] border border-line p-3">
           <div className="flex gap-2">
             <Field label="Category" className="flex-[3] text-[12px]">
-              <select aria-label={`Category for line ${i + 1}`} className={inputClass} value={l.categoryId} onChange={(e) => upd(l.id, { categoryId: e.target.value })}>
+              <select
+                aria-label={`Category for line ${i + 1}`}
+                className={inputClass}
+                value={l.categoryId}
+                onChange={(e) => upd(l.id, { categoryId: e.target.value })}
+              >
                 <option value="">Choose…</option>
                 {opts.map((g) => (
                   <optgroup key={g.id} label={g.name}>
@@ -699,7 +845,12 @@ export function SplitScreen() {
               <input
                 aria-label={`Amount for line ${i + 1}`}
                 inputMode="decimal"
-                className={cx(inputClass, 'tnum', l.id === rem && 'bg-sunken', l.id === rem && neg && 'border-over-fg')}
+                className={cx(
+                  inputClass,
+                  'tnum',
+                  l.id === rem && 'bg-sunken',
+                  l.id === rem && neg && 'border-over-fg',
+                )}
                 value={l.id === rem ? centsToInput(remCents) : l.input}
                 readOnly={l.id === rem}
                 onChange={(e) => upd(l.id, { input: e.target.value })}
@@ -708,7 +859,13 @@ export function SplitScreen() {
           </div>
           <div className="flex items-center justify-between">
             <label className="flex items-center gap-2 text-[13px] text-ink-2">
-              <input type="radio" name="rem" className="hit h-5 w-5 accent-[var(--ll-accent)]" checked={rem === l.id} onChange={() => setRem(l.id)} />
+              <input
+                type="radio"
+                name="rem"
+                className="hit h-5 w-5 accent-[var(--ll-accent)]"
+                checked={rem === l.id}
+                onChange={() => setRem(l.id)}
+              />
               Takes any difference
             </label>
             {lines.length > 2 && (
@@ -726,8 +883,14 @@ export function SplitScreen() {
               </button>
             )}
           </div>
-          {l.categoryId === 'owed' && <span className="text-[12px] text-owed-fg">This line is owed to you.</span>}
-          {rem === l.id && <span className="text-[12px] text-muted">Fills in automatically with whatever the other lines leave.</span>}
+          {l.categoryId === 'owed' && (
+            <span className="text-[12px] text-owed-fg">This line is owed to you.</span>
+          )}
+          {rem === l.id && (
+            <span className="text-[12px] text-muted">
+              Fills in automatically with whatever the other lines leave.
+            </span>
+          )}
         </div>
       ))}
       <button
@@ -741,7 +904,12 @@ export function SplitScreen() {
       >
         + Add a line
       </button>
-      <div className={cx('flex justify-between rounded-xl px-3 py-2.5 text-[14px] font-semibold', neg ? 'bg-over-bg text-over-fg' : 'bg-success-soft text-funded-fg')}>
+      <div
+        className={cx(
+          'flex justify-between rounded-xl px-3 py-2.5 text-[14px] font-semibold',
+          neg ? 'bg-over-bg text-over-fg' : 'bg-success-soft text-funded-fg',
+        )}
+      >
         <span>{neg ? 'Lines are more than the total by' : 'Lines add up to the total'}</span>
         <span className="tnum">{neg ? formatCents(-remCents) : formatCents(total)}</span>
       </div>
@@ -760,8 +928,14 @@ export function RenamePayeeFromTxn() {
   const navigate = useNavigate();
   const parent = useParentPath();
   const back = () => void navigate({ to: `${parent}/txn/${encodeURIComponent(key)}` });
-  const patch = useMoneyMutation((v: { key: string; body: Parameters<typeof api.patchTxn>[1] }) => api.patchTxn(v.key, v.body), { invalidate: [qk.payees] });
-  const rename = useMoneyMutation((v: { id: string; name: string }) => api.renamePayee(v.id, { name: v.name, remember: true }), { invalidate: [qk.payees] });
+  const patch = useMoneyMutation(
+    (v: { key: string; body: Parameters<typeof api.patchTxn>[1] }) => api.patchTxn(v.key, v.body),
+    { invalidate: [qk.payees] },
+  );
+  const rename = useMoneyMutation(
+    (v: { id: string; name: string }) => api.renamePayee(v.id, { name: v.name, remember: true }),
+    { invalidate: [qk.payees] },
+  );
   const [name, setName] = useState<string | null>(null);
   const t = q.data;
   if (!t)
@@ -778,7 +952,13 @@ export function RenamePayeeFromTxn() {
     back();
   };
   return (
-    <Sheet label="Rename payee" track="payee.rename" onClose={back} gap="auto" header={<h1 className="m-0 text-[20px] font-bold">Rename payee</h1>}>
+    <Sheet
+      label="Rename payee"
+      track="payee.rename"
+      onClose={back}
+      gap="auto"
+      header={<h1 className="m-0 text-[20px] font-bold">Rename payee</h1>}
+    >
       <div className="flex flex-col gap-3 pb-4">
         <Field label="Show as">
           <input className={inputClass} value={value} onChange={(e) => setName(e.target.value)} />
@@ -787,11 +967,14 @@ export function RenamePayeeFromTxn() {
           <Label>Bank names that become this payee</Label>
           <div className="flex items-center justify-between rounded-xl border border-line px-3 py-2.5 text-[14px]">
             <span className="font-semibold">{t.rawName}</span>
-            <span className="text-[12px] text-muted">{payee ? `${payee.transactions} transactions` : 'this transaction'}</span>
+            <span className="text-[12px] text-muted">
+              {payee ? `${payee.transactions} transactions` : 'this transaction'}
+            </span>
           </div>
         </div>
         <p className="m-0 text-[12px] leading-snug text-muted">
-          Applies to past and future transactions. Rules follow the new name. The bank’s description stays on each transaction.
+          Applies to past and future transactions. Rules follow the new name. The bank’s description stays on
+          each transaction.
         </p>
         {(patch.error || rename.error) && <ErrorNote error={patch.error ?? rename.error} />}
         <PrimaryButton mutates track="payee.rename.save" disabled={!value.trim()} onClick={() => void save()}>

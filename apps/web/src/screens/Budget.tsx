@@ -72,7 +72,14 @@ interface DoneFix {
   delta: number;
 }
 
-const SECTION_ORDER: AttentionItem['section'][] = ['Ready to Assign', 'Overspent', 'Underfunded', 'Low', 'Overfunded', 'Owed to you'];
+const SECTION_ORDER: AttentionItem['section'][] = [
+  'Ready to Assign',
+  'Overspent',
+  'Underfunded',
+  'Low',
+  'Overfunded',
+  'Owed to you',
+];
 const SECTION_TONE: Record<AttentionItem['section'], { tone: Tone; icon: IconName }> = {
   'Ready to Assign': { tone: 'over', icon: 'alert' },
   Overspent: { tone: 'over', icon: 'alert' },
@@ -92,9 +99,15 @@ function useFixes(month: string) {
   const assign = useMoneyMutation(api.assign);
   const apply = async (items: { key: string; categoryId: string; name: string; amount: number }[]) => {
     const started = Date.now();
-    await assign.mutateAsync({ month, items: items.map((i) => ({ categoryId: i.categoryId, amount: i.amount })) });
+    await assign.mutateAsync({
+      month,
+      items: items.map((i) => ({ categoryId: i.categoryId, amount: i.amount })),
+    });
     usage.record('task', 'fix', Date.now() - started);
-    setDone((d) => [...items.map((i) => ({ key: i.key, categoryId: i.categoryId, name: i.name, delta: i.amount })), ...d.filter((x) => !items.some((i) => i.key === x.key))]);
+    setDone((d) => [
+      ...items.map((i) => ({ key: i.key, categoryId: i.categoryId, name: i.name, delta: i.amount })),
+      ...d.filter((x) => !items.some((i) => i.key === x.key)),
+    ]);
   };
   const undo = async (f: DoneFix) => {
     await assign.mutateAsync({ month, items: [{ categoryId: f.categoryId, amount: -f.delta }] });
@@ -145,8 +158,12 @@ function CardRowPhone({ card }: { card: CardRow }) {
         <div className="flex min-w-0 flex-col gap-[3px]">
           <span className="text-[15px] font-semibold">{card.name}</span>
           <span className="text-[12px] leading-[1.45] text-muted">
-            <StatusWord word={card.status === 'short' ? 'Short' : 'Covered'} tone={tone} icon={card.status === 'short' ? 'alert' : 'check'} /> ·{' '}
-            {card.detail}
+            <StatusWord
+              word={card.status === 'short' ? 'Short' : 'Covered'}
+              tone={tone}
+              icon={card.status === 'short' ? 'alert' : 'check'}
+            />{' '}
+            · {card.detail}
           </span>
         </div>
         <Pill tone={tone}>{formatCents(card.available)}</Pill>
@@ -156,18 +173,25 @@ function CardRowPhone({ card }: { card: CardRow }) {
 }
 
 function owedTone(b: BudgetView): { tone: Tone; word: string; icon: IconName } {
-  return b.owed.status === 'late' ? { tone: 'under', word: `${b.owed.late} late`, icon: 'clock' } : { tone: 'none', word: 'Tracking', icon: 'dash' };
+  return b.owed.status === 'late'
+    ? { tone: 'under', word: `${b.owed.late} late`, icon: 'clock' }
+    : { tone: 'none', word: 'Tracking', icon: 'dash' };
 }
 
 function OwedRowPhone({ b }: { b: BudgetView }) {
   const t = owedTone(b);
   return (
-    <Link to="/owed" data-track="budget.owed" className="flex min-h-11 flex-col gap-[7px] px-3 py-2.5 text-ink no-underline">
+    <Link
+      to="/owed"
+      data-track="budget.owed"
+      className="flex min-h-11 flex-col gap-[7px] px-3 py-2.5 text-ink no-underline"
+    >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
           <span className="text-[15px] font-semibold">Owed to you</span>
           <span className="text-[12px] leading-[1.45] text-muted">
-            <StatusWord word={t.word} tone={t.tone} icon={t.icon} /> · {formatCents(b.owed.out)} out · comes back to Ready to Assign
+            <StatusWord word={t.word} tone={t.tone} icon={t.icon} /> · {formatCents(b.owed.out)} out · comes
+            back to Ready to Assign
           </span>
         </div>
         <Pill tone={t.tone}>{formatCents(b.owed.out)} out</Pill>
@@ -176,7 +200,21 @@ function OwedRowPhone({ b }: { b: BudgetView }) {
   );
 }
 
-function Group({ id, name, total, children, collapsed, toggle }: { id: string; name: string; total: string; children: ReactNode; collapsed: boolean; toggle: (id: string) => void }) {
+function Group({
+  id,
+  name,
+  total,
+  children,
+  collapsed,
+  toggle,
+}: {
+  id: string;
+  name: string;
+  total: string;
+  children: ReactNode;
+  collapsed: boolean;
+  toggle: (id: string) => void;
+}) {
   return (
     <Card>
       <button
@@ -184,7 +222,10 @@ function Group({ id, name, total, children, collapsed, toggle }: { id: string; n
         data-track="budget.group.toggle"
         aria-expanded={!collapsed}
         onClick={() => toggle(id)}
-        className={cx('flex min-h-11 w-full items-center justify-between bg-surface-2 px-3', !collapsed && 'border-b border-line')}
+        className={cx(
+          'flex min-h-11 w-full items-center justify-between bg-surface-2 px-3',
+          !collapsed && 'border-b border-line',
+        )}
       >
         <span className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.6px] text-ink-2">
           <Icon name={collapsed ? 'chevR' : 'chevD'} size={14} stroke={2.4} />
@@ -204,7 +245,10 @@ function AttentionList({ b, month }: { b: BudgetView; month: string }) {
   const canWrite = useCanWrite();
   const navigate = useNavigate();
   const open = b.attention.filter((a) => !fixes.done.some((d) => d.key === a.key));
-  const sections = SECTION_ORDER.map((s) => ({ title: s, items: open.filter((a) => a.section === s) })).filter((s) => s.items.length);
+  const sections = SECTION_ORDER.map((s) => ({
+    title: s,
+    items: open.filter((a) => a.section === s),
+  })).filter((s) => s.items.length);
   const availOf = (id: string) => b.groups.flatMap((g) => g.categories).find((c) => c.id === id)?.available;
   const run = async (a: AttentionItem) => {
     if (!a.fix) return;
@@ -220,7 +264,14 @@ function AttentionList({ b, month }: { b: BudgetView; month: string }) {
   const underfunded = open.filter((a) => a.section === 'Underfunded' && a.fix && a.categoryId);
   const fundAll = async () => {
     try {
-      await fixes.apply(underfunded.map((a) => ({ key: a.key, categoryId: a.categoryId!, name: a.name, amount: a.fix!.amount })));
+      await fixes.apply(
+        underfunded.map((a) => ({
+          key: a.key,
+          categoryId: a.categoryId!,
+          name: a.name,
+          amount: a.fix!.amount,
+        })),
+      );
     } catch (e) {
       toast.show({ text: e instanceof Error ? e.message : 'Couldn’t save that.' });
     }
@@ -228,14 +279,21 @@ function AttentionList({ b, month }: { b: BudgetView; month: string }) {
   return (
     <>
       {open.length === 0 && (
-        <p className="m-0 shrink-0 rounded-[14px] bg-funded-bg p-4 text-center text-[15px] font-semibold text-funded-fg">Nothing needs attention.</p>
+        <p className="m-0 shrink-0 rounded-[14px] bg-funded-bg p-4 text-center text-[15px] font-semibold text-funded-fg">
+          Nothing needs attention.
+        </p>
       )}
       {sections.map((sec) => {
         const t = SECTION_TONE[sec.title];
         return (
           <Card key={sec.title}>
             <div className="flex min-h-11 items-center justify-between border-b border-line bg-surface-2 pl-3 pr-2">
-              <h2 className={cx('m-0 flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.6px]', TONE[t.tone].fg)}>
+              <h2
+                className={cx(
+                  'm-0 flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.6px]',
+                  TONE[t.tone].fg,
+                )}
+              >
                 <Icon name={t.icon} size={14} stroke={2.6} />
                 {sec.title}
               </h2>
@@ -251,15 +309,26 @@ function AttentionList({ b, month }: { b: BudgetView; month: string }) {
               )}
             </div>
             {sec.items.map((a) => (
-              <div key={a.key} className="flex items-center gap-3 border-t border-divider px-3 py-2.5 first:border-t-0">
+              <div
+                key={a.key}
+                className="flex items-center gap-3 border-t border-divider px-3 py-2.5 first:border-t-0"
+              >
                 <Link
-                  to={a.link === 'owed' ? '/owed' : a.categoryId ? `/budget/category/${a.categoryId}` : '/budget'}
+                  to={
+                    a.link === 'owed'
+                      ? '/owed'
+                      : a.categoryId
+                        ? `/budget/category/${a.categoryId}`
+                        : '/budget'
+                  }
                   search={a.categoryId ? { month } : undefined}
                   className="flex min-h-11 min-w-0 flex-1 flex-col justify-center gap-[3px] text-ink no-underline"
                 >
                   <span className="flex justify-between gap-2">
                     <span className="text-[15px] font-semibold">{a.name}</span>
-                    <span className={cx('tnum text-[14px] font-bold', TONE[t.tone].fg)}>{formatCents(a.amount)}</span>
+                    <span className={cx('tnum text-[14px] font-bold', TONE[t.tone].fg)}>
+                      {formatCents(a.amount)}
+                    </span>
                   </span>
                   <span className="text-[12px] text-muted">{a.detail}</span>
                 </Link>
@@ -289,14 +358,21 @@ function AttentionList({ b, month }: { b: BudgetView; month: string }) {
             </h2>
           </div>
           {fixes.done.map((f) => (
-            <div key={f.key} className="flex items-center gap-3 border-t border-divider px-3 py-2.5 first:border-t-0">
+            <div
+              key={f.key}
+              className="flex items-center gap-3 border-t border-divider px-3 py-2.5 first:border-t-0"
+            >
               <div className="flex min-h-11 min-w-0 flex-1 flex-col justify-center gap-[3px]">
                 <span className="flex justify-between gap-2">
                   <span className="text-[15px] font-semibold">{f.name}</span>
-                  <span className="tnum text-[14px] font-bold text-muted">{formatCents(availOf(f.categoryId) ?? 0)}</span>
+                  <span className="tnum text-[14px] font-bold text-muted">
+                    {formatCents(availOf(f.categoryId) ?? 0)}
+                  </span>
                 </span>
                 <span className="text-[12px] text-muted">
-                  {f.delta < 0 ? `Moved ${formatCents(-f.delta)} back to Ready to Assign` : `Added ${formatCents(f.delta)} from Ready to Assign`}
+                  {f.delta < 0
+                    ? `Moved ${formatCents(-f.delta)} back to Ready to Assign`
+                    : `Added ${formatCents(f.delta)} from Ready to Assign`}
                 </span>
               </div>
               <Button
@@ -325,7 +401,9 @@ function OverAssigned({ b, month }: { b: BudgetView; month: string }) {
   const candidates = b.groups
     .flatMap((g) => g.categories)
     .filter((c) => c.available >= need && c.status !== 'overspent')
-    .sort((x, y) => (x.status === 'overfunded' ? -1 : y.status === 'overfunded' ? 1 : y.available - x.available))
+    .sort((x, y) =>
+      x.status === 'overfunded' ? -1 : y.status === 'overfunded' ? 1 : y.available - x.available,
+    )
     .slice(0, 3);
   if (took)
     return (
@@ -352,14 +430,24 @@ function OverAssigned({ b, month }: { b: BudgetView; month: string }) {
   if (b.rta >= 0) return null;
   return (
     <>
-      <div role="alert" className="flex shrink-0 flex-col gap-1 rounded-xl bg-over-bg px-3 py-2.5 text-over-fg">
+      <div
+        role="alert"
+        className="flex shrink-0 flex-col gap-1 rounded-xl bg-over-bg px-3 py-2.5 text-over-fg"
+      >
         <span className="text-[15px] font-bold">You assigned {formatCents(need)} more than you have</span>
-        <span className="text-[13px] leading-snug">Take {formatCents(need)} back from a category below. Nothing else is blocked meanwhile.</span>
+        <span className="text-[13px] leading-snug">
+          Take {formatCents(need)} back from a category below. Nothing else is blocked meanwhile.
+        </span>
       </div>
-      <h2 className="m-0 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">Take it back from</h2>
+      <h2 className="m-0 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
+        Take it back from
+      </h2>
       <Card>
         {candidates.map((c) => (
-          <div key={c.id} className="flex items-center gap-3 border-t border-divider px-3 py-2.5 first:border-t-0">
+          <div
+            key={c.id}
+            className="flex items-center gap-3 border-t border-divider px-3 py-2.5 first:border-t-0"
+          >
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="text-[15px] font-semibold">{c.name}</span>
               <span className="text-[12px] text-muted">
@@ -381,8 +469,9 @@ function OverAssigned({ b, month }: { b: BudgetView; month: string }) {
         ))}
       </Card>
       <p className="m-0 text-[12px] leading-snug text-muted">
-        Ready to Assign can go below zero when you assign more than you have, when money you front for someone is more than it holds, or when a
-        pending deposit is reversed. Each shows here as a Needs attention item; the app never takes money from your categories on its own.
+        Ready to Assign can go below zero when you assign more than you have, when money you front for someone
+        is more than it holds, or when a pending deposit is reversed. Each shows here as a Needs attention
+        item; the app never takes money from your categories on its own.
       </p>
     </>
   );
@@ -398,9 +487,10 @@ function FirstBudget({ b }: { b: BudgetView }) {
     <section className="flex shrink-0 flex-col gap-1.5 rounded-[14px] bg-accent-soft p-3.5 text-ink">
       <span className="text-[17px] font-bold">Give your {formatCents(b.rta)} a job</span>
       <span className="text-[13px] leading-snug text-ink-2">
-        Your cards owe {formatCents(owed)}; that shows as {b.cards.length === 1 ? 'a card payment category' : `${b.cards.length} card payment categories`} to fund first,
-        not as less money here. Then bills due before your next paycheck, everyday spending, and savings. Tap any category to assign to it, or use
-        Assign below.
+        Your cards owe {formatCents(owed)}; that shows as{' '}
+        {b.cards.length === 1 ? 'a card payment category' : `${b.cards.length} card payment categories`} to
+        fund first, not as less money here. Then bills due before your next paycheck, everyday spending, and
+        savings. Tap any category to assign to it, or use Assign below.
       </span>
     </section>
   );
@@ -417,7 +507,10 @@ function NewMonth({ b, month }: { b: BudgetView; month: string }) {
     <>
       <section className="flex shrink-0 flex-col gap-2 rounded-[14px] border border-line bg-surface p-3.5">
         <h2 className="m-0 text-[17px] font-bold">{monthName(month)} has started</h2>
-        <span className="text-[13px] text-muted">Nothing moved on its own. Every category keeps what it had left in {monthName(prev)}, and Ready to Assign carried over.</span>
+        <span className="text-[13px] text-muted">
+          Nothing moved on its own. Every category keeps what it had left in {monthName(prev)}, and Ready to
+          Assign carried over.
+        </span>
         <div className="flex items-center justify-between border-t border-divider pt-2 text-[14px]">
           <span className="font-semibold">Ready to Assign</span>
           <span className="tnum font-bold">{formatCents(b.rta)}</span>
@@ -430,14 +523,19 @@ function NewMonth({ b, month }: { b: BudgetView; month: string }) {
             <span className="tnum text-[15px] font-bold">{formatCents(total)}</span>
           </div>
           <span className="text-[13px] text-muted">
-            {filled ? 'Filled every refill target and this month’s share of each savings goal.' : 'Refill targets plus this month’s share of each savings goal.'}
+            {filled
+              ? 'Filled every refill target and this month’s share of each savings goal.'
+              : 'Refill targets plus this month’s share of each savings goal.'}
           </span>
           {filled ? (
             <SecondaryButton
               mutates
               track="budget.newmonth.undo"
               onClick={async () => {
-                await assign.mutateAsync({ month, items: filled.map((f) => ({ categoryId: f.categoryId, amount: -f.amount })) });
+                await assign.mutateAsync({
+                  month,
+                  items: filled.map((f) => ({ categoryId: f.categoryId, amount: -f.amount })),
+                });
                 usage.undo('fill_targets');
                 setFilled(null);
               }}
@@ -469,7 +567,12 @@ function RtaBar({ b }: { b: BudgetView }) {
   const canWrite = useCanWrite();
   const neg = b.rta < 0;
   return (
-    <div className={cx('flex shrink-0 items-center justify-between gap-3 px-4 py-2.5', neg ? 'bg-danger text-on-danger' : 'bg-accent text-on-accent')}>
+    <div
+      className={cx(
+        'flex shrink-0 items-center justify-between gap-3 px-4 py-2.5',
+        neg ? 'bg-danger text-on-danger' : 'bg-accent text-on-accent',
+      )}
+    >
       <div className="flex flex-col gap-px">
         <span className="text-[12px] font-semibold">Ready to Assign</span>
         <span className="tnum text-[22px] font-bold" data-testid="rta">
@@ -480,12 +583,18 @@ function RtaBar({ b }: { b: BudgetView }) {
         <Link
           to="/budget/assign"
           data-track="budget.assign"
-          className={cx('hit flex h-10 items-center rounded-full bg-on-accent px-[22px] text-[15px] font-bold no-underline', neg ? 'text-danger' : 'text-accent')}
+          className={cx(
+            'hit flex h-10 items-center rounded-full bg-on-accent px-[22px] text-[15px] font-bold no-underline',
+            neg ? 'text-danger' : 'text-accent',
+          )}
         >
           Assign
         </Link>
       ) : (
-        <span aria-disabled="true" className="flex h-10 items-center rounded-full bg-on-accent/50 px-[22px] text-[15px] font-bold text-muted">
+        <span
+          aria-disabled="true"
+          className="flex h-10 items-center rounded-full bg-on-accent/50 px-[22px] text-[15px] font-bold text-muted"
+        >
           Assign
         </span>
       )}
@@ -493,11 +602,25 @@ function RtaBar({ b }: { b: BudgetView }) {
   );
 }
 
-function MonthNav({ b, month, view, desktop }: { b: BudgetView; month: string; view: View; desktop: boolean }) {
+function MonthNav({
+  b,
+  month,
+  view,
+  desktop,
+}: {
+  b: BudgetView;
+  month: string;
+  view: View;
+  desktop: boolean;
+}) {
   const navigate = useNavigate();
   const canPrev = compareMonths(month, b.minMonth) > 0;
   const canNext = compareMonths(month, b.maxMonth) < 0;
-  const go = (m: string) => navigate({ to: '/budget', search: { month: m === b.currentMonth ? undefined : m, view: view === 'all' ? undefined : view } });
+  const go = (m: string) =>
+    navigate({
+      to: '/budget',
+      search: { month: m === b.currentMonth ? undefined : m, view: view === 'all' ? undefined : view },
+    });
   return (
     <div className={cx('flex items-center', desktop ? 'gap-1' : 'justify-between px-2 py-1.5')}>
       <button
@@ -510,7 +633,9 @@ function MonthNav({ b, month, view, desktop }: { b: BudgetView; month: string; v
       >
         <Icon name="chevL" size={22} />
       </button>
-      <h1 className={cx('m-0 text-center font-bold', desktop ? 'min-w-[170px] text-[20px]' : 'text-[17px]')}>{monthLabel(month)}</h1>
+      <h1 className={cx('m-0 text-center font-bold', desktop ? 'min-w-[170px] text-[20px]' : 'text-[17px]')}>
+        {monthLabel(month)}
+      </h1>
       <button
         type="button"
         data-track="budget.month.next"
@@ -525,9 +650,23 @@ function MonthNav({ b, month, view, desktop }: { b: BudgetView; month: string; v
   );
 }
 
-function ViewChips({ view, count, month, current }: { view: View; count: number; month: string; current: string }) {
+function ViewChips({
+  view,
+  count,
+  month,
+  current,
+}: {
+  view: View;
+  count: number;
+  month: string;
+  current: string;
+}) {
   const navigate = useNavigate();
-  const set = (v: View) => navigate({ to: '/budget', search: { month: month === current ? undefined : month, view: v === 'all' ? undefined : v } });
+  const set = (v: View) =>
+    navigate({
+      to: '/budget',
+      search: { month: month === current ? undefined : month, view: v === 'all' ? undefined : v },
+    });
   return (
     <div role="group" aria-label="Show" className="flex gap-2">
       <Chip pressed={view === 'all'} onClick={() => set('all')} track="budget.filter.all">
@@ -545,14 +684,18 @@ function PastNote({ month, current }: { month: string; current: string }) {
   if (compareMonths(month, current) >= 0) return null;
   return (
     <p className="m-0 shrink-0 rounded-xl bg-info-bg px-3 py-2.5 text-[13px] leading-snug text-info-fg">
-      {monthName(month)}. You can still change what was assigned; the change carries into {monthName(current)}.
+      {monthName(month)}. You can still change what was assigned; the change carries into {monthName(current)}
+      .
     </p>
   );
 }
 
 function SyncProblem({ text }: { text: string }) {
   return (
-    <Link to="/accounts" className="flex items-center gap-2 bg-warn-bg px-4 py-2 text-[13px] font-semibold text-warn-fg no-underline">
+    <Link
+      to="/accounts"
+      className="flex items-center gap-2 bg-warn-bg px-4 py-2 text-[13px] font-semibold text-warn-fg no-underline"
+    >
       <Icon name="alert" size={16} stroke={2.6} />
       {text} · see Accounts
     </Link>
@@ -571,33 +714,60 @@ function AllGroups({ b, month }: { b: BudgetView; month: string }) {
   return (
     <>
       {b.cards.length > 0 && (
-        <Group id="cards" name="Credit card payments" total={formatCents(b.cards.reduce((s, c) => s + c.available, 0))} collapsed={!!collapsed.cards} toggle={toggle}>
+        <Group
+          id="cards"
+          name="Credit card payments"
+          total={formatCents(b.cards.reduce((s, c) => s + c.available, 0))}
+          collapsed={!!collapsed.cards}
+          toggle={toggle}
+        >
           {b.cards.map((c) => (
             <CardRowPhone key={c.accountId} card={c} />
           ))}
         </Group>
       )}
       {!empty && (
-        <Group id="owed" name="Owed to you" total="not a category" collapsed={!!collapsed.owed} toggle={toggle}>
+        <Group
+          id="owed"
+          name="Owed to you"
+          total="not a category"
+          collapsed={!!collapsed.owed}
+          toggle={toggle}
+        >
           <OwedRowPhone b={b} />
         </Group>
       )}
       {b.groups.map((g) => (
-        <Group key={g.id} id={g.id} name={g.name} total={formatCents(g.total)} collapsed={!!collapsed[g.id]} toggle={toggle}>
+        <Group
+          key={g.id}
+          id={g.id}
+          name={g.name}
+          total={formatCents(g.total)}
+          collapsed={!!collapsed[g.id]}
+          toggle={toggle}
+        >
           {g.categories.map((c) => (
             <CategoryRowPhone key={c.id} row={c} month={month} />
           ))}
         </Group>
       ))}
       {b.archived.length > 0 && (
-        <Group id="archived" name="Archived" total={formatCents(b.archived.reduce((s, c) => s + c.available, 0))} collapsed={collapsed.archived !== false} toggle={(id) => toggle(id)}>
+        <Group
+          id="archived"
+          name="Archived"
+          total={formatCents(b.archived.reduce((s, c) => s + c.available, 0))}
+          collapsed={collapsed.archived !== false}
+          toggle={(id) => toggle(id)}
+        >
           {b.archived.map((c) => (
             <CategoryRowPhone key={c.id} row={c} month={month} />
           ))}
         </Group>
       )}
       <p className="m-0 text-[12px] text-muted">
-        {empty ? 'Transactions will show up in Activity after the first sync, usually within a few minutes.' : 'Bars show how much of this month’s money is left.'}
+        {empty
+          ? 'Transactions will show up in Activity after the first sync, usually within a few minutes.'
+          : 'Bars show how much of this month’s money is left.'}
       </p>
     </>
   );
@@ -612,7 +782,11 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
   const head = 'grid grid-cols-[minmax(200px,2fr)_repeat(3,minmax(90px,1fr))] items-center';
   const cell = 'tnum px-3.5 py-1 text-right text-ink-2';
   const groupRow = (name: string) => (
-    <div role="row" key={`g-${name}`} className="border-t border-line bg-surface-2 px-3.5 py-2 text-[12px] font-bold uppercase tracking-[0.5px] text-ink-2">
+    <div
+      role="row"
+      key={`g-${name}`}
+      className="border-t border-line bg-surface-2 px-3.5 py-2 text-[12px] font-bold uppercase tracking-[0.5px] text-ink-2"
+    >
       <span role="rowheader">{name}</span>
     </div>
   );
@@ -627,9 +801,18 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
     onClick: () => void,
     track: string,
   ) => (
-    <div role="row" key={key} className={cx(head, 'border-t border-divider', selected === key ? 'bg-accent-soft' : '')}>
+    <div
+      role="row"
+      key={key}
+      className={cx(head, 'border-t border-divider', selected === key ? 'bg-accent-soft' : '')}
+    >
       <span role="rowheader" className="px-3.5 py-1">
-        <button type="button" data-track={track} onClick={onClick} className="flex min-h-11 w-full flex-col items-start justify-center gap-0.5 text-left text-[14px] font-semibold text-ink">
+        <button
+          type="button"
+          data-track={track}
+          onClick={onClick}
+          className="flex min-h-11 w-full flex-col items-start justify-center gap-0.5 text-left text-[14px] font-semibold text-ink"
+        >
           {name}
           <span className="text-[12px] font-normal text-muted">{detail}</span>
         </button>
@@ -641,7 +824,15 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
         {spent}
       </span>
       <span role="cell" className="px-3.5 py-1 text-right">
-        <span className={cx('tnum inline-block rounded-full px-2.5 py-[3px] font-bold', TONE[tone].bg, TONE[tone].fg)}>{avail}</span>
+        <span
+          className={cx(
+            'tnum inline-block rounded-full px-2.5 py-[3px] font-bold',
+            TONE[tone].bg,
+            TONE[tone].fg,
+          )}
+        >
+          {avail}
+        </span>
       </span>
     </div>
   );
@@ -649,7 +840,10 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
   return (
     <div className="min-w-0 overflow-x-auto rounded-xl border border-line bg-surface">
       <div role="table" aria-label={`Budget for ${monthLabel(month)}`} className="min-w-[520px] text-[14px]">
-        <div role="row" className={cx(head, 'border-b border-line bg-surface-2 text-[12px] font-bold text-ink-2')}>
+        <div
+          role="row"
+          className={cx(head, 'border-b border-line bg-surface-2 text-[12px] font-bold text-ink-2')}
+        >
           <span role="columnheader" className="px-3.5 py-2.5">
             Category
           </span>
@@ -665,10 +859,30 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
         </div>
         {b.cards.length > 0 && groupRow('Credit card payments')}
         {b.cards.map((c) =>
-          row(c.accountId, c.name, c.detail, '—', '—', formatCents(c.available), c.status === 'short' ? 'over' : 'funded', () => void navigate({ to: `/accounts/${c.accountId}` }), 'budget.card'),
+          row(
+            c.accountId,
+            c.name,
+            c.detail,
+            '—',
+            '—',
+            formatCents(c.available),
+            c.status === 'short' ? 'over' : 'funded',
+            () => void navigate({ to: `/accounts/${c.accountId}` }),
+            'budget.card',
+          ),
         )}
         {groupRow('Owed to you · not a category')}
-        {row('owed', 'Owed to you', `${t.word} · fronted money comes back to Ready to Assign`, '—', '—', `${formatCents(b.owed.out)} out`, t.tone, () => void navigate({ to: '/owed' }), 'budget.owed')}
+        {row(
+          'owed',
+          'Owed to you',
+          `${t.word} · fronted money comes back to Ready to Assign`,
+          '—',
+          '—',
+          `${formatCents(b.owed.out)} out`,
+          t.tone,
+          () => void navigate({ to: '/owed' }),
+          'budget.owed',
+        )}
         {b.groups.flatMap((g) => [
           groupRow(g.name),
           ...g.categories.map((c) =>
@@ -702,12 +916,21 @@ export function BudgetScreen() {
   const canWrite = useCanWrite();
 
   if (!month || !current) return <Loading />;
-  if (q.error && !b) return <div className="p-4"><ErrorNote error={q.error} /></div>;
+  if (q.error && !b)
+    return (
+      <div className="p-4">
+        <ErrorNote error={q.error} />
+      </div>
+    );
   if (!b) return <Loading />;
 
   const empty = allAssignedZero(b) && b.cards.every((c) => c.available === 0);
   const today = session.data?.budget.today ?? '';
-  const newMonth = month === b.currentMonth && today.endsWith('-01') && !empty && b.groups.every((g) => g.categories.every((c) => c.assigned === 0));
+  const newMonth =
+    month === b.currentMonth &&
+    today.endsWith('-01') &&
+    !empty &&
+    b.groups.every((g) => g.categories.every((c) => c.assigned === 0));
   const count = b.attention.length;
   const content = (
     <>
@@ -715,7 +938,13 @@ export function BudgetScreen() {
       <OverAssigned b={b} month={month} />
       {empty && <FirstBudget b={b} />}
       {newMonth && <NewMonth b={b} month={month} />}
-      {view === 'attention' ? <AttentionList b={b} month={month} /> : desktop ? <DesktopTable b={b} month={month} /> : <AllGroups b={b} month={month} />}
+      {view === 'attention' ? (
+        <AttentionList b={b} month={month} />
+      ) : desktop ? (
+        <DesktopTable b={b} month={month} />
+      ) : (
+        <AllGroups b={b} month={month} />
+      )}
     </>
   );
 
@@ -727,11 +956,18 @@ export function BudgetScreen() {
           <div className="flex items-center gap-2">
             <ViewChips view={view} count={count} month={month} current={b.currentMonth} />
             {canWrite ? (
-              <Link to="/budget/assign" data-track="budget.assign" className="hit flex h-9 items-center rounded-full bg-accent px-4 text-[13px] font-bold text-on-accent no-underline">
+              <Link
+                to="/budget/assign"
+                data-track="budget.assign"
+                className="hit flex h-9 items-center rounded-full bg-accent px-4 text-[13px] font-bold text-on-accent no-underline"
+              >
                 Assign {formatCents(b.rta)}
               </Link>
             ) : (
-              <span aria-disabled="true" className="flex h-9 items-center rounded-full bg-disabled-bg px-4 text-[13px] font-bold text-muted">
+              <span
+                aria-disabled="true"
+                className="flex h-9 items-center rounded-full bg-disabled-bg px-4 text-[13px] font-bold text-muted"
+              >
                 Assign {formatCents(b.rta)}
               </span>
             )}

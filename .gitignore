@@ -13,3 +13,5 @@ test-results/
 .measure/
 .claude/
 .bundle/
+e2e/screenshots/
+e2e/test-results/

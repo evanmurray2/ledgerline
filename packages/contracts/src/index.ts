@@ -477,7 +477,8 @@ export const GroupUpsert = z.object({
 export const ArchiveRequest = z.object({ archived: z.boolean() });
 export const ReorderRequest = z.object({ ids: z.array(id).max(500) });
 
-export const RuleCondition = z.discriminatedUnion('field', [
+// A plain union: `amount` appears twice (equals / between), which a discriminated union can't express.
+export const RuleCondition = z.union([
   z.object({ field: z.literal('payee'), op: z.enum(['is', 'contains']), value: z.string().max(120) }),
   z.object({
     field: z.literal('description'),

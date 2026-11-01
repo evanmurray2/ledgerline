@@ -13,7 +13,8 @@ export function makeQueryClient() {
         staleTime: 15_000,
         gcTime: 24 * 60 * 60 * 1000,
         refetchOnWindowFocus: true,
-        retry: (count, err) => !(err instanceof ApiError && err.status >= 400 && err.status < 500) && count < 2,
+        retry: (count, err) =>
+          !(err instanceof ApiError && err.status >= 400 && err.status < 500) && count < 2,
       },
       mutations: { networkMode: 'always', retry: false },
     },

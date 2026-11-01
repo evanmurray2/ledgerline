@@ -17,7 +17,11 @@ export function useCategoryOptions() {
   const q = useCategoriesSettings();
   const groups = (q.data?.groups ?? [])
     .filter((g) => !g.system)
-    .map((g) => ({ id: g.id, name: g.name, categories: g.categories.map((c) => ({ id: c.id, name: c.name, available: c.available })) }));
+    .map((g) => ({
+      id: g.id,
+      name: g.name,
+      categories: g.categories.map((c) => ({ id: c.id, name: c.name, available: c.available })),
+    }));
   const byId = new Map(groups.flatMap((g) => g.categories.map((c) => [c.id, c.name] as const)));
   return { groups, byId, loading: q.isLoading };
 }
@@ -31,7 +35,11 @@ export function rowMeta(r: TxnListRow, style: 'list' | 'posted' | 'needs' | 'reg
       : style === 'needs'
         ? [r.accountName, date]
         : style === 'register'
-          ? [r.status === 'pending' ? 'Pending' : null, r.categoryLabel ?? (r.badge === 'Needs category' ? null : null), r.sub]
+          ? [
+              r.status === 'pending' ? 'Pending' : null,
+              r.categoryLabel ?? (r.badge === 'Needs category' ? null : null),
+              r.sub,
+            ]
           : r.status === 'upcoming'
             ? [date, r.categoryLabel]
             : [r.accountName, date, r.categoryLabel];

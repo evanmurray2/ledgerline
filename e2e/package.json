@@ -6,7 +6,8 @@
   "scripts": {
     "test": "playwright test",
     "screenshots": "playwright test screenshots.spec.ts",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "test:worker": "playwright test -c playwright.worker.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"

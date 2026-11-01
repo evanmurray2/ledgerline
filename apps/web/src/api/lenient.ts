@@ -12,13 +12,22 @@ const id = z.string().min(1).max(80);
 
 const Condition = z.union([
   z.object({ field: z.literal('payee'), op: z.enum(['is', 'contains']), value: z.string().max(120) }),
-  z.object({ field: z.literal('description'), op: z.enum(['contains', 'matches']), value: z.string().max(200) }),
+  z.object({
+    field: z.literal('description'),
+    op: z.enum(['contains', 'matches']),
+    value: z.string().max(200),
+  }),
   z.object({ field: z.literal('account'), op: z.literal('is'), value: id }),
   z.object({ field: z.literal('amount'), op: z.literal('equals'), value: cents }),
   z.object({ field: z.literal('amount'), op: z.literal('between'), min: cents, max: cents }),
   z.object({ field: z.literal('direction'), op: z.literal('is'), value: z.enum(['in', 'out']) }),
   z.object({ field: z.literal('provider_category'), op: z.literal('is'), value: z.string().max(80) }),
-  z.object({ field: z.literal('day_of_month'), op: z.literal('between'), min: z.number().int(), max: z.number().int() }),
+  z.object({
+    field: z.literal('day_of_month'),
+    op: z.literal('between'),
+    min: z.number().int(),
+    max: z.number().int(),
+  }),
 ]);
 
 // Actions have unique discriminators, so the contract's union works; it's restated loosely to keep this file

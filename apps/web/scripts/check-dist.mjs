@@ -21,7 +21,8 @@ function walk(dir) {
 const problems = [];
 for (const file of walk(DIST).filter((f) => /\.(js|css|html)$/.test(f))) {
   const text = readFileSync(file, 'utf8');
-  for (const [needle, what] of FORBIDDEN) if (text.includes(needle)) problems.push(`${file}: contains ${what} (${needle})`);
+  for (const [needle, what] of FORBIDDEN)
+    if (text.includes(needle)) problems.push(`${file}: contains ${what} (${needle})`);
 }
 if (problems.length) {
   console.error(problems.join('\n'));

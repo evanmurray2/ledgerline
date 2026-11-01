@@ -61,7 +61,9 @@ const PACIFIC = 'America/Los_Angeles';
 export function pacificTime(at: string | number): string {
   const d = new Date(at);
   if (Number.isNaN(d.getTime())) return '';
-  return new Intl.DateTimeFormat('en-US', { timeZone: PACIFIC, hour: 'numeric', minute: '2-digit' }).format(d);
+  return new Intl.DateTimeFormat('en-US', { timeZone: PACIFIC, hour: 'numeric', minute: '2-digit' }).format(
+    d,
+  );
 }
 
 /** Epoch ms as "Nov 12" or "9:42 AM" when it's today in Pacific time. */

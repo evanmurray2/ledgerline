@@ -43,7 +43,11 @@ describe('Budget', () => {
 
   it('Needs attention lists one-tap fixes, and Cover updates Ready to Assign', async () => {
     renderAt('/budget?view=attention');
-    const cover = await screen.findByRole('button', { name: 'Cover $18.25 for Dining out' }, { timeout: 4000 });
+    const cover = await screen.findByRole(
+      'button',
+      { name: 'Cover $18.25 for Dining out' },
+      { timeout: 4000 },
+    );
     expect(screen.getByRole('button', { name: /Fund all · \$340\.00/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Add $20.00 for Personal care' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Move $40.00 for Gifts' })).toBeTruthy();
@@ -100,10 +104,18 @@ describe('Activity', () => {
 
   it('categorizes from the picker with Undo and the Always offer', async () => {
     renderAt('/activity');
-    fireEvent.click(await screen.findByRole('button', { name: /Choose category for Blue Bottle Coffee/ }, { timeout: 4000 }));
+    fireEvent.click(
+      await screen.findByRole(
+        'button',
+        { name: /Choose category for Blue Bottle Coffee/ },
+        { timeout: 4000 },
+      ),
+    );
     const dialog = await screen.findByRole('dialog', { name: 'Choose a category' });
     fireEvent.click(within(dialog).getAllByRole('button', { name: 'Dining out' })[0]!);
-    await text('Blue Bottle Coffee → Dining out · Dining out is now overspent by $25.00. Cover it on Budget.');
+    await text(
+      'Blue Bottle Coffee → Dining out · Dining out is now overspent by $25.00. Cover it on Budget.',
+    );
     expect(screen.getByRole('button', { name: 'Always' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy();
     expect(server.db.txn('bb').categoryId).toBe('dining');
@@ -113,7 +125,9 @@ describe('Activity', () => {
 describe('Accounts and Reports', () => {
   it('accounts show net worth, owed to you and the repair banner', async () => {
     renderAt('/accounts');
-    expect((await screen.findByTestId('net-worth', undefined, { timeout: 4000 })).textContent).toBe('$22,555.35');
+    expect((await screen.findByTestId('net-worth', undefined, { timeout: 4000 })).textContent).toBe(
+      '$22,555.35',
+    );
     expect(screen.getByText('$1,430.60')).toBeTruthy();
     expect(screen.getByText('Ally needs you to sign in again')).toBeTruthy();
     expect(screen.getByText('$23,612.40')).toBeTruthy();
@@ -154,7 +168,9 @@ describe('Settings', () => {
 
   it('bank connections show the link meter and confirm before linking', async () => {
     renderAt('/settings/connections');
-    expect((await screen.findByTestId('link-meter', undefined, { timeout: 4000 })).textContent).toBe('4 of 10 links used');
+    expect((await screen.findByTestId('link-meter', undefined, { timeout: 4000 })).textContent).toBe(
+      '4 of 10 links used',
+    );
     fireEvent.click(screen.getByRole('button', { name: /Link another bank/ }));
     expect(await screen.findByText('Use 1 of your 6 remaining links?')).toBeTruthy();
   });
@@ -170,12 +186,18 @@ describe('States', () => {
     renderAt('/budget', 'readonly');
     const banner = await screen.findByTestId('readonly-banner', undefined, { timeout: 4000 });
     expect(banner.textContent).toContain('View only until 4:00 PM');
-    expect((await screen.findByText('Assign', undefined, { timeout: 4000 })).getAttribute('aria-disabled')).toBe('true');
+    expect(
+      (await screen.findByText('Assign', undefined, { timeout: 4000 })).getAttribute('aria-disabled'),
+    ).toBe('true');
   });
 
   it('offline shows the last loaded data and disables fixes', async () => {
     renderAt('/budget?view=attention');
-    const cover = await screen.findByRole('button', { name: 'Cover $18.25 for Dining out' }, { timeout: 4000 });
+    const cover = await screen.findByRole(
+      'button',
+      { name: 'Cover $18.25 for Dining out' },
+      { timeout: 4000 },
+    );
     connectivity.setOnline(false);
     await waitFor(() => expect((cover as HTMLButtonElement).disabled).toBe(true));
     expect(screen.getByTestId('offline-banner')).toBeTruthy();

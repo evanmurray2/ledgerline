@@ -21,7 +21,16 @@ export interface SheetProps {
   closeLabel?: string;
 }
 
-export function Sheet({ label, track, onClose, gap = 'medium', header, footer, children, closeLabel = 'Close' }: SheetProps) {
+export function Sheet({
+  label,
+  track,
+  onClose,
+  gap = 'medium',
+  header,
+  footer,
+  children,
+  closeLabel = 'Close',
+}: SheetProps) {
   const desktop = useIsDesktop();
   const slot = useContext(PanelSlotContext);
   const ref = useRef<HTMLElement>(null);
@@ -56,10 +65,17 @@ export function Sheet({ label, track, onClose, gap = 'medium', header, footer, c
         !desktop && (gap === 'auto' ? 'flex-none' : 'flex-1'),
       )}
     >
-      {!desktop && <div aria-hidden="true" className="mt-2 h-1 w-10 shrink-0 self-center rounded-sm bg-line-strong" />}
+      {!desktop && (
+        <div aria-hidden="true" className="mt-2 h-1 w-10 shrink-0 self-center rounded-sm bg-line-strong" />
+      )}
       <div className="flex shrink-0 items-start justify-between pb-1 pl-4 pr-2 pt-2">
         <div className="min-w-0 flex-1">{header}</div>
-        <button type="button" onClick={close} aria-label={closeLabel} className="flex h-11 w-11 shrink-0 items-center justify-center text-ink-2">
+        <button
+          type="button"
+          onClick={close}
+          aria-label={closeLabel}
+          className="flex h-11 w-11 shrink-0 items-center justify-center text-ink-2"
+        >
           <Icon name="close" size={22} />
         </button>
       </div>
@@ -73,19 +89,47 @@ export function Sheet({ label, track, onClose, gap = 'medium', header, footer, c
     return createPortal(body, slot);
   }
 
-  const top = { small: 'h-8 shrink-0', medium: 'h-14 shrink-0', large: 'h-[120px] shrink-0', auto: 'min-h-14 flex-1' }[gap];
+  const top = {
+    small: 'h-8 shrink-0',
+    medium: 'h-14 shrink-0',
+    large: 'h-[120px] shrink-0',
+    auto: 'min-h-14 flex-1',
+  }[gap];
   return createPortal(
     <div className="fixed inset-0 z-40 flex flex-col">
       <div className="ll-scrim absolute inset-0 bg-scrim" aria-hidden="true" />
-      <button type="button" aria-label={`${closeLabel} and go back`} onClick={close} className={cx('relative block w-full', top)} tabIndex={-1} />
-      <div className={cx('relative flex min-h-0 flex-col', gap === 'auto' ? 'max-h-[calc(100%-56px)]' : 'flex-1')}>{body}</div>
+      <button
+        type="button"
+        aria-label={`${closeLabel} and go back`}
+        onClick={close}
+        className={cx('relative block w-full', top)}
+        tabIndex={-1}
+      />
+      <div
+        className={cx(
+          'relative flex min-h-0 flex-col',
+          gap === 'auto' ? 'max-h-[calc(100%-56px)]' : 'flex-1',
+        )}
+      >
+        {body}
+      </div>
     </div>,
     document.body,
   );
 }
 
 /** Header block used at the top of most sheets. */
-export function SheetTitle({ title, sub, tag, tagClass }: { title: ReactNode; sub?: ReactNode; tag?: ReactNode; tagClass?: string }) {
+export function SheetTitle({
+  title,
+  sub,
+  tag,
+  tagClass,
+}: {
+  title: ReactNode;
+  sub?: ReactNode;
+  tag?: ReactNode;
+  tagClass?: string;
+}) {
   return (
     <div className="flex flex-col gap-0.5">
       {tag && <span className={cx('text-[13px] font-bold', tagClass ?? 'text-muted')}>{tag}</span>}

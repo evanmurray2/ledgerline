@@ -62,10 +62,16 @@ export function NoteSheet({ onClose }: { onClose: () => void }) {
             className="w-full rounded-xl border border-line-strong bg-surface p-3 text-[16px] text-ink"
           />
           <span className="text-[12px] leading-snug text-muted">
-            Saved with the screen name and your last 20 taps, so it’s clear what you were doing. No amounts or payee names are attached.
+            Saved with the screen name and your last 20 taps, so it’s clear what you were doing. No amounts or
+            payee names are attached.
           </span>
           {error ? <ErrorNote error={error} /> : null}
-          <PrimaryButton mutates track="note.save" disabled={!text.trim() || busy} onClick={() => void save()}>
+          <PrimaryButton
+            mutates
+            track="note.save"
+            disabled={!text.trim() || busy}
+            onClick={() => void save()}
+          >
             Save note
           </PrimaryButton>
         </div>

@@ -63,11 +63,21 @@ function Root() {
 
   const setupPath = path.startsWith('/setup') || path.startsWith('/welcome');
   if (!s) {
-    if (session.error) return <div className="p-4"><ErrorNote error={session.error} /></div>;
+    if (session.error)
+      return (
+        <div className="p-4">
+          <ErrorNote error={session.error} />
+        </div>
+      );
     return <Loading />;
   }
   if (s.budget.setupStep !== 'done' && !setupPath) {
-    const to = s.budget.setupStep === 'start' ? '/welcome' : s.budget.setupStep === 'link' ? '/setup/link' : '/setup/categories';
+    const to =
+      s.budget.setupStep === 'start'
+        ? '/welcome'
+        : s.budget.setupStep === 'link'
+          ? '/setup/link'
+          : '/setup/categories';
     return <Navigate to={to} replace />;
   }
   if (setupPath) return <Outlet />;
@@ -89,10 +99,26 @@ const indexRoute = createRoute({
 });
 
 // ------------------------------------------------------------------ first run
-const welcomeRoute = createRoute({ getParentRoute: () => rootRoute, path: '/welcome', component: WelcomeScreen });
-const setupStartRoute = createRoute({ getParentRoute: () => rootRoute, path: '/setup/start', component: StartMonthScreen });
-const setupLinkRoute = createRoute({ getParentRoute: () => rootRoute, path: '/setup/link', component: LinkBanksScreen });
-const setupCatsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/setup/categories', component: FirstSortScreen });
+const welcomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/welcome',
+  component: WelcomeScreen,
+});
+const setupStartRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/setup/start',
+  component: StartMonthScreen,
+});
+const setupLinkRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/setup/link',
+  component: LinkBanksScreen,
+});
+const setupCatsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/setup/categories',
+  component: FirstSortScreen,
+});
 
 // ------------------------------------------------------------------ budget
 const budgetRoute = createRoute({
@@ -104,13 +130,33 @@ const budgetRoute = createRoute({
   }),
   component: BudgetScreen,
 });
-const categoryRoute = createRoute({ getParentRoute: () => budgetRoute, path: 'category/$categoryId', component: CategorySheetScreen });
-const targetRoute = createRoute({ getParentRoute: () => budgetRoute, path: 'category/$categoryId/target', component: TargetScreen });
-const assignRoute = createRoute({ getParentRoute: () => budgetRoute, path: 'assign', component: AssignSheetScreen });
+const categoryRoute = createRoute({
+  getParentRoute: () => budgetRoute,
+  path: 'category/$categoryId',
+  component: CategorySheetScreen,
+});
+const targetRoute = createRoute({
+  getParentRoute: () => budgetRoute,
+  path: 'category/$categoryId/target',
+  component: TargetScreen,
+});
+const assignRoute = createRoute({
+  getParentRoute: () => budgetRoute,
+  path: 'assign',
+  component: AssignSheetScreen,
+});
 
 const owedRoute = createRoute({ getParentRoute: () => rootRoute, path: '/owed', component: OwedScreen });
-const owedCloseRoute = createRoute({ getParentRoute: () => owedRoute, path: 'close/$itemId', component: CloseSheet });
-const owedMatchRoute = createRoute({ getParentRoute: () => owedRoute, path: 'match/$key', component: MatchScreen });
+const owedCloseRoute = createRoute({
+  getParentRoute: () => owedRoute,
+  path: 'close/$itemId',
+  component: CloseSheet,
+});
+const owedMatchRoute = createRoute({
+  getParentRoute: () => owedRoute,
+  path: 'match/$key',
+  component: MatchScreen,
+});
 
 // ------------------------------------------------------------------ activity
 const activityRoute = createRoute({
@@ -122,17 +168,49 @@ const activityRoute = createRoute({
   }),
   component: ActivityScreen,
 });
-const txnRoute = createRoute({ getParentRoute: () => activityRoute, path: 'txn/$key', component: TxnSheetScreen });
-const splitRoute = createRoute({ getParentRoute: () => activityRoute, path: 'txn/$key/split', component: SplitScreen });
-const renameTxnRoute = createRoute({ getParentRoute: () => activityRoute, path: 'txn/$key/rename', component: RenamePayeeFromTxn });
-const matchRoute = createRoute({ getParentRoute: () => activityRoute, path: 'match/$key', component: MatchScreen });
-const transferRoute = createRoute({ getParentRoute: () => activityRoute, path: 'transfer/$key', component: TransferScreen });
-const checkRoute = createRoute({ getParentRoute: () => activityRoute, path: 'check/$key', component: CheckPendingScreen });
+const txnRoute = createRoute({
+  getParentRoute: () => activityRoute,
+  path: 'txn/$key',
+  component: TxnSheetScreen,
+});
+const splitRoute = createRoute({
+  getParentRoute: () => activityRoute,
+  path: 'txn/$key/split',
+  component: SplitScreen,
+});
+const renameTxnRoute = createRoute({
+  getParentRoute: () => activityRoute,
+  path: 'txn/$key/rename',
+  component: RenamePayeeFromTxn,
+});
+const matchRoute = createRoute({
+  getParentRoute: () => activityRoute,
+  path: 'match/$key',
+  component: MatchScreen,
+});
+const transferRoute = createRoute({
+  getParentRoute: () => activityRoute,
+  path: 'transfer/$key',
+  component: TransferScreen,
+});
+const checkRoute = createRoute({
+  getParentRoute: () => activityRoute,
+  path: 'check/$key',
+  component: CheckPendingScreen,
+});
 const addRoute = createRoute({ getParentRoute: () => activityRoute, path: 'add', component: AddTxnScreen });
 
 // ------------------------------------------------------------------ accounts
-const accountsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/accounts', component: AccountsScreen });
-const repairRoute = createRoute({ getParentRoute: () => accountsRoute, path: 'repair/$connectionId', component: RepairScreen });
+const accountsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/accounts',
+  component: AccountsScreen,
+});
+const repairRoute = createRoute({
+  getParentRoute: () => accountsRoute,
+  path: 'repair/$connectionId',
+  component: RepairScreen,
+});
 const registerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/accounts/$accountId',
@@ -141,11 +219,31 @@ const registerRoute = createRoute({
   }),
   component: RegisterScreen,
 });
-const registerTxnRoute = createRoute({ getParentRoute: () => registerRoute, path: 'txn/$key', component: TxnSheetScreen });
-const registerSplitRoute = createRoute({ getParentRoute: () => registerRoute, path: 'txn/$key/split', component: SplitScreen });
-const registerXferRoute = createRoute({ getParentRoute: () => registerRoute, path: 'transfer/$key', component: TransferScreen });
-const registerMatchRoute = createRoute({ getParentRoute: () => registerRoute, path: 'match/$key', component: MatchScreen });
-const registerCheckRoute = createRoute({ getParentRoute: () => registerRoute, path: 'check/$key', component: CheckPendingScreen });
+const registerTxnRoute = createRoute({
+  getParentRoute: () => registerRoute,
+  path: 'txn/$key',
+  component: TxnSheetScreen,
+});
+const registerSplitRoute = createRoute({
+  getParentRoute: () => registerRoute,
+  path: 'txn/$key/split',
+  component: SplitScreen,
+});
+const registerXferRoute = createRoute({
+  getParentRoute: () => registerRoute,
+  path: 'transfer/$key',
+  component: TransferScreen,
+});
+const registerMatchRoute = createRoute({
+  getParentRoute: () => registerRoute,
+  path: 'match/$key',
+  component: MatchScreen,
+});
+const registerCheckRoute = createRoute({
+  getParentRoute: () => registerRoute,
+  path: 'check/$key',
+  component: CheckPendingScreen,
+});
 
 // ------------------------------------------------------------------ reports
 const reportsRoute = createRoute({
@@ -156,15 +254,51 @@ const reportsRoute = createRoute({
 });
 
 // ------------------------------------------------------------------ settings
-const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/settings', component: SettingsLayout });
-const appearanceRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'appearance', component: AppearanceSection });
-const categoriesRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'categories', component: CategoriesScreen });
-const categoryEditRoute = createRoute({ getParentRoute: () => categoriesRoute, path: '$categoryId', component: CategoryEditSheet });
-const rulesRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'rules', component: RulesScreen });
-const ruleEditRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'rules/$ruleId', component: RuleEditScreen });
-const payeesRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'payees', component: PayeesScreen });
-const payeeRenameRoute = createRoute({ getParentRoute: () => payeesRoute, path: '$payeeId', component: RenamePayeeSheet });
-const connectionsRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'connections', component: ConnectionsScreen });
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings',
+  component: SettingsLayout,
+});
+const appearanceRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'appearance',
+  component: AppearanceSection,
+});
+const categoriesRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'categories',
+  component: CategoriesScreen,
+});
+const categoryEditRoute = createRoute({
+  getParentRoute: () => categoriesRoute,
+  path: '$categoryId',
+  component: CategoryEditSheet,
+});
+const rulesRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'rules',
+  component: RulesScreen,
+});
+const ruleEditRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'rules/$ruleId',
+  component: RuleEditScreen,
+});
+const payeesRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'payees',
+  component: PayeesScreen,
+});
+const payeeRenameRoute = createRoute({
+  getParentRoute: () => payeesRoute,
+  path: '$payeeId',
+  component: RenamePayeeSheet,
+});
+const connectionsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'connections',
+  component: ConnectionsScreen,
+});
 const dataRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'data', component: DataScreen });
 
 const routeTree = rootRoute.addChildren([
@@ -175,9 +309,23 @@ const routeTree = rootRoute.addChildren([
   setupCatsRoute,
   budgetRoute.addChildren([categoryRoute, targetRoute, assignRoute]),
   owedRoute.addChildren([owedCloseRoute, owedMatchRoute]),
-  activityRoute.addChildren([txnRoute, splitRoute, renameTxnRoute, matchRoute, transferRoute, checkRoute, addRoute]),
+  activityRoute.addChildren([
+    txnRoute,
+    splitRoute,
+    renameTxnRoute,
+    matchRoute,
+    transferRoute,
+    checkRoute,
+    addRoute,
+  ]),
   accountsRoute.addChildren([repairRoute]),
-  registerRoute.addChildren([registerTxnRoute, registerSplitRoute, registerXferRoute, registerMatchRoute, registerCheckRoute]),
+  registerRoute.addChildren([
+    registerTxnRoute,
+    registerSplitRoute,
+    registerXferRoute,
+    registerMatchRoute,
+    registerCheckRoute,
+  ]),
   reportsRoute,
   settingsRoute.addChildren([
     appearanceRoute,

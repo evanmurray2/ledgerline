@@ -7,7 +7,18 @@ import type { AccountRow } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
 import { useAccounts, useBudget, useRegister, useSession, qk } from '../api/hooks';
 import { Sheet } from '../components/Sheet';
-import { BackHeader, Banner, Card, Chip, cx, ErrorNote, Icon, Loading, PrimaryButton, useIsDesktop } from '../components/ui';
+import {
+  BackHeader,
+  Banner,
+  Card,
+  Chip,
+  cx,
+  ErrorNote,
+  Icon,
+  Loading,
+  PrimaryButton,
+  useIsDesktop,
+} from '../components/ui';
 import { formatCents } from '../lib/money';
 import { dayLabel, monthName, pacificDateTime, pacificTime, syncedLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
@@ -18,12 +29,19 @@ import { usage } from '../usage/tracker';
 
 function accountSub(a: AccountRow): { text: string; warn: boolean } {
   if (a.connectionStatus !== 'ok') return { text: 'may be out of date', warn: true };
-  if (a.kind === 'credit') return { text: a.pending > 0 ? `${formatCents(a.pending)} pending at bank` : '', warn: false };
+  if (a.kind === 'credit')
+    return { text: a.pending > 0 ? `${formatCents(a.pending)} pending at bank` : '', warn: false };
   if (a.pending !== 0) return { text: `after pending ${formatCents(a.working)}`, warn: false };
   return { text: '', warn: false };
 }
 
-function SyncFailure({ f, today }: { f: { connectionId: string; institution: string; lastGood: number | null; nextRetry: number | null }; today: string }) {
+function SyncFailure({
+  f,
+  today,
+}: {
+  f: { connectionId: string; institution: string; lastGood: number | null; nextRetry: number | null };
+  today: string;
+}) {
   const qc = useQueryClient();
   const [step, setStep] = useState<'failed' | 'trying' | 'ok' | 'error'>('failed');
   const canWrite = useCanWrite();
@@ -38,7 +56,12 @@ function SyncFailure({ f, today }: { f: { connectionId: string; institution: str
       setStep('error');
     }
   };
-  const title = step === 'trying' ? `Syncing ${f.institution}…` : step === 'ok' ? `${f.institution} is up to date` : `${f.institution} didn’t finish syncing`;
+  const title =
+    step === 'trying'
+      ? `Syncing ${f.institution}…`
+      : step === 'ok'
+        ? `${f.institution} is up to date`
+        : `${f.institution} didn’t finish syncing`;
   const text =
     step === 'trying'
       ? `Picking up from ${f.lastGood ? pacificTime(f.lastGood) : 'the last good sync'}.`
@@ -46,14 +69,28 @@ function SyncFailure({ f, today }: { f: { connectionId: string; institution: str
         ? 'Synced just now.'
         : `This is usually on the bank’s side.${f.nextRetry ? ` We’ll try again at ${pacificTime(f.nextRetry)}` : ''}${f.lastGood ? `; last good sync was ${syncedLabel(f.lastGood, today)}.` : '.'}`;
   return (
-    <section role="status" className={cx('flex shrink-0 items-start gap-3 rounded-[14px] border p-3', step === 'ok' ? 'border-success-border bg-success-soft text-funded-fg' : 'border-warn-border bg-warn-bg text-warn-fg')}>
+    <section
+      role="status"
+      className={cx(
+        'flex shrink-0 items-start gap-3 rounded-[14px] border p-3',
+        step === 'ok'
+          ? 'border-success-border bg-success-soft text-funded-fg'
+          : 'border-warn-border bg-warn-bg text-warn-fg',
+      )}
+    >
       <Icon name={step === 'ok' ? 'check' : 'alert'} size={20} stroke={2.4} />
       <span className="flex flex-1 flex-col gap-0.5">
         <span className="text-[14px] font-bold">{title}</span>
         <span className="text-[13px] leading-snug">{text}</span>
       </span>
       {(step === 'failed' || step === 'error') && (
-        <button type="button" data-track="accounts.sync.retry" disabled={!canWrite} onClick={() => void retry()} className="hit h-9 shrink-0 rounded-full bg-surface px-3 text-[13px] font-bold text-ink disabled:opacity-50">
+        <button
+          type="button"
+          data-track="accounts.sync.retry"
+          disabled={!canWrite}
+          onClick={() => void retry()}
+          className="hit h-9 shrink-0 rounded-full bg-surface px-3 text-[13px] font-bold text-ink disabled:opacity-50"
+        >
           Try now
         </button>
       )}
@@ -70,15 +107,27 @@ export function AccountsScreen() {
   const today = session.data?.budget.today ?? '';
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className={cx('flex min-h-14 shrink-0 items-center justify-between border-b border-line bg-surface', desktop ? 'px-6' : 'pl-4 pr-1')}>
+      <header
+        className={cx(
+          'flex min-h-14 shrink-0 items-center justify-between border-b border-line bg-surface',
+          desktop ? 'px-6' : 'pl-4 pr-1',
+        )}
+      >
         <h1 className="m-0 text-[22px] font-bold">Accounts</h1>
         {!desktop && (
-          <Link to="/settings" data-track="accounts.settings" aria-label="Settings" className="flex h-11 w-11 items-center justify-center text-ink-2">
+          <Link
+            to="/settings"
+            data-track="accounts.settings"
+            aria-label="Settings"
+            className="flex h-11 w-11 items-center justify-center text-ink-2"
+          >
             <Icon name="gear" size={22} />
           </Link>
         )}
       </header>
-      <div className={cx('flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-3', desktop ? 'px-6' : 'px-4')}>
+      <div
+        className={cx('flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-3', desktop ? 'px-6' : 'px-4')}
+      >
         <div className={cx('flex flex-col gap-3', desktop && 'mx-auto w-full max-w-[720px]')}>
           {!v ? (
             q.error ? (
@@ -94,11 +143,20 @@ export function AccountsScreen() {
                   <span className="tnum text-[26px] font-bold" data-testid="net-worth">
                     {formatCents(v.netWorth)}
                   </span>
-                  <span className={cx('tnum text-[13px] font-semibold', v.netWorthChange >= 0 ? 'text-funded-fg' : 'text-over-fg')}>
+                  <span
+                    className={cx(
+                      'tnum text-[13px] font-semibold',
+                      v.netWorthChange >= 0 ? 'text-funded-fg' : 'text-over-fg',
+                    )}
+                  >
                     {formatCents(v.netWorthChange, { plus: true })} in {monthName(v.month)}
                   </span>
                 </div>
-                <Link to="/owed" data-track="accounts.owed" className="mt-1 flex min-h-10 items-center justify-between border-t border-divider pt-1 text-[13px] text-ink-2 no-underline">
+                <Link
+                  to="/owed"
+                  data-track="accounts.owed"
+                  className="mt-1 flex min-h-10 items-center justify-between border-t border-divider pt-1 text-[13px] text-ink-2 no-underline"
+                >
                   <span>Owed to you · not in this total</span>
                   <span className="tnum font-bold">{formatCents(v.owedOut)}</span>
                 </Link>
@@ -113,7 +171,10 @@ export function AccountsScreen() {
                   <Icon name="alert" size={20} stroke={2.4} />
                   <span className="flex flex-1 flex-col gap-px">
                     <span className="text-[14px] font-bold">{r.institution} needs you to sign in again</span>
-                    <span className="text-[12px]">Last synced {r.lastSynced ? syncedLabel(r.lastSynced, today) : 'never'}. Repairing keeps the same link.</span>
+                    <span className="text-[12px]">
+                      Last synced {r.lastSynced ? syncedLabel(r.lastSynced, today) : 'never'}. Repairing keeps
+                      the same link.
+                    </span>
                   </span>
                   <span className="text-[14px] font-bold underline">Repair</span>
                 </Link>
@@ -129,7 +190,9 @@ export function AccountsScreen() {
               {v.groups.map((g) => (
                 <section key={g.name} className="flex shrink-0 flex-col gap-1.5">
                   <div className="flex min-h-9 items-center justify-between px-0.5">
-                    <h2 className="m-0 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">{g.name}</h2>
+                    <h2 className="m-0 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
+                      {g.name}
+                    </h2>
                     <span className="tnum text-[13px] font-semibold text-ink-2">{formatCents(g.total)}</span>
                   </div>
                   <Card>
@@ -145,11 +208,29 @@ export function AccountsScreen() {
                         >
                           <span className="flex min-w-0 flex-col gap-0.5">
                             <span className="text-[15px] font-semibold">{a.name}</span>
-                            <span className={cx('text-[12px]', a.connectionStatus !== 'ok' ? 'text-under-fg' : 'text-muted')}>{a.meta}</span>
+                            <span
+                              className={cx(
+                                'text-[12px]',
+                                a.connectionStatus !== 'ok' ? 'text-under-fg' : 'text-muted',
+                              )}
+                            >
+                              {a.meta}
+                            </span>
                           </span>
                           <span className="flex shrink-0 flex-col items-end gap-0.5">
-                            <span className={cx('tnum text-[15px] font-bold', credit ? 'text-over-fg' : 'text-ink')}>{formatCents(credit ? -a.bank : a.bank)}</span>
-                            {sub.text && <span className={cx('text-[11px]', sub.warn ? 'text-under-fg' : 'text-muted')}>{sub.text}</span>}
+                            <span
+                              className={cx(
+                                'tnum text-[15px] font-bold',
+                                credit ? 'text-over-fg' : 'text-ink',
+                              )}
+                            >
+                              {formatCents(credit ? -a.bank : a.bank)}
+                            </span>
+                            {sub.text && (
+                              <span className={cx('text-[11px]', sub.warn ? 'text-under-fg' : 'text-muted')}>
+                                {sub.text}
+                              </span>
+                            )}
                           </span>
                         </Link>
                       );
@@ -201,8 +282,15 @@ export function RegisterScreen() {
     : '';
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <BackHeader title={a?.name ?? 'Account'} sub={sub} onBack={() => void navigate({ to: '/accounts' })} backLabel="Back to accounts" />
-      <div className={cx('flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-3', desktop ? 'px-6' : 'px-4')}>
+      <BackHeader
+        title={a?.name ?? 'Account'}
+        sub={sub}
+        onBack={() => void navigate({ to: '/accounts' })}
+        backLabel="Back to accounts"
+      />
+      <div
+        className={cx('flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-3', desktop ? 'px-6' : 'px-4')}
+      >
         <div className={cx('flex flex-col gap-3', desktop && 'mx-auto w-full max-w-[720px]')}>
           {!a || !v ? (
             all.error ? (
@@ -219,20 +307,36 @@ export function RegisterScreen() {
                       <div className="flex flex-col gap-0.5">
                         <span className="text-[12px] text-muted">You owe the bank</span>
                         <span className="tnum text-[20px] font-bold">{formatCents(a.bank)}</span>
-                        <span className="text-[12px] text-muted">{a.pending > 0 ? `+ ${formatCents(a.pending)} pending at the bank` : 'nothing pending'}</span>
+                        <span className="text-[12px] text-muted">
+                          {a.pending > 0
+                            ? `+ ${formatCents(a.pending)} pending at the bank`
+                            : 'nothing pending'}
+                        </span>
                       </div>
                       {a.statement && (
                         <div className="flex flex-col gap-0.5">
-                          <span className="text-[12px] text-muted">Statement{a.statement.due ? ` due ${dayLabel(a.statement.due)}` : ''}</span>
-                          <span className="tnum text-[20px] font-bold">{formatCents(a.statement.balance)}</span>
-                          <span className={cx('text-[12px]', a.statement.covered ? 'text-funded-fg' : 'text-over-fg')}>
+                          <span className="text-[12px] text-muted">
+                            Statement{a.statement.due ? ` due ${dayLabel(a.statement.due)}` : ''}
+                          </span>
+                          <span className="tnum text-[20px] font-bold">
+                            {formatCents(a.statement.balance)}
+                          </span>
+                          <span
+                            className={cx(
+                              'text-[12px]',
+                              a.statement.covered ? 'text-funded-fg' : 'text-over-fg',
+                            )}
+                          >
                             {a.statement.covered ? 'Covered by payment category' : 'Not covered yet'}
                           </span>
                         </div>
                       )}
                     </div>
                     {card && (
-                      <Link to="/budget" className="flex min-h-10 items-center justify-between gap-3 rounded-xl bg-page px-3 py-2 text-[14px] text-ink no-underline">
+                      <Link
+                        to="/budget"
+                        className="flex min-h-10 items-center justify-between gap-3 rounded-xl bg-page px-3 py-2 text-[14px] text-ink no-underline"
+                      >
                         <span className="font-semibold">{a.name.split(' ')[0]} payment category</span>
                         <span className={cx('tnum font-bold', card.short > 0 ? 'text-over-fg' : 'text-ink')}>
                           {formatCents(card.available)}
@@ -253,7 +357,11 @@ export function RegisterScreen() {
                     </div>
                   </>
                 )}
-                {v.note && <p className="m-0 rounded-xl bg-over-bg px-3 py-2 text-[13px] leading-snug text-over-fg">{v.note}</p>}
+                {v.note && (
+                  <p className="m-0 rounded-xl bg-over-bg px-3 py-2 text-[13px] leading-snug text-over-fg">
+                    {v.note}
+                  </p>
+                )}
                 <p className="m-0 text-[12px] leading-snug text-muted">
                   {a.kind === 'credit'
                     ? 'Balances come from the bank and can’t be edited here. Everything you change on a transaction is saved on top of the bank’s record.'
@@ -263,19 +371,40 @@ export function RegisterScreen() {
               {chips.length > 1 && (
                 <div role="group" aria-label="Show" className="flex gap-2 overflow-x-auto">
                   {chips.map(([id, name]) => (
-                    <Chip key={id} pressed={show === id} onClick={() => void navigate({ to: base, search: { show: id === 'all' ? undefined : id } })} track={`register.filter.${id}`}>
+                    <Chip
+                      key={id}
+                      pressed={show === id}
+                      onClick={() =>
+                        void navigate({ to: base, search: { show: id === 'all' ? undefined : id } })
+                      }
+                      track={`register.filter.${id}`}
+                    >
                       {name}
                     </Chip>
                   ))}
                 </div>
               )}
-              {v.days.length === 0 && <p className="m-0 p-4 text-center text-[14px] text-muted">No transactions here.</p>}
+              {v.days.length === 0 && (
+                <p className="m-0 p-4 text-center text-[14px] text-muted">No transactions here.</p>
+              )}
               {v.days.map((d) => (
                 <section key={d.label} className="flex shrink-0 flex-col gap-1.5">
                   <div className="flex min-h-8 items-center justify-between px-0.5 text-[12px]">
-                    <span className="font-bold uppercase tracking-[0.5px] text-ink-2">{d.label === 'Pending' ? 'Pending' : /^\d{4}-/.test(d.label) ? dayLabel(d.label) : d.label}</span>
+                    <span className="font-bold uppercase tracking-[0.5px] text-ink-2">
+                      {d.label === 'Pending'
+                        ? 'Pending'
+                        : /^\d{4}-/.test(d.label)
+                          ? dayLabel(d.label)
+                          : d.label}
+                    </span>
                     <span className="tnum text-muted">
-                      {d.balance === null ? (a.kind === 'credit' ? 'counts now' : '') : a.kind === 'credit' ? `Owed ${formatCents(d.balance)}` : `Balance ${formatCents(d.balance)}`}
+                      {d.balance === null
+                        ? a.kind === 'credit'
+                          ? 'counts now'
+                          : ''
+                        : a.kind === 'credit'
+                          ? `Owed ${formatCents(d.balance)}`
+                          : `Balance ${formatCents(d.balance)}`}
                     </span>
                   </div>
                   <Card>
@@ -338,7 +467,12 @@ export function RepairScreen() {
         step === 'after' ? (
           <PrimaryButton onClick={close}>Done</PrimaryButton>
         ) : (
-          <PrimaryButton mutates track="repair.start" disabled={step === 'working' || !repair} onClick={() => void start()}>
+          <PrimaryButton
+            mutates
+            track="repair.start"
+            disabled={step === 'working' || !repair}
+            onClick={() => void start()}
+          >
             Sign in to {inst}
           </PrimaryButton>
         )
@@ -347,19 +481,28 @@ export function RepairScreen() {
       {step === 'after' ? (
         <div role="status" className="flex flex-col gap-1 rounded-[14px] bg-success-soft p-3 text-funded-fg">
           <span className="text-[15px] font-bold">{inst} is connected again</span>
-          <span className="text-[13px] leading-snug">New transactions are coming in. Your rules categorize what they can; anything else waits in Activity.</span>
+          <span className="text-[13px] leading-snug">
+            New transactions are coming in. Your rules categorize what they can; anything else waits in
+            Activity.
+          </span>
         </div>
       ) : step === 'working' ? (
-        <div role="status" className="flex flex-col items-center gap-2 rounded-[14px] bg-page p-5 text-center">
+        <div
+          role="status"
+          className="flex flex-col items-center gap-2 rounded-[14px] bg-page p-5 text-center"
+        >
           <span className="text-[15px] font-bold">Catching up on {inst}</span>
-          <span className="text-[13px] text-muted">Pulling transactions since the last sync. You can leave this screen; we’ll keep going.</span>
+          <span className="text-[13px] text-muted">
+            Pulling transactions since the last sync. You can leave this screen; we’ll keep going.
+          </span>
         </div>
       ) : (
         <>
           <div className="flex flex-col gap-1 rounded-[14px] border border-warn-border bg-warn-bg p-3 text-warn-fg">
             <span className="text-[15px] font-bold">{inst} asked you to sign in again</span>
             <span className="text-[13px] leading-snug">
-              This happens when a bank changes its login or asks for a new consent. Nothing is lost: we kept everything up to the last sync
+              This happens when a bank changes its login or asks for a new consent. Nothing is lost: we kept
+              everything up to the last sync
               {repair?.lastSynced ? ` on ${syncedLabel(repair.lastSynced, today)}` : ''}.
             </span>
           </div>
@@ -370,17 +513,24 @@ export function RepairScreen() {
               ['Balance shown', accts[0] ? `${formatCents(accts[0].bank)} (may be out of date)` : '—'],
               ['Budget effect', 'None until new data arrives'],
             ].map(([k, val]) => (
-              <div key={k} className="flex justify-between gap-3 border-t border-divider px-3 py-2.5 text-[14px] first:border-t-0">
+              <div
+                key={k}
+                className="flex justify-between gap-3 border-t border-divider px-3 py-2.5 text-[14px] first:border-t-0"
+              >
                 <span className="text-muted">{k}</span>
                 <span className="text-right font-semibold">{val}</span>
               </div>
             ))}
           </div>
           <p className="m-0 text-[13px] leading-snug text-muted">
-            Repair opens Plaid’s secure window. You sign in with {inst} there; Ledgerline never sees your bank password. Repairing doesn’t use another of your
-            10 links.
+            Repair opens Plaid’s secure window. You sign in with {inst} there; Ledgerline never sees your bank
+            password. Repairing doesn’t use another of your 10 links.
           </p>
-          {step === 'exited' && <p className="m-0 text-[13px] text-under-fg">You closed the window before finishing. Nothing changed.</p>}
+          {step === 'exited' && (
+            <p className="m-0 text-[13px] text-under-fg">
+              You closed the window before finishing. Nothing changed.
+            </p>
+          )}
           {error ? <ErrorNote error={error} /> : null}
         </>
       )}

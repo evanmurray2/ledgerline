@@ -6,7 +6,16 @@ import { Link, Outlet, useNavigate, useParams, useRouterState } from '@tanstack/
 import { useQueryClient } from '@tanstack/react-query';
 import type { RuleBody } from '@ledgerline/contracts';
 import { api, exportUrls } from '../api/endpoints';
-import { qk, useAccounts, useCategoriesSettings, useConnections, useMoneyMutation, usePayees, useRules, useSession } from '../api/hooks';
+import {
+  qk,
+  useAccounts,
+  useCategoriesSettings,
+  useConnections,
+  useMoneyMutation,
+  usePayees,
+  useRules,
+  useSession,
+} from '../api/hooks';
 import { Sheet } from '../components/Sheet';
 import { toast } from '../components/Toast';
 import {
@@ -58,7 +67,9 @@ function useSectionMeta() {
     categories: cats ? `${nCats} of yours in ${mine.length} groups · ${cats.archived.length} archived` : '',
     rules: rules ? `${rules.rules.length} rules` : '',
     payees: payees ? `Rename and merge · ${payees.payees.length} payees` : 'Rename and merge',
-    connections: conns ? `${conns.used} of ${conns.limit} links used${needRepair[0] ? ` · ${needRepair[0].institution} needs repair` : ''}` : '',
+    connections: conns
+      ? `${conns.used} of ${conns.limit} links used${needRepair[0] ? ` · ${needRepair[0].institution} needs repair` : ''}`
+      : '',
     data: 'History import · CSV and JSON export · backups',
   } as Record<string, string>;
 }
@@ -77,7 +88,10 @@ export function SettingsLayout() {
         <h1 className="m-0 text-[22px] font-bold">Settings</h1>
       </header>
       <div className="flex min-h-0 flex-1">
-        <nav aria-label="Settings sections" className="flex w-[260px] shrink-0 flex-col gap-1 overflow-y-auto border-r border-line bg-surface p-3">
+        <nav
+          aria-label="Settings sections"
+          className="flex w-[260px] shrink-0 flex-col gap-1 overflow-y-auto border-r border-line bg-surface p-3"
+        >
           {SECTIONS.map((s) => {
             const on = s.id === active;
             return (
@@ -86,22 +100,46 @@ export function SettingsLayout() {
                 to={s.to}
                 data-track={`settings.section.${s.id}`}
                 aria-current={on ? 'page' : undefined}
-                className={cx('flex flex-col gap-0.5 rounded-lg px-3 py-2 no-underline', on ? 'bg-accent-soft text-accent' : 'text-ink-2')}
+                className={cx(
+                  'flex flex-col gap-0.5 rounded-lg px-3 py-2 no-underline',
+                  on ? 'bg-accent-soft text-accent' : 'text-ink-2',
+                )}
               >
                 <span className="text-[14px] font-semibold">{s.name}</span>
-                <span className={cx('text-[12px]', s.id === 'connections' && meta.connections?.includes('repair') ? 'text-under-fg' : 'text-muted')}>{meta[s.id]}</span>
+                <span
+                  className={cx(
+                    'text-[12px]',
+                    s.id === 'connections' && meta.connections?.includes('repair')
+                      ? 'text-under-fg'
+                      : 'text-muted',
+                  )}
+                >
+                  {meta[s.id]}
+                </span>
               </Link>
             );
           })}
         </nav>
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">{sub ? <Outlet /> : <AppearanceSection />}</div>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+          {sub ? <Outlet /> : <AppearanceSection />}
+        </div>
       </div>
     </div>
   );
 }
 
 /** Desktop pages render inside the settings layout without their own back header. */
-function Page({ title, back, right, children }: { title: string; back: string; right?: ReactNode; children: ReactNode }) {
+function Page({
+  title,
+  back,
+  right,
+  children,
+}: {
+  title: string;
+  back: string;
+  right?: ReactNode;
+  children: ReactNode;
+}) {
   const desktop = useIsDesktop();
   const navigate = useNavigate();
   return (
@@ -112,9 +150,19 @@ function Page({ title, back, right, children }: { title: string; back: string; r
           {right}
         </div>
       ) : (
-        <BackHeader title={title} onBack={() => void navigate({ to: back })} backLabel={`Back to ${back === '/settings' ? 'settings' : back === '/accounts' ? 'accounts' : 'list'}`} right={right} />
+        <BackHeader
+          title={title}
+          onBack={() => void navigate({ to: back })}
+          backLabel={`Back to ${back === '/settings' ? 'settings' : back === '/accounts' ? 'accounts' : 'list'}`}
+          right={right}
+        />
       )}
-      <div className={cx('flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-3', desktop ? 'px-6 pb-8' : 'px-4 pb-6')}>
+      <div
+        className={cx(
+          'flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-3',
+          desktop ? 'px-6 pb-8' : 'px-4 pb-6',
+        )}
+      >
         <div className={cx('flex flex-col gap-3', desktop && 'max-w-[680px]')}>{children}</div>
       </div>
     </div>
@@ -123,7 +171,11 @@ function Page({ title, back, right, children }: { title: string; back: string; r
 
 function RowLink({ to, name, meta, track }: { to: string; name: string; meta: string; track: string }) {
   return (
-    <Link to={to} data-track={track} className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0">
+    <Link
+      to={to}
+      data-track={track}
+      className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
+    >
       <span className="flex flex-col gap-0.5">
         <span className="text-[15px] font-semibold">{name}</span>
         <span className="text-[12px] text-muted">{meta}</span>
@@ -152,7 +204,10 @@ function Preferences() {
   const patch = async (body: { tracking?: boolean; noteButton?: boolean }) => {
     await api.patchSettings(body);
     await qc.invalidateQueries({ queryKey: qk.session });
-    if (body.tracking === false) setTrackNote('Collection stopped. Nothing new is recorded; stored events are deleted after 90 days, and you can export them first from Import and export.');
+    if (body.tracking === false)
+      setTrackNote(
+        'Collection stopped. Nothing new is recorded; stored events are deleted after 90 days, and you can export them first from Import and export.',
+      );
     if (body.tracking === true) setTrackNote(null);
   };
   if (!s) return <Loading />;
@@ -161,15 +216,23 @@ function Preferences() {
       <Card>
         <div className="flex min-h-14 items-center justify-between gap-3 px-3 py-2">
           <span className="flex flex-col gap-px text-[15px] font-semibold">
-            Time zone<span className="text-[12px] font-normal text-muted">Decides which day and month a transaction falls in</span>
+            Time zone
+            <span className="text-[12px] font-normal text-muted">
+              Decides which day and month a transaction falls in
+            </span>
           </span>
-          <span className="shrink-0 whitespace-nowrap text-[14px] text-ink-2">{s.budget.timeZone === 'America/Los_Angeles' ? 'US Pacific' : s.budget.timeZone}</span>
+          <span className="shrink-0 whitespace-nowrap text-[14px] text-ink-2">
+            {s.budget.timeZone === 'America/Los_Angeles' ? 'US Pacific' : s.budget.timeZone}
+          </span>
         </div>
         <div className="flex min-h-14 items-center justify-between gap-3 border-t border-divider px-3 py-2">
           <span className="flex flex-col gap-px text-[15px] font-semibold">
-            Budget started<span className="text-[12px] font-normal text-muted">Earlier transactions are history only</span>
+            Budget started
+            <span className="text-[12px] font-normal text-muted">Earlier transactions are history only</span>
           </span>
-          <span className="shrink-0 whitespace-nowrap text-[14px] text-ink-2">{s.budget.startMonth ? monthLabel(s.budget.startMonth).replace(/^(\w{3})\w*/, '$1') : '—'}</span>
+          <span className="shrink-0 whitespace-nowrap text-[14px] text-ink-2">
+            {s.budget.startMonth ? monthLabel(s.budget.startMonth).replace(/^(\w{3})\w*/, '$1') : '—'}
+          </span>
         </div>
         <Toggle
           mutates
@@ -198,12 +261,16 @@ function Preferences() {
         <div className="flex flex-col gap-1">
           <span className="text-[15px] font-semibold">GitHub with passkey</span>
           <span className="text-[13px] leading-snug text-muted">
-            Signed in as {s.user.login ?? s.user.email} · session ends after 24 hours. Sign-in is handled by Cloudflare Access, so Ledgerline never stores a
-            password.
+            Signed in as {s.user.login ?? s.user.email} · session ends after 24 hours. Sign-in is handled by
+            Cloudflare Access, so Ledgerline never stores a password.
           </span>
         </div>
       </Card>
-      <a href="/cdn-cgi/access/logout" data-track="settings.sign_out" className="flex h-12 items-center justify-center rounded-xl border border-line-strong bg-surface text-[16px] font-bold text-over-fg no-underline">
+      <a
+        href="/cdn-cgi/access/logout"
+        data-track="settings.sign_out"
+        className="flex h-12 items-center justify-center rounded-xl border border-line-strong bg-surface text-[16px] font-bold text-over-fg no-underline"
+      >
         Sign out
       </a>
     </>
@@ -216,26 +283,51 @@ function SettingsHome() {
   const pref = useThemePref();
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <BackHeader title="Settings" onBack={() => void navigate({ to: '/accounts' })} backLabel="Back to accounts" />
+      <BackHeader
+        title="Settings"
+        onBack={() => void navigate({ to: '/accounts' })}
+        backLabel="Back to accounts"
+      />
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pb-6 pt-3">
         <h2 className="m-0 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">Budget</h2>
         <Card>
-          <RowLink to="/settings/categories" name="Categories and groups" meta={meta.categories ?? ''} track="settings.categories" />
+          <RowLink
+            to="/settings/categories"
+            name="Categories and groups"
+            meta={meta.categories ?? ''}
+            track="settings.categories"
+          />
           <RowLink to="/settings/rules" name="Rules" meta={meta.rules ?? ''} track="settings.rules" />
           <RowLink to="/settings/payees" name="Payees" meta={meta.payees ?? ''} track="settings.payees" />
         </Card>
         <h2 className="m-0 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">Data</h2>
         <Card>
-          <RowLink to="/settings/connections" name="Bank connections" meta={meta.connections ?? ''} track="settings.connections" />
-          <RowLink to="/settings/data" name="Import and export" meta={meta.data ?? ''} track="settings.data" />
+          <RowLink
+            to="/settings/connections"
+            name="Bank connections"
+            meta={meta.connections ?? ''}
+            track="settings.connections"
+          />
+          <RowLink
+            to="/settings/data"
+            name="Import and export"
+            meta={meta.data ?? ''}
+            track="settings.data"
+          />
         </Card>
-        <h2 className="m-0 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">Preferences</h2>
+        <h2 className="m-0 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
+          Preferences
+        </h2>
         <Card>
           <div className="flex flex-col gap-2 px-3 py-3">
             <span className="flex flex-col gap-px text-[15px] font-semibold">
               Appearance<span className="text-[12px] font-normal text-muted">Saved on this device</span>
             </span>
-            <div role="radiogroup" aria-label="Appearance" className="grid grid-cols-3 gap-1 rounded-[10px] bg-sunken p-[3px]">
+            <div
+              role="radiogroup"
+              aria-label="Appearance"
+              className="grid grid-cols-3 gap-1 rounded-[10px] bg-sunken p-[3px]"
+            >
               {THEMES.map((t) => (
                 <button
                   key={t.id}
@@ -244,7 +336,10 @@ function SettingsHome() {
                   aria-checked={pref === t.id}
                   data-track={`settings.theme.${t.id}`}
                   onClick={() => setTheme(t.id)}
-                  className={cx('hit h-9 rounded-lg text-[14px] font-bold text-ink', pref === t.id ? 'bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.08)]' : 'bg-transparent')}
+                  className={cx(
+                    'hit h-9 rounded-lg text-[14px] font-bold text-ink',
+                    pref === t.id ? 'bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.08)]' : 'bg-transparent',
+                  )}
                 >
                   {t.name}
                 </button>
@@ -271,18 +366,26 @@ export function AppearanceSection() {
             aria-checked={pref === t.id}
             data-track={`settings.theme.${t.id}`}
             onClick={() => setTheme(t.id)}
-            className={cx('flex flex-col gap-2 rounded-xl border-2 bg-surface p-3 text-left', pref === t.id ? 'border-accent' : 'border-line')}
+            className={cx(
+              'flex flex-col gap-2 rounded-xl border-2 bg-surface p-3 text-left',
+              pref === t.id ? 'border-accent' : 'border-line',
+            )}
           >
             <span aria-hidden="true" className="flex h-14 overflow-hidden rounded-lg border border-line">
               <span className="flex-1" style={{ background: t.id === 'dark' ? '#181B21' : '#FFFFFF' }} />
-              <span className="flex-1" style={{ background: t.id === 'light' ? '#F5F6F8' : t.id === 'dark' ? '#0E1014' : '#181B21' }} />
+              <span
+                className="flex-1"
+                style={{ background: t.id === 'light' ? '#F5F6F8' : t.id === 'dark' ? '#0E1014' : '#181B21' }}
+              />
             </span>
             <span className="text-[14px] font-bold">{t.name}</span>
             <span className="text-[12px] text-muted">{t.desc}</span>
           </button>
         ))}
       </div>
-      <p className="m-0 text-[13px] text-muted">Saved on this device. Every screen follows it, on phone and desktop.</p>
+      <p className="m-0 text-[13px] text-muted">
+        Saved on this device. Every screen follows it, on phone and desktop.
+      </p>
       <h2 className="m-0 mt-2 text-[15px] font-bold">Preferences</h2>
       <Preferences />
     </Page>
@@ -294,7 +397,10 @@ export function AppearanceSection() {
 export function CategoriesScreen() {
   useScreen('settings.categories');
   const q = useCategoriesSettings();
-  const archive = useMoneyMutation((v: { id: string; archived: boolean }) => api.archiveCategory(v.id, v.archived), { invalidate: [qk.categories] });
+  const archive = useMoneyMutation(
+    (v: { id: string; archived: boolean }) => api.archiveCategory(v.id, v.archived),
+    { invalidate: [qk.categories] },
+  );
   const [editing, setEditing] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const v = q.data;
@@ -318,25 +424,35 @@ export function CategoriesScreen() {
       title="Categories"
       back="/settings"
       right={
-        <button type="button" data-track="categories.edit" onClick={() => setEditing(!editing)} className="hit h-9 px-2 text-[15px] font-bold text-accent">
+        <button
+          type="button"
+          data-track="categories.edit"
+          onClick={() => setEditing(!editing)}
+          className="hit h-9 px-2 text-[15px] font-bold text-accent"
+        >
           {editing ? 'Done' : 'Edit'}
         </button>
       }
     >
       <p className="m-0 text-[13px] leading-snug text-muted">
-        You make all categories. The only ones the app makes are card payments, one per card. Money you front for others isn’t a category: it’s tracked on the
-        Owed to you list.
+        You make all categories. The only ones the app makes are card payments, one per card. Money you front
+        for others isn’t a category: it’s tracked on the Owed to you list.
       </p>
       {!v && (q.error ? <ErrorNote error={q.error} /> : <Loading />)}
       {v?.groups.map((g) => (
         <section key={g.id} className="flex shrink-0 flex-col gap-1.5">
           <div className="flex min-h-9 items-center justify-between px-0.5">
             <h2 className="m-0 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">{g.name}</h2>
-            <span className="text-[12px] text-muted">{g.system ? 'made by the app' : g.categories.length}</span>
+            <span className="text-[12px] text-muted">
+              {g.system ? 'made by the app' : g.categories.length}
+            </span>
           </div>
           <Card>
             {g.categories.map((c) => (
-              <div key={c.id} className="flex min-h-14 items-center gap-2 border-t border-divider px-3 first:border-t-0">
+              <div
+                key={c.id}
+                className="flex min-h-14 items-center gap-2 border-t border-divider px-3 first:border-t-0"
+              >
                 {editing && !g.system && (
                   <span aria-hidden="true" className="text-faint">
                     ⋮⋮
@@ -348,7 +464,11 @@ export function CategoriesScreen() {
                     <span className="text-[12px] text-muted">{c.meta}</span>
                   </span>
                 ) : (
-                  <Link to={`/settings/categories/${c.id}`} data-track="categories.open" className="flex flex-1 flex-col gap-0.5 py-2 text-ink no-underline">
+                  <Link
+                    to={`/settings/categories/${c.id}`}
+                    data-track="categories.open"
+                    className="flex flex-1 flex-col gap-0.5 py-2 text-ink no-underline"
+                  >
                     <span className="text-[15px] font-semibold">{c.name}</span>
                     <span className="text-[12px] text-muted">{c.meta}</span>
                   </Link>
@@ -371,28 +491,49 @@ export function CategoriesScreen() {
       ))}
       {v && editing && (
         <div className="flex gap-2">
-          <Link to="/settings/categories/new" data-track="categories.add" className="flex h-11 flex-1 items-center justify-center rounded-xl border border-dashed border-accent text-[14px] font-bold text-accent no-underline">
+          <Link
+            to="/settings/categories/new"
+            data-track="categories.add"
+            className="flex h-11 flex-1 items-center justify-center rounded-xl border border-dashed border-accent text-[14px] font-bold text-accent no-underline"
+          >
             + Category
           </Link>
-          <Link to="/settings/categories/new-group" data-track="categories.add_group" className="flex h-11 flex-1 items-center justify-center rounded-xl border border-dashed border-accent text-[14px] font-bold text-accent no-underline">
+          <Link
+            to="/settings/categories/new-group"
+            data-track="categories.add_group"
+            className="flex h-11 flex-1 items-center justify-center rounded-xl border border-dashed border-accent text-[14px] font-bold text-accent no-underline"
+          >
             + Group
           </Link>
         </div>
       )}
       {v && v.archived.length > 0 && (
         <>
-          <button type="button" data-track="categories.show_archived" onClick={() => setShowArchived(!showArchived)} className="min-h-9 self-start text-[14px] font-bold text-accent">
+          <button
+            type="button"
+            data-track="categories.show_archived"
+            onClick={() => setShowArchived(!showArchived)}
+            className="min-h-9 self-start text-[14px] font-bold text-accent"
+          >
             {showArchived ? 'Hide archived' : `Show archived (${v.archived.length})`}
           </button>
           {showArchived && (
             <Card>
               {v.archived.map((a) => (
-                <div key={a.id} className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 first:border-t-0">
+                <div
+                  key={a.id}
+                  className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 first:border-t-0"
+                >
                   <span className="flex flex-col gap-0.5">
                     <span className="text-[15px] font-semibold">{a.name}</span>
                     <span className="text-[12px] text-muted">{a.meta}</span>
                   </span>
-                  <Button mutates track="categories.restore" onClick={() => void doArchive(a.id, a.name, false)} className="hit h-9 rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent">
+                  <Button
+                    mutates
+                    track="categories.restore"
+                    onClick={() => void doArchive(a.id, a.name, false)}
+                    className="hit h-9 rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent"
+                  >
                     Restore
                   </Button>
                 </div>
@@ -402,7 +543,8 @@ export function CategoriesScreen() {
         </>
       )}
       <p className="m-0 text-[12px] leading-snug text-muted">
-        Archived categories keep their history in reports. Archiving one that still has money moves the money to Ready to Assign first.
+        Archived categories keep their history in reports. Archiving one that still has money moves the money
+        to Ready to Assign first.
       </p>
       <Outlet />
     </Page>
@@ -418,7 +560,9 @@ export function CategoryEditSheet() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const close = () => void navigate({ to: '/settings/categories' });
-  const existing = q.data?.groups.flatMap((g) => g.categories.map((c) => ({ ...c, groupId: g.id }))).find((c) => c.id === categoryId);
+  const existing = q.data?.groups
+    .flatMap((g) => g.categories.map((c) => ({ ...c, groupId: g.id })))
+    .find((c) => c.id === categoryId);
   const groups = (q.data?.groups ?? []).filter((g) => !g.system);
   const [name, setName] = useState<string | null>(null);
   const [groupId, setGroupId] = useState<string | null>(null);
@@ -435,7 +579,13 @@ export function CategoryEditSheet() {
     setError(null);
     try {
       if (isGroup) await api.upsertGroup({ name: n.trim(), isBills });
-      else await api.upsertCategory({ id: isNew ? undefined : categoryId, name: n.trim(), groupId: g || null, kind: k });
+      else
+        await api.upsertCategory({
+          id: isNew ? undefined : categoryId,
+          name: n.trim(),
+          groupId: g || null,
+          kind: k,
+        });
       await qc.invalidateQueries({ queryKey: qk.categories });
       void qc.invalidateQueries({ queryKey: ['budget'] });
       void qc.invalidateQueries({ queryKey: ['activity'] });
@@ -473,10 +623,21 @@ export function CategoryEditSheet() {
     >
       <div className="flex flex-col gap-3.5 pb-4">
         <Field label="Name">
-          <input className={inputClass} value={n} maxLength={60} placeholder={isGroup ? 'e.g. Kids' : 'e.g. Climbing'} onChange={(e) => setName(e.target.value)} />
+          <input
+            className={inputClass}
+            value={n}
+            maxLength={60}
+            placeholder={isGroup ? 'e.g. Kids' : 'e.g. Climbing'}
+            onChange={(e) => setName(e.target.value)}
+          />
         </Field>
         {isGroup ? (
-          <Toggle label="Bills group" help="Bills are never shown as Low" checked={isBills} onChange={setIsBills} />
+          <Toggle
+            label="Bills group"
+            help="Bills are never shown as Low"
+            checked={isBills}
+            onChange={setIsBills}
+          />
         ) : (
           <>
             <Field label="Group">
@@ -489,7 +650,9 @@ export function CategoryEditSheet() {
               </select>
             </Field>
             <div className="flex flex-col gap-1.5">
-              <span className="text-[13px] font-semibold text-ink-2">In reports, money out of it counts as</span>
+              <span className="text-[13px] font-semibold text-ink-2">
+                In reports, money out of it counts as
+              </span>
               <Segmented
                 label="Counts as"
                 value={k}
@@ -506,7 +669,11 @@ export function CategoryEditSheet() {
               </span>
             </div>
             {!isNew && existing && (
-              <Link to={`/budget/category/${existing.id}/target`} data-track="category_edit.target" className="flex min-h-14 items-center justify-between rounded-xl border border-line px-3 text-ink no-underline">
+              <Link
+                to={`/budget/category/${existing.id}/target`}
+                data-track="category_edit.target"
+                className="flex min-h-14 items-center justify-between rounded-xl border border-line px-3 text-ink no-underline"
+              >
                 <span className="flex flex-col gap-0.5">
                   <span className="text-[15px] font-semibold">Target</span>
                   <span className="text-[12px] text-muted">{existing.meta}</span>
@@ -516,18 +683,29 @@ export function CategoryEditSheet() {
             )}
             {!isNew && existing && (
               <div className="flex flex-col gap-1">
-                <Button mutates track="category_edit.archive" onClick={() => void archive()} className="min-h-9 self-start text-[14px] font-bold text-over-fg">
+                <Button
+                  mutates
+                  track="category_edit.archive"
+                  onClick={() => void archive()}
+                  className="min-h-9 self-start text-[14px] font-bold text-over-fg"
+                >
                   Archive {existing.name}
                 </Button>
                 <span className="text-[12px] leading-snug text-muted">
-                  Its {formatCents(existing.available)} goes back to Ready to Assign. Past transactions keep the category, and reports still show it.
+                  Its {formatCents(existing.available)} goes back to Ready to Assign. Past transactions keep
+                  the category, and reports still show it.
                 </span>
               </div>
             )}
           </>
         )}
         {error ? <ErrorNote error={error} /> : null}
-        <PrimaryButton mutates track="category_edit.save" disabled={!n.trim() || busy || !canWrite} onClick={() => void save()}>
+        <PrimaryButton
+          mutates
+          track="category_edit.save"
+          disabled={!n.trim() || busy || !canWrite}
+          onClick={() => void save()}
+        >
           {isNew ? (isGroup ? 'Add group' : 'Add category') : 'Save'}
         </PrimaryButton>
       </div>
@@ -546,13 +724,18 @@ export function RulesScreen() {
       title="Rules"
       back="/settings"
       right={
-        <Link to="/settings/rules/new" data-track="rules.new" className="hit flex h-9 items-center px-2 text-[15px] font-bold text-accent no-underline">
+        <Link
+          to="/settings/rules/new"
+          data-track="rules.new"
+          className="hit flex h-9 items-center px-2 text-[15px] font-bold text-accent no-underline"
+        >
           + New rule
         </Link>
       }
     >
       <p className="m-0 text-[13px] leading-snug text-muted">
-        Rules run top to bottom on each new transaction; the first match wins. They never change a category you set yourself.
+        Rules run top to bottom on each new transaction; the first match wins. They never change a category
+        you set yourself.
       </p>
       {!v && (q.error ? <ErrorNote error={q.error} /> : <Loading />)}
       {v && (
@@ -560,15 +743,25 @@ export function RulesScreen() {
           {v.rules.map((r, i) => {
             const [when, then] = r.summary.includes(' → ') ? r.summary.split(' → ') : [r.summary, ''];
             return (
-              <Link key={r.id} to={`/settings/rules/${r.id}`} data-track="rules.open" className="flex min-h-14 items-center gap-3 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0">
-                <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sunken text-[12px] font-bold text-ink-2">
+              <Link
+                key={r.id}
+                to={`/settings/rules/${r.id}`}
+                data-track="rules.open"
+                className="flex min-h-14 items-center gap-3 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
+              >
+                <span
+                  aria-hidden="true"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sunken text-[12px] font-bold text-ink-2"
+                >
                   {i + 1}
                 </span>
                 <span className="flex flex-1 flex-col gap-0.5">
                   <span className="text-[14px] font-semibold">{when}</span>
                   {then && <span className="text-[13px] text-ink-2">→ {then}</span>}
                   <span className="text-[12px] text-muted">
-                    {r.enabled ? `Used ${r.matches90d} ${r.matches90d === 1 ? 'time' : 'times'} in 90 days` : 'Turned off'}
+                    {r.enabled
+                      ? `Used ${r.matches90d} ${r.matches90d === 1 ? 'time' : 'times'} in 90 days`
+                      : 'Turned off'}
                   </span>
                 </span>
                 <Icon name="chevR" size={18} className="text-faint" />
@@ -577,7 +770,9 @@ export function RulesScreen() {
           })}
         </Card>
       )}
-      <span className="text-[12px] text-muted">To make a rule quickly, categorize a payee the same way twice; Activity will offer “Always”.</span>
+      <span className="text-[12px] text-muted">
+        To make a rule quickly, categorize a payee the same way twice; Activity will offer “Always”.
+      </span>
     </Page>
   );
 }
@@ -597,11 +792,26 @@ function condsFromRule(r: RuleBody): Cond[] {
   const out: Cond[] = [];
   for (const c of r.conditions.all) {
     id += 1;
-    if (c.field === 'payee' || c.field === 'description') out.push({ id, field: c.field, value: c.value, min: '', max: '' });
-    else if (c.field === 'amount' && c.op === 'between') out.push({ id, field: 'amount', value: '', min: centsToInput(Math.abs(c.max)), max: centsToInput(Math.abs(c.min)) });
+    if (c.field === 'payee' || c.field === 'description')
+      out.push({ id, field: c.field, value: c.value, min: '', max: '' });
+    else if (c.field === 'amount' && c.op === 'between')
+      out.push({
+        id,
+        field: 'amount',
+        value: '',
+        min: centsToInput(Math.abs(c.max)),
+        max: centsToInput(Math.abs(c.min)),
+      });
   }
   const anyPayees = (r.conditions.any ?? []).flat().filter((c) => c.field === 'payee');
-  if (anyPayees.length) out.unshift({ id: 99, field: 'payee', value: anyPayees.map((c) => ('value' in c ? String(c.value) : '')).join(' or '), min: '', max: '' });
+  if (anyPayees.length)
+    out.unshift({
+      id: 99,
+      field: 'payee',
+      value: anyPayees.map((c) => ('value' in c ? String(c.value) : '')).join(' or '),
+      min: '',
+      max: '',
+    });
   return out.length ? out : [{ id: 1, field: 'payee', value: '', min: '', max: '' }];
 }
 
@@ -624,7 +834,11 @@ export function RuleEditScreen() {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [preview, setPreview] = useState<{ n: number; rows: { key: string; date: string; payee: string; amount: number; meta: string }[]; uncategorized: number } | null>(null);
+  const [preview, setPreview] = useState<{
+    n: number;
+    rows: { key: string; date: string; payee: string; amount: number; meta: string }[];
+    uncategorized: number;
+  } | null>(null);
   const canWrite = useCanWrite();
 
   useEffect(() => {
@@ -652,10 +866,15 @@ export function RuleEditScreen() {
     const any: RuleBody['conditions']['all'][] = [];
     for (const c of conds) {
       if (c.field === 'payee' && c.value.trim()) {
-        const names = c.value.split(/\s+or\s+/).map((x) => x.trim()).filter(Boolean);
-        if (names.length > 1) any.push(...names.map((n) => [{ field: 'payee' as const, op: 'is' as const, value: n }]));
+        const names = c.value
+          .split(/\s+or\s+/)
+          .map((x) => x.trim())
+          .filter(Boolean);
+        if (names.length > 1)
+          any.push(...names.map((n) => [{ field: 'payee' as const, op: 'is' as const, value: n }]));
         else all.push({ field: 'payee', op: 'is', value: names[0]! });
-      } else if (c.field === 'description' && c.value.trim()) all.push({ field: 'description', op: 'contains', value: c.value.trim() });
+      } else if (c.field === 'description' && c.value.trim())
+        all.push({ field: 'description', op: 'contains', value: c.value.trim() });
       else if (c.field === 'amount') {
         const lo = parseCents(c.min);
         const hi = parseCents(c.max);
@@ -692,12 +911,19 @@ export function RuleEditScreen() {
     const id = setTimeout(() => {
       api
         .previewRule(body)
-        .then((p) => setPreview({ n: p.matches.length, uncategorized: p.uncategorizedMatches, rows: p.matches.slice(0, 5).map((m) => ({ key: m.key, date: m.date, payee: m.payee, amount: m.amount, meta: rowMeta(m) })) }))
+        .then((p) =>
+          setPreview({
+            n: p.matches.length,
+            uncategorized: p.uncategorizedMatches,
+            rows: p.matches
+              .slice(0, 5)
+              .map((m) => ({ key: m.key, date: m.date, payee: m.payee, amount: m.amount, meta: rowMeta(m) })),
+          }),
+        )
         .catch(() => setPreview(null));
     }, 400);
     return () => clearTimeout(id);
     // bodyKey captures every field of body
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bodyKey]);
 
   if (!conds)
@@ -706,7 +932,8 @@ export function RuleEditScreen() {
         {q.error ? <ErrorNote error={q.error} /> : <Loading />}
       </Page>
     );
-  const upd = (id: number, p: Partial<Cond>) => setConds(conds.map((c) => (c.id === id ? { ...c, ...p } : c)));
+  const upd = (id: number, p: Partial<Cond>) =>
+    setConds(conds.map((c) => (c.id === id ? { ...c, ...p } : c)));
   const save = async () => {
     if (!body) return;
     setBusy(true);
@@ -745,15 +972,39 @@ export function RuleEditScreen() {
             </select>
             {c.field === 'amount' ? (
               <span className="flex min-w-0 items-center gap-1">
-                <input aria-label={`Lowest amount for condition ${i + 1}`} inputMode="decimal" className={cx(inputClass, 'tnum')} placeholder="0.00" value={c.min} onChange={(e) => upd(c.id, { min: e.target.value })} />
+                <input
+                  aria-label={`Lowest amount for condition ${i + 1}`}
+                  inputMode="decimal"
+                  className={cx(inputClass, 'tnum')}
+                  placeholder="0.00"
+                  value={c.min}
+                  onChange={(e) => upd(c.id, { min: e.target.value })}
+                />
                 <span className="text-muted">–</span>
-                <input aria-label={`Highest amount for condition ${i + 1}`} inputMode="decimal" className={cx(inputClass, 'tnum')} placeholder="0.00" value={c.max} onChange={(e) => upd(c.id, { max: e.target.value })} />
+                <input
+                  aria-label={`Highest amount for condition ${i + 1}`}
+                  inputMode="decimal"
+                  className={cx(inputClass, 'tnum')}
+                  placeholder="0.00"
+                  value={c.max}
+                  onChange={(e) => upd(c.id, { max: e.target.value })}
+                />
               </span>
             ) : (
-              <input aria-label={`Value for condition ${i + 1}`} className={cx(inputClass, 'min-w-0')} value={c.value} onChange={(e) => upd(c.id, { value: e.target.value })} />
+              <input
+                aria-label={`Value for condition ${i + 1}`}
+                className={cx(inputClass, 'min-w-0')}
+                value={c.value}
+                onChange={(e) => upd(c.id, { value: e.target.value })}
+              />
             )}
             {conds.length > 1 ? (
-              <button type="button" aria-label={`Remove condition ${i + 1}`} onClick={() => setConds(conds.filter((x) => x.id !== c.id))} className="hit h-11 w-8 text-[20px] text-muted">
+              <button
+                type="button"
+                aria-label={`Remove condition ${i + 1}`}
+                onClick={() => setConds(conds.filter((x) => x.id !== c.id))}
+                className="hit h-11 w-8 text-[20px] text-muted"
+              >
                 ×
               </button>
             ) : (
@@ -764,7 +1015,18 @@ export function RuleEditScreen() {
         <button
           type="button"
           data-track="rule.add_condition"
-          onClick={() => setConds([...conds, { id: Math.max(0, ...conds.map((c) => c.id)) + 1, field: 'description', value: '', min: '', max: '' }])}
+          onClick={() =>
+            setConds([
+              ...conds,
+              {
+                id: Math.max(0, ...conds.map((c) => c.id)) + 1,
+                field: 'description',
+                value: '',
+                min: '',
+                max: '',
+              },
+            ])
+          }
           className="hit h-9 self-start text-[14px] font-bold text-accent"
         >
           + Add condition
@@ -790,7 +1052,13 @@ export function RuleEditScreen() {
           <span className="flex flex-col gap-px text-[15px] font-semibold">
             Owed to you
             <span className="text-[12px] font-normal text-muted">
-              {owed === 'none' ? 'Nothing owed' : owed === 'half' ? 'Half of each payment' : owed === 'all' ? 'All of it' : `${owedFixed ? formatCents(parseCents(owedFixed) ?? 0) : 'A set amount'} of each payment`}
+              {owed === 'none'
+                ? 'Nothing owed'
+                : owed === 'half'
+                  ? 'Half of each payment'
+                  : owed === 'all'
+                    ? 'All of it'
+                    : `${owedFixed ? formatCents(parseCents(owedFixed) ?? 0) : 'A set amount'} of each payment`}
             </span>
           </span>
           <Segmented
@@ -805,19 +1073,36 @@ export function RuleEditScreen() {
             ]}
           />
           {owed === 'fixed' && (
-            <input aria-label="Amount owed" inputMode="decimal" className={cx(inputClass, 'tnum')} placeholder="0.00" value={owedFixed} onChange={(e) => setOwedFixed(e.target.value)} />
+            <input
+              aria-label="Amount owed"
+              inputMode="decimal"
+              className={cx(inputClass, 'tnum')}
+              placeholder="0.00"
+              value={owedFixed}
+              onChange={(e) => setOwedFixed(e.target.value)}
+            />
           )}
         </Card>
         <Card>
-          <Toggle label="Count in the previous month" help="If it posts on day 1–5 of a month" checked={prev} onChange={setPrev} />
+          <Toggle
+            label="Count in the previous month"
+            help="If it posts on day 1–5 of a month"
+            checked={prev}
+            onChange={setPrev}
+          />
         </Card>
       </section>
       <section className="flex flex-col gap-1.5">
-        <h2 className="m-0 text-[13px] font-bold text-ink-2">Matches in the last 90 days · {preview ? preview.n : '…'}</h2>
+        <h2 className="m-0 text-[13px] font-bold text-ink-2">
+          Matches in the last 90 days · {preview ? preview.n : '…'}
+        </h2>
         {preview && preview.rows.length > 0 && (
           <Card>
             {preview.rows.map((m) => (
-              <div key={m.key} className="flex items-center justify-between gap-2 border-t border-divider px-3 py-2 text-[14px] first:border-t-0">
+              <div
+                key={m.key}
+                className="flex items-center justify-between gap-2 border-t border-divider px-3 py-2 text-[14px] first:border-t-0"
+              >
                 <span className="flex flex-col">
                   <span className="font-semibold">
                     {dayLabel(m.date)} · {m.payee}
@@ -831,7 +1116,9 @@ export function RuleEditScreen() {
         )}
         <span className="text-[12px] text-muted">
           Already-categorized matches keep their category. Changes apply to new transactions.
-          {preview && preview.uncategorized > 0 ? ` ${preview.uncategorized} uncategorized ${preview.uncategorized === 1 ? 'match' : 'matches'} can be categorized after saving.` : ''}
+          {preview && preview.uncategorized > 0
+            ? ` ${preview.uncategorized} uncategorized ${preview.uncategorized === 1 ? 'match' : 'matches'} can be categorized after saving.`
+            : ''}
         </span>
         {!isNew && preview && preview.uncategorized > 0 && (
           <SecondaryButton
@@ -850,26 +1137,50 @@ export function RuleEditScreen() {
       </section>
       {!isNew &&
         (asking ? (
-          <div role="alertdialog" aria-label="Delete rule" className="flex flex-col gap-2.5 rounded-xl bg-over-bg p-3 text-over-fg">
+          <div
+            role="alertdialog"
+            aria-label="Delete rule"
+            className="flex flex-col gap-2.5 rounded-xl bg-over-bg p-3 text-over-fg"
+          >
             <span className="text-[14px] leading-snug">
-              Delete this rule? Transactions it already categorized keep their categories; new ones from this payee will need a category.
+              Delete this rule? Transactions it already categorized keep their categories; new ones from this
+              payee will need a category.
             </span>
             <div className="flex gap-2">
-              <button type="button" onClick={() => setAsking(false)} className="h-11 flex-1 rounded-[10px] border border-line-strong bg-surface text-[14px] font-bold text-ink-2">
+              <button
+                type="button"
+                onClick={() => setAsking(false)}
+                className="h-11 flex-1 rounded-[10px] border border-line-strong bg-surface text-[14px] font-bold text-ink-2"
+              >
                 Keep it
               </button>
-              <Button mutates track="rule.delete.confirm" onClick={() => void remove()} className="h-11 flex-1 rounded-[10px] bg-danger text-[14px] font-bold text-on-danger">
+              <Button
+                mutates
+                track="rule.delete.confirm"
+                onClick={() => void remove()}
+                className="h-11 flex-1 rounded-[10px] bg-danger text-[14px] font-bold text-on-danger"
+              >
                 Delete rule
               </Button>
             </div>
           </div>
         ) : (
-          <button type="button" data-track="rule.delete" onClick={() => setAsking(true)} className="min-h-9 self-start text-[14px] font-bold text-over-fg">
+          <button
+            type="button"
+            data-track="rule.delete"
+            onClick={() => setAsking(true)}
+            className="min-h-9 self-start text-[14px] font-bold text-over-fg"
+          >
             Delete rule
           </button>
         ))}
       {error ? <ErrorNote error={error} /> : null}
-      <PrimaryButton mutates track="rule.save" disabled={!body || busy || !canWrite} onClick={() => void save()}>
+      <PrimaryButton
+        mutates
+        track="rule.save"
+        disabled={!body || busy || !canWrite}
+        onClick={() => void save()}
+      >
         Save rule
       </PrimaryButton>
     </Page>
@@ -886,19 +1197,32 @@ export function PayeesScreen() {
   const [kept, setKept] = useState<Record<string, boolean>>({});
   const [merged, setMerged] = useState<string | null>(null);
   const v = q.data;
-  const list = (v?.payees ?? []).filter((p) => !filter || p.name.toLowerCase().includes(filter.toLowerCase()));
+  const list = (v?.payees ?? []).filter(
+    (p) => !filter || p.name.toLowerCase().includes(filter.toLowerCase()),
+  );
   return (
     <Page title="Payees" back="/settings">
       <label className="flex min-h-11 items-center gap-2 rounded-xl bg-sunken px-3 text-muted">
         <Icon name="search" size={18} />
-        <input aria-label="Search payees" placeholder="Search payees" value={filter} onChange={(e) => setFilter(e.target.value)} className="min-h-10 flex-1 border-none bg-transparent text-[16px] text-ink outline-none" />
+        <input
+          aria-label="Search payees"
+          placeholder="Search payees"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="min-h-10 flex-1 border-none bg-transparent text-[16px] text-ink outline-none"
+        />
       </label>
       {!v && (q.error ? <ErrorNote error={q.error} /> : <Loading />)}
       {v?.suggestions
         .filter((s) => !kept[s.name])
         .map((s) => (
-          <section key={s.name} className="flex shrink-0 flex-col gap-2 rounded-[14px] border border-accent bg-accent-soft p-3">
-            <span className="text-[12px] font-bold uppercase tracking-[0.4px] text-accent">Looks like the same payee</span>
+          <section
+            key={s.name}
+            className="flex shrink-0 flex-col gap-2 rounded-[14px] border border-accent bg-accent-soft p-3"
+          >
+            <span className="text-[12px] font-bold uppercase tracking-[0.4px] text-accent">
+              Looks like the same payee
+            </span>
             <div className="flex flex-wrap gap-1.5">
               {s.rawNames.map((r) => (
                 <span key={r} className="rounded-md bg-surface px-2 py-1 font-mono text-[12px] text-ink-2">
@@ -910,7 +1234,12 @@ export function PayeesScreen() {
               Merge into <strong>{s.name}</strong>? Rules and past transactions follow.
             </span>
             <div className="flex gap-2">
-              <button type="button" data-track="payees.keep_separate" onClick={() => setKept({ ...kept, [s.name]: true })} className="hit h-9 flex-1 rounded-full border border-line-strong bg-surface text-[13px] font-bold text-ink-2">
+              <button
+                type="button"
+                data-track="payees.keep_separate"
+                onClick={() => setKept({ ...kept, [s.name]: true })}
+                className="hit h-9 flex-1 rounded-full border border-line-strong bg-surface text-[13px] font-bold text-ink-2"
+              >
                 Keep separate
               </button>
               <Button
@@ -937,7 +1266,10 @@ export function PayeesScreen() {
       {v && (
         <Card>
           {list.map((p) => (
-            <div key={p.id} className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 py-2 first:border-t-0">
+            <div
+              key={p.id}
+              className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 py-2 first:border-t-0"
+            >
               <span className="flex flex-col gap-0.5">
                 <span className="text-[15px] font-semibold">{p.name}</span>
                 <span className="text-[12px] text-muted">
@@ -945,7 +1277,12 @@ export function PayeesScreen() {
                   {p.defaultCategory ? ` · usually ${p.defaultCategory}` : ''}
                 </span>
               </span>
-              <Link to={`/settings/payees/${p.id}`} data-track="payees.rename" aria-label={`Rename ${p.name}`} className="hit flex h-9 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline">
+              <Link
+                to={`/settings/payees/${p.id}`}
+                data-track="payees.rename"
+                aria-label={`Rename ${p.name}`}
+                className="hit flex h-9 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline"
+              >
                 Rename
               </Link>
             </div>
@@ -953,7 +1290,8 @@ export function PayeesScreen() {
         </Card>
       )}
       <p className="m-0 text-[12px] leading-snug text-muted">
-        Renames and merges only change how payees are shown and matched. The bank’s original description is always kept on each transaction.
+        Renames and merges only change how payees are shown and matched. The bank’s original description is
+        always kept on each transaction.
       </p>
       <Outlet />
     </Page>
@@ -994,17 +1332,31 @@ export function RenamePayeeSheet() {
     }
   };
   return (
-    <Sheet label="Rename payee" track="payee.rename" onClose={close} gap="auto" header={<h1 className="m-0 text-[20px] font-bold">Rename payee</h1>}>
+    <Sheet
+      label="Rename payee"
+      track="payee.rename"
+      onClose={close}
+      gap="auto"
+      header={<h1 className="m-0 text-[20px] font-bold">Rename payee</h1>}
+    >
       <div className="flex flex-col gap-3 pb-4">
         <Field label="Show as">
-          <input className={inputClass} value={value} disabled={!!into} onChange={(e) => setName(e.target.value)} />
+          <input
+            className={inputClass}
+            value={value}
+            disabled={!!into}
+            onChange={(e) => setName(e.target.value)}
+          />
         </Field>
         {raw.length > 0 && (
           <div className="flex flex-col gap-1.5">
             <Label>Bank names that become this payee</Label>
             <Card>
               {raw.map((r) => (
-                <div key={r} className="border-t border-divider px-3 py-2.5 font-mono text-[13px] first:border-t-0">
+                <div
+                  key={r}
+                  className="border-t border-divider px-3 py-2.5 font-mono text-[13px] first:border-t-0"
+                >
                   {r}
                 </div>
               ))}
@@ -1014,8 +1366,8 @@ export function RenamePayeeSheet() {
         <Field label="Or merge into an existing payee">
           <select className={inputClass} value={into} onChange={(e) => setInto(e.target.value)}>
             <option value="">Don’t merge</option>
-            {q.data!.payees
-              .filter((x) => x.id !== p.id)
+            {q
+              .data!.payees.filter((x) => x.id !== p.id)
               .map((x) => (
                 <option key={x.id} value={x.id}>
                   {x.name}
@@ -1023,7 +1375,10 @@ export function RenamePayeeSheet() {
               ))}
           </select>
         </Field>
-        <p className="m-0 text-[12px] leading-snug text-muted">Applies to past and future transactions. Rules follow the new name. The bank’s description stays on each transaction.</p>
+        <p className="m-0 text-[12px] leading-snug text-muted">
+          Applies to past and future transactions. Rules follow the new name. The bank’s description stays on
+          each transaction.
+        </p>
         {error ? <ErrorNote error={error} /> : null}
         <PrimaryButton mutates track="payee.rename.save" disabled={!value.trim()} onClick={() => void save()}>
           Save
@@ -1051,7 +1406,8 @@ export function LinkMeter({ used, limit }: { used: number; limit: number }) {
         ))}
       </div>
       <span className="text-[12px] leading-snug text-muted">
-        The free Plaid plan allows {limit} bank logins ever. Removing one doesn’t give it back, so repair a broken login instead of re-adding it.
+        The free Plaid plan allows {limit} bank logins ever. Removing one doesn’t give it back, so repair a
+        broken login instead of re-adding it.
       </span>
     </section>
   );
@@ -1073,7 +1429,10 @@ export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label
     try {
       const r = await runPlaidLink('new');
       if (r.status === 'exited') return setStep('idle');
-      await Promise.all([qc.invalidateQueries({ queryKey: qk.connections }), qc.invalidateQueries({ queryKey: qk.accounts })]);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: qk.connections }),
+        qc.invalidateQueries({ queryKey: qk.accounts }),
+      ]);
       usage.record('task', 'link_bank');
       setStep('done');
       onLinked?.();
@@ -1082,21 +1441,37 @@ export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label
       setStep('confirm');
     }
   };
-  if (left <= 0) return <p className="m-0 rounded-xl bg-under-bg p-3 text-[13px] text-under-fg">All {v.limit} links are used. Import a CSV from Import and export instead.</p>;
+  if (left <= 0)
+    return (
+      <p className="m-0 rounded-xl bg-under-bg p-3 text-[13px] text-under-fg">
+        All {v.limit} links are used. Import a CSV from Import and export instead.
+      </p>
+    );
   return (
     <div className="flex flex-col gap-2">
       {step === 'confirm' || step === 'linking' ? (
-        <div role="alertdialog" aria-label="Use a link" className="flex flex-col gap-2.5 rounded-[14px] border border-accent bg-accent-soft p-3">
+        <div
+          role="alertdialog"
+          aria-label="Use a link"
+          className="flex flex-col gap-2.5 rounded-[14px] border border-accent bg-accent-soft p-3"
+        >
           <span className="text-[15px] font-bold">Use 1 of your {left} remaining links?</span>
           <span className="text-[13px] leading-snug text-ink-2">
-            After this, {v.used + 1} of {v.limit} links are used, for good. If a bank you already linked stopped syncing, repair it from Accounts instead. Linking opens
-            Plaid’s secure window; Ledgerline never sees your bank password.
+            After this, {v.used + 1} of {v.limit} links are used, for good. If a bank you already linked
+            stopped syncing, repair it from Accounts instead. Linking opens Plaid’s secure window; Ledgerline
+            never sees your bank password.
           </span>
           <div className="flex gap-2">
             <SecondaryButton className="flex-1" onClick={() => setStep('idle')} disabled={step === 'linking'}>
               Cancel
             </SecondaryButton>
-            <PrimaryButton mutates track="connections.link.confirm" className="flex-[2]" disabled={step === 'linking' || !canWrite} onClick={() => void start()}>
+            <PrimaryButton
+              mutates
+              track="connections.link.confirm"
+              className="flex-[2]"
+              disabled={step === 'linking' || !canWrite}
+              onClick={() => void start()}
+            >
               {step === 'linking' ? 'Opening Plaid…' : 'Link a bank'}
             </PrimaryButton>
           </div>
@@ -1147,10 +1522,15 @@ export function ConnectionsScreen() {
               const st = status(it.status);
               const repair = accounts.data?.repairs.find((r) => r.connectionId === it.id);
               return (
-                <div key={it.id} className="flex flex-col gap-2 border-t border-divider px-3 py-2.5 first:border-t-0">
+                <div
+                  key={it.id}
+                  className="flex flex-col gap-2 border-t border-divider px-3 py-2.5 first:border-t-0"
+                >
                   <div className="flex items-start justify-between gap-2">
                     <span className="flex flex-col gap-0.5">
-                      <span className={cx('text-[15px] font-semibold', it.status === 'removed' && 'text-muted')}>
+                      <span
+                        className={cx('text-[15px] font-semibold', it.status === 'removed' && 'text-muted')}
+                      >
                         {it.institution}
                         {it.status === 'removed' ? ' (removed)' : ''}
                       </span>
@@ -1159,11 +1539,17 @@ export function ConnectionsScreen() {
                       </span>
                     </span>
                     <span className={cx('shrink-0 rounded-full px-2.5 py-1 text-[12px] font-bold', st.cls)}>
-                      {it.status === 'ok' && it.lastSynced ? `Synced ${syncedLabel(it.lastSynced, today)}` : st.text}
+                      {it.status === 'ok' && it.lastSynced
+                        ? `Synced ${syncedLabel(it.lastSynced, today)}`
+                        : st.text}
                     </span>
                   </div>
                   {repair && (
-                    <Link to={`/accounts/repair/${it.id}`} data-track="connections.repair" className="hit flex h-9 items-center self-start rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline">
+                    <Link
+                      to={`/accounts/repair/${it.id}`}
+                      data-track="connections.repair"
+                      className="hit flex h-9 items-center self-start rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline"
+                    >
                       Repair on Accounts
                     </Link>
                   )}
@@ -1172,7 +1558,9 @@ export function ConnectionsScreen() {
             })}
           </Card>
           <LinkBankFlow />
-          {v.environment === 'sandbox' && <p className="m-0 text-[12px] text-muted">Plaid Sandbox: test banks only.</p>}
+          {v.environment === 'sandbox' && (
+            <p className="m-0 text-[12px] text-muted">Plaid Sandbox: test banks only.</p>
+          )}
         </>
       )}
     </Page>
@@ -1196,7 +1584,11 @@ export function DataScreen() {
   const pick = async (f: File | undefined) => {
     if (!f) return;
     const text = await f.text();
-    setFile({ name: f.name, text, rows: Math.max(0, text.split(/\r?\n/).filter((l) => l.trim()).length - 1) });
+    setFile({
+      name: f.name,
+      text,
+      rows: Math.max(0, text.split(/\r?\n/).filter((l) => l.trim()).length - 1),
+    });
     setResult(null);
   };
   const doImport = async () => {
@@ -1205,7 +1597,9 @@ export function DataScreen() {
     setError(null);
     try {
       const r = await api.importCsv({ accountId: acct, csv: file.text });
-      setResult(`Imported ${r.imported.toLocaleString('en-US')} transactions as history. ${r.skipped.toLocaleString('en-US')} overlap your linked accounts and were skipped. Payee names were added to Payees.`);
+      setResult(
+        `Imported ${r.imported.toLocaleString('en-US')} transactions as history. ${r.skipped.toLocaleString('en-US')} overlap your linked accounts and were skipped. Payee names were added to Payees.`,
+      );
       setFile(null);
       void qc.invalidateQueries({ queryKey: ['reports'] });
       void qc.invalidateQueries({ queryKey: qk.payees });
@@ -1228,11 +1622,24 @@ export function DataScreen() {
         {!file ? (
           <>
             <span className="text-[13px] leading-snug text-muted">
-              Upload a CSV export from your old budgeting app or bank. Its transactions become history: searchable and in reports, never in a budget month.
+              Upload a CSV export from your old budgeting app or bank. Its transactions become history:
+              searchable and in reports, never in a budget month.
             </span>
-            <label className={cx('hit flex h-11 cursor-pointer items-center justify-center self-start rounded-full px-4 text-[14px] font-bold', canWrite ? 'bg-accent-soft text-accent' : 'bg-sunken text-disabled')}>
+            <label
+              className={cx(
+                'hit flex h-11 cursor-pointer items-center justify-center self-start rounded-full px-4 text-[14px] font-bold',
+                canWrite ? 'bg-accent-soft text-accent' : 'bg-sunken text-disabled',
+              )}
+            >
               Choose file
-              <input type="file" accept=".csv,text/csv" className="sr-only" disabled={!canWrite} data-track="data.import.choose" onChange={(e) => void pick(e.target.files?.[0])} />
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                className="sr-only"
+                disabled={!canWrite}
+                data-track="data.import.choose"
+                onChange={(e) => void pick(e.target.files?.[0])}
+              />
             </label>
           </>
         ) : (
@@ -1255,7 +1662,13 @@ export function DataScreen() {
               <SecondaryButton className="h-10 flex-1" onClick={() => setFile(null)}>
                 Cancel
               </SecondaryButton>
-              <PrimaryButton mutates track="data.import" className="h-10 flex-[2]" disabled={busy} onClick={() => void doImport()}>
+              <PrimaryButton
+                mutates
+                track="data.import"
+                className="h-10 flex-[2]"
+                disabled={busy}
+                onClick={() => void doImport()}
+              >
                 Import {file.rows.toLocaleString('en-US')}
               </PrimaryButton>
             </div>
@@ -1271,12 +1684,21 @@ export function DataScreen() {
       <h2 className="m-0 mt-1 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">Export</h2>
       <Card>
         {exportsList.map(([name, meta, href]) => (
-          <div key={name} className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 py-2 first:border-t-0">
+          <div
+            key={name}
+            className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 py-2 first:border-t-0"
+          >
             <span className="flex flex-col gap-0.5">
               <span className="text-[15px] font-semibold">{name}</span>
               <span className="text-[12px] text-muted">{meta}</span>
             </span>
-            <a href={href} download data-track="data.export" aria-label={`Download ${name}`} className="hit flex h-9 shrink-0 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline">
+            <a
+              href={href}
+              download
+              data-track="data.export"
+              aria-label={`Download ${name}`}
+              className="hit flex h-9 shrink-0 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline"
+            >
               Download
             </a>
           </div>
@@ -1298,7 +1720,9 @@ export function DataScreen() {
           <span className="text-[13px] text-ink-2">Last 7 days</span>
         </div>
       </Card>
-      <span className="text-[12px] text-muted">Restores are done from the repository, not from this screen, so a stolen session can’t wipe your data.</span>
+      <span className="text-[12px] text-muted">
+        Restores are done from the repository, not from this screen, so a stolen session can’t wipe your data.
+      </span>
     </Page>
   );
 }

@@ -31,7 +31,11 @@ export function useBudget(month: string | undefined) {
   return useQuery({ queryKey: qk.budget(month ?? ''), queryFn: () => api.budget(month!), enabled: !!month });
 }
 export function useAssignView(month: string | undefined) {
-  return useQuery({ queryKey: qk.assign(month ?? ''), queryFn: () => api.assignView(month!), enabled: !!month });
+  return useQuery({
+    queryKey: qk.assign(month ?? ''),
+    queryFn: () => api.assignView(month!),
+    enabled: !!month,
+  });
 }
 export function useCategorySheet(id: string, month: string | undefined) {
   return useQuery({
@@ -89,7 +93,17 @@ export function useConnections() {
 
 /** Everything a money change can touch. */
 export function invalidateMoney(qc: QueryClient) {
-  for (const key of [['budget'], ['category'], ['activity'], ['txn'], ['match'], ['owed'], ['accounts'], ['register'], ['reports']])
+  for (const key of [
+    ['budget'],
+    ['category'],
+    ['activity'],
+    ['txn'],
+    ['match'],
+    ['owed'],
+    ['accounts'],
+    ['register'],
+    ['reports'],
+  ])
     void qc.invalidateQueries({ queryKey: key });
 }
 

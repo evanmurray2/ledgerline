@@ -38,7 +38,8 @@ export interface MockResponse {
 
 function parse<S extends z.ZodType>(schema: S, body: unknown): z.infer<S> {
   const r = schema.safeParse(body);
-  if (!r.success) throw new MockHttpError(400, 'bad_request', r.error.issues[0]?.message ?? 'Invalid request');
+  if (!r.success)
+    throw new MockHttpError(400, 'bad_request', r.error.issues[0]?.message ?? 'Invalid request');
   return r.data;
 }
 
@@ -75,7 +76,8 @@ export class MockServer {
       const r = this.route(method, p, u.searchParams, body ?? {});
       return { status: r === null ? 204 : 200, body: r };
     } catch (e) {
-      if (e instanceof MockHttpError) return { status: e.status, body: { error: e.code, message: e.message } };
+      if (e instanceof MockHttpError)
+        return { status: e.status, body: { error: e.code, message: e.message } };
       return { status: 500, body: { error: 'internal', message: e instanceof Error ? e.message : 'error' } };
     }
   }
@@ -141,7 +143,9 @@ export class MockServer {
         }
         if (r.split) {
           if (x.categoryId) db.categorize([x.key], null);
-          x.split = r.split.filter((s) => s.categoryId).map((s) => ({ categoryId: s.categoryId!, amount: s.amount }));
+          x.split = r.split
+            .filter((s) => s.categoryId)
+            .map((s) => ({ categoryId: s.categoryId!, amount: s.amount }));
           for (const s of x.split) {
             const cat = db.catById(s.categoryId);
             if (cat) {
@@ -404,7 +408,9 @@ export class MockServer {
         const r = parse(RuleBody, body);
         const payee = r.conditions.all.find((x) => x.field === 'payee');
         const val = payee && 'value' in payee ? String(payee.value).toLowerCase() : '';
-        const matches = db.txns.filter((x) => val && x.payee.toLowerCase().includes(val)).map((x) => db.row(x));
+        const matches = db.txns
+          .filter((x) => val && x.payee.toLowerCase().includes(val))
+          .map((x) => db.row(x));
         return { matches, uncategorizedMatches: matches.filter((m) => m.categoryLabel === null).length };
       }
       case 'POST settings/rules/:y/apply':
@@ -479,7 +485,8 @@ export class MockServer {
 function isParam(a: string | undefined, b: string): boolean {
   if (a === 'budget') return b !== 'assign' && b !== 'set' && b !== 'move';
   if (a === 'transactions') return b !== 'categorize';
-  if (a === 'match' || a === 'categories' || a === 'owed' || a === 'accounts' || a === 'transfers') return true;
+  if (a === 'match' || a === 'categories' || a === 'owed' || a === 'accounts' || a === 'transfers')
+    return true;
   return false;
 }
 

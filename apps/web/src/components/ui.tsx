@@ -52,7 +52,17 @@ const ICONS = {
 } as const;
 export type IconName = keyof typeof ICONS;
 
-export function Icon({ name, size = 20, stroke = 2, className }: { name: IconName; size?: number; stroke?: number; className?: string }) {
+export function Icon({
+  name,
+  size = 20,
+  stroke = 2,
+  className,
+}: {
+  name: IconName;
+  size?: number;
+  stroke?: number;
+  className?: string;
+}) {
   return (
     <svg
       aria-hidden="true"
@@ -105,7 +115,14 @@ export function StatusWord({ word, tone, icon }: { word: string; tone: Tone; ico
 
 export function Pill({ tone, children, className }: { tone: Tone; children: ReactNode; className?: string }) {
   return (
-    <span className={cx('tnum shrink-0 rounded-full px-2.5 py-1 text-[14px] font-bold', TONE[tone].bg, TONE[tone].fg, className)}>
+    <span
+      className={cx(
+        'tnum shrink-0 rounded-full px-2.5 py-1 text-[14px] font-bold',
+        TONE[tone].bg,
+        TONE[tone].fg,
+        className,
+      )}
+    >
       {children}
     </span>
   );
@@ -136,7 +153,15 @@ function useDisabled(mutates: boolean | undefined, disabled: boolean | undefined
   return !!disabled || (!!mutates && !canWrite);
 }
 
-export function Button({ mutates, track, disabled, className, children, type = 'button', ...rest }: BtnProps) {
+export function Button({
+  mutates,
+  track,
+  disabled,
+  className,
+  children,
+  type = 'button',
+  ...rest
+}: BtnProps) {
   const off = useDisabled(mutates, disabled);
   return (
     <button
@@ -326,10 +351,24 @@ export function OptionCard({
 // ------------------------------------------------------------------ cards, sections, fields
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
-  return <section className={cx('shrink-0 overflow-hidden rounded-[14px] border border-line bg-surface', className)}>{children}</section>;
+  return (
+    <section
+      className={cx('shrink-0 overflow-hidden rounded-[14px] border border-line bg-surface', className)}
+    >
+      {children}
+    </section>
+  );
 }
 
-export function SectionTitle({ children, note, action }: { children: ReactNode; note?: ReactNode; action?: ReactNode }) {
+export function SectionTitle({
+  children,
+  note,
+  action,
+}: {
+  children: ReactNode;
+  note?: ReactNode;
+  action?: ReactNode;
+}) {
   return (
     <div className="flex min-h-9 items-center justify-between px-0.5">
       <h2 className="m-0 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">{children}</h2>
@@ -346,7 +385,15 @@ export function Label({ children }: { children: ReactNode }) {
 export const inputClass =
   'h-11 w-full rounded-[10px] border border-line-strong bg-surface px-3 text-[16px] text-ink placeholder:text-faint disabled:bg-sunken disabled:text-muted';
 
-export function Field({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
+export function Field({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
     <label className={cx('flex flex-col gap-1.5 text-[13px] font-semibold text-ink-2', className)}>
       {label}
@@ -410,7 +457,10 @@ export function Banner({
     success: 'bg-success-soft text-funded-fg border border-success-border',
   }[tone];
   return (
-    <div role={role} className={cx('flex shrink-0 items-start gap-3 rounded-xl px-3 py-2.5 text-[13px] leading-snug', cls)}>
+    <div
+      role={role}
+      className={cx('flex shrink-0 items-start gap-3 rounded-xl px-3 py-2.5 text-[13px] leading-snug', cls)}
+    >
       <div className="flex flex-1 flex-col gap-0.5">
         {title && <span className="text-[14px] font-bold">{title}</span>}
         {children && <span>{children}</span>}
@@ -456,7 +506,12 @@ export function BackHeader({
 }) {
   return (
     <header className="flex shrink-0 items-center gap-1 border-b border-line bg-surface py-2 pl-1 pr-4">
-      <button type="button" onClick={onBack} aria-label={backLabel} className="flex h-11 w-11 items-center justify-center text-ink-2">
+      <button
+        type="button"
+        onClick={onBack}
+        aria-label={backLabel}
+        className="flex h-11 w-11 items-center justify-center text-ink-2"
+      >
         <Icon name="back" size={22} />
       </button>
       <div className="flex min-w-0 flex-1 flex-col">

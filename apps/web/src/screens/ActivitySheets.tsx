@@ -5,7 +5,18 @@ import { useQueries } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
 import { useAccounts, useMatchView, useMoneyMutation, useTxn, useSession, useBudget, qk } from '../api/hooks';
 import { Sheet } from '../components/Sheet';
-import { Button, cx, ErrorNote, Field, inputClass, Loading, OptionCard, PrimaryButton, SecondaryButton, Segmented } from '../components/ui';
+import {
+  Button,
+  cx,
+  ErrorNote,
+  Field,
+  inputClass,
+  Loading,
+  OptionCard,
+  PrimaryButton,
+  SecondaryButton,
+  Segmented,
+} from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { dayLabel } from '../lib/dates';
 import { useCategoryOptions, useScreen } from '../lib/common';
@@ -66,8 +77,14 @@ export function MatchScreen() {
   const matched = inflow - left;
   const paidCount = applied.filter((a) => a.applied > 0 && a.applied >= a.still).length;
   const submit = async (asIncome: boolean) => {
-    const items = asIncome ? [] : applied.filter((a) => a.applied > 0).map((a) => ({ itemId: a.id, amount: a.applied }));
-    const r = await match.mutateAsync({ inflowKey: v.inflow.key, items, rest: asIncome ? 'income' : left > 0 ? rest : 'income' });
+    const items = asIncome
+      ? []
+      : applied.filter((a) => a.applied > 0).map((a) => ({ itemId: a.id, amount: a.applied }));
+    const r = await match.mutateAsync({
+      inflowKey: v.inflow.key,
+      items,
+      rest: asIncome ? 'income' : left > 0 ? rest : 'income',
+    });
     usage.endTask('match');
     setDone({
       text: asIncome
@@ -86,11 +103,15 @@ export function MatchScreen() {
           <span className="text-[13px] text-muted">
             {v.inflow.payee} · {v.inflow.accountName} · {dayLabel(v.inflow.date)}
           </span>
-          <h1 className="tnum m-0 text-[28px] font-bold text-funded-fg">{formatCents(inflow, { plus: true })}</h1>
+          <h1 className="tnum m-0 text-[28px] font-bold text-funded-fg">
+            {formatCents(inflow, { plus: true })}
+          </h1>
           {!done && (
             <>
               <span className="text-[15px] font-bold">What is this money?</span>
-              <span className="text-[13px] text-muted">It’s held in Waiting to match, outside Ready to Assign, until you decide.</span>
+              <span className="text-[13px] text-muted">
+                It’s held in Waiting to match, outside Ready to Assign, until you decide.
+              </span>
             </>
           )}
         </div>
@@ -98,7 +119,10 @@ export function MatchScreen() {
     >
       {done ? (
         <div className="flex flex-col gap-3">
-          <p role="status" className="m-0 rounded-xl bg-success-soft p-3 text-[14px] leading-snug text-funded-fg">
+          <p
+            role="status"
+            className="m-0 rounded-xl bg-success-soft p-3 text-[14px] leading-snug text-funded-fg"
+          >
             {done.text}
           </p>
           <div className="flex gap-2">
@@ -114,18 +138,28 @@ export function MatchScreen() {
             >
               Undo
             </SecondaryButton>
-            <Link to="/owed" className="flex h-12 flex-[2] items-center justify-center rounded-xl bg-accent text-[16px] font-bold text-on-accent no-underline">
+            <Link
+              to="/owed"
+              className="flex h-12 flex-[2] items-center justify-center rounded-xl bg-accent text-[16px] font-bold text-on-accent no-underline"
+            >
               See what’s still owed
             </Link>
           </div>
         </div>
       ) : (
         <>
-          <h2 className="m-0 text-[12px] font-bold uppercase tracking-[0.4px] text-ink-2">Money back for what’s owed to you</h2>
+          <h2 className="m-0 text-[12px] font-bold uppercase tracking-[0.4px] text-ink-2">
+            Money back for what’s owed to you
+          </h2>
           <div className="shrink-0 overflow-hidden rounded-[14px] border border-line">
-            {applied.length === 0 && <p className="m-0 p-3 text-[14px] text-muted">Nothing is marked as owed to you.</p>}
+            {applied.length === 0 && (
+              <p className="m-0 p-3 text-[14px] text-muted">Nothing is marked as owed to you.</p>
+            )}
             {applied.map((a) => (
-              <label key={a.id} className="flex min-h-14 items-center gap-3 border-t border-divider px-3 py-1.5 first:border-t-0">
+              <label
+                key={a.id}
+                className="flex min-h-14 items-center gap-3 border-t border-divider px-3 py-1.5 first:border-t-0"
+              >
                 <input
                   type="checkbox"
                   className="hit h-[22px] w-[22px] shrink-0 accent-[var(--ll-accent)]"
@@ -140,9 +174,13 @@ export function MatchScreen() {
                   </span>
                 </span>
                 <span className="flex flex-col items-end">
-                  <span className="tnum text-[15px] font-bold">{on[a.id] ? formatCents(a.applied) : '—'}</span>
+                  <span className="tnum text-[15px] font-bold">
+                    {on[a.id] ? formatCents(a.applied) : '—'}
+                  </span>
                   <span className="text-[11px] text-muted">
-                    {on[a.id] && a.applied < a.still ? `of ${formatCents(a.still)}, rest stays owed` : `of ${formatCents(a.still)}`}
+                    {on[a.id] && a.applied < a.still
+                      ? `of ${formatCents(a.still)}, rest stays owed`
+                      : `of ${formatCents(a.still)}`}
                   </span>
                 </span>
               </label>
@@ -150,10 +188,16 @@ export function MatchScreen() {
           </div>
           {other ? (
             <p className="m-0 rounded-xl bg-page p-3 text-[13px] leading-snug text-muted">
-              To match money back for something you didn’t mark, open that purchase in Activity and set Owed to you first. It then shows up here.
+              To match money back for something you didn’t mark, open that purchase in Activity and set Owed
+              to you first. It then shows up here.
             </p>
           ) : (
-            <button type="button" data-track="match.other" onClick={() => setOther(true)} className="min-h-9 self-start text-[14px] font-bold text-accent">
+            <button
+              type="button"
+              data-track="match.other"
+              onClick={() => setOther(true)}
+              className="min-h-9 self-start text-[14px] font-bold text-accent"
+            >
               It’s for something I didn’t mark…
             </button>
           )}
@@ -168,23 +212,40 @@ export function MatchScreen() {
                 ] as const
               ).map(([id, name]) => (
                 <label key={id} className="flex min-h-9 items-center gap-2 text-[14px]">
-                  <input type="radio" name="rest" className="hit h-5 w-5 accent-[var(--ll-accent)]" checked={rest === id} onChange={() => setRest(id)} />
+                  <input
+                    type="radio"
+                    name="rest"
+                    className="hit h-5 w-5 accent-[var(--ll-accent)]"
+                    checked={rest === id}
+                    onChange={() => setRest(id)}
+                  />
                   {name}
                 </label>
               ))}
             </fieldset>
           )}
           <p className="m-0 text-[12px] leading-snug text-muted">
-            Either way the money goes to Ready to Assign. Matching also marks what it pays back as settled, so it leaves your Owed to you list. Pick “It’s
-            income” if it doesn’t pay anything back.
+            Either way the money goes to Ready to Assign. Matching also marks what it pays back as settled, so
+            it leaves your Owed to you list. Pick “It’s income” if it doesn’t pay anything back.
             {rta !== undefined ? ` Ready to Assign has ${formatCents(rta)} now.` : ''}
           </p>
           {match.error && <ErrorNote error={match.error} />}
           <div className="flex gap-2 pb-4">
-            <SecondaryButton mutates track="match.income" className="flex-1" onClick={() => void submit(true)}>
+            <SecondaryButton
+              mutates
+              track="match.income"
+              className="flex-1"
+              onClick={() => void submit(true)}
+            >
               It’s income
             </SecondaryButton>
-            <PrimaryButton mutates track="match.apply" className="flex-[2]" disabled={matched === 0} onClick={() => void submit(false)}>
+            <PrimaryButton
+              mutates
+              track="match.apply"
+              className="flex-[2]"
+              disabled={matched === 0}
+              onClick={() => void submit(false)}
+            >
               {matched === 0 ? 'Pick what it pays back' : `Match ${formatCents(matched)}`}
             </PrimaryButton>
           </div>
@@ -209,9 +270,15 @@ export function TransferScreen() {
   const unpair = useMoneyMutation(api.unpairTransfer);
   const [result, setResult] = useState<string | null>(null);
   const t = q.data;
-  const others = (accounts.data?.groups ?? []).flatMap((g) => g.accounts).filter((a) => t && a.id !== t.accountId);
+  const others = (accounts.data?.groups ?? [])
+    .flatMap((g) => g.accounts)
+    .filter((a) => t && a.id !== t.accountId);
   const registers = useQueries({
-    queries: others.map((a) => ({ queryKey: qk.register(a.id, 'all'), queryFn: () => api.register(a.id, 'all'), enabled: !!t })),
+    queries: others.map((a) => ({
+      queryKey: qk.register(a.id, 'all'),
+      queryFn: () => api.register(a.id, 'all'),
+      enabled: !!t,
+    })),
   });
   if (!t)
     return (
@@ -220,7 +287,8 @@ export function TransferScreen() {
       </Sheet>
     );
   // The contract has no candidate list: find deposits of the same amount within 5 days in the other accounts.
-  const day = (d: string) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))) / 86_400_000;
+  const day = (d: string) =>
+    Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))) / 86_400_000;
   const candidates = registers.flatMap((r, i) =>
     (r.data?.days ?? [])
       .flatMap((d) => d.rows)
@@ -251,7 +319,10 @@ export function TransferScreen() {
       <div className="flex flex-col gap-3 pb-4">
         {result ? (
           <>
-            <p role="status" className="m-0 rounded-xl bg-success-soft p-3 text-[14px] leading-snug text-funded-fg">
+            <p
+              role="status"
+              className="m-0 rounded-xl bg-success-soft p-3 text-[14px] leading-snug text-funded-fg"
+            >
               {result}
             </p>
             <div className="flex gap-2">
@@ -275,7 +346,10 @@ export function TransferScreen() {
         ) : (
           <>
             <p className="m-0 text-[13px] leading-snug text-muted">
-              Transfers between your accounts pair up on their own. This one couldn’t: {candidates.length > 1 ? `${candidates.length} accounts received ${formatCents(-t.amount)} within a few days.` : 'no single account clearly matched.'}
+              Transfers between your accounts pair up on their own. This one couldn’t:{' '}
+              {candidates.length > 1
+                ? `${candidates.length} accounts received ${formatCents(-t.amount)} within a few days.`
+                : 'no single account clearly matched.'}
             </p>
             {loadingCands && <Loading label="Looking for the other side" />}
             <div className="flex flex-col gap-2">
@@ -297,7 +371,9 @@ export function TransferScreen() {
                       {dayLabel(row.date)} · “{row.payee}”
                     </span>
                   </span>
-                  <span className="tnum font-bold text-funded-fg">{formatCents(row.amount, { plus: true })}</span>
+                  <span className="tnum font-bold text-funded-fg">
+                    {formatCents(row.amount, { plus: true })}
+                  </span>
                 </Button>
               ))}
               <Button
@@ -346,10 +422,34 @@ export function CheckPendingScreen() {
   const amt = amount ?? centsToInput(Math.abs(t.amount));
   const days = 9;
   const opts: { id: CheckPick; name: string; desc: string; cta: string; result: string }[] = [
-    { id: 'wait', name: 'Keep waiting', desc: 'Leave it as is. You won’t be asked again for 14 days.', cta: 'Keep waiting', result: 'Still pending. You’ll be asked again in 14 days if it hasn’t cleared.' },
-    { id: 'edit', name: 'Fix the amount or date', desc: 'If you wrote it for a different amount or day.', cta: 'Save changes', result: 'Saved. It keeps waiting for the bank.' },
-    { id: 'match', name: 'Match it by hand', desc: 'Pick the bank transaction if the bank shows it under another name.', cta: 'Nothing to match yet', result: '' },
-    { id: 'delete', name: 'Delete it', desc: `The check was voided or never sent. ${cat} gets its ${formatCents(Math.abs(t.amount), { whole: true })} back.`, cta: 'Delete check', result: `Deleted. ${cat} got ${formatCents(Math.abs(t.amount))} back.` },
+    {
+      id: 'wait',
+      name: 'Keep waiting',
+      desc: 'Leave it as is. You won’t be asked again for 14 days.',
+      cta: 'Keep waiting',
+      result: 'Still pending. You’ll be asked again in 14 days if it hasn’t cleared.',
+    },
+    {
+      id: 'edit',
+      name: 'Fix the amount or date',
+      desc: 'If you wrote it for a different amount or day.',
+      cta: 'Save changes',
+      result: 'Saved. It keeps waiting for the bank.',
+    },
+    {
+      id: 'match',
+      name: 'Match it by hand',
+      desc: 'Pick the bank transaction if the bank shows it under another name.',
+      cta: 'Nothing to match yet',
+      result: '',
+    },
+    {
+      id: 'delete',
+      name: 'Delete it',
+      desc: `The check was voided or never sent. ${cat} gets its ${formatCents(Math.abs(t.amount), { whole: true })} back.`,
+      cta: 'Delete check',
+      result: `Deleted. ${cat} got ${formatCents(Math.abs(t.amount))} back.`,
+    },
   ];
   const cur = opts.find((o) => o.id === pick)!;
   const confirm = async () => {
@@ -393,23 +493,42 @@ export function CheckPendingScreen() {
               It still counts in {cat} and your checking balance. Checks often take a few weeks to be cashed.
             </p>
             {opts.map((o) => (
-              <OptionCard key={o.id} selected={pick === o.id} onClick={() => setPick(o.id)} title={o.name} desc={o.desc} track={`check.${o.id}`} />
+              <OptionCard
+                key={o.id}
+                selected={pick === o.id}
+                onClick={() => setPick(o.id)}
+                title={o.name}
+                desc={o.desc}
+                track={`check.${o.id}`}
+              />
             ))}
             {pick === 'edit' && (
               <div className="flex gap-2">
                 <Field label="Amount" className="flex-1">
-                  <input className={cx(inputClass, 'tnum')} inputMode="decimal" value={amt} onChange={(e) => setAmount(e.target.value)} />
+                  <input
+                    className={cx(inputClass, 'tnum')}
+                    inputMode="decimal"
+                    value={amt}
+                    onChange={(e) => setAmount(e.target.value)}
+                  />
                 </Field>
               </div>
             )}
             {pick === 'match' && (
               <p className="m-0 rounded-xl bg-page p-3 text-[13px] text-muted">
-                No bank transaction near {formatCents(Math.abs(t.amount), { whole: true })} since {dayLabel(t.date)} looks like this check yet. When one arrives, it will
-                appear here to pick.
+                No bank transaction near {formatCents(Math.abs(t.amount), { whole: true })} since{' '}
+                {dayLabel(t.date)} looks like this check yet. When one arrives, it will appear here to pick.
               </p>
             )}
             {(keep.error || patch.error) && <ErrorNote error={keep.error ?? patch.error} />}
-            <PrimaryButton mutates track={`check.confirm.${pick}`} danger={pick === 'delete'} disabled={pick === 'match'} className="mt-2" onClick={() => void confirm()}>
+            <PrimaryButton
+              mutates
+              track={`check.confirm.${pick}`}
+              danger={pick === 'delete'}
+              disabled={pick === 'match'}
+              className="mt-2"
+              onClick={() => void confirm()}
+            >
               {cur.cta}
             </PrimaryButton>
           </>
@@ -485,7 +604,13 @@ export function AddTxnScreen() {
       </p>
       <div className="flex items-end gap-2">
         <Field label="Amount" className="flex-1">
-          <input className={cx(inputClass, 'tnum text-[18px] font-bold')} inputMode="decimal" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <input
+            className={cx(inputClass, 'tnum text-[18px] font-bold')}
+            inputMode="decimal"
+            placeholder="0.00"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
         </Field>
         <div className="w-[140px]">
           <Segmented
@@ -500,7 +625,12 @@ export function AddTxnScreen() {
         </div>
       </div>
       <Field label="Payee">
-        <input className={inputClass} placeholder="e.g. Check #1044" value={payee} onChange={(e) => setPayee(e.target.value)} />
+        <input
+          className={inputClass}
+          placeholder="e.g. Check #1044"
+          value={payee}
+          onChange={(e) => setPayee(e.target.value)}
+        />
       </Field>
       <Field label="Account">
         <select className={inputClass} value={acct} onChange={(e) => setAccountId(e.target.value)}>
@@ -526,11 +656,20 @@ export function AddTxnScreen() {
         </select>
       </Field>
       <Field label={kind === 'pending' ? 'Date' : 'On'}>
-        <input type="date" className={inputClass} value={date || today} onChange={(e) => setDate(e.target.value)} />
+        <input
+          type="date"
+          className={inputClass}
+          value={date || today}
+          onChange={(e) => setDate(e.target.value)}
+        />
       </Field>
       {kind === 'upcoming' && (
         <Field label="Repeats">
-          <select className={inputClass} value={repeats} onChange={(e) => setRepeats(e.target.value as typeof repeats)}>
+          <select
+            className={inputClass}
+            value={repeats}
+            onChange={(e) => setRepeats(e.target.value as typeof repeats)}
+          >
             <option value="never">Never</option>
             <option value="monthly">Every month</option>
             <option value="yearly">Every year</option>
@@ -538,8 +677,8 @@ export function AddTxnScreen() {
         </Field>
       )}
       <p className="m-0 text-[12px] leading-snug text-muted">
-        When the bank shows a matching transaction, the two are merged and the bank’s amount wins. If nothing matches in {kind === 'pending' ? 7 : 3} days,
-        you’ll see an alert.
+        When the bank shows a matching transaction, the two are merged and the bank’s amount wins. If nothing
+        matches in {kind === 'pending' ? 7 : 3} days, you’ll see an alert.
       </p>
       {add.error && <ErrorNote error={add.error} />}
     </Sheet>

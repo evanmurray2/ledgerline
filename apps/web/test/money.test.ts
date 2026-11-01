@@ -67,7 +67,8 @@ describe('parseCents', () => {
   });
 
   it('rejects anything that is not an amount', () => {
-    for (const s of ['', ' ', 'abc', '12a', '1,00', '1.2.3', '$', '.', '--5', '1e3', 'NaN', '12,34.00']) expect(parseCents(s)).toBeNull();
+    for (const s of ['', ' ', 'abc', '12a', '1,00', '1.2.3', '$', '.', '--5', '1e3', 'NaN', '12,34.00'])
+      expect(parseCents(s)).toBeNull();
   });
 });
 

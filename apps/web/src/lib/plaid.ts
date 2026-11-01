@@ -39,14 +39,19 @@ export function loadPlaid(): Promise<PlaidGlobal> {
   return loading;
 }
 
-export type LinkOutcome = { status: 'linked'; connectionId: string } | { status: 'repaired' } | { status: 'exited' };
+export type LinkOutcome =
+  { status: 'linked'; connectionId: string } | { status: 'repaired' } | { status: 'exited' };
 
 /**
  * Gets a link token, opens Plaid Link and, for a new link, exchanges the public token. Repair (update mode)
  * keeps the same Item, so there's nothing to exchange; the caller refreshes the connection afterwards.
  */
 export async function runPlaidLink(mode: 'new' | 'repair', connectionId?: string): Promise<LinkOutcome> {
-  const { linkToken } = await api.linkToken({ mode, connectionId, confirmSlot: mode === 'new' ? true : undefined });
+  const { linkToken } = await api.linkToken({
+    mode,
+    connectionId,
+    confirmSlot: mode === 'new' ? true : undefined,
+  });
   const publicToken = await openLink(linkToken);
   if (publicToken === null) return { status: 'exited' };
   if (mode === 'repair') return { status: 'repaired' };

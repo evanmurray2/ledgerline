@@ -20,7 +20,8 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const ok = { ok: true, rta: 96365, rtaUpdating: false };
 
 describe('API client', () => {
@@ -39,7 +40,10 @@ describe('API client', () => {
       expect(typeof c.init.body).toBe('string');
     }
     expect(calls.map((c) => c.init.method)).toEqual(['POST', 'PATCH', 'PUT', 'DELETE', 'POST']);
-    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ month: '2026-11', items: [{ categoryId: 'dining', amount: 1825 }] });
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({
+      month: '2026-11',
+      items: [{ categoryId: 'dining', amount: 1825 }],
+    });
   });
 
   it('sends no CSRF header or body on reads', async () => {
@@ -62,12 +66,16 @@ describe('API client', () => {
 
   it('parses responses with the contract schema', async () => {
     respond = () => json({ ok: true, rta: 'lots', rtaUpdating: false });
-    await expect(api.assign({ month: '2026-11', items: [{ categoryId: 'x', amount: 1 }] })).rejects.toMatchObject({ code: 'bad_response' });
+    await expect(
+      api.assign({ month: '2026-11', items: [{ categoryId: 'x', amount: 1 }] }),
+    ).rejects.toMatchObject({ code: 'bad_response' });
   });
 
   it('maps API errors by code', async () => {
     respond = () => json({ error: 'read_only', message: 'Writes are paused' }, 503);
-    const err = await api.assign({ month: '2026-11', items: [{ categoryId: 'x', amount: 1 }] }).catch((e: unknown) => e);
+    const err = await api
+      .assign({ month: '2026-11', items: [{ categoryId: 'x', amount: 1 }] })
+      .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err).toMatchObject({ code: 'read_only', status: 503 });
     expect(errorMessage(err)).toMatch(/paused/);
@@ -83,10 +91,14 @@ describe('API client', () => {
   it('refuses mutations while offline or read-only, without calling the server', async () => {
     respond = () => json(ok);
     connectivity.setOnline(false);
-    await expect(api.assign({ month: '2026-11', items: [{ categoryId: 'x', amount: 1 }] })).rejects.toMatchObject({ code: 'offline' });
+    await expect(
+      api.assign({ month: '2026-11', items: [{ categoryId: 'x', amount: 1 }] }),
+    ).rejects.toMatchObject({ code: 'offline' });
     connectivity.setOnline(true);
     connectivity.setReadOnly(true, '2026-11-15T00:00:00Z');
-    await expect(api.move({ month: '2026-11', from: 'rta', to: 'x', amount: 1 })).rejects.toMatchObject({ code: 'read_only' });
+    await expect(api.move({ month: '2026-11', from: 'rta', to: 'x', amount: 1 })).rejects.toMatchObject({
+      code: 'read_only',
+    });
     expect(calls).toHaveLength(0);
   });
 });

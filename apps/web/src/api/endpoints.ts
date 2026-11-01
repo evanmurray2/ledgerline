@@ -76,7 +76,8 @@ export const api = {
   txn: (key: string) => get(`/api/transactions/${enc(key)}`, TxnSheet),
   patchTxn: (key: string, body: In<typeof TxnPatch>) =>
     patch(`/api/transactions/${enc(key)}`, MutationResult, body),
-  categorize: (body: In<typeof CategorizeRequest>) => post('/api/transactions/categorize', MutationResult, body),
+  categorize: (body: In<typeof CategorizeRequest>) =>
+    post('/api/transactions/categorize', MutationResult, body),
   newTxn: (body: In<typeof NewTxnRequest>) => post('/api/transactions', MutationResult, body),
   pendingCheck: (key: string, body: In<typeof PendingCheckAction>) =>
     post(`/api/transactions/${enc(key)}/pending`, MutationResult, body),
@@ -112,15 +113,18 @@ export const api = {
 
   payees: () => get('/api/settings/payees', PayeesView),
   mergePayees: (body: In<typeof MergePayees>) => post('/api/settings/payees/merge', Ok, body),
-  renamePayee: (id: string, body: In<typeof RenamePayee>) => post(`/api/settings/payees/${enc(id)}`, Ok, body),
+  renamePayee: (id: string, body: In<typeof RenamePayee>) =>
+    post(`/api/settings/payees/${enc(id)}`, Ok, body),
 
   connections: () => get('/api/settings/connections', ConnectionsView),
-  linkToken: (body: In<typeof LinkTokenRequest>) => post('/api/settings/connections/link-token', LinkToken, body),
+  linkToken: (body: In<typeof LinkTokenRequest>) =>
+    post('/api/settings/connections/link-token', LinkToken, body),
   exchange: (publicToken: string) => post('/api/settings/connections/exchange', Exchange, { publicToken }),
   refreshConnection: (id: string) => post(`/api/settings/connections/${enc(id)}/refresh`, Ok),
 
   setupStart: (body: In<typeof SetupStart>) => post('/api/setup/start', Ok, body),
-  startingBalances: (body: In<typeof StartingBalances>) => post('/api/setup/starting-balances', MutationResult, body),
+  startingBalances: (body: In<typeof StartingBalances>) =>
+    post('/api/setup/starting-balances', MutationResult, body),
   patchSettings: (body: In<typeof SettingsPatch>) => patch('/api/settings', Ok, body),
   importCsv: (body: In<typeof ImportCsvRequest>) => post('/api/import/csv', ImportResult, body),
   note: (body: In<typeof NoteRequest>) => post('/api/notes', Ok, body),

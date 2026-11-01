@@ -5,6 +5,7 @@ const PORT = 5179;
 
 export default defineConfig({
   testDir: './tests',
+  testIgnore: /worker\.spec\.ts/,
   fullyParallel: true,
   workers: 4,
   timeout: 30_000,
@@ -16,7 +17,15 @@ export default defineConfig({
     colorScheme: 'light',
   },
   projects: [
-    { name: 'phone', use: { browserName: 'chromium', viewport: { width: 390, height: 844 }, hasTouch: true, deviceScaleFactor: 2 } },
+    {
+      name: 'phone',
+      use: {
+        browserName: 'chromium',
+        viewport: { width: 390, height: 844 },
+        hasTouch: true,
+        deviceScaleFactor: 2,
+      },
+    },
     { name: 'desktop', use: { browserName: 'chromium', viewport: { width: 1280, height: 800 } } },
   ],
   webServer: {

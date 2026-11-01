@@ -72,7 +72,9 @@ test('Activity: categorize from the picker, undo, and accept the Always offer', 
   await expect(picker.getByText('You’ve used for Amazon')).toBeVisible();
   await picker.getByRole('button', { name: 'Shopping' }).first().click();
   await expect(page.getByRole('status').filter({ hasText: 'Amazon → Shopping' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Change category for Amazon −\$38\.10/ })).toHaveText('Shopping');
+  await expect(page.getByRole('button', { name: /Change category for Amazon −\$38\.10/ })).toHaveText(
+    'Shopping',
+  );
   await expect(page.getByRole('button', { name: 'Needs attention 7' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Undo' }).click();
@@ -80,7 +82,11 @@ test('Activity: categorize from the picker, undo, and accept the Always offer', 
 
   // Every past Blue Bottle Coffee was Dining out, so the toast offers a rule.
   await page.getByRole('button', { name: /Choose category for Blue Bottle Coffee/ }).click();
-  await page.getByRole('dialog', { name: 'Choose a category' }).getByRole('button', { name: 'Dining out' }).first().click();
+  await page
+    .getByRole('dialog', { name: 'Choose a category' })
+    .getByRole('button', { name: 'Dining out' })
+    .first()
+    .click();
   const toastBox = page.getByRole('status').filter({ hasText: 'Blue Bottle Coffee → Dining out' });
   await expect(toastBox.getByText('Put every Blue Bottle Coffee in Dining out from now on?')).toBeVisible();
   await toastBox.getByRole('button', { name: 'Always' }).click();
@@ -94,7 +100,10 @@ test('Activity: Select several gives many transactions one category', async ({ p
   await page.getByRole('checkbox', { name: /Select Amazon −\$23\.20/ }).check();
   await expect(page.getByText('2 selected')).toBeVisible();
   await page.getByRole('button', { name: 'Choose category' }).click();
-  await page.getByRole('dialog', { name: 'Choose a category' }).getByRole('button', { name: 'Household' }).click();
+  await page
+    .getByRole('dialog', { name: 'Choose a category' })
+    .getByRole('button', { name: 'Household' })
+    .click();
   await expect(page.getByRole('status').filter({ hasText: '2 transactions → Household' })).toBeVisible();
 });
 
@@ -127,10 +136,14 @@ test('Offline: last data stays visible and every change is disabled', async ({ p
   await expect(cover).toBeDisabled();
   await expect(page.getByRole('button', { name: /Fund all/ })).toBeDisabled();
   await expect(rta(page)).toHaveText('$981.90');
-  if (test.info().project.name === 'phone') await expect(page.getByText('Assign', { exact: true })).toHaveAttribute('aria-disabled', 'true');
+  if (test.info().project.name === 'phone')
+    await expect(page.getByText('Assign', { exact: true })).toHaveAttribute('aria-disabled', 'true');
 
   // Browsing still works; changing doesn't.
-  await page.getByRole('link', { name: /Activity/ }).first().click();
+  await page
+    .getByRole('link', { name: /Activity/ })
+    .first()
+    .click();
   await expect(page.getByText('Money to match')).toBeVisible();
   await expect(page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ })).toBeDisabled();
 
@@ -171,5 +184,7 @@ test('Bank connections confirm before linking and update the meter', async ({ pa
 test('Match money back returns it to Ready to Assign', async ({ page }) => {
   await page.goto('/activity/match/venmo');
   await page.getByRole('button', { name: 'Match $1,018.00' }).click();
-  await expect(page.getByText('Matched $1,018.00. 2 items are paid back, and Ready to Assign is now $1,999.90.')).toBeVisible();
+  await expect(
+    page.getByText('Matched $1,018.00. 2 items are paid back, and Ready to Assign is now $1,999.90.'),
+  ).toBeVisible();
 });

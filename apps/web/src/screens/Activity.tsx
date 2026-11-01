@@ -9,7 +9,18 @@ import { api, type ActivityFilter } from '../api/endpoints';
 import { qk, useActivity, useMoneyMutation } from '../api/hooks';
 import { Sheet } from '../components/Sheet';
 import { toast } from '../components/Toast';
-import { badgeClass, Button, Chip, cx, ErrorNote, Icon, Loading, SectionTitle, SoftButton, useIsDesktop } from '../components/ui';
+import {
+  badgeClass,
+  Button,
+  Chip,
+  cx,
+  ErrorNote,
+  Icon,
+  Loading,
+  SectionTitle,
+  SoftButton,
+  useIsDesktop,
+} from '../components/ui';
 import { formatCents } from '../lib/money';
 import { rowMeta, useScreen } from '../lib/common';
 import { useCanWrite } from '../state/connectivity';
@@ -19,7 +30,14 @@ import { useQueryClient } from '@tanstack/react-query';
 type NeedsRow = ActivityView['needsCategory'][number];
 
 export function sheetPath(base: string, r: Pick<TxnListRow, 'key' | 'sheet'>): string {
-  const seg = r.sheet === 'transfer' ? 'transfer' : r.sheet === 'match' ? 'match' : r.sheet === 'checkPending' ? 'check' : 'txn';
+  const seg =
+    r.sheet === 'transfer'
+      ? 'transfer'
+      : r.sheet === 'match'
+        ? 'match'
+        : r.sheet === 'checkPending'
+          ? 'check'
+          : 'txn';
   return `${base}/${seg}/${encodeURIComponent(r.key)}`;
 }
 
@@ -41,15 +59,32 @@ export function TxnRow({
 }) {
   return (
     <div className="flex items-center gap-2.5 border-t border-divider px-3 py-2 first:border-t-0">
-      <Link to={sheetPath(base, r)} data-track="activity.row" className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2.5 text-ink no-underline">
+      <Link
+        to={sheetPath(base, r)}
+        data-track="activity.row"
+        className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2.5 text-ink no-underline"
+      >
         <span className="flex min-w-0 flex-col gap-[3px]">
-          <span className={cx('text-[15px] font-semibold', r.wontClear && 'text-faint line-through')}>{r.payee}</span>
+          <span className={cx('text-[15px] font-semibold', r.wontClear && 'text-faint line-through')}>
+            {r.payee}
+          </span>
           <span className="text-[12px] text-muted">{rowMeta(r, style)}</span>
-          {r.badge && <span className={cx('self-start rounded-md px-2 py-0.5 text-[11px] font-bold', badgeClass(r.badgeKind))}>{r.badge}</span>}
+          {r.badge && (
+            <span
+              className={cx(
+                'self-start rounded-md px-2 py-0.5 text-[11px] font-bold',
+                badgeClass(r.badgeKind),
+              )}
+            >
+              {r.badge}
+            </span>
+          )}
         </span>
         <span className="flex shrink-0 flex-col items-end gap-0.5">
           <span className={cx('tnum text-[15px] font-bold', amountClass(r))}>
-            {r.sheet === 'txn' && r.badge === 'Transfer' ? formatCents(Math.abs(r.amount)) : formatCents(r.amount, { plus: true })}
+            {r.sheet === 'txn' && r.badge === 'Transfer'
+              ? formatCents(Math.abs(r.amount))
+              : formatCents(r.amount, { plus: true })}
           </span>
           {r.sub && style !== 'register' && <span className="text-[11px] text-muted">{r.sub}</span>}
         </span>
@@ -59,7 +94,17 @@ export function TxnRow({
   );
 }
 
-function Section({ title, note, children, action }: { title: string; note?: string; children: React.ReactNode; action?: React.ReactNode }) {
+function Section({
+  title,
+  note,
+  children,
+  action,
+}: {
+  title: string;
+  note?: string;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}) {
   return (
     <section className="flex shrink-0 flex-col gap-1.5">
       <SectionTitle note={note} action={action}>
@@ -102,7 +147,9 @@ export function ActivityScreen() {
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const [picking, setPicking] = useState<Picking | null>(null);
   /** Rows categorized while on this screen stay in place with their new category, as in the prototype. */
-  const [chosen, setChosen] = useState<Record<string, { row: NeedsRow; categoryId: string | null; name: string }>>({});
+  const [chosen, setChosen] = useState<
+    Record<string, { row: NeedsRow; categoryId: string | null; name: string }>
+  >({});
   const reportedEmpty = useRef('');
 
   /** Keys in the order the server first listed them, so categorized rows keep their place. */
@@ -119,7 +166,11 @@ export function ActivityScreen() {
   const openNeeds = needs.filter((r) => !chosen[r.key] || chosen[r.key]!.categoryId === null);
 
   const total = v
-    ? v.moneyToMatch.length + v.transfersToSort.length + v.checkThese.length + (v.needsCategory?.length ?? 0) + (v.posted.length + v.pending.length + v.upcoming.length)
+    ? v.moneyToMatch.length +
+      v.transfersToSort.length +
+      v.checkThese.length +
+      (v.needsCategory?.length ?? 0) +
+      (v.posted.length + v.pending.length + v.upcoming.length)
     : 0;
   useEffect(() => {
     if (!v || !q || query.isFetching) return;
@@ -129,11 +180,14 @@ export function ActivityScreen() {
     }
   }, [v, q, total, query.isFetching]);
 
-  const setFilter = (f: ActivityFilter) => navigate({ to: '/activity', search: { filter: f === 'all' ? undefined : f, q: q || undefined } });
+  const setFilter = (f: ActivityFilter) =>
+    navigate({ to: '/activity', search: { filter: f === 'all' ? undefined : f, q: q || undefined } });
 
   const pickerGroups = v?.categoryPicker ?? [];
-  const availOf = (id: string) => pickerGroups.flatMap((g) => g.categories).find((c) => c.id === id)?.available;
-  const nameOf = (id: string) => pickerGroups.flatMap((g) => g.categories).find((c) => c.id === id)?.name ?? 'category';
+  const availOf = (id: string) =>
+    pickerGroups.flatMap((g) => g.categories).find((c) => c.id === id)?.available;
+  const nameOf = (id: string) =>
+    pickerGroups.flatMap((g) => g.categories).find((c) => c.id === id)?.name ?? 'category';
 
   const openPicker = (p: Picking) => {
     usage.startTask('categorize');
@@ -155,10 +209,16 @@ export function ActivityScreen() {
       return;
     }
     usage.endTask('categorize');
-    setChosen((c) => ({ ...c, ...Object.fromEntries(rows.map((r) => [r.key, { row: r, categoryId, name }])) }));
+    setChosen((c) => ({
+      ...c,
+      ...Object.fromEntries(rows.map((r) => [r.key, { row: r, categoryId, name }])),
+    }));
     const spent = rows.reduce((s, r) => s - r.amount, 0);
     const after = before === undefined ? null : before - spent;
-    const warn = after !== null && after < 0 ? ` · ${name} is now overspent by ${formatCents(-after)}. Cover it on Budget.` : '';
+    const warn =
+      after !== null && after < 0
+        ? ` · ${name} is now overspent by ${formatCents(-after)}. Cover it on Budget.`
+        : '';
     const first = rows[0];
     const text = `${rows.length === 1 && first ? first.payee : `${rows.length} transactions`} → ${name}${warn}`;
     const offerRule = rows.length === 1 && first?.history?.consistent && first.history.categories[0] === name;
@@ -167,12 +227,12 @@ export function ActivityScreen() {
       undo: async () => {
         const back = keys.filter((k) => prev[k] === null);
         if (back.length) await categorize.mutateAsync({ keys: back, categoryId: null });
-        for (const k of keys.filter((x) => prev[x])) await categorize.mutateAsync({ keys: [k], categoryId: prev[k]! });
+        for (const k of keys.filter((x) => prev[x]))
+          await categorize.mutateAsync({ keys: [k], categoryId: prev[k]! });
         usage.undo('categorize');
         setChosen((c) => {
-          const n = { ...c };
-          for (const k of keys) delete n[k];
-          return n;
+          const drop = new Set(keys);
+          return Object.fromEntries(Object.entries(c).filter(([k]) => !drop.has(k)));
         });
       },
       offer:
@@ -211,16 +271,27 @@ export function ActivityScreen() {
   const selKeys = openNeeds.filter((r) => sel[r.key]).map((r) => r.key);
   const showAttnHead = filter !== 'pending' && !q && (v?.attentionCount ?? 0) > 0;
   const attentionCount = counts.data?.attentionCount ?? v?.attentionCount ?? 0;
-  const showNeeds = filter !== 'pending' && needs.filter((r) => !q || r.payee.toLowerCase().includes(q.toLowerCase())).length > 0;
+  const showNeeds =
+    filter !== 'pending' &&
+    needs.filter((r) => !q || r.payee.toLowerCase().includes(q.toLowerCase())).length > 0;
   const empty = v && total === 0 && !showNeeds && !(filter === 'attention' && !q);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <header className={cx('flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface pb-2.5', desktop ? 'px-6 pt-4' : 'px-4 pt-3')}>
+      <header
+        className={cx(
+          'flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface pb-2.5',
+          desktop ? 'px-6 pt-4' : 'px-4 pt-3',
+        )}
+      >
         <div className="flex items-center justify-between gap-3">
           <h1 className="m-0 text-[22px] font-bold">Activity</h1>
           {desktop && (
-            <Link to="/activity/add" data-track="activity.add" className="hit flex h-9 items-center rounded-full bg-accent px-4 text-[13px] font-bold text-on-accent no-underline">
+            <Link
+              to="/activity/add"
+              data-track="activity.add"
+              className="hit flex h-9 items-center rounded-full bg-accent px-4 text-[13px] font-bold text-on-accent no-underline"
+            >
               + Add transaction
             </Link>
           )}
@@ -240,26 +311,43 @@ export function ActivityScreen() {
           <Chip pressed={filter === 'all'} onClick={() => void setFilter('all')} track="activity.filter.all">
             All
           </Chip>
-          <Chip pressed={filter === 'attention'} onClick={() => void setFilter('attention')} track="activity.filter.attention">
+          <Chip
+            pressed={filter === 'attention'}
+            onClick={() => void setFilter('attention')}
+            track="activity.filter.attention"
+          >
             Needs attention {attentionCount}
           </Chip>
-          <Chip pressed={filter === 'pending'} onClick={() => void setFilter('pending')} track="activity.filter.pending">
+          <Chip
+            pressed={filter === 'pending'}
+            onClick={() => void setFilter('pending')}
+            track="activity.filter.pending"
+          >
             Not posted yet
           </Chip>
         </div>
       </header>
-      <div className={cx('flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto pt-3', desktop ? 'px-6 pb-8' : 'px-4 pb-24')}>
+      <div
+        className={cx(
+          'flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto pt-3',
+          desktop ? 'px-6 pb-8' : 'px-4 pb-24',
+        )}
+      >
         <div className={cx('flex flex-col gap-3.5', desktop && 'mx-auto w-full max-w-[880px]')}>
           {!v && (query.error ? <ErrorNote error={query.error} /> : <Loading />)}
           {empty && <p className="m-0 p-4 text-center text-[14px] text-muted">No transactions match.</p>}
           {v && showAttnHead && (
             <div className="flex items-center gap-2 px-0.5">
               <h2 className="m-0 text-[15px] font-bold">Needs attention</h2>
-              <span className="flex h-5 min-w-5 items-center justify-center rounded-[10px] bg-danger px-1.5 text-[12px] font-bold text-on-danger">{v.attentionCount}</span>
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-[10px] bg-danger px-1.5 text-[12px] font-bold text-on-danger">
+                {v.attentionCount}
+              </span>
             </div>
           )}
           {v && filter === 'attention' && !q && v.attentionCount === 0 && openNeeds.length === 0 && (
-            <p className="m-0 rounded-[14px] bg-funded-bg p-4 text-center text-[15px] font-semibold text-funded-fg">Nothing needs attention.</p>
+            <p className="m-0 rounded-[14px] bg-funded-bg p-4 text-center text-[15px] font-semibold text-funded-fg">
+              Nothing needs attention.
+            </p>
           )}
           {v && v.moneyToMatch.length > 0 && (
             <Section title="Money to match">
@@ -269,7 +357,12 @@ export function ActivityScreen() {
                   r={r}
                   base="/activity"
                   action={
-                    <Link to={sheetPath('/activity', r)} data-track="activity.match" aria-label={`Match ${r.payee}`} className="hit flex h-9 shrink-0 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline">
+                    <Link
+                      to={sheetPath('/activity', r)}
+                      data-track="activity.match"
+                      aria-label={`Match ${r.payee}`}
+                      className="hit flex h-9 shrink-0 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline"
+                    >
                       Match
                     </Link>
                   }
@@ -285,7 +378,12 @@ export function ActivityScreen() {
                   r={r}
                   base="/activity"
                   action={
-                    <Link to={sheetPath('/activity', r)} data-track="activity.transfer.pick" aria-label={`Pick ${r.payee}`} className="hit flex h-9 shrink-0 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline">
+                    <Link
+                      to={sheetPath('/activity', r)}
+                      data-track="activity.transfer.pick"
+                      aria-label={`Pick ${r.payee}`}
+                      className="hit flex h-9 shrink-0 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline"
+                    >
                       Pick
                     </Link>
                   }
@@ -299,7 +397,10 @@ export function ActivityScreen() {
                 <h2 className="m-0 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
                   Needs category{' '}
                   <span className="font-semibold normal-case tracking-normal text-muted">
-                    · {openNeeds.length === 0 ? 'done' : `${openNeeds.length} · ${formatCents(openNeeds.reduce((s, r) => s + r.amount, 0))}`}
+                    ·{' '}
+                    {openNeeds.length === 0
+                      ? 'done'
+                      : `${openNeeds.length} · ${formatCents(openNeeds.reduce((s, r) => s + r.amount, 0))}`}
                   </span>
                 </h2>
                 {openNeeds.length > 1 && (
@@ -317,7 +418,11 @@ export function ActivityScreen() {
                 )}
               </div>
               <div className="overflow-hidden rounded-[14px] border border-line bg-surface">
-                {openNeeds.length === 0 && <p className="m-0 px-3 py-3.5 text-[14px] font-semibold text-funded-fg">Everything has a category.</p>}
+                {openNeeds.length === 0 && (
+                  <p className="m-0 px-3 py-3.5 text-[14px] font-semibold text-funded-fg">
+                    Everything has a category.
+                  </p>
+                )}
                 {needs
                   .filter((r) => !q || r.payee.toLowerCase().includes(q.toLowerCase()))
                   .map((r) => {
@@ -325,7 +430,13 @@ export function ActivityScreen() {
                     const label = c && c.categoryId ? c.name : null;
                     const on = !!sel[r.key];
                     return (
-                      <div key={r.key} className={cx('flex items-center gap-2.5 border-t border-divider px-3 py-2 first:border-t-0', selecting && on ? 'bg-accent-soft' : 'bg-surface')}>
+                      <div
+                        key={r.key}
+                        className={cx(
+                          'flex items-center gap-2.5 border-t border-divider px-3 py-2 first:border-t-0',
+                          selecting && on ? 'bg-accent-soft' : 'bg-surface',
+                        )}
+                      >
                         {selecting && !label && (
                           <input
                             type="checkbox"
@@ -335,7 +446,10 @@ export function ActivityScreen() {
                             onChange={() => setSel((s) => ({ ...s, [r.key]: !s[r.key] }))}
                           />
                         )}
-                        <Link to={sheetPath('/activity', r)} className="flex min-h-11 min-w-0 flex-1 flex-col justify-center gap-[3px] text-ink no-underline">
+                        <Link
+                          to={sheetPath('/activity', r)}
+                          className="flex min-h-11 min-w-0 flex-1 flex-col justify-center gap-[3px] text-ink no-underline"
+                        >
                           <span className="flex justify-between gap-2">
                             <span className="text-[15px] font-semibold">{r.payee}</span>
                             <span className="tnum text-[15px] font-bold">{formatCents(r.amount)}</span>
@@ -350,7 +464,9 @@ export function ActivityScreen() {
                             onClick={() => openPicker({ keys: [r.key], row: r })}
                             className={cx(
                               'hit h-9 max-w-[112px] shrink-0 truncate whitespace-nowrap rounded-full border px-3 text-[13px] font-bold disabled:opacity-50',
-                              label ? 'border-solid border-line-strong bg-sunken text-none-fg' : 'border-dashed border-accent bg-surface text-accent',
+                              label
+                                ? 'border-solid border-line-strong bg-sunken text-none-fg'
+                                : 'border-dashed border-accent bg-surface text-accent',
                             )}
                           >
                             {label ?? 'Choose'}
@@ -371,11 +487,21 @@ export function ActivityScreen() {
                   base="/activity"
                   action={
                     r.action === 'dismiss' ? (
-                      <SoftButton mutates track="activity.check.ok" aria-label={`OK ${r.payee}`} onClick={() => void dismiss(r)}>
+                      <SoftButton
+                        mutates
+                        track="activity.check.ok"
+                        aria-label={`OK ${r.payee}`}
+                        onClick={() => void dismiss(r)}
+                      >
                         OK
                       </SoftButton>
                     ) : (
-                      <Link to={sheetPath('/activity', r)} data-track="activity.check.review" aria-label={`Review ${r.payee}`} className="hit flex h-9 shrink-0 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline">
+                      <Link
+                        to={sheetPath('/activity', r)}
+                        data-track="activity.check.review"
+                        aria-label={`Review ${r.payee}`}
+                        className="hit flex h-9 shrink-0 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline"
+                      >
                         Review
                       </Link>
                     )
@@ -485,7 +611,9 @@ function CategoryPicker({
         <div className="flex flex-col gap-px">
           <h2 className="m-0 text-[17px] font-bold">Choose a category</h2>
           <span className="text-[13px] text-muted">
-            {row ? `${row.payee} · ${formatCents(row.amount)} · ${rowMeta(row, 'needs')}` : `${picking.keys.length} transactions`}
+            {row
+              ? `${row.payee} · ${formatCents(row.amount)} · ${rowMeta(row, 'needs')}`
+              : `${picking.keys.length} transactions`}
           </span>
         </div>
       }
@@ -493,7 +621,9 @@ function CategoryPicker({
       <div className="flex flex-col gap-2.5 pb-4">
         {row?.history && suggest.length > 0 && (
           <>
-            <span className="text-[12px] font-bold uppercase tracking-[0.4px] text-ink-2">{row.history.title}</span>
+            <span className="text-[12px] font-bold uppercase tracking-[0.4px] text-ink-2">
+              {row.history.title}
+            </span>
             <div className="flex flex-wrap gap-2">
               {suggest.map((n) => (
                 <button
@@ -512,7 +642,9 @@ function CategoryPicker({
         )}
         {groups.map((g) => (
           <div key={g.group} className="flex flex-col gap-2.5">
-            <span className="pt-1 text-[12px] font-bold uppercase tracking-[0.4px] text-ink-2">{g.group}</span>
+            <span className="pt-1 text-[12px] font-bold uppercase tracking-[0.4px] text-ink-2">
+              {g.group}
+            </span>
             <div className="shrink-0 overflow-hidden rounded-xl border border-line">
               {g.categories.map((c) => (
                 <button
@@ -524,7 +656,9 @@ function CategoryPicker({
                   className="flex h-12 w-full items-center justify-between border-t border-divider bg-surface px-3 text-left text-[15px] text-ink first:border-t-0"
                 >
                   <span>{c.name}</span>
-                  <span className={cx('tnum text-[13px]', c.available < 0 ? 'text-over-fg' : 'text-muted')}>{formatCents(c.available)}</span>
+                  <span className={cx('tnum text-[13px]', c.available < 0 ? 'text-over-fg' : 'text-muted')}>
+                    {formatCents(c.available)}
+                  </span>
                 </button>
               ))}
             </div>
@@ -532,10 +666,20 @@ function CategoryPicker({
         ))}
         {row && (
           <div className="flex gap-4 pt-1">
-            <button type="button" data-track="activity.picker.split" onClick={() => onSplit(row.key)} className="hit flex h-10 items-center text-[14px] font-bold text-accent">
+            <button
+              type="button"
+              data-track="activity.picker.split"
+              onClick={() => onSplit(row.key)}
+              className="hit flex h-10 items-center text-[14px] font-bold text-accent"
+            >
               Split it…
             </button>
-            <button type="button" data-track="activity.picker.transfer" onClick={() => onTransfer(row.key)} className="hit flex h-10 items-center text-[14px] font-bold text-accent">
+            <button
+              type="button"
+              data-track="activity.picker.transfer"
+              onClick={() => onTransfer(row.key)}
+              className="hit flex h-10 items-center text-[14px] font-bold text-accent"
+            >
               It’s a transfer…
             </button>
           </div>

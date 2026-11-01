@@ -117,7 +117,8 @@ describe('UsageTracker', () => {
     tracker.tap('budget.category');
     await tracker.flush();
     const raw = String(sent[0]!.init.body);
-    for (const bad of ['Trader', 'Joe', '18.25', 'Blue Bottle', 'Jordan', 'uber eats']) expect(raw).not.toContain(bad);
+    for (const bad of ['Trader', 'Joe', '18.25', 'Blue Bottle', 'Jordan', 'uber eats'])
+      expect(raw).not.toContain(bad);
     const events = UsageBatch.parse(JSON.parse(raw)).events;
     expect(events.every((e) => /^[a-z0-9_.-]+$/.test(e.event))).toBe(true);
     expect(events.every((e) => e.target === null || /^[a-z0-9_.-]+$/.test(e.target))).toBe(true);
@@ -126,7 +127,8 @@ describe('UsageTracker', () => {
   it('records named controls from clicks and rage taps on non-controls', async () => {
     const { tracker, sent } = make();
     tracker.setEnabled(true);
-    document.body.innerHTML = '<button data-track="budget.assign">Assign <span id="inner">$981.90</span></button><p id="text">Ready to Assign</p>';
+    document.body.innerHTML =
+      '<button data-track="budget.assign">Assign <span id="inner">$981.90</span></button><p id="text">Ready to Assign</p>';
     tracker.onClick(new MouseEvent('click', { bubbles: true }) as MouseEvent & { target: Element });
     const inner = document.getElementById('inner')!;
     inner.dispatchEvent(new MouseEvent('click', { bubbles: true }));

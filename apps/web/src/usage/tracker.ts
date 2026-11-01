@@ -39,7 +39,8 @@ export interface TrackerDeps {
   clearInterval: (h: unknown) => void;
 }
 
-const CONTROL_SELECTOR = 'a,button,input,select,textarea,label,summary,[role="button"],[role="radio"],[data-track]';
+const CONTROL_SELECTOR =
+  'a,button,input,select,textarea,label,summary,[role="button"],[role="radio"],[data-track]';
 
 export class UsageTracker {
   private buffer: UsageEvent[] = [];
@@ -184,7 +185,11 @@ export class UsageTracker {
           keepalive: true,
           credentials: 'same-origin',
           headers: { 'content-type': 'application/json', [CSRF_HEADER]: '1' },
-          body: JSON.stringify({ sessionId: this.sessionId, appVersion: this.appVersion.slice(0, 20), events: chunk }),
+          body: JSON.stringify({
+            sessionId: this.sessionId,
+            appVersion: this.appVersion.slice(0, 20),
+            events: chunk,
+          }),
         });
       } catch {
         // Usage is lowest priority: a failed batch is dropped, never retried or queued.

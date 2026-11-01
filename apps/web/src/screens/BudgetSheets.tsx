@@ -100,8 +100,15 @@ export function CategorySheetScreen() {
         </div>
       }
       footer={
-        <PrimaryButton mutates track={mode === 'assign' ? 'category.save' : 'category.move'} onClick={save} disabled={mode === 'assign' ? !changed : !moveOk}>
-          {mode === 'assign' ? 'Save' : `Move ${moveCents && moveCents > 0 ? formatCents(moveCents) : ''}`.trim()}
+        <PrimaryButton
+          mutates
+          track={mode === 'assign' ? 'category.save' : 'category.move'}
+          onClick={save}
+          disabled={mode === 'assign' ? !changed : !moveOk}
+        >
+          {mode === 'assign'
+            ? 'Save'
+            : `Move ${moveCents && moveCents > 0 ? formatCents(moveCents) : ''}`.trim()}
         </PrimaryButton>
       }
     >
@@ -116,7 +123,10 @@ export function CategorySheetScreen() {
         </div>
         <div className={cx('flex flex-col gap-0.5 rounded-xl p-2.5', TONE[st.tone].bg)}>
           <span className={cx('text-[12px]', TONE[st.tone].fg)}>Available</span>
-          <span className={cx('tnum text-[16px] font-bold', TONE[st.tone].fg)} data-testid="category-available">
+          <span
+            className={cx('tnum text-[16px] font-bold', TONE[st.tone].fg)}
+            data-testid="category-available"
+          >
             {formatCents(available)}
           </span>
         </div>
@@ -143,13 +153,26 @@ export function CategorySheetScreen() {
             />
           </Field>
           <div className="flex flex-wrap gap-2">
-            <QuickChip label="+ $50" onClick={() => setAssigned(centsToInput((newAssigned ?? c.assigned) + 5000))} />
+            <QuickChip
+              label="+ $50"
+              onClick={() => setAssigned(centsToInput((newAssigned ?? c.assigned) + 5000))}
+            />
             {c.lastMonthAssigned > 0 && (
-              <QuickChip label={`Last month ${formatCents(c.lastMonthAssigned, { whole: true })}`} onClick={() => setAssigned(centsToInput(c.lastMonthAssigned))} />
+              <QuickChip
+                label={`Last month ${formatCents(c.lastMonthAssigned, { whole: true })}`}
+                onClick={() => setAssigned(centsToInput(c.lastMonthAssigned))}
+              />
             )}
-            {target !== null && <QuickChip label={`Target ${formatCents(target, { whole: true })}`} onClick={() => setAssigned(centsToInput(target))} />}
+            {target !== null && (
+              <QuickChip
+                label={`Target ${formatCents(target, { whole: true })}`}
+                onClick={() => setAssigned(centsToInput(target))}
+              />
+            )}
           </div>
-          <p className="m-0 text-[12px] text-muted">The difference comes from or goes back to Ready to Assign ({formatCents(c.rta)}).</p>
+          <p className="m-0 text-[12px] text-muted">
+            The difference comes from or goes back to Ready to Assign ({formatCents(c.rta)}).
+          </p>
         </>
       ) : (
         <>
@@ -163,7 +186,13 @@ export function CategorySheetScreen() {
             </select>
           </Field>
           <Field label="Amount">
-            <input className={cx(inputClass, 'tnum text-[18px] font-bold')} inputMode="decimal" placeholder="0.00" value={moveAmt} onChange={(e) => setMoveAmt(e.target.value)} />
+            <input
+              className={cx(inputClass, 'tnum text-[18px] font-bold')}
+              inputMode="decimal"
+              placeholder="0.00"
+              value={moveAmt}
+              onChange={(e) => setMoveAmt(e.target.value)}
+            />
           </Field>
           <p className="m-0 text-[12px] text-muted">
             {c.name} would have {formatCents(c.available - (moveCents ?? 0))} left.
@@ -190,17 +219,36 @@ export function CategorySheetScreen() {
         <div className="flex items-center justify-between">
           <Label>Recent</Label>
           {c.recentTotal > 0 && (
-            <button type="button" data-track="category.see_all" onClick={() => void navigate({ to: '/activity', search: { q: c.name } })} className="flex min-h-9 items-center text-[13px] font-bold text-accent">
+            <button
+              type="button"
+              data-track="category.see_all"
+              onClick={() => void navigate({ to: '/activity', search: { q: c.name } })}
+              className="flex min-h-9 items-center text-[13px] font-bold text-accent"
+            >
               See all {c.recentTotal}
             </button>
           )}
         </div>
-        {c.recent.length === 0 && <p className="m-0 py-3 text-[13px] text-muted">No transactions yet this month.</p>}
+        {c.recent.length === 0 && (
+          <p className="m-0 py-3 text-[13px] text-muted">No transactions yet this month.</p>
+        )}
         {c.recent.map((r) => (
-          <Link key={r.key} to={`/activity/txn/${r.key}`} className="flex min-h-12 items-center justify-between border-t border-divider text-[14px] text-ink no-underline">
+          <Link
+            key={r.key}
+            to={`/activity/txn/${r.key}`}
+            className="flex min-h-12 items-center justify-between border-t border-divider text-[14px] text-ink no-underline"
+          >
             <span className="flex flex-col gap-px">
               <span className="font-semibold">{r.payee}</span>
-              <span className="text-[12px] text-muted">{[dayLabel(r.date), r.accountName, r.badge === 'By rule' ? 'by rule' : r.categoryLabel === 'split' ? 'split' : null].filter(Boolean).join(' · ')}</span>
+              <span className="text-[12px] text-muted">
+                {[
+                  dayLabel(r.date),
+                  r.accountName,
+                  r.badge === 'By rule' ? 'by rule' : r.categoryLabel === 'split' ? 'split' : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
             </span>
             <span className="tnum font-bold">{formatCents(r.amount)}</span>
           </Link>
@@ -212,7 +260,12 @@ export function CategorySheetScreen() {
 
 function QuickChip({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <button type="button" data-track="category.quick" onClick={onClick} className="hit h-9 rounded-full border border-line-strong bg-surface px-3.5 text-[13px] font-semibold text-ink-2">
+    <button
+      type="button"
+      data-track="category.quick"
+      onClick={onClick}
+      className="hit h-9 rounded-full border border-line-strong bg-surface px-3.5 text-[13px] font-semibold text-ink-2"
+    >
       {label}
     </button>
   );
@@ -222,10 +275,18 @@ function QuickChip({ label, onClick }: { label: string; onClick: () => void }) {
 
 type Kind = 'refill' | 'set_aside' | 'by_date' | 'no_date';
 const KINDS: { id: Kind; name: string; desc: string }[] = [
-  { id: 'refill', name: 'Refill', desc: 'Have an amount available each month, quarter or year; leftover rolls over' },
+  {
+    id: 'refill',
+    name: 'Refill',
+    desc: 'Have an amount available each month, quarter or year; leftover rolls over',
+  },
   { id: 'set_aside', name: 'Set aside', desc: 'Put the same amount in every month, whatever the balance' },
   { id: 'by_date', name: 'Balance by a date', desc: 'Reach a total by a month, in even steps' },
-  { id: 'no_date', name: 'Balance, no date', desc: 'Grow toward a total, optionally a set amount each month' },
+  {
+    id: 'no_date',
+    name: 'Balance, no date',
+    desc: 'Grow toward a total, optionally a set amount each month',
+  },
 ];
 
 function monthsBetween(from: string, to: string) {
@@ -240,8 +301,14 @@ export function TargetScreen() {
   useScreen('target');
   const q = useCategorySheet(categoryId, month);
   const navigate = useNavigate();
-  const back = () => void navigate({ to: `/budget/category/${categoryId}`, search: { month: month === current ? undefined : month } });
-  const save = useMoneyMutation((v: { id: string; body: Parameters<typeof api.setTarget>[1] }) => api.setTarget(v.id, v.body));
+  const back = () =>
+    void navigate({
+      to: `/budget/category/${categoryId}`,
+      search: { month: month === current ? undefined : month },
+    });
+  const save = useMoneyMutation((v: { id: string; body: Parameters<typeof api.setTarget>[1] }) =>
+    api.setTarget(v.id, v.body),
+  );
   const c = q.data;
   const [kind, setKind] = useState<Kind>('refill');
   const [amount, setAmount] = useState('');
@@ -273,7 +340,13 @@ export function TargetScreen() {
   const cents = parseCents(amount);
   const target = useMemo<Target | null>(() => {
     if (cents === null || cents <= 0 || !month) return null;
-    if (kind === 'refill') return { type: 'refill', amount: cents, periodMonths: Number(period) as 1 | 3 | 12, anchor: period === '1' ? month : due || addMonths(month, Number(period) - 1) };
+    if (kind === 'refill')
+      return {
+        type: 'refill',
+        amount: cents,
+        periodMonths: Number(period) as 1 | 3 | 12,
+        anchor: period === '1' ? month : due || addMonths(month, Number(period) - 1),
+      };
     if (kind === 'set_aside') return { type: 'set_aside', amount: cents };
     if (kind === 'by_date') return byMonth ? { type: 'by_date', amount: cents, targetMonth: byMonth } : null;
     const m = parseCents(monthly);
@@ -294,21 +367,36 @@ export function TargetScreen() {
       case 'refill': {
         if (target.periodMonths === 1) {
           const nextNeed = Math.max(0, target.amount - c.available);
-          return [`Needs ${f(target.amount)} this month`, `You have ${formatCents(c.available)} left, so next month needs ${formatCents(nextNeed)} to refill.`];
+          return [
+            `Needs ${f(target.amount)} this month`,
+            `You have ${formatCents(c.available)} left, so next month needs ${formatCents(nextNeed)} to refill.`,
+          ];
         }
         const per = Math.floor(target.amount / target.periodMonths);
         const word = target.periodMonths === 12 ? 'year' : 'quarter';
-        return [`Needs ${f(per)} a month`, `${f(target.amount)} per ${word} in ${target.periodMonths === 12 ? 'twelve' : 'three'} monthly steps. Leftover lowers the next ${word}.`];
+        return [
+          `Needs ${f(per)} a month`,
+          `${f(target.amount)} per ${word} in ${target.periodMonths === 12 ? 'twelve' : 'three'} monthly steps. Leftover lowers the next ${word}.`,
+        ];
       }
       case 'set_aside':
-        return [`Needs ${f(target.amount)} every month`, 'The balance keeps growing; spending doesn’t change what’s needed.'];
+        return [
+          `Needs ${f(target.amount)} every month`,
+          'The balance keeps growing; spending doesn’t change what’s needed.',
+        ];
       case 'by_date': {
         const n = monthsBetween(month, target.targetMonth);
         const per = Math.floor(Math.max(0, target.amount - c.available) / n);
-        return [`Needs ${f(per)} a month`, `${f(target.amount)} by ${monthLabel(target.targetMonth)} from what you have now, in even steps.`];
+        return [
+          `Needs ${f(per)} a month`,
+          `${f(target.amount)} by ${monthLabel(target.targetMonth)} from what you have now, in even steps.`,
+        ];
       }
       case 'no_date':
-        return [target.monthly ? `Needs ${f(target.monthly)} a month` : 'No monthly amount', `Shows progress toward ${f(target.amount)}; stops asking once reached.`];
+        return [
+          target.monthly ? `Needs ${f(target.monthly)} a month` : 'No monthly amount',
+          `Shows progress toward ${f(target.amount)}; stops asking once reached.`,
+        ];
       default:
         return ['', ''];
     }
@@ -326,7 +414,12 @@ export function TargetScreen() {
       closeLabel={`Back to ${c.name}`}
       header={<SheetTitle title="Target" sub={c.name} />}
       footer={
-        <PrimaryButton mutates track="target.save" disabled={!target} onClick={() => target && void submit(target)}>
+        <PrimaryButton
+          mutates
+          track="target.save"
+          disabled={!target}
+          onClick={() => target && void submit(target)}
+        >
           Save target
         </PrimaryButton>
       }
@@ -334,11 +427,32 @@ export function TargetScreen() {
       <fieldset className="m-0 flex flex-col gap-2 border-none p-0">
         <legend className="pb-2 text-[13px] font-bold text-ink-2">What kind of target?</legend>
         {KINDS.map((k) => (
-          <OptionCard key={k.id} selected={kind === k.id} onClick={() => setKind(k.id)} title={k.name} desc={k.desc} track={`target.kind.${k.id}`} />
+          <OptionCard
+            key={k.id}
+            selected={kind === k.id}
+            onClick={() => setKind(k.id)}
+            title={k.name}
+            desc={k.desc}
+            track={`target.kind.${k.id}`}
+          />
         ))}
       </fieldset>
-      <Field label={kind === 'refill' ? 'Have this much available' : kind === 'set_aside' ? 'Set aside every month' : 'Reach a balance of'}>
-        <input className={cx(inputClass, 'tnum text-[18px] font-bold')} inputMode="decimal" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+      <Field
+        label={
+          kind === 'refill'
+            ? 'Have this much available'
+            : kind === 'set_aside'
+              ? 'Set aside every month'
+              : 'Reach a balance of'
+        }
+      >
+        <input
+          className={cx(inputClass, 'tnum text-[18px] font-bold')}
+          inputMode="decimal"
+          placeholder="0.00"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+        />
       </Field>
       {kind === 'refill' && (
         <>
@@ -355,19 +469,36 @@ export function TargetScreen() {
           />
           {period !== '1' && (
             <Field label="Due">
-              <input type="month" className={inputClass} value={due || addMonths(month, Number(period) - 1)} onChange={(e) => setDue(e.target.value)} />
+              <input
+                type="month"
+                className={inputClass}
+                value={due || addMonths(month, Number(period) - 1)}
+                onChange={(e) => setDue(e.target.value)}
+              />
             </Field>
           )}
         </>
       )}
       {kind === 'by_date' && (
         <Field label="By">
-          <input type="month" className={inputClass} value={byMonth} min={month} onChange={(e) => setByMonth(e.target.value)} />
+          <input
+            type="month"
+            className={inputClass}
+            value={byMonth}
+            min={month}
+            onChange={(e) => setByMonth(e.target.value)}
+          />
         </Field>
       )}
       {kind === 'no_date' && (
         <Field label="Add each month (optional)">
-          <input className={cx(inputClass, 'tnum text-[18px]')} inputMode="decimal" placeholder="0.00" value={monthly} onChange={(e) => setMonthly(e.target.value)} />
+          <input
+            className={cx(inputClass, 'tnum text-[18px]')}
+            inputMode="decimal"
+            placeholder="0.00"
+            value={monthly}
+            onChange={(e) => setMonthly(e.target.value)}
+          />
         </Field>
       )}
       <p className="m-0 rounded-xl bg-page p-3 text-[14px] leading-[1.45]">
@@ -378,21 +509,40 @@ export function TargetScreen() {
       {save.error && <ErrorNote error={save.error} />}
       {c.target.type !== 'none' &&
         (asking ? (
-          <div role="alertdialog" aria-label="Remove target" className="flex flex-col gap-2.5 rounded-xl bg-over-bg p-3 text-over-fg">
+          <div
+            role="alertdialog"
+            aria-label="Remove target"
+            className="flex flex-col gap-2.5 rounded-xl bg-over-bg p-3 text-over-fg"
+          >
             <span className="text-[14px] leading-snug">
-              Remove the target from {c.name}? The money stays in the category; it just stops showing as underfunded or low.
+              Remove the target from {c.name}? The money stays in the category; it just stops showing as
+              underfunded or low.
             </span>
             <div className="flex gap-2">
-              <button type="button" onClick={() => setAsking(false)} className="h-11 flex-1 rounded-[10px] border border-line-strong bg-surface text-[14px] font-bold text-ink-2">
+              <button
+                type="button"
+                onClick={() => setAsking(false)}
+                className="h-11 flex-1 rounded-[10px] border border-line-strong bg-surface text-[14px] font-bold text-ink-2"
+              >
                 Keep it
               </button>
-              <Button mutates track="target.remove.confirm" onClick={() => void submit({ type: 'none' })} className="h-11 flex-1 rounded-[10px] bg-danger text-[14px] font-bold text-on-danger">
+              <Button
+                mutates
+                track="target.remove.confirm"
+                onClick={() => void submit({ type: 'none' })}
+                className="h-11 flex-1 rounded-[10px] bg-danger text-[14px] font-bold text-on-danger"
+              >
                 Remove target
               </Button>
             </div>
           </div>
         ) : (
-          <button type="button" data-track="target.remove" onClick={() => setAsking(true)} className="min-h-9 self-start text-[14px] font-bold text-over-fg">
+          <button
+            type="button"
+            data-track="target.remove"
+            onClick={() => setAsking(true)}
+            className="min-h-9 self-start text-[14px] font-bold text-over-fg"
+          >
             Remove target
           </button>
         ))}
@@ -427,8 +577,10 @@ export function AssignSheetScreen() {
       </Sheet>
     );
   }
-  const defaultOn = (s: (typeof v.suggestions)[number]) => s.reason !== 'target' || /^Underfunded/.test(s.detail);
-  const isOn = (s: (typeof v.suggestions)[number]) => (off[s.categoryId] === undefined ? defaultOn(s) : !off[s.categoryId]);
+  const defaultOn = (s: (typeof v.suggestions)[number]) =>
+    s.reason !== 'target' || /^Underfunded/.test(s.detail);
+  const isOn = (s: (typeof v.suggestions)[number]) =>
+    off[s.categoryId] === undefined ? defaultOn(s) : !off[s.categoryId];
   const chosen = v.suggestions.filter(isOn);
   const customCents = parseCents(custom);
   const items = new Map<string, number>();
@@ -438,7 +590,10 @@ export function AssignSheetScreen() {
   const left = v.rta - sum;
   const apply = async () => {
     if (items.size === 0) return;
-    await assign.mutateAsync({ month, items: [...items].map(([categoryId, amount]) => ({ categoryId, amount })) });
+    await assign.mutateAsync({
+      month,
+      items: [...items].map(([categoryId, amount]) => ({ categoryId, amount })),
+    });
     usage.endTask('assign');
     close();
   };
@@ -448,23 +603,40 @@ export function AssignSheetScreen() {
       track="assign"
       onClose={close}
       gap="large"
-      header={<SheetTitle title={`Assign ${formatCents(v.rta)}`} sub={`Ready to Assign in ${monthName(month)}`} />}
+      header={
+        <SheetTitle title={`Assign ${formatCents(v.rta)}`} sub={`Ready to Assign in ${monthName(month)}`} />
+      }
       footer={
         <div className="flex flex-col gap-2">
           <div className="flex justify-between text-[14px]">
             <span className="text-muted">Left to assign after this</span>
-            <span className={cx('tnum font-bold', left < 0 ? 'text-over-fg' : 'text-ink')} data-testid="assign-left">
+            <span
+              className={cx('tnum font-bold', left < 0 ? 'text-over-fg' : 'text-ink')}
+              data-testid="assign-left"
+            >
               {formatCents(left)}
             </span>
           </div>
           {left < 0 && (
             <p role="alert" className="m-0 text-[13px] leading-snug text-over-fg">
-              That’s {formatCents(-left)} more than you have. Ready to Assign would go negative and show in Needs attention until you take money back from a
-              category.
+              That’s {formatCents(-left)} more than you have. Ready to Assign would go negative and show in
+              Needs attention until you take money back from a category.
             </p>
           )}
-          <PrimaryButton mutates track={left < 0 ? 'assign.anyway' : 'assign.apply'} danger={left < 0} disabled={items.size === 0 || !canWrite} onClick={() => void apply()}>
-            {items.size === 0 ? 'Nothing selected' : left < 0 ? 'Assign anyway' : sum >= 0 ? `Assign ${formatCents(sum)}` : `Move ${formatCents(-sum)} back`}
+          <PrimaryButton
+            mutates
+            track={left < 0 ? 'assign.anyway' : 'assign.apply'}
+            danger={left < 0}
+            disabled={items.size === 0 || !canWrite}
+            onClick={() => void apply()}
+          >
+            {items.size === 0
+              ? 'Nothing selected'
+              : left < 0
+                ? 'Assign anyway'
+                : sum >= 0
+                  ? `Assign ${formatCents(sum)}`
+                  : `Move ${formatCents(-sum)} back`}
           </PrimaryButton>
           {assign.error && <ErrorNote error={assign.error} />}
         </div>
@@ -475,7 +647,10 @@ export function AssignSheetScreen() {
           <Label>Suggested</Label>
           <div className="shrink-0 overflow-hidden rounded-[14px] border border-line">
             {v.suggestions.map((s) => (
-              <label key={s.categoryId} className="flex min-h-14 items-center gap-3 border-t border-divider px-3 py-1.5 first:border-t-0">
+              <label
+                key={s.categoryId}
+                className="flex min-h-14 items-center gap-3 border-t border-divider px-3 py-1.5 first:border-t-0"
+              >
                 <input
                   type="checkbox"
                   className="hit h-[22px] w-[22px] shrink-0 accent-[var(--ll-accent)]"
@@ -510,10 +685,15 @@ export function AssignSheetScreen() {
           </select>
         </Field>
         <Field label="Amount" className="flex-[2] text-[12px]">
-          <input className={cx(inputClass, 'tnum')} inputMode="decimal" placeholder="0.00" value={custom} onChange={(e) => setCustom(e.target.value)} />
+          <input
+            className={cx(inputClass, 'tnum')}
+            inputMode="decimal"
+            placeholder="0.00"
+            value={custom}
+            onChange={(e) => setCustom(e.target.value)}
+          />
         </Field>
       </div>
     </Sheet>
   );
 }
-

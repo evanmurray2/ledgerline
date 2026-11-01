@@ -91,7 +91,10 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
   ];
   const negative = rta !== undefined && rta < 0;
   return (
-    <nav aria-label="Main" className="flex h-full w-[220px] shrink-0 flex-col gap-1 border-r border-line bg-surface px-3 py-5">
+    <nav
+      aria-label="Main"
+      className="flex h-full w-[220px] shrink-0 flex-col gap-1 border-r border-line bg-surface px-3 py-5"
+    >
       <span className="px-2.5 pb-4 text-[18px] font-bold">Ledgerline</span>
       {items.map((n) => {
         const on = n.id === active;
@@ -116,11 +119,21 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
         );
       })}
       {noteButton && (
-        <button type="button" data-track="nav.note" onClick={onNote} className="mt-2 flex h-10 items-center gap-2 rounded-lg px-2.5 text-[14px] font-semibold text-ink-2">
+        <button
+          type="button"
+          data-track="nav.note"
+          onClick={onNote}
+          className="mt-2 flex h-10 items-center gap-2 rounded-lg px-2.5 text-[14px] font-semibold text-ink-2"
+        >
           <Icon name="note" size={18} /> Note
         </button>
       )}
-      <div className={cx('mt-auto flex flex-col gap-0.5 rounded-xl p-3', negative ? 'bg-danger text-on-danger' : 'bg-accent text-on-accent')}>
+      <div
+        className={cx(
+          'mt-auto flex flex-col gap-0.5 rounded-xl p-3',
+          negative ? 'bg-danger text-on-danger' : 'bg-accent text-on-accent',
+        )}
+      >
         <span className="text-[12px] font-semibold">Ready to Assign</span>
         <span className="tnum text-[22px] font-bold" data-testid="nav-rta">
           {budget.data?.rtaUpdating ? 'Updating' : rta === undefined ? '—' : formatCents(rta)}
@@ -147,7 +160,11 @@ export function StatusBanner() {
   const loaded = c.loadedAt ? pacificTime(c.loadedAt) : null;
   if (offline)
     return (
-      <div role="status" data-testid="offline-banner" className="flex shrink-0 flex-col gap-1 border-b border-line bg-sunken px-4 py-2.5 text-none-fg">
+      <div
+        role="status"
+        data-testid="offline-banner"
+        className="flex shrink-0 flex-col gap-1 border-b border-line bg-sunken px-4 py-2.5 text-none-fg"
+      >
         <span className="text-[14px] font-bold">You’re offline</span>
         <span className="text-[13px] leading-snug">
           {loaded ? `Showing what was loaded at ${loaded}. ` : 'Showing what was last loaded. '}
@@ -157,11 +174,15 @@ export function StatusBanner() {
     );
   const until = c.readOnlyUntil ? pacificTime(c.readOnlyUntil) : 'midnight UTC';
   return (
-    <div role="status" data-testid="readonly-banner" className="flex shrink-0 flex-col gap-1 border-b border-warn-border bg-warn-bg px-4 py-2.5 text-warn-fg">
+    <div
+      role="status"
+      data-testid="readonly-banner"
+      className="flex shrink-0 flex-col gap-1 border-b border-warn-border bg-warn-bg px-4 py-2.5 text-warn-fg"
+    >
       <span className="text-[14px] font-bold">View only until {until}</span>
       <span className="text-[13px] leading-snug">
-        Today’s free database writes are used up, so changes are paused until the limit resets at {until} Pacific
-        (midnight UTC). Bank sync catches up after that. Nothing is lost.
+        Today’s free database writes are used up, so changes are paused until the limit resets at {until}{' '}
+        Pacific (midnight UTC). Bank sync catches up after that. Nothing is lost.
       </span>
     </div>
   );
