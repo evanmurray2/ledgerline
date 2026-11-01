@@ -56,7 +56,8 @@ function Root() {
     // The session ended (24 hours, or signed out elsewhere): show sign-in.
     const onSignedOut = () => {
       // Only when the app was showing data; on the sign-in screen the session query already failed.
-      if (qc.getQueryData(qk.session)) void qc.resetQueries({ queryKey: qk.session });
+      // Drop everything in memory too, so nothing from the ended session is saved again.
+      if (qc.getQueryData(qk.session)) qc.clear();
     };
     window.addEventListener('ledgerline:signedout', onSignedOut);
     return () => {

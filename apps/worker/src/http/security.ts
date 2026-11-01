@@ -8,7 +8,8 @@ export const apiHeaders: MiddlewareHandler = async (c, next) => {
   h.set('strict-transport-security', 'max-age=63072000; includeSubDomains');
   h.set('x-content-type-options', 'nosniff');
   h.set('referrer-policy', 'no-referrer');
-  h.set('cache-control', 'no-store');
+  // Screens revalidate with ETags (http/etag.ts) and say so themselves; everything else is never stored.
+  if (!h.has('cache-control')) h.set('cache-control', 'no-store');
   h.set('content-security-policy', "default-src 'none'; frame-ancestors 'none'");
   h.set('x-frame-options', 'DENY');
 };

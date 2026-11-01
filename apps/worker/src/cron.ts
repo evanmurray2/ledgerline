@@ -9,6 +9,7 @@ import { budgetMeta, planLineRebuild } from './ledger/ledger.js';
 import { recompute } from './budget/recompute.js';
 import { refreshUsage } from './ops/usage.js';
 import { ulid } from '@ledgerline/platform';
+import { bumpVersion } from './http/etag.js';
 
 export const CRON_BACKSTOP = '7 */4 * * *';
 export const CRON_DAILY_SCAN = '10 8 * * *';
@@ -111,6 +112,7 @@ export async function dailyScan(env: Env, budgetId: string, now: number): Promis
     await s.batch(plan.stmts);
   }
   await recompute(env.DB, budgetId, now);
+  await bumpVersion(env.DB, budgetId);
   return { materialized: keys.length };
 }
 

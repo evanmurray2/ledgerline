@@ -40,6 +40,15 @@ Then the heavy screens stopped reading history (migration 0006): an index on ban
 
 A day of active use (a few hundred screen visits and edits) is now in the hundreds of thousands of reads, under 10% of the free 5 million.
 
+Then (migration 0007): every screen response carries an ETag built from `budget.data_version` (bumped by every
+successful change through the API and by the daily jobs), the sync and recompute counters, connection updates, the
+date and the deployed commit (`apps/worker/src/http/etag.ts`). A screen that hasn't changed answers 304 for a few
+rows read. The app saves its data on the device and shows it at once after confirming the session (`state/saved.ts`;
+cleared on sign-out and when a session ends), and categorizing no longer refetches Activity: the screen already
+shows the change and the counts are adjusted locally. Estimates for a very heavy day (about 3,000 screen visits and
+1,500 categorizations): visits mostly 304s (a few rows each), each categorization about 130 reads plus the version
+bump, so well under 1 million reads; a normal day stays a few percent of the limit.
+
 The sections below are the original go/no-go, measured with R2.
 
 Result: **go**, after two redesigns that the measurements forced. Each hot path's own compute is now under 3 ms in workerd, about 5 ms with the estimated I/O, against the 10 ms limit:

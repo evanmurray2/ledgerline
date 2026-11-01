@@ -8,6 +8,7 @@ import { api } from '../api/endpoints';
 import { qk } from '../api/hooks';
 import { Card, Field, PrimaryButton, SecondaryButton, inputClass, cx } from '../components/ui';
 import { toast } from '../components/Toast';
+import { clearSavedData } from '../state/saved';
 
 /** Runs a WebAuthn ceremony and turns the browser's errors into plain sentences. */
 async function ceremony(fn: () => Promise<unknown>): Promise<string | null> {
@@ -353,7 +354,12 @@ export function SignInSection() {
       <button
         type="button"
         data-track="settings.sign_out"
-        onClick={() => run(api.signOut, () => window.location.assign('/'))}
+        onClick={() =>
+          run(api.signOut, () => {
+            clearSavedData();
+            window.location.assign('/');
+          })
+        }
         className="flex h-12 items-center justify-center rounded-xl border border-line-strong bg-surface text-[16px] font-bold text-over-fg"
       >
         Sign out

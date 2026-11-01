@@ -3,6 +3,7 @@
 import { ApiError as ApiErrorBody, CSRF_HEADER } from '@ledgerline/contracts';
 import type { z } from 'zod';
 import { connectivity } from '../state/connectivity';
+import { clearSavedData } from '../state/saved';
 
 export class ApiError extends Error {
   readonly code: string;
@@ -89,8 +90,10 @@ export async function request<S extends z.ZodType>(
     const message = parsed.success ? parsed.data.message : res.statusText || 'Request failed';
     if (code === 'read_only' || code === 'readonly') onReadOnly?.();
     // Signed out (session ended) or a fresh passkey check is needed: the app shows sign-in or "Confirm it's you".
-    if (code === 'unauthenticated' && !path.startsWith('/api/auth/'))
+    if (code === 'unauthenticated' && !path.startsWith('/api/auth/')) {
+      clearSavedData();
       window.dispatchEvent(new Event('ledgerline:signedout'));
+    }
     if (code === 'reauth') window.dispatchEvent(new Event('ledgerline:reauth'));
     throw new ApiError(code, message, res.status);
   }

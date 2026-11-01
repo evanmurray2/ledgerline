@@ -46,6 +46,10 @@ test('Needs attention fixes reach $643.65 through the API', async ({ page }) => 
 
 test('Activity: categorizing an uncategorized purchase persists', async ({ page }) => {
   await page.goto('/activity');
+  const chip = page.getByRole('button', { name: /^Needs attention \d+$/ });
+  await expect(page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ })).toBeVisible();
+  await expect(chip).toHaveText(/Needs attention [1-9]/);
+  const before = Number((await chip.textContent())!.match(/\d+/)![0]);
   await page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ }).click();
   await page
     .getByRole('dialog', { name: 'Choose a category' })
@@ -55,6 +59,12 @@ test('Activity: categorizing an uncategorized purchase persists', async ({ page 
   await expect(page.getByRole('button', { name: /Change category for Amazon −\$38\.10/ })).toHaveText(
     'Shopping',
   );
+  // The count drops at once, without reloading the list.
+  await expect(chip).toHaveText(`Needs attention ${before - 1}`);
+  // Leaving and coming back shows the server's state.
+  await page.goto('/budget');
+  await page.goto('/activity');
+  await expect(chip).toHaveText(`Needs attention ${before - 1}`);
   await page.reload();
   await expect(page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ })).toHaveCount(0);
 });

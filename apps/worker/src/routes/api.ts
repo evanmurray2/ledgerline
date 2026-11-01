@@ -16,6 +16,7 @@ import { OPS_PATHS, REAUTH_MS, identify, needsRecentPasskey } from '../http/auth
 import { authRoutes } from './auth.js';
 import { securityRoutes } from './security.js';
 import { csrf } from '../http/security.js';
+import { bumpOnChange, etags } from '../http/etag.js';
 import { Scoped, resolveMembership } from '../db/scoped.js';
 import { markDirty, recompute } from '../budget/recompute.js';
 import { budgetView } from '../views/budget.js';
@@ -64,6 +65,9 @@ api.use('*', async (c, next) => {
   return next();
 });
 api.use('*', csrf);
+/** Unchanged screens answer 304; every change bumps the version (http/etag.ts). */
+api.use('*', etags);
+api.use('*', bumpOnChange);
 
 /** Writes are refused when the account is at 90% of a daily D1 limit (Sync spec F8). */
 api.use('*', async (c, next) => {

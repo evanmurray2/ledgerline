@@ -60,6 +60,20 @@ export function useMatchView(key: string) {
 export function useOwed() {
   return useQuery({ queryKey: qk.owed, queryFn: api.owed });
 }
+/**
+ * Change the Needs attention counts shown on screen (Activity's chip and the tab badge) by `delta`, without a
+ * refetch: used when categorizing, which the screen already shows.
+ */
+export function adjustAttention(qc: QueryClient, delta: number) {
+  qc.setQueriesData<{ attentionCount?: number; activity?: number }>({ queryKey: ['activity'] }, (old) => {
+    if (!old || typeof old !== 'object') return old;
+    if (typeof old.attentionCount === 'number')
+      return { ...old, attentionCount: Math.max(0, old.attentionCount + delta) };
+    if (typeof old.activity === 'number') return { ...old, activity: Math.max(0, old.activity + delta) };
+    return old;
+  });
+}
+
 /** Tab badges. Keyed under 'activity' so every money change refreshes them too. */
 export function useBadgeCounts() {
   return useQuery({ queryKey: ['activity', 'badges'], queryFn: api.badges, staleTime: 60_000 });
@@ -96,7 +110,11 @@ export function useConnections() {
 }
 
 /** Everything a money change can touch. */
-export function invalidateMoney(qc: QueryClient) {
+/**
+ * After a money change. Keys whose first part is in `quiet` are only marked out of date, not refetched now: the
+ * screen already shows the change (they refetch on the next visit). Each refetch reads from the database.
+ */
+export function invalidateMoney(qc: QueryClient, quiet: readonly string[] = []) {
   for (const key of [
     ['budget'],
     ['category'],
@@ -108,7 +126,7 @@ export function invalidateMoney(qc: QueryClient) {
     ['register'],
     ['reports'],
   ])
-    void qc.invalidateQueries({ queryKey: key });
+    void qc.invalidateQueries({ queryKey: key, refetchType: quiet.includes(key[0]!) ? 'none' : 'active' });
 }
 
 function isMutationResult(x: unknown): x is MutationResult {
@@ -131,14 +149,14 @@ export function applyRta(qc: QueryClient, result: unknown) {
  */
 export function useMoneyMutation<TVars, TResult>(
   fn: (vars: TVars) => Promise<TResult>,
-  opts: { invalidate?: readonly (readonly unknown[])[]; money?: boolean } = {},
+  opts: { invalidate?: readonly (readonly unknown[])[]; money?: boolean; quiet?: readonly string[] } = {},
 ) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
     onSuccess: (result) => {
       applyRta(qc, result);
-      if (opts.money !== false) invalidateMoney(qc);
+      if (opts.money !== false) invalidateMoney(qc, opts.quiet);
       for (const key of opts.invalidate ?? []) void qc.invalidateQueries({ queryKey: key });
     },
     onError: (err) => {

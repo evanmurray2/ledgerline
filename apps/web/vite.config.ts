@@ -6,6 +6,8 @@ import tailwindcss from '@tailwindcss/vite';
 // unless VITE_MOCK=1, which serves every endpoint from src/mock (that code never reaches a production build).
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Each build gets its own id: data saved on the phone by an older build is discarded (src/state/saved.ts).
+  define: { __BUILD_ID__: JSON.stringify(String(Date.now())) },
   build: { outDir: 'dist', sourcemap: false, chunkSizeWarningLimit: 800 },
   server: {
     port: 5173,

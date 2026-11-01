@@ -41,9 +41,13 @@ test('set up a passkey, sign out, sign in, and add a second device', async ({ pa
   // Signed in: a new budget starts at first-run setup.
   await expect(page).toHaveURL(/\/welcome/);
 
+  // The production app saves its data on the device; signing out (here, the session ending) clears it.
+  await page.goto('/budget');
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('ledgerline-saved-data'))).not.toBeNull();
   expect((await post(page, '/api/settings/security/sign-out')).status).toBe(200);
   await page.goto('/budget');
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('ledgerline-saved-data'))).toBeNull();
   await page.getByRole('button', { name: 'Sign in with passkey' }).click();
   await expect(page).toHaveURL(/\/welcome/);
 

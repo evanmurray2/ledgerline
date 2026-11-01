@@ -19,6 +19,7 @@ import { clock } from './http/clock.js';
 import { Scoped } from './db/scoped.js';
 import { lineFromRow } from './budget/recompute.js';
 import { RECENT_TX } from './ledger/ledger.js';
+import { bumpVersion } from './http/etag.js';
 
 const STEP = {
   retries: { limit: 3, delay: '10 seconds' as const, backoff: 'exponential' as const },
@@ -85,6 +86,8 @@ export class MaintenanceWorkflow extends WorkflowEntrypoint<Env, MaintenancePara
         .bind(b)
         .run();
     });
+    // The daily job's writes (alerts, health, usage) change what screens show: new ETags (http/etag.ts).
+    await step.do('bump-version', STEP, () => bumpVersion(env.DB, b));
     return { ok: true };
   }
 }

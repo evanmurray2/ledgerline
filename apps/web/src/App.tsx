@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { BUILD_ID, SAVED_MAX_AGE, makePersister, savingEnabled } from './state/saved';
 import { RouterProvider, type RouterHistory } from '@tanstack/react-router';
 import { makeRouter } from './router';
 import { ApiError } from './api/client';
@@ -25,6 +27,24 @@ export function makeQueryClient() {
 export function App({ history, queryClient }: { history?: RouterHistory; queryClient?: QueryClient }) {
   const [qc] = useState(() => queryClient ?? makeQueryClient());
   const [router] = useState(() => makeRouter(history));
+  const [persister] = useState(() => (savingEnabled() && !queryClient ? makePersister() : null));
+  if (persister)
+    return (
+      <PersistQueryClientProvider
+        client={qc}
+        persistOptions={{
+          persister,
+          maxAge: SAVED_MAX_AGE,
+          buster: BUILD_ID,
+          // Never the session: the app always confirms you're signed in before it shows saved screens.
+          dehydrateOptions: {
+            shouldDehydrateQuery: (q) => q.state.status === 'success' && q.queryKey[0] !== 'session',
+          },
+        }}
+      >
+        <RouterProvider router={router} />
+      </PersistQueryClientProvider>
+    );
   return (
     <QueryClientProvider client={qc}>
       <RouterProvider router={router} />

@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate, useSearch } from '@tanstack/react-router';
 import type { ActivityView, TxnListRow } from '@ledgerline/contracts';
 import { api, type ActivityFilter } from '../api/endpoints';
-import { qk, useActivity, useMoneyMutation } from '../api/hooks';
+import { adjustAttention, qk, useActivity, useMoneyMutation } from '../api/hooks';
 import { Sheet } from '../components/Sheet';
 import { toast } from '../components/Toast';
 import {
@@ -141,7 +141,9 @@ export function ActivityScreen() {
   const v = query.data;
   const canWrite = useCanWrite();
   const qc = useQueryClient();
-  const categorize = useMoneyMutation(api.categorize);
+  // The list keeps categorized rows in place and the counts are adjusted here, so Activity isn't refetched after
+  // each categorize (every refetch reads the database); it refreshes on the next visit.
+  const categorize = useMoneyMutation(api.categorize, { quiet: ['activity'] });
   const saveRule = useMoneyMutation(api.saveRule, { money: false, invalidate: [qk.rules] });
   const [selecting, setSelecting] = useState(false);
   const [sel, setSel] = useState<Record<string, boolean>>({});
@@ -209,6 +211,7 @@ export function ActivityScreen() {
       return;
     }
     usage.endTask('categorize');
+    adjustAttention(qc, -keys.filter((k) => prev[k] === null).length);
     setChosen((c) => ({
       ...c,
       ...Object.fromEntries(rows.map((r) => [r.key, { row: r, categoryId, name }])),
@@ -226,7 +229,10 @@ export function ActivityScreen() {
       text,
       undo: async () => {
         const back = keys.filter((k) => prev[k] === null);
-        if (back.length) await categorize.mutateAsync({ keys: back, categoryId: null });
+        if (back.length) {
+          await categorize.mutateAsync({ keys: back, categoryId: null });
+          adjustAttention(qc, back.length);
+        }
         for (const k of keys.filter((x) => prev[x]))
           await categorize.mutateAsync({ keys: [k], categoryId: prev[k]! });
         usage.undo('categorize');
