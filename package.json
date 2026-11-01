@@ -26,5 +26,10 @@
     "typescript-eslint": "8.72.1",
     "vitest": "4.1.12",
     "ws": "^8.21.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "minimatch": "11.0.1"
+    }
   }
 }
