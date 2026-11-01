@@ -18,6 +18,7 @@ import { refreshUsage } from './ops/usage.js';
 import { clock } from './http/clock.js';
 import { Scoped } from './db/scoped.js';
 import { lineFromRow } from './budget/recompute.js';
+import { RECENT_TX } from './ledger/ledger.js';
 
 const STEP = {
   retries: { limit: 3, delay: '10 seconds' as const, backoff: 'exponential' as const },
@@ -105,7 +106,7 @@ export async function checkIdentityDb(
   const [work, held, snaps, curLines, cats] = await s.batch([
     s.q(
       `SELECT (SELECT coalesce(sum(starting_balance), 0) FROM account WHERE budget_id = ?1) +
-              (SELECT coalesce(sum(amount), 0) FROM v_transaction WHERE budget_id = ?1 AND wont_clear = 0 AND (date >= budget_from OR pending_at_link = 1)
+              (SELECT coalesce(sum(amount), 0) FROM ${RECENT_TX} WHERE budget_id = ?1 AND wont_clear = 0 AND (date >= budget_from OR pending_at_link = 1)
                  AND (status != 'upcoming' OR date <= ?2)) AS w`,
       today,
     ),
@@ -207,6 +208,10 @@ async function watchdog(env: Env, budgetId: string, now: number): Promise<void> 
     ).bind(budgetId, k, v, now);
   await env.DB.batch([
     up('watchdog_ran_at', String(now)),
+    // Card statement snapshots older than 120 days: only each card's latest is shown.
+    env.DB.prepare(
+      `DELETE FROM liability_snapshot WHERE budget_id = ?1 AND as_of < date(?2 / 1000, 'unixepoch', '-120 days')`,
+    ).bind(budgetId, now),
     // Expired sign-in state (decisions.md D-27).
     env.DB.prepare(`DELETE FROM auth_session WHERE expires_at <= ?1`).bind(now),
     env.DB.prepare(`DELETE FROM auth_challenge WHERE expires_at <= ?1`).bind(now),

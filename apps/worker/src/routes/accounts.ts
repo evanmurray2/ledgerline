@@ -16,7 +16,7 @@ import type { AppEnv } from '../http/context.js';
 import { HttpError, scoped, startRecompute } from './api.js';
 import { cards as loadCards, fresh, monthResult, shortDate, structure } from '../views/common.js';
 import { listRow } from '../views/rows.js';
-import { TX_COLUMNS, type TxRow } from '../ledger/ledger.js';
+import { RECENT_TX, TX_COLUMNS, type TxRow } from '../ledger/ledger.js';
 import type { Scoped } from '../db/scoped.js';
 
 export const accountRoutes = new Hono<AppEnv>();
@@ -47,12 +47,12 @@ async function accountRows(s: Scoped, today: string): Promise<{ rows: AccountRow
        WHERE a.budget_id = ?1 AND a.closed_at IS NULL ORDER BY a.kind = 'credit', a.sort, a.name`,
     ),
     s.q(
-      `SELECT account_id, sum(amount) AS p FROM v_transaction WHERE budget_id = ?1 AND status IN ('pending', 'upcoming') AND wont_clear = 0
+      `SELECT account_id, sum(amount) AS p FROM ${RECENT_TX} WHERE budget_id = ?1 AND status IN ('pending', 'upcoming') AND wont_clear = 0
          AND (status != 'upcoming' OR date <= ?2) GROUP BY account_id`,
       today,
     ),
     s.q(
-      `SELECT account_id, sum(amount) AS p FROM v_transaction WHERE budget_id = ?1 AND status = 'posted' AND (date >= budget_from OR pending_at_link = 1) GROUP BY account_id`,
+      `SELECT account_id, sum(amount) AS p FROM ${RECENT_TX} WHERE budget_id = ?1 AND status = 'posted' AND (date >= budget_from OR pending_at_link = 1) GROUP BY account_id`,
     ),
   ]);
   const pending = new Map(
@@ -117,7 +117,8 @@ accountRoutes.get('/accounts', async (c) => {
   const netWorth = cash.reduce((a, r) => a + r.bank, 0) - credit.reduce((a, r) => a + r.bank, 0);
   const [monthPosted, conns, health, hist, owedI, owedL] = await s.batch([
     s.q(
-      `SELECT sum(amount) AS p FROM v_transaction WHERE budget_id = ?1 AND status = 'posted' AND substr(date, 1, 7) = ?2`,
+      `SELECT sum(amount) AS p FROM v_txn_bank WHERE budget_id = ?1 AND status = 'posted'
+         AND posted_date >= date(?2 || '-01', '-1 month') AND substr(date, 1, 7) = ?2`,
       f.current,
     ),
     s.q(
@@ -303,7 +304,9 @@ accountRoutes.get('/reports', async (c) => {
       m,
     ),
     s.q(
-      `SELECT substr(date, 1, 7) AS m, sum(amount) AS a FROM v_transaction WHERE budget_id = ?1 AND status = 'posted' GROUP BY substr(date, 1, 7)`,
+      // At most the last 13 months, read through the date index.
+      `SELECT substr(date, 1, 7) AS m, sum(amount) AS a FROM v_txn_bank WHERE budget_id = ?1 AND status = 'posted'
+         AND posted_date >= date('now', 'start of month', '-13 months') GROUP BY substr(date, 1, 7)`,
     ),
     s.q(
       `SELECT id, txn_key, amount, expect_by, closed_at, canceled_at FROM expected_reimbursement e WHERE budget_id = ?1 AND NOT EXISTS (SELECT 1 FROM manual_pending mp WHERE mp.budget_id = e.budget_id AND mp.txn_key = e.txn_key AND mp.kind = 'upcoming' AND mp.matched_txn_key IS NULL)`,

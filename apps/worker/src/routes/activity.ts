@@ -33,7 +33,15 @@ import type { AppEnv } from '../http/context.js';
 import { HttpError, afterWrite, parse, scoped, startRecompute } from './api.js';
 import { fresh, monthResult, shortDate, structure } from '../views/common.js';
 import { categoryLabel, listRow } from '../views/rows.js';
-import { TX_COLUMNS, budgetMeta, chunks, planLineRebuild, type TxRow } from '../ledger/ledger.js';
+import {
+  RECENT_TX,
+  TX_COLUMNS,
+  budgetMeta,
+  chunks,
+  planLineRebuild,
+  txnCol,
+  type TxRow,
+} from '../ledger/ledger.js';
 import type { Scoped } from '../db/scoped.js';
 import { accountNames } from '../views/category.js';
 
@@ -65,7 +73,7 @@ async function commit(
 // ---------------------------------------------------------------- Activity
 
 /** Rows that need you: Waiting to match, transfers to sort out, alerts, and uncategorized rows in the budget. */
-const ATTENTION_SQL = `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1
+const ATTENTION_SQL = `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1
          AND (date >= budget_from OR pending_at_link = 1 OR status != 'posted') AND (
          wtm_state IN ('waiting', 'send_back') OR transfer_state = 'unsorted' OR (alert IS NOT NULL AND reviewed_at IS NULL)
          OR (category_id IS NULL AND coalesce(to_rta, 0) = 0 AND transfer_state IS NULL AND wtm_state IS NULL AND wont_clear = 0
@@ -116,6 +124,41 @@ activityRoutes.get('/badges', async (c) => {
   });
 });
 
+/** Start of the first window the Activity list reads: 45 days before the page's cursor (or today). */
+function windowStart(cursor: string | undefined, today: string): string {
+  const from = cursor ? cursor.slice(0, 10) : today;
+  return shiftDate(from, -45);
+}
+
+function shiftDate(d: string, n: number): string {
+  const t = new Date(`${d}T00:00:00Z`);
+  t.setUTCDate(t.getUTCDate() + n);
+  return t.toISOString().slice(0, 10);
+}
+
+/**
+ * One page of posted rows, newest first. With a window start, only rows dated (and so posted) on or after it are
+ * read, through bank_txn_budget_date; 'all' reads every row (searches); 'none' reads nothing (the attention view).
+ */
+function postedQuery(
+  s: Scoped,
+  from: string | 'all' | 'none',
+  cursor: string | null,
+  q: string,
+): D1PreparedStatement {
+  const window = from !== 'all' && from !== 'none';
+  return s.q(
+    `SELECT ${TX_COLUMNS} FROM v_txn_bank WHERE budget_id = ?1 AND ${from === 'none' ? '0 AND ' : ''}status = 'posted'
+       ${window ? 'AND posted_date >= ?4 AND date >= ?4' : ''}
+       AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
+       ${q ? `AND (lower(payee) LIKE ?3 OR printf('%.2f', abs(amount) / 100.0) LIKE ?3)` : 'AND ?3 IS NULL'}
+     ORDER BY date DESC, seq DESC LIMIT 50`,
+    cursor,
+    q ? `%${q}%` : null,
+    ...(window ? [from] : []),
+  );
+}
+
 activityRoutes.get('/activity', async (c) => {
   const s = scoped(c);
   const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env, s.budgetId));
@@ -126,20 +169,20 @@ activityRoutes.get('/activity', async (c) => {
   const [attn, pend, upc, posted, splits, owed, links, stale] = await s.batch([
     s.q(ATTENTION_SQL),
     s.q(
-      `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND status = 'pending' ORDER BY date DESC, seq DESC LIMIT 200`,
+      `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1 AND status = 'pending' ORDER BY date DESC, seq DESC LIMIT 200`,
     ),
     // The attention view shows no upcoming or posted rows: skip those scans (they cost reads on every visit).
     s.q(
-      `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND ?3 = 0 AND status = 'upcoming' AND date > ?2 ORDER BY date LIMIT 100`,
+      `SELECT ${TX_COLUMNS} FROM v_txn_manual WHERE budget_id = ?1 AND ?3 = 0 AND status = 'upcoming' AND date > ?2 ORDER BY date LIMIT 100`,
       f.today,
       filter === 'attention' ? 1 : 0,
     ),
-    s.q(
-      `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND ${filter === 'attention' ? '0 AND ' : ''}status = 'posted' AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
-         ${q ? `AND (lower(payee) LIKE ?3 OR printf('%.2f', abs(amount) / 100.0) LIKE ?3)` : ''}
-       ORDER BY date DESC, seq DESC LIMIT 50`,
+    // Posted rows are bank rows only. Without a search, the first try reads only a recent window (see postedPage).
+    postedQuery(
+      s,
+      filter === 'attention' ? 'none' : q ? 'all' : windowStart(cursor, f.today),
       cursor ?? null,
-      ...(q ? [`%${q}%`] : []),
+      q,
     ),
     s.q(`SELECT DISTINCT txn_key FROM txn_split WHERE budget_id = ?1`),
     s.q(
@@ -231,8 +274,15 @@ activityRoutes.get('/activity', async (c) => {
     .filter((t) => !t.wont_clear)
     .reduce((a, t) => a - t.amount, 0);
   const upcoming = (upc!.results as TxRow[]).filter(match).map(row);
-  const postedRows = (posted!.results as TxRow[]).map(row);
-  const last = (posted!.results as TxRow[])[49];
+  let postedTx = posted!.results as TxRow[];
+  if (filter === 'all' && !q && postedTx.length < 50) {
+    // The recent window had fewer than 50 rows: widen it, then read everything.
+    const run = async (from: string) => (await postedQuery(s, from, cursor ?? null, q).all<TxRow>()).results;
+    const wider = await run(shiftDate(windowStart(cursor, f.today), -180));
+    postedTx = wider.length < 50 ? await run('all') : wider;
+  }
+  const postedRows = postedTx.map(row);
+  const last = postedTx[49];
   const { categories, groups } = await structure(s);
   const start = (f.budget.budget_start_month ?? f.current) as Month;
   const mr = await monthResult(s, f.current, start);
@@ -291,12 +341,12 @@ activityRoutes.get('/transactions/:key', async (c) => {
       key,
     ),
     s.q(
-      `SELECT l.from_key, l.to_key, l.amount, coalesce(v.payee, '') AS label FROM txn_link l LEFT JOIN v_transaction v ON v.budget_id = l.budget_id AND v.key = l.from_key
+      `SELECT l.from_key, l.to_key, l.amount, coalesce(${txnCol('l.from_key', 'payee')}, '') AS label FROM txn_link l
        WHERE l.budget_id = ?1 AND l.kind = 'reimbursement_of' AND l.undone_at IS NULL AND (l.from_key = ?2 OR l.to_key IN (SELECT id FROM expected_reimbursement WHERE budget_id = ?1 AND txn_key = ?2))`,
       key,
     ),
     s.q(
-      `SELECT l.to_key, coalesce(v.payee, '') AS label, v.date FROM txn_link l LEFT JOIN v_transaction v ON v.budget_id = l.budget_id AND v.key = l.to_key
+      `SELECT l.to_key, coalesce(${txnCol('l.to_key', 'payee')}, '') AS label, ${txnCol('l.to_key', 'date')} AS date FROM txn_link l
        WHERE l.budget_id = ?1 AND l.kind = 'refund_of' AND l.undone_at IS NULL AND l.from_key = ?2`,
       key,
     ),
@@ -700,8 +750,9 @@ activityRoutes.post('/transactions/:key/review', async (c) => {
 async function openItems(s: Scoped, today: string) {
   const [items, links] = await s.batch([
     s.q(
-      `SELECT e.id, e.txn_key, e.amount, e.expect_by, e.closed_at, e.canceled_at, coalesce(v.payee, '') AS payee, v.date, v.category_id, v.amount AS txn_amount
-       FROM expected_reimbursement e LEFT JOIN v_transaction v ON v.budget_id = e.budget_id AND v.key = e.txn_key WHERE e.budget_id = ?1
+      `SELECT e.id, e.txn_key, e.amount, e.expect_by, e.closed_at, e.canceled_at, coalesce(${txnCol('e.txn_key', 'payee')}, '') AS payee,
+         ${txnCol('e.txn_key', 'date')} AS date, ${txnCol('e.txn_key', 'category_id')} AS category_id, ${txnCol('e.txn_key', 'amount')} AS txn_amount
+       FROM expected_reimbursement e WHERE e.budget_id = ?1
          AND NOT EXISTS (SELECT 1 FROM manual_pending mp WHERE mp.budget_id = e.budget_id AND mp.txn_key = e.txn_key AND mp.kind = 'upcoming' AND mp.matched_txn_key IS NULL)`,
     ),
     s.q(
@@ -860,7 +911,7 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
   if (out.transfer_state !== 'unsorted' || out.amount >= 0)
     throw new HttpError(422, 'not_unclear', 'Not a transfer to sort out');
   const cands = await s.all<{ key: string; account_id: string }>(
-    `SELECT key, account_id FROM v_transaction WHERE budget_id = ?1 AND transfer_state = 'unsorted' AND amount = ?2 AND account_id != ?3
+    `SELECT key, account_id FROM ${RECENT_TX} WHERE budget_id = ?1 AND transfer_state = 'unsorted' AND amount = ?2 AND account_id != ?3
        AND abs(julianday(date) - julianday(?4)) <= 5`,
     -out.amount,
     out.account_id,
@@ -932,7 +983,7 @@ activityRoutes.post('/transfers/:key/unpair', async (c) => {
       : (link?.from_key ??
         (
           await s.first<{ key: string }>(
-            `SELECT key FROM v_transaction WHERE budget_id = ?1 AND transfer_state = 'paired' AND account_id = ?2 AND amount = ?3 AND abs(julianday(date) - julianday(?4)) <= 5`,
+            `SELECT key FROM ${RECENT_TX} WHERE budget_id = ?1 AND transfer_state = 'paired' AND account_id = ?2 AND amount = ?3 AND abs(julianday(date) - julianday(?4)) <= 5`,
             t.transfer_account_id ?? '',
             -t.amount,
             t.date,

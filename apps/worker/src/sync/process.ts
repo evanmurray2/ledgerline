@@ -589,8 +589,12 @@ export async function finalizeConnection(
       for (const l of liab) {
         stmts.push(
           env.DB.prepare(
+            // One snapshot per card per day: a later sync the same day replaces it (liability_day index).
             `INSERT INTO liability_snapshot (id, budget_id, provider_account_id, as_of, statement_balance, statement_date, due_date, minimum_payment, apr_bp, data, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, '{}', ?10)`,
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, '{}', ?10)
+             ON CONFLICT (budget_id, provider_account_id, as_of) DO UPDATE SET statement_balance = excluded.statement_balance,
+               statement_date = excluded.statement_date, due_date = excluded.due_date, minimum_payment = excluded.minimum_payment,
+               apr_bp = excluded.apr_bp, created_at = excluded.created_at`,
           ).bind(
             ulid(now),
             c.budgetId,

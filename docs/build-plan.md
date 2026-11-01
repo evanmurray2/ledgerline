@@ -102,4 +102,4 @@ The UI works around these contract gaps (details in `apps/web/CONTRACT_NOTES.md`
 - [x] No off-site backup (D-29): backup job, script and endpoint removed; health and monitor no longer need a backup; monitor alert only after the monitor's first check. _Verify:_ Worker tests (ops token, monitor check), web tests.
 - [x] A new bank link is saved before its accounts are set up (migration 0005 `setup_done`); a failure in between shows Finish setup on Bank connections and never uses another link; syncs skip unfinished links. _Verify:_ `apps/worker/test/link.test.ts` with Plaid failing once.
 - [x] Cut database reads after the account hit the free daily read limit: cheap `/api/badges`, Activity attention skips unused scans, 2-minute freshness. _Verify:_ `apps/worker/test/read-cost.test.ts`.
-- [ ] Heavy screens (Budget, Activity, Accounts, Reports) read only recent rows instead of all history.
+- [x] Heavy screens read only rows that matter to the budget (migration 0006: date and pending indexes, split views, key lookups, windowed Activity list, one card statement per day). _Verify:_ `read-cost.test.ts` limits per request and pages the whole Activity list.

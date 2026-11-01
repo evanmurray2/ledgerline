@@ -16,6 +16,7 @@ import {
 import type { Scoped } from '../db/scoped.js';
 import { recompute } from '../budget/recompute.js';
 import type { Env } from '../env.js';
+import { RECENT_TX } from '../ledger/ledger.js';
 
 export interface BudgetRow {
   id: string;
@@ -193,7 +194,7 @@ export async function cards(s: Scoped, today: string): Promise<CardInfo[]> {
        WHERE a.budget_id = ?1 AND a.kind = 'credit' AND a.closed_at IS NULL ORDER BY a.sort, a.name`,
     ),
     s.q(
-      `SELECT account_id, sum(-amount) AS pending FROM v_transaction WHERE budget_id = ?1 AND account_kind = 'credit' AND status IN ('pending', 'upcoming')
+      `SELECT account_id, sum(-amount) AS pending FROM ${RECENT_TX} WHERE budget_id = ?1 AND account_kind = 'credit' AND status IN ('pending', 'upcoming')
          AND wont_clear = 0 AND (status != 'upcoming' OR date <= ?2) GROUP BY account_id`,
       today,
     ),
@@ -201,8 +202,11 @@ export async function cards(s: Scoped, today: string): Promise<CardInfo[]> {
       `SELECT account_id, sum(-amount) AS u FROM budget_line WHERE budget_id = ?1 AND kind = 'uncat' AND card = 0 GROUP BY account_id`,
     ),
     s.q(
-      `SELECT l.provider_account_id, l.statement_balance, l.due_date FROM liability_snapshot l
-       WHERE l.budget_id = ?1 AND l.created_at = (SELECT max(created_at) FROM liability_snapshot x WHERE x.budget_id = l.budget_id AND x.provider_account_id = l.provider_account_id)`,
+      // Each card's latest statement: one row per card, read through the liability_day index.
+      `SELECT l.provider_account_id, l.statement_balance, l.due_date FROM account a
+       JOIN liability_snapshot l ON l.id = (SELECT x.id FROM liability_snapshot x WHERE x.budget_id = ?1
+         AND x.provider_account_id = a.provider_account_id ORDER BY x.as_of DESC LIMIT 1)
+       WHERE a.budget_id = ?1 AND a.kind = 'credit' AND a.provider_account_id IS NOT NULL`,
     ),
   ]);
   const pending = new Map(

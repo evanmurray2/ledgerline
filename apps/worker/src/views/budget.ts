@@ -29,6 +29,7 @@ import {
   type CategoryInfo,
   type Fresh,
 } from './common.js';
+import { txnCol } from '../ledger/ledger.js';
 
 const fmt = (c: number) => formatCents(c);
 
@@ -183,8 +184,8 @@ export async function budgetView(s: Scoped, f: Fresh, month: Month): Promise<Bud
   const [cardCats, owedRows, links, fronts, conns, maxRow] = await s.batch([
     s.q(`SELECT id, card_account_id FROM category WHERE budget_id = ?1 AND kind = 'cc_payment'`),
     s.q(
-      `SELECT e.id, e.txn_key, e.amount, e.expect_by, e.closed_at, e.canceled_at, coalesce(v.payee, '') AS payee
-       FROM expected_reimbursement e LEFT JOIN v_transaction v ON v.budget_id = e.budget_id AND v.key = e.txn_key WHERE e.budget_id = ?1
+      `SELECT e.id, e.txn_key, e.amount, e.expect_by, e.closed_at, e.canceled_at, coalesce(${txnCol('e.txn_key', 'payee')}, '') AS payee
+       FROM expected_reimbursement e WHERE e.budget_id = ?1
          AND NOT EXISTS (SELECT 1 FROM manual_pending mp WHERE mp.budget_id = e.budget_id AND mp.txn_key = e.txn_key AND mp.kind = 'upcoming' AND mp.matched_txn_key IS NULL)`,
     ),
     s.q(

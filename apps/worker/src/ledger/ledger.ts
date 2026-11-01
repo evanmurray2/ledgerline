@@ -62,6 +62,26 @@ export const TX_COLUMNS = `key, source, account_id, account_kind, account_name, 
   seq, repeats, category_id, to_rta, income_tag, memo, budget_month, estimated_amount, wont_clear, transfer_state,
   transfer_account_id, wtm_state, categorized_by, rule_id, reviewed_at, pending_at_link, alert, payee_id`;
 
+/** The earliest account budget start: rows posted before it are history for every account. */
+const MIN_FROM = `(SELECT min(budget_from) FROM account WHERE budget_id = ?1)`;
+
+/**
+ * v_transaction narrowed to the rows the budget can count, read through indexes so older history is never read:
+ * bank rows posted on or after the earliest budget start (bank_txn_budget_date), bank rows still pending from before
+ * it, which can be pending at link (bank_txn_pending; the unary + keeps the planner on that index), and all manual
+ * rows. Callers still apply their own budget_from conditions. Binds ?1 (budget id).
+ */
+export const RECENT_TX = `(SELECT * FROM v_txn_bank WHERE budget_id = ?1 AND posted_date >= ${MIN_FROM}
+  UNION ALL SELECT * FROM v_txn_bank WHERE budget_id = ?1 AND bank_pending = 1 AND +posted_date < ${MIN_FROM}
+  UNION ALL SELECT * FROM v_txn_manual WHERE budget_id = ?1)`;
+
+/**
+ * One column of the transaction with this key, looked up through an index (bank_txn_key, then manual_pending's
+ * txn_key). Joining v_transaction instead reads every transaction, since a UNION ALL can't be joined by index.
+ */
+export const txnCol = (key: string, col: string) =>
+  `coalesce((SELECT ${col} FROM v_txn_bank WHERE key = ${key}), (SELECT ${col} FROM v_txn_manual WHERE key = ${key}))`;
+
 export interface SplitRow {
   id: string;
   txn_key: string;

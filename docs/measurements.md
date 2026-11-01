@@ -23,7 +23,22 @@ On the first day with 7 banks (578 transactions) the account passed D1's free 5 
 | Activity, Needs attention                                                                                     | 7,200                                    | 3,600 (skips the posted and upcoming scans it never shows) |
 | Budget                                                                                                        | 4,100                                    | 4,100                                                      |
 
-Data now stays fresh for 2 minutes before switching back to the app refetches it (was 15 seconds). Next: make the heavy screens read recent rows only instead of all history.
+Data now stays fresh for 2 minutes before switching back to the app refetches it (was 15 seconds).
+
+Then the heavy screens stopped reading history (migration 0006): an index on bank rows by date, `v_txn_bank` and `v_txn_manual` (the two halves of `v_transaction`, which can be read through indexes), `RECENT_TX` (rows posted since the earliest budget start, rows still pending from before it, and manual rows), lookups by key instead of joining `v_transaction`, a windowed Activity list, a covering payee index, and card statements kept to one snapshot per card per day with an indexed latest-per-card lookup (that query read every snapshot for every snapshot, so it grew with the square of their number). On data shaped like the real account (8 cards, about 600 transactions of history, two months of daily statements):
+
+| Request                          | Start of the day                         | After                                     |
+| -------------------------------- | ---------------------------------------- | ----------------------------------------- |
+| Tab badges                       | about 16,000 (Activity + Accounts views) | about 700                                 |
+| Budget                           | 11,900                                   | about 330                                 |
+| Accounts                         | 13,100                                   | about 1,300                               |
+| Activity, Needs attention        | 4,300                                    | under 1,500                               |
+| Activity, full list (first page) | 8,400                                    | about 2,300                               |
+| Owed to you                      | 3,500                                    | 120                                       |
+| Reports                          | 15,100                                   | about 4,600 (13 months of totals at most) |
+| Categorize, assign               | about 100                                | about 100                                 |
+
+A day of active use (a few hundred screen visits and edits) is now in the hundreds of thousands of reads, under 10% of the free 5 million.
 
 The sections below are the original go/no-go, measured with R2.
 
