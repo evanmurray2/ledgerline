@@ -5,7 +5,7 @@
 // `jsMs` still includes the D1 client's JSON round trip, which a Durable Object doesn't do.
 // Writes .measure/store.json.
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { test } from 'vitest';
+import { afterAll, test } from 'vitest';
 import { Hono } from 'hono';
 import { PlaidProvider } from '@ledgerline/bank-provider';
 import { encryptToken, parseKeyring } from '@ledgerline/platform';
@@ -284,6 +284,10 @@ test('budget edit in the first of 36 months (recompute, 6 months per invocation)
     workflowChunk: summary(chunkRuns),
     topSql: topSql(db, edits.length + chunkRuns.length),
   };
+});
+
+// Written after any subset of the tests (e.g. -t "screens"), so results are never stale.
+afterAll(() => {
   mkdirSync('.measure', { recursive: true });
   writeFileSync('.measure/store.json', JSON.stringify(out, null, 2));
   console.log(JSON.stringify(out, null, 2));

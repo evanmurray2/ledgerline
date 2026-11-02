@@ -64,14 +64,18 @@ export function dayOfMonth(d: IsoDate): number {
   return Number(d.slice(8, 10));
 }
 
+// Building an Intl.DateTimeFormat costs far more than using one, and localDate runs for every row on some screens,
+// so one formatter per time zone is kept (docs/measurements.md, phase 0).
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
 /** Calendar date in a time zone. */
 export function localDate(epochMs: number, timeZone: string): IsoDate {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date(epochMs));
+  let fmt = formatters.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+    formatters.set(timeZone, fmt);
+  }
+  const parts = fmt.formatToParts(new Date(epochMs));
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
