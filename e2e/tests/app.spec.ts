@@ -32,13 +32,17 @@ test('Needs attention fixes move money and Ready to Assign reads $643.65', async
     ['Cover $18.25 for Dining out', '$963.65'],
     ['Fund $90.00 for Car insurance', '$873.65'],
     ['Fund $250.00 for Vacation', '$623.65'],
-    ['Add $20.00 for Personal care', '$603.65'],
-    ['Move $40.00 for Gifts', '$643.65'],
+    ['Move $40.00 for Gifts', '$663.65'],
   ];
   for (const [name, after] of fixes) {
     await page.getByRole('button', { name }).click();
     await expect(rta(page)).toHaveText(after);
   }
+  // Low has its own filter.
+  await expect(page.getByRole('button', { name: 'Add $20.00 for Personal care' })).toHaveCount(0);
+  await page.getByRole('button', { name: /^Low \d/ }).click();
+  await page.getByRole('button', { name: 'Add $20.00 for Personal care' }).click();
+  await expect(rta(page)).toHaveText('$643.65');
   await expect(page.getByText('Done just now')).toBeVisible();
   await expect(page.getByText('Added $18.25 from Ready to Assign')).toBeVisible();
   await expect(page.getByText('Moved $40.00 back to Ready to Assign')).toBeVisible();

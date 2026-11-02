@@ -34,12 +34,14 @@ test('Needs attention fixes reach $643.65 through the API', async ({ page }) => 
     ['Cover $18.25 for Dining out', '$963.65'],
     ['Fund $90.00 for Car insurance', '$873.65'],
     ['Fund $250.00 for Vacation', '$623.65'],
-    ['Add $20.00 for Personal care', '$603.65'],
-    ['Move $40.00 for Gifts', '$643.65'],
+    ['Move $40.00 for Gifts', '$663.65'],
   ] as const) {
     await page.getByRole('button', { name }).click();
     await expect(rta(page)).toHaveText(after);
   }
+  await page.getByRole('button', { name: /^Low \d/ }).click();
+  await page.getByRole('button', { name: 'Add $20.00 for Personal care' }).click();
+  await expect(rta(page)).toHaveText('$643.65');
   await page.reload();
   await expect(rta(page)).toHaveText('$643.65');
 });

@@ -9,6 +9,7 @@ import { usage } from '../usage/tracker';
 const SCREEN_NAMES: Record<string, string> = {
   budget: 'Budget',
   'budget.attention': 'Budget · Needs attention',
+  'budget.low': 'Budget · Low',
   activity: 'Activity',
   'activity.attention': 'Activity · Needs attention',
   'activity.pending': 'Activity · Not posted yet',

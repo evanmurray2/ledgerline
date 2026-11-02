@@ -35,7 +35,7 @@ import { useCanWrite } from '../state/connectivity';
 import { toast } from '../components/Toast';
 import { usage } from '../usage/tracker';
 
-type View = 'all' | 'attention';
+type View = 'all' | 'attention' | 'low';
 
 export interface BudgetSearch {
   month?: string;
@@ -240,11 +240,14 @@ function Group({
 
 // ------------------------------------------------------------------ needs attention
 
-function AttentionList({ b, month }: { b: BudgetView; month: string }) {
+/** Needs attention (everything but Low), or Low on its own filter. */
+function AttentionList({ b, month, low = false }: { b: BudgetView; month: string; low?: boolean }) {
   const fixes = useFixes(month);
   const canWrite = useCanWrite();
   const navigate = useNavigate();
-  const open = b.attention.filter((a) => !fixes.done.some((d) => d.key === a.key));
+  const open = b.attention.filter(
+    (a) => !fixes.done.some((d) => d.key === a.key) && (a.section === 'Low') === low,
+  );
   const sections = SECTION_ORDER.map((s) => ({
     title: s,
     items: open.filter((a) => a.section === s),
@@ -280,7 +283,7 @@ function AttentionList({ b, month }: { b: BudgetView; month: string }) {
     <>
       {open.length === 0 && (
         <p className="m-0 shrink-0 rounded-[14px] bg-funded-bg p-4 text-center text-[15px] font-semibold text-funded-fg">
-          Nothing needs attention.
+          {low ? 'Nothing is running low.' : 'Nothing needs attention.'}
         </p>
       )}
       {sections.map((sec) => {
@@ -663,11 +666,13 @@ function MonthNav({
 function ViewChips({
   view,
   count,
+  lowCount,
   month,
   current,
 }: {
   view: View;
   count: number;
+  lowCount: number;
   month: string;
   current: string;
 }) {
@@ -685,6 +690,10 @@ function ViewChips({
       <Chip pressed={view === 'attention'} onClick={() => set('attention')} track="budget.filter.attention">
         Needs attention
         <CountBadge n={count} inverted={view === 'attention'} />
+      </Chip>
+      <Chip pressed={view === 'low'} onClick={() => set('low')} track="budget.filter.low">
+        Low
+        <CountBadge n={lowCount} inverted={view === 'low'} />
       </Chip>
     </div>
   );
@@ -917,9 +926,9 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
 export function BudgetScreen() {
   const desktop = useIsDesktop();
   const search = useSearch({ strict: false }) as BudgetSearch;
-  const view: View = search.view === 'attention' ? 'attention' : 'all';
+  const view: View = search.view === 'attention' || search.view === 'low' ? search.view : 'all';
   const { month, current } = useBudgetMonth();
-  useScreen(view === 'attention' ? 'budget.attention' : 'budget');
+  useScreen(view === 'attention' ? 'budget.attention' : view === 'low' ? 'budget.low' : 'budget');
   const q = useBudget(month);
   const session = useSession();
   const b = q.data;
@@ -941,15 +950,16 @@ export function BudgetScreen() {
     today.endsWith('-01') &&
     !empty &&
     b.groups.every((g) => g.categories.every((c) => c.assigned === 0));
-  const count = b.attention.length;
+  const lowCount = b.attention.filter((a) => a.section === 'Low').length;
+  const count = b.attention.length - lowCount;
   const content = (
     <>
       <PastNote month={month} current={b.currentMonth} />
       <OverAssigned b={b} month={month} />
       {empty && <FirstBudget b={b} />}
       {newMonth && <NewMonth b={b} month={month} />}
-      {view === 'attention' ? (
-        <AttentionList b={b} month={month} />
+      {view !== 'all' ? (
+        <AttentionList b={b} month={month} low={view === 'low'} />
       ) : desktop ? (
         <DesktopTable b={b} month={month} />
       ) : (
@@ -964,7 +974,7 @@ export function BudgetScreen() {
         <header className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-line bg-surface px-6 py-2">
           <MonthNav b={b} month={month} view={view} desktop />
           <div className="flex items-center gap-2">
-            <ViewChips view={view} count={count} month={month} current={b.currentMonth} />
+            <ViewChips view={view} count={count} lowCount={lowCount} month={month} current={b.currentMonth} />
             {canWrite ? (
               <Link
                 to="/budget/assign"
@@ -997,7 +1007,7 @@ export function BudgetScreen() {
       <header className="flex shrink-0 flex-col border-b border-line bg-surface">
         <MonthNav b={b} month={month} view={view} desktop={false} />
         <div className="px-4 pb-3 pt-1">
-          <ViewChips view={view} count={count} month={month} current={b.currentMonth} />
+          <ViewChips view={view} count={count} lowCount={lowCount} month={month} current={b.currentMonth} />
         </div>
         {b.syncProblem && <SyncProblem text={b.syncProblem} />}
       </header>

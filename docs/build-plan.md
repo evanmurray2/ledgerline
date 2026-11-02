@@ -111,3 +111,4 @@ The UI works around these contract gaps (details in `apps/web/CONTRACT_NOTES.md`
 - [x] Low only for monthly spending categories (D-32): yearly funds and goals on plan no longer show in Needs attention. _Verify:_ `targets-status.test.ts`.
 - [x] Ready to Assign at $0 shows a quiet "All money assigned" line with no Assign button (phone bar and desktop sidebar). _Verify:_ mock Playwright.
 - [x] Rename an account from its register (a card's payment category follows; syncs never change names). _Verify:_ `categories.test.ts`; Worker Playwright rename test.
+- [x] Low has its own Budget filter beside Needs attention (which no longer lists Low). _Verify:_ mock and Worker Playwright fix tests.
