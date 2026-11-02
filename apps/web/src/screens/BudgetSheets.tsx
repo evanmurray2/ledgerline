@@ -295,6 +295,16 @@ function monthsBetween(from: string, to: string) {
   return Math.max(1, (ty - fy) * 12 + (tm - fm) + 1);
 }
 
+/** The last month of the refill period that contains `month` (periods start at `anchor`, every `n` months). */
+function refillDue(anchor: string, n: number, month: string) {
+  const idx = (m: string) => {
+    const [y, mm] = m.split('-').map(Number) as [number, number];
+    return y * 12 + mm - 1;
+  };
+  const k = Math.floor((idx(month) - idx(anchor)) / n);
+  return addMonths(anchor, k * n + n - 1);
+}
+
 export function TargetScreen() {
   const { categoryId } = useParams({ strict: false }) as { categoryId: string };
   const { month, current } = useBudgetMonth();
@@ -331,7 +341,7 @@ export function TargetScreen() {
     setAmount(centsToInput(t.amount));
     if (t.type === 'refill') {
       setPeriod(t.periodMonths === 1 ? '1' : t.periodMonths === 12 ? '12' : '3');
-      setDue(t.anchor);
+      setDue(refillDue(t.anchor, t.periodMonths, month));
     }
     if (t.type === 'by_date') setByMonth(t.targetMonth);
     if (t.type === 'no_date' && t.monthly !== null) setMonthly(centsToInput(t.monthly));
@@ -345,7 +355,8 @@ export function TargetScreen() {
         type: 'refill',
         amount: cents,
         periodMonths: Number(period) as 1 | 3 | 12,
-        anchor: period === '1' ? month : due || addMonths(month, Number(period) - 1),
+        // The stored anchor is the first month of a period; the Due month is its last (the target is met by then).
+        anchor: period === '1' ? month : addMonths(due || addMonths(month, Number(period) - 1), 1 - Number(period)),
       };
     if (kind === 'set_aside') return { type: 'set_aside', amount: cents };
     if (kind === 'by_date') return byMonth ? { type: 'by_date', amount: cents, targetMonth: byMonth } : null;
@@ -372,11 +383,14 @@ export function TargetScreen() {
             `You have ${formatCents(c.available)} left, so next month needs ${formatCents(nextNeed)} to refill.`,
           ];
         }
-        const per = Math.floor(target.amount / target.periodMonths);
+        // Months left run through the Due month; months of the period before now aren't asked for.
+        const end = refillDue(target.anchor, target.periodMonths, month);
+        const left = monthsBetween(month, end);
+        const per = Math.floor(Math.max(0, target.amount - c.available) / left);
         const word = target.periodMonths === 12 ? 'year' : 'quarter';
         return [
           `Needs ${f(per)} a month`,
-          `${f(target.amount)} per ${word} in ${target.periodMonths === 12 ? 'twelve' : 'three'} monthly steps. Leftover lowers the next ${word}.`,
+          `${f(target.amount)} by ${monthLabel(end)} from what you have now, in ${left === 1 ? 'one step' : `${left} monthly steps`}. Then ${f(Math.floor(target.amount / target.periodMonths))} a month each ${word}; leftover lowers the next ${word}.`,
         ];
       }
       case 'set_aside':

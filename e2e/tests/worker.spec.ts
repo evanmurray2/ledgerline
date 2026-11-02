@@ -96,3 +96,16 @@ test('Settings → Categories: rename a group, reorder, and remove a category', 
   await expect(page.getByText('Dining out archived: it has history, so reports keep it')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Remove Dining out' })).toHaveCount(0);
 });
+
+test('Target: a yearly refill is met in its Due month, and the Due month is kept', async ({ page }) => {
+  await page.goto('/budget/category/groceries/target');
+  await page.getByPlaceholder('0.00').fill('124');
+  await page.getByRole('button', { name: 'Year', exact: true }).click();
+  await page.getByLabel('Due').fill('2027-03');
+  // November through March: five steps, the last one in March.
+  await expect(page.getByText(/by Mar(ch)? 2027 from what you have now, in 5 monthly steps/)).toBeVisible();
+  await page.getByRole('button', { name: 'Save target' }).click();
+  await expect(page).not.toHaveURL(/\/target/);
+  await page.goto('/budget/category/groceries/target');
+  await expect(page.getByLabel('Due')).toHaveValue('2027-03');
+});

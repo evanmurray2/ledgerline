@@ -72,6 +72,21 @@ describe('targets', () => {
     );
   });
 
+  it('refill periods that began before the budget (or the target) spread over the months left', () => {
+    // Yearly $124 due March 2027 (period April 2026 – March 2027), budget starting November 2026: five months.
+    const t: Target = { type: 'refill', amount: $('124'), periodMonths: 12, anchor: month('2026-04') };
+    const from = month('2026-11');
+    expect(neededThisMonth(t, ctx({ month: from, periodFrom: from }))).toBe($('24.80'));
+    expect(
+      neededThisMonth(t, ctx({ month: month('2027-01'), periodFrom: from, assignedEarlierInPeriod: $('49.60') })),
+    ).toBe($('24.80'));
+    expect(
+      neededThisMonth(t, ctx({ month: month('2027-03'), periodFrom: from, assignedEarlierInPeriod: $('99.20') })),
+    ).toBe($('24.80'));
+    // The next period is a whole year again.
+    expect(neededThisMonth(t, ctx({ month: month('2027-04'), periodFrom: from }))).toBe($('10.33'));
+  });
+
   it('spending during the period does not raise the need', () => {
     const t: Target = { type: 'refill', amount: $('600'), periodMonths: 1, anchor: month('2026-01') };
     expect(neededThisMonth(t, ctx({ month: month('2026-11'), assignedThisMonth: $('600') }))).toBe(0);

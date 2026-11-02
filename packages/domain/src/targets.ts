@@ -35,8 +35,14 @@ export interface TargetContext {
   availableAtMonthStart: Cents;
   /** S: available at the start of the current refill period. */
   availableAtPeriodStart: Cents;
-  /** P: assigned earlier in this refill period (months before this one). */
+  /** P: assigned earlier in this refill period (months before this one), counted from `periodFrom`. */
   assignedEarlierInPeriod: Cents;
+  /**
+   * The first month of this refill period that counts: the later of the period start, the budget start and the month
+   * the target was set. Earlier months of the period couldn't be funded, so the steps spread over the months left.
+   * S is the available at the start of this month.
+   */
+  periodFrom?: Month;
 }
 
 export function refillPeriod(
@@ -64,8 +70,9 @@ export function neededThisMonth(t: Target | null, c: TargetContext): Cents {
     case 'refill': {
       // Even steps from the period start: month k of n should have k × floor((A − S) / n) assigned by its end; the
       // last month takes the remainder. Spending during the period doesn't raise the need.
-      const { monthsLeft } = refillPeriod(t, c.month);
-      const n = Math.max(1, t.periodMonths);
+      const { start, end, monthsLeft } = refillPeriod(t, c.month);
+      const from = c.periodFrom && c.periodFrom > start && c.periodFrom <= c.month ? c.periodFrom : start;
+      const n = monthsBetween(from, end) + 1;
       const total = t.amount - c.availableAtPeriodStart;
       if (total <= 0) return cents(0);
       const k = n - monthsLeft + 1;

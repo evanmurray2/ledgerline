@@ -70,16 +70,26 @@ export async function categoryRows(
     const available = cell?.available ?? cents(prev?.snapshot.carry[info.id] ?? 0);
     const spent = cell?.spent ?? cents(0);
     const X = cents(prev?.snapshot.carry[info.id] ?? 0);
-    const target = targetFor(targets.get(info.id) ?? [], month);
+    const versions = targets.get(info.id) ?? [];
+    const target = targetFor(versions, month);
     let S = X;
     let P = cents(0);
+    let periodFrom: Month | undefined;
     if (target?.type === 'refill' && target.periodMonths > 1) {
+      // The period counts from the later of its start, the budget start and the month this target was set.
+      const set = versions.reduce<Month | null>(
+        (b, v) => (v.effectiveFrom <= month && (!b || v.effectiveFrom > b) ? v.effectiveFrom : b),
+        null,
+      );
       const p = refillPeriod(target, month);
-      if (p.start < month && p.start >= start) {
-        const before = p.start > start ? await monthAt(addMonths(p.start, -1)) : null;
+      let from = p.start > start ? p.start : start;
+      if (set && set > from) from = set;
+      periodFrom = from;
+      if (from < month) {
+        const before = from > start ? await monthAt(addMonths(from, -1)) : null;
         S = cents(before?.snapshot.carry[info.id] ?? 0);
         let sum = 0;
-        for (let m = p.start; m < month; m = addMonths(m, 1))
+        for (let m = from; m < month; m = addMonths(m, 1))
           sum += (await monthAt(m))?.categories[info.id]?.assigned ?? 0;
         P = cents(sum);
       }
@@ -90,6 +100,7 @@ export async function categoryRows(
       availableAtMonthStart: X,
       availableAtPeriodStart: S,
       assignedEarlierInPeriod: P,
+      periodFrom,
     });
     const isBill = (info.group_id !== null && billGroups.has(info.group_id)) || info.due_day !== null;
     const st: StatusInput = {
