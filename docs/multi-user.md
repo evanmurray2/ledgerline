@@ -459,7 +459,9 @@ This runs on a throwaway Worker in the owner's account (approved), deployed by a
 
   The gate is p95 under 8 ms. If the Activity screen misses, the fallback is a stored list of recent rows, updated by sync.
 
-  **Result (Nov 2, 2026, `docs/measurements.md`):** every sync step, recompute step and screen passes, except the Activity screen (p95 10.8 ms) and the 150 KB move step (p95 17.9 ms). So the Activity screen gets the stored list, and move steps shrink to 50 KB. Durable Objects on Free did not stop at 10 ms: a 49 ms request succeeded. Point-in-time recovery needs a retest on an older object.
+  **Result (Nov 2, 2026, `docs/measurements.md`):** every sync step, recompute step and screen passes, except the Activity screen (p95 10.8 ms) and the 150 KB move step (p95 17.9 ms). Move steps shrink to 50 KB.
+
+  **The Activity screen: a gate before the move, not built yet.** Profiling showed no single expensive query to fix. The cost is spread over about a dozen indexed queries (the largest about 1 ms locally) plus row building. The local `localDate` formatter was rebuilt on every call and is now kept, a small saving on every screen. The measured data was three years of transactions; the owner has six months, and the screen's cost grows with history. So phase 4 starts by re-measuring Activity on Cloudflare with an owner-sized copy (phase 0 workflow). If p95 is under 8 ms, the move goes ahead without the stored list. If not, the stored list of recent rows (kept up to date by sync and edits) is built and measured first. Either way the result is recorded in `docs/measurements.md` before the owner's data moves. Durable Objects on Free did not stop at 10 ms: a 49 ms request succeeded. Point-in-time recovery needs a retest on an older object.
 
 - **Platform behaviour:**
   - whether Durable Object rows share D1's daily pool, and which GraphQL dataset reports them;
