@@ -24,13 +24,14 @@ function micros(): number {
 export async function cpu<T>(
   db: NodeD1,
   fn: () => Promise<T>,
-): Promise<{ ms: number; result: T; queries: number; statements: number }> {
+): Promise<{ ms: number; execMs: number; result: T; queries: number; statements: number }> {
   db.resetStats();
   const t0 = micros();
   const result = await fn();
   const total = micros() - t0;
   return {
     ms: (total - db.stats.sqliteMicros) / 1000,
+    execMs: db.stats.execMicros / 1000,
     result,
     queries: db.stats.queries,
     statements: db.stats.statements,

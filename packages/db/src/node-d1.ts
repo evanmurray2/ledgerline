@@ -12,6 +12,8 @@ export interface NodeD1Stats {
   rowsRead: number;
   /** CPU spent inside SQLite (excluded from Worker CPU estimates). */
   sqliteMicros: number;
+  /** Of that, executing statements and building result rows (what in-process SQLite would add to CPU). */
+  execMicros: number;
 }
 
 type Value = string | number | null | bigint | Uint8Array;
@@ -76,7 +78,14 @@ interface Meta {
 
 export class NodeD1 {
   readonly db: DatabaseSync;
-  readonly stats: NodeD1Stats = { queries: 0, statements: 0, changes: 0, rowsRead: 0, sqliteMicros: 0 };
+  readonly stats: NodeD1Stats = {
+    queries: 0,
+    statements: 0,
+    changes: 0,
+    rowsRead: 0,
+    sqliteMicros: 0,
+    execMicros: 0,
+  };
   private cache = new Map<string, StatementSync>();
 
   constructor(path = ':memory:') {
@@ -98,7 +107,14 @@ export class NodeD1 {
   }
 
   resetStats(): void {
-    Object.assign(this.stats, { queries: 0, statements: 0, changes: 0, rowsRead: 0, sqliteMicros: 0 });
+    Object.assign(this.stats, {
+      queries: 0,
+      statements: 0,
+      changes: 0,
+      rowsRead: 0,
+      sqliteMicros: 0,
+      execMicros: 0,
+    });
   }
 
   /** One D1 call: serialize like the D1 client, run in a transaction, serialize results back. */
@@ -143,8 +159,10 @@ export class NodeD1 {
     } catch (e) {
       if (tx) this.db.exec('ROLLBACK');
       this.stats.sqliteMicros += micros() - t0;
+      this.stats.execMicros += micros() - t0;
       throw new Error(`D1_ERROR: ${e instanceof Error ? e.message : String(e)}`);
     }
+    this.stats.execMicros += micros() - t0;
     // Serializing the response happens in D1, so it is excluded; parsing it is client work and counts.
     const text = JSON.stringify(out);
     this.stats.sqliteMicros += micros() - t0;

@@ -1,5 +1,25 @@
 # Phase 1 measurements (go/no-go)
 
+## Update: SQLite in-process, for a database per budget (Nov 2, 2026)
+
+Phase 0 of `docs/multi-user.md` v2 asked whether the hot paths would still fit 10 ms of CPU if each budget's SQLite ran inside a Durable Object, on the same thread as the code, instead of inside D1. `apps/worker/measure/store.measure.ts` runs the real code against `node:sqlite` and reports two numbers for each path. The first is today's Worker CPU, with SQLite excluded as in production. The second is the CPU spent executing SQLite and building result rows (`NodeD1.stats.execMicros`), which a Durable Object would add. Data: the November budget plus 3,296 bank rows over three years; a 3,000-transaction backfill at 100 per page; and the 36-month, 60-category budget.
+
+Median ms over three runs of 7 (one run's p90 in brackets). This is a shared, noisy container, so read the ranges, not single values:
+
+| Path                                | Today (SQLite in D1) | SQLite work | In a Durable Object |
+| ----------------------------------- | -------------------- | ----------- | ------------------- |
+| Budget screen                       | 1.4–2.2              | 0.4–0.7     | 1.8–2.9 (4.5)       |
+| Activity screen                     | 2.0–2.8              | 1.7–2.2     | 3.6–5.1 (12.5)      |
+| Other screens                       | 0.8–1.4              | 0.2–1.0     | 0.9–2.9             |
+| Sync apply step (50 events)         | 2.6–4.0              | 2.1–2.7     | 4.7–6.7 (8.4)       |
+| Sync processing step                | 0.6–0.9              | 4.2–5.9     | 4.9–6.8 (5.8)       |
+| Budget edit, first month (6 months) | 3.2–5.3              | 2.0–3.0     | 5.2–8.0 (9.8)       |
+| Recompute Workflow step (6 months)  | 3.1–7.3              | 2.0–2.4     | 5.0–9.1 (13.8)      |
+
+The Durable Object column is a slight overestimate: today's figure includes the D1 client's JSON round trip, which a Durable Object doesn't do. The machine is also somewhat slower than the one behind the workerd figures below. Even so, the sync steps, budget edits and recompute steps would sit around 5–7 ms with peaks past 10 ms, against a 5 ms design threshold. Fitting them would mean smaller chunks: more Workflow steps, and steps (3,000 a day) are already the tightest Free-plan limit.
+
+**Result: no-go on the Free plan.** The Workers Paid plan allows 30 seconds of CPU per invocation, so the problem disappears in the same place the per-budget design starts to pay off. `execMicros` was added to `NodeD1` for this measurement, and `sync.measure.ts` was brought up to date with the 50-event apply chunks.
+
 ## Update: no R2 (decisions.md D-26)
 
 Raw pages moved from R2 into D1, so the fetch step now decodes the page once and sends its text to D1 as one parameter, and the apply step parses the page text out of D1's response. Re-measured the same way (kernel method, 30 reps, median of 5, 100 transactions per page):

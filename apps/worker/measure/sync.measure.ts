@@ -80,12 +80,15 @@ test('sync steps CPU', async () => {
     const applies: number[] = [];
     const applyQueries: number[] = [];
     let statements = 0;
-    for (let i = 0; i < page; i++) {
-      const r = await cpu(db, () => applyPage(ctx(), p, holder, i));
-      applies.push(r.ms);
-      applyQueries.push(r.queries);
-      statements = Math.max(statements, r.result.statements);
-    }
+    // Each page is applied in 50-event chunks, one Workflow step each.
+    for (let i = 0; i < page; i++)
+      for (let ch = 0; ; ch++) {
+        const r = await cpu(db, () => applyPage(ctx(), p, holder, i, ch));
+        applies.push(r.ms);
+        applyQueries.push(r.queries);
+        statements = Math.max(statements, r.result.statements);
+        if (r.result.pageDone) break;
+      }
     const processes: number[] = [];
     for (;;) {
       const r = await cpu(db, () => processPending({ DB: d1 } as never, 'b1'));

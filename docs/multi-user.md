@@ -1,5 +1,7 @@
 # Multi-user design: one database per budget
 
+> **Phase 0 result (Nov 2, 2026): no-go on the Free plan.** With SQLite running in-process, the sync steps, budget edits and recompute steps measure about 5–7 ms, with peaks past 10 ms (`docs/measurements.md`, first section). This design waits until the app moves to Workers Paid (30 s of CPU per invocation). An independent review of this draft also found problems to fix before it's built: the move must be write-safe (screen reads, background jobs and webhooks also write); the adapter needs a real `changes` count for leases; error classes don't cross RPC; about 80 call sites need changes, not none; batches must not span the directory and a store; and deploys that add a Durable Object class can't be rolled back past.
+
 Status: v2, Nov 2, 2026. Replaces v1 (one shared D1 database; reviewed, see section 13). The owner asked for everything other people need to be built but switched off, then chose a database per budget so the app can grow past one database's limits.
 
 ## 1. Goal
