@@ -23,23 +23,6 @@ declare namespace Cloudflare {
   interface GlobalProps {
     mainModule: typeof import('./index');
   }
-  interface StagingEnv {
-    RAW: R2Bucket;
-    DB: D1Database;
-    ASSETS: Fetcher;
-    APP_VERSION: '0.1.0';
-    PLAID_CLIENT_ID: string;
-    PLAID_SECRET: string;
-    PLAID_BASE_URL: string;
-    TOKEN_KEYS: string;
-    TOKEN_KEY_CURRENT: string;
-    MEASURE: string;
-    DEV_AUTH_EMAIL: string;
-    PLAID_ENV: string;
-    SYNC: Workflow<Parameters<import('./index').SyncWorkflow['run']>[0]['payload']>;
-    MAINTENANCE: Workflow<Parameters<import('./index').MaintenanceWorkflow['run']>[0]['payload']>;
-    RECOMPUTE: Workflow<Parameters<import('./index').RecomputeWorkflow['run']>[0]['payload']>;
-  }
   interface Env extends __BaseEnv_GeneratedEnv {}
 }
 interface GeneratedEnv extends __BaseEnv_GeneratedEnv {}

@@ -1,12 +1,12 @@
 # Ledgerline: notes for Claude sessions
 
-A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `docs/build-plan.md` (what's done), `docs/decisions.md` (D-1 to D-35: why things differ from the design) and `docs/runbooks/setup.md`. `docs/design.md` and `docs/sync-spec.md` are the source of truth; record any contradiction in `docs/decisions.md`.
+A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `docs/build-plan.md` (what's done), `docs/decisions.md` (D-1 to D-36: why things differ from the design) and `docs/runbooks/setup.md`. `docs/design.md` and `docs/sync-spec.md` are the source of truth; record any contradiction in `docs/decisions.md`.
 
 ## Production
 
 - App: https://ledgerline.ledger-line.workers.dev (Worker `ledgerline`, workers.dev subdomain `ledger-line`)
 - Cloudflare account id: `f2d39c71e2c0819833de7942cdcc1222`
-- D1: `ledgerline` `52a5b8a6-09b1-4b27-b0bd-ddfaefd943b3`, `ledgerline-staging` `dd5f73ff-487b-4fb3-a975-3c9b4531047e` (staging isn't deployed)
+- D1: `ledgerline` `52a5b8a6-09b1-4b27-b0bd-ddfaefd943b3`. There is no staging (D-36).
 - Sign-in is passkeys (D-27). The owner's passkey exists, and 7 of the 10 Plaid links are used (Charles Schwab, Chase, Wells Fargo, Citibank, Bank of America, American Express, SoFi; checked Nov 2, 2026), so 3 are left. Plaid allows 10 links for life: **never link, re-link or remove a bank without asking.**
 
 ## Deploying

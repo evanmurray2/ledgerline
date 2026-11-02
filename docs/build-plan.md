@@ -78,7 +78,7 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 ## 9. CI and supply chain
 
 - [x] `ci.yml`: frozen install → lint, typecheck, format → unit → integration (local D1) → build → migration check → bundle budget → Playwright (fake provider). _Verify:_ green run on GitHub.
-- [x] `security.yml` (CodeQL, Gitleaks, OSV-Scanner, dependency review, zizmor, actionlint), `deploy.yml` (staging → production with approval, rollback), `release.yml`, `nightly.yml`, `monitor.yml`, `keepalive.yml`, Dependabot, CODEOWNERS, PR template; actions pinned to SHAs. _Verify:_ `actionlint` clean; CI green.
+- [x] `security.yml` (CodeQL, Gitleaks, OSV-Scanner, dependency review, zizmor, actionlint), `deploy.yml` (production with approval, rollback; no staging, D-36), `release.yml`, `nightly.yml`, `monitor.yml`, `keepalive.yml`, Dependabot, CODEOWNERS, PR template; actions pinned to SHAs. _Verify:_ `actionlint` clean; CI green.
 
 ## Follow-ups (not blocking go-live)
 
@@ -98,7 +98,7 @@ The UI works around these contract gaps (details in `apps/web/CONTRACT_NOTES.md`
 - [x] Backups as encrypted GitHub Actions artifacts (90 days), reported to the app with the ops token. _Verify:_ zizmor; script syntax; endpoint test.
 - [x] Passkey sign-in in the Worker instead of Cloudflare Access (migration 0003): setup code, sessions, 15-minute check for banks/exports/passkeys, device links, ops token. _Verify:_ 11 Worker tests with a software passkey; Playwright with Chromium's virtual authenticator against the real Worker.
 - [x] Sign-in, add-device and "Confirm it's you" screens; Settings → Sign-in. _Verify:_ Playwright (passkey, mock and Worker suites).
-- [x] Setup from a phone (D-28): secrets in GitHub environments uploaded by each deploy, passphrase token keys, passphrase backups, optional staging. _Verify:_ token-crypto tests; secrets-file script run with sample values; gpg encrypt/decrypt round trip; zizmor.
+- [x] Setup from a phone (D-28): secrets in GitHub environments uploaded by each deploy, passphrase token keys, passphrase backups. _Verify:_ token-crypto tests; secrets-file script run with sample values; gpg encrypt/decrypt round trip; zizmor.
 - [x] No off-site backup (D-29): backup job, script and endpoint removed; health and monitor no longer need a backup; monitor alert only after the monitor's first check. _Verify:_ Worker tests (ops token, monitor check), web tests.
 - [x] A new bank link is saved before its accounts are set up (migration 0005 `setup_done`); a failure in between shows Finish setup on Bank connections and never uses another link; syncs skip unfinished links. _Verify:_ `apps/worker/test/link.test.ts` with Plaid failing once.
 - [x] Cut database reads after the account hit the free daily read limit: cheap `/api/badges`, Activity attention skips unused scans, 2-minute freshness. _Verify:_ `apps/worker/test/read-cost.test.ts`.

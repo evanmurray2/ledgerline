@@ -75,7 +75,6 @@ The setup code stops working once a passkey exists. For a non-Apple device, use 
 ## Optional extras
 
 - **Branch protection** (Settings → Rules → New ruleset on `master`): require a PR, passing checks, linear history, no force pushes.
-- **Staging**: an environment `staging` with the same secret names (Plaid **Sandbox** secret, its own `TOKEN_KEYS` and `SETUP_CODE`), and the repository variable `STAGING_URL` (`https://ledgerline-staging.<subdomain>.workers.dev`). Deploys then go to staging first.
 - **Nightly Plaid Sandbox test**: environment `sandbox` with `PLAID_SANDBOX_CLIENT_ID` and `PLAID_SANDBOX_SECRET`, and the variable `SANDBOX_E2E=true`.
 
 ## Recovery
