@@ -132,8 +132,8 @@ export function Pill({ tone, children, className }: { tone: Tone; children: Reac
 
 export function Bar({ percent, tone }: { percent: number; tone: Tone }) {
   return (
-    <div aria-hidden="true" className="h-1 overflow-hidden rounded-sm bg-track">
-      <div className={cx('h-1 rounded-sm', TONE[tone].bar)} style={{ width: `${percent}%` }} />
+    <div aria-hidden="true" className="h-1.5 overflow-hidden rounded-sm bg-track">
+      <div className={cx('h-1.5 rounded-sm', TONE[tone].bar)} style={{ width: `${percent}%` }} />
     </div>
   );
 }
@@ -183,7 +183,8 @@ export function PrimaryButton({ className, danger, ...p }: BtnProps & { danger?:
   return (
     <Button
       className={cx(
-        'flex h-12 w-full items-center justify-center rounded-xl px-4 text-[16px] font-bold',
+        // shrink-0: in a scrolling column a button would otherwise be squeezed below its height.
+        'flex h-12 w-full shrink-0 items-center justify-center rounded-xl px-4 text-[16px] font-bold',
         danger ? 'bg-danger text-on-danger' : 'bg-accent text-on-accent',
         'disabled:bg-disabled-bg disabled:text-muted',
         className,
@@ -197,7 +198,7 @@ export function SecondaryButton({ className, ...p }: BtnProps) {
   return (
     <Button
       className={cx(
-        'flex h-12 items-center justify-center rounded-xl border border-line-strong bg-surface px-4 text-[16px] font-bold text-ink-2 disabled:text-disabled',
+        'flex h-12 shrink-0 items-center justify-center rounded-xl border border-line-strong bg-surface px-4 text-[16px] font-bold text-ink-2 disabled:text-disabled',
         className,
       )}
       {...p}
@@ -535,7 +536,8 @@ export function badgeClass(kind: string | null): string {
     case 'alert':
       return 'bg-under-bg text-under-fg';
     case 'match':
-      return 'bg-success-soft text-funded-fg';
+      // Waiting to match is a to-do, not a success: the Owed to you color, never green.
+      return 'bg-owed-bg text-owed-fg';
     case 'est':
       return 'bg-info-bg text-info-fg';
     case 'owed':

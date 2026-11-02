@@ -67,7 +67,7 @@ export function OwedScreen() {
               <Link
                 to={`/owed/match/${waiting.key}`}
                 data-track="owed.waiting.match"
-                className="flex min-h-14 shrink-0 items-center gap-2.5 rounded-[14px] border border-success-border bg-success-soft px-3 py-2 text-funded-fg no-underline"
+                className="flex min-h-14 shrink-0 items-center gap-2.5 rounded-[14px] bg-owed-bg px-3 py-2 text-owed-fg no-underline"
               >
                 <span className="flex flex-1 flex-col gap-px">
                   <span className="text-[14px] font-bold">
@@ -79,16 +79,28 @@ export function OwedScreen() {
               </Link>
             )}
             {v.projected.map((p) => (
-              <p
+              <div
                 key={p.key}
-                className="m-0 shrink-0 rounded-xl bg-under-bg px-3 py-2.5 text-[13px] leading-[1.45] text-under-fg"
+                className="flex shrink-0 flex-col gap-1 rounded-xl bg-under-bg px-3 py-2.5 text-[13px] leading-[1.45] text-under-fg"
               >
-                {p.label} takes {formatCents(p.owed, { whole: true })} from Ready to Assign until it’s paid
-                back.{' '}
-                {rta + (waiting?.amount ?? 0) >= p.owed
-                  ? 'You have enough to cover it.'
-                  : `Keep ${formatCents(p.owed, { whole: true })} unassigned (you have ${formatCents(rta)}${waiting ? `, ${formatCents(rta + waiting.amount)} after matching ${waiting.payee.split(' ')[0]}` : ''}).`}
-              </p>
+                <span className="text-[14px] font-bold">
+                  {rta + (waiting?.amount ?? 0) >= p.owed
+                    ? `${p.label} is covered`
+                    : `Keep ${formatCents(p.owed, { whole: true })} unassigned for ${p.label}`}
+                </span>
+                <span>
+                  It takes {formatCents(p.owed, { whole: true })} from Ready to Assign until it’s paid back.
+                </span>
+                {rta + (waiting?.amount ?? 0) < p.owed && (
+                  <span>
+                    You have {formatCents(rta)} now
+                    {waiting
+                      ? `, or ${formatCents(rta + waiting.amount)} after you match ${waiting.payee.split(' ')[0]}`
+                      : ''}
+                    .
+                  </span>
+                )}
+              </div>
             ))}
             <h2 className="m-0 mt-1 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
               Still owed
@@ -122,7 +134,7 @@ export function OwedScreen() {
                       </span>
                       <span className="flex shrink-0 flex-col items-end gap-0.5">
                         <span className="tnum text-[15px] font-bold">{formatCents(o.still)}</span>
-                        <span className="text-[11px] text-muted">
+                        <span className="text-[12px] text-muted">
                           {o.still === o.amount
                             ? 'all of it'
                             : `of ${formatCents(o.amount, { whole: true })} owed`}

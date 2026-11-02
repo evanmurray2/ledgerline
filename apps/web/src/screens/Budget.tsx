@@ -733,19 +733,27 @@ function ViewChips({
       to: '/budget',
       search: { month: month === current ? undefined : month, view: v === 'all' ? undefined : v },
     });
+  // A filter with nothing in it is hidden, unless it's the one showing.
+  const showAttention = count > 0 || view === 'attention';
+  const showLow = lowCount > 0 || view === 'low';
+  if (!showAttention && !showLow) return null;
   return (
     <div role="group" aria-label="Show" className="flex gap-2">
       <Chip pressed={view === 'all'} onClick={() => set('all')} track="budget.filter.all">
         All
       </Chip>
-      <Chip pressed={view === 'attention'} onClick={() => set('attention')} track="budget.filter.attention">
-        Needs attention
-        <CountBadge n={count} inverted={view === 'attention'} />
-      </Chip>
-      <Chip pressed={view === 'low'} onClick={() => set('low')} track="budget.filter.low">
-        Low
-        <CountBadge n={lowCount} inverted={view === 'low'} />
-      </Chip>
+      {showAttention && (
+        <Chip pressed={view === 'attention'} onClick={() => set('attention')} track="budget.filter.attention">
+          Needs attention
+          <CountBadge n={count} inverted={view === 'attention'} />
+        </Chip>
+      )}
+      {showLow && (
+        <Chip pressed={view === 'low'} onClick={() => set('low')} track="budget.filter.low">
+          Low
+          <CountBadge n={lowCount} inverted={view === 'low'} />
+        </Chip>
+      )}
     </div>
   );
 }
@@ -788,7 +796,7 @@ function AllGroups({ b, month }: { b: BudgetView; month: string }) {
           key={g.id}
           id={g.id}
           name={g.name}
-          total={formatCents(g.total)}
+          total={`${formatCents(g.total)} available`}
           collapsed={!!collapsed[g.id]}
           toggle={toggle}
         >
@@ -801,7 +809,7 @@ function AllGroups({ b, month }: { b: BudgetView; month: string }) {
         <Group
           id="archived"
           name="Archived"
-          total={formatCents(b.archived.reduce((s, c) => s + c.available, 0))}
+          total={`${formatCents(b.archived.reduce((s, c) => s + c.available, 0))} available`}
           collapsed={collapsed.archived !== false}
           toggle={(id) => toggle(id)}
         >
@@ -814,7 +822,7 @@ function AllGroups({ b, month }: { b: BudgetView; month: string }) {
         <Group
           id="cards"
           name="Credit card payments"
-          total={formatCents(b.cards.reduce((s, c) => s + c.available, 0))}
+          total={`${formatCents(b.cards.reduce((s, c) => s + c.available, 0))} available`}
           collapsed={!!collapsed.cards}
           toggle={toggle}
         >
@@ -842,7 +850,7 @@ function AllGroups({ b, month }: { b: BudgetView; month: string }) {
       <Link
         to="/budget/targets"
         data-track="budget.set_targets"
-        className="hit flex h-10 items-center self-start text-[14px] font-bold text-accent no-underline"
+        className="hit flex h-10 shrink-0 items-center self-start text-[14px] font-bold text-accent no-underline"
       >
         Set targets
       </Link>
@@ -874,7 +882,7 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
     assigned: string,
     spent: string,
     avail: string,
-    tone: Tone,
+    tone: Tone | null,
     onClick: () => void,
     track: string,
   ) => (
@@ -901,11 +909,11 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
         {spent}
       </span>
       <span role="cell" className="px-3.5 py-1 text-right">
+        {/* Healthy rows stay plain so the pills mark only what needs you. */}
         <span
           className={cx(
             'tnum inline-block rounded-full px-2.5 py-[3px] font-bold',
-            TONE[tone].bg,
-            TONE[tone].fg,
+            tone ? [TONE[tone].bg, TONE[tone].fg].join(' ') : 'text-ink',
           )}
         >
           {avail}
@@ -940,11 +948,11 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
             row(
               c.id,
               c.name,
-              `${STATUS[c.status].word} · ${c.detail}`,
+              isQuiet(c.status) ? c.detail : `${STATUS[c.status].word} · ${c.detail}`,
               formatCents(c.assigned),
               c.status === 'invested' ? `Invested ${formatCents(c.spent)}` : formatCents(c.spent),
               formatCents(c.available),
-              STATUS[c.status].tone,
+              isQuiet(c.status) ? null : STATUS[c.status].tone,
               () => void navigate({ to: `/budget/category/${c.id}`, search: { month } }),
               'budget.category',
             ),
@@ -959,7 +967,7 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
             '—',
             '—',
             formatCents(c.available),
-            c.status === 'short' ? 'over' : 'funded',
+            c.status === 'short' ? 'over' : null,
             () => void navigate({ to: `/accounts/${c.accountId}` }),
             'budget.card',
           ),
@@ -972,7 +980,7 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
           '—',
           '—',
           `${formatCents(b.owed.out)} out`,
-          t.tone,
+          b.owed.status === 'late' ? t.tone : null,
           () => void navigate({ to: '/owed' }),
           'budget.owed',
         )}
@@ -1079,9 +1087,11 @@ export function BudgetScreen() {
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex shrink-0 flex-col border-b border-line bg-surface">
         <MonthNav b={b} month={month} view={view} desktop={false} />
-        <div className="px-4 pb-3 pt-1">
-          <ViewChips view={view} count={count} lowCount={lowCount} month={month} current={b.currentMonth} />
-        </div>
+        {(count > 0 || lowCount > 0 || view !== 'all') && (
+          <div className="px-4 pb-3 pt-1">
+            <ViewChips view={view} count={count} lowCount={lowCount} month={month} current={b.currentMonth} />
+          </div>
+        )}
         {b.syncProblem && <SyncProblem text={b.syncProblem} />}
       </header>
       <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">

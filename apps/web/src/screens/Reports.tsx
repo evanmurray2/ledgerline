@@ -6,7 +6,7 @@ import type { ReportsView } from '@ledgerline/contracts';
 import { useAccounts, useReports, useSession } from '../api/hooks';
 import { cx, ErrorNote, Icon, Loading, Segmented, useIsDesktop } from '../components/ui';
 import { formatCents, percentOf } from '../lib/money';
-import { addMonths, compareMonths, monthLabel, monthName, monthShort } from '../lib/dates';
+import { addMonths, compareMonths, monthLabel, monthShort } from '../lib/dates';
 import { useScreen } from '../lib/common';
 
 type View = 'spend' | 'trend' | 'worth';
@@ -28,7 +28,7 @@ function Tiles({ r, desktop }: { r: ReportsView; desktop: boolean }) {
       {tiles.map(([k, v, note]) => (
         <div key={k} className="flex flex-col gap-0.5 rounded-xl border border-line bg-surface p-2.5">
           <span className="text-[12px] text-muted">{k}</span>
-          <span className="tnum text-[16px] font-bold">{formatCents(v, { whole: true })}</span>
+          <span className="tnum text-[16px] font-bold">{formatCents(v)}</span>
           {desktop && <span className="text-[12px] text-muted">{note}</span>}
         </div>
       ))}
@@ -83,7 +83,7 @@ function Trend({ r }: { r: ReportsView }) {
           const last = i === r.trend.length - 1;
           return (
             <div key={t.month} className="flex flex-1 flex-col items-center justify-end gap-1">
-              <span className="tnum text-[11px] text-muted">{kShort(t.spent)}</span>
+              <span className="tnum text-[12px] text-muted">{kShort(t.spent)}</span>
               <span
                 className={cx(
                   'w-full max-w-9 rounded-t-md',
@@ -91,7 +91,7 @@ function Trend({ r }: { r: ReportsView }) {
                 )}
                 style={{ height: `${Math.round((t.spent * 120) / top)}px` }}
               />
-              <span className="text-[11px] text-muted">{monthShort(t.month)}</span>
+              <span className="text-[12px] text-muted">{monthShort(t.month)}</span>
             </div>
           );
         })}
@@ -234,9 +234,7 @@ export function ReportsScreen() {
             >
               <Icon name="chevL" size={20} />
             </button>
-            <span className="min-w-[84px] text-center text-[15px] font-bold">
-              {desktop ? monthLabel(month) : monthName(month)}
-            </span>
+            <span className="min-w-[84px] text-center text-[15px] font-bold">{monthLabel(month)}</span>
             <button
               type="button"
               data-track="reports.month.next"

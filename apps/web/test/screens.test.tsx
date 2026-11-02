@@ -73,7 +73,7 @@ describe('Budget', () => {
     renderAt('/budget/category/groceries');
     await text('Refill to $600 every month');
     expect(screen.getByTestId('category-available').textContent).toBe('$212.40');
-    expect(screen.getByText('−$387.60')).toBeTruthy();
+    expect(screen.getByText('$387.60')).toBeTruthy();
     expect(screen.getByText('See all 9')).toBeTruthy();
   });
 

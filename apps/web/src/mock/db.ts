@@ -537,7 +537,7 @@ function initialOwed(): Owed[] {
       id: 'rent',
       txnKey: 'rent-oct',
       label: 'Rent · Sam',
-      sub: 'Oct 31 · Everyday Checking · rule: 2/3',
+      sub: 'Oct 31 · Everyday Checking · they owe 2/3',
       categoryId: 'rent',
       amount: 100000,
       matched: 100000,
@@ -549,7 +549,7 @@ function initialOwed(): Owed[] {
       id: 'nopa',
       txnKey: 'nopa',
       label: 'Nopa · Alex',
-      sub: 'Nov 8 · Sapphire · Half',
+      sub: 'Nov 8 · Sapphire · they owe half',
       categoryId: 'dining',
       amount: 1800,
       matched: 0,
@@ -893,8 +893,7 @@ export class MockDb {
           : 'back to this month’s target';
     else if (c.id === 'rent' && status === 'underfunded') d = `needs ${fmt(need)} by Nov 30`;
     else if (c.refill !== null && !d) {
-      d = `${fmt(c.spent)} of ${fmt(c.refill)} spent`;
-      if (status === 'low') d += ` · ${fmt(c.available)} left`;
+      d = `${fmt(c.available)} left of ${fmt(c.spent + c.available > 0 ? c.spent + c.available : c.refill)}`;
       if (c.carry) d += ` · ${c.carry}`;
     }
     if (status === 'funded' && c.added > 0 && c.need === null) d += ` · added ${fmt(c.added)}`;

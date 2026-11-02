@@ -57,8 +57,21 @@ export function TxnRow({
   style?: 'list' | 'posted' | 'register';
   action?: React.ReactNode;
 }) {
+  const desktop = useIsDesktop();
+  // On a phone a row with a button stacks: the text gets the full width, and the badge and button share a line.
+  const stacked = !!action && !desktop;
+  const badge = r.badge && (
+    <span className={cx('self-start rounded-md px-2 py-0.5 text-[12px] font-bold', badgeClass(r.badgeKind))}>
+      {r.badge}
+    </span>
+  );
   return (
-    <div className="flex items-center gap-2.5 border-t border-divider px-3 py-2 first:border-t-0">
+    <div
+      className={cx(
+        'flex gap-2.5 border-t border-divider px-3 py-2 first:border-t-0',
+        stacked ? 'flex-col' : 'items-center',
+      )}
+    >
       <Link
         to={sheetPath(base, r)}
         data-track="activity.row"
@@ -69,16 +82,7 @@ export function TxnRow({
             {r.payee}
           </span>
           <span className="text-[12px] text-muted">{rowMeta(r, style)}</span>
-          {r.badge && (
-            <span
-              className={cx(
-                'self-start rounded-md px-2 py-0.5 text-[11px] font-bold',
-                badgeClass(r.badgeKind),
-              )}
-            >
-              {r.badge}
-            </span>
-          )}
+          {!stacked && badge}
         </span>
         <span className="flex shrink-0 flex-col items-end gap-0.5">
           <span className={cx('tnum text-[15px] font-bold', amountClass(r))}>
@@ -86,10 +90,17 @@ export function TxnRow({
               ? formatCents(Math.abs(r.amount))
               : formatCents(r.amount, { plus: true })}
           </span>
-          {r.sub && style !== 'register' && <span className="text-[11px] text-muted">{r.sub}</span>}
+          {r.sub && style !== 'register' && <span className="text-[12px] text-muted">{r.sub}</span>}
         </span>
       </Link>
-      {action}
+      {stacked ? (
+        <div className="flex items-center justify-between gap-2.5">
+          {badge || <span />}
+          {action}
+        </div>
+      ) : (
+        action
+      )}
     </div>
   );
 }
@@ -343,12 +354,8 @@ export function ActivityScreen() {
           {!v && (query.error ? <ErrorNote error={query.error} /> : <Loading />)}
           {empty && <p className="m-0 p-4 text-center text-[14px] text-muted">No transactions match.</p>}
           {v && showAttnHead && (
-            <div className="flex items-center gap-2 px-0.5">
-              <h2 className="m-0 text-[15px] font-bold">Needs attention</h2>
-              <span className="flex h-5 min-w-5 items-center justify-center rounded-[10px] bg-count-bg px-1.5 text-[12px] font-bold text-count-fg">
-                {v.attentionCount}
-              </span>
-            </div>
+            // The count is already on the filter chip above.
+            <h2 className="m-0 px-0.5 text-[15px] font-bold">Needs attention</h2>
           )}
           {v && filter === 'attention' && !q && v.attentionCount === 0 && openNeeds.length === 0 && (
             <p className="m-0 rounded-[14px] bg-funded-bg p-4 text-center text-[15px] font-semibold text-funded-fg">

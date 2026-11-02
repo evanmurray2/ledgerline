@@ -360,7 +360,7 @@ export function SignInSection() {
             window.location.assign('/');
           })
         }
-        className="flex h-12 items-center justify-center rounded-xl border border-line-strong bg-surface text-[16px] font-bold text-over-fg"
+        className="flex h-12 shrink-0 items-center justify-center rounded-xl border border-line-strong bg-surface text-[16px] font-bold text-over-fg"
       >
         Sign out
       </button>

@@ -147,8 +147,8 @@ export async function categoryRows(
       detail = `${fmt(available - tAmount)} more than this month’s ${fmt(tAmount)}`;
     else if (status === 'underfunded') detail = `needs ${fmt(need)} this month`;
     else if (tAmount !== null && target?.type !== 'no_date') {
-      detail = `${fmt(spent)} of ${fmt(tAmount)} spent`;
-      if (status === 'low') detail += ` · ${fmt(available)} left`;
+      // Matches the bar, which shows what's left of the month's money (spent + available).
+      detail = `${fmt(available)} left of ${fmt(spent + available > 0 ? spent + available : tAmount)}`;
       if (X > 0 && status !== 'low' && target?.type === 'refill' && month > start)
         detail += ` · ${fmt(X)} carried from ${monthLong(addMonths(month, -1))}`;
     } else if (target?.type === 'no_date')

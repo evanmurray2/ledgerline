@@ -178,7 +178,7 @@ export function MatchScreen() {
                   <span className="tnum text-[15px] font-bold">
                     {on[a.id] ? formatCents(a.applied) : '—'}
                   </span>
-                  <span className="text-[11px] text-muted">
+                  <span className="text-[12px] text-muted">
                     {on[a.id] && a.applied < a.still
                       ? `of ${formatCents(a.still)}, rest stays owed`
                       : `of ${formatCents(a.still)}`}

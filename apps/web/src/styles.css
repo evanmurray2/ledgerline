@@ -16,7 +16,7 @@
   --ll-divider: #f0f1f3;
   --ll-border: #e5e7eb;
   --ll-border-strong: #d0d5dd;
-  --ll-track: #eef0f3;
+  --ll-track: #e4e7ec;
   --ll-ink: #111827;
   --ll-ink-2: #374151;
   --ll-muted: #4b5563;
@@ -33,24 +33,25 @@
   --ll-inverse-line: #344054;
   --ll-inverse-muted: #d0d5dd;
 
+  /* Bars: each fill is at least 3:1 against the track, so the amount left reads without the text. */
   --ll-funded-bg: #dcfae6;
   --ll-funded-fg: #085d3a;
-  --ll-funded-bar: #12b76a;
+  --ll-funded-bar: #079455;
   --ll-low-bg: #f4ebff;
   --ll-low-fg: #6941c6;
-  --ll-low-bar: #9e77ed;
+  --ll-low-bar: #7f56d9;
   --ll-over-bg: #fee4e2;
   --ll-over-fg: #b42318;
   --ll-over-bar: #d92d20;
   --ll-under-bg: #fef0c7;
   --ll-under-fg: #93370d;
-  --ll-under-bar: #f79009;
+  --ll-under-bar: #b54708;
   --ll-overfunded-bg: #d1e9ff;
   --ll-overfunded-fg: #175cd3;
-  --ll-overfunded-bar: #2e90fa;
+  --ll-overfunded-bar: #1570ef;
   --ll-none-bg: #f2f4f7;
   --ll-none-fg: #344054;
-  --ll-none-bar: #98a2b3;
+  --ll-none-bar: #667085;
 
   --ll-success-soft: #ecfdf3;
   --ll-success-border: #abefc6;
@@ -84,7 +85,7 @@
   --ll-divider: #262b33;
   --ll-border: #2c323b;
   --ll-border-strong: #4a525e;
-  --ll-track: #2a2f37;
+  --ll-track: #3a404a;
   --ll-ink: #f2f4f7;
   --ll-ink-2: #d0d5dd;
   --ll-muted: #a7afbb;
@@ -109,7 +110,7 @@
   --ll-low-bar: #9e77ed;
   --ll-over-bg: #3a1614;
   --ll-over-fg: #f97066;
-  --ll-over-bar: #f04438;
+  --ll-over-bar: #f97066;
   --ll-under-bg: #3a2a0a;
   --ll-under-fg: #fdb022;
   --ll-under-bar: #f79009;
@@ -118,7 +119,7 @@
   --ll-overfunded-bar: #53b1fd;
   --ll-none-bg: #252a32;
   --ll-none-fg: #d0d5dd;
-  --ll-none-bar: #7c8695;
+  --ll-none-bar: #949dab;
 
   --ll-success-soft: #10291d;
   --ll-success-border: #1f5135;
@@ -258,6 +259,23 @@
 
   .tnum {
     font-variant-numeric: tabular-nums;
+  }
+
+  /*
+   * Lists use the phone's own picker, drawn like the app's other fields: same padding, and a muted chevron
+   * instead of the browser's arrow (so Account and Category look alike on Add a transaction).
+   */
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 40px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234b5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 18px;
+  }
+  :root[data-theme='dark'] select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a7afbb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   }
 
   /* At least 44 x 44 px of touch target around small controls. */

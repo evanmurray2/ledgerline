@@ -120,7 +120,7 @@ export function CategorySheetScreen() {
         </div>
         <div className="flex flex-col gap-0.5 rounded-xl bg-page p-2.5">
           <span className="text-[12px] text-muted">{c.status === 'invested' ? 'Invested' : 'Spent'}</span>
-          <span className="tnum text-[16px] font-bold">{formatCents(-c.spent)}</span>
+          <span className="tnum text-[16px] font-bold">{formatCents(c.spent)}</span>
         </div>
         <div className={cx('flex flex-col gap-0.5 rounded-xl p-2.5', TONE[st.tone].bg)}>
           <span className={cx('text-[12px]', TONE[st.tone].fg)}>Available</span>

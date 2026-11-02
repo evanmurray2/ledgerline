@@ -160,7 +160,10 @@ export function AccountsScreen() {
                   className="mt-1 flex min-h-10 items-center justify-between border-t border-divider pt-1 text-[13px] text-ink-2 no-underline"
                 >
                   <span>Owed to you · not in this total</span>
-                  <span className="tnum font-bold">{formatCents(v.owedOut)}</span>
+                  <span className="flex items-center gap-1">
+                    <span className="tnum font-bold">{formatCents(v.owedOut)}</span>
+                    <Icon name="chevR" size={16} className="text-faint" />
+                  </span>
                 </Link>
               </section>
               {v.repairs.map((r) => (
@@ -222,14 +225,14 @@ export function AccountsScreen() {
                           <span className="flex shrink-0 flex-col items-end gap-0.5">
                             <span
                               className={cx(
-                                'tnum text-[15px] font-bold',
-                                credit ? 'text-over-fg' : 'text-ink',
+                                // A card balance isn't a problem: red is kept for overspending and broken links.
+                                'tnum text-[15px] font-bold text-ink',
                               )}
                             >
                               {formatCents(credit ? -a.bank : a.bank)}
                             </span>
                             {sub.text && (
-                              <span className={cx('text-[11px]', sub.warn ? 'text-under-fg' : 'text-muted')}>
+                              <span className={cx('text-[12px]', sub.warn ? 'text-under-fg' : 'text-muted')}>
                                 {sub.text}
                               </span>
                             )}
