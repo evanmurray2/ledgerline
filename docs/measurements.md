@@ -226,3 +226,8 @@ A D1 export reads every row once. The 36-month dataset holds about 5,400 transac
 - CPU time per Workflow step and per request in Workers Logs: fetch about 2 ms, apply about 5 ms expected.
 - Whether the 50 external subrequests apply per invocation or per Workflow instance.
 - Rows read by the first D1 export (estimate above).
+
+### Phase 0 rerun, owner-sized Activity (Nov 2, 2026, run 41406679174)
+
+- **Point-in-time recovery on Free works** on a Durable Object a few minutes old (bookmark returned). The first try, on a brand-new object, failed only because the requested time was before the object existed.
+- **Activity: no numbers.** All 243 steps ran, but GraphQL Analytics returned no Durable Object CPU rows for them. This run and the first one used about 90% of the account's daily Durable Object allowance (the owner got Cloudflare's 90% notice). No further runs: Activity is measured on the real app's analytics after the move instead, and the stored recent-rows list is built only if it's over budget there.
