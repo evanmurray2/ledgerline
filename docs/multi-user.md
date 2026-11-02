@@ -99,7 +99,7 @@ A GET with a cached session costs one Worker request and one Durable Object requ
 - `noteUsage`, `usageToday`
 - `health`, `dumpChunk`, `loadChunk`
 
-The soft limit is about 1,000 requests a second per object. The GET cache keeps this app far below that. Splitting sessions by token hash is the way out later; it isn't built now.
+The soft limit is about 1,000 requests a second per object. The GET cache keeps this app far below that up to thousands of active users. Past that, sessions would be split across several `SessionShard` objects keyed by token hash, with users, invites and slots staying in the Directory. That isn't built now. The Directory's People screen shows requests per second, so the need would be visible well before it bites.
 
 **If the Directory breaks** (a bad migration, a bug), the whole app is down, reads included. Two things limit the damage:
 
@@ -206,7 +206,7 @@ If a step fails:
 ### 6.2 Recurring jobs
 
 - Each store keeps three **recurring job rows**: the sync backstop every 4 hours, the daily scan at 08:10 UTC, and maintenance at 10:20 UTC (the same times as today). A recurring row is never deleted; finishing a run just moves its `run_at` forward.
-- The one daily cron trigger refreshes account usage. It also calls `ensureJobs` on up to 50 budgets per run, picking up from a cursor. `ensureJobs` recreates any missing recurring rows, checks that an alarm is set, re-registers any of the store's items missing from `connection_route`, and reports failed jobs.
+- The one daily cron trigger refreshes account usage and starts an `ensure_all` job in the Directory. That job calls `ensureJobs` on `ENSURE_BATCH` budgets per step (default 25), from a cursor, until every budget has been checked that day. This covers any number of budgets without a longer cron run. `ensureJobs` recreates any missing recurring rows, checks that an alarm is set, re-registers any of the store's items missing from `connection_route`, and reports failed jobs.
 - With one budget, the cron makes one call.
 
 ### 6.3 Leases and fences inside one object
@@ -524,6 +524,15 @@ The results go in `docs/measurements.md`. If anything misses its gate, the work 
 **Rough size:** phases 0–5 take five to eight weeks of sessions; phases 6–8 take one to two more.
 
 ## 13. Open questions
+
+- **Limits after this plan** (not built, by design):
+  - splitting sessions out of the Directory at very large scale (5.2);
+  - automatic backups for many users (needs R2 and a payment card);
+  - billing for Plaid Production fees;
+  - email recovery (needs a domain);
+  - support and monitoring for other people.
+
+  Everything else scales with settings.
 
 - Phase 0 answers the CPU gates on Cloudflare, shared row pools, the GraphQL dataset, point-in-time recovery on Free, alarm behaviour after overruns, the data browser on iPhone, the counter's write cost, and the link token's lifetime.
 - Do Plaid Trial terms allow other people's banks at all? This needs an answer before sign-up is turned on.
