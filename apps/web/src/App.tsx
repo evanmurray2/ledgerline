@@ -41,6 +41,10 @@ export function App({ history, queryClient }: { history?: RouterHistory; queryCl
             shouldDehydrateQuery: (q) => q.state.status === 'success' && q.queryKey[0] !== 'session',
           },
         }}
+        // Saved screens are shown at once, then each checks for changes with its ETag (a couple of rows read when
+        // nothing changed). Without this, a screen saved within staleTime would trust its copy, and a change made
+        // just before leaving (saved data is written at most every 2 s) could show stale for up to 2 minutes.
+        onSuccess={() => void qc.invalidateQueries()}
       >
         <RouterProvider router={router} />
       </PersistQueryClientProvider>

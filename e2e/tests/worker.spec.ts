@@ -71,6 +71,25 @@ test('Activity: categorizing an uncategorized purchase persists', async ({ page 
   await expect(page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ })).toHaveCount(0);
 });
 
+test('Saved screens check for changes when the app opens again', async ({ page }) => {
+  await page.goto('/activity');
+  const chip = page.getByRole('button', { name: /^Needs attention \d+$/ });
+  await expect(chip).toHaveText(/Needs attention [1-9]/);
+  const before = Number((await chip.textContent())!.match(/\d+/)![0]);
+  // Let this screen be saved on the device (at most every 2 s)…
+  await page.waitForTimeout(2500);
+  await page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ }).click();
+  await page
+    .getByRole('dialog', { name: 'Choose a category' })
+    .getByRole('button', { name: 'Shopping' })
+    .first()
+    .click();
+  await expect(chip).toHaveText(`Needs attention ${before - 1}`);
+  // …then leave before the change is saved: reopening must not trust the old copy.
+  await page.reload();
+  await expect(chip).toHaveText(`Needs attention ${before - 1}`);
+});
+
 test('Accounts: net worth and the Ally repair prompt', async ({ page }) => {
   await page.goto('/accounts');
   await expect(page.getByText('$22,555.35').first()).toBeVisible();
