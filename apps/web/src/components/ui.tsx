@@ -48,6 +48,7 @@ const ICONS = {
   reports: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
   link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
   note: 'M4 4h16v12H8l-4 4zM8 9h8M8 12h5',
+  more: 'M5 12h.01M12 12h.01M19 12h.01',
   wifiOff: 'M2 2l20 20M8.5 16.5a5 5 0 0 1 7 0M5 13a10 10 0 0 1 5.2-2.8M19 13a10 10 0 0 0-2.2-1.6M12 20h.01',
 } as const;
 export type IconName = keyof typeof ICONS;
@@ -246,12 +247,17 @@ export function Chip({
   );
 }
 
-export function CountBadge({ n, inverted }: { n: number; inverted?: boolean }) {
+/** A count of to-dos. Gray unless `danger`: red is kept for real problems (overspending, broken links). */
+export function CountBadge({ n, inverted, danger }: { n: number; inverted?: boolean; danger?: boolean }) {
   return (
     <span
       className={cx(
         'flex h-5 min-w-5 items-center justify-center rounded-[10px] px-1.5 text-[12px] font-bold',
-        inverted ? 'bg-on-inverse text-inverse' : 'bg-danger text-on-danger',
+        inverted
+          ? 'bg-on-inverse text-inverse'
+          : danger
+            ? 'bg-danger text-on-danger'
+            : 'bg-count-bg text-count-fg',
       )}
     >
       {n}

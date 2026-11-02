@@ -121,7 +121,11 @@ test('Pending: money you add goes to Ready to Assign, and a bank pending charge 
   await add.getByPlaceholder('0.00').fill('500');
   await add.getByRole('button', { name: 'In', exact: true }).click();
   await add.getByLabel('Payee').fill('Zelle from a friend');
-  await add.getByLabel('Category').selectOption({ label: 'Ready to Assign' });
+  await add.getByLabel('Category').click();
+  await page
+    .getByRole('dialog', { name: 'Choose a category' })
+    .getByRole('button', { name: 'Ready to Assign' })
+    .click();
   await add.getByRole('button', { name: 'Add', exact: true }).click();
   await page.goto('/budget');
   await expect(rta(page)).toHaveText('$1,481.90');
@@ -147,7 +151,8 @@ test('Pending: money you add goes to Ready to Assign, and a bank pending charge 
 
 test('Accounts: rename an account', async ({ page }) => {
   await page.goto('/accounts/sapphire');
-  await page.getByRole('button', { name: 'Rename', exact: true }).click();
+  await page.getByRole('button', { name: 'More for this account' }).click();
+  await page.getByRole('menuitem', { name: 'Rename account' }).click();
   const sheet = page.getByRole('dialog', { name: 'Rename account' });
   await sheet.getByLabel('Name').fill('Travel card');
   await sheet.getByRole('button', { name: 'Save' }).click();

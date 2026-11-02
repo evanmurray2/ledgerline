@@ -61,7 +61,11 @@ const SCREENS: { name: string; path: string; ready?: string; prepare?: (page: Pa
     prepare: async (p) => {
       const checked = p.getByRole('checkbox', { checked: true });
       while ((await checked.count()) > 0) await checked.first().uncheck();
-      await p.getByLabel('Category').selectOption({ label: 'Vacation' });
+      await p.getByLabel('Category').click();
+      await p
+        .getByRole('dialog', { name: 'Choose a category' })
+        .getByRole('button', { name: /^Vacation/ })
+        .click();
       await p.getByLabel('Amount').fill('1000');
       await p.getByRole('button', { name: 'Assign anyway' }).click();
       await p.getByText('more than you have').first().waitFor();

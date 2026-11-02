@@ -2,7 +2,7 @@
 // replaces the tab bar and a right-hand panel holds sheets. The offline / read-only banner sits on top.
 import { useState, type ReactNode } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
-import { PanelSlotContext } from './Sheet';
+import { PanelSlotContext, useModalOpen } from './Sheet';
 import { ToastHost } from './Toast';
 import { cx, Icon, useIsDesktop, type IconName } from './ui';
 import { NoteSheet } from '../screens/Note';
@@ -41,15 +41,17 @@ const TABS: { id: Tab; name: string; to: string; icon: IconName; what: string }[
 
 function TabBar({ active }: { active: Tab }) {
   const badges = useBadges();
-  const current = active === 'settings' ? 'accounts' : active;
+  const current = active === 'settings' ? 'budget' : active;
   return (
     <nav
       aria-label="Main"
-      className="grid h-[72px] shrink-0 grid-cols-4 border-t border-line bg-surface px-2 pb-3.5 pt-1.5"
+      className="safe-tabs grid min-h-[72px] shrink-0 grid-cols-4 border-t border-line bg-surface px-2 pt-1.5"
     >
       {TABS.map((t) => {
         const on = t.id === current;
         const badge = t.id === 'activity' ? badges.activity : t.id === 'accounts' ? badges.accounts : 0;
+        // Activity counts to-dos (gray); Accounts counts broken bank links (red).
+        const problem = t.id === 'accounts';
         return (
           <Link
             key={t.id}
@@ -66,7 +68,10 @@ function TabBar({ active }: { active: Tab }) {
             {badge > 0 && (
               <span
                 aria-hidden="true"
-                className="absolute left-1/2 top-0.5 ml-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-[9px] bg-danger px-[5px] text-[11px] font-bold text-on-danger"
+                className={cx(
+                  'absolute left-1/2 top-0.5 ml-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-[9px] px-[5px] text-[11px] font-bold',
+                  problem ? 'bg-danger text-on-danger' : 'bg-count-bg text-count-fg',
+                )}
               >
                 {badge}
               </span>
@@ -112,7 +117,12 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
           >
             <span>{n.name}</span>
             {n.badge > 0 && (
-              <span className="flex h-5 min-w-5 items-center justify-center rounded-[10px] bg-danger px-1.5 text-[12px] font-bold text-on-danger">
+              <span
+                className={cx(
+                  'flex h-5 min-w-5 items-center justify-center rounded-[10px] px-1.5 text-[12px] font-bold',
+                  n.id === 'accounts' ? 'bg-danger text-on-danger' : 'bg-count-bg text-count-fg',
+                )}
+              >
                 {n.badge}
               </span>
             )}
@@ -136,7 +146,7 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
             ? 'bg-danger text-on-danger'
             : done
               ? 'border border-line text-muted'
-              : 'bg-accent text-on-accent',
+              : 'bg-rta-bg text-rta-fg',
         )}
       >
         <span className="text-[12px] font-semibold">{done ? 'All money assigned' : 'Ready to Assign'}</span>
@@ -147,7 +157,7 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
           <Link
             to="/budget/assign"
             data-track="nav.assign"
-            className="hit mt-1.5 flex h-9 items-center justify-center rounded-full bg-on-accent text-[14px] font-bold text-accent no-underline"
+            className="hit mt-1.5 flex h-9 items-center justify-center rounded-full bg-rta-fg text-[14px] font-bold text-rta-btn-fg no-underline"
           >
             Assign
           </Link>
@@ -172,23 +182,40 @@ export function StatusBanner() {
       >
         <span className="text-[14px] font-bold">You’re offline</span>
         <span className="text-[13px] leading-snug">
-          {loaded ? `Showing what was loaded at ${loaded}. ` : 'Showing what was last loaded. '}
-          Changes are turned off until you’re back online, so nothing gets lost or saved twice.
+          {loaded ? `Showing what was loaded at ${loaded}.` : 'Showing what was last loaded.'} Changes are off
+          until you’re back online.
         </span>
       </div>
     );
-  const until = c.readOnlyUntil ? pacificTime(c.readOnlyUntil) : 'midnight UTC';
+  return <ReadOnlyBanner until={c.readOnlyUntil ? pacificTime(c.readOnlyUntil) : 'midnight UTC'} />;
+}
+
+function ReadOnlyBanner({ until }: { until: string }) {
+  const [why, setWhy] = useState(false);
   return (
     <div
       role="status"
       data-testid="readonly-banner"
-      className="flex shrink-0 flex-col gap-1 border-b border-warn-border bg-warn-bg px-4 py-2.5 text-warn-fg"
+      className="flex shrink-0 flex-col gap-1 border-b border-warn-border bg-warn-bg px-4 py-2 text-warn-fg"
     >
-      <span className="text-[14px] font-bold">View only until {until}</span>
-      <span className="text-[13px] leading-snug">
-        Today’s free database writes are used up, so changes are paused until the limit resets at {until}{' '}
-        Pacific (midnight UTC). Bank sync catches up after that. Nothing is lost.
-      </span>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[14px] font-bold">View only until {until}</span>
+        <button
+          type="button"
+          data-track="banner.readonly.why"
+          aria-expanded={why}
+          onClick={() => setWhy(!why)}
+          className="hit h-7 shrink-0 text-[14px] font-bold underline"
+        >
+          {why ? 'Hide' : 'Why?'}
+        </button>
+      </div>
+      {why && (
+        <span className="text-[13px] leading-snug">
+          The app has used today’s free allowance for saving changes. Changes start again at {until}, and bank
+          sync catches up then. Nothing is lost.
+        </span>
+      )}
     </div>
   );
 }
@@ -201,11 +228,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [noteOpen, setNoteOpen] = useState(false);
   const session = useSession();
   const noteButton = !!session.data?.settings.noteButton;
+  // While a sheet covers the screen, the screen under it can't be reached with VoiceOver or Tab.
+  const modal = useModalOpen();
 
   if (desktop) {
     return (
       <PanelSlotContext.Provider value={slot}>
-        <div className="flex h-full bg-page">
+        <div className="safe-top flex h-full bg-page" inert={modal || undefined}>
           <DNav active={active} onNote={() => setNoteOpen(true)} noteButton={noteButton} />
           <div className="flex min-w-0 flex-1 flex-col">
             <StatusBanner />
@@ -224,7 +253,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
   return (
     <PanelSlotContext.Provider value={null}>
-      <div className="mx-auto flex h-full max-w-[1023px] flex-col bg-page">
+      <div
+        className="safe-top safe-x mx-auto flex h-full max-w-[1023px] flex-col bg-page"
+        inert={modal || undefined}
+      >
         <StatusBanner />
         <main className="flex min-h-0 flex-1 flex-col">{children}</main>
         <TabBar active={active} />
@@ -235,7 +267,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           data-track="app.note"
           aria-label="Write a note about this screen"
           onClick={() => setNoteOpen(true)}
-          className="fixed bottom-[150px] right-4 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface text-ink-2 shadow-sm"
+          className="fixed bottom-[calc(150px+env(safe-area-inset-bottom,0px))] right-4 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface text-ink-2 shadow-sm"
         >
           <Icon name="note" size={18} />
         </button>

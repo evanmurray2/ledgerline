@@ -1,7 +1,7 @@
 // Budget (home): month switcher, All / Needs attention, card payment rows pinned first, the Owed to you row,
 // collapsible groups with totals, status words and bars. Desktop shows the same data as a table with
 // Assigned, Spent and Available columns. Needs attention offers one-tap fixes with amounts.
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Link, Outlet, useNavigate, useRouterState, useSearch } from '@tanstack/react-router';
 import type { AttentionItem, BudgetCategoryRow, BudgetView, CardRow } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
@@ -123,8 +123,14 @@ function catTone(row: BudgetCategoryRow): Tone {
   return STATUS[row.status].tone;
 }
 
+/** Healthy rows stay quiet (no status word, no colored pill) so the ones that need you stand out. */
+function isQuiet(status: BudgetCategoryRow['status']): boolean {
+  return status === 'funded' || status === 'invested' || status === 'no_target';
+}
+
 function CategoryRowPhone({ row, month }: { row: BudgetCategoryRow; month: string }) {
   const st = STATUS[row.status];
+  const quiet = isQuiet(row.status);
   return (
     <Link
       to={`/budget/category/${row.id}`}
@@ -135,11 +141,22 @@ function CategoryRowPhone({ row, month }: { row: BudgetCategoryRow; month: strin
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
           <span className="text-[15px] font-semibold">{row.name}</span>
-          <span className="text-[12px] leading-[1.45] text-muted">
-            <StatusWord word={st.word} tone={st.tone} icon={st.icon} /> · {row.detail}
+          <span className="truncate text-[12px] leading-[1.45] text-muted">
+            {quiet ? (
+              <span className="sr-only">{st.word} · </span>
+            ) : (
+              <>
+                <StatusWord word={st.word} tone={st.tone} icon={st.icon} /> ·{' '}
+              </>
+            )}
+            {row.detail}
           </span>
         </div>
-        <Pill tone={catTone(row)}>{formatCents(row.available)}</Pill>
+        {quiet ? (
+          <span className="tnum shrink-0 px-2.5 text-[15px] font-semibold">{formatCents(row.available)}</span>
+        ) : (
+          <Pill tone={catTone(row)}>{formatCents(row.available)}</Pill>
+        )}
       </div>
       {row.leftPercent !== null && <Bar percent={row.leftPercent} tone={catTone(row)} />}
     </Link>
@@ -157,16 +174,24 @@ function CardRowPhone({ card }: { card: CardRow }) {
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
           <span className="text-[15px] font-semibold">{card.name}</span>
-          <span className="text-[12px] leading-[1.45] text-muted">
-            <StatusWord
-              word={card.status === 'short' ? 'Short' : 'Covered'}
-              tone={tone}
-              icon={card.status === 'short' ? 'alert' : 'check'}
-            />{' '}
-            · {card.detail}
+          <span className="truncate text-[12px] leading-[1.45] text-muted">
+            {card.status === 'short' ? (
+              <>
+                <StatusWord word="Short" tone={tone} icon="alert" /> ·{' '}
+              </>
+            ) : (
+              <span className="sr-only">Covered · </span>
+            )}
+            {card.detail}
           </span>
         </div>
-        <Pill tone={tone}>{formatCents(card.available)}</Pill>
+        {card.status === 'short' ? (
+          <Pill tone={tone}>{formatCents(card.available)}</Pill>
+        ) : (
+          <span className="tnum shrink-0 px-2.5 text-[15px] font-semibold">
+            {formatCents(card.available)}
+          </span>
+        )}
       </div>
     </Link>
   );
@@ -472,9 +497,7 @@ function OverAssigned({ b, month }: { b: BudgetView; month: string }) {
         ))}
       </Card>
       <p className="m-0 text-[12px] leading-snug text-muted">
-        Ready to Assign can go below zero when you assign more than you have, when money you front for someone
-        is more than it holds, or when a pending deposit is reversed. Each shows here as a Needs attention
-        item; the app never takes money from your categories on its own.
+        The app never takes money from your categories on its own.
       </p>
     </>
   );
@@ -566,7 +589,7 @@ function NewMonth({ b, month }: { b: BudgetView; month: string }) {
 
 // ------------------------------------------------------------------ screen
 
-function RtaBar({ b }: { b: BudgetView }) {
+function RtaBar({ b, onFix }: { b: BudgetView; onFix: () => void }) {
   const canWrite = useCanWrite();
   const neg = b.rta < 0;
   // Every dollar assigned: a quiet line, nothing to do.
@@ -583,7 +606,7 @@ function RtaBar({ b }: { b: BudgetView }) {
     <div
       className={cx(
         'flex shrink-0 items-center justify-between gap-3 px-4 py-2.5',
-        neg ? 'bg-danger text-on-danger' : 'bg-accent text-on-accent',
+        neg ? 'bg-danger text-on-danger' : 'bg-rta-bg text-rta-fg',
       )}
     >
       <div className="flex flex-col gap-px">
@@ -592,14 +615,21 @@ function RtaBar({ b }: { b: BudgetView }) {
           {b.rtaUpdating ? 'Updating' : formatCents(b.rta)}
         </span>
       </div>
-      {canWrite ? (
+      {canWrite && neg ? (
+        // Below zero the job is to take money back, which the list above offers: go there.
+        <button
+          type="button"
+          data-track="budget.over.fix"
+          onClick={onFix}
+          className="hit flex h-10 items-center rounded-full bg-on-danger px-[22px] text-[15px] font-bold text-danger"
+        >
+          Take back
+        </button>
+      ) : canWrite ? (
         <Link
           to="/budget/assign"
           data-track="budget.assign"
-          className={cx(
-            'hit flex h-10 items-center rounded-full bg-on-accent px-[22px] text-[15px] font-bold no-underline',
-            neg ? 'text-danger' : 'text-accent',
-          )}
+          className="hit flex h-10 items-center rounded-full bg-rta-fg px-[22px] text-[15px] font-bold text-rta-btn-fg no-underline"
         >
           Assign
         </Link>
@@ -646,7 +676,12 @@ function MonthNav({
       >
         <Icon name="chevL" size={22} />
       </button>
-      <h1 className={cx('m-0 text-center font-bold', desktop ? 'min-w-[170px] text-[20px]' : 'text-[17px]')}>
+      <h1
+        className={cx(
+          'm-0 text-center font-bold',
+          desktop ? 'min-w-[170px] text-[20px]' : 'flex-1 pl-11 text-[17px]',
+        )}
+      >
         {monthLabel(month)}
       </h1>
       <button
@@ -659,6 +694,16 @@ function MonthNav({
       >
         <Icon name="chevR" size={22} />
       </button>
+      {!desktop && (
+        <Link
+          to="/settings"
+          data-track="budget.settings"
+          aria-label="Settings"
+          className="flex h-11 w-11 items-center justify-center rounded-lg text-ink-2"
+        >
+          <Icon name="gear" size={21} />
+        </Link>
+      )}
     </div>
   );
 }
@@ -788,6 +833,13 @@ function AllGroups({ b, month }: { b: BudgetView; month: string }) {
           ? 'Transactions will show up in Activity after the first sync, usually within a few minutes.'
           : 'Bars show how much of this month’s money is left.'}
       </p>
+      <Link
+        to="/settings/categories"
+        data-track="budget.edit_categories"
+        className="hit flex h-10 items-center self-start text-[14px] font-bold text-accent no-underline"
+      >
+        Edit categories
+      </Link>
     </>
   );
 }
@@ -933,6 +985,7 @@ export function BudgetScreen() {
   const session = useSession();
   const b = q.data;
   const canWrite = useCanWrite();
+  const scroller = useRef<HTMLDivElement>(null);
 
   if (!month || !current) return <Loading />;
   if (q.error && !b)
@@ -1011,8 +1064,10 @@ export function BudgetScreen() {
         </div>
         {b.syncProblem && <SyncProblem text={b.syncProblem} />}
       </header>
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">{content}</div>
-      <RtaBar b={b} />
+      <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">
+        {content}
+      </div>
+      <RtaBar b={b} onFix={() => scroller.current?.scrollTo({ top: 0, behavior: 'smooth' })} />
       <Outlet />
     </div>
   );

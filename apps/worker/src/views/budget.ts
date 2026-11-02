@@ -149,8 +149,6 @@ export async function categoryRows(
     else if (tAmount !== null && target?.type !== 'no_date') {
       detail = `${fmt(spent)} of ${fmt(tAmount)} spent`;
       if (status === 'low') detail += ` · ${fmt(available)} left`;
-      else if (isBill && target?.type === 'refill' && available * 5 < tAmount && info.kind === 'spending')
-        detail += ' · bills are never Low';
       if (X > 0 && status !== 'low' && target?.type === 'refill' && month > start)
         detail += ` · ${fmt(X)} carried from ${monthLong(addMonths(month, -1))}`;
     } else if (target?.type === 'no_date')

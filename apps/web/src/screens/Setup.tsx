@@ -76,7 +76,7 @@ export function WelcomeScreen() {
         <Link
           to="/setup/start"
           data-track="welcome.continue"
-          className="flex h-12 items-center justify-center rounded-xl bg-inverse text-[16px] font-bold text-on-inverse no-underline"
+          className="flex h-12 items-center justify-center rounded-xl bg-accent text-[16px] font-bold text-on-accent no-underline"
         >
           Get started
         </Link>

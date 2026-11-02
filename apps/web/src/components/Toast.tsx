@@ -72,7 +72,10 @@ export function ToastHost({ aboveTabs }: { aboveTabs: boolean }) {
         'fixed z-50 flex flex-col gap-1.5 rounded-[14px] bg-inverse px-3 py-2.5 text-on-inverse shadow-[0_4px_12px_var(--ll-shadow)]',
         desktop
           ? 'bottom-6 right-6 w-[380px]'
-          : cx('left-4 right-4', aboveTabs ? 'bottom-[88px]' : 'bottom-6'),
+          : cx(
+              'left-4 right-4',
+              aboveTabs ? 'bottom-[calc(88px+env(safe-area-inset-bottom,0px))]' : 'bottom-6',
+            ),
       )}
     >
       <div className="flex items-center justify-between gap-2 text-[14px]">

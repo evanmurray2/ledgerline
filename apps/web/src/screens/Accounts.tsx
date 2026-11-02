@@ -291,18 +291,7 @@ export function RegisterScreen() {
         sub={sub}
         onBack={() => void navigate({ to: '/accounts' })}
         backLabel="Back to accounts"
-        right={
-          a && canWrite ? (
-            <button
-              type="button"
-              data-track="account.rename"
-              onClick={() => setRenaming(true)}
-              className="hit h-9 shrink-0 rounded-full border border-line-strong px-3 text-[13px] font-bold text-ink-2"
-            >
-              Rename
-            </button>
-          ) : undefined
-        }
+        right={a && canWrite ? <AccountMenu onRename={() => setRenaming(true)} /> : undefined}
       />
       {renaming && a && <RenameAccountSheet id={a.id} name={a.name} close={() => setRenaming(false)} />}
       <div
@@ -379,11 +368,11 @@ export function RegisterScreen() {
                     {v.note}
                   </p>
                 )}
-                <p className="m-0 text-[12px] leading-snug text-muted">
-                  {a.kind === 'credit'
-                    ? 'Balances come from the bank and can’t be edited here. Everything you change on a transaction is saved on top of the bank’s record.'
-                    : 'Upcoming bills aren’t subtracted here; they count in your budget on their dates.'}
-                </p>
+                {a.kind !== 'credit' && (
+                  <p className="m-0 text-[12px] leading-snug text-muted">
+                    Upcoming bills aren’t subtracted here; they count in your budget on their dates.
+                  </p>
+                )}
               </section>
               {chips.length > 1 && (
                 <div role="group" aria-label="Show" className="flex gap-2 overflow-x-auto">
@@ -477,7 +466,7 @@ export function RepairScreen() {
       label={`Repair ${inst}`}
       track="repair"
       onClose={close}
-      gap="small"
+      gap="auto"
       closeLabel="Back to accounts"
       header={<h1 className="m-0 text-[20px] font-bold">Repair {inst}</h1>}
       footer={
@@ -555,6 +544,54 @@ export function RepairScreen() {
   );
 }
 
+/** The ⋯ button on an account: less-used actions live here, not in the header. */
+function AccountMenu({ onRename }: { onRename: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        data-track="account.menu"
+        aria-label="More for this account"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="flex h-11 w-11 items-center justify-center text-ink-2"
+      >
+        <Icon name="more" size={24} stroke={3} />
+      </button>
+      {open && (
+        <>
+          <button
+            type="button"
+            aria-label="Close menu"
+            tabIndex={-1}
+            onClick={() => setOpen(false)}
+            className="fixed inset-0 z-30 cursor-default"
+          />
+          <div
+            role="menu"
+            className="absolute right-0 top-11 z-30 w-52 overflow-hidden rounded-xl border border-line bg-surface shadow-[0_4px_12px_var(--ll-shadow)]"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              data-track="account.rename"
+              onClick={() => {
+                setOpen(false);
+                onRename();
+              }}
+              className="flex h-12 w-full items-center px-3 text-left text-[15px] font-semibold text-ink"
+            >
+              Rename account
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function RenameAccountSheet({ id, name, close }: { id: string; name: string; close: () => void }) {
   const qc = useQueryClient();
   const [value, setValue] = useState(name);
@@ -579,7 +616,7 @@ function RenameAccountSheet({ id, name, close }: { id: string; name: string; clo
       label="Rename account"
       track="account.rename"
       onClose={close}
-      gap="small"
+      gap="auto"
       closeLabel="Cancel"
       header={<h1 className="m-0 text-[20px] font-bold">Rename account</h1>}
       footer={

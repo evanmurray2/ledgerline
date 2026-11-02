@@ -17,6 +17,7 @@ import {
   useRules,
   useSession,
 } from '../api/hooks';
+import { CategoryField } from '../components/CategoryPicker';
 import { Sheet } from '../components/Sheet';
 import { toast } from '../components/Toast';
 import {
@@ -39,7 +40,7 @@ import {
 import { useThemePref, writeThemePref, type ThemePref } from '../lib/theme';
 import { formatCents, parseCents, centsToInput } from '../lib/money';
 import { dayLabel, monthLabel, syncedLabel } from '../lib/dates';
-import { rowMeta, useCategoryOptions, useScreen } from '../lib/common';
+import { rowMeta, useScreen } from '../lib/common';
 import { runPlaidLink } from '../lib/plaid';
 import { usage } from '../usage/tracker';
 import { useCanWrite } from '../state/connectivity';
@@ -134,11 +135,14 @@ function Page({
   title,
   back,
   right,
+  footer,
   children,
 }: {
   title: string;
   back: string;
   right?: ReactNode;
+  /** Stays at the bottom while the page scrolls (Save buttons). */
+  footer?: ReactNode;
   children: ReactNode;
 }) {
   const desktop = useIsDesktop();
@@ -166,6 +170,11 @@ function Page({
       >
         <div className={cx('flex flex-col gap-3', desktop && 'max-w-[680px]')}>{children}</div>
       </div>
+      {footer && (
+        <div className={cx('shrink-0 border-t border-line bg-surface py-3', desktop ? 'px-6' : 'px-4')}>
+          <div className={cx(desktop && 'max-w-[680px]')}>{footer}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -467,15 +476,10 @@ export function CategoriesScreen() {
         </button>
       }
     >
-      <p className="m-0 text-[13px] leading-snug text-muted">
-        You make all categories. The only ones the app makes are card payments, one per card. Money you front
-        for others isn’t a category: it’s tracked on the Owed to you list.
-      </p>
       {!v && (q.error ? <ErrorNote error={q.error} /> : <Loading />)}
       {v && !editing && (
         <p className="m-0 text-[13px] text-muted">
-          Tap a category to rename it or move it to another group. Tap Edit to reorder, rename groups, or
-          remove things.
+          Tap a category to rename or move it. Edit reorders and removes.
         </p>
       )}
       {v?.groups.map((g) => {
@@ -936,7 +940,6 @@ export function RuleEditScreen() {
   const q = useRules();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { groups } = useCategoryOptions();
   const back = () => void navigate({ to: '/settings/rules' });
   const rule = q.data?.rules.find((r) => r.id === ruleId);
   const idx = q.data?.rules.findIndex((r) => r.id === ruleId) ?? -1;
@@ -1069,23 +1072,39 @@ export function RuleEditScreen() {
   };
   const title = isNew ? 'New rule' : `Rule ${idx + 1} · ${rule?.name ?? ''}`;
   return (
-    <Page title={title} back="/settings/rules">
+    <Page
+      title={title}
+      back="/settings/rules"
+      footer={
+        <div className="flex flex-col gap-2">
+          {error ? <ErrorNote error={error} /> : null}
+          <PrimaryButton
+            mutates
+            track="rule.save"
+            disabled={!body || busy || !canWrite}
+            onClick={() => void save()}
+          >
+            Save rule
+          </PrimaryButton>
+        </div>
+      }
+    >
       <section className="flex flex-col gap-2">
         <h2 className="m-0 text-[13px] font-bold text-ink-2">When all of these match</h2>
         {conds.map((c, i) => (
-          <div key={c.id} className="grid grid-cols-[minmax(0,140px)_minmax(0,1fr)_32px] items-center gap-2">
+          <div key={c.id} className="flex flex-col gap-2 rounded-[14px] border border-line bg-surface p-3">
             <select
               aria-label={`Field for condition ${i + 1}`}
-              className={cx(inputClass, 'px-2 text-[14px]')}
+              className={inputClass}
               value={c.field}
               onChange={(e) => upd(c.id, { field: e.target.value as CondField })}
             >
               <option value="payee">Payee is</option>
               <option value="description">Description contains</option>
-              <option value="amount">Amount between</option>
+              <option value="amount">Amount is between</option>
             </select>
             {c.field === 'amount' ? (
-              <span className="flex min-w-0 items-center gap-1">
+              <span className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
                 <input
                   aria-label={`Lowest amount for condition ${i + 1}`}
                   inputMode="decimal"
@@ -1094,7 +1113,7 @@ export function RuleEditScreen() {
                   value={c.min}
                   onChange={(e) => upd(c.id, { min: e.target.value })}
                 />
-                <span className="text-muted">–</span>
+                <span className="text-[14px] text-muted">and</span>
                 <input
                   aria-label={`Highest amount for condition ${i + 1}`}
                   inputMode="decimal"
@@ -1107,22 +1126,20 @@ export function RuleEditScreen() {
             ) : (
               <input
                 aria-label={`Value for condition ${i + 1}`}
-                className={cx(inputClass, 'min-w-0')}
+                className={inputClass}
                 value={c.value}
                 onChange={(e) => upd(c.id, { value: e.target.value })}
               />
             )}
-            {conds.length > 1 ? (
+            {conds.length > 1 && (
               <button
                 type="button"
                 aria-label={`Remove condition ${i + 1}`}
                 onClick={() => setConds(conds.filter((x) => x.id !== c.id))}
-                className="hit h-11 w-8 text-[20px] text-muted"
+                className="hit h-8 self-end text-[14px] font-semibold text-muted"
               >
-                ×
+                Remove condition
               </button>
-            ) : (
-              <span />
             )}
           </div>
         ))}
@@ -1149,18 +1166,12 @@ export function RuleEditScreen() {
       <section className="flex flex-col gap-3">
         <h2 className="m-0 text-[13px] font-bold text-ink-2">Then</h2>
         <Field label="Category">
-          <select className={inputClass} value={cat ?? ''} onChange={(e) => setCat(e.target.value)}>
-            <option value="">Don’t set a category</option>
-            {groups.map((g) => (
-              <optgroup key={g.id} label={g.name}>
-                {g.categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+          <CategoryField
+            track="rule.category"
+            value={cat ?? ''}
+            onChange={setCat}
+            specials={[{ id: '', name: 'Don’t set a category' }]}
+          />
         </Field>
         <Card className="flex flex-col gap-2 p-3">
           <span className="flex flex-col gap-px text-[15px] font-semibold">
@@ -1283,20 +1294,11 @@ export function RuleEditScreen() {
             type="button"
             data-track="rule.delete"
             onClick={() => setAsking(true)}
-            className="min-h-9 self-start text-[14px] font-bold text-over-fg"
+            className="mt-4 min-h-10 self-start text-[14px] font-bold text-over-fg"
           >
-            Delete rule
+            Delete this rule…
           </button>
         ))}
-      {error ? <ErrorNote error={error} /> : null}
-      <PrimaryButton
-        mutates
-        track="rule.save"
-        disabled={!body || busy || !canWrite}
-        onClick={() => void save()}
-      >
-        Save rule
-      </PrimaryButton>
     </Page>
   );
 }

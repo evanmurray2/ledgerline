@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useQueries } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
 import { useAccounts, useMatchView, useMoneyMutation, useTxn, useSession, useBudget, qk } from '../api/hooks';
+import { CategoryField } from '../components/CategoryPicker';
 import { Sheet } from '../components/Sheet';
 import {
   Button,
@@ -19,7 +20,7 @@ import {
 } from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { dayLabel } from '../lib/dates';
-import { useCategoryOptions, useScreen } from '../lib/common';
+import { useScreen } from '../lib/common';
 import { useParentPath } from './TxnSheets';
 import { usage } from '../usage/tracker';
 
@@ -545,7 +546,6 @@ export function AddTxnScreen() {
   const close = useClose();
   const session = useSession();
   const accounts = useAccounts();
-  const { groups } = useCategoryOptions();
   const add = useMoneyMutation(api.newTxn);
   const today = session.data?.budget.today ?? '';
   const [kind, setKind] = useState<'pending' | 'upcoming'>('pending');
@@ -644,19 +644,19 @@ export function AddTxnScreen() {
         </select>
       </Field>
       <Field label="Category">
-        <select className={inputClass} value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-          <option value="">Choose later</option>
-          {dir === 'in' && <option value="rta">Ready to Assign</option>}
-          {groups.map((g) => (
-            <optgroup key={g.id} label={g.name}>
-              {g.categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
+        <CategoryField
+          track="add.category"
+          value={categoryId}
+          onChange={setCategoryId}
+          specials={
+            dir === 'in'
+              ? [
+                  { id: '', name: 'Choose later' },
+                  { id: 'rta', name: 'Ready to Assign' },
+                ]
+              : [{ id: '', name: 'Choose later' }]
+          }
+        />
       </Field>
       <Field label={kind === 'pending' ? 'Date' : 'On'}>
         <input

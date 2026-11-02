@@ -5,8 +5,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useRouterState } from '@tanstack/react-router';
 import type { TxnSheet } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
-import { useAccounts, useMoneyMutation, useTxn, usePayees, qk } from '../api/hooks';
+import { useMoneyMutation, useTxn, usePayees, qk } from '../api/hooks';
 import { Sheet } from '../components/Sheet';
+import { CategoryField } from '../components/CategoryPicker';
 import {
   Button,
   cx,
@@ -17,6 +18,7 @@ import {
   Loading,
   PrimaryButton,
   SecondaryButton,
+  Icon,
   Segmented,
 } from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
@@ -55,39 +57,15 @@ function CategorySelect({
   onChange,
   id,
   allowRta,
-  transferAccounts,
 }: {
   value: string;
   onChange: (v: string) => void;
   id: string;
   allowRta?: boolean;
-  transferAccounts?: { id: string; name: string }[];
 }) {
-  const { groups } = useCategoryOptions();
-  return (
-    <select id={id} className={inputClass} value={value} onChange={(e) => onChange(e.target.value)}>
-      <option value="">Needs a category</option>
-      {allowRta && <option value="rta">Ready to Assign</option>}
-      {groups.map((g) => (
-        <optgroup key={g.id} label={g.name}>
-          {g.categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </optgroup>
-      ))}
-      {transferAccounts && transferAccounts.length > 0 && (
-        <optgroup label="Transfer to account…">
-          {transferAccounts.map((a) => (
-            <option key={a.id} value={`xfer:${a.id}`} disabled>
-              {a.name}
-            </option>
-          ))}
-        </optgroup>
-      )}
-    </select>
-  );
+  const specials = [{ id: '', name: 'Needs a category' }];
+  if (allowRta) specials.push({ id: 'rta', name: 'Ready to Assign' });
+  return <CategoryField id={id} track="txn.category" value={value} onChange={onChange} specials={specials} />;
 }
 
 function Header({ t }: { t: TxnSheet }) {
@@ -159,7 +137,6 @@ export function TxnSheetScreen() {
 
 function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const parent = useParentPath();
-  const accounts = useAccounts();
   const patch = useMoneyMutation((v: { key: string; body: Parameters<typeof api.patchTxn>[1] }) =>
     api.patchTxn(v.key, v.body),
   );
@@ -176,6 +153,8 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const [wont, setWont] = useState(t.wontClear);
   const [memo, setMemo] = useState(t.memo ?? '');
   const [linked, setLinked] = useState(true);
+  // Owed to you, budget month and Won't clear are rarely changed: folded into one row unless one is set.
+  const [more, setMore] = useState(t.owed.length > 0 || t.wontClear || t.budgetMonth !== t.date.slice(0, 7));
 
   useEffect(() => {
     usage.startTask('categorize');
@@ -204,10 +183,6 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const owedCents =
     owed === 'half' ? Math.round(spendCents / 2) : owed === 'all' ? spendCents : (parseCents(owedAmt) ?? 0);
   const catName = useCategoryOptions().byId.get(cat) ?? 'The category';
-  const transferAccounts = (accounts.data?.groups ?? [])
-    .flatMap((g) => g.accounts)
-    .filter((a) => a.id !== t.accountId)
-    .map((a) => ({ id: a.id, name: a.name }));
   const months = [addMonths(t.date.slice(0, 7), -1), t.date.slice(0, 7), addMonths(t.date.slice(0, 7), 1)];
   const isIncome = t.kind === 'income';
   const isRefund = t.kind === 'refund';
@@ -252,7 +227,7 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       label={`${t.payee} transaction`}
       track="txn"
       onClose={close}
-      gap="small"
+      gap="auto"
       header={<Header t={t} />}
       footer={
         <div className="flex flex-col gap-2">
@@ -391,13 +366,7 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
               {t.categoryLabel ?? 'Split'}
             </Link>
           ) : (
-            <CategorySelect
-              id="txn-cat"
-              value={cat}
-              onChange={setCat}
-              allowRta={isRefund || t.amount > 0}
-              transferAccounts={transferAccounts}
-            />
+            <CategorySelect id="txn-cat" value={cat} onChange={setCat} allowRta={isRefund || t.amount > 0} />
           )}
           {t.categorizedBy && (
             <span className="text-[12px] text-muted">
@@ -430,7 +399,27 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           </Link>
         </div>
       )}
-      {outflow && !isIncome && (
+      {outflow && !isIncome && !more && (
+        <button
+          type="button"
+          data-track="txn.more"
+          aria-expanded={false}
+          onClick={() => setMore(true)}
+          className="flex min-h-14 shrink-0 items-center justify-between gap-3 rounded-[14px] border border-line px-3 py-2 text-left"
+        >
+          <span className="flex flex-col gap-px">
+            <span className="text-[15px] font-semibold">More</span>
+            <span className="text-[12px] text-muted">
+              Owed to you, budget month{t.status === 'pending' ? ', won’t clear' : ''}
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-[14px] text-muted">
+            Not owed · {monthShort(month)}
+            <Icon name="chevD" size={18} />
+          </span>
+        </button>
+      )}
+      {outflow && !isIncome && more && (
         <div className="shrink-0 overflow-hidden rounded-[14px] border border-line">
           <div className="flex flex-col gap-2 p-3">
             <span className="flex flex-col gap-px text-[15px] font-semibold">
@@ -578,7 +567,7 @@ function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
       label={`${t.payee} paid back`}
       track="txn.paid"
       onClose={close}
-      gap="small"
+      gap="auto"
       header={
         <div className="flex flex-col gap-0.5">
           <span className={cx('text-[13px] font-bold', unlinked ? 'text-funded-fg' : 'text-owed-fg')}>
@@ -664,9 +653,10 @@ function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
         </div>
       )}
       {t.memo && (
-        <Field label="Memo">
-          <input className={inputClass} value={t.memo} readOnly />
-        </Field>
+        <div className="flex flex-col gap-1">
+          <Label>Memo</Label>
+          <span className="text-[15px]">{t.memo}</span>
+        </div>
       )}
       <BankSays t={t} extra={`Matched by you on ${dayLabel(t.date)}`} />
     </Sheet>
@@ -849,24 +839,14 @@ export function SplitScreen() {
         <div key={l.id} className="flex shrink-0 flex-col gap-2 rounded-[14px] border border-line p-3">
           <div className="flex gap-2">
             <Field label="Category" className="flex-[3] text-[12px]">
-              <select
-                aria-label={`Category for line ${i + 1}`}
-                className={inputClass}
+              <CategoryField
+                ariaLabel={`Category for line ${i + 1}`}
+                track="split.category"
                 value={l.categoryId}
-                onChange={(e) => upd(l.id, { categoryId: e.target.value })}
-              >
-                <option value="">Choose…</option>
-                {opts.map((g) => (
-                  <optgroup key={g.id} label={g.name}>
-                    {g.categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-                <option value="owed">Owed to you</option>
-              </select>
+                onChange={(v) => upd(l.id, { categoryId: v })}
+                groups={opts.map((g) => ({ key: g.id, name: g.name, categories: g.categories }))}
+                specials={[{ id: 'owed', name: 'Owed to you' }]}
+              />
             </Field>
             <Field label="Amount" className="flex-[2] text-[12px]">
               <input

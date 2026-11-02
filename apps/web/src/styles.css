@@ -64,6 +64,15 @@
   --ll-danger: #b42318;
   --ll-on-danger: #ffffff;
   --ll-shadow: rgba(16, 24, 40, 0.25);
+  /* Ready to Assign bar. Dark mode keeps a deep blue so it doesn't glow brighter than everything else. */
+  --ll-rta-bg: #1d4ed8;
+  --ll-rta-fg: #ffffff;
+  --ll-rta-btn-fg: #1d4ed8;
+  /* Counts of to-dos (not problems): gray, so red stays for overspending and broken links. */
+  --ll-count-bg: #e5e7eb;
+  --ll-count-fg: #374151;
+  /* The see-through layer behind a sheet on a phone. */
+  --ll-scrim-a: rgba(17, 24, 39, 0.45);
   color-scheme: light;
 }
 
@@ -123,6 +132,12 @@
   --ll-danger: #f97066;
   --ll-on-danger: #181b21;
   --ll-shadow: rgba(0, 0, 0, 0.6);
+  --ll-rta-bg: #1e3a8a;
+  --ll-rta-fg: #ffffff;
+  --ll-rta-btn-fg: #1e3a8a;
+  --ll-count-bg: #343a44;
+  --ll-count-fg: #e4e7ec;
+  --ll-scrim-a: rgba(0, 0, 0, 0.6);
   color-scheme: dark;
 }
 
@@ -180,6 +195,12 @@
   --color-warn-fg: var(--ll-warn-fg);
   --color-danger: var(--ll-danger);
   --color-on-danger: var(--ll-on-danger);
+  --color-rta-bg: var(--ll-rta-bg);
+  --color-rta-fg: var(--ll-rta-fg);
+  --color-rta-btn-fg: var(--ll-rta-btn-fg);
+  --color-count-bg: var(--ll-count-bg);
+  --color-count-fg: var(--ll-count-fg);
+  --color-scrim-a: var(--ll-scrim-a);
   --breakpoint-lg: 64rem;
 }
 
@@ -238,6 +259,27 @@
     height: max(100%, 44px);
     transform: translate(-50%, -50%);
   }
+}
+
+/*
+ * iPhone safe areas (the notch and the home bar). env() is 0 where there's nothing to avoid, so these only add
+ * space on phones that need it, mostly when the app is opened from the Home Screen.
+ */
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.safe-x {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+.safe-tabs {
+  padding-bottom: max(14px, env(safe-area-inset-bottom, 0px));
+}
+.safe-foot {
+  padding-bottom: max(24px, calc(env(safe-area-inset-bottom, 0px) + 8px));
+}
+.safe-pad {
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
 }
 
 @keyframes ll-sheet-up {

@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import type { Target } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
 import { useAssignView, useCategorySheet, useMoneyMutation } from '../api/hooks';
+import { CategoryField } from '../components/CategoryPicker';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import {
   Button,
@@ -686,18 +687,12 @@ export function AssignSheetScreen() {
       <Label>Or assign to any category</Label>
       <div className="flex gap-2">
         <Field label="Category" className="flex-[3] text-[12px]">
-          <select className={inputClass} value={catId} onChange={(e) => setCatId(e.target.value)}>
-            <option value="">Choose…</option>
-            {groups.map((g) => (
-              <optgroup key={g.id} label={g.name}>
-                {g.categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+          <CategoryField
+            track="assign.category"
+            value={catId}
+            onChange={setCatId}
+            groups={groups.map((g) => ({ key: g.id, name: g.name, categories: g.categories }))}
+          />
         </Field>
         <Field label="Amount" className="flex-[2] text-[12px]">
           <input

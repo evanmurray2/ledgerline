@@ -7,7 +7,7 @@ import { Link, Outlet, useNavigate, useSearch } from '@tanstack/react-router';
 import type { ActivityView, TxnListRow } from '@ledgerline/contracts';
 import { api, type ActivityFilter } from '../api/endpoints';
 import { adjustAttention, qk, useActivity, useMoneyMutation } from '../api/hooks';
-import { Sheet } from '../components/Sheet';
+import { CategoryPickerSheet } from '../components/CategoryPicker';
 import { toast } from '../components/Toast';
 import {
   badgeClass,
@@ -292,15 +292,15 @@ export function ActivityScreen() {
       >
         <div className="flex items-center justify-between gap-3">
           <h1 className="m-0 text-[22px] font-bold">Activity</h1>
-          {desktop && (
-            <Link
-              to="/activity/add"
-              data-track="activity.add"
-              className="hit flex h-9 items-center rounded-full bg-accent px-4 text-[13px] font-bold text-on-accent no-underline"
-            >
-              + Add transaction
-            </Link>
-          )}
+          <Link
+            to="/activity/add"
+            data-track="activity.add"
+            aria-label="Add a transaction"
+            className="hit flex h-9 items-center gap-1 rounded-full bg-accent px-3.5 text-[14px] font-bold text-on-accent no-underline"
+          >
+            <Icon name="plus" size={16} stroke={2.6} />
+            {desktop ? 'Add transaction' : 'Add'}
+          </Link>
         </div>
         <label className="flex min-h-11 items-center gap-2 rounded-xl bg-sunken px-3 text-muted">
           <Icon name="search" size={18} />
@@ -336,7 +336,7 @@ export function ActivityScreen() {
       <div
         className={cx(
           'flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto pt-3',
-          desktop ? 'px-6 pb-8' : 'px-4 pb-24',
+          desktop ? 'px-6 pb-8' : 'px-4 pb-6',
         )}
       >
         <div className={cx('flex flex-col gap-3.5', desktop && 'mx-auto w-full max-w-[880px]')}>
@@ -345,7 +345,7 @@ export function ActivityScreen() {
           {v && showAttnHead && (
             <div className="flex items-center gap-2 px-0.5">
               <h2 className="m-0 text-[15px] font-bold">Needs attention</h2>
-              <span className="flex h-5 min-w-5 items-center justify-center rounded-[10px] bg-danger px-1.5 text-[12px] font-bold text-on-danger">
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-[10px] bg-count-bg px-1.5 text-[12px] font-bold text-count-fg">
                 {v.attentionCount}
               </span>
             </div>
@@ -469,10 +469,8 @@ export function ActivityScreen() {
                             aria-label={`${label ? 'Change category for' : 'Choose category for'} ${r.payee} ${formatCents(r.amount)}`}
                             onClick={() => openPicker({ keys: [r.key], row: r })}
                             className={cx(
-                              'hit h-9 max-w-[112px] shrink-0 truncate whitespace-nowrap rounded-full border px-3 text-[13px] font-bold disabled:opacity-50',
-                              label
-                                ? 'border-solid border-line-strong bg-sunken text-none-fg'
-                                : 'border-dashed border-accent bg-surface text-accent',
+                              'hit h-9 max-w-[112px] shrink-0 truncate whitespace-nowrap rounded-full px-3 text-[13px] font-bold disabled:opacity-50',
+                              label ? 'bg-sunken text-none-fg' : 'bg-accent-soft text-accent',
                             )}
                           >
                             {label ?? 'Choose'}
@@ -539,16 +537,6 @@ export function ActivityScreen() {
           )}
         </div>
       </div>
-      {!desktop && !selecting && (
-        <Link
-          to="/activity/add"
-          data-track="activity.add"
-          className="absolute bottom-4 right-4 flex h-12 items-center gap-1.5 rounded-3xl bg-accent px-[18px] text-[15px] font-bold text-on-accent no-underline shadow-[0_4px_12px_var(--ll-shadow)]"
-        >
-          <Icon name="plus" size={18} stroke={2.4} />
-          Add
-        </Link>
-      )}
       {selecting && (
         <div className="flex shrink-0 items-center gap-2.5 border-t border-line bg-surface px-4 py-2.5">
           <span className="flex-1 text-[14px] font-semibold">{selKeys.length} selected</span>
@@ -604,93 +592,46 @@ function CategoryPicker({
 }) {
   const row = picking.row;
   const byName = new Map(groups.flatMap((g) => g.categories.map((c) => [c.name, c.id] as const)));
-  const suggest = row?.history?.categories.filter((n) => byName.has(n)) ?? [];
+  const suggested = (row?.history?.categories ?? []).flatMap((n) => {
+    const id = byName.get(n);
+    return id ? [id] : [];
+  });
   const canWrite = useCanWrite();
   return (
-    <Sheet
-      label="Choose a category"
+    <CategoryPickerSheet
       track="activity.picker"
       onClose={onClose}
-      gap="auto"
-      closeLabel="Close category picker"
-      header={
-        <div className="flex flex-col gap-px">
-          <h2 className="m-0 text-[17px] font-bold">Choose a category</h2>
-          <span className="text-[13px] text-muted">
-            {row
-              ? `${row.payee} · ${formatCents(row.amount)} · ${rowMeta(row, 'needs')}`
-              : `${picking.keys.length} transactions`}
-          </span>
-        </div>
+      onPick={onPick}
+      disabled={!canWrite}
+      groups={groups.map((g) => ({ key: g.group, name: g.group, categories: g.categories }))}
+      suggested={suggested}
+      suggestedTitle={row?.history?.title}
+      sub={
+        row
+          ? `${row.payee} · ${formatCents(row.amount)} · ${rowMeta(row, 'needs')}`
+          : `${picking.keys.length} transactions`
       }
     >
-      <div className="flex flex-col gap-2.5 pb-4">
-        {row?.history && suggest.length > 0 && (
-          <>
-            <span className="text-[12px] font-bold uppercase tracking-[0.4px] text-ink-2">
-              {row.history.title}
-            </span>
-            <div className="flex flex-wrap gap-2">
-              {suggest.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  disabled={!canWrite}
-                  data-track="activity.picker.suggested"
-                  onClick={() => onPick(byName.get(n)!)}
-                  className="hit h-10 rounded-full border border-accent bg-accent-soft px-3.5 text-[14px] font-bold text-accent"
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-        {groups.map((g) => (
-          <div key={g.group} className="flex flex-col gap-2.5">
-            <span className="pt-1 text-[12px] font-bold uppercase tracking-[0.4px] text-ink-2">
-              {g.group}
-            </span>
-            <div className="shrink-0 overflow-hidden rounded-xl border border-line">
-              {g.categories.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  disabled={!canWrite}
-                  data-track="activity.picker.category"
-                  onClick={() => onPick(c.id)}
-                  className="flex h-12 w-full items-center justify-between border-t border-divider bg-surface px-3 text-left text-[15px] text-ink first:border-t-0"
-                >
-                  <span>{c.name}</span>
-                  <span className={cx('tnum text-[13px]', c.available < 0 ? 'text-over-fg' : 'text-muted')}>
-                    {formatCents(c.available)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-        {row && (
-          <div className="flex gap-4 pt-1">
-            <button
-              type="button"
-              data-track="activity.picker.split"
-              onClick={() => onSplit(row.key)}
-              className="hit flex h-10 items-center text-[14px] font-bold text-accent"
-            >
-              Split it…
-            </button>
-            <button
-              type="button"
-              data-track="activity.picker.transfer"
-              onClick={() => onTransfer(row.key)}
-              className="hit flex h-10 items-center text-[14px] font-bold text-accent"
-            >
-              It’s a transfer…
-            </button>
-          </div>
-        )}
-      </div>
-    </Sheet>
+      {row && (
+        <div className="flex gap-4 pt-1">
+          <button
+            type="button"
+            data-track="activity.picker.split"
+            onClick={() => onSplit(row.key)}
+            className="hit flex h-10 items-center text-[14px] font-bold text-accent"
+          >
+            Split it…
+          </button>
+          <button
+            type="button"
+            data-track="activity.picker.transfer"
+            onClick={() => onTransfer(row.key)}
+            className="hit flex h-10 items-center text-[14px] font-bold text-accent"
+          >
+            It’s a transfer…
+          </button>
+        </div>
+      )}
+    </CategoryPickerSheet>
   );
 }

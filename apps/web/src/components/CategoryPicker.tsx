@@ -1,0 +1,248 @@
+// The one way to choose a category: a sheet with search, your usual picks first, then every group with what
+// each category has available. Activity uses the sheet directly (a tap categorizes at once); forms use
+// CategoryField, a field-shaped button that opens the same sheet.
+import { useMemo, useState, type ReactNode } from 'react';
+import { Sheet } from './Sheet';
+import { cx, Icon, inputClass } from './ui';
+import { formatCents } from '../lib/money';
+import { useCategoryOptions } from '../lib/common';
+
+export interface PickerCategory {
+  id: string;
+  name: string;
+  available?: number;
+}
+export interface PickerGroup {
+  key: string;
+  name: string;
+  categories: PickerCategory[];
+}
+/** Choices that aren't categories, listed first: "Needs a category", "Ready to Assign", "Don’t set a category". */
+export interface PickerSpecial {
+  id: string;
+  name: string;
+}
+
+const label = 'text-[12px] font-bold uppercase tracking-[0.4px] text-ink-2';
+const listBox = 'shrink-0 overflow-hidden rounded-xl border border-line';
+const rowCls =
+  'flex min-h-12 w-full items-center justify-between gap-3 border-t border-divider bg-surface px-3 text-left text-[15px] text-ink first:border-t-0 disabled:text-disabled';
+
+function Avail({ cents }: { cents: number | undefined }) {
+  if (cents === undefined) return null;
+  return (
+    <span className={cx('tnum text-[13px]', cents < 0 ? 'text-over-fg' : 'text-muted')}>
+      {formatCents(cents)}
+    </span>
+  );
+}
+
+export function CategoryPickerSheet({
+  title = 'Choose a category',
+  sub,
+  groups,
+  specials = [],
+  suggestedTitle,
+  suggested = [],
+  value,
+  onPick,
+  onClose,
+  disabled,
+  modal,
+  track,
+  children,
+}: {
+  title?: string;
+  sub?: ReactNode;
+  groups: PickerGroup[];
+  specials?: PickerSpecial[];
+  suggestedTitle?: string;
+  /** Category ids to offer first, e.g. what this payee usually gets. */
+  suggested?: string[];
+  value?: string;
+  onPick: (id: string) => void;
+  onClose: () => void;
+  disabled?: boolean;
+  modal?: boolean;
+  track: string;
+  /** Extra actions under the list (Split it…, It’s a transfer…). */
+  children?: ReactNode;
+}) {
+  const [q, setQ] = useState('');
+  const all = useMemo(
+    () => groups.flatMap((g) => g.categories.map((c) => ({ ...c, group: g.name }))),
+    [groups],
+  );
+  const byId = useMemo(() => new Map(all.map((c) => [c.id, c])), [all]);
+  const needle = q.trim().toLowerCase();
+  const matches = needle ? all.filter((c) => c.name.toLowerCase().includes(needle)) : [];
+  const usual = suggested.map((id) => byId.get(id)).filter((c): c is NonNullable<typeof c> => !!c);
+  const pick = (id: string) => () => onPick(id);
+  const row = (c: PickerCategory & { group?: string }, how: string, showGroup = false) => (
+    <button
+      key={c.id}
+      type="button"
+      disabled={disabled}
+      data-track={`${track}.${how}`}
+      aria-pressed={value === undefined ? undefined : value === c.id}
+      onClick={pick(c.id)}
+      className={rowCls}
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        {value === c.id && <Icon name="check" size={16} stroke={2.6} className="shrink-0 text-accent" />}
+        <span className="truncate">{c.name}</span>
+        {showGroup && c.group && <span className="shrink-0 text-[13px] text-muted">· {c.group}</span>}
+      </span>
+      <Avail cents={c.available} />
+    </button>
+  );
+
+  return (
+    <Sheet
+      label={title}
+      track={track}
+      onClose={onClose}
+      gap="auto"
+      modal={modal}
+      closeLabel="Close category picker"
+      header={
+        <div className="flex flex-col gap-px">
+          <h2 className="m-0 text-[17px] font-bold">{title}</h2>
+          {sub && <span className="text-[13px] text-muted">{sub}</span>}
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-2.5 pb-4">
+        <label className="flex min-h-11 shrink-0 items-center gap-2 rounded-xl bg-sunken px-3 text-muted">
+          <Icon name="search" size={18} />
+          <span className="sr-only">Search categories</span>
+          <input
+            type="search"
+            value={q}
+            data-track={`${track}.search`}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search categories"
+            className="min-h-10 flex-1 border-none bg-transparent text-[16px] text-ink outline-none placeholder:text-faint"
+          />
+        </label>
+        {needle ? (
+          matches.length > 0 ? (
+            <div className={listBox}>{matches.map((c) => row(c, 'search_result', true))}</div>
+          ) : (
+            <p className="m-0 px-1 py-2 text-[14px] text-muted">No category called “{q.trim()}”.</p>
+          )
+        ) : (
+          <>
+            {usual.length > 0 && (
+              <>
+                <span className={label}>{suggestedTitle ?? 'Usually'}</span>
+                <div className="flex flex-wrap gap-2">
+                  {usual.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      disabled={disabled}
+                      data-track={`${track}.suggested`}
+                      onClick={pick(c.id)}
+                      className="hit flex h-10 items-center gap-2 rounded-full border border-accent bg-accent-soft px-3.5 text-[14px] font-bold text-accent"
+                    >
+                      {c.name}
+                      {c.available !== undefined && c.available < 0 && (
+                        <span className="tnum font-semibold text-over-fg">{formatCents(c.available)}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            {specials.length > 0 && <div className={listBox}>{specials.map((sp) => row(sp, 'special'))}</div>}
+            {groups.map((g) => (
+              <div key={g.key} className="flex flex-col gap-2.5">
+                <span className={cx('pt-1', label)}>{g.name}</span>
+                <div className={listBox}>{g.categories.map((c) => row(c, 'category'))}</div>
+              </div>
+            ))}
+          </>
+        )}
+        {children}
+      </div>
+    </Sheet>
+  );
+}
+
+/**
+ * A form field that shows the chosen category and opens the picker. Wrap it in <Field label="Category"> (or
+ * point a <label htmlFor> at `id`) so it's named like any other field.
+ */
+export function CategoryField({
+  id,
+  value,
+  onChange,
+  specials = [],
+  groups: given,
+  placeholder = 'Choose…',
+  title,
+  sub,
+  track,
+  ariaLabel,
+}: {
+  id?: string;
+  value: string;
+  onChange: (id: string) => void;
+  specials?: PickerSpecial[];
+  /** Defaults to every category you can pick. */
+  groups?: PickerGroup[];
+  placeholder?: string;
+  title?: string;
+  sub?: ReactNode;
+  track: string;
+  ariaLabel?: string;
+}) {
+  const opts = useCategoryOptions();
+  const groups =
+    given ??
+    opts.groups.map((g) => ({
+      key: g.id,
+      name: g.name,
+      categories: g.categories,
+    }));
+  const [open, setOpen] = useState(false);
+  const cat = groups.flatMap((g) => g.categories).find((c) => c.id === value);
+  const chosen: PickerCategory | undefined = specials.find((s) => s.id === value) ?? cat;
+  const avail = cat?.available;
+  return (
+    <>
+      <button
+        id={id}
+        type="button"
+        aria-haspopup="dialog"
+        aria-label={ariaLabel}
+        data-track={`${track}.open`}
+        onClick={() => setOpen(true)}
+        className={cx(inputClass, 'flex items-center justify-between gap-2 text-left')}
+      >
+        <span className={cx('truncate', !chosen && 'text-faint')}>{chosen ? chosen.name : placeholder}</span>
+        <span className="flex shrink-0 items-center gap-1.5 text-muted">
+          <Avail cents={avail} />
+          <Icon name="chevR" size={18} />
+        </span>
+      </button>
+      {open && (
+        <CategoryPickerSheet
+          modal
+          title={title}
+          sub={sub}
+          groups={groups}
+          specials={specials}
+          value={value}
+          track={track}
+          onPick={(v) => {
+            onChange(v);
+            setOpen(false);
+          }}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
+}

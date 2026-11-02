@@ -167,7 +167,11 @@ test('Assigned more than you have offers to take it back', async ({ page }) => {
   await expect(page.getByText('Suggested')).toBeVisible();
   const checked = page.getByRole('checkbox', { checked: true });
   while ((await checked.count()) > 0) await checked.first().uncheck();
-  await page.getByLabel('Category').selectOption({ label: 'Vacation' });
+  await page.getByLabel('Category').click();
+  await page
+    .getByRole('dialog', { name: 'Choose a category' })
+    .getByRole('button', { name: /^Vacation/ })
+    .click();
   await page.getByLabel('Amount').fill('1000');
   await page.getByRole('button', { name: 'Assign anyway' }).click();
   await expect(rta(page)).toHaveText('−$18.10');

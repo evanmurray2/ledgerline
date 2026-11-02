@@ -894,7 +894,6 @@ export class MockDb {
     else if (c.id === 'rent' && status === 'underfunded') d = `needs ${fmt(need)} by Nov 30`;
     else if (c.refill !== null && !d) {
       d = `${fmt(c.spent)} of ${fmt(c.refill)} spent`;
-      if (c.bill && c.id === 'subs') d += ' · bills are never Low';
       if (status === 'low') d += ` · ${fmt(c.available)} left`;
       if (c.carry) d += ` · ${c.carry}`;
     }
