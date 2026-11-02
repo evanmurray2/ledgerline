@@ -4,7 +4,7 @@
 import { MockServer } from './server';
 import type { Scenario } from './db';
 
-const SCENARIOS: Scenario[] = ['default', 'firstrun', 'empty', 'readonly', 'syncfail', 'newmonth'];
+const SCENARIOS: Scenario[] = ['default', 'firstrun', 'empty', 'readonly', 'resting', 'syncfail', 'newmonth'];
 
 declare global {
   interface Window {

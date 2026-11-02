@@ -10,7 +10,14 @@ export const READ_LIMIT = 5_000_000;
 export const DO_REQUEST_LIMIT = 100_000;
 export const DO_GBS_LIMIT = 13_000;
 
-export type BudgetState = 'normal' | 'pause' | 'readonly';
+/** Workers on Free: 100,000 requests a day, account-wide (static assets don't count). */
+export const WORKER_REQUEST_LIMIT = 100_000;
+
+/**
+ * 'normal'; 'pause' (70%: background work waits); 'readonly' (90%: changes refused, the app reads less often);
+ * 'rest' (95%: reading stops too, so the last few percent never run out and take the app offline).
+ */
+export type BudgetState = 'normal' | 'pause' | 'readonly' | 'rest';
 
 /** Today's Durable Object requests and active time (GB-s), from analytics. */
 export interface DoUsage {
@@ -19,24 +26,50 @@ export interface DoUsage {
 }
 
 /**
- * 70% of any daily limit pauses background work, 90% makes the app read-only. Rows read and written, and (since
- * Nov 2, 2026, when running out of them took the app offline for the day) Durable Object requests and active time.
+ * 70% of any daily limit pauses background work, 90% makes the app read-only, 95% stops reading too. Rows read
+ * and written, Durable Object requests and active time (since Nov 2, 2026, when running out of them took the app
+ * offline for the day), and Worker requests.
  */
 export function classifyUsage(
   rowsWritten: number,
   rowsRead: number,
   d: DoUsage = { requests: 0, gbs: 0 },
+  workerRequests = 0,
 ): BudgetState {
-  const share = Math.max(
-    rowsWritten / WRITE_LIMIT,
-    rowsRead / READ_LIMIT,
-    d.requests / DO_REQUEST_LIMIT,
-    d.gbs / DO_GBS_LIMIT,
-  );
+  const share = usageShare(rowsWritten, rowsRead, d, workerRequests);
+  if (share >= 0.95) return 'rest';
   if (share >= 0.9) return 'readonly';
   if (share >= 0.7) return 'pause';
   return 'normal';
 }
+
+/** The highest share of any daily limit used so far today (0 to 1, or more). */
+export function usageShare(
+  rowsWritten: number,
+  rowsRead: number,
+  d: DoUsage = { requests: 0, gbs: 0 },
+  workerRequests = 0,
+): number {
+  return Math.max(
+    rowsWritten / WRITE_LIMIT,
+    rowsRead / READ_LIMIT,
+    d.requests / DO_REQUEST_LIMIT,
+    d.gbs / DO_GBS_LIMIT,
+    workerRequests / WORKER_REQUEST_LIMIT,
+  );
+}
+
+/** Refused while resting: everything but sign-in, the session (so the app knows) and Plaid webhooks. */
+export function restsDuring(method: string, path: string): boolean {
+  if (path.startsWith('/api/auth/') || path === '/api/webhooks/plaid') return false;
+  return !(method === 'GET' && path === '/api/session');
+}
+
+export const RESTING = {
+  error: 'resting',
+  message:
+    'Ledgerline is resting to stay inside Cloudflare’s free daily limit. Your data is safe. It’s back after midnight UTC.',
+} as const;
 
 export function utcDay(now = Date.now()): string {
   return new Date(now).toISOString().slice(0, 10);
@@ -45,22 +78,37 @@ export function utcDay(now = Date.now()): string {
 export async function usageToday(
   env: Env,
   now = Date.now(),
-): Promise<{ written: number; read: number; do: DoUsage; refreshedAt: number | null }> {
+): Promise<{ written: number; read: number; do: DoUsage; workers: number; refreshedAt: number | null }> {
   // Inside a budget's Durable Object, account usage lives in the Directory (docs/multi-user.md 9.2).
   if (env.USAGE) {
     const u = await env.USAGE();
-    return { written: u.written, read: u.read, do: u.do ?? { requests: 0, gbs: 0 }, refreshedAt: null };
+    return {
+      written: u.written,
+      read: u.read,
+      do: u.do ?? { requests: 0, gbs: 0 },
+      workers: u.workers ?? 0,
+      refreshedAt: null,
+    };
   }
   const r = await env.DB.prepare(
-    `SELECT rows_written + est_written AS w, rows_read + est_read AS r, do_requests, do_gbs, refreshed_at
+    `SELECT rows_written + est_written AS w, rows_read + est_read AS r, do_requests, do_gbs, worker_requests,
+       refreshed_at
      FROM usage_day WHERE day = ?1`,
   )
     .bind(utcDay(now))
-    .first<{ w: number; r: number; do_requests: number; do_gbs: number; refreshed_at: number }>();
+    .first<{
+      w: number;
+      r: number;
+      do_requests: number;
+      do_gbs: number;
+      worker_requests: number;
+      refreshed_at: number;
+    }>();
   return {
     written: r?.w ?? 0,
     read: r?.r ?? 0,
     do: { requests: r?.do_requests ?? 0, gbs: r?.do_gbs ?? 0 },
+    workers: r?.worker_requests ?? 0,
     refreshedAt: r?.refreshed_at ?? null,
   };
 }
@@ -68,8 +116,8 @@ export async function usageToday(
 /** Background paths call this before each unit of work. Usage events are dropped from the 70% tier. */
 export async function writeBudgetState(env: Env): Promise<BudgetState> {
   const u = await usageToday(env);
-  const s = classifyUsage(u.written, u.read, u.do);
-  return s === 'readonly' ? 'pause' : s;
+  const s = classifyUsage(u.written, u.read, u.do, u.workers);
+  return s === 'readonly' || s === 'rest' ? 'pause' : s;
 }
 
 /** Adds this app's own row counts between analytics refreshes. */

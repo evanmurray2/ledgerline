@@ -49,7 +49,12 @@ export interface Env {
   MEASURE?: string;
   APP_VERSION?: string;
   /** Inside a budget's Durable Object: today's account usage, from the Directory (docs/multi-user.md 9.2). */
-  USAGE?: () => Promise<{ written: number; read: number; do?: { requests: number; gbs: number } }>;
+  USAGE?: () => Promise<{
+    written: number;
+    read: number;
+    do?: { requests: number; gbs: number };
+    workers?: number;
+  }>;
   /** Inside a budget's Durable Object: add this app's own row counts to the Directory's usage_day. */
   NOTE_USAGE?: (written: number, read: number) => Promise<void>;
   /** Inside a budget's Durable Object: queue registering a new Plaid Item's route in the Directory. */

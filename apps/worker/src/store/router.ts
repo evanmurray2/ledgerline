@@ -5,6 +5,19 @@ import type { Env } from '../env.js';
 import { DIRECTORY_NAME } from './directory.js';
 import { OPS_PATHS, secretMatches } from '../http/auth.js';
 import { makeProvider } from '../sync/provider.js';
+import { RESTING, restsDuring } from '../sync/breaker.js';
+
+/**
+ * After the Directory says the app is resting (95% of a daily limit), this isolate refuses the same requests itself
+ * for a few minutes, so they don't cost Durable Object requests either.
+ */
+const REST_MS = 5 * 60_000;
+let restingUntil = 0;
+
+/** Tests only: forget the resting state. */
+export function resetRoutingCache(): void {
+  restingUntil = 0;
+}
 
 const json = (body: unknown, status: number) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -50,8 +63,16 @@ export async function routeApi(req: Request, env: Env): Promise<Response> {
   }
 
   // Everything else: who is asking, then their own budget.
+  const now = Date.now();
+  if (now < restingUntil && restsDuring(req.method, path)) return json(RESTING, 503);
   const a = await dir.authenticate(req.headers.get('cookie'), req.method, path);
-  if (!a.ok) return json(a.body, a.status);
+  if (!a.ok) {
+    if (a.body.error === RESTING.error) {
+      const midnight = new Date(now).setUTCHours(24, 0, 0, 0);
+      restingUntil = Math.min(now + REST_MS, midnight);
+    }
+    return json(a.body, a.status);
+  }
   return store(a.caller.budgetId).api(req, a.caller);
 }
 

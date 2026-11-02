@@ -1,5 +1,5 @@
-// The write breaker (Sync spec F8, decisions.md D-37): 70% of any daily limit pauses background work and 90% makes
-// the app read-only, counting Durable Object requests and active time as well as rows.
+// The write breaker (Sync spec F8, decisions.md D-37, D-40): 70% of any daily limit pauses background work, 90% makes
+// the app read-only and 95% stops reading too, counting Durable Object and Worker requests and active time as well as rows.
 import { describe, expect, it } from 'vitest';
 import { classifyUsage } from '../src/sync/breaker.js';
 
@@ -14,6 +14,15 @@ describe('classifyUsage', () => {
   it('pauses at 70% of Durable Object requests or active time', () => {
     expect(classifyUsage(0, 0, { requests: 70_000, gbs: 0 })).toBe('pause');
     expect(classifyUsage(0, 0, { requests: 0, gbs: 9_100 })).toBe('pause');
+  });
+  it('counts Worker requests: pause at 70%, read-only at 90%', () => {
+    expect(classifyUsage(0, 0, undefined, 70_000)).toBe('pause');
+    expect(classifyUsage(0, 0, undefined, 90_000)).toBe('readonly');
+  });
+  it('rests (reading stops too) at 95% of any limit', () => {
+    expect(classifyUsage(0, 0, undefined, 95_000)).toBe('rest');
+    expect(classifyUsage(0, 0, { requests: 95_000, gbs: 0 })).toBe('rest');
+    expect(classifyUsage(0, 4_750_000)).toBe('rest');
   });
   it('goes read-only at 90% of any limit', () => {
     expect(classifyUsage(90_000, 0)).toBe('readonly');

@@ -5,6 +5,7 @@ import type { BudgetView, MutationResult } from '@ledgerline/contracts';
 import { api, type ActivityFilter, type RegisterShow } from './endpoints';
 import { usage } from '../usage/tracker';
 import { ApiError } from './client';
+import { connectivity } from '../state/connectivity';
 
 export const qk = {
   session: ['session'] as const,
@@ -25,7 +26,11 @@ export const qk = {
 };
 
 export function useSession() {
-  return useQuery({ queryKey: qk.session, queryFn: api.session, staleTime: 60_000 });
+  return useQuery({
+    queryKey: qk.session,
+    queryFn: api.session,
+    staleTime: () => connectivity.staleMs(60_000),
+  });
 }
 export function useBudget(month: string | undefined) {
   return useQuery({ queryKey: qk.budget(month ?? ''), queryFn: () => api.budget(month!), enabled: !!month });

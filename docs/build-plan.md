@@ -20,7 +20,7 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 ## 2. Domain core (design Phase 2) — `packages/domain`
 
 - [x] Money: branded integer cents, parse/format, no floats (lint rule). _Verify:_ unit + property tests.
-- [x] Months and time zone: budget month math in America/Los_Angeles without a date library. _Verify:_ property tests (round trips, DST boundaries).
+- [x] Months and time zone: budget month math in America/Los*Angeles without a date library. \_Verify:* property tests (round trips, DST boundaries).
 - [x] `computeBudget()`: the only Ready to Assign implementation; carry-forward with Money rules 1–9, 11, 12; snapshot start for incremental recompute. _Verify:_ property test per rule; incremental-from-snapshot equals full recompute (property).
 - [x] Rule 10 identity checker, asserted in tests and in the daily recompute. _Verify:_ property test over random ledgers.
 - [x] Rule 13 projected fronts; funding statuses (Overspent, Underfunded, Funded, Overfunded, Low, Covered/Short, Invested, Late/Tracking). _Verify:_ unit + property tests.
@@ -92,6 +92,7 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 - [x] The mock API and the Worker are checked against one list of screens and their schemas (`packages/contracts/src/screens.ts`). _Verify:_ `apps/web/test/mock-contract.test.ts` (every mock scenario), `apps/worker/test/screens.test.ts`.
 - [x] Settings split by section: `apps/web/src/screens/settings/` and `apps/worker/src/routes/settings/` (no behaviour change). _Verify:_ `pnpm check`; mock and Worker Playwright suites.
 - [x] Delete the empty `ledgerline` D1 database (D-38). _Verify:_ the account lists no D1 databases (Nov 2, 2026).
+- [x] Breaker counts Worker requests and rests at 95% (D-40): reading stops too, saved screens stay on view, the Worker refuses by itself for 5 minutes; from 90% screens check every 15 minutes. _Verify:_ `apps/worker/test/breaker.test.ts`, `apps/worker/test/objects/routing.test.ts` (rests at 95%), `apps/web/test/client.test.ts`.
 - [ ] Activity screen: check CPU on the real app's analytics; build a stored recent-rows list only if p95 is 8 ms or more.
 - [ ] Later, only if wanted: invites, People with a reset link, Plaid link slots per user, account deletion, an isolation test (`docs/multi-user.md` 7.3, 7.4, 9.1, 10, 11).
 

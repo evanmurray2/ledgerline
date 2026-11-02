@@ -96,7 +96,10 @@ The limits are per account, so the breaker reads account-wide usage, not just th
 | --- | --- |
 | Under 70,000 writes and 3.5M reads | Normal |
 | 70,000+ writes or 3.5M+ reads | Usage events are dropped; backfills, imports, the daily recompute and hand-offs sleep until 00:00 UTC (lease extended over the sleep); the monitor alerts |
-| 90,000+ writes or 4.5M+ reads | App becomes read-only with a banner; only lease releases still write |
+| 90,000+ writes or 4.5M+ reads | App becomes read-only with a banner; only lease releases still write; screens check for changes every 15 minutes |
+| 95% of any daily limit | The app rests (decisions.md D-40): reading stops too, except sign-in, the session and Plaid webhooks; saved screens stay on view under a banner until 00:00 UTC |
+
+Since D-37 and D-40 the levels apply to the highest share of any daily limit: rows written (100,000), rows read (5M), Durable Object requests (100,000) and active time (13,000 GB-s), and Worker requests (100,000).
 
 The step-8 hand-off, recompute retries and fetch restarts each have their own cap (3), so no loop is unbounded.
 

@@ -47,6 +47,8 @@ export function dailyResetTime(now = new Date()): string {
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError && err.code === 'daily_limit')
     return `Cloudflare’s free daily limit is used up. Your data is safe. Ledgerline is back at ${dailyResetTime()}.`;
+  if (err instanceof ApiError && err.code === 'resting')
+    return `Ledgerline is resting to stay inside Cloudflare’s free daily limit. Your data is safe. It’s back at ${dailyResetTime()}.`;
   if (err instanceof ApiError) return FRIENDLY[err.code] ?? err.message;
   return 'Something went wrong. Try again.';
 }
@@ -64,6 +66,9 @@ export async function request<S extends z.ZodType>(
   body?: unknown,
 ): Promise<z.infer<S>> {
   const mutation = method !== 'GET';
+  // Resting (95% of a daily limit): only the session is asked, so the app knows when it's over.
+  if (!mutation && connectivity.get().readsPaused && path !== '/api/session')
+    throw new ApiError('resting', 'Reading is paused until the daily limit resets.', 503);
   if (mutation && !connectivity.canWrite()) {
     throw new ApiError(
       connectivity.isOffline() ? 'offline' : 'read_only',
@@ -98,6 +103,7 @@ export async function request<S extends z.ZodType>(
     const code = parsed.success ? parsed.data.error : `http_${res.status}`;
     const message = parsed.success ? parsed.data.message : res.statusText || 'Request failed';
     if (code === 'read_only' || code === 'readonly') onReadOnly?.();
+    if (code === 'resting') connectivity.setReadsPaused(true);
     // Signed out (session ended) or a fresh passkey check is needed: the app shows sign-in or "Confirm it's you".
     if (code === 'unauthenticated' && !path.startsWith('/api/auth/')) {
       clearSavedData();

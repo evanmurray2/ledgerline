@@ -11,6 +11,7 @@ beforeEach(() => {
   calls = [];
   connectivity.setOnline(true);
   connectivity.setReadOnly(false, null);
+  connectivity.setReadsPaused(false);
   connectivity.reportOk();
   globalThis.fetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     const call = { url: String(url), init: init ?? {} };
@@ -100,5 +101,18 @@ describe('API client', () => {
       code: 'read_only',
     });
     expect(calls).toHaveLength(0);
+  });
+
+  it('while resting, asks only for the session and stops after a resting answer', async () => {
+    respond = () => json({ error: 'resting', message: 'resting' }, 503);
+    await expect(api.budget('2026-11')).rejects.toMatchObject({ code: 'resting' });
+    expect(connectivity.get().readsPaused).toBe(true);
+    expect(calls).toHaveLength(1);
+    await expect(api.budget('2026-11')).rejects.toMatchObject({ code: 'resting' });
+    expect(calls).toHaveLength(1);
+    await api.session().catch(() => null);
+    expect(calls).toHaveLength(2);
+    expect(errorMessage(new ApiError('resting', 'x'))).toMatch(/resting to stay inside/);
+    expect(connectivity.staleMs(120_000)).toBe(15 * 60_000);
   });
 });

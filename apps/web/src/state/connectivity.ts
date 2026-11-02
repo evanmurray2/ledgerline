@@ -9,6 +9,8 @@ interface State {
   /** Session.writeState === 'readonly' */
   readOnly: boolean;
   readOnlyUntil: string | null;
+  /** 95% of a daily limit (Session.readsPaused, or a 'resting' answer): no reads until the limit resets. */
+  readsPaused: boolean;
   /** When the data on screen was last loaded (epoch ms). */
   loadedAt: number | null;
 }
@@ -18,6 +20,7 @@ let state: State = {
   networkFailed: false,
   readOnly: false,
   readOnlyUntil: null,
+  readsPaused: false,
   loadedAt: null,
 };
 
@@ -29,6 +32,7 @@ function set(patch: Partial<State>) {
     next.networkFailed === state.networkFailed &&
     next.readOnly === state.readOnly &&
     next.readOnlyUntil === state.readOnlyUntil &&
+    next.readsPaused === state.readsPaused &&
     next.loadedAt === state.loadedAt
   )
     return;
@@ -52,6 +56,13 @@ export const connectivity = {
   },
   setReadOnly(readOnly: boolean, until: string | null) {
     set({ readOnly, readOnlyUntil: until });
+  },
+  setReadsPaused(readsPaused: boolean) {
+    set({ readsPaused });
+  },
+  /** Near a daily limit, screens check for changes less often: every request counts against it. */
+  staleMs(normal: number) {
+    return state.readOnly || state.readsPaused ? 15 * 60_000 : normal;
   },
   setOnline(online: boolean) {
     set({ online, networkFailed: online ? false : state.networkFailed });

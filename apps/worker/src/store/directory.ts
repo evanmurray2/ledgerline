@@ -17,7 +17,14 @@ import { csrf } from '../http/security.js';
 import { REAUTH_MS, identify, needsRecentPasskey } from '../http/auth.js';
 import { membership } from '../db/scoped.js';
 import { clock } from '../http/clock.js';
-import { noteUsage, usageToday } from '../sync/breaker.js';
+import {
+  RESTING,
+  classifyUsage,
+  noteUsage,
+  restsDuring,
+  usageToday,
+  type BudgetState,
+} from '../sync/breaker.js';
 import { refreshUsage } from '../ops/usage.js';
 import { pruneAuthStmts } from '../maintenance.js';
 import { JobRunner, type Handler } from './jobs.js';
@@ -39,13 +46,18 @@ export interface Caller {
 }
 
 export type AuthResult =
-  { ok: true; caller: Caller } | { ok: false; status: 401 | 403; body: { error: string; message: string } };
+  | { ok: true; caller: Caller }
+  | { ok: false; status: 401 | 403 | 503; body: { error: string; message: string } };
+
+/** How long the Directory trusts its last look at today's usage (it changes at most every refresh). */
+const STATE_MS = 60_000;
 
 export class Directory extends DurableObject<Env> {
   protected readonly db: SqlD1;
   private startError: string | null = null;
   private app: Hono<AppEnv> | null = null;
   private readonly runner: JobRunner;
+  private usageState: { state: BudgetState; at: number } | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -101,9 +113,12 @@ export class Directory extends DurableObject<Env> {
       },
       // Account usage from GraphQL Analytics, every 30 minutes, for the write breaker. Durable Object requests and
       // active time can climb fast (they went from 90% to 100% in about an hour on Nov 2, 2026).
+      // Every 10 minutes once any limit is past 70%, so the 90% and 95% brakes engage in time.
       usage_refresh: async (_job, now) => {
         await refreshUsage(this.appEnv(), now, true).catch(() => null);
-        return { state: {}, runAt: now + 30 * 60_000 };
+        this.usageState = null;
+        const busy = (await this.state(now)) !== 'normal';
+        return { state: {}, runAt: now + (busy ? 10 : 30) * 60_000 };
       },
       // Every budget's ensureJobs, ENSURE_BATCH per step.
       ensure_all: async (job, now) => {
@@ -164,6 +179,9 @@ export class Directory extends DurableObject<Env> {
     const m = await membership(env.DB, who.userId);
     if (!m)
       return { ok: false, status: 403, body: { error: 'forbidden', message: 'Not a member of this budget' } };
+    // 95% of a daily limit: stop reading too, so the app never runs into Cloudflare's hard stop (sync/breaker.ts).
+    if (restsDuring(method, path) && (await this.state(Date.now())) === 'rest')
+      return { ok: false, status: 503, body: { ...RESTING } };
     return {
       ok: true,
       caller: {
@@ -183,9 +201,23 @@ export class Directory extends DurableObject<Env> {
   }
 
   /** Today's account usage, for the write breaker in every store (docs/multi-user.md 9.2). */
-  async usageToday(): Promise<{ written: number; read: number; do: { requests: number; gbs: number } }> {
+  async usageToday(): Promise<{
+    written: number;
+    read: number;
+    do: { requests: number; gbs: number };
+    workers: number;
+  }> {
     const u = await usageToday(this.appEnv());
-    return { written: u.written, read: u.read, do: u.do };
+    return { written: u.written, read: u.read, do: u.do, workers: u.workers };
+  }
+
+  /** The breaker's state, from usage_day at most once a minute (one row read). */
+  private async state(now: number): Promise<BudgetState> {
+    if (this.usageState && now - this.usageState.at < STATE_MS) return this.usageState.state;
+    const u = await usageToday(this.appEnv(), now);
+    const state = classifyUsage(u.written, u.read, u.do, u.workers);
+    this.usageState = { state, at: now };
+    return state;
   }
 
   /** Adds a store's own row counts to today's account usage (between analytics refreshes). */

@@ -28,7 +28,7 @@ import type {
   TxnSheet,
 } from '@ledgerline/contracts';
 
-export type Scenario = 'default' | 'firstrun' | 'empty' | 'readonly' | 'syncfail' | 'newmonth';
+export type Scenario = 'default' | 'firstrun' | 'empty' | 'readonly' | 'resting' | 'syncfail' | 'newmonth';
 
 type GroupKey = 'bills' | 'everyday' | 'savings';
 
@@ -695,7 +695,7 @@ export class MockDb {
 
   constructor(scenario: Scenario = 'default') {
     this.scenario = scenario;
-    if (scenario === 'readonly') this.writeState = 'readonly';
+    if (scenario === 'readonly' || scenario === 'resting') this.writeState = 'readonly';
     if (scenario === 'firstrun') {
       this.setupStep = 'start';
       this.linked = 0;
@@ -1779,6 +1779,7 @@ export class MockDb {
       appVersion: '0.1.0',
       writeState: this.writeState,
       readOnlyUntil: this.writeState === 'readonly' ? '2026-11-15T00:00:00.000Z' : null,
+      readsPaused: this.scenario === 'resting',
       settings: { tracking: this.tracking, noteButton: this.noteButton },
     };
   }

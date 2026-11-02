@@ -67,6 +67,8 @@ export class MockServer {
       const path = u.pathname.replace(/\/+$/, '');
       const p = path.split('/').slice(2).map(decodeURIComponent); // drop '' and 'api'
       const mutation = method !== 'GET';
+      if (this.db.scenario === 'resting' && p[0] !== 'session' && p[0] !== 'auth')
+        throw new MockHttpError(503, 'resting', 'Resting until the daily limit resets');
       if (mutation) {
         this.lastMutationHeaders = headers;
         if (headers[CSRF_HEADER] !== '1' || !(headers['content-type'] ?? '').startsWith('application/json'))

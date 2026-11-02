@@ -171,7 +171,7 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
 export function StatusBanner() {
   const c = useConnectivity();
   const offline = !c.online || c.networkFailed;
-  if (!offline && !c.readOnly) return null;
+  if (!offline && !c.readOnly && !c.readsPaused) return null;
   const loaded = c.loadedAt ? pacificTime(c.loadedAt) : null;
   if (offline)
     return (
@@ -187,7 +187,26 @@ export function StatusBanner() {
         </span>
       </div>
     );
-  return <ReadOnlyBanner until={c.readOnlyUntil ? pacificTime(c.readOnlyUntil) : 'midnight UTC'} />;
+  const until = c.readOnlyUntil ? pacificTime(c.readOnlyUntil) : 'midnight UTC';
+  if (c.readsPaused) return <RestingBanner until={until} />;
+  return <ReadOnlyBanner until={until} />;
+}
+
+/** 95% of a daily limit: nothing is loaded until the reset, so the app never hits Cloudflare's hard stop. */
+function RestingBanner({ until }: { until: string }) {
+  return (
+    <div
+      role="status"
+      data-testid="resting-banner"
+      className="flex shrink-0 flex-col gap-1 border-b border-warn-border bg-warn-bg px-4 py-2 text-warn-fg"
+    >
+      <span className="text-[14px] font-bold">Resting until {until}</span>
+      <span className="text-[13px] leading-snug">
+        The app has nearly used today’s free allowance, so it has stopped loading and saving to stay online.
+        Screens show what was last saved on this device. Nothing is lost.
+      </span>
+    </div>
+  );
 }
 
 function ReadOnlyBanner({ until }: { until: string }) {

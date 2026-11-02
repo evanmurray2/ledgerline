@@ -5,6 +5,7 @@ import { BUILD_ID, SAVED_MAX_AGE, makePersister, savingEnabled } from './state/s
 import { RouterProvider, type RouterHistory } from '@tanstack/react-router';
 import { makeRouter } from './router';
 import { ApiError } from './api/client';
+import { connectivity } from './state/connectivity';
 
 export function makeQueryClient() {
   return new QueryClient({
@@ -13,11 +14,13 @@ export function makeQueryClient() {
         // Keep showing the last loaded data when offline; don't retry client errors.
         networkMode: 'offlineFirst',
         // Each screen reads every transaction from the database, so refetch on focus only when data is older than this.
-        staleTime: 120_000,
+        // Near a daily limit, every 15 minutes instead (state/connectivity.ts).
+        staleTime: () => connectivity.staleMs(120_000),
         gcTime: 24 * 60 * 60 * 1000,
         refetchOnWindowFocus: true,
         retry: (count, err) =>
-          !(err instanceof ApiError && err.status >= 400 && err.status < 500) && count < 2,
+          !(err instanceof ApiError && ((err.status >= 400 && err.status < 500) || err.code === 'resting')) &&
+          count < 2,
       },
       mutations: { networkMode: 'always', retry: false },
     },

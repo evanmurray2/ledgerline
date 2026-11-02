@@ -75,7 +75,8 @@ budgetApi.use('*', async (c, next) => {
   if (m === 'GET' || m === 'HEAD') return next();
   // Inside a budget's Durable Object, account usage comes from the Directory (USAGE); on D1, from usage_day.
   const u = c.env.USAGE ? await c.env.USAGE() : await usageToday(c.env);
-  if (classifyUsage(u.written, u.read, u.do) === 'readonly')
+  const st = classifyUsage(u.written, u.read, u.do, u.workers);
+  if (st === 'readonly' || st === 'rest')
     return c.json({ error: 'readonly', message: 'Daily database limit reached' }, 503);
   return next();
 });
@@ -171,7 +172,7 @@ budgetApi.get('/session', async (c) => {
         ? 'categories'
         : 'done';
   const u = await usageToday(c.env, now);
-  const ws = classifyUsage(u.written, u.read, u.do);
+  const ws = classifyUsage(u.written, u.read, u.do, u.workers);
   const tomorrow = new Date(now);
   tomorrow.setUTCHours(24, 0, 0, 0);
   const body: Session = {
@@ -189,7 +190,8 @@ budgetApi.get('/session', async (c) => {
     },
     appVersion: c.env.APP_VERSION ?? '0.1.0',
     writeState: ws === 'normal' ? 'ok' : ws === 'pause' ? 'paused' : 'readonly',
-    readOnlyUntil: ws === 'readonly' ? tomorrow.toISOString() : null,
+    readOnlyUntil: ws === 'readonly' || ws === 'rest' ? tomorrow.toISOString() : null,
+    readsPaused: ws === 'rest',
     settings: { tracking: setting.get('tracking') !== false, noteButton: setting.get('noteButton') === true },
   };
   return c.json(body);

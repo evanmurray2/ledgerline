@@ -20,6 +20,10 @@ export const DIRECTORY_MIGRATIONS: StoreMigration[] = [
   {
     "name": "0004_do_usage.sql",
     "sql": "-- Durable Object requests and active time (GB-s) for the write breaker (decisions.md D-37): the two Free limits\n-- that ran out on Nov 2, 2026. Expand-only.\nALTER TABLE usage_day ADD COLUMN do_requests INTEGER NOT NULL DEFAULT 0;\nALTER TABLE usage_day ADD COLUMN do_gbs REAL NOT NULL DEFAULT 0;\n"
+  },
+  {
+    "name": "0005_worker_requests.sql",
+    "sql": "-- Worker requests today (100,000 a day on Free) for the breaker: the one daily limit it didn't watch. Expand-only.\nALTER TABLE usage_day ADD COLUMN worker_requests INTEGER NOT NULL DEFAULT 0;\n"
   }
 ];
 

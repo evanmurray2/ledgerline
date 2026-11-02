@@ -33,7 +33,7 @@ opsRoutes.post('/usage', async (c) => {
   );
   if (setting && JSON.parse(setting.value) === false) return c.body(null, 204);
   const u = await usageToday(c.env);
-  if (classifyUsage(u.written, u.read, u.do) !== 'normal') return c.body(null, 204);
+  if (classifyUsage(u.written, u.read, u.do, u.workers) !== 'normal') return c.body(null, 204);
   const dayStart = Date.parse(`${utcDay()}T00:00:00Z`);
   const today = await s.first<{ n: number }>(
     `SELECT count(*) AS n FROM usage_event WHERE budget_id = ?1 AND at >= ?2`,
@@ -104,7 +104,7 @@ opsRoutes.get('/health', async (c) => {
     stale: !x.last_synced_at || now - x.last_synced_at > 24 * 3_600_000,
   }));
   const view: HealthView = {
-    ok: connections.every((x) => !x.stale) && classifyUsage(u.written, u.read, u.do) === 'normal',
+    ok: connections.every((x) => !x.stale) && classifyUsage(u.written, u.read, u.do, u.workers) === 'normal',
     connections,
     watermarkLag: Math.max(0, (lag!.results[0] as { lag: number } | undefined)?.lag ?? 0),
     usage: {

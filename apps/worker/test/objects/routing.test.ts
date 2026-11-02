@@ -4,6 +4,8 @@ import { createExecutionContext, env, runInDurableObject } from 'cloudflare:test
 import { describe, expect, it } from 'vitest';
 import worker from '../../src/index.js';
 import { tokenHash } from '../../src/http/auth.js';
+import { resetRoutingCache } from '../../src/store/router.js';
+import { utcDay } from '../../src/sync/breaker.js';
 import { DIRECTORY_NAME, type Directory } from '../../src/store/directory.js';
 import type { BudgetStore } from '../../src/store/budget-store.js';
 import { SoftAuthenticator } from '../soft-authenticator.js';
@@ -106,6 +108,39 @@ describe('routing', () => {
     const sec = await owner.call('GET', '/api/settings/security');
     expect(sec.status).toBe(200);
     expect((sec.json.passkeys as { id: string }[]).map((p) => p.id)).toEqual([ownerKey.id]);
+  });
+
+  it('rests at 95% of a daily limit: only sign-in and the session answer', async () => {
+    const setWorkerRequests = (n: number) =>
+      runInDurableObject(directory(), async (o, st) => {
+        st.storage.sql.exec(
+          `INSERT INTO usage_day (day, rows_read, rows_written, refreshed_at, worker_requests) VALUES (?, 0, 0, 0, ?)
+           ON CONFLICT (day) DO UPDATE SET worker_requests = excluded.worker_requests`,
+          utcDay(),
+          n,
+        );
+        (o as unknown as { usageState: unknown }).usageState = null;
+      });
+    await setWorkerRequests(96_000);
+    try {
+      const b = await owner.call('GET', '/api/budget/2026-11');
+      expect(b.status).toBe(503);
+      expect(b.json).toMatchObject({ error: 'resting' });
+      const w = await owner.call('POST', '/api/settings/groups', { name: 'Fun', isBills: false });
+      expect(w.status).toBe(503);
+      const s = await owner.call('GET', '/api/session');
+      expect(s.status).toBe(200);
+      expect(s.json).toMatchObject({ writeState: 'readonly', readsPaused: true });
+      expect((await owner.call('GET', '/api/auth/status')).status).toBe(200);
+      // The Worker now refuses by itself for a few minutes, without asking the Directory.
+      await setWorkerRequests(0);
+      expect((await owner.call('GET', '/api/budget/2026-11')).status).toBe(503);
+      resetRoutingCache();
+      expect((await owner.call('GET', '/api/budget/2026-11')).status).toBe(200);
+    } finally {
+      await setWorkerRequests(0);
+      resetRoutingCache();
+    }
   });
 
   it('a second user reaches only their own budget', async () => {

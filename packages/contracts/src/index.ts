@@ -27,6 +27,8 @@ export const Session = z.object({
   /** 'ok' | 'paused' (70% of a daily limit) | 'readonly' (90%: banner, writes refused). */
   writeState: z.enum(['ok', 'paused', 'readonly']),
   readOnlyUntil: z.string().nullable(),
+  /** 95% of a daily limit: reading stops too, and the app shows what it saved (optional: older Workers omit it). */
+  readsPaused: z.boolean().optional(),
   settings: z.object({ tracking: z.boolean(), noteButton: z.boolean() }),
 });
 export type Session = z.infer<typeof Session>;

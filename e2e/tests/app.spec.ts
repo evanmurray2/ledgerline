@@ -162,6 +162,22 @@ test('Daily limit: read-only banner with the reset time in Pacific', async ({ pa
   await expect(page.getByRole('button', { name: 'Cover $18.25 for Dining out' })).toBeDisabled();
 });
 
+test('Resting at 95%: a banner, and nothing but the session is asked for', async ({ page }) => {
+  const asked: string[] = [];
+  page.on('request', (r) => {
+    const u = new URL(r.url());
+    if (u.pathname.startsWith('/api/')) asked.push(u.pathname);
+  });
+  await page.goto('/budget?mock=resting');
+  await expect(page.getByTestId('resting-banner')).toContainText('Resting until 4:00 PM');
+  await expect(page.getByRole('alert')).toContainText('daily limit resets');
+  // After the first resting answer, moving around asks the server for nothing.
+  const before = asked.filter((p) => p !== '/api/session').length;
+  await page.getByRole('link', { name: 'Activity' }).first().click();
+  await expect(page.getByRole('alert')).toContainText('daily limit resets');
+  expect(asked.filter((p) => p !== '/api/session')).toHaveLength(before);
+});
+
 test('Assigned more than you have offers to take it back', async ({ page }) => {
   await page.goto('/budget/assign');
   await expect(page.getByText('Suggested')).toBeVisible();

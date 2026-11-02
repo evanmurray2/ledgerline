@@ -71,7 +71,11 @@ function Root() {
     usage.appVersion = s.appVersion;
     usage.setEnabled(s.settings.tracking);
     connectivity.setReadOnly(s.writeState === 'readonly', s.readOnlyUntil);
-  }, [s]);
+    // Resting ended (the daily limit reset): load every screen again.
+    const wasPaused = connectivity.get().readsPaused;
+    connectivity.setReadsPaused(s.readsPaused === true);
+    if (wasPaused && !s.readsPaused) void qc.invalidateQueries();
+  }, [s, qc]);
 
   const setupPath = path.startsWith('/setup') || path.startsWith('/welcome');
   if (path === '/add-device') return <AddDeviceScreen />;
@@ -83,7 +87,8 @@ function Root() {
           {/* Cloudflare's daily limit ran out (decisions.md D-37): the reset time in the reader's own time zone. */}
           <ErrorNote
             error={
-              session.error instanceof ApiError && session.error.code === 'daily_limit'
+              session.error instanceof ApiError &&
+              (session.error.code === 'daily_limit' || session.error.code === 'resting')
                 ? new Error(errorMessage(session.error))
                 : session.error
             }
