@@ -110,57 +110,7 @@ async function acquireFor(db: D1Database, C: string, holder: string): Promise<vo
 
 const start = (holder: string): SyncState => ({ phase: 'begin', holder, trigger: 'test' });
 
-/** Drives the handler step by step without a runner (works on D1 too). */
-async function drive(d: SyncDeps, C: string, holder: string): Promise<number> {
-  const h = syncHandler(d);
-  let state: unknown = start(holder);
-  for (let n = 1; n < 2000; n++) {
-    const r = await h(
-      { id: holder, kind: 'sync', connectionId: C, state, attempts: 1, recurring: false },
-      T + n,
-    );
-    if ('done' in r) return n;
-    state = r.state;
-  }
-  throw new Error('sync did not finish');
-}
-
-const HASH_SQL = {
-  txns: `SELECT group_concat(provider_txn_id || ':' || amount || ':' || date || ':' || txn_key, ',') AS h
-         FROM (SELECT * FROM bank_txn ORDER BY provider_txn_id)`,
-  lines: `SELECT count(*) || ':' || coalesce(sum(amount), 0) AS h FROM budget_line`,
-};
-
 describe('sync job', () => {
-  it('writes exactly the same rows on D1 and on the adapter', async () => {
-    const D1 = e.DB;
-    await seed(D1, 'b_job_d1', 'con_job_d1');
-    await acquireFor(D1, 'con_job_d1', 'run-d1');
-    await drive(deps(D1, 'b_job_d1'), 'con_job_d1', 'run-d1');
-    const onD1 = {
-      txns: await D1.prepare(
-        HASH_SQL.txns.replace('FROM bank_txn', `FROM bank_txn WHERE budget_id = 'b_job_d1'`),
-      ).first('h'),
-      lines: await D1.prepare(HASH_SQL.lines + ` WHERE budget_id = 'b_job_d1'`).first('h'),
-    };
-    const inStore = await runInDurableObject(
-      e.BUDGET.get(e.BUDGET.idFromName('sync-parity')),
-      async (_o, st) => {
-        const db = new SqlD1(st.storage) as unknown as D1Database;
-        await seed(db, 'b_job_d1', 'con_job_d1');
-        await acquireFor(db, 'con_job_d1', 'run-d1');
-        await drive(deps(db, 'b_job_d1'), 'con_job_d1', 'run-d1');
-        return {
-          txns: await db.prepare(HASH_SQL.txns).first('h'),
-          lines: await db.prepare(HASH_SQL.lines).first('h'),
-        };
-      },
-    );
-    expect(String(onD1.txns).split(',')).toHaveLength(TOTAL);
-    expect(onD1.lines).not.toBe('0:0'); // budget lines were built, so they are really compared
-    expect(inStore).toEqual(onD1);
-  });
-
   it('runs to completion through the alarm runner: rows applied, run done, lease released, recompute queued and run', async () => {
     await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName('sync-runner')), async (_o, st) => {
       const db = new SqlD1(st.storage) as unknown as D1Database;

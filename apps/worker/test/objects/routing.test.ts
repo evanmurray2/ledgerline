@@ -149,17 +149,6 @@ describe('after the move', () => {
   });
 });
 
-describe('before the move', () => {
-  it('everything is served from D1 as before', async () => {
-    await setPhase('none');
-    const st = await new Browser().call('GET', '/api/auth/status');
-    expect(st.json).toMatchObject({ hasPasskey: false, setupOpen: true });
-    await setPhase('moved');
-    const moved = await new Browser().call('GET', '/api/auth/status');
-    expect(moved.json).toMatchObject({ hasPasskey: true, setupOpen: false });
-  });
-});
-
 describe('without D1 (production since Nov 2, 2026)', () => {
   const noD1 = (path: string) =>
     worker.fetch(
