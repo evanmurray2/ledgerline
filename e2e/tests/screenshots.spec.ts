@@ -86,7 +86,15 @@ for (const theme of ['light', 'dark'] as const) {
       await page.goto(s.path);
       if (s.ready) await page.getByText(s.ready).first().waitFor();
       if (s.prepare) await s.prepare(page);
-      await page.waitForTimeout(350);
+      // Sheets and banners finish moving in (looping animations, such as a spinner, are left running).
+      await page.evaluate(() =>
+        Promise.all(
+          document
+            .getAnimations()
+            .filter((a) => a.effect?.getTiming().iterations !== Infinity)
+            .map((a) => a.finished.catch(() => undefined)),
+        ),
+      );
       await page.screenshot({ path: `screenshots/${info.project.name}-${theme}-${s.name}.png` });
     });
   }

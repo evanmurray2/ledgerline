@@ -5,6 +5,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   Navigate,
   Outlet,
   redirect,
@@ -25,30 +26,38 @@ import { ActivityScreen } from './screens/Activity';
 import { RenamePayeeFromTxn, SplitScreen, TxnSheetScreen } from './screens/TxnSheets';
 import { AddTxnScreen, CheckPendingScreen, MatchScreen, TransferScreen } from './screens/ActivitySheets';
 import { AccountsScreen, RegisterScreen, RepairScreen } from './screens/Accounts';
-import { ReportsScreen } from './screens/Reports';
-import {
-  AppearanceSection,
-  CategoriesScreen,
-  CategoryEditSheet,
-  ConnectionsScreen,
-  DataScreen,
-  PayeesScreen,
-  RenamePayeeSheet,
-  RuleEditScreen,
-  RulesScreen,
-  SettingsLayout,
-} from './screens/Settings';
-import { FirstSortScreen, LinkBanksScreen, StartMonthScreen, WelcomeScreen } from './screens/Setup';
 import { AddDeviceScreen, ReauthDialog, SignInScreen } from './screens/Auth';
 import { ApiError, errorMessage } from './api/client';
+
+// Screens opened now and then (Reports, Settings, Categories, first-run setup) load when first opened, so the app
+// starts with less to download and parse. After a new release, a missing piece reloads the app once.
+const reports = () => import('./screens/Reports');
+const settings = () => import('./screens/Settings');
+const setup = () => import('./screens/Setup');
+const ReportsScreen = lazyRouteComponent(reports, 'ReportsScreen');
+const AppearanceSection = lazyRouteComponent(settings, 'AppearanceSection');
+const CategoriesScreen = lazyRouteComponent(settings, 'CategoriesScreen');
+const CategoryEditSheet = lazyRouteComponent(settings, 'CategoryEditSheet');
+const ConnectionsScreen = lazyRouteComponent(settings, 'ConnectionsScreen');
+const DataScreen = lazyRouteComponent(settings, 'DataScreen');
+const PayeesScreen = lazyRouteComponent(settings, 'PayeesScreen');
+const RenamePayeeSheet = lazyRouteComponent(settings, 'RenamePayeeSheet');
+const RuleEditScreen = lazyRouteComponent(settings, 'RuleEditScreen');
+const RulesScreen = lazyRouteComponent(settings, 'RulesScreen');
+const SettingsLayout = lazyRouteComponent(settings, 'SettingsLayout');
+const FirstSortScreen = lazyRouteComponent(setup, 'FirstSortScreen');
+const LinkBanksScreen = lazyRouteComponent(setup, 'LinkBanksScreen');
+const StartMonthScreen = lazyRouteComponent(setup, 'StartMonthScreen');
+const WelcomeScreen = lazyRouteComponent(setup, 'WelcomeScreen');
 
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
 
 function Root() {
   const session = useSession();
   const path = useRouterState({ select: (s) => s.location.pathname });
-  const s = session.data;
   const qc = useQueryClient();
+  // Offline start: useSession() stands in the last confirmed session when the server can't be reached.
+  const s = session.data;
 
   useEffect(() => {
     // The Worker refused a write because the daily limit was reached: refresh writeState and readOnlyUntil.
@@ -59,6 +68,8 @@ function Root() {
       // Only when the app was showing data; on the sign-in screen the session query already failed.
       // Drop everything in memory too, so nothing from the ended session is saved again.
       if (qc.getQueryData(qk.session)) qc.clear();
+      // Opened signed out with saved data on the device: drop it, but keep the session check that said so.
+      else qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'session' });
     };
     window.addEventListener('ledgerline:signedout', onSignedOut);
     return () => {
@@ -418,5 +429,6 @@ export function makeRouter(history?: RouterHistory) {
     history,
     defaultPreload: false,
     defaultNotFoundComponent: () => <Navigate to="/budget" replace />,
+    defaultPendingComponent: Loading,
   });
 }

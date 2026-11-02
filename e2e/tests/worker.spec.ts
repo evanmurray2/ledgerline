@@ -46,6 +46,27 @@ test('The app is served with its security headers, and nothing on Budget breaks 
   expect(violations).toEqual([]);
 });
 
+test('Opens with no signal: the saved screens show, with changes turned off', async ({ page, context }) => {
+  await page.goto('/budget');
+  await expect(rta(page)).toHaveText('$981.90');
+  // The app's files are kept by its service worker, and the screen is saved on the device (at most every 2 s).
+  await page.waitForFunction(async () => !!(await navigator.serviceWorker.ready).active);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => window.localStorage.getItem('ledgerline-saved-data')?.includes('[\\"budget\\",')),
+      {
+        timeout: 5000,
+      },
+    )
+    .toBe(true);
+  await context.setOffline(true);
+  await page.reload();
+  await expect(rta(page)).toHaveText('$981.90');
+  await expect(page.getByText(/offline/i).first()).toBeVisible();
+  await context.setOffline(false);
+});
+
 test('Needs attention fixes reach $643.65 through the API', async ({ page }) => {
   await page.goto('/budget?view=attention');
   await expect(rta(page)).toHaveText('$981.90');
@@ -96,7 +117,14 @@ test('Saved screens check for changes when the app opens again', async ({ page }
   await expect(chip).toHaveText(/Needs attention [1-9]/);
   const before = Number((await chip.textContent())!.match(/\d+/)![0]);
   // Let this screen be saved on the device (at most every 2 s)…
-  await page.waitForTimeout(2500);
+  await expect
+    .poll(
+      () => page.evaluate(() => window.localStorage.getItem('ledgerline-saved-data')?.includes('"activity"')),
+      {
+        timeout: 5000,
+      },
+    )
+    .toBe(true);
   await page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ }).click();
   await page
     .getByRole('dialog', { name: 'Choose a category' })

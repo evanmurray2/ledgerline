@@ -111,35 +111,53 @@ export class BudgetStore extends DurableObject<Env> {
    */
   async restoreDump(lines: string): Promise<{ ok: true; rows: number } | { ok: false; reason: string }> {
     const db = this.adapter();
-    let rows = 0;
+    // Each piece is checked in full, then written in one transaction: a piece that fails anywhere adds nothing,
+    // so the same piece can simply be sent again.
+    const rows: { t: string; r: Record<string, unknown> }[] = [];
+    let header = false;
+    let footer: unknown = undefined;
     for (const line of lines.split('\n')) {
       if (!line.trim()) continue;
-      const o = JSON.parse(line) as {
-        format?: string;
-        t?: string;
-        r?: Record<string, unknown>;
-        end?: boolean;
-        tables?: unknown;
-      };
+      let o: { format?: string; t?: string; r?: Record<string, unknown>; end?: boolean; tables?: unknown };
+      try {
+        o = JSON.parse(line) as typeof o;
+      } catch {
+        return { ok: false, reason: 'unreadable line' };
+      }
       if (o.format) {
         if (o.format !== 'ledgerline-dump') return { ok: false, reason: 'not a Ledgerline backup' };
-        const has = this.ctx.storage.sql.exec(`SELECT count(*) AS n FROM budget`).one().n;
-        if (Number(has) > 0) return { ok: false, reason: 'refused: this database already holds a budget' };
-        this.ctx.storage.sql.exec(`DELETE FROM apply_counter`);
+        header = true;
         continue;
       }
       if (o.end) {
-        await this.ctx.storage.put('restore_footer', o.tables);
+        footer = o.tables;
         continue;
       }
       if (!o.t || !o.r || !(BUDGET_TABLES as readonly string[]).includes(o.t))
         return { ok: false, reason: `unknown line` };
-      const meta = await tableMeta(db, o.t);
-      await db.batch(insertStatements(db, o.t, meta, [o.r]));
-      rows++;
+      rows.push({ t: o.t, r: o.r });
     }
+    if (header) {
+      const has = this.ctx.storage.sql.exec(`SELECT count(*) AS n FROM budget`).one().n;
+      if (Number(has) > 0) return { ok: false, reason: 'refused: this database already holds a budget' };
+    }
+    const metas = new Map<string, Awaited<ReturnType<typeof tableMeta>>>();
+    for (const { t } of rows) if (!metas.has(t)) metas.set(t, await tableMeta(db, t));
+    const stmts = [
+      ...(header ? [db.prepare(`DELETE FROM apply_counter`)] : []),
+      ...rows.flatMap(({ t, r }) => insertStatements(db, t, metas.get(t)!, [r])),
+    ];
+    try {
+      await db.batch(stmts);
+    } catch (e) {
+      return {
+        ok: false,
+        reason: `nothing from this piece was written: ${e instanceof Error ? e.message : e}`,
+      };
+    }
+    if (footer !== undefined) await this.ctx.storage.put('restore_footer', footer);
     this.cachedBudgetId = null;
-    return { ok: true, rows };
+    return { ok: true, rows: rows.length };
   }
 
   /** Recomputes every table's row count and fingerprint and compares them with the backup's footer. */

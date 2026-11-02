@@ -26,6 +26,12 @@ async function start() {
     </StrictMode>,
   );
   setReadOnlyHandler(() => window.dispatchEvent(new Event('ledgerline:readonly')));
+  // Offline start (public/sw.js): the production app only, never the mock or local dev.
+  if (import.meta.env.PROD && import.meta.env.VITE_MOCK !== '1' && 'serviceWorker' in navigator)
+    window.addEventListener(
+      'load',
+      () => void navigator.serviceWorker.register('/sw.js').catch(() => undefined),
+    );
 }
 
 void start();
