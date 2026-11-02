@@ -216,8 +216,8 @@ export class BudgetStore extends DurableObject<Env> {
       provider: () => makeProvider(env),
       token: (id) => connectionToken(env, id),
       pageSize: pageSize(env),
-      // Account usage still lives in D1 until the Directory takes it over (docs/multi-user.md 5.6, phase 3).
-      budgetState: async () => ((await writeBudgetState(this.env)) === 'normal' ? 'normal' : 'pause'),
+      // Account usage: from the Directory once it exists here (env.USAGE), else D1's usage_day (sync/breaker.ts).
+      budgetState: async () => ((await writeBudgetState(env)) === 'normal' ? 'normal' : 'pause'),
       enqueue: this.enqueue,
     };
   }

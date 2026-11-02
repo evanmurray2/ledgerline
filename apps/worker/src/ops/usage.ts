@@ -1,4 +1,7 @@
-// Account-wide D1 usage for the write circuit breaker, from Cloudflare's GraphQL Analytics API (read-only token).
+// Account-wide database usage for the write circuit breaker, from Cloudflare's GraphQL Analytics API (read-only
+// token): D1 rows plus Durable Object SQLite rows. They're added together because whether the Free plan pools the
+// two daily limits isn't known (docs/measurements.md, phase 0); counting both pauses background work early rather
+// than late.
 import type { Env } from '../env.js';
 import { utcDay } from '../sync/breaker.js';
 
@@ -14,7 +17,8 @@ export async function refreshUsage(
     .first<{ refreshed_at: number }>();
   if (!force && cur && now - cur.refreshed_at < 10 * 60_000) return null;
   const query = `query ($accountTag: string!, $date: Date!) { viewer { accounts(filter: { accountTag: $accountTag }) {
-    d1AnalyticsAdaptiveGroups(limit: 10000, filter: { date: $date }) { sum { rowsRead rowsWritten } } } } }`;
+    d1AnalyticsAdaptiveGroups(limit: 10000, filter: { date: $date }) { sum { rowsRead rowsWritten } }
+    durableObjectsPeriodicGroups(limit: 10000, filter: { date: $date }) { sum { rowsRead rowsWritten } } } } }`;
   const res = await fetch('https://api.cloudflare.com/client/v4/graphql', {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${env.CF_ANALYTICS_TOKEN}` },
@@ -24,11 +28,15 @@ export async function refreshUsage(
   const j = (await res.json()) as {
     data?: {
       viewer?: {
-        accounts?: { d1AnalyticsAdaptiveGroups?: { sum: { rowsRead: number; rowsWritten: number } }[] }[];
+        accounts?: {
+          d1AnalyticsAdaptiveGroups?: { sum: { rowsRead: number; rowsWritten: number } }[];
+          durableObjectsPeriodicGroups?: { sum: { rowsRead: number; rowsWritten: number } }[];
+        }[];
       };
     };
   };
-  const groups = j.data?.viewer?.accounts?.[0]?.d1AnalyticsAdaptiveGroups ?? [];
+  const acct = j.data?.viewer?.accounts?.[0];
+  const groups = [...(acct?.d1AnalyticsAdaptiveGroups ?? []), ...(acct?.durableObjectsPeriodicGroups ?? [])];
   const rowsRead = groups.reduce((a, g) => a + g.sum.rowsRead, 0);
   const rowsWritten = groups.reduce((a, g) => a + g.sum.rowsWritten, 0);
   // The analytics figure replaces this app's own estimates since the last refresh.
