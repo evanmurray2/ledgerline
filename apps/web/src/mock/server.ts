@@ -15,6 +15,7 @@ import {
   NoteRequest,
   OwedAction,
   PendingCheckAction,
+  RenameAccount,
   RenamePayee,
   SetAssignedRequest,
   SettingsPatch,
@@ -331,6 +332,10 @@ export class MockServer {
       }
       case 'GET accounts':
         return db.accounts();
+      case 'POST accounts/:x/name': {
+        db.accountNames.set(b!, parse(RenameAccount, body).name);
+        return this.ok();
+      }
       case 'GET accounts/:x/register': {
         const show = q.get('show');
         return db.register(b!, show === 'pending' || show === 'needs' || show === 'transfers' ? show : 'all');

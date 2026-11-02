@@ -1,5 +1,5 @@
 // Settings → Categories: rename, reorder and remove categories and groups, on the seeded November budget.
-import { SELF } from 'cloudflare:test';
+import { SELF, env } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { BudgetView, CategoriesView } from '@ledgerline/contracts';
 
@@ -94,5 +94,21 @@ describe('categories and groups', () => {
   it('card payment categories can’t be removed', async () => {
     const card = (await cats()).groups.find((g) => g.system)!.categories[0]!;
     expect((await call('POST', `/api/settings/categories/${card.id}/remove`)).status).toBe(422);
+  });
+});
+
+describe('accounts', () => {
+  it('rename; a card’s payment category follows', async () => {
+    expect((await call('POST', '/api/accounts/sapphire/name', { name: '  Travel card ' })).status).toBe(200);
+    const a = await env.DB.prepare(`SELECT name FROM account WHERE id = 'sapphire'`).first<{
+      name: string;
+    }>();
+    expect(a!.name).toBe('Travel card');
+    const c = await env.DB.prepare(
+      `SELECT name FROM category WHERE card_account_id = 'sapphire' AND kind = 'cc_payment'`,
+    ).first<{ name: string }>();
+    expect(c!.name).toBe('Travel card');
+    expect((await call('POST', '/api/accounts/sapphire/name', { name: '   ' })).status).toBe(400);
+    expect((await call('POST', '/api/accounts/nope/name', { name: 'X' })).status).toBe(404);
   });
 });

@@ -42,6 +42,7 @@ import type {
   TxnPatch,
   ImportCsvRequest,
   MergePayees,
+  RenameAccount,
   RenamePayee,
   SetupStart,
 } from '@ledgerline/contracts';
@@ -148,6 +149,8 @@ export const api = {
 
   payees: () => get('/api/settings/payees', PayeesView),
   mergePayees: (body: In<typeof MergePayees>) => post('/api/settings/payees/merge', Ok, body),
+  renameAccount: (id: string, body: In<typeof RenameAccount>) =>
+    post(`/api/accounts/${enc(id)}/name`, Ok, body),
   renamePayee: (id: string, body: In<typeof RenamePayee>) =>
     post(`/api/settings/payees/${enc(id)}`, Ok, body),
 

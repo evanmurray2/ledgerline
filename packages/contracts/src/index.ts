@@ -564,6 +564,7 @@ export const PayeesView = z.object({
 });
 export type PayeesView = z.infer<typeof PayeesView>;
 export const MergePayees = z.object({ ids: z.array(id).min(2), name: z.string().min(1).max(120) });
+export const RenameAccount = z.object({ name: z.string().trim().min(1).max(60) });
 export const RenamePayee = z.object({ name: z.string().min(1).max(120), remember: z.boolean().optional() });
 
 export const ConnectionsView = z.object({

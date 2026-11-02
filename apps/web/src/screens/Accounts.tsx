@@ -14,7 +14,9 @@ import {
   Chip,
   cx,
   ErrorNote,
+  Field,
   Icon,
+  inputClass,
   Loading,
   PrimaryButton,
   useIsDesktop,
@@ -273,6 +275,8 @@ export function RegisterScreen() {
   const card = budget.data?.cards.find((c) => c.accountId === accountId);
   const today = session.data?.budget.today ?? '';
   const base = `/accounts/${accountId}`;
+  const [renaming, setRenaming] = useState(false);
+  const canWrite = useCanWrite();
   const chips: [Show, string][] = [['all', 'All']];
   if (counts.pending) chips.push(['pending', `Pending ${counts.pending}`]);
   if (a?.kind === 'credit' && counts.needs) chips.push(['needs', `Needs category ${counts.needs}`]);
@@ -287,7 +291,20 @@ export function RegisterScreen() {
         sub={sub}
         onBack={() => void navigate({ to: '/accounts' })}
         backLabel="Back to accounts"
+        right={
+          a && canWrite ? (
+            <button
+              type="button"
+              data-track="account.rename"
+              onClick={() => setRenaming(true)}
+              className="hit h-9 shrink-0 rounded-full border border-line-strong px-3 text-[13px] font-bold text-ink-2"
+            >
+              Rename
+            </button>
+          ) : undefined
+        }
       />
+      {renaming && a && <RenameAccountSheet id={a.id} name={a.name} close={() => setRenaming(false)} />}
       <div
         className={cx('flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-3', desktop ? 'px-6' : 'px-4')}
       >
@@ -534,6 +551,64 @@ export function RepairScreen() {
           {error ? <ErrorNote error={error} /> : null}
         </>
       )}
+    </Sheet>
+  );
+}
+
+function RenameAccountSheet({ id, name, close }: { id: string; name: string; close: () => void }) {
+  const qc = useQueryClient();
+  const [value, setValue] = useState(name);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const next = value.trim();
+  const save = async () => {
+    if (!next || next === name) return close();
+    setBusy(true);
+    try {
+      await api.renameAccount(id, { name: next });
+      // The name shows on many screens (accounts, activity, budget card rows, settings).
+      await qc.invalidateQueries();
+      close();
+    } catch (e) {
+      setError(e);
+      setBusy(false);
+    }
+  };
+  return (
+    <Sheet
+      label="Rename account"
+      track="account.rename"
+      onClose={close}
+      gap="small"
+      closeLabel="Cancel"
+      header={<h1 className="m-0 text-[20px] font-bold">Rename account</h1>}
+      footer={
+        <div className="flex flex-col gap-2">
+          {error !== null && <ErrorNote error={error} />}
+          <PrimaryButton
+            mutates
+            track="account.rename.save"
+            disabled={!next || busy}
+            onClick={() => void save()}
+          >
+            Save
+          </PrimaryButton>
+        </div>
+      }
+    >
+      <Field label="Name">
+        <input
+          className={inputClass}
+          value={value}
+          maxLength={60}
+          autoFocus
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && void save()}
+        />
+      </Field>
+      <p className="m-0 text-[13px] leading-snug text-muted">
+        Only the name in Ledgerline changes. For a card, its payment category is renamed too.
+      </p>
     </Sheet>
   );
 }

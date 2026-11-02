@@ -1,7 +1,13 @@
 // Accounts (net worth, cash and cards, registers, repair and sync problems) and Reports.
 import { clock } from '../http/clock.js';
 import { Hono } from 'hono';
-import type { AccountRow, AccountsView, RegisterView, ReportsView } from '@ledgerline/contracts';
+import {
+  RenameAccount,
+  type AccountRow,
+  type AccountsView,
+  type RegisterView,
+  type ReportsView,
+} from '@ledgerline/contracts';
 import {
   type Month,
   addMonths,
@@ -13,7 +19,7 @@ import {
   statementCovered,
 } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
-import { HttpError, scoped, startRecompute } from './api.js';
+import { HttpError, parse, scoped, startRecompute } from './api.js';
 import { cards as loadCards, fresh, monthResult, shortDate, structure } from '../views/common.js';
 import { listRow } from '../views/rows.js';
 import { RECENT_TX, TX_COLUMNS, type TxRow } from '../ledger/ledger.js';
@@ -221,6 +227,27 @@ accountRoutes.get('/accounts', async (c) => {
     alerts,
   };
   return c.json(view);
+});
+
+/** Rename an account. A card's payment category follows the new name. Syncs never change a name. */
+accountRoutes.post('/accounts/:id/name', async (c) => {
+  const r = await parse(RenameAccount, c.req.raw);
+  const s = scoped(c);
+  const now = clock(c.env);
+  const id = c.req.param('id');
+  const a = await s.first<{ name: string }>(`SELECT name FROM account WHERE budget_id = ?1 AND id = ?2`, id);
+  if (!a) throw new HttpError(404, 'not_found', 'account');
+  await s.batch([
+    s.q(`UPDATE account SET name = ?3, updated_at = ?4 WHERE budget_id = ?1 AND id = ?2`, id, r.name, now),
+    s.q(
+      `UPDATE category SET name = ?3, updated_at = ?4 WHERE budget_id = ?1 AND card_account_id = ?2 AND kind = 'cc_payment'`,
+      id,
+      r.name,
+      now,
+    ),
+    s.audit('account.rename', 'account', id, { name: a.name }, r, now),
+  ]);
+  return c.json({ ok: true as const });
 });
 
 accountRoutes.get('/accounts/:id/register', async (c) => {

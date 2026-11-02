@@ -142,3 +142,14 @@ test('Pending: money you add goes to Ready to Assign, and a bank pending charge 
   expect(after.estimatedAmount).toBe(-12_345);
   expect(after.amount).toBe(-12_345);
 });
+
+test('Accounts: rename an account', async ({ page }) => {
+  await page.goto('/accounts/sapphire');
+  await page.getByRole('button', { name: 'Rename', exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: 'Rename account' });
+  await sheet.getByLabel('Name').fill('Travel card');
+  await sheet.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('heading', { name: 'Travel card' })).toBeVisible();
+  await page.goto('/accounts');
+  await expect(page.getByText('Travel card').first()).toBeVisible();
+});

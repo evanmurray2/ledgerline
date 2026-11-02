@@ -1322,6 +1322,9 @@ export class MockDb {
     };
   }
 
+  /** Names you gave accounts (Rename on the register). */
+  accountNames = new Map<string, string>();
+
   private accountRow(id: string): AccountRow {
     const a = ACCOUNTS[id]!;
     const ally = id === 'ally' && !this.allyRepaired;
@@ -1329,7 +1332,7 @@ export class MockDb {
     const synced = ally ? SYNC_ALLY : chaseFail ? Date.UTC(2026, 10, 14, 14, 10) : SYNC_TODAY;
     const base = {
       id,
-      name: a.name,
+      name: this.accountNames.get(id) ?? a.name,
       kind: a.kind,
       institution: a.inst,
       mask: a.mask,
