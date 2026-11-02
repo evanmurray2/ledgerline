@@ -5,8 +5,10 @@ import { createExecutionContext, env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import worker from '../src/index.js';
 import type { BudgetStore } from '../src/store/budget-store.js';
+import { ownerDb } from './store-db.js';
 
-const e = env as unknown as { DB: D1Database; BUDGET: DurableObjectNamespace<BudgetStore> };
+const e = env as unknown as { BUDGET: DurableObjectNamespace<BudgetStore> };
+const db = ownerDb();
 const ORIGIN = 'https://ledgerline.test';
 const call = async (method: string, path: string) => {
   const r = await worker.fetch(
@@ -49,7 +51,7 @@ describe('full backup', () => {
     expect(footer.end).toBe(true);
     for (const t of ['bank_txn', 'category', 'assignment', 'budget_line', 'month_snapshot'])
       expect(footer.tables[t]!.count, t).toBe(
-        Number(await e.DB.prepare(`SELECT count(*) AS n FROM ${t}`).first('n')),
+        Number(await db.prepare(`SELECT count(*) AS n FROM ${t}`).first('n')),
       );
     const fresh = e.BUDGET.get(e.BUDGET.idFromName('restore-ok'));
     expect(await fresh.restoreDump(text)).toMatchObject({ ok: true });

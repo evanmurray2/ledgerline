@@ -1,8 +1,10 @@
 // The Durable Object adapter runs migrations statement by statement (docs/multi-user.md 5.5, 5.7). Every real
 // migration must split into statements that each parse, with trigger bodies kept whole.
-import { env } from 'cloudflare:test';
+import { runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { splitStatements } from '../src/store/adapter.js';
+import { BUDGET_MIGRATIONS, DIRECTORY_MIGRATIONS } from '../src/store/migrations.gen.js';
+import { budgetStub } from './store-db.js';
 
 describe('splitStatements', () => {
   it('keeps trigger bodies, quotes and comments intact', () => {
@@ -18,15 +20,30 @@ describe('splitStatements', () => {
     expect(parts[2]).toContain("'it''s; fine'");
   });
 
-  it('splits every real migration into statements D1 accepts one by one', async () => {
-    const migs = (env as unknown as { TEST_MIGRATIONS: { name: string; queries: string[] }[] })
-      .TEST_MIGRATIONS;
-    expect(migs.length).toBeGreaterThan(0);
-    for (const m of migs) {
-      const sql = m.queries.join(';\n');
-      const parts = splitStatements(sql);
-      expect(parts.length, m.name).toBeGreaterThanOrEqual(m.queries.length);
-      for (const p of parts) expect(p.trim().endsWith(';'), `${m.name}: ${p.slice(0, 60)}`).toBe(false);
+  it('splits every store migration into statements that each run on their own', async () => {
+    for (const [kind, migs] of [
+      ['budget', BUDGET_MIGRATIONS],
+      ['directory', DIRECTORY_MIGRATIONS],
+    ] as const) {
+      expect(migs.length).toBeGreaterThan(0);
+      // A fresh object whose own start-up migrations are undone first, so each statement runs exactly once here.
+      const stub = budgetStub(`split-${kind}`);
+      await runInDurableObject(stub, async (_o, st) => {
+        const names = st.storage.sql
+          .exec(
+            `SELECT name, type FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND name NOT LIKE '\\_%' ESCAPE '\\'`,
+          )
+          .toArray();
+        for (const v of names.filter((n) => n.type === 'view'))
+          st.storage.sql.exec(`DROP VIEW "${String(v.name)}"`);
+        for (const t of names.filter((n) => n.type === 'table'))
+          st.storage.sql.exec(`DROP TABLE IF EXISTS "${String(t.name)}"`);
+        for (const m of migs)
+          for (const part of splitStatements(m.sql)) {
+            expect(part.trim().endsWith(';'), `${m.name}: ${part.slice(0, 60)}`).toBe(false);
+            st.storage.sql.exec(part);
+          }
+      });
     }
   });
 });

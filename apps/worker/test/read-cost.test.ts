@@ -1,78 +1,39 @@
-// D1 rows read per request. The free plan allows 5 million reads a day and every screen visit costs reads, so this
-// test fails if a request grows past its budget. The data is shaped like a real first month: the November budget
+// Rows read per request in the budget's Durable Object. The free plan allows 5 million rows read a day and every
+// screen visit costs reads, so this test fails if a request grows past its budget. The data is shaped like a real first month: the November budget
 // plus about 600 transactions of history before it, and two months of daily card statement snapshots.
-import { createExecutionContext, env } from 'cloudflare:test';
+import { createExecutionContext, env, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import worker from '../src/index.js';
+import type { SqlD1 } from '../src/store/adapter.js';
+import { budgetStub, directoryStub, ownerDb } from './store-db.js';
 
-let reads = 0;
-const bySql = new Map<string, number>();
-const sqlOf = new WeakMap<object, string>();
+const db = ownerDb();
 
-function tally(r: unknown, sql: string | undefined) {
-  const n = (r as { meta?: { rows_read?: number } } | null)?.meta?.rows_read ?? 0;
-  reads += n;
-  const k = (sql ?? '?').replace(/\s+/g, ' ').slice(0, 160);
-  bySql.set(k, (bySql.get(k) ?? 0) + n);
-  return r;
-}
-
-function wrap(st: D1PreparedStatement, sql: string): D1PreparedStatement {
-  const proxy: D1PreparedStatement = new Proxy(st, {
-    get(t, k) {
-      if (k === '__raw') return t;
-      const v = Reflect.get(t, k) as unknown;
-      if (k === 'bind')
-        return (...a: unknown[]) => wrap((v as (...x: unknown[]) => D1PreparedStatement).apply(t, a), sql);
-      if (k === 'all' || k === 'run')
-        return async () => tally(await (v as () => Promise<unknown>).apply(t), sql);
-      if (k === 'first')
-        return async () => {
-          const r = await t.all();
-          tally(r, sql);
-          return (r.results[0] ?? null) as never;
-        };
-      return typeof v === 'function' ? (v as (...x: unknown[]) => unknown).bind(t) : v;
-    },
-  });
-  sqlOf.set(proxy, sql);
-  return proxy;
-}
-
-const db = new Proxy(env.DB, {
-  get(t, k) {
-    const v = Reflect.get(t, k) as unknown;
-    if (k === 'prepare') return (sql: string) => wrap(t.prepare(sql), sql);
-    if (k === 'batch')
-      return async (stmts: D1PreparedStatement[]) => {
-        const r = await t.batch(
-          stmts.map((x) => (x as unknown as { __raw?: D1PreparedStatement }).__raw ?? x),
-        );
-        r.forEach((x, i) => tally(x, sqlOf.get(stmts[i]!)));
-        return r;
-      };
-    return typeof v === 'function' ? (v as (...x: unknown[]) => unknown).bind(t) : v;
-  },
-});
+/** Rows the budget's store has read so far: its SqlD1 counts every statement (store/adapter.ts). */
+const storeReads = async () => {
+  const id = await directoryStub().firstBudget();
+  if (!id) return 0;
+  return runInDurableObject(budgetStub(id), async (o) => (o as unknown as { db: SqlD1 }).db.stats.rowsRead);
+};
 
 const call = async (p: string, method = 'GET', body: unknown = {}) => {
-  reads = 0;
+  const before = await storeReads();
   const r = await worker.fetch(
     new Request('https://ledgerline.test' + p, {
       method,
       headers: method === 'GET' ? {} : { 'content-type': 'application/json', 'x-ledgerline': '1' },
       body: method === 'GET' ? undefined : JSON.stringify(body),
     }),
-    { ...env, DB: db } as never,
+    env as never,
     createExecutionContext(),
   );
   await r.text();
-  return { p, status: r.status, reads };
+  return { p, status: r.status, reads: (await storeReads()) - before };
 };
 
 /** Copies of the seeded bank rows, dated 1–10 periods of 18 days before the budget start: history. */
 async function addHistory() {
-  const cols = (await env.DB.prepare(`PRAGMA table_info(bank_txn)`).all<{ name: string }>()).results.map(
+  const cols = (await db.prepare(`PRAGMA table_info(bank_txn)`).all<{ name: string }>()).results.map(
     (c) => c.name,
   );
   for (let i = 1; i <= 10; i++) {
@@ -89,22 +50,28 @@ async function addHistory() {
                 : c,
       )
       .join(', ');
-    await env.DB.prepare(
-      `INSERT INTO bank_txn (${cols.join(', ')}) SELECT ${sel} FROM bank_txn WHERE txn_key NOT LIKE '%-h%'`,
-    ).run();
-    await env.DB.prepare(
-      `INSERT INTO txn_overlay (txn_key, budget_id, payee_id, category_id, created_at, updated_at)
+    await db
+      .prepare(
+        `INSERT INTO bank_txn (${cols.join(', ')}) SELECT ${sel} FROM bank_txn WHERE txn_key NOT LIKE '%-h%'`,
+      )
+      .run();
+    await db
+      .prepare(
+        `INSERT INTO txn_overlay (txn_key, budget_id, payee_id, category_id, created_at, updated_at)
        SELECT txn_key || '-h${i}', budget_id, payee_id, NULL, created_at, updated_at FROM txn_overlay
        WHERE txn_key NOT LIKE '%-h%' AND txn_key IN (SELECT txn_key FROM bank_txn)`,
-    ).run();
+      )
+      .run();
   }
   // Two months of daily statement snapshots per card (one sync a day kept).
   for (let d = 1; d <= 60; d++)
-    await env.DB.prepare(
-      `INSERT INTO liability_snapshot (id, budget_id, provider_account_id, as_of, statement_balance, due_date, data, created_at)
+    await db
+      .prepare(
+        `INSERT INTO liability_snapshot (id, budget_id, provider_account_id, as_of, statement_balance, due_date, data, created_at)
        SELECT 'ls-' || provider_account_id || '-${d}', budget_id, provider_account_id, date('2026-11-14', '-${d} days'), 10000, '2026-12-01', '{}', ${d}
        FROM account WHERE kind = 'credit' AND provider_account_id IS NOT NULL`,
-    ).run();
+      )
+      .run();
 }
 
 const SCREENS = [
@@ -123,17 +90,19 @@ describe('database reads per request', () => {
   it('stay within budget with six months of history', async () => {
     await call('/__dev/seed-november', 'POST');
     await addHistory();
-    const n = await env.DB.prepare(`SELECT count(*) AS b FROM bank_txn`).first<{ b: number }>();
+    const n = await db.prepare(`SELECT count(*) AS b FROM bank_txn`).first<{ b: number }>();
     expect(n!.b).toBeGreaterThan(550);
 
     const out = [];
     for (const p of SCREENS) out.push(await call(p));
-    const t = await env.DB.prepare(
-      `SELECT key FROM v_transaction WHERE category_id IS NULL AND date >= budget_from AND status = 'posted' LIMIT 1`,
-    ).first<{ key: string }>();
-    const cat = await env.DB.prepare(
-      `SELECT id, name, group_id FROM category WHERE kind = 'spending' LIMIT 1`,
-    ).first<{ id: string; name: string; group_id: string }>();
+    const t = await db
+      .prepare(
+        `SELECT key FROM v_transaction WHERE category_id IS NULL AND date >= budget_from AND status = 'posted' LIMIT 1`,
+      )
+      .first<{ key: string }>();
+    const cat = await db
+      .prepare(`SELECT id, name, group_id FROM category WHERE kind = 'spending' LIMIT 1`)
+      .first<{ id: string; name: string; group_id: string }>();
     // Accounts and Reports again: finished months' totals are stored now (ledger/totals.ts).
     out.push({ ...(await call('/api/accounts')), p: 'accounts again' });
     out.push({ ...(await call('/api/reports?month=2026-11')), p: 'reports again' });
@@ -149,9 +118,9 @@ describe('database reads per request', () => {
 
     // The Activity list reads in date windows; paging through it still returns every posted row once, in order.
     const all = (
-      await env.DB.prepare(
-        `SELECT key FROM v_transaction WHERE status = 'posted' ORDER BY date DESC, seq DESC`,
-      ).all<{ key: string }>()
+      await db
+        .prepare(`SELECT key FROM v_transaction WHERE status = 'posted' ORDER BY date DESC, seq DESC`)
+        .all<{ key: string }>()
     ).results.map((r) => r.key);
     const seen: string[] = [];
     let cursor: string | null = null;
@@ -170,8 +139,7 @@ describe('database reads per request', () => {
     }
     expect(seen).toEqual(all);
 
-    const report = () =>
-      JSON.stringify({ reads, top: [...bySql].sort((a, b) => b[1] - a[1]).slice(0, 12) }, null, 1);
+    const report = () => JSON.stringify(reads, null, 1);
     // Every screen.
     expect(reads['/api/badges'], report()).toBeLessThan(800);
     expect(reads['/api/session'], report()).toBeLessThan(100);

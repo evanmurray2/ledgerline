@@ -2,16 +2,31 @@
 // the real Worker with a software passkey.
 import { createExecutionContext, env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
-import worker from '../src/index.js';
-import { Scoped } from '../src/db/scoped.js';
-import { SoftAuthenticator } from './soft-authenticator.js';
+import worker from '../../src/index.js';
+import { Scoped } from '../../src/db/scoped.js';
+import { SoftAuthenticator } from '../soft-authenticator.js';
+import { directoryDb, directoryStub, storeDb } from '../store-db.js';
 
 const ORIGIN = 'https://ledgerline.test';
 const SETUP = 's'.repeat(40);
 const OPS = 'o'.repeat(40);
-let now = Date.parse('2026-11-14T20:00:00Z');
+const now = Date.parse('2026-11-14T20:00:00Z');
+const dir = directoryDb();
 
-/** The Worker's env as production would have it: no dev sign-in. */
+/**
+ * Time passing for sign-in: the Directory keeps its own clock (FAKE_NOW in vitest.objects.config.ts), so the
+ * sessions and their last passkey check are moved back instead.
+ */
+async function later(ms: number): Promise<void> {
+  await dir
+    .prepare(
+      `UPDATE auth_session SET created_at = created_at - ?1, verified_at = verified_at - ?1, expires_at = expires_at - ?1`,
+    )
+    .bind(ms)
+    .run();
+}
+
+/** The Worker's env as production would have it: no dev sign-in (the objects' own bindings say the same). */
 const prodEnv = () =>
   ({
     ...env,
@@ -107,9 +122,9 @@ describe('passkey sign-in', () => {
   it('starting a sign-in writes nothing (the challenge is a signed cookie)', async () => {
     const count = async () =>
       Number(
-        await env.DB.prepare(
-          `SELECT (SELECT count(*) FROM auth_challenge) + (SELECT count(*) FROM auth_session) AS n`,
-        ).first('n'),
+        await dir
+          .prepare(`SELECT (SELECT count(*) FROM auth_challenge) + (SELECT count(*) FROM auth_session) AS n`)
+          .first('n'),
       );
     const before = await count();
     for (let i = 0; i < 5; i++) await new Browser().call('POST', '/api/auth/login/options');
@@ -146,7 +161,7 @@ describe('passkey sign-in', () => {
   });
 
   it('linking a bank and exports need a passkey check within 15 minutes', async () => {
-    now += 16 * 60 * 1000;
+    await later(16 * 60 * 1000);
     const r = await b.call('POST', '/api/settings/connections/link-token', {});
     expect(r).toMatchObject({ status: 401, json: { error: 'reauth' } });
     expect((await b.call('GET', '/api/export/json')).json).toMatchObject({ error: 'reauth' });
@@ -173,7 +188,7 @@ describe('passkey sign-in', () => {
   });
 
   it('a session ends after 24 hours', async () => {
-    now += 24 * 60 * 60 * 1000;
+    await later(24 * 60 * 60 * 1000);
     expect((await b.call('GET', '/api/session')).status).toBe(401);
     expect((await b.signIn(phone)).status).toBe(200);
   });
@@ -189,10 +204,11 @@ describe('passkey sign-in', () => {
     expect((await ops.call('GET', '/api/health', undefined, bearer)).status).toBe(200);
     expect((await ops.call('POST', '/api/ops/backup-done', {}, bearer)).status).toBe(403);
     // Only the monitor's own checks count for the "Monitoring stopped" alert.
+    const owner = storeDb(String(await directoryStub().firstBudget()));
     const checks = () =>
-      env.DB.prepare(`SELECT count(*) AS n FROM health_status WHERE key = 'last_monitor_check_at'`).first<{
-        n: number;
-      }>();
+      owner
+        .prepare(`SELECT count(*) AS n FROM health_status WHERE key = 'last_monitor_check_at'`)
+        .first<{ n: number }>();
     expect((await checks())!.n).toBe(0);
     await ops.call('GET', '/api/health', undefined, { ...bearer, 'x-ledgerline-monitor': '1' });
     expect((await checks())!.n).toBe(1);
@@ -205,7 +221,7 @@ describe('passkey sign-in', () => {
 
 describe('signing out', () => {
   it('needs no fresh passkey check, and ends the session', async () => {
-    now += 60 * 60 * 1000;
+    await later(60 * 60 * 1000);
     expect((await b.call('GET', '/api/session')).status).toBe(200);
     expect((await b.call('POST', '/api/settings/security/sign-out')).status).toBe(200);
     expect((await b.call('GET', '/api/session')).status).toBe(401);
@@ -214,7 +230,7 @@ describe('signing out', () => {
 
 describe('budget-scoped data access', () => {
   it('refuses a query that does not bind the budget id as ?1', () => {
-    const s = new Scoped(env.DB, 'b1', 'u1');
+    const s = new Scoped(dir, 'b1', 'u1');
     expect(() => s.q(`SELECT * FROM category`)).toThrow(/budget id/);
     expect(() => s.q(`SELECT * FROM category WHERE budget_id = ?1`)).not.toThrow();
   });

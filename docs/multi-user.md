@@ -520,7 +520,7 @@ The results go in `docs/measurements.md`. If anything misses its gate, the work 
   - the no-loss rule and the full dump.
 - Updates to `design.md`, `sync-spec.md`, `threat-model.md` (including the 30-second read window), `build-plan.md`, `runbooks/setup.md` and `CLAUDE.md`.
 
-**Cleanup after the move (with phase 5).** The move is one-time code. Once the owner's data has moved, been checked, and the owner says D1 can go, these are deleted:
+**Cleanup after the move (with phase 5; done Nov 2, 2026, D-37 and D-38, except deleting the D1 database itself).** The move is one-time code. Once the owner's data has moved, been checked, and the owner says D1 can go, these are deleted:
 
 - the move and the way back: `store/move.ts`, `store/move-jobs.ts`, `store/frozen.ts`, `resetForMove`/`startMoveOut`/`afterMove`/`restoreDump`-style move methods on both objects, `POST`/`GET /api/move` and `/api/move/back`, the Storage card, and their tests;
 - the frozen and restoring modes in `index.ts` and `router.ts` (`servingPhase`, the lease abort), and the "moving" write state and banner;

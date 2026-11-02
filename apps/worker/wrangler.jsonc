@@ -1,8 +1,8 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   // Production. All data lives in SQLite Durable Objects (docs/multi-user.md): a Directory and one store per
-  // budget. D1 and Workflows were removed on Nov 2, 2026 after the move. Local dev and tests use wrangler.local.jsonc,
-  // which adds a local D1 and Workflows for the older code paths still under test.
+  // budget. D1 and Workflows were removed on Nov 2, 2026 after the move (decisions.md D-37). Local dev, tests and e2e
+  // use this same config, with local settings from .dev.vars or --var.
   "name": "ledgerline",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-01",
@@ -20,7 +20,7 @@
   // Sign-in, setup, recovery and sign-up attempts per IP (docs/multi-user.md 7.2). Approximate, per location.
   "ratelimits": [{ "name": "AUTH_LIMITER", "namespace_id": "4101", "simple": { "limit": 20, "period": 60 } }],
   // 3 of the 5 free cron triggers: sync backstop, daily stale-pending scan, daily maintenance (10:20 UTC).
-  "triggers": { "crons": ["7 */4 * * *", "10 8 * * *", "20 10 * * *"] },
+  "triggers": { "crons": ["20 10 * * *"] },
   "assets": {
     "directory": "../web/dist",
     "binding": "ASSETS",

@@ -86,9 +86,9 @@ The setup code stops working once a passkey exists. For a non-Apple device, use 
 
 ```sh
 cp apps/worker/.dev.vars.example apps/worker/.dev.vars   # fill in Sandbox keys and a token key
-cd apps/worker && pnpm exec wrangler d1 migrations apply DB -c wrangler.local.jsonc --local
-pnpm dev   # wrangler dev -c wrangler.local.jsonc (an emulated D1 for local runs)
-# Load the prototype's November into the local database (DEV_ROUTES=1, FAKE_NOW=2026-11-14T20:00:00Z in .dev.vars):
+cd apps/worker && pnpm dev   # wrangler dev: the same config as production; each Durable Object migrates itself
+# Load the prototype's November into your local budget (PLAID_ENV=sandbox, DEV_AUTH_EMAIL, DEV_ROUTES=1 and
+# FAKE_NOW=2026-11-14T20:00:00Z in .dev.vars):
 curl -X POST localhost:8787/__dev/seed-november -H 'content-type: application/json' -H 'x-ledgerline: 1' -d '{}'
 ```
 

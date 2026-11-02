@@ -6,29 +6,6 @@ import { DIRECTORY_NAME } from './directory.js';
 import { OPS_PATHS, secretMatches } from '../http/auth.js';
 import { makeProvider } from '../sync/provider.js';
 
-const CACHE_MS = 10_000;
-let cached: { phase: string; at: number } | null = null;
-
-/**
- * Whether the Durable Objects serve requests. Always in production, which has no D1 binding. Local dev and tests
- * have an emulated D1, and serve from it unless its move_state says 'moved'.
- */
-export async function objectsServe(env: Env, now = Date.now()): Promise<boolean> {
-  if (!env.DB) return true;
-  if (!cached || now - cached.at >= CACHE_MS) {
-    const r = await env.DB.prepare(`SELECT phase FROM move_state WHERE id = 1`)
-      .first<{ phase: string }>()
-      .catch(() => null);
-    cached = { phase: r?.phase ?? 'none', at: now };
-  }
-  return cached.phase === 'moved';
-}
-
-/** Tests only: forget the cached phase. */
-export function resetRoutingCache(): void {
-  cached = null;
-}
-
 const json = (body: unknown, status: number) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
@@ -76,4 +53,12 @@ export async function routeApi(req: Request, env: Env): Promise<Response> {
   const a = await dir.authenticate(req.headers.get('cookie'), req.method, path);
   if (!a.ok) return json(a.body, a.status);
   return store(a.caller.budgetId).api(req, a.caller);
+}
+
+/** Local development and e2e only (index.ts gates it): the dev user's /__dev routes, served in their store. */
+export async function routeDev(req: Request, env: Env): Promise<Response> {
+  const dir = env.DIRECTORY.get(env.DIRECTORY.idFromName(DIRECTORY_NAME));
+  const a = await dir.authenticate(req.headers.get('cookie'), req.method, new URL(req.url).pathname);
+  if (!a.ok) return json(a.body, a.status);
+  return env.BUDGET.get(env.BUDGET.idFromName(a.caller.budgetId)).dev(req, a.caller);
 }

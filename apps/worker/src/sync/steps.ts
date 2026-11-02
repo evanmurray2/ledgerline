@@ -1,5 +1,5 @@
-// Sync run lifecycle (Sync spec: Run lifecycle). Each exported function is the body of one Workflow step, so the
-// go/no-go harness can time exactly what a step does. Steps return small JSON (ids, cursors, counts), never pages.
+// Sync run lifecycle (Sync spec: Run lifecycle). Each exported function is the body of one sync job step, so the
+// measuring harness can time exactly what a step does. Steps return small JSON (ids, cursors, counts), never pages.
 import {
   MUTATION_DURING_PAGINATION,
   ProviderError,
@@ -248,10 +248,12 @@ const TOUCHED = `SELECT provider_txn_id FROM bank_event WHERE sync_run_id = ?1 A
 const EVENT_PARAMS = 10;
 const EVENTS_PER_STMT = Math.floor(100 / EVENT_PARAMS);
 
-/** Events per apply step. A page (one Plaid call) is applied in chunks of this size to stay within CPU. */
-/** Events per apply step (one Workflow step each). Production uses the default; measurement may lower it. */
-export const APPLY_CHUNK = 50;
-export const CHUNK = { apply: APPLY_CHUNK, process: 100 };
+/**
+ * Events per apply and processing step (one alarm step each). A page (one Plaid call) is applied in chunks of this
+ * size to stay within 10 ms of CPU with SQLite in-process (decisions.md D-37; docs/measurements.md, phase 0).
+ */
+export const APPLY_CHUNK = 25;
+export const CHUNK = { apply: APPLY_CHUNK, process: 25 };
 
 export interface ApplyResult {
   applied: boolean;

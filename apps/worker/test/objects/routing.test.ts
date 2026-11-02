@@ -1,17 +1,14 @@
-// Routing after the move (docs/multi-user.md 5.1, 8.5), through the real Worker with software passkeys. With
-// move_state = 'moved', sign-in is served by the Directory and the budget by its own Durable Object, and D1 is not
-// touched; each user reaches only their own budget. With 'none', everything is served from D1 as before.
+// Routing (docs/multi-user.md 5.1), through the real Worker with software passkeys: sign-in is served by the
+// Directory and the budget by its own Durable Object; each user reaches only their own budget.
 import { createExecutionContext, env, runInDurableObject } from 'cloudflare:test';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import worker from '../../src/index.js';
 import { tokenHash } from '../../src/http/auth.js';
-import { resetRoutingCache } from '../../src/store/router.js';
 import { DIRECTORY_NAME, type Directory } from '../../src/store/directory.js';
 import type { BudgetStore } from '../../src/store/budget-store.js';
 import { SoftAuthenticator } from '../soft-authenticator.js';
 
 const e = env as unknown as {
-  DB: D1Database;
   DIRECTORY: DurableObjectNamespace<Directory>;
   BUDGET: DurableObjectNamespace<BudgetStore>;
 };
@@ -70,30 +67,19 @@ class Browser {
   }
 }
 
-const setPhase = async (phase: string) => {
-  await e.DB.prepare(`UPDATE move_state SET phase = ?1 WHERE id = 1`).bind(phase).run();
-  resetRoutingCache();
-};
-const d1Count = async (table: string) =>
-  Number(await e.DB.prepare(`SELECT count(*) AS n FROM ${table}`).first('n'));
-
 const ownerKey = new SoftAuthenticator(ORIGIN, 'ledgerline.test');
 const otherKey = new SoftAuthenticator(ORIGIN, 'ledgerline.test');
 const owner = new Browser();
 const other = new Browser();
 let ownerBudget = '';
 
-beforeAll(() => setPhase('moved'));
-afterAll(() => setPhase('none'));
-
-describe('after the move', () => {
+describe('routing', () => {
   it('nothing is reachable signed out', async () => {
     expect((await owner.call('GET', '/api/session')).status).toBe(401);
   });
 
-  it('setup and sign-in are served by the Directory, not D1', async () => {
+  it('setup and sign-in are served by the Directory', async () => {
     expect((await owner.register(ownerKey, { setupCode: SETUP })).status).toBe(200);
-    expect(await d1Count('passkey')).toBe(0);
     const inDirectory = await runInDurableObject(directory(), async (_o, st) =>
       Number(st.storage.sql.exec(`SELECT count(*) AS n FROM passkey`).one().n),
     );
@@ -105,10 +91,8 @@ describe('after the move', () => {
     expect(s.status).toBe(200);
     expect(s.headers.get('x-content-type-options')).toBe('nosniff');
     ownerBudget = String((s.json.budget as { id: string }).id);
-    expect(await d1Count('budget')).toBe(0);
     const w = await owner.call('POST', '/api/settings/groups', { name: 'Bills', isBills: true });
     expect(w.status).toBe(200);
-    expect(await d1Count('category_group')).toBe(0);
     const inStore = await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName(ownerBudget)), async (_o, st) =>
       st.storage.sql
         .exec(`SELECT name FROM category_group`)
@@ -149,28 +133,10 @@ describe('after the move', () => {
   });
 });
 
-describe('without D1 (production since Nov 2, 2026)', () => {
-  const noD1 = (path: string) =>
-    worker.fetch(
-      new Request(ORIGIN + path, { headers: { origin: ORIGIN } }),
-      { ...(prodEnv() as object), DB: undefined } as never,
-      createExecutionContext(),
-    );
-  it('serves sign-in from the Directory and nothing else signed out', async () => {
-    resetRoutingCache();
-    const st = await noD1('/api/auth/status');
-    expect(st.status).toBe(200);
-    expect(await st.json()).toMatchObject({ hasPasskey: true });
-    expect((await noD1('/api/session')).status).toBe(401);
-    resetRoutingCache();
-  });
-});
-
 describe('when the Durable Objects can’t be reached', () => {
   const broken = (message: string) =>
     ({
       ...(prodEnv() as object),
-      DB: undefined,
       DIRECTORY: {
         idFromName: () => ({}),
         get: () => ({

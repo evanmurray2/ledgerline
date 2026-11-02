@@ -1,13 +1,16 @@
 export interface Env {
+  /**
+   * The SQLite database of the Durable Object running this code, behind a D1-shaped adapter (store/adapter.ts): a
+   * budget's own data inside a BudgetStore, users and sessions inside the Directory. Production has no D1.
+   */
   DB: D1Database;
   /** Sign-in attempts per IP (docs/multi-user.md 7.2). */
   AUTH_LIMITER?: RateLimit;
   /** docs/multi-user.md: the Directory (one object) and one BudgetStore per budget. */
   DIRECTORY: DurableObjectNamespace<import('./store/directory.js').Directory>;
   BUDGET: DurableObjectNamespace<import('./store/budget-store.js').BudgetStore>;
-  SYNC: Workflow<SyncParams>;
-  MAINTENANCE: Workflow<MaintenanceParams>;
-  RECOMPUTE: Workflow<RecomputeParams>;
+  /** Inside a budget's Durable Object: queue background work as alarm-driven jobs (docs/multi-user.md 6.1). */
+  JOBS?: Jobs;
   ASSETS?: Fetcher;
   /** 'sandbox' | 'production'. Production keys exist only in the production Worker. */
   PLAID_ENV: string;
@@ -42,7 +45,7 @@ export interface Env {
   CF_ANALYTICS_TOKEN?: string;
   /** Plaid page size: 500 by default, 250 if Phase 1 shows the apply step over budget. */
   SYNC_PAGE_SIZE?: string;
-  /** Enables /__measure routes (local go/no-go harness only). */
+  /** Enables /__measure routes (local measuring only; never in production). */
   MEASURE?: string;
   APP_VERSION?: string;
   /** Inside a budget's Durable Object: today's account usage, from the Directory (docs/multi-user.md 9.2). */
@@ -53,21 +56,9 @@ export interface Env {
   ROUTE_LINK?: (providerItemId: string, connectionId: string) => Promise<void>;
 }
 
-export interface SyncParams {
-  connectionId: string;
-  budgetId: string;
-  /** Lease holder id; also the Workflow instance id. */
-  runId: string;
-  handoffFrom?: string;
-  handoffDepth?: number;
-  trigger: 'webhook' | 'cron' | 'refresh' | 'link' | 'handoff' | 'measure';
-}
-
-export interface MaintenanceParams {
-  day: string;
-  budgetId: string;
-}
-
-export interface RecomputeParams {
-  budgetId: string;
+export interface Jobs {
+  /** Runs a sync for a connection whose lease `runId` already holds (routes/settings.ts startSync). */
+  sync(runId: string, connectionId: string, trigger: string): Promise<void>;
+  /** Continues a recompute of older months in small steps (decisions.md D-22). */
+  recompute(): Promise<void>;
 }

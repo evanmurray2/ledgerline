@@ -13,7 +13,6 @@ import { type Month, addMonths, cents, isMonth } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
 import { OPS_PATHS, REAUTH_MS, identify, needsRecentPasskey } from '../http/auth.js';
-import { authRoutes } from './auth.js';
 import { securityRoutes } from './security.js';
 import { csrf } from '../http/security.js';
 import { bumpOnChange, etags } from '../http/etag.js';
@@ -29,18 +28,12 @@ import { opsRoutes } from './ops.js';
 import { categorySheet, assignView } from '../views/category.js';
 
 /**
- * The API in two layers (docs/multi-user.md 5.1): `api` checks who is asking (session, membership), then hands over
- * to `budgetApi`, which serves one budget's data. On D1 both run in this Worker. After the move, sign-in runs in
- * the Directory and `budgetApi` runs inside the budget's own Durable Object, which trusts the identity the Worker
- * passes it.
+ * One budget's API (docs/multi-user.md 5.1). It runs inside the budget's own Durable Object, which trusts the caller
+ * the Worker passes it after the Directory has checked who is asking (store/router.ts).
  */
-export const api = new Hono<AppEnv>();
 export const budgetApi = new Hono<AppEnv>();
 
-/** Sign-in routes are public (they verify passkeys themselves). */
-api.route('/auth', authRoutes);
-
-/** Every other API request: a signed-in session (or the ops token), then membership in a budget. */
+/** Settings → Sign-in in the Directory: a signed-in session (or the ops token), then membership in a budget. */
 export const identity: MiddlewareHandler<AppEnv> = async (c, next) => {
   c.set('requestId', crypto.randomUUID());
   const path = new URL(c.req.url).pathname;
@@ -71,7 +64,6 @@ export const identity: MiddlewareHandler<AppEnv> = async (c, next) => {
   c.set('budgetId', m.budgetId);
   return next();
 };
-api.use('*', identity);
 budgetApi.use('*', csrf);
 /** Unchanged screens answer 304; every change bumps the version (http/etag.ts). */
 budgetApi.use('*', etags);
@@ -92,26 +84,19 @@ export function scoped(c: { env: AppEnv['Bindings']; get: (k: 'budgetId' | 'user
   return new Scoped(c.env.DB, c.get('budgetId'), c.get('userId'));
 }
 
-/** Starts (or reuses) the recompute Workflow for an older edit (decisions.md D-22). */
-export async function startRecompute(env: AppEnv['Bindings'], budgetId: string): Promise<void> {
-  const b = await env.DB.prepare(`SELECT summary_version FROM budget WHERE id = ?1`)
-    .bind(budgetId)
-    .first<{ summary_version: number }>();
-  try {
-    await env.RECOMPUTE.create({ id: `rc-${budgetId}-${b?.summary_version ?? 0}`, params: { budgetId } });
-  } catch (e) {
-    if (!/already exists/i.test(String(e))) throw e;
-  }
+/** Continues an older edit's recompute in the store's jobs (decisions.md D-22). */
+export async function startRecompute(env: AppEnv['Bindings']): Promise<void> {
+  await env.JOBS?.recompute();
 }
 
-/** After a write: recompute before responding (one chunk), continue older months in the Workflow. */
+/** After a write: recompute before responding (one chunk), continue older months in a job. */
 export async function afterWrite(
   env: AppEnv['Bindings'],
   budgetId: string,
   now: number,
 ): Promise<MutationResult> {
   const r = await recompute(env.DB, budgetId, now);
-  if (!r.done) await startRecompute(env, budgetId);
+  if (!r.done) await startRecompute(env);
   const b = await env.DB.prepare(`SELECT rta, summary_dirty_from FROM budget WHERE id = ?1`)
     .bind(budgetId)
     .first<{ rta: number; summary_dirty_from: string | null }>();
@@ -146,7 +131,7 @@ export class HttpError extends Error {
   }
 }
 
-const onError = (e: Error, c: Parameters<Parameters<typeof api.onError>[0]>[1]) => {
+const onError = (e: Error, c: Parameters<Parameters<typeof budgetApi.onError>[0]>[1]) => {
   if (e instanceof HttpError) return c.json({ error: e.code, message: e.message }, e.status);
   console.log(
     JSON.stringify({
@@ -158,7 +143,6 @@ const onError = (e: Error, c: Parameters<Parameters<typeof api.onError>[0]>[1]) 
   );
   return c.json({ error: 'internal', message: 'Something went wrong' }, 500);
 };
-api.onError(onError);
 budgetApi.onError(onError);
 
 // ---------------------------------------------------------------- session and budget
@@ -166,7 +150,7 @@ budgetApi.onError(onError);
 budgetApi.get('/session', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
-  const f = await fresh(c.env, s, now, () => startRecompute(c.env, s.budgetId));
+  const f = await fresh(c.env, s, now, () => startRecompute(c.env));
   const [accounts, cats, settings] = await s.batch([
     s.q(`SELECT count(*) AS n FROM account WHERE budget_id = ?1`),
     s.q(`SELECT count(*) AS n FROM category WHERE budget_id = ?1 AND kind != 'cc_payment'`),
@@ -215,7 +199,7 @@ budgetApi.get('/budget/:month', async (c) => {
   const m = c.req.param('month');
   if (!isMonth(m)) throw new HttpError(400, 'invalid', 'month');
   const s = scoped(c);
-  const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env, s.budgetId));
+  const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env));
   return c.json(await budgetView(s, f, m));
 });
 
@@ -223,13 +207,13 @@ budgetApi.get('/budget/:month/assign', async (c) => {
   const m = c.req.param('month');
   if (!isMonth(m)) throw new HttpError(400, 'invalid', 'month');
   const s = scoped(c);
-  const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env, s.budgetId));
+  const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env));
   return c.json(await assignView(s, f, m));
 });
 
 budgetApi.get('/categories/:id/sheet', async (c) => {
   const s = scoped(c);
-  const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env, s.budgetId));
+  const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env));
   const m = c.req.query('month') ?? f.current;
   if (!isMonth(m)) throw new HttpError(400, 'invalid', 'month');
   const sheet = await categorySheet(s, f, c.req.param('id'), m);
@@ -342,6 +326,3 @@ budgetApi.route('/', opsRoutes);
 budgetApi.route('/', securityRoutes);
 
 export { addMonths };
-
-// The D1 path: identity above, then the budget's routes.
-api.route('/', budgetApi);

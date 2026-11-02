@@ -114,7 +114,7 @@ async function accountRows(s: Scoped, today: string): Promise<{ rows: AccountRow
 accountRoutes.get('/accounts', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
-  const f = await fresh(c.env, s, now, () => startRecompute(c.env, s.budgetId));
+  const f = await fresh(c.env, s, now, () => startRecompute(c.env));
   const { rows } = await accountRows(s, f.today);
   const start = (f.budget.budget_start_month ?? f.current) as Month;
   const mr = await monthResult(s, f.current, start);
@@ -309,7 +309,7 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
 accountRoutes.get('/reports', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
-  const f = await fresh(c.env, s, now, () => startRecompute(c.env, s.budgetId));
+  const f = await fresh(c.env, s, now, () => startRecompute(c.env));
   const m = (c.req.query('month') ?? f.current) as Month;
   if (!isMonth(m)) throw new HttpError(400, 'invalid', 'month');
   const start = (f.budget.budget_start_month ?? f.current) as Month;

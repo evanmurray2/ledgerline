@@ -4,10 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev -c wrangler.local.jsonc",
+    "dev": "wrangler dev",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run && vitest run -c vitest.objects.config.ts",
-    "db:migrate:local": "wrangler d1 migrations apply DB --local"
+    "test": "vitest run && vitest run -c vitest.objects.config.ts"
   },
   "dependencies": {
     "@ledgerline/bank-provider": "workspace:*",

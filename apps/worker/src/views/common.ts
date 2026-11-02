@@ -35,7 +35,7 @@ export interface Fresh {
   rtaUpdating: boolean;
 }
 
-/** Recomputes (at most one chunk) before answering, as the design requires; older edits finish in the Workflow. */
+/** Recomputes (at most one chunk) before answering, as the design requires; older edits finish in the recompute job. */
 export async function fresh(
   env: Env,
   s: Scoped,

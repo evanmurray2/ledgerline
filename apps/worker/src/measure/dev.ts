@@ -1,10 +1,10 @@
 // Local development and end-to-end tests only: loads the prototype's November 2026 (the canonical fixture in
-// packages/domain/test/fixtures/november.ts) into D1 through the real tables, overlay and line rebuild. Mounted
-// only when DEV_ROUTES=1 outside production and without Access configured.
+// packages/domain/test/fixtures/november.ts) into the dev user's BudgetStore through the real tables, overlay and
+// line rebuild. Served inside the store (BudgetStore.dev) only when DEV_ROUTES=1 outside production and without a
+// setup code.
 import { Hono } from 'hono';
-import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
-import { Scoped, resolveMembership } from '../db/scoped.js';
+import { Scoped } from '../db/scoped.js';
 import { budgetMeta, planLineRebuild, planStartLines } from '../ledger/ledger.js';
 import { recompute } from '../budget/recompute.js';
 import { clock } from '../http/clock.js';
@@ -143,7 +143,13 @@ const PAYEES: Record<string, string> = {
 dev.post('/seed-november', async (c) => {
   const env = c.env;
   const now = clock(env);
-  const email = env.DEV_AUTH_EMAIL ?? 'dev@example.com';
+  const m = { budgetId: c.get('budgetId'), userId: c.get('userId') };
+  // Keep the budget's data_version climbing, so a browser's old ETags never match the new data.
+  const version = Number(
+    (await env.DB.prepare(`SELECT data_version AS v FROM budget WHERE id = ?1`)
+      .bind(m.budgetId)
+      .first('v')) ?? 0,
+  );
   await env.DB.batch(
     [
       'budget_line',
@@ -169,13 +175,14 @@ dev.post('/seed-november', async (c) => {
       'month_total_done',
       'alert',
       'setting',
-      'budget_member',
       'budget',
-      'user',
     ].map((t) => env.DB.prepare(`DELETE FROM ${t}`)),
   );
-  const m = await resolveMembership(env.DB, email, email, now, () => ulid(now));
-  if (!m) return c.json({ error: 'seed' }, 500);
+  await env.DB.prepare(
+    `INSERT INTO budget (id, name, data_version, created_at, updated_at) VALUES (?1, 'My budget', ?2, ?3, ?3)`,
+  )
+    .bind(m.budgetId, version + 1, now)
+    .run();
   const s = new Scoped(env.DB, m.budgetId, m.userId);
   const w: D1PreparedStatement[] = [
     s.q(

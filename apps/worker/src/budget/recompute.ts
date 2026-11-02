@@ -22,14 +22,15 @@ import { conditionFence, isFenceAbort } from '../sync/lease.js';
 
 export const MAX_RECOMPUTE_RETRIES = 3;
 /**
- * Months recomputed per invocation. Phase 1 measured about 0.6 ms of CPU per month of history, so a request or
- * Workflow step handles up to 6 months; older edits continue in the recompute Workflow (decisions.md D-22).
+ * Months recomputed per invocation. SQLite runs in the budget's Durable Object, on the same CPU as the app, so a
+ * request or job step handles up to 2 months; older edits continue in the store's recompute job (decisions.md
+ * D-22, revised by D-37; docs/measurements.md, phase 0).
  */
-export const MONTHS_PER_CHUNK = 6;
+export const MONTHS_PER_CHUNK = 2;
 
 export interface RecomputeResult {
   ok: boolean;
-  /** False when months remain dirty after this chunk; run again (the recompute Workflow does). */
+  /** False when months remain dirty after this chunk; run again (the recompute job does). */
   done: boolean;
   rta: number;
   from: Month | null;

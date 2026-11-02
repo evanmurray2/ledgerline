@@ -1,4 +1,5 @@
-// Nightly: a real Plaid Sandbox sync through the Workflow on local wrangler dev (no deploy, no Production keys).
+// Nightly: a real Plaid Sandbox sync through the budget store's sync job on local wrangler dev (no deploy, no
+// Production keys).
 import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
@@ -14,15 +15,11 @@ writeFileSync(
     `PLAID_SECRET=${process.env.PLAID_SECRET}`,
     `TOKEN_KEYS=1:${randomBytes(32).toString('base64')}`,
     'TOKEN_KEY_CURRENT=1',
+    'PLAID_ENV=sandbox',
     'MEASURE=1',
     'DEV_AUTH_EMAIL=ci@example.com',
   ].join('\n'),
 );
-const dev = spawn('pnpm', ['exec', 'wrangler', 'd1', 'migrations', 'apply', 'DB', '--local'], {
-  cwd: 'apps/worker',
-  stdio: 'inherit',
-});
-await new Promise((r) => dev.on('exit', r));
 const w = spawn('pnpm', ['exec', 'wrangler', 'dev', '--port', '8787'], {
   cwd: 'apps/worker',
   stdio: 'inherit',
@@ -43,10 +40,10 @@ try {
       })
     ).json();
   const seed = await post('/seed');
-  const run = await post('/workflow', seed);
+  const run = await post('/sync', seed);
   let s;
   for (let i = 0; i < 120; i++) {
-    s = await (await fetch(`http://127.0.0.1:8787/__measure/workflow/${run.id}`)).json();
+    s = await (await fetch(`http://127.0.0.1:8787/__measure/sync/${run.id}`)).json();
     if (['complete', 'errored', 'terminated'].includes(s.status)) break;
     await new Promise((r) => setTimeout(r, 1000));
   }

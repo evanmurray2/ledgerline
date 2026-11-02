@@ -907,7 +907,8 @@ export async function startSync(
   const runId = `run_${ulid(now)}`;
   if (!(await acquire(env.DB, connectionId, runId, now))) return false;
   try {
-    await env.SYNC.create({ id: runId, params: { connectionId, budgetId, runId, trigger } });
+    if (!env.JOBS) throw new Error('jobs run only inside a budget store');
+    await env.JOBS.sync(runId, connectionId, trigger);
     return true;
   } catch (e) {
     const { releaseFailed } = await import('../sync/lease.js');

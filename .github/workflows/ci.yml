@@ -29,12 +29,10 @@ jobs:
         run: pnpm test:unit
       - name: Build the SPA
         run: pnpm --filter @ledgerline/web build
-      - name: Integration tests (Worker + local D1 in workerd)
+      - name: Integration tests (Worker + Durable Objects in workerd)
         run: pnpm --filter @ledgerline/worker test
       - name: Migration check
         run: node tools/ci/migration-check.mjs
-      - name: Local config matches production
-        run: node tools/ci/local-config-check.mjs
       - name: Bundle size budget
         run: node tools/ci/bundle-budget.mjs
   e2e:

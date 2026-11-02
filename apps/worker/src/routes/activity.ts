@@ -161,7 +161,7 @@ function postedQuery(
 
 activityRoutes.get('/activity', async (c) => {
   const s = scoped(c);
-  const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env, s.budgetId));
+  const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env));
   const filter = c.req.query('filter') ?? 'all';
   const q = (c.req.query('q') ?? '').trim().toLowerCase();
   const cursor = c.req.query('cursor');
@@ -1037,7 +1037,7 @@ activityRoutes.post('/transfers/:key/unpair', async (c) => {
 
 activityRoutes.get('/owed', async (c) => {
   const s = scoped(c);
-  const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env, s.budgetId));
+  const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env));
   const { cats } = await names(s);
   const { rows, raw } = await openItems(s, f.today);
   const fr = await s.all<{ txn_key: string; date: string; payee_name: string; amount: number }>(

@@ -3,9 +3,12 @@
 // user's session stops working. Through the real Worker with software passkeys.
 import { createExecutionContext, env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
-import worker from '../src/index.js';
-import { tokenHash } from '../src/http/auth.js';
-import { SoftAuthenticator, b64u } from './soft-authenticator.js';
+import worker from '../../src/index.js';
+import { tokenHash } from '../../src/http/auth.js';
+import { SoftAuthenticator, b64u } from '../soft-authenticator.js';
+import { directoryDb } from '../store-db.js';
+
+const dir = directoryDb();
 
 const ORIGIN = 'https://ledgerline.test';
 const SETUP = 's'.repeat(40);
@@ -69,17 +72,19 @@ const other = new Browser();
 /** A second user, created directly (sign-up isn't built yet), who adds their passkey through a device link. */
 async function addSecondUser(): Promise<void> {
   const token = 'second-user-device-link-token-0123456789';
-  await env.DB.batch([
-    env.DB.prepare(
+  await dir.batch([
+    dir.prepare(
       `INSERT INTO user (id, email, webauthn_handle, created_at, updated_at) VALUES ('u_b', 'u:u_b', 'handle-of-b', 0, 0)`,
     ),
-    env.DB.prepare(`INSERT INTO budget (id, name, created_at, updated_at) VALUES ('b_b', 'B', 0, 0)`),
-    env.DB.prepare(
+    dir.prepare(`INSERT INTO budget (id, name, created_at, updated_at) VALUES ('b_b', 'B', 0, 0)`),
+    dir.prepare(
       `INSERT INTO budget_member (budget_id, user_id, role, created_at, updated_at) VALUES ('b_b', 'u_b', 'owner', 0, 0)`,
     ),
-    env.DB.prepare(
-      `INSERT INTO device_link (token_hash, created_at, expires_at, user_id) VALUES (?1, 0, ?2, 'u_b')`,
-    ).bind(await tokenHash(token), now + 600_000),
+    dir
+      .prepare(
+        `INSERT INTO device_link (token_hash, created_at, expires_at, user_id) VALUES (?1, 0, ?2, 'u_b')`,
+      )
+      .bind(await tokenHash(token), now + 600_000),
   ]);
   expect((await other.register(otherKey, { deviceToken: token })).status).toBe(200);
 }
@@ -87,14 +92,14 @@ async function addSecondUser(): Promise<void> {
 describe('more than one user', () => {
   it('setup creates the first user as admin, with the handle earlier passkeys used', async () => {
     expect((await owner.register(ownerKey, { setupCode: SETUP })).status).toBe(200);
-    const u = await env.DB.prepare(`SELECT id, is_admin, link_allowance, webauthn_handle FROM user`).first<{
+    const u = await dir.prepare(`SELECT id, is_admin, link_allowance, webauthn_handle FROM user`).first<{
       id: string;
       is_admin: number;
       link_allowance: number;
       webauthn_handle: string;
     }>();
     expect(u).toMatchObject({ is_admin: 1, link_allowance: 10, webauthn_handle: 'ledgerline-owner' });
-    expect(await env.DB.prepare(`SELECT user_id FROM passkey`).first('user_id')).toBe(u!.id);
+    expect(await dir.prepare(`SELECT user_id FROM passkey`).first('user_id')).toBe(u!.id);
     expect(ownerKey.userHandle).toBe(b64u(new TextEncoder().encode('ledgerline-owner')));
   });
 
@@ -117,7 +122,7 @@ describe('more than one user', () => {
       409,
     );
     expect(
-      await env.DB.prepare(`SELECT count(*) AS n FROM passkey WHERE id = ?1`).bind(ownerKey.id).first('n'),
+      await dir.prepare(`SELECT count(*) AS n FROM passkey WHERE id = ?1`).bind(ownerKey.id).first('n'),
     ).toBe(1);
     // Signing out everywhere else ends only the second user's other sessions.
     await other.call('POST', '/api/settings/security/sign-out-others');
@@ -141,7 +146,7 @@ describe('more than one user', () => {
   });
 
   it('a disabled user’s sessions stop working and they can’t sign in', async () => {
-    await env.DB.prepare(`UPDATE user SET status = 'disabled' WHERE id = 'u_b'`).run();
+    await dir.prepare(`UPDATE user SET status = 'disabled' WHERE id = 'u_b'`).run();
     expect((await other.call('GET', '/api/session')).status).toBe(401);
     expect((await new Browser().signIn(otherKey)).status).toBe(403);
     expect((await owner.call('GET', '/api/session')).status).toBe(200);

@@ -1,7 +1,9 @@
-// Local go/no-go harness routes (Phase 1). Mounted only when MEASURE=1, never in deployed Workers.
+// Local measuring routes (docs/measurements.md, tools/measure). Served inside the dev user's BudgetStore, on its own
+// database, only when MEASURE=1 outside production (index.ts and BudgetStore.dev both check).
 import { Hono } from 'hono';
 import { encryptToken, parseKeyring, ulid } from '@ledgerline/platform';
 import type { Env } from '../env.js';
+import type { AppEnv } from '../http/context.js';
 import { cents, changeHash, computeBudget, encodeMonth, type Month } from '@ledgerline/domain';
 import { lineFromRow } from '../budget/recompute.js';
 import { seedBudget } from './budget-seed.js';
@@ -9,12 +11,12 @@ import { acquire } from '../sync/lease.js';
 import { applyPage, beginRun, fetchPage, planApply, planStage, type StepContext } from '../sync/steps.js';
 import { connectionToken, makeProvider } from '../sync/provider.js';
 
-export const measure = new Hono<{ Bindings: Env }>();
+export const measure = new Hono<AppEnv>();
 
 measure.post('/seed', async (c) => {
   const env = c.env;
   const now = Date.now();
-  const budgetId = 'bud_measure';
+  const budgetId = c.get('budgetId');
   const connectionId = `con_${ulid()}`;
   const provider = makeProvider(env);
   const link = await provider.sandboxCreateItem();
@@ -25,7 +27,7 @@ measure.post('/seed', async (c) => {
   );
   await env.DB.batch([
     env.DB.prepare(
-      `INSERT OR IGNORE INTO budget (id, name, budget_start_month, created_at, updated_at) VALUES (?1, 'Measure', '2023-11', ?2, ?2)`,
+      `UPDATE budget SET budget_start_month = coalesce(budget_start_month, '2023-11'), updated_at = ?2 WHERE id = ?1`,
     ).bind(budgetId, now),
     env.DB.prepare(
       `INSERT INTO connection (id, budget_id, provider, provider_item_id, institution_name, access_token_enc, key_version, linked_at, created_at, updated_at)
@@ -89,17 +91,27 @@ measure.post('/apply', async (c) => {
   return c.json(r);
 });
 
-measure.post('/workflow', async (c) => {
-  const b = await c.req.json<{ connectionId: string; budgetId: string }>();
+/** A whole sync as the app runs it: the store's sync job, one alarm step at a time. */
+measure.post('/sync', async (c) => {
+  const b = await c.req.json<{ connectionId: string }>();
   const runId = `run_${ulid()}`;
-  if (!(await acquire(c.env.DB, b.connectionId, runId, Date.now()))) return c.json({ ok: false }, 409);
-  const inst = await c.env.SYNC.create({ id: runId, params: { ...b, runId, trigger: 'measure' } });
-  return c.json({ id: inst.id });
+  if (!c.env.JOBS || !(await acquire(c.env.DB, b.connectionId, runId, Date.now())))
+    return c.json({ ok: false }, 409);
+  await c.env.JOBS.sync(runId, b.connectionId, 'measure');
+  return c.json({ id: runId });
 });
 
-measure.get('/workflow/:id', async (c) => {
-  const inst = await c.env.SYNC.get(c.req.param('id'));
-  return c.json(await inst.status());
+/** 'running' while the sync's job is queued; then 'complete' or 'errored' from its run. */
+measure.get('/sync/:id', async (c) => {
+  const id = c.req.param('id');
+  const job = await c.env.DB.prepare(`SELECT failed_at, last_error FROM job WHERE id = ?1`)
+    .bind(id)
+    .first<{ failed_at: number | null; last_error: string | null }>();
+  if (job) return c.json({ status: job.failed_at ? 'errored' : 'running', error: job.last_error });
+  const run = await c.env.DB.prepare(`SELECT phase FROM sync_run ORDER BY started_at DESC LIMIT 1`).first<{
+    phase: string;
+  }>();
+  return c.json({ status: run?.phase === 'done' ? 'complete' : 'errored', phase: run?.phase ?? null });
 });
 
 measure.get('/count', async (c) => {

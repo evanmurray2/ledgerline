@@ -5,7 +5,7 @@
 //   3. save the new state (or delete a finished job) and reset attempts, in one transaction;
 //   4. set the next alarm, synchronously, for the earliest due job.
 // A step that throws backs off (10 s, 30 s, 2 min, 10 min, 1 h); after MAX_ATTEMPTS the job is marked failed and
-// onFailed runs (sync jobs release their lease there). Steps must be idempotent, as Workflow steps are today.
+// onFailed runs (sync jobs release their lease there). Steps must be idempotent.
 
 export type StepResult = { done: true } | { state: unknown; runAt: number };
 

@@ -1,5 +1,19 @@
 # Phase 1 measurements (go/no-go)
 
+## Update: step sizes in the code match D-37 (Nov 2, 2026)
+
+The code had kept the D1-era sizes (apply 50 events, processing 100 events, recompute 6 months per request) while production ran in Durable Objects, where SQLite counts as CPU. They are now 25, 25 and 2 (decisions.md D-38). `apps/worker/measure` runs the same code on `node:sqlite` with the store's own migrations and now reports CPU **including** SQLite (`ms`), as a Durable Object pays it. Three runs, Node, ms (median / p90 / max):
+
+| Path                                   | Before (6 months, 50 / 100 events) | After (2 months, 25 / 25 events) |
+| -------------------------------------- | ---------------------------------- | -------------------------------- |
+| Budget edit, first month (the request) | 8.7 / 21.8 / 21.8                  | 2.2–2.7 / 4.5–6.8 / 4.5–6.8      |
+| Recompute job step                     | 6.3 / 15.8 / 21.5                  | 2.0–2.1 / 6.3–6.5 / 11.9–16.3    |
+| Sync apply step                        | 6.2 / 7.2 / 14.2                   | 4.9–5.1 / 6.7–7.0 / 13.5–14.9    |
+| Sync processing step                   | 5.6 / 5.9 / 8.4                    | 2.6–2.7 / 2.9–3.6 / 6.5–9.1      |
+| Sync fetch step (100 transactions)     | 3.3 / 3.5 / 4.0                    | 3.2–3.7 / 3.6–4.3 / 4.7–6.0      |
+
+A first-month edit now takes 18 small invocations instead of 6, and a 3,000-transaction backfill about 244 job steps; both are alarms, which have no daily step limit. The max column is the first, cold runs on a shared machine; the phase 0 figures from Cloudflare below are the reference for p95.
+
 ## Update: phase 0 on Cloudflare, a Durable Object per budget (Nov 2, 2026)
 
 `.github/workflows/phase0.yml` deployed a throwaway Worker (`ledgerline-phase0`, not the live app) and ran the real code inside a SQLite Durable Object through the D1-shaped adapter (`apps/worker/src/store/adapter.ts`). Each operation ran 30 times or more as its own alarm invocation, one group of operations at a time with a quiet minute between groups. CPU per invocation comes from GraphQL Analytics (`durableObjectsInvocationsAdaptiveGroups`, run 41395183161). The Worker was deleted afterwards.

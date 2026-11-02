@@ -21,8 +21,8 @@ export default defineConfig({
   ],
   webServer: {
     command:
-      `cd ../apps/worker && rm -rf .wrangler/e2e && pnpm exec wrangler d1 migrations apply DB -c wrangler.local.jsonc --local --persist-to .wrangler/e2e >/dev/null && ` +
-      `pnpm exec wrangler dev -c wrangler.local.jsonc --port ${PORT} --persist-to .wrangler/e2e --var PLAID_ENV:sandbox --var DEV_ROUTES:1 --var DEV_AUTH_EMAIL:owner@example.com ` +
+      `cd ../apps/worker && rm -rf .wrangler/e2e && ` +
+      `pnpm exec wrangler dev --port ${PORT} --persist-to .wrangler/e2e --var PLAID_ENV:sandbox --var DEV_ROUTES:1 --var DEV_AUTH_EMAIL:owner@example.com ` +
       `--var FAKE_NOW:2026-11-14T20:00:00Z --var TOKEN_KEYS:1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8= --var TOKEN_KEY_CURRENT:1`,
     url: `http://127.0.0.1:${PORT}/api/session`,
     reuseExistingServer: false,

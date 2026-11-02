@@ -1,4 +1,4 @@
-// Go/no-go: an assignment edit in the first budget month after 36 simulated months with 60 categories — D1 queries,
+// Go/no-go: an assignment edit in the first budget month after 36 simulated months with 60 categories — database calls,
 // rows written and (Node) CPU. Writes .measure/budget.json. The workerd CPU of the same work comes from
 // tools/measure/budget-kernel.mjs.
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -56,7 +56,7 @@ test('budget edit in the first month', async () => {
   const full = await recompute(d1, B, now, { force: true });
   expect(full.ok).toBe(true);
 
-  // Full recompute to fill the cache (in chunks, as the Workflow does).
+  // Full recompute to fill the cache (in chunks, as the recompute job does).
   for (let r = await recompute(d1, B, now, { force: true }); !r.done; r = await recompute(d1, B, now))
     expect(r.ok).toBe(true);
   const runs: number[] = [];
@@ -81,7 +81,7 @@ test('budget edit in the first month', async () => {
     let reads = db.stats.rowsRead;
     let changes = db.stats.changes;
     invocations = 1;
-    // The recompute Workflow continues in steps of MONTHS_PER_CHUNK months.
+    // The recompute job continues in steps of MONTHS_PER_CHUNK months.
     while (!last.done) {
       const c = await cpu(db, () => recompute(d1, B, now));
       chunkRuns.push(c.ms);
@@ -99,7 +99,7 @@ test('budget edit in the first month', async () => {
     budgetLines: seed.lines.length,
     assignments: seed.assignments.length,
     nodeCpuMsEditRequest: stats(runs),
-    nodeCpuMsPerWorkflowChunk: stats(chunkRuns),
+    nodeCpuMsPerJobStep: stats(chunkRuns),
     invocationsPerEdit: invocations,
     d1CallsPerInvocation: last.queries + 1,
     monthsPerInvocation: last.monthsComputed,

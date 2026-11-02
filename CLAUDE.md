@@ -1,12 +1,12 @@
 # Ledgerline: notes for Claude sessions
 
-A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `docs/build-plan.md` (what's done), `docs/decisions.md` (D-1 to D-36: why things differ from the design) and `docs/runbooks/setup.md`. `docs/design.md` and `docs/sync-spec.md` are the source of truth; record any contradiction in `docs/decisions.md`.
+A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `docs/build-plan.md` (what's done), `docs/decisions.md` (D-1 to D-38: why things differ from the design) and `docs/runbooks/setup.md`. `docs/design.md` and `docs/sync-spec.md` are the source of truth; record any contradiction in `docs/decisions.md`.
 
 ## Production
 
 - App: https://ledgerline.ledger-line.workers.dev (Worker `ledgerline`, workers.dev subdomain `ledger-line`)
 - Cloudflare account id: `f2d39c71e2c0819833de7942cdcc1222`
-- Data: SQLite Durable Objects since Nov 2, 2026 (`docs/multi-user.md`): a `Directory` (sign-in) and one `BudgetStore` per budget, with Cloudflare's 30-day point-in-time recovery. D1 and Workflows are gone from production; local dev and tests use `apps/worker/wrangler.local.jsonc`, which adds an emulated D1. There is no staging (D-36).
+- Data: SQLite Durable Objects since Nov 2, 2026 (`docs/multi-user.md`): a `Directory` (sign-in) and one `BudgetStore` per budget, with Cloudflare's 30-day point-in-time recovery. D1 and Workflows are gone (D-37, D-38): production, local dev, tests and e2e all use `apps/worker/wrangler.jsonc`, and tests reach a store's database through `apps/worker/test/store-db.ts`. There is no staging (D-36).
 - Sign-in is passkeys (D-27). The owner's passkey exists, and 7 of the 10 Plaid links are used (Charles Schwab, Chase, Wells Fargo, Citibank, Bank of America, American Express, SoFi; checked Nov 2, 2026), so 3 are left. Plaid allows 10 links for life: **never link, re-link or remove a bank without asking.**
 
 ## Deploying
@@ -19,7 +19,7 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 ## Hard rules from the owner
 
 - $0 forever: Cloudflare free plan only, no services that need a payment card (no R2, no Zero Trust: D-26, D-27), Plaid Trial.
-- 10 ms of CPU per request or Workflow step; measure hot paths (`docs/measurements.md`).
+- 10 ms of CPU per request or job step (SQLite runs in-process, so it counts); measure hot paths (`docs/measurements.md`).
 - Never mention any other budgeting app by name anywhere: code, comments, docs, UI copy, commit messages.
 - Stop and ask only when a choice would change how money is counted (Money rules in `docs/sync-spec.md`; `packages/domain`).
 - No off-site backups (D-29). No monitor or nightly Plaid Sandbox job wanted for now.
@@ -30,5 +30,5 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 - pnpm monorepo: `packages/domain` (Money rules, `computeBudget()`), `packages/contracts` (Zod), `apps/worker` (Hono + Durable Objects, alarms for background work), `apps/web` (React SPA), `e2e` (Playwright).
 - Checks before pushing: `pnpm check` (about 30 s). It formats, then runs lint, typecheck, unit and integration tests side by side and prints only what fails. For UI changes, run only the e2e tests that cover what you changed, e.g. `cd e2e && pnpm exec playwright test app.spec.ts -g "<test name>"` (the Worker suite: `pnpm --filter @ledgerline/web build` first, then `-c playwright.worker.config.ts`). Don't run the full `pnpm test:e2e`: CI runs it on every push. Chromium is preinstalled; don't run `playwright install`.
 - Don't wait for CI after a push; carry on working. Just before your next push, and when you finish a task, check the `ci` run for your previous push (it's usually done by then; GitHub MCP `actions_list`, `list_workflow_runs`). If it failed, fix that first.
-- Migrations in `packages/db/migrations` are forward-only once on `main` (`node tools/ci/migration-check.mjs`); add a new numbered file.
+- Migrations in `packages/db/budget-migrations` and `packages/db/directory-migrations` are forward-only once on `main` (`node tools/ci/migration-check.mjs`); add a new numbered file, then run `node tools/db/gen-store-migrations.mjs`.
 - Small commits on `main`, tests passing before each; keep `docs/build-plan.md` current.

@@ -1,7 +1,7 @@
-// Bank sync as an alarm job (docs/multi-user.md 6.1, 6.3): the same phases, tables, leases and fences as
-// SyncWorkflow (sync/workflow.ts), one small step per alarm. Each call of the handler does exactly one of:
+// Bank sync as an alarm job (docs/multi-user.md 6.1, 6.3): the phases, tables, leases and fences of the Sync spec's
+// run lifecycle, one small step per alarm. Each call of the handler does exactly one of:
 // begin, fetch one page, restart, apply one chunk, process one batch, finalize, release (or hand off).
-// A lost lease or an unrecoverable error ends the run the way the Workflow's release-failed step does; any other
+// A lost lease or an unrecoverable error ends the run (release the lease as failed); any other
 // error is thrown so the runner retries the step with backoff.
 import type { BankDataProvider } from '@ledgerline/bank-provider';
 import type { Env } from '../env.js';
@@ -9,7 +9,7 @@ import { CHUNK, LeaseLost, applyPage, beginRun, fetchPage, restartFetch } from '
 import { MAX_HANDOFFS, moveLease, releaseFailed, releaseSuccess, renew } from '../sync/lease.js';
 import { finalizeConnection, processPending } from '../sync/process.js';
 import { sleepUntilUtcMidnight } from '../sync/breaker.js';
-import { recompute } from '../budget/recompute.js';
+import { MONTHS_PER_CHUNK, recompute } from '../budget/recompute.js';
 import type { Handler, Job, StepResult } from './jobs.js';
 
 export const MAX_PAGES = 1000;
@@ -71,7 +71,7 @@ export function syncHandler(deps: SyncDeps): Handler {
   };
 }
 
-/** The Workflow's release-failed step: free the lease (asking for a new sync) and record the error. */
+/** Release as failed: free the lease (asking for a new sync) and record the error. */
 export async function failSync(
   deps: SyncDeps,
   connectionId: string,
@@ -202,8 +202,8 @@ async function step(deps: SyncDeps, connectionId: string, s: SyncState, now: num
   }
 }
 
-/** Recompute as a job: 2 months per step (docs/measurements.md, phase 0) until caught up. */
-export const STORE_MONTHS_PER_STEP = 2;
+/** Recompute as a job: MONTHS_PER_CHUNK per step until caught up. */
+export const STORE_MONTHS_PER_STEP = MONTHS_PER_CHUNK;
 
 export function recomputeHandler(db: D1Database, budgetId: string): Handler {
   return async (_job, now) => {

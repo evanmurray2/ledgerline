@@ -1,4 +1,4 @@
-// Post-apply work driven by the watermark (Sync spec F3). Each step reads up to PROCESS_BATCH events after
+// Post-apply work driven by the watermark (Sync spec F3). Each step reads up to CHUNK.process events after
 // budget.processed_through, decides matches, categorization, transfers and Waiting to match with the pure domain
 // functions, and writes everything plus the new watermark in one batch behind a watermark fence. Reprocessing is
 // harmless: rules never overwrite a user's categorization.
@@ -32,8 +32,6 @@ import { clearTotals } from '../ledger/totals.js';
 import { recompute } from '../budget/recompute.js';
 import { makeProvider, connectionToken } from './provider.js';
 
-/** Default events per processing step; the live value is CHUNK.process. */
-export const PROCESS_BATCH = 100;
 const MAX_WATERMARK_RETRIES = 3;
 const P2P = /\b(ZELLE|VENMO|CASH APP|CASHAPP|PAYPAL TRANSFER|APPLE CASH)\b/i;
 

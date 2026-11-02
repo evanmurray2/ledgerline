@@ -4,7 +4,7 @@
 import { ulid } from '@ledgerline/platform';
 import type { Env } from '../env.js';
 import { recompute } from '../budget/recompute.js';
-import { dailyScan } from '../cron.js';
+import { dailyScan } from '../daily-scan.js';
 import { checkIdentityDb, rollUpUsage, watchdogBudgetStmts } from '../maintenance.js';
 import { processPending } from '../sync/process.js';
 import { acquire, requestSync } from '../sync/lease.js';
@@ -46,7 +46,7 @@ export async function ensureRecurring(enqueue: Enqueue, now: number): Promise<vo
 }
 
 /**
- * Starts a sync for one connection, as routes/settings.ts startSync() does for the Workflow: only once the link's
+ * Starts a sync for one connection, as routes/settings.ts startSync() does: only once the link's
  * accounts are set up; records the request; takes the lease; queues a sync job holding it.
  */
 export async function startSyncJob(
@@ -102,7 +102,7 @@ interface MaintState {
   identity?: { ok: boolean; difference: number; literal: boolean };
 }
 
-/** Daily at 10:20 UTC: today's MaintenanceWorkflow steps, smaller (full recompute 2 months per step). */
+/** Daily at 10:20 UTC: the daily maintenance steps (maintenance.ts), full recompute 2 months per step. */
 export function maintenanceHandler(env: Env, budgetId: () => Promise<string>): Handler {
   return async (job, now): Promise<StepResult> => {
     const db = env.DB;

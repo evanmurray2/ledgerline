@@ -1,7 +1,10 @@
 // Settings → Categories: rename, reorder and remove categories and groups, on the seeded November budget.
-import { SELF, env } from 'cloudflare:test';
+import { SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { BudgetView, CategoriesView } from '@ledgerline/contracts';
+import { ownerDb } from './store-db.js';
+
+const db = ownerDb();
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 const call = async (method: string, p: string, body?: unknown) => {
@@ -100,13 +103,13 @@ describe('categories and groups', () => {
 describe('accounts', () => {
   it('rename; a card’s payment category follows', async () => {
     expect((await call('POST', '/api/accounts/sapphire/name', { name: '  Travel card ' })).status).toBe(200);
-    const a = await env.DB.prepare(`SELECT name FROM account WHERE id = 'sapphire'`).first<{
+    const a = await db.prepare(`SELECT name FROM account WHERE id = 'sapphire'`).first<{
       name: string;
     }>();
     expect(a!.name).toBe('Travel card');
-    const c = await env.DB.prepare(
-      `SELECT name FROM category WHERE card_account_id = 'sapphire' AND kind = 'cc_payment'`,
-    ).first<{ name: string }>();
+    const c = await db
+      .prepare(`SELECT name FROM category WHERE card_account_id = 'sapphire' AND kind = 'cc_payment'`)
+      .first<{ name: string }>();
     expect(c!.name).toBe('Travel card');
     expect((await call('POST', '/api/accounts/sapphire/name', { name: '   ' })).status).toBe(400);
     expect((await call('POST', '/api/accounts/nope/name', { name: 'X' })).status).toBe(404);

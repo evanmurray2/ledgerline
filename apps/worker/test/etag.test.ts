@@ -1,6 +1,9 @@
 // Unchanged screens answer 304 for a couple of rows read; anything that can change a screen changes its ETag.
-import { SELF, env } from 'cloudflare:test';
+import { SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { ownerDb } from './store-db.js';
+
+const db = ownerDb();
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 const get = (p: string, etag?: string) =>
@@ -27,7 +30,7 @@ describe('screen ETags', () => {
   });
 
   it('an edit through the API changes it', async () => {
-    const cat = await env.DB.prepare(`SELECT id FROM category WHERE kind = 'spending' LIMIT 1`).first<{
+    const cat = await db.prepare(`SELECT id FROM category WHERE kind = 'spending' LIMIT 1`).first<{
       id: string;
     }>();
     expect(
@@ -41,15 +44,15 @@ describe('screen ETags', () => {
   });
 
   it('a sync applying or processing bank rows changes it, and so does a connection update', async () => {
-    await env.DB.prepare(`UPDATE apply_counter SET seq = seq + 1 WHERE id = 1`).run();
+    await db.prepare(`UPDATE apply_counter SET seq = seq + 1 WHERE id = 1`).run();
     let r = await get('/api/budget/2026-11', tag);
     expect(r.status).toBe(200);
     tag = r.headers.get('etag')!;
-    await env.DB.prepare(`UPDATE budget SET processed_through = processed_through + 1`).run();
+    await db.prepare(`UPDATE budget SET processed_through = processed_through + 1`).run();
     r = await get('/api/budget/2026-11', tag);
     expect(r.status).toBe(200);
     tag = r.headers.get('etag')!;
-    await env.DB.prepare(`UPDATE connection SET last_synced_at = coalesce(last_synced_at, 0) + 1`).run();
+    await db.prepare(`UPDATE connection SET last_synced_at = coalesce(last_synced_at, 0) + 1`).run();
     r = await get('/api/budget/2026-11', tag);
     expect(r.status).toBe(200);
   });

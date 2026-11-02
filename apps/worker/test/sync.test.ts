@@ -1,6 +1,7 @@
 // The sync pipeline on a local D1 inside workerd: staged pages → apply (fenced, chunked) → watermark
 // processing (rules, matcher, transfers, Waiting to match) → budget lines → recompute.
 import { env } from 'cloudflare:test';
+import { storeDb } from './store-db.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { PlaidProvider } from '@ledgerline/bank-provider';
 import { acquire } from '../src/sync/lease.js';
@@ -11,7 +12,7 @@ import { Scoped } from '../src/db/scoped.js';
 import { inBudgetByAccount, monthTotals } from '../src/ledger/totals.js';
 import type { Month } from '@ledgerline/domain';
 
-const db = env.DB;
+const db = storeDb('sync');
 const NOW = Date.parse('2026-11-14T20:00:00Z');
 const provider = new PlaidProvider({ clientId: 'x', secret: 'y', env: 'sandbox' });
 const B = 'b_sync';
@@ -72,7 +73,7 @@ async function sync(
     const r = await applyPage(ctx, provider, run, 0, chunk);
     if (r.pageDone) break;
   }
-  for (;;) if ((await processPending(env as never, B, NOW)).caughtUp) break;
+  for (;;) if ((await processPending({ ...env, DB: db } as never, B, NOW)).caughtUp) break;
   await db.batch([
     db.prepare(`UPDATE connection SET sync_lock = NULL, lock_expires = NULL WHERE id = ?1`).bind(C),
     db.prepare(`UPDATE sync_run SET phase = 'done' WHERE id = ?1`).bind(run),

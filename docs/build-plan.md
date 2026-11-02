@@ -87,7 +87,9 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 - [x] Per-user identity: user ids on passkeys and sessions, per-user passkey handles, signed challenge cookies, sign-in rate limit.
 - [x] Full backup on Import and export (every row, with per-table fingerprints), restorable into an empty store.
 - [x] The owner's data moved (Nov 2, 2026, 8:07 UTC), checked row by row; production runs without D1 and Workflows; move code removed.
-- [ ] Delete the D1 database (after the deploy without D1 is live).
+- [x] Tests, local dev and e2e on Durable Objects only (D-38): `wrangler.local.jsonc`, the Workflow classes, the D1 `api` path, D1 migrations and the D1 crons removed; one cron left. _Verify:_ `pnpm check` (100 Worker tests through the Directory and BudgetStore); Worker and passkey Playwright suites; `test/exports.test.ts` (workerd refuses non-function exports).
+- [x] Step sizes match D-37 (apply and processing 25 events, recompute 2 months, in requests too). _Verify:_ Worker tests; `apps/worker/measure` re-run (`docs/measurements.md`).
+- [ ] **(manual)** Delete the empty `ledgerline` D1 database (still in the account on Nov 2, 2026; D-38).
 - [ ] Activity screen: check CPU on the real app's analytics; build a stored recent-rows list only if p95 is 8 ms or more.
 - [ ] Later, only if wanted: invites, People with a reset link, Plaid link slots per user, account deletion, an isolation test (`docs/multi-user.md` 7.3, 7.4, 9.1, 10, 11).
 

@@ -80,7 +80,7 @@ test('sync steps CPU', async () => {
     const applies: number[] = [];
     const applyQueries: number[] = [];
     let statements = 0;
-    // Each page is applied in 50-event chunks, one Workflow step each.
+    // Each page is applied in 25-event chunks, one alarm step each.
     for (let i = 0; i < page; i++)
       for (let ch = 0; ; ch++) {
         const r = await cpu(db, () => applyPage(ctx(), p, holder, i, ch));
@@ -105,9 +105,9 @@ test('sync steps CPU', async () => {
       queriesPerFetch: Math.max(...fetchQueries),
       queriesPerApply: Math.max(...applyQueries),
       statementsPerApplyBatch: statements,
-      // Workflow steps for this backfill: begin + per page (budget check + fetch + budget check + apply) +
+      // Job steps for this backfill: begin + per page (budget check + fetch + budget check + apply) +
       // process steps + finalize + release.
-      workflowSteps: 1 + page * 4 + processes.length + 2,
+      jobSteps: 1 + page * 4 + processes.length + 2,
       plaidCalls: page,
     };
   }

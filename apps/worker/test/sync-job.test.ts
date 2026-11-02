@@ -1,7 +1,7 @@
 // Bank sync as an alarm job (docs/multi-user.md 6.1), inside a real Durable Object. The same handler run against
 // D1 and against the adapter must produce identical rows: moving the data changes nothing about what a sync writes.
 import { env, runInDurableObject } from 'cloudflare:test';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { PlaidProvider } from '@ledgerline/bank-provider';
 import { generate } from '../../../tools/plaid-mock/data.mjs';
 import { SqlD1 } from '../src/store/adapter.js';
@@ -13,7 +13,6 @@ import {
   type SyncDeps,
   type SyncState,
 } from '../src/store/sync-job.js';
-import { CHUNK } from '../src/sync/steps.js';
 import type { BudgetStore } from '../src/store/budget-store.js';
 import type { Env } from '../src/env.js';
 
@@ -50,13 +49,6 @@ const provider = new PlaidProvider({
     });
   },
 });
-
-const saved = { ...CHUNK };
-beforeAll(() => {
-  CHUNK.apply = 25;
-  CHUNK.process = 25;
-});
-afterAll(() => Object.assign(CHUNK, saved));
 
 async function seed(db: D1Database, B: string, C: string): Promise<void> {
   await db.batch([

@@ -7,6 +7,8 @@ import type { AppEnv } from '../http/context.js';
 import type { Caller } from './directory.js';
 import { DIRECTORY_NAME } from './directory.js';
 import { budgetApi } from '../routes/api.js';
+import { dev } from '../measure/dev.js';
+import { measure } from '../measure/routes.js';
 import { BUDGET_TABLES, NO_FILTER, chain, insertStatements, readChunk, tableMeta } from './dump.js';
 import type { Env } from '../env.js';
 import { SqlD1 } from './adapter.js';
@@ -39,6 +41,7 @@ export class BudgetStore extends DurableObject<Env> {
   private readonly runner: JobRunner;
   private cachedBudgetId: string | null = null;
   private app: Hono<AppEnv> | null = null;
+  private devApp: Hono<AppEnv> | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -68,28 +71,35 @@ export class BudgetStore extends DurableObject<Env> {
   async api(request: Request, caller: Caller): Promise<Response> {
     this.ready();
     this.ensureBudget(caller.budgetId);
-    if (!this.app) {
-      const app = new Hono<AppEnv>();
-      app.use('*', async (c, next) => {
-        const who = (c.env as Env & { CALLER: Caller }).CALLER;
-        c.set('requestId', crypto.randomUUID());
-        c.set('userId', who.userId);
-        c.set('budgetId', who.budgetId);
-        c.set('email', who.email);
-        c.set('sessionId', who.sessionId);
-        return next();
-      });
-      app.route('/api', budgetApi);
-      this.app = app;
-    }
+    this.app ??= withCaller((app) => app.route('/api', budgetApi));
+    return this.serve(this.app, request, caller);
+  }
+
+  /** Local development, e2e and measuring only: /__dev and /__measure (index.ts refuses them in production). */
+  async dev(request: Request, caller: Caller): Promise<Response> {
+    this.ready();
+    if (this.env.PLAID_ENV === 'production' || this.env.SETUP_CODE)
+      return new Response('Not found', { status: 404 });
+    this.ensureBudget(caller.budgetId);
+    this.devApp ??= withCaller((app) => {
+      app.route('/__dev', dev);
+      app.use('/__measure/*', async (c, next) => (this.env.MEASURE === '1' ? next() : c.notFound()));
+      app.route('/__measure', measure);
+    });
+    return this.serve(this.devApp, request, caller);
+  }
+
+  private serve(app: Hono<AppEnv>, request: Request, caller: Caller): Promise<Response> {
     const env = { ...this.appEnv(), CALLER: caller };
-    return this.app.fetch(
-      request,
-      env as never,
-      {
-        waitUntil: (p: Promise<unknown>) => this.ctx.waitUntil(p),
-        passThroughOnException() {},
-      } as never,
+    return Promise.resolve(
+      app.fetch(
+        request,
+        env as never,
+        {
+          waitUntil: (p: Promise<unknown>) => this.ctx.waitUntil(p),
+          passThroughOnException() {},
+        } as never,
+      ),
     );
   }
 
@@ -208,8 +218,8 @@ export class BudgetStore extends DurableObject<Env> {
 
   /**
    * The env every app function sees inside the store: the same bindings, with DB = this store's database, account
-   * usage from the Directory, and the Workflow bindings standing in for jobs, so the routes that start a sync or
-   * an older-month recompute queue a job here instead (docs/multi-user.md 6.1).
+   * usage from the Directory, and JOBS, so the routes that start a sync or an older-month recompute queue a job
+   * here (docs/multi-user.md 6.1).
    */
   private appEnv(): Env {
     const now = () => Date.now();
@@ -227,26 +237,16 @@ export class BudgetStore extends DurableObject<Env> {
           runAt: now(),
         });
       },
-      SYNC: {
-        create: async (o: { id: string; params: { connectionId: string; trigger: string } }) => {
-          // routes/settings.ts startSync() has already taken the lease with this id.
-          const state: SyncState = { phase: 'begin', holder: o.id, trigger: o.params.trigger };
-          await this.enqueue('sync', { id: o.id, connectionId: o.params.connectionId, state, runAt: now() });
-          return { id: o.id };
+      JOBS: {
+        // routes/settings.ts startSync() has already taken the lease with this run id.
+        sync: async (runId, connectionId, trigger) => {
+          const state: SyncState = { phase: 'begin', holder: runId, trigger };
+          await this.enqueue('sync', { id: runId, connectionId, state, runAt: now() });
         },
-        get: async () => {
-          throw new Error('not available inside a store');
-        },
-      } as never,
-      RECOMPUTE: {
-        create: async () => {
+        recompute: async () => {
           await this.enqueue('recompute', { id: 'recompute', runAt: now() });
-          return { id: 'recompute' };
         },
-        get: async () => {
-          throw new Error('not available inside a store');
-        },
-      } as never,
+      },
     };
   }
 
@@ -281,7 +281,7 @@ export class BudgetStore extends DurableObject<Env> {
       provider: () => makeProvider(env),
       token: (id) => connectionToken(env, id),
       pageSize: pageSize(env),
-      // Account usage: from the Directory once it exists here (env.USAGE), else D1's usage_day (sync/breaker.ts).
+      // Account usage from the Directory (env.USAGE).
       budgetState: async () => ((await writeBudgetState(env)) === 'normal' ? 'normal' : 'pause'),
       enqueue: this.enqueue,
     };
@@ -316,6 +316,22 @@ export class BudgetStore extends DurableObject<Env> {
     if (job.kind === 'sync' && job.connectionId)
       await failSync(await this.syncDeps(), job.connectionId, job.state as SyncState, error);
   }
+}
+
+/** A Hono app whose requests carry the caller the Worker authenticated with the Directory. */
+function withCaller(mount: (app: Hono<AppEnv>) => void): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+  app.use('*', async (c, next) => {
+    const who = (c.env as Env & { CALLER: Caller }).CALLER;
+    c.set('requestId', crypto.randomUUID());
+    c.set('userId', who.userId);
+    c.set('budgetId', who.budgetId);
+    c.set('email', who.email);
+    c.set('sessionId', who.sessionId);
+    return next();
+  });
+  mount(app);
+  return app;
 }
 
 export function storeHealth(

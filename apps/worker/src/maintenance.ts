@@ -1,7 +1,5 @@
-// The daily maintenance job (Sync spec: Daily maintenance job): full recompute with drift report and the rule 10
-// identity assertion, post-sync catch-up, usage roll-up and pruning, account-wide D1 usage, and the watchdog.
-// Each step is sized for 10 ms of CPU.
-import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
+// The daily maintenance job's pieces (Sync spec: Daily maintenance job): the rule 10 identity assertion, usage
+// roll-up and pruning, and the watchdog. store/budget-jobs.ts runs them as alarm steps, each sized for 10 ms of CPU.
 import {
   type Month,
   type StoredMonth,
@@ -10,87 +8,11 @@ import {
   cents,
   currentMonth,
 } from '@ledgerline/domain';
-import { ulid } from '@ledgerline/platform';
-import type { Env, MaintenanceParams } from './env.js';
-import { recompute } from './budget/recompute.js';
-import { processPending } from './sync/process.js';
-import { refreshUsage } from './ops/usage.js';
+import type { Env } from './env.js';
 import { clock } from './http/clock.js';
 import { Scoped } from './db/scoped.js';
 import { lineFromRow } from './budget/recompute.js';
 import { RECENT_TX } from './ledger/ledger.js';
-import { bumpVersion } from './http/etag.js';
-
-const STEP = {
-  retries: { limit: 3, delay: '10 seconds' as const, backoff: 'exponential' as const },
-  timeout: '2 minutes' as const,
-};
-
-export class MaintenanceWorkflow extends WorkflowEntrypoint<Env, MaintenanceParams> {
-  override async run(event: WorkflowEvent<MaintenanceParams>, step: WorkflowStep): Promise<unknown> {
-    const env = this.env;
-    const b = event.payload.budgetId;
-    // 1. Full recompute from budget start; any month that changes without a pending edit is drift.
-    const dirtyBefore = await step.do('drift-check-start', STEP, async () => {
-      const r = await env.DB.prepare(`SELECT summary_dirty_from FROM budget WHERE id = ?1`)
-        .bind(b)
-        .first<{ summary_dirty_from: string | null }>();
-      return r?.summary_dirty_from ?? null;
-    });
-    let written = 0;
-    for (let i = 0; i < 60; i++) {
-      const r = await step.do(`recompute-${i}`, STEP, () =>
-        recompute(env.DB, b, clock(env), i === 0 ? { force: true, fullFrom: true } : {}),
-      );
-      written += r.monthsWritten;
-      if (r.done || !r.ok) break;
-    }
-    const identity = await step.do('identity', STEP, () => checkIdentityDb(env, b));
-    await step.do('drift-record', STEP, async () => {
-      const now = clock(env);
-      const stmts = [
-        env.DB.prepare(
-          `INSERT INTO health_status (budget_id, key, value, at) VALUES (?1, 'last_recompute', ?2, ?3) ON CONFLICT (budget_id, key) DO UPDATE SET value = excluded.value, at = excluded.at`,
-        ).bind(
-          b,
-          JSON.stringify({ monthsChanged: written, drift: dirtyBefore === null && written > 0, identity }),
-          now,
-        ),
-      ];
-      if (!identity.ok) {
-        stmts.push(
-          env.DB.prepare(
-            `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at) VALUES (?1, ?2, 'identity', ?3, ?4, ?5) ON CONFLICT (budget_id, type, ref_key) DO UPDATE SET data = excluded.data`,
-          ).bind(ulid(now), b, new Date(now).toISOString().slice(0, 10), JSON.stringify(identity), now),
-        );
-        console.log(JSON.stringify({ event: 'identity_failed', count: identity.difference }));
-      }
-      await env.DB.batch(stmts);
-    });
-    // 2. Post-sync catch-up from the watermark.
-    for (let i = 0; i < 100; i++) {
-      const r = await step.do(`catch-up-${i}`, STEP, () => processPending(env, b, clock(env)));
-      if (r.caughtUp) break;
-    }
-    // 3. Usage roll-up into usage_daily; prune raw events older than 90 days.
-    await step.do('usage-rollup', STEP, () => rollUpUsage(env, b, clock(env)));
-    // 4. Account-wide D1 usage from the GraphQL Analytics API.
-    await step.do('usage-refresh', STEP, () => refreshUsage(env, clock(env), true));
-    // 5. Watchdog.
-    await step.do('watchdog', STEP, () => watchdog(env, b, clock(env)));
-    // Housekeeping: staging rows of finished runs.
-    await step.do('prune-staging', STEP, async () => {
-      await env.DB.prepare(
-        `DELETE FROM sync_page WHERE sync_run_id IN (SELECT id FROM sync_run WHERE phase IN ('done', 'failed') AND budget_id = ?1)`,
-      )
-        .bind(b)
-        .run();
-    });
-    // The daily job's writes (alerts, health, usage) change what screens show: new ETags (http/etag.ts).
-    await step.do('bump-version', STEP, () => bumpVersion(env.DB, b));
-    return { ok: true };
-  }
-}
 
 /** Rule 10 on the stored data: working balances vs categories + RTA + held amounts − unbudgeted card debt + later months. */
 export async function checkIdentityDb(
@@ -228,10 +150,6 @@ export function pruneAuthStmts(db: D1Database, now: number): D1PreparedStatement
     db.prepare(`DELETE FROM auth_challenge WHERE expires_at <= ?1`).bind(now),
     db.prepare(`DELETE FROM device_link WHERE expires_at <= ?1`).bind(now),
   ];
-}
-
-async function watchdog(env: Env, budgetId: string, now: number): Promise<void> {
-  await env.DB.batch([...watchdogBudgetStmts(env.DB, budgetId, now), ...pruneAuthStmts(env.DB, now)]);
 }
 
 export { addMonths };

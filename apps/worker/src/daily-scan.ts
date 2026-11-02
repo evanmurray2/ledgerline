@@ -1,48 +1,11 @@
-// Three cron triggers (of the five allowed): sync backstop every 4 hours, the daily stale-pending scan (which also
-// brings due Upcoming entries into the budget), and the daily maintenance job.
+// The daily scan, run by each budget's daily_scan job (store/budget-jobs.ts).
 import { localDate, type Month } from '@ledgerline/domain';
 import type { Env } from './env.js';
-import { startSync } from './routes/settings.js';
-import { clock } from './http/clock.js';
 import { Scoped } from './db/scoped.js';
 import { budgetMeta, planLineRebuild } from './ledger/ledger.js';
 import { recompute } from './budget/recompute.js';
-import { refreshUsage } from './ops/usage.js';
 import { ulid } from '@ledgerline/platform';
 import { bumpVersion } from './http/etag.js';
-
-export const CRON_BACKSTOP = '7 */4 * * *';
-export const CRON_DAILY_SCAN = '10 8 * * *';
-export const CRON_MAINTENANCE = '20 10 * * *';
-
-export async function scheduled(controller: ScheduledController, env: Env): Promise<void> {
-  const now = clock(env);
-  if (controller.cron === CRON_MAINTENANCE) {
-    for (const b of (await env.DB.prepare(`SELECT id FROM budget`).all<{ id: string }>()).results) {
-      const day = new Date(now).toISOString().slice(0, 10);
-      try {
-        await env.MAINTENANCE.create({ id: `maint-${b.id}-${day}`, params: { day, budgetId: b.id } });
-      } catch (e) {
-        if (!/already exists/i.test(String(e))) throw e;
-      }
-    }
-    return;
-  }
-  if (controller.cron === CRON_DAILY_SCAN) {
-    for (const b of (await env.DB.prepare(`SELECT id FROM budget`).all<{ id: string }>()).results)
-      await dailyScan(env, b.id, now);
-    return;
-  }
-  // Backstop: any connection without a successful sync in the last 4 hours, or with a request left by a failed run.
-  await refreshUsage(env, now).catch(() => null);
-  const due = await env.DB.prepare(
-    `SELECT id, budget_id FROM connection WHERE removed_at IS NULL AND provider = 'plaid' AND status != 'login_required'
-       AND (last_synced_at IS NULL OR last_synced_at < ?1 OR resync_requested = 1)`,
-  )
-    .bind(now - 4 * 3_600_000)
-    .all<{ id: string; budget_id: string }>();
-  for (const c of due.results) await startSync(env, c.budget_id, c.id, 'cron').catch(() => false);
-}
 
 /** Upcoming entries count from their date; repeating ones schedule their next occurrence. Vanished pending rows get an alert. */
 export async function dailyScan(

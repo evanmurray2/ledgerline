@@ -1,8 +1,11 @@
 // Pending transactions: money you add can go to Ready to Assign, amounts you added can change, and a bank pending
 // row takes your estimate even if it never had one. On the seeded November budget.
-import { SELF, env } from 'cloudflare:test';
+import { SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { BudgetView, TxnSheet } from '@ledgerline/contracts';
+import { ownerDb } from './store-db.js';
+
+const db = ownerDb();
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 const call = async (method: string, p: string, body?: unknown) => {
@@ -21,7 +24,7 @@ describe('pending transactions', () => {
   let checking = '';
   beforeAll(async () => {
     expect((await call('POST', '/__dev/seed-november')).status).toBe(200);
-    checking = (await env.DB.prepare(`SELECT id FROM account WHERE kind = 'checking' LIMIT 1`).first<{
+    checking = (await db.prepare(`SELECT id FROM account WHERE kind = 'checking' LIMIT 1`).first<{
       id: string;
     }>())!.id;
   });
@@ -41,9 +44,9 @@ describe('pending transactions', () => {
     expect(add.status).toBe(200);
     expect(await rta()).toBe(before + 50_000);
 
-    const key = (await env.DB.prepare(
-      `SELECT txn_key FROM manual_pending WHERE payee_name = 'Zelle from a friend'`,
-    ).first<{ txn_key: string }>())!.txn_key;
+    const key = (await db
+      .prepare(`SELECT txn_key FROM manual_pending WHERE payee_name = 'Zelle from a friend'`)
+      .first<{ txn_key: string }>())!.txn_key;
     expect((await sheet(key)).categoryLabel).toBe('Ready to Assign');
     expect(
       (await call('PATCH', `/api/transactions/${encodeURIComponent(key)}`, { amount: 45_000 })).status,
@@ -64,17 +67,21 @@ describe('pending transactions', () => {
       toRta: true,
       repeats: 'never',
     });
-    const o = await env.DB.prepare(
-      `SELECT o.to_rta FROM txn_overlay o JOIN manual_pending m ON m.txn_key = o.txn_key WHERE m.payee_name = 'Check 1044'`,
-    ).first<{ to_rta: number }>();
+    const o = await db
+      .prepare(
+        `SELECT o.to_rta FROM txn_overlay o JOIN manual_pending m ON m.txn_key = o.txn_key WHERE m.payee_name = 'Check 1044'`,
+      )
+      .first<{ to_rta: number }>();
     expect(o!.to_rta).toBe(0);
     expect(await rta()).toBe(before);
   });
 
   it('a bank pending row takes a first estimate; its bank amount can’t be changed', async () => {
-    const t = (await env.DB.prepare(
-      `SELECT key, amount FROM v_transaction WHERE source = 'bank' AND status = 'pending' AND amount < 0 AND estimated_amount IS NULL LIMIT 1`,
-    ).first<{ key: string; amount: number }>())!;
+    const t = (await db
+      .prepare(
+        `SELECT key, amount FROM v_transaction WHERE source = 'bank' AND status = 'pending' AND amount < 0 AND estimated_amount IS NULL LIMIT 1`,
+      )
+      .first<{ key: string; amount: number }>())!;
     const url = `/api/transactions/${encodeURIComponent(t.key)}`;
     expect((await call('PATCH', url, { estimatedAmount: t.amount - 1_000 })).status).toBe(200);
     const s = await sheet(t.key);
@@ -106,7 +113,7 @@ describe('assign suggestions', () => {
     const b = (await call('GET', '/api/budget/2026-11')).json as unknown as BudgetView;
     const row = b.groups.flatMap((g) => g.categories).find((c) => c.id === cat)!;
     if (row.available >= 0) {
-      const checking = (await env.DB.prepare(`SELECT id FROM account WHERE kind = 'checking' LIMIT 1`).first<{
+      const checking = (await db.prepare(`SELECT id FROM account WHERE kind = 'checking' LIMIT 1`).first<{
         id: string;
       }>())!.id;
       await call('POST', '/api/transactions', {
