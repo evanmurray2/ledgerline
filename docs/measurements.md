@@ -1,5 +1,43 @@
 # Phase 1 measurements (go/no-go)
 
+## Update: phase 0 on Cloudflare, a Durable Object per budget (Nov 2, 2026)
+
+`.github/workflows/phase0.yml` deployed a throwaway Worker (`ledgerline-phase0`, not the live app) and ran the real code inside a SQLite Durable Object through the D1-shaped adapter (`apps/worker/src/store/adapter.ts`). Each operation ran 30 times or more as its own alarm invocation, one group of operations at a time with a quiet minute between groups. CPU per invocation comes from GraphQL Analytics (`durableObjectsInvocationsAdaptiveGroups`, run 41395183161). The Worker was deleted afterwards.
+
+Data: the November budget plus 3,296 bank rows over three years; a 3,000-transaction backfill at 100 per page; the 36-month, 60-category budget. Step sizes: apply 25 events, processing 25 events, recompute 2 months.
+
+CPU per invocation in ms. The gate is a p95 under 8 ms; the owner's limit is 10 ms.
+
+| Operation                          | p50  | p95  | p99  | Gate |
+| ---------------------------------- | ---- | ---- | ---- | ---- |
+| `/api/session`                     | 2.0  | 6.5  | 7.8  | pass |
+| `/api/badges`                      | 3.1  | 7.6  | 8.4  | pass |
+| `/api/budget/2026-11`              | 3.3  | 7.7  | 13.3 | pass |
+| `/api/accounts`                    | 3.5  | 7.9  | 13.0 | pass |
+| `/api/reports`                     | 4.0  | 7.9  | 9.3  | pass |
+| `/api/activity`                    | 7.2  | 10.8 | 17.0 | fail |
+| `/api/activity?filter=attention`   | 5.5  | 9.8  | 10.7 | fail |
+| Sync fetch step (100 transactions) | 3.3  | 4.5  | 6.1  | pass |
+| Sync apply step (25 events)        | 3.4  | 4.7  | 5.6  | pass |
+| Sync processing step (25 events)   | 5.0  | 7.7  | 10.6 | pass |
+| Recompute step (2 months)          | 4.0  | 6.3  | 11.3 | pass |
+| Move step (~150 KB of rows)        | 10.5 | 17.9 | 18.6 | fail |
+
+These figures include the harness's own work in every invocation: reading its step plan and writing a timeline row, roughly 0.5 ms. Real steps will be a little lower.
+
+What else phase 0 found:
+
+- **Durable Objects on Free don't stop at 10 ms.** A request that burned about 49 ms of CPU succeeded, and an alarm that burned about 100 ms ran once without a retry. No invocation in the run reported `exceededCpuErrors`. The 10 ms limit is the owner's rule, not a platform cutoff for Durable Objects. Peaks over 10 ms don't fail, but the gate stays as designed.
+- **Point-in-time recovery answered "This database has no history"** for a timestamp from before the object existed. It did not say the feature isn't available, which is what the local simulator says. This needs a retest against an object that's more than a minute old.
+- **Durable Object rows are counted separately from D1** (`durableObjectsPeriodicGroups.rowsRead` / `rowsWritten`). D1's figures for the day didn't include them. Whether the Free plan enforces the two daily limits as one pool can't be seen without hitting a limit. Cloudflare's pricing pages list them as separate limits.
+- **Per invocation, the Worker calling the object** (the router, a separate invocation) used 1–6 ms.
+
+What changes in the design (`docs/multi-user.md`):
+
+1. **Move steps of about 50 KB of rows**, not 150 KB. CPU scales with bytes: about 10.5 ms per 150 KB at p50, so 50 KB is about 3.5 ms.
+2. **The Activity screen needs the fallback** planned in phase 0: a stored list of recent rows, kept up to date by sync and by edits, so the screen reads a few hundred stored rows instead of building them from `v_transaction` every time. The filter view gets the same. This is required before the switch.
+3. **Processing and recompute have p99 peaks of about 11 ms.** They pass the gate. Dropping to 20 events and staying at 2 months would leave more margin; this is a tuning choice for phase 2.
+
 ## Update: SQLite in-process, for a database per budget (Nov 2, 2026)
 
 Phase 0 of `docs/multi-user.md` v2 asked whether the hot paths would still fit 10 ms of CPU if each budget's SQLite ran inside a Durable Object, on the same thread as the code, instead of inside D1. `apps/worker/measure/store.measure.ts` runs the real code against `node:sqlite` and reports two numbers for each path. The first is today's Worker CPU, with SQLite excluded as in production. The second is the CPU spent executing SQLite and building result rows (`NodeD1.stats.execMicros`), which a Durable Object would add. Data: the November budget plus 3,296 bank rows over three years; a 3,000-transaction backfill at 100 per page; and the 36-month, 60-category budget.

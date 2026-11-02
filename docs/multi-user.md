@@ -323,7 +323,7 @@ The new objects read D1 through the D1 binding, which stays configured until pha
   - `user`, `budget_member`, `passkey`, `auth_session`, `device_link`, with the new 7.1 columns;
   - one `connection_route` per Plaid item;
   - Plaid slots, starting at 7 used.
-- **Store rows:** every budget table, in foreign-key order. Steps are sized by measured CPU, about 100–200 KB of rows each, and phase 0 measures one. A step always copies at least one row, and a 200 KB `raw_page` row is a step on its own.
+- **Store rows:** every budget table, in foreign-key order. Steps are about 50 KB of rows each: phase 0 measured a 150 KB step at 10.5 ms (p50) on Cloudflare, and CPU grows with bytes. A step always copies at least one row, and a 200 KB `raw_page` row is a step on its own.
 - **Tables without `budget_id`:**
   - `apply_counter` takes D1's value;
   - `lease_guard` is created fresh;
@@ -459,6 +459,8 @@ This runs on a throwaway Worker in the owner's account (approved), deployed by a
 
   The gate is p95 under 8 ms. If the Activity screen misses, the fallback is a stored list of recent rows, updated by sync.
 
+  **Result (Nov 2, 2026, `docs/measurements.md`):** every sync step, recompute step and screen passes, except the Activity screen (p95 10.8 ms) and the 150 KB move step (p95 17.9 ms). So the Activity screen gets the stored list, and move steps shrink to 50 KB. Durable Objects on Free did not stop at 10 ms: a 49 ms request succeeded. Point-in-time recovery needs a retest on an older object.
+
 - **Platform behaviour:**
   - whether Durable Object rows share D1's daily pool, and which GraphQL dataset reports them;
   - point-in-time recovery on Free;
@@ -534,7 +536,16 @@ The results go in `docs/measurements.md`. If anything misses its gate, the work 
 
   Everything else scales with settings.
 
-- Phase 0 answers the CPU gates on Cloudflare, shared row pools, the GraphQL dataset, point-in-time recovery on Free, alarm behaviour after overruns, the data browser on iPhone, the counter's write cost, and the link token's lifetime.
+- **Answered by phase 0:**
+  - CPU gates (pass, except the Activity screen and 150 KB move steps);
+  - the GraphQL datasets (`durableObjectsInvocationsAdaptiveGroups` for CPU, `durableObjectsPeriodicGroups` for rows);
+  - CPU overruns (no platform cutoff at 10 ms on Free).
+- **Still open:**
+  - point-in-time recovery on Free (retest on an older object);
+  - whether the daily row limits pool with D1's;
+  - the data browser on iPhone (owner);
+  - the counter's write cost;
+  - the link token's lifetime.
 - Do Plaid Trial terms allow other people's banks at all? This needs an answer before sign-up is turned on.
 
 ## 14. History
