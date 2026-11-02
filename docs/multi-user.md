@@ -53,7 +53,7 @@ One visible change, recorded as a decision: an edit to a month 3–6 months back
 | **Workers**                  | Static web app, API entry, sign-in checks, routing each request to the right object           | 100,000 requests a day; 10 ms CPU                                                                                                  |
 | **Durable Objects (SQLite)** | `Directory` (one) and `BudgetStore` (one per budget); alarms run all background work          | 1 GB per object, 5 GB per account; 5M rows read and 100k rows written a day; 100,000 requests a day; 13,000 GB-s of duration a day |
 | **Cron Triggers**            | One daily trigger: account usage refresh, plus a check that every budget's jobs are scheduled | 1 of 5                                                                                                                             |
-| **Rate Limiting binding**    | Sign-in, sign-up and recovery attempts                                                        |                                                                                                                                    |
+| **Rate Limiting binding**    | Sign-in and invite attempts                                                                   |                                                                                                                                    |
 | **GraphQL Analytics API**    | Account-wide usage, for the write breaker                                                     |                                                                                                                                    |
 
 Removed: **D1** (deleted after the move) and **Workflows** (replaced by alarms). Not used: R2, KV, Queues, Zero Trust, Email. Nothing here needs a payment card.
@@ -82,7 +82,7 @@ A GET with a cached session costs one Worker request and one Durable Object requ
 **Tables:**
 
 - `user` (with the 7.1 columns), `budget` (`id`, `name`, `created_at`), `budget_member`
-- `passkey`, `auth_session`, `device_link`, `invite`, `recovery_code`
+- `passkey`, `auth_session`, `device_link`, `invite`
 - `plaid_link_slot`
 - `connection_route` (Plaid item id as primary key → budget id, connection id)
 - `usage_day`, `budget_usage_day`
@@ -92,7 +92,7 @@ A GET with a cached session costs one Worker request and one Durable Object requ
 **RPC methods:**
 
 - `authenticate`
-- ceremonies: sign-in, setup, invite, recovery, device link
+- ceremonies: sign-in, setup, invite, device link (also used for People's reset link)
 - security, invites, People
 - `reserveSlot`, `useSlot`, `releaseSlot`
 - `routeFor`, `registerRoute`
@@ -233,7 +233,7 @@ The Worker verifies the signature, asks `routeFor` which budget owns the item, t
 
 **Sign-up**
 
-1. One Directory transaction creates the user, budget, membership, passkey, session and recovery code, and marks the invite used.
+1. One Directory transaction creates the user, budget, membership and passkey, and marks the invite used. The session follows.
 2. The Worker then calls the new store's `health()`, which creates the store and runs its migrations.
 3. The store fills in its first-run rows on first request. If the steps are interrupted part-way, the result is an empty budget that still works.
 
@@ -253,33 +253,31 @@ The Worker verifies the signature, asks `routeFor` which budget owns the item, t
 
 - **Per-user passkey handles.** New users get a random WebAuthn user handle and their name as `userName`. `excludeCredentials` lists only that user's passkeys. Sign-in checks that the assertion's `userHandle` matches the passkey's user.
 - **Challenges in a cookie.** Starting a ceremony writes nothing. The challenge goes in a 5-minute HMAC-signed cookie (HKDF key from `TOKEN_KEYS`, label `ledgerline-challenge`). A successful finish stores `challenge_id` on the session under a unique index, so replaying the cookie and assertion fails.
-- **Rate limits.** The rate-limiting binding allows about 20 a minute per IP on every sign-in, sign-up and recovery route.
+- **Rate limits.** The rate-limiting binding allows about 20 a minute per IP on every sign-in and invite route.
 
-### 7.3 The switch, invites, recovery
+### 7.3 The switch and invites
 
-- `SIGNUPS` (`off` / `invite` / `open`, default `off`) and `MAX_USERS` (default 1) are Worker variables, so turning sign-up on takes a deploy. While `off`, the invite, sign-up and recovery routes return 404 and the web app hides them.
+**Later, not built (owner, Nov 2, 2026):** 7.3 and 7.4 are deferred. Only the per-user databases are built now; the identity columns, per-user passkey handles and the `invite` table are in place for when invites are wanted.
+
+- `SIGNUPS` (`off` / `invite`, default `off`) and `MAX_USERS` (default 1) are Worker variables, so turning invites on takes a deploy. While `off`, the invite and People routes return 404 and the web app hides them. Any other value counts as `off`.
 - **Invite:**
   - The token goes in the URL fragment. It's single use and lasts 7 days, and only its hash is stored.
   - One Directory transaction creates the account, checked against the invite, the switch and `MAX_USERS` (counting active, disabled and deleting users).
   - The new user starts with the invite's link allowance, which defaults to 0.
-- **Open sign-up** is the same flow without an invite, and only when `SIGNUPS = open`.
-- **Recovery codes** are for non-owner users. A code is shown once and stored as a unique hash. Using it deletes all of that user's passkeys and sessions and issues a new code.
+- **Cut (owner, Nov 2, 2026):** open sign-up and recovery codes. Invites are enough for people the owner knows, and a locked-out user gets a reset link from People (7.4) instead of a code.
 - **The owner** keeps D-27's device link. Below that, the runbook uses the dashboard data browser (5.2).
 
-### 7.4 Settings → People and Diagnostics (admins)
+### 7.4 Settings → People (admins)
 
-- **People** appears once `SIGNUPS` isn't `off`:
-  - invites
-  - users: name, joined, last seen, links used of allowance, today's usage
-  - disable and enable, link allowances, delete
-  - shared counters: Plaid links used of the cap, users of `MAX_USERS`, usage, storage
-- **Diagnostics** is always shown to the admin, for their own budget only:
-  - row counts per table
-  - job queue (pending, failed, next alarm)
-  - a fixed list of named health queries
-  - **Download full dump** (8.7)
+**People** appears once `SIGNUPS` is `invite`:
 
-  There's no free-form SQL, and **no restore button**: restores are a runbook step (8.8).
+- invites: make one (with a bank-link allowance), cancel one
+- users: name, joined, last seen, links used of allowance
+- turn an account off or on (off signs it out everywhere), set bank-link allowances, delete (section 10)
+- **reset link** for a locked-out user: removes their passkeys, sessions and device links and makes a one-day, single-use link to add a new passkey, which the admin sends them. Not for admins.
+- shared counters: Plaid links used of the cap, users of `MAX_USERS`
+
+**Cut (owner, Nov 2, 2026):** the Diagnostics screen. The full backup (8.7) is on Import and export, and the Cloudflare dashboard covers the rest. There is no restore button: restores are a runbook step (8.8).
 
 ## 8. Moving all data and deleting D1
 
@@ -366,7 +364,7 @@ This works only while D1's schema still matches. The expand-only rule and CI kee
 The **full dump** is a copy of every table of every object the user can reach: the Directory rows for the user, plus their budget's store, including raw pages, sync state, snapshots, the audit log and the encrypted Plaid tokens.
 
 - **Format:** one NDJSON file. Each line is `{ table, row }`, with a header carrying the schema versions and the canonical hash of every table.
-- **Download:** Settings → Diagnostics → Download full dump. It is streamed in chunks, and the download needs a fresh passkey check.
+- **Download:** Settings → Import and export → Full backup. It is streamed in chunks, and the download needs a fresh passkey check.
 - **Restore:** a runbook step loads a dump into new, empty objects through `loadChunk`, then runs the same verification as the move.
 
 It replaces "keep the JSON export" as the copy the owner keeps. The JSON export stays as the readable one.
@@ -406,10 +404,7 @@ Phase 0 confirms point-in-time recovery works on Free.
 
 - Each object tracks its own rows read and written in its own SQLite. It sends them to `Directory.noteUsage` at most once a minute.
 - **The account breaker** (70% pause, 90% read-only) uses GraphQL Analytics plus the Directory's recent counts. Phase 0 finds the right dataset and checks whether Durable Object rows share D1's pool.
-- **Multi-user mode only:**
-  - per-user shares (20,000 rows written and 1,000,000 read a day; admins are exempt);
-  - backfills admitted against today's usage;
-  - weekly full recompute for budgets with no sign-in for 14 days.
+- **Cut for now (owner, Nov 2, 2026):** per-user daily shares, admitting backfills against today's usage, and the weekly recompute for idle budgets. They only matter with many users; the account breaker still protects the free plan.
 
 ### 9.3 Capacity on Free
 
@@ -509,11 +504,11 @@ The results go in `docs/measurements.md`. If anything misses its gate, the work 
 - Only when the owner says so, after a full dump and a passing restore dry run (8.8).
 - Remove the D1 binding, the Workflow classes, the extra crons and the D1 serving paths. Delete the D1 database. Update the runbook.
 
-**6. Accounts:** the switch, invites, recovery codes, People and Diagnostics (7.3, 7.4).
+**6. Accounts: later (owner, Nov 2, 2026).** The switch, invites and People with its reset link (7.3, 7.4). Not built now.
 
-**7. Plaid slots, fair share, deletion, and the isolation test** (sections 9, 10 and 11).
+**7. Plaid slots, deletion, and the isolation test: later (owner, Nov 2, 2026)** (sections 9.1, 10 and 11). Only needed once there are other users.
 
-**8. Capacity:** seed 10 users with the November fixture, simulate a day, and update 9.3.
+**8. Capacity measurement:** cut for now (owner, Nov 2, 2026). The estimates in 9.3 are enough for a few people.
 
 **9. Docs**
 
@@ -521,9 +516,19 @@ The results go in `docs/measurements.md`. If anything misses its gate, the work 
   - Durable Objects for everything; D1 and Workflows removed;
   - alarms instead of Workflows;
   - the new chunk sizes, which revise D-22;
-  - identity by user id and recovery codes;
+  - identity by user id; invites only, with a reset link instead of recovery codes;
   - the no-loss rule and the full dump.
 - Updates to `design.md`, `sync-spec.md`, `threat-model.md` (including the 30-second read window), `build-plan.md`, `runbooks/setup.md` and `CLAUDE.md`.
+
+**Cleanup after the move (with phase 5).** The move is one-time code. Once the owner's data has moved, been checked, and the owner says D1 can go, these are deleted:
+
+- the move and the way back: `store/move.ts`, `store/move-jobs.ts`, `store/frozen.ts`, `resetForMove`/`startMoveOut`/`afterMove`/`restoreDump`-style move methods on both objects, `POST`/`GET /api/move` and `/api/move/back`, the Storage card, and their tests;
+- the frozen and restoring modes in `index.ts` and `router.ts` (`servingPhase`, the lease abort), and the "moving" write state and banner;
+- every D1 serving path: the D1 `api` mount in `index.ts`, `identify`'s D1 use, `resolveMembership`, the D1 scheduled handler, the D1 binding and `packages/db/migrations` (kept in git history);
+- Workflows: the SYNC, RECOMPUTE and MAINTENANCE classes and bindings and the job shims that stand in for them;
+- the phase 0 tooling (`apps/worker/phase0`, `.github/workflows/phase0.yml`, `measure/store.measure.ts`).
+
+What stays: the Directory, the budget stores, the adapter, the job runner, routing, sign-in, and the full backup (the way back once D1 is gone).
 
 **Rough size:** phases 0–5 take five to eight weeks of sessions; phases 6–8 take one to two more.
 
