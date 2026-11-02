@@ -149,6 +149,7 @@ The Trial slot is spent the moment the user finishes Plaid Link, before the app 
 - Making a link token for a new bank inserts a `reserved` slot (30-minute expiry) in a fenced batch: it goes in only if `PLAID_LINKS_USED_BEFORE` plus the `used` and unexpired `reserved` slots is under the cap, and the user's own count is under their `link_allowance`. Two people can't take the last slot together.
 - Exchange **always saves the Item** (the 0005 rule: never lose a link that already counts) and marks the slot `used`. If the reservation had expired, the slot is marked `used` anyway and the over-count is reported on People. Cancelling Link marks it `released`. A reservation that expires without an exchange counts as released.
 - Repair (update mode) never reserves a slot.
+- **On Plaid Production** there is no lifetime cap; each Item costs a monthly fee instead. Switching is configuration only: set `PLAID_LINK_CAP` to `0` (meaning no cap) and `PLAID_LINKS_USED_BEFORE` stops mattering. The global count check is skipped, slots are still recorded (useful history), and `link_allowance` stays as the per-user control over how many paid Items each person can add. Nothing needs removing.
 - For the owner this keeps today's behavior (confirm prompt, 3 left) with a stronger check.
 
 ### 7.2 D1 writes and reads (A16)
@@ -235,7 +236,7 @@ Each phase lands on `main` with `pnpm check` passing, and the owner's app is unc
 
 ## 11. Open questions
 
-- Should a new user's link allowance default to 0 (admin grants) or 1? Draft says 0, because Trial links are gone for good once used.
+- ~~Should a new user's link allowance default to 0 or 1?~~ **Decided by the owner (Nov 2, 2026): 0.** An admin grants links per person.
 - Do Plaid Trial terms allow other people's banks at all? (9.1; decides whether 7.1's allowance matters before Production.)
 
 ## 12. Review (Nov 2, 2026)
