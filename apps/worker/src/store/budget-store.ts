@@ -23,6 +23,8 @@ import {
 } from './budget-jobs.js';
 import { connectionToken, makeProvider, pageSize } from '../sync/provider.js';
 import { writeBudgetState } from '../sync/breaker.js';
+import { storeMoveHandler, type MoveStatus } from './move-jobs.js';
+import type { QueuedWebhook } from './frozen.js';
 
 export interface StoreHealth {
   ok: boolean;
@@ -89,6 +91,59 @@ export class BudgetStore extends DurableObject<Env> {
         passThroughOnException() {},
       } as never,
     );
+  }
+
+  // ---- the move (docs/multi-user.md 8.3–8.5)
+
+  /**
+   * Empties this store and starts copying its budget from D1. Refused unless D1 says a move is copying right now,
+   * so a store holding live data can never be wiped by mistake.
+   */
+  async resetForMove(budgetId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const refused = await notFrozen(this.env.DB);
+    if (refused) return { ok: false, reason: refused };
+    await this.ctx.storage.deleteAll();
+    migrate(this.ctx.storage, BUDGET_MIGRATIONS, Date.now());
+    this.cachedBudgetId = null;
+    this.app = null;
+    await this.ctx.storage.put('move_status', { state: 'copying' } satisfies MoveStatus);
+    await this.enqueue('move_in', {
+      id: 'move_in',
+      state: { phase: 'copy', budgetId, t: 0, cursor: null, rows: 0, hash: '' },
+      runAt: Date.now(),
+    });
+    return { ok: true };
+  }
+
+  async moveStatus(): Promise<MoveStatus | null> {
+    return (await this.ctx.storage.get<MoveStatus>('move_status')) ?? null;
+  }
+
+  /** After the switch: replay webhooks that arrived during the freeze, keep recurring jobs, sync every bank. */
+  async afterMove(webhooks: QueuedWebhook[]): Promise<void> {
+    this.ready();
+    const now = Date.now();
+    const db = this.adapter();
+    for (const w of webhooks) {
+      const conn = await db
+        .prepare(`SELECT id FROM connection WHERE provider_item_id = ?1 AND removed_at IS NULL`)
+        .bind(w.itemId)
+        .first<{ id: string }>();
+      if (conn && (w.type === 'item_error' || w.type === 'pending_expiration'))
+        await db
+          .prepare(
+            `UPDATE connection SET status = 'login_required', error_code = ?2, updated_at = ?3 WHERE id = ?1`,
+          )
+          .bind(conn.id, w.code, now)
+          .run();
+    }
+    await this.ensureJobs();
+    const conns = await db
+      .prepare(
+        `SELECT id FROM connection WHERE removed_at IS NULL AND provider = 'plaid' AND status != 'login_required' AND setup_done = 1`,
+      )
+      .all<{ id: string }>();
+    for (const c of conns.results) await startSyncJob(db, this.enqueue, c.id, 'cron', now).catch(() => false);
   }
 
   /** Daily safety net (6.2): recreate missing recurring jobs and make sure an alarm is set. */
@@ -230,6 +285,13 @@ export class BudgetStore extends DurableObject<Env> {
       backstop: (job, now) => backstopHandler(this.adapter(), this.enqueue)(job, now),
       daily_scan: (job, now) => dailyScanHandler(this.appEnv(), budgetId, this.enqueue)(job, now),
       maintenance: (job, now) => maintenanceHandler(this.appEnv(), budgetId)(job, now),
+      move_in: (job, now) =>
+        storeMoveHandler(
+          this.env.DB,
+          this.adapter(),
+          () => this.appEnv(),
+          (st) => this.ctx.storage.put('move_status', st),
+        )(job, now),
       register_link: async (job) => {
         // Retried until the Directory answers; a duplicate Item is flagged on the connection (6.4).
         const { itemId, connectionId } = job.state as { itemId: string; connectionId: string };
@@ -251,6 +313,12 @@ export class BudgetStore extends DurableObject<Env> {
     if (job.kind === 'sync' && job.connectionId)
       await failSync(await this.syncDeps(), job.connectionId, job.state as SyncState, error);
   }
+}
+
+/** Null when D1's move_state is 'frozen' (a move is copying), else why a wipe is refused. */
+export async function notFrozen(d1: D1Database): Promise<string | null> {
+  const r = await d1.prepare(`SELECT phase FROM move_state WHERE id = 1`).first<{ phase: string }>();
+  return r?.phase === 'frozen' ? null : `refused: no move is copying (phase ${r?.phase ?? 'unknown'})`;
 }
 
 export function storeHealth(

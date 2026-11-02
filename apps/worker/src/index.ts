@@ -7,7 +7,9 @@ import { measure } from './measure/routes.js';
 import { dev } from './measure/dev.js';
 import { CRON_MAINTENANCE, scheduled } from './cron.js';
 import { DIRECTORY_NAME } from './store/directory.js';
-import { objectsServe, routeApi, servingPhase } from './store/router.js';
+import { objectsServe, resetRoutingCache, routeApi, servingPhase } from './store/router.js';
+import { REAUTH_MS, identify } from './http/auth.js';
+import { csrf } from './http/security.js';
 import { MOVING, queueWebhook, readOnlyD1 } from './store/frozen.js';
 import { makeProvider } from './sync/provider.js';
 export { SyncWorkflow } from './sync/workflow.js';
@@ -27,6 +29,58 @@ app.use('/api/auth/*', async (c, next) => {
   return next();
 });
 // After the move (docs/multi-user.md 8.5), the Directory and each budget's Durable Object serve the API.
+// Starting the move and watching it (docs/multi-user.md 8.1): the owner (admin) only; starting needs a passkey
+// check in the last 15 minutes, no move already under way, and no bank sync holding a lease.
+const MOVE_LEASE_MS = 30 * 60_000;
+app.on(['GET', 'POST'], '/api/move', csrf, async (c) => {
+  const env = c.env;
+  const now = Date.now();
+  const phase = await servingPhase(env, now);
+  const dir = env.DIRECTORY.get(env.DIRECTORY.idFromName(DIRECTORY_NAME));
+  if (phase === 'moved') {
+    const a = await dir.authenticate(c.req.header('cookie') ?? null, 'GET', '/api/move');
+    if (!a.ok) return c.json(a.body, a.status);
+    return c.json({ phase, status: await dir.moveStatus() });
+  }
+  const who = await identify(c.req.raw, env, now);
+  if (!who || who.kind !== 'user')
+    return c.json({ error: 'unauthenticated', message: 'Sign in with your passkey' }, 401);
+  const admin = await env.DB.prepare(`SELECT is_admin FROM user WHERE id = ?1`)
+    .bind(who.userId)
+    .first<number>('is_admin');
+  if (admin !== 1) return c.json({ error: 'forbidden', message: 'Only the owner can move the data' }, 403);
+  if (c.req.method === 'GET')
+    return c.json({ phase, status: phase === 'none' ? null : await dir.moveStatus() });
+  if (now - who.verifiedAt > REAUTH_MS)
+    return c.json({ error: 'reauth', message: 'Confirm it’s you with your passkey' }, 401);
+  if (phase !== 'none') return c.json({ error: 'busy', message: 'A move is already under way' }, 409);
+  const syncing = await env.DB.prepare(
+    `SELECT count(*) AS n FROM connection WHERE sync_lock IS NOT NULL AND lock_expires > ?1`,
+  )
+    .bind(now)
+    .first<number>('n');
+  if (syncing)
+    return c.json({ error: 'busy', message: 'A bank sync is running. Try again in a few minutes.' }, 409);
+  const r = await env.DB.prepare(
+    `UPDATE move_state SET phase = 'frozen', started_at = ?1, lease_expires = ?2, updated_at = ?1 WHERE id = 1 AND phase = 'none'`,
+  )
+    .bind(now, now + MOVE_LEASE_MS)
+    .run();
+  if (r.meta.changes !== 1) return c.json({ error: 'busy', message: 'A move is already under way' }, 409);
+  resetRoutingCache();
+  const started = await dir.resetForMove().catch((e: unknown) => ({ ok: false as const, reason: String(e) }));
+  if (!started.ok) {
+    await env.DB.prepare(
+      `UPDATE move_state SET phase = 'none', updated_at = ?1 WHERE id = 1 AND phase = 'frozen'`,
+    )
+      .bind(Date.now())
+      .run();
+    resetRoutingCache();
+    return c.json({ error: 'move_failed', message: started.reason }, 500);
+  }
+  return c.json({ phase: 'frozen', status: await dir.moveStatus() }, 202);
+});
+
 // During the move (docs/multi-user.md 8.2): screens read-only, edits and sign-ins answer "moving", Plaid webhooks
 // wait in move_queue. D1's triggers refuse writes anyway; this turns that into answers instead of errors.
 const frozenApp = new Hono<AppEnv>();
@@ -40,7 +94,7 @@ app.use('/api/*', async (c, next) => {
       .verifyWebhook(c.req.raw)
       .catch(() => null);
     if (!ev) return c.json({ error: 'unauthorized' }, 401);
-    if (ev.providerItemId) await queueWebhook(c.env, ev.providerItemId, ev.type, Date.now());
+    if (ev.providerItemId) await queueWebhook(c.env, ev.providerItemId, ev.type, ev.code ?? null, Date.now());
     return c.json({ ok: true });
   }
   if (c.req.method !== 'GET' && c.req.method !== 'HEAD') return c.json(MOVING, 503);

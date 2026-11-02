@@ -22,6 +22,8 @@ import { refreshUsage } from '../ops/usage.js';
 import { pruneAuthStmts } from '../maintenance.js';
 import { JobRunner, type Handler } from './jobs.js';
 import { nextUtc } from './budget-jobs.js';
+import { directoryMoveHandler, type MoveStatus } from './move-jobs.js';
+import { notFrozen } from './budget-store.js';
 
 /** Budgets checked per ensure_all step (docs/multi-user.md 6.2). */
 export const ENSURE_BATCH = 25;
@@ -87,6 +89,28 @@ export class Directory extends DurableObject<Env> {
     return { jobs: this.runner.list() };
   }
 
+  // ---- the move (docs/multi-user.md 8.3–8.5)
+
+  /** Empties the Directory and starts the move. Refused unless D1 says a move is copying right now. */
+  async resetForMove(): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const refused = await notFrozen(this.env.DB);
+    if (refused) return { ok: false, reason: refused };
+    await this.ctx.storage.deleteAll();
+    migrate(this.ctx.storage, DIRECTORY_MIGRATIONS, Date.now());
+    this.app = null;
+    await this.ctx.storage.put('move_status', { state: 'starting' });
+    await this.runner.enqueue(
+      'move',
+      { id: 'move', state: { phase: 'copy', t: 0, cursor: null }, runAt: Date.now() },
+      Date.now(),
+    );
+    return { ok: true };
+  }
+
+  async moveStatus(): Promise<unknown> {
+    return (await this.ctx.storage.get('move_status')) ?? null;
+  }
+
   override async alarm(): Promise<void> {
     this.ready();
     await this.runner.runNext(Date.now());
@@ -94,6 +118,25 @@ export class Directory extends DurableObject<Env> {
 
   private handlers(): Record<string, Handler> {
     return {
+      move: (job, now) => {
+        const store = (b: string) => this.env.BUDGET.get(this.env.BUDGET.idFromName(b));
+        return directoryMoveHandler({
+          d1: this.env.DB,
+          dir: this.db as unknown as D1Database,
+          budgetIds: async () =>
+            this.ctx.storage.sql
+              .exec(`SELECT id FROM budget ORDER BY id`)
+              .toArray()
+              .map((r) => String(r.id)),
+          resetStore: async (b) => {
+            const r = await store(b).resetForMove(b);
+            if (!r.ok) throw new Error(r.reason);
+          },
+          storeStatus: (b) => store(b).moveStatus() as Promise<MoveStatus | null>,
+          afterMove: (b, events) => store(b).afterMove(events),
+          setStatus: (st) => this.ctx.storage.put('move_status', st),
+        })(job, now);
+      },
       // Expired sign-in state (D-27), daily.
       auth_prune: async (_job, now) => {
         await this.db.batch(pruneAuthStmts(this.db as unknown as D1Database, now) as never);

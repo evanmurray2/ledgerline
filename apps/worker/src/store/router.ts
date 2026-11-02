@@ -13,10 +13,21 @@ let cached: { phase: string; at: number } | null = null;
 /** move_state.phase: 'none', 'frozen', 'moved' or 'restoring' (cached for 10 seconds per isolate). */
 export async function servingPhase(env: Env, now = Date.now()): Promise<string> {
   if (cached && now - cached.at < CACHE_MS) return cached.phase;
-  const r = await env.DB.prepare(`SELECT phase FROM move_state WHERE id = 1`)
-    .first<{ phase: string }>()
+  const r = await env.DB.prepare(`SELECT phase, lease_expires FROM move_state WHERE id = 1`)
+    .first<{ phase: string; lease_expires: number | null }>()
     .catch(() => null);
-  cached = { phase: r?.phase ?? 'none', at: now };
+  let phase = r?.phase ?? 'none';
+  // The freeze's time limit (docs/multi-user.md 8.2): a move that hasn't switched in time is abandoned and D1
+  // carries on, even if the move's own job has died. The switch is fenced on the same lease.
+  if (phase === 'frozen' && r?.lease_expires && r.lease_expires < now) {
+    await env.DB.prepare(
+      `UPDATE move_state SET phase = 'none', updated_at = ?1 WHERE id = 1 AND phase = 'frozen' AND lease_expires < ?1`,
+    )
+      .bind(now)
+      .run();
+    phase = 'none';
+  }
+  cached = { phase, at: now };
   return cached.phase;
 }
 

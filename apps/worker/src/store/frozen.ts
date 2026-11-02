@@ -64,8 +64,20 @@ export function readOnlyD1(db: D1Database): D1Database {
 export const MOVING = { error: 'moving', message: 'Moving your data. Try again in a few minutes.' } as const;
 
 /** A Plaid webhook that arrives during the freeze, kept for the new databases to replay after the switch. */
-export async function queueWebhook(env: Env, itemId: string, type: string, now: number): Promise<void> {
+export async function queueWebhook(
+  env: Env,
+  itemId: string,
+  type: string,
+  code: string | null,
+  now: number,
+): Promise<void> {
   await env.DB.prepare(`INSERT INTO move_queue (kind, payload, created_at) VALUES ('webhook', ?1, ?2)`)
-    .bind(JSON.stringify({ itemId, type }), now)
+    .bind(JSON.stringify({ itemId, type, code }), now)
     .run();
+}
+
+export interface QueuedWebhook {
+  itemId: string;
+  type: string;
+  code: string | null;
 }
