@@ -579,6 +579,7 @@ export async function finalizeConnection(
   env: Env,
   c: StepContext,
   runId: string,
+  opts: { recompute?: boolean } = {},
 ): Promise<{ recomputeDone: boolean }> {
   const now = Date.now();
   try {
@@ -631,6 +632,8 @@ export async function finalizeConnection(
       `UPDATE connection SET last_synced_at = ?2, last_attempt_at = ?2, error_code = NULL, status = 'ok' WHERE id = ?1`,
     ).bind(c.connectionId, now),
   ]);
+  // The job runner (docs/multi-user.md 6.1) recomputes in its own small steps instead.
+  if (opts.recompute === false) return { recomputeDone: false };
   const r = await recompute(env.DB, c.budgetId, now);
   return { recomputeDone: r.done };
 }
