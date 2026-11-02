@@ -45,6 +45,8 @@ export interface Env {
   APP_VERSION?: string;
   /** Inside a budget's Durable Object: today's account usage, from the Directory (docs/multi-user.md 9.2). */
   USAGE?: () => Promise<{ written: number; read: number }>;
+  /** Inside a budget's Durable Object: add this app's own row counts to the Directory's usage_day. */
+  NOTE_USAGE?: (written: number, read: number) => Promise<void>;
 }
 
 export interface SyncParams {

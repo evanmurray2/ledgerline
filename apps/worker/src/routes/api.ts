@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import { clock } from '../http/clock.js';
 import { z } from 'zod';
 import {
@@ -41,7 +41,7 @@ export const budgetApi = new Hono<AppEnv>();
 api.route('/auth', authRoutes);
 
 /** Every other API request: a signed-in session (or the ops token), then membership in a budget. */
-api.use('*', async (c, next) => {
+export const identity: MiddlewareHandler<AppEnv> = async (c, next) => {
   c.set('requestId', crypto.randomUUID());
   const path = new URL(c.req.url).pathname;
   if (path === '/api/webhooks/plaid' || path.startsWith('/api/auth/')) return next();
@@ -70,7 +70,8 @@ api.use('*', async (c, next) => {
   c.set('email', m.email);
   c.set('budgetId', m.budgetId);
   return next();
-});
+};
+api.use('*', identity);
 budgetApi.use('*', csrf);
 /** Unchanged screens answer 304; every change bumps the version (http/etag.ts). */
 budgetApi.use('*', etags);
@@ -189,12 +190,10 @@ budgetApi.get('/session', async (c) => {
   const ws = classifyUsage(u.written, u.read);
   const tomorrow = new Date(now);
   tomorrow.setUTCHours(24, 0, 0, 0);
-  const user = await s.first<{ github_login: string | null }>(
-    `SELECT github_login FROM user WHERE id = ?2 AND ?1 IS NOT NULL`,
-    c.get('userId'),
-  );
   const body: Session = {
-    user: { email: c.get('email'), login: user?.github_login ?? null },
+    // `login` was the GitHub name from before passkeys (D-27); nothing sets it any more. Users live in the
+    // Directory after the move, so the budget's routes don't read the user table.
+    user: { email: c.get('email'), login: null },
     budget: {
       id: f.budget.id,
       name: f.budget.name,

@@ -2,6 +2,11 @@
 // (docs/multi-user.md 5.3). It migrates itself at start, runs its background work on alarms (6.1) and keeps its own
 // recurring jobs (6.2). Nothing routes requests to it yet: until the move, the app runs entirely on D1.
 import { DurableObject } from 'cloudflare:workers';
+import { Hono } from 'hono';
+import type { AppEnv } from '../http/context.js';
+import type { Caller } from './directory.js';
+import { DIRECTORY_NAME } from './directory.js';
+import { budgetApi } from '../routes/api.js';
 import type { Env } from '../env.js';
 import { SqlD1 } from './adapter.js';
 import { appliedMigrations, migrate } from './migrate.js';
@@ -32,6 +37,7 @@ export class BudgetStore extends DurableObject<Env> {
   private startError: string | null = null;
   private readonly runner: JobRunner;
   private cachedBudgetId: string | null = null;
+  private app: Hono<AppEnv> | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -52,6 +58,37 @@ export class BudgetStore extends DurableObject<Env> {
   /** Called by the deploy smoke test and the daily check; running it applies pending migrations. */
   async health(): Promise<StoreHealth> {
     return storeHealth(this.ctx.storage, 'budget', this.startError);
+  }
+
+  /**
+   * The budget's API (routes/api.ts budgetApi) for a caller the Worker has already authenticated with the
+   * Directory. The store can only be reached through its binding, so the caller it is given can be trusted.
+   */
+  async api(request: Request, caller: Caller): Promise<Response> {
+    this.ready();
+    this.ensureBudget(caller.budgetId);
+    if (!this.app) {
+      const app = new Hono<AppEnv>();
+      app.use('*', async (c, next) => {
+        const who = (c.env as Env & { CALLER: Caller }).CALLER;
+        c.set('requestId', crypto.randomUUID());
+        c.set('userId', who.userId);
+        c.set('budgetId', who.budgetId);
+        c.set('email', who.email);
+        c.set('sessionId', who.sessionId);
+        return next();
+      });
+      app.route('/api', budgetApi);
+      this.app = app;
+    }
+    return this.app.fetch(
+      request,
+      { ...this.appEnv(), CALLER: caller } as never,
+      {
+        waitUntil: (p: Promise<unknown>) => this.ctx.waitUntil(p),
+        passThroughOnException() {},
+      } as never,
+    );
   }
 
   /** Daily safety net (6.2): recreate missing recurring jobs and make sure an alarm is set. */
@@ -91,9 +128,53 @@ export class BudgetStore extends DurableObject<Env> {
     return this.db as unknown as D1Database;
   }
 
-  /** The env every app function sees inside the store: the same bindings, with DB = this store's database. */
+  /**
+   * The env every app function sees inside the store: the same bindings, with DB = this store's database, account
+   * usage from the Directory, and the Workflow bindings standing in for jobs, so the routes that start a sync or
+   * an older-month recompute queue a job here instead (docs/multi-user.md 6.1).
+   */
   private appEnv(): Env {
-    return { ...this.env, DB: this.adapter() };
+    const now = () => Date.now();
+    const dir = this.env.DIRECTORY?.get(this.env.DIRECTORY.idFromName(DIRECTORY_NAME));
+    return {
+      ...this.env,
+      DB: this.adapter(),
+      ...(dir
+        ? { USAGE: () => dir.usageToday(), NOTE_USAGE: (w: number, r: number) => dir.noteUsage(w, r) }
+        : {}),
+      SYNC: {
+        create: async (o: { id: string; params: { connectionId: string; trigger: string } }) => {
+          // routes/settings.ts startSync() has already taken the lease with this id.
+          const state: SyncState = { phase: 'begin', holder: o.id, trigger: o.params.trigger };
+          await this.enqueue('sync', { id: o.id, connectionId: o.params.connectionId, state, runAt: now() });
+          return { id: o.id };
+        },
+        get: async () => {
+          throw new Error('not available inside a store');
+        },
+      } as never,
+      RECOMPUTE: {
+        create: async () => {
+          await this.enqueue('recompute', { id: 'recompute', runAt: now() });
+          return { id: 'recompute' };
+        },
+        get: async () => {
+          throw new Error('not available inside a store');
+        },
+      } as never,
+    };
+  }
+
+  /** The store fills in its own budget row on first use (sign-up and setup create it in the Directory). */
+  private ensureBudget(budgetId: string): void {
+    if (this.cachedBudgetId === budgetId) return;
+    this.ctx.storage.sql.exec(
+      `INSERT OR IGNORE INTO budget (id, name, created_at, updated_at) VALUES (?, 'My budget', ?, ?)`,
+      budgetId,
+      Date.now(),
+      Date.now(),
+    );
+    this.cachedBudgetId = budgetId;
   }
 
   /** The store's budget: the one row in its budget table. */

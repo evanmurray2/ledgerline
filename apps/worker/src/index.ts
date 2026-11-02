@@ -6,6 +6,7 @@ import { api } from './routes/api.js';
 import { measure } from './measure/routes.js';
 import { dev } from './measure/dev.js';
 import { scheduled } from './cron.js';
+import { objectsServe, routeApi } from './store/router.js';
 export { SyncWorkflow } from './sync/workflow.js';
 export { MaintenanceWorkflow } from './maintenance.js';
 export { RecomputeWorkflow } from './budget/workflow.js';
@@ -14,6 +15,15 @@ export { Directory } from './store/directory.js';
 
 const app = new Hono<AppEnv>();
 app.use('/api/*', apiHeaders);
+// After the move (docs/multi-user.md 8.5), the Directory and each budget's Durable Object serve the API.
+app.use('/api/*', async (c, next) => {
+  if (await objectsServe(c.env)) {
+    // Responses from another object have immutable headers; copy so apiHeaders can add its own.
+    const r = await routeApi(c.req.raw, c.env);
+    return new Response(r.body, r);
+  }
+  return next();
+});
 app.route('/api', api);
 // Local measurement and seed routes: never in production, and only when explicitly enabled.
 app.use('/__measure/*', async (c, next) => {

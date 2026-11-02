@@ -27,6 +27,10 @@ export default defineConfig(async () => {
         },
       }),
     ],
-    test: { include: ['test/**/*.test.ts'], setupFiles: ['./test/setup.ts'] },
+    test: {
+      include: ['test/**/*.test.ts'],
+      exclude: ['test/objects/**'],
+      setupFiles: ['./test/setup.ts'],
+    },
   };
 });

@@ -55,8 +55,10 @@ opsRoutes.post('/usage', async (c) => {
       ),
     );
   }
-  stmts.push(noteUsage(c.env.DB, events.length * 2, 1));
+  // Account usage lives in usage_day: in this database on D1, in the Directory after the move (multi-user.md 5.6).
+  if (!c.env.NOTE_USAGE) stmts.push(noteUsage(c.env.DB, events.length * 2, 1));
   await s.batch(stmts);
+  if (c.env.NOTE_USAGE) await c.env.NOTE_USAGE(events.length * 2, 1);
   return c.body(null, 204);
 });
 

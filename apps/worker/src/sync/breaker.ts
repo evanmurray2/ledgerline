@@ -22,6 +22,11 @@ export async function usageToday(
   env: Env,
   now = Date.now(),
 ): Promise<{ written: number; read: number; refreshedAt: number | null }> {
+  // Inside a budget's Durable Object, account usage lives in the Directory (docs/multi-user.md 9.2).
+  if (env.USAGE) {
+    const u = await env.USAGE();
+    return { written: u.written, read: u.read, refreshedAt: null };
+  }
   const r = await env.DB.prepare(
     `SELECT rows_written + est_written AS w, rows_read + est_read AS r, refreshed_at FROM usage_day WHERE day = ?1`,
   )
