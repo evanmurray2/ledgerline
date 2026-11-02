@@ -732,30 +732,6 @@ function AllGroups({ b, month }: { b: BudgetView; month: string }) {
   const empty = allAssignedZero(b);
   return (
     <>
-      {b.cards.length > 0 && (
-        <Group
-          id="cards"
-          name="Credit card payments"
-          total={formatCents(b.cards.reduce((s, c) => s + c.available, 0))}
-          collapsed={!!collapsed.cards}
-          toggle={toggle}
-        >
-          {b.cards.map((c) => (
-            <CardRowPhone key={c.accountId} card={c} />
-          ))}
-        </Group>
-      )}
-      {!empty && (
-        <Group
-          id="owed"
-          name="Owed to you"
-          total="not a category"
-          collapsed={!!collapsed.owed}
-          toggle={toggle}
-        >
-          <OwedRowPhone b={b} />
-        </Group>
-      )}
       {b.groups.map((g) => (
         <Group
           key={g.id}
@@ -781,6 +757,30 @@ function AllGroups({ b, month }: { b: BudgetView; month: string }) {
           {b.archived.map((c) => (
             <CategoryRowPhone key={c.id} row={c} month={month} />
           ))}
+        </Group>
+      )}
+      {b.cards.length > 0 && (
+        <Group
+          id="cards"
+          name="Credit card payments"
+          total={formatCents(b.cards.reduce((s, c) => s + c.available, 0))}
+          collapsed={!!collapsed.cards}
+          toggle={toggle}
+        >
+          {b.cards.map((c) => (
+            <CardRowPhone key={c.accountId} card={c} />
+          ))}
+        </Group>
+      )}
+      {!empty && (
+        <Group
+          id="owed"
+          name="Owed to you"
+          total="not a category"
+          collapsed={!!collapsed.owed}
+          toggle={toggle}
+        >
+          <OwedRowPhone b={b} />
         </Group>
       )}
       <p className="m-0 text-[12px] text-muted">
@@ -876,6 +876,22 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
             Available
           </span>
         </div>
+        {b.groups.flatMap((g) => [
+          groupRow(g.name),
+          ...g.categories.map((c) =>
+            row(
+              c.id,
+              c.name,
+              `${STATUS[c.status].word} · ${c.detail}`,
+              formatCents(c.assigned),
+              c.status === 'invested' ? `Invested ${formatCents(c.spent)}` : formatCents(c.spent),
+              formatCents(c.available),
+              STATUS[c.status].tone,
+              () => void navigate({ to: `/budget/category/${c.id}`, search: { month } }),
+              'budget.category',
+            ),
+          ),
+        ])}
         {b.cards.length > 0 && groupRow('Credit card payments')}
         {b.cards.map((c) =>
           row(
@@ -902,22 +918,6 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
           () => void navigate({ to: '/owed' }),
           'budget.owed',
         )}
-        {b.groups.flatMap((g) => [
-          groupRow(g.name),
-          ...g.categories.map((c) =>
-            row(
-              c.id,
-              c.name,
-              `${STATUS[c.status].word} · ${c.detail}`,
-              formatCents(c.assigned),
-              c.status === 'invested' ? `Invested ${formatCents(c.spent)}` : formatCents(c.spent),
-              formatCents(c.available),
-              STATUS[c.status].tone,
-              () => void navigate({ to: `/budget/category/${c.id}`, search: { month } }),
-              'budget.category',
-            ),
-          ),
-        ])}
       </div>
     </div>
   );

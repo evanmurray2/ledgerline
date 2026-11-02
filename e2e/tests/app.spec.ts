@@ -195,3 +195,13 @@ test('Match money back returns it to Ready to Assign', async ({ page }) => {
     page.getByText('Matched $1,018.00. 2 items are paid back, and Ready to Assign is now $1,999.90.'),
   ).toBeVisible();
 });
+
+test('Budget lists your groups first, then card payments, then Owed to you', async ({ page }) => {
+  await page.goto('/budget');
+  const y = async (text: string) => (await page.getByText(text, { exact: true }).first().boundingBox())!.y;
+  await expect(page.getByText('Credit card payments', { exact: true }).first()).toBeVisible();
+  const owed = test.info().project.name === 'desktop' ? 'Owed to you · not a category' : 'Owed to you';
+  const [bills, cards, owedY] = [await y('Bills'), await y('Credit card payments'), await y(owed)];
+  expect(bills).toBeLessThan(cards);
+  expect(cards).toBeLessThan(owedY);
+});
