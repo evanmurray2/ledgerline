@@ -86,6 +86,11 @@ async function runMove(budgetId: string, onStep?: () => Promise<void>): Promise<
     }
     if (onStep) await onStep();
     const s = (await dir().moveStatus()) as { state: string } | null;
+    // A failure's reason, in the test output (the abort test expects one; anywhere else it explains the failure).
+    if (s?.state === 'failed')
+      console.error(
+        `move stopped: ${JSON.stringify(s)}; store: ${JSON.stringify(await store(budgetId).moveStatus())}`,
+      );
     if (s?.state === 'moved' || s?.state === 'back' || s?.state === 'failed') return s.state;
   }
   throw new Error('the move did not finish');
