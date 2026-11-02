@@ -76,4 +76,19 @@ describe('full backup', () => {
     expect(v.ok).toBe(false);
     expect(v.differences.join(' ')).toContain('assignment');
   });
+
+  it('a piece that fails partway writes nothing, so it can be sent again', async () => {
+    const text = await download();
+    const lines = text.split('\n');
+    const dup = lines.find((l) => l.includes('"t":"category"'))!;
+    // The same row twice breaks its primary key near the end of the piece.
+    const broken = [...lines.slice(0, -1), dup, lines.at(-1)!].join('\n');
+    const fresh = e.BUDGET.get(e.BUDGET.idFromName('restore-retry'));
+    expect(await fresh.restoreDump(broken)).toMatchObject({
+      ok: false,
+      reason: expect.stringMatching(/nothing from this piece was written/),
+    });
+    expect(await fresh.restoreDump(text)).toMatchObject({ ok: true });
+    expect(await fresh.restoreVerify()).toEqual({ ok: true, differences: [] });
+  });
 });
