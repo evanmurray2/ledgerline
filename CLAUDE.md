@@ -11,7 +11,7 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 
 ## Deploying
 
-- When the owner asks to deploy: trigger the GitHub workflow `deploy.yml` on `master` (GitHub MCP `actions_run_trigger`, method `run_workflow`), then check the run's result. It applies D1 migrations, deploys, smoke-tests and rolls back on failure.
+- When the owner asks to deploy: first check that the `ci` run for that `master` commit passed (GitHub MCP `actions_list`, `list_workflow_runs`; `deploy.yml` doesn't check). If it's still running, wait for it; if it failed, fix it first. Then trigger the GitHub workflow `deploy.yml` on `master` (GitHub MCP `actions_run_trigger`, method `run_workflow`), then check the run's result. It applies D1 migrations, deploys, smoke-tests and rolls back on failure.
 - GitHub holds only the `production` environment's `CLOUDFLARE_API_TOKEN`. The Worker keeps its other secrets (`TOKEN_KEYS`, Plaid keys, `SETUP_CODE`, `OPS_TOKEN`) from the first deploy; a deploy never deletes a secret.
 - Deploy on merge is off until the repository variable `DEPLOY_ON_MERGE` is `true` (D-30).
 - Never print, commit or ask the owner to paste secrets in chat.
@@ -28,6 +28,7 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 ## Working in the repo
 
 - pnpm monorepo: `packages/domain` (Money rules, `computeBudget()`), `packages/contracts` (Zod), `apps/worker` (Hono + D1 + Workflows), `apps/web` (React SPA), `e2e` (Playwright).
-- Checks before pushing: `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`, `pnpm test:integration`, and for UI changes `pnpm --filter @ledgerline/web build && pnpm test:e2e`. Chromium is preinstalled; don't run `playwright install`.
+- Checks before pushing (about 30 s): `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`, `pnpm test:integration`. For UI changes, run only the e2e tests that cover what you changed, e.g. `cd e2e && pnpm exec playwright test app.spec.ts -g "<test name>"` (the Worker suite: `pnpm --filter @ledgerline/web build` first, then `-c playwright.worker.config.ts`). Don't run the full `pnpm test:e2e`: CI runs it on every push. Chromium is preinstalled; don't run `playwright install`.
+- After each push, check the `ci` run for your commit (about 2 min) and fix it on `master` right away if it fails, before more work goes on top.
 - Migrations in `packages/db/migrations` are forward-only once on `master` (`node tools/ci/migration-check.mjs`); add a new numbered file.
 - Small commits on `master`, tests passing before each; keep `docs/build-plan.md` current.
