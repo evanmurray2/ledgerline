@@ -294,6 +294,8 @@ export const TxnPatch = z.object({
     .optional(),
   memo: z.string().max(500).nullable().optional(),
   estimatedAmount: cents.nullable().optional(),
+  /** A transaction you added (pending or upcoming): its amount, outflow negative. */
+  amount: cents.optional(),
   wontClear: z.boolean().optional(),
   budgetMonth: month.nullable().optional(),
   payeeName: z.string().min(1).max(120).optional(),
@@ -322,6 +324,8 @@ export const NewTxnRequest = z.object({
   amount: cents,
   payee: z.string().min(1).max(120),
   categoryId: id.nullable(),
+  /** Money in that goes to Ready to Assign (no category). */
+  toRta: z.boolean().optional(),
   repeats: z.enum(['never', 'monthly', 'yearly']),
 });
 export const MatchRequest = z.object({

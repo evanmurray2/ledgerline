@@ -140,15 +140,19 @@ export class MockServer {
         if (r.wontClear !== undefined) x.wontClear = r.wontClear;
         if (r.payeeName) x.payee = r.payeeName;
         if (r.budgetMonth !== undefined) x.budgetMonth = r.budgetMonth ?? undefined;
-        if (r.estimatedAmount !== undefined && r.estimatedAmount !== null && x.categoryId) {
-          const diff = -r.estimatedAmount - x.amount;
-          const cat = db.catById(x.categoryId);
+        // Estimates (bank pending) and amounts (added by you) are signed like the transaction.
+        const next =
+          r.amount ??
+          (r.estimatedAmount !== undefined && r.estimatedAmount !== null ? r.estimatedAmount : null);
+        if (next !== null) {
+          const diff = next - x.amount;
+          const cat = x.categoryId ? db.catById(x.categoryId) : undefined;
           if (cat) {
             cat.available += diff;
             cat.spent -= diff;
           }
-          x.amount = -r.estimatedAmount;
-          x.estimate = r.estimatedAmount;
+          x.amount = next;
+          if (r.amount === undefined) x.estimate = Math.abs(next);
         }
         if (r.split) {
           if (x.categoryId) db.categorize([x.key], null);
@@ -194,7 +198,7 @@ export class MockServer {
           section: r.kind === 'pending' ? 'pending' : 'upcoming',
         };
         db.txns.push(x);
-        if (r.categoryId && r.kind === 'pending') db.categorize([k], r.categoryId);
+        if ((r.categoryId || r.toRta) && r.kind === 'pending') db.categorize([k], r.categoryId, r.toRta);
         else x.categoryId = r.categoryId;
         return this.ok();
       }

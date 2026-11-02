@@ -533,6 +533,20 @@ activityRoutes.patch('/transactions/:key', async (c) => {
     set('estimated_amount', p.estimatedAmount);
     edits.estimated_amount = now;
   }
+  if (p.amount !== undefined) {
+    if (t.source !== 'manual')
+      throw new HttpError(422, 'not_manual', 'Only a transaction you added can change its amount');
+    if (p.amount === 0) throw new HttpError(422, 'zero_amount', 'Enter an amount');
+    w.push(
+      s.q(
+        `UPDATE manual_pending SET amount = ?3, updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
+        key,
+        p.amount,
+        now,
+      ),
+    );
+    edits.amount = now;
+  }
   if (p.wontClear !== undefined) set('wont_clear', p.wontClear ? 1 : 0);
   if (p.budgetMonth !== undefined) set('budget_month', p.budgetMonth);
   if (p.payeeName !== undefined) {
@@ -648,6 +662,15 @@ activityRoutes.post('/transactions', async (c) => {
   const now = clock(c.env);
   const acct = await s.first(`SELECT id FROM account WHERE budget_id = ?1 AND id = ?2`, r.accountId);
   if (!acct) throw new HttpError(404, 'not_found', 'account');
+  if (r.categoryId) {
+    const ok = await s.first(
+      `SELECT id FROM category WHERE budget_id = ?1 AND id = ?2 AND kind != 'cc_payment'`,
+      r.categoryId,
+    );
+    if (!ok) throw new HttpError(404, 'not_found', 'category');
+  }
+  // Only money in can go to Ready to Assign.
+  const toRta = r.toRta === true && r.amount > 0;
   const key = `m:${ulid(now)}`;
   const w = [
     s.q(
@@ -664,9 +687,10 @@ activityRoutes.post('/transactions', async (c) => {
       now,
     ),
     s.q(
-      `INSERT INTO txn_overlay (txn_key, budget_id, category_id, categorized_by, created_at, updated_at) VALUES (?2, ?1, ?3, 'user', ?4, ?4)`,
+      `INSERT INTO txn_overlay (txn_key, budget_id, category_id, to_rta, categorized_by, created_at, updated_at) VALUES (?2, ?1, ?3, ?4, 'user', ?5, ?5)`,
       key,
-      r.categoryId,
+      toRta ? null : r.categoryId,
+      toRta ? 1 : 0,
       now,
     ),
     s.audit('txn.add', 'transaction', key, null, r, now),

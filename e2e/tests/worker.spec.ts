@@ -109,3 +109,36 @@ test('Target: a yearly refill is met in its Due month, and the Due month is kept
   await page.goto('/budget/category/groceries/target');
   await expect(page.getByLabel('Due')).toHaveValue('2027-03');
 });
+
+test('Pending: money you add goes to Ready to Assign, and a bank pending charge takes your amount', async ({
+  page,
+  request,
+}) => {
+  await page.goto('/activity/add');
+  const add = page.getByRole('dialog', { name: 'Add a transaction' });
+  await add.getByPlaceholder('0.00').fill('500');
+  await add.getByRole('button', { name: 'In', exact: true }).click();
+  await add.getByLabel('Payee').fill('Zelle from a friend');
+  await add.getByLabel('Category').selectOption({ label: 'Ready to Assign' });
+  await add.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.goto('/budget');
+  await expect(rta(page)).toHaveText('$1,481.90');
+
+  // A card hold with no estimate yet: set your own amount.
+  const v = (await (await request.get('/api/activity')).json()) as {
+    pending: { key: string; amount: number; badgeKind: string | null; sheet: string }[];
+  };
+  const hold = v.pending.find(
+    (r) => r.amount < 0 && r.badgeKind !== 'mine' && r.badgeKind !== 'est' && r.sheet === 'txn',
+  )!;
+  await page.goto(`/activity/txn/${encodeURIComponent(hold.key)}`);
+  await page.getByRole('dialog').getByLabel('Your estimate').fill('123.45');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page).not.toHaveURL(/\/txn\//);
+  const after = (await (await request.get(`/api/transactions/${encodeURIComponent(hold.key)}`)).json()) as {
+    amount: number;
+    estimatedAmount: number;
+  };
+  expect(after.estimatedAmount).toBe(-12_345);
+  expect(after.amount).toBe(-12_345);
+});

@@ -165,7 +165,10 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   );
   const del = useMoneyMutation(api.deleteTxn);
   const [cat, setCat] = useState(t.categoryId ?? (t.categoryLabel === 'Ready to Assign' ? 'rta' : ''));
-  const [est, setEst] = useState(t.estimatedAmount !== null ? centsToInput(t.estimatedAmount) : '');
+  // Amounts are typed without a sign; the transaction's direction keeps it.
+  const sign = (t.bankAmount ?? t.amount) < 0 ? -1 : 1;
+  const [est, setEst] = useState(t.estimatedAmount !== null ? centsToInput(Math.abs(t.estimatedAmount)) : '');
+  const [amt, setAmt] = useState(centsToInput(Math.abs(t.amount)));
   const [owed, setOwed] = useState<OwedMode>(t.owed.length ? 'half' : 'none');
   const [owedAmt, setOwedAmt] = useState(t.owed[0] ? centsToInput(t.owed[0].amount) : '');
   const [expectBy, setExpectBy] = useState(t.owed[0]?.expectBy ?? '');
@@ -179,16 +182,23 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
     return () => usage.cancelTask('categorize');
   }, []);
 
-  const estCents = parseCents(est);
+  const estTyped = parseCents(est);
+  const estCents = estTyped === null ? null : sign * Math.abs(estTyped);
+  const amtTyped = parseCents(amt);
+  const amtCents = amtTyped === null || amtTyped === 0 ? null : sign * Math.abs(amtTyped);
   const bank = t.bankAmount;
+  /** A bank pending row: you can set your own amount (an estimate) until it posts. */
+  const canEstimate = t.status === 'pending' && bank !== null;
+  /** A transaction you added: its amount is yours to change. */
+  const canSetAmount = t.kind === 'manual' || t.kind === 'upcoming';
   const tips =
-    bank !== null && t.kind === 'pending' && t.estimatedAmount !== null
+    canEstimate && bank < 0
       ? [15, 18, 20]
           .map((p) => ({
-            label: `+${p}% · ${formatCents(Math.round((bank * (100 + p)) / 100))}`,
-            cents: Math.round((bank * (100 + p)) / 100),
+            label: `+${p}% · ${formatCents(Math.abs(Math.round((bank * (100 + p)) / 100)))}`,
+            cents: Math.abs(Math.round((bank * (100 + p)) / 100)),
           }))
-          .concat([{ label: `Bank ${formatCents(bank)}`, cents: bank }])
+          .concat([{ label: `Bank ${formatCents(Math.abs(bank))}`, cents: Math.abs(bank) }])
       : [];
   const spendCents = Math.abs(estCents ?? t.amount);
   const owedCents =
@@ -210,8 +220,12 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       if (cat === 'rta') body.toRta = true;
       else body.categoryId = cat || null;
     }
-    if (t.estimatedAmount !== null && estCents !== null && estCents !== t.estimatedAmount)
-      body.estimatedAmount = estCents;
+    if (canEstimate) {
+      // Back to the bank's amount: an empty box, or the bank amount itself.
+      const next = estCents === null || estCents === bank ? null : estCents;
+      if (next !== t.estimatedAmount) body.estimatedAmount = next;
+    }
+    if (canSetAmount && amtCents !== null && amtCents !== t.amount) body.amount = amtCents;
     if (memo !== (t.memo ?? '')) body.memo = memo || null;
     if (wont !== t.wontClear) body.wontClear = wont;
     if (month !== t.budgetMonth) body.budgetMonth = month;
@@ -254,16 +268,29 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           {a}
         </p>
       ))}
-      {t.kind === 'pending' && t.estimatedAmount !== null && (
+      {canSetAmount && (
+        <label className="flex shrink-0 items-center justify-between gap-3 rounded-[14px] bg-page p-3 text-[14px] font-semibold text-ink-2">
+          {t.amount < 0 ? 'Amount out' : 'Amount in'}
+          <input
+            inputMode="decimal"
+            aria-label="Amount"
+            value={amt}
+            onChange={(e) => setAmt(e.target.value)}
+            className="tnum h-11 w-[120px] rounded-[10px] border border-line-strong bg-surface px-2.5 text-right text-[17px] font-bold text-ink"
+          />
+        </label>
+      )}
+      {canEstimate && (
         <div className="flex shrink-0 flex-col gap-2 rounded-[14px] bg-page p-3">
           <div className="flex justify-between text-[14px]">
             <span className="text-muted">Bank amount</span>
-            <span className="tnum font-bold">{bank !== null ? formatCents(bank) : '—'}</span>
+            <span className="tnum font-bold">{formatCents(Math.abs(bank))}</span>
           </div>
           <label className="flex items-center justify-between gap-3 text-[14px] font-semibold text-ink-2">
             Your estimate
             <input
               inputMode="decimal"
+              placeholder={centsToInput(Math.abs(bank))}
               value={est}
               onChange={(e) => setEst(e.target.value)}
               className="tnum h-11 w-[120px] rounded-[10px] border border-line-strong bg-surface px-2.5 text-right text-[17px] font-bold text-ink"

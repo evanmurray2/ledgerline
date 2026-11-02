@@ -560,6 +560,7 @@ export function AddTxnScreen() {
   const acct = accountId || accts[0]?.id || '';
   const cents = parseCents(amount);
   const ok = cents !== null && cents > 0 && payee.trim() && acct && (date || today);
+  const toRta = dir === 'in' && categoryId === 'rta';
   const submit = async () => {
     if (!ok || cents === null) return;
     await add.mutateAsync({
@@ -568,7 +569,8 @@ export function AddTxnScreen() {
       date: date || today,
       amount: dir === 'out' ? -cents : cents,
       payee: payee.trim(),
-      categoryId: categoryId || null,
+      categoryId: toRta || categoryId === 'rta' ? null : categoryId || null,
+      toRta,
       repeats: kind === 'upcoming' ? repeats : 'never',
     });
     close();
@@ -644,6 +646,7 @@ export function AddTxnScreen() {
       <Field label="Category">
         <select className={inputClass} value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
           <option value="">Choose later</option>
+          {dir === 'in' && <option value="rta">Ready to Assign</option>}
           {groups.map((g) => (
             <optgroup key={g.id} label={g.name}>
               {g.categories.map((c) => (
