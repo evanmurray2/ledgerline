@@ -155,15 +155,26 @@ export async function assignView(s: Scoped, f: Fresh, month: Month): Promise<Ass
         amount: cents(short),
       });
   }
-  for (const r of rows)
-    if (r.row.need > 0 && !r.info.archived_at)
-      suggestions.push({
-        categoryId: r.row.id,
-        name: r.row.name,
-        reason: 'target',
-        detail: r.row.detail,
-        amount: r.row.need,
-      });
+  for (const r of rows) {
+    if (r.row.need <= 0 || r.info.archived_at) continue;
+    // One line per category: a target's need already funds this month's spending, so when it's also overspent
+    // the larger of the two is suggested, never both added together.
+    const cover = suggestions.find((x) => x.categoryId === r.row.id && x.reason === 'cover');
+    if (cover) {
+      if (r.row.need > cover.amount) {
+        cover.amount = r.row.need;
+        cover.detail = `${r.row.detail} · covers ${fmt(-r.row.available)} of overspending`;
+      }
+      continue;
+    }
+    suggestions.push({
+      categoryId: r.row.id,
+      name: r.row.name,
+      reason: 'target',
+      detail: r.row.detail,
+      amount: r.row.need,
+    });
+  }
   void monthOfDate;
   return { month, rta: cents(f.budget.rta), suggestions };
 }

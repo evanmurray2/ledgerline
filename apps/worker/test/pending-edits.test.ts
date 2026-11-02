@@ -85,3 +85,45 @@ describe('pending transactions', () => {
     expect((await call('PATCH', url, { amount: -1 })).status).toBe(422);
   });
 });
+
+describe('assign suggestions', () => {
+  it('list an overspent category with a target once, for the larger amount', async () => {
+    expect((await call('POST', '/__dev/seed-november')).status).toBe(200);
+    // Set aside $1,000 a month in a category, take back what it holds, then spend from it.
+    const cat = 'shopping';
+    expect(
+      (
+        await call('PUT', `/api/categories/${cat}/target`, {
+          categoryId: cat,
+          month: '2026-11',
+          target: { type: 'set_aside', amount: 100_000 },
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (await call('POST', '/api/budget/set', { month: '2026-11', categoryId: cat, assigned: 0 })).status,
+    ).toBe(200);
+    const b = (await call('GET', '/api/budget/2026-11')).json as unknown as BudgetView;
+    const row = b.groups.flatMap((g) => g.categories).find((c) => c.id === cat)!;
+    if (row.available >= 0) {
+      const checking = (await env.DB.prepare(`SELECT id FROM account WHERE kind = 'checking' LIMIT 1`).first<{
+        id: string;
+      }>())!.id;
+      await call('POST', '/api/transactions', {
+        kind: 'pending',
+        accountId: checking,
+        date: '2026-11-14',
+        amount: -(row.available + 41_310),
+        payee: 'Night out',
+        categoryId: cat,
+        repeats: 'never',
+      });
+    }
+    const v = (await call('GET', '/api/budget/2026-11/assign')).json as unknown as {
+      suggestions: { categoryId: string; amount: number }[];
+    };
+    const mine = v.suggestions.filter((x) => x.categoryId === cat);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]!.amount).toBe(100_000);
+  });
+});
