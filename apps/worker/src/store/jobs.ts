@@ -59,12 +59,20 @@ export class JobRunner {
     private readonly onFailed: (job: Job, error: string) => Promise<void> = async () => {},
   ) {}
 
-  /** Adds a job. With an explicit id it is idempotent: an existing job with that id is left as it is. */
+  /**
+   * Adds a job. With an explicit id it is idempotent: a pending job with that id is left as it is. A job with that
+   * id that failed for good is started again from the new state, so one bad day (Plaid down, the daily allowance
+   * used up) can't stop a fixed-id job such as `recompute` or `register_link:<id>` for ever.
+   */
   async enqueue(kind: string, o: EnqueueOptions, now: number): Promise<string> {
     const id = o.id ?? `${kind}:${now.toString(36)}:${crypto.randomUUID().slice(0, 8)}`;
     this.storage.sql.exec(
-      `INSERT OR IGNORE INTO job (id, kind, connection_id, state, run_at, recurring, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO job (id, kind, connection_id, state, run_at, recurring, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, connection_id = excluded.connection_id,
+         state = excluded.state, run_at = excluded.run_at, recurring = excluded.recurring, attempts = 0,
+         failed_at = NULL, last_error = NULL, updated_at = excluded.updated_at
+       WHERE job.failed_at IS NOT NULL`,
       id,
       kind,
       o.connectionId ?? null,

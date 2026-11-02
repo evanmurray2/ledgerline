@@ -113,4 +113,28 @@ describe('job runner', () => {
       expect(storage.sql.exec(`SELECT state FROM job`).one().state).toBe('{"a":1}');
     });
   });
+
+  it('enqueueing a job that failed for good starts it again', async () => {
+    await inObject(async (storage) => {
+      let fail = true;
+      const flaky: Handler = async () => {
+        if (fail) throw new Error('daily allowance used up');
+        return { done: true };
+      };
+      const r = new JobRunner(storage, { flaky });
+      await r.enqueue('flaky', { id: 'recompute', runAt: T }, T);
+      let now = T;
+      for (let i = 0; i < MAX_ATTEMPTS; i++) {
+        const o = await r.runNext(now);
+        now = (o as { next: number | null }).next ?? now;
+      }
+      expect(r.list()[0]).toMatchObject({ id: 'recompute', failed_at: expect.any(Number) });
+      fail = false;
+      await r.enqueue('flaky', { id: 'recompute', runAt: now, state: { again: 1 } }, now);
+      expect(r.list()[0]).toMatchObject({ failed_at: null, attempts: 0, last_error: null });
+      expect(await storage.getAlarm()).toBe(now);
+      expect(await r.runNext(now)).toMatchObject({ result: 'done' });
+      expect(r.list()).toEqual([]);
+    });
+  });
 });

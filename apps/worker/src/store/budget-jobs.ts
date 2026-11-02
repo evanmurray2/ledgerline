@@ -33,6 +33,9 @@ export interface Enqueue {
   ): Promise<string>;
 }
 
+/** Jobs that failed for good stay visible in health for this long, then the daily prune removes them. */
+export const FAILED_JOB_KEEP_MS = 30 * 86_400_000;
+
 /** Recreates any missing recurring row (idempotent). Called when a store's budget is created and by the daily ensureJobs. */
 export async function ensureRecurring(enqueue: Enqueue, now: number): Promise<void> {
   await enqueue('backstop', { id: BACKSTOP_ID, runAt: now + FOUR_HOURS, recurring: true });
@@ -173,12 +176,21 @@ export function maintenanceHandler(env: Env, budgetId: () => Promise<string>): H
         await db.batch(watchdogBudgetStmts(db, b, now));
         return next({ phase: 'prune' });
       case 'prune':
-        await db
-          .prepare(
-            `DELETE FROM sync_page WHERE sync_run_id IN (SELECT id FROM sync_run WHERE phase IN ('done', 'failed') AND budget_id = ?1)`,
-          )
-          .bind(b)
-          .run();
+        // Staged pages of finished runs (driven from sync_page, which stays small, not from every run ever), and
+        // jobs that failed for good more than 30 days ago. The bank history itself (raw_page, bank_page,
+        // bank_event) is append-only by design: database triggers refuse deletes (threat-model.md).
+        await db.batch([
+          db
+            .prepare(
+              `DELETE FROM sync_page WHERE sync_run_id IN (
+                 SELECT p.sync_run_id FROM (SELECT DISTINCT sync_run_id FROM sync_page) p
+                 JOIN sync_run r ON r.id = p.sync_run_id WHERE r.budget_id = ?1 AND r.phase IN ('done', 'failed'))`,
+            )
+            .bind(b),
+          db
+            .prepare(`DELETE FROM job WHERE failed_at IS NOT NULL AND failed_at < ?1`)
+            .bind(now - FAILED_JOB_KEEP_MS),
+        ]);
         return next({ phase: 'bump' });
       case 'bump':
         // The daily job's writes change what screens show: new ETags (http/etag.ts). Then wait for tomorrow.

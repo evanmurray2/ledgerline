@@ -7,6 +7,7 @@ import { generate } from '../../../tools/plaid-mock/data.mjs';
 import { SqlD1 } from '../src/store/adapter.js';
 import { JobRunner } from '../src/store/jobs.js';
 import {
+  failSync,
   nextUtcMidnight,
   recomputeHandler,
   syncHandler,
@@ -204,6 +205,89 @@ describe('sync job', () => {
       expect(await h({ ...job, state: (a as { state: unknown }).state }, T)).toEqual({ done: true });
       expect(await db.prepare(`SELECT count(*) AS n FROM bank_txn`).first('n')).toBe(0);
     });
+  });
+
+  it('a run that fails partway through applying, then runs again from the start, counts every row once', async () => {
+    /** What the budget sees: bank rows, budget lines and month snapshots (no ids or times). */
+    const fingerprint = async (db: D1Database) =>
+      JSON.stringify([
+        (
+          await db
+            .prepare(
+              `SELECT provider_txn_id, amount, date, pending, removed_at IS NULL AS live, txn_key FROM bank_txn ORDER BY 1`,
+            )
+            .all()
+        ).results,
+        (
+          await db
+            .prepare(
+              `SELECT txn_key, line, month, date, kind, account_id, card, category_id, amount, ref FROM budget_line ORDER BY txn_key, line`,
+            )
+            .all()
+        ).results,
+        (await db.prepare(`SELECT month, state FROM month_snapshot ORDER BY month`).all()).results,
+      ]);
+    const runAll = async (db: D1Database, st: DurableObjectState, holder: string) => {
+      const runner: JobRunner = new JobRunner(st.storage, {
+        sync: syncHandler(deps(db, 'b1', { enqueue: (kind, o) => runner.enqueue(kind, o, Date.now()) })),
+        recompute: recomputeHandler(db, 'b1'),
+      });
+      await runner.enqueue('sync', { id: holder, connectionId: 'c1', state: start(holder), runAt: T }, T);
+      let now = T;
+      for (let n = 0; n < 2000 && runner.list().length; n++) {
+        const o = await runner.runNext(now);
+        if (o.ran && o.result === 'retry') throw new Error(`step failed: ${runner.list()[0]?.last_error}`);
+        now += 1000;
+      }
+      expect(runner.list()).toEqual([]);
+    };
+
+    const clean = await runInDurableObject(
+      e.BUDGET.get(e.BUDGET.idFromName('sync-clean')),
+      async (_o, st) => {
+        const db = new SqlD1(st.storage) as unknown as D1Database;
+        await seed(db, 'b1', 'c1');
+        await acquireFor(db, 'c1', 'one');
+        await runAll(db, st, 'one');
+        return fingerprint(db);
+      },
+    );
+
+    const replayed = await runInDurableObject(
+      e.BUDGET.get(e.BUDGET.idFromName('sync-replay')),
+      async (_o, st) => {
+        const db = new SqlD1(st.storage) as unknown as D1Database;
+        await seed(db, 'b1', 'c1');
+        await acquireFor(db, 'c1', 'first');
+        // The first run fetches every page and applies part of them, then fails for good.
+        const d = deps(db, 'b1');
+        const h = syncHandler(d);
+        const job = { id: 'first', kind: 'sync', connectionId: 'c1', attempts: 1, recurring: false };
+        let state: SyncState = start('first');
+        let applied = 0;
+        for (let n = 0; n < 50; n++) {
+          if (state.phase === 'apply' && ++applied > 5) break;
+          state = ((await h({ ...job, state }, T)) as { state: SyncState }).state;
+        }
+        expect(state.phase).toBe('apply');
+        expect(Number(await db.prepare(`SELECT count(*) AS n FROM bank_event`).first('n'))).toBeGreaterThan(
+          0,
+        );
+        await failSync(d, 'c1', state, 'test: killed');
+        expect(await db.prepare(`SELECT phase FROM sync_run`).first('phase')).toBe('failed');
+        // The next sync starts again from the stored cursor and applies every page again.
+        await acquireFor(db, 'c1', 'second');
+        await runAll(db, st, 'second');
+        expect(Number(await db.prepare(`SELECT count(*) AS n FROM bank_event`).first('n'))).toBeGreaterThan(
+          TOTAL,
+        );
+        return fingerprint(db);
+      },
+    );
+
+    // Not vacuous: the budget has lines built from the synced rows.
+    expect(clean).toContain('"kind":"');
+    expect(replayed).toBe(clean);
   });
 
   it('a sync requested mid-run hands the lease to a new sync job', async () => {

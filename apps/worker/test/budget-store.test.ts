@@ -38,8 +38,38 @@ describe('BudgetStore scheduling', () => {
     const s = store('maintenance');
     await seedBudget(s);
     await s.ensureJobs();
-    // Make maintenance due now; leave the others in the future.
+    // Make maintenance due now; leave the others in the future. Give the prune something to keep and to remove.
     await runInDurableObject(s, async (_o, st) => {
+      const day = 86_400_000;
+      const sql = st.storage.sql;
+      sql.exec(
+        `INSERT INTO connection (id, budget_id, provider, institution_name, linked_at, created_at, updated_at)
+         VALUES ('c1', 'b1', 'plaid', 'Bank', 0, 0, 0)`,
+      );
+      for (const [run, phase] of [
+        ['run-done', 'done'],
+        ['run-live', 'applying'],
+      ])
+        sql.exec(
+          `INSERT INTO sync_run (id, budget_id, connection_id, phase, started_at, created_at, updated_at) VALUES (?, 'b1', 'c1', ?, 0, 0, 0)`,
+          run,
+          phase,
+        );
+      for (const run of ['run-done', 'run-live'])
+        sql.exec(
+          `INSERT INTO sync_page (sync_run_id, page, budget_id, restart, raw_key, sha256, bytes, next_cursor, has_more, created_at)
+           VALUES (?, 0, 'b1', 0, 'k', 'none', 1, 'c', 0, 0)`,
+          run,
+        );
+      for (const [id, failedAt] of [
+        ['old-failure', Date.now() - 31 * day],
+        ['new-failure', Date.now() - day],
+      ])
+        sql.exec(
+          `INSERT INTO job (id, kind, state, run_at, failed_at, created_at, updated_at) VALUES (?, 'x', '{}', 0, ?, 0, 0)`,
+          id,
+          failedAt,
+        );
       st.storage.sql.exec(`UPDATE job SET run_at = ? WHERE id = ?`, Date.now() - 1, MAINTENANCE_ID);
       await st.storage.setAlarm(Date.now());
     });
@@ -69,7 +99,17 @@ describe('BudgetStore scheduling', () => {
         .exec(`SELECT key FROM health_status ORDER BY key`)
         .toArray()
         .map((r) => r.key),
+      stagedRuns: st.storage.sql
+        .exec(`SELECT sync_run_id FROM sync_page ORDER BY 1`)
+        .toArray()
+        .map((r) => r.sync_run_id),
+      failures: st.storage.sql
+        .exec(`SELECT id FROM job WHERE failed_at IS NOT NULL ORDER BY 1`)
+        .toArray()
+        .map((r) => r.id),
     }));
+    expect(out.stagedRuns).toEqual(['run-live']);
+    expect(out.failures).toEqual(['new-failure']);
     expect(out.job).toMatchObject({ state: '{"phase":"start"}', attempts: 0, last_error: null });
     expect(Number(out.job.run_at)).toBeGreaterThan(Date.now());
     expect(out.health).toEqual(['last_recompute', 'watchdog_ran_at']);
