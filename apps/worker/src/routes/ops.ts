@@ -1,6 +1,8 @@
 // Usage tracking, notes, health, webhooks, import and export.
 import { clock } from '../http/clock.js';
 import { Hono } from 'hono';
+import type { DumpChunk } from '@ledgerline/contracts';
+import { BUDGET_TABLES, budgetFilter, chain, readChunk, tableMeta } from '../store/move.js';
 import {
   ImportCsvRequest,
   NoteRequest,
@@ -164,6 +166,45 @@ const EXPORT_TABLES = [
   'expected_reimbursement',
   'setting',
 ] as const;
+
+/**
+ * The full backup (docs/multi-user.md 8.7): every row of every table of this budget, rowids kept, in pieces of
+ * about 50 KB so each request stays small. The footer carries each table's row count and fingerprint (the same
+ * chained hash the move uses), so a restore can prove nothing changed. Sign-in rows (passkeys, sessions) are not
+ * included: after a restore the owner adds a passkey with the setup code.
+ */
+opsRoutes.get('/export/dump', async (c) => {
+  const s = scoped(c);
+  const db = c.env.DB;
+  const raw = c.req.query('cursor');
+  type Cur = { t: number; k: unknown[] | null; h: Record<string, { count: number; hash: string }> };
+  const cur: Cur = raw ? (JSON.parse(atob(raw)) as Cur) : { t: 0, k: null, h: {} };
+  const lines: string[] = [];
+  if (!raw)
+    lines.push(
+      JSON.stringify({
+        format: 'ledgerline-dump',
+        version: 1,
+        budgetId: s.budgetId,
+        createdAt: new Date(clock(c.env)).toISOString(),
+        appVersion: c.env.APP_VERSION ?? null,
+      }),
+    );
+  const table = BUDGET_TABLES[cur.t];
+  if (!table) {
+    lines.push(JSON.stringify({ end: true, tables: cur.h }));
+    return c.json({ data: lines.join('\n'), cursor: null } satisfies DumpChunk);
+  }
+  const meta = await tableMeta(db, table);
+  const chunk = await readChunk(db, table, meta, budgetFilter(table, s.budgetId), cur.k);
+  for (const r of chunk.rows) lines.push(JSON.stringify({ t: table, r }));
+  const prev = cur.h[table] ?? { count: 0, hash: '' };
+  // Only pieces with rows count toward the fingerprint (the restore check does the same).
+  const hash = chunk.rows.length ? await chain(prev.hash, chunk.text) : prev.hash;
+  const h = { ...cur.h, [table]: { count: prev.count + chunk.rows.length, hash } };
+  const next: Cur = chunk.cursor ? { t: cur.t, k: chunk.cursor, h } : { t: cur.t + 1, k: null, h };
+  return c.json({ data: lines.join('\n'), cursor: btoa(JSON.stringify(next)) } satisfies DumpChunk);
+});
 
 opsRoutes.get('/export/json', async (c) => {
   const s = scoped(c);

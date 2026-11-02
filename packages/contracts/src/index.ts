@@ -682,3 +682,12 @@ export type DeviceLink = z.infer<typeof DeviceLink>;
 
 export type ImportResult = z.infer<typeof ImportResult>;
 export type RulePreview = z.infer<typeof RulePreview>;
+
+// ---------------------------------------------------------------- full backup (docs/multi-user.md 8.7)
+
+/**
+ * One piece of the full backup: NDJSON lines (a header, then {"t": table, "r": row} lines, then a footer with each
+ * table's row count and fingerprint). The app asks for pieces until `cursor` is null and saves them as one file.
+ */
+export const DumpChunk = z.object({ data: z.string(), cursor: z.string().nullable() });
+export type DumpChunk = z.infer<typeof DumpChunk>;

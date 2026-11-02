@@ -191,3 +191,20 @@ test('Accounts: rename an account', async ({ page }) => {
   await page.goto('/accounts');
   await expect(page.getByText('Travel card').first()).toBeVisible();
 });
+
+test('Full backup: downloads every row of the budget as one file', async ({ page }) => {
+  await page.goto('/settings/data');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download' }).last().click();
+  const d = await download;
+  expect(d.suggestedFilename()).toMatch(/^ledgerline-backup-\d{4}-\d{2}-\d{2}\.ndjson$/);
+  const text = await (await import('node:fs/promises')).readFile((await d.path())!, 'utf8');
+  const lines = text
+    .trim()
+    .split('\n')
+    .map((l) => JSON.parse(l) as Record<string, unknown>);
+  expect(lines[0]).toMatchObject({ format: 'ledgerline-dump' });
+  expect(lines.at(-1)).toMatchObject({ end: true });
+  expect(lines.filter((l) => l.t === 'bank_txn').length).toBeGreaterThan(10);
+  await expect(page.getByText('Saved. Keep it somewhere safe.')).toBeVisible();
+});

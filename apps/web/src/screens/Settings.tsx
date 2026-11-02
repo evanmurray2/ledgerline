@@ -5,7 +5,8 @@ import { SignInSection } from './Auth';
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, Outlet, useNavigate, useParams, useRouterState, useSearch } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import type { CategoriesView, RuleBody } from '@ledgerline/contracts';
+import { DumpChunk, type CategoriesView, type RuleBody } from '@ledgerline/contracts';
+import { get, qs } from '../api/client';
 import { api, exportUrls } from '../api/endpoints';
 import {
   qk,
@@ -1899,6 +1900,7 @@ export function DataScreen() {
           </div>
         ))}
       </Card>
+      <FullBackup />
       <h2 className="m-0 mt-1 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
         Recovery
       </h2>
@@ -1916,5 +1918,65 @@ export function DataScreen() {
         copy older than 7 days, download the JSON export above and keep it somewhere safe.
       </span>
     </Page>
+  );
+}
+
+/**
+ * The full backup (docs/multi-user.md 8.7): every row of the budget, downloaded in small pieces and saved as one
+ * file. Unlike the JSON export, it can be restored, and it proves on restore that nothing changed.
+ */
+function FullBackup() {
+  const [state, setState] = useState<'idle' | 'working' | 'done'>('idle');
+  const [error, setError] = useState<unknown>(null);
+  const run = async () => {
+    setState('working');
+    setError(null);
+    try {
+      const parts: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const r: DumpChunk = await get(`/api/export/dump${qs({ cursor })}`, DumpChunk);
+        if (r.data) parts.push(r.data);
+        cursor = r.cursor;
+      } while (cursor);
+      const url = URL.createObjectURL(new Blob([parts.join('\n') + '\n'], { type: 'application/x-ndjson' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ledgerline-backup-${new Date().toISOString().slice(0, 10)}.ndjson`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setState('done');
+    } catch (e) {
+      setError(e);
+      setState('idle');
+    }
+  };
+  return (
+    <Card>
+      <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
+        <span className="flex flex-col gap-0.5">
+          <span className="text-[15px] font-semibold">Full backup</span>
+          <span className="text-[12px] text-muted">
+            {state === 'done'
+              ? 'Saved. Keep it somewhere safe.'
+              : 'Every row of your budget, in a file that can be restored'}
+          </span>
+        </span>
+        <button
+          type="button"
+          data-track="data.backup"
+          disabled={state === 'working'}
+          onClick={() => void run()}
+          className="hit flex h-9 shrink-0 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent disabled:opacity-60"
+        >
+          {state === 'working' ? 'Saving…' : 'Download'}
+        </button>
+      </div>
+      {error ? (
+        <div className="px-3 pb-2">
+          <ErrorNote error={error} />
+        </div>
+      ) : null}
+    </Card>
   );
 }

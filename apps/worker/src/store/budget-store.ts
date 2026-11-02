@@ -8,6 +8,7 @@ import type { Caller } from './directory.js';
 import { DIRECTORY_NAME } from './directory.js';
 import { budgetApi } from '../routes/api.js';
 import { MOVING, readOnlyD1 } from './frozen.js';
+import { BUDGET_TABLES, NO_FILTER, chain, insertStatements, readChunk, tableMeta } from './move.js';
 import type { Env } from '../env.js';
 import { SqlD1 } from './adapter.js';
 import { appliedMigrations, migrate } from './migrate.js';
@@ -138,6 +139,69 @@ export class BudgetStore extends DurableObject<Env> {
       runAt: Date.now(),
     });
     return { ok: true };
+  }
+
+  // ---- restoring a full backup (docs/multi-user.md 8.7; a runbook step, never a button)
+
+  /**
+   * Loads backup lines (header, rows, footer) into this store. Refused unless the store holds no budget yet, so a
+   * live budget can't be overwritten. Call with consecutive pieces of the file; then restoreVerify().
+   */
+  async restoreDump(lines: string): Promise<{ ok: true; rows: number } | { ok: false; reason: string }> {
+    const db = this.adapter();
+    let rows = 0;
+    for (const line of lines.split('\n')) {
+      if (!line.trim()) continue;
+      const o = JSON.parse(line) as {
+        format?: string;
+        t?: string;
+        r?: Record<string, unknown>;
+        end?: boolean;
+        tables?: unknown;
+      };
+      if (o.format) {
+        if (o.format !== 'ledgerline-dump') return { ok: false, reason: 'not a Ledgerline backup' };
+        const has = this.ctx.storage.sql.exec(`SELECT count(*) AS n FROM budget`).one().n;
+        if (Number(has) > 0) return { ok: false, reason: 'refused: this database already holds a budget' };
+        this.ctx.storage.sql.exec(`DELETE FROM apply_counter`);
+        continue;
+      }
+      if (o.end) {
+        await this.ctx.storage.put('restore_footer', o.tables);
+        continue;
+      }
+      if (!o.t || !o.r || !(BUDGET_TABLES as readonly string[]).includes(o.t))
+        return { ok: false, reason: `unknown line` };
+      const meta = await tableMeta(db, o.t);
+      await db.batch(insertStatements(db, o.t, meta, [o.r]));
+      rows++;
+    }
+    this.cachedBudgetId = null;
+    return { ok: true, rows };
+  }
+
+  /** Recomputes every table's row count and fingerprint and compares them with the backup's footer. */
+  async restoreVerify(): Promise<{ ok: boolean; differences: string[] }> {
+    const footer =
+      (await this.ctx.storage.get<Record<string, { count: number; hash: string }>>('restore_footer')) ?? {};
+    const db = this.adapter();
+    const differences: string[] = [];
+    for (const t of BUDGET_TABLES) {
+      const meta = await tableMeta(db, t);
+      let count = 0;
+      let hash = '';
+      let cursor: unknown[] | null = null;
+      do {
+        const c = await readChunk(db, t, meta, NO_FILTER, cursor);
+        count += c.rows.length;
+        hash = c.rows.length ? await chain(hash, c.text) : hash;
+        cursor = c.cursor;
+      } while (cursor);
+      const want = footer[t] ?? { count: 0, hash: '' };
+      if (want.count !== count || want.hash !== hash)
+        differences.push(`${t}: ${count} row(s), backup has ${want.count}`);
+    }
+    return { ok: differences.length === 0, differences };
   }
 
   async moveStatus(): Promise<MoveStatus | null> {
