@@ -1,6 +1,6 @@
 # Setup and first production deploy
 
-Everything below is done by you, once, and works from an iPhone in Safari (no command line; decisions.md D-28). Nothing needs a payment card: the app uses only Workers, D1 and Workflows on the free plan, with no R2 and no Zero Trust (D-26, D-27). The two D1 databases already exist (created Nov 1, 2026; ids in `apps/worker/wrangler.jsonc`). There is no off-site backup (D-29): recovery uses Cloudflare's 7-day Time Travel and your own JSON exports.
+Everything below is done by you, once, and works from an iPhone in Safari (no command line; decisions.md D-28). Nothing needs a payment card: the app uses only Workers and SQLite Durable Objects on the free plan, with no R2 and no Zero Trust (D-26, D-27, D-37). There is no off-site backup (D-29): recovery uses Cloudflare's 30-day point-in-time recovery on each Durable Object and the full backup you can download from Settings → Import and export.
 
 On GitHub's mobile site some settings pages are easier with **aA → Request Desktop Website**. Turn on 2FA (passkey or security key) for Cloudflare, GitHub and Plaid first.
 
@@ -26,7 +26,7 @@ In the **Passwords** app, tap **+** and use the suggested strong password; then 
 
 1. **Workers & Pages**: note your **Account ID** and your **workers.dev subdomain** (set one if asked). Your app's address will be `https://ledgerline.<subdomain>.workers.dev`.
 2. **My Profile → API Tokens → Create Token**, twice:
-   - "Deploy": template **Edit Cloudflare Workers**, then add **Account → D1 → Edit**. Account Resources: your account.
+   - "Deploy": template **Edit Cloudflare Workers**. Account Resources: your account.
    - "Analytics": Custom token with only **Account → Account Analytics → Read**.
 
 ## 4. GitHub (github.com/evanmurray2/ledgerline → Settings)
@@ -79,15 +79,15 @@ The setup code stops working once a passkey exists. For a non-Apple device, use 
 
 ## Recovery
 
-- **Lost every passkey?** From a computer, in `apps/worker`: `pnpm exec wrangler d1 execute DB --remote --command "DELETE FROM passkey; DELETE FROM auth_session;"`, then use the setup code again. If the old code may be known, change `SETUP_CODE` in the `production` environment and re-run deploy first.
+- **Lost every passkey?** In the Cloudflare dashboard, open [Durable Objects](https://dash.cloudflare.com/?to=/:account/workers/durable-objects), then the `Directory` object of the `ledgerline` Worker, and run `DELETE FROM passkey; DELETE FROM auth_session;` in its data browser (not tried yet from a phone; if it isn't there, ask a Claude session for a one-off fix). Then use the setup code again. If the old code may be known, change `SETUP_CODE` in the `production` environment and re-run deploy first.
 - **Rotating `TOKEN_KEYS`**: set it to `1:<old>,2:<new>` and add the secret `TOKEN_KEY_CURRENT` = `2` in the `production` environment, then deploy. Old rows keep decrypting with key 1.
 
 ## Local development (computer)
 
 ```sh
 cp apps/worker/.dev.vars.example apps/worker/.dev.vars   # fill in Sandbox keys and a token key
-cd apps/worker && pnpm exec wrangler d1 migrations apply DB --local
-pnpm exec wrangler dev
+cd apps/worker && pnpm exec wrangler d1 migrations apply DB -c wrangler.local.jsonc --local
+pnpm dev   # wrangler dev -c wrangler.local.jsonc (an emulated D1 for local runs)
 # Load the prototype's November into the local database (DEV_ROUTES=1, FAKE_NOW=2026-11-14T20:00:00Z in .dev.vars):
 curl -X POST localhost:8787/__dev/seed-november -H 'content-type: application/json' -H 'x-ledgerline: 1' -d '{}'
 ```

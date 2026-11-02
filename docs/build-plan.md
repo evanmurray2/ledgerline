@@ -80,6 +80,17 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 - [x] `ci.yml`: frozen install → lint, typecheck, format → unit → integration (local D1) → build → migration check → bundle budget → Playwright (fake provider). _Verify:_ green run on GitHub.
 - [x] `security.yml` (CodeQL, Gitleaks, OSV-Scanner, dependency review, zizmor, actionlint), `deploy.yml` (production with approval, rollback; no staging, D-36), `release.yml`, `nightly.yml`, `monitor.yml`, `keepalive.yml`, Dependabot, CODEOWNERS, PR template; actions pinned to SHAs. _Verify:_ `actionlint` clean; CI green.
 
+## 10. Durable Objects (decisions.md D-37, `docs/multi-user.md`)
+
+- [x] D1-shaped adapter over Durable Object SQLite, per-object migrations, alarm job runner (sync, recompute, backstop, daily scan, maintenance).
+- [x] Directory (sign-in, sessions, routing of Plaid Items) and one BudgetStore per budget; the Worker routes every API request through them.
+- [x] Per-user identity: user ids on passkeys and sessions, per-user passkey handles, signed challenge cookies, sign-in rate limit.
+- [x] Full backup on Import and export (every row, with per-table fingerprints), restorable into an empty store.
+- [x] The owner's data moved (Nov 2, 2026, 8:07 UTC), checked row by row; production runs without D1 and Workflows; move code removed.
+- [ ] Delete the D1 database (after the deploy without D1 is live).
+- [ ] Activity screen: check CPU on the real app's analytics; build a stored recent-rows list only if p95 is 8 ms or more.
+- [ ] Later, only if wanted: invites, People with a reset link, Plaid link slots per user, account deletion, an isolation test (`docs/multi-user.md` 7.3, 7.4, 9.1, 10, 11).
+
 ## Follow-ups (not blocking go-live)
 
 The UI works around these contract gaps (details in `apps/web/CONTRACT_NOTES.md`):
