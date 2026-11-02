@@ -106,6 +106,9 @@ export class NodeD1 {
     return this.batchInternal(stmts, true);
   }
 
+  /** When set, SQLite time per distinct statement is added here (measurement only). */
+  bySql: Map<string, { micros: number; calls: number }> | null = null;
+
   resetStats(): void {
     Object.assign(this.stats, {
       queries: 0,
@@ -138,6 +141,7 @@ export class NodeD1 {
     try {
       if (tx) this.db.exec('BEGIN');
       for (const s of stmts) {
+        const ts = this.bySql ? micros() : 0;
         let st = this.cache.get(s.sql);
         if (!st) {
           st = this.db.prepare(s.sql);
@@ -153,6 +157,13 @@ export class NodeD1 {
           const changes = Number(r.changes);
           this.stats.changes += changes;
           out.push({ results: [], success: true, meta: meta(changes, Number(r.lastInsertRowid), 0) });
+        }
+        if (this.bySql) {
+          const k = s.sql.replace(/\s+/g, ' ').trim();
+          const e = this.bySql.get(k) ?? { micros: 0, calls: 0 };
+          e.micros += micros() - ts;
+          e.calls++;
+          this.bySql.set(k, e);
         }
       }
       if (tx) this.db.exec('COMMIT');

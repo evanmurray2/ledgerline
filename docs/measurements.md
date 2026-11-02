@@ -18,7 +18,21 @@ Median ms over three runs of 7 (one run's p90 in brackets). This is a shared, no
 
 The Durable Object column is a slight overestimate: today's figure includes the D1 client's JSON round trip, which a Durable Object doesn't do. The machine is also somewhat slower than the one behind the workerd figures below. Even so, the sync steps, budget edits and recompute steps would sit around 5–7 ms with peaks past 10 ms, against a 5 ms design threshold. Fitting them would mean smaller chunks: more Workflow steps, and steps (3,000 a day) are already the tightest Free-plan limit.
 
-**Result: no-go on the Free plan.** The Workers Paid plan allows 30 seconds of CPU per invocation, so the problem disappears in the same place the per-budget design starts to pay off. `execMicros` was added to `NodeD1` for this measurement, and `sync.measure.ts` was brought up to date with the 50-event apply chunks.
+**Result at today's chunk sizes: no-go on the Free plan.** `execMicros` was added to `NodeD1` for this measurement, and `sync.measure.ts` was brought up to date with the 50-event apply chunks.
+
+**Where the SQLite time goes** (`NodeD1.bySql`, per run): processing does four large reads per step (planning rows from `bank_txn` and `v_transaction`, about 1.3–1.7 ms each at 100 events). A recompute step does one read of the chunk's `budget_line` rows (about 0.6 ms per month). An apply step re-reads its staged 200 KB page (0.8 ms). The Activity screen's two `v_transaction` reads take about 1.3 ms. Every hot path except the screens scales with chunk size.
+
+**With smaller chunks** (two runs each, store estimate median, p90 in brackets):
+
+| Path                                  | Today's chunks                 | Smaller chunks               |
+| ------------------------------------- | ------------------------------ | ---------------------------- |
+| Processing step                       | 5.8–8.5 (9–14), 100 events     | 3.2–4.1 (3.9–4.9), 25 events |
+| Budget edit, first month              | 6.2–8.3 (14–17), 6 months      | 2.9–3.4 (7.7–8.0), 2 months  |
+| Recompute step                        | 5.5–7.4 (14–21), 6 months      | 2.3–3.3 (7.2–7.7), 2 months  |
+| Apply step                            | 7.2–7.5 (10.6–10.8), 50 events | 3.8–4.0 (6.0–6.1), 25 events |
+| Activity / Budget screens (unchunked) | 3.8–5.5 / 2.0–2.3              | same                         |
+
+So the per-budget design fits 10 ms on Free with chunks of 2 months, 25 processing events and 25 apply events. That costs about 2–4 times as many invocations. As Workflow steps that would eat the 3,000-a-day limit (a 3,000-transaction backfill would go from about 150 steps to about 400), so the per-budget design should run its chunked work on Durable Object alarms. Alarms count as Durable Object requests (100,000 a day on Free) and one row written each, not as Workflow steps.
 
 ## Update: no R2 (decisions.md D-26)
 

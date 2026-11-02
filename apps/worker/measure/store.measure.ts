@@ -34,6 +34,20 @@ const run = (r: { ms: number; execMs: number }): Run => ({
 
 const out: Record<string, unknown> = {};
 
+/** SQLite time per statement over the runs since profiling started, top first (ms per run). */
+function topSql(db: { bySql: Map<string, { micros: number; calls: number }> | null }, runs: number) {
+  const m = db.bySql!;
+  db.bySql = null;
+  return [...m.entries()]
+    .sort((a, b) => b[1].micros - a[1].micros)
+    .slice(0, 6)
+    .map(([sql, e]) => ({
+      msPerRun: +(e.micros / 1000 / runs).toFixed(2),
+      calls: e.calls,
+      sql: sql.slice(0, 220),
+    }));
+}
+
 test('screens with three years of history', async () => {
   const db = freshDb();
   const d1 = db as unknown as D1Database;
@@ -114,8 +128,9 @@ test('screens with three years of history', async () => {
     await call(p);
     await call(p); // warm: stored totals written, JIT warm
     const rs: Run[] = [];
+    db.bySql = new Map();
     for (let i = 0; i < 7; i++) rs.push(run(await cpu(db, () => call(p))));
-    res[p] = summary(rs);
+    res[p] = { ...summary(rs), topSql: topSql(db, 7) };
   }
   out.screens = { bankTxns: txns, byPath: res };
 });
@@ -173,6 +188,7 @@ test('sync apply and process steps, 3,000 transactions, 100 per page', async () 
     if (!r.result.hasMore) break;
   }
   const applies: Run[] = [];
+  db.bySql = new Map();
   // Each page is applied in 50-event chunks, one Workflow step each.
   for (let i = 0; i < page; i++)
     for (let ch = 0; ; ch++) {
@@ -180,13 +196,21 @@ test('sync apply and process steps, 3,000 transactions, 100 per page', async () 
       applies.push(run(r));
       if (r.result.pageDone) break;
     }
+  const applySql = topSql(db, applies.length);
   const processes: Run[] = [];
+  db.bySql = new Map();
   for (;;) {
     const r = await cpu(db, () => processPending({ DB: d1 } as never, 'b1'));
     processes.push(run(r));
     if (r.result.caughtUp) break;
   }
-  out.sync = { pages: page, fetch: summary(fetches), apply: summary(applies), process: summary(processes) };
+  const processSql = topSql(db, processes.length);
+  out.sync = {
+    pages: page,
+    fetch: summary(fetches),
+    apply: { ...summary(applies), topSql: applySql },
+    process: { ...summary(processes), topSql: processSql },
+  };
 });
 
 test('budget edit in the first of 36 months (recompute, 6 months per invocation)', async () => {
@@ -234,6 +258,7 @@ test('budget edit in the first of 36 months (recompute, 6 months per invocation)
   for (let r = await recompute(d1, B, now, { force: true }); !r.done; r = await recompute(d1, B, now));
   const edits: Run[] = [];
   const chunkRuns: Run[] = [];
+  db.bySql = new Map();
   for (let i = 0; i < 6; i++) {
     const r = await cpu(db, async () => {
       await d1.batch([
@@ -254,7 +279,11 @@ test('budget edit in the first of 36 months (recompute, 6 months per invocation)
       last = c.result;
     }
   }
-  out.recompute = { editRequest: summary(edits), workflowChunk: summary(chunkRuns) };
+  out.recompute = {
+    editRequest: summary(edits),
+    workflowChunk: summary(chunkRuns),
+    topSql: topSql(db, edits.length + chunkRuns.length),
+  };
   mkdirSync('.measure', { recursive: true });
   writeFileSync('.measure/store.json', JSON.stringify(out, null, 2));
   console.log(JSON.stringify(out, null, 2));
