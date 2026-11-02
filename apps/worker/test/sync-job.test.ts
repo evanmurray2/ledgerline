@@ -166,6 +166,46 @@ describe('sync job', () => {
     });
   });
 
+  it('a bank that needs signing in again ends the run at once and is marked for repair', async () => {
+    await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName('sync-login')), async (_o, st) => {
+      const db = new SqlD1(st.storage) as unknown as D1Database;
+      await seed(db, 'b1', 'c1');
+      await acquireFor(db, 'c1', 'x');
+      const expired = new PlaidProvider({
+        clientId: 'c',
+        secret: 's',
+        env: 'sandbox',
+        fetch: async () =>
+          new Response(JSON.stringify({ error_code: 'ITEM_LOGIN_REQUIRED', error_message: 'sign in' }), {
+            status: 400,
+          }),
+      });
+      const h = syncHandler(deps(db, 'b1', { provider: () => expired }));
+      const job = { id: 'x', kind: 'sync', connectionId: 'c1', attempts: 1, recurring: false };
+      const a = await h({ ...job, state: start('x') }, T);
+      expect(await h({ ...job, state: (a as { state: unknown }).state }, T)).toEqual({ done: true });
+      const conn = await db
+        .prepare(`SELECT status, error_code, sync_lock FROM connection`)
+        .first<{ status: string; error_code: string; sync_lock: string | null }>();
+      expect(conn).toEqual({ status: 'login_required', error_code: 'ITEM_LOGIN_REQUIRED', sync_lock: null });
+      expect(await db.prepare(`SELECT phase FROM sync_run`).first('phase')).toBe('failed');
+    });
+  });
+
+  it('a removed connection loses its lease, so its sync stops', async () => {
+    await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName('sync-removed')), async (_o, st) => {
+      const db = new SqlD1(st.storage) as unknown as D1Database;
+      await seed(db, 'b1', 'c1');
+      await acquireFor(db, 'c1', 'r');
+      const h = syncHandler(deps(db, 'b1'));
+      const job = { id: 'r', kind: 'sync', connectionId: 'c1', attempts: 1, recurring: false };
+      const a = await h({ ...job, state: start('r') }, T);
+      await db.prepare(`UPDATE connection SET removed_at = 1`).run();
+      expect(await h({ ...job, state: (a as { state: unknown }).state }, T)).toEqual({ done: true });
+      expect(await db.prepare(`SELECT count(*) AS n FROM bank_txn`).first('n')).toBe(0);
+    });
+  });
+
   it('a sync requested mid-run hands the lease to a new sync job', async () => {
     await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName('sync-handoff')), async (_o, st) => {
       const db = new SqlD1(st.storage) as unknown as D1Database;

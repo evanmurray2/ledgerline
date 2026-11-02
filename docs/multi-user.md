@@ -135,7 +135,7 @@ Inside an object, `env.DB` is an adapter with D1's interface over `ctx.storage.s
 - **Errors:** `isFenceAbort()` and any other matched error text accept both D1's wording and the Durable Object's. A test forces each fence on both backends.
 - **No `await` inside a batch.** Batches are built before they run.
 - **Limits** match D1: 100 bound parameters, 2 MB per value, 100 KB per statement.
-- **Freeze switch** for the move (8.2): when set, every write through the adapter throws `frozen`. Every object write passes through here.
+- **Freeze switch** for the move (8.2): when set, every write through the adapter throws `frozen`. Every object write passes through here. Removed after the move (Nov 2, 2026).
 
 The fence tests, integration suite and measure suite run against both D1 and the adapter until D1 is removed. After that, they run against the adapter alone.
 

@@ -3,7 +3,7 @@
 // begin, fetch one page, restart, apply one chunk, process one batch, finalize, release (or hand off).
 // A lost lease or an unrecoverable error ends the run (release the lease as failed); any other
 // error is thrown so the runner retries the step with backoff.
-import type { BankDataProvider } from '@ledgerline/bank-provider';
+import { ProviderError, type BankDataProvider } from '@ledgerline/bank-provider';
 import type { Env } from '../env.js';
 import { CHUNK, LeaseLost, applyPage, beginRun, fetchPage, restartFetch } from '../sync/steps.js';
 import { MAX_HANDOFFS, moveLease, releaseFailed, releaseSuccess, renew } from '../sync/lease.js';
@@ -50,6 +50,26 @@ export interface SyncDeps {
 
 class Fatal extends Error {}
 
+/**
+ * Plaid errors only the person can fix, by signing in to the bank again (Link update mode). The connection is
+ * marked login_required, so the app asks for a repair and the 4-hour backstop stops retrying it.
+ */
+export const NEEDS_SIGN_IN = new Set([
+  'ITEM_LOGIN_REQUIRED',
+  'PENDING_EXPIRATION',
+  'PENDING_DISCONNECT',
+  'INVALID_CREDENTIALS',
+  'INSUFFICIENT_CREDENTIALS',
+  'INVALID_MFA',
+  'INVALID_UPDATED_USERNAME',
+  'ITEM_LOCKED',
+  'USER_SETUP_REQUIRED',
+  'USER_INPUT_TIMEOUT',
+  'MFA_NOT_SUPPORTED',
+  'NO_ACCOUNTS',
+  'ACCESS_NOT_GRANTED',
+]);
+
 export function nextUtcMidnight(now: number): number {
   const d = new Date(now);
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1, 0, 0, 30);
@@ -64,6 +84,17 @@ export function syncHandler(deps: SyncDeps): Handler {
     } catch (e) {
       if (e instanceof LeaseLost || e instanceof Fatal) {
         await failSync(deps, connectionId, s, e.message || e.name);
+        return { done: true };
+      }
+      // An error Plaid says a retry won't fix ends the run now instead of retrying for an hour.
+      if (e instanceof ProviderError && !e.retryable) {
+        await failSync(deps, connectionId, s, e.code);
+        if (NEEDS_SIGN_IN.has(e.code))
+          await deps.env.DB.prepare(
+            `UPDATE connection SET status = 'login_required', updated_at = ?2 WHERE id = ?1 AND removed_at IS NULL`,
+          )
+            .bind(connectionId, Date.now())
+            .run();
         return { done: true };
       }
       throw e;

@@ -1,4 +1,5 @@
-// Transport and browser controls for API responses. The SPA's own headers (CSP etc.) come from apps/web/public/_headers.
+// Transport and browser controls for API responses. The web app's own headers (CSP etc.) come from
+// apps/web/public/_headers, which Cloudflare applies to static files before the Worker runs.
 import type { MiddlewareHandler } from 'hono';
 import { CSRF_HEADER } from '@ledgerline/contracts';
 
@@ -14,10 +15,15 @@ export const apiHeaders: MiddlewareHandler = async (c, next) => {
   h.set('x-frame-options', 'DENY');
 };
 
+/** The Plaid webhook: a server-to-server call, proven by Plaid's signature instead (routes/ops.ts). */
+export const WEBHOOK_PATH = '/api/webhooks/plaid';
+
 /** CSRF: mutations need a JSON content type, the custom header and a same-origin Origin. */
 export const csrf: MiddlewareHandler = async (c, next) => {
   const m = c.req.method;
   if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return next();
+  // Plaid never sends the app's header; its signed JWT is checked before anything runs.
+  if (m === 'POST' && new URL(c.req.url).pathname === WEBHOOK_PATH) return next();
   const ct = c.req.header('content-type') ?? '';
   if (!ct.toLowerCase().startsWith('application/json'))
     return c.json({ error: 'csrf', message: 'JSON required' }, 415);

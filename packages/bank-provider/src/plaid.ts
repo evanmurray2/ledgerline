@@ -177,6 +177,23 @@ export function parsePlaidSyncPage(body: string): SyncPage {
   return { events, nextCursor: j.next_cursor, hasMore: j.has_more };
 }
 
+/**
+ * Plaid's webhook signing keys by key id, shared by every provider in the isolate: the Worker and the budget's store
+ * each build a provider per webhook, and a per-instance cache would ask Plaid for the key every time.
+ */
+const WEBHOOK_KEYS = new Map<
+  string,
+  { jwk: JsonWebKey | null; expiredAt: number | null; fetchedAt: number }
+>();
+const KEY_TTL_MS = 24 * 3_600_000;
+const MISSING_KEY_TTL_MS = 10 * 60_000;
+const MAX_CACHED_KEYS = 50;
+
+/** Tests only: forget cached webhook keys. */
+export function resetWebhookKeyCache(): void {
+  WEBHOOK_KEYS.clear();
+}
+
 export class PlaidProvider implements BankDataProvider {
   readonly id = 'plaid' as const;
   private readonly origin: string;
@@ -332,8 +349,6 @@ export class PlaidProvider implements BankDataProvider {
     return this.completeLink(pt.public_token);
   }
 
-  private keyCache = new Map<string, { jwk: JsonWebKey; expiredAt: number | null; fetchedAt: number }>();
-
   async verifyWebhook(req: Request): Promise<ProviderWebhookEvent | null> {
     const jwt = req.headers.get('plaid-verification');
     if (!jwt) return null;
@@ -372,7 +387,10 @@ export class PlaidProvider implements BankDataProvider {
   }
 
   private async webhookKey(kid: string): Promise<CryptoKey | null> {
-    let entry = this.keyCache.get(kid);
+    const cacheKey = `${this.cfg.env}|${this.cfg.baseUrl ?? ''}|${kid}`;
+    const now = this.now();
+    let entry = WEBHOOK_KEYS.get(cacheKey);
+    if (entry && now - entry.fetchedAt > (entry.jwk ? KEY_TTL_MS : MISSING_KEY_TTL_MS)) entry = undefined;
     if (!entry) {
       try {
         const r = await this.json<{ key: JsonWebKey & { expired_at?: number | null } }>(
@@ -381,13 +399,18 @@ export class PlaidProvider implements BankDataProvider {
             key_id: kid,
           },
         );
-        entry = { jwk: r.key, expiredAt: r.key.expired_at ?? null, fetchedAt: this.now() };
-        this.keyCache.set(kid, entry);
-      } catch {
-        return null;
+        entry = { jwk: r.key, expiredAt: r.key.expired_at ?? null, fetchedAt: now };
+      } catch (e) {
+        // A key id Plaid doesn't know (a forged webhook) is remembered briefly, so repeats don't call Plaid.
+        // Other failures (Plaid down) aren't, and the webhook is retried by Plaid.
+        if (!(e instanceof ProviderError) || e.retryable) return null;
+        entry = { jwk: null, expiredAt: null, fetchedAt: now };
       }
+      if (WEBHOOK_KEYS.size >= MAX_CACHED_KEYS) WEBHOOK_KEYS.clear();
+      WEBHOOK_KEYS.set(cacheKey, entry);
     }
-    if (entry.expiredAt !== null && entry.expiredAt * 1000 < this.now()) return null;
+    if (!entry.jwk) return null;
+    if (entry.expiredAt !== null && entry.expiredAt * 1000 < now) return null;
     const { kty, crv, x, y } = entry.jwk;
     return crypto.subtle.importKey('jwk', { kty, crv, x, y }, { name: 'ECDSA', namedCurve: 'P-256' }, false, [
       'verify',

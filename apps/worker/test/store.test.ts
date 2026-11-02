@@ -131,16 +131,4 @@ describe('D1-shaped adapter', () => {
       expect(() => db.prepare(`SELECT ?1`).bind(undefined)).toThrow(/D1_TYPE_ERROR/);
     });
   });
-
-  it('a frozen object refuses writes but serves reads', async () => {
-    await runInDurableObject(budget(), async (_obj, state) => {
-      const a = new SqlD1(state.storage);
-      const db = a as unknown as D1Database;
-      await seed(db);
-      a.frozen = true;
-      await expect(db.prepare(`UPDATE budget SET rta = 1`).run()).rejects.toThrow(/frozen/);
-      await expect(db.batch([db.prepare(`DELETE FROM setting`)])).rejects.toThrow(/frozen/);
-      expect(await db.prepare(`SELECT count(*) AS n FROM budget`).first('n')).toBe(1);
-    });
-  });
 });

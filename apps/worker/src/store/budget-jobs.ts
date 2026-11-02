@@ -33,7 +33,7 @@ export interface Enqueue {
   ): Promise<string>;
 }
 
-/** Recreates any missing recurring row (idempotent). Called at store start and by the daily ensureJobs. */
+/** Recreates any missing recurring row (idempotent). Called when a store's budget is created and by the daily ensureJobs. */
 export async function ensureRecurring(enqueue: Enqueue, now: number): Promise<void> {
   await enqueue('backstop', { id: BACKSTOP_ID, runAt: now + FOUR_HOURS, recurring: true });
   await enqueue('daily_scan', { id: DAILY_SCAN_ID, runAt: nextUtc(now, 8, 10), recurring: true });

@@ -21,9 +21,17 @@ export const MIN_SECRET_LENGTH = 32;
 export type Identity =
   { kind: 'user'; userId: string; sessionId: string | null; verifiedAt: number } | { kind: 'ops' };
 
+/**
+ * Local development and tests sign in as DEV_AUTH_EMAIL without a passkey. Never where a setup code exists (every
+ * real deploy has one), and never on Plaid Production, so one wrong setting can't open the app to anyone.
+ */
+export function devSignIn(env: Env): boolean {
+  return !!env.DEV_AUTH_EMAIL && env.PLAID_ENV !== 'production' && !env.SETUP_CODE;
+}
+
 /** The first user's email in the membership tables (setup and local development only; never identity). */
 export function ownerEmail(env: Env): string {
-  const dev = env.PLAID_ENV !== 'production' ? env.DEV_AUTH_EMAIL : undefined;
+  const dev = devSignIn(env) ? env.DEV_AUTH_EMAIL : undefined;
   return (env.OWNER_EMAIL || dev || 'owner').toLowerCase();
 }
 
@@ -88,7 +96,7 @@ export async function identify(req: Request, env: Env, now: number): Promise<Ide
     return null;
   }
   // Local development and tests only: no passkey, a fixed first user.
-  if (env.PLAID_ENV !== 'production' && env.DEV_AUTH_EMAIL) {
+  if (devSignIn(env)) {
     const email = ownerEmail(env);
     const m = await resolveMembership(env.DB, email, email, now, () => ulid(now));
     return m ? { kind: 'user', userId: m.userId, sessionId: null, verifiedAt: now } : null;
