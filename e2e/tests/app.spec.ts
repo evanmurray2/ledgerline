@@ -170,6 +170,9 @@ test('Assigned more than you have offers to take it back', async ({ page }) => {
   await expect(page.getByText('You assigned $18.10 more than you have')).toBeVisible();
   await page.getByRole('button', { name: 'Take $18.10 from Vacation' }).click();
   await expect(rta(page)).toHaveText('$0.00');
+  // Nothing left to assign: a quiet line, no Assign button.
+  await expect(page.getByText('All money assigned').first()).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Assign', exact: true })).toHaveCount(0);
 });
 
 test('Bank connections confirm before linking and update the meter', async ({ page }) => {

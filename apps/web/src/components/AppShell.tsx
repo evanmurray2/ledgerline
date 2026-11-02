@@ -90,6 +90,7 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
     { id: 'settings', name: 'Settings', to: '/settings', badge: 0 },
   ];
   const negative = rta !== undefined && rta < 0;
+  const done = rta === 0 && !badges.rtaUpdating;
   return (
     <nav
       aria-label="Main"
@@ -131,14 +132,18 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
       <div
         className={cx(
           'mt-auto flex flex-col gap-0.5 rounded-xl p-3',
-          negative ? 'bg-danger text-on-danger' : 'bg-accent text-on-accent',
+          negative
+            ? 'bg-danger text-on-danger'
+            : done
+              ? 'border border-line text-muted'
+              : 'bg-accent text-on-accent',
         )}
       >
-        <span className="text-[12px] font-semibold">Ready to Assign</span>
+        <span className="text-[12px] font-semibold">{done ? 'All money assigned' : 'Ready to Assign'}</span>
         <span className="tnum text-[22px] font-bold" data-testid="nav-rta">
           {badges.rtaUpdating ? 'Updating' : rta === undefined ? '—' : formatCents(rta)}
         </span>
-        {active !== 'budget' && (
+        {active !== 'budget' && !done && (
           <Link
             to="/budget/assign"
             data-track="nav.assign"

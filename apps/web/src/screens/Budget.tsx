@@ -566,6 +566,16 @@ function NewMonth({ b, month }: { b: BudgetView; month: string }) {
 function RtaBar({ b }: { b: BudgetView }) {
   const canWrite = useCanWrite();
   const neg = b.rta < 0;
+  // Every dollar assigned: a quiet line, nothing to do.
+  if (b.rta === 0 && !b.rtaUpdating)
+    return (
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-surface px-4 py-2 text-[13px] text-muted">
+        <span className="font-semibold">All money assigned</span>
+        <span className="tnum font-bold text-ink-2" data-testid="rta">
+          {formatCents(0)}
+        </span>
+      </div>
+    );
   return (
     <div
       className={cx(
