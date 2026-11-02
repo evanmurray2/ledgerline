@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "check": "node tools/check.mjs",
     "test": "pnpm -r --if-present test",
     "test:unit": "pnpm --filter \"./packages/**\" --if-present test",
     "test:integration": "pnpm --filter @ledgerline/worker test",
