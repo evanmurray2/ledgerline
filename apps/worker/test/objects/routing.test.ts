@@ -159,3 +159,21 @@ describe('before the move', () => {
     expect(moved.json).toMatchObject({ hasPasskey: true, setupOpen: false });
   });
 });
+
+describe('without D1 (production since Nov 2, 2026)', () => {
+  const noD1 = (path: string) =>
+    worker.fetch(
+      new Request(ORIGIN + path, { headers: { origin: ORIGIN } }),
+      { ...(prodEnv() as object), DB: undefined } as never,
+      createExecutionContext(),
+    );
+  it('serves sign-in from the Directory and turns the move off', async () => {
+    resetRoutingCache();
+    const st = await noD1('/api/auth/status');
+    expect(st.status).toBe(200);
+    expect(await st.json()).toMatchObject({ hasPasskey: true });
+    expect((await noD1('/api/session')).status).toBe(401);
+    expect((await noD1('/api/move')).status).toBe(404);
+    resetRoutingCache();
+  });
+});

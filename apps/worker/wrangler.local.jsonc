@@ -1,0 +1,46 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  // Local dev and tests only (wrangler dev -c wrangler.local.jsonc, the vitest configs, e2e). Production is
+  // wrangler.jsonc. This is the same config plus a local, emulated D1 and Workflows, for the older D1 code paths
+  // still under test; tools/ci/local-config-check.mjs keeps the two in step.
+  "name": "ledgerline",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ledgerline",
+      "database_id": "local",
+      "migrations_dir": "../../packages/db/migrations",
+    },
+  ],
+  "workflows": [
+    { "name": "ledgerline-sync", "binding": "SYNC", "class_name": "SyncWorkflow" },
+    { "name": "ledgerline-maintenance", "binding": "MAINTENANCE", "class_name": "MaintenanceWorkflow" },
+    { "name": "ledgerline-recompute", "binding": "RECOMPUTE", "class_name": "RecomputeWorkflow" },
+  ],
+  // docs/multi-user.md: SQLite Durable Objects. Phase 1 adds the classes only (nothing routes to them yet). Adding a
+  // class is a deploy Cloudflare's rollback can't step back over, so this ships in a deploy of its own.
+  "durable_objects": {
+    "bindings": [
+      { "name": "DIRECTORY", "class_name": "Directory" },
+      { "name": "BUDGET", "class_name": "BudgetStore" },
+    ],
+  },
+  "migrations": [{ "tag": "v1-stores", "new_sqlite_classes": ["Directory", "BudgetStore"] }],
+  // Sign-in, setup, recovery and sign-up attempts per IP (docs/multi-user.md 7.2). Approximate, per location.
+  "ratelimits": [{ "name": "AUTH_LIMITER", "namespace_id": "4101", "simple": { "limit": 20, "period": 60 } }],
+  // 3 of the 5 free cron triggers: sync backstop, daily stale-pending scan, daily maintenance (10:20 UTC).
+  "triggers": { "crons": ["7 */4 * * *", "10 8 * * *", "20 10 * * *"] },
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/__dev/*", "/__measure/*"],
+  },
+  // Production runs Plaid Production. Local dev (.dev.vars) and tests set PLAID_ENV=sandbox explicitly.
+  "vars": { "PLAID_ENV": "production", "APP_VERSION": "0.1.0" },
+}

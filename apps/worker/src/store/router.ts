@@ -12,6 +12,8 @@ let cached: { phase: string; at: number } | null = null;
 
 /** move_state.phase: 'none', 'frozen', 'moved' or 'restoring' (cached for 10 seconds per isolate). */
 export async function servingPhase(env: Env, now = Date.now()): Promise<string> {
+  // Production has no D1 binding since the move (Nov 2, 2026): the Durable Objects serve everything.
+  if (!env.DB) return 'moved';
   if (cached && now - cached.at < CACHE_MS) return cached.phase;
   const r = await env.DB.prepare(`SELECT phase, lease_expires FROM move_state WHERE id = 1`)
     .first<{ phase: string; lease_expires: number | null }>()

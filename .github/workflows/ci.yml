@@ -33,6 +33,8 @@ jobs:
         run: pnpm --filter @ledgerline/worker test
       - name: Migration check
         run: node tools/ci/migration-check.mjs
+      - name: Local config matches production
+        run: node tools/ci/local-config-check.mjs
       - name: Bundle size budget
         run: node tools/ci/bundle-budget.mjs
   e2e:

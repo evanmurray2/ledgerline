@@ -34,6 +34,8 @@ app.use('/api/auth/*', async (c, next) => {
 const MOVE_LEASE_MS = 30 * 60_000;
 app.on(['GET', 'POST'], '/api/move', csrf, async (c) => {
   const env = c.env;
+  // Production has no D1 since the move: nothing left to move.
+  if (!env.DB) return c.json({ error: 'not_found' }, 404);
   const now = Date.now();
   const phase = await servingPhase(env, now);
   const dir = env.DIRECTORY.get(env.DIRECTORY.idFromName(DIRECTORY_NAME));
@@ -87,6 +89,7 @@ app.on(['GET', 'POST'], '/api/move', csrf, async (c) => {
 // after the move, into D1, verifies it, and switches back. The owner only, with a fresh passkey check; one budget.
 app.post('/api/move/back', csrf, async (c) => {
   const env = c.env;
+  if (!env.DB) return c.json({ error: 'not_found' }, 404);
   const now = Date.now();
   if ((await servingPhase(env, now)) !== 'moved')
     return c.json({ error: 'busy', message: 'The data isn’t on the new databases' }, 409);

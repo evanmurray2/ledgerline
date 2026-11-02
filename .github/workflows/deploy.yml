@@ -29,12 +29,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @ledgerline/web build
-      - name: Migrations (production D1, expand-only)
-        working-directory: apps/worker
-        run: pnpm exec wrangler d1 migrations apply DB --remote
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || 'f2d39c71e2c0819833de7942cdcc1222' }}
       - name: Worker secrets
         run: node tools/ci/worker-secrets.mjs "$RUNNER_TEMP/secrets.json"
         env:

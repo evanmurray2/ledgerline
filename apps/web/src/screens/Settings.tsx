@@ -2,7 +2,6 @@
 // rename), bank connections (Item meter, confirm before Link), import and export, appearance and preferences.
 // There is no email setting: the app sends no email (decisions.md D-24).
 import { SignInSection } from './Auth';
-import { StorageCard } from './Storage';
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, Outlet, useNavigate, useParams, useRouterState, useSearch } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -1902,7 +1901,6 @@ export function DataScreen() {
         ))}
       </Card>
       <FullBackup />
-      <StorageCard />
       <h2 className="m-0 mt-1 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
         Recovery
       </h2>
@@ -1912,12 +1910,12 @@ export function DataScreen() {
             <span className="text-[15px] font-semibold">Undo window</span>
             <span className="text-[12px] text-muted">The database can be rewound to any minute</span>
           </span>
-          <span className="text-[13px] text-ink-2">Last 7 days</span>
+          <span className="text-[13px] text-ink-2">Last 30 days</span>
         </div>
       </Card>
       <span className="text-[12px] text-muted">
         Rewinding is done in Cloudflare, not from this screen, so a stolen session can’t wipe your data. For a
-        copy older than 7 days, download the JSON export above and keep it somewhere safe.
+        copy older than 30 days, download the full backup above and keep it somewhere safe.
       </span>
     </Page>
   );
