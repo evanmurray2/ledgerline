@@ -187,7 +187,24 @@ export function StatusBanner() {
         </span>
       </div>
     );
+  if (c.moving) return <MovingBanner />;
   return <ReadOnlyBanner until={c.readOnlyUntil ? pacificTime(c.readOnlyUntil) : 'midnight UTC'} />;
+}
+
+/** While the data moves to its new databases (a few minutes): view only, nothing lost. */
+function MovingBanner() {
+  return (
+    <div
+      role="status"
+      data-testid="moving-banner"
+      className="flex shrink-0 flex-col gap-1 border-b border-warn-border bg-warn-bg px-4 py-2 text-warn-fg"
+    >
+      <span className="text-[14px] font-bold">Moving your data</span>
+      <span className="text-[13px] leading-snug">
+        This takes a few minutes. You can look around; changes are off until it’s done. Nothing is lost.
+      </span>
+    </div>
+  );
 }
 
 function ReadOnlyBanner({ until }: { until: string }) {

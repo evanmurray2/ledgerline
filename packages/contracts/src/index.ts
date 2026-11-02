@@ -24,8 +24,11 @@ export const Session = z.object({
     setupStep: z.enum(['start', 'link', 'categories', 'done']),
   }),
   appVersion: z.string(),
-  /** 'ok' | 'paused' (70% of a daily D1 limit) | 'readonly' (90%: banner, writes refused). */
-  writeState: z.enum(['ok', 'paused', 'readonly']),
+  /**
+   * 'ok' | 'paused' (70% of a daily limit) | 'readonly' (90%: banner, writes refused) | 'moving' (the data is being
+   * moved to its new databases, docs/multi-user.md 8.2: banner, writes refused for a few minutes).
+   */
+  writeState: z.enum(['ok', 'paused', 'readonly', 'moving']),
   readOnlyUntil: z.string().nullable(),
   settings: z.object({ tracking: z.boolean(), noteButton: z.boolean() }),
 });

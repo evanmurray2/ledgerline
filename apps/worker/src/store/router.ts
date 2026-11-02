@@ -10,14 +10,19 @@ import { makeProvider } from '../sync/provider.js';
 const CACHE_MS = 10_000;
 let cached: { phase: string; at: number } | null = null;
 
-/** Whether the Durable Objects serve requests: move_state.phase = 'moved' (cached for 10 seconds per isolate). */
-export async function objectsServe(env: Env, now = Date.now()): Promise<boolean> {
-  if (cached && now - cached.at < CACHE_MS) return cached.phase === 'moved';
+/** move_state.phase: 'none', 'frozen', 'moved' or 'restoring' (cached for 10 seconds per isolate). */
+export async function servingPhase(env: Env, now = Date.now()): Promise<string> {
+  if (cached && now - cached.at < CACHE_MS) return cached.phase;
   const r = await env.DB.prepare(`SELECT phase FROM move_state WHERE id = 1`)
     .first<{ phase: string }>()
     .catch(() => null);
   cached = { phase: r?.phase ?? 'none', at: now };
-  return cached.phase === 'moved';
+  return cached.phase;
+}
+
+/** Whether the Durable Objects serve requests: move_state.phase = 'moved'. */
+export async function objectsServe(env: Env, now = Date.now()): Promise<boolean> {
+  return (await servingPhase(env, now)) === 'moved';
 }
 
 /** Tests only: forget the cached phase. */

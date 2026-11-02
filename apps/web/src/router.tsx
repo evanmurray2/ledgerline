@@ -70,7 +70,7 @@ function Root() {
     if (!s) return;
     usage.appVersion = s.appVersion;
     usage.setEnabled(s.settings.tracking);
-    connectivity.setReadOnly(s.writeState === 'readonly', s.readOnlyUntil);
+    connectivity.setReadOnly(s.writeState === 'readonly', s.readOnlyUntil, s.writeState === 'moving');
   }, [s]);
 
   const setupPath = path.startsWith('/setup') || path.startsWith('/welcome');

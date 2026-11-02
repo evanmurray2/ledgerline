@@ -6,8 +6,10 @@ import { useSyncExternalStore } from 'react';
 interface State {
   online: boolean;
   networkFailed: boolean;
-  /** Session.writeState === 'readonly' */
+  /** Session.writeState === 'readonly' or 'moving' */
   readOnly: boolean;
+  /** Session.writeState === 'moving': the data is being moved (a few minutes). */
+  moving: boolean;
   readOnlyUntil: string | null;
   /** When the data on screen was last loaded (epoch ms). */
   loadedAt: number | null;
@@ -17,6 +19,7 @@ let state: State = {
   online: typeof navigator === 'undefined' ? true : navigator.onLine,
   networkFailed: false,
   readOnly: false,
+  moving: false,
   readOnlyUntil: null,
   loadedAt: null,
 };
@@ -28,6 +31,7 @@ function set(patch: Partial<State>) {
     next.online === state.online &&
     next.networkFailed === state.networkFailed &&
     next.readOnly === state.readOnly &&
+    next.moving === state.moving &&
     next.readOnlyUntil === state.readOnlyUntil &&
     next.loadedAt === state.loadedAt
   )
@@ -50,8 +54,8 @@ export const connectivity = {
   reportOk() {
     set({ networkFailed: false, loadedAt: Date.now() });
   },
-  setReadOnly(readOnly: boolean, until: string | null) {
-    set({ readOnly, readOnlyUntil: until });
+  setReadOnly(readOnly: boolean, until: string | null, moving = false) {
+    set({ readOnly: readOnly || moving, readOnlyUntil: until, moving });
   },
   setOnline(online: boolean) {
     set({ online, networkFailed: online ? false : state.networkFailed });
