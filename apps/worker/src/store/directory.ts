@@ -18,6 +18,13 @@ import { REAUTH_MS, identify, needsRecentPasskey } from '../http/auth.js';
 import { membership } from '../db/scoped.js';
 import { clock } from '../http/clock.js';
 import { noteUsage, usageToday } from '../sync/breaker.js';
+import { refreshUsage } from '../ops/usage.js';
+import { pruneAuthStmts } from '../maintenance.js';
+import { JobRunner, type Handler } from './jobs.js';
+import { nextUtc } from './budget-jobs.js';
+
+/** Budgets checked per ensure_all step (docs/multi-user.md 6.2). */
+export const ENSURE_BATCH = 25;
 
 /** The Directory is a single object; this is its name. */
 export const DIRECTORY_NAME = 'directory';
@@ -38,10 +45,14 @@ export class Directory extends DurableObject<Env> {
   protected readonly db: SqlD1;
   private startError: string | null = null;
   private app: Hono<AppEnv> | null = null;
+  private readonly runner: JobRunner;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.db = new SqlD1(ctx.storage);
+    this.runner = new JobRunner(ctx.storage, this.handlers(), async (job, err) => {
+      console.log(JSON.stringify({ event: 'job_failed', kind: job.kind, id: job.id, error: err }));
+    });
     void ctx.blockConcurrencyWhile(async () => {
       try {
         migrate(ctx.storage, DIRECTORY_MIGRATIONS, Date.now());
@@ -53,6 +64,63 @@ export class Directory extends DurableObject<Env> {
 
   async health(): Promise<StoreHealth> {
     return storeHealth(this.ctx.storage, 'directory', this.startError);
+  }
+
+  /**
+   * The daily cron after the move (6.2): keep the Directory's recurring jobs and start the safety check that walks
+   * every budget in batches, so it covers any number of budgets.
+   */
+  async daily(): Promise<{ jobs: ReturnType<JobRunner['list']> }> {
+    this.ready();
+    const now = Date.now();
+    await this.runner.enqueue(
+      'auth_prune',
+      { id: 'recurring:auth_prune', runAt: nextUtc(now, 10, 20), recurring: true },
+      now,
+    );
+    await this.runner.enqueue(
+      'usage_refresh',
+      { id: 'recurring:usage_refresh', runAt: now, recurring: true },
+      now,
+    );
+    await this.runner.enqueue('ensure_all', { id: 'ensure_all', state: { cursor: '' }, runAt: now }, now);
+    return { jobs: this.runner.list() };
+  }
+
+  override async alarm(): Promise<void> {
+    this.ready();
+    await this.runner.runNext(Date.now());
+  }
+
+  private handlers(): Record<string, Handler> {
+    return {
+      // Expired sign-in state (D-27), daily.
+      auth_prune: async (_job, now) => {
+        await this.db.batch(pruneAuthStmts(this.db as unknown as D1Database, now) as never);
+        return { state: {}, runAt: nextUtc(now, 10, 20) };
+      },
+      // Account usage from GraphQL Analytics, every 4 hours, for the write breaker.
+      usage_refresh: async (_job, now) => {
+        await refreshUsage(this.appEnv(), now, true).catch(() => null);
+        return { state: {}, runAt: now + 4 * 3_600_000 };
+      },
+      // Every budget's ensureJobs, ENSURE_BATCH per step.
+      ensure_all: async (job, now) => {
+        const cursor = (job.state as { cursor: string }).cursor ?? '';
+        const ids = this.ctx.storage.sql
+          .exec(`SELECT id FROM budget WHERE id > ? ORDER BY id LIMIT ?`, cursor, ENSURE_BATCH)
+          .toArray()
+          .map((r) => String(r.id));
+        for (const id of ids)
+          await this.env.BUDGET.get(this.env.BUDGET.idFromName(id))
+            .ensureJobs()
+            .catch((e: unknown) =>
+              console.log(JSON.stringify({ event: 'ensure_failed', budget: id, error: String(e) })),
+            );
+        if (ids.length < ENSURE_BATCH) return { done: true };
+        return { state: { cursor: ids[ids.length - 1] }, runAt: now };
+      },
+    };
   }
 
   /** Sign-in and Settings → Sign-in, with the D1 path's own routes on the Directory's database. */
@@ -122,6 +190,25 @@ export class Directory extends DurableObject<Env> {
   /** Adds a store's own row counts to today's account usage (between analytics refreshes). */
   async noteUsage(written: number, read: number): Promise<void> {
     await noteUsage(this.db as unknown as D1Database, written, read).run();
+  }
+
+  /**
+   * Records which budget owns a Plaid Item (6.4). Idempotent. An Item already routed to another budget is refused
+   * ('duplicate'), which replaces the old global unique index on (provider, provider_item_id).
+   */
+  async registerRoute(itemId: string, budgetId: string, connectionId: string): Promise<'ok' | 'duplicate'> {
+    this.ready();
+    this.ctx.storage.sql.exec(
+      `INSERT OR IGNORE INTO connection_route (provider_item_id, budget_id, connection_id, created_at) VALUES (?, ?, ?, ?)`,
+      itemId,
+      budgetId,
+      connectionId,
+      Date.now(),
+    );
+    const r = this.ctx.storage.sql
+      .exec(`SELECT budget_id FROM connection_route WHERE provider_item_id = ?`, itemId)
+      .one();
+    return String(r.budget_id) === budgetId ? 'ok' : 'duplicate';
   }
 
   /** Which budget owns a Plaid Item (webhooks, 6.4). */

@@ -95,8 +95,21 @@ export class BudgetStore extends DurableObject<Env> {
   async ensureJobs(): Promise<{ ok: boolean; jobs: ReturnType<JobRunner['list']> }> {
     this.ready();
     const now = Date.now();
-    if (!(await this.budgetId().catch(() => null))) return { ok: false, jobs: [] };
+    const budgetId = await this.budgetId().catch(() => null);
+    if (!budgetId) return { ok: false, jobs: [] };
     await ensureRecurring(this.enqueue, now);
+    // Every Plaid Item this budget holds is routed to it in the Directory (6.4); missing routes are re-registered.
+    const items = this.ctx.storage.sql
+      .exec(
+        `SELECT id, provider_item_id FROM connection WHERE provider_item_id IS NOT NULL AND removed_at IS NULL`,
+      )
+      .toArray();
+    for (const c of items)
+      await this.enqueue('register_link', {
+        id: `register_link:${String(c.id)}`,
+        state: { itemId: String(c.provider_item_id), connectionId: String(c.id) },
+        runAt: now,
+      });
     await this.runner.scheduleNext(now);
     return { ok: true, jobs: this.runner.list() };
   }
@@ -142,6 +155,13 @@ export class BudgetStore extends DurableObject<Env> {
       ...(dir
         ? { USAGE: () => dir.usageToday(), NOTE_USAGE: (w: number, r: number) => dir.noteUsage(w, r) }
         : {}),
+      ROUTE_LINK: async (itemId: string, connectionId: string) => {
+        await this.enqueue('register_link', {
+          id: `register_link:${connectionId}`,
+          state: { itemId, connectionId },
+          runAt: now(),
+        });
+      },
       SYNC: {
         create: async (o: { id: string; params: { connectionId: string; trigger: string } }) => {
           // routes/settings.ts startSync() has already taken the lease with this id.
@@ -210,6 +230,19 @@ export class BudgetStore extends DurableObject<Env> {
       backstop: (job, now) => backstopHandler(this.adapter(), this.enqueue)(job, now),
       daily_scan: (job, now) => dailyScanHandler(this.appEnv(), budgetId, this.enqueue)(job, now),
       maintenance: (job, now) => maintenanceHandler(this.appEnv(), budgetId)(job, now),
+      register_link: async (job) => {
+        // Retried until the Directory answers; a duplicate Item is flagged on the connection (6.4).
+        const { itemId, connectionId } = job.state as { itemId: string; connectionId: string };
+        const dir = this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName(DIRECTORY_NAME));
+        const r = await dir.registerRoute(itemId, await budgetId(), connectionId);
+        if (r === 'duplicate')
+          this.ctx.storage.sql.exec(
+            `UPDATE connection SET error_code = 'duplicate_item', updated_at = ? WHERE id = ?`,
+            Date.now(),
+            connectionId,
+          );
+        return { done: true };
+      },
     };
   }
 

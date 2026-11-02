@@ -770,6 +770,8 @@ export async function saveLinkedItem(
     ),
     s.audit('connection.link', 'connection', connectionId, null, { institution }, now),
   ]);
+  // Inside a budget's Durable Object: record which budget owns the Item, for webhooks (docs/multi-user.md 6.4).
+  if (env.ROUTE_LINK) await env.ROUTE_LINK(itemId, connectionId);
   return connectionId;
 }
 

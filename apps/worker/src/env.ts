@@ -47,6 +47,8 @@ export interface Env {
   USAGE?: () => Promise<{ written: number; read: number }>;
   /** Inside a budget's Durable Object: add this app's own row counts to the Directory's usage_day. */
   NOTE_USAGE?: (written: number, read: number) => Promise<void>;
+  /** Inside a budget's Durable Object: queue registering a new Plaid Item's route in the Directory. */
+  ROUTE_LINK?: (providerItemId: string, connectionId: string) => Promise<void>;
 }
 
 export interface SyncParams {

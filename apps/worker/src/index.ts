@@ -5,7 +5,8 @@ import { apiHeaders } from './http/security.js';
 import { api } from './routes/api.js';
 import { measure } from './measure/routes.js';
 import { dev } from './measure/dev.js';
-import { scheduled } from './cron.js';
+import { CRON_MAINTENANCE, scheduled } from './cron.js';
+import { DIRECTORY_NAME } from './store/directory.js';
 import { objectsServe, routeApi } from './store/router.js';
 export { SyncWorkflow } from './sync/workflow.js';
 export { MaintenanceWorkflow } from './maintenance.js';
@@ -41,5 +42,17 @@ app.all('*', (c) => (c.env.ASSETS ? c.env.ASSETS.fetch(c.req.raw) : c.text('Not 
 
 export default {
   fetch: app.fetch,
-  scheduled: (controller, env, ctx) => ctx.waitUntil(scheduled(controller, env)),
+  scheduled: (controller, env, ctx) =>
+    ctx.waitUntil(
+      (async () => {
+        // After the move each budget runs its own schedule on alarms; the daily trigger only wakes the Directory,
+        // which refreshes usage and checks every budget's jobs (docs/multi-user.md 6.2).
+        if (await objectsServe(env)) {
+          if (controller.cron === CRON_MAINTENANCE)
+            await env.DIRECTORY.get(env.DIRECTORY.idFromName(DIRECTORY_NAME)).daily();
+          return;
+        }
+        await scheduled(controller, env);
+      })(),
+    ),
 } satisfies ExportedHandler<Env>;
