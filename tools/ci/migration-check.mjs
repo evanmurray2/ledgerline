@@ -14,7 +14,7 @@ console.log(`fresh: ${files.length} migration(s) applied`);
 
 let base = [];
 try {
-  const ref = process.env.BASE_REF ?? 'origin/master';
+  const ref = process.env.BASE_REF ?? 'origin/main';
   const list = execFileSync('git', ['ls-tree', '--name-only', `${ref}:${DIR}`], { encoding: 'utf8' })
     .split('\n')
     .filter((f) => f.endsWith('.sql'))

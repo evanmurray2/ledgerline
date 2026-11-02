@@ -43,13 +43,13 @@ In the **Passwords** app, tap **+** and use the suggested strong password; then 
 
 ## 5. Deploy
 
-1. **Actions → deploy → Run workflow** (branch `master`).
+1. **Actions → deploy → Run workflow** (branch `main`).
 2. GitHub asks you to approve the production deployment (a notification in the GitHub app, or on the run page): **Review deployments → production → Approve and deploy**.
 3. Wait for the green check (a few minutes). It applies the database migrations, deploys the app with your secrets, and checks it.
 
 ## Redeploying later
 
-GitHub only needs the `production` environment with the secret `CLOUDFLARE_API_TOKEN` (the Deploy token). Under the environment's **Deployment branches and tags**, choose **Selected branches** and add `master`. The Worker keeps every secret it already has; add others to the environment only to change them.
+GitHub only needs the `production` environment with the secret `CLOUDFLARE_API_TOKEN` (the Deploy token). Under the environment's **Deployment branches and tags**, choose **Selected branches** and add `main`. The Worker keeps every secret it already has; add others to the environment only to change them.
 
 - **Deploy now:** Actions → **deploy** → **Run workflow**. Claude can start it for you too.
 - **Deploy on every merge:** add the repository variable `DEPLOY_ON_MERGE` = `true`. Add yourself under **Required reviewers** then, so each merge waits for your tap.
@@ -74,7 +74,7 @@ The setup code stops working once a passkey exists. For a non-Apple device, use 
 
 ## Optional extras
 
-- **Branch protection** (Settings → Rules → New ruleset on `master`): require a PR, passing checks, linear history, no force pushes.
+- **Branch protection** (Settings → Rules → New ruleset on `main`): require a PR, passing checks, linear history, no force pushes.
 - **Nightly Plaid Sandbox test**: environment `sandbox` with `PLAID_SANDBOX_CLIENT_ID` and `PLAID_SANDBOX_SECRET`, and the variable `SANDBOX_E2E=true`.
 
 ## Recovery

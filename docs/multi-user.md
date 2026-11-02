@@ -182,7 +182,7 @@ Each of these changes a hard rule or a decision, so none happens without the own
 
 ## 10. Build phases
 
-Each phase lands on `master` with `pnpm check` passing and changes nothing for the owner while `SIGNUPS` is `off`.
+Each phase lands on `main` with `pnpm check` passing and changes nothing for the owner while `SIGNUPS` is `off`.
 
 1. **Schema and identity**: migration 0010 with backfill; `identify()` and `resolveMembership()` by user id; security routes scoped by user (A1–A3, A5). _Verify:_ migration test on a copy of the current schema with the owner's rows; existing e2e sign-in tests pass unchanged.
 2. **Isolation**: fix A6, A8, A10; the two-tenant test (6.2) and the `DB.prepare` allowlist. _Verify:_ isolation test passes and fails when a scope is removed on purpose.
