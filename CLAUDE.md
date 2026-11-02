@@ -7,7 +7,7 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 - App: https://ledgerline.ledger-line.workers.dev (Worker `ledgerline`, workers.dev subdomain `ledger-line`)
 - Cloudflare account id: `f2d39c71e2c0819833de7942cdcc1222`
 - D1: `ledgerline` `52a5b8a6-09b1-4b27-b0bd-ddfaefd943b3`, `ledgerline-staging` `dd5f73ff-487b-4fb3-a975-3c9b4531047e` (staging isn't deployed)
-- Sign-in is passkeys (D-27). The owner's passkey and one Charles Schwab bank link exist. Plaid allows 10 links for life: **never link, re-link or remove a bank without asking.**
+- Sign-in is passkeys (D-27). The owner's passkey exists, and 7 of the 10 Plaid links are used (Charles Schwab, Chase, Wells Fargo, Citibank, Bank of America, American Express, SoFi; checked Nov 2, 2026), so 3 are left. Plaid allows 10 links for life: **never link, re-link or remove a bank without asking.**
 
 ## Deploying
 
