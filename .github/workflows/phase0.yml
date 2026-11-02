@@ -4,6 +4,11 @@ name: phase0
 # Worker. Manual only (Actions → phase0 → Run workflow). Results: the run log and the phase0-results artifact.
 on:
   workflow_dispatch:
+    inputs:
+      kinds:
+        description: 'Plans to run (comma-separated): screens, screens-owner, sync, recompute, move'
+        required: false
+        default: 'screens,sync,recompute,move'
 permissions:
   contents: read
 concurrency:
@@ -46,6 +51,7 @@ jobs:
           PHASE0_KEY: ${{ steps.key.outputs.key }}
           CF_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || 'f2d39c71e2c0819833de7942cdcc1222' }}
           CF_ANALYTICS_TOKEN: ${{ secrets.CF_ANALYTICS_TOKEN }}
+          KINDS: ${{ inputs.kinds }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
