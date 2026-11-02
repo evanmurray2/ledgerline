@@ -90,6 +90,7 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 - [x] Tests, local dev and e2e on Durable Objects only (D-38): `wrangler.local.jsonc`, the Workflow classes, the D1 `api` path, D1 migrations and the D1 crons removed; one cron left. _Verify:_ `pnpm check` (100 Worker tests through the Directory and BudgetStore); Worker and passkey Playwright suites; `test/exports.test.ts` (workerd refuses non-function exports).
 - [x] Step sizes match D-37 (apply and processing 25 events, recompute 2 months, in requests too). _Verify:_ Worker tests; `apps/worker/measure` re-run (`docs/measurements.md`).
 - [x] The mock API and the Worker are checked against one list of screens and their schemas (`packages/contracts/src/screens.ts`). _Verify:_ `apps/web/test/mock-contract.test.ts` (every mock scenario), `apps/worker/test/screens.test.ts`.
+- [x] Settings split by section: `apps/web/src/screens/settings/` and `apps/worker/src/routes/settings/` (no behaviour change). _Verify:_ `pnpm check`; mock and Worker Playwright suites.
 - [ ] **(manual)** Delete the empty `ledgerline` D1 database (still in the account on Nov 2, 2026; D-38).
 - [ ] Activity screen: check CPU on the real app's analytics; build a stored recent-rows list only if p95 is 8 ms or more.
 - [ ] Later, only if wanted: invites, People with a reset link, Plaid link slots per user, account deletion, an isolation test (`docs/multi-user.md` 7.3, 7.4, 9.1, 10, 11).

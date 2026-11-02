@@ -16,7 +16,7 @@ import type { AppEnv } from '../http/context.js';
 import { HttpError, parse, scoped } from './api.js';
 import { classifyUsage, noteUsage, usageToday, utcDay, READ_LIMIT, WRITE_LIMIT } from '../sync/breaker.js';
 import { makeProvider } from '../sync/provider.js';
-import { startSync } from './settings.js';
+import { startSync } from './settings/connections.js';
 import { TX_COLUMNS, budgetMeta, planLineRebuild, type TxRow } from '../ledger/ledger.js';
 import { clearTotals } from '../ledger/totals.js';
 
