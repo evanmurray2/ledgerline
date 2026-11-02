@@ -299,9 +299,10 @@ const appearanceRoute = createRoute({
   path: 'appearance',
   component: AppearanceSection,
 });
+// Categories belong to the budget: their own page, opened from Budget, with Back returning there.
 const categoriesRoute = createRoute({
-  getParentRoute: () => settingsRoute,
-  path: 'categories',
+  getParentRoute: () => rootRoute,
+  path: '/categories',
   component: CategoriesScreen,
 });
 const categoryEditRoute = createRoute({
@@ -309,6 +310,21 @@ const categoryEditRoute = createRoute({
   path: '$categoryId',
   validateSearch: (s: Record<string, unknown>) => ({ group: str(s.group) }),
   component: CategoryEditSheet,
+});
+// Old links (bookmarks, history) from when Categories lived in Settings.
+const oldCategoriesRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'categories',
+  beforeLoad: () => {
+    throw redirect({ to: '/categories' });
+  },
+});
+const oldCategoryRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'categories/$categoryId',
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: `/categories/${params.categoryId}` });
+  },
 });
 const rulesRoute = createRoute({
   getParentRoute: () => settingsRoute,
@@ -364,9 +380,11 @@ const routeTree = rootRoute.addChildren([
     registerCheckRoute,
   ]),
   reportsRoute,
+  categoriesRoute.addChildren([categoryEditRoute]),
   settingsRoute.addChildren([
     appearanceRoute,
-    categoriesRoute.addChildren([categoryEditRoute]),
+    oldCategoriesRoute,
+    oldCategoryRoute,
     rulesRoute,
     ruleEditRoute,
     payeesRoute.addChildren([payeeRenameRoute]),

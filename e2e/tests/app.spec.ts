@@ -238,7 +238,7 @@ test('Target: a new kind starts empty instead of reusing the old amount', async 
 });
 
 test('Categories: add one to a group, then set its target', async ({ page }) => {
-  await page.goto('/settings/categories');
+  await page.goto('/categories');
   await page.getByRole('link', { name: 'Add category' }).nth(1).click();
   const sheet = page.getByRole('dialog', { name: 'New category' });
   await expect(sheet.getByLabel('Group')).toHaveValue('g-everyday');
@@ -248,7 +248,7 @@ test('Categories: add one to a group, then set its target', async ({ page }) => 
   await expect(target.getByText('Climbing')).toBeVisible();
   await target.getByLabel('Have this much available').fill('40');
   await target.getByRole('button', { name: 'Save target' }).click();
-  await expect(page).toHaveURL(/\/settings\/categories$/);
+  await expect(page).toHaveURL(/\/categories$/);
   await expect(page.getByText('Climbing')).toBeVisible();
 });
 
@@ -260,4 +260,29 @@ test('Assign: Clear all and Select all', async ({ page }) => {
   await expect(sheet.getByRole('button', { name: 'Nothing selected' })).toBeDisabled();
   await sheet.getByRole('button', { name: 'Select all' }).click();
   await expect(sheet.getByRole('checkbox', { checked: false })).toHaveCount(0);
+});
+
+test('Categories open from Budget, Back returns there, and old Settings links still work', async ({
+  page,
+}, info) => {
+  await page.goto('/budget');
+  await page.getByRole('link', { name: 'Edit categories' }).first().click();
+  await expect(page).toHaveURL(/\/categories$/);
+  if (info.project.name === 'phone') {
+    await page.getByRole('button', { name: 'Back to budget' }).click();
+    await expect(page).toHaveURL(/\/budget/);
+  }
+  await page.goto('/settings/categories');
+  await expect(page).toHaveURL(/\/categories$/);
+  // Settings no longer lists categories; Set targets lives on Budget only.
+  await expect(page.getByRole('link', { name: 'Set targets' })).toHaveCount(0);
+});
+
+test('Categories: reorder a category with the keyboard on its handle', async ({ page }) => {
+  await page.goto('/categories');
+  const rows = page.getByRole('link', { name: /^(Rent|Electric)/ });
+  await expect(rows.first()).toContainText('Rent');
+  await page.getByRole('button', { name: 'Reorder Rent' }).focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(rows.first()).toContainText('Electric');
 });

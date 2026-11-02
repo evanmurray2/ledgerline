@@ -41,7 +41,7 @@ const TABS: { id: Tab; name: string; to: string; icon: IconName; what: string }[
 
 function TabBar({ active }: { active: Tab }) {
   const badges = useBadges();
-  const current = active === 'settings' ? 'budget' : active;
+  const current = active === 'settings' ? 'accounts' : active;
   return (
     <nav
       aria-label="Main"

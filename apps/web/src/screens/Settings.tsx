@@ -2,10 +2,10 @@
 // rename), bank connections (Item meter, confirm before Link), import and export, appearance and preferences.
 // There is no email setting: the app sends no email (decisions.md D-24).
 import { SignInSection } from './Auth';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, Outlet, useNavigate, useParams, useRouterState, useSearch } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import type { RuleBody } from '@ledgerline/contracts';
+import type { CategoriesView, RuleBody } from '@ledgerline/contracts';
 import { api, exportUrls } from '../api/endpoints';
 import {
   qk,
@@ -19,6 +19,7 @@ import {
 } from '../api/hooks';
 import { CategoryField } from '../components/CategoryPicker';
 import { Sheet } from '../components/Sheet';
+import { moved, useReorder } from '../components/reorder';
 import { toast } from '../components/Toast';
 import {
   BackHeader,
@@ -49,7 +50,6 @@ import { useCanWrite } from '../state/connectivity';
 
 const SECTIONS: { id: string; name: string; to: string }[] = [
   { id: 'appearance', name: 'Appearance and preferences', to: '/settings/appearance' },
-  { id: 'categories', name: 'Categories and groups', to: '/settings/categories' },
   { id: 'rules', name: 'Rules', to: '/settings/rules' },
   { id: 'payees', name: 'Payees', to: '/settings/payees' },
   { id: 'connections', name: 'Bank connections', to: '/settings/connections' },
@@ -57,16 +57,12 @@ const SECTIONS: { id: string; name: string; to: string }[] = [
 ];
 
 function useSectionMeta() {
-  const cats = useCategoriesSettings().data;
   const rules = useRules().data;
   const conns = useConnections().data;
   const payees = usePayees().data;
-  const mine = cats ? cats.groups.filter((g) => !g.system) : [];
-  const nCats = mine.reduce((s, g) => s + g.categories.length, 0);
   const needRepair = conns?.items.filter((i) => i.status === 'login_required' || i.status === 'error') ?? [];
   return {
     appearance: 'Light, Dark or Match device',
-    categories: cats ? `${nCats} of yours in ${mine.length} groups · ${cats.archived.length} archived` : '',
     rules: rules ? `${rules.rules.length} rules` : '',
     payees: payees ? `Rename and merge · ${payees.payees.length} payees` : 'Rename and merge',
     connections: conns
@@ -158,7 +154,7 @@ function Page({
         <BackHeader
           title={title}
           onBack={() => void navigate({ to: back })}
-          backLabel={`Back to ${back === '/settings' ? 'settings' : back === '/accounts' ? 'accounts' : 'list'}`}
+          backLabel={`Back to ${back === '/settings' ? 'settings' : back === '/accounts' ? 'accounts' : back === '/budget' ? 'budget' : 'list'}`}
           right={right}
         />
       )}
@@ -285,12 +281,6 @@ function SettingsHome() {
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pb-6 pt-3">
         <h2 className="m-0 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">Budget</h2>
         <Card>
-          <RowLink
-            to="/settings/categories"
-            name="Categories and groups"
-            meta={meta.categories ?? ''}
-            track="settings.categories"
-          />
           <RowLink to="/settings/rules" name="Rules" meta={meta.rules ?? ''} track="settings.rules" />
           <RowLink to="/settings/payees" name="Payees" meta={meta.payees ?? ''} track="settings.payees" />
         </Card>
@@ -395,7 +385,6 @@ export function CategoriesScreen() {
     (v: { id: string; archived: boolean }) => api.archiveCategory(v.id, v.archived),
     { invalidate: [qk.categories] },
   );
-  const [editing, setEditing] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const v = q.data;
   const qc = useQueryClient();
@@ -404,33 +393,33 @@ export function CategoriesScreen() {
     void qc.invalidateQueries({ queryKey: qk.categories });
     void qc.invalidateQueries({ queryKey: ['budget'] });
   };
-  const fail = (e: unknown) =>
+  const fail = (e: unknown) => {
+    refresh();
     toast.show({ text: e instanceof Error ? e.message : 'Couldn’t save that. Try again.' });
+  };
+  const system = (v?.groups ?? []).filter((g) => g.system);
   const mine = (v?.groups ?? []).filter((g) => !g.system);
-  /** Move a category up or down within its group; the server keeps one order for all categories. */
-  const moveCategory = (groupId: string, index: number, dir: -1 | 1) => {
-    const order = mine.map((g) => g.categories.map((c) => c.id));
-    const gi = mine.findIndex((g) => g.id === groupId);
-    const list = order[gi]!;
-    const j = index + dir;
-    if (j < 0 || j >= list.length) return;
-    [list[index], list[j]] = [list[j]!, list[index]!];
-    api.reorderCategories(order.flat()).then(refresh, fail);
+  /** Shows a new order at once; the save follows, and a failure reloads the list as it was. */
+  const show = (next: typeof mine) =>
+    qc.setQueryData<CategoriesView>(qk.categories, (old) =>
+      old ? { ...old, groups: [...old.groups.filter((g) => g.system), ...next] } : old,
+    );
+  const moveGroup = (from: number, to: number) => {
+    if (!canWrite) return;
+    const next = moved(mine, from, to);
+    show(next);
+    api.reorderGroups(next.map((g) => g.id)).then(refresh, fail);
   };
-  const moveGroup = (index: number, dir: -1 | 1) => {
-    const ids = mine.map((g) => g.id);
-    const j = index + dir;
-    if (j < 0 || j >= ids.length) return;
-    [ids[index], ids[j]] = [ids[j]!, ids[index]!];
-    api.reorderGroups(ids).then(refresh, fail);
+  /** The server keeps one order for all categories, so the whole list is sent. */
+  const moveCategory = (groupId: string, from: number, to: number) => {
+    if (!canWrite) return;
+    const next = mine.map((g) =>
+      g.id === groupId ? { ...g, categories: moved(g.categories, from, to) } : g,
+    );
+    show(next);
+    api.reorderCategories(next.flatMap((g) => g.categories.map((c) => c.id))).then(refresh, fail);
   };
-  const removeGroup = (id: string, name: string) =>
-    api.removeGroup(id).then(() => {
-      refresh();
-      toast.show({ text: `${name} removed` });
-    }, fail);
-  const arrow =
-    'hit flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line-strong text-[15px] font-bold text-ink-2 disabled:text-disabled';
+  const groups = useReorder(mine.length, moveGroup);
   const doArchive = async (id: string, name: string, archived: boolean) => {
     try {
       await archive.mutateAsync({ id, archived });
@@ -447,168 +436,59 @@ export function CategoriesScreen() {
     });
   };
   return (
-    <Page
-      title="Categories"
-      back="/settings"
-      right={
-        <button
-          type="button"
-          data-track="categories.edit"
-          onClick={() => setEditing(!editing)}
-          className="hit h-9 px-2 text-[15px] font-bold text-accent"
-        >
-          {editing ? 'Done' : 'Edit'}
-        </button>
-      }
-    >
+    <Page title="Categories" back="/budget">
       {!v && (q.error ? <ErrorNote error={q.error} /> : <Loading />)}
-      {v && !editing && (
-        <div className="flex items-center justify-between gap-3">
-          <p className="m-0 text-[13px] text-muted">Tap a category to rename, move or remove it.</p>
-          <Link
-            to="/budget/targets"
-            data-track="categories.set_targets"
-            className="hit flex h-9 shrink-0 items-center text-[14px] font-bold text-accent no-underline"
-          >
-            Set targets
-          </Link>
-        </div>
-      )}
-      {v?.groups.map((g) => {
-        const gi = mine.findIndex((x) => x.id === g.id);
-        return (
-          <section key={g.id} className="flex shrink-0 flex-col gap-1.5">
-            <div className="flex min-h-9 items-center justify-between gap-2 px-0.5">
-              <h2 className="m-0 min-w-0 flex-1 truncate text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
-                {g.name}
-              </h2>
-              {editing && !g.system ? (
-                <span className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    className={cx(arrow, gi === 0 && 'invisible')}
-                    aria-label={`Move group ${g.name} up`}
-                    aria-hidden={gi === 0 || undefined}
-                    tabIndex={gi === 0 ? -1 : undefined}
-                    disabled={!canWrite || gi === 0}
-                    onClick={() => moveGroup(gi, -1)}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    className={cx(arrow, gi === mine.length - 1 && 'invisible')}
-                    aria-label={`Move group ${g.name} down`}
-                    aria-hidden={gi === mine.length - 1 || undefined}
-                    tabIndex={gi === mine.length - 1 ? -1 : undefined}
-                    disabled={!canWrite || gi === mine.length - 1}
-                    onClick={() => moveGroup(gi, 1)}
-                  >
-                    ↓
-                  </button>
-                  <Link
-                    to={`/settings/categories/group:${g.id}`}
-                    data-track="categories.rename_group"
-                    aria-label={`Rename group ${g.name}`}
-                    className="hit flex h-9 items-center rounded-full border border-line-strong px-3 text-[13px] font-bold text-ink-2 no-underline"
-                  >
-                    Rename
-                  </Link>
-                  {g.categories.length === 0 && (
-                    <Button
-                      mutates
-                      track="categories.remove_group"
-                      aria-label={`Remove group ${g.name}`}
-                      onClick={() => void removeGroup(g.id, g.name)}
-                      className="hit h-9 rounded-full border border-line-strong px-3 text-[13px] font-bold text-over-fg"
-                    >
-                      Remove
-                    </Button>
-                  )}
-                </span>
-              ) : (
-                <span className="text-[12px] text-muted">
-                  {g.system ? 'made by the app' : g.categories.length}
-                </span>
-              )}
-            </div>
-            <Card>
-              {g.categories.length === 0 && !g.system && (
-                <p className="m-0 px-3 py-3 text-[13px] text-muted">No categories yet.</p>
-              )}
-              {g.categories.map((c, ci) => (
-                <div
-                  key={c.id}
-                  className="flex min-h-14 items-center gap-2 border-t border-divider px-3 first:border-t-0"
-                >
-                  {editing && !g.system && (
-                    <span className="flex shrink-0 gap-1">
-                      <button
-                        type="button"
-                        className={cx(arrow, ci === 0 && 'invisible')}
-                        aria-label={`Move ${c.name} up`}
-                        aria-hidden={ci === 0 || undefined}
-                        tabIndex={ci === 0 ? -1 : undefined}
-                        disabled={!canWrite || ci === 0}
-                        onClick={() => moveCategory(g.id, ci, -1)}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        className={cx(arrow, ci === g.categories.length - 1 && 'invisible')}
-                        aria-label={`Move ${c.name} down`}
-                        aria-hidden={ci === g.categories.length - 1 || undefined}
-                        tabIndex={ci === g.categories.length - 1 ? -1 : undefined}
-                        disabled={!canWrite || ci === g.categories.length - 1}
-                        onClick={() => moveCategory(g.id, ci, 1)}
-                      >
-                        ↓
-                      </button>
-                    </span>
-                  )}
-                  {g.system ? (
-                    <span className="flex flex-1 flex-col gap-0.5 py-2">
-                      <span className="text-[15px] font-semibold">{c.name}</span>
-                      <span className="text-[12px] text-muted">{c.meta}</span>
-                    </span>
-                  ) : (
-                    <Link
-                      to={`/settings/categories/${c.id}`}
-                      data-track="categories.open"
-                      className="flex flex-1 flex-col gap-0.5 py-2 text-ink no-underline"
-                    >
-                      <span className="text-[15px] font-semibold">{c.name}</span>
-                      <span className="text-[12px] text-muted">{c.meta}</span>
-                    </Link>
-                  )}
-                </div>
-              ))}
-              {!g.system && !editing && (
-                <Link
-                  to="/settings/categories/new"
-                  search={{ group: g.id }}
-                  data-track="categories.add"
-                  className="flex min-h-12 items-center gap-1.5 border-t border-divider px-3 text-[14px] font-bold text-accent no-underline first:border-t-0"
-                >
-                  <Icon name="plus" size={16} stroke={2.6} />
-                  Add category
-                </Link>
-              )}
-            </Card>
-          </section>
-        );
-      })}
       {v && (
-        <div className="flex gap-2">
-          <Link
-            to="/settings/categories/new-group"
-            data-track="categories.add_group"
-            className="flex h-11 flex-1 items-center justify-center rounded-xl border border-dashed border-accent text-[14px] font-bold text-accent no-underline"
-          >
-            + Group
-          </Link>
-        </div>
+        <p className="m-0 text-[13px] text-muted">
+          Tap a name to change or remove it. Drag the handles to reorder.
+        </p>
+      )}
+      {system.map((g) => (
+        <section key={g.id} className="flex shrink-0 flex-col gap-1.5">
+          <div className="flex min-h-9 items-center justify-between gap-2 px-0.5">
+            <h2 className="m-0 truncate text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
+              {g.name}
+            </h2>
+            <span className="text-[12px] text-muted">made by the app</span>
+          </div>
+          <Card>
+            {g.categories.map((c) => (
+              <div
+                key={c.id}
+                className="flex min-h-14 flex-col justify-center gap-0.5 border-t border-divider px-3 py-2 first:border-t-0"
+              >
+                <span className="text-[15px] font-semibold">{c.name}</span>
+                <span className="text-[12px] text-muted">{c.meta}</span>
+              </div>
+            ))}
+          </Card>
+        </section>
+      ))}
+      {mine.map((g, gi) => (
+        <GroupSection
+          key={g.id}
+          g={g}
+          sectionRef={groups.itemRef(gi)}
+          style={groups.itemStyle(gi)}
+          handle={
+            <DragHandle
+              label={`Reorder group ${g.name}`}
+              disabled={!canWrite || mine.length < 2}
+              props={groups.handleProps(gi)}
+            />
+          }
+          onMoveCategory={moveCategory}
+          canWrite={canWrite}
+        />
+      ))}
+      {v && (
+        <Link
+          to="/categories/new-group"
+          data-track="categories.add_group"
+          className="flex h-11 shrink-0 items-center justify-center rounded-xl border border-dashed border-accent text-[14px] font-bold text-accent no-underline"
+        >
+          + Group
+        </Link>
       )}
       {v && v.archived.length > 0 && (
         <>
@@ -650,6 +530,105 @@ export function CategoriesScreen() {
   );
 }
 
+/** The ≡ handle: drag it, or focus it and press the up or down arrow. */
+function DragHandle({
+  label,
+  disabled,
+  props,
+}: {
+  label: string;
+  disabled: boolean;
+  props: ReturnType<ReturnType<typeof useReorder>['handleProps']>;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title="Drag to reorder, or use the arrow keys"
+      disabled={disabled}
+      data-track="categories.reorder"
+      className="flex h-11 w-9 shrink-0 cursor-grab touch-none items-center justify-center text-faint disabled:invisible"
+      {...(disabled ? {} : props)}
+    >
+      <Icon name="grip" size={20} />
+    </button>
+  );
+}
+
+type CatGroup = CategoriesView['groups'][number];
+
+function GroupSection({
+  g,
+  sectionRef,
+  style,
+  handle,
+  onMoveCategory,
+  canWrite,
+}: {
+  g: CatGroup;
+  sectionRef: (el: HTMLElement | null) => void;
+  style: CSSProperties | undefined;
+  handle: ReactNode;
+  onMoveCategory: (groupId: string, from: number, to: number) => void;
+  canWrite: boolean;
+}) {
+  const rows = useReorder(g.categories.length, (from, to) => onMoveCategory(g.id, from, to));
+  return (
+    <section ref={sectionRef} style={style} className="flex shrink-0 flex-col gap-1.5 rounded-[14px] bg-page">
+      <div className="flex min-h-11 items-center gap-1">
+        {handle}
+        <Link
+          to={`/categories/group:${g.id}`}
+          data-track="categories.rename_group"
+          aria-label={`Rename group ${g.name}`}
+          className="flex min-h-11 min-w-0 flex-1 items-center no-underline"
+        >
+          <h2 className="m-0 truncate text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
+            {g.name}
+          </h2>
+        </Link>
+        <span className="pr-0.5 text-[12px] text-muted">{g.categories.length}</span>
+      </div>
+      <Card>
+        {g.categories.length === 0 && (
+          <p className="m-0 px-3 py-3 text-[13px] text-muted">No categories yet.</p>
+        )}
+        {g.categories.map((c, ci) => (
+          <div
+            key={c.id}
+            ref={rows.itemRef(ci)}
+            style={rows.itemStyle(ci)}
+            className="flex min-h-14 items-center gap-1 border-t border-divider bg-surface pl-1 pr-3 first:border-t-0"
+          >
+            <DragHandle
+              label={`Reorder ${c.name}`}
+              disabled={!canWrite || g.categories.length < 2}
+              props={rows.handleProps(ci)}
+            />
+            <Link
+              to={`/categories/${c.id}`}
+              data-track="categories.open"
+              className="flex min-w-0 flex-1 flex-col gap-0.5 py-2 text-ink no-underline"
+            >
+              <span className="text-[15px] font-semibold">{c.name}</span>
+              <span className="truncate text-[12px] text-muted">{c.meta}</span>
+            </Link>
+          </div>
+        ))}
+        <Link
+          to="/categories/new"
+          search={{ group: g.id }}
+          data-track="categories.add"
+          className="flex min-h-12 items-center gap-1.5 border-t border-divider px-3 text-[14px] font-bold text-accent no-underline first:border-t-0"
+        >
+          <Icon name="plus" size={16} stroke={2.6} />
+          Add category
+        </Link>
+      </Card>
+    </section>
+  );
+}
+
 export function CategoryEditSheet() {
   const { categoryId } = useParams({ strict: false }) as { categoryId: string };
   const groupEditId = categoryId.startsWith('group:') ? categoryId.slice(6) : null;
@@ -659,7 +638,7 @@ export function CategoryEditSheet() {
   const q = useCategoriesSettings();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const close = () => void navigate({ to: '/settings/categories' });
+  const close = () => void navigate({ to: '/categories' });
   // "Add category" at the end of a group opens this with that group chosen.
   const fromGroup = (useSearch({ strict: false }) as { group?: string }).group;
   const [asking, setAsking] = useState(false);
@@ -823,6 +802,31 @@ export function CategoryEditSheet() {
         >
           {isNew ? (isGroup ? 'Add group' : 'Add category') : 'Save'}
         </PrimaryButton>
+        {editingGroup &&
+          (editingGroup.categories.length === 0 ? (
+            <Button
+              mutates
+              track="categories.remove_group"
+              onClick={() =>
+                void api.removeGroup(editingGroup.id).then(
+                  () => {
+                    void qc.invalidateQueries({ queryKey: qk.categories });
+                    void qc.invalidateQueries({ queryKey: ['budget'] });
+                    toast.show({ text: `${editingGroup.name} removed` });
+                    close();
+                  },
+                  (e: unknown) => setError(e),
+                )
+              }
+              className="mt-3 min-h-10 self-start text-[14px] font-bold text-over-fg"
+            >
+              Remove group {editingGroup.name}
+            </Button>
+          ) : (
+            <span className="text-[12px] leading-snug text-muted">
+              To remove this group, move or remove its categories first.
+            </span>
+          ))}
         {isNew && !isGroup && (
           <SecondaryButton
             mutates

@@ -77,14 +77,21 @@ test('Accounts: net worth and the Ally repair prompt', async ({ page }) => {
   await expect(page.getByText(/Ally/).first()).toBeVisible();
 });
 
-test('Settings → Categories: rename a group, reorder, and remove a category', async ({ page }) => {
-  await page.goto('/settings/categories');
-  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+test('Categories: rename a group, reorder by dragging, and remove a category', async ({ page }) => {
+  await page.goto('/categories');
   const groups = page.locator('section').getByRole('heading', { level: 2 });
   // Card payments come first and are made by the app; your groups follow.
   await expect(groups.nth(1)).toHaveText('Bills');
   await expect(groups.nth(2)).toHaveText('Everyday');
-  await page.getByRole('button', { name: 'Move group Bills down' }).click();
+  // Drag Bills below Everyday by its handle: no Edit mode.
+  const handle = page.getByRole('button', { name: 'Reorder group Bills' });
+  const everyday = page.getByRole('link', { name: 'Rename group Everyday' });
+  const from = (await handle.boundingBox())!;
+  const to = (await everyday.boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + from.width / 2, to.y + 400, { steps: 12 });
+  await page.mouse.up();
   await expect(groups.nth(1)).toHaveText('Everyday');
   await expect(groups.nth(2)).toHaveText('Bills');
 

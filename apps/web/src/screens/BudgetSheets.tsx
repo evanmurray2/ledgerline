@@ -319,7 +319,7 @@ export function TargetScreen() {
     from === 'targets'
       ? void navigate({ to: '/budget/targets', search: { month: m } })
       : from === 'categories'
-        ? void navigate({ to: '/settings/categories' })
+        ? void navigate({ to: '/categories' })
         : void navigate({ to: `/budget/category/${categoryId}`, search: { month: m } });
   // After saving, skip the category sheet (it was only a stop on the way): back to the list or the budget.
   const done = () =>

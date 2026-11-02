@@ -700,13 +700,14 @@ function MonthNav({
         <Icon name="chevR" size={22} />
       </button>
       {!desktop && (
+        // Categories belong to the budget; Settings stays behind the gear on Accounts.
         <Link
-          to="/settings"
-          data-track="budget.settings"
-          aria-label="Settings"
-          className="flex h-11 w-11 items-center justify-center rounded-lg text-ink-2"
+          to="/categories"
+          data-track="budget.edit_categories"
+          aria-label="Edit categories"
+          className="flex h-11 min-w-11 items-center justify-center px-1 text-[15px] font-bold text-accent no-underline"
         >
-          <Icon name="gear" size={21} />
+          Edit
         </Link>
       )}
     </div>
@@ -838,22 +839,13 @@ function AllGroups({ b, month }: { b: BudgetView; month: string }) {
           ? 'Transactions will show up in Activity after the first sync, usually within a few minutes.'
           : 'Bars show how much of this month’s money is left.'}
       </p>
-      <div className="flex gap-5">
-        <Link
-          to="/budget/targets"
-          data-track="budget.set_targets"
-          className="hit flex h-10 items-center text-[14px] font-bold text-accent no-underline"
-        >
-          Set targets
-        </Link>
-        <Link
-          to="/settings/categories"
-          data-track="budget.edit_categories"
-          className="hit flex h-10 items-center text-[14px] font-bold text-accent no-underline"
-        >
-          Edit categories
-        </Link>
-      </div>
+      <Link
+        to="/budget/targets"
+        data-track="budget.set_targets"
+        className="hit flex h-10 items-center self-start text-[14px] font-bold text-accent no-underline"
+      >
+        Set targets
+      </Link>
     </>
   );
 }
@@ -1042,6 +1034,20 @@ export function BudgetScreen() {
           <MonthNav b={b} month={month} view={view} desktop />
           <div className="flex items-center gap-2">
             <ViewChips view={view} count={count} lowCount={lowCount} month={month} current={b.currentMonth} />
+            <Link
+              to="/categories"
+              data-track="budget.edit_categories"
+              className="hit flex h-9 items-center px-2 text-[13px] font-bold text-accent no-underline"
+            >
+              Edit categories
+            </Link>
+            <Link
+              to="/budget/targets"
+              data-track="budget.set_targets"
+              className="hit flex h-9 items-center px-2 text-[13px] font-bold text-accent no-underline"
+            >
+              Set targets
+            </Link>
             {canWrite ? (
               <Link
                 to="/budget/assign"

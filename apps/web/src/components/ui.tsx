@@ -49,6 +49,7 @@ const ICONS = {
   link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
   note: 'M4 4h16v12H8l-4 4zM8 9h8M8 12h5',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
+  grip: 'M5 8h14M5 12h14M5 16h14',
   wifiOff: 'M2 2l20 20M8.5 16.5a5 5 0 0 1 7 0M5 13a10 10 0 0 1 5.2-2.8M19 13a10 10 0 0 0-2.2-1.6M12 20h.01',
 } as const;
 export type IconName = keyof typeof ICONS;
