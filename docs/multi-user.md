@@ -1,255 +1,248 @@
-# Multi-user design
+# Multi-user design: one database per budget
 
-Status: revised after an adversarial review, Nov 2, 2026 (section 12). Asked for by the owner: "I want the code ready if I do ever decide to share. Everything built, but signing up not turned on."
+Status: v2, Nov 2, 2026. Replaces v1 (one shared D1 database; reviewed, see section 13). The owner asked for everything other people need to be built but switched off, then chose a database per budget so the app can grow past one database's limits.
 
 ## 1. Goal
 
-Build everything other people need to use Ledgerline, each with their own budget, and ship it **switched off**.
+1. Move each budget's data out of the shared D1 database into its **own SQLite database**, held by a Cloudflare Durable Object (one object per budget).
+2. Build accounts, invites, sign-up and the rest for other users, **switched off**.
 
-"Off" has a precise meaning here: **while the instance has one active user, the owner's app behaves exactly as today.** Same screens, same sync timing, same limits, same sign-in. Any new public route returns 404. Every fair-share or scheduling change in section 7 is active only in **multi-user mode** (more than one active user), which can't happen while sign-up is off.
+"Off" means that while the instance has one active user, the owner's app behaves as it does today: same screens, same sync timing, same sign-in. New public routes return 404. Fair-share limits are active only in **multi-user mode** (more than one active user).
 
-Turning it on later should be a deploy-variable change plus the owner decisions in section 9 (money, legal, Plaid), not new code.
+The owner's data moves in step 1. That move is the riskiest part of this plan and has its own safety steps (section 7).
 
-Non-goals: paying plans, email, a custom domain, native apps, off-site backups (D-29 stands until the owner decides otherwise), and sharing one budget between two people (the design lists the shared-budget UI as a non-goal).
+Non-goals: paying plans, email, a custom domain, native apps, off-site backups (D-29), sharing one budget between two people.
 
-## 2. What does not change
+## 2. Why a database per budget
 
-- **Money rules.** `packages/domain` and `computeBudget()` are per budget. Nothing here changes how money is counted.
-- Sync guarantees in `docs/sync-spec.md` (leases, fences, watermark, the write breaker). Sections 7 and 8 add limits and one narrow exception to append-only tables (8.2). They don't loosen any fence.
+|                          | Shared D1 (v1)                                                        | Database per budget (v2)                                                                      |
+| ------------------------ | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Size limit               | 500 MB (Free) / 10 GB (Paid) for everyone together                    | 1 GB (Free) / 10 GB (Paid) **each**                                                           |
+| Writes                   | One database, one writer, for everyone                                | Each budget writes on its own                                                                 |
+| Keeping users apart      | `budget_id` on every row and every query; tests try to catch mistakes | A budget's code can only open its own database                                                |
+| Deleting an account      | Thousands of deletes, blocked by append-only triggers                 | Delete the object's storage                                                                   |
+| Query speed              | A network round trip per query                                        | SQLite in the same process as the code                                                        |
+| Inspecting data          | Cloudflare dashboard console and MCP queries                          | Only through the app (8.4)                                                                    |
+| Daily row limits on Free | Shared by everyone                                                    | Listed separately from D1's; whether each account gets a separate pool is measured in phase 0 |
 
-## 3. Where the code assumes one owner today
+## 3. What does not change
 
-Verified against the code on Nov 2, 2026.
+- **Money rules.** `packages/domain` and `computeBudget()` are untouched. Nothing here changes how money is counted.
+- **The SQL.** Durable Objects run SQLite, as D1 does. The schema and queries move as they are (5.2).
+- **The sync guarantees** in `docs/sync-spec.md`. Leases, fences and the watermark keep working inside the budget's database (5.4).
+- **The 10 ms CPU rule.** Durable Objects have the same per-invocation CPU limit as Workers on the Free plan.
 
-| #   | Place                                                                                                                    | Assumption                                                                                                                                                                     | Effect with two users                                                                                                                                                      |
-| --- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A1  | `http/auth.ts` `identify()`, `ownerEmail()`                                                                              | Any valid session is "the owner"; identity is `OWNER_EMAIL`                                                                                                                    | Every user signed in as the owner                                                                                                                                          |
-| A2  | `db/scoped.ts` `resolveMembership()`                                                                                     | Looks up by email, bootstraps the first user                                                                                                                                   | Same as A1                                                                                                                                                                 |
-| A3  | `passkey`, `auth_session`, `device_link` (migration 0003)                                                                | No `user_id` column                                                                                                                                                            | Can't tell whose passkey or session it is                                                                                                                                  |
-| A4  | `routes/auth.ts:37` and registration options                                                                             | Every passkey uses the WebAuthn user handle `ledgerline-owner` and the name "Ledgerline"; `excludeCredentials` lists every passkey in the database; `passkeyCount()` is global | A new account's passkey on a device that holds the owner's could **replace the owner's passkey** (same site, same handle); every credential id goes to anyone with a grant |
-| A5  | `routes/auth.ts:117`                                                                                                     | First passkey needs `SETUP_CODE` while no passkey exists; no other way to create an account                                                                                    | No sign-up path                                                                                                                                                            |
-| A6  | `routes/security.ts`                                                                                                     | Lists every passkey; "sign out everywhere" deletes every session; deletes any passkey by id; device links aren't tied to a user                                                | One user could see, sign out or lock out another                                                                                                                           |
-| A7  | `sync/provider.ts` `connectionToken()` (Link repair, `routes/settings.ts:714`); `startSync()` (`routes/settings.ts:900`) | Load a connection by id with no budget check                                                                                                                                   | A user could open Plaid Link update mode on another user's bank                                                                                                            |
-| A8  | Split lines (`routes/activity.ts`), then the CSV export and payee list joining `category` by id                          | A category id in a request body isn't checked against the budget                                                                                                               | Another budget's category name could show up in an export                                                                                                                  |
-| A9  | `sync/steps.ts:430–460` `bank_txn` upsert and removal                                                                    | Matches on the global `provider_txn_id` with no budget predicate                                                                                                               | Safe only because Plaid ids are unique; one bad id would cross budgets                                                                                                     |
-| A10 | `routes/settings.ts:722` `ITEM_LIMIT`, checked when the link token is made                                               | Counts Plaid rows in this budget                                                                                                                                               | Plaid's Trial limit is 10 Items **for the whole Plaid account, for life**; two users could each "have 10"                                                                  |
-| A11 | `apply_counter` (one row), read by `http/etag.ts:57` and `ledger/totals.ts:70,117`                                       | One global counter of applied bank rows                                                                                                                                        | Every sync changes every user's ETag and blocks their month-totals done mark (extra reads; leaks when someone else syncs)                                                  |
-| A12 | `bank_event` indexes                                                                                                     | No index starts with `budget_id`; `WHERE budget_id = ? AND id > ?` (`sync/process.ts:86`) and the health lag (`routes/ops.ts:93`) scan past other budgets' events              | Reads grow with other users' activity                                                                                                                                      |
-| A13 | `cron.ts`                                                                                                                | Loops over every budget (daily scan inline) and every due connection in one invocation                                                                                         | Runs out of 10 ms CPU / 50 queries after a few users                                                                                                                       |
-| A14 | `maintenance.ts:78`, `:219–221`                                                                                          | Each budget's run refreshes account usage (a GraphQL call) and prunes the global `auth_*` tables                                                                               | N calls and N prunes a day                                                                                                                                                 |
-| A15 | `routes/api.ts:51` (ops token), `routes/ops.ts:114–118` (monitor check-in)                                               | Pick the first budget                                                                                                                                                          | Health and monitor report only on the owner                                                                                                                                |
-| A16 | `sync/breaker.ts`, `usage_day`                                                                                           | One account-wide write budget, first come first served; only `POST /api/usage` adds estimates, the rest comes from analytics up to 4 hours old                                 | One user's first sync could use the day's writes and put everyone in read-only                                                                                             |
-| A17 | `bank_page`, `bank_event`, `raw_page` triggers (`0001_init.sql:136,173`, `0002:13`)                                      | Append-only: any delete aborts                                                                                                                                                 | An account can't be deleted; a deleted user's raw bank data would stay for ever                                                                                            |
-| A18 | Web: `screens/Auth.tsx` (only sign in or setup code); `state/saved.ts:8` (one saved-data key)                            | One person per browser                                                                                                                                                         | No sign-up screens; two accounts on one browser share saved screens until a 401 clears them                                                                                |
-| A19 | `design.md:28` ("more users need no schema change")                                                                      | Stated as a property of the design                                                                                                                                             | Not true (A3, A4, A17); superseded by D-37                                                                                                                                 |
+## 4. Architecture
 
-Screen and tap telemetry already has a per-budget `setting.tracking` toggle (`routes/ops.ts:28`); new budgets start with it off. No new column.
+### 4.1 Cloudflare services at the end
 
-## 4. Accounts and sign-in
+| Service                              | Used for                                                                                                                                  | Free-plan limit that matters                                                                    |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **Workers**                          | The API and the web app's static files; sign-in; routes each request to the right budget                                                  | 100,000 requests a day, 10 ms CPU each                                                          |
+| **Durable Objects (SQLite)** _(new)_ | `BudgetStore`: one per budget, holding all of that budget's data                                                                          | 1 GB per object, 5 GB for the account; 5M rows read, 100k written a day; 100,000 requests a day |
+| **D1**                               | The **directory**: users, passkeys, sessions, invites, recovery codes, Plaid slots, which budget each bank link belongs to, account usage | 500 MB; same daily row limits                                                                   |
+| **Workflows**                        | Bank sync, recompute, daily maintenance, account deletion                                                                                 | 3,000 steps a day                                                                               |
+| **Cron Triggers**                    | Sync backstop, daily scan, daily maintenance (3 of 5)                                                                                     |                                                                                                 |
+| **Rate Limiting binding** _(new)_    | Sign-in and sign-up attempts                                                                                                              |                                                                                                 |
+| **GraphQL Analytics API**            | Account-wide usage for the breaker                                                                                                        |                                                                                                 |
 
-### 4.1 Schema (migration `0010_multi_user.sql`, additive)
+Nothing on this list needs a payment card. Not used: R2, KV, Queues, Zero Trust, Email.
 
-- `user`: add `display_name TEXT`, `is_admin INTEGER NOT NULL DEFAULT 0`, `status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled','deleting'))`, `last_seen_at INTEGER`, `link_allowance INTEGER NOT NULL DEFAULT 0`, `webauthn_handle TEXT`. `email` stays `NOT NULL UNIQUE` (a forward-only migration can't relax it without rebuilding the table); new users get `u:<user id>` and email is never used as identity again.
-- `passkey`, `auth_session`, `device_link`: add `user_id TEXT REFERENCES user(id)`, with indexes on `passkey(user_id)` and `auth_session(user_id)`. `auth_session` also gets `challenge_id TEXT` with a unique index (4.6).
-- Backfill: the existing user gets `is_admin = 1`, `link_allowance = 10`, `webauthn_handle = 'ledgerline-owner'` (the handle on their existing passkeys), and every passkey, session and device link gets that user's id. On a fresh install there is nothing to backfill; the setup code creates the first user as admin with the same handle.
-- `bank_event`: index `(budget_id, id)` (A12). It costs one extra row write per bank event (about 1 in 5 of a sync's writes). That buys reads that no longer grow with other budgets; measured before and after in phase 2.
-- `budget`: add `applied_seq INTEGER NOT NULL DEFAULT 0`, backfilled from `max(bank_event.id)` for that budget (A11).
-- New tables:
-  - `invite (token_hash TEXT PRIMARY KEY, created_by TEXT NOT NULL, link_allowance INTEGER NOT NULL DEFAULT 0, created_at, expires_at, used_at, used_by)`. Single use, 7 days, only the hash is stored.
-  - `recovery_code (user_id TEXT PRIMARY KEY, code_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL)`.
-  - `plaid_link_slot (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, budget_id TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('reserved','used','released')), connection_id TEXT, created_at INTEGER NOT NULL, expires_at INTEGER)` (7.1).
-  - `budget_usage_day (budget_id, day, written, read, steps, PRIMARY KEY (budget_id, day))` (7.2).
-- Triggers: see 8.2.
+### 4.2 Request path
 
-### 4.2 Identity
+1. The Worker checks the session against the directory (D1), finds the user's budget in `budget_member`, and gets that budget's `BudgetStore`.
+2. It forwards the request with the verified user id. The budget's API routes run **inside** the `BudgetStore`, with the same Hono routes as today.
+3. Sign-in, security, invites, People, health and the Plaid webhook stay in the Worker and use the directory.
 
-- `identify()` returns `{ kind: 'user', userId, sessionId, verifiedAt }` from `auth_session.user_id`, joined to `user.status = 'active'`. `ownerEmail()` and `OWNER_EMAIL` go away. Local dev keeps `DEV_AUTH_EMAIL`, mapped to a dev user.
-- `resolveMembership(db, userId)` reads `budget_member` by user id and returns the user's one budget. The bootstrap branch moves into the setup and sign-up flows.
-- Disabling a user deletes their sessions, and their banks stop syncing (connections are skipped by the backstop and webhooks while the user is disabled).
+The `BudgetStore` accepts only requests from the Worker. The verified user id is passed as a call argument, not a header a browser could set.
 
-### 4.3 Passkeys per user (A4)
+### 4.3 Which data goes where
 
-- New users get a random 32-byte WebAuthn user handle (`user.webauthn_handle`) and their display name as `userName`. The owner keeps `ledgerline-owner`, so their passkeys keep working.
-- `excludeCredentials` lists only that user's passkeys.
-- Sign-in looks the passkey up by credential id, then checks that the assertion's `userHandle` equals that user's handle, so a credential can't be presented for another account.
-- Because each account has its own handle, a new account made on a device that holds the owner's passkey adds a second passkey instead of replacing it.
+- **Directory (D1)**: `user`, `budget` (id, name, `store_version`), `budget_member`, `passkey`, `auth_session`, `device_link`, `invite`, `recovery_code`, `plaid_link_slot`, `connection_route` (Plaid item id → budget id, for webhooks), `usage_day`, `budget_usage_day`, `app_state` (cron cursors).
+- **BudgetStore (one per budget)**: everything else (connections and their encrypted tokens, bank pages and events, transactions, accounts, categories, assignments, targets, rules, payees, overlays, budget lines, snapshots and totals, alerts, audit log, settings, usage events), plus the budget's own row fields (`processed_through`, `rta`, summary fields).
+- Global counters disappear: `apply_counter` and `lease_guard` become per-store tables, and `bank_event.id` only needs to be unique within its own budget.
 
-### 4.4 How accounts are created
+## 5. The BudgetStore
 
-1. **Setup code** (unchanged): works only while the `user` table is empty.
-2. **Invite link** (new): an admin makes a link in Settings → People. The token is in the URL fragment (like device links, `routes/security.ts:221`), so it isn't sent to the server or logged until the page posts it. The visitor names their passkey, the browser makes it, and one D1 batch creates the user, budget, owner membership, passkey, session and recovery code, and marks the invite used. The batch is fenced (the `lease_guard` pattern) on: the invite unused and unexpired, the sign-up gate, and the count of `active` + `disabled` + `deleting` users being under `MAX_USERS`.
-3. **Open sign-up** (built; on only when `SIGNUPS = open`): the same flow without an invite.
+### 5.1 Shape
 
-New users land in the existing first-run setup and start with the `link_allowance` from their invite (default 0): manual accounts and CSV import work, Plaid doesn't until the admin grants a link.
+```ts
+export class BudgetStore extends DurableObject<Env> {
+  // Runs pending schema migrations once, before any request (blockConcurrencyWhile).
+  // fetch(): the budget's Hono API, given { userId, request } by the Worker.
+  // RPC methods for Workflows and cron: syncFetch, syncApply, processPending, recompute,
+  //   dailyScan, maintenanceStep, exportAll, importAll, verify, wipe.
+}
+```
 
-### 4.5 The sign-up gate
+The object id is `idFromName(budgetId)`.
 
-- **`SIGNUPS`** (Worker variable in `wrangler.jsonc`, default `off`; `off` / `invite` / `open`) and **`MAX_USERS`** (default `1`). Both are deploy-time, so turning on takes a deploy and can't happen by accident from a screen.
-- While `SIGNUPS = off`: the invite, sign-up and recovery routes return 404, the web app never shows them, and Settings → People shows nothing but the owner's account.
-- Pausing sign-ups after turning on: set `SIGNUPS = off` and deploy (one tap in Actions).
+### 5.2 A D1-shaped adapter
 
-### 4.6 Challenges and rate limits
+The code calls D1 about 400 times in 27 files (`prepare/bind/first/all/run/batch`, plus `Scoped`). Instead of rewriting every call, the store exposes a small adapter with the same interface over `ctx.storage.sql`:
 
-Today `POST /api/auth/login/options` writes an `auth_challenge` row for anyone, so anyone could spend the day's 100,000 writes by calling it in a loop. That's true already, but public sign-up would advertise it.
+- `prepare(sql).bind(...).first/all/run` → `sql.exec(...)`, returning `{ results, meta: { rows_read, rows_written, changes, last_row_id } }` from the cursor's `rowsRead` and `rowsWritten`.
+- `batch(stmts)` → `ctx.storage.transactionSync(() => …)`. A statement that throws rolls back the whole batch, as D1 does. The fence pattern (`lease_guard`'s `CHECK (ok = 1)` aborting the batch) therefore works unchanged.
+- Same limits as D1: 100 bound parameters, 2 MB per row, 100 KB per statement.
 
-- **Challenges without a write at start**: the challenge, purpose and grant go into a 5-minute cookie signed with HMAC-SHA-256 under a key derived from `TOKEN_KEYS` with HKDF (label `ledgerline-challenge`), not used for anything else. Starting a ceremony writes nothing.
-- **Still single use**: a successful finish writes the session with `challenge_id` (unique index), in the same batch as the passkey counter update or the account creation. Replaying the cookie and assertion fails on the unique index. This replaces the `DELETE … RETURNING` single-use check, and doesn't rely on the signature counter (iCloud Keychain passkeys always report 0).
-- **Rate limits**: the Workers rate-limiting binding (GA, listed with no paid-plan restriction; counts are approximate and per location) on every `/api/auth/*` and sign-up route, keyed by IP, for example 20 a minute. No D1 fallback: a counter that writes on failure would bring the same problem back.
-- The challenge change applies to the owner too. It's in phase 3, tested on its own, and needs no new screen.
+Code that runs inside the store gets `env.DB` = the adapter, so routes, `Scoped`, the ledger, the sync steps and recompute keep their current code. The adapter has its own tests: the existing fence tests run against both D1 and the adapter.
 
-### 4.7 Recovery without email
+Differences the adapter must handle, each with a test:
 
-The app sends no email (D-24).
+- `sql.exec` is synchronous. The adapter wraps results in resolved promises, so `await` still works.
+- **No `await` inside `transactionSync`.** Batches are built first and then executed, which is already how the code works.
+- Errors look different. `isFenceAbort()` matches both D1's and the store's message for a failed `CHECK`.
+- SQLite version and pragmas may differ slightly. The full integration suite runs against both backends in CI until the D1 path is removed.
 
-- **Owner**: unchanged. The owner's recovery is D-27's (wrangler, or a device link from a signed-in device). No code is pushed on the owner.
-- **Other users**: shown a recovery code once at account creation (24 random characters in groups of four). Only its hash is stored, under a unique index. "Lost your passkey?" (404 while `SIGNUPS = off`) takes the code, **deletes all of that user's passkeys and sessions**, registers a new passkey, and shows a new code.
-- An admin can also make a single-use device link for a user from People, after checking who they are outside the app.
+### 5.3 Schema migrations per store
 
-## 5. Roles and Settings → People
+- `packages/db/store-migrations/` holds the budget-side schema: `0001_baseline.sql` is today's budget tables after 0009, without the directory tables and without `budget_id` columns.
+- Keeping `budget_id`: **yes, for now.** Removing it would touch every query. The column stays, always set to the store's budget id, and `Scoped` keeps binding it. It costs a few bytes per row. Removing it is a later clean-up, not part of this plan.
+- The store runs its pending migrations in `blockConcurrencyWhile` before serving, recorded in a `_migrations` table. They stay forward-only, checked by the same `migration-check` script.
+- A deploy changes migrations for every store, but each store applies them on its next request. The Worker's deploy smoke test calls the owner's store, so a failing migration fails the deploy and the existing rollback runs.
 
-- `user.is_admin` marks who runs the instance. It's separate from `budget_member.role`.
-- **People** (admins only; shown once `SIGNUPS` isn't `off`): invite links (create, copy, revoke, with a Plaid link allowance), users (name, joined, last seen, Plaid links used of allowance, today's writes and steps), disable and enable, change a link allowance, delete a user (section 8), and the shared counters: Plaid links used of the cap, users of `MAX_USERS`, today's writes, reads and Workflow steps.
-- An admin can't see another user's budget, accounts or transactions. People shows only counts and dates.
+### 5.4 Sync, leases and fences
+
+- Workflows stay. Each step calls an RPC method on the budget's store: fetch from Plaid, stage the page, apply, process, recompute. The Workflow keeps orchestrating, and the store does the database work.
+- A store handles one request at a time, so a single batch can't interleave with another. Leases still matter, though: a Workflow step that lost its lease must not apply a page after another run took over. The lease and fence logic stays as it is, inside the store.
+- Plaid calls happen inside the store (`fetch` from a Durable Object counts against the 50 external subrequests per invocation, the same as today's steps).
+- A later option, not in this plan: replace Workflows with Durable Object alarms. That would remove the 3,000 steps a day limit, the binding constraint on Free. It rewrites the sync orchestration, so it would be a separate decision after this move.
+
+### 5.5 Cron
+
+The cron reads budget ids from the directory, at most 25 per run from a cursor in `app_state`. For each one it starts the per-budget Workflow, or calls the store for the daily scan. With one budget this is one call at the same times as today.
 
 ## 6. Keeping users apart
 
-### 6.1 Fixes
+Most of v1's isolation work isn't needed: a request for budget A can only reach A's store, because the Worker picks the store from the user's own membership row.
 
-- A6: every query in `routes/security.ts` and `routes/auth.ts` filters by `user_id`, including "keep at least one passkey" (that user's passkeys).
-- A7: `connectionToken(env, budgetId, connectionId)` and `startSync()` bind the budget id; so does every lookup by connection id.
-- A8: every foreign id in a request body (category, account, payee, transaction key, rule) is checked against the budget before it's written. One helper, `assertOwned(s, table, ids)`, used by every route that takes ids.
-- A9: the `bank_txn` upsert's `ON CONFLICT … DO UPDATE` and the removal update add `WHERE budget_id = excluded.budget_id` / `AND budget_id = ?`.
-- A14: maintenance does account-wide work (usage refresh, `auth_*` prune) only in the run that the cron marks as first for the day.
-- A15: the ops token's health check reports account-wide numbers (usage, worst lag, stale connection count). The monitor check-in is stored account-wide.
-- A18: the saved-data key includes the user id.
+What still needs care:
 
-### 6.2 Proving it: the two-tenant test
+- **The Worker's routing**: the store is chosen only from `budget_member` for the verified user, never from a request parameter. A test signs in as user A and tries to reach B's store through every route, by putting B's budget id, connection id and Plaid item id in the path and the body.
+- **The directory routes** (security, invites, People): every query filters by `user_id`. This covers v1's A6: passkey list and delete, "keep at least one passkey", sign out everywhere, device links.
+- **Webhooks**: the Plaid item id is looked up in `connection_route` to find the budget. That table is written only when a link is saved.
+- **`connectionToken`** lives in the store, so it can only see its own connections (v1's A7 goes away).
+- **Foreign ids in request bodies** (v1's A8) can only name rows in the same store. A bad id fails with not found instead of leaking another budget's names.
 
-`apps/worker/test/isolation.test.ts` seeds two complete budgets, A and B, through the real sign-up path, with banks, transactions, splits, rules, targets, payees, passkeys and sessions. Then:
+## 7. Moving the owner's data
 
-1. It enumerates every route registered on the Hono app, so a new route is covered automatically and an unknown one fails the test.
-2. It calls each route as user A, putting B's ids wherever the route takes one, **in the path and in the body** (split lines, category and payee ids, transfer accounts, rule actions).
-3. It checks that no response contains any of B's ids or names, and that a hash of every B row is the same before and after.
+The owner's budget is 4.2 MB (718 transactions, 7 banks, Nov 2, 2026).
 
-A lint test fails on any `.prepare(` outside an allowlist: `db/scoped.ts`, `routes/auth.ts`, `routes/security.ts`, `sync/*`, `budget/recompute.ts`, `budget/workflow.ts`, `http/etag.ts`, `ops/usage.ts`, `maintenance.ts`, `cron.ts`, `measure/*`, and named functions in `routes/settings.ts` and `routes/ops.ts`. Each allowed file gets a comment saying why.
+### 7.1 Steps
 
-### 6.3 Per-budget applied counter (A11)
+1. **Ship the store and adapter with the D1 path still live.** `budget.store_version` in the directory says where a budget's data lives: `d1` (default) or `store`. Every budget request goes to D1 while it's `d1`, so this deploy changes nothing for the owner.
+2. **Copy.** An admin-only action (Settings → People → Storage, or an ops route) starts a `MoveBudgetWorkflow`. It sets the budget read-only (writes get a 503 "Moving your budget, a minute or so"), pauses syncs for that budget by holding all its leases, and copies table by table in chunks of 500 rows into the store with `importAll`. Writes to the store count against the daily limits, about 20,000 rows for the owner.
+3. **Verify** inside the store: row counts per table equal D1's; a hash of each table's rows equals D1's; a full recompute from scratch in the store equals the stored month summaries and Ready to Assign; the rule 10 identity holds. Any difference stops the move. The budget stays on `d1`, writes come back on, and the store is wiped.
+4. **Switch**: set `store_version = 'store'` and release the read-only state and leases in one directory batch. From now on every request goes to the store.
+5. **Keep the D1 copy** for 30 days, untouched. A reverse action (`MoveBudgetWorkflow` the other way, same code) can move the budget back with every change made since the switch. After 30 days, and only when the owner agrees, a forward migration drops the budget tables from D1.
 
-`bank_event.id` stays globally unique, assigned from `apply_counter` inside the apply batch (`sync/steps.ts:390,466`). The same batch runs `UPDATE budget SET applied_seq = applied_seq + n WHERE id = ?`. ETags and the month-totals stamp use `budget.applied_seq`.
+The owner is told before step 2 and picks the time. The whole move should take a few minutes.
 
-## 7. Sharing the free plan fairly
+### 7.2 Backups and recovery
 
-Cloudflare's limits and Plaid's Trial cap belong to the whole account. Each needs a per-user share. **Except 7.1, everything here is active only in multi-user mode.** With one user, the owner's syncs, schedules and limits are exactly today's.
+- D1 Time Travel (7 days on Free) keeps covering the directory.
+- Durable Objects with SQLite have point-in-time recovery (`getBookmarkForTime`, `onNextSessionRestoreBookmark`): up to 30 days per object. Phase 0 checks that this works on the Free plan. If it does, an admin-only "Restore this budget to a time" action is built for it, which is better than today's 7 days.
+- The JSON export keeps working (it runs in the store).
+- D-29 (no off-site backup) is unchanged.
 
-### 7.1 Plaid links (A10): active always
+## 8. Accounts, sign-in and the switch
 
-The Trial slot is spent the moment the user finishes Plaid Link, before the app sees the result. So the slot has to be reserved **before** opening Link, not checked afterwards.
+These are carried over from v1 after its review. Changes for v2 are noted.
 
-- `PLAID_LINK_CAP` (Worker variable, `10`) and `PLAID_LINKS_USED_BEFORE` (Worker variable, `7`: the owner-confirmed count from CLAUDE.md, not a count of `connection` rows, which may not match Plaid's).
-- Making a link token for a new bank inserts a `reserved` slot (30-minute expiry) in a fenced batch: it goes in only if `PLAID_LINKS_USED_BEFORE` plus the `used` and unexpired `reserved` slots is under the cap, and the user's own count is under their `link_allowance`. Two people can't take the last slot together.
-- Exchange **always saves the Item** (the 0005 rule: never lose a link that already counts) and marks the slot `used`. If the reservation had expired, the slot is marked `used` anyway and the over-count is reported on People. Cancelling Link marks it `released`. A reservation that expires without an exchange counts as released.
-- Repair (update mode) never reserves a slot.
-- **On Plaid Production** there is no lifetime cap; each Item costs a monthly fee instead. Switching is configuration only: set `PLAID_LINK_CAP` to `0` (meaning no cap) and `PLAID_LINKS_USED_BEFORE` stops mattering. The global count check is skipped, slots are still recorded (useful history), and `link_allowance` stays as the per-user control over how many paid Items each person can add. Nothing needs removing.
-- For the owner this keeps today's behavior (confirm prompt, 3 left) with a stronger check.
+### 8.1 Identity and passkeys
 
-### 7.2 D1 writes and reads (A16)
+- The directory schema adds to `user`: `display_name`, `is_admin`, `status` (`active` / `disabled` / `deleting`), `last_seen_at`, `link_allowance` (default **0**, decided by the owner), `webauthn_handle`. `passkey`, `auth_session`, `device_link` get `user_id`. The owner's rows are backfilled: admin, link allowance 10, handle `ledgerline-owner`.
+- `identify()` returns the user id from the session; `OWNER_EMAIL` goes away. Email is no longer identity; new users get `u:<id>` in the existing `NOT NULL UNIQUE` column.
+- Each new user gets a random WebAuthn user handle and their name as `userName`. `excludeCredentials` lists only their passkeys. Sign-in checks that the assertion's `userHandle` matches the passkey's user. This stops a new account's passkey from replacing the owner's on a shared device.
+- Disabling a user deletes their sessions and stops their banks syncing.
 
-- **Counting first.** In multi-user mode, every write request sums `meta.rows_written` and `meta.rows_read` from its D1 results and adds them to `budget_usage_day` in the request's final batch (one extra row write per write request). Workflow steps do the same in the batch they already write. Reads on GET requests are summed and written at most once a minute per budget. In single-user mode none of this runs.
-- **Per-user daily share**: `USER_WRITE_SHARE` (default 20,000 rows) and `USER_READ_SHARE` (default 1,000,000). Past either, that user's writes get 503 "Daily limit reached for your budget" and their background syncs pause until midnight UTC. Other users carry on. Admins are exempt.
-- **New-bank backfills are admitted**: the first sync of a new connection is estimated at 7 writes and 50 steps per 1,000 transactions (from the 3,000-transaction measurement: 4.1 writes before processing, plus overlays and budget lines; 109–153 steps). Assume 3,000 transactions if unknown. It starts only if today's account writes and steps plus the estimate stay under the 70% pause line; otherwise it waits as `queued` and the backstop starts it after 00:00 UTC.
-- The account-wide breaker (70% pause, 90% read-only) stays as the last line, in both modes.
+### 8.2 Challenges and rate limits
 
-### 7.3 Workflow steps and cron (A13)
+- Starting a ceremony writes nothing: the challenge goes in a 5-minute HMAC-signed cookie (HKDF key from `TOKEN_KEYS`, label `ledgerline-challenge`).
+- Single use comes from the session row: a successful finish stores `challenge_id` under a unique index. It doesn't rely on the signature counter (iCloud passkeys always report 0).
+- The Workers rate-limiting binding (about 20 a minute per IP) covers every `/api/auth/*` and sign-up route, with no D1 fallback.
 
-Cloudflare's Workflows pricing page lists **3,000 steps a day** on Workers Free (verified Nov 2, 2026), plus 1,024 per instance and 100 concurrent instances. Workflow runs also share the 100,000 requests a day.
+### 8.3 The switch, invites and recovery
 
-- **Cron fan-out (both modes)**: the daily scan and maintenance cron each create at most 25 per-budget Workflow instances per run, from a cursor, and the backstop cron finishes the rest. With one budget this is one instance at the same times as today. The daily scan becomes its own small Workflow started at 08:10 UTC, so Upcoming entries appear at the same time as today.
-- **Backstop**: starts at most 20 syncs per run, oldest first.
-- **Step counting and breaker** (multi-user mode): steps are counted in `budget_usage_day.steps` and summed for the account; new Workflow instances pause at 70% of 3,000.
-- **Quiet budgets** (multi-user mode, not the admin's): a budget with no sign-in for 14 days gets its full recompute weekly instead of daily, and webhooks for it set `resync_requested`, picked up by the next backstop (every 4 hours) instead of syncing at once.
-- sync-spec.md's limits table is updated: the step limit is verified, not "verify".
+- `SIGNUPS` (`off` / `invite` / `open`, default `off`) and `MAX_USERS` (default `1`) are Worker variables, so turning on takes a deploy. While off, invite, sign-up and recovery routes return 404 and the web app hides them.
+- **Invite link** (token in the URL fragment, single use, 7 days, hash stored): one directory batch creates the user, budget, membership, passkey, session and recovery code, fenced on the invite, the switch and `MAX_USERS` (counting active, disabled and deleting users). Then the new budget's store is created and runs its migrations. The new user lands in first-run setup with the invite's link allowance (default 0).
+- **Open sign-up**: the same flow without an invite, only when `SIGNUPS = open`.
+- **Recovery codes** are for non-owner users only: shown once and stored as a unique hash. Using one deletes all that user's passkeys and sessions and issues a new code. The owner keeps D-27's recovery. Admins can also make a device link for a user.
 
-### 7.4 Storage
+### 8.4 Settings → People (admins)
 
-`raw_page` is append-only and never pruned: each 3,000-transaction backfill stores about 6 MB for good, plus ongoing syncs. People shows the database size against 500 MB, and sign-up refuses new accounts above 70%. Pruning old raw pages is a separate decision (it changes the sync spec's append-only rule) and isn't part of this build.
+- Shown once `SIGNUPS` isn't `off`: invites, users (name, joined, last seen, links used, today's writes and steps), disable and enable, link allowances, delete, and the shared counters (Plaid links of the cap, users of `MAX_USERS`, today's usage, total store storage).
+- **Storage** (always shown to the admin): where each budget lives (`d1` / `store`), its size, the move action (7.1), and on Free, restore to a time (7.2).
+- **Diagnostics** (admin, for their own budget only): table row counts and a fixed list of named health queries. There is no free-form SQL endpoint: that would be an injection and data-access risk. This replaces the D1 console for checking the owner's data from a phone or a Claude session.
 
-### 7.5 Rough capacity on the free plan
+## 9. Sharing the free plan
 
-Estimates from `docs/measurements.md`; phase 7 measures them.
+### 9.1 Plaid links (active always)
 
-| Limit                  | Per active user, per day                             | Users it allows                           |
-| ---------------------- | ---------------------------------------------------- | ----------------------------------------- |
-| Plaid Trial links      | 1 to 7, once                                         | 3 links left in total: 1 to 3 more people |
-| Workflow steps (3,000) | ~10 maintenance + ~12 per sync, 3–6 syncs per bank   | about 5 to 10; a new bank costs ~150      |
-| D1 writes (100,000)    | a few thousand; ~20,000 on the day a bank is added   | about 10 to 15 steady users               |
-| D1 reads (5,000,000)   | ~150,000 normal, up to 1,000,000 on a heavy day      | about 20 to 30                            |
-| Storage (500 MB)       | ~6 MB per 3,000 transactions of raw pages, plus rows | 50+ before it matters                     |
+As in v1 after its review:
 
-On the free plan and Plaid Trial, other users means a handful. Section 9 lists what raises it.
+- `PLAID_LINK_CAP` (10; set to 0 for no cap on Plaid Production) and `PLAID_LINKS_USED_BEFORE` (7, owner-confirmed).
+- A `reserved` slot is taken in the directory, in a fenced batch, **before** Link opens. Exchange always saves the Item and marks the slot used. Cancelling releases it. Repair never reserves a slot.
+- `link_allowance` (default 0) limits each user. On Plaid Production it remains the per-user control over how many paid Items each person can add.
 
-## 8. Deleting an account
+### 9.2 Daily limits (multi-user mode only)
 
-### 8.1 Flow
+- Each store knows its own rows read and written from `meta`. It keeps a running total in memory and adds it to `budget_usage_day` in the directory at most once a minute.
+- Per-user shares (`USER_WRITE_SHARE` 20,000, `USER_READ_SHARE` 1,000,000; admins exempt): past either, that user's writes get a 503 and their syncs pause until midnight UTC.
+- New-bank backfills are admitted against today's writes and Workflow steps (estimated 7 writes and 50 steps per 1,000 transactions) and queued past the 70% line.
+- The account-wide breaker (70% pause, 90% read-only) reads D1 and Durable Object usage from GraphQL Analytics and checks the right one for each limit. This depends on phase 0's finding about shared pools.
+- Quiet budgets (no sign-in for 14 days, not the admin's) get a weekly full recompute instead of daily, and webhooks for them wait for the next backstop.
 
-- The user (Settings → Security → Delete account, with a fresh passkey check and typing the budget name) or an admin starts it. `user.status = 'deleting'`, sessions are deleted at once, and a `DeleteAccountWorkflow` runs.
-- Steps: remove each Plaid Item (`/item/remove`; this does **not** give the Trial slot back, and the confirm screen says so); then delete the budget's rows in chunks of 500 in foreign-key order (children first: `sync_page`, `bank_page`, `raw_page`, `bank_event`, `bank_txn`, snapshots, `txn_split`, `txn_link`, `txn_overlay`, `manual_pending`, `expected_reimbursement`, `budget_line`, totals, `assignment`, `target`, `rule`, `payee_alias`, `payee`, `category`, `category_group`, `account`, `provider_account`, `sync_run`, `connection`, `alert`, `audit_log`, `setting`, `health_status`, usage tables, `month_snapshot`, `budget_usage_day`, `budget_member`, `budget`); then passkeys, recovery code, device links and the user row. The exact order comes from the schema and is checked by a test that runs it on a seeded budget with foreign keys on. Each step checks the write breaker and pauses until midnight if needed.
-- `plaid_link_slot` rows stay (they hold only ids and keep the Trial count right).
-- The last admin can't be deleted from the app. The screen offers the JSON export first.
+### 9.3 Capacity on Free
 
-### 8.2 Append-only tables
+Phase 0 and phase 8 measure these; until then they are estimates.
 
-`bank_page`, `bank_event` and `raw_page` block every delete. Migration 0010 replaces the three `*_no_delete` triggers with ones that allow a delete only when the row's budget belongs to a user with `status = 'deleting'`:
+| Limit                                              | Per active user, per day                        | Users it allows                                                |
+| -------------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------- |
+| Plaid Trial links                                  | 1 to 7, once                                    | 3 left in total: 1 to 3 more people                            |
+| Workflow steps (3,000)                             | ~10 maintenance + ~12 per sync                  | about 5 to 10                                                  |
+| Rows written (100,000)                             | a few thousand; ~20,000 the day a bank is added | about 10 to 15 if shared with D1, more if separate             |
+| Requests (100,000 Worker + 100,000 Durable Object) | a few hundred to a few thousand                 | 30+                                                            |
+| Storage                                            | ~9 MB a year                                    | 1 GB each: about 100 years; 5 GB total: hundreds of user-years |
 
-```sql
-CREATE TRIGGER bank_event_no_delete BEFORE DELETE ON bank_event
-WHEN NOT EXISTS (SELECT 1 FROM budget_member m JOIN user u ON u.id = m.user_id
-                 WHERE m.budget_id = OLD.budget_id AND m.role = 'owner' AND u.status = 'deleting')
-BEGIN SELECT RAISE(ABORT, 'bank_event is append-only'); END;
-```
+On Free, other users still means a handful, because of Plaid Trial and Workflow steps. The move removes the size and shared-writer limits for the paid plan.
 
-This is the only exception to the sync spec's append-only rule. It is recorded in D-37 and in sync-spec.md. Update triggers don't change.
+## 10. Deleting an account
 
-## 9. Turning it on (owner decisions, not built here)
+A `DeleteAccountWorkflow`:
 
-Each of these changes a hard rule or a decision:
+1. Removes each Plaid Item (`/item/remove`; this doesn't give the Trial slot back, and the confirm screen says so).
+2. Calls the store's `wipe()` (`ctx.storage.deleteAll()`), which deletes the budget's whole database at once. The append-only triggers don't apply because nothing is deleted row by row.
+3. Deletes the directory rows (membership, passkeys, sessions, recovery code, `connection_route`, user, budget). `plaid_link_slot` rows stay.
 
-1. **Plaid**: 3 Trial links are left in total. Real use needs Plaid Production (application, security questionnaire, monthly fees per Item). Also check that Trial terms allow linking banks for people other than the developer.
-2. **Cloudflare Workers Paid** ($5 a month) raises every limit in 7.5 a lot. Most of 7.2 and 7.3 then matters much less.
-3. **Backups**: D-29 is fine for the owner's own data; holding other people's needs a decision.
-4. **Privacy policy and terms**, and what happens to people's data if the app shuts down.
-5. **Monitoring**: someone needs to know when it breaks for other people.
-6. Raise `SIGNUPS` and `MAX_USERS` and deploy.
+It starts after a fresh passkey check and typing the budget name, and offers the JSON export first. The last admin can't be deleted from the app.
 
-## 10. Build phases
+## 11. Build phases
 
-Each phase lands on `main` with `pnpm check` passing, and the owner's app is unchanged after each one (checked by the existing e2e suite and, for phases 1 and 3, a sign-in on the real app).
+Each phase lands on `main` with `pnpm check` passing. The owner's app is unchanged after every phase until phase 4's switch, which happens only when the owner says so.
 
-1. **Schema and identity**: migration 0010 (columns, backfill, tables, `bank_event(budget_id, id)` index, `applied_seq`, triggers); `identify()` and `resolveMembership()` by user id; security routes scoped by user (A1–A3, A6). _Verify:_ migration test on a copy of the current schema with the owner's rows; owner sign-in unchanged.
-2. **Isolation**: A7–A9, A11, A12, A14, A15, A18; `assertOwned`; the two-tenant test and the `.prepare(` allowlist. _Verify:_ the isolation test passes, and fails when a scope is removed on purpose; reads per screen before and after the new index in `docs/measurements.md`.
-3. **Passkeys per user, challenges, rate limits** (4.3, 4.6). _Verify:_ starting a sign-in writes 0 rows; a replayed cookie and assertion fails; an assertion with another user's handle fails.
-4. **Sign-up gate, invites, recovery codes, People** (4.4, 4.5, 4.7, 5) and the web screens. _Verify:_ with `SIGNUPS = off` every new route returns 404; e2e for invite sign-up, a reused invite, `MAX_USERS` reached, recovery.
-5. **Plaid slots** (7.1). _Verify:_ two link-token requests for the last slot: one gets it; an expired reservation followed by exchange still saves the Item.
-6. **Fair share and fan-out** (7.2, 7.3). _Verify:_ with one user, no `budget_usage_day` writes and the same cron behavior as today; with two users, a backfill past the pause line queues; a cron run with 60 budgets stays under 10 ms CPU and 50 queries.
-7. **Account deletion** (8). _Verify:_ deletion leaves no row with that `budget_id` except `plaid_link_slot`; append-only triggers still abort for active users.
-8. **Capacity**: seed 10 users with the November fixture, run a simulated day, write the numbers in `docs/measurements.md`, update 7.5.
-9. **Docs**: D-37 in `decisions.md` (identity by user id; email no longer identity; per-user passkey handles; recovery codes for non-owners; the append-only exception; supersedes `design.md:28`), update `sync-spec.md` (step limit, append-only exception), `threat-model.md`, and `build-plan.md`.
+0. **Measure first** (no app change): deploy a throwaway Durable Object class behind an ops-only route; write and read 10,000 rows; check in GraphQL Analytics and the dashboard whether that usage counts against D1's daily limits; time a request that goes Worker → store → SQLite and back against the 10 ms CPU rule; check point-in-time recovery on Free. Remove the class. Record in `docs/measurements.md`. _If_ the store hop doesn't fit 10 ms for the heavy screens, stop and report before phase 1.
+1. **Adapter and store skeleton**: `BudgetStore`, the D1-shaped adapter, the per-store migration runner, `0001_baseline.sql`. _Verify:_ the integration suite runs against both D1 and the store backend in CI; fence tests pass on both.
+2. **Routing**: `store_version` in the directory; the Worker forwards budget routes to the store when `store`; Workflows and cron call store RPC methods. _Verify:_ e2e suite passes with the test budget on `store`; the owner's budget is still on `d1` in production.
+3. **Directory split**: directory tables and `connection_route`; the webhook looks up the budget; usage and the breaker read both sources. _Verify:_ a webhook for a store budget starts its sync; the breaker test with store usage.
+4. **Move tool**: `MoveBudgetWorkflow` both ways, verify step, read-only state, Storage screen. _Verify:_ moving the November fixture and a 3,000-transaction budget both ways gives identical hashes and recomputes; a forced mismatch stops the move. **Then, with the owner's go-ahead, move the owner's budget.**
+5. **Remove the D1 budget path** after 30 days and the owner's OK: forward migration dropping budget tables from D1; the integration suite runs on the store only.
+6. **Identity and passkeys** (8.1, 8.2). _Verify:_ owner sign-in unchanged; replayed challenge fails; another user's handle fails.
+7. **Switch, invites, recovery, People, diagnostics** (8.3, 8.4) and the routing isolation test (6). _Verify:_ with `SIGNUPS = off` all new routes return 404; e2e for invite sign-up, reused invite, `MAX_USERS`, recovery.
+8. **Plaid slots, fair share, deletion** (9, 10), then a capacity run: seed 10 users with the November fixture, simulate a day, update 9.3.
+9. **Docs**: D-37 (per-budget databases, directory, adapter, identity, recovery codes; supersedes `design.md` rows on D1 and Users), `sync-spec.md` (where fences live; step limit verified), `threat-model.md`, `build-plan.md`, `runbooks/setup.md`.
 
-## 11. Open questions
+Rough size: phases 0–5 about two to three weeks of sessions, phases 6–8 about one to two.
 
-- ~~Should a new user's link allowance default to 0 or 1?~~ **Decided by the owner (Nov 2, 2026): 0.** An admin grants links per person.
-- Do Plaid Trial terms allow other people's banks at all? (9.1; decides whether 7.1's allowance matters before Production.)
+## 12. Open questions
 
-## 12. Review (Nov 2, 2026)
+- Does Durable Object row usage share the D1 daily pool on Free? (Phase 0; decides 9.2 and 9.3.)
+- Does the store hop fit 10 ms of CPU on the heaviest screen? (Phase 0; the plan stops there if not.)
+- Is point-in-time recovery available on Free? (Phase 0; decides the restore action.)
+- Replace Workflows with alarms later? (5.4; a separate decision.)
+- Do Plaid Trial terms allow other people's banks at all? (Before turning on.)
 
-Two adversarial reviews: one by the author, one by an independent agent that hadn't seen the author's reasoning. What changed from the first draft:
+## 13. History
 
-- **Account deletion couldn't work**: `bank_event`, `bank_page` and `raw_page` block deletes. Added 8.2 (a narrow trigger exception) and a foreign-key order.
-- **The Plaid slot check came too late**: the slot is spent when Link finishes, before the app could refuse. Now reserved before Link opens (7.1), and the starting count is the owner-confirmed 7.
-- **Passkeys shared one user handle** (missed in the draft): a new account's passkey could have replaced the owner's. Added A4 and 4.3.
-- **"Nothing changes for the owner" wasn't true**: backfill admission, quiet budgets and moving the daily scan would have changed the owner's app. All of 7 except Plaid slots now runs only in multi-user mode, the daily scan keeps its time, and the owner gets no recovery code.
-- **The replay argument was wrong** (iCloud passkeys don't count signatures): single use now comes from a unique `challenge_id` on the session. The D1 rate-limit fallback was dropped; the Workers rate-limiting binding is used.
-- **Usage counters the shares relied on don't exist**: 7.2 now builds the counting first, only in multi-user mode.
-- **The step limit is real** (3,000 a day on Free): admission and the breaker count steps.
-- **More isolation gaps**: foreign ids in bodies (A8), the `bank_txn` upsert (A9), `startSync` (A7), no `budget_id` index on `bank_event` (A12), per-budget maintenance doing account work (A14), shared saved data in the browser (A18). The lint allowlist now matches `.prepare(`.
-- **Factual fixes**: A10 counts every Plaid row ever made (none are removed), telemetry already has a toggle, `raw_page` is never pruned, and the writes-per-transaction estimate went from 5 to 7.
-- **Simplified**: dropped the second sign-up switch (`app_config`), the `telemetry` column and invite kind `member`. Not dropped, though the reviewer suggested it: fair-share limits, quiet budgets and recovery codes stay, because the owner asked for everything to be built. They're gated so they cost nothing while off.
+- **v1** (one shared D1 database) was reviewed twice on Nov 2, 2026. The review's findings still shape v2: Plaid slots reserved before Link, per-user passkey handles, replay protection from a unique challenge id, the rate-limiting binding, recovery codes only for non-owners, everything gated so the owner's app doesn't change, and a measured step limit. Findings v2 makes moot: append-only triggers blocking deletion, the global apply counter, `bank_event` scans across budgets, isolation of foreign ids and of `connectionToken`.
+- **v2**: database per budget, chosen by the owner on Nov 2, 2026 after seeing the trade-offs. The owner's data was 4.2 MB, so size was not the reason; growth past one database was.
