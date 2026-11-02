@@ -1,5 +1,4 @@
-// Request routing after the move (docs/multi-user.md 5.1, 8.5). Until move_state says 'moved', the Worker serves
-// everything from D1 as before. After it, every API request goes to the Directory (sign-in, Settings → Sign-in,
+// Request routing (docs/multi-user.md 5.1). Every API request goes to the Directory (sign-in, Settings → Sign-in,
 // who is asking) and then to the asking user's own BudgetStore. The store is chosen only from the session's
 // membership, never from anything in the request.
 import type { Env } from '../env.js';
@@ -10,34 +9,19 @@ import { makeProvider } from '../sync/provider.js';
 const CACHE_MS = 10_000;
 let cached: { phase: string; at: number } | null = null;
 
-/** move_state.phase: 'none', 'frozen', 'moved' or 'restoring' (cached for 10 seconds per isolate). */
-export async function servingPhase(env: Env, now = Date.now()): Promise<string> {
-  // Production has no D1 binding since the move (Nov 2, 2026): the Durable Objects serve everything.
-  if (!env.DB) return 'moved';
-  if (cached && now - cached.at < CACHE_MS) return cached.phase;
-  const r = await env.DB.prepare(`SELECT phase, lease_expires FROM move_state WHERE id = 1`)
-    .first<{ phase: string; lease_expires: number | null }>()
-    .catch(() => null);
-  let phase = r?.phase ?? 'none';
-  // The freeze's time limit (docs/multi-user.md 8.2, 8.6): a move or a way back that hasn't switched in time is
-  // abandoned and the side that held the data carries on (D1 for a move, the new databases for the way back),
-  // even if the job has died. Both switches are fenced on the same lease.
-  if ((phase === 'frozen' || phase === 'restoring') && r?.lease_expires && r.lease_expires < now) {
-    const back = phase === 'frozen' ? 'none' : 'moved';
-    await env.DB.prepare(
-      `UPDATE move_state SET phase = ?2, updated_at = ?1 WHERE id = 1 AND phase = ?3 AND lease_expires < ?1`,
-    )
-      .bind(now, back, phase)
-      .run();
-    phase = back;
-  }
-  cached = { phase, at: now };
-  return cached.phase;
-}
-
-/** Whether the Durable Objects serve requests: move_state.phase = 'moved'. */
+/**
+ * Whether the Durable Objects serve requests. Always in production, which has no D1 binding. Local dev and tests
+ * have an emulated D1, and serve from it unless its move_state says 'moved'.
+ */
 export async function objectsServe(env: Env, now = Date.now()): Promise<boolean> {
-  return (await servingPhase(env, now)) === 'moved';
+  if (!env.DB) return true;
+  if (!cached || now - cached.at >= CACHE_MS) {
+    const r = await env.DB.prepare(`SELECT phase FROM move_state WHERE id = 1`)
+      .first<{ phase: string }>()
+      .catch(() => null);
+    cached = { phase: r?.phase ?? 'none', at: now };
+  }
+  return cached.phase === 'moved';
 }
 
 /** Tests only: forget the cached phase. */
@@ -48,7 +32,7 @@ export function resetRoutingCache(): void {
 const json = (body: unknown, status: number) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-export async function routeApi(req: Request, env: Env, opts: { frozen?: boolean } = {}): Promise<Response> {
+export async function routeApi(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
   const dir = env.DIRECTORY.get(env.DIRECTORY.idFromName(DIRECTORY_NAME));
@@ -91,5 +75,5 @@ export async function routeApi(req: Request, env: Env, opts: { frozen?: boolean 
   // Everything else: who is asking, then their own budget.
   const a = await dir.authenticate(req.headers.get('cookie'), req.method, path);
   if (!a.ok) return json(a.body, a.status);
-  return store(a.caller.budgetId).api(req, { ...a.caller, ...(opts.frozen ? { frozen: true } : {}) });
+  return store(a.caller.budgetId).api(req, a.caller);
 }

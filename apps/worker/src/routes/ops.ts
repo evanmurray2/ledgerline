@@ -2,7 +2,7 @@
 import { clock } from '../http/clock.js';
 import { Hono } from 'hono';
 import type { DumpChunk } from '@ledgerline/contracts';
-import { BUDGET_TABLES, budgetFilter, chain, readChunk, tableMeta } from '../store/move.js';
+import { BUDGET_TABLES, budgetFilter, chain, readChunk, tableMeta } from '../store/dump.js';
 import {
   ImportCsvRequest,
   NoteRequest,

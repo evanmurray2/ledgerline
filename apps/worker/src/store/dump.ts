@@ -1,7 +1,7 @@
-// Copying and verifying data between D1 and the Durable Objects (docs/multi-user.md 8.3, 8.4, 8.6). One table at a
-// time, in foreign-key order, in steps of about 50 KB of rows (phase 0: CPU grows with bytes). Rows are read in
-// primary-key order with keyset pagination, so a step can resume from its cursor after a retry. Verification hashes
-// each table on both sides with the same canonical encoding, in the same steps, and compares counts and hashes.
+// Reading and writing a budget's rows for the full backup and its restore (docs/multi-user.md 8.7). One table at a
+// time, in foreign-key order, in pieces of about 50 KB (CPU grows with bytes). Rows are read in primary-key order
+// with keyset pagination, so a piece can resume from its cursor. Each table gets a chained fingerprint over a
+// canonical encoding, so a restore proves it holds exactly what was saved.
 
 /** A budget's tables, parents before children (computed from the schema's foreign keys). */
 export const BUDGET_TABLES = [
@@ -42,20 +42,6 @@ export const BUDGET_TABLES = [
   'sync_page',
   'target',
 ] as const;
-
-/** The Directory's tables copied from D1 (auth_challenge is no longer used: challenges are signed cookies). */
-export const DIRECTORY_TABLES = [
-  'user',
-  'budget',
-  'budget_member',
-  'passkey',
-  'auth_session',
-  'device_link',
-  'usage_day',
-] as const;
-
-/** Tables in a budget's store that hold no budget_id: copied whole (apply_counter) or by id (budget). */
-const NO_BUDGET_ID = new Set(['apply_counter', 'budget']);
 
 /** Rows read per query before trimming to the byte limit (raw and staged pages are up to ~200 KB each). */
 const ROWS_PER_READ: Record<string, number> = { raw_page: 1, sync_page: 1, bank_page: 5, bank_event: 25 };
@@ -107,23 +93,6 @@ export async function tableMeta(db: D1Database, table: string): Promise<Meta> {
 }
 
 /** Tables whose destination intentionally holds fewer columns than D1 (the Directory's own view of a budget). */
-const SUBSET_OK = new Set(['directory:budget']);
-
-/**
- * Null when the destination has every column the source has, else the missing ones. Verification fails on any
- * missing column, so a copy can never silently drop data.
- */
-export async function missingColumns(
-  src: D1Database,
-  dst: D1Database,
-  table: string,
-  kind: 'budget' | 'directory',
-): Promise<string[] | null> {
-  if (SUBSET_OK.has(`${kind}:${table}`)) return null;
-  const [a, b] = await Promise.all([tableMeta(src, table), tableMeta(dst, table)]);
-  const missing = a.own.filter((c) => !b.own.includes(c));
-  return missing.length ? missing : null;
-}
 
 /** The WHERE clause that selects one budget's rows of a table (source side), with its bound value. */
 export function budgetFilter(table: string, budgetId: string): { sql: string; args: unknown[] } {
@@ -220,15 +189,3 @@ export function insertStatements(
   const sql = `INSERT INTO "${table}" (${cols.map((c) => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`;
   return rows.map((row) => db.prepare(sql).bind(...cols.map((c) => row[c] ?? null)));
 }
-
-export interface TableProgress {
-  t: number;
-  cursor: unknown[] | null;
-  hash: string;
-  count: number;
-}
-
-export const START: TableProgress = { t: 0, cursor: null, hash: '', count: 0 };
-
-/** Whether a table holds budget-scoped rows (used to decide how to filter it on each side). */
-export const scoped = (table: string) => !NO_BUDGET_ID.has(table);

@@ -88,7 +88,7 @@ export async function request<S extends z.ZodType>(
     const parsed = ApiErrorBody.safeParse(json);
     const code = parsed.success ? parsed.data.error : `http_${res.status}`;
     const message = parsed.success ? parsed.data.message : res.statusText || 'Request failed';
-    if (code === 'read_only' || code === 'readonly' || code === 'moving') onReadOnly?.();
+    if (code === 'read_only' || code === 'readonly') onReadOnly?.();
     // Signed out (session ended) or a fresh passkey check is needed: the app shows sign-in or "Confirm it's you".
     if (code === 'unauthenticated' && !path.startsWith('/api/auth/')) {
       clearSavedData();

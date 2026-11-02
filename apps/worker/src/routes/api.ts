@@ -187,12 +187,12 @@ budgetApi.get('/session', async (c) => {
         ? 'categories'
         : 'done';
   const u = await usageToday(c.env, now);
-  const ws = c.env.MOVING === '1' ? 'moving' : classifyUsage(u.written, u.read);
+  const ws = classifyUsage(u.written, u.read);
   const tomorrow = new Date(now);
   tomorrow.setUTCHours(24, 0, 0, 0);
   const body: Session = {
     // `login` was the GitHub name from before passkeys (D-27); nothing sets it any more. Users live in the
-    // Directory after the move, so the budget's routes don't read the user table.
+    // Directory, so the budget's routes don't read the user table.
     user: { email: c.get('email'), login: null },
     budget: {
       id: f.budget.id,
@@ -204,7 +204,7 @@ budgetApi.get('/session', async (c) => {
       setupStep,
     },
     appVersion: c.env.APP_VERSION ?? '0.1.0',
-    writeState: ws === 'moving' ? 'moving' : ws === 'normal' ? 'ok' : ws === 'pause' ? 'paused' : 'readonly',
+    writeState: ws === 'normal' ? 'ok' : ws === 'pause' ? 'paused' : 'readonly',
     readOnlyUntil: ws === 'readonly' ? tomorrow.toISOString() : null,
     settings: { tracking: setting.get('tracking') !== false, noteButton: setting.get('noteButton') === true },
   };

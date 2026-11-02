@@ -1,5 +1,5 @@
 // The one Durable Object for users, passkeys, sessions, invites, Plaid slots and routing (docs/multi-user.md 5.2).
-// After the move it serves sign-in (/api/auth/*) and Settings → Sign-in (/api/settings/security/*) with the same
+// It serves sign-in (/api/auth/*) and Settings → Sign-in (/api/settings/security/*) with the same
 // routes the D1 path uses, and answers authenticate() for every other request so the Worker knows whose budget
 // to open.
 import { DurableObject } from 'cloudflare:workers';
@@ -22,8 +22,6 @@ import { refreshUsage } from '../ops/usage.js';
 import { pruneAuthStmts } from '../maintenance.js';
 import { JobRunner, type Handler } from './jobs.js';
 import { nextUtc } from './budget-jobs.js';
-import { directoryMoveHandler, directoryMoveOutHandler, type MoveStatus } from './move-jobs.js';
-import { notFrozen } from './budget-store.js';
 
 /** Budgets checked per ensure_all step (docs/multi-user.md 6.2). */
 export const ENSURE_BATCH = 25;
@@ -38,8 +36,6 @@ export interface Caller {
   email: string;
   sessionId: string;
   verifiedAt: number;
-  /** The way back is copying into D1 (docs/multi-user.md 8.6): serve read-only. */
-  frozen?: boolean;
 }
 
 export type AuthResult =
@@ -91,52 +87,6 @@ export class Directory extends DurableObject<Env> {
     return { jobs: this.runner.list() };
   }
 
-  // ---- the move (docs/multi-user.md 8.3–8.5)
-
-  /** Empties the Directory and starts the move. Refused unless D1 says a move is copying right now. */
-  async resetForMove(): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const refused = await notFrozen(this.env.DB);
-    if (refused) return { ok: false, reason: refused };
-    await this.ctx.storage.deleteAll();
-    migrate(this.ctx.storage, DIRECTORY_MIGRATIONS, Date.now());
-    this.app = null;
-    await this.ctx.storage.put('move_status', { state: 'starting' });
-    await this.runner.enqueue(
-      'move',
-      { id: 'move', state: { phase: 'copy', t: 0, cursor: null }, runAt: Date.now() },
-      Date.now(),
-    );
-    return { ok: true };
-  }
-
-  /** The way back (8.6): refused unless D1 is 'restoring'; only for a single budget (bank event ids). */
-  async startMoveOut(): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const ph = await this.env.DB.prepare(`SELECT phase FROM move_state WHERE id = 1`).first<string>('phase');
-    if (ph !== 'restoring')
-      return { ok: false, reason: `refused: the way back isn't under way (phase ${ph})` };
-    await this.ctx.storage.put('move_status', { state: 'emptying' });
-    this.ctx.storage.sql.exec(`DELETE FROM job WHERE id = 'move_out'`);
-    await this.runner.enqueue(
-      'move_out',
-      { id: 'move_out', state: { phase: 'empty', t: 0, cursor: null }, runAt: Date.now() },
-      Date.now(),
-    );
-    return { ok: true };
-  }
-
-  async budgetCount(): Promise<number> {
-    return Number(this.ctx.storage.sql.exec(`SELECT count(*) AS n FROM budget`).one().n);
-  }
-
-  async isAdmin(userId: string): Promise<boolean> {
-    const r = this.ctx.storage.sql.exec(`SELECT is_admin FROM user WHERE id = ?`, userId).toArray()[0];
-    return r?.is_admin === 1;
-  }
-
-  async moveStatus(): Promise<unknown> {
-    return (await this.ctx.storage.get('move_status')) ?? null;
-  }
-
   override async alarm(): Promise<void> {
     this.ready();
     await this.runner.runNext(Date.now());
@@ -144,43 +94,6 @@ export class Directory extends DurableObject<Env> {
 
   private handlers(): Record<string, Handler> {
     return {
-      move: (job, now) => {
-        const store = (b: string) => this.env.BUDGET.get(this.env.BUDGET.idFromName(b));
-        return directoryMoveHandler({
-          d1: this.env.DB,
-          dir: this.db as unknown as D1Database,
-          budgetIds: async () =>
-            this.ctx.storage.sql
-              .exec(`SELECT id FROM budget ORDER BY id`)
-              .toArray()
-              .map((r) => String(r.id)),
-          resetStore: async (b) => {
-            const r = await store(b).resetForMove(b);
-            if (!r.ok) throw new Error(r.reason);
-          },
-          storeStatus: (b) => store(b).moveStatus() as Promise<MoveStatus | null>,
-          afterMove: (b, events) => store(b).afterMove(events),
-          setStatus: (st) => this.ctx.storage.put('move_status', st),
-        })(job, now);
-      },
-      move_out: (job, now) => {
-        const store = (b: string) => this.env.BUDGET.get(this.env.BUDGET.idFromName(b));
-        return directoryMoveOutHandler({
-          d1: this.env.DB,
-          dir: this.db as unknown as D1Database,
-          budgetIds: async () =>
-            this.ctx.storage.sql
-              .exec(`SELECT id FROM budget ORDER BY id`)
-              .toArray()
-              .map((r) => String(r.id)),
-          startStore: async (b) => {
-            const r = await store(b).startMoveOut(b);
-            if (!r.ok) throw new Error(r.reason);
-          },
-          storeStatus: (b) => store(b).moveStatus() as Promise<MoveStatus | null>,
-          setStatus: (st) => this.ctx.storage.put('move_status', st),
-        })(job, now);
-      },
       // Expired sign-in state (D-27), daily.
       auth_prune: async (_job, now) => {
         await this.db.batch(pruneAuthStmts(this.db as unknown as D1Database, now) as never);

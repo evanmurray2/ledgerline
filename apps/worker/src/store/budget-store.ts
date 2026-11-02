@@ -1,14 +1,13 @@
 // One Durable Object per budget, holding all of that budget's data in its own SQLite database
 // (docs/multi-user.md 5.3). It migrates itself at start, runs its background work on alarms (6.1) and keeps its own
-// recurring jobs (6.2). Nothing routes requests to it yet: until the move, the app runs entirely on D1.
+// recurring jobs (6.2). The Worker reaches it only after the Directory has said whose budget it is.
 import { DurableObject } from 'cloudflare:workers';
 import { Hono } from 'hono';
 import type { AppEnv } from '../http/context.js';
 import type { Caller } from './directory.js';
 import { DIRECTORY_NAME } from './directory.js';
 import { budgetApi } from '../routes/api.js';
-import { MOVING, readOnlyD1 } from './frozen.js';
-import { BUDGET_TABLES, NO_FILTER, chain, insertStatements, readChunk, tableMeta } from './move.js';
+import { BUDGET_TABLES, NO_FILTER, chain, insertStatements, readChunk, tableMeta } from './dump.js';
 import type { Env } from '../env.js';
 import { SqlD1 } from './adapter.js';
 import { appliedMigrations, migrate } from './migrate.js';
@@ -25,8 +24,6 @@ import {
 } from './budget-jobs.js';
 import { connectionToken, makeProvider, pageSize } from '../sync/provider.js';
 import { writeBudgetState } from '../sync/breaker.js';
-import { storeMoveHandler, storeMoveOutHandler, type MoveStatus } from './move-jobs.js';
-import type { QueuedWebhook } from './frozen.js';
 
 export interface StoreHealth {
   ok: boolean;
@@ -70,13 +67,7 @@ export class BudgetStore extends DurableObject<Env> {
    */
   async api(request: Request, caller: Caller): Promise<Response> {
     this.ready();
-    // While the way back copies into D1: screens read-only (their cache writes skipped), edits answer "moving".
-    if (caller.frozen && request.method !== 'GET' && request.method !== 'HEAD')
-      return new Response(JSON.stringify(MOVING), {
-        status: 503,
-        headers: { 'content-type': 'application/json' },
-      });
-    if (!caller.frozen) this.ensureBudget(caller.budgetId);
+    this.ensureBudget(caller.budgetId);
     if (!this.app) {
       const app = new Hono<AppEnv>();
       app.use('*', async (c, next) => {
@@ -91,9 +82,7 @@ export class BudgetStore extends DurableObject<Env> {
       app.route('/api', budgetApi);
       this.app = app;
     }
-    const env = caller.frozen
-      ? { ...this.appEnv(), DB: readOnlyD1(this.adapter()), MOVING: '1', CALLER: caller }
-      : { ...this.appEnv(), CALLER: caller };
+    const env = { ...this.appEnv(), CALLER: caller };
     return this.app.fetch(
       request,
       env as never,
@@ -102,43 +91,6 @@ export class BudgetStore extends DurableObject<Env> {
         passThroughOnException() {},
       } as never,
     );
-  }
-
-  // ---- the move (docs/multi-user.md 8.3–8.5)
-
-  /**
-   * Empties this store and starts copying its budget from D1. Refused unless D1 says a move is copying right now,
-   * so a store holding live data can never be wiped by mistake.
-   */
-  async resetForMove(budgetId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const refused = await notFrozen(this.env.DB);
-    if (refused) return { ok: false, reason: refused };
-    await this.ctx.storage.deleteAll();
-    migrate(this.ctx.storage, BUDGET_MIGRATIONS, Date.now());
-    this.cachedBudgetId = null;
-    this.app = null;
-    await this.ctx.storage.put('move_status', { state: 'copying' } satisfies MoveStatus);
-    await this.enqueue('move_in', {
-      id: 'move_in',
-      state: { phase: 'copy', budgetId, t: 0, cursor: null, rows: 0, hash: '' },
-      runAt: Date.now(),
-    });
-    return { ok: true };
-  }
-
-  /** The way back: copy this store's rows into D1. Refused unless D1 is 'restoring'. */
-  async startMoveOut(budgetId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const ph = await this.env.DB.prepare(`SELECT phase FROM move_state WHERE id = 1`).first<string>('phase');
-    if (ph !== 'restoring')
-      return { ok: false, reason: `refused: the way back isn't under way (phase ${ph})` };
-    await this.ctx.storage.put('move_status', { state: 'copying' } satisfies MoveStatus);
-    await this.ctx.storage.sql.exec(`DELETE FROM job WHERE id = 'move_out'`);
-    await this.enqueue('move_out', {
-      id: 'move_out',
-      state: { phase: 'copy', budgetId, t: 0, cursor: null, rows: 0 },
-      runAt: Date.now(),
-    });
-    return { ok: true };
   }
 
   // ---- restoring a full backup (docs/multi-user.md 8.7; a runbook step, never a button)
@@ -202,37 +154,6 @@ export class BudgetStore extends DurableObject<Env> {
         differences.push(`${t}: ${count} row(s), backup has ${want.count}`);
     }
     return { ok: differences.length === 0, differences };
-  }
-
-  async moveStatus(): Promise<MoveStatus | null> {
-    return (await this.ctx.storage.get<MoveStatus>('move_status')) ?? null;
-  }
-
-  /** After the switch: replay webhooks that arrived during the freeze, keep recurring jobs, sync every bank. */
-  async afterMove(webhooks: QueuedWebhook[]): Promise<void> {
-    this.ready();
-    const now = Date.now();
-    const db = this.adapter();
-    for (const w of webhooks) {
-      const conn = await db
-        .prepare(`SELECT id FROM connection WHERE provider_item_id = ?1 AND removed_at IS NULL`)
-        .bind(w.itemId)
-        .first<{ id: string }>();
-      if (conn && (w.type === 'item_error' || w.type === 'pending_expiration'))
-        await db
-          .prepare(
-            `UPDATE connection SET status = 'login_required', error_code = ?2, updated_at = ?3 WHERE id = ?1`,
-          )
-          .bind(conn.id, w.code, now)
-          .run();
-    }
-    await this.ensureJobs();
-    const conns = await db
-      .prepare(
-        `SELECT id FROM connection WHERE removed_at IS NULL AND provider = 'plaid' AND status != 'login_required' AND setup_done = 1`,
-      )
-      .all<{ id: string }>();
-    for (const c of conns.results) await startSyncJob(db, this.enqueue, c.id, 'cron', now).catch(() => false);
   }
 
   /** Daily safety net (6.2): recreate missing recurring jobs and make sure an alarm is set. */
@@ -374,18 +295,6 @@ export class BudgetStore extends DurableObject<Env> {
       backstop: (job, now) => backstopHandler(this.adapter(), this.enqueue)(job, now),
       daily_scan: (job, now) => dailyScanHandler(this.appEnv(), budgetId, this.enqueue)(job, now),
       maintenance: (job, now) => maintenanceHandler(this.appEnv(), budgetId)(job, now),
-      move_in: (job, now) =>
-        storeMoveHandler(
-          this.env.DB,
-          this.adapter(),
-          () => this.appEnv(),
-          (st) => this.ctx.storage.put('move_status', st),
-        )(job, now),
-      move_out: (job, now) =>
-        storeMoveOutHandler(this.env.DB, this.adapter(), (st) => this.ctx.storage.put('move_status', st))(
-          job,
-          now,
-        ),
       register_link: async (job) => {
         // Retried until the Directory answers; a duplicate Item is flagged on the connection (6.4).
         const { itemId, connectionId } = job.state as { itemId: string; connectionId: string };
@@ -407,12 +316,6 @@ export class BudgetStore extends DurableObject<Env> {
     if (job.kind === 'sync' && job.connectionId)
       await failSync(await this.syncDeps(), job.connectionId, job.state as SyncState, error);
   }
-}
-
-/** Null when D1's move_state is 'frozen' (a move is copying), else why a wipe is refused. */
-export async function notFrozen(d1: D1Database): Promise<string | null> {
-  const r = await d1.prepare(`SELECT phase FROM move_state WHERE id = 1`).first<{ phase: string }>();
-  return r?.phase === 'frozen' ? null : `refused: no move is copying (phase ${r?.phase ?? 'unknown'})`;
 }
 
 export function storeHealth(

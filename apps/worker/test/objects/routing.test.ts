@@ -156,13 +156,12 @@ describe('without D1 (production since Nov 2, 2026)', () => {
       { ...(prodEnv() as object), DB: undefined } as never,
       createExecutionContext(),
     );
-  it('serves sign-in from the Directory and turns the move off', async () => {
+  it('serves sign-in from the Directory and nothing else signed out', async () => {
     resetRoutingCache();
     const st = await noD1('/api/auth/status');
     expect(st.status).toBe(200);
     expect(await st.json()).toMatchObject({ hasPasskey: true });
     expect((await noD1('/api/session')).status).toBe(401);
-    expect((await noD1('/api/move')).status).toBe(404);
     resetRoutingCache();
   });
 });

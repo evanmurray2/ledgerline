@@ -45,8 +45,6 @@ export interface Env {
   /** Enables /__measure routes (local go/no-go harness only). */
   MEASURE?: string;
   APP_VERSION?: string;
-  /** '1' while the move is copying (docs/multi-user.md 8.2): /api/session tells the web app to show its banner. */
-  MOVING?: string;
   /** Inside a budget's Durable Object: today's account usage, from the Directory (docs/multi-user.md 9.2). */
   USAGE?: () => Promise<{ written: number; read: number }>;
   /** Inside a budget's Durable Object: add this app's own row counts to the Directory's usage_day. */
