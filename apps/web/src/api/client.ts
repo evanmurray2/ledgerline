@@ -53,13 +53,65 @@ export function errorMessage(err: unknown): string {
   return 'Something went wrong. Try again.';
 }
 
+// Any answer from the server, even a 401, means the network is back (state/connectivity.ts).
+connectivity.setProbe(async () => {
+  try {
+    await fetch('/api/session', { credentials: 'same-origin', headers: { accept: 'application/json' } });
+    return true;
+  } catch {
+    return false;
+  }
+});
+
 let onReadOnly: (() => void) | null = null;
 /** Called when the Worker says writes are refused, so the app can refresh the session state. */
 export function setReadOnlyHandler(fn: () => void) {
   onReadOnly = fn;
 }
 
-export async function request<S extends z.ZodType>(
+// A double tap must not change money twice. The same change (method, path and body) sent again while the first is
+// on its way, or within REPEAT_MS after it answered, gets the first one's answer instead of a second request. Only
+// the latest change to each path is remembered, so changing something and changing it back is always sent.
+// Nothing in the app sends the very same change twice on purpose that fast; sign-in ceremonies are left alone.
+const REPEAT_MS = 2_000;
+interface Recent {
+  body: string;
+  promise: Promise<unknown>;
+  settledAt: number | null;
+}
+const recent = new Map<string, Recent>();
+
+export function request<S extends z.ZodType>(
+  method: Method,
+  path: string,
+  schema: S,
+  body?: unknown,
+): Promise<z.infer<S>> {
+  if (method === 'GET' || path.startsWith('/api/auth/')) return send(method, path, schema, body);
+  const now = Date.now();
+  for (const [k, v] of recent) if (v.settledAt !== null && now - v.settledAt > REPEAT_MS) recent.delete(k);
+  const key = `${method} ${path}`;
+  const bodyKey = JSON.stringify(body ?? null);
+  const seen = recent.get(key);
+  if (seen && seen.body === bodyKey) return seen.promise as Promise<z.infer<S>>;
+  const entry: Recent = { body: bodyKey, promise: Promise.resolve(), settledAt: null };
+  entry.promise = send(method, path, schema, body).finally(() => {
+    entry.settledAt = Date.now();
+  });
+  // A failed change can be tried again at once.
+  entry.promise.catch(() => {
+    if (recent.get(key) === entry) recent.delete(key);
+  });
+  recent.set(key, entry);
+  return entry.promise as Promise<z.infer<S>>;
+}
+
+/** Tests only: forget recent changes. */
+export function resetRecentChanges(): void {
+  recent.clear();
+}
+
+async function send<S extends z.ZodType>(
   method: Method,
   path: string,
   schema: S,

@@ -35,9 +35,9 @@ describe('Budget', () => {
     expect(screen.getByText('$155.00')).toBeTruthy();
     expect(screen.getByText('Short')).toBeTruthy();
     expect(screen.getByText('$1,430.60 out')).toBeTruthy();
-    expect(screen.getByText('$1,121.85')).toBeTruthy();
-    expect(screen.getByText('$441.45')).toBeTruthy();
-    expect(screen.getByText('$18,877.63')).toBeTruthy();
+    expect(screen.getByText('$1,121.85 available')).toBeTruthy();
+    expect(screen.getByText('$441.45 available')).toBeTruthy();
+    expect(screen.getByText('$18,877.63 available')).toBeTruthy();
     expect(screen.getByText('−$18.25')).toBeTruthy();
   });
 

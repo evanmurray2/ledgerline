@@ -15,6 +15,7 @@ import { AppShell } from './components/AppShell';
 import { ErrorNote, Loading } from './components/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { qk, useSession } from './api/hooks';
+import { needsReload, reloadForVersion } from './state/version';
 import { connectivity } from './state/connectivity';
 import { usage } from './usage/tracker';
 import { BudgetScreen } from './screens/Budget';
@@ -65,6 +66,12 @@ function Root() {
       window.removeEventListener('ledgerline:signedout', onSignedOut);
     };
   }, [qc]);
+
+  // A new release is live: load its code (src/state/version.ts). Only on an answer fetched now, not a saved one.
+  const fetchedVersion = session.isFetchedAfterMount ? s?.appVersion : undefined;
+  useEffect(() => {
+    if (fetchedVersion && needsReload(fetchedVersion)) return reloadForVersion(fetchedVersion);
+  }, [fetchedVersion]);
 
   useEffect(() => {
     if (!s) return;

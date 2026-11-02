@@ -20,6 +20,18 @@ export function isIsoDate(s: unknown): s is IsoDate {
   return typeof s === 'string' && DATE_RE.test(s);
 }
 
+/**
+ * A date from a file someone imports: "2026-11-02" or US "11/2/2026". Returns the ISO date, or null when it isn't
+ * a real calendar date (month 13, February 30, or day-first "25/12/2025").
+ */
+export function parseImportDate(input: string): IsoDate | null {
+  const t = input.trim();
+  const us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(t);
+  const iso = us ? `${us[3]}-${us[1]!.padStart(2, '0')}-${us[2]!.padStart(2, '0')}` : t;
+  if (!isIsoDate(iso)) return null;
+  return dayOfMonth(iso) <= daysInMonth(monthOfDate(iso)) ? iso : null;
+}
+
 function toIndex(m: Month): number {
   return Number(m.slice(0, 4)) * 12 + Number(m.slice(5, 7)) - 1;
 }
