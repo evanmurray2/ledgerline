@@ -286,3 +286,30 @@ test('Categories: reorder a category with the keyboard on its handle', async ({ 
   await page.keyboard.press('ArrowDown');
   await expect(rows.first()).toContainText('Electric');
 });
+
+test('No screen is taller than the phone: the page itself never scrolls, only its lists', async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== 'phone', 'phone layout');
+  for (const path of [
+    '/budget',
+    '/budget?view=attention',
+    '/activity',
+    '/accounts',
+    '/accounts/sapphire',
+    '/reports',
+    '/categories',
+    '/settings',
+    '/activity/txn/uber',
+  ]) {
+    await page.goto(path);
+    await page.waitForLoadState('networkidle');
+    const r = await page.evaluate(() => ({
+      page: document.documentElement.scrollHeight,
+      screen: window.innerHeight,
+      bounce: getComputedStyle(document.documentElement).overscrollBehaviorY,
+    }));
+    expect(r.page, path).toBeLessThanOrEqual(r.screen);
+    expect(r.bounce, path).toBe('none');
+  }
+});

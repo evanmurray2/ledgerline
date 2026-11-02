@@ -211,6 +211,20 @@
     height: 100%;
   }
 
+  /*
+   * The app is one screen that never scrolls as a whole: lists scroll inside it. Without this, iPhone Safari
+   * drags the whole page (tab bar and all) when you swipe on something that doesn't scroll, like the tab bar.
+   */
+  html,
+  body {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  /* A list that reaches its end stops there instead of handing the swipe to the page. */
+  .overflow-y-auto {
+    overscroll-behavior-y: contain;
+  }
+
   body {
     margin: 0;
     background: var(--ll-page);

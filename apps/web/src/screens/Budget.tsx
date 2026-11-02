@@ -136,7 +136,7 @@ function CategoryRowPhone({ row, month }: { row: BudgetCategoryRow; month: strin
       to={`/budget/category/${row.id}`}
       search={{ month }}
       data-track="budget.category"
-      className="flex min-h-11 flex-col gap-[7px] border-t border-divider px-3 py-2.5 text-ink no-underline first:border-t-0"
+      className="relative flex min-h-11 flex-col gap-[7px] border-t border-divider px-3 py-2.5 text-ink no-underline first:border-t-0"
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
@@ -169,7 +169,7 @@ function CardRowPhone({ card }: { card: CardRow }) {
     <Link
       to={`/accounts/${card.accountId}`}
       data-track="budget.card"
-      className="flex min-h-11 flex-col gap-[7px] border-t border-divider px-3 py-2.5 text-ink no-underline first:border-t-0"
+      className="relative flex min-h-11 flex-col gap-[7px] border-t border-divider px-3 py-2.5 text-ink no-underline first:border-t-0"
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
