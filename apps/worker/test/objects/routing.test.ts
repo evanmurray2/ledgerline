@@ -180,8 +180,19 @@ describe('when the Durable Objects can’t be reached', () => {
         }),
       },
     }) as never;
-  const call = (env: never, path: string) =>
-    worker.fetch(new Request(ORIGIN + path, { headers: { origin: ORIGIN } }), env, createExecutionContext());
+  // A signed-in browser: its session cookie sends the request on to the Directory.
+  const call = (env: never, path: string, cookie = '__Host-ledgerline=some-session') =>
+    worker.fetch(
+      new Request(ORIGIN + path, { headers: { origin: ORIGIN, ...(cookie ? { cookie } : {}) } }),
+      env,
+      createExecutionContext(),
+    );
+
+  it('a request with no session cookie is refused without asking the Directory', async () => {
+    const r = await call(broken('should not be asked'), '/api/session', '');
+    expect(r.status).toBe(401);
+    expect(await r.json()).toMatchObject({ error: 'unauthenticated' });
+  });
 
   it('says the daily limit ran out, plainly, instead of a bare error', async () => {
     const env = broken('Exceeded allowed volume of requests in Durable Objects free tier.');

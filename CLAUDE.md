@@ -11,7 +11,7 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 
 ## Deploying
 
-- When the owner asks to deploy: first check that the `ci` run for that `main` commit passed (GitHub MCP `actions_list`, `list_workflow_runs`; `deploy.yml` doesn't check). If it's still running, wait for it; if it failed, fix it first. Then trigger the GitHub workflow `deploy.yml` on `main` (GitHub MCP `actions_run_trigger`, method `run_workflow`), then check the run's result. It deploys, smoke-tests and rolls back on failure. Each Durable Object runs its own schema migrations when it starts.
+- When the owner asks to deploy: first check that the `ci` run for that `main` commit passed (GitHub MCP `actions_list`, `list_workflow_runs`; `deploy.yml` also waits for it and refuses a commit whose `ci` failed). If it's still running, wait for it; if it failed, fix it first. Then trigger the GitHub workflow `deploy.yml` on `main` (GitHub MCP `actions_run_trigger`, method `run_workflow`), then check the run's result. It deploys, smoke-tests and rolls back on failure. Each Durable Object runs its own schema migrations when it starts.
 - GitHub holds only the `production` environment's `CLOUDFLARE_API_TOKEN`. The Worker keeps its other secrets (`TOKEN_KEYS`, Plaid keys, `SETUP_CODE`, `OPS_TOKEN`) from the first deploy; a deploy never deletes a secret.
 - Deploy on merge is off until the repository variable `DEPLOY_ON_MERGE` is `true` (D-30).
 - Never print, commit or ask the owner to paste secrets in chat.
