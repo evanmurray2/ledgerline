@@ -1448,7 +1448,7 @@ export class MockDb {
     }
     const note =
       id === 'freedom' && this.cards().find((c) => c.accountId === 'freedom')!.short > 0
-        ? 'Dining out is $18.25 overspent on this card, so the payment category is $18.25 short of the card spending. Shake Shack (Nov 14) was the purchase that went over. Cover Dining out on the Budget to fix both.'
+        ? 'Dining out is $18.25 overspent on this card, so its payment category is $18.25 short. Cover Dining out on Budget to fix both.'
         : null;
     return { account, days, note };
   }

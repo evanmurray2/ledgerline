@@ -513,11 +513,16 @@ function FirstBudget({ b }: { b: BudgetView }) {
     <section className="flex shrink-0 flex-col gap-1.5 rounded-[14px] bg-accent-soft p-3.5 text-ink">
       <span className="text-[17px] font-bold">Give your {formatCents(b.rta)} a job</span>
       <span className="text-[13px] leading-snug text-ink-2">
-        Your cards owe {formatCents(owed)}; that shows as{' '}
-        {b.cards.length === 1 ? 'a card payment category' : `${b.cards.length} card payment categories`} to
-        fund first, not as less money here. Then bills due before your next paycheck, everyday spending, and
-        savings. Tap any category to assign to it, or use Assign below.
+        Fund your card payments first ({formatCents(owed)} owed), then bills, everyday spending and savings.
+        Targets tell each category what it needs.
       </span>
+      <Link
+        to="/budget/targets"
+        data-track="budget.first.targets"
+        className="hit mt-1 flex h-10 items-center self-start rounded-full bg-accent px-4 text-[14px] font-bold text-on-accent no-underline"
+      >
+        Set targets
+      </Link>
     </section>
   );
 }
@@ -833,13 +838,22 @@ function AllGroups({ b, month }: { b: BudgetView; month: string }) {
           ? 'Transactions will show up in Activity after the first sync, usually within a few minutes.'
           : 'Bars show how much of this month’s money is left.'}
       </p>
-      <Link
-        to="/settings/categories"
-        data-track="budget.edit_categories"
-        className="hit flex h-10 items-center self-start text-[14px] font-bold text-accent no-underline"
-      >
-        Edit categories
-      </Link>
+      <div className="flex gap-5">
+        <Link
+          to="/budget/targets"
+          data-track="budget.set_targets"
+          className="hit flex h-10 items-center text-[14px] font-bold text-accent no-underline"
+        >
+          Set targets
+        </Link>
+        <Link
+          to="/settings/categories"
+          data-track="budget.edit_categories"
+          className="hit flex h-10 items-center text-[14px] font-bold text-accent no-underline"
+        >
+          Edit categories
+        </Link>
+      </div>
     </>
   );
 }

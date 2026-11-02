@@ -147,6 +147,8 @@ describe('UsageTracker', () => {
     expect(events.filter((e) => e.event === 'tap').map((e) => e.target)).toEqual(['budget.assign']);
     expect(events.filter((e) => e.event === 'rage_tap')).toHaveLength(1);
     expect(events.find((e) => e.event === 'rage_tap')!.value).toBe(3);
+    // Where it happened, by structure only: never the text that was tapped.
+    expect(events.find((e) => e.event === 'rage_tap')!.target).toBe('p.body.html');
   });
 
   it('stops collecting and drops the buffer when tracking is turned off', async () => {

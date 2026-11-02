@@ -39,6 +39,24 @@ export interface TrackerDeps {
   clearInterval: (h: unknown) => void;
 }
 
+/**
+ * What a rage tap hit, by structure only (never text, names or amounts), so it can be found later:
+ * "sheet." when inside a sheet, "disabled." when a disabled control is under the finger, then the tag names
+ * of the element and two parents, e.g. "sheet.span.div.label".
+ */
+export function describeTapped(el: Element, x: number, y: number): string {
+  const parts: string[] = [];
+  if (el.closest('[role="dialog"]')) parts.push('sheet');
+  const under = typeof document.elementsFromPoint === 'function' ? document.elementsFromPoint(x, y) : [];
+  if (under.some((u) => u.matches(':disabled'))) parts.push('disabled');
+  let n: Element | null = el;
+  for (let i = 0; i < 3 && n; i++, n = n.parentElement) parts.push(n.tagName.toLowerCase());
+  return parts
+    .join('.')
+    .replace(/[^a-z0-9_.-]/g, '')
+    .slice(0, 60);
+}
+
 const CONTROL_SELECTOR =
   'a,button,input,select,textarea,label,summary,[role="button"],[role="radio"],[data-track]';
 
@@ -170,7 +188,7 @@ export class UsageTracker {
     const near = this.taps.filter((t) => Math.abs(t.x - e.clientX) < 40 && Math.abs(t.y - e.clientY) < 40);
     if (near.length >= 3 && now - this.rageReported > 1000) {
       this.rageReported = now;
-      this.record('rage_tap', null, near.length);
+      this.record('rage_tap', describeTapped(el, e.clientX, e.clientY), near.length);
     }
   };
 

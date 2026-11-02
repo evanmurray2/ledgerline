@@ -1,9 +1,9 @@
 // Category sheet (Assign / Move money, target, recent), Edit target, and the Assign sheet.
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import type { Target } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
-import { useAssignView, useCategorySheet, useMoneyMutation } from '../api/hooks';
+import { useAssignView, useCategoriesSettings, useCategorySheet, useMoneyMutation } from '../api/hooks';
 import { CategoryField } from '../components/CategoryPicker';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import {
@@ -312,11 +312,20 @@ export function TargetScreen() {
   useScreen('target');
   const q = useCategorySheet(categoryId, month);
   const navigate = useNavigate();
+  // Where the target was opened from: the targets list, Categories (a new category), or the category sheet.
+  const from = (useSearch({ strict: false }) as { from?: string }).from;
+  const m = month === current ? undefined : month;
   const back = () =>
-    void navigate({
-      to: `/budget/category/${categoryId}`,
-      search: { month: month === current ? undefined : month },
-    });
+    from === 'targets'
+      ? void navigate({ to: '/budget/targets', search: { month: m } })
+      : from === 'categories'
+        ? void navigate({ to: '/settings/categories' })
+        : void navigate({ to: `/budget/category/${categoryId}`, search: { month: m } });
+  // After saving, skip the category sheet (it was only a stop on the way): back to the list or the budget.
+  const done = () =>
+    from === 'targets' || from === 'categories'
+      ? back()
+      : void navigate({ to: '/budget', search: { month: m } });
   const save = useMoneyMutation((v: { id: string; body: Parameters<typeof api.setTarget>[1] }) =>
     api.setTarget(v.id, v.body),
   );
@@ -329,6 +338,15 @@ export function TargetScreen() {
   const [monthly, setMonthly] = useState('');
   const [asking, setAsking] = useState(false);
   const [init, setInit] = useState(false);
+  /** The saved target's kind and amount, so switching kinds and back restores it. */
+  const [orig, setOrig] = useState<{ kind: Kind; amount: string } | null>(null);
+  // An amount means something different for each kind ($3,000 by June is not $3,000 every month), so a new
+  // kind starts empty instead of carrying the old number across.
+  const chooseKind = (k: Kind) => {
+    if (k === kind) return;
+    setKind(k);
+    setAmount(orig && orig.kind === k ? orig.amount : '');
+  };
 
   useEffect(() => {
     if (!c || init || !month) return;
@@ -340,6 +358,7 @@ export function TargetScreen() {
     }
     setKind(t.type);
     setAmount(centsToInput(t.amount));
+    setOrig({ kind: t.type, amount: centsToInput(t.amount) });
     if (t.type === 'refill') {
       setPeriod(t.periodMonths === 1 ? '1' : t.periodMonths === 12 ? '12' : '3');
       setDue(refillDue(t.anchor, t.periodMonths, month));
@@ -419,7 +438,7 @@ export function TargetScreen() {
   })();
   const submit = async (t: Target) => {
     await save.mutateAsync({ id: c.id, body: { categoryId: c.id, month, target: t } });
-    back();
+    done();
   };
   return (
     <Sheet
@@ -446,7 +465,7 @@ export function TargetScreen() {
           <OptionCard
             key={k.id}
             selected={kind === k.id}
-            onClick={() => setKind(k.id)}
+            onClick={() => chooseKind(k.id)}
             title={k.name}
             desc={k.desc}
             track={`target.kind.${k.id}`}
@@ -557,7 +576,7 @@ export function TargetScreen() {
             type="button"
             data-track="target.remove"
             onClick={() => setAsking(true)}
-            className="min-h-9 self-start text-[14px] font-bold text-over-fg"
+            className="mt-4 min-h-10 self-start text-[14px] font-bold text-over-fg"
           >
             Remove target
           </button>
@@ -660,7 +679,23 @@ export function AssignSheetScreen() {
     >
       {v.suggestions.length > 0 && (
         <>
-          <Label>Suggested</Label>
+          <div className="flex min-h-9 items-center justify-between">
+            <Label>Suggested</Label>
+            {v.suggestions.length > 1 && (
+              // Clearing or picking every suggestion one checkbox at a time took dozens of taps.
+              <button
+                type="button"
+                data-track={chosen.length > 0 ? 'assign.clear_all' : 'assign.select_all'}
+                onClick={() => {
+                  const clear = chosen.length > 0;
+                  setOff(Object.fromEntries(v.suggestions.map((x) => [x.categoryId, clear])));
+                }}
+                className="hit h-9 px-1 text-[14px] font-bold text-accent"
+              >
+                {chosen.length > 0 ? 'Clear all' : 'Select all'}
+              </button>
+            )}
+          </div>
           <div className="shrink-0 overflow-hidden rounded-[14px] border border-line">
             {v.suggestions.map((s) => (
               <label
@@ -704,6 +739,69 @@ export function AssignSheetScreen() {
           />
         </Field>
       </div>
+    </Sheet>
+  );
+}
+
+/** Every category and its target on one list: tap one, save, and you're back here for the next. */
+export function TargetsScreen() {
+  useScreen('targets');
+  const { month, current } = useBudgetMonth();
+  const navigate = useNavigate();
+  const q = useCategoriesSettings();
+  const m = month === current ? undefined : month;
+  const close = () => void navigate({ to: '/budget', search: { month: m } });
+  const groups = (q.data?.groups ?? []).filter((g) => !g.system);
+  const none = groups.flatMap((g) => g.categories).filter((c) => c.meta.endsWith('No target'));
+  return (
+    <Sheet
+      label="Set targets"
+      track="targets"
+      onClose={close}
+      gap="small"
+      header={
+        <SheetTitle
+          title="Set targets"
+          sub={
+            !q.data
+              ? undefined
+              : none.length === 0
+                ? 'Every category has a target'
+                : `${none.length} ${none.length === 1 ? 'category has' : 'categories have'} no target yet`
+          }
+        />
+      }
+    >
+      {!q.data && (q.error ? <ErrorNote error={q.error} /> : <Loading />)}
+      {groups.map((g) => (
+        <div key={g.id} className="flex shrink-0 flex-col gap-2">
+          <Label>{g.name}</Label>
+          <div className="overflow-hidden rounded-xl border border-line">
+            {g.categories.map((c) => {
+              const missing = c.meta.endsWith('No target');
+              return (
+                <Link
+                  key={c.id}
+                  to={`/budget/category/${c.id}/target`}
+                  search={{ month: m, from: 'targets' }}
+                  data-track="targets.category"
+                  className="flex min-h-14 items-center justify-between gap-3 border-t border-divider bg-surface px-3 py-2 text-ink no-underline first:border-t-0"
+                >
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-[15px] font-semibold">{c.name}</span>
+                    <span className={cx('truncate text-[12px]', missing ? 'text-accent' : 'text-muted')}>
+                      {missing ? 'Add a target' : c.meta}
+                    </span>
+                  </span>
+                  <span aria-hidden="true" className="text-faint">
+                    ›
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </Sheet>
   );
 }

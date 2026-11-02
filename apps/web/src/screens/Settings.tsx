@@ -3,7 +3,7 @@
 // There is no email setting: the app sends no email (decisions.md D-24).
 import { SignInSection } from './Auth';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Link, Outlet, useNavigate, useParams, useRouterState } from '@tanstack/react-router';
+import { Link, Outlet, useNavigate, useParams, useRouterState, useSearch } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RuleBody } from '@ledgerline/contracts';
 import { api, exportUrls } from '../api/endpoints';
@@ -424,21 +424,6 @@ export function CategoriesScreen() {
     [ids[index], ids[j]] = [ids[j]!, ids[index]!];
     api.reorderGroups(ids).then(refresh, fail);
   };
-  const removeCategory = (id: string, name: string) => {
-    api.removeCategory(id).then((r) => {
-      refresh();
-      if (r.outcome === 'deleted') toast.show({ text: `${name} deleted` });
-      else
-        toast.show({
-          text: `${name} archived: it has history, so reports keep it`,
-          undo: async () => {
-            await api.archiveCategory(id, false);
-            usage.undo('archive');
-            refresh();
-          },
-        });
-    }, fail);
-  };
   const removeGroup = (id: string, name: string) =>
     api.removeGroup(id).then(() => {
       refresh();
@@ -478,9 +463,16 @@ export function CategoriesScreen() {
     >
       {!v && (q.error ? <ErrorNote error={q.error} /> : <Loading />)}
       {v && !editing && (
-        <p className="m-0 text-[13px] text-muted">
-          Tap a category to rename or move it. Edit reorders and removes.
-        </p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="m-0 text-[13px] text-muted">Tap a category to rename, move or remove it.</p>
+          <Link
+            to="/budget/targets"
+            data-track="categories.set_targets"
+            className="hit flex h-9 shrink-0 items-center text-[14px] font-bold text-accent no-underline"
+          >
+            Set targets
+          </Link>
+        </div>
       )}
       {v?.groups.map((g) => {
         const gi = mine.findIndex((x) => x.id === g.id);
@@ -494,8 +486,10 @@ export function CategoriesScreen() {
                 <span className="flex shrink-0 items-center gap-1">
                   <button
                     type="button"
-                    className={arrow}
+                    className={cx(arrow, gi === 0 && 'invisible')}
                     aria-label={`Move group ${g.name} up`}
+                    aria-hidden={gi === 0 || undefined}
+                    tabIndex={gi === 0 ? -1 : undefined}
                     disabled={!canWrite || gi === 0}
                     onClick={() => moveGroup(gi, -1)}
                   >
@@ -503,8 +497,10 @@ export function CategoriesScreen() {
                   </button>
                   <button
                     type="button"
-                    className={arrow}
+                    className={cx(arrow, gi === mine.length - 1 && 'invisible')}
                     aria-label={`Move group ${g.name} down`}
+                    aria-hidden={gi === mine.length - 1 || undefined}
+                    tabIndex={gi === mine.length - 1 ? -1 : undefined}
                     disabled={!canWrite || gi === mine.length - 1}
                     onClick={() => moveGroup(gi, 1)}
                   >
@@ -518,15 +514,17 @@ export function CategoriesScreen() {
                   >
                     Rename
                   </Link>
-                  <Button
-                    mutates
-                    track="categories.remove_group"
-                    aria-label={`Remove group ${g.name}`}
-                    onClick={() => void removeGroup(g.id, g.name)}
-                    className="hit h-9 rounded-full border border-line-strong px-3 text-[13px] font-bold text-over-fg"
-                  >
-                    Remove
-                  </Button>
+                  {g.categories.length === 0 && (
+                    <Button
+                      mutates
+                      track="categories.remove_group"
+                      aria-label={`Remove group ${g.name}`}
+                      onClick={() => void removeGroup(g.id, g.name)}
+                      className="hit h-9 rounded-full border border-line-strong px-3 text-[13px] font-bold text-over-fg"
+                    >
+                      Remove
+                    </Button>
+                  )}
                 </span>
               ) : (
                 <span className="text-[12px] text-muted">
@@ -547,8 +545,10 @@ export function CategoriesScreen() {
                     <span className="flex shrink-0 gap-1">
                       <button
                         type="button"
-                        className={arrow}
+                        className={cx(arrow, ci === 0 && 'invisible')}
                         aria-label={`Move ${c.name} up`}
+                        aria-hidden={ci === 0 || undefined}
+                        tabIndex={ci === 0 ? -1 : undefined}
                         disabled={!canWrite || ci === 0}
                         onClick={() => moveCategory(g.id, ci, -1)}
                       >
@@ -556,8 +556,10 @@ export function CategoriesScreen() {
                       </button>
                       <button
                         type="button"
-                        className={arrow}
+                        className={cx(arrow, ci === g.categories.length - 1 && 'invisible')}
                         aria-label={`Move ${c.name} down`}
+                        aria-hidden={ci === g.categories.length - 1 || undefined}
+                        tabIndex={ci === g.categories.length - 1 ? -1 : undefined}
                         disabled={!canWrite || ci === g.categories.length - 1}
                         onClick={() => moveCategory(g.id, ci, 1)}
                       >
@@ -580,32 +582,25 @@ export function CategoriesScreen() {
                       <span className="text-[12px] text-muted">{c.meta}</span>
                     </Link>
                   )}
-                  {editing && !g.system && (
-                    <Button
-                      mutates
-                      track="categories.remove"
-                      aria-label={`Remove ${c.name}`}
-                      onClick={() => void removeCategory(c.id, c.name)}
-                      className="hit h-9 shrink-0 rounded-full border border-line-strong px-3 text-[13px] font-bold text-over-fg"
-                    >
-                      Remove
-                    </Button>
-                  )}
                 </div>
               ))}
+              {!g.system && !editing && (
+                <Link
+                  to="/settings/categories/new"
+                  search={{ group: g.id }}
+                  data-track="categories.add"
+                  className="flex min-h-12 items-center gap-1.5 border-t border-divider px-3 text-[14px] font-bold text-accent no-underline first:border-t-0"
+                >
+                  <Icon name="plus" size={16} stroke={2.6} />
+                  Add category
+                </Link>
+              )}
             </Card>
           </section>
         );
       })}
-      {v && editing && (
+      {v && (
         <div className="flex gap-2">
-          <Link
-            to="/settings/categories/new"
-            data-track="categories.add"
-            className="flex h-11 flex-1 items-center justify-center rounded-xl border border-dashed border-accent text-[14px] font-bold text-accent no-underline"
-          >
-            + Category
-          </Link>
           <Link
             to="/settings/categories/new-group"
             data-track="categories.add_group"
@@ -650,11 +645,6 @@ export function CategoriesScreen() {
           )}
         </>
       )}
-      <p className="m-0 text-[12px] leading-snug text-muted">
-        Removing a category you never used deletes it. One with history is archived instead, so past
-        transactions and reports keep it; any money in it goes back to Ready to Assign. A group can be removed
-        once it’s empty.
-      </p>
       <Outlet />
     </Page>
   );
@@ -670,6 +660,9 @@ export function CategoryEditSheet() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const close = () => void navigate({ to: '/settings/categories' });
+  // "Add category" at the end of a group opens this with that group chosen.
+  const fromGroup = (useSearch({ strict: false }) as { group?: string }).group;
+  const [asking, setAsking] = useState(false);
   const existing = q.data?.groups
     .flatMap((g) => g.categories.map((c) => ({ ...c, groupId: g.id })))
     .find((c) => c.id === categoryId);
@@ -684,45 +677,64 @@ export function CategoryEditSheet() {
   const canWrite = useCanWrite();
   const n = name ?? existing?.name ?? editingGroup?.name ?? '';
   const bills = isBills ?? editingGroup?.isBills ?? false;
-  const g = groupId ?? existing?.groupId ?? groups[0]?.id ?? '';
+  const g =
+    groupId ??
+    existing?.groupId ??
+    (fromGroup && groups.some((x) => x.id === fromGroup) ? fromGroup : undefined) ??
+    groups[0]?.id ??
+    '';
   const k = kind ?? (existing?.kind === 'saving' ? 'saving' : 'spending');
-  const save = async () => {
+  const save = async (thenTarget = false) => {
     setBusy(true);
     setError(null);
     try {
+      let newId: string | null = null;
       if (isGroup) await api.upsertGroup({ id: groupEditId ?? undefined, name: n.trim(), isBills: bills });
       else
-        await api.upsertCategory({
-          id: isNew ? undefined : categoryId,
-          name: n.trim(),
-          groupId: g || null,
-          kind: k,
-        });
+        newId = (
+          await api.upsertCategory({
+            id: isNew ? undefined : categoryId,
+            name: n.trim(),
+            groupId: g || null,
+            kind: k,
+          })
+        ).id;
       await qc.invalidateQueries({ queryKey: qk.categories });
       void qc.invalidateQueries({ queryKey: ['budget'] });
       void qc.invalidateQueries({ queryKey: ['activity'] });
-      close();
+      if (thenTarget && newId)
+        void navigate({ to: `/budget/category/${newId}/target`, search: { from: 'categories' } });
+      else close();
     } catch (e) {
       setError(e);
     } finally {
       setBusy(false);
     }
   };
-  const archive = async () => {
+  /** Deleted when never used; otherwise archived (with Undo), so history and reports keep it. */
+  const remove = async () => {
     if (!existing) return;
-    await api.archiveCategory(existing.id, true);
-    await qc.invalidateQueries({ queryKey: qk.categories });
-    void qc.invalidateQueries({ queryKey: ['budget'] });
-    toast.show({
-      text: `${existing.name} archived`,
-      undo: async () => {
-        await api.archiveCategory(existing.id, false);
-        usage.undo('archive');
-        void qc.invalidateQueries({ queryKey: qk.categories });
-        void qc.invalidateQueries({ queryKey: ['budget'] });
-      },
-    });
-    close();
+    const refresh = () => {
+      void qc.invalidateQueries({ queryKey: qk.categories });
+      void qc.invalidateQueries({ queryKey: ['budget'] });
+    };
+    try {
+      const r = await api.removeCategory(existing.id);
+      refresh();
+      if (r.outcome === 'deleted') toast.show({ text: `${existing.name} deleted` });
+      else
+        toast.show({
+          text: `${existing.name} archived: it has history, so reports keep it`,
+          undo: async () => {
+            await api.archiveCategory(existing.id, false);
+            usage.undo('archive');
+            refresh();
+          },
+        });
+      close();
+    } catch (e) {
+      setError(e);
+    }
   };
   const title = groupEditId
     ? 'Rename group'
@@ -789,6 +801,7 @@ export function CategoryEditSheet() {
             {!isNew && existing && (
               <Link
                 to={`/budget/category/${existing.id}/target`}
+                search={{ from: 'categories' }}
                 data-track="category_edit.target"
                 className="flex min-h-14 items-center justify-between rounded-xl border border-line px-3 text-ink no-underline"
               >
@@ -798,22 +811,6 @@ export function CategoryEditSheet() {
                 </span>
                 <Icon name="chevR" size={18} className="text-faint" />
               </Link>
-            )}
-            {!isNew && existing && (
-              <div className="flex flex-col gap-1">
-                <Button
-                  mutates
-                  track="category_edit.archive"
-                  onClick={() => void archive()}
-                  className="min-h-9 self-start text-[14px] font-bold text-over-fg"
-                >
-                  Archive {existing.name}
-                </Button>
-                <span className="text-[12px] leading-snug text-muted">
-                  Its {formatCents(existing.available)} goes back to Ready to Assign. Past transactions keep
-                  the category, and reports still show it.
-                </span>
-              </div>
             )}
           </>
         )}
@@ -826,6 +823,59 @@ export function CategoryEditSheet() {
         >
           {isNew ? (isGroup ? 'Add group' : 'Add category') : 'Save'}
         </PrimaryButton>
+        {isNew && !isGroup && (
+          <SecondaryButton
+            mutates
+            track="category_edit.save_target"
+            disabled={!n.trim() || busy || !canWrite}
+            onClick={() => void save(true)}
+          >
+            Add and set a target
+          </SecondaryButton>
+        )}
+        {!isNew &&
+          existing &&
+          (asking ? (
+            <div
+              role="alertdialog"
+              aria-label={`Remove ${existing.name}`}
+              className="mt-3 flex flex-col gap-2.5 rounded-xl bg-over-bg p-3 text-over-fg"
+            >
+              <span className="text-[14px] leading-snug">
+                Remove {existing.name}?
+                {existing.available > 0
+                  ? ` Its ${formatCents(existing.available)} goes back to Ready to Assign.`
+                  : ''}{' '}
+                If it has history it’s archived, so past transactions and reports keep it.
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAsking(false)}
+                  className="h-11 flex-1 rounded-[10px] border border-line-strong bg-surface text-[14px] font-bold text-ink-2"
+                >
+                  Keep it
+                </button>
+                <Button
+                  mutates
+                  track="category_edit.remove.confirm"
+                  onClick={() => void remove()}
+                  className="h-11 flex-1 rounded-[10px] bg-danger text-[14px] font-bold text-on-danger"
+                >
+                  Remove
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              data-track="category_edit.remove"
+              onClick={() => setAsking(true)}
+              className="mt-3 min-h-10 self-start text-[14px] font-bold text-over-fg"
+            >
+              Remove {existing.name}…
+            </button>
+          ))}
       </div>
     </Sheet>
   );
@@ -1593,14 +1643,25 @@ export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label
           </div>
         </div>
       ) : (
-        <Button
-          mutates
-          track="connections.link"
-          onClick={() => setStep('confirm')}
-          className="flex h-12 w-full items-center justify-center rounded-xl border border-dashed border-accent text-[15px] font-bold text-accent disabled:border-line disabled:text-disabled"
-        >
-          {label ?? `+ Link another bank (uses 1 of ${left})`}
-        </Button>
+        <>
+          {left <= 3 && (
+            // Few links left for good: say so before the button, not only in the confirm step.
+            <p className="m-0 rounded-xl border border-warn-border bg-warn-bg p-3 text-[13px] leading-snug text-warn-fg">
+              <strong>
+                Only {left} {left === 1 ? 'link' : 'links'} left, ever.
+              </strong>{' '}
+              Repair a broken login from Accounts instead of linking it again.
+            </p>
+          )}
+          <Button
+            mutates
+            track="connections.link"
+            onClick={() => setStep('confirm')}
+            className="flex h-12 w-full items-center justify-center rounded-xl border border-dashed border-accent text-[15px] font-bold text-accent disabled:border-line disabled:text-disabled"
+          >
+            {label ?? `+ Link another bank (uses 1 of ${left})`}
+          </Button>
+        </>
       )}
       {step === 'done' && (
         <p role="status" className="m-0 rounded-xl bg-success-soft p-3 text-[13px] text-funded-fg">

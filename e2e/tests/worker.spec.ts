@@ -94,9 +94,13 @@ test('Settings → Categories: rename a group, reorder, and remove a category', 
   await sheet.getByRole('button', { name: 'Save' }).click();
   await expect(groups.nth(1)).toHaveText('Day to day');
 
-  await page.getByRole('button', { name: 'Remove Dining out' }).click();
+  // Removing happens on the category's own sheet, with a confirm step.
+  await page.getByRole('link', { name: /^Dining out/ }).click();
+  const edit = page.getByRole('dialog', { name: 'Edit category' });
+  await edit.getByRole('button', { name: 'Remove Dining out…' }).click();
+  await edit.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(page.getByText('Dining out archived: it has history, so reports keep it')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Remove Dining out' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /^Dining out/ })).toHaveCount(0);
 });
 
 test('Target: a yearly refill is met in its Due month, and the Due month is kept', async ({ page }) => {

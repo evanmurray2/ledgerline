@@ -300,7 +300,7 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
     if (over.length) {
       const amt = over.reduce((a, [, v]) => a + (v.creditOverspent[id] ?? 0), 0);
       const names = over.map(([k]) => cats.get(k) ?? k).join(', ');
-      note = `${names} is ${formatCents(amt)} overspent on this card, so the payment category is ${formatCents(amt)} short of the card spending. Cover ${names} on the Budget to fix both.`;
+      note = `${names} is ${formatCents(amt)} overspent on this card, so its payment category is ${formatCents(amt)} short. Cover ${names} on Budget to fix both.`;
     }
   }
   return c.json({ account, days, note } satisfies RegisterView);

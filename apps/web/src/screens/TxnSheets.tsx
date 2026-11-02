@@ -384,20 +384,17 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
         </p>
       )}
       {isIncome && (
-        <div className="flex flex-col gap-1.5 rounded-[14px] border border-line p-3">
-          <span className="text-[15px] font-semibold">Part of this is money back?</span>
-          <span className="text-[12px] text-muted">
-            If a reimbursement came in this deposit, match that part so it leaves your Owed to you list. All
-            of it still goes to Ready to Assign.
+        <Link
+          to="/owed"
+          data-track="txn.income.match"
+          className="flex min-h-12 shrink-0 items-center justify-between gap-3 rounded-[14px] border border-line px-3 text-ink no-underline"
+        >
+          <span className="text-[14px]">Part of this is money back for something you fronted?</span>
+          <span className="flex shrink-0 items-center text-[14px] font-bold text-accent">
+            Match
+            <Icon name="chevR" size={16} />
           </span>
-          <Link
-            to="/owed"
-            data-track="txn.income.match"
-            className="hit flex h-9 items-center self-start rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline"
-          >
-            Match part of it
-          </Link>
-        </div>
+        </Link>
       )}
       {outflow && !isIncome && !more && (
         <button

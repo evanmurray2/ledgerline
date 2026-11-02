@@ -60,8 +60,7 @@ export function OwedScreen() {
               <span className="text-[12px] text-muted">Out with others</span>
               <span className="tnum text-[24px] font-bold">{formatCents(v.out)}</span>
               <span className="text-[13px] leading-[1.45] text-ink-2">
-                Money you front comes out of Ready to Assign. When it’s paid back, it goes back to Ready to
-                Assign. This is a list, not a category, so it holds no money.
+                Money you front leaves Ready to Assign and comes back when you’re paid.
               </span>
             </section>
             {waiting && (
@@ -74,9 +73,7 @@ export function OwedScreen() {
                   <span className="text-[14px] font-bold">
                     {waiting.payee} {formatCents(waiting.amount, { plus: true })} is waiting to match
                   </span>
-                  <span className="text-[12px]">
-                    Held outside Ready to Assign. Could pay back what’s listed below.
-                  </span>
+                  <span className="text-[12px]">Held outside Ready to Assign until you match it.</span>
                 </span>
                 <span className="text-[14px] font-bold underline">Match</span>
               </Link>
@@ -86,14 +83,11 @@ export function OwedScreen() {
                 key={p.key}
                 className="m-0 shrink-0 rounded-xl bg-under-bg px-3 py-2.5 text-[13px] leading-[1.45] text-under-fg"
               >
-                {p.label} takes {formatCents(p.owed, { whole: true })} out of Ready to Assign until it’s paid
-                back. You have {formatCents(rta)}
-                {waiting
-                  ? ` now, ${formatCents(rta + waiting.amount)} once the ${waiting.payee.split(' ')[0]} money is matched`
-                  : ''}
+                {p.label} takes {formatCents(p.owed, { whole: true })} from Ready to Assign until it’s paid
+                back.{' '}
                 {rta + (waiting?.amount ?? 0) >= p.owed
-                  ? ', enough to cover it.'
-                  : `. Keep ${formatCents(p.owed, { whole: true })} unassigned, or Ready to Assign will go negative on ${dayLabel(p.date)}.`}
+                  ? 'You have enough to cover it.'
+                  : `Keep ${formatCents(p.owed, { whole: true })} unassigned (you have ${formatCents(rta)}${waiting ? `, ${formatCents(rta + waiting.amount)} after matching ${waiting.payee.split(' ')[0]}` : ''}).`}
               </p>
             ))}
             <h2 className="m-0 mt-1 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
@@ -233,14 +227,14 @@ export function CloseSheet() {
     {
       id: 'close',
       name: 'They won’t pay it',
-      desc: `It becomes your spending: ${cat} is charged ${amt} in ${month}, and Ready to Assign gets back the ${amt} it fronted. If that overspends ${cat}, Needs attention will offer to cover it.`,
+      desc: `${cat} is charged ${amt} in ${month}; Ready to Assign gets its ${amt} back.`,
       cta: `Close out ${amt}`,
       result: `Closed. ${cat} was charged ${amt} in ${month} and Ready to Assign got ${amt} back.`,
     },
     {
       id: 'cancel',
       name: 'I marked it by mistake',
-      desc: `Remove the mark. ${cat} is charged the full ${formatCents(it.amount + 0, { whole: true })} in the purchase’s month, Ready to Assign gets the fronted amount back${it.matched > 0 ? `, and the ${formatCents(it.matched, { whole: true })} already paid back stays in Ready to Assign as income` : ''}.`,
+      desc: `${cat} carries the full ${formatCents(it.amount + 0, { whole: true })} in the purchase’s month; Ready to Assign gets the fronted amount back${it.matched > 0 ? ` and keeps the ${formatCents(it.matched, { whole: true })} already paid back` : ''}.`,
       cta: 'Remove the mark',
       result: `Mark removed. ${cat} now carries the full amount.`,
     },

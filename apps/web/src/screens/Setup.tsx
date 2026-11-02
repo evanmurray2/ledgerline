@@ -4,7 +4,7 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
 import { qk, useAccounts, useConnections, useSession } from '../api/hooks';
-import { cx, ErrorNote, Icon, OptionCard, PrimaryButton } from '../components/ui';
+import { cx, ErrorNote, Icon, PrimaryButton } from '../components/ui';
 import { formatCents } from '../lib/money';
 import { monthLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
@@ -122,20 +122,15 @@ export function StartMonthScreen() {
         </PrimaryButton>
       }
     >
-      <h1 className="m-0 text-[24px] font-bold">When does your budget start?</h1>
+      <h1 className="m-0 text-[24px] font-bold">
+        Your budget starts {month ? `in ${monthLabel(month)}` : 'this month'}
+      </h1>
       <p className="m-0 text-[15px] leading-snug text-ink-2">
-        Transactions from this month on go in your budget. Anything earlier is history: you can search it and
-        see it in reports, but it never changes what you have to assign.
+        You start with what’s in your checking and savings today. Earlier bank history comes in for reports
+        and rules, but older months aren’t budgeted.
       </p>
-      <OptionCard
-        selected
-        onClick={() => undefined}
-        title={`Start this month${month ? ` (${monthLabel(month)})` : ''}`}
-        desc="Begin with what you have today. Past bank history is imported for reports and rules, but past months aren’t re-budgeted."
-      />
       <p className="m-0 rounded-xl bg-page p-3 text-[13px] leading-snug text-muted">
-        Your starting money is what’s in your linked checking and savings today. What you owe on cards isn’t
-        subtracted: each card gets a payment category to fund instead. You’ll assign it in step 3.
+        Card balances aren’t subtracted: each card gets a payment category you fund instead.
       </p>
       {error ? <ErrorNote error={error} /> : null}
     </Step>

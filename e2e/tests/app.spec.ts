@@ -209,3 +209,55 @@ test('Budget lists your groups first, then card payments, then Owed to you', asy
   expect(bills).toBeLessThan(cards);
   expect(cards).toBeLessThan(owedY);
 });
+
+test('Set targets: a list of every category, and saving a target comes back to it', async ({ page }) => {
+  await page.goto('/budget/targets');
+  const list = page.getByRole('dialog', { name: 'Set targets' });
+  await list.getByRole('link', { name: /^Home repairs/ }).click();
+  const sheet = page.getByRole('dialog', { name: 'Target' });
+  await sheet.getByLabel('Have this much available').fill('50');
+  await sheet.getByRole('button', { name: 'Save target' }).click();
+  await expect(page.getByRole('dialog', { name: 'Set targets' })).toBeVisible();
+  await expect(page).toHaveURL(/\/budget\/targets/);
+});
+
+test('Target: saving from a category goes back to the Budget, not the category', async ({ page }) => {
+  await page.goto('/budget/category/groceries/target');
+  await page.getByRole('button', { name: 'Save target' }).click();
+  await expect(page).toHaveURL(/\/budget(\?.*)?$/);
+});
+
+test('Target: a new kind starts empty instead of reusing the old amount', async ({ page }) => {
+  await page.goto('/budget/category/vacation/target');
+  const sheet = page.getByRole('dialog', { name: 'Target' });
+  await expect(sheet.getByLabel('Reach a balance of')).toHaveValue('3000.00');
+  await sheet.getByRole('button', { name: /Set aside/ }).click();
+  await expect(sheet.getByLabel('Set aside every month')).toHaveValue('');
+  await sheet.getByRole('button', { name: /Balance by a date/ }).click();
+  await expect(sheet.getByLabel('Reach a balance of')).toHaveValue('3000.00');
+});
+
+test('Categories: add one to a group, then set its target', async ({ page }) => {
+  await page.goto('/settings/categories');
+  await page.getByRole('link', { name: 'Add category' }).nth(1).click();
+  const sheet = page.getByRole('dialog', { name: 'New category' });
+  await expect(sheet.getByLabel('Group')).toHaveValue('g-everyday');
+  await sheet.getByLabel('Name').fill('Climbing');
+  await sheet.getByRole('button', { name: 'Add and set a target' }).click();
+  const target = page.getByRole('dialog', { name: 'Target' });
+  await expect(target.getByText('Climbing')).toBeVisible();
+  await target.getByLabel('Have this much available').fill('40');
+  await target.getByRole('button', { name: 'Save target' }).click();
+  await expect(page).toHaveURL(/\/settings\/categories$/);
+  await expect(page.getByText('Climbing')).toBeVisible();
+});
+
+test('Assign: Clear all and Select all', async ({ page }) => {
+  await page.goto('/budget/assign');
+  const sheet = page.getByRole('dialog', { name: 'Assign money' });
+  await sheet.getByRole('button', { name: 'Clear all' }).click();
+  await expect(sheet.getByRole('checkbox', { checked: true })).toHaveCount(0);
+  await expect(sheet.getByRole('button', { name: 'Nothing selected' })).toBeDisabled();
+  await sheet.getByRole('button', { name: 'Select all' }).click();
+  await expect(sheet.getByRole('checkbox', { checked: false })).toHaveCount(0);
+});

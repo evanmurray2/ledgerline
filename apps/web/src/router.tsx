@@ -18,7 +18,7 @@ import { qk, useSession } from './api/hooks';
 import { connectivity } from './state/connectivity';
 import { usage } from './usage/tracker';
 import { BudgetScreen } from './screens/Budget';
-import { AssignSheetScreen, CategorySheetScreen, TargetScreen } from './screens/BudgetSheets';
+import { AssignSheetScreen, CategorySheetScreen, TargetScreen, TargetsScreen } from './screens/BudgetSheets';
 import { CloseSheet, OwedScreen } from './screens/Owed';
 import { ActivityScreen } from './screens/Activity';
 import { RenamePayeeFromTxn, SplitScreen, TxnSheetScreen } from './screens/TxnSheets';
@@ -156,6 +156,7 @@ const budgetRoute = createRoute({
   validateSearch: (s: Record<string, unknown>) => ({
     month: str(s.month),
     view: s.view === 'attention' || s.view === 'low' ? (s.view as 'attention' | 'low') : undefined,
+    from: s.from === 'targets' || s.from === 'categories' ? (s.from as 'targets' | 'categories') : undefined,
   }),
   component: BudgetScreen,
 });
@@ -168,6 +169,11 @@ const targetRoute = createRoute({
   getParentRoute: () => budgetRoute,
   path: 'category/$categoryId/target',
   component: TargetScreen,
+});
+const targetsRoute = createRoute({
+  getParentRoute: () => budgetRoute,
+  path: 'targets',
+  component: TargetsScreen,
 });
 const assignRoute = createRoute({
   getParentRoute: () => budgetRoute,
@@ -301,6 +307,7 @@ const categoriesRoute = createRoute({
 const categoryEditRoute = createRoute({
   getParentRoute: () => categoriesRoute,
   path: '$categoryId',
+  validateSearch: (s: Record<string, unknown>) => ({ group: str(s.group) }),
   component: CategoryEditSheet,
 });
 const rulesRoute = createRoute({
@@ -337,7 +344,7 @@ const routeTree = rootRoute.addChildren([
   setupStartRoute,
   setupLinkRoute,
   setupCatsRoute,
-  budgetRoute.addChildren([categoryRoute, targetRoute, assignRoute]),
+  budgetRoute.addChildren([categoryRoute, targetRoute, targetsRoute, assignRoute]),
   owedRoute.addChildren([owedCloseRoute, owedMatchRoute]),
   activityRoute.addChildren([
     txnRoute,
