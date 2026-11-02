@@ -45,7 +45,12 @@ export async function scheduled(controller: ScheduledController, env: Env): Prom
 }
 
 /** Upcoming entries count from their date; repeating ones schedule their next occurrence. Vanished pending rows get an alert. */
-export async function dailyScan(env: Env, budgetId: string, now: number): Promise<{ materialized: number }> {
+export async function dailyScan(
+  env: Env,
+  budgetId: string,
+  now: number,
+  opts: { recompute?: boolean } = {},
+): Promise<{ materialized: number }> {
   const s = new Scoped(env.DB, budgetId, 'system');
   const meta = await budgetMeta(s);
   if (!meta) return { materialized: 0 };
@@ -111,7 +116,8 @@ export async function dailyScan(env: Env, budgetId: string, now: number): Promis
     const plan = await planLineRebuild(s, keys, meta, today, now);
     await s.batch(plan.stmts);
   }
-  await recompute(env.DB, budgetId, now);
+  // The job runner recomputes in its own small steps instead (docs/multi-user.md 6.1).
+  if (opts.recompute !== false) await recompute(env.DB, budgetId, now);
   await bumpVersion(env.DB, budgetId);
   return { materialized: keys.length };
 }

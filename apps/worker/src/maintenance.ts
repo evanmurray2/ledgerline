@@ -185,7 +185,7 @@ export async function checkIdentityDb(
   return { ok: working === right, difference: working - right, literal: working === right && k === 0 };
 }
 
-async function rollUpUsage(env: Env, budgetId: string, now: number): Promise<void> {
+export async function rollUpUsage(env: Env, budgetId: string, now: number): Promise<void> {
   const today = new Date(now).toISOString().slice(0, 10);
   const dayStart = Date.parse(`${today}T00:00:00Z`);
   // Roll up earlier days not yet rolled up (raw rows stay 90 days for the export).
@@ -203,23 +203,35 @@ async function rollUpUsage(env: Env, budgetId: string, now: number): Promise<voi
   ]);
 }
 
-async function watchdog(env: Env, budgetId: string, now: number): Promise<void> {
+/** The budget's half of the watchdog (docs/multi-user.md 5.6: the auth prune runs in the Directory). */
+export function watchdogBudgetStmts(db: D1Database, budgetId: string, now: number): D1PreparedStatement[] {
   // The watchdog records that it ran; the Accounts alerts compare it with the monitor's last check.
-  const up = (k: string, v: string | null) =>
-    env.DB.prepare(
-      `INSERT INTO health_status (budget_id, key, value, at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (budget_id, key) DO UPDATE SET value = excluded.value, at = excluded.at`,
-    ).bind(budgetId, k, v, now);
-  await env.DB.batch([
-    up('watchdog_ran_at', String(now)),
+  return [
+    db
+      .prepare(
+        `INSERT INTO health_status (budget_id, key, value, at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (budget_id, key) DO UPDATE SET value = excluded.value, at = excluded.at`,
+      )
+      .bind(budgetId, 'watchdog_ran_at', String(now), now),
     // Card statement snapshots older than 120 days: only each card's latest is shown.
-    env.DB.prepare(
-      `DELETE FROM liability_snapshot WHERE budget_id = ?1 AND as_of < date(?2 / 1000, 'unixepoch', '-120 days')`,
-    ).bind(budgetId, now),
-    // Expired sign-in state (decisions.md D-27).
-    env.DB.prepare(`DELETE FROM auth_session WHERE expires_at <= ?1`).bind(now),
-    env.DB.prepare(`DELETE FROM auth_challenge WHERE expires_at <= ?1`).bind(now),
-    env.DB.prepare(`DELETE FROM device_link WHERE expires_at <= ?1`).bind(now),
-  ]);
+    db
+      .prepare(
+        `DELETE FROM liability_snapshot WHERE budget_id = ?1 AND as_of < date(?2 / 1000, 'unixepoch', '-120 days')`,
+      )
+      .bind(budgetId, now),
+  ];
+}
+
+/** Expired sign-in state (decisions.md D-27). */
+export function pruneAuthStmts(db: D1Database, now: number): D1PreparedStatement[] {
+  return [
+    db.prepare(`DELETE FROM auth_session WHERE expires_at <= ?1`).bind(now),
+    db.prepare(`DELETE FROM auth_challenge WHERE expires_at <= ?1`).bind(now),
+    db.prepare(`DELETE FROM device_link WHERE expires_at <= ?1`).bind(now),
+  ];
+}
+
+async function watchdog(env: Env, budgetId: string, now: number): Promise<void> {
+  await env.DB.batch([...watchdogBudgetStmts(env.DB, budgetId, now), ...pruneAuthStmts(env.DB, now)]);
 }
 
 export { addMonths };
