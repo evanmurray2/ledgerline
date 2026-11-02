@@ -26,11 +26,11 @@ import {
   TxnPatch,
   UsageBatch,
   ImportCsvRequest,
+  RuleBody,
   type MutationResult,
 } from '@ledgerline/contracts';
 import type { z } from 'zod';
 import { MockDb, MockHttpError, type Scenario, type Txn } from './db';
-import { RuleBodyLenient as RuleBody } from '../api/lenient';
 
 export interface MockResponse {
   status: number;

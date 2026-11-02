@@ -1,6 +1,7 @@
 // Transfer detection (design: Transfer detection, revised Oct 31, 2026). An outflow in one of your accounts with
 // exactly one matching inflow of the same amount in another of your accounts within 5 days is paired
-// automatically; with two or more possible other sides, or none, you're asked. Only transfer-like outflows are
+// automatically, as long as that inflow could not also be the other side of another outflow; with two or more
+// possible other sides, or none, you're asked, so the answer never depends on the order the rows arrive in. Only transfer-like outflows are
 // considered (the provider marks them as transfers, or the description says so).
 import { type Cents } from './money.js';
 import { type IsoDate, daysBetween } from './month.js';
@@ -34,23 +35,19 @@ export function detectTransfers(
 ): TransferDecision[] {
   const open = rows.filter((r) => !alreadyPaired.has(r.key));
   const inflows = open.filter((r) => r.amount > 0);
+  const outflows = open.filter((o) => o.amount < 0 && isTransferLike(o));
+  const matches = (o: TransferRow, i: TransferRow) =>
+    i.accountId !== o.accountId && i.amount === -o.amount && Math.abs(daysBetween(o.date, i.date)) <= 5;
+  // How many outflows each inflow could belong to.
+  const claims = new Map<string, number>();
+  for (const o of outflows)
+    for (const i of inflows) if (matches(o, i)) claims.set(i.key, (claims.get(i.key) ?? 0) + 1);
   const out: TransferDecision[] = [];
-  const used = new Set<string>();
-  for (const o of open) {
-    if (o.amount >= 0 || !isTransferLike(o)) continue;
-    const cands = inflows.filter(
-      (i) =>
-        !used.has(i.key) &&
-        i.accountId !== o.accountId &&
-        i.amount === -o.amount &&
-        Math.abs(daysBetween(o.date, i.date)) <= 5,
-    );
-    if (cands.length === 1) {
-      used.add(cands[0]!.key);
+  for (const o of outflows) {
+    const cands = inflows.filter((i) => matches(o, i));
+    if (cands.length === 1 && claims.get(cands[0]!.key) === 1)
       out.push({ kind: 'paired', outKey: o.key, inKey: cands[0]!.key });
-    } else {
-      out.push({ kind: 'unclear', outKey: o.key, candidates: cands.map((c) => c.key) });
-    }
+    else out.push({ kind: 'unclear', outKey: o.key, candidates: cands.map((c) => c.key) });
   }
   return out;
 }

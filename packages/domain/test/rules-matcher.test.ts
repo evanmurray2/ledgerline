@@ -198,6 +198,18 @@ describe('payees and transfers', () => {
       ]),
     ).toEqual([{ kind: 'unclear', outKey: 'o', candidates: ['m', 'a'] }]);
     expect(detectTransfers([t('x', 'chk', '-20', '2026-11-10', 'SAFEWAY')])).toEqual([]);
+    // Two equal outflows and one inflow: either could be its other side, so both are asked about, in any order.
+    const two = [
+      t('o1', 'chk', '-300', '2026-11-10'),
+      t('o2', 'savings', '-300', '2026-11-11'),
+      t('in', 'marcus', '300', '2026-11-12', 'DEPOSIT'),
+    ];
+    const asked = [
+      { kind: 'unclear', outKey: 'o1', candidates: ['in'] },
+      { kind: 'unclear', outKey: 'o2', candidates: ['in'] },
+    ];
+    expect(detectTransfers(two)).toEqual(asked);
+    expect(detectTransfers([...two].reverse())).toEqual([...asked].reverse());
     expect(cents(0)).toBe(0);
   });
 });

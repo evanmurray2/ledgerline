@@ -3,19 +3,6 @@
 Gaps found while building the SPA against `packages/contracts` and `docs/api.md`. Each one is worked around in
 the UI; none of them edits the contract.
 
-## Blocking: `RuleCondition` can't parse
-
-`RuleCondition` is `z.discriminatedUnion('field', …)` with two members whose discriminator is `'amount'`
-(`equals` and `between`). Zod 4 throws `Duplicate discriminator value "amount"` the first time it parses
-anything, so `RuleBody`, `RulesView` and anything built on them throw. This also affects the Worker: validating
-`POST /api/settings/rules` and `POST /api/settings/rules/preview` with `RuleBody` will throw (500), not 400.
-
-Suggested fix: make `RuleCondition` a plain `z.union`, or merge the two amount shapes into one member with
-`op: z.enum(['equals', 'between'])`.
-
-Workaround: `src/api/lenient.ts` restates the shapes with `z.union` and is used for `GET /api/settings/rules`
-(and by the mock to validate rule bodies).
-
 ## Missing data
 
 | Screen                                       | Gap                                                                                                                                                                                             | Workaround                                                                                                                                                                                                              |

@@ -10,7 +10,7 @@ import {
   type HealthView,
   type ImportResult,
 } from '@ledgerline/contracts';
-import { cents, parseCents } from '@ledgerline/domain';
+import { cents, parseCents, parseImportDate } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
 import { HttpError, parse, scoped } from './api.js';
@@ -347,15 +347,8 @@ opsRoutes.post('/import/csv', async (c) => {
       ?.map((x) => x.replace(/,$/, '').replace(/^"|"$/g, '').replace(/""/g, '"')) ?? [];
   for (const [i, l] of lines.entries()) {
     const cols = parseRow(l);
-    const d = (cols[di] ?? '').trim();
-    const iso = /^\d{4}-\d{2}-\d{2}$/.test(d)
-      ? d
-      : /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.test(d)
-        ? d.replace(
-            /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/,
-            (_, m, dd, y) => `${y}-${m.padStart(2, '0')}-${dd.padStart(2, '0')}`,
-          )
-        : null;
+    // A real calendar date only: "25/12/2025" (day first) or "2026-13-01" is skipped, never stored as month 25.
+    const iso = parseImportDate(cols[di] ?? '');
     let amount: number;
     try {
       amount = parseCents(cols[ai] ?? '');

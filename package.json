@@ -14,7 +14,7 @@
     "format:check": "prettier --check .",
     "check": "node tools/check.mjs",
     "test": "pnpm -r --if-present test",
-    "test:unit": "pnpm --filter \"./packages/**\" --if-present test",
+    "test:unit": "pnpm --filter \"./packages/**\" --filter @ledgerline/web --if-present test",
     "test:integration": "pnpm --filter @ledgerline/worker test",
     "test:e2e": "pnpm --filter @ledgerline/e2e test && pnpm --filter @ledgerline/e2e test:worker"
   },

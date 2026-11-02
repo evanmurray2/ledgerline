@@ -50,9 +50,15 @@ export const connectivity = {
   },
   reportNetworkError() {
     set({ networkFailed: true });
+    scheduleProbe();
   },
   reportOk() {
+    stopProbe();
     set({ networkFailed: false, loadedAt: Date.now() });
+  },
+  /** How the app checks the network is back after a failed request (api/client.ts registers it). */
+  setProbe(fn: (() => Promise<boolean>) | null) {
+    probe = fn;
   },
   setReadOnly(readOnly: boolean, until: string | null) {
     set({ readOnly, readOnlyUntil: until });
@@ -75,12 +81,48 @@ export const connectivity = {
   },
 };
 
+// After a request fails at the network level, a light check (the session) runs again after 5, 15, 30 and then
+// every 60 seconds, and whenever the app comes back to the screen, so one dropped request doesn't leave changes
+// turned off until some screen happens to load again.
+const PROBE_DELAYS_MS = [5_000, 15_000, 30_000, 60_000];
+let probe: (() => Promise<boolean>) | null = null;
+let probeTimer: ReturnType<typeof setTimeout> | null = null;
+let probeTries = 0;
+
+function stopProbe() {
+  if (probeTimer) clearTimeout(probeTimer);
+  probeTimer = null;
+  probeTries = 0;
+}
+
+function scheduleProbe() {
+  if (probeTimer || !probe) return;
+  const delay = PROBE_DELAYS_MS[Math.min(probeTries, PROBE_DELAYS_MS.length - 1)]!;
+  probeTimer = setTimeout(() => {
+    probeTimer = null;
+    probeTries++;
+    void runProbe();
+  }, delay);
+}
+
+async function runProbe() {
+  if (!probe || !state.networkFailed) return stopProbe();
+  const reachable = await probe().catch(() => false);
+  if (reachable) {
+    stopProbe();
+    set({ networkFailed: false });
+  } else scheduleProbe();
+}
+
 let installed = false;
 export function installConnectivityListeners() {
   if (installed || typeof window === 'undefined') return;
   installed = true;
   window.addEventListener('online', () => connectivity.setOnline(true));
   window.addEventListener('offline', () => connectivity.setOnline(false));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && state.networkFailed) void runProbe();
+  });
 }
 
 export function useConnectivity(): State {

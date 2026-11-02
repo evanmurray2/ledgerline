@@ -43,6 +43,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @ledgerline/web build
+        env:
+          # The same release id the Worker gets below: an open app that sees another one reloads.
+          APP_VERSION: ${{ github.sha }}
       - name: Secrets the Worker already has
         # Names only, never values. A Worker that doesn't exist yet (first deploy) has none.
         working-directory: apps/worker

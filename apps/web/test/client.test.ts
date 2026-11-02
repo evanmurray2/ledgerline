@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../src/api/endpoints';
-import { ApiError, errorMessage } from '../src/api/client';
+import { ApiError, errorMessage, resetRecentChanges } from '../src/api/client';
 import { connectivity } from '../src/state/connectivity';
 
 type Call = { url: string; init: RequestInit };
@@ -9,6 +9,7 @@ let respond: (call: Call) => Response | Promise<Response>;
 
 beforeEach(() => {
   calls = [];
+  resetRecentChanges();
   connectivity.setOnline(true);
   connectivity.setReadOnly(false, null);
   connectivity.setReadsPaused(false);
@@ -87,6 +88,44 @@ describe('API client', () => {
     await expect(api.session()).rejects.toMatchObject({ code: 'network', network: true });
     expect(connectivity.canWrite()).toBe(false);
     expect(connectivity.isOffline()).toBe(true);
+  });
+
+  it('after a dropped request, checks again on its own and turns changes back on', async () => {
+    vi.useFakeTimers();
+    try {
+      let down = true;
+      respond = () => (down ? Promise.reject(new TypeError('Failed to fetch')) : json(ok));
+      await expect(api.session()).rejects.toMatchObject({ code: 'network' });
+      expect(connectivity.canWrite()).toBe(false);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(connectivity.canWrite()).toBe(false);
+      down = false;
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(connectivity.canWrite()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a double tap sends a change once; a different change, or a retry after a failure, is sent', async () => {
+    respond = () => json(ok);
+    const move = { month: '2026-11', from: 'rta', to: 'dining', amount: 1000 };
+    const [a, b] = await Promise.all([api.move(move), api.move(move)]);
+    expect(a).toEqual(b);
+    await api.move(move);
+    expect(calls).toHaveLength(1);
+    await api.move({ ...move, amount: 2000 });
+    expect(calls).toHaveLength(2);
+    respond = () => json({ error: 'conflict', message: 'no' }, 409);
+    await expect(api.move({ ...move, amount: 3000 })).rejects.toMatchObject({ code: 'conflict' });
+    respond = () => json(ok);
+    await api.move({ ...move, amount: 3000 });
+    expect(calls).toHaveLength(4);
+    // Changing something and changing it back is sent every time.
+    await api.patchTxn('uber', { memo: 'a' });
+    await api.patchTxn('uber', { memo: 'b' });
+    await api.patchTxn('uber', { memo: 'a' });
+    expect(calls).toHaveLength(7);
   });
 
   it('refuses mutations while offline or read-only, without calling the server', async () => {

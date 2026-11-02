@@ -18,6 +18,7 @@ import {
   RegisterView,
   ReportsView,
   RulePreview,
+  RulesView,
   Session,
   TxnSheet,
 } from '@ledgerline/contracts';
@@ -48,7 +49,6 @@ import type {
 } from '@ledgerline/contracts';
 import { z } from 'zod';
 import { del, get, patch, post, put, qs } from './client';
-import { RulesViewLenient } from './lenient';
 
 type In<T extends z.ZodType> = z.input<T>;
 
@@ -141,7 +141,7 @@ export const api = {
     ),
   removeGroup: (id: string) => post(`/api/settings/groups/${enc(id)}/remove`, Ok),
 
-  rules: () => get('/api/settings/rules', RulesViewLenient),
+  rules: () => get('/api/settings/rules', RulesView),
   saveRule: (body: In<typeof RuleBody>) => post('/api/settings/rules', OkId, body),
   previewRule: (body: In<typeof RuleBody>) => post('/api/settings/rules/preview', RulePreview, body),
   applyRule: (id: string) => post(`/api/settings/rules/${enc(id)}/apply`, MutationResult),

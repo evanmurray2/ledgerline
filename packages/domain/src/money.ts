@@ -41,18 +41,23 @@ export function clamp(v: Cents, lo: Cents, hi: Cents): Cents {
   return max(lo, min(v, hi));
 }
 
-/** Parses "1,234.5", "-12", "$3.07", "−$18.25" into cents. Rejects more than two decimals. */
+/**
+ * Parses "1,234.5", "-12", "$3.07", "−$18.25", "$-4" and accounting-style "(12.00)" into cents. Commas are only
+ * thousands separators ("12,50" is refused, never read as 1,250). Rejects more than two decimals.
+ */
 export function parseCents(input: string): Cents {
-  const s = input
-    .trim()
-    .replace(/[−‒–]/g, '-')
-    .replace(/[$,\s]/g, '');
-  const m = /^([+-])?(\d+)(?:\.(\d{0,2}))?$/.exec(s) ?? /^([+-])?()\.(\d{1,2})$/.exec(s);
-  if (!m) throw new RangeError(`not an amount: ${input}`);
-  const whole = m[2] ? Number(m[2]) : 0;
+  let s = input.trim().replace(/[−‒–]/g, '-').replace(/\s/g, '');
+  const paren = /^\((.*)\)$/.exec(s);
+  if (paren) s = paren[1]!;
+  // One dollar sign, before or after the sign.
+  s = s.replace(/^([+-]?)\$/, '$1').replace(/^\$([+-])/, '$1');
+  const m = /^([+-])?(\d{1,3}(?:,\d{3})+|\d+)?(?:\.(\d{0,2}))?$/.exec(s);
+  if (!m || (m[2] === undefined && !m[3]) || (paren && m[1])) throw new RangeError(`not an amount: ${input}`);
+  const whole = m[2] ? Number(m[2].replace(/,/g, '')) : 0;
   const frac = Number(((m[3] ?? '') + '00').slice(0, 2));
   const v = whole * 100 + frac;
-  return cents(m[1] === '-' ? -v : v);
+  if (!Number.isSafeInteger(v)) throw new RangeError(`not an amount: ${input}`);
+  return cents(m[1] === '-' || paren ? -v : v);
 }
 
 /** "$1,234.56" / "−$18.25" (true minus sign, as the UI shows). */
