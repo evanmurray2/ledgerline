@@ -397,7 +397,6 @@ export function CategoriesScreen() {
     refresh();
     toast.show({ text: e instanceof Error ? e.message : 'Couldn’t save that. Try again.' });
   };
-  const system = (v?.groups ?? []).filter((g) => g.system);
   const mine = (v?.groups ?? []).filter((g) => !g.system);
   /** Shows a new order at once; the save follows, and a failure reloads the list as it was. */
   const show = (next: typeof mine) =>
@@ -443,27 +442,7 @@ export function CategoriesScreen() {
           Tap a name to change or remove it. Drag the handles to reorder.
         </p>
       )}
-      {system.map((g) => (
-        <section key={g.id} className="flex shrink-0 flex-col gap-1.5">
-          <div className="flex min-h-9 items-center justify-between gap-2 px-0.5">
-            <h2 className="m-0 truncate text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
-              {g.name}
-            </h2>
-            <span className="text-[12px] text-muted">made by the app</span>
-          </div>
-          <Card>
-            {g.categories.map((c) => (
-              <div
-                key={c.id}
-                className="flex min-h-14 flex-col justify-center gap-0.5 border-t border-divider px-3 py-2 first:border-t-0"
-              >
-                <span className="text-[15px] font-semibold">{c.name}</span>
-                <span className="text-[12px] text-muted">{c.meta}</span>
-              </div>
-            ))}
-          </Card>
-        </section>
-      ))}
+      {/* Card payment categories are made by the app and can't be edited, so this screen leaves them out. */}
       {mine.map((g, gi) => (
         <GroupSection
           key={g.id}

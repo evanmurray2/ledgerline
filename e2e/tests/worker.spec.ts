@@ -99,9 +99,10 @@ test('Accounts: net worth and the Ally repair prompt', async ({ page }) => {
 test('Categories: rename a group, reorder by dragging, and remove a category', async ({ page }) => {
   await page.goto('/categories');
   const groups = page.locator('section').getByRole('heading', { level: 2 });
-  // Card payments come first and are made by the app; your groups follow.
-  await expect(groups.nth(1)).toHaveText('Bills');
-  await expect(groups.nth(2)).toHaveText('Everyday');
+  // Card payments are made by the app and can't be edited, so only your groups show.
+  await expect(groups.filter({ hasText: 'Credit card payments' })).toHaveCount(0);
+  await expect(groups.nth(0)).toHaveText('Bills');
+  await expect(groups.nth(1)).toHaveText('Everyday');
   // Drag Bills below Everyday by its handle: no Edit mode.
   const handle = page.getByRole('button', { name: 'Reorder group Bills' });
   const everyday = page.getByRole('link', { name: 'Rename group Everyday' });
@@ -111,14 +112,14 @@ test('Categories: rename a group, reorder by dragging, and remove a category', a
   await page.mouse.down();
   await page.mouse.move(from.x + from.width / 2, to.y + 400, { steps: 12 });
   await page.mouse.up();
-  await expect(groups.nth(1)).toHaveText('Everyday');
-  await expect(groups.nth(2)).toHaveText('Bills');
+  await expect(groups.nth(0)).toHaveText('Everyday');
+  await expect(groups.nth(1)).toHaveText('Bills');
 
   await page.getByRole('link', { name: 'Rename group Everyday' }).click();
   const sheet = page.getByRole('dialog', { name: 'Rename group' });
   await sheet.getByLabel('Name').fill('Day to day');
   await sheet.getByRole('button', { name: 'Save' }).click();
-  await expect(groups.nth(1)).toHaveText('Day to day');
+  await expect(groups.nth(0)).toHaveText('Day to day');
 
   // Removing happens on the category's own sheet, with a confirm step.
   await page.getByRole('link', { name: /^Dining out/ }).click();
