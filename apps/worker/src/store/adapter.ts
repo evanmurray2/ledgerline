@@ -73,8 +73,6 @@ export class SqlStatement {
 
 export class SqlD1 {
   readonly stats: AdapterStats = { statements: 0, rowsRead: 0, rowsWritten: 0 };
-  /** Set while a move or restore freezes this object (docs/multi-user.md 8.6): every write throws. */
-  frozen = false;
 
   constructor(private readonly storage: DurableObjectStorage) {}
 
@@ -103,7 +101,6 @@ export class SqlD1 {
 
   execOne(sql: string, params: Value[]): D1Result<Record<string, unknown>> {
     const isWrite = WRITE.test(sql) || WITH_WRITE.test(sql);
-    if (this.frozen && isWrite) throw new Error('D1_ERROR: frozen');
     let rows: Record<string, unknown>[];
     let read: number;
     let written: number;

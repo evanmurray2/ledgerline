@@ -70,7 +70,7 @@ export class BudgetStore extends DurableObject<Env> {
    */
   async api(request: Request, caller: Caller): Promise<Response> {
     this.ready();
-    this.ensureBudget(caller.budgetId);
+    await this.ensureBudget(caller.budgetId);
     this.app ??= withCaller((app) => app.route('/api', budgetApi));
     return this.serve(this.app, request, caller);
   }
@@ -80,7 +80,7 @@ export class BudgetStore extends DurableObject<Env> {
     this.ready();
     if (this.env.PLAID_ENV === 'production' || this.env.SETUP_CODE)
       return new Response('Not found', { status: 404 });
-    this.ensureBudget(caller.budgetId);
+    await this.ensureBudget(caller.budgetId);
     this.devApp ??= withCaller((app) => {
       app.route('/__dev', dev);
       app.use('/__measure/*', async (c, next) => (this.env.MEASURE === '1' ? next() : c.notFound()));
@@ -251,14 +251,17 @@ export class BudgetStore extends DurableObject<Env> {
   }
 
   /** The store fills in its own budget row on first use (sign-up and setup create it in the Directory). */
-  private ensureBudget(budgetId: string): void {
+  private async ensureBudget(budgetId: string): Promise<void> {
     if (this.cachedBudgetId === budgetId) return;
-    this.ctx.storage.sql.exec(
+    const now = Date.now();
+    const created = this.ctx.storage.sql.exec(
       `INSERT OR IGNORE INTO budget (id, name, created_at, updated_at) VALUES (?, 'My budget', ?, ?)`,
       budgetId,
-      Date.now(),
-      Date.now(),
-    );
+      now,
+      now,
+    ).rowsWritten;
+    // A new budget gets its sync backstop, daily scan and maintenance now, not at the next daily check.
+    if (created > 0) await ensureRecurring(this.enqueue, now);
     this.cachedBudgetId = budgetId;
   }
 

@@ -4,6 +4,8 @@ import { createExecutionContext, env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import worker from '../../src/index.js';
 import { Scoped } from '../../src/db/scoped.js';
+import { devSignIn } from '../../src/http/auth.js';
+import type { Env } from '../../src/env.js';
 import { SoftAuthenticator } from '../soft-authenticator.js';
 import { directoryDb, directoryStub, storeDb } from '../store-db.js';
 
@@ -149,6 +151,29 @@ describe('passkey sign-in', () => {
         )
       ).status,
     ).toBe(200);
+  });
+
+  it('a sign-in with a broken body is a plain 400, not a server error', async () => {
+    for (const path of ['/api/auth/login/verify', '/api/auth/register/verify']) {
+      const res = await worker.fetch(
+        new Request(ORIGIN + path, {
+          method: 'POST',
+          headers: { origin: ORIGIN, 'content-type': 'application/json', 'x-ledgerline': '1' },
+          body: 'not json',
+        }),
+        prodEnv(),
+        createExecutionContext(),
+      );
+      expect(res.status).toBe(400);
+    }
+  });
+
+  it('the local sign-in shortcut is off wherever a setup code exists, and on Plaid Production', () => {
+    const base = { DEV_AUTH_EMAIL: 'owner@example.com', PLAID_ENV: 'sandbox' } as never as Env;
+    expect(devSignIn(base)).toBe(true);
+    expect(devSignIn({ ...base, SETUP_CODE: SETUP })).toBe(false);
+    expect(devSignIn({ ...base, PLAID_ENV: 'production' })).toBe(false);
+    expect(devSignIn({ ...base, DEV_AUTH_EMAIL: undefined })).toBe(false);
   });
 
   it('a challenge is single-use', async () => {

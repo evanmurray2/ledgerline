@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import {
   PLAID_DAYS_REQUESTED,
@@ -6,6 +6,7 @@ import {
   classifyWebhook,
   parsePlaidSyncPage,
   plaidAmountToCents,
+  resetWebhookKeyCache,
   scanSyncTail,
   scanSyncTailBytes,
   sha256Hex,
@@ -107,6 +108,7 @@ describe('Plaid adapter', () => {
 });
 
 describe('Plaid webhook verification (ES256, body hash, 5-minute iat)', () => {
+  beforeEach(() => resetWebhookKeyCache());
   const enc = (o: unknown) =>
     btoa(JSON.stringify(o)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
   const b64u = (b: ArrayBuffer) =>
@@ -115,7 +117,7 @@ describe('Plaid webhook verification (ES256, body hash, 5-minute iat)', () => {
       .replace(/\+/g, '-')
       .replace(/\//g, '_');
 
-  async function setup(now: number) {
+  async function setup(now: number, keyStatus = 200) {
     const kp = (await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
       'sign',
       'verify',
@@ -129,6 +131,10 @@ describe('Plaid webhook verification (ES256, body hash, 5-minute iat)', () => {
       now: () => now,
       fetch: async () => {
         keyCalls++;
+        if (keyStatus !== 200)
+          return new Response(JSON.stringify({ error_code: 'INVALID_WEBHOOK_VERIFICATION_KEY_ID' }), {
+            status: keyStatus,
+          });
         return new Response(JSON.stringify({ key: { ...jwk, kid: 'k1', expired_at: null } }), {
           status: 200,
         });
@@ -180,5 +186,38 @@ describe('Plaid webhook verification (ES256, body hash, 5-minute iat)', () => {
     ).toBeNull();
     const other = await setup(now);
     expect(await provider.verifyWebhook(req(await other.sign(body)))).toBeNull();
+  });
+
+  it('shares the key between providers, as the Worker and the store each build one per webhook', async () => {
+    const now = Date.now();
+    const a = await setup(now);
+    expect(await a.provider.verifyWebhook(req(await a.sign(body)))).not.toBeNull();
+    const second = new PlaidProvider({
+      clientId: 'c',
+      secret: 's',
+      env: 'sandbox',
+      now: () => now,
+      fetch: async () => {
+        throw new Error('should use the cached key');
+      },
+    });
+    expect(await second.verifyWebhook(req(await a.sign(body)))).not.toBeNull();
+    expect(a.keyCalls()).toBe(1);
+  });
+
+  it('remembers a key id Plaid refuses, so forged webhooks do not each call Plaid', async () => {
+    const now = Date.now();
+    const { provider, sign, keyCalls } = await setup(now, 400);
+    expect(await provider.verifyWebhook(req(await sign(body)))).toBeNull();
+    expect(await provider.verifyWebhook(req(await sign(body)))).toBeNull();
+    expect(keyCalls()).toBe(1);
+  });
+
+  it("does not remember a failure on Plaid's side", async () => {
+    const now = Date.now();
+    const { provider, sign, keyCalls } = await setup(now, 500);
+    expect(await provider.verifyWebhook(req(await sign(body)))).toBeNull();
+    expect(await provider.verifyWebhook(req(await sign(body)))).toBeNull();
+    expect(keyCalls()).toBe(2);
   });
 });

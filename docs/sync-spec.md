@@ -127,7 +127,7 @@ Amounts are integer cents. For each category and month, transactions are process
 2. **Card purchase `x` in category C:** funded `f = clamp(A, 0, x)`; `A −= x`; `P += f`. The unfunded part `x − f` is credit overspending: new debt, and C resets to 0 for it at month end without touching RTA.
 3. **Card refund `r` in category C:** `A += r`; `P −= g`, where `g` = the funded part of the linked purchase (capped at `r`), or `min(r, max(P, 0))` when unlinked.
 4. **Payment from checking to card:** a transfer; `P −= amount`. No category is involved.
-5. **Owed part `o` of a card purchase:** charged to RTA and moved to P in full, not capped by what RTA holds, so the card always stays covered; if that makes RTA negative, it shows in Needs attention.
+5. **Owed part `o` of a card purchase:** charged to RTA and moved to P in full, not capped by what RTA holds, so the card always stays covered; if that makes RTA negative, it shows in Needs attention. The part paid from the card's credit balance moves nothing to P (D-25).
 6. **Month end:** for every category, negative cash available is added to that month's uncovered cash overspending, which RTA subtracts, and the category starts the next month at 0. Owed to you is a list, not a category, so nothing about it rolls over.
 7. **Card coverage:** fully funded when `P = card bank balance + budgeted pending charges − uncategorized card spending`. Statement covered when `P ≥ statement balance`.
 8. **Starting balances:** checking and savings become RTA inflows at budget start (or link). A card's starting debt never touches RTA; P starts at 0.

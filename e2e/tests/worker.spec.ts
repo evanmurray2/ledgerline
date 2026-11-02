@@ -27,6 +27,25 @@ test('Budget shows the November numbers from the Worker', async ({ page }) => {
   await expect(page.getByText('$1,430.60 out').first()).toBeVisible();
 });
 
+test('The app is served with its security headers, and nothing on Budget breaks them', async ({ page }) => {
+  const violations: string[] = [];
+  page.on('console', (m) => {
+    if (/Content Security Policy|Refused to/i.test(m.text())) violations.push(m.text());
+  });
+  const res = await page.goto('/budget');
+  const csp = res?.headers()['content-security-policy'] ?? '';
+  expect(csp).toContain("frame-ancestors 'none'");
+  expect(csp).toContain('https://cdn.plaid.com');
+  expect(res?.headers()['x-frame-options']).toBe('DENY');
+  await expect(rta(page)).toHaveText('$981.90');
+  await page
+    .getByRole('link', { name: /Activity/ })
+    .first()
+    .click();
+  await page.waitForLoadState('networkidle');
+  expect(violations).toEqual([]);
+});
+
 test('Needs attention fixes reach $643.65 through the API', async ({ page }) => {
   await page.goto('/budget?view=attention');
   await expect(rta(page)).toHaveText('$981.90');

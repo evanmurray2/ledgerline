@@ -14,7 +14,7 @@ export function leaseFence(
   return db
     .prepare(
       `INSERT OR REPLACE INTO lease_guard (id, ok)
-       VALUES (1, coalesce((SELECT sync_lock = ?1 AND lock_expires > ?2 FROM connection WHERE id = ?3), 0))`,
+       VALUES (1, coalesce((SELECT sync_lock = ?1 AND lock_expires > ?2 AND removed_at IS NULL FROM connection WHERE id = ?3), 0))`,
     )
     .bind(holder, now, connectionId);
 }
@@ -57,7 +57,7 @@ export async function acquire(
   return r.meta.changes === 1;
 }
 
-/** Every step starts here. Accepts the next holder during a hand-off. */
+/** Every step starts here. Accepts the next holder during a hand-off. A removed connection's lease can't be renewed. */
 export async function renew(
   db: D1Database,
   connectionId: string,
@@ -68,7 +68,7 @@ export async function renew(
   const r = await db
     .prepare(
       `UPDATE connection SET lock_expires = max(coalesce(lock_expires, 0), ?1)
-       WHERE id = ?2 AND sync_lock IN (?3, ?4)`,
+       WHERE id = ?2 AND removed_at IS NULL AND sync_lock IN (?3, ?4)`,
     )
     .bind(now + LEASE_TTL_MS, connectionId, holder, alsoAccept ?? holder)
     .run();

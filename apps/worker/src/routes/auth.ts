@@ -211,7 +211,8 @@ authRoutes.post('/register/options', async (c) => {
 authRoutes.post('/register/verify', async (c) => {
   const env = c.env;
   const now = clock(env);
-  const b = await c.req.json<{ response: RegistrationResponseJSON; name?: string }>();
+  const b = await c.req.json<{ response: RegistrationResponseJSON; name?: string }>().catch(() => null);
+  if (!b || typeof b !== 'object') return c.json(fail('Something went wrong. Try again.'), 400);
   const ch = await takeChallenge(c.req.raw, env, 'register', now);
   if (!ch) return c.json(fail('That took too long. Try again.'), 400);
   const { rpID, origin } = rp(c.req.raw, env);
@@ -312,7 +313,8 @@ authRoutes.post('/login/options', async (c) => {
 authRoutes.post('/login/verify', async (c) => {
   const env = c.env;
   const now = clock(env);
-  const b = await c.req.json<{ response: AuthenticationResponseJSON }>();
+  const b = await c.req.json<{ response: AuthenticationResponseJSON }>().catch(() => null);
+  if (!b || typeof b !== 'object') return c.json(fail('Something went wrong. Try again.'), 400);
   const ch = await takeChallenge(c.req.raw, env, 'login', now);
   if (!ch) return c.json(fail('That took too long. Try again.'), 400);
   const pk = await env.DB.prepare(
