@@ -86,7 +86,7 @@ async function runMove(budgetId: string, onStep?: () => Promise<void>): Promise<
     }
     if (onStep) await onStep();
     const s = (await dir().moveStatus()) as { state: string } | null;
-    if (s?.state === 'moved' || s?.state === 'failed') return s.state;
+    if (s?.state === 'moved' || s?.state === 'back' || s?.state === 'failed') return s.state;
   }
   throw new Error('the move did not finish');
 }
@@ -160,6 +160,32 @@ describe('the move', () => {
     // The store now keeps its own recurring jobs.
     expect((await store(budgetId).jobs()).map((j) => j.id)).toEqual(
       expect.arrayContaining(['recurring:maintenance']),
+    );
+  });
+
+  it('the way back copies everything, including changes made after the move, into D1 and switches back', async () => {
+    const budgetId = (await e.DB.prepare(`SELECT id FROM budget`).first<string>('id'))!;
+    resetRoutingCache();
+    expect(await phase()).toBe('moved');
+    // What the new databases show now, including the group added after the move.
+    const now: Record<string, unknown> = {};
+    for (const p of screens) now[p] = (await call('GET', p)).json;
+    expect(JSON.stringify(now['/api/settings/categories'])).toContain('After the move');
+    expect((await call('POST', '/api/move/back')).status).toBe(202);
+    expect(await phase()).toBe('restoring');
+    // While D1 is refilled: read-only from the new databases.
+    expect((await call('GET', '/api/session')).json.writeState).toBe('moving');
+    expect((await call('POST', '/api/settings/groups', { name: 'x', isBills: false })).status).toBe(503);
+    expect(await runMove(budgetId)).toBe('back');
+    expect(await phase()).toBe('none');
+    resetRoutingCache();
+    // Served by D1 again: the change made after the move is there, and every screen matches.
+    expect(
+      await e.DB.prepare(`SELECT count(*) AS n FROM category_group WHERE name = 'After the move'`).first('n'),
+    ).toBe(1);
+    for (const p of screens) expect((await call('GET', p)).json, p).toEqual(now[p]);
+    expect((await call('POST', '/api/settings/groups', { name: 'Back on D1', isBills: false })).status).toBe(
+      200,
     );
   });
 

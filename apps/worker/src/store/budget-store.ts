@@ -7,6 +7,7 @@ import type { AppEnv } from '../http/context.js';
 import type { Caller } from './directory.js';
 import { DIRECTORY_NAME } from './directory.js';
 import { budgetApi } from '../routes/api.js';
+import { MOVING, readOnlyD1 } from './frozen.js';
 import type { Env } from '../env.js';
 import { SqlD1 } from './adapter.js';
 import { appliedMigrations, migrate } from './migrate.js';
@@ -23,7 +24,7 @@ import {
 } from './budget-jobs.js';
 import { connectionToken, makeProvider, pageSize } from '../sync/provider.js';
 import { writeBudgetState } from '../sync/breaker.js';
-import { storeMoveHandler, type MoveStatus } from './move-jobs.js';
+import { storeMoveHandler, storeMoveOutHandler, type MoveStatus } from './move-jobs.js';
 import type { QueuedWebhook } from './frozen.js';
 
 export interface StoreHealth {
@@ -68,7 +69,13 @@ export class BudgetStore extends DurableObject<Env> {
    */
   async api(request: Request, caller: Caller): Promise<Response> {
     this.ready();
-    this.ensureBudget(caller.budgetId);
+    // While the way back copies into D1: screens read-only (their cache writes skipped), edits answer "moving".
+    if (caller.frozen && request.method !== 'GET' && request.method !== 'HEAD')
+      return new Response(JSON.stringify(MOVING), {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+      });
+    if (!caller.frozen) this.ensureBudget(caller.budgetId);
     if (!this.app) {
       const app = new Hono<AppEnv>();
       app.use('*', async (c, next) => {
@@ -83,9 +90,12 @@ export class BudgetStore extends DurableObject<Env> {
       app.route('/api', budgetApi);
       this.app = app;
     }
+    const env = caller.frozen
+      ? { ...this.appEnv(), DB: readOnlyD1(this.adapter()), MOVING: '1', CALLER: caller }
+      : { ...this.appEnv(), CALLER: caller };
     return this.app.fetch(
       request,
-      { ...this.appEnv(), CALLER: caller } as never,
+      env as never,
       {
         waitUntil: (p: Promise<unknown>) => this.ctx.waitUntil(p),
         passThroughOnException() {},
@@ -110,6 +120,21 @@ export class BudgetStore extends DurableObject<Env> {
     await this.enqueue('move_in', {
       id: 'move_in',
       state: { phase: 'copy', budgetId, t: 0, cursor: null, rows: 0, hash: '' },
+      runAt: Date.now(),
+    });
+    return { ok: true };
+  }
+
+  /** The way back: copy this store's rows into D1. Refused unless D1 is 'restoring'. */
+  async startMoveOut(budgetId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const ph = await this.env.DB.prepare(`SELECT phase FROM move_state WHERE id = 1`).first<string>('phase');
+    if (ph !== 'restoring')
+      return { ok: false, reason: `refused: the way back isn't under way (phase ${ph})` };
+    await this.ctx.storage.put('move_status', { state: 'copying' } satisfies MoveStatus);
+    await this.ctx.storage.sql.exec(`DELETE FROM job WHERE id = 'move_out'`);
+    await this.enqueue('move_out', {
+      id: 'move_out',
+      state: { phase: 'copy', budgetId, t: 0, cursor: null, rows: 0 },
       runAt: Date.now(),
     });
     return { ok: true };
@@ -292,6 +317,11 @@ export class BudgetStore extends DurableObject<Env> {
           () => this.appEnv(),
           (st) => this.ctx.storage.put('move_status', st),
         )(job, now),
+      move_out: (job, now) =>
+        storeMoveOutHandler(this.env.DB, this.adapter(), (st) => this.ctx.storage.put('move_status', st))(
+          job,
+          now,
+        ),
       register_link: async (job) => {
         // Retried until the Directory answers; a duplicate Item is flagged on the connection (6.4).
         const { itemId, connectionId } = job.state as { itemId: string; connectionId: string };

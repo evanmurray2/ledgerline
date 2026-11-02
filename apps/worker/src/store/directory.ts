@@ -22,7 +22,7 @@ import { refreshUsage } from '../ops/usage.js';
 import { pruneAuthStmts } from '../maintenance.js';
 import { JobRunner, type Handler } from './jobs.js';
 import { nextUtc } from './budget-jobs.js';
-import { directoryMoveHandler, type MoveStatus } from './move-jobs.js';
+import { directoryMoveHandler, directoryMoveOutHandler, type MoveStatus } from './move-jobs.js';
 import { notFrozen } from './budget-store.js';
 
 /** Budgets checked per ensure_all step (docs/multi-user.md 6.2). */
@@ -38,6 +38,8 @@ export interface Caller {
   email: string;
   sessionId: string;
   verifiedAt: number;
+  /** The way back is copying into D1 (docs/multi-user.md 8.6): serve read-only. */
+  frozen?: boolean;
 }
 
 export type AuthResult =
@@ -107,6 +109,30 @@ export class Directory extends DurableObject<Env> {
     return { ok: true };
   }
 
+  /** The way back (8.6): refused unless D1 is 'restoring'; only for a single budget (bank event ids). */
+  async startMoveOut(): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const ph = await this.env.DB.prepare(`SELECT phase FROM move_state WHERE id = 1`).first<string>('phase');
+    if (ph !== 'restoring')
+      return { ok: false, reason: `refused: the way back isn't under way (phase ${ph})` };
+    await this.ctx.storage.put('move_status', { state: 'emptying' });
+    this.ctx.storage.sql.exec(`DELETE FROM job WHERE id = 'move_out'`);
+    await this.runner.enqueue(
+      'move_out',
+      { id: 'move_out', state: { phase: 'empty', t: 0, cursor: null }, runAt: Date.now() },
+      Date.now(),
+    );
+    return { ok: true };
+  }
+
+  async budgetCount(): Promise<number> {
+    return Number(this.ctx.storage.sql.exec(`SELECT count(*) AS n FROM budget`).one().n);
+  }
+
+  async isAdmin(userId: string): Promise<boolean> {
+    const r = this.ctx.storage.sql.exec(`SELECT is_admin FROM user WHERE id = ?`, userId).toArray()[0];
+    return r?.is_admin === 1;
+  }
+
   async moveStatus(): Promise<unknown> {
     return (await this.ctx.storage.get('move_status')) ?? null;
   }
@@ -134,6 +160,24 @@ export class Directory extends DurableObject<Env> {
           },
           storeStatus: (b) => store(b).moveStatus() as Promise<MoveStatus | null>,
           afterMove: (b, events) => store(b).afterMove(events),
+          setStatus: (st) => this.ctx.storage.put('move_status', st),
+        })(job, now);
+      },
+      move_out: (job, now) => {
+        const store = (b: string) => this.env.BUDGET.get(this.env.BUDGET.idFromName(b));
+        return directoryMoveOutHandler({
+          d1: this.env.DB,
+          dir: this.db as unknown as D1Database,
+          budgetIds: async () =>
+            this.ctx.storage.sql
+              .exec(`SELECT id FROM budget ORDER BY id`)
+              .toArray()
+              .map((r) => String(r.id)),
+          startStore: async (b) => {
+            const r = await store(b).startMoveOut(b);
+            if (!r.ok) throw new Error(r.reason);
+          },
+          storeStatus: (b) => store(b).moveStatus() as Promise<MoveStatus | null>,
           setStatus: (st) => this.ctx.storage.put('move_status', st),
         })(job, now);
       },

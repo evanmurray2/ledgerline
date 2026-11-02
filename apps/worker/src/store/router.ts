@@ -17,15 +17,17 @@ export async function servingPhase(env: Env, now = Date.now()): Promise<string> 
     .first<{ phase: string; lease_expires: number | null }>()
     .catch(() => null);
   let phase = r?.phase ?? 'none';
-  // The freeze's time limit (docs/multi-user.md 8.2): a move that hasn't switched in time is abandoned and D1
-  // carries on, even if the move's own job has died. The switch is fenced on the same lease.
-  if (phase === 'frozen' && r?.lease_expires && r.lease_expires < now) {
+  // The freeze's time limit (docs/multi-user.md 8.2, 8.6): a move or a way back that hasn't switched in time is
+  // abandoned and the side that held the data carries on (D1 for a move, the new databases for the way back),
+  // even if the job has died. Both switches are fenced on the same lease.
+  if ((phase === 'frozen' || phase === 'restoring') && r?.lease_expires && r.lease_expires < now) {
+    const back = phase === 'frozen' ? 'none' : 'moved';
     await env.DB.prepare(
-      `UPDATE move_state SET phase = 'none', updated_at = ?1 WHERE id = 1 AND phase = 'frozen' AND lease_expires < ?1`,
+      `UPDATE move_state SET phase = ?2, updated_at = ?1 WHERE id = 1 AND phase = ?3 AND lease_expires < ?1`,
     )
-      .bind(now)
+      .bind(now, back, phase)
       .run();
-    phase = 'none';
+    phase = back;
   }
   cached = { phase, at: now };
   return cached.phase;
@@ -44,7 +46,7 @@ export function resetRoutingCache(): void {
 const json = (body: unknown, status: number) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-export async function routeApi(req: Request, env: Env): Promise<Response> {
+export async function routeApi(req: Request, env: Env, opts: { frozen?: boolean } = {}): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
   const dir = env.DIRECTORY.get(env.DIRECTORY.idFromName(DIRECTORY_NAME));
@@ -87,5 +89,5 @@ export async function routeApi(req: Request, env: Env): Promise<Response> {
   // Everything else: who is asking, then their own budget.
   const a = await dir.authenticate(req.headers.get('cookie'), req.method, path);
   if (!a.ok) return json(a.body, a.status);
-  return store(a.caller.budgetId).api(req, a.caller);
+  return store(a.caller.budgetId).api(req, { ...a.caller, ...(opts.frozen ? { frozen: true } : {}) });
 }

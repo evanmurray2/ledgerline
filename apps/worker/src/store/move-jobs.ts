@@ -273,3 +273,167 @@ export function directoryMoveHandler(deps: DirectoryMoveDeps): Handler {
     }
   };
 }
+
+// ---------------------------------------------------------------- the way back (docs/multi-user.md 8.6)
+
+interface StoreOutState {
+  phase: 'copy' | 'verify';
+  budgetId: string;
+  t: number;
+  cursor: unknown[] | null;
+  rows: number;
+}
+
+/** A store's move_out job: copy every row (rowids kept) into D1, then compare D1 with the store row for row. */
+export function storeMoveOutHandler(
+  d1: D1Database,
+  store: D1Database,
+  setStatus: (s: MoveStatus) => Promise<void>,
+): Handler {
+  return async (job, now): Promise<StepResult> => {
+    const s = job.state as StoreOutState;
+    const next = (st: StoreOutState): StepResult => ({ state: st, runAt: now });
+    const fail = async (reason: string): Promise<StepResult> => {
+      await setStatus({ state: 'failed', reason });
+      return { done: true };
+    };
+    const table = BUDGET_TABLES[s.t];
+    if (s.phase === 'copy') {
+      if (!table) {
+        await setStatus({ state: 'verifying' });
+        return next({ ...s, phase: 'verify', t: 0, cursor: null, rows: 0 });
+      }
+      const meta = await tableMeta(store, table);
+      const c = await readChunk(store, table, meta, NO_FILTER, s.cursor);
+      if (c.rows.length) await d1.batch(insertStatements(d1, table, meta, c.rows));
+      await setStatus({ state: 'copying', table });
+      return next(
+        c.cursor
+          ? { ...s, cursor: c.cursor, rows: s.rows + c.rows.length }
+          : { ...s, t: s.t + 1, cursor: null, rows: s.rows + c.rows.length },
+      );
+    }
+    if (!table) {
+      await setStatus({ state: 'verified', tables: BUDGET_TABLES.length, rows: s.rows, monthsRecomputed: 0 });
+      return { done: true };
+    }
+    if (s.cursor === null) {
+      const missing = await missingColumns(store, d1, table, 'budget');
+      if (missing) return fail(`${table}: D1 lacks column(s) ${missing.join(', ')}`);
+    }
+    const meta = await tableMeta(store, table);
+    const src = await readChunk(store, table, meta, NO_FILTER, s.cursor);
+    const dst = await readChunk(d1, table, meta, budgetFilter(table, s.budgetId), s.cursor);
+    if (src.text !== dst.text) return fail(`${table}: rows differ in D1 after ${s.rows} row(s)`);
+    return next(
+      src.cursor
+        ? { ...s, cursor: src.cursor, rows: s.rows + src.rows.length }
+        : { ...s, t: s.t + 1, cursor: null, rows: s.rows + src.rows.length },
+    );
+  };
+}
+
+/** D1's tables, emptied children-first before the way back refills them parents-first. */
+const DIR_FIRST = ['user'] as const;
+const DIR_AFTER = ['budget_member', 'passkey', 'auth_session', 'device_link', 'usage_day'] as const;
+export const D1_FILL_ORDER = [...DIR_FIRST, ...BUDGET_TABLES, ...DIR_AFTER];
+
+interface DirOutState {
+  phase: 'empty' | 'users' | 'stores' | 'wait' | 'rest' | 'verify' | 'switch';
+  t: number;
+  cursor: unknown[] | null;
+  budgets?: string[];
+  i?: number;
+  polls?: number;
+}
+
+export interface DirectoryOutDeps {
+  d1: D1Database;
+  dir: D1Database;
+  budgetIds: () => Promise<string[]>;
+  startStore: (budgetId: string) => Promise<void>;
+  storeStatus: (budgetId: string) => Promise<MoveStatus | null>;
+  setStatus: (s: MoveStatus | { state: 'emptying' | 'waiting' | 'switching' | 'back' }) => Promise<void>;
+}
+
+/** The Directory's move_out job. Any failure leaves the new databases serving, with nothing lost. */
+export function directoryMoveOutHandler(deps: DirectoryOutDeps): Handler {
+  const { d1, dir } = deps;
+  return async (job, now): Promise<StepResult> => {
+    const s = job.state as DirOutState;
+    const next = (st: DirOutState, delay = 0): StepResult => ({ state: st, runAt: now + delay });
+    const abort = async (reason: string): Promise<StepResult> => {
+      // The new databases still hold everything: they carry on serving.
+      await d1
+        .prepare(
+          `UPDATE move_state SET phase = 'moved', updated_at = ?1 WHERE id = 1 AND phase = 'restoring'`,
+        )
+        .bind(now)
+        .run();
+      await deps.setStatus({ state: 'failed', reason });
+      return { done: true };
+    };
+    switch (s.phase) {
+      case 'empty': {
+        // D1 accepts writes only while 'restoring'; its old copy is replaced by the current data, children first.
+        const ph = await d1.prepare(`SELECT phase FROM move_state WHERE id = 1`).first<string>('phase');
+        if (ph !== 'restoring') return abort('the way back is no longer under way');
+        await deps.setStatus({ state: 'emptying' });
+        await d1.batch([...D1_FILL_ORDER].reverse().map((t) => d1.prepare(`DELETE FROM "${t}"`)));
+        return next({ phase: 'users', t: 0, cursor: null });
+      }
+      case 'users':
+      case 'rest': {
+        const list = s.phase === 'users' ? DIR_FIRST : DIR_AFTER;
+        const table = list[s.t];
+        if (!table) {
+          if (s.phase === 'users')
+            return next({ phase: 'stores', t: 0, cursor: null, budgets: await deps.budgetIds(), i: 0 });
+          return next({ ...s, phase: 'verify', t: 0, cursor: null });
+        }
+        const meta = await tableMeta(dir, table);
+        const c = await readChunk(dir, table, meta, NO_FILTER, s.cursor);
+        if (c.rows.length) await d1.batch(insertStatements(d1, table, meta, c.rows));
+        return next(c.cursor ? { ...s, cursor: c.cursor } : { ...s, t: s.t + 1, cursor: null });
+      }
+      case 'stores': {
+        const b = s.budgets?.[s.i ?? 0];
+        if (!b) return next({ ...s, phase: 'wait', polls: 0 }, 1000);
+        await deps.startStore(b);
+        return next({ ...s, i: (s.i ?? 0) + 1 });
+      }
+      case 'wait': {
+        await deps.setStatus({ state: 'waiting' });
+        const statuses = await Promise.all((s.budgets ?? []).map((b) => deps.storeStatus(b)));
+        const failed = statuses.find((x) => x?.state === 'failed');
+        if (failed && failed.state === 'failed') return abort(failed.reason);
+        if (statuses.every((x) => x?.state === 'verified'))
+          return next({ ...s, phase: 'rest', t: 0, cursor: null });
+        if ((s.polls ?? 0) > 1500) return abort('a budget did not finish copying in time');
+        return next({ ...s, polls: (s.polls ?? 0) + 1 }, 2000);
+      }
+      case 'verify': {
+        const all = [...DIR_FIRST, ...DIR_AFTER];
+        const table = all[s.t];
+        if (!table) return next({ ...s, phase: 'switch' });
+        const meta = await tableMeta(dir, table);
+        const src = await readChunk(dir, table, meta, NO_FILTER, s.cursor);
+        const dst = await readChunk(d1, table, meta, NO_FILTER, s.cursor);
+        if (src.text !== dst.text) return abort(`${table}: rows differ in D1`);
+        return next(src.cursor ? { ...s, cursor: src.cursor } : { ...s, t: s.t + 1, cursor: null });
+      }
+      case 'switch': {
+        await deps.setStatus({ state: 'switching' });
+        const r = await d1
+          .prepare(
+            `UPDATE move_state SET phase = 'none', updated_at = ?1 WHERE id = 1 AND phase = 'restoring' AND lease_expires > ?1`,
+          )
+          .bind(now)
+          .run();
+        if (r.meta.changes !== 1) return abort('the way back ran out of time before the switch');
+        await deps.setStatus({ state: 'back' });
+        return { done: true };
+      }
+    }
+  };
+}
