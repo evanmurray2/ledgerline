@@ -108,3 +108,4 @@ The UI works around these contract gaps (details in `apps/web/CONTRACT_NOTES.md`
 - [x] Quarterly and yearly refill targets are met in their Due month, and a period already under way spreads over the months left (D-31, migration 0009). _Verify:_ `targets-status.test.ts`; Worker Playwright target test.
 - [x] Pending: money you add can go straight to Ready to Assign; amounts you added can change; any bank pending row takes your estimate (typed without a sign, cleared to go back to the bank amount). _Verify:_ `apps/worker/test/pending-edits.test.ts`; Worker Playwright pending test.
 - [x] Assign lists an overspent category that also has a target once, for the larger of the two amounts (a target's need already funds the month's spending). _Verify:_ `apps/worker/test/pending-edits.test.ts`.
+- [x] Low only for monthly spending categories (D-32): yearly funds and goals on plan no longer show in Needs attention. _Verify:_ `targets-status.test.ts`.

@@ -1,9 +1,9 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { cents, parseCents as $, type Cents } from '../src/money.js';
-import { addMonths, month, type Month } from '../src/month.js';
+import { addMonths, month, type IsoDate, type Month } from '../src/month.js';
 import { neededThisMonth, refillPeriod, targetFor, type Target } from '../src/targets.js';
-import { cardStatus, categoryStatus, suggestedFix, type StatusInput } from '../src/status.js';
+import { cardStatus, categoryStatus, isLow, suggestedFix, type StatusInput } from '../src/status.js';
 import { computeBudget } from '../src/budget/compute.js';
 import { project } from '../src/budget/project.js';
 import * as F from './fixtures/november.js';
@@ -213,6 +213,43 @@ describe('November statuses match the prototype', () => {
     expect(suggestedFix('low', input('personal'))).toBe($('20'));
     expect(suggestedFix('overfunded', input('gifts'))).toBe($('-40'));
   });
+  it('Low is for spending running through a monthly category, not a yearly fund or goal on its way up', () => {
+    const base = { ...input('personal'), today: '2026-11-02' as IsoDate };
+    const yearly: Target = { type: 'refill', amount: $('259'), periodMonths: 12, anchor: month('2026-06') };
+    // $37 of a $259 year, nothing spent: on plan.
+    expect(isLow({ ...base, target: yearly, available: $('37'), spent: cents(0), need: cents(0) })).toBe(
+      false,
+    );
+    expect(
+      isLow({
+        ...base,
+        target: { type: 'no_date', amount: $('3000'), monthly: null },
+        available: $('187.08'),
+        spent: cents(0),
+        need: cents(0),
+      }),
+    ).toBe(false);
+    // Groceries $400 a month with $340 spent two days in: Low.
+    const groceries: Target = { type: 'refill', amount: $('400'), periodMonths: 1, anchor: month('2026-11') };
+    expect(isLow({ ...base, target: groceries, available: $('60'), spent: $('340'), need: cents(0) })).toBe(
+      true,
+    );
+    expect(isLow({ ...base, target: groceries, available: $('390'), spent: $('10'), need: cents(0) })).toBe(
+      false,
+    );
+    // A Low amount you set still applies to any spending category.
+    expect(
+      isLow({
+        ...base,
+        target: yearly,
+        available: $('37'),
+        spent: cents(0),
+        need: cents(0),
+        lowThreshold: $('50'),
+      }),
+    ).toBe(true);
+  });
+
   it('cards: Sapphire Covered, Freedom Short $18.25', () => {
     expect(cardStatus(nov.cards.sapphire!.available, cents(-p.working.sapphire!), $('44.85'))).toEqual({
       status: 'covered',

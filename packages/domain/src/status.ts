@@ -31,19 +31,23 @@ export function elapsedShare(month: Month, today: IsoDate): number {
   return dayOfMonth(today) / daysInMonth(month);
 }
 
+/** A target funded fresh each month (Refill monthly, Set aside), as opposed to one that builds toward a date or goal. */
+function monthlyTarget(t: Target | null): boolean {
+  return t !== null && (t.type === 'set_aside' || (t.type === 'refill' && t.periodMonths === 1));
+}
+
 /**
- * Low (spending categories only): less than 20% of the period amount left (or below the per-category amount), or
- * month-to-date spending more than 30 points ahead of the month's elapsed share. Spending share is spent ÷ (spent +
- * available) (decisions.md D-18).
+ * Low warns that spending is running through a category (spending categories only): below the per-category Low
+ * amount if one is set; otherwise, for monthly targets only, less than 20% of the month's amount left after spending,
+ * or month-to-date spending more than 30 points ahead of the month's elapsed share. Spending share is spent ÷
+ * (spent + available) (decisions.md D-18). Quarterly and yearly refills and balance goals fill up slowly by design,
+ * so being far below their full amount is not Low (D-32).
  */
 export function isLow(s: StatusInput): boolean {
   if (s.kind !== 'spending' || s.isBill || s.available <= 0) return false;
-  const period = s.target ? s.target.amount : null;
-  if (s.lowThreshold !== null) {
-    if (s.available < s.lowThreshold) return true;
-  } else if (period !== null && s.available * 5 < period) {
-    return true; // available < 20% of the period amount, in integers
-  }
+  if (s.lowThreshold !== null && s.available < s.lowThreshold) return true;
+  if (!monthlyTarget(s.target) || s.spent <= 0) return false;
+  if (s.lowThreshold === null && s.available * 5 < s.target!.amount) return true; // < 20%, in integers
   const total = s.spent + s.available;
   if (total <= 0 || s.spent <= 0) return false;
   return s.spent / total - elapsedShare(s.month, s.today) > 0.3;
