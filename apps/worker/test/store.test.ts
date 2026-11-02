@@ -45,8 +45,8 @@ describe('object migrations', () => {
     expect(d).toMatchObject({
       ok: true,
       kind: 'directory',
-      migrations: ['0001_baseline.sql', '0002_jobs.sql'],
-      tables: 9,
+      migrations: ['0001_baseline.sql', '0002_jobs.sql', '0003_users.sql'],
+      tables: 15,
     });
   });
 
