@@ -4,3 +4,4 @@ docs/sync-spec.md
 pnpm-lock.yaml
 .wrangler/
 dist/
+apps/worker/src/store/migrations.gen.ts

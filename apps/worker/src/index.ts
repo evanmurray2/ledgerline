@@ -9,6 +9,8 @@ import { scheduled } from './cron.js';
 export { SyncWorkflow } from './sync/workflow.js';
 export { MaintenanceWorkflow } from './maintenance.js';
 export { RecomputeWorkflow } from './budget/workflow.js';
+export { BudgetStore } from './store/budget-store.js';
+export { Directory } from './store/directory.js';
 
 const app = new Hono<AppEnv>();
 app.use('/api/*', apiHeaders);

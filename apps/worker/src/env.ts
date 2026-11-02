@@ -1,5 +1,8 @@
 export interface Env {
   DB: D1Database;
+  /** docs/multi-user.md: the Directory (one object) and one BudgetStore per budget. Unused until routing ships. */
+  DIRECTORY: DurableObjectNamespace<import('./store/directory.js').Directory>;
+  BUDGET: DurableObjectNamespace<import('./store/budget-store.js').BudgetStore>;
   SYNC: Workflow<SyncParams>;
   MAINTENANCE: Workflow<MaintenanceParams>;
   RECOMPUTE: Workflow<RecomputeParams>;
