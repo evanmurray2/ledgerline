@@ -39,7 +39,7 @@ import {
 } from './screens/Settings';
 import { FirstSortScreen, LinkBanksScreen, StartMonthScreen, WelcomeScreen } from './screens/Setup';
 import { AddDeviceScreen, ReauthDialog, SignInScreen } from './screens/Auth';
-import { ApiError } from './api/client';
+import { ApiError, errorMessage } from './api/client';
 
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
 
@@ -80,7 +80,14 @@ function Root() {
     if (session.error)
       return (
         <div className="p-4">
-          <ErrorNote error={session.error} />
+          {/* Cloudflare's daily limit ran out (decisions.md D-37): the reset time in the reader's own time zone. */}
+          <ErrorNote
+            error={
+              session.error instanceof ApiError && session.error.code === 'daily_limit'
+                ? new Error(errorMessage(session.error))
+                : session.error
+            }
+          />
         </div>
       );
     return <Loading />;

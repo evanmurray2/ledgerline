@@ -165,3 +165,35 @@ describe('without D1 (production since Nov 2, 2026)', () => {
     resetRoutingCache();
   });
 });
+
+describe('when the Durable Objects can’t be reached', () => {
+  const broken = (message: string) =>
+    ({
+      ...(prodEnv() as object),
+      DB: undefined,
+      DIRECTORY: {
+        idFromName: () => ({}),
+        get: () => ({
+          fetch: () => Promise.reject(new Error(message)),
+          authenticate: () => Promise.reject(new Error(message)),
+        }),
+      },
+    }) as never;
+  const call = (env: never, path: string) =>
+    worker.fetch(new Request(ORIGIN + path, { headers: { origin: ORIGIN } }), env, createExecutionContext());
+
+  it('says the daily limit ran out, plainly, instead of a bare error', async () => {
+    const env = broken('Exceeded allowed volume of requests in Durable Objects free tier.');
+    for (const path of ['/api/auth/status', '/api/session']) {
+      const r = await call(env, path);
+      expect(r.status).toBe(503);
+      expect(await r.json()).toMatchObject({ error: 'daily_limit' });
+    }
+  });
+
+  it('any other failure is a short "can’t reach your data" answer', async () => {
+    const r = await call(broken('Network connection lost.'), '/api/session');
+    expect(r.status).toBe(503);
+    expect(await r.json()).toMatchObject({ error: 'unavailable' });
+  });
+});

@@ -14,6 +14,20 @@ export { RecomputeWorkflow } from './budget/workflow.js';
 export { BudgetStore } from './store/budget-store.js';
 export { Directory } from './store/directory.js';
 
+/** The answer when the Durable Objects can't be reached (docs/multi-user.md 9.2, decisions.md D-37). */
+export function storeUnavailable(error: string): { error: string; message: string } {
+  return /exceed|limit|quota|free tier/i.test(error)
+    ? {
+        error: 'daily_limit',
+        message:
+          'Cloudflare’s free daily limit is used up. Your data is safe. Ledgerline is back after midnight UTC.',
+      }
+    : {
+        error: 'unavailable',
+        message: 'Ledgerline can’t reach your data right now. Your data is safe. Try again soon.',
+      };
+}
+
 const app = new Hono<AppEnv>();
 app.use('/api/*', apiHeaders);
 // Sign-in attempts per IP. Requests without a client IP only come from local runs and tests.
@@ -27,8 +41,17 @@ app.use('/api/auth/*', async (c, next) => {
 // the D1 path below is only for local dev and tests (wrangler.local.jsonc).
 app.use('/api/*', async (c, next) => {
   if (await objectsServe(c.env)) {
+    let r: Response;
+    try {
+      r = await routeApi(c.req.raw, c.env);
+    } catch (e) {
+      // The Directory or the budget's store couldn't be reached. On Free that is almost always the daily Durable
+      // Object allowance running out (Nov 2, 2026): say so plainly instead of a bare 500. Nothing is lost.
+      const text = e instanceof Error ? e.message : String(e);
+      console.error(JSON.stringify({ event: 'store_unreachable', error: text }));
+      return c.json(storeUnavailable(text), 503);
+    }
     // Responses from another object have immutable headers; copy so apiHeaders can add its own.
-    const r = await routeApi(c.req.raw, c.env);
     return new Response(r.body, r);
   }
   return next();

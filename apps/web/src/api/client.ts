@@ -37,7 +37,16 @@ const FRIENDLY: Record<string, string> = {
   reauth: 'Confirm it’s you with your passkey, then try again.',
 };
 
+/** The next midnight UTC, in the reader's own time zone (when Cloudflare's daily limits reset). */
+export function dailyResetTime(now = new Date()): string {
+  const reset = new Date(now);
+  reset.setUTCHours(24, 0, 0, 0);
+  return reset.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
 export function errorMessage(err: unknown): string {
+  if (err instanceof ApiError && err.code === 'daily_limit')
+    return `Cloudflare’s free daily limit is used up. Your data is safe. Ledgerline is back at ${dailyResetTime()}.`;
   if (err instanceof ApiError) return FRIENDLY[err.code] ?? err.message;
   return 'Something went wrong. Try again.';
 }
