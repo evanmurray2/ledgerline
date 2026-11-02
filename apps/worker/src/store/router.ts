@@ -3,7 +3,7 @@
 // membership, never from anything in the request.
 import type { Env } from '../env.js';
 import { DIRECTORY_NAME } from './directory.js';
-import { OPS_PATHS, secretMatches } from '../http/auth.js';
+import { OPS_PATHS, SESSION_COOKIE, devSignIn, readCookie, secretMatches } from '../http/auth.js';
 import { makeProvider } from '../sync/provider.js';
 import { RESTING, restsDuring } from '../sync/breaker.js';
 
@@ -62,7 +62,10 @@ export async function routeApi(req: Request, env: Env): Promise<Response> {
     return store(budgetId).api(req, { userId: 'service', budgetId, email: '', sessionId: '', verifiedAt: 0 });
   }
 
-  // Everything else: who is asking, then their own budget.
+  // Everything else: who is asking, then their own budget. A request with no session cookie can't be anyone,
+  // so it is refused here without a Durable Object request: a loop of them can't use up the daily allowance.
+  if (!readCookie(req, SESSION_COOKIE) && !devSignIn(env))
+    return json({ error: 'unauthenticated', message: 'Sign in with your passkey' }, 401);
   const now = Date.now();
   if (now < restingUntil && restsDuring(req.method, path)) return json(RESTING, 503);
   const a = await dir.authenticate(req.headers.get('cookie'), req.method, path);
