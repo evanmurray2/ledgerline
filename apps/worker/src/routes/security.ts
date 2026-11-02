@@ -10,8 +10,13 @@ export const securityRoutes = new Hono<AppEnv>();
 securityRoutes.get('/settings/security', async (c) => {
   const now = clock(c.env);
   const [pk, ss] = await c.env.DB.batch([
-    c.env.DB.prepare(`SELECT id, name, created_at, last_used_at FROM passkey ORDER BY created_at`),
-    c.env.DB.prepare(`SELECT count(*) AS n FROM auth_session WHERE expires_at > ?1`).bind(now),
+    c.env.DB.prepare(
+      `SELECT id, name, created_at, last_used_at FROM passkey WHERE user_id = ?1 ORDER BY created_at`,
+    ).bind(c.get('userId')),
+    c.env.DB.prepare(`SELECT count(*) AS n FROM auth_session WHERE expires_at > ?1 AND user_id = ?2`).bind(
+      now,
+      c.get('userId'),
+    ),
   ]);
   return c.json({
     passkeys: (
@@ -32,11 +37,9 @@ securityRoutes.post('/settings/security/device-link', async (c) => {
   const token = randomToken();
   await c.env.DB.batch([
     c.env.DB.prepare(`DELETE FROM device_link WHERE expires_at <= ?1`).bind(now),
-    c.env.DB.prepare(`INSERT INTO device_link (token_hash, created_at, expires_at) VALUES (?1, ?2, ?3)`).bind(
-      await tokenHash(token),
-      now,
-      now + DEVICE_LINK_MS,
-    ),
+    c.env.DB.prepare(
+      `INSERT INTO device_link (token_hash, created_at, expires_at, user_id) VALUES (?1, ?2, ?3, ?4)`,
+    ).bind(await tokenHash(token), now, now + DEVICE_LINK_MS, c.get('userId')),
   ]);
   const origin = new URL(c.req.url).origin;
   return c.json({
@@ -48,8 +51,10 @@ securityRoutes.post('/settings/security/device-link', async (c) => {
 securityRoutes.post('/settings/security/passkeys/:id/remove', async (c) => {
   const id = c.req.param('id');
   // Never the last one: you'd be locked out.
-  const r = await c.env.DB.prepare(`DELETE FROM passkey WHERE id = ?1 AND (SELECT count(*) FROM passkey) > 1`)
-    .bind(id)
+  const r = await c.env.DB.prepare(
+    `DELETE FROM passkey WHERE id = ?1 AND user_id = ?2 AND (SELECT count(*) FROM passkey WHERE user_id = ?2) > 1`,
+  )
+    .bind(id, c.get('userId'))
     .run();
   if (r.meta.changes !== 1)
     return c.json({ error: 'last_passkey', message: 'You can’t remove your only passkey.' }, 409);
@@ -58,7 +63,9 @@ securityRoutes.post('/settings/security/passkeys/:id/remove', async (c) => {
 
 /** Ends every other session (other phones and computers sign in again with their passkey). */
 securityRoutes.post('/settings/security/sign-out-others', async (c) => {
-  const r = await c.env.DB.prepare(`DELETE FROM auth_session WHERE id != ?1`).bind(c.get('sessionId')).run();
+  const r = await c.env.DB.prepare(`DELETE FROM auth_session WHERE id != ?1 AND user_id = ?2`)
+    .bind(c.get('sessionId'), c.get('userId'))
+    .run();
   return c.json({ ok: true, ended: r.meta.changes });
 });
 

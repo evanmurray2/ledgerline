@@ -51,7 +51,22 @@ export class Scoped {
   }
 }
 
-/** Membership check: returns the user's budget, bootstrapping the owner on first sign-in (single user at launch). */
+/** The signed-in user's budget and email, from their membership (docs/multi-user.md 7.1). */
+export async function membership(
+  db: D1Database,
+  userId: string,
+): Promise<{ userId: string; budgetId: string; email: string } | null> {
+  const r = await db
+    .prepare(
+      `SELECT m.budget_id, u.email FROM budget_member m JOIN user u ON u.id = m.user_id
+       WHERE m.user_id = ?1 AND u.status = 'active' ORDER BY m.created_at LIMIT 1`,
+    )
+    .bind(userId)
+    .first<{ budget_id: string; email: string }>();
+  return r ? { userId, budgetId: r.budget_id, email: r.email } : null;
+}
+
+/** Bootstraps the first user and their budget (setup and local development), or finds them by email. */
 export async function resolveMembership(
   db: D1Database,
   email: string,
@@ -73,7 +88,11 @@ export async function resolveMembership(
   const budgetId = newId();
   await db.batch([
     db
-      .prepare(`INSERT INTO user (id, email, created_at, updated_at) VALUES (?1, ?2, ?3, ?3)`)
+      // The first user runs the instance and keeps the WebAuthn handle the first passkeys use (multi-user.md 7.1).
+      .prepare(
+        `INSERT INTO user (id, email, is_admin, link_allowance, webauthn_handle, created_at, updated_at)
+         VALUES (?1, ?2, 1, 10, 'ledgerline-owner', ?3, ?3)`,
+      )
       .bind(userId, email, now),
     db
       .prepare(`INSERT INTO budget (id, name, created_at, updated_at) VALUES (?1, 'My budget', ?2, ?2)`)

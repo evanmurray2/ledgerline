@@ -3,7 +3,9 @@
 // HttpOnly cookie and the database stores only its SHA-256. The GitHub monitor and deploy smoke test use a bearer
 // token that can reach two endpoints. Local development may trust a fixed email instead, never in production.
 import { sha256Hex } from '@ledgerline/bank-provider';
+import { ulid } from '@ledgerline/platform';
 import type { Env } from '../env.js';
+import { resolveMembership } from '../db/scoped.js';
 
 export const SESSION_COOKIE = '__Host-ledgerline';
 export const CHALLENGE_COOKIE = '__Host-ledgerline-challenge';
@@ -17,9 +19,9 @@ export const DEVICE_LINK_MS = 10 * 60 * 1000;
 export const MIN_SECRET_LENGTH = 32;
 
 export type Identity =
-  { kind: 'owner'; email: string; sessionId: string | null; verifiedAt: number } | { kind: 'ops' };
+  { kind: 'user'; userId: string; sessionId: string | null; verifiedAt: number } | { kind: 'ops' };
 
-/** The one user's identity in the membership tables. */
+/** The first user's email in the membership tables (setup and local development only; never identity). */
 export function ownerEmail(env: Env): string {
   const dev = env.PLAID_ENV !== 'production' ? env.DEV_AUTH_EMAIL : undefined;
   return (env.OWNER_EMAIL || dev || 'owner').toLowerCase();
@@ -68,16 +70,29 @@ export async function identify(req: Request, env: Env, now: number): Promise<Ide
     return (await secretMatches(auth.slice(7), env.OPS_TOKEN)) ? { kind: 'ops' } : null;
   const token = readCookie(req, SESSION_COOKIE);
   if (token) {
-    const row = await env.DB.prepare(`SELECT id, expires_at, verified_at FROM auth_session WHERE id = ?1`)
+    // The session names its user (docs/multi-user.md 7.1); a disabled or deleting user's sessions stop working.
+    const row = await env.DB.prepare(
+      `SELECT s.id, s.expires_at, s.verified_at, s.user_id, u.status FROM auth_session s
+       LEFT JOIN user u ON u.id = s.user_id WHERE s.id = ?1`,
+    )
       .bind(await tokenHash(token))
-      .first<{ id: string; expires_at: number; verified_at: number }>();
-    if (row && row.expires_at > now)
-      return { kind: 'owner', email: ownerEmail(env), sessionId: row.id, verifiedAt: row.verified_at };
+      .first<{
+        id: string;
+        expires_at: number;
+        verified_at: number;
+        user_id: string | null;
+        status: string | null;
+      }>();
+    if (row && row.expires_at > now && row.user_id && row.status === 'active')
+      return { kind: 'user', userId: row.user_id, sessionId: row.id, verifiedAt: row.verified_at };
     return null;
   }
-  // Local development and tests only: no passkey, a fixed owner.
-  if (env.PLAID_ENV !== 'production' && env.DEV_AUTH_EMAIL)
-    return { kind: 'owner', email: ownerEmail(env), sessionId: null, verifiedAt: now };
+  // Local development and tests only: no passkey, a fixed first user.
+  if (env.PLAID_ENV !== 'production' && env.DEV_AUTH_EMAIL) {
+    const email = ownerEmail(env);
+    const m = await resolveMembership(env.DB, email, email, now, () => ulid(now));
+    return m ? { kind: 'user', userId: m.userId, sessionId: null, verifiedAt: now } : null;
+  }
   return null;
 }
 

@@ -71,6 +71,8 @@ export class SoftAuthenticator {
   private keys: CryptoKeyPair | null = null;
   readonly credId = crypto.getRandomValues(new Uint8Array(16));
   counter = 0;
+  /** The WebAuthn user handle given at creation (base64url), returned on every sign-in like a real authenticator. */
+  userHandle: string | null = null;
 
   constructor(
     readonly origin: string,
@@ -81,7 +83,8 @@ export class SoftAuthenticator {
     return b64u(this.credId);
   }
 
-  async create(options: { challenge: string }) {
+  async create(options: { challenge: string; user?: { id: string } }) {
+    this.userHandle = options.user?.id ?? null;
     this.keys = (await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
       'sign',
       'verify',
@@ -129,7 +132,10 @@ export class SoftAuthenticator {
     };
   }
 
-  async get(options: { challenge: string }, o: { origin?: string; signWith?: SoftAuthenticator } = {}) {
+  async get(
+    options: { challenge: string },
+    o: { origin?: string; signWith?: SoftAuthenticator; userHandle?: string } = {},
+  ) {
     this.counter++;
     const clientData = new TextEncoder().encode(
       JSON.stringify({ type: 'webauthn.get', challenge: options.challenge, origin: o.origin ?? this.origin }),
@@ -155,7 +161,7 @@ export class SoftAuthenticator {
         clientDataJSON: b64u(clientData),
         authenticatorData: b64u(authData),
         signature: b64u(der(sig)),
-        userHandle: b64u(new TextEncoder().encode('ledgerline-owner')),
+        userHandle: o.userHandle ?? this.userHandle ?? b64u(new TextEncoder().encode('ledgerline-owner')),
       },
       clientExtensionResults: {},
     };

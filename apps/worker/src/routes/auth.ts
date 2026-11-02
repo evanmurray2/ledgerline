@@ -13,6 +13,8 @@ import {
 import { isoBase64URL } from '@simplewebauthn/server/helpers';
 import type { AppEnv } from '../http/context.js';
 import type { Env } from '../env.js';
+import { ulid } from '@ledgerline/platform';
+import { resolveMembership } from '../db/scoped.js';
 import { clock } from '../http/clock.js';
 import { csrf } from '../http/security.js';
 import {
@@ -23,6 +25,7 @@ import {
   SESSION_MS,
   cookie,
   identify,
+  ownerEmail,
   randomToken,
   readCookie,
   secretMatches,
@@ -33,8 +36,12 @@ export const authRoutes = new Hono<AppEnv>();
 authRoutes.use('*', csrf);
 
 const RP_NAME = 'Ledgerline';
-/** One user: every passkey belongs to the same WebAuthn user handle. */
-const USER_ID = Uint8Array.from(new TextEncoder().encode('ledgerline-owner'));
+/**
+ * Each user has their own WebAuthn user handle (docs/multi-user.md 7.2), so two accounts' passkeys on one device
+ * never replace each other. The first user keeps the handle every passkey used before multi-user.
+ */
+const OWNER_HANDLE = 'ledgerline-owner';
+const handleBytes = (h: string) => Uint8Array.from(new TextEncoder().encode(h));
 
 function rp(req: Request, env: Env): { rpID: string; origin: string } {
   const u = new URL(req.url);
@@ -47,14 +54,37 @@ async function passkeyCount(env: Env): Promise<number> {
   return (await env.DB.prepare(`SELECT count(*) AS n FROM passkey`).first<{ n: number }>())?.n ?? 0;
 }
 
-async function newSession(env: Env, now: number, passkeyId: string, ua: string | null): Promise<string> {
+async function newSession(
+  env: Env,
+  now: number,
+  userId: string,
+  passkeyId: string,
+  ua: string | null,
+): Promise<string> {
   const token = randomToken();
   await env.DB.prepare(
-    `INSERT INTO auth_session (id, created_at, expires_at, verified_at, passkey_id, user_agent) VALUES (?1, ?2, ?3, ?2, ?4, ?5)`,
+    `INSERT INTO auth_session (id, created_at, expires_at, verified_at, passkey_id, user_agent, user_id) VALUES (?1, ?2, ?3, ?2, ?4, ?5, ?6)`,
   )
-    .bind(await tokenHash(token), now, now + SESSION_MS, passkeyId, ua?.slice(0, 200) ?? null)
+    .bind(await tokenHash(token), now, now + SESSION_MS, passkeyId, ua?.slice(0, 200) ?? null, userId)
     .run();
   return token;
+}
+
+/** The user a new passkey will belong to, from what allowed the ceremony; null for setup (the first user, not yet created). */
+async function grantUser(env: Env, grant: { kind: string; ref: string | null }): Promise<string | null> {
+  if (grant.kind === 'device')
+    return (
+      (await env.DB.prepare(`SELECT user_id FROM device_link WHERE token_hash = ?1`)
+        .bind(grant.ref)
+        .first<string>('user_id')) ?? null
+    );
+  if (grant.kind === 'session')
+    return (
+      (await env.DB.prepare(`SELECT user_id FROM auth_session WHERE id = ?1`)
+        .bind(grant.ref)
+        .first<string>('user_id')) ?? null
+    );
+  return null;
 }
 
 async function takeChallenge(
@@ -98,7 +128,7 @@ authRoutes.get('/status', async (c) => {
   const who = await identify(c.req.raw, c.env, now);
   const n = await passkeyCount(c.env);
   return c.json({
-    signedIn: who?.kind === 'owner',
+    signedIn: who?.kind === 'user',
     hasPasskey: n > 0,
     setupOpen: n === 0 && (c.env.SETUP_CODE?.length ?? 0) >= 32,
   });
@@ -126,21 +156,39 @@ authRoutes.post('/register/options', async (c) => {
     if (ok) grant = { kind: 'device', ref: h };
   } else {
     const who = await identify(c.req.raw, env, now);
-    if (who?.kind === 'owner' && who.sessionId && now - who.verifiedAt <= REAUTH_MS)
+    if (who?.kind === 'user' && who.sessionId && now - who.verifiedAt <= REAUTH_MS)
       grant = { kind: 'session', ref: who.sessionId };
   }
   if (!grant) return c.json(fail('That code or link isn’t valid, or it has expired.'), 403);
-  const existing = await env.DB.prepare(`SELECT id, transports FROM passkey`).all<{
-    id: string;
-    transports: string | null;
-  }>();
+  // Only this user's passkeys are excluded, and only their handle is used (never another account's).
+  const userId = await grantUser(env, grant);
+  if (grant.kind !== 'setup' && !userId)
+    return c.json(fail('That code or link isn’t valid, or it has expired.'), 403);
+  const user = userId
+    ? await env.DB.prepare(`SELECT webauthn_handle, display_name FROM user WHERE id = ?1`)
+        .bind(userId)
+        .first<{ webauthn_handle: string | null; display_name: string | null }>()
+    : null;
+  let handle = user?.webauthn_handle ?? null;
+  if (userId && !handle) {
+    handle = randomToken(32);
+    await env.DB.prepare(`UPDATE user SET webauthn_handle = ?2 WHERE id = ?1 AND webauthn_handle IS NULL`)
+      .bind(userId, handle)
+      .run();
+  }
+  const existing = userId
+    ? await env.DB.prepare(`SELECT id, transports FROM passkey WHERE user_id = ?1`)
+        .bind(userId)
+        .all<{ id: string; transports: string | null }>()
+    : { results: [] as { id: string; transports: string | null }[] };
   const { rpID } = rp(c.req.raw, env);
+  const label = user?.display_name ?? 'Ledgerline';
   const options = await generateRegistrationOptions({
     rpName: RP_NAME,
     rpID,
-    userID: USER_ID,
-    userName: 'Ledgerline',
-    userDisplayName: 'Ledgerline',
+    userID: handleBytes(handle ?? OWNER_HANDLE),
+    userName: label,
+    userDisplayName: label,
     attestationType: 'none',
     excludeCredentials: existing.results.map((p) => ({
       id: p.id,
@@ -176,7 +224,7 @@ authRoutes.post('/register/verify', async (c) => {
   }
   const cred = info.credential;
   const name = (typeof b.name === 'string' && b.name.trim() ? b.name.trim() : 'Passkey').slice(0, 60);
-  const insert = `INSERT INTO passkey (id, public_key, counter, transports, name, created_at)`;
+  const insert = `INSERT INTO passkey (id, public_key, counter, transports, name, created_at, user_id)`;
   const vals = [
     cred.id,
     isoBase64URL.fromBuffer(cred.publicKey),
@@ -188,11 +236,19 @@ authRoutes.post('/register/verify', async (c) => {
   // Re-check what allowed the ceremony, in the same statement as the insert, so a used link or a second setup
   // can't add a passkey.
   let stmts: D1PreparedStatement[];
+  let owner: string | null = null;
   if (ch.grant_kind === 'setup') {
+    // The first passkey creates the first user (and their budget), who runs the instance.
+    if ((await passkeyCount(env)) > 0)
+      return c.json(fail('That code or link isn’t valid, or it has expired.'), 403);
+    const email = ownerEmail(env);
+    const m = await resolveMembership(env.DB, email, email, now, () => ulid(now));
+    if (!m) return c.json(fail('That code or link isn’t valid, or it has expired.'), 403);
+    owner = m.userId;
     stmts = [
-      env.DB.prepare(`${insert} SELECT ?1, ?2, ?3, ?4, ?5, ?6 WHERE NOT EXISTS (SELECT 1 FROM passkey)`).bind(
-        ...vals,
-      ),
+      env.DB.prepare(
+        `${insert} SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE NOT EXISTS (SELECT 1 FROM passkey)`,
+      ).bind(...vals, owner),
     ];
   } else if (ch.grant_kind === 'device') {
     stmts = [
@@ -200,13 +256,15 @@ authRoutes.post('/register/verify', async (c) => {
         `UPDATE device_link SET used_at = ?2 WHERE token_hash = ?1 AND used_at IS NULL AND expires_at > ?2`,
       ).bind(ch.grant_ref, now),
       env.DB.prepare(
-        `${insert} SELECT ?1, ?2, ?3, ?4, ?5, ?6 WHERE EXISTS (SELECT 1 FROM device_link WHERE token_hash = ?7 AND used_at = ?6)`,
+        `${insert} SELECT ?1, ?2, ?3, ?4, ?5, ?6, user_id FROM device_link
+         WHERE token_hash = ?7 AND used_at = ?6 AND user_id IS NOT NULL`,
       ).bind(...vals, ch.grant_ref),
     ];
   } else if (ch.grant_kind === 'session') {
     stmts = [
       env.DB.prepare(
-        `${insert} SELECT ?1, ?2, ?3, ?4, ?5, ?6 WHERE EXISTS (SELECT 1 FROM auth_session WHERE id = ?7 AND expires_at > ?6)`,
+        `${insert} SELECT ?1, ?2, ?3, ?4, ?5, ?6, user_id FROM auth_session
+         WHERE id = ?7 AND expires_at > ?6 AND user_id IS NOT NULL`,
       ).bind(...vals, ch.grant_ref),
     ];
   } else {
@@ -216,7 +274,13 @@ authRoutes.post('/register/verify', async (c) => {
   if ((res.at(-1)?.meta.changes ?? 0) !== 1)
     return c.json(fail('That code or link isn’t valid, or it has expired.'), 403);
   if (ch.grant_kind !== 'session') {
-    const token = await newSession(env, now, cred.id, c.req.header('user-agent') ?? null);
+    const userId =
+      owner ??
+      (await env.DB.prepare(`SELECT user_id FROM passkey WHERE id = ?1`)
+        .bind(cred.id)
+        .first<string>('user_id'));
+    if (!userId) return c.json(fail('The passkey couldn’t be verified.'), 400);
+    const token = await newSession(env, now, userId, cred.id, c.req.header('user-agent') ?? null);
     c.header('set-cookie', cookie(SESSION_COOKIE, token, SESSION_MS));
   }
   return c.json({ ok: true });
@@ -239,10 +303,26 @@ authRoutes.post('/login/verify', async (c) => {
   const b = await c.req.json<{ response: AuthenticationResponseJSON }>();
   const ch = await takeChallenge(c.req.raw, env, 'login', now);
   if (!ch) return c.json(fail('That took too long. Try again.'), 400);
-  const pk = await env.DB.prepare(`SELECT id, public_key, counter, transports FROM passkey WHERE id = ?1`)
+  const pk = await env.DB.prepare(
+    `SELECT p.id, p.public_key, p.counter, p.transports, p.user_id, u.webauthn_handle, u.status
+     FROM passkey p LEFT JOIN user u ON u.id = p.user_id WHERE p.id = ?1`,
+  )
     .bind(String(b.response?.id ?? ''))
-    .first<{ id: string; public_key: string; counter: number; transports: string | null }>();
-  if (!pk) return c.json(fail('This passkey isn’t registered with Ledgerline.'), 403);
+    .first<{
+      id: string;
+      public_key: string;
+      counter: number;
+      transports: string | null;
+      user_id: string | null;
+      webauthn_handle: string | null;
+      status: string | null;
+    }>();
+  if (!pk || !pk.user_id) return c.json(fail('This passkey isn’t registered with Ledgerline.'), 403);
+  if (pk.status !== 'active') return c.json(fail('This account is turned off.'), 403);
+  // The passkey must answer for its own user (docs/multi-user.md 7.2).
+  const sent = b.response?.response?.userHandle;
+  if (sent && pk.webauthn_handle && sent !== isoBase64URL.fromBuffer(handleBytes(pk.webauthn_handle)))
+    return c.json(fail('The passkey couldn’t be verified.'), 403);
   const { rpID, origin } = rp(c.req.raw, env);
   let newCounter: number;
   try {
@@ -273,7 +353,7 @@ authRoutes.post('/login/verify', async (c) => {
   ];
   // Already signed in: this was a fresh passkey check (for linking a bank or exporting), so keep the session.
   const who = await identify(c.req.raw, env, now);
-  if (who?.kind === 'owner' && who.sessionId) {
+  if (who?.kind === 'user' && who.sessionId && who.userId === pk.user_id) {
     stmts.push(
       env.DB.prepare(`UPDATE auth_session SET verified_at = ?2 WHERE id = ?1`).bind(who.sessionId, now),
     );
@@ -281,7 +361,7 @@ authRoutes.post('/login/verify', async (c) => {
     return c.json({ ok: true });
   }
   await env.DB.batch(stmts);
-  const token = await newSession(env, now, pk.id, c.req.header('user-agent') ?? null);
+  const token = await newSession(env, now, pk.user_id, pk.id, c.req.header('user-agent') ?? null);
   c.header('set-cookie', cookie(SESSION_COOKIE, token, SESSION_MS));
   return c.json({ ok: true });
 });

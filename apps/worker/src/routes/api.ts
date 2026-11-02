@@ -17,7 +17,7 @@ import { authRoutes } from './auth.js';
 import { securityRoutes } from './security.js';
 import { csrf } from '../http/security.js';
 import { bumpOnChange, etags } from '../http/etag.js';
-import { Scoped, resolveMembership } from '../db/scoped.js';
+import { Scoped, membership } from '../db/scoped.js';
 import { markDirty, recompute } from '../budget/recompute.js';
 import { budgetView } from '../views/budget.js';
 import { fresh } from '../views/common.js';
@@ -56,11 +56,11 @@ api.use('*', async (c, next) => {
   }
   if (needsRecentPasskey(c.req.method, path) && now - who.verifiedAt > REAUTH_MS)
     return c.json({ error: 'reauth', message: 'Confirm it’s you with your passkey' }, 401);
-  const m = await resolveMembership(c.env.DB, who.email, who.email, now, () => ulid());
+  const m = await membership(c.env.DB, who.userId);
   if (!m) return c.json({ error: 'forbidden', message: 'Not a member of this budget' }, 403);
   c.set('sessionId', who.sessionId ?? '');
   c.set('userId', m.userId);
-  c.set('email', who.email);
+  c.set('email', m.email);
   c.set('budgetId', m.budgetId);
   return next();
 });
