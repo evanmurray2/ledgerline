@@ -15,7 +15,7 @@ What the owner asked for:
 1. **Move all data out of D1 into Durable Objects**, each with its own SQLite database:
    - one `BudgetStore` per budget, holding everything about that budget;
    - one `Directory` object, holding users, passkeys, sessions, invites, Plaid slots and which budget each bank link belongs to.
-2. **Delete the D1 database** once the move is verified. Cloudflare can undelete a D1 database for 7 days, which is the way back (8.6).
+2. **Delete the D1 database** only after the move is verified and the owner says so. No data is lost on any path: the way back copies everything, including changes made after the move, into a new D1 database (8.6).
 3. **Build accounts, invites and sign-up for other users, switched off.** While the instance has one active user, the owner's app works as it does today, apart from the move itself. New public routes return 404, and fair-share limits run only in multi-user mode (more than one active user).
 
 Non-goals: paying plans, email, a custom domain, native apps, off-site backups (D-29), and sharing one budget between two people.
@@ -253,6 +253,8 @@ Carried over from v1 after its review, adapted to the Directory.
 
 The owner's D1 database is 4.2 MB: 718 transactions, 7 banks, 20 raw pages (Nov 2, 2026). The move runs once, at a time the owner picks, and should take a few minutes.
 
+**Hard rule from the owner: no data is lost on any path.** That covers the move, a failed move, going back afterwards, and deleting D1. Every row the owner has, including edits made after the move, must survive. A step that can't guarantee this doesn't run.
+
 ### 8.1 Before the move
 
 Phases 1–4 ship with D1 still serving everything. The Directory and the owner's store exist but are empty.
@@ -317,11 +319,20 @@ From then on:
 
 ### 8.6 Deleting D1, and the way back
 
-- The owner checks the app for a day or so. Then, with the owner's OK, a deploy removes the D1 binding (phase 5), and the owner (or a Claude session with the owner's say-so) deletes the `ledgerline` D1 database in the Cloudflare dashboard.
-- **The way back within 7 days of deletion**: undelete the D1 database (Cloudflare keeps it 7 days), redeploy the release before phase 5, and set `move_state.phase = 'none'`.
-  - **Bank data refills automatically.** D1's saved Plaid cursors are older, so the next sync fetches every change since. Phase 0 confirms that Plaid accepts an older cursor.
-  - **The owner's own edits made after the move are lost**: categorizing, assigning, splits, rules.
-- After those 7 days there's no way back to D1. Recovery then relies on the stores' own point-in-time recovery (up to 30 days per object, if phase 0 confirms it on Free) and the JSON export. D-29 (no off-site backup) is unchanged.
+- **The way back copies everything, including changes since the move.** A `move_out` job uses the same copy and verify code in reverse:
+  1. Freeze the objects' writers.
+  2. Copy the Directory and the store into a **new, empty** D1 database made from the same migrations. This only adds rows, so the append-only triggers (which block updates and deletes) don't get in the way. `apply_counter` is set to the store's value.
+  3. Check row counts, canonical hashes and a full recompute.
+  4. Switch the Worker back to D1 in one fenced step.
+
+  Nothing the owner did after the move is lost. `move_out` is built and tested in phase 4, both ways on the November fixture and the 3,000-transaction budget, before the owner's real move.
+
+- **Deleting the old D1 database** happens only after the owner has used the app on the new databases for a while and says so. Then:
+  - the owner downloads a JSON export, kept by the owner as an extra copy;
+  - a `move_out` dry run into a scratch D1 database passes verification and is then deleted, proving the way back still works;
+  - a deploy removes the D1 binding (phase 5), and the old `ledgerline` D1 database is deleted.
+- **After deletion**, the way back is still `move_out` into a new D1 database, because the data lives in the objects. Cloudflare's 7-day undelete of the old database is an extra safety net, not the plan.
+- **Point-in-time recovery**: each object can be restored to any moment in the last 30 days, if phase 0 confirms this on Free. The JSON export works at any time. D-29 (no off-site backup) is unchanged.
 
 ## 9. Sharing the free plan
 
@@ -386,8 +397,8 @@ Each phase lands on `main` with `pnpm check` passing. Until phase 4's switch, wh
 1. **Classes, adapter, migrations** (no behaviour change): `Directory`, `BudgetStore`, the adapter, both migration runners and baselines, the expand-only check. _Verify:_ the integration suite and fence tests run against D1 and the adapter in CI; the deploy adds the classes and nothing else.
 2. **Job runner**: sync, recompute, maintenance and daily scan as jobs, with today's step functions at the new chunk sizes. _Verify:_ the 3,000-transaction backfill through the job runner in `vitest-pool-workers` gives the same rows as through the Workflow; lease and fence tests on jobs; the measure suite on the adapter stays under 5 ms per step.
 3. **Routing and Directory**: Worker → Directory → store routing; Directory routes for sign-in and security, scoped by user (7.1, 7.2); the webhook through `connection_route`; the middleware split; usage through the Directory. All of this runs only after the switch: before it, everything still goes to D1. _Verify:_ e2e suite against a test instance with `move_state = 'moved'` and seeded objects.
-4. **The move** (section 8): freeze fences, `move_in`, `move_verify`, the switch, a dry run on a copy of the November fixture and on a 3,000-transaction budget. _Verify:_ a forced mismatch stops the move; a write during the freeze is refused; the switch aborts if a marker changed. **Then, at a time the owner picks, move the owner's data.**
-5. **Remove D1 and Workflows** after a day or so and the owner's OK: drop the D1 binding, the Workflow classes and crons, and the D1 code paths. The owner deletes the D1 database. Update the runbook.
+4. **The move and the way back** (section 8): freeze fences, `move_in`, `move_verify`, the switch, and `move_out` into a new D1 database. Dry runs both ways on a copy of the November fixture and on a 3,000-transaction budget, with edits made between the two moves. _Verify:_ every row and every edit survives both directions (row counts, hashes, full recompute); a forced mismatch stops the move with nothing changed; a write during the freeze is refused; the switch aborts if a marker changed. **Then, at a time the owner picks, move the owner's data.**
+5. **Remove D1 and Workflows** once the owner is happy with the new databases and says so: the JSON export and a passing `move_out` dry run come first (8.6). Then drop the D1 binding, the Workflow classes, the crons and the D1 serving paths, and delete the D1 database. `move_out` and its tests stay in the code. Using it later needs a deploy that binds a new, empty D1 database (runbook step). Update the runbook.
 6. **Accounts**: the switch, invites, recovery codes, People and diagnostics (7.3, 7.4). _Verify:_ with `SIGNUPS = off` every new route returns 404; e2e for invite sign-up, reused invite, `MAX_USERS`, recovery.
 7. **Plaid slots, fair share, deletion** (9, 10), and the isolation test (11).
 8. **Capacity**: seed 10 users with the November fixture, simulate a day, update 9.3.
@@ -422,7 +433,7 @@ Rough size: phases 0–5 three to five weeks of sessions, phases 6–8 one to tw
   - no batch spans two databases;
   - deploys that add a Durable Object class can't be rolled back past;
   - copying needs byte-sized chunks and the budget-less tables;
-  - the reverse move is replaced by D1's 7-day undelete.
+  - the reverse move is a full copy into a new, empty D1 database, so nothing made after the move is lost (owner's rule: no data lost on any path).
 
   The v2 review also argued the move only pays off on the paid plan. The owner chose to go ahead knowing that.
 
