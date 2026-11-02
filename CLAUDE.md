@@ -29,6 +29,6 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 
 - pnpm monorepo: `packages/domain` (Money rules, `computeBudget()`), `packages/contracts` (Zod), `apps/worker` (Hono + D1 + Workflows), `apps/web` (React SPA), `e2e` (Playwright).
 - Checks before pushing (about 30 s): `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`, `pnpm test:integration`. For UI changes, run only the e2e tests that cover what you changed, e.g. `cd e2e && pnpm exec playwright test app.spec.ts -g "<test name>"` (the Worker suite: `pnpm --filter @ledgerline/web build` first, then `-c playwright.worker.config.ts`). Don't run the full `pnpm test:e2e`: CI runs it on every push. Chromium is preinstalled; don't run `playwright install`.
-- After each push, check the `ci` run for your commit (about 2 min) and fix it on `master` right away if it fails, before more work goes on top.
+- Don't wait for CI after a push; carry on working. Just before your next push, and when you finish a task, check the `ci` run for your previous push (it's usually done by then; GitHub MCP `actions_list`, `list_workflow_runs`). If it failed, fix that first.
 - Migrations in `packages/db/migrations` are forward-only once on `master` (`node tools/ci/migration-check.mjs`); add a new numbered file.
 - Small commits on `master`, tests passing before each; keep `docs/build-plan.md` current.
