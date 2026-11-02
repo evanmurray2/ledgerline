@@ -6,11 +6,35 @@ import { extendForSleep } from './lease.js';
 export const WRITE_LIMIT = 100_000;
 export const READ_LIMIT = 5_000_000;
 
+/** Durable Objects on Free: 100,000 requests and 13,000 GB-s of active time a day (docs/multi-user.md 9.3). */
+export const DO_REQUEST_LIMIT = 100_000;
+export const DO_GBS_LIMIT = 13_000;
+
 export type BudgetState = 'normal' | 'pause' | 'readonly';
 
-export function classifyUsage(rowsWritten: number, rowsRead: number): BudgetState {
-  if (rowsWritten >= 90_000 || rowsRead >= 4_500_000) return 'readonly';
-  if (rowsWritten >= 70_000 || rowsRead >= 3_500_000) return 'pause';
+/** Today's Durable Object requests and active time (GB-s), from analytics. */
+export interface DoUsage {
+  requests: number;
+  gbs: number;
+}
+
+/**
+ * 70% of any daily limit pauses background work, 90% makes the app read-only. Rows read and written, and (since
+ * Nov 2, 2026, when running out of them took the app offline for the day) Durable Object requests and active time.
+ */
+export function classifyUsage(
+  rowsWritten: number,
+  rowsRead: number,
+  d: DoUsage = { requests: 0, gbs: 0 },
+): BudgetState {
+  const share = Math.max(
+    rowsWritten / WRITE_LIMIT,
+    rowsRead / READ_LIMIT,
+    d.requests / DO_REQUEST_LIMIT,
+    d.gbs / DO_GBS_LIMIT,
+  );
+  if (share >= 0.9) return 'readonly';
+  if (share >= 0.7) return 'pause';
   return 'normal';
 }
 
@@ -21,24 +45,30 @@ export function utcDay(now = Date.now()): string {
 export async function usageToday(
   env: Env,
   now = Date.now(),
-): Promise<{ written: number; read: number; refreshedAt: number | null }> {
+): Promise<{ written: number; read: number; do: DoUsage; refreshedAt: number | null }> {
   // Inside a budget's Durable Object, account usage lives in the Directory (docs/multi-user.md 9.2).
   if (env.USAGE) {
     const u = await env.USAGE();
-    return { written: u.written, read: u.read, refreshedAt: null };
+    return { written: u.written, read: u.read, do: u.do ?? { requests: 0, gbs: 0 }, refreshedAt: null };
   }
   const r = await env.DB.prepare(
-    `SELECT rows_written + est_written AS w, rows_read + est_read AS r, refreshed_at FROM usage_day WHERE day = ?1`,
+    `SELECT rows_written + est_written AS w, rows_read + est_read AS r, do_requests, do_gbs, refreshed_at
+     FROM usage_day WHERE day = ?1`,
   )
     .bind(utcDay(now))
-    .first<{ w: number; r: number; refreshed_at: number }>();
-  return { written: r?.w ?? 0, read: r?.r ?? 0, refreshedAt: r?.refreshed_at ?? null };
+    .first<{ w: number; r: number; do_requests: number; do_gbs: number; refreshed_at: number }>();
+  return {
+    written: r?.w ?? 0,
+    read: r?.r ?? 0,
+    do: { requests: r?.do_requests ?? 0, gbs: r?.do_gbs ?? 0 },
+    refreshedAt: r?.refreshed_at ?? null,
+  };
 }
 
 /** Background paths call this before each unit of work. Usage events are dropped from the 70% tier. */
 export async function writeBudgetState(env: Env): Promise<BudgetState> {
   const u = await usageToday(env);
-  const s = classifyUsage(u.written, u.read);
+  const s = classifyUsage(u.written, u.read, u.do);
   return s === 'readonly' ? 'pause' : s;
 }
 

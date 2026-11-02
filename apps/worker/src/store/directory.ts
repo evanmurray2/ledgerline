@@ -99,10 +99,11 @@ export class Directory extends DurableObject<Env> {
         await this.db.batch(pruneAuthStmts(this.db as unknown as D1Database, now) as never);
         return { state: {}, runAt: nextUtc(now, 10, 20) };
       },
-      // Account usage from GraphQL Analytics, every 4 hours, for the write breaker.
+      // Account usage from GraphQL Analytics, every 30 minutes, for the write breaker. Durable Object requests and
+      // active time can climb fast (they went from 90% to 100% in about an hour on Nov 2, 2026).
       usage_refresh: async (_job, now) => {
         await refreshUsage(this.appEnv(), now, true).catch(() => null);
-        return { state: {}, runAt: now + 4 * 3_600_000 };
+        return { state: {}, runAt: now + 30 * 60_000 };
       },
       // Every budget's ensureJobs, ENSURE_BATCH per step.
       ensure_all: async (job, now) => {
@@ -182,9 +183,9 @@ export class Directory extends DurableObject<Env> {
   }
 
   /** Today's account usage, for the write breaker in every store (docs/multi-user.md 9.2). */
-  async usageToday(): Promise<{ written: number; read: number }> {
+  async usageToday(): Promise<{ written: number; read: number; do: { requests: number; gbs: number } }> {
     const u = await usageToday(this.appEnv());
-    return { written: u.written, read: u.read };
+    return { written: u.written, read: u.read, do: u.do };
   }
 
   /** Adds a store's own row counts to today's account usage (between analytics refreshes). */

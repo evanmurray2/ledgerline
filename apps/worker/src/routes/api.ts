@@ -83,7 +83,7 @@ budgetApi.use('*', async (c, next) => {
   if (m === 'GET' || m === 'HEAD') return next();
   // Inside a budget's Durable Object, account usage comes from the Directory (USAGE); on D1, from usage_day.
   const u = c.env.USAGE ? await c.env.USAGE() : await usageToday(c.env);
-  if (classifyUsage(u.written, u.read) === 'readonly')
+  if (classifyUsage(u.written, u.read, u.do) === 'readonly')
     return c.json({ error: 'readonly', message: 'Daily database limit reached' }, 503);
   return next();
 });
@@ -187,7 +187,7 @@ budgetApi.get('/session', async (c) => {
         ? 'categories'
         : 'done';
   const u = await usageToday(c.env, now);
-  const ws = classifyUsage(u.written, u.read);
+  const ws = classifyUsage(u.written, u.read, u.do);
   const tomorrow = new Date(now);
   tomorrow.setUTCHours(24, 0, 0, 0);
   const body: Session = {
