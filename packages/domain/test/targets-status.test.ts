@@ -78,10 +78,16 @@ describe('targets', () => {
     const from = month('2026-11');
     expect(neededThisMonth(t, ctx({ month: from, periodFrom: from }))).toBe($('24.80'));
     expect(
-      neededThisMonth(t, ctx({ month: month('2027-01'), periodFrom: from, assignedEarlierInPeriod: $('49.60') })),
+      neededThisMonth(
+        t,
+        ctx({ month: month('2027-01'), periodFrom: from, assignedEarlierInPeriod: $('49.60') }),
+      ),
     ).toBe($('24.80'));
     expect(
-      neededThisMonth(t, ctx({ month: month('2027-03'), periodFrom: from, assignedEarlierInPeriod: $('99.20') })),
+      neededThisMonth(
+        t,
+        ctx({ month: month('2027-03'), periodFrom: from, assignedEarlierInPeriod: $('99.20') }),
+      ),
     ).toBe($('24.80'));
     // The next period is a whole year again.
     expect(neededThisMonth(t, ctx({ month: month('2027-04'), periodFrom: from }))).toBe($('10.33'));

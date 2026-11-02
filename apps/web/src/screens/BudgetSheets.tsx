@@ -356,7 +356,8 @@ export function TargetScreen() {
         amount: cents,
         periodMonths: Number(period) as 1 | 3 | 12,
         // The stored anchor is the first month of a period; the Due month is its last (the target is met by then).
-        anchor: period === '1' ? month : addMonths(due || addMonths(month, Number(period) - 1), 1 - Number(period)),
+        anchor:
+          period === '1' ? month : addMonths(due || addMonths(month, Number(period) - 1), 1 - Number(period)),
       };
     if (kind === 'set_aside') return { type: 'set_aside', amount: cents };
     if (kind === 'by_date') return byMonth ? { type: 'by_date', amount: cents, targetMonth: byMonth } : null;
