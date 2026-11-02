@@ -3,7 +3,7 @@ import { NonRetryableError } from 'cloudflare:workflows';
 import type { Env, SyncParams } from '../env.js';
 import { MAX_HANDOFFS, moveLease, releaseFailed, releaseSuccess, renew } from './lease.js';
 import {
-  APPLY_CHUNK,
+  CHUNK,
   applyPage,
   beginRun,
   fetchPage,
@@ -112,7 +112,7 @@ export class SyncWorkflow extends WorkflowEntrypoint<Env, SyncParams> {
 
       // Apply staged pages in order, each in chunks of APPLY_CHUNK events, one batch per step.
       for (let i = state.appliedThrough + 1; i < pages; i++) {
-        let chunk = i === state.appliedThrough + 1 ? Math.floor(state.appliedEvents / APPLY_CHUNK) : 0;
+        let chunk = i === state.appliedThrough + 1 ? Math.floor(state.appliedEvents / CHUNK.apply) : 0;
         for (let attempt = 0; ;) {
           const name = `apply-${i}-${chunk}-${attempt}`;
           const r = await step.do(name, STEP, () =>

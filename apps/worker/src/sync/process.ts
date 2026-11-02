@@ -26,11 +26,13 @@ import type { Env } from '../env.js';
 import { Scoped } from '../db/scoped.js';
 import { conditionFence, isFenceAbort } from './lease.js';
 import type { StepContext } from './steps.js';
+import { CHUNK } from './steps.js';
 import { budgetMeta, chunks, planLineRebuild } from '../ledger/ledger.js';
 import { clearTotals } from '../ledger/totals.js';
 import { recompute } from '../budget/recompute.js';
 import { makeProvider, connectionToken } from './provider.js';
 
+/** Default events per processing step; the live value is CHUNK.process. */
 export const PROCESS_BATCH = 100;
 const MAX_WATERMARK_RETRIES = 3;
 const P2P = /\b(ZELLE|VENMO|CASH APP|CASHAPP|PAYPAL TRANSFER|APPLE CASH)\b/i;
@@ -85,7 +87,7 @@ export async function processPending(env: Env, budgetId: string, now = Date.now(
     const evs = await s.all<EventRow>(
       `SELECT id, kind, provider_txn_id FROM bank_event WHERE budget_id = ?1 AND id > ?2 ORDER BY id LIMIT ?3`,
       expected,
-      PROCESS_BATCH,
+      CHUNK.process,
     );
     if (evs.length === 0) return { caughtUp: true, processed: 0 };
     const through = evs[evs.length - 1]!.id;
@@ -104,7 +106,7 @@ export async function processPending(env: Env, budgetId: string, now = Date.now(
         ...lines,
         s.q(`UPDATE budget SET processed_through = ?2, updated_at = ?3 WHERE id = ?1`, through, now),
       ]);
-      return { caughtUp: evs.length < PROCESS_BATCH, processed: evs.length };
+      return { caughtUp: evs.length < CHUNK.process, processed: evs.length };
     } catch (e) {
       if (!isFenceAbort(e)) throw e;
       // Another processor moved the watermark first: re-read and continue.

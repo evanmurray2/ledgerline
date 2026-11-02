@@ -249,7 +249,9 @@ const EVENT_PARAMS = 10;
 const EVENTS_PER_STMT = Math.floor(100 / EVENT_PARAMS);
 
 /** Events per apply step. A page (one Plaid call) is applied in chunks of this size to stay within CPU. */
+/** Events per apply step (one Workflow step each). Production uses the default; measurement may lower it. */
 export const APPLY_CHUNK = 50;
+export const CHUNK = { apply: APPLY_CHUNK, process: 100 };
 
 export interface ApplyResult {
   applied: boolean;
@@ -303,7 +305,7 @@ export async function applyPage(
     statements: 0,
   });
   if (runRow.applied_through >= page) return done(true);
-  if (runRow.applied_through === page - 1 && runRow.applied_events > chunk * APPLY_CHUNK) return done(false);
+  if (runRow.applied_through === page - 1 && runRow.applied_events > chunk * CHUNK.apply) return done(false);
   const pageRow = pg?.results[0] as (PageRow & { body: string }) | undefined;
   if (!pageRow) throw new Error(`staged page ${page} missing`);
   const body = pageRow.body;
@@ -330,7 +332,7 @@ export async function applyPage(
     if (
       r &&
       (r.applied_through >= page ||
-        (r.applied_through === page - 1 && r.applied_events > chunk * APPLY_CHUNK))
+        (r.applied_through === page - 1 && r.applied_events > chunk * CHUNK.apply))
     ) {
       return done(r.applied_through >= page);
     }
@@ -356,8 +358,8 @@ export async function planApply(
   body: string,
 ): Promise<{ stmts: D1PreparedStatement[]; events: number; pageDone: boolean }> {
   const parsed = provider.parsePage(body);
-  const from = chunk * APPLY_CHUNK;
-  const to = Math.min(parsed.events.length, from + APPLY_CHUNK);
+  const from = chunk * CHUNK.apply;
+  const to = Math.min(parsed.events.length, from + CHUNK.apply);
   const pageDone = to >= parsed.events.length;
   const stmts: D1PreparedStatement[] = [
     leaseFence(db as D1Database, c.connectionId, c.holder, c.now),
