@@ -166,11 +166,11 @@ describe('sync job', () => {
       const db = new SqlD1(st.storage) as unknown as D1Database;
       await seed(db, 'b1', 'c1');
       await acquireFor(db, 'c1', 'sync:1');
-      let runner!: JobRunner;
-      const d = deps(db, 'b1', {
-        enqueue: (kind, o) => runner.enqueue(kind, o, Date.now()),
+      // The sync job enqueues its follow-ups (recompute, hand-off) on the same runner.
+      const runner: JobRunner = new JobRunner(st.storage, {
+        sync: syncHandler(deps(db, 'b1', { enqueue: (kind, o) => runner.enqueue(kind, o, Date.now()) })),
+        recompute: recomputeHandler(db, 'b1'),
       });
-      runner = new JobRunner(st.storage, { sync: syncHandler(d), recompute: recomputeHandler(db, 'b1') });
       await runner.enqueue('sync', { id: 'sync:1', connectionId: 'c1', state: start('sync:1'), runAt: T }, T);
       let now = T;
       for (let n = 0; n < 2000 && runner.list().length; n++) {
