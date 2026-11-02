@@ -28,7 +28,14 @@ import { settingsRoutes } from './settings.js';
 import { opsRoutes } from './ops.js';
 import { categorySheet, assignView } from '../views/category.js';
 
+/**
+ * The API in two layers (docs/multi-user.md 5.1): `api` checks who is asking (session, membership), then hands over
+ * to `budgetApi`, which serves one budget's data. On D1 both run in this Worker. After the move, sign-in runs in
+ * the Directory and `budgetApi` runs inside the budget's own Durable Object, which trusts the identity the Worker
+ * passes it.
+ */
 export const api = new Hono<AppEnv>();
+export const budgetApi = new Hono<AppEnv>();
 
 /** Sign-in routes are public (they verify passkeys themselves). */
 api.route('/auth', authRoutes);
@@ -64,16 +71,17 @@ api.use('*', async (c, next) => {
   c.set('budgetId', m.budgetId);
   return next();
 });
-api.use('*', csrf);
+budgetApi.use('*', csrf);
 /** Unchanged screens answer 304; every change bumps the version (http/etag.ts). */
-api.use('*', etags);
-api.use('*', bumpOnChange);
+budgetApi.use('*', etags);
+budgetApi.use('*', bumpOnChange);
 
-/** Writes are refused when the account is at 90% of a daily D1 limit (Sync spec F8). */
-api.use('*', async (c, next) => {
+/** Writes are refused when the account is at 90% of a daily limit (Sync spec F8). */
+budgetApi.use('*', async (c, next) => {
   const m = c.req.method;
   if (m === 'GET' || m === 'HEAD') return next();
-  const u = await usageToday(c.env);
+  // Inside a budget's Durable Object, account usage comes from the Directory (USAGE); on D1, from usage_day.
+  const u = c.env.USAGE ? await c.env.USAGE() : await usageToday(c.env);
   if (classifyUsage(u.written, u.read) === 'readonly')
     return c.json({ error: 'readonly', message: 'Daily database limit reached' }, 503);
   return next();
@@ -137,7 +145,7 @@ export class HttpError extends Error {
   }
 }
 
-api.onError((e, c) => {
+const onError = (e: Error, c: Parameters<Parameters<typeof api.onError>[0]>[1]) => {
   if (e instanceof HttpError) return c.json({ error: e.code, message: e.message }, e.status);
   console.log(
     JSON.stringify({
@@ -148,11 +156,13 @@ api.onError((e, c) => {
     }),
   );
   return c.json({ error: 'internal', message: 'Something went wrong' }, 500);
-});
+};
+api.onError(onError);
+budgetApi.onError(onError);
 
 // ---------------------------------------------------------------- session and budget
 
-api.get('/session', async (c) => {
+budgetApi.get('/session', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
   const f = await fresh(c.env, s, now, () => startRecompute(c.env, s.budgetId));
@@ -202,7 +212,7 @@ api.get('/session', async (c) => {
   return c.json(body);
 });
 
-api.get('/budget/:month', async (c) => {
+budgetApi.get('/budget/:month', async (c) => {
   const m = c.req.param('month');
   if (!isMonth(m)) throw new HttpError(400, 'invalid', 'month');
   const s = scoped(c);
@@ -210,7 +220,7 @@ api.get('/budget/:month', async (c) => {
   return c.json(await budgetView(s, f, m));
 });
 
-api.get('/budget/:month/assign', async (c) => {
+budgetApi.get('/budget/:month/assign', async (c) => {
   const m = c.req.param('month');
   if (!isMonth(m)) throw new HttpError(400, 'invalid', 'month');
   const s = scoped(c);
@@ -218,7 +228,7 @@ api.get('/budget/:month/assign', async (c) => {
   return c.json(await assignView(s, f, m));
 });
 
-api.get('/categories/:id/sheet', async (c) => {
+budgetApi.get('/categories/:id/sheet', async (c) => {
   const s = scoped(c);
   const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env, s.budgetId));
   const m = c.req.query('month') ?? f.current;
@@ -267,19 +277,19 @@ async function addAssignments(
   return afterWrite(c.env, s.budgetId, now);
 }
 
-api.post('/budget/assign', async (c) => {
+budgetApi.post('/budget/assign', async (c) => {
   const r = await parse(AssignRequest, c.req.raw);
   return c.json(await addAssignments(c, r.month as Month, r.items));
 });
 
-api.post('/budget/set', async (c) => {
+budgetApi.post('/budget/set', async (c) => {
   const r = await parse(SetAssignedRequest, c.req.raw);
   return c.json(
     await addAssignments(c, r.month as Month, [{ categoryId: r.categoryId, amount: r.assigned, set: true }]),
   );
 });
 
-api.post('/budget/move', async (c) => {
+budgetApi.post('/budget/move', async (c) => {
   const r = await parse(MoveRequest, c.req.raw);
   const items: { categoryId: string; amount: number }[] = [];
   if (r.from !== 'rta') items.push({ categoryId: r.from, amount: -r.amount });
@@ -288,7 +298,7 @@ api.post('/budget/move', async (c) => {
   return c.json(await addAssignments(c, r.month as Month, items));
 });
 
-api.put('/categories/:id/target', async (c) => {
+budgetApi.put('/categories/:id/target', async (c) => {
   const r = await parse(TargetRequest, c.req.raw);
   const s = scoped(c);
   const now = clock(c.env);
@@ -326,10 +336,13 @@ api.put('/categories/:id/target', async (c) => {
   } satisfies MutationResult);
 });
 
-api.route('/', activityRoutes);
-api.route('/', accountRoutes);
-api.route('/', settingsRoutes);
-api.route('/', opsRoutes);
-api.route('/', securityRoutes);
+budgetApi.route('/', activityRoutes);
+budgetApi.route('/', accountRoutes);
+budgetApi.route('/', settingsRoutes);
+budgetApi.route('/', opsRoutes);
+budgetApi.route('/', securityRoutes);
 
 export { addMonths };
+
+// The D1 path: identity above, then the budget's routes.
+api.route('/', budgetApi);

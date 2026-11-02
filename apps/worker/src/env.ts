@@ -43,6 +43,8 @@ export interface Env {
   /** Enables /__measure routes (local go/no-go harness only). */
   MEASURE?: string;
   APP_VERSION?: string;
+  /** Inside a budget's Durable Object: today's account usage, from the Directory (docs/multi-user.md 9.2). */
+  USAGE?: () => Promise<{ written: number; read: number }>;
 }
 
 export interface SyncParams {
