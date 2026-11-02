@@ -36,9 +36,14 @@ jobs:
       - name: Bundle size budget
         run: node tools/ci/bundle-budget.mjs
   e2e:
+    # Runs alongside checks, split in two so the slow mock-API suite and the real-Worker suites don't queue.
+    name: e2e (${{ matrix.suite }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: checks
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [mock, worker]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -51,12 +56,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
         working-directory: e2e
-      - run: pnpm --filter @ledgerline/web build
-      - name: Playwright against local wrangler dev with the November fixture
-        run: pnpm test:e2e
+      - name: Playwright against the SPA with the mock API, phone and desktop
+        if: matrix.suite == 'mock'
+        run: pnpm --filter @ledgerline/e2e test
+      - name: Build the SPA
+        if: matrix.suite == 'worker'
+        run: pnpm --filter @ledgerline/web build
+      - name: Playwright against local wrangler dev with the November fixture, then passkey sign-in
+        if: matrix.suite == 'worker'
+        run: pnpm --filter @ledgerline/e2e test:worker
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.suite }}
           path: e2e/playwright-report
           retention-days: 7

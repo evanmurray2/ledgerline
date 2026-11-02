@@ -1,5 +1,6 @@
 // Screenshots of the main screens in both themes, for comparing against the prototype by eye. Written to
-// e2e/screenshots/ (gitignored). Runs against the mock API.
+// e2e/screenshots/ (gitignored). Runs against the mock API. CI keeps nothing, so it takes every screen in light and
+// only the Budget in dark (the theme switch is the same code on every screen); local runs take both themes.
 import { test, type Page } from '@playwright/test';
 
 const PHONE_ONLY = new Set(['welcome', 'setup-start', 'setup-link', 'setup-categories']);
@@ -74,6 +75,7 @@ const SCREENS: { name: string; path: string; ready?: string; prepare?: (page: Pa
 
 for (const theme of ['light', 'dark'] as const) {
   for (const s of SCREENS) {
+    if (process.env.CI && theme === 'dark' && s.name !== 'budget') continue;
     test(`${theme} ${s.name}`, async ({ page }, info) => {
       test.skip(info.project.name === 'desktop' && PHONE_ONLY.has(s.name), 'phone only');
       await page.addInitScript((t) => window.localStorage.setItem('ledgerline-theme', t), theme);
