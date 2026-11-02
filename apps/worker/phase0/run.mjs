@@ -56,7 +56,8 @@ console.log('pitr', JSON.stringify(out.pitr));
 out.alarmTestStart = (await call('/alarm-test', 'POST')).body;
 
 // 4. The measured operations, one plan at a time.
-for (const kind of ['screens', 'sync', 'recompute', 'move']) {
+const KINDS = (process.env.KINDS || 'screens,sync,recompute,move').split(',');
+for (const kind of KINDS) {
   console.log('start', kind, JSON.stringify((await call(`/start/${kind}`, 'POST')).body));
   const deadline = Date.now() + 40 * 60_000;
   let s;
@@ -70,6 +71,9 @@ for (const kind of ['screens', 'sync', 'recompute', 'move']) {
   await sleep(70_000);
 }
 out.alarmTest = (await call('/alarm-test')).body;
+// Point-in-time recovery again, now that the object is older than a minute.
+out.pitrLater = (await call('/pitr')).body;
+console.log('pitr later', JSON.stringify(out.pitrLater));
 console.log('alarm test', JSON.stringify(out.alarmTest));
 
 // 5. Analytics: wait for ingestion, find the CPU fields, then query each measured group's window.

@@ -89,9 +89,10 @@ function plan(kind: string): Step[] {
   const add = (op: string, group: string, n = 1, measure = false, arg?: (i: number) => number) => {
     for (let i = 0; i < n; i++) s.push({ op, group, measure, ...(arg ? { arg: arg(i) } : {}) });
   };
-  if (kind === 'screens') {
+  if (kind === 'screens' || kind === 'screens-owner') {
+    // 'screens-owner': about the owner's size (Nov 2026: 718 transactions over six months), for the Activity gate.
     add('seed-november', 'seed');
-    add('history', 'seed', 60, false, (i) => i + 1);
+    add('history', 'seed', kind === 'screens-owner' ? 11 : 60, false, (i) => i + 1);
     for (const p of SCREENS) {
       add('screen-warm', `screen ${p}`, 2, false, () => SCREENS.indexOf(p));
       add('gap', 'gap');
@@ -534,7 +535,7 @@ app.get('/burn/:n', async (c) => {
     return c.json({ ok: false, error: String(e) });
   }
 });
-app.get('/pitr', async (c) => c.json(await stub(c.env, 'screens').pitr()));
+app.get('/pitr', async (c) => c.json(await stub(c.env, 'probe').pitr()));
 app.post('/alarm-test', async (c) => c.json(await stub(c.env, 'alarmtest').alarmTest()));
 app.get('/alarm-test', async (c) => c.json(await stub(c.env, 'alarmtest').alarmTestStatus()));
 
