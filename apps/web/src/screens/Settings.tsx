@@ -2,6 +2,7 @@
 // rename), bank connections (Item meter, confirm before Link), import and export, appearance and preferences.
 // There is no email setting: the app sends no email (decisions.md D-24).
 import { SignInSection } from './Auth';
+import { StorageCard } from './Storage';
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, Outlet, useNavigate, useParams, useRouterState, useSearch } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -1901,6 +1902,7 @@ export function DataScreen() {
         ))}
       </Card>
       <FullBackup />
+      <StorageCard />
       <h2 className="m-0 mt-1 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
         Recovery
       </h2>

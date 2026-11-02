@@ -691,3 +691,23 @@ export type RulePreview = z.infer<typeof RulePreview>;
  */
 export const DumpChunk = z.object({ data: z.string(), cursor: z.string().nullable() });
 export type DumpChunk = z.infer<typeof DumpChunk>;
+
+/**
+ * Where the data lives (docs/multi-user.md 8.1, 8.6), for the owner's Storage card. `phase`: 'none' (D1), 'frozen'
+ * (moving to the new databases), 'moved' (on the new databases), 'restoring' (moving back to D1). `status` is the
+ * last move's progress or result, kept after it ends so a failure's reason stays visible.
+ */
+export const MoveInfo = z.object({
+  phase: z.enum(['none', 'frozen', 'moved', 'restoring']),
+  status: z
+    .object({
+      state: z.string(),
+      table: z.string().optional(),
+      reason: z.string().optional(),
+      tables: z.number().optional(),
+      rows: z.number().optional(),
+    })
+    .passthrough()
+    .nullable(),
+});
+export type MoveInfo = z.infer<typeof MoveInfo>;

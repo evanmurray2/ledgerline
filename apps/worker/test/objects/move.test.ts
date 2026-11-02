@@ -121,6 +121,9 @@ describe('the move', () => {
     expect(result).toBe('failed');
     expect(await phase()).toBe('none');
     resetRoutingCache();
+    // The owner's Storage card still shows why it stopped.
+    const info = await call('GET', '/api/move');
+    expect(info.json).toMatchObject({ phase: 'none', status: { state: 'failed' } });
     // Served from D1 again, with the same numbers, and writable.
     expect((await call('GET', '/api/budget/2026-11')).json).toEqual(before.json);
     expect((await call('POST', '/api/settings/groups', { name: 'After abort', isBills: false })).status).toBe(

@@ -40,6 +40,8 @@ app.on(['GET', 'POST'], '/api/move', csrf, async (c) => {
   if (phase === 'moved' || phase === 'restoring') {
     const a = await dir.authenticate(c.req.header('cookie') ?? null, 'GET', '/api/move');
     if (!a.ok) return c.json(a.body, a.status);
+    if (!(await dir.isAdmin(a.caller.userId)))
+      return c.json({ error: 'forbidden', message: 'Only the owner can move the data' }, 403);
     return c.json({ phase, status: await dir.moveStatus() });
   }
   const who = await identify(c.req.raw, env, now);
@@ -49,8 +51,8 @@ app.on(['GET', 'POST'], '/api/move', csrf, async (c) => {
     .bind(who.userId)
     .first<number>('is_admin');
   if (admin !== 1) return c.json({ error: 'forbidden', message: 'Only the owner can move the data' }, 403);
-  if (c.req.method === 'GET')
-    return c.json({ phase, status: phase === 'none' ? null : await dir.moveStatus() });
+  // The last move's status stays readable after it ends, so a failure's reason is still on screen.
+  if (c.req.method === 'GET') return c.json({ phase, status: await dir.moveStatus() });
   if (now - who.verifiedAt > REAUTH_MS)
     return c.json({ error: 'reauth', message: 'Confirm it’s you with your passkey' }, 401);
   if (phase !== 'none') return c.json({ error: 'busy', message: 'A move is already under way' }, 409);

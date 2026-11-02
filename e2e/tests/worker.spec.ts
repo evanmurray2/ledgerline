@@ -208,3 +208,12 @@ test('Full backup: downloads every row of the budget as one file', async ({ page
   expect(lines.filter((l) => l.t === 'bank_txn').length).toBeGreaterThan(10);
   await expect(page.getByText('Saved. Keep it somewhere safe.')).toBeVisible();
 });
+
+test('Storage: the owner sees where the data lives and can open the move', async ({ page }) => {
+  await page.goto('/settings/data');
+  await expect(page.getByTestId('move-phase')).toHaveText('One shared database (D1)');
+  await page.getByRole('button', { name: 'Move to the new databases' }).click();
+  await expect(page.getByText('If anything differs, the move stops and nothing changes.')).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('button', { name: 'Move to the new databases' })).toBeVisible();
+});
