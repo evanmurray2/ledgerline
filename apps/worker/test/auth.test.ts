@@ -104,6 +104,38 @@ describe('passkey sign-in', () => {
     expect((await b.call('GET', '/api/session')).status).toBe(200);
   });
 
+  it('starting a sign-in writes nothing (the challenge is a signed cookie)', async () => {
+    const count = async () =>
+      Number(
+        await env.DB.prepare(
+          `SELECT (SELECT count(*) FROM auth_challenge) + (SELECT count(*) FROM auth_session) AS n`,
+        ).first('n'),
+      );
+    const before = await count();
+    for (let i = 0; i < 5; i++) await new Browser().call('POST', '/api/auth/login/options');
+    expect(await count()).toBe(before);
+  });
+
+  it('sign-in attempts are limited per IP', async () => {
+    const ip = { 'cf-connecting-ip': '203.0.113.9' };
+    const codes: number[] = [];
+    for (let i = 0; i < 25; i++)
+      codes.push((await new Browser().call('POST', '/api/auth/login/options', {}, ip)).status);
+    expect(codes).toContain(429);
+    expect(codes.filter((s) => s === 200).length).toBeLessThanOrEqual(20);
+    // Another address isn't affected.
+    expect(
+      (
+        await new Browser().call(
+          'POST',
+          '/api/auth/login/options',
+          {},
+          { 'cf-connecting-ip': '203.0.113.10' },
+        )
+      ).status,
+    ).toBe(200);
+  });
+
   it('a challenge is single-use', async () => {
     const o = await b.call('POST', '/api/auth/login/options');
     const resp = await phone.get(o.json as never);

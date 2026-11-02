@@ -1,6 +1,8 @@
 export interface Env {
   DB: D1Database;
-  /** docs/multi-user.md: the Directory (one object) and one BudgetStore per budget. Unused until routing ships. */
+  /** Sign-in attempts per IP (docs/multi-user.md 7.2). */
+  AUTH_LIMITER?: RateLimit;
+  /** docs/multi-user.md: the Directory (one object) and one BudgetStore per budget. */
   DIRECTORY: DurableObjectNamespace<import('./store/directory.js').Directory>;
   BUDGET: DurableObjectNamespace<import('./store/budget-store.js').BudgetStore>;
   SYNC: Workflow<SyncParams>;

@@ -29,6 +29,8 @@
     ],
   },
   "migrations": [{ "tag": "v1-stores", "new_sqlite_classes": ["Directory", "BudgetStore"] }],
+  // Sign-in, setup, recovery and sign-up attempts per IP (docs/multi-user.md 7.2). Approximate, per location.
+  "ratelimits": [{ "name": "AUTH_LIMITER", "namespace_id": "4101", "simple": { "limit": 20, "period": 60 } }],
   // 3 of the 5 free cron triggers: sync backstop, daily stale-pending scan, daily maintenance (10:20 UTC).
   "triggers": { "crons": ["7 */4 * * *", "10 8 * * *", "20 10 * * *"] },
   "assets": {

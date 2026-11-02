@@ -16,6 +16,14 @@ export { Directory } from './store/directory.js';
 
 const app = new Hono<AppEnv>();
 app.use('/api/*', apiHeaders);
+// Sign-in attempts per IP, on both paths (D1 now, the Directory after the move). Requests without a client IP only
+// come from local runs and tests.
+app.use('/api/auth/*', async (c, next) => {
+  const ip = c.req.header('cf-connecting-ip');
+  if (ip && c.env.AUTH_LIMITER && !(await c.env.AUTH_LIMITER.limit({ key: `auth:${ip}` })).success)
+    return c.json({ error: 'rate_limited', message: 'Too many tries. Wait a minute and try again.' }, 429);
+  return next();
+});
 // After the move (docs/multi-user.md 8.5), the Directory and each budget's Durable Object serve the API.
 app.use('/api/*', async (c, next) => {
   if (await objectsServe(c.env)) {

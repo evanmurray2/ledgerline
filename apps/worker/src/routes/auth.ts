@@ -1,6 +1,6 @@
 // Passkey sign-in (decisions.md D-27). Public routes: they run before the API's session check, behind the same
-// CSRF rules (JSON, the custom header, same-origin Origin). Every ceremony's challenge is stored server-side for
-// five minutes and tied to the browser by an HttpOnly cookie.
+// CSRF rules (JSON, the custom header, same-origin Origin). Each ceremony's challenge travels in a signed, HttpOnly,
+// five-minute cookie (http/challenge.ts): starting a ceremony writes nothing, and a finish is single use.
 import { Hono } from 'hono';
 import {
   generateAuthenticationOptions,
@@ -16,6 +16,7 @@ import type { Env } from '../env.js';
 import { ulid } from '@ledgerline/platform';
 import { resolveMembership } from '../db/scoped.js';
 import { clock } from '../http/clock.js';
+import { openChallenge, sealChallenge } from '../http/challenge.js';
 import { csrf } from '../http/security.js';
 import {
   CHALLENGE_COOKIE,
@@ -54,19 +55,35 @@ async function passkeyCount(env: Env): Promise<number> {
   return (await env.DB.prepare(`SELECT count(*) AS n FROM passkey`).first<{ n: number }>())?.n ?? 0;
 }
 
+/** A new session; null if this challenge already made one (a replay). */
 async function newSession(
   env: Env,
   now: number,
   userId: string,
   passkeyId: string,
   ua: string | null,
-): Promise<string> {
+  challengeId: string,
+): Promise<string | null> {
   const token = randomToken();
-  await env.DB.prepare(
-    `INSERT INTO auth_session (id, created_at, expires_at, verified_at, passkey_id, user_agent, user_id) VALUES (?1, ?2, ?3, ?2, ?4, ?5, ?6)`,
-  )
-    .bind(await tokenHash(token), now, now + SESSION_MS, passkeyId, ua?.slice(0, 200) ?? null, userId)
-    .run();
+  try {
+    await env.DB.prepare(
+      `INSERT INTO auth_session (id, created_at, expires_at, verified_at, passkey_id, user_agent, user_id, challenge_id)
+       VALUES (?1, ?2, ?3, ?2, ?4, ?5, ?6, ?7)`,
+    )
+      .bind(
+        await tokenHash(token),
+        now,
+        now + SESSION_MS,
+        passkeyId,
+        ua?.slice(0, 200) ?? null,
+        userId,
+        challengeId,
+      )
+      .run();
+  } catch (e) {
+    if (/UNIQUE/i.test(String(e))) return null;
+    throw e;
+  }
   return token;
 }
 
@@ -92,17 +109,14 @@ async function takeChallenge(
   env: Env,
   purpose: 'register' | 'login',
   now: number,
-): Promise<{ challenge: string; grant_kind: string | null; grant_ref: string | null } | null> {
-  const id = readCookie(req, CHALLENGE_COOKIE);
-  if (!id) return null;
-  // Single use: deleted as it is read.
-  const row = await env.DB.prepare(
-    `DELETE FROM auth_challenge WHERE id = ?1 AND purpose = ?2 RETURNING challenge, grant_kind, grant_ref, expires_at`,
-  )
-    .bind(id, purpose)
-    .first<{ challenge: string; grant_kind: string | null; grant_ref: string | null; expires_at: number }>();
-  if (!row || row.expires_at <= now) return null;
-  return row;
+): Promise<{ id: string; challenge: string; grant_kind: string | null; grant_ref: string | null } | null> {
+  const c = await openChallenge(env, readCookie(req, CHALLENGE_COOKIE), purpose, now);
+  if (!c) return null;
+  // Single use: a finished ceremony records its challenge id on a session (unique index).
+  const used = await env.DB.prepare(`SELECT 1 AS u FROM auth_session WHERE challenge_id = ?1`)
+    .bind(c.id)
+    .first();
+  return used ? null : c;
 }
 
 async function putChallenge(
@@ -112,14 +126,7 @@ async function putChallenge(
   purpose: 'register' | 'login',
   grant: { kind: string; ref: string | null } | null,
 ): Promise<string> {
-  const id = randomToken(16);
-  await env.DB.batch([
-    env.DB.prepare(`DELETE FROM auth_challenge WHERE expires_at <= ?1`).bind(now),
-    env.DB.prepare(
-      `INSERT INTO auth_challenge (id, challenge, purpose, grant_kind, grant_ref, expires_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
-    ).bind(id, challenge, purpose, grant?.kind ?? null, grant?.ref ?? null, now + CHALLENGE_MS),
-  ]);
-  return id;
+  return sealChallenge(env, now, challenge, purpose, grant);
 }
 
 /** What the sign-in screen should show. */
@@ -270,7 +277,11 @@ authRoutes.post('/register/verify', async (c) => {
   } else {
     return c.json(fail('That took too long. Try again.'), 400);
   }
-  const res = await env.DB.batch(stmts);
+  const res = await env.DB.batch(stmts).catch((e: unknown) => {
+    if (/UNIQUE|PRIMARY KEY/i.test(String(e))) return null; // the same passkey again: a replay
+    throw e;
+  });
+  if (!res) return c.json(fail('That took too long. Try again.'), 400);
   if ((res.at(-1)?.meta.changes ?? 0) !== 1)
     return c.json(fail('That code or link isn’t valid, or it has expired.'), 403);
   if (ch.grant_kind !== 'session') {
@@ -280,7 +291,8 @@ authRoutes.post('/register/verify', async (c) => {
         .bind(cred.id)
         .first<string>('user_id'));
     if (!userId) return c.json(fail('The passkey couldn’t be verified.'), 400);
-    const token = await newSession(env, now, userId, cred.id, c.req.header('user-agent') ?? null);
+    const token = await newSession(env, now, userId, cred.id, c.req.header('user-agent') ?? null, ch.id);
+    if (!token) return c.json(fail('That took too long. Try again.'), 400);
     c.header('set-cookie', cookie(SESSION_COOKIE, token, SESSION_MS));
   }
   return c.json({ ok: true });
@@ -355,13 +367,18 @@ authRoutes.post('/login/verify', async (c) => {
   const who = await identify(c.req.raw, env, now);
   if (who?.kind === 'user' && who.sessionId && who.userId === pk.user_id) {
     stmts.push(
-      env.DB.prepare(`UPDATE auth_session SET verified_at = ?2 WHERE id = ?1`).bind(who.sessionId, now),
+      env.DB.prepare(`UPDATE auth_session SET verified_at = ?2, challenge_id = ?3 WHERE id = ?1`).bind(
+        who.sessionId,
+        now,
+        ch.id,
+      ),
     );
     await env.DB.batch(stmts);
     return c.json({ ok: true });
   }
   await env.DB.batch(stmts);
-  const token = await newSession(env, now, pk.user_id, pk.id, c.req.header('user-agent') ?? null);
+  const token = await newSession(env, now, pk.user_id, pk.id, c.req.header('user-agent') ?? null, ch.id);
+  if (!token) return c.json(fail('That took too long. Try again.'), 400);
   c.header('set-cookie', cookie(SESSION_COOKIE, token, SESSION_MS));
   return c.json({ ok: true });
 });
