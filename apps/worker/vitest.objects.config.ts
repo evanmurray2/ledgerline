@@ -27,6 +27,8 @@ export default defineConfig(async () => {
         },
       }),
     ],
-    test: { include: ['test/objects/**/*.test.ts'], setupFiles: ['./test/setup.ts'] },
+    // The move tests copy and verify whole budgets: give them room when the machine is busy (pnpm check runs
+    // everything side by side).
+    test: { include: ['test/objects/**/*.test.ts'], setupFiles: ['./test/setup.ts'], testTimeout: 60_000 },
   };
 });
