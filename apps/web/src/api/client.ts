@@ -131,7 +131,7 @@ async function send<S extends z.ZodType>(
   // Screens are worked out from the copy on this device (D-45, src/copy).
   if (readsLocally(method, path)) return answer(method, path, schema, await readCopy(path));
   // Changes made with no signal go to the copy now and to the server later (a short list; copy.ts).
-  if (mutation && (connectivity.isOffline() || !navigator.onLine) && canEditOffline(method, path))
+  if (mutation && connectivity.isOffline() && canEditOffline(method, path))
     return schema.parse(
       withRta(await editOffline(method, path, body), await afterChange().catch(() => null)),
     );

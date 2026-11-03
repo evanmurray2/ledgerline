@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { Session } from '@ledgerline/contracts';
 import { PrimaryButton, SecondaryButton } from '../components/ui';
-import { type CopyState, start, unlockOnline, unlockWithoutSignal, wipe } from '../copy/copy';
+import { type CopyState, setUpCopy, skipCopy, start, unlockOnline, unlockWithoutSignal, wipe } from '../copy/copy';
 
 function Frame({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -66,6 +66,26 @@ export function CopyScreen({
             Try again
           </PrimaryButton>
         )}
+      </Frame>
+    );
+  if (copy.status === 'setup' && session)
+    return (
+      <Frame title="Keep your budget on this iPhone">
+        <p className="m-0 text-[15px] leading-relaxed text-ink-2">
+          Ledgerline can save your budget on this phone, encrypted with your passkey, so it opens at once and works
+          with no signal. Opening it again asks for Face ID.
+        </p>
+        {err && (
+          <p role="alert" className="m-0 rounded-xl bg-over-bg p-3 text-[14px] text-over-fg">
+            {err}
+          </p>
+        )}
+        <PrimaryButton disabled={busy} onClick={() => go(() => setUpCopy(session))}>
+          {busy ? 'Waiting for Face ID…' : 'Keep it on this iPhone'}
+        </PrimaryButton>
+        <SecondaryButton disabled={busy} onClick={() => go(() => skipCopy(session))}>
+          Not now
+        </SecondaryButton>
       </Frame>
     );
   const offline = !session;

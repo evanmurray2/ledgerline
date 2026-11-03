@@ -7,6 +7,7 @@
 // dropped; opening again needs Face ID. Wipe: sign-out, a revoked device, no longer a member, or 7 days offline.
 import { useSyncExternalStore } from 'react';
 import { CSRF_HEADER, type Session } from '@ledgerline/contracts';
+import { connectivity } from '../state/connectivity';
 import { EngineHost, syncAll, type EngineIdentity, type SyncPage } from './host';
 import { assert, canUsePasskeys, isStandalone, type RequestOptionsJSON } from './passkey';
 import {
@@ -33,6 +34,7 @@ export type CopyStatus =
   | 'off' // the mock API (development and tests)
   | 'idle' // nobody signed in yet
   | 'locked' // a saved copy waits for Face ID
+  | 'setup' // the Home Screen app offers to keep an encrypted copy (one Face ID)
   | 'opening'
   | 'ready'
   | 'failed';
@@ -103,6 +105,8 @@ async function server<T>(
         : { 'content-type': 'application/json', [CSRF_HEADER]: '1', ...headers },
     body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),
   });
+  // Any answer means the network works (the offline banner goes).
+  connectivity.reportOk();
   const text = await res.text();
   const json = (text ? JSON.parse(text) : null) as T & { error?: string; message?: string };
   if (!res.ok)
@@ -175,6 +179,12 @@ export async function start(session: Session): Promise<void> {
       } else rec = null;
     }
     if (!rec) {
+      // The Home Screen app keeps a copy when the passkey can: ask once with Face ID, unless it said it can't.
+      if (isStandalone() && !p?.prf && !noPrf() && !declined) {
+        set({ status: 'setup' });
+        return;
+      }
+      if (isStandalone() && p && !p.prf) markNoPrf();
       if (isStandalone() && p?.prf) {
         const dev = await server<{ id: string; share: string }>('POST', '/api/settings/security/devices', {
           name: deviceName(),
@@ -212,6 +222,40 @@ export async function start(session: Session): Promise<void> {
     host = null;
     set({ status: 'failed', error: e instanceof Error ? e.message : String(e) });
   }
+}
+
+const NO_PRF_KEY = 'ledgerline-no-prf';
+/** This device's passkey gave no PRF output once: don't ask to keep a copy again (memory only). */
+function noPrf(): boolean {
+  try {
+    return window.localStorage.getItem(NO_PRF_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+function markNoPrf(): void {
+  try {
+    window.localStorage.setItem(NO_PRF_KEY, '1');
+  } catch {
+    // Storage blocked: it asks again next time.
+  }
+  window.dispatchEvent(new Event('ledgerline:no-prf'));
+}
+/** "Not now" on the setup screen: memory only for this visit. */
+let declined = false;
+
+/** "Keep it on this iPhone": Face ID, then the copy is set up and saved. */
+export async function setUpCopy(session: Session): Promise<void> {
+  await signIn();
+  set({ status: 'idle' });
+  await start(session);
+}
+
+/** "Not now": keep the copy in memory for this visit only. */
+export async function skipCopy(session: Session): Promise<void> {
+  declined = true;
+  set({ status: 'idle' });
+  await start(session);
 }
 
 /** The Unlock button: a fresh sign-in with Face ID that also unlocks the saved copy. */
@@ -278,6 +322,7 @@ function deviceName(): string {
 // ---------------------------------------------------------------- sync and save
 
 let syncing: Promise<void> | null = null;
+let lastSync = 0;
 
 /**
  * Brings the copy up to date with the server, works out the budget again and saves it. Screens are told to read it
@@ -288,6 +333,7 @@ export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
   if (syncing) return syncing.then(() => syncNow(opts));
   syncing = (async () => {
     try {
+      lastSync = Date.now();
       const r = await syncAll(host!, async (since, cursor) => {
         const p = await fetchPage(since, cursor);
         set({ progress: state.progress + p.rows.length });
@@ -483,7 +529,7 @@ function watch(): void {
     () => {
       if (state.status !== 'ready') return;
       if (Date.now() - lastActive >= LOCK_MS) void lock();
-      else if (document.visibilityState === 'visible' && !state.offline)
+      else if (document.visibilityState === 'visible' && !state.offline && Date.now() - lastSync >= SYNC_EVERY_MS)
         void syncNow().catch(() => undefined);
     },
     Math.min(SYNC_EVERY_MS, 30_000),
