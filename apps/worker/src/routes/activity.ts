@@ -769,12 +769,17 @@ activityRoutes.post('/transactions/:key/review', async (c) => {
   const s = scoped(c);
   const key = c.req.param('key');
   const now = clock(c.env);
-  await s.run(
-    `UPDATE txn_overlay SET reviewed_at = ?3, alert = NULL, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
-    key,
-    now,
-  );
-  return c.json(await afterWrite(c.env, s.budgetId, now));
+  const o = await s.first(`SELECT 1 FROM txn_overlay WHERE budget_id = ?1 AND txn_key = ?2`, key);
+  if (!o) throw new HttpError(404, 'not_found', 'transaction');
+  const w = [
+    s.q(
+      `UPDATE txn_overlay SET reviewed_at = ?3, alert = NULL, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
+      key,
+      now,
+    ),
+    s.audit('txn.review', 'transaction', key, null, null, now),
+  ];
+  return c.json(await commit(c, w, [key], now));
 });
 
 // ---------------------------------------------------------------- matching money back

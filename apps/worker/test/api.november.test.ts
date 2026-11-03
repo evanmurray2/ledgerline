@@ -219,4 +219,30 @@ describe('Overfunded wording', () => {
     expect(row.status).toBe('overfunded');
     expect(row.detail).toBe('$100.00 more assigned than this month’s $100.00');
   });
+
+  it('Check these: OK on a bank row that cleared at a new amount clears it from Needs attention', async () => {
+    const before = await get<ActivityView>('/api/activity?filter=attention');
+    const shake = before.checkThese.find((r) => r.payee === 'Shake Shack')!;
+    expect(shake.action).toBe('dismiss');
+    // The bank row has no expected entry, so "keep waiting" can't be what OK sends.
+    const wrong = await SELF.fetch(
+      `https://ledgerline.test/api/transactions/${encodeURIComponent(shake.key)}/pending`,
+      {
+        method: 'POST',
+        headers: H,
+        body: JSON.stringify({ action: 'keep_waiting' }),
+      },
+    );
+    expect(wrong.status).toBe(404);
+    await post(`/api/transactions/${encodeURIComponent(shake.key)}/review`, {});
+    const after = await get<ActivityView>('/api/activity?filter=attention');
+    expect(after.checkThese.map((r) => r.payee)).toEqual(['Check #1043']);
+    expect(after.attentionCount).toBe(before.attentionCount - 1);
+    const missing = await SELF.fetch('https://ledgerline.test/api/transactions/nope/review', {
+      method: 'POST',
+      headers: H,
+      body: '{}',
+    });
+    expect(missing.status).toBe(404);
+  });
 });

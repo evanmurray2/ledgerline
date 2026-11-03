@@ -205,9 +205,22 @@ export class MockServer {
         else x.categoryId = r.categoryId;
         return this.ok();
       }
+      case 'POST transactions/:x/review': {
+        const x = db.txn(b!);
+        if (x.section === 'check' && x.checkAction === 'dismiss') {
+          x.section = x.status === 'pending' ? 'pending' : 'posted';
+          x.badge = null;
+          x.badgeKind = null;
+          x.sub = null;
+        }
+        return this.ok();
+      }
       case 'POST transactions/:x/pending': {
         const r = parse(PendingCheckAction, body);
         const x = db.txn(b!);
+        // As on the server, only an entry you added has an expected row to keep waiting on or delete.
+        if (x.kind !== 'manual' && x.kind !== 'upcoming')
+          throw new MockHttpError(404, 'not_found', 'expected transaction');
         if (r.action === 'delete') {
           if (x.categoryId) db.categorize([x.key], null);
           x.hidden = true;
