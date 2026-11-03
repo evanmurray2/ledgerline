@@ -101,6 +101,46 @@ describe('the phone works out the same screens as the server', () => {
     for (const path of SCREENS(month)) expect(await phoneJson(engine, path), path).toEqual(await json(path));
   });
 
+  it('after splits, a new pending row and moved money, rebuilding only what changed', async () => {
+    const cats = (await json('/api/settings/categories')) as {
+      groups: { categories: { id: string; kind: string }[] }[];
+    };
+    const spending = cats.groups.flatMap((g) => g.categories).filter((c) => c.kind === 'spending');
+    const act = (await json('/api/activity')) as {
+      posted: { key: string; amount: number; accountId: string }[];
+    };
+    const out = act.posted.filter((r) => r.amount < -200)[1]!;
+    const half = Math.trunc(out.amount / 2);
+    await post(
+      `/api/transactions/${encodeURIComponent(out.key)}`,
+      {
+        split: [
+          { categoryId: spending[2]!.id, amount: half, memo: null, absorbsRemainder: false },
+          { categoryId: spending[3]!.id, amount: out.amount - half, memo: null, absorbsRemainder: true },
+        ],
+      },
+      'PATCH',
+    );
+    await post('/api/transactions', {
+      kind: 'pending',
+      accountId: out.accountId,
+      date: '2026-11-13',
+      amount: -4567,
+      payee: 'Corner store',
+      categoryId: spending[0]!.id,
+      repeats: 'never',
+    });
+    await post('/api/budget/move', { month, from: spending[0]!.id, to: spending[4]!.id, amount: 1000 });
+    await syncAll(engine);
+    await engine.derive();
+    for (const path of SCREENS(month)) expect(await phoneJson(engine, path), path).toEqual(await json(path));
+    // Undo the split: the purchase goes back to one category.
+    await post(`/api/transactions/${encodeURIComponent(out.key)}`, { categoryId: spending[1]!.id }, 'PATCH');
+    await syncAll(engine);
+    await engine.derive();
+    for (const path of SCREENS(month)) expect(await phoneJson(engine, path), path).toEqual(await json(path));
+  });
+
   it('a new epoch throws the copy away', async () => {
     const st = await engine.state();
     const r = await engine.apply({

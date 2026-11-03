@@ -54,6 +54,18 @@ const EMPTY: EngineState = {
   offset: 0,
 };
 
+/** What the next derive() has to redo, kept in the copy so a reload in between loses nothing. */
+interface PendingDerive {
+  /** Every line, from the budget start (first download, an account or the budget's start or time zone changed). */
+  full: boolean;
+  /** Transactions whose lines to rebuild. */
+  keys: string[];
+  /** Earliest month whose assignments changed. */
+  fromMonth: string | null;
+  /** Categories changed: recompute from the budget start, without rebuilding lines. */
+  fromStart?: boolean;
+}
+
 /** What a sync page did to the copy. */
 export interface ApplyResult {
   /** The copy was thrown away first (new epoch or format). */
@@ -152,7 +164,12 @@ export class LocalEngine {
       return { reset: true, rows: 0, caughtUp: false };
     }
     const stmts: D1PreparedStatement[] = [this.db.prepare(`PRAGMA defer_foreign_keys = ON`)];
+    // What the next derive() must redo (read before the rows change: a moved or deleted row's old key counts too).
+    const todo = await this.pendingDerive();
+    if (st.cursor || page.cursor || st.through === 0) todo.full = true;
+    if (!todo.full) await this.noteChanges(page.rows, todo);
     for (const r of page.rows) stmts.push(...this.rowStatements(r));
+    stmts.push(this.setPendingDerive(todo));
     const next: EngineState = {
       ...st,
       epoch: page.epoch,
@@ -166,6 +183,65 @@ export class LocalEngine {
     stmts.push(this.setState(next));
     for (const part of chunks(stmts, 500)) await this.db.batch(part);
     return { reset: false, rows: page.rows.length, caughtUp: !page.more && !page.cursor };
+  }
+
+  private async pendingDerive(): Promise<PendingDerive> {
+    const r = await this.db
+      .prepare(`SELECT value FROM local_state WHERE key = 'derive'`)
+      .first<{ value: string }>();
+    return r ? (JSON.parse(r.value) as PendingDerive) : { full: false, keys: [], fromMonth: null };
+  }
+
+  private setPendingDerive(p: PendingDerive): D1PreparedStatement {
+    return this.db
+      .prepare(
+        `INSERT INTO local_state (key, value) VALUES ('derive', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+      )
+      .bind(JSON.stringify({ ...p, keys: [...new Set(p.keys)] }));
+  }
+
+  /**
+   * Which transactions' lines and which months a sync page changes. Rows that only change what screens read
+   * directly (payees, rules, alerts, balances, targets, settings) need no derive at all.
+   */
+  private async noteChanges(rows: readonly SyncRow[], todo: PendingDerive): Promise<void> {
+    const keyCols: Record<string, string[]> = {
+      bank_txn: ['txn_key'],
+      manual_pending: ['txn_key'],
+      txn_split: ['txn_key'],
+      expected_reimbursement: ['txn_key'],
+      txn_link: ['from_key', 'to_key'],
+      txn_overlay: ['txn_key'],
+    };
+    const month = (m: unknown) => {
+      if (typeof m === 'string' && (!todo.fromMonth || m < todo.fromMonth)) todo.fromMonth = m;
+    };
+    for (const r of rows) {
+      const t = SYNC_TABLES.find((x) => x.name === r.t);
+      if (!t) continue;
+      const cols = keyCols[r.t];
+      if (cols) {
+        const where = t.pk.map((c, i) => `${c} = ?${i + 1}`).join(' AND ');
+        const old = await this.db
+          .prepare(`SELECT ${cols.join(', ')} FROM ${r.t} WHERE ${where}`)
+          .bind(...r.k)
+          .first<Record<string, unknown>>();
+        for (const c of cols) {
+          if (old?.[c]) todo.keys.push(String(old[c]));
+          if (r.d?.[c]) todo.keys.push(String(r.d[c]));
+        }
+      } else if (r.t === 'assignment') month(r.k[1]);
+      else if (r.t === 'category') todo.fromStart = true;
+      else if (r.t === 'account') todo.full = true;
+      else if (r.t === 'budget') {
+        const b = await this.db
+          .prepare(`SELECT budget_start_month, time_zone FROM budget WHERE id = ?1`)
+          .bind(r.k[0])
+          .first<{ budget_start_month: string | null; time_zone: string }>();
+        if (!b || !r.d || b.budget_start_month !== r.d.budget_start_month || b.time_zone !== r.d.time_zone)
+          todo.full = true;
+      }
+    }
   }
 
   private rowStatements(r: SyncRow): D1PreparedStatement[] {
@@ -210,6 +286,40 @@ export class LocalEngine {
     const meta = await budgetMeta(s);
     if (!meta) return null;
     const today = localDate(now, meta.timeZone);
+    const todo = await this.pendingDerive();
+    const last = await this.db
+      .prepare(`SELECT value FROM local_state WHERE key = 'derived_today'`)
+      .first<{ value: string }>();
+    // A new day can make upcoming rows count, so it rebuilds everything; otherwise only what the syncs changed.
+    if (!todo.full && last?.value === today) {
+      // Nothing that counts changed (payees, rules, alerts, balances, targets…): the numbers stand.
+      if (!todo.keys.length && !todo.fromMonth && !todo.fromStart) return { rta: (await this.rta()).rta };
+      const stmts: D1PreparedStatement[] = [];
+      if (todo.keys.length) {
+        for (const part of chunks([...new Set(todo.keys)], 450)) {
+          const plan = await planLineRebuild(s, part, meta, today, now);
+          if (plan.stmts.length) await s.batch(plan.stmts);
+        }
+        stmts.push(clearTotals(s));
+      }
+      if (todo.fromStart) stmts.push(markDirty(this.db, this.who.budgetId, meta.startMonth, now));
+      else if (todo.fromMonth)
+        stmts.push(
+          markDirty(
+            this.db,
+            this.who.budgetId,
+            (todo.fromMonth < meta.startMonth ? meta.startMonth : todo.fromMonth) as Month,
+            now,
+          ),
+        );
+      stmts.push(this.setPendingDerive({ full: false, keys: [], fromMonth: null }));
+      await s.batch(stmts);
+      let r = await recompute(this.db, this.who.budgetId, now, { maxMonths: 1200 });
+      for (let i = 0; !r.done && i < 20; i++)
+        r = await recompute(this.db, this.who.budgetId, now, { maxMonths: 1200 });
+      await this.identity(now, today);
+      return { rta: r.rta };
+    }
     await s.run(`DELETE FROM budget_line WHERE budget_id = ?1`);
     const accounts = await s.all<AccountRowDb>(`SELECT * FROM account WHERE budget_id = ?1`);
     const start = accounts.flatMap((a) => planStartLines(s, toLedgerAccount(a), meta, now));
@@ -229,12 +339,31 @@ export class LocalEngine {
     });
     for (let i = 0; !r.done && i < 20; i++)
       r = await recompute(this.db, this.who.budgetId, now, { maxMonths: 1200 });
+    await s.batch([
+      this.setPendingDerive({ full: false, keys: [], fromMonth: null }),
+      this.db
+        .prepare(
+          `INSERT INTO local_state (key, value) VALUES ('derived_today', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+        )
+        .bind(today),
+    ]);
+    await this.identity(now, today);
+    return { rta: r.rta };
+  }
+
+  /** Rule 10 on the copy; a failure is reported to the server (an `identity` alert). */
+  private async identity(now: number, today: string): Promise<void> {
     const identity = await checkIdentityDb(this.env(now), this.who.budgetId).catch(() => null);
     if (identity && !identity.ok && this.onIdentity)
       await this.onIdentity({ difference: identity.difference, month: today.slice(0, 7) }).catch(
         () => undefined,
       );
-    return { rta: r.rta };
+  }
+
+  /** Whether a derive has anything to do (the host skips it otherwise). */
+  async needsDerive(): Promise<boolean> {
+    const todo = await this.pendingDerive();
+    return todo.full || todo.keys.length > 0 || !!todo.fromMonth || !!todo.fromStart;
   }
 
   /** The current Ready to Assign in the copy. */
