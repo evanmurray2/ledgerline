@@ -2,6 +2,22 @@
 
 Oct 31, 2026 · @Evan
 
+
+## What's true now (Nov 3, 2026)
+
+This doc is the Oct 31 design, exported from Claude Docs and kept as written. The system has moved on in the places below. Where a section here disagrees, the decision named wins (`docs/decisions.md`, `docs/decisions/`); each replaced section starts with a **Now** note. The Money rules and the budgeting model are unchanged.
+
+| Area | The design said | What runs now | Why |
+| --- | --- | --- | --- |
+| Data | One D1 database | SQLite in Durable Objects: a `Directory` (users, sessions, routing) and one `BudgetStore` per budget (`docs/multi-user.md`) | D-37, D-38 |
+| Background work | Workflows and three crons | Alarm jobs inside each store (sync, 4-hour backstop, daily scan, daily maintenance); one cron at 10:20 UTC wakes the Directory | D-37, D-38 |
+| Who works out the budget | The Worker, on every request, with cached month summaries | The phone: it keeps an encrypted copy (`GET /api/sync`) and works out every screen with the same code; the server stores what was entered and imported, and keeps nothing derived | D-45, D-46, D-53; `docs/phone-budget.md` |
+| Sign-in | Cloudflare Access | Passkeys in the Worker | D-27 |
+| Raw Plaid pages and backups | R2; nightly encrypted export | Raw pages in SQLite; no off-site backup; Cloudflare's 30-day point-in-time recovery, plus a full backup download from Settings | D-26, D-29, D-37 |
+| Sync sizes | 500 per Plaid page, a Workflow step per page | 100 per page; 25 events per apply or processing step | D-6, D-38 |
+| Environments and deploys | Staging, then production after approval; release, nightly and monitor workflows | No staging; every merge to `main` deploys after its `ci` passes; only `ci`, `deploy` and `security` workflows | D-30, D-36, D-49, D-51 |
+| Database layer | Drizzle over D1 | The app's own small interface over SQLite (`packages/db/src/sql.ts`) | Nov 3 cleanup |
+
 ## Summary and constraints
 
 Ledgerline is a single-user, zero-based budgeting app (every dollar gets a job) that runs entirely on a free Cloudflare account, pulls cleared data from Plaid, and treats the bank feed as an immutable source of truth that the budget is derived from. "Ledgerline" is a working name.
@@ -29,6 +45,8 @@ Ledgerline is a single-user, zero-based budgeting app (every dollar gets a job) 
 
 ## Architecture
 
+> **Now:** one Worker serves the app and API; data lives in Durable Objects (D-37), sign-in is passkeys (D-27), and the phone works out the budget (D-45). See the table at the top.
+
 One Cloudflare Worker behind Access serves the app and API; a Workflow pulls bank data from Plaid into D1, where provider data is append-only and your edits live in a separate overlay. Two ports keep it swappable: `BankDataProvider` for the bank feed and a small set of platform ports (runtime, database, jobs, secrets, auth) for Cloudflare.
 
 &#91;embedded content: system architecture · 8 components\]
@@ -36,6 +54,8 @@ One Cloudflare Worker behind Access serves the app and API; a Workflow pulls ban
 Requests from you pass Access and are re-checked in the Worker; Plaid webhooks only start a sync, and all bank writes happen inside the sync Workflow, never from the UI.
 
 ## Cloudflare platform (free tier)
+
+> **Now:** Durable Objects with SQLite instead of D1, alarm jobs instead of Workflows, one cron, no Access and no R2 (D-26, D-27, D-29, D-37, D-38). SQLite runs in-process, so its CPU counts toward the 10 ms (`docs/measurements.md`).
 
 One Worker serves both the React SPA (as static assets) and the JSON API, backed by one D1 database, with Workflows for bank syncs and Access for login. Everything fits the Workers Free plan for a single user; the binding constraint is **10 ms of CPU per invocation**, not request or storage volume.
 
@@ -67,6 +87,8 @@ Not used: KV (D1 covers config; avoids eventual-consistency bugs), Queues and Du
 Sources: [Workers limits](https://developers.cloudflare.com/workers/platform/limits/), [D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/), [D1 limits](https://developers.cloudflare.com/d1/platform/limits/), [D1 free-tier enforcement](https://developers.cloudflare.com/changelog/post/2026-09-01-d1-free-tier-limit-enforcement/), [Workflows pricing](https://developers.cloudflare.com/workflows/reference/pricing/).
 
 ## Bank data layer
+
+> **Now:** raw pages are stored in SQLite, not R2 (D-26); 100 transactions per Plaid page and 25 events per step (D-6, D-38). Everything else here stands.
 
 Bank data enters through a provider-agnostic port, is stored as an append-only event log that nothing in the app can edit, and every screen reads a projection of that log plus a separate user overlay. Plaid is the first adapter; a CSV/OFX importer and a fake provider (for tests) are the second and third.
 
@@ -118,6 +140,8 @@ Because the projection is derived, it can be rebuilt from events at any time, wh
 Sources: [Plaid pricing and billing (Trial plan)](https://plaid.com/docs/account/billing/), [Plaid plan comparison](https://support.plaid.com/hc/en-us/articles/16110110883479-How-are-Sandbox-Production-Trial-plan-and-Limited-Production-different), [Plaid transaction states](https://plaid.com/docs/transactions/transactions-data/), [Plaid transactions webhooks](https://plaid.com/docs/transactions/webhooks/).
 
 ## Budgeting model
+
+> **Now:** the model and Money rules stand; the numbers are worked out on the phone, not on the server (D-45, D-46).
 
 Accounts are either **budget** accounts (cash you assign: checking, savings, credit cards) or **tracking** accounts (counted in net worth only: linked brokerage, IRA or loan accounts; none in v1, and there are no manual assets). Savings accounts are budget accounts (decided Oct 31, 2026): every dollar in them is assigned to a category, such as Emergency fund. Money crossing between the two groups is what needs a rule; money moving within either group never touches categories. The budget always balances: cash and card working balances (counting pending you've budgeted) = every category except the card payment categories + Ready to Assign + Waiting to match + transfer sides not yet sorted − spending not yet categorized. Card payment categories are left out because each one mirrors card debt that's already in the card balances.
 
@@ -323,6 +347,8 @@ Worked example: rent of $3,000 posts Nov 1 and counts in October (rule: first 5 
 
 ## Data model
 
+> **Now:** the tables live in each budget's `BudgetStore` and the `Directory` (D-37). Budget lines, month snapshots and month totals exist only in the phone's copy (D-45; server migration 0006).
+
 SQLite (D1) schema in four layers: provider data you can't edit, the overlay you can, budget structure, and derived caches. Conventions: ULID primary keys; money as `INTEGER` cents; dates as ISO `TEXT` (`YYYY-MM-DD`), budget months as `YYYY-MM` in your configured time zone; every table has `budget_id`, `created_at`, `updated_at`; soft delete via `archived_at` where history matters.
 
 | Layer | Table | Purpose and key columns |
@@ -436,6 +462,8 @@ A **Note** button can be switched on in Settings. It sits in the corner of every
 
 ## Security and authentication
 
+> **Now:** passkey sign-in in the Worker instead of Access (D-27); no off-site backups (D-29); the outside monitor was removed (D-49). `docs/threat-model.md` is current.
+
 **You authenticate with Cloudflare Access, and the Worker independently verifies every request.** Access sits in front of the whole `workers.dev` hostname (and all preview URLs), so an unauthenticated request never reaches app code. Inside the Worker, middleware rejects any request without a valid Access identity (`ctx.access`, or verifying the `Cf-Access-Jwt-Assertion` JWT against your team's public keys with the expected audience). This double check protects against a misconfigured Access policy.
 
 Access setup:
@@ -468,6 +496,8 @@ Access setup:
 Threats this design accepts: a compromise of your Cloudflare account or your identity provider account exposes the data. Hardware-key 2FA on both is the main mitigation.
 
 ## Repository and CI/CD
+
+> **Now:** no staging (D-36); every merge to `main` deploys after its `ci` passes (D-30, D-49); release, nightly and monitor workflows are gone (D-49); sessions merge without rebasing (D-51). `docs/build-plan.md` tracks the rest.
 
 A TypeScript pnpm monorepo whose core budgeting logic is a pure package with no I/O, so the hardest logic is the most tested and the least tied to Cloudflare.
 
@@ -519,6 +549,8 @@ Workflow hardening: default `permissions: contents: read`, elevated per job only
 D1 databases used: production and staging (2 of the 10 free); CI and nightly jobs use local D1 only. Cron triggers used: 3 of the 5 (sync backstop, stale-pending scan, daily maintenance); backups and the outside monitor run in GitHub Actions. Plaid environments: Sandbox for local, CI and staging; Production only in the production Worker. During setup, check whether R2 or Zero Trust asks for a payment method; if one is on file, add R2 lifecycle rules and a $0 budget alert so going over a free allowance can't be billed silently.
 
 ## Risks, open questions and plan
+
+> **Now:** progress is tracked in `docs/build-plan.md`; measurements are in `docs/measurements.md`.
 
 **Risks**
 
