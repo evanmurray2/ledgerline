@@ -125,8 +125,7 @@ export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label
             className="flex h-12 w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-accent text-[15px] font-bold text-accent disabled:border-line disabled:text-disabled"
           >
             <Icon name="plus" size={16} stroke={2.6} />
-            {/* The plus is the icon: Setup still passes a "+ " label. */}
-            {label?.replace(/^\+ /, '') ?? `Link another bank (uses 1 of ${left})`}
+            {label ?? `Link another bank (uses 1 of ${left})`}
           </Button>
         </>
       )}
