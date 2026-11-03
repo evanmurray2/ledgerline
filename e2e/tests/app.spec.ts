@@ -359,10 +359,10 @@ test('No screen is taller than the phone: the page itself never scrolls, only it
   }
 });
 
-test('Accounts: Refresh syncs every bank; on a phone, so does pulling down', async ({ page }) => {
+test('Accounts: Sync in the header syncs every bank; on a phone, so does pulling down', async ({ page }) => {
   await page.goto('/accounts');
   if (test.info().project.name === 'desktop') {
-    await page.getByRole('button', { name: 'Refresh' }).click();
+    await page.getByRole('button', { name: 'Sync', exact: true }).click();
     await expect(page.getByText('Up to date')).toBeVisible();
     return;
   }
@@ -394,8 +394,8 @@ test('Accounts: Refresh syncs every bank; on a phone, so does pulling down', asy
   await drag('release');
   await expect(page.getByTestId('pull-refresh')).toContainText('Syncing banks…');
   await expect(page.getByTestId('pull-refresh')).toContainText('Up to date');
-  // The Refresh button next to the gear does the same.
-  await expect(page.getByRole('button', { name: 'Refresh' })).toBeEnabled();
+  // The Sync button next to the gear does the same.
+  await expect(page.getByRole('button', { name: 'Sync', exact: true })).toBeEnabled();
 });
 
 test('Desktop: type into Assigned, Tab saves and moves on, Escape puts it back', async ({ page }, info) => {
