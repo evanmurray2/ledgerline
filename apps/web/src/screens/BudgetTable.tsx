@@ -4,7 +4,7 @@ import { useNavigate, useRouterState } from '@tanstack/react-router';
 import type { BudgetCategoryRow, BudgetView } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
 import { useMoneyMutation } from '../api/hooks';
-import { Bar, cx, STATUS, StatusWord, TONE, type Tone } from '../components/ui';
+import { Bar, Card, cx, STATUS, StatusWord, TONE, type Tone } from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { monthLabel } from '../lib/dates';
 import { useCanWrite } from '../state/connectivity';
@@ -219,7 +219,7 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
   const dash = <span className="px-[9px]">—</span>;
   const t = owedTone(b);
   return (
-    <div className="@container min-w-0 overflow-x-auto rounded-xl border border-line bg-surface">
+    <Card className="@container min-w-0 overflow-x-auto">
       <div role="table" aria-label={`Budget for ${monthLabel(month)}`} className="text-[14px]">
         <div
           role="row"
@@ -296,6 +296,6 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
           track: 'budget.owed',
         })}
       </div>
-    </div>
+    </Card>
   );
 }

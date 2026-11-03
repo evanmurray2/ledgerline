@@ -4,9 +4,9 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import type { AttentionItem, BudgetView } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
 import { useMoneyMutation } from '../api/hooks';
-import { Button, Card, cx, Icon, SoftButton, TONE, type IconName, type Tone } from '../components/ui';
+import { Card, cx, SoftButton, TONE, type IconName, type Tone } from '../components/ui';
+import { GroupHeader } from './BudgetRows';
 import { formatCents } from '../lib/money';
-import { useCanWrite } from '../state/connectivity';
 import { toast } from '../components/Toast';
 import { usage } from '../usage/tracker';
 
@@ -67,7 +67,6 @@ function useFixes(month: string) {
 /** Needs attention (everything but Low), or Low on its own filter. */
 export function AttentionList({ b, month, low = false }: { b: BudgetView; month: string; low?: boolean }) {
   const fixes = useFixes(month);
-  const canWrite = useCanWrite();
   const navigate = useNavigate();
   const open = b.attention.filter(
     (a) => !fixes.done.some((d) => d.key === a.key) && (a.section === 'Low') === low,
@@ -114,27 +113,24 @@ export function AttentionList({ b, month, low = false }: { b: BudgetView; month:
         const t = SECTION_TONE[sec.title];
         return (
           <Card key={sec.title}>
-            <div className="flex min-h-11 items-center justify-between border-b border-line bg-surface-2 pl-3 pr-2">
-              <h2
-                className={cx(
-                  'm-0 flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.6px]',
-                  TONE[t.tone].fg,
-                )}
-              >
-                <Icon name={t.icon} size={14} stroke={2.6} />
-                {sec.title}
-              </h2>
-              {sec.title === 'Underfunded' && underfunded.length > 1 && (
-                <Button
-                  mutates
-                  track="budget.attention.fund_all"
-                  onClick={fundAll}
-                  className="hit h-9 rounded-full bg-accent px-3 text-[13px] font-bold text-on-accent disabled:bg-disabled-bg disabled:text-muted"
-                >
-                  Fund all · {formatCents(underfunded.reduce((s, a) => s + a.fix!.amount, 0))}
-                </Button>
-              )}
-            </div>
+            <GroupHeader
+              title={sec.title}
+              icon={t.icon}
+              color={TONE[t.tone].fg}
+              right={
+                sec.title === 'Underfunded' &&
+                underfunded.length > 1 && (
+                  <SoftButton
+                    tone="filled"
+                    mutates
+                    track="budget.attention.fund_all"
+                    onClick={() => void fundAll()}
+                  >
+                    Fund all · {formatCents(underfunded.reduce((s, a) => s + a.fix!.amount, 0))}
+                  </SoftButton>
+                )
+              }
+            />
             {sec.items.map((a) => (
               <div
                 key={a.key}
@@ -185,12 +181,7 @@ export function AttentionList({ b, month, low = false }: { b: BudgetView; month:
       })}
       {fixes.done.length > 0 && (
         <Card>
-          <div className="flex min-h-11 items-center border-b border-line bg-surface-2 px-3">
-            <h2 className="m-0 flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.6px] text-funded-fg">
-              <Icon name="check" size={14} stroke={2.6} />
-              Done just now
-            </h2>
-          </div>
+          <GroupHeader title="Done just now" icon="check" color="text-funded-fg" />
           {fixes.done.map((f) => (
             <div
               key={f.key}
@@ -209,15 +200,15 @@ export function AttentionList({ b, month, low = false }: { b: BudgetView; month:
                     : `Added ${formatCents(f.delta)} from Ready to Assign`}
                 </span>
               </div>
-              <Button
+              <SoftButton
+                tone="outline"
                 mutates
                 track="budget.attention.undo"
-                disabled={!canWrite}
                 onClick={() => void fixes.undo(f)}
-                className="hit h-9 min-w-[92px] shrink-0 rounded-full border border-line-strong bg-surface px-3 text-[13px] font-bold text-ink-2"
+                className="min-w-[92px]"
               >
                 Undo
-              </Button>
+              </SoftButton>
             </div>
           ))}
         </Card>

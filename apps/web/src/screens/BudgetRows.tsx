@@ -133,6 +133,58 @@ function OwedRowPhone({ b }: { b: BudgetView }) {
   );
 }
 
+/**
+ * The bar at the top of a Budget card: a group (tap to fold it) or a Needs attention section (an h2 in its status
+ * color, with an action on the right). 12 px uppercase on surface-2.
+ */
+export function GroupHeader({
+  title,
+  icon,
+  color = 'text-ink-2',
+  right,
+  divider = true,
+  toggle,
+}: {
+  title: ReactNode;
+  icon: IconName;
+  color?: string;
+  right?: ReactNode;
+  divider?: boolean;
+  toggle?: { expanded: boolean; onClick: () => void; track: string };
+}) {
+  const bar = cx(
+    'flex min-h-11 w-full items-center justify-between gap-2 bg-surface-2 pl-3',
+    right && !toggle ? 'pr-2' : 'pr-3',
+    divider && 'border-b border-line',
+  );
+  const label = 'm-0 flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.6px]';
+  if (toggle)
+    return (
+      <button
+        type="button"
+        data-track={toggle.track}
+        aria-expanded={toggle.expanded}
+        onClick={toggle.onClick}
+        className={bar}
+      >
+        <span className={cx(label, color)}>
+          <Icon name={icon} size={14} stroke={2.4} />
+          {title}
+        </span>
+        {right}
+      </button>
+    );
+  return (
+    <div className={bar}>
+      <h2 className={cx(label, color)}>
+        <Icon name={icon} size={14} stroke={2.6} />
+        {title}
+      </h2>
+      {right}
+    </div>
+  );
+}
+
 function Group({
   id,
   name,
@@ -150,22 +202,13 @@ function Group({
 }) {
   return (
     <Card>
-      <button
-        type="button"
-        data-track="budget.group.toggle"
-        aria-expanded={!collapsed}
-        onClick={() => toggle(id)}
-        className={cx(
-          'flex min-h-11 w-full items-center justify-between bg-surface-2 px-3',
-          !collapsed && 'border-b border-line',
-        )}
-      >
-        <span className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.6px] text-ink-2">
-          <Icon name={collapsed ? 'chevR' : 'chevD'} size={14} stroke={2.4} />
-          {name}
-        </span>
-        <span className="tnum text-[12px] text-muted">{total}</span>
-      </button>
+      <GroupHeader
+        title={name}
+        icon={collapsed ? 'chevR' : 'chevD'}
+        right={<span className="tnum text-[12px] text-muted">{total}</span>}
+        divider={!collapsed}
+        toggle={{ expanded: !collapsed, onClick: () => toggle(id), track: 'budget.group.toggle' }}
+      />
       {!collapsed && children}
     </Card>
   );

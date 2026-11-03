@@ -10,17 +10,18 @@ import {
   Chip,
   CountBadge,
   cx,
-  DESKTOP_WIDTH,
   DesktopHeader,
   ErrorNote,
   Icon,
   Loading,
   OverflowMenu,
+  PhoneHeader,
+  ScreenBody,
+  textLinkClass,
   useIsDesktop,
-  useShortcuts,
 } from '../components/ui';
+import { MonthSwitcher } from '../components/MonthSwitcher';
 import { formatCents } from '../lib/money';
-import { addMonths, compareMonths, monthLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
 import { useCanWrite } from '../state/connectivity';
 import { AllGroups, allAssignedZero } from './BudgetRows';
@@ -112,68 +113,23 @@ function MonthNav({
   desktop: boolean;
 }) {
   const navigate = useNavigate();
-  const canPrev = compareMonths(month, b.minMonth) > 0;
-  const canNext = compareMonths(month, b.maxMonth) < 0;
-  const targetsSearch = { month: month === b.currentMonth ? undefined : month };
   const go = (m: string) =>
-    navigate({
+    void navigate({
       to: '/budget',
       search: { month: m === b.currentMonth ? undefined : m, view: view === 'all' ? undefined : view },
     });
-  useShortcuts(
-    {
-      '[': () => canPrev && void go(addMonths(month, -1)),
-      ']': () => canNext && void go(addMonths(month, 1)),
-    },
-    desktop,
-  );
   return (
-    <div className={cx('flex items-center', desktop ? '-ml-3 gap-1' : 'justify-between px-2 py-1.5')}>
-      <button
-        type="button"
-        data-track="budget.month.prev"
-        aria-label="Previous month"
-        aria-keyshortcuts={desktop ? '[' : undefined}
-        title={desktop ? 'Previous month ( [ )' : undefined}
-        disabled={!canPrev}
-        onClick={() => go(addMonths(month, -1))}
-        className="flex h-11 w-11 items-center justify-center rounded-lg text-ink-2 disabled:text-line-strong"
-      >
-        <Icon name="chevL" size={22} />
-      </button>
-      <h1
-        className={cx(
-          'm-0 text-center font-bold',
-          desktop ? 'min-w-[170px] text-[22px]' : 'flex-1 pl-11 text-[17px]',
-        )}
-      >
-        {monthLabel(month)}
-      </h1>
-      <button
-        type="button"
-        data-track="budget.month.next"
-        aria-label="Next month"
-        aria-keyshortcuts={desktop ? ']' : undefined}
-        title={desktop ? 'Next month ( ] )' : undefined}
-        disabled={!canNext}
-        onClick={() => go(addMonths(month, 1))}
-        className="flex h-11 w-11 items-center justify-center rounded-lg text-ink-2 disabled:text-line-strong"
-      >
-        <Icon name="chevR" size={22} />
-      </button>
-      {!desktop && (
-        // Categories and targets belong to the budget, so they sit at the top of it; Settings stays behind the
-        // gear on Accounts.
-        <OverflowMenu
-          label="More budget actions"
-          className="flex h-11 w-11 items-center justify-center"
-          items={[
-            { to: '/targets', search: targetsSearch, name: 'Set targets', track: 'budget.set_targets' },
-            { to: '/categories', name: 'Edit categories', track: 'budget.edit_categories' },
-          ]}
-        />
-      )}
-    </div>
+    <MonthSwitcher
+      title
+      month={month}
+      min={b.minMonth}
+      max={b.maxMonth}
+      onGo={go}
+      track="budget.month"
+      // Phone: centered in the row; the left padding balances the menu on the right.
+      className={desktop ? '-ml-3 gap-1' : '-ml-2 min-w-0 flex-1'}
+      labelClassName={desktop ? 'min-w-[170px] text-[22px]' : 'flex-1 pl-[52px] text-[17px]'}
+    />
   );
 }
 
@@ -285,21 +241,19 @@ export function BudgetScreen() {
           right={
             <>
               {/* The header narrows when a side panel opens: these two fold into a menu instead of wrapping. */}
-              <Link
-                to="/categories"
-                data-track="budget.edit_categories"
-                className="hit hidden h-9 items-center whitespace-nowrap px-2 text-[13px] font-bold text-accent no-underline @min-[560px]:flex"
-              >
-                Edit categories
-              </Link>
-              <Link
-                to="/targets"
-                search={targetsSearch}
-                data-track="budget.set_targets"
-                className="hit hidden h-9 items-center whitespace-nowrap px-2 text-[13px] font-bold text-accent no-underline @min-[560px]:flex"
-              >
-                Set targets
-              </Link>
+              <span className="hidden gap-3 @min-[560px]:flex">
+                <Link to="/categories" data-track="budget.edit_categories" className={textLinkClass}>
+                  Edit categories
+                </Link>
+                <Link
+                  to="/targets"
+                  search={targetsSearch}
+                  data-track="budget.set_targets"
+                  className={textLinkClass}
+                >
+                  Set targets
+                </Link>
+              </span>
               <OverflowMenu
                 label="More budget actions"
                 className="@min-[560px]:hidden"
@@ -323,9 +277,7 @@ export function BudgetScreen() {
           }
         />
         {b.syncProblem && <SyncProblem text={b.syncProblem} />}
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5">
-          <div className={cx(DESKTOP_WIDTH, 'flex flex-col gap-3')}>{content}</div>
-        </div>
+        <ScreenBody>{content}</ScreenBody>
         <Outlet />
       </div>
     );
@@ -333,18 +285,27 @@ export function BudgetScreen() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex shrink-0 flex-col border-b border-line bg-surface">
-        <MonthNav b={b} month={month} view={view} desktop={false} />
-        {(count > 0 || lowCount > 0 || view !== 'all') && (
-          <div className="px-4 pb-3 pt-1">
+      <PhoneHeader
+        title={<MonthNav b={b} month={month} view={view} desktop={false} />}
+        right={
+          // Categories and targets belong to the budget, so they sit at the top of it; Settings stays behind the
+          // gear on Accounts.
+          <OverflowMenu
+            label="More budget actions"
+            items={[
+              { to: '/targets', search: targetsSearch, name: 'Set targets', track: 'budget.set_targets' },
+              { to: '/categories', name: 'Edit categories', track: 'budget.edit_categories' },
+            ]}
+          />
+        }
+        below={
+          count > 0 || lowCount > 0 || view !== 'all' ? (
             <ViewChips view={view} count={count} lowCount={lowCount} month={month} current={b.currentMonth} />
-          </div>
-        )}
-        {b.syncProblem && <SyncProblem text={b.syncProblem} />}
-      </header>
-      <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">
-        {content}
-      </div>
+          ) : undefined
+        }
+      />
+      {b.syncProblem && <SyncProblem text={b.syncProblem} />}
+      <ScreenBody scrollRef={scroller}>{content}</ScreenBody>
       <RtaBar b={b} onFix={() => scroller.current?.scrollTo({ top: 0, behavior: 'smooth' })} />
       <Outlet />
     </div>

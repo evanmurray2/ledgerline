@@ -1,10 +1,17 @@
 // Budget's special states above the list: a past month, assigned more than there is, a first budget, a new month.
 import { useState } from 'react';
-import { Link } from '@tanstack/react-router';
 import type { BudgetView } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
 import { useAssignView, useMoneyMutation } from '../api/hooks';
-import { Banner, Button, Card, PrimaryButton, SecondaryButton, SoftButton } from '../components/ui';
+import {
+  Banner,
+  Card,
+  PrimaryButton,
+  SecondaryButton,
+  SectionTitle,
+  SoftButton,
+  SoftLink,
+} from '../components/ui';
 import { formatCents } from '../lib/money';
 import { addMonths, compareMonths, monthName } from '../lib/dates';
 import { usage } from '../usage/tracker';
@@ -27,10 +34,10 @@ export function OverAssigned({ b, month }: { b: BudgetView; month: string }) {
       <Banner
         tone="success"
         action={
-          <Button
+          <SoftButton
+            tone="outline"
             mutates
             track="budget.over.undo"
-            className="hit h-9 shrink-0 px-2 text-[13px] font-bold underline"
             onClick={async () => {
               await move.mutateAsync({ month, from: 'rta', to: took.id, amount: took.amount });
               usage.undo('take_back');
@@ -38,7 +45,7 @@ export function OverAssigned({ b, month }: { b: BudgetView; month: string }) {
             }}
           >
             Undo
-          </Button>
+          </SoftButton>
         }
       >
         Took {formatCents(took.amount)} from {took.name}. Ready to Assign is back to {formatCents(b.rta)}.
@@ -47,18 +54,15 @@ export function OverAssigned({ b, month }: { b: BudgetView; month: string }) {
   if (b.rta >= 0) return null;
   return (
     <>
-      <div
+      <Banner
+        tone="danger"
         role="alert"
-        className="flex shrink-0 flex-col gap-1 rounded-xl bg-over-bg px-3 py-2.5 text-over-fg"
+        icon="alert"
+        title={`You assigned ${formatCents(need)} more than you have`}
       >
-        <span className="text-[15px] font-bold">You assigned {formatCents(need)} more than you have</span>
-        <span className="text-[13px] leading-snug">
-          Take {formatCents(need)} back from a category below. Nothing else is blocked meanwhile.
-        </span>
-      </div>
-      <h2 className="m-0 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
-        Take it back from
-      </h2>
+        Take {formatCents(need)} back from a category below. Nothing else is blocked meanwhile.
+      </Banner>
+      <SectionTitle>Take it back from</SectionTitle>
       <Card>
         {candidates.map((c) => (
           <div
@@ -101,13 +105,9 @@ export function FirstBudget({ b }: { b: BudgetView }) {
         Fund your card payments first ({formatCents(owed)} owed), then bills, everyday spending and savings.
         Targets tell each category what it needs.
       </span>
-      <Link
-        to="/targets"
-        data-track="budget.first.targets"
-        className="hit mt-1 flex h-10 items-center self-start rounded-full bg-accent px-4 text-[14px] font-bold text-on-accent no-underline"
-      >
+      <SoftLink to="/targets" tone="filled" track="budget.first.targets" className="mt-1 self-start">
         Set targets
-      </Link>
+      </SoftLink>
     </section>
   );
 }
@@ -121,7 +121,7 @@ export function NewMonth({ b, month }: { b: BudgetView; month: string }) {
   const prev = addMonths(month, -1);
   return (
     <>
-      <section className="flex shrink-0 flex-col gap-2 rounded-[14px] border border-line bg-surface p-3.5">
+      <Card className="flex flex-col gap-2 p-3.5">
         <h2 className="m-0 text-[17px] font-bold">{monthName(month)} has started</h2>
         <span className="text-[13px] text-muted">
           Nothing moved on its own. Every category keeps what it had left in {monthName(prev)}, and Ready to
@@ -131,9 +131,9 @@ export function NewMonth({ b, month }: { b: BudgetView; month: string }) {
           <span className="font-semibold">Ready to Assign</span>
           <span className="tnum font-bold">{formatCents(b.rta)}</span>
         </div>
-      </section>
+      </Card>
       {total > 0 && (
-        <section className="flex shrink-0 flex-col gap-2 rounded-[14px] border border-line bg-surface p-3.5">
+        <Card className="flex flex-col gap-2 p-3.5">
           <div className="flex items-center justify-between">
             <h2 className="m-0 text-[15px] font-bold">Targets for {monthName(month)}</h2>
             <span className="tnum text-[15px] font-bold">{formatCents(total)}</span>
@@ -171,7 +171,7 @@ export function NewMonth({ b, month }: { b: BudgetView; month: string }) {
               Fill targets · {formatCents(total)}
             </PrimaryButton>
           )}
-        </section>
+        </Card>
       )}
     </>
   );
@@ -180,9 +180,9 @@ export function NewMonth({ b, month }: { b: BudgetView; month: string }) {
 export function PastNote({ month, current }: { month: string; current: string }) {
   if (compareMonths(month, current) >= 0) return null;
   return (
-    <p className="m-0 shrink-0 rounded-xl bg-info-bg px-3 py-2.5 text-[13px] leading-snug text-info-fg">
+    <Banner tone="info">
       {monthName(month)}. You can still change what was assigned; the change carries into {monthName(current)}
       .
-    </p>
+    </Banner>
   );
 }
