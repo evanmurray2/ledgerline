@@ -1,6 +1,6 @@
 # Working out the budget on the phone
 
-Status: accepted v1.3, Nov 3, 2026 (decisions.md D-44). Building stages 0–4 behind settings; stage 5 waits for a clean shadow comparison. v1 got an adversarial review (1 blocker, 8 major, 9 minor); v1.1 includes its fixes, listed in section 15. v1.2 added the security design in section 13; v1.3 includes the fixes from its security review (1 blocker, 7 major, 7 minor). Nothing here changes how money is counted: the same `computeBudget()` runs, in a different place, and section 9 shows how its inputs stay the same.
+Status: built, v1.4, Nov 3, 2026 (decisions.md D-44, D-45). The owner asked for everything at once, including stage 5; section 16 says what was built and how it differs from this design. v1 got an adversarial review (1 blocker, 8 major, 9 minor); v1.1 includes its fixes, listed in section 15. v1.2 added the security design in section 13; v1.3 includes the fixes from its security review (1 blocker, 7 major, 7 minor). Nothing here changes how money is counted: the same `computeBudget()` runs, in a different place, and section 9 shows how its inputs stay the same.
 
 ## 1. The question
 
@@ -303,3 +303,17 @@ v1.2 got a security review the same day. Findings were checked against the code;
 | M6    | "Readable only while unlocked" was wrong both ways                                                                                                                               | Major    | Lock ends the server session; reload after Plaid Link; reworded (13.1, 13.4, 13.5)                             |
 | M7    | Rows weren't bound to their ids, so they could be swapped or replayed                                                                                                            | Major    | Associated data, random IVs, encrypted manifest (13.3)                                                         |
 | m1–m7 | Background timers; blocked deletes; Safari copies; uncertain PRF facts; PRF output in the sign-in post; threat table gaps; clock rollback                                        | Minor    | 13.1, 13.2, 13.4, 13.7                                                                                         |
+
+## 16. As built (Nov 3, 2026, D-45)
+
+- **One release, no stages or settings** (owner). `apps/worker/test/engine.test.ts` replaces the shadow comparison: a copy fed only by `/api/sync` gives exactly the server's answers for 11 screens, after a full download and after changes.
+- **The phone runs the server's own code.** The engine (`apps/worker/src/local/engine.ts`) keeps the stored tables in sql.js (`sqljs-d1.ts`) and answers screens with the server's routes and SQL, so there's one definition of every screen. So the sync sends the stored tables (`src/sync-tables.ts`), not screen-shaped transaction rows: a payee or account rename changes one row, and the views join it on the phone. Each sync with news rebuilds every budget line and recomputes from the budget start (no chunks: the phone has no 10 ms limit).
+- **`change_log`** numbers are one more than the highest logged; rows are never deleted, so numbers never repeat.
+- **The sync epoch lives in the Directory** (a restore of the budget's own database can't roll it back). `restoreVerify`, `restoreTo` and `POST /api/settings/restore` change it.
+- **The server keeps nothing derived** (`budget/derived.ts` is off in production): changes answer `{ ok: true }`, screen reads answer `on_device`, the daily maintenance skips the recompute and identity check, and the daily scan schedules repeats without looking at budget lines. The four derived tables stay, unused, until the next release drops them.
+- **The copy is one AES-GCM blob**, bound to the device by associated data. Putting back an older blob only shows older data, and the next sync brings it up to date, so the per-row manifest in 13.3 isn't needed.
+- **One passkey per copy.** The data key is non-extractable, so it can't be wrapped again for a second passkey; unlocking asks for the passkey that set the phone up (`allowCredentials`), and another one is refused, never wiped.
+- **Upcoming rows** count from midnight in the budget's time zone on the phone. The server's daily scan counted them about 10 minutes after midnight, at most 40 a day.
+- **Search and payee history** cover all history: the whole budget is synced, so "Search older" wasn't needed.
+- **Lock** ends the server session too; unlocking online is a fresh sign-in, which also returns the PRF output in the same Face ID prompt. Registration asks for the `prf` extension, which security keys need and iCloud passkeys don't.
+- **Not built yet:** dropping the derived tables (next release), the iPhone checks in stage 0, an end-to-end test of an offline edit sent later, and replacing the mock API's own engine with a sample dataset.

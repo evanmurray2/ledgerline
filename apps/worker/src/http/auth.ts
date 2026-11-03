@@ -106,7 +106,7 @@ export async function identify(req: Request, env: Env, now: number): Promise<Ide
 
 /** Linking or repairing a bank, removing a connection, exports, and managing passkeys need a recent passkey check. */
 export function needsRecentPasskey(method: string, path: string): boolean {
-  if (path.startsWith('/api/export/')) return true;
+  if (path.startsWith('/api/export/') || path === '/api/settings/restore') return true;
   if (path === '/api/settings/rules/export') return false;
   if (method === 'GET' || path === '/api/settings/security/sign-out') return false;
   return path.startsWith('/api/settings/connections') || path.startsWith('/api/settings/security/');

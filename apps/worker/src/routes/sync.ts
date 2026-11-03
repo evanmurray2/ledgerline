@@ -7,7 +7,6 @@ import { z } from 'zod';
 import type { AppEnv } from '../http/context.js';
 import { clock } from '../http/clock.js';
 import { SYNC_FORMAT, SYNC_TABLES, type SyncTable } from '../sync-tables.js';
-import { HttpError } from './api.js';
 import type { Scoped } from '../db/scoped.js';
 
 export const syncRoutes = new Hono<AppEnv>();
@@ -58,7 +57,7 @@ async function head(db: D1Database): Promise<number> {
 syncRoutes.get('/sync', async (c) => {
   const db = c.env.DB;
   const since = Number(c.req.query('since') ?? '0');
-  if (!Number.isSafeInteger(since) || since < 0) throw new HttpError(400, 'invalid', 'since');
+  if (!Number.isSafeInteger(since) || since < 0) return c.json({ error: 'invalid', message: 'since' }, 400);
   const limit = Math.min(Number(c.req.query('limit') ?? SYNC_PAGE_ROWS) || SYNC_PAGE_ROWS, 500);
   const base = { format: SYNC_FORMAT, epoch: c.get('syncEpoch') ?? 'e0', serverTime: clock(c.env) };
 
@@ -69,7 +68,7 @@ syncRoutes.get('/sync', async (c) => {
     try {
       cur = raw ? Cursor.parse(JSON.parse(raw)) : { t: 0, after: null, through: await head(db) };
     } catch {
-      throw new HttpError(400, 'invalid', 'cursor');
+      return c.json({ error: 'invalid', message: 'cursor' }, 400);
     }
     const rows: SyncRow[] = [];
     let t = cur.t;
@@ -153,7 +152,7 @@ syncRoutes.post('/identity-alert', async (c) => {
   const body = z
     .object({ difference: z.number().int(), month: z.string().regex(/^\d{4}-\d{2}$/) })
     .safeParse(await c.req.json().catch(() => null));
-  if (!body.success) throw new HttpError(400, 'invalid', 'identity report');
+  if (!body.success) return c.json({ error: 'invalid', message: 'identity report' }, 400);
   const now = clock(c.env);
   await c.env.DB.prepare(
     `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at) VALUES (?1, ?2, 'identity', ?3, ?4, ?5)
@@ -168,6 +167,28 @@ syncRoutes.post('/identity-alert', async (c) => {
     )
     .run();
   return c.json({ ok: true });
+});
+
+/**
+ * Point-in-time recovery from the app (runbooks/restore.md): rolls the budget's database back to a time in the last 30
+ * days. Needs a passkey check within 15 minutes and the budget's name typed. Phones download their copies again.
+ */
+syncRoutes.post('/settings/restore', async (c) => {
+  const body = z
+    .object({ before: z.string().datetime(), confirm: z.string() })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!body.success) return c.json({ error: 'invalid', message: 'before and confirm' }, 400);
+  const b = await c.env.DB.prepare(`SELECT name FROM budget WHERE id = ?1`)
+    .bind(c.get('budgetId'))
+    .first<{ name: string }>();
+  if (!b || body.data.confirm !== b.name)
+    return c.json({ error: 'confirm', message: 'Type the budget’s name to confirm' }, 422);
+  const at = Date.parse(body.data.before);
+  const now = clock(c.env);
+  if (!(at < now && at > now - 30 * 86_400_000))
+    return c.json({ error: 'invalid', message: 'Pick a time in the last 30 days' }, 422);
+  if (!c.env.RESTORE_TO) return c.json({ error: 'unavailable', message: 'Not available here' }, 503);
+  return c.json({ ok: true, ...(await c.env.RESTORE_TO(at)) });
 });
 
 /** Edit ids from the phone's offline queue: kept 30 days (pruned by the daily maintenance job). */

@@ -61,6 +61,8 @@ export interface Env {
   NOTE_USAGE?: (written: number, read: number) => Promise<void>;
   /** Inside a budget's Durable Object: queue registering a new Plaid Item's route in the Directory. */
   ROUTE_LINK?: (providerItemId: string, connectionId: string) => Promise<void>;
+  /** Inside a budget's Durable Object: point-in-time recovery of its database (runbooks/restore.md). */
+  RESTORE_TO?: (at: number) => Promise<{ undo: string }>;
 }
 
 export interface Jobs {

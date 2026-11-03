@@ -146,12 +146,18 @@ The UI works around these contract gaps (details in `apps/web/CONTRACT_NOTES.md`
 - [x] Restore, tests, loading and offline: each piece of a backup restore is written in one transaction (a failed piece adds nothing and can be sent again); the e2e suites wait for saved data and finished animations instead of fixed sleeps; Reports, Settings, Categories and first-run setup load when first opened; offline start (D-42): a service worker keeps the app's files, and the last confirmed session opens the saved screens view-only when the server can't be reached (never after a "signed out" answer). _Verify:_ `backup.test.ts` retry test; `apps/web/test/session.test.tsx`; Worker Playwright "Opens with no signal"; screenshots suite.
 - [x] Refunds of split purchases (D-43): a linked refund gives back the funded part of every line of the purchase; a split refund keeps its link; the daily scan rebuilds refund lines saved without it. _Verify:_ `money-rules.property.test.ts` (the $100 split example fails before the fix; the card-debt invariant now includes split purchases and split refunds).
 
-## 12. Budget on the phone (D-44, `docs/phone-budget.md`)
+## 12. Budget on the phone (D-44, D-45, `docs/phone-budget.md`)
 
-- [ ] Stage 0: `change_log` (triggers, counter `seq`, epoch), `GET /api/sync` and history paging behind the `phone_copy` setting; CPU per page measured.
-- [ ] Devices: `device` table, server share, revoke; separate `session_expired`, `revoked`, `not_member` answers; CSP narrowed.
-- [ ] Encrypted copy on the phone: PRF keys, row encryption with associated data, manifest, 10-minute lock, wipe rules, Home Screen app only.
-- [ ] Part A: Activity, registers and search from the copy.
-- [ ] Part B: shadow comparison, then Budget, Accounts and Reports from the phone's compute.
-- [ ] Offline edits (short list).
-- [ ] Stage 5 (delete derived tables): after two clean weeks of the shadow comparison, on the owner's go-ahead.
+Built all at once on the owner's word (D-45): no settings and no shadow comparison.
+
+- [x] Server: `change_log` written by triggers on every synced table (migration 0003), `GET /api/sync` (full download in key order, then changes), sync epoch in the Directory (migration 0006) changed by every restore, `POST /api/settings/restore`. _Verify:_ `test/engine.test.ts` (triggers on every table, server answers without Ready to Assign); `measure/phone.measure.ts` (pages 3.6 ms median, 7.8 ms max).
+- [x] The server keeps nothing derived (`budget/derived.ts`): no budget lines, month snapshots, totals or Ready to Assign; screen reads answer 404 `on_device`; archiving takes the phone's amount with its change number. _Verify:_ `test/engine.test.ts`.
+- [x] The phone's engine (`apps/worker/src/local`) runs the server's own routes on sql.js in a Web Worker. _Verify:_ `test/engine.test.ts`: 11 screens equal to the server's after a full download and after changes; Worker e2e (24) with every screen from the engine.
+- [x] Devices: `device` table, server share, Turn off in Settings → Sign-in, Sign out other devices turns their copies off; `not_member` answer. _Verify:_ `test/objects/routing.test.ts`.
+- [x] Encrypted copy in the Home Screen app: passkey PRF + server share, AES-GCM, offline unlock for 7 days, lock after 10 minutes, wipe on sign-out, revoke or not a member; plain saved screens off and deleted. _Verify:_ passkey e2e (copy is ciphertext, opens with no signal, replaced after Turn off).
+- [x] Offline edits for a short list, sent later with edit ids and edit times; moved transaction keys followed. _Verify:_ unit-level only so far (see follow-ups).
+- [x] CSP: WebAssembly for SQLite, workers from this site, Plaid API hosts only. _Verify:_ `apps/web/test/headers.test.ts`; Worker e2e security headers.
+- [ ] Drop `budget_line`, `month_snapshot`, `account_month_total` and `month_total_done` on the server: the second release of the removal (expand-only rule), after this one is deployed.
+- [ ] On the owner's iPhone after deploy: PRF in the Home Screen app with the existing passkey, first download time, Face ID unlock with no signal.
+- [ ] An e2e test of an offline edit sent later (Chromium can't emulate the Home Screen app's offline unlock and an edit in one run yet).
+- [ ] The mock API (`apps/web/src/mock`) still has its own engine for the mock tests; replace it with a sample sync dataset fed to the real engine.

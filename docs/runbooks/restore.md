@@ -2,20 +2,21 @@
 
 There is no off-site backup (decisions.md D-29). Recovery uses what Cloudflare keeps for D1 on the free plan.
 
-## Undo recent damage (last 7 days)
+## Undo recent damage (last 30 days)
 
-D1 Time Travel restores the production database to any minute in the last 7 days. From a computer, in `apps/worker`:
+Each budget lives in its own Durable Object, with Cloudflare's 30-day point-in-time recovery. Restoring goes through the app, so every phone's copy is downloaded again (D-44): the restore changes the budget's sync epoch in the Directory first.
 
-```sh
-pnpm exec wrangler d1 time-travel info ledgerline                       # current bookmark
-pnpm exec wrangler d1 time-travel restore ledgerline --timestamp=<ISO time before the damage>
+From a computer, signed in to Ledgerline in a browser (sign in again first: it needs a passkey check in the last 15 minutes), open the browser's console on the Ledgerline tab and run, with a time just before the damage and your budget's name:
+
+```js
+await fetch('/api/settings/restore', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-ledgerline': '1' },
+  body: JSON.stringify({ before: '2026-11-03T15:00:00Z', confirm: 'Your budget name' }),
+}).then((r) => r.json());
 ```
 
-A restore replaces the whole database, including everything after that time. Bank transactions after it come back on the next sync; your own edits after it are lost.
-
-## A deleted database (within 7 days)
-
-Use Cloudflare's D1 undelete API as soon as possible; requests for databases deleted more than 7 days ago fail.
+The answer has an `undo` bookmark; keep it. Everything after that time is replaced. Bank transactions after it come back on the next sync; your own edits after it are lost.
 
 ## Your own copy
 

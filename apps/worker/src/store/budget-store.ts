@@ -309,6 +309,7 @@ export class BudgetStore extends DurableObject<Env> {
           runAt: now(),
         });
       },
+      RESTORE_TO: (at: number) => this.restoreTo(at),
       JOBS: {
         // routes/settings.ts startSync() has already taken the lease with this run id.
         sync: async (runId, connectionId, trigger) => {

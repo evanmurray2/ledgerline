@@ -1,5 +1,17 @@
 # Phase 1 measurements (go/no-go)
 
+## Update: sync pages for the phone's copy (Nov 3, 2026)
+
+`measure/phone.measure.ts`: `GET /api/sync` on a 3,000-transaction budget (node:sqlite, SQLite included, as a Durable Object pays it), 200 rows a page.
+
+| Request                                | Count | ms median / p90 / max |
+| -------------------------------------- | ----- | --------------------- |
+| Full download page                     | 16    | 3.6 / 5.9 / 7.8       |
+| Change page (600 changed transactions) | 4     | 3.9 / 4.2 / 4.2       |
+| Nothing new                            | 20    | 0.1 / 0.2 / 0.2       |
+
+Working out the budget moved to the phone (D-44), which has no 10 ms limit; the iPhone timings are still to be taken after deploy.
+
 ## Update: step sizes in the code match D-37 (Nov 2, 2026)
 
 The code had kept the D1-era sizes (apply 50 events, processing 100 events, recompute 6 months per request) while production ran in Durable Objects, where SQLite counts as CPU. They are now 25, 25 and 2 (decisions.md D-38). `apps/worker/measure` runs the same code on `node:sqlite` with the store's own migrations and now reports CPU **including** SQLite (`ms`), as a Durable Object pays it. Three runs, Node, ms (median / p90 / max):
