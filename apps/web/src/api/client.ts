@@ -8,7 +8,7 @@ import {
   afterChange,
   archiveFields,
   canEditOffline,
-  currentDeviceId,
+  dropSignedOut,
   editOffline,
   read as readCopy,
   readsLocally,
@@ -186,14 +186,7 @@ async function sendOnce<S extends z.ZodType>(
     res = await fetch(path, {
       method,
       credentials: 'same-origin',
-      headers: mutation
-        ? {
-            ...MUTATION_HEADERS,
-            ...(path === '/api/settings/security/sign-out-others' && currentDeviceId()
-              ? { 'x-device-id': currentDeviceId()! }
-              : {}),
-          }
-        : { accept: 'application/json' },
+      headers: mutation ? MUTATION_HEADERS : { accept: 'application/json' },
       body: mutation && body !== undefined ? JSON.stringify(body) : mutation ? '{}' : undefined,
     });
   } catch {
@@ -263,11 +256,12 @@ function failure(res: Response, json: unknown, path: string): ApiError {
   const message = parsed.success ? parsed.data.message : res.statusText || 'Request failed';
   if (code === 'read_only' || code === 'readonly') onReadOnly?.();
   if (code === 'resting') connectivity.setReadsPaused(true);
-  // The session ended (24 hours, or locked): sign in again. The saved copy stays, encrypted (D-45).
-  // A passkey check ("reauth") is handled by afterPasskeyCheck.
+  // The session ended (24 hours, or locked): sign in again. The saved copy stays, encrypted (D-45), unless this
+  // device was signed out from another one: then it's deleted first. A passkey check ("reauth") is handled by
+  // afterPasskeyCheck.
   if (code === 'unauthenticated' && !path.startsWith('/api/auth/')) {
     clearSavedData();
-    window.dispatchEvent(new Event('ledgerline:signedout'));
+    void dropSignedOut(true).finally(() => window.dispatchEvent(new Event('ledgerline:signedout')));
   }
   // No longer a member of this budget: this phone's copy goes (D-45).
   if (code === 'not_member') void wipe();

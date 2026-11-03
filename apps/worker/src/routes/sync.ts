@@ -70,6 +70,14 @@ syncRoutes.get('/sync', async (c) => {
     } catch {
       return c.json({ error: 'invalid', message: 'cursor' }, 400);
     }
+    // Why the phone is downloading everything (its saved copy was missing, unreadable, turned off…), for the logs.
+    if (!raw)
+      console.log(
+        JSON.stringify({
+          event: 'sync_full',
+          why: (c.req.query('why') ?? 'unknown').replace(/[^\w:-]/g, '').slice(0, 40),
+        }),
+      );
     const rows: SyncRow[] = [];
     let t = cur.t;
     let after = cur.after;
