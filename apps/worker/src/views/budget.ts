@@ -144,7 +144,12 @@ export async function categoryRows(
           ? `needs ${fmt(need)} this month · ${describeTarget(target, fmt).replace(/\.00\b/g, '')}`
           : `this month’s share is in · ${describeTarget(target, fmt).replace(/\.00\b/g, '')}`;
     else if (status === 'overfunded' && tAmount !== null)
-      detail = `${fmt(available - tAmount)} more than this month’s ${fmt(tAmount)}`;
+      // The same amount the Move fix offers. A Set aside target is overfunded by what was assigned this month, not by
+      // what's left after spending, which can be below the target (Nov 3, 2026: "−$480.85 more than $1,000.00").
+      detail =
+        target?.type === 'set_aside'
+          ? `${fmt(-fixAmount)} more assigned than this month’s ${fmt(tAmount)}`
+          : `${fmt(-fixAmount)} more than this month’s ${fmt(tAmount)}`;
     else if (status === 'underfunded') detail = `needs ${fmt(need)} this month`;
     else if (tAmount !== null && target?.type !== 'no_date') {
       // Matches the bar, which shows what's left of the month's money (spent + available).

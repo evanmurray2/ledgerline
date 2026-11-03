@@ -173,3 +173,50 @@ describe('November through the API', () => {
     expect(r.status).toBe(403);
   });
 });
+
+describe('Overfunded wording', () => {
+  beforeAll(async () => {
+    await SELF.fetch('https://ledgerline.test/__dev/seed-november', {
+      method: 'POST',
+      headers: H,
+      body: '{}',
+    });
+  });
+
+  it('a Set aside target says how much more was assigned, even when spending left less than the target', async () => {
+    const put = (p: string, body: unknown) =>
+      SELF.fetch(`https://ledgerline.test${p}`, { method: 'PUT', headers: H, body: JSON.stringify(body) });
+    const cat = 'shopping';
+    expect(
+      (
+        await put(`/api/categories/${cat}/target`, {
+          categoryId: cat,
+          month: '2026-11',
+          target: { type: 'set_aside', amount: 10_000 },
+        })
+      ).status,
+    ).toBe(200);
+    await post('/api/budget/set', { month: '2026-11', categoryId: cat, assigned: 20_000 });
+    // Spend most of it, so what's left is below the $100 target while $200 stays assigned.
+    const accounts = await get<AccountsView>('/api/accounts');
+    const checking = accounts.groups.find((g) => g.name === 'Cash')!.accounts[0]!.id;
+    let row = (await get<BudgetView>('/api/budget/2026-11')).groups
+      .flatMap((g) => g.categories)
+      .find((c) => c.id === cat)!;
+    await post('/api/transactions', {
+      kind: 'pending',
+      accountId: checking,
+      date: '2026-11-14',
+      amount: -(row.available - 5_000),
+      payee: 'Night out',
+      categoryId: cat,
+      repeats: 'never',
+    });
+    row = (await get<BudgetView>('/api/budget/2026-11')).groups
+      .flatMap((g) => g.categories)
+      .find((c) => c.id === cat)!;
+    expect(row.available).toBe(5_000);
+    expect(row.status).toBe('overfunded');
+    expect(row.detail).toBe('$100.00 more assigned than this month’s $100.00');
+  });
+});
