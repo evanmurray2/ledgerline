@@ -2,12 +2,23 @@
 // categories and groups, rules (with live preview), payees, bank connections (Item meter, confirm before Link), and
 // import and export. There is no email setting: the app sends no email (decisions.md D-24).
 import { SignInSection } from './Auth';
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
 import { qk, useConnections, usePayees, useRules, useSession } from '../api/hooks';
-import { BackHeader, Card, cx, DesktopHeader, Loading, Toggle, useIsDesktop } from '../components/ui';
+import {
+  BackHeader,
+  Banner,
+  Card,
+  cx,
+  DesktopHeader,
+  Loading,
+  ScreenBody,
+  SectionTitle,
+  Toggle,
+  useIsDesktop,
+} from '../components/ui';
 import { useThemePref, writeThemePref, type ThemePref } from '../lib/theme';
 import { monthLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
@@ -29,7 +40,7 @@ function useSectionMeta() {
   const conns = useConnections().data;
   const payees = usePayees().data;
   const needRepair = conns?.items.filter((i) => i.status === 'login_required' || i.status === 'error') ?? [];
-  return {
+  const text: Record<string, string> = {
     appearance: 'Light, Dark or Match device',
     rules: rules ? `${rules.rules.length} rules` : '',
     payees: payees ? `Rename and merge · ${payees.payees.length} payees` : 'Rename and merge',
@@ -37,7 +48,8 @@ function useSectionMeta() {
       ? `${conns.used} of ${conns.limit} links used${needRepair[0] ? ` · ${needRepair[0].institution} needs repair` : ''}`
       : '',
     data: 'History import · CSV and JSON export · recovery',
-  } as Record<string, string>;
+  };
+  return { text, repair: needRepair.length > 0 };
 }
 
 export function SettingsLayout() {
@@ -77,12 +89,10 @@ export function SettingsLayout() {
                 <span
                   className={cx(
                     'text-[12px]',
-                    s.id === 'connections' && meta.connections?.includes('repair')
-                      ? 'text-under-fg'
-                      : 'text-muted',
+                    s.id === 'connections' && meta.repair ? 'text-warn-fg' : 'text-muted',
                   )}
                 >
-                  {meta[s.id]}
+                  {meta.text[s.id]}
                 </span>
               </Link>
             );
@@ -163,11 +173,7 @@ function Preferences() {
           onChange={(v) => void patch({ noteButton: v })}
         />
       </Card>
-      {trackNote && (
-        <p role="status" className="m-0 rounded-xl bg-page p-3 text-[13px] text-muted">
-          {trackNote}
-        </p>
-      )}
+      {trackNote && <Banner tone="neutral">{trackNote}</Banner>}
       <SignInSection />
     </>
   );
@@ -176,7 +182,6 @@ function Preferences() {
 function SettingsHome() {
   const navigate = useNavigate();
   const meta = useSectionMeta();
-  const pref = useThemePref();
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <BackHeader
@@ -184,99 +189,88 @@ function SettingsHome() {
         onBack={() => void navigate({ to: '/accounts' })}
         backLabel="Back to accounts"
       />
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pb-6 pt-3">
-        <h2 className="m-0 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">Budget</h2>
+      <ScreenBody>
+        <SectionTitle>Budget</SectionTitle>
         <Card>
-          <RowLink to="/settings/rules" name="Rules" meta={meta.rules ?? ''} track="settings.rules" />
-          <RowLink to="/settings/payees" name="Payees" meta={meta.payees ?? ''} track="settings.payees" />
+          <RowLink to="/settings/rules" name="Rules" meta={meta.text.rules ?? ''} track="settings.rules" />
+          <RowLink
+            to="/settings/payees"
+            name="Payees"
+            meta={meta.text.payees ?? ''}
+            track="settings.payees"
+          />
         </Card>
-        <h2 className="m-0 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">Data</h2>
+        <SectionTitle>Data</SectionTitle>
         <Card>
           <RowLink
             to="/settings/connections"
             name="Bank connections"
-            meta={meta.connections ?? ''}
+            meta={meta.text.connections ?? ''}
+            warn={meta.repair}
             track="settings.connections"
           />
           <RowLink
             to="/settings/data"
             name="Import and export"
-            meta={meta.data ?? ''}
+            meta={meta.text.data ?? ''}
             track="settings.data"
           />
         </Card>
-        <h2 className="m-0 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
-          Preferences
-        </h2>
-        <Card>
-          <div className="flex flex-col gap-2 px-3 py-3">
-            <span className="flex flex-col gap-px text-[15px] font-semibold">
-              Appearance<span className="text-[12px] font-normal text-muted">Saved on this device</span>
-            </span>
-            <div
-              role="radiogroup"
-              aria-label="Appearance"
-              className="grid grid-cols-3 gap-1 rounded-[10px] bg-sunken p-[3px]"
-            >
-              {THEMES.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={pref === t.id}
-                  data-track={`settings.theme.${t.id}`}
-                  onClick={() => setTheme(t.id)}
-                  className={cx(
-                    'hit h-9 rounded-lg text-[14px] font-bold text-ink',
-                    pref === t.id ? 'bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.08)]' : 'bg-transparent',
-                  )}
-                >
-                  {t.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        </Card>
+        <SectionTitle note="Saved on this device">Appearance</SectionTitle>
+        <ThemeChoice />
+        <SectionTitle>Preferences</SectionTitle>
         <Preferences />
-      </div>
+      </ScreenBody>
+    </div>
+  );
+}
+
+/** The one Appearance control, on the phone's Settings home and in the desktop Appearance pane. */
+function ThemeChoice() {
+  const pref = useThemePref();
+  const id = useId();
+  return (
+    <div role="radiogroup" aria-label="Appearance" className="grid grid-cols-3 gap-2">
+      {THEMES.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          role="radio"
+          aria-checked={pref === t.id}
+          aria-label={t.name}
+          aria-describedby={`${id}-${t.id}`}
+          data-track={`settings.theme.${t.id}`}
+          onClick={() => setTheme(t.id)}
+          className={cx(
+            'flex min-w-0 flex-col gap-1.5 rounded-xl border-2 bg-surface p-2.5 text-left',
+            pref === t.id ? 'border-accent' : 'border-line',
+          )}
+        >
+          <span aria-hidden="true" className="flex h-10 overflow-hidden rounded-lg border border-line">
+            <span className="flex-1" style={{ background: t.id === 'dark' ? '#181B21' : '#FFFFFF' }} />
+            <span
+              className="flex-1"
+              style={{ background: t.id === 'light' ? '#F5F6F8' : t.id === 'dark' ? '#0E1014' : '#181B21' }}
+            />
+          </span>
+          <span className="text-[14px] font-bold leading-tight">{t.name}</span>
+          <span id={`${id}-${t.id}`} className="text-[12px] leading-snug text-muted">
+            {t.desc}
+          </span>
+        </button>
+      ))}
     </div>
   );
 }
 
 export function AppearanceSection() {
-  const pref = useThemePref();
   return (
     <Page title="Appearance" back="/settings">
-      <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-3">
-        {THEMES.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="radio"
-            aria-checked={pref === t.id}
-            data-track={`settings.theme.${t.id}`}
-            onClick={() => setTheme(t.id)}
-            className={cx(
-              'flex flex-col gap-2 rounded-xl border-2 bg-surface p-3 text-left',
-              pref === t.id ? 'border-accent' : 'border-line',
-            )}
-          >
-            <span aria-hidden="true" className="flex h-14 overflow-hidden rounded-lg border border-line">
-              <span className="flex-1" style={{ background: t.id === 'dark' ? '#181B21' : '#FFFFFF' }} />
-              <span
-                className="flex-1"
-                style={{ background: t.id === 'light' ? '#F5F6F8' : t.id === 'dark' ? '#0E1014' : '#181B21' }}
-              />
-            </span>
-            <span className="text-[14px] font-bold">{t.name}</span>
-            <span className="text-[12px] text-muted">{t.desc}</span>
-          </button>
-        ))}
-      </div>
+      <ThemeChoice />
       <p className="m-0 text-[13px] text-muted">
         Saved on this device. Every screen follows it, on phone and desktop.
       </p>
-      <h2 className="m-0 mt-2 text-[15px] font-bold">Preferences</h2>
+      <SectionTitle>Preferences</SectionTitle>
       <Preferences />
     </Page>
   );
