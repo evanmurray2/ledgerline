@@ -155,9 +155,8 @@ Built all at once on the owner's word (D-45): no settings and no shadow comparis
 - [x] The phone's engine (`apps/worker/src/local`) runs the server's own routes on sql.js in a Web Worker. _Verify:_ `test/engine.test.ts`: 11 screens equal to the server's after a full download and after changes; Worker e2e (24) with every screen from the engine.
 - [x] Devices: `device` table, server share, Turn off in Settings → Sign-in, Sign out other devices turns their copies off; `not_member` answer. _Verify:_ `test/objects/routing.test.ts`.
 - [x] Encrypted copy in the Home Screen app: passkey PRF + server share, AES-GCM, offline unlock for 7 days, lock after 10 minutes, wipe on sign-out, revoke or not a member; plain saved screens off and deleted. _Verify:_ passkey e2e (copy is ciphertext, opens with no signal, replaced after Turn off).
-- [x] Offline edits for a short list, sent later with edit ids and edit times; moved transaction keys followed. _Verify:_ unit-level only so far (see follow-ups).
+- [x] Offline edits for a short list (categorize, a transaction's details, assign, targets), sent later with edit ids and edit times; moved transaction keys followed; those controls stay on offline and the banner counts what's waiting. _Verify:_ Worker e2e "A change made with no signal…" (shown at once, 1 waiting, on the server once back online).
 - [x] CSP: WebAssembly for SQLite, workers from this site, Plaid API hosts only. _Verify:_ `apps/web/test/headers.test.ts`; Worker e2e security headers.
 - [ ] Drop `budget_line`, `month_snapshot`, `account_month_total` and `month_total_done` on the server: the second release of the removal (expand-only rule), after this one is deployed.
 - [ ] On the owner's iPhone after deploy: PRF in the Home Screen app with the existing passkey, first download time, Face ID unlock with no signal.
-- [ ] An e2e test of an offline edit sent later (Chromium can't emulate the Home Screen app's offline unlock and an edit in one run yet).
 - [ ] The mock API (`apps/web/src/mock`) still has its own engine for the mock tests; replace it with a sample sync dataset fed to the real engine.

@@ -146,13 +146,13 @@ export function Money({ cents, plus, className }: { cents: number; plus?: boolea
 // ------------------------------------------------------------------ buttons
 
 type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  /** Changes data: disabled while offline or read-only. */
-  mutates?: boolean;
+  /** Changes data: disabled while offline or read-only. 'offline': also works offline with the copy (D-44). */
+  mutates?: boolean | 'offline';
   track?: string;
 };
 
-function useDisabled(mutates: boolean | undefined, disabled: boolean | undefined) {
-  const canWrite = useCanWrite();
+function useDisabled(mutates: boolean | 'offline' | undefined, disabled: boolean | undefined) {
+  const canWrite = useCanWrite({ offline: mutates === 'offline' });
   return !!disabled || (!!mutates && !canWrite);
 }
 

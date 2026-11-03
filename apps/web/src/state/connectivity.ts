@@ -2,6 +2,7 @@
 // the network level) and the daily-limit read-only state both make the app view-only: the last loaded data
 // stays visible and every control that changes data is disabled. Nothing is queued.
 import { useSyncExternalStore } from 'react';
+import { useCopy } from '../copy/copy';
 
 interface State {
   online: boolean;
@@ -130,7 +131,13 @@ export function useConnectivity(): State {
 }
 
 /** False while offline or read-only: every control that changes data uses this. */
-export function useCanWrite(): boolean {
+/**
+ * Whether a control that changes data is on. `offline`: a change the copy on this device can take with no signal
+ * and send later (D-44, src/copy/copy.ts: categorizing, a transaction's details, assigning, targets).
+ */
+export function useCanWrite(opts: { offline?: boolean } = {}): boolean {
   const s = useConnectivity();
+  const copy = useCopy();
+  if (opts.offline && copy.status === 'ready' && !s.readOnly) return true;
   return s.online && !s.networkFailed && !s.readOnly;
 }

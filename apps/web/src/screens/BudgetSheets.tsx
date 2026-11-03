@@ -597,7 +597,7 @@ export function AssignSheetScreen() {
   const [off, setOff] = useState<Record<string, boolean>>({});
   const [catId, setCatId] = useState('');
   const [custom, setCustom] = useState('');
-  const canWrite = useCanWrite();
+  const canWrite = useCanWrite({ offline: true });
 
   useEffect(() => {
     usage.startTask('assign');
@@ -659,7 +659,7 @@ export function AssignSheetScreen() {
             </p>
           )}
           <PrimaryButton
-            mutates
+            mutates="offline"
             track={left < 0 ? 'assign.anyway' : 'assign.apply'}
             danger={left < 0}
             disabled={items.size === 0 || !canWrite}

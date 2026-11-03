@@ -402,7 +402,7 @@ export async function editOffline(method: string, path: string, body: unknown): 
   await host!.put('outbox', JSON.stringify(q));
   set({ queued: q.length });
   await save();
-  changed();
+  // The app's own mutation refreshes what it changed (as after an online change).
   return json;
 }
 

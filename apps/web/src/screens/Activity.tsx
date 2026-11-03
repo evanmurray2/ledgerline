@@ -150,7 +150,7 @@ export function ActivityScreen() {
   const query = useActivity(filter, q);
   const counts = useActivity('attention', '');
   const v = query.data;
-  const canWrite = useCanWrite();
+  const canWrite = useCanWrite({ offline: true });
   const qc = useQueryClient();
   // The list keeps categorized rows in place and the counts are adjusted here, so Activity isn't refetched after
   // each categorize (every refetch reads the database); it refreshes on the next visit.
@@ -471,7 +471,7 @@ export function ActivityScreen() {
                         </Link>
                         {!selecting && (
                           <Button
-                            mutates
+                            mutates="offline"
                             track="activity.category.choose"
                             aria-label={`${label ? 'Change category for' : 'Choose category for'} ${r.payee} ${formatCents(r.amount)}`}
                             onClick={() => openPicker({ keys: [r.key], row: r })}
@@ -548,7 +548,7 @@ export function ActivityScreen() {
         <div className="flex shrink-0 items-center gap-2.5 border-t border-line bg-surface px-4 py-2.5">
           <span className="flex-1 text-[14px] font-semibold">{selKeys.length} selected</span>
           <Button
-            mutates
+            mutates="offline"
             track="activity.select.choose"
             disabled={selKeys.length === 0 || !canWrite}
             onClick={() => openPicker({ keys: selKeys, row: null })}
@@ -603,7 +603,7 @@ function CategoryPicker({
     const id = byName.get(n);
     return id ? [id] : [];
   });
-  const canWrite = useCanWrite();
+  const canWrite = useCanWrite({ offline: true });
   return (
     <CategoryPickerSheet
       track="activity.picker"

@@ -7,6 +7,7 @@ import { ToastHost } from './Toast';
 import { cx, Icon, useIsDesktop, type IconName } from './ui';
 import { NoteSheet } from '../screens/Note';
 import { useBadgeCounts, useSession } from '../api/hooks';
+import { useCopy } from '../copy/copy';
 import { useConnectivity } from '../state/connectivity';
 import { pacificTime } from '../lib/dates';
 import { formatCents } from '../lib/money';
@@ -170,6 +171,7 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
 /** Offline and daily-limit banners. Shown on every screen while they apply. */
 export function StatusBanner() {
   const c = useConnectivity();
+  const copy = useCopy();
   const offline = !c.online || c.networkFailed;
   if (!offline && !c.readOnly && !c.readsPaused) return null;
   const loaded = c.loadedAt ? pacificTime(c.loadedAt) : null;
@@ -182,8 +184,9 @@ export function StatusBanner() {
       >
         <span className="text-[14px] font-bold">You’re offline</span>
         <span className="text-[13px] leading-snug">
-          {loaded ? `Showing what was loaded at ${loaded}.` : 'Showing what was last loaded.'} Changes are off
-          until you’re back online.
+          {copy.status === 'ready'
+            ? `Categorizing, editing a transaction and assigning still work${copy.queued ? ` (${copy.queued} waiting to send)` : ''}; they’re sent when you’re back online. Other changes are off.`
+            : `${loaded ? `Showing what was loaded at ${loaded}.` : 'Showing what was last loaded.'} Changes are off until you’re back online.`}
         </span>
       </div>
     );

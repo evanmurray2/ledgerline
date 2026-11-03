@@ -143,6 +143,41 @@ test('Changes made elsewhere show when the app opens again', async ({ page, requ
   await expect(chip).toHaveText(`Needs attention ${before - 1}`);
 });
 
+test('A change made with no signal is kept on the device and sent when the connection is back', async ({
+  page,
+  context,
+  request,
+}) => {
+  await page.goto('/activity');
+  const chip = page.getByRole('button', { name: /^Needs attention \d+$/ });
+  await expect(chip).toHaveText(/Needs attention [1-9]/);
+  const before = Number((await chip.textContent())!.match(/\d+/)![0]);
+  const txn = (await rows(request, 'bank_txn')).find(
+    (r) => r.amount === -3810 && /amazon/i.test(String(r.raw_name)),
+  )!;
+  const shopping = (await rows(request, 'category')).find((c) => c.name === 'Shopping')!;
+  const onServer = async () =>
+    (await rows(request, 'txn_overlay')).find((o) => o.txn_key === txn.txn_key)?.category_id ?? null;
+
+  await context.setOffline(true);
+  await expect(page.getByTestId('offline-banner')).toBeVisible();
+  await page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ }).click();
+  await page
+    .getByRole('dialog', { name: 'Choose a category' })
+    .getByRole('button', { name: 'Shopping' })
+    .first()
+    .click();
+  // The copy took it at once; the server hasn't seen it.
+  await expect(chip).toHaveText(`Needs attention ${before - 1}`);
+  await expect(page.getByTestId('offline-banner')).toContainText('1 waiting to send');
+  expect(await onServer()).not.toBe(shopping.id);
+
+  await context.setOffline(false);
+  await expect.poll(onServer, { timeout: 15_000 }).toBe(shopping.id);
+  await page.reload();
+  await expect(chip).toHaveText(`Needs attention ${before - 1}`);
+});
+
 test('Accounts: net worth and the Ally repair prompt', async ({ page }) => {
   await page.goto('/accounts');
   await expect(page.getByText('$22,555.35').first()).toBeVisible();

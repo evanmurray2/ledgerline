@@ -316,4 +316,4 @@ v1.2 got a security review the same day. Findings were checked against the code;
 - **Upcoming rows** count from midnight in the budget's time zone on the phone. The server's daily scan counted them about 10 minutes after midnight, at most 40 a day.
 - **Search and payee history** cover all history: the whole budget is synced, so "Search older" wasn't needed.
 - **Lock** ends the server session too; unlocking online is a fresh sign-in, which also returns the PRF output in the same Face ID prompt. Registration asks for the `prf` extension, which security keys need and iCloud passkeys don't.
-- **Not built yet:** dropping the derived tables (next release), the iPhone checks in stage 0, an end-to-end test of an offline edit sent later, and replacing the mock API's own engine with a sample dataset.
+- **Not built yet:** dropping the derived tables (next release), the iPhone checks in stage 0, and replacing the mock API's own engine with a sample dataset.

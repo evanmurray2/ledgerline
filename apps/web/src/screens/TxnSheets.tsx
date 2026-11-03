@@ -232,7 +232,7 @@ function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       footer={
         <div className="flex flex-col gap-2">
           {patch.error && <ErrorNote error={patch.error} />}
-          <PrimaryButton mutates track="txn.save" onClick={() => void save()}>
+          <PrimaryButton mutates="offline" track="txn.save" onClick={() => void save()}>
             Save
           </PrimaryButton>
         </div>
