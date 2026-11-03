@@ -28,6 +28,10 @@ export const DIRECTORY_MIGRATIONS: StoreMigration[] = [
   {
     "name": "0006_devices.sql",
     "sql": "-- Phones that keep an encrypted copy of a budget (docs/phone-budget.md section 13, decisions.md D-45). The copy's\n-- key needs both the user's passkey and this row's share, which the server hands out only after a sign-in and only\n-- while the device isn't revoked. Expand-only.\nCREATE TABLE device (\n  id TEXT PRIMARY KEY,\n  user_id TEXT NOT NULL,\n  budget_id TEXT NOT NULL,\n  name TEXT NOT NULL,\n  share TEXT,                        -- base64url, 32 random bytes; NULL once revoked\n  created_at INTEGER NOT NULL,\n  last_seen_at INTEGER,\n  revoked_at INTEGER\n);\nCREATE INDEX device_user ON device (user_id);\n-- Changes whenever a budget's database is restored, so every phone downloads its copy again (section 8).\nALTER TABLE budget ADD COLUMN sync_epoch TEXT NOT NULL DEFAULT 'e0';\n"
+  },
+  {
+    "name": "0007_device_session.sql",
+    "sql": "-- The sign-in a phone's saved copy last opened with (D-52). Settings → Sign-in lists a phone with a saved copy as\n-- one of your sign-ins, and signing it out there also turns its copy off, so the phone deletes it. Expand-only.\nALTER TABLE device ADD COLUMN session_id TEXT;\nCREATE INDEX device_session ON device (session_id);\n"
   }
 ];
 

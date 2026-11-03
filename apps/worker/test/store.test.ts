@@ -62,6 +62,7 @@ describe('object migrations', () => {
         '0004_do_usage.sql',
         '0005_worker_requests.sql',
         '0006_devices.sql',
+        '0007_device_session.sql',
       ],
       tables: 16,
     });

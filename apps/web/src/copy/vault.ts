@@ -3,8 +3,8 @@
 // Keys:
 // - The passkey's PRF output (WebAuthn `prf` extension, salt kept on the device) is a secret only that passkey can
 //   produce. It never leaves the phone and is never stored.
-// - The server holds a share for each device (Settings → Sign-in → devices); it hands it out only after a sign-in and
-//   only while the device isn't revoked.
+// - The server holds a share for each device; it hands it out only after a sign-in and only until the device is
+//   signed out (Settings → Sign-in).
 // - HKDF(PRF output ‖ share) gives the key-encryption key, which unwraps the random data key. The data key encrypts
 //   the copy (AES-GCM, a fresh random IV every time, bound to this device by associated data).
 // - For offline unlock, the share is also kept wrapped under a key from the PRF output alone, with the last server
@@ -72,10 +72,16 @@ export async function loadRecord(key: string): Promise<CopyRecord | null> {
   return ((await tx('readonly', (s) => s.get(key)).catch(() => null)) as CopyRecord | undefined) ?? null;
 }
 
+/** Every copy on this device. */
+export async function allRecords(): Promise<CopyRecord[]> {
+  if (typeof indexedDB === 'undefined') return [];
+  return ((await tx('readonly', (s) => s.getAll()).catch(() => [])) as CopyRecord[]) ?? [];
+}
+
 /** The record last used on this device (for opening with no signal, before anyone has signed in). */
 export async function lastRecord(): Promise<CopyRecord | null> {
   if (typeof indexedDB === 'undefined') return null;
-  const all = ((await tx('readonly', (s) => s.getAll()).catch(() => [])) as CopyRecord[]) ?? [];
+  const all = await allRecords();
   return all.sort((a, b) => b.savedAt - a.savedAt)[0] ?? null;
 }
 
