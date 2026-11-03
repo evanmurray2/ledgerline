@@ -28,10 +28,10 @@ function Frame({ title, children }: { title: string; children: React.ReactNode }
 
 /** Why the whole budget is downloading instead of only what changed (also sent to the server's logs). */
 const WHY: Record<FullWhy, string> = {
-  memory: 'this device keeps your budget in memory only.',
-  first: 'there’s no saved copy on this phone yet.',
-  no_prf: 'your passkey didn’t give Ledgerline a key, so nothing is saved on this phone.',
-  turned_off: 'this phone was signed out from another device.',
+  memory: 'this browser can’t save your budget.',
+  first: 'there’s no saved copy on this device yet.',
+  no_prf: 'your passkey didn’t give Ledgerline a key, so nothing is saved on this device.',
+  turned_off: 'this device was signed out from another one.',
   unreadable_share: 'the saved copy couldn’t be opened (share).',
   unreadable_key: 'the saved copy couldn’t be opened (key).',
   unreadable_copy: 'the saved copy couldn’t be opened (copy).',

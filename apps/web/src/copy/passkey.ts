@@ -20,21 +20,11 @@ export interface Assertion {
 }
 
 /**
- * Where the copy is saved on the device: an iPhone or iPad, in Safari or the Home Screen app (D-48; owner). On a
- * computer it's kept in memory only (browser extensions share the page's storage there).
+ * Whether the copy is saved on this device: on every device, phone or computer, in a browser or the Home Screen app
+ * (D-53; owner). It stays encrypted with the passkey and the server's share either way.
  */
 export function keepsCopy(): boolean {
-  if (typeof window === 'undefined') return false;
-  if (isStandalone()) return true;
-  const ua = navigator.userAgent;
-  return /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
-}
-
-/** An installed Home Screen app. */
-export function isStandalone(): boolean {
-  if (typeof window === 'undefined') return false;
-  const nav = navigator as Navigator & { standalone?: boolean };
-  return nav.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches === true;
+  return typeof window !== 'undefined' && typeof indexedDB !== 'undefined';
 }
 
 export function canUsePasskeys(): boolean {

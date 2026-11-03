@@ -1,7 +1,7 @@
 // The budget's copy on this device (docs/phone-budget.md, decisions.md D-45): every screen is worked out from it by
-// the engine in a Web Worker; changes go to the server and come back through the sync. On an iPhone or iPad (Safari or the Home Screen app, D-48) with
-// a passkey that supports PRF, the copy is saved encrypted (vault.ts) and opens with no signal; anywhere else it's
-// kept in memory for the visit only.
+// the engine in a Web Worker; changes go to the server and come back through the sync. On any device whose passkey
+// supports PRF (D-53), the copy is saved encrypted (vault.ts), reopens downloading only what changed, and opens with
+// no signal; without PRF it's kept in memory for the visit only.
 //
 // Lock (13.4): after 10 idle minutes, or 10 minutes in the background, the keys, the copy and the server session are
 // dropped; opening again needs Face ID. Wipe: signing out, here or from another device (Settings → Sign-in), no longer
@@ -74,7 +74,7 @@ let state: CopyState = {
 
 /** Why a sync starts from nothing; sent with the first request (`why`) and shown while it downloads. */
 export type FullWhy =
-  | 'memory' // this device keeps the budget in memory only (a computer)
+  | 'memory' // this browser can't save anything (no IndexedDB)
   | 'first' // no saved copy on this phone yet
   | 'no_prf' // the passkey gave no key, so nothing can be saved
   | 'turned_off' // signed out from another device
@@ -323,11 +323,17 @@ async function openHost(bytes: ArrayBuffer | null): Promise<void> {
   await host.open(who!, bytes);
 }
 
+/** The name Settings → Sign-in shows for this device's saved copy while it's locked. */
 function deviceName(): string {
   const ua = navigator.userAgent;
   if (/iPhone/.test(ua)) return 'iPhone';
-  if (/iPad/.test(ua)) return 'iPad';
-  return 'This device';
+  if (/iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'iPad';
+  if (/Android/.test(ua)) return 'Android phone';
+  if (/Mac/.test(ua)) return 'Mac';
+  if (/Windows/.test(ua)) return 'Windows computer';
+  if (/CrOS/.test(ua)) return 'Chromebook';
+  if (/Linux/.test(ua)) return 'Linux computer';
+  return 'Computer';
 }
 
 // ---------------------------------------------------------------- sync and save

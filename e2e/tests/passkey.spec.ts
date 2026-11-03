@@ -46,7 +46,7 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   // Signed in: a new budget starts at first-run setup.
   await expect(page).toHaveURL(/\/welcome/);
 
-  // In a browser tab nothing is saved on the device (D-45): the session ending shows sign-in.
+  // Right after setup the passkey hasn't given the app a key yet, so nothing is saved until the next sign-in.
   await page.goto('/budget');
   expect(await page.evaluate(() => localStorage.getItem('ledgerline-saved-data'))).toBeNull();
   expect((await post(page, '/api/settings/security/sign-out')).status).toBe(200);
@@ -79,14 +79,8 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   await phone.getByRole('button', { name: 'Sign in with passkey' }).click();
   await expect(phone).toHaveURL(/\/welcome/);
 
-  // Safari on an iPhone keeps an encrypted copy (D-45, D-48). Signing in gets the passkey's PRF output in the same
+  // A computer keeps an encrypted copy too, like a phone (D-53). Signing in gets the passkey's PRF output in the same
   // prompt.
-  await page.addInitScript(() =>
-    Object.defineProperty(navigator, 'userAgent', {
-      get: () =>
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1',
-    }),
-  );
   await post(page, '/api/settings/security/sign-out');
   await page.goto('/budget');
   await page.getByRole('button', { name: 'Sign in with passkey' }).click();
@@ -159,7 +153,7 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
     return (await r.json()) as { signIns: { id: string; name: string; locked: boolean; saved: boolean }[] };
   });
   const locked = list.signIns.find((x) => x.locked && x.saved);
-  expect(locked?.name).toBe('iPhone');
+  expect(locked?.name).toBe('Linux computer');
   const out = await phone.evaluate(async (id) => {
     const r = await fetch('/api/settings/security/sign-out-session', {
       method: 'POST',
