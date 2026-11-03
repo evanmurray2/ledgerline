@@ -15,7 +15,7 @@ import {
 import { AppShell } from './components/AppShell';
 import { ErrorNote, Loading } from './components/ui';
 import { useQueryClient } from '@tanstack/react-query';
-import { qk, useSession } from './api/hooks';
+import { forgetSignedOut, qk, useSession } from './api/hooks';
 import { copySettled, needsReload, reloadForVersion } from './state/version';
 import { connectivity } from './state/connectivity';
 import { usage } from './usage/tracker';
@@ -97,13 +97,7 @@ function Root() {
     const onReadOnly = () => void qc.invalidateQueries({ queryKey: qk.session });
     window.addEventListener('ledgerline:readonly', onReadOnly);
     // The session ended (24 hours, or signed out elsewhere): show sign-in.
-    const onSignedOut = () => {
-      // Only when the app was showing data; on the sign-in screen the session query already failed.
-      // Drop everything in memory too, so nothing from the ended session is saved again.
-      if (qc.getQueryData(qk.session)) qc.clear();
-      // Opened signed out with saved data on the device: drop it, but keep the session check that said so.
-      else qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'session' });
-    };
+    const onSignedOut = () => forgetSignedOut(qc);
     window.addEventListener('ledgerline:signedout', onSignedOut);
     return () => {
       window.removeEventListener('ledgerline:readonly', onReadOnly);

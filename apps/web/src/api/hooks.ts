@@ -10,6 +10,8 @@ import { useEffect } from 'react';
 
 export const qk = {
   session: ['session'] as const,
+  /** What the sign-in screen shows (first-time setup or sign in); it belongs to the signed-out state. */
+  authStatus: ['auth-status'] as const,
   /** The last confirmed session, saved on the device for an offline start only (router.tsx). */
   savedSession: ['saved-session'] as const,
   budget: (month: string) => ['budget', month] as const,
@@ -195,4 +197,20 @@ export function useMoneyMutation<TVars, TResult>(
       usage.error(err instanceof ApiError ? err.code : 'unknown');
     },
   });
+}
+
+/** The queries a signed-out app still needs: the session check that said so, and the sign-in screen's own. */
+const SIGNED_OUT_KEYS = new Set<unknown>([qk.session[0], qk.authStatus[0]]);
+
+/**
+ * Forgets what a signed-in session loaded, once the app learns the session ended. The sign-in screen is usually up
+ * by then (the event comes after the copy is dropped, which takes a moment), so its own query is kept: removing it
+ * would cancel its request silently and leave the screen with no answer, never showing first-time setup.
+ */
+export function forgetSignedOut(qc: QueryClient): void {
+  // Only when the app was showing data; on the sign-in screen the session query already failed.
+  // Drop everything in memory too, so nothing from the ended session is saved again.
+  if (qc.getQueryData(qk.session)) qc.clear();
+  // Opened signed out with saved data on the device: drop it, but keep what the sign-in screen uses.
+  else qc.removeQueries({ predicate: (q) => !SIGNED_OUT_KEYS.has(q.queryKey[0]) });
 }
