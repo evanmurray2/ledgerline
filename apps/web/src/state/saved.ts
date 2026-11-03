@@ -1,5 +1,5 @@
 // The app's data saved on this device, so it opens instantly with the last screens while it checks for changes
-// (each screen revalidates with its ETag: a couple of rows read when nothing changed). Only in the production app,
+// (each screen is then read again from the phone's copy). Only in the production app,
 // never in the mock or tests. Signing out, or the session ending, clears it.
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 import type { PersistedClient } from '@tanstack/react-query-persist-client';
