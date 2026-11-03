@@ -153,12 +153,12 @@ activityRoutes.get('/activity', async (c) => {
     s.q(
       `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1 AND status = 'pending' ORDER BY date DESC, seq DESC LIMIT 200`,
     ),
-    // The attention view shows no upcoming or posted rows: skip those scans (they cost reads on every visit).
+    // Upcoming rows are read in every view (a small manual table): they count toward notPostedCount.
     s.q(
-      `SELECT ${TX_COLUMNS} FROM v_txn_manual WHERE budget_id = ?1 AND ?3 = 0 AND status = 'upcoming' AND date > ?2 ORDER BY date LIMIT 100`,
+      `SELECT ${TX_COLUMNS} FROM v_txn_manual WHERE budget_id = ?1 AND status = 'upcoming' AND date > ?2 ORDER BY date LIMIT 100`,
       f.today,
-      filter === 'attention' ? 1 : 0,
     ),
+    // The attention view shows no posted rows: skip that scan (it costs reads on every visit).
     // Posted rows are bank rows only. Without a search, the first try reads only a recent window (see postedPage).
     postedQuery(
       s,
@@ -293,6 +293,7 @@ activityRoutes.get('/activity', async (c) => {
     .filter((g) => g.categories.length);
   const view: ActivityView = {
     attentionCount: moneyToMatch.length + transfersToSort.length + needsCategory.length + checkThese.length,
+    notPostedCount: pend!.results.length + upc!.results.length,
     moneyToMatch,
     transfersToSort,
     needsCategory,

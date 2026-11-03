@@ -282,6 +282,9 @@ test('Categories open from Budget, Back returns there, and old Settings links st
   page,
 }, info) => {
   await page.goto('/budget');
+  // On a phone, Edit categories and Set targets sit in the menu at the top of the Budget.
+  if (info.project.name === 'phone') await page.getByRole('button', { name: 'More budget actions' }).click();
+  await expect(page.getByRole('link', { name: 'Set targets' }).first()).toBeVisible();
   await page.getByRole('link', { name: 'Edit categories' }).first().click();
   await expect(page).toHaveURL(/\/categories$/);
   if (info.project.name === 'phone') {

@@ -298,6 +298,10 @@ export function ActivityScreen() {
   const selKeys = openNeeds.filter((r) => sel[r.key]).map((r) => r.key);
   const showAttnHead = filter !== 'pending' && !q && (v?.attentionCount ?? 0) > 0;
   const attentionCount = counts.data?.attentionCount ?? v?.attentionCount ?? 0;
+  const notPostedCount = counts.data?.notPostedCount ?? v?.notPostedCount ?? 0;
+  // A filter with nothing in it is hidden, unless it's the one showing; with neither, the chip row goes too.
+  const showAttentionChip = attentionCount > 0 || filter === 'attention';
+  const showPendingChip = notPostedCount > 0 || filter === 'pending';
   const showNeeds =
     filter !== 'pending' &&
     needs.filter((r) => !q || r.payee.toLowerCase().includes(q.toLowerCase())).length > 0;
@@ -330,25 +334,29 @@ export function ActivityScreen() {
       />
     </label>
   );
-  const chips = (
+  const chips = (showAttentionChip || showPendingChip) && (
     <div key="chips" role="group" aria-label="Filter" className="flex gap-2 overflow-x-auto pb-0.5">
       <Chip pressed={filter === 'all'} onClick={() => void setFilter('all')} track="activity.filter.all">
         All
       </Chip>
-      <Chip
-        pressed={filter === 'attention'}
-        onClick={() => void setFilter('attention')}
-        track="activity.filter.attention"
-      >
-        Needs attention <CountBadge n={attentionCount} inverted={filter === 'attention'} />
-      </Chip>
-      <Chip
-        pressed={filter === 'pending'}
-        onClick={() => void setFilter('pending')}
-        track="activity.filter.pending"
-      >
-        Not posted yet
-      </Chip>
+      {showAttentionChip && (
+        <Chip
+          pressed={filter === 'attention'}
+          onClick={() => void setFilter('attention')}
+          track="activity.filter.attention"
+        >
+          Needs attention <CountBadge n={attentionCount} inverted={filter === 'attention'} />
+        </Chip>
+      )}
+      {showPendingChip && (
+        <Chip
+          pressed={filter === 'pending'}
+          onClick={() => void setFilter('pending')}
+          track="activity.filter.pending"
+        >
+          Not posted yet
+        </Chip>
+      )}
     </div>
   );
 

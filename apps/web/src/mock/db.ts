@@ -1141,6 +1141,10 @@ export class MockDb {
             .reduce((a, x) => a - x.amount, 0));
     return {
       attentionCount,
+      notPostedCount:
+        this.visible('pending').length +
+        this.visible('check').filter((x) => x.status === 'pending').length +
+        this.visible('upcoming').length,
       moneyToMatch: showAttn ? moneyToMatch.filter(match).map((x) => this.row(x)) : [],
       transfersToSort: showAttn ? transfersToSort.filter(match).map((x) => this.row(x)) : [],
       needsCategory: showAttn

@@ -101,6 +101,14 @@ describe('Activity', () => {
     expect(screen.getByText('counts now · $201.00')).toBeTruthy();
     expect(screen.getByText('Acme Corp payroll')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Needs attention 8' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Not posted yet' })).toBeTruthy();
+  });
+
+  it('hides the Activity filters when nothing needs attention and nothing is pending', async () => {
+    renderAt('/activity', 'empty');
+    await screen.findByRole('heading', { name: 'Activity' });
+    await waitFor(() => expect(screen.queryByRole('group', { name: 'Filter' })).toBeNull());
+    expect(screen.queryByRole('button', { name: /Needs attention/ })).toBeNull();
   });
 
   it('categorizes from the picker with Undo and the Always offer', async () => {
