@@ -4,7 +4,7 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
 import { qk, useAccounts, useConnections, useSession } from '../api/hooks';
-import { cx, ErrorNote, Icon, PrimaryButton } from '../components/ui';
+import { Banner, cx, ErrorNote, Icon, PrimaryButton } from '../components/ui';
 import { formatCents } from '../lib/money';
 import { monthLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
@@ -122,16 +122,16 @@ export function StartMonthScreen() {
         </PrimaryButton>
       }
     >
-      <h1 className="m-0 text-[24px] font-bold">
+      <h1 className="m-0 text-[26px] font-bold">
         Your budget starts {month ? `in ${monthLabel(month)}` : 'this month'}
       </h1>
       <p className="m-0 text-[15px] leading-snug text-ink-2">
         You start with what’s in your checking and savings today. Earlier bank history comes in for reports
         and rules, but older months aren’t budgeted.
       </p>
-      <p className="m-0 rounded-xl bg-page p-3 text-[13px] leading-snug text-muted">
+      <Banner tone="neutral">
         Card balances aren’t subtracted: each card gets a payment category you fund instead.
-      </p>
+      </Banner>
       {error ? <ErrorNote error={error} /> : null}
     </Step>
   );
@@ -158,7 +158,7 @@ export function LinkBanksScreen() {
         </PrimaryButton>
       }
     >
-      <h1 className="m-0 text-[24px] font-bold">Link your banks and cards</h1>
+      <h1 className="m-0 text-[26px] font-bold">Link your banks and cards</h1>
       <p className="m-0 text-[15px] leading-snug text-ink-2">
         One login can bring in several accounts. You have {conns.data?.limit ?? 10} logins in total, and they
         don’t come back if you remove one.
@@ -183,7 +183,7 @@ export function LinkBanksScreen() {
           ))}
         </div>
       )}
-      <LinkBankFlow label={linked.length === 0 ? '+ Link a bank' : '+ Link another bank'} />
+      <LinkBankFlow label={linked.length === 0 ? 'Link a bank' : 'Link another bank'} />
       <span className="text-[13px] text-muted">
         {conns.data?.used ?? 0} of {conns.data?.limit ?? 10} logins used
       </span>
@@ -295,7 +295,7 @@ export function FirstSortScreen() {
         </>
       }
     >
-      <h1 className="m-0 text-[24px] font-bold">Make your categories</h1>
+      <h1 className="m-0 text-[26px] font-bold">Make your categories</h1>
       <p className="m-0 text-[15px] leading-snug text-ink-2">
         Tap to keep the ideas you want, or type your own. You can rename, group and add targets any time.
       </p>
