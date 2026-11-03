@@ -6,7 +6,8 @@ const token = process.env.OPS_TOKEN ?? '';
 const home = await fetch(`${base}/`);
 if (home.status !== 200) throw new Error(`home page ${home.status}`);
 const status = await fetch(`${base}/api/auth/status`);
-if (status.status !== 200) throw new Error(`auth status ${status.status}`);
+if (status.status !== 200)
+  throw new Error(`auth status ${status.status}: ${(await status.text().catch(() => '')).slice(0, 300)}`);
 const st = await status.json();
 if (typeof st.hasPasskey !== 'boolean') throw new Error('auth status body is missing fields');
 const anon = await fetch(`${base}/api/session`, { redirect: 'manual' });
