@@ -6,6 +6,17 @@ const token = process.env.OPS_TOKEN ?? '';
 const home = await fetch(`${base}/`);
 if (home.status !== 200) throw new Error(`home page ${home.status}`);
 const status = await fetch(`${base}/api/auth/status`);
+if (status.status === 503) {
+  // Cloudflare's daily free limit refuses Durable Object work until it lifts. That isn't this release's fault, and
+  // rolling back can't help (every release reads the same Durable Objects), so keep the release and say so.
+  const body = await status.json().catch(() => ({}));
+  if (body.error === 'daily_limit') {
+    console.log(
+      `::warning::Cloudflare's daily limit is in force; deployed without the sign-in check: ${body.message}`,
+    );
+    process.exit(0);
+  }
+}
 if (status.status !== 200)
   throw new Error(`auth status ${status.status}: ${(await status.text().catch(() => '')).slice(0, 300)}`);
 const st = await status.json();

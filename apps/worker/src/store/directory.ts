@@ -253,7 +253,16 @@ export class Directory extends DurableObject<Env> {
   }
 
   private ready(): void {
-    if (this.startError) throw new Error(`directory_unavailable: ${this.startError}`);
+    if (!this.startError) return;
+    // A failed start (for example Cloudflare refusing writes for the rest of the day) is retried on the next call,
+    // so the object recovers by itself once writes are allowed again instead of waiting to be evicted.
+    try {
+      migrate(this.ctx.storage, DIRECTORY_MIGRATIONS, Date.now());
+      this.startError = null;
+    } catch (e) {
+      this.startError = e instanceof Error ? e.message : String(e);
+      throw new Error(`directory_unavailable: ${this.startError}`);
+    }
   }
 
   private appEnv(): Env {
