@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import type { Env } from '../env.js';
 import type { AppEnv } from '../http/context.js';
 import { DurableDb } from './adapter.js';
+import { answering } from './body.js';
 import { migrate } from './migrate.js';
 import { DIRECTORY_MIGRATIONS } from './migrations.gen.js';
 import { storeHealth, type StoreHealth } from './budget-store.js';
@@ -152,10 +153,13 @@ export class Directory extends DurableObject<Env> {
       app.route('/api', securityRoutes);
       this.app = app;
     }
-    return this.app.fetch(request, this.appEnv(), {
-      waitUntil: (p: Promise<unknown>) => this.ctx.waitUntil(p),
-      passThroughOnException() {},
-    } as never);
+    const app = this.app;
+    return answering(request, () =>
+      app.fetch(request, this.appEnv(), {
+        waitUntil: (p: Promise<unknown>) => this.ctx.waitUntil(p),
+        passThroughOnException() {},
+      } as never),
+    );
   }
 
   /** For every other API request: the signed-in user's budget, or why not. */
