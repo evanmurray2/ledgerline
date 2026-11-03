@@ -319,3 +319,4 @@ v1.2 got a security review the same day. Findings were checked against the code;
 - **Not built yet:** dropping the derived tables (next release), the iPhone checks in stage 0, and replacing the mock API's own engine with a sample dataset.
 - **Safari too (D-48, owner):** on an iPhone or iPad the copy is saved in Safari as well as in the Home Screen app; computers keep it in memory only.
 - **No separate device list (D-52, owner):** "Phones with a copy" and its Turn off are gone. A phone with a saved copy is one of the sign-ins in Settings → Sign-in, shown as locked when it has no session; signing it out turns its copy off and the phone deletes it the next time it opens online, before showing anything.
+- **Computers too (D-53, owner):** every device saves the encrypted copy when its passkey gives the PRF output, so a computer reopens downloading only what changed, like the phone.
