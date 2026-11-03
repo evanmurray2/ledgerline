@@ -166,6 +166,8 @@ Built all at once on the owner's word (D-46): no settings and no shadow comparis
 - [x] CSP: WebAssembly for SQLite, workers from this site, Plaid API hosts only. _Verify:_ `apps/web/test/headers.test.ts`; Worker e2e security headers.
 - [x] Bank pending rows without the provider's link are claimed by their posted rows in either order, hidden once claimed, and won't clear never hides a posted charge (D-47). _Verify:_ `packages/domain/test/bank-pending.test.ts` (cases from the owner's Atmos Summit rows), `apps/worker/test/pending-match.test.ts` (every order through the sync pipeline).
 - [ ] A way to match a pending row to a posted row by hand, and a screen for `ambiguous_match` and `vanished_pending` alerts (the alert table is not shown anywhere yet).
+- [x] Unlocking with no signal opens the budget (it showed "Couldn't reach Ledgerline": the copy's saved session wasn't watched). _Verify:_ passkey e2e checks the budget opens after an offline unlock (fails before the fix).
+- [x] Faster screens after a sync: the phone rebuilds only the changed transactions' lines and recomputes from the earliest month touched, instead of everything from the budget start. _Verify:_ `test/engine.test.ts` (splits, a new pending row, moved money and an undone split, compared with the server).
 - [ ] Drop `budget_line`, `month_snapshot`, `account_month_total` and `month_total_done` on the server: the second release of the removal (expand-only rule), after this one is deployed.
 - [ ] On the owner's iPhone after deploy: PRF in the Home Screen app with the existing passkey, first download time, Face ID unlock with no signal.
 - [ ] The mock API (`apps/web/src/mock`) still has its own engine for the mock tests; replace it with a sample sync dataset fed to the real engine.

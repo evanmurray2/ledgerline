@@ -225,7 +225,7 @@ export async function unlockOnline(session: Session | null): Promise<void> {
 }
 
 /** Opening with no signal: the passkey unlocks the copy on its own for up to 7 days after the last sign-in. */
-export async function unlockWithoutSignal(): Promise<Session> {
+export async function unlockWithoutSignal(onSession?: (s: Session) => void): Promise<Session> {
   const rec = await lastRecord();
   if (!rec) throw new Error('There’s no copy on this phone yet.');
   const a = await assert(
@@ -252,9 +252,13 @@ export async function unlockWithoutSignal(): Promise<Session> {
     await openHost(await openCopy(rec, dataKey));
     const s = await host!.get('session');
     if (!s) throw new Error('The copy has no session saved.');
+    const session = JSON.parse(s) as Session;
+    // The saved session goes to the app first (onSession), then the copy says it's ready, so the app never shows a
+    // moment with an open copy and no session ("Couldn't reach Ledgerline").
+    onSession?.(session);
     set({ status: 'ready', saved: true, hasSaved: true });
     watch();
-    return JSON.parse(s) as Session;
+    return session;
   } catch (e) {
     await host?.close();
     host = null;
