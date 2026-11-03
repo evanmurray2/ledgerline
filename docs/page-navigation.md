@@ -1,6 +1,6 @@
 # Page navigation: pills that go somewhere, and pages that slide (design, Nov 4, 2026)
 
-Status: **revised after review** (see Review): ship the page enter animation; drop chevrons on pills; View
+Status: **built** (D-56), as the revised proposal below.
 Transitions only as a later, guarded follow-up. Updates D-54 (pages and sheets) and D-55 (one look per meaning).
 Nothing here changes how money is counted.
 

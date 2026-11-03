@@ -8,6 +8,7 @@ import { Sheet } from '../components/Sheet';
 import { SheetTitle } from '../components/Sheet';
 import {
   BackHeader,
+  PageFrame,
   Banner,
   Card,
   Chip,
@@ -63,7 +64,7 @@ export function RegisterScreen() {
     ? `${a.institution}${a.mask ? ` · ending ${a.mask}` : ''} · ${a.connectionStatus === 'ok' ? 'synced' : 'last synced'} ${a.syncedAt ? syncedLabel(a.syncedAt, today) : 'never'}${a.connectionStatus !== 'ok' ? ' · repair on Accounts' : ''}`
     : '';
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <PageFrame>
       <BackHeader
         title={a?.name ?? 'Account'}
         sub={sub}
@@ -202,7 +203,7 @@ export function RegisterScreen() {
         )}
       </ScreenBody>
       <Outlet />
-    </div>
+    </PageFrame>
   );
 }
 
