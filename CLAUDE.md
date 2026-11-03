@@ -34,6 +34,7 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 - Watch CI and deploys; never guess. Don't use `sleep`, timed check-ins (`send_later`) or a fixed number of minutes to decide that CI has passed or a deploy is done. Start a background watcher that polls the real runs and reports the moment each one finishes: `node tools/ci/watch-runs.mjs <sha> ci` for a PR's latest commit, `node tools/ci/watch-runs.mjs <sha> ci deploy` for a merge commit (Bash with `run_in_background`; it exits 0 when all passed or were skipped, 1 on a failure, cancel or timeout; when a newer merge cancelled the commit's `ci`, it follows the newest commit on `main`, whose deploy ships both). Subscribing to the PR (`subscribe_pr_activity`) also wakes you on its CI, but nothing wakes you for `deploy` on `main`, so always watch that one after a merge. Tell the owner only what the watcher reported.
 - Migrations in `packages/db/budget-migrations` and `packages/db/directory-migrations` are forward-only once on `main` (`node tools/ci/migration-check.mjs`); add a new numbered file, then run `node tools/db/gen-store-migrations.mjs`.
 - Keep `docs/build-plan.md` current in the same PR as the work.
+- Large files (over about 600 lines): when a task already changes one, split off the part you're working on into its own file, by feature (a sheet, a group of routes). Make the split its own commit with no change in behavior. Don't split files you aren't otherwise touching.
 
 ## Several sessions at once
 
