@@ -25,6 +25,7 @@ let state: State = {
   loadedAt: null,
 };
 
+const MOCK = import.meta.env.VITE_MOCK === '1';
 const listeners = new Set<() => void>();
 function set(patch: Partial<State>) {
   const next = { ...state, ...patch };
@@ -53,9 +54,14 @@ export const connectivity = {
     set({ networkFailed: true });
     scheduleProbe();
   },
+  /**
+   * A server answered: the network works, whatever the browser's online flag says. iPhone Home Screen apps don't
+   * always fire 'online' after the connection comes back, and can report offline when they aren't.
+   */
   reportOk() {
     stopProbe();
-    set({ networkFailed: false, loadedAt: Date.now() });
+    // The mock API answers inside the page, so its answers say nothing about the network.
+    set({ online: MOCK ? state.online : true, networkFailed: false, loadedAt: Date.now() });
   },
   /** How the app checks the network is back after a failed request (api/client.ts registers it). */
   setProbe(fn: (() => Promise<boolean>) | null) {
@@ -107,11 +113,11 @@ function scheduleProbe() {
 }
 
 async function runProbe() {
-  if (!probe || !state.networkFailed) return stopProbe();
+  if (!probe || (!state.networkFailed && state.online)) return stopProbe();
   const reachable = await probe().catch(() => false);
   if (reachable) {
     stopProbe();
-    set({ networkFailed: false });
+    set({ online: MOCK ? state.online : true, networkFailed: false });
   } else scheduleProbe();
 }
 
@@ -120,10 +126,16 @@ export function installConnectivityListeners() {
   if (installed || typeof window === 'undefined') return;
   installed = true;
   window.addEventListener('online', () => connectivity.setOnline(true));
-  window.addEventListener('offline', () => connectivity.setOnline(false));
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && state.networkFailed) void runProbe();
+  window.addEventListener('offline', () => {
+    connectivity.setOnline(false);
+    // The flag can be wrong: check with the server, and keep checking until it answers.
+    scheduleProbe();
   });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && (state.networkFailed || !state.online)) void runProbe();
+  });
+  // Opened while the browser says offline: check it.
+  if (!state.online) scheduleProbe();
 }
 
 export function useConnectivity(): State {

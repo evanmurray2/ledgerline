@@ -1,5 +1,5 @@
 // The budget's copy on this device (docs/phone-budget.md, decisions.md D-45): every screen is worked out from it by
-// the engine in a Web Worker; changes go to the server and come back through the sync. In the Home Screen app with
+// the engine in a Web Worker; changes go to the server and come back through the sync. On an iPhone or iPad (Safari or the Home Screen app, D-48) with
 // a passkey that supports PRF, the copy is saved encrypted (vault.ts) and opens with no signal; anywhere else it's
 // kept in memory for the visit only.
 //
@@ -7,8 +7,9 @@
 // dropped; opening again needs Face ID. Wipe: sign-out, a revoked device, no longer a member, or 7 days offline.
 import { useSyncExternalStore } from 'react';
 import { CSRF_HEADER, type Session } from '@ledgerline/contracts';
+import { connectivity } from '../state/connectivity';
 import { EngineHost, syncAll, type EngineIdentity, type SyncPage } from './host';
-import { assert, canUsePasskeys, isStandalone, type RequestOptionsJSON } from './passkey';
+import { assert, canUsePasskeys, keepsCopy, type RequestOptionsJSON } from './passkey';
 import {
   type CopyRecord,
   deleteAll,
@@ -103,6 +104,8 @@ async function server<T>(
         : { 'content-type': 'application/json', [CSRF_HEADER]: '1', ...headers },
     body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),
   });
+  // Any answer means the network works (the offline banner goes).
+  connectivity.reportOk();
   const text = await res.text();
   const json = (text ? JSON.parse(text) : null) as T & { error?: string; message?: string };
   if (!res.ok)
@@ -119,16 +122,16 @@ const fetchPage = (since: number, cursor: string | null) =>
 // ---------------------------------------------------------------- sign-in and unlock
 
 /**
- * Passkey sign-in. In the Home Screen app it asks the passkey for its PRF output in the same Face ID prompt, so the
+ * Passkey sign-in. On an iPhone or iPad it asks the passkey for its PRF output in the same Face ID prompt, so the
  * copy can be set up or unlocked without a second one.
  */
 export async function signIn(): Promise<void> {
   const options = await server<RequestOptionsJSON>('POST', '/api/auth/login/options');
-  const saved = isStandalone() ? await lastRecord() : null;
+  const saved = keepsCopy() ? await lastRecord() : null;
   const salt = saved?.salt ?? randomBytes(32);
   const a = await assert(
     options,
-    isStandalone() ? { salt, credentialId: saved?.credentialIdHint ?? null } : undefined,
+    keepsCopy() ? { salt, credentialId: saved?.credentialIdHint ?? null } : undefined,
   );
   await server('POST', '/api/auth/login/verify', { response: a.json });
   pending = { credentialId: a.credentialId, prf: a.prf, salt };
@@ -145,7 +148,7 @@ export async function start(session: Session): Promise<void> {
   set({ status: 'opening', error: null, progress: 0, offline: false });
   try {
     const key = recordKey(who.email, who.budgetId);
-    let rec = isStandalone() ? await loadRecord(key) : null;
+    let rec = keepsCopy() ? await loadRecord(key) : null;
     const p = pending;
     pending = null;
     if (rec) {
@@ -175,7 +178,7 @@ export async function start(session: Session): Promise<void> {
       } else rec = null;
     }
     if (!rec) {
-      if (isStandalone() && p?.prf) {
+      if (keepsCopy() && p?.prf) {
         const dev = await server<{ id: string; share: string }>('POST', '/api/settings/security/devices', {
           name: deviceName(),
         });
@@ -278,6 +281,7 @@ function deviceName(): string {
 // ---------------------------------------------------------------- sync and save
 
 let syncing: Promise<void> | null = null;
+let lastSync = 0;
 
 /**
  * Brings the copy up to date with the server, works out the budget again and saves it. Screens are told to read it
@@ -288,6 +292,7 @@ export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
   if (syncing) return syncing.then(() => syncNow(opts));
   syncing = (async () => {
     try {
+      lastSync = Date.now();
       const r = await syncAll(host!, async (since, cursor) => {
         const p = await fetchPage(since, cursor);
         set({ progress: state.progress + p.rows.length });
@@ -483,7 +488,11 @@ function watch(): void {
     () => {
       if (state.status !== 'ready') return;
       if (Date.now() - lastActive >= LOCK_MS) void lock();
-      else if (document.visibilityState === 'visible' && !state.offline)
+      else if (
+        document.visibilityState === 'visible' &&
+        !state.offline &&
+        Date.now() - lastSync >= SYNC_EVERY_MS
+      )
         void syncNow().catch(() => undefined);
     },
     Math.min(SYNC_EVERY_MS, 30_000),
@@ -519,7 +528,7 @@ export async function wipe(all = false): Promise<void> {
 
 /** Whether a saved copy exists on this device (for the no-signal screen). */
 export async function checkSaved(): Promise<boolean> {
-  const has = !MOCK && canUsePasskeys() && isStandalone() && (await lastRecord()) !== null;
+  const has = !MOCK && canUsePasskeys() && keepsCopy() && (await lastRecord()) !== null;
   set({ hasSaved: has });
   return has;
 }

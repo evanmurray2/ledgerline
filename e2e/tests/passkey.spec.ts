@@ -75,9 +75,14 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   await expect(again.getByRole('alert')).toContainText('isn’t valid');
   await other.close();
 
-  // The installed Home Screen app (D-45; Safari sets navigator.standalone there) keeps an encrypted copy. Signing
-  // in there gets the passkey's PRF output in the same prompt.
-  await page.addInitScript(() => Object.defineProperty(navigator, 'standalone', { value: true }));
+  // Safari on an iPhone keeps an encrypted copy (D-45, D-48). Signing in gets the passkey's PRF output in the same
+  // prompt.
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'userAgent', {
+      get: () =>
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1',
+    }),
+  );
   await post(page, '/api/settings/security/sign-out');
   await page.goto('/budget');
   await page.getByRole('button', { name: 'Sign in with passkey' }).click();

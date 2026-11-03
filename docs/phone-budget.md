@@ -317,3 +317,4 @@ v1.2 got a security review the same day. Findings were checked against the code;
 - **Search and payee history** cover all history: the whole budget is synced, so "Search older" wasn't needed.
 - **Lock** ends the server session too; unlocking online is a fresh sign-in, which also returns the PRF output in the same Face ID prompt. Registration asks for the `prf` extension, which security keys need and iCloud passkeys don't.
 - **Not built yet:** dropping the derived tables (next release), the iPhone checks in stage 0, and replacing the mock API's own engine with a sample dataset.
+- **Safari too (D-48, owner):** on an iPhone or iPad the copy is saved in Safari as well as in the Home Screen app; computers keep it in memory only.
