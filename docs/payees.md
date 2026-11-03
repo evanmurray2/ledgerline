@@ -1,14 +1,14 @@
 # Payees: a calmer page and merging that works
 
-Status: proposal, v1.1, Nov 3, 2026. Nothing is built yet. The owner asked for a better Payees page because it is
+Status: proposal, v1.2, Nov 3, 2026. Nothing is built yet. The owner asked for a better Payees page because it is
 overwhelming and doesn't merge payees well. v1 got an adversarial review (2 blockers, 8 major, 13 minor) and a
-design critique (6 high, 5 medium, 3 low); v1.1 includes their fixes, listed in sections 13 and 14. Section 12
-holds the questions for the owner.
+design critique (6 high, 5 medium, 3 low); v1.1 includes their fixes, listed in sections 13 and 14. v1.2 records the owner's
+answers (section 12).
 
 **Does this change how money is counted?** A merge never changes the category, amount or budget month of a
 transaction you already have. It can change which category **later** transactions get, because the merged payee
-has one remembered category and the rules that named either payee now see one payee. So the Merge sheet always
-shows that before you merge (section 7), and section 12 asks the owner how a conflict should be handled.
+has one remembered category and the rules that named either payee now see one payee. The owner chose no
+warning for this: Undo right after the merge is enough (section 12).
 
 ## 1. How it works today
 
@@ -58,7 +58,7 @@ Goals:
 1. The page opens on the list, with duplicates as one line you act on when you choose.
 2. A merge shows exactly which payees combine, lets you take any out, and lets you pick the name and the
    remembered category.
-3. Before merging, you see what changes for later transactions (rules, remembered category).
+3. Before merging, you choose the remembered category when the payees differ.
 4. A merge can be undone right after it. A bank description can be made its own payee again at any time.
 5. "Not the same" is remembered.
 6. Renaming never stops a rule matching.
@@ -129,8 +129,6 @@ into this one** (section 6). This is the only way to merge by hand, so there's o
 │ Blue Shield will stay separate.      │
 │ Show as [Blue Bottle Coffee        ] │
 │ (Blue Bottle Coffee) (Bluebottle Co…)│
-│ Coffee shops → Coffee: also applies  │
-│ to Bluebottle Coffee.                │
 │ ─────────────────────────────────────│
 │ [ Merge 2 payees                   ] │
 │   Not the same          Skip         │
@@ -144,7 +142,7 @@ into this one** (section 6). This is the only way to merge by hand, so there's o
 - **Show as** is one text field, filled with the most used ticked payee's name. Each ticked payee's name is a
   chip under it; tapping one fills the field. The kept payee (the one whose id survives) is the one whose name
   is in the field, or the most used if you typed a new name.
-- **What changes later** (section 7.2), when anything does: one line per change, in plain words.
+- **Category to remember** (section 7.2), only when the ticked payees differ.
 - **Footer** (D-55): **Merge _n_ payees** (disabled with "Tick at least 2" below 2), and under it, on one row,
   two `TextButton`s: **Not the same** and **Skip**.
 - **Merge** merges, marks the unticked payees as not the same as the kept one, and moves on. A toast says
@@ -212,23 +210,16 @@ already a payee named …" line and **Merge into it**, which opens the payee she
 ### 7.1 What it shows
 
 The same body as the Review page (section 5): ticked payees with counts and an example description, **Show as**
-with name chips, what changes later, and **Merge _n_ payees** in the footer. Shared as one component.
+with name chips, the category choice when needed, and **Merge _n_ payees** in the footer. Shared as one component.
 
-### 7.2 What changes later
+### 7.2 Category to remember
 
-The server works this out (`GET /api/settings/payees/merge-preview?keep=…&ids=…`) and the step shows it before
-you merge:
+If the ticked payees remember different categories (or only some remember one), a "Category to remember" choice
+appears: each one, or "Don't remember". It starts on the kept payee's. The view already has each payee's
+remembered category, so no extra request is needed.
 
-- **Remembered category.** If the payees remember different categories (or only some remember one), a
-  "Category to remember" choice appears: each one, or "Don't remember". It starts on the kept payee's.
-- **Rules.** For each rule that names one of the payees (section 8.4): "Coffee shops → Coffee: also applies to
-  Bluebottle Coffee." When two rules disagree, the step says so plainly: "Lyft → Work travel and Uber →
-  Personal: after merging, both go to Work travel (that rule comes first)." What happens then is the owner's
-  choice (section 12, question 1).
-- **Rules that match part of a name** ("Payee contains") are listed as links: "Check rule: Payee contains
-  'Blue'".
-
-Nothing here touches past transactions.
+Rules aren't shown here (the owner's choice, section 12): rules that named a merged payee name the kept one after
+the merge (8.4), and Undo puts them back. Nothing here touches past transactions.
 
 ## 8. Data and API
 
@@ -281,7 +272,7 @@ would become `[K, K]`, and removes duplicates.
    payee was already merged. Pull to refresh.").
 2. Renames `keep` and sets its remembered category as chosen.
 3. Moves aliases and `txn_overlay.payee_id` from the others to `keep`, and sets `merged_into` on the others.
-4. Updates rules (8.4) and Not the same pairs (8.2), adding `notSame` pairs (the unticked payees).
+4. Re-points rules (8.4) and Not the same pairs (8.2), adding `notSame` pairs (the unticked payees).
 5. Writes the `audit_log` row with a `before` holding: each payee's name, remembered category and flag; each
    moved alias and the payee it pointed at; each changed rule's previous JSON and `updated_at`.
 
@@ -302,7 +293,8 @@ reloaded keeps working.
 
 - **A rename changes no rule**, and two payees with the same name don't share rules.
 - **A merge** points conditions naming a merged id at `keep` (removing duplicates in OR groups, so no "Chevron
-  or Chevron"). The step (7.2) shows each one first.
+  or Chevron"), without asking (section 12). If two such rules disagree, the first one wins for later
+  transactions, as rules always do.
 - **"Payee contains"** stays a name match and is never rewritten.
 
 Existing rules: a one-time conversion (an alarm job, the way other background work runs) changes each "Payee is
@@ -341,9 +333,6 @@ any more. It needs at least two aliases on the payee.
 | Merge button    | "Merge 2 payees" · below 2: "Tick at least 2"                                                                                                 |
 | Toast           | "Merged into Blue Bottle Coffee" · Undo                                                                                                       |
 | Can't undo      | "Can't undo now: this payee changed since."                                                                                                   |
-| Rules line      | "Coffee shops → Coffee: also applies to Bluebottle Coffee."                                                                                   |
-| Rules conflict  | "Lyft → Work travel and Uber → Personal: after merging, both go to Work travel."                                                              |
-| Contains rule   | "Check rule: Payee contains 'Blue'"                                                                                                           |
 | Category choice | "Category to remember"                                                                                                                        |
 | Same name       | "There's already a payee named Lyft." · Merge into it                                                                                         |
 | Split confirm   | "SQ \*BLUE BOTTLE becomes its own payee. 19 transactions move. Rule Coffee shops → Coffee won't apply to them." · Make its own payee · Cancel |
@@ -373,7 +362,7 @@ Four PRs, each shippable, none with a migration:
    no hidden `remember: true`); the Rules screen keeping "contains"; rules naming payees by id and the one-time
    conversion (if the owner says yes, section 12).
 2. **The calm list and the payee sheet.** Banner instead of cards, plain rows, search across all payees and
-   descriptions, the payee sheet with Merge other payees into this one, the merge step with what changes later,
+   descriptions, the payee sheet with Merge other payees into this one, the merge step with the category choice,
    the same-name offer, Undo.
 3. **Review duplicates.** The Review page and Not the same.
 4. **Make its own payee.**
@@ -383,37 +372,34 @@ merge validation, a chosen keep, rules re-pointed, undo after a sync that added 
 change, Not the same pairs after a merge, split; `engine.test.ts` as in 8.6; e2e (mock) for open payee → merge →
 Undo and for Review at iPhone size.
 
-## 12. Questions for the owner
+## 12. The owner's answers
 
-1. **Rules that disagree.** Lyft has "→ Work travel" and Uber "→ Personal". If you merge them, later rides all go
-   to whichever rule comes first. Should the merge step (a) show it and let you merge anyway, or (b) not allow
-   the merge until you change a rule? Proposal: (a), with the warning in plain words.
-2. **Rules name payees by id (8.4).** A one-time change to your saved rules so a rename never stops one
-   matching. Each rule matches the same transactions as before. Okay to run it?
-3. **No multi-select.** You merge by hand by opening the payee to keep, and Review handles groups. Okay to drop
-   the Select mode from v1 of this doc?
+1. **Rules that disagree** (Nov 3): no warning. Undo right after the merge is enough. The merge step doesn't list
+   rules (7.2).
+2. **Rules name payees by id (8.4):** asked; waiting for an answer.
+3. **No multi-select** (Nov 3): agreed. Merging by hand starts from the payee to keep (section 6).
 
 ## 13. Adversarial review (v1 → v1.1)
 
-| #   | Severity | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Change                                                                                       |
-| --- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| 1   | Blocker  | Rewriting "Payee is Lyft" to the merged name widens it to all of the merged payee, and two disagreeing rules collapse to the first. The intro's "nothing changes" was wrong                                                                                                                                                                                                                                                                                                                                 | Intro corrected; the merge step shows every rule change and conflict (7.2); owner question 1 |
-| 2   | Blocker  | A new synced table: an older app skips its rows but still moves its sync position, and never gets them                                                                                                                                                                                                                                                                                                                                                                                                      | No new table: Not the same goes in `setting`, which already syncs (8.2)                      |
-| 3   | Major    | Undo from a stored list of transaction keys misses rows synced after the merge and pending rows that posted                                                                                                                                                                                                                                                                                                                                                                                                 | Undo re-resolves through the restored aliases (8.3)                                          |
-| 4   | Major    | Undo after later merges or rule edits restores the wrong state                                                                                                                                                                                                                                                                                                                                                                                                                                              | Undo only while nothing changed since; otherwise Make its own payee (8.3)                    |
-| 5   | Major    | No stored link from a transaction to its alias; working out per-alias counts for every row is slow                                                                                                                                                                                                                                                                                                                                                                                                          | Counts only for one payee, on its sheet, with the shared lookup (8.1)                        |
-| 6   | Major    | Clustering is already about 18 ms; comparing with every member without caching took about 1.2 s                                                                                                                                                                                                                                                                                                                                                                                                             | Rewritten: per alias, cached trigrams, blocking, measured before PR 1 (8.1)                  |
-| 7   | Major    | Comparing with every member chains Uber Eats and Uber Trip together                                                                                                                                                                                                                                                                                                                                                                                                                                         | Average linkage, order-independent (8.1)                                                     |
-| 8   | Major    | The rename-from-transaction path works offline; names aren't unique, so rewriting by name hits other payees                                                                                                                                                                                                                                                                                                                                                                                                 | Rules name ids (8.4); a late offline rename of a merged payee is refused (8.6)               |
-| 9   | Major    | PR 1 shipped irreversible rule rewrites with no undo                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Rule JSON is in the audit row's `before`; undo puts it back (8.3)                            |
-| 10  | Major    | The merge route doesn't check its ids                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Validation and 409 (8.3)                                                                     |
-| —   | Minor    | "Set payee" unused; the suggested name described wrongly; hidden `remember: true` and find-by-name on the Rename-from-transaction sheet; one description with two payees drops one; OR groups duplicate; Rules screen turns "contains" into "is"; route order; pair edge cases; audit size; overlay changes rebuild budget lines; `engine.test.ts` already covers the view; manual transactions; See transactions by name; "Merge _n_" counts descriptions; new variants keep making payees; stacked sheets | Sections 1, 2, 6, 8.1–8.6, 10, 11                                                            |
+| #   | Severity | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Change                                                                         |
+| --- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| 1   | Blocker  | Rewriting "Payee is Lyft" to the merged name widens it to all of the merged payee, and two disagreeing rules collapse to the first. The intro's "nothing changes" was wrong                                                                                                                                                                                                                                                                                                                                 | Intro corrected; owner chose no warning, with Undo (12, answer 1)              |
+| 2   | Blocker  | A new synced table: an older app skips its rows but still moves its sync position, and never gets them                                                                                                                                                                                                                                                                                                                                                                                                      | No new table: Not the same goes in `setting`, which already syncs (8.2)        |
+| 3   | Major    | Undo from a stored list of transaction keys misses rows synced after the merge and pending rows that posted                                                                                                                                                                                                                                                                                                                                                                                                 | Undo re-resolves through the restored aliases (8.3)                            |
+| 4   | Major    | Undo after later merges or rule edits restores the wrong state                                                                                                                                                                                                                                                                                                                                                                                                                                              | Undo only while nothing changed since; otherwise Make its own payee (8.3)      |
+| 5   | Major    | No stored link from a transaction to its alias; working out per-alias counts for every row is slow                                                                                                                                                                                                                                                                                                                                                                                                          | Counts only for one payee, on its sheet, with the shared lookup (8.1)          |
+| 6   | Major    | Clustering is already about 18 ms; comparing with every member without caching took about 1.2 s                                                                                                                                                                                                                                                                                                                                                                                                             | Rewritten: per alias, cached trigrams, blocking, measured before PR 1 (8.1)    |
+| 7   | Major    | Comparing with every member chains Uber Eats and Uber Trip together                                                                                                                                                                                                                                                                                                                                                                                                                                         | Average linkage, order-independent (8.1)                                       |
+| 8   | Major    | The rename-from-transaction path works offline; names aren't unique, so rewriting by name hits other payees                                                                                                                                                                                                                                                                                                                                                                                                 | Rules name ids (8.4); a late offline rename of a merged payee is refused (8.6) |
+| 9   | Major    | PR 1 shipped irreversible rule rewrites with no undo                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Rule JSON is in the audit row's `before`; undo puts it back (8.3)              |
+| 10  | Major    | The merge route doesn't check its ids                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Validation and 409 (8.3)                                                       |
+| —   | Minor    | "Set payee" unused; the suggested name described wrongly; hidden `remember: true` and find-by-name on the Rename-from-transaction sheet; one description with two payees drops one; OR groups duplicate; Rules screen turns "contains" into "is"; route order; pair edge cases; audit size; overlay changes rebuild budget lines; `engine.test.ts` already covers the view; manual transactions; See transactions by name; "Merge _n_" counts descriptions; new variants keep making payees; stacked sheets | Sections 1, 2, 6, 8.1–8.6, 10, 11                                              |
 
 ## 14. Design critique (v1 → v1.1)
 
 | #   | Impact | Finding                                                                                                    | Change                                                                                            |
 | --- | ------ | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| 1   | High   | Four ways to merge; Select mode merges payees you can't see after a new search, its button is out of reach | Select mode cut; one hand-merge path from the payee (4, 6); question 3                            |
+| 1   | High   | Four ways to merge; Select mode merges payees you can't see after a new search, its button is out of reach | Select mode cut; one hand-merge path from the payee (4, 6); owner agreed (12, answer 3)           |
 | 2   | High   | "Not the same" meant two things depending on ticks                                                         | Always the whole group; unticked payees are marked by Merge, with a line saying so (5)            |
 | 3   | High   | Review crowded: radio lists repeat the rows; Merge and Not the same stacked                                | One Show as field with name chips; Merge in the footer, Not the same and Skip as text buttons (5) |
 | 4   | High   | Everything ticked by default, so a weak match (Blue Shield) merges with one tap                            | Only strong matches start ticked (5)                                                              |
