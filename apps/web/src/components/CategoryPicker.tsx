@@ -2,8 +2,8 @@
 // each category has available. Activity uses the sheet directly (a tap categorizes at once); forms use
 // CategoryField, a field-shaped button that opens the same sheet.
 import { useMemo, useState, type ReactNode } from 'react';
-import { Sheet } from './Sheet';
-import { cx, Icon, inputClass } from './ui';
+import { Sheet, SheetTitle } from './Sheet';
+import { cx, EmptyNote, Icon, inputClass, Label, SearchField } from './ui';
 import { formatCents } from '../lib/money';
 import { useCategoryOptions } from '../lib/common';
 
@@ -23,7 +23,6 @@ export interface PickerSpecial {
   name: string;
 }
 
-const label = 'text-[12px] font-bold uppercase tracking-[0.4px] text-ink-2';
 const listBox = 'shrink-0 overflow-hidden rounded-xl border border-line';
 const rowCls =
   'flex min-h-12 w-full items-center justify-between gap-3 border-t border-divider bg-surface px-3 text-left text-[15px] text-ink first:border-t-0 disabled:text-disabled';
@@ -105,37 +104,24 @@ export function CategoryPickerSheet({
       gap="auto"
       modal={modal}
       closeLabel="Close category picker"
-      header={
-        <div className="flex flex-col gap-px">
-          <h2 className="m-0 text-[17px] font-bold">{title}</h2>
-          {sub && <span className="text-[13px] text-muted">{sub}</span>}
-        </div>
-      }
+      header={<SheetTitle title={title} sub={sub} />}
     >
       <div className="flex flex-col gap-2.5 pb-4">
-        <label className="flex min-h-11 shrink-0 items-center gap-2 rounded-xl bg-sunken px-3 text-muted">
-          <Icon name="search" size={18} />
-          <span className="sr-only">Search categories</span>
-          <input
-            type="search"
-            value={q}
-            data-track={`${track}.search`}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search categories"
-            className="min-h-10 flex-1 border-none bg-transparent text-[16px] text-ink outline-none placeholder:text-faint"
-          />
-        </label>
+        {/* SearchField takes no data-track; the tracker reads the nearest one, so the wrapper carries it. */}
+        <div data-track={`${track}.search`} className="flex shrink-0 flex-col">
+          <SearchField value={q} onChange={setQ} label="Search categories" placeholder="Search categories" />
+        </div>
         {needle ? (
           matches.length > 0 ? (
             <div className={listBox}>{matches.map((c) => row(c, 'search_result', true))}</div>
           ) : (
-            <p className="m-0 px-1 py-2 text-[14px] text-muted">No category called “{q.trim()}”.</p>
+            <EmptyNote>No category called “{q.trim()}”.</EmptyNote>
           )
         ) : (
           <>
             {usual.length > 0 && (
               <>
-                <span className={label}>{suggestedTitle ?? 'Usually'}</span>
+                <Label>{suggestedTitle ?? 'Usually'}</Label>
                 <div className="flex flex-wrap gap-2">
                   {usual.map((c) => (
                     <button
@@ -158,7 +144,9 @@ export function CategoryPickerSheet({
             {specials.length > 0 && <div className={listBox}>{specials.map((sp) => row(sp, 'special'))}</div>}
             {groups.map((g) => (
               <div key={g.key} className="flex flex-col gap-2.5">
-                <span className={cx('pt-1', label)}>{g.name}</span>
+                <span className="pt-1">
+                  <Label>{g.name}</Label>
+                </span>
                 <div className={listBox}>{g.categories.map((c) => row(c, 'category'))}</div>
               </div>
             ))}
