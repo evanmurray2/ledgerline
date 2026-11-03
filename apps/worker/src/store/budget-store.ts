@@ -38,6 +38,7 @@ export interface StoreHealth {
 export class BudgetStore extends DurableObject<Env> {
   protected readonly db: SqlD1;
   private startError: string | null = null;
+  private armed = false;
   private readonly runner: JobRunner;
   private cachedBudgetId: string | null = null;
   private app: Hono<AppEnv> | null = null;
@@ -71,6 +72,7 @@ export class BudgetStore extends DurableObject<Env> {
   async api(request: Request, caller: Caller): Promise<Response> {
     this.ready();
     await this.ensureBudget(caller.budgetId);
+    await this.rearm();
     this.app ??= withCaller((app) => app.route('/api', budgetApi));
     return this.serve(this.app, request, caller);
   }
@@ -225,6 +227,17 @@ export class BudgetStore extends DurableObject<Env> {
   }
 
   // ---- internals
+
+  /**
+   * Cloudflare drops an alarm that keeps failing (for example all day while writes are refused), which would leave
+   * the bank syncs and daily jobs waiting for the next daily ensureJobs. The first call after the object starts
+   * puts the alarm back if jobs are waiting and none is set.
+   */
+  private async rearm(): Promise<void> {
+    if (this.armed) return;
+    this.armed = true;
+    if ((await this.ctx.storage.getAlarm()) === null) await this.runner.scheduleNext(Date.now());
+  }
 
   protected ready(): void {
     if (!this.startError) return;

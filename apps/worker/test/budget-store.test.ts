@@ -34,6 +34,16 @@ describe('BudgetStore scheduling', () => {
     expect(await runInDurableObject(s, async (_o, st) => st.storage.getAlarm())).not.toBeNull();
   });
 
+  it('the first API call puts back an alarm Cloudflare dropped while jobs wait', async () => {
+    const s = store('rearm');
+    await seedBudget(s);
+    await s.ensureJobs();
+    await runInDurableObject(s, async (_o, st) => st.storage.deleteAlarm());
+    const caller = { userId: 'u1', budgetId: 'b1', email: '', sessionId: '', verifiedAt: 0 };
+    await s.api(new Request('https://app.test/api/none'), caller);
+    expect(await runInDurableObject(s, async (_o, st) => st.storage.getAlarm())).not.toBeNull();
+  });
+
   it('daily maintenance runs every step on alarms, records its health and waits for tomorrow', async () => {
     const s = store('maintenance');
     await seedBudget(s);
