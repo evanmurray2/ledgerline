@@ -256,7 +256,7 @@ function failure(res: Response, json: unknown, path: string): ApiError {
   const message = parsed.success ? parsed.data.message : res.statusText || 'Request failed';
   if (code === 'read_only' || code === 'readonly') onReadOnly?.();
   if (code === 'resting') connectivity.setReadsPaused(true);
-  // The session ended (24 hours, or locked): sign in again. The saved copy stays, encrypted (D-45), unless this
+  // The session ended (24 hours, or 10 idle minutes): sign in again. The saved copy stays, encrypted (D-45), unless this
   // device was signed out from another one: then it's deleted first. A passkey check ("reauth") is handled by
   // afterPasskeyCheck.
   if (code === 'unauthenticated' && !path.startsWith('/api/auth/')) {

@@ -7,6 +7,7 @@ import { useActivity, useMoneyMutation, useOwed, useBudget, useSession } from '.
 import { Sheet, SheetTitle } from '../components/Sheet';
 import {
   BackHeader,
+  PageFrame,
   Banner,
   Card,
   cx,
@@ -50,7 +51,7 @@ export function OwedScreen() {
   const pill = desktop ? 'px-4' : 'flex-1';
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <PageFrame>
       <BackHeader
         title="Owed to you"
         onBack={() => void navigate({ to: '/budget' })}
@@ -214,7 +215,7 @@ export function OwedScreen() {
         )}
       </ScreenBody>
       <Outlet />
-    </div>
+    </PageFrame>
   );
 }
 

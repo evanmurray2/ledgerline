@@ -25,6 +25,7 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 - Stop and ask only when a choice would change how money is counted (Money rules in `docs/sync-spec.md`; `packages/domain`).
 - No off-site backups (D-29). No monitor or nightly Plaid Sandbox job wanted for now (their workflows were removed, D-49).
 - The owner works from an iPhone: give short, plain steps with direct links.
+- Write to the owner in ASD-STE100 Simplified Technical English, or at least follow its principles: short sentences (at most 20 words for an instruction, 25 for a description), one instruction per sentence, active voice, one meaning per word, common words plus the project's own technical names. This is for what you write to the owner (chat replies, PR descriptions); code and docs keep their own style.
 
 ## Working in the repo
 

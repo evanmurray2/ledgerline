@@ -149,6 +149,31 @@ export function PhoneHeader({
   );
 }
 
+// ------------------------------------------------------------------ page arrival
+
+// A page opened from another screen slides in a little from the right; coming back to it with Back, from the left.
+// Plain CSS on mount (styles.css .ll-page-in/.ll-page-back), so sheets, tabs and the side panel never move.
+let backAt = 0;
+/** Back was just tapped: the next page that opens is "coming back". */
+export function markBack(): void {
+  backAt = performance.now();
+}
+function useArrival(): string {
+  const [cls] = useState(() => {
+    const now = performance.now();
+    // The app's first screen doesn't slide in.
+    if (now < 1500) return '';
+    return now - backAt < 600 ? 'll-page-back' : 'll-page-in';
+  });
+  return cls;
+}
+
+/** The outer frame of every page opened from another screen (Categories, Set targets, an account, Owed, Settings). */
+export function PageFrame({ children, still }: { children: ReactNode; still?: boolean }) {
+  const arrival = useArrival();
+  return <div className={cx('flex min-h-0 flex-1 flex-col', !still && arrival)}>{children}</div>;
+}
+
 /** A screen opened from another one, with Back. Phone: 56 px, 19 px title. Desktop: the 64 px DesktopHeader. */
 export function BackHeader({
   title,
@@ -171,7 +196,10 @@ export function BackHeader({
     <>
       <button
         type="button"
-        onClick={onBack}
+        onClick={() => {
+          markBack();
+          onBack();
+        }}
         aria-label={backLabel}
         className={cx('flex h-11 w-11 shrink-0 items-center justify-center text-ink-2', desktop && '-ml-3')}
       >

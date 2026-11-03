@@ -9,6 +9,7 @@ import { api } from '../api/endpoints';
 import { qk, useConnections, usePayees, useRules, useSession } from '../api/hooks';
 import {
   BackHeader,
+  PageFrame,
   Banner,
   Card,
   cx,
@@ -183,7 +184,7 @@ function SettingsHome() {
   const navigate = useNavigate();
   const meta = useSectionMeta();
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <PageFrame>
       <BackHeader
         title="Settings"
         onBack={() => void navigate({ to: '/accounts' })}
@@ -221,7 +222,7 @@ function SettingsHome() {
         <SectionTitle>Preferences</SectionTitle>
         <Preferences />
       </ScreenBody>
-    </div>
+    </PageFrame>
   );
 }
 

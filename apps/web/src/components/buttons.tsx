@@ -198,6 +198,7 @@ export function HeaderAction({
   icon,
   label,
   to,
+  search,
   onClick,
   disabled,
   spin,
@@ -211,6 +212,7 @@ export function HeaderAction({
   iconOnly?: boolean;
   /** A link (opens a sheet or page) or, without it, a button. */
   to?: string;
+  search?: Record<string, string | undefined>;
   onClick?: () => void;
   disabled?: boolean;
   /** Turns the icon while the action runs (Refresh). */
@@ -230,7 +232,7 @@ export function HeaderAction({
   if (iconOnly) ariaLabel ??= label;
   if (to)
     return (
-      <Link to={to} search={true} data-track={track} aria-label={ariaLabel} className={cls}>
+      <Link to={to} search={search} data-track={track} aria-label={ariaLabel} className={cls}>
         {inner}
       </Link>
     );

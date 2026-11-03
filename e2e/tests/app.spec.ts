@@ -518,3 +518,59 @@ test('Activity: a transaction opened on October closes back to October; a search
   await page.getByLabel('Search transactions').fill('Safeway');
   await expect(page.getByTestId('all-months')).toHaveText('Searching all months');
 });
+test('Pages slide in when opened and back when Back returns to them; tabs and the first screen do not', async ({
+  page,
+}, info) => {
+  const anim = (sel: string) =>
+    page
+      .locator(sel)
+      .first()
+      .evaluate((el) => getComputedStyle(el).animationName);
+  // The first screen of the app doesn't slide.
+  await page.goto('/settings');
+  await expect(page.getByRole('heading', { name: 'Settings', exact: true }).first()).toBeVisible();
+  await page.waitForTimeout(1600);
+  if (info.project.name === 'phone') {
+    await page.getByRole('link', { name: /^Rules/ }).click();
+    await expect(page.locator('.ll-page-in')).toHaveCount(1);
+    expect(await anim('.ll-page-in')).toBe('ll-page-in');
+    await page.getByRole('button', { name: 'Back to settings' }).click();
+    await expect(page.locator('.ll-page-back')).toHaveCount(1);
+  }
+  // From Budget, Edit categories opens a page that slides in.
+  await page.goto('/budget');
+  await page.waitForTimeout(1600);
+  if (info.project.name === 'phone') await page.getByRole('button', { name: 'More budget actions' }).click();
+  await page.getByRole('link', { name: 'Edit categories' }).first().click();
+  await expect(page).toHaveURL(/\/categories$/);
+  await expect(page.locator('.ll-page-in')).toHaveCount(1);
+  // Back to Budget, a tab's own screen: nothing slides.
+  await page.getByRole('button', { name: 'Back to budget' }).click();
+  await expect(page).toHaveURL(/\/budget/);
+  await expect(page.locator('.ll-page-in, .ll-page-back')).toHaveCount(0);
+});
+
+test('Pages do not slide with Reduce Motion', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/accounts');
+  await page.waitForTimeout(1600);
+  await page
+    .getByRole('link', { name: /Everyday Checking/ })
+    .first()
+    .click();
+  const frame = page.locator('.ll-page-in').first();
+  await expect(frame).toHaveCount(1);
+  expect(await frame.evaluate((el) => getComputedStyle(el).animationName)).toBe('none');
+});
+
+test('Desktop: Budget header pills for Edit categories and Set targets, like Sync and Add', async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== 'desktop', 'on a phone they sit in the ⋯ menu');
+  await page.goto('/budget');
+  for (const name of ['Edit categories', 'Set targets']) {
+    const pill = page.getByRole('link', { name, exact: true });
+    await expect(pill).toBeVisible();
+    await expect(pill).toHaveClass(/rounded-full/);
+  }
+});

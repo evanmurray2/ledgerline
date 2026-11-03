@@ -15,7 +15,7 @@ import {
   Loading,
   OverflowMenu,
   ScreenBody,
-  textLinkClass,
+  HeaderAction,
   useIsDesktop,
 } from '../components/ui';
 import { MonthBar, TabHeader } from '../components/MonthBar';
@@ -218,18 +218,20 @@ export function BudgetScreen() {
           right={
             <>
               {/* The header narrows when a side panel opens: these two fold into a menu instead of wrapping. */}
-              <span className="hidden gap-3 @min-[560px]:flex">
-                <Link to="/categories" data-track="budget.edit_categories" className={textLinkClass}>
-                  Edit categories
-                </Link>
-                <Link
+              <span className="hidden gap-2 @min-[560px]:flex">
+                <HeaderAction
+                  to="/categories"
+                  track="budget.edit_categories"
+                  icon="pencil"
+                  label="Edit categories"
+                />
+                <HeaderAction
                   to="/targets"
                   search={targetsSearch}
-                  data-track="budget.set_targets"
-                  className={textLinkClass}
-                >
-                  Set targets
-                </Link>
+                  track="budget.set_targets"
+                  icon="target"
+                  label="Set targets"
+                />
               </span>
               <OverflowMenu
                 label="More budget actions"

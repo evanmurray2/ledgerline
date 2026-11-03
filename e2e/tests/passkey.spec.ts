@@ -117,9 +117,9 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   await page.waitForFunction(async () => !!(await navigator.serviceWorker.ready).active);
   await context.setOffline(true);
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Ledgerline is locked' })).toBeVisible();
-  await page.getByRole('button', { name: 'Unlock' }).click();
-  await expect(page.getByRole('heading', { name: 'Ledgerline is locked' })).toBeHidden();
+  await expect(page.getByRole('heading', { name: 'No signal' })).toBeVisible();
+  await page.getByRole('button', { name: 'Open with Face ID' }).click();
+  await expect(page.getByRole('heading', { name: 'No signal' })).toBeHidden();
   // The budget opens from the copy (here, first-run setup), not "Couldn't reach Ledgerline".
   await expect(page).toHaveURL(/\/welcome/);
   await expect(page.getByRole('heading', { name: 'Ledgerline', exact: true })).toBeVisible();
@@ -155,29 +155,54 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   await page.reload();
   await expect(page).toHaveURL(/\/welcome/);
   await expect(page.getByRole('heading', { name: 'Ledgerline', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Ledgerline is locked' })).toBeHidden();
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeHidden();
   await expect.poll(() => since.length, { timeout: 15_000 }).toBeGreaterThan(before);
   expect(since.at(-1)).toBeGreaterThan(0);
   expect(signIns).toBe(0);
+
+  // 10 minutes in the background: the sign-in ends and the app shows Sign in, every time (it used to race a Lock
+  // screen). That one passkey prompt opens the saved copy too, downloading only what changed.
+  await page.clock.install();
+  await page.reload();
+  await expect(page).toHaveURL(/\/welcome/);
+  await expect(page.getByRole('heading', { name: 'Ledgerline', exact: true })).toBeVisible();
+  const setVisibility = (v: 'hidden' | 'visible') =>
+    page.evaluate((state) => {
+      Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }, v);
+  await setVisibility('hidden');
+  await page.clock.setSystemTime(Date.now() + 11 * 60_000);
+  await setVisibility('visible');
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  const syncsBefore = since.length;
+  await page.getByRole('button', { name: 'Sign in with passkey' }).click();
+  await expect(page).toHaveURL(/\/welcome/);
+  await expect(page.getByRole('heading', { name: 'Ledgerline', exact: true })).toBeVisible();
+  await expect.poll(() => since.length, { timeout: 15_000 }).toBeGreaterThan(syncsBefore);
+  expect(since.at(-1)).toBeGreaterThan(0);
+  expect(signIns).toBe(1);
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeHidden();
   page.off('request', countSignIns);
 
-  // Locked again, then signed out from the other device (Settings → Sign-in, here the API): the phone deletes its
-  // copy as soon as it opens, before anyone signs in.
+  // Signed out again, then signed out from the other device (Settings → Sign-in, here the API): a signed-out
+  // device isn't listed, but "Sign out other devices" turns its copy off, and it deletes the copy as soon as it
+  // opens, before anyone signs in.
   await post(page, '/api/settings/security/sign-out');
   const list = await phone.evaluate(async () => {
     const r = await fetch('/api/settings/security');
-    return (await r.json()) as { signIns: { id: string; name: string; locked: boolean; saved: boolean }[] };
+    return (await r.json()) as { otherSessions: number; signIns: { name: string; current: boolean }[] };
   });
-  const locked = list.signIns.find((x) => x.locked && x.saved);
-  expect(locked?.name).toBe('Linux computer');
-  const out = await phone.evaluate(async (id) => {
-    const r = await fetch('/api/settings/security/sign-out-session', {
+  expect(list.signIns.map((x) => x.name)).not.toContain('Linux computer');
+  expect(list.otherSessions).toBeGreaterThan(list.signIns.filter((x) => !x.current).length);
+  const out = await phone.evaluate(async () => {
+    const r = await fetch('/api/settings/security/sign-out-others', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-ledgerline': '1' },
-      body: JSON.stringify({ id }),
+      body: '{}',
     });
     return r.status;
-  }, locked!.id);
+  });
   expect(out).toBe(200);
   await other.close();
   await page.reload();

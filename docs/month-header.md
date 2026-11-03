@@ -1,6 +1,6 @@
 # One month header on every tab
 
-Status: built (Nov 3, 2026). Decision: D-? (`docs/decisions/D-?-one-month-header.md`). The first draft went
+Status: built (Nov 3, 2026). Decision: D-58 (`docs/decisions/D-58-one-month-header.md`). The first draft went
 through a design critique and an adversarial review against the code; what they changed is at the end.
 
 ## The problem

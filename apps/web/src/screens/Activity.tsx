@@ -228,6 +228,8 @@ export function ActivityScreen() {
   const addButton = (
     <HeaderAction
       to="/activity/add"
+      // The sheet keeps the list's month, filter and search, so the list under it doesn't change.
+      search={{ month: search.month, filter: search.filter, q: search.q }}
       track="activity.add"
       icon="plus"
       label={desktop ? 'Add transaction' : 'Add'}

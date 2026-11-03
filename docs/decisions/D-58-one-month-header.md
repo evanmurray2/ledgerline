@@ -1,4 +1,4 @@
-# D-?: One month header on the tabs (Nov 3, 2026)
+# D-58: One month header on the tabs (Nov 3, 2026)
 
 The owner wants `‹ November 2026 ›` at the top of every page in the same place. Before, Budget showed the month as
 its title, Reports as a small switcher on the right, and Activity and Accounts not at all, and each tab kept its own
