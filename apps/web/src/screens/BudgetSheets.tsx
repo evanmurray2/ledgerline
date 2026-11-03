@@ -6,7 +6,9 @@ import { useAssignView, useBudget, useCategorySheet, useMoneyMutation } from '..
 import { CategoryField } from '../components/CategoryPicker';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import {
+  Card,
   cx,
+  EmptyNote,
   ErrorNote,
   Field,
   Icon,
@@ -15,8 +17,11 @@ import {
   Loading,
   PrimaryButton,
   Segmented,
+  SoftButton,
+  SoftLink,
   STATUS,
   StatusWord,
+  TextButton,
   TONE,
   useIsDesktop,
   useShortcuts,
@@ -67,9 +72,9 @@ function useCategorySteps(categoryId: string, month: string | undefined, current
       disabled={!fn}
       onClick={fn}
       data-track={`category.${icon === 'up' ? 'prev' : 'next'}`}
-      className="flex h-11 w-9 items-center justify-center text-ink-2 disabled:text-line-strong"
+      className="flex h-11 w-11 items-center justify-center text-ink-2 disabled:text-line-strong"
     >
-      <Icon name={icon} size={18} />
+      <Icon name={icon} size={22} />
     </button>
   );
   return (
@@ -138,12 +143,16 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
       onClose={close}
       header={
         <div className="flex items-start justify-between gap-1">
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <h1 className="m-0 text-[20px] font-bold">{c.name}</h1>
-            <span className={cx('inline-flex items-center gap-1 text-[13px] font-bold', TONE[st.tone].fg)}>
-              <StatusWord word="" tone={st.tone} icon={st.icon} />
-              {c.statusText}
-            </span>
+          <div className="min-w-0">
+            <SheetTitle
+              title={c.name}
+              sub={
+                <span className={cx('inline-flex items-center gap-1 font-bold', TONE[st.tone].fg)}>
+                  <StatusWord word="" tone={st.tone} icon={st.icon} />
+                  {c.statusText}
+                </span>
+              }
+            />
           </div>
           {steps}
         </div>
@@ -249,38 +258,30 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
         </>
       )}
       {err && <ErrorNote error={err} />}
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-line p-3">
+      <Card className="flex items-center justify-between gap-3 p-3">
         <div className="flex flex-col gap-0.5">
           <Label>Target</Label>
           <span className="text-[14px] font-semibold">{c.targetText}</span>
           <span className="text-[12px] text-muted">{c.targetHelp}</span>
         </div>
-        <Link
-          to={`/budget/category/${c.id}/target`}
-          search={{ month }}
-          data-track="category.target.edit"
-          className="hit flex h-9 shrink-0 items-center rounded-full bg-accent-soft px-3.5 text-[13px] font-bold text-accent no-underline"
-        >
+        <SoftLink to={`/budget/category/${c.id}/target`} search={{ month }} track="category.target.edit">
           Edit
-        </Link>
-      </div>
+        </SoftLink>
+      </Card>
       <div className="flex flex-col">
         <div className="flex items-center justify-between">
           <Label>Recent</Label>
           {c.recentTotal > 0 && (
-            <button
-              type="button"
-              data-track="category.see_all"
+            <TextButton
+              track="category.see_all"
               onClick={() => void navigate({ to: '/activity', search: { q: c.name } })}
-              className="flex min-h-9 items-center text-[13px] font-bold text-accent"
+              className="self-auto"
             >
               See all {c.recentTotal}
-            </button>
+            </TextButton>
           )}
         </div>
-        {c.recent.length === 0 && (
-          <p className="m-0 py-3 text-[13px] text-muted">No transactions yet this month.</p>
-        )}
+        {c.recent.length === 0 && <EmptyNote>No transactions yet this month.</EmptyNote>}
         {c.recent.map((r) => (
           <Link
             key={r.key}
@@ -309,14 +310,9 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
 
 function QuickChip({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <button
-      type="button"
-      data-track="category.quick"
-      onClick={onClick}
-      className="hit h-9 rounded-full border border-line-strong bg-surface px-3.5 text-[13px] font-semibold text-ink-2"
-    >
+    <SoftButton tone="outline" track="category.quick" onClick={onClick}>
       {label}
-    </button>
+    </SoftButton>
   );
 }
 
@@ -418,20 +414,19 @@ export function AssignSheetScreen() {
             <Label>Suggested</Label>
             {v.suggestions.length > 1 && (
               // Clearing or picking every suggestion one checkbox at a time took dozens of taps.
-              <button
-                type="button"
-                data-track={chosen.length > 0 ? 'assign.clear_all' : 'assign.select_all'}
+              <TextButton
+                track={chosen.length > 0 ? 'assign.clear_all' : 'assign.select_all'}
                 onClick={() => {
                   const clear = chosen.length > 0;
                   setOff(Object.fromEntries(v.suggestions.map((x) => [x.categoryId, clear])));
                 }}
-                className="hit h-9 px-1 text-[14px] font-bold text-accent"
+                className="self-auto px-1"
               >
                 {chosen.length > 0 ? 'Clear all' : 'Select all'}
-              </button>
+              </TextButton>
             )}
           </div>
-          <div className="shrink-0 overflow-hidden rounded-[14px] border border-line">
+          <Card>
             {v.suggestions.map((s) => (
               <label
                 key={s.categoryId}
@@ -451,7 +446,7 @@ export function AssignSheetScreen() {
                 <span className="tnum text-[15px] font-bold">{formatCents(s.amount)}</span>
               </label>
             ))}
-          </div>
+          </Card>
         </>
       )}
       <Label>Or assign to any category</Label>

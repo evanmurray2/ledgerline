@@ -1,11 +1,22 @@
 // Settings → Bank connections: the Item meter, Link with a confirm step, Finish setup.
 import { useState } from 'react';
-import { Link } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/endpoints';
 import { qk, useAccounts, useConnections, useSession } from '../../api/hooks';
 import { toast } from '../../components/Toast';
-import { Button, Card, cx, ErrorNote, Loading, PrimaryButton, SecondaryButton } from '../../components/ui';
+import {
+  Banner,
+  Button,
+  Card,
+  cx,
+  ErrorNote,
+  Icon,
+  Loading,
+  PrimaryButton,
+  SecondaryButton,
+  SoftButton,
+  SoftLink,
+} from '../../components/ui';
 import { syncedLabel } from '../../lib/dates';
 import { useScreen } from '../../lib/common';
 import { runPlaidLink } from '../../lib/plaid';
@@ -68,9 +79,7 @@ export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label
   };
   if (left <= 0)
     return (
-      <p className="m-0 rounded-xl bg-under-bg p-3 text-[13px] text-under-fg">
-        All {v.limit} links are used. Import a CSV from Import and export instead.
-      </p>
+      <Banner tone="warn">All {v.limit} links are used. Import a CSV from Import and export instead.</Banner>
     );
   return (
     <div className="flex flex-col gap-2">
@@ -105,27 +114,25 @@ export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label
         <>
           {left <= 3 && (
             // Few links left for good: say so before the button, not only in the confirm step.
-            <p className="m-0 rounded-xl border border-warn-border bg-warn-bg p-3 text-[13px] leading-snug text-warn-fg">
-              <strong>
-                Only {left} {left === 1 ? 'link' : 'links'} left, ever.
-              </strong>{' '}
+            <Banner tone="warn" title={`Only ${left} ${left === 1 ? 'link' : 'links'} left, ever.`}>
               Repair a broken login from Accounts instead of linking it again.
-            </p>
+            </Banner>
           )}
           <Button
             mutates
             track="connections.link"
             onClick={() => setStep('confirm')}
-            className="flex h-12 w-full items-center justify-center rounded-xl border border-dashed border-accent text-[15px] font-bold text-accent disabled:border-line disabled:text-disabled"
+            className="flex h-12 w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-accent text-[15px] font-bold text-accent disabled:border-line disabled:text-disabled"
           >
-            {label ?? `+ Link another bank (uses 1 of ${left})`}
+            <Icon name="plus" size={16} stroke={2.6} />
+            {label ?? `Link another bank (uses 1 of ${left})`}
           </Button>
         </>
       )}
       {step === 'done' && (
-        <p role="status" className="m-0 rounded-xl bg-success-soft p-3 text-[13px] text-funded-fg">
+        <Banner tone="success" icon="check">
           Linked. Transactions will show up in Activity after the first sync, usually within a few minutes.
-        </p>
+        </Banner>
       )}
       {error ? <ErrorNote error={error} /> : null}
     </div>
@@ -137,7 +144,7 @@ function FinishSetup({ id, institution }: { id: string; institution: string }) {
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
   return (
-    <Button
+    <SoftButton
       mutates
       track="connections.finish_setup"
       disabled={busy}
@@ -155,10 +162,10 @@ function FinishSetup({ id, institution }: { id: string; institution: string }) {
           },
         );
       }}
-      className="hit flex h-9 items-center self-start rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent"
+      className="self-start"
     >
       {busy ? 'Finishing…' : 'Finish setup'}
-    </Button>
+    </SoftButton>
   );
 }
 
@@ -173,7 +180,7 @@ export function ConnectionsScreen() {
     s === 'ok'
       ? { text: 'Synced', cls: 'bg-funded-bg text-funded-fg' }
       : s === 'login_required'
-        ? { text: 'Sign in again', cls: 'bg-under-bg text-under-fg' }
+        ? { text: 'Sign in again', cls: 'bg-warn-bg text-warn-fg' }
         : s === 'error'
           ? { text: 'Sync failed', cls: 'bg-over-bg text-over-fg' }
           : { text: 'Still counts', cls: 'bg-none-bg text-none-fg' };
@@ -204,7 +211,7 @@ export function ConnectionsScreen() {
                         {it.accounts} · linked {syncedLabel(it.linkedAt, '')}
                       </span>
                     </span>
-                    <span className={cx('shrink-0 rounded-full px-2.5 py-1 text-[12px] font-bold', st.cls)}>
+                    <span className={cx('shrink-0 rounded-md px-2 py-0.5 text-[12px] font-bold', st.cls)}>
                       {!it.setupDone
                         ? 'Setup unfinished'
                         : it.status === 'ok' && it.lastSynced
@@ -216,13 +223,13 @@ export function ConnectionsScreen() {
                     <FinishSetup id={it.id} institution={it.institution} />
                   )}
                   {repair && (
-                    <Link
+                    <SoftLink
                       to={`/accounts/repair/${it.id}`}
-                      data-track="connections.repair"
-                      className="hit flex h-9 items-center self-start rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline"
+                      track="connections.repair"
+                      className="self-start"
                     >
                       Repair on Accounts
-                    </Link>
+                    </SoftLink>
                   )}
                 </div>
               );

@@ -1,16 +1,20 @@
 // Small shared building blocks. Colors are always tokens (src/styles.css), never literals.
 import {
+  forwardRef,
   useEffect,
   useRef,
   useState,
   useSyncExternalStore,
-  type ButtonHTMLAttributes,
   type ReactNode,
+  type Ref,
 } from 'react';
 import { Link } from '@tanstack/react-router';
 import type { CategoryStatus } from '@ledgerline/contracts';
-import { useCanWrite } from '../state/connectivity';
 import { formatCents } from '../lib/money';
+import { useDisabled } from './buttons';
+
+export * from './buttons';
+export * from './headers';
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ');
@@ -63,96 +67,10 @@ export function useShortcuts(keys: Record<string, () => void>, enabled = true) {
   }, [enabled]);
 }
 
-/**
- * The one desktop page header: 64 px, title on the left, actions on the right, and an optional second row
- * (search, filters). Both rows line up with the content column unless `wide` (Settings has its own panes).
- */
-export function DesktopHeader({
-  title,
-  right,
-  below,
-  wide,
-}: {
-  title: ReactNode;
-  right?: ReactNode;
-  below?: ReactNode;
-  wide?: boolean;
-}) {
-  return (
-    <header className="@container shrink-0 border-b border-line bg-surface px-6">
-      <div className={cx('flex h-16 items-center justify-between gap-3', !wide && DESKTOP_WIDTH)}>
-        {typeof title === 'string' ? <h1 className="m-0 truncate text-[22px] font-bold">{title}</h1> : title}
-        {right && <div className="flex min-w-0 shrink-0 items-center gap-2">{right}</div>}
-      </div>
-      {below && <div className={cx('flex flex-col gap-2.5 pb-3', !wide && DESKTOP_WIDTH)}>{below}</div>}
-    </header>
-  );
-}
-
-/** A "More" button with a short list of links, for header actions that don't fit. */
-export function OverflowMenu({
-  label = 'More',
-  items,
-  className,
-}: {
-  label?: string;
-  items: { to: string; search?: Record<string, string | undefined>; name: string; track?: string }[];
-  className?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const esc = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      setOpen(false);
-      ref.current?.querySelector('button')?.focus();
-    };
-    document.addEventListener('pointerdown', away);
-    window.addEventListener('keydown', esc, true);
-    return () => {
-      document.removeEventListener('pointerdown', away);
-      window.removeEventListener('keydown', esc, true);
-    };
-  }, [open]);
-  return (
-    <div ref={ref} className={cx('relative', className)}>
-      <button
-        type="button"
-        aria-label={label}
-        aria-expanded={open}
-        aria-haspopup="true"
-        onClick={() => setOpen(!open)}
-        className="hit flex h-9 w-9 items-center justify-center rounded-full text-ink-2 hover:bg-sunken"
-      >
-        <Icon name="more" size={22} stroke={3} />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-10 z-30 flex min-w-[180px] flex-col rounded-xl border border-line bg-surface py-1 shadow-[0_8px_24px_var(--ll-shadow)]">
-          {items.map((i) => (
-            <Link
-              key={i.to}
-              to={i.to}
-              search={i.search}
-              data-track={i.track}
-              onClick={() => setOpen(false)}
-              className="flex h-10 items-center px-3.5 text-[14px] font-semibold text-ink no-underline hover:bg-surface-2"
-            >
-              {i.name}
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ------------------------------------------------------------------ icons
 
+// Icon sizes: header buttons 22 px, row chevrons (a row that opens a page) 18 px in text-faint, icons in a
+// Banner 18 px, inline status icons 14 or 16 px.
 const ICONS = {
   chevL: 'M15 6l-6 6 6 6',
   chevR: 'M9 6l6 6-6 6',
@@ -268,137 +186,6 @@ export function Bar({ percent, tone }: { percent: number; tone: Tone }) {
 
 export function Money({ cents, plus, className }: { cents: number; plus?: boolean; className?: string }) {
   return <span className={cx('tnum', className)}>{formatCents(cents, { plus })}</span>;
-}
-
-// ------------------------------------------------------------------ buttons
-
-type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  /** Changes data: disabled while offline or read-only. 'offline': also works offline with the copy (D-45). */
-  mutates?: boolean | 'offline';
-  track?: string;
-};
-
-function useDisabled(mutates: boolean | 'offline' | undefined, disabled: boolean | undefined) {
-  const canWrite = useCanWrite({ offline: mutates === 'offline' });
-  return !!disabled || (!!mutates && !canWrite);
-}
-
-export function Button({
-  mutates,
-  track,
-  disabled,
-  className,
-  children,
-  type = 'button',
-  ...rest
-}: BtnProps) {
-  const off = useDisabled(mutates, disabled);
-  return (
-    <button
-      type={type}
-      data-track={track}
-      disabled={off}
-      aria-disabled={off || undefined}
-      className={cx('disabled:cursor-not-allowed', className)}
-      {...rest}
-    >
-      {children}
-    </button>
-  );
-}
-
-export function PrimaryButton({ className, danger, ...p }: BtnProps & { danger?: boolean }) {
-  return (
-    <Button
-      className={cx(
-        // shrink-0: in a scrolling column a button would otherwise be squeezed below its height.
-        'flex h-12 w-full shrink-0 items-center justify-center rounded-xl px-4 text-[16px] font-bold',
-        danger ? 'bg-danger text-on-danger' : 'bg-accent text-on-accent',
-        'disabled:bg-disabled-bg disabled:text-muted',
-        className,
-      )}
-      {...p}
-    />
-  );
-}
-
-export function SecondaryButton({ className, ...p }: BtnProps) {
-  return (
-    <Button
-      className={cx(
-        'flex h-12 shrink-0 items-center justify-center rounded-xl border border-line-strong bg-surface px-4 text-[16px] font-bold text-ink-2 disabled:text-disabled',
-        className,
-      )}
-      {...p}
-    />
-  );
-}
-
-/** The soft blue pill used for one-tap fixes ("Cover $18.25", "Match", "Edit"). */
-export function SoftButton({ className, ...p }: BtnProps) {
-  return (
-    <Button
-      className={cx(
-        'hit h-9 shrink-0 rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent disabled:bg-sunken disabled:text-disabled',
-        className,
-      )}
-      {...p}
-    />
-  );
-}
-
-const HEADER_ACTION =
-  'hit flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline disabled:opacity-50';
-
-/**
- * The one style for a screen's own action in its header (Add, Refresh), the same on phone and desktop: the soft
- * pill with an icon and a word. Filled blue is kept for the main button of a sheet or form (Save, Assign).
- */
-export function HeaderAction({
-  icon,
-  label,
-  to,
-  onClick,
-  disabled,
-  spin,
-  track,
-  ariaLabel,
-}: {
-  icon: IconName;
-  label: string;
-  /** A link (opens a sheet or page) or, without it, a button. */
-  to?: string;
-  onClick?: () => void;
-  disabled?: boolean;
-  /** Turns the icon while the action runs (Refresh). */
-  spin?: boolean;
-  track: string;
-  ariaLabel?: string;
-}) {
-  const inner = (
-    <>
-      <Icon name={icon} size={16} stroke={2.4} className={spin ? 'animate-spin' : undefined} />
-      {label}
-    </>
-  );
-  if (to)
-    return (
-      <Link to={to} data-track={track} aria-label={ariaLabel} className={HEADER_ACTION}>
-        {inner}
-      </Link>
-    );
-  return (
-    <button
-      type="button"
-      data-track={track}
-      aria-label={ariaLabel}
-      disabled={disabled}
-      onClick={onClick}
-      className={HEADER_ACTION}
-    >
-      {inner}
-    </button>
-  );
 }
 
 export function Chip({
@@ -633,36 +420,136 @@ export function Toggle({
   );
 }
 
+/**
+ * The one note or warning card. Tones: info, warn (needs you: sign in again), neutral, danger (over: overspent,
+ * negative), success (done). `icon` leads the card; `to` makes the whole card a link (repair, match).
+ */
 export function Banner({
   tone,
   title,
   children,
   action,
+  icon,
+  to,
+  track,
   role = 'status',
+  className,
 }: {
   tone: 'info' | 'warn' | 'neutral' | 'danger' | 'success';
   title?: ReactNode;
   children?: ReactNode;
   action?: ReactNode;
+  icon?: IconName;
+  to?: string;
+  track?: string;
   role?: 'status' | 'alert';
+  className?: string;
 }) {
   const cls = {
-    info: 'bg-info-bg text-info-fg',
+    info: 'bg-info-bg text-info-fg border border-transparent',
     warn: 'bg-warn-bg text-warn-fg border border-warn-border',
     neutral: 'bg-sunken text-none-fg border border-line',
-    danger: 'bg-over-bg text-over-fg',
+    danger: 'bg-over-bg text-over-fg border border-transparent',
     success: 'bg-success-soft text-funded-fg border border-success-border',
   }[tone];
-  return (
-    <div
-      role={role}
-      className={cx('flex shrink-0 items-start gap-3 rounded-xl px-3 py-2.5 text-[13px] leading-snug', cls)}
-    >
-      <div className="flex flex-1 flex-col gap-0.5">
+  const body = (
+    <>
+      {icon && <Icon name={icon} size={18} stroke={2.4} className="mt-px shrink-0" />}
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         {title && <span className="text-[14px] font-bold">{title}</span>}
         {children && <span>{children}</span>}
       </div>
+      {to && <Icon name="chevR" size={18} className="mt-px shrink-0 opacity-70" />}
       {action}
+    </>
+  );
+  const box = cx(
+    'flex shrink-0 items-start gap-2.5 rounded-xl px-3 py-2.5 text-[13px] leading-snug no-underline',
+    cls,
+    className,
+  );
+  if (to)
+    return (
+      <Link to={to} data-track={track} className={box}>
+        {body}
+      </Link>
+    );
+  return (
+    <div role={role} className={box}>
+      {body}
+    </div>
+  );
+}
+
+/** A neutral "nothing here" line: 14 px muted, centered. `inCard`: inside a Card, which draws the border. */
+export function EmptyNote({ children, inCard }: { children: ReactNode; inCard?: boolean }) {
+  return (
+    <p className={cx('m-0 p-4 text-center text-[14px] text-muted', !inCard && 'shrink-0')}>{children}</p>
+  );
+}
+
+/** The one search box: icon, type="search", Escape clears it. */
+export const SearchField = forwardRef<
+  HTMLInputElement,
+  {
+    value: string;
+    onChange: (v: string) => void;
+    label: string;
+    placeholder: string;
+    shortcut?: string;
+    className?: string;
+  }
+>(function SearchField({ value, onChange, label, placeholder, shortcut, className }, ref) {
+  return (
+    <label
+      className={cx(
+        'flex min-h-11 shrink-0 items-center gap-2 rounded-xl bg-sunken px-3 text-muted',
+        className,
+      )}
+    >
+      <Icon name="search" size={18} />
+      <span className="sr-only">{label}</span>
+      <input
+        ref={ref}
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => e.key === 'Escape' && value && (e.stopPropagation(), onChange(''))}
+        placeholder={placeholder}
+        aria-keyshortcuts={shortcut}
+        className="min-h-10 min-w-0 flex-1 border-none bg-transparent text-[16px] text-ink outline-none placeholder:text-faint"
+      />
+    </label>
+  );
+});
+
+/**
+ * The scrolling content under a screen's header: phone px-4 pt-3 pb-6, desktop px-6 pt-5 pb-8 in the content
+ * column, blocks gap-3 apart. Pass `scrollRef` for pull to sync.
+ */
+export function ScreenBody({
+  children,
+  scrollRef,
+  className,
+  innerRef,
+}: {
+  children: ReactNode;
+  scrollRef?: Ref<HTMLDivElement>;
+  innerRef?: Ref<HTMLDivElement>;
+  className?: string;
+}) {
+  const desktop = useIsDesktop();
+  return (
+    <div
+      ref={scrollRef}
+      className={cx(
+        'relative flex min-h-0 flex-1 flex-col overflow-y-auto',
+        desktop ? 'px-6 pb-8 pt-5' : 'px-4 pb-6 pt-3',
+      )}
+    >
+      <div ref={innerRef} className={cx('flex flex-col gap-3', desktop && DESKTOP_WIDTH, className)}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -685,51 +572,6 @@ export function ErrorNote({ error }: { error: unknown }) {
     <p role="alert" className="m-0 rounded-xl bg-over-bg p-3 text-[14px] text-over-fg">
       {error instanceof Error ? error.message : 'Something went wrong.'}
     </p>
-  );
-}
-
-export function BackHeader({
-  title,
-  sub,
-  onBack,
-  backLabel,
-  right,
-}: {
-  title: string;
-  sub?: string;
-  onBack: () => void;
-  backLabel: string;
-  right?: ReactNode;
-}) {
-  const desktop = useIsDesktop();
-  const inner = (
-    <>
-      <button
-        type="button"
-        onClick={onBack}
-        aria-label={backLabel}
-        className={cx('flex h-11 w-11 shrink-0 items-center justify-center text-ink-2', desktop && '-ml-3')}
-      >
-        <Icon name="back" size={22} />
-      </button>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <h1 className={cx('m-0 truncate font-bold', desktop ? 'text-[22px]' : 'text-[19px]')}>{title}</h1>
-        {sub && <span className="truncate text-[13px] text-muted">{sub}</span>}
-      </div>
-      {right}
-    </>
-  );
-  // Desktop: the same 64 px header as every other screen, lined up with the content column.
-  if (desktop)
-    return (
-      <header className="shrink-0 border-b border-line bg-surface px-6">
-        <div className={cx(DESKTOP_WIDTH, 'flex min-h-16 items-center gap-1 py-1')}>{inner}</div>
-      </header>
-    );
-  return (
-    <header className="flex shrink-0 items-center gap-1 border-b border-line bg-surface py-2 pl-1 pr-4">
-      {inner}
-    </header>
   );
 }
 

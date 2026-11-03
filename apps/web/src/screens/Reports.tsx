@@ -3,20 +3,24 @@
 import { useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { ReportsView } from '@ledgerline/contracts';
-import { useAccounts, useReports, useSession } from '../api/hooks';
+import { useAccounts, useBudget, useReports, useSession } from '../api/hooks';
 import {
+  Card,
   cx,
-  DESKTOP_WIDTH,
   DesktopHeader,
+  EmptyNote,
   ErrorNote,
   Icon,
   Loading,
+  PhoneHeader,
+  ScreenBody,
+  SectionTitle,
   Segmented,
   useIsDesktop,
-  useShortcuts,
 } from '../components/ui';
+import { MonthSwitcher } from '../components/MonthSwitcher';
 import { formatCents, percentOf } from '../lib/money';
-import { addMonths, compareMonths, monthLabel, monthShort } from '../lib/dates';
+import { monthLabel, monthShort } from '../lib/dates';
 import { useScreen } from '../lib/common';
 
 type View = 'spend' | 'trend' | 'worth';
@@ -36,11 +40,11 @@ function Tiles({ r, desktop }: { r: ReportsView; desktop: boolean }) {
   return (
     <section className={cx('grid shrink-0 gap-2', desktop ? 'grid-cols-4' : 'grid-cols-3')}>
       {tiles.map(([k, v, note]) => (
-        <div key={k} className="flex flex-col gap-0.5 rounded-xl border border-line bg-surface p-2.5">
+        <Card key={k} className="flex flex-col gap-0.5 p-2.5">
           <span className="text-[12px] text-muted">{k}</span>
           <span className="tnum text-[16px] font-bold">{formatCents(v)}</span>
           {desktop && <span className="text-[12px] text-muted">{note}</span>}
-        </div>
+        </Card>
       ))}
     </section>
   );
@@ -52,8 +56,8 @@ function ByCategory({ r }: { r: ReportsView }) {
   const sorted = [...r.byCategory].sort((a, b) => b.spent - a.spent);
   const max = sorted[0]?.spent ?? 1;
   return (
-    <section className="flex shrink-0 flex-col overflow-hidden rounded-[14px] border border-line bg-surface">
-      {sorted.length === 0 && <p className="m-0 p-4 text-[14px] text-muted">No spending yet.</p>}
+    <Card className="flex flex-col">
+      {sorted.length === 0 && <EmptyNote inCard>No spending yet.</EmptyNote>}
       {sorted.map((c) => (
         <button
           key={c.categoryId}
@@ -70,7 +74,7 @@ function ByCategory({ r }: { r: ReportsView }) {
             <span className="font-semibold">{c.name}</span>
             <span className="flex items-center gap-1">
               <span className="tnum font-bold">{formatCents(c.spent)}</span>
-              <Icon name="chevR" size={16} className="text-faint" />
+              <Icon name="chevR" size={18} className="text-faint" />
             </span>
           </span>
           <span aria-hidden="true" className="h-1.5 overflow-hidden rounded-sm bg-track">
@@ -81,7 +85,7 @@ function ByCategory({ r }: { r: ReportsView }) {
           </span>
         </button>
       ))}
-    </section>
+    </Card>
   );
 }
 
@@ -94,7 +98,7 @@ function Trend({ r, desktop }: { r: ReportsView; desktop: boolean }) {
     )
     .join(', ');
   return (
-    <section className="flex shrink-0 flex-col gap-2 rounded-[14px] border border-line bg-surface p-3">
+    <Card className="flex flex-col gap-2 p-3">
       <span className="text-[14px] font-bold">Spent, last {r.trend.length} months</span>
       <div role="img" aria-label={`Spending by month: ${label}`} className="flex h-[170px] items-end gap-2">
         {r.trend.map((t, i) => {
@@ -120,7 +124,7 @@ function Trend({ r, desktop }: { r: ReportsView; desktop: boolean }) {
           ? 'Click a category under Spending by category to see its transactions.'
           : 'Tap a category on the Spending view to see its transactions.'}
       </span>
-    </section>
+    </Card>
   );
 }
 
@@ -133,7 +137,7 @@ function IncomeTable({ r }: { r: ReportsView }) {
     [`Invested, ${monthShort(prev.month)}`, prev.invested],
   ];
   return (
-    <section className="shrink-0 overflow-hidden rounded-[14px] border border-line bg-surface">
+    <Card>
       {rows.map(([k, v]) => (
         <div
           key={k}
@@ -143,14 +147,14 @@ function IncomeTable({ r }: { r: ReportsView }) {
           <span className="tnum font-bold">{formatCents(v)}</span>
         </div>
       ))}
-    </section>
+    </Card>
   );
 }
 
 function NetWorth({ r }: { r: ReportsView }) {
   const pts = r.netWorth;
   const last = pts[pts.length - 1];
-  if (!last) return <p className="m-0 text-[14px] text-muted">No history yet.</p>;
+  if (!last) return <EmptyNote>No history yet.</EmptyNote>;
   const min = Math.min(...pts.map((p) => p.value));
   const max = Math.max(...pts.map((p) => p.value));
   const span = Math.max(1, max - min);
@@ -161,7 +165,7 @@ function NetWorth({ r }: { r: ReportsView }) {
     )
     .join(' ');
   return (
-    <section className="flex shrink-0 flex-col gap-2 rounded-[14px] border border-line bg-surface p-3">
+    <Card className="flex flex-col gap-2 p-3">
       <div className="flex items-baseline justify-between">
         <span className="text-[14px] font-bold">Net worth</span>
         <span className="tnum text-[20px] font-bold">{formatCents(last.value)}</span>
@@ -189,7 +193,7 @@ function NetWorth({ r }: { r: ReportsView }) {
           {monthShort(last.month)} {last.month.slice(0, 4)}
         </span>
       </div>
-    </section>
+    </Card>
   );
 }
 
@@ -201,7 +205,7 @@ function WorthTable() {
     ['Net worth', a.netWorth],
   ];
   return (
-    <section className="shrink-0 overflow-hidden rounded-[14px] border border-line bg-surface">
+    <Card>
       {rows.map(([k, v]) => (
         <div
           key={k}
@@ -211,7 +215,7 @@ function WorthTable() {
           <span className={cx('tnum font-bold', v < 0 && 'text-over-fg')}>{formatCents(v)}</span>
         </div>
       ))}
-    </section>
+    </Card>
   );
 }
 
@@ -228,64 +232,24 @@ export function ReportsScreen() {
   const r = q.data;
   const go = (m: string) =>
     void navigate({ to: '/reports', search: { month: m === current ? undefined : m } });
-  const atEnd = !!month && !!current && compareMonths(month, current) >= 0;
+  // The budget's first month: there is nothing to report before it.
+  const min = useBudget(current).data?.minMonth;
   const note = r
     ? r.monthToDate
       ? `Month to date. Your share only: amounts owed to you are left out.${r.stillOwed ? ` ${formatCents(r.stillOwed)} is still owed to you.` : ''}`
       : 'Whole month. Your share only.'
     : '';
-  const canPrev = !!month;
-  useShortcuts(
-    {
-      '[': () => month && go(addMonths(month, -1)),
-      ']': () => month && !atEnd && go(addMonths(month, 1)),
-    },
-    desktop && canPrev,
-  );
   const monthNav = month && (
-    <div className="flex items-center">
-      <button
-        type="button"
-        data-track="reports.month.prev"
-        aria-label="Previous month"
-        aria-keyshortcuts={desktop ? '[' : undefined}
-        title={desktop ? 'Previous month ( [ )' : undefined}
-        onClick={() => go(addMonths(month, -1))}
-        className="flex h-11 w-11 items-center justify-center text-ink-2"
-      >
-        <Icon name="chevL" size={20} />
-      </button>
-      <span className="min-w-[84px] text-center text-[15px] font-bold">{monthLabel(month)}</span>
-      <button
-        type="button"
-        data-track="reports.month.next"
-        aria-label="Next month"
-        aria-keyshortcuts={desktop ? ']' : undefined}
-        title={desktop ? 'Next month ( ] )' : undefined}
-        disabled={atEnd}
-        onClick={() => go(addMonths(month, 1))}
-        className="flex h-11 w-11 items-center justify-center text-ink-2 disabled:text-line-strong"
-      >
-        <Icon name="chevR" size={20} />
-      </button>
-    </div>
+    <MonthSwitcher month={month} min={min} max={current} onGo={go} track="reports.month" />
   );
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {desktop ? (
         <DesktopHeader title="Reports" right={monthNav} />
       ) : (
-        <header className="flex min-h-14 shrink-0 items-center justify-between border-b border-line bg-surface pl-4 pr-1">
-          <h1 className="m-0 text-[22px] font-bold">Reports</h1>
-          {monthNav}
-        </header>
+        <PhoneHeader title="Reports" right={monthNav} />
       )}
-      <div
-        className={cx(
-          'flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto',
-          desktop ? 'px-6 py-5' : 'px-4 py-3',
-        )}
-      >
+      <ScreenBody>
         {!r ? (
           q.error ? (
             <ErrorNote error={q.error} />
@@ -293,12 +257,12 @@ export function ReportsScreen() {
             <Loading />
           )
         ) : desktop ? (
-          <div className={cx(DESKTOP_WIDTH, 'flex flex-col gap-4')}>
+          <>
             <Tiles r={r} desktop />
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-2">
-                <h2 className="m-0 text-[15px] font-bold">Spending by category</h2>
-                <span className="text-[12px] text-muted">{note}</span>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <SectionTitle>Spending by category</SectionTitle>
+                <p className="m-0 px-0.5 pb-1 text-[12px] leading-snug text-muted">{note}</p>
                 <ByCategory r={r} />
               </div>
               <div className="flex flex-col gap-3">
@@ -306,7 +270,7 @@ export function ReportsScreen() {
                 <NetWorth r={r} />
               </div>
             </div>
-          </div>
+          </>
         ) : (
           <>
             <Segmented
@@ -345,7 +309,7 @@ export function ReportsScreen() {
             )}
           </>
         )}
-      </div>
+      </ScreenBody>
     </div>
   );
 }

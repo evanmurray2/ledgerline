@@ -6,7 +6,18 @@ import { browserSupportsWebAuthn, startAuthentication, startRegistration } from 
 import { ApiError, errorMessage, setPasskeyCheck } from '../api/client';
 import { api } from '../api/endpoints';
 import { qk } from '../api/hooks';
-import { Card, Field, PrimaryButton, SecondaryButton, inputClass, cx } from '../components/ui';
+import { Frame, Problem } from '../components/Frame';
+import {
+  Card,
+  ConfirmInline,
+  DangerLink,
+  Field,
+  PrimaryButton,
+  SecondaryButton,
+  SectionTitle,
+  inputClass,
+  cx,
+} from '../components/ui';
 import { toast } from '../components/Toast';
 import { clearSavedData } from '../state/saved';
 import { signIn as copySignIn, signOutHere } from '../copy/copy';
@@ -52,29 +63,6 @@ function deviceName(): string {
   if (/Mac/.test(ua)) return 'Mac';
   if (/Windows/.test(ua)) return 'Windows computer';
   return 'This device';
-}
-
-function Frame({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <main className="flex min-h-dvh items-center justify-center bg-page px-4 py-10">
-      <div className="flex w-full max-w-[400px] flex-col gap-4">
-        <div className="flex flex-col gap-1">
-          <span className="text-[13px] font-bold uppercase tracking-[0.5px] text-accent">Ledgerline</span>
-          <h1 className="m-0 text-[26px] font-bold text-ink">{title}</h1>
-        </div>
-        {children}
-      </div>
-    </main>
-  );
-}
-
-function Problem({ text }: { text: string | null }) {
-  if (!text) return null;
-  return (
-    <p role="alert" className="m-0 rounded-xl bg-over-bg p-3 text-[14px] text-over-fg">
-      {text}
-    </p>
-  );
 }
 
 const NoPasskeys = () => (
@@ -282,6 +270,8 @@ export function SignInSection() {
   const sec = useQuery({ queryKey: ['security'], queryFn: api.security });
   const [link, setLink] = useState<{ url: string; expiresAt: string } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  /** The removal being confirmed: 'passkey:<id>', 'session:<id>', 'others' or 'here'. */
+  const [asking, setAsking] = useState<string | null>(null);
   const refresh = () => void qc.invalidateQueries({ queryKey: ['security'] });
   const run = (fn: () => Promise<unknown>, done?: (r: unknown) => void) => {
     setErr(null);
@@ -298,7 +288,7 @@ export function SignInSection() {
   const keys = sec.data?.passkeys ?? [];
   return (
     <>
-      <h2 className="m-0 mt-1 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">Sign-in</h2>
+      <SectionTitle>Sign-in</SectionTitle>
       <Card>
         <div className="flex flex-col gap-1 px-3 py-3">
           <span className="text-[15px] font-semibold">Passkeys</span>
@@ -307,26 +297,42 @@ export function SignInSection() {
           </span>
         </div>
         {keys.map((k) => (
-          <div
-            key={k.id}
-            className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 py-2"
-          >
-            <span className="flex flex-col gap-0.5">
-              <span className="text-[15px] font-semibold">{k.name}</span>
-              <span className="text-[12px] text-muted">
-                Added {when(k.createdAt)} · last used {when(k.lastUsedAt)}
+          <div key={k.id} className="flex flex-col border-t border-divider">
+            <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
+              <span className="flex flex-col gap-0.5">
+                <span className="text-[15px] font-semibold">{k.name}</span>
+                <span className="text-[12px] text-muted">
+                  Added {when(k.createdAt)} · last used {when(k.lastUsedAt)}
+                </span>
               </span>
-            </span>
-            {keys.length > 1 && (
-              <button
-                type="button"
-                data-track="settings.passkey.remove"
-                className="hit h-9 rounded-full px-3 text-[13px] font-bold text-over-fg"
-                onClick={() => run(() => api.removePasskey(k.id))}
-                aria-label={`Remove passkey ${k.name}`}
+              {keys.length > 1 && asking !== `passkey:${k.id}` && (
+                <DangerLink
+                  track="settings.passkey.remove"
+                  onClick={() => setAsking(`passkey:${k.id}`)}
+                  aria-label={`Remove passkey ${k.name}…`}
+                  className="shrink-0 self-center"
+                >
+                  Remove…
+                </DangerLink>
+              )}
+            </div>
+            {asking === `passkey:${k.id}` && (
+              <ConfirmInline
+                label={`Remove passkey ${k.name}`}
+                confirmLabel="Remove"
+                track="settings.passkey.remove.confirm"
+                mutates={false}
+                onConfirm={() =>
+                  run(
+                    () => api.removePasskey(k.id),
+                    () => setAsking(null),
+                  )
+                }
+                onCancel={() => setAsking(null)}
+                className="mx-3 mb-3"
               >
-                Remove
-              </button>
+                Remove the passkey {k.name}? That device can’t sign in with it any more.
+              </ConfirmInline>
             )}
           </div>
         ))}
@@ -366,42 +372,72 @@ export function SignInSection() {
         </SecondaryButton>
       )}
       <Problem text={err} />
-      <SignIns signIns={sec.data?.signIns ?? []} run={run} />
+      <SignIns signIns={sec.data?.signIns ?? []} run={run} asking={asking} setAsking={setAsking} />
       {/* One other device has its own Sign out above; this is for several at once. */}
-      {(sec.data?.otherSessions ?? 0) > 1 && (
-        <div className="flex flex-col gap-1.5">
-          <SecondaryButton
-            className="lg:self-start lg:px-6"
-            track="settings.sign_out_others"
-            onClick={() =>
-              run(api.signOutOthers, () => toast.show({ text: 'Your other devices are signed out' }))
+      {(sec.data?.otherSessions ?? 0) > 1 &&
+        (asking === 'others' ? (
+          <ConfirmInline
+            label="Sign out other devices"
+            confirmLabel="Sign out"
+            track="settings.sign_out_others.confirm"
+            mutates={false}
+            onConfirm={() =>
+              run(api.signOutOthers, () => {
+                setAsking(null);
+                toast.show({ text: 'Your other devices are signed out' });
+              })
             }
+            onCancel={() => setAsking(null)}
           >
-            Sign out other devices
-          </SecondaryButton>
-          <span className="px-0.5 text-[12px] leading-snug text-muted">
-            Signs out {sec.data?.otherSessions} other devices and deletes the budget saved on them. This
-            device stays signed in.
-          </span>
-        </div>
+            Sign out {sec.data?.otherSessions} other devices? It deletes the budget saved on them. This device
+            stays signed in.
+          </ConfirmInline>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            <SecondaryButton
+              className="lg:self-start lg:px-6"
+              track="settings.sign_out_others"
+              onClick={() => setAsking('others')}
+            >
+              Sign out other devices…
+            </SecondaryButton>
+            <span className="px-0.5 text-[12px] leading-snug text-muted">
+              Signs out {sec.data?.otherSessions} other devices and deletes the budget saved on them. This
+              device stays signed in.
+            </span>
+          </div>
+        ))}
+      {asking === 'here' ? (
+        <ConfirmInline
+          label="Sign out of this device"
+          confirmLabel="Sign out"
+          track="settings.sign_out.confirm"
+          mutates={false}
+          onConfirm={() =>
+            run(
+              async () => {
+                // The budget saved on this phone is deleted first (D-45), then the sign-in ends.
+                clearSavedData();
+                await (import.meta.env.VITE_MOCK === '1' ? api.signOut() : signOutHere());
+              },
+              () => window.location.assign('/'),
+            )
+          }
+          onCancel={() => setAsking(null)}
+        >
+          Sign out of this device? It also deletes the budget saved on this device. Your budget stays on the
+          server: sign in again with your passkey to get it back.
+        </ConfirmInline>
+      ) : (
+        <SecondaryButton
+          danger
+          className="lg:self-start lg:px-6"
+          track="settings.sign_out"
+          onClick={() => setAsking('here')}
+        >
+          Sign out of this device…
+        </SecondaryButton>
       )}
-      <button
-        type="button"
-        data-track="settings.sign_out"
-        onClick={() =>
-          run(
-            async () => {
-              // The budget saved on this phone is deleted first (D-45), then the sign-in ends.
-              clearSavedData();
-              await (import.meta.env.VITE_MOCK === '1' ? api.signOut() : signOutHere());
-            },
-            () => window.location.assign('/'),
-          )
-        }
-        className="flex h-12 shrink-0 items-center justify-center rounded-xl border border-line-strong bg-surface text-[16px] font-bold text-over-fg"
-      >
-        Sign out of this device
-      </button>
     </>
   );
 }
@@ -410,6 +446,8 @@ export function SignInSection() {
 function SignIns({
   signIns,
   run,
+  asking,
+  setAsking,
 }: {
   signIns: {
     id: string;
@@ -420,6 +458,8 @@ function SignIns({
     locked: boolean;
   }[];
   run: (fn: () => Promise<unknown>, then?: () => void) => void;
+  asking: string | null;
+  setAsking: (v: string | null) => void;
 }) {
   if (!signIns.length) return null;
   const sorted = [...signIns.filter((x) => x.current), ...signIns.filter((x) => !x.current)];
@@ -440,34 +480,50 @@ function SignIns({
         </span>
       </div>
       {sorted.map((x) => (
-        <div
-          key={x.id}
-          className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 py-2"
-        >
-          <span className="flex flex-col gap-0.5">
-            <span className="text-[15px] font-semibold">{x.name}</span>
-            <span className="text-[12px] text-muted">
-              {x.locked ? `Locked since ${at(x.signedInAt)}` : `Signed in ${at(x.signedInAt)}`}
-              {x.saved ? ' · budget saved' : ''}
+        <div key={x.id} className="flex flex-col border-t border-divider">
+          <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
+            <span className="flex flex-col gap-0.5">
+              <span className="text-[15px] font-semibold">{x.name}</span>
+              <span className="text-[12px] text-muted">
+                {x.locked ? `Locked since ${at(x.signedInAt)}` : `Signed in ${at(x.signedInAt)}`}
+                {x.saved ? ' · budget saved' : ''}
+              </span>
             </span>
-          </span>
-          {x.current ? (
-            <span className="shrink-0 px-3 text-[13px] font-semibold text-muted">This device</span>
-          ) : (
-            <button
-              type="button"
-              data-track="settings.sign_in.sign_out"
-              className="hit h-9 shrink-0 whitespace-nowrap rounded-full px-3 text-[13px] font-bold text-over-fg"
-              onClick={() =>
+            {x.current ? (
+              <span className="shrink-0 px-3 text-[13px] font-semibold text-muted">This device</span>
+            ) : (
+              asking !== `session:${x.id}` && (
+                <DangerLink
+                  track="settings.sign_in.sign_out"
+                  onClick={() => setAsking(`session:${x.id}`)}
+                  aria-label={`Sign out ${x.name}…`}
+                  className="shrink-0 self-center whitespace-nowrap"
+                >
+                  Sign out…
+                </DangerLink>
+              )
+            )}
+          </div>
+          {!x.current && asking === `session:${x.id}` && (
+            <ConfirmInline
+              label={`Sign out ${x.name}`}
+              confirmLabel="Sign out"
+              track="settings.sign_in.sign_out.confirm"
+              mutates={false}
+              onConfirm={() =>
                 run(
                   () => api.signOutSession(x.id),
-                  () => toast.show({ text: `${x.name} is signed out` }),
+                  () => {
+                    setAsking(null);
+                    toast.show({ text: `${x.name} is signed out` });
+                  },
                 )
               }
-              aria-label={`Sign out ${x.name}`}
+              onCancel={() => setAsking(null)}
+              className="mx-3 mb-3"
             >
-              Sign out
-            </button>
+              Sign out {x.name}? It also deletes the budget saved on it.
+            </ConfirmInline>
           )}
         </div>
       ))}

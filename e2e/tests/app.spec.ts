@@ -359,10 +359,10 @@ test('No screen is taller than the phone: the page itself never scrolls, only it
   }
 });
 
-test('Accounts: Refresh syncs every bank; on a phone, so does pulling down', async ({ page }) => {
+test('Accounts: Sync in the header syncs every bank; on a phone, so does pulling down', async ({ page }) => {
   await page.goto('/accounts');
   if (test.info().project.name === 'desktop') {
-    await page.getByRole('button', { name: 'Refresh' }).click();
+    await page.getByRole('button', { name: 'Sync', exact: true }).click();
     await expect(page.getByText('Up to date')).toBeVisible();
     return;
   }
@@ -394,8 +394,8 @@ test('Accounts: Refresh syncs every bank; on a phone, so does pulling down', asy
   await drag('release');
   await expect(page.getByTestId('pull-refresh')).toContainText('Syncing banks…');
   await expect(page.getByTestId('pull-refresh')).toContainText('Up to date');
-  // The Refresh button next to the gear does the same.
-  await expect(page.getByRole('button', { name: 'Refresh' })).toBeEnabled();
+  // The Sync button next to the gear does the same.
+  await expect(page.getByRole('button', { name: 'Sync', exact: true })).toBeEnabled();
 });
 
 test('Desktop: type into Assigned, Tab saves and moves on, Escape puts it back', async ({ page }, info) => {
@@ -428,4 +428,21 @@ test('Desktop: the category panel steps to the next category with the arrow keys
   await expect(page.getByRole('dialog', { name: 'Dining out' })).toBeVisible();
   await page.getByRole('button', { name: 'Previous category' }).click();
   await expect(page.getByRole('dialog', { name: 'Groceries' })).toBeVisible();
+});
+
+test('Rename payee: the same sheet from a transaction and from Settings', async ({ page }) => {
+  await page.goto('/activity/txn/uber');
+  await page.getByRole('link', { name: 'Rename payee' }).click();
+  let sheet = page.getByRole('dialog', { name: 'Rename payee' });
+  await expect(sheet.getByRole('heading', { name: 'Rename payee' })).toBeVisible();
+  await expect(sheet.getByText('Bank names that become this payee')).toBeVisible();
+  await sheet.getByLabel('Show as').fill('Uber rides');
+  await sheet.getByRole('button', { name: 'Save name' }).click();
+  await expect(sheet).toBeHidden();
+
+  await page.goto('/settings/payees/p-uber');
+  sheet = page.getByRole('dialog', { name: 'Rename payee' });
+  await expect(sheet.getByRole('heading', { name: 'Rename payee' })).toBeVisible();
+  await expect(sheet.getByLabel('Or merge into an existing payee')).toBeVisible();
+  await expect(sheet.getByRole('button', { name: 'Save name' })).toBeVisible();
 });

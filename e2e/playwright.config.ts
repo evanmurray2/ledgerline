@@ -3,7 +3,8 @@ import { failureReport } from './report';
 
 // Runs the SPA with Vite in mock mode (every /api request answered in memory) on phone and desktop sizes.
 const report = failureReport('mock');
-const PORT = 5179;
+// E2E_PORT: run several copies side by side (each its own Vite).
+const PORT = Number(process.env.E2E_PORT ?? 5179);
 
 export default defineConfig({
   testDir: './tests',

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { api } from '../api/endpoints';
 import { Sheet, SheetTitle } from '../components/Sheet';
-import { ErrorNote, PrimaryButton, SecondaryButton } from '../components/ui';
+import { Banner, ErrorNote, PrimaryButton } from '../components/ui';
 import { usage } from '../usage/tracker';
 
 const SCREEN_NAMES: Record<string, string> = {
@@ -43,16 +43,25 @@ export function NoteSheet({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       gap="auto"
       header={<SheetTitle title="Note about this screen" sub={SCREEN_NAMES[screen] ?? screen} />}
+      footer={
+        saved ? (
+          <PrimaryButton onClick={onClose}>Done</PrimaryButton>
+        ) : (
+          <PrimaryButton
+            mutates
+            track="note.save"
+            disabled={!text.trim() || busy}
+            onClick={() => void save()}
+          >
+            Save note
+          </PrimaryButton>
+        )
+      }
     >
       {saved ? (
-        <div className="flex flex-col gap-3 pb-4">
-          <p role="status" className="m-0 rounded-xl bg-success-soft p-3 text-[14px] text-funded-fg">
-            Saved. Notes are included in Export usage (Import and export).
-          </p>
-          <SecondaryButton onClick={onClose}>Back</SecondaryButton>
-        </div>
+        <Banner tone="success">Saved. Notes are included in Export usage (Import and export).</Banner>
       ) : (
-        <div className="flex flex-col gap-3 pb-4">
+        <div className="flex flex-col gap-3">
           <textarea
             aria-label="Note"
             rows={4}
@@ -67,14 +76,6 @@ export function NoteSheet({ onClose }: { onClose: () => void }) {
             payee names are attached.
           </span>
           {error ? <ErrorNote error={error} /> : null}
-          <PrimaryButton
-            mutates
-            track="note.save"
-            disabled={!text.trim() || busy}
-            onClick={() => void save()}
-          >
-            Save note
-          </PrimaryButton>
         </div>
       )}
     </Sheet>

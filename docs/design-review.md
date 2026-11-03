@@ -4,8 +4,9 @@ A review of `apps/web/src` for the same kind of thing looking or behaving differ
 (390 px) and a computer (1280 px), checked in the mock app (`VITE_MOCK=1`). Line numbers refer to commit `790df7f`
 (`git show 790df7f:<path>`); they will drift as the fixes land. `docs/build-plan.md` section 19 tracks what's done.
 
-Already fixed with this review (D-54): Set targets is a page like Categories, and a screen's header action (Add,
-Refresh, New rule) is one `HeaderAction` style on both screen sizes.
+**Status:** fixed (D-54, D-55; `docs/build-plan.md` section 19). Left as they are, on purpose: Unpair transfer has
+no Undo (it needs a server change), Owed's "waiting to match" card keeps its own color, Budget's sync-problem strip
+stays a full-width strip under the header, and the Ready to Assign bar keeps its own buttons.
 
 Money rules: nothing below changes how money is counted. All of it is markup, copy or color. Two items (11b
 and 13a) touch how an amount or a "late" state is shown, but not how it is computed.

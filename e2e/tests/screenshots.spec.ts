@@ -52,7 +52,7 @@ const SCREENS: { name: string; path: string; ready?: string; prepare?: (page: Pa
   { name: 'data', path: '/settings/data', ready: 'Import past transactions' },
   { name: 'state-empty', path: '/budget?mock=empty', ready: 'a job' },
   { name: 'state-readonly', path: '/budget?mock=readonly', ready: 'View only until' },
-  { name: 'state-sync', path: '/accounts?mock=syncfail', ready: 'Try now' },
+  { name: 'state-sync', path: '/accounts?mock=syncfail', ready: 'Sync now' },
   { name: 'state-newmonth', path: '/budget?mock=newmonth', ready: 'has started' },
   {
     name: 'state-overassigned',

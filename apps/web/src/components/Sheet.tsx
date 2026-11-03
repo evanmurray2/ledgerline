@@ -229,23 +229,36 @@ export function Sheet({
   );
 }
 
-/** Header block used at the top of most sheets. */
+/**
+ * Header block used at the top of most sheets. With `amount` (the transaction sheets), the amount is the
+ * heading: tag line (13 px bold), amount (28 px), sub line (14 px muted), in that order, and `title` is left out.
+ */
 export function SheetTitle({
   title,
   sub,
   tag,
   tagClass,
+  amount,
+  amountClass,
 }: {
-  title: ReactNode;
+  title?: ReactNode;
   sub?: ReactNode;
   tag?: ReactNode;
   tagClass?: string;
+  amount?: ReactNode;
+  amountClass?: string;
 }) {
   return (
     <div className="flex flex-col gap-0.5">
       {tag && <span className={cx('text-[13px] font-bold', tagClass ?? 'text-muted')}>{tag}</span>}
-      <h1 className="m-0 text-[20px] font-bold leading-tight">{title}</h1>
-      {sub && <span className="text-[13px] text-muted">{sub}</span>}
+      {amount !== undefined ? (
+        <h1 className={cx('tnum m-0 text-[28px] font-bold leading-tight', amountClass)}>{amount}</h1>
+      ) : (
+        <h1 className="m-0 text-[20px] font-bold leading-tight">{title}</h1>
+      )}
+      {sub && (
+        <span className={cx('text-muted', amount !== undefined ? 'text-[14px]' : 'text-[13px]')}>{sub}</span>
+      )}
     </div>
   );
 }

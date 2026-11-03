@@ -6,15 +6,17 @@ import { api } from '../api/endpoints';
 import { useCategoriesSettings, useCategorySheet, useMoneyMutation } from '../api/hooks';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import {
-  Button,
+  Card,
+  ConfirmInline,
   cx,
+  DangerLink,
   ErrorNote,
   Field,
   inputClass,
-  Label,
   Loading,
   OptionCard,
   PrimaryButton,
+  SectionTitle,
   Segmented,
 } from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
@@ -294,42 +296,21 @@ export function TargetScreen() {
       {save.error && <ErrorNote error={save.error} />}
       {c.target.type !== 'none' &&
         (asking ? (
-          <div
-            role="alertdialog"
-            aria-label="Remove target"
-            className="flex flex-col gap-2.5 rounded-xl bg-over-bg p-3 text-over-fg"
+          <ConfirmInline
+            label="Remove target"
+            confirmLabel="Remove target"
+            track="target.remove.confirm"
+            onConfirm={() => void submit({ type: 'none' })}
+            onCancel={() => setAsking(false)}
+            busy={save.isPending}
           >
-            <span className="text-[14px] leading-snug">
-              Remove the target from {c.name}? The money stays in the category; it just stops showing as
-              underfunded or low.
-            </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setAsking(false)}
-                className="h-11 flex-1 rounded-[10px] border border-line-strong bg-surface text-[14px] font-bold text-ink-2"
-              >
-                Keep it
-              </button>
-              <Button
-                mutates
-                track="target.remove.confirm"
-                onClick={() => void submit({ type: 'none' })}
-                className="h-11 flex-1 rounded-[10px] bg-danger text-[14px] font-bold text-on-danger"
-              >
-                Remove target
-              </Button>
-            </div>
-          </div>
+            Remove the target from {c.name}? The money stays in the category; it just stops showing as
+            underfunded or low.
+          </ConfirmInline>
         ) : (
-          <button
-            type="button"
-            data-track="target.remove"
-            onClick={() => setAsking(true)}
-            className="mt-4 min-h-10 self-start text-[14px] font-bold text-over-fg"
-          >
-            Remove target
-          </button>
+          <DangerLink track="target.remove" onClick={() => setAsking(true)} className="mt-4">
+            Remove target…
+          </DangerLink>
         ))}
     </Sheet>
   );
@@ -354,9 +335,9 @@ export function TargetsScreen() {
         </p>
       )}
       {groups.map((g) => (
-        <div key={g.id} className="flex shrink-0 flex-col gap-2">
-          <Label>{g.name}</Label>
-          <div className="overflow-hidden rounded-xl border border-line">
+        <div key={g.id} className="flex shrink-0 flex-col gap-1">
+          <SectionTitle>{g.name}</SectionTitle>
+          <Card>
             {g.categories.map((c) => {
               const missing = c.meta.endsWith('No target');
               return (
@@ -365,7 +346,7 @@ export function TargetsScreen() {
                   to={`/targets/${c.id}`}
                   search={{ month: m }}
                   data-track="targets.category"
-                  className="flex min-h-14 items-center justify-between gap-3 border-t border-divider bg-surface px-3 py-2 text-ink no-underline first:border-t-0"
+                  className="flex min-h-14 items-center gap-3 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
                 >
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="text-[15px] font-semibold">{c.name}</span>
@@ -373,13 +354,10 @@ export function TargetsScreen() {
                       {missing ? 'Add a target' : c.meta}
                     </span>
                   </span>
-                  <span aria-hidden="true" className="text-faint">
-                    ›
-                  </span>
                 </Link>
               );
             })}
-          </div>
+          </Card>
         </div>
       ))}
       <Outlet />

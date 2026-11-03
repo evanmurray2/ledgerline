@@ -29,12 +29,7 @@ export function Page({
   const width = isDesktop ? (inPane ? 'max-w-[680px]' : DESKTOP_WIDTH) : undefined;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {desktop ? (
-        <div className="flex items-center justify-between px-6 pt-5">
-          <h2 className="m-0 text-[18px] font-bold">{title}</h2>
-          {right}
-        </div>
-      ) : (
+      {!desktop && (
         <BackHeader
           title={title}
           onBack={() => void navigate({ to: back, search: backSearch })}
@@ -42,14 +37,22 @@ export function Page({
           right={right}
         />
       )}
+      {/* The same padding as ScreenBody. In the Settings pane the page title is the first row of the column. */}
       <div
         className={cx(
-          'flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-3',
-          isDesktop ? 'px-6 pb-8' : 'px-4 pb-6',
-          isDesktop && !inPane && 'pt-5',
+          'flex min-h-0 flex-1 flex-col overflow-y-auto',
+          isDesktop ? 'px-6 pb-8 pt-5' : 'px-4 pb-6 pt-3',
         )}
       >
-        <div className={cx('flex flex-col gap-3', width)}>{children}</div>
+        <div className={cx('flex flex-col gap-3', width)}>
+          {desktop && (
+            <div className="flex min-h-9 items-center justify-between gap-3">
+              <h2 className="m-0 text-[18px] font-bold">{title}</h2>
+              {right}
+            </div>
+          )}
+          {children}
+        </div>
       </div>
       {footer && (
         <div className={cx('shrink-0 border-t border-line bg-surface py-3', isDesktop ? 'px-6' : 'px-4')}>
@@ -64,11 +67,14 @@ export function RowLink({
   to,
   name,
   meta,
+  warn,
   track,
 }: {
   to: string;
   name: string;
   meta: string;
+  /** The meta line needs the owner (a bank to sign in to again): the warn color, as on Accounts. */
+  warn?: boolean;
   track: string;
 }) {
   return (
@@ -79,7 +85,7 @@ export function RowLink({
     >
       <span className="flex flex-col gap-0.5">
         <span className="text-[15px] font-semibold">{name}</span>
-        <span className="text-[12px] text-muted">{meta}</span>
+        <span className={cx('text-[12px]', warn ? 'text-warn-fg' : 'text-muted')}>{meta}</span>
       </span>
       <Icon name="chevR" size={18} className="text-faint" />
     </Link>
