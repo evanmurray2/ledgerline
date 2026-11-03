@@ -1,6 +1,6 @@
 # Working out the budget on the phone
 
-Status: proposal v1.2, Nov 3, 2026. Not decided. v1 got an adversarial review (1 blocker, 8 major, 9 minor); v1.1 includes its fixes, listed in section 15. v1.2 adds the security design in section 13 (the copy encrypted with your passkey). Nothing here changes how money is counted: the same `computeBudget()` runs, in a different place, and section 9 shows how its inputs stay the same.
+Status: proposal v1.3, Nov 3, 2026. Not decided. v1 got an adversarial review (1 blocker, 8 major, 9 minor); v1.1 includes its fixes, listed in section 15. v1.2 added the security design in section 13; v1.3 includes the fixes from its security review (1 blocker, 7 major, 7 minor). Nothing here changes how money is counted: the same `computeBudget()` runs, in a different place, and section 9 shows how its inputs stay the same.
 
 ## 1. The question
 
@@ -78,8 +78,8 @@ Recommendation: build A. Decide on B after A has run for two weeks, with B's sha
 
 |                                                | How bad, and what limits it                                                                                                                                                                                                               |
 | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| More of your history is stored on the phone    | Today at most 24 hours of saved screens, unencrypted. With this, the budget's transactions stay for up to 7 days without a confirmed session, encrypted with a key only your passkey can produce (section 13).                            |
-| Face ID more often                             | The copy locks after 5 idle minutes; today's session lasts 24 hours without a prompt.                                                                                                                                                     |
+| More of your history is stored on the phone    | Today at most 24 hours of saved screens, unencrypted. With this, encrypted with your passkey and a per-device server share. Someone with your passkey who keeps the phone offline keeps the last snapshot (section 13.6).                 |
+| Face ID more often                             | The copy locks after 5 idle minutes or in the background, and locking ends the server session; today a session lasts 24 hours without a prompt.                                                                                           |
 | Phone and server can disagree for a moment     | The phone shows what it last synced; today's screens are also as old as the last load. It shows "Updated 2 min ago" when it's been a while.                                                                                               |
 | Two devices can show different numbers briefly | Each catches up on its next sync, and after a release, when it reloads. The shadow stage flags it.                                                                                                                                        |
 | The phone's clock and time zone (B)            | "Today" and the current month use the budget's time zone and the server's clock (section 9), never the phone's, so travel can't move money between months.                                                                                |
@@ -154,13 +154,13 @@ Transactions are sent **without the fields copied from other tables** (`payee` n
 
 ## 10. Server paths that need budget numbers (part B)
 
-| Path                                                                     | Today                                                                | In part B                                                                                                                                                                                                                                                   |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Archive a category, or remove one in use: its available goes back to RTA | reads `month_snapshot` via `monthResult()` (`categories.ts:200-215`) | The server works out that one category's available itself, from its own transactions and assignments (independent of other categories by the Money rules; a property test confirms it). It never uses an amount from the phone. Money moves exactly as now. |
-| "Is this category in use?"                                               | counts `budget_line` rows (`categories.ts:245`)                      | counts overlays and splits pointing at it                                                                                                                                                                                                                   |
-| Every mutation answer                                                    | `MutationResult.rta`, `rtaUpdating`                                  | both become optional in one contract change old and new clients accept; the phone computes RTA                                                                                                                                                              |
-| Owed: projected fronts                                                   | uses the server's RTA (`activity.ts:1066`)                           | the phone runs `projectedFronts()`                                                                                                                                                                                                                          |
-| `/api/badges`, Needs attention, Assign suggestions, Reports              | server views                                                         | phone                                                                                                                                                                                                                                                       |
+| Path                                                                     | Today                                                                | In part B                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Archive a category, or remove one in use: its available goes back to RTA | reads `month_snapshot` via `monthResult()` (`categories.ts:200-215`) | The phone sends the amount it computed and the `through` it computed at; the server refuses with "changed, try again" if any `change_log` row is newer than `through`. The server can't work out one category alone: card refunds pay other categories' unfunded purchases (D-12, `compute.ts:280-297`). Trusting the phone here adds nothing an attacker couldn't already do, since anything that can send this request can also call assign and move. Money moves exactly as now. |
+| "Is this category in use?"                                               | counts `budget_line` rows (`categories.ts:245`)                      | counts overlays and splits pointing at it                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Every mutation answer                                                    | `MutationResult.rta`, `rtaUpdating`                                  | both become optional in one contract change old and new clients accept; the phone computes RTA                                                                                                                                                                                                                                                                                                                                                                                      |
+| Owed: projected fronts                                                   | uses the server's RTA (`activity.ts:1066`)                           | the phone runs `projectedFronts()`                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `/api/badges`, Needs attention, Assign suggestions, Reports              | server views                                                         | phone                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 **The server keeps computing until the last stage.** `planLineRebuild`, the recompute job and month totals keep running through stages 1–4, so every stage can be turned back with a setting and the shadow comparison has something to compare with. They're removed only in stage 5.
 
@@ -190,7 +190,7 @@ Each stage ships on its own and, until stage 5, can be turned back with a settin
    - cold open (read IndexedDB, build the copy) to the first Budget screen under 1 second;
    - (for B) full compute of the 36-month set on the iPhone under 150 ms, also with Lockdown Mode if the owner uses it;
    - rows written for a 3,000-row backfill and a 200-row payee merge;
-   - WebAuthn PRF works in the Home Screen app on the owner's iPhone, and decrypting the full copy takes under 100 ms.
+   - the PRF checks in section 13.7, and decrypting the full copy takes under 100 ms.
 1. **Part A (4–5 days).** Activity, registers and search read the phone's copy. Budget, Accounts and Reports still come from the server.
 2. **Decide on B.** After two weeks of stage 1.
 3. **Shadow (2–3 days).** The phone computes in the background. Each Budget load compares the phone's Ready to Assign and every category's available with the server's, **only when the server isn't mid-recompute and both are at the same `through`**, and posts any difference.
@@ -201,50 +201,72 @@ Each stage ships on its own and, until stage 5, can be turned back with a settin
 
 ## 13. Data on the phone
 
-**The aim:** a copy on the phone is no easier to read than the server. The server is protected by your passkey, so the copy is encrypted with a key only your passkey can produce. Whatever unlocks the copy (your passkey, behind Face ID or the phone's passcode) already unlocks the server, so a stolen phone gives a thief nothing your passkey wouldn't.
+**The aim:** a copy on the phone is no easier to read than the server, as far as a web app allows. The copy is encrypted with a key from your passkey, combined with a share the server holds for each device, so reading it needs your passkey and, whenever the phone is online, the server's agreement. Section 13.6 lists what this can't do.
 
-| Threat                               | Server only, today                          | Plain copy on the phone                                                                          | Copy encrypted with your passkey (this design)          |
-| ------------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
-| Phone stolen while locked            | Needs your passkey (Face ID or passcode)    | Forensic tools may read website data once the phone has been unlocked since restart (unverified) | Unreadable without your passkey                         |
-| Phone taken while unlocked, app open | The session cookie works for up to 24 hours | Everything readable                                                                              | The app locks after 5 idle minutes and asks for Face ID |
-| Thief knows your passcode            | Can use your passkeys, so gets the server   | Same                                                                                             | Same: no worse than today                               |
-| Malicious script in the web app      | Can call the API while you're signed in     | Can also read the copy after sign-out                                                            | Can read only while unlocked, like the server           |
-| Phone backups (iCloud)               | Nothing on the phone                        | May include the copy (unverified)                                                                | Only ciphertext                                         |
-| Someone else using the same browser  | Separate sign-in                            | Needs a separate database                                                                        | Separate database, and their passkey can't unlock yours |
+### 13.1 Threats
 
-**Encryption with the passkey (WebAuthn PRF).**
+| Threat                                             | Server only, today                          | This design                                                                                                                                                      |
+| -------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phone stolen while locked                          | Needs your passkey (Face ID or passcode)    | Unreadable without your passkey                                                                                                                                  |
+| Phone taken while unlocked, app open               | The session cookie works for up to 24 hours | The app locks after 5 idle minutes or when it goes to the background, and ends the server session at the same time                                               |
+| Thief who watched you type the passcode            | Can use your passkeys, so gets the server   | Same. Stolen Device Protection helps only away from familiar places                                                                                              |
+| Thief with the passkey who keeps the phone offline | Gets nothing new from the server            | **Keeps the last snapshot.** Revoking the device stops it from getting the server's share again, but can't reach a phone that never connects (13.6)              |
+| Malicious script in the web app                    | Can call the API while you're signed in     | Can read everything while you're signed in or unlocked, and can keep a usable key for later. Locking doesn't help against a script that's already running (13.5) |
+| Phone backups (iCloud)                             | Nothing on the phone                        | Only ciphertext; anyone with your iCloud-synced passkey can already sign in                                                                                      |
+| App switcher snapshot                              | The last screen                             | The app covers its content when it goes to the background                                                                                                        |
+| Someone else using the same phone                  | Separate sign-in                            | Separate database, and their passkey can't unlock yours                                                                                                          |
+| Browser extensions (a laptop copy)                 | Same access as a malicious script           | Same; no laptop copy until that's accepted (section 14)                                                                                                          |
+| Jailbroken device                                  | Keychain and memory readable                | Same                                                                                                                                                             |
 
-- When you sign in or unlock, the passkey ceremony also asks for the PRF extension with a fixed salt kept on the device (the salt isn't secret). The passkey returns a secret that only that passkey can produce for that salt.
-- The phone derives a key-encryption key from it with HKDF in WebCrypto, as a non-extractable `CryptoKey` held only in memory.
-- That key unwraps a random 256-bit data key, stored wrapped next to the copy. Every row, the sync position and the outbox are stored AES-GCM encrypted under the data key. AES-GCM fails on a wrong key, so a forged passkey answer can't produce readable data.
-- Unlocking works offline: the WebAuthn ceremony runs on the device, and only the right passkey produces the right secret.
-- One Face ID does both jobs: the same ceremony signs you in to the server and unlocks the copy.
-- **Losing or replacing a passkey costs nothing.** The server is the master copy: a new passkey means a new data key and a fresh download. There are no recovery codes for the copy.
-- Decrypting a few MB at open takes milliseconds in WebCrypto; the copy is decrypted into the Web Worker's memory, as the design loads it there anyway. IndexedDB holds only ciphertext, so it has no plaintext indexes; searches run in memory.
+### 13.2 Keys
 
-**Locking.** After 5 idle minutes, or when the app has been in the background for 5 minutes, the keys and the decrypted copy are dropped from memory and the next open asks for Face ID. While locked the phone doesn't sync; it syncs right after unlocking.
+- **PRF:** each unlock runs a WebAuthn ceremony asking for the PRF extension with `userVerification: 'required'`, a per-device random salt, `allowCredentials` set to the credential that wrapped the key, and `evalByCredential`. The app checks the user-verified flag. Sign-in and unlock are one ceremony when online.
+- **Server share:** each device holding a copy has a row in a new `device` table (id, user, created, last seen, revoked) and a random 32-byte share the server keeps. After a successful sign-in the server returns the share only for a device that isn't revoked.
+- **Key-encryption key:** HKDF-SHA-256 over PRF output ‖ server share, with `info` = `ledgerline-copy-v1‖userId‖budgetId‖deviceId`. It is a non-extractable `CryptoKey` held in memory only.
+- **Data key:** random 256-bit, wrapped with AES-GCM under the key-encryption key with associated data `credentialId‖salt‖deviceId`, and unwrapped as non-extractable. One wrapped copy is kept per passkey: signing in with a second passkey while unlocked adds a wrapped copy for it. A different passkey at a locked unlock is refused with "use the passkey you set this phone up with", never a wipe.
+- **Offline unlock:** the server share is cached on the device, wrapped under a PRF-only key, with the last `serverTime`. Offline unlock is allowed for 7 days from that time and refused if the phone's clock is earlier than it. A tampered app can ignore this limit (13.6).
+- **The PRF output never leaves the phone:** `clientExtensionResults.prf` is removed before the sign-in answer is posted to `/api/auth/login/verify`.
 
-**Wiping.** The copy, its wrapped key and the salt are deleted on sign-out, on any "signed out" answer from the server, after 7 days with no confirmed session, and when "Sign out other devices" reaches the device (it wipes when it next connects). Settings → Security lists the devices that hold a copy. Safari and the Home Screen app keep separate storage, so each holds its own copy and is wiped on its own.
+### 13.3 Rows
 
-**One database per user and budget**, so another person signing in on the same device starts empty.
+- Every value is encrypted with AES-GCM under the data key with a fresh random 96-bit IV from `getRandomValues` (never a counter), and associated data `deviceId‖entity‖id‖seq‖format`, so rows can't be swapped between ids or entities.
+- An encrypted manifest holds the epoch, `through`, and a hash over every `(entity, id, seq)`. It's checked on load; if it doesn't match, the copy is dropped and downloaded again. This stops an old row being replayed under a newer sync position.
+- Decrypted rows live in the Web Worker's memory. That makes scrolling smoother; it isn't a security boundary, since the page asks the Worker for rows.
 
-**Without PRF** (older iOS, or a browser without it), the app keeps the copy in memory only for that visit and saves nothing, so offline opening isn't available there. Today's 24-hour saved screens go with stage 5.
+### 13.4 Lock and wipe
 
-**Keeping a malicious script from sending data out.** The Content Security Policy already allows connections only to the app's own server and Plaid Link. Keep it that strict, with no inline scripts, and add a test that fails if `connect-src`, `img-src` or `script-src` gets looser.
+- **Lock:** after 5 idle minutes, or 5 minutes after the app goes to the background, the keys, the decrypted copy, React Query's cache and the screens are dropped, and the server session is ended. iOS suspends timers in a backgrounded app, so the app records the time on `visibilitychange: hidden`, covers its content at once, and on return checks the elapsed time before drawing anything. While locked it doesn't sync. Unlocking online is a fresh sign-in.
+- **Separate answers from the server:** `session_expired` asks for your passkey and keeps everything. `revoked` (the device row is revoked) and `not_member` wipe. Today a single `unauthenticated` answer covers all three (`api.ts`) and the app clears its data on it; plain 401s never wipe in this design.
+- **Wipe:** the database, wrapped keys, cached share, salt, the old saved-screens store (`ledgerline-saved-data`) and the query cache. The Worker closes its database connection on `versionchange` so `deleteDatabase` isn't blocked, and the app confirms the delete finished. Before a wipe the outbox is sent if the phone is online; edits that can't be sent are lost and the app says so.
+- **Triggers:** sign-out; `revoked` or `not_member`; the 7-day offline limit.
+- **Revoking a device:** Settings → Security lists devices from the `device` table, each with Revoke. Revoking marks the row and deletes its share and sessions. "Sign out other devices" also revokes every other device. This replaces today's button, which only deletes sessions and is hidden unless another unexpired session exists (`security.ts:16`); a phone that has been offline a day can then be revoked too.
+- **Copy only in the Home Screen app:** Safari in a browser tab keeps data in memory only, so there's never a forgotten Safari copy.
+- **Saved screens:** the plaintext `localStorage` persister (`state/saved.ts`) is turned off in stage 1; it is not kept until stage 5.
 
-**The server never trusts numbers the phone works out.** Archiving a category is the only place the phone sends a computed amount (section 10). By the Money rules (1–3, 6, 11), a non-payment category's available depends only on its own transactions and assignments, so the server can work out that one category itself, reading only its lines. A property test confirms that independence; the server then ignores the phone's amount and uses its own.
+### 13.5 Scripts in the page
 
-**On your phone:** turn on Stolen Device Protection (Settings → Face ID & Passcode). Away from familiar places it asks for Face ID, not just the passcode, before passwords and passkeys can be used, which protects the server and the copy alike.
+- The Content Security Policy makes injecting a script harder. It does **not** stop a running script from sending data out: page navigation and `window.open` aren't covered by CSP, and WebRTC may not be in Safari.
+- Narrow `connect-src` from `https://*.plaid.com` to the exact hosts Plaid Link needs from the top page (or `'self'` if Link's iframe does the talking), and add `worker-src 'self'` (today it falls back to `script-src`, which allows `cdn.plaid.com`). The CSP test covers `connect-src`, `script-src`, `worker-src`, `frame-src`, `form-action`, `img-src` and `style-src`, and fails if any loosens.
+- Plaid Link's script stays in the page after linking, so the app reloads after Link closes.
+- The real defence is keeping foreign scripts out: no inline scripts, pinned dependencies, the existing supply-chain checks.
 
-**Before stage 1 ships:**
+### 13.6 What this can't do
 
-- Stage 0 confirms PRF works in the Home Screen app on the owner's iPhone (iOS 18 or later, passkey in iCloud Keychain). If it doesn't, part A waits.
-- `docs/threat-model.md` replaces its "Saved data on the phone" row with the table above, and a decision record notes the change.
+- Someone who has your passkey and keeps the phone offline can read the snapshot already on it, for as long as they like, by ignoring the app's own limits. Revocation works only on a device that connects again. This is the main difference from keeping everything on the server.
+- A script running while you're signed in or unlocked reads what you can read, and can keep a usable key for later runs.
+- The iOS keyboard may learn payee names typed in search, as with any text field.
+
+**On your phone:** turn on Stolen Device Protection (Settings → Face ID & Passcode).
+
+### 13.7 Before stage 1 ships
+
+- Stage 0 tests on your iPhone: PRF in the Home Screen app; PRF with your existing passkey (it may have been created before iOS 18); offline unlock; and the iOS version floor. If PRF doesn't work in the Home Screen app, part A waits.
+- `docs/threat-model.md` takes the table in 13.1, and a decision record notes the change.
 
 ## 14. Open questions for the owner
 
 1. Build part A? (Recommended.)
-2. The copy is encrypted with your passkey and locks after 5 idle minutes, so opening the app after that asks for Face ID. Is 5 minutes right?
+2. The copy locks after 5 idle minutes or in the background, and asks for Face ID to open again. Is 5 minutes right? And do you accept that someone with your passkey who keeps the phone offline keeps the last snapshot (section 13.6)?
 3. Offline edits: wanted, or is offline viewing enough?
 4. Any device besides the iPhone that should keep a copy, such as a laptop browser?
 
@@ -267,3 +289,17 @@ v1 got an adversarial review the same day. Every finding was checked against the
 | —     | A simpler option was missing: transactions on the phone, budget still on the server                                                                        | Minor    | Now part A, recommended first (section 4)                                                                                                       |
 
 v1.2 (Nov 3, 2026): section 13 rewritten. The copy on the phone is encrypted with a key from your passkey (WebAuthn PRF), locks after 5 idle minutes, and is kept only where PRF works. The server works out an archived category's available itself instead of taking the phone's amount. Not yet reviewed.
+
+v1.2 got a security review the same day. Findings were checked against the code; all are fixed in v1.3.
+
+| #     | Finding                                                                                                                                                                          | Severity | Resolution                                                                                                     |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------- |
+| B1    | The claim that a category's available depends only on its own rows was false: card refunds pay other categories' unfunded purchases (D-12), and refunds depend on card-wide debt | Blocker  | Claim removed; archive back to the v1.1 design (section 10), with why trusting the phone's amount adds no risk |
+| M1    | Revoking never reached the copy; "Sign out other devices" only deletes sessions and is hidden for offline devices                                                                | Major    | `device` table, server key share, revoke, honest limits (13.2, 13.4, 13.6)                                     |
+| M2    | Wiping on any 401 would wipe at the 24-hour session limit and lose offline edits                                                                                                 | Major    | Separate `session_expired`, `revoked`, `not_member`; outbox sent before a wipe (13.4)                          |
+| M3    | Several passkeys and cross-device sign-in don't fit one wrapped key                                                                                                              | Major    | Credential id stored, `allowCredentials`, one wrapped key per passkey, refuse rather than wipe (13.2)          |
+| M4    | Plaintext saved screens would stay through stages 1–4                                                                                                                            | Major    | Persister off in stage 1; cache cleared on lock (13.4)                                                         |
+| M5    | The CSP doesn't stop a script sending data out; it allows every Plaid host                                                                                                       | Major    | Said plainly; narrower `connect-src`, `worker-src`, wider test (13.5)                                          |
+| M6    | "Readable only while unlocked" was wrong both ways                                                                                                                               | Major    | Lock ends the server session; reload after Plaid Link; reworded (13.1, 13.4, 13.5)                             |
+| M7    | Rows weren't bound to their ids, so they could be swapped or replayed                                                                                                            | Major    | Associated data, random IVs, encrypted manifest (13.3)                                                         |
+| m1–m7 | Background timers; blocked deletes; Safari copies; uncertain PRF facts; PRF output in the sign-in post; threat table gaps; clock rollback                                        | Minor    | 13.1, 13.2, 13.4, 13.7                                                                                         |
