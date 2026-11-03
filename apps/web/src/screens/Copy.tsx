@@ -1,17 +1,10 @@
-// The copy's own screens (D-45, src/copy/copy.ts): getting it ready, locked (Face ID to open), opening with no
-// signal, and what went wrong.
+// The copy's own screens (D-45, src/copy/copy.ts): getting it ready, opening it with no signal (Face ID), and what
+// went wrong. Online, the Sign in screen opens it.
 import { useState } from 'react';
 import type { Session } from '@ledgerline/contracts';
 import { Frame, Problem } from '../components/Frame';
-import { PrimaryButton, SecondaryButton } from '../components/ui';
-import {
-  type CopyState,
-  type FullWhy,
-  signOutHere,
-  start,
-  unlockOnline,
-  unlockWithoutSignal,
-} from '../copy/copy';
+import { PrimaryButton } from '../components/ui';
+import { type CopyState, type FullWhy, openWithoutSignal, start } from '../copy/copy';
 
 /** Why the whole budget is downloading instead of only what changed (also sent to the server's logs). */
 const WHY: Record<FullWhy, string> = {
@@ -76,29 +69,17 @@ export function CopyScreen({
         )}
       </Frame>
     );
-  const offline = !session;
+  // No signal: the saved copy opens with Face ID alone (online, Sign in opens it).
   return (
-    <Frame title="Ledgerline is locked">
+    <Frame title="No signal">
       <p className="m-0 text-[15px] leading-relaxed text-ink-2">
-        {offline
-          ? 'No signal. Your budget is saved on this phone, encrypted: unlock it with Face ID to look and make small changes. They’re sent when you’re back online.'
-          : 'Your budget is saved on this phone, encrypted. Unlock it with Face ID.'}
+        Your budget is saved on this phone, encrypted. Open it with Face ID to look and make small changes.
+        They’re sent when you’re back online.
       </p>
       <Problem text={err} />
-      <PrimaryButton
-        disabled={busy}
-        onClick={() => go(() => (offline ? unlockWithoutSignal(onOffline) : unlockOnline(session)))}
-      >
-        {busy ? 'Waiting for Face ID…' : 'Unlock'}
+      <PrimaryButton disabled={busy} onClick={() => go(() => openWithoutSignal(onOffline))}>
+        {busy ? 'Waiting for Face ID…' : 'Open with Face ID'}
       </PrimaryButton>
-      {!offline && (
-        <SecondaryButton
-          disabled={busy}
-          onClick={() => go(() => signOutHere().then(() => window.location.assign('/')))}
-        >
-          Sign out and delete it from this phone
-        </SecondaryButton>
-      )}
     </Frame>
   );
 }

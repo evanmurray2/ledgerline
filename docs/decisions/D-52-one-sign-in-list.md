@@ -1,5 +1,7 @@
 # D-52: No "Phones with a copy" list: signing a device out deletes its saved budget (Nov 3, 2026)
 
+**Now** (D-57): there is no lock screen and no locked row. Settings → Sign-in lists live sign-ins only; "Sign out other devices" still turns off the copies on signed-out devices.
+
 **Decided by the owner.** Settings → Sign-in had a second list, "Phones with a copy", with its own Turn off button (D-45). The owner didn't want it: one list of where you're signed in, and signing a device out also removes the budget saved on it.
 
 1. **One list.** Settings → Sign-in lists each sign-in and each locked phone with a saved copy (locking ends the sign-in, but the copy still opens with Face ID, so it's still signed in in the sense that matters). A phone that's open now is one entry: its copy remembers the sign-in it last opened with (`device.session_id`, directory migration 0007). Rows say "budget saved on it" and "Locked · last opened …".

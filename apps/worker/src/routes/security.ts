@@ -10,7 +10,7 @@ export const securityRoutes = new Hono<AppEnv>();
 
 /** The id Settings shows for a sign-in: a hash of the stored hash, so the stored id (the cookie's hash) never leaves. */
 const signInId = async (sessionId: string) => (await tokenHash(`sign-in:${sessionId}`)).slice(0, 24);
-/** The id Settings shows for a locked phone with a saved copy (it has no sign-in right now). */
+/** The id of a signed-out device that still has a saved copy (it has no sign-in right now). */
 const copyId = async (deviceId: string) => (await tokenHash(`copy:${deviceId}`)).slice(0, 24);
 
 type DB = AppEnv['Bindings']['DB'];
@@ -32,15 +32,15 @@ interface Entry {
   name: string;
   signedInAt: number;
   current: boolean;
-  /** Its server session, when it has one (a locked phone doesn't). */
+  /** Its server session, when it has one (a signed-out device with a saved copy doesn't). */
   sessionId: string | null;
   /** The saved copies on it (decisions.md D-45): signing it out turns them off, so the phone deletes them. */
   deviceIds: string[];
 }
 
 /**
- * Where you're signed in: every sign-in, and every phone with a saved copy, which is a sign-in too: it opens with
- * Face ID. A phone that's open now is one entry (its copy last opened with that sign-in, `device.session_id`).
+ * Every sign-in, and every signed-out device that still has a saved copy (it counts for "Sign out other devices").
+ * A device that's open now is one entry (its copy last opened with that sign-in, `device.session_id`).
  */
 async function entries(db: DB, userId: string, sessionId: string, now: number): Promise<Entry[]> {
   const sessions = await signIns(db, userId, now);
@@ -113,21 +113,23 @@ securityRoutes.get('/settings/security', async (c) => {
     })),
     sessions: list.filter((x) => x.sessionId).length,
     otherSessions: list.filter((x) => !x.current).length,
-    signIns: list.map((x) => ({
-      id: x.id,
-      name: x.name,
-      signedInAt: new Date(x.signedInAt).toISOString(),
-      current: x.current,
-      saved: x.deviceIds.length > 0,
-      locked: x.sessionId === null,
-    })),
+    // Only live sign-ins are listed; a signed-out device's saved copy goes with "Sign out other devices".
+    signIns: list
+      .filter((x) => x.sessionId)
+      .map((x) => ({
+        id: x.id,
+        name: x.name,
+        signedInAt: new Date(x.signedInAt).toISOString(),
+        current: x.current,
+        saved: x.deviceIds.length > 0,
+      })),
   });
 });
 
 // ---- A phone's saved copy (docs/phone-budget.md 13.2, decisions.md D-45). Its key needs the user's passkey and
 // this server-held share, so signing the phone out (which forgets the share) stops it opening its copy: it deletes
-// the copy the next time it connects. These routes need a passkey check within 15 minutes (every unlock is a fresh
-// sign-in).
+// the copy the next time it connects. These routes need a passkey check within 15 minutes (opening the copy online
+// is always a fresh sign-in).
 
 const b64url = (b: Uint8Array) =>
   btoa(String.fromCharCode(...b))
@@ -241,7 +243,7 @@ securityRoutes.post('/settings/security/sign-out-session', async (c) => {
 });
 
 /**
- * Ends this sign-in. Locking the app ends it too and keeps the phone's saved copy. Sign out of this device sends
+ * Ends this sign-in. 10 idle minutes end it too and keep the device's saved copy. Sign out of this device sends
  * `forget` (and the phone's copies, `devices`) after the phone has deleted them, so the server forgets their shares
  * as well.
  */
