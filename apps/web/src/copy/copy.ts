@@ -34,7 +34,6 @@ export type CopyStatus =
   | 'off' // the mock API (development and tests)
   | 'idle' // nobody signed in yet
   | 'locked' // a saved copy waits for Face ID
-  | 'setup' // the Home Screen app offers to keep an encrypted copy (one Face ID)
   | 'opening'
   | 'ready'
   | 'failed';
@@ -179,12 +178,6 @@ export async function start(session: Session): Promise<void> {
       } else rec = null;
     }
     if (!rec) {
-      // The Home Screen app keeps a copy when the passkey can: ask once with Face ID, unless it said it can't.
-      if (isStandalone() && !p?.prf && !noPrf() && !declined) {
-        set({ status: 'setup' });
-        return;
-      }
-      if (isStandalone() && p && !p.prf) markNoPrf();
       if (isStandalone() && p?.prf) {
         const dev = await server<{ id: string; share: string }>('POST', '/api/settings/security/devices', {
           name: deviceName(),
@@ -222,40 +215,6 @@ export async function start(session: Session): Promise<void> {
     host = null;
     set({ status: 'failed', error: e instanceof Error ? e.message : String(e) });
   }
-}
-
-const NO_PRF_KEY = 'ledgerline-no-prf';
-/** This device's passkey gave no PRF output once: don't ask to keep a copy again (memory only). */
-function noPrf(): boolean {
-  try {
-    return window.localStorage.getItem(NO_PRF_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-function markNoPrf(): void {
-  try {
-    window.localStorage.setItem(NO_PRF_KEY, '1');
-  } catch {
-    // Storage blocked: it asks again next time.
-  }
-  window.dispatchEvent(new Event('ledgerline:no-prf'));
-}
-/** "Not now" on the setup screen: memory only for this visit. */
-let declined = false;
-
-/** "Keep it on this iPhone": Face ID, then the copy is set up and saved. */
-export async function setUpCopy(session: Session): Promise<void> {
-  await signIn();
-  set({ status: 'idle' });
-  await start(session);
-}
-
-/** "Not now": keep the copy in memory for this visit only. */
-export async function skipCopy(session: Session): Promise<void> {
-  declined = true;
-  set({ status: 'idle' });
-  await start(session);
 }
 
 /** The Unlock button: a fresh sign-in with Face ID that also unlocks the saved copy. */
@@ -529,7 +488,11 @@ function watch(): void {
     () => {
       if (state.status !== 'ready') return;
       if (Date.now() - lastActive >= LOCK_MS) void lock();
-      else if (document.visibilityState === 'visible' && !state.offline && Date.now() - lastSync >= SYNC_EVERY_MS)
+      else if (
+        document.visibilityState === 'visible' &&
+        !state.offline &&
+        Date.now() - lastSync >= SYNC_EVERY_MS
+      )
         void syncNow().catch(() => undefined);
     },
     Math.min(SYNC_EVERY_MS, 30_000),
