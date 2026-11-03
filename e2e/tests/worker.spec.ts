@@ -335,6 +335,8 @@ test('Usage: leaving Settings records no visit to Appearance', async ({ page }) 
   await page.goto('/accounts');
   await page.getByRole('link', { name: 'Settings' }).first().click();
   await expect(page).toHaveURL(/\/settings/);
+  // Settings is loaded when first opened: until its code arrives the screen isn't shown, so it records no view.
+  await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
   await page.getByRole('link', { name: 'Budget' }).first().click();
   await expect(page).toHaveURL(/\/budget/);
   const sent = page.waitForRequest((r) => r.url().endsWith('/api/usage') && r.method() === 'POST');
