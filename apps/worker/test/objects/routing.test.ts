@@ -110,6 +110,25 @@ describe('routing', () => {
     expect((sec.json.passkeys as { id: string }[]).map((p) => p.id)).toEqual([ownerKey.id]);
   });
 
+  it('a phone gets its key share until it is revoked (D-44)', async () => {
+    const d = await owner.call('POST', '/api/settings/security/devices', { name: 'iPhone' });
+    expect(d.status).toBe(200);
+    const { id, share } = d.json as { id: string; share: string };
+    expect(share).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    const again = await owner.call('POST', `/api/settings/security/devices/${id}/share`);
+    expect(again.json).toEqual({ id, share });
+    const list = await owner.call('GET', '/api/settings/security');
+    expect((list.json as { devices: unknown[] }).devices).toEqual([
+      expect.objectContaining({ id, name: 'iPhone', revoked: false }),
+    ]);
+    // Another user can't read it.
+    expect((await other.call('POST', `/api/settings/security/devices/${id}/share`)).status).not.toBe(200);
+    expect((await owner.call('POST', `/api/settings/security/devices/${id}/revoke`)).status).toBe(200);
+    const gone = await owner.call('POST', `/api/settings/security/devices/${id}/share`);
+    expect(gone.status).toBe(410);
+    expect(gone.json).toMatchObject({ error: 'revoked' });
+  });
+
   it('rests at 95% of a daily limit: only sign-in and the session answer', async () => {
     const setWorkerRequests = (n: number) =>
       runInDurableObject(directory(), async (o, st) => {

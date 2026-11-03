@@ -692,10 +692,25 @@ export const SecurityView = z.object({
   ),
   /** Signed-in sessions on all devices. */
   sessions: z.number().int(),
+  /** Phones holding an encrypted copy of the budget (D-44). */
+  devices: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        createdAt: z.string(),
+        lastSeenAt: z.string().nullable(),
+        revoked: z.boolean(),
+      }),
+    )
+    .default([]),
 });
 export type SecurityView = z.infer<typeof SecurityView>;
 
 export const DeviceLink = z.object({ url: z.string(), expiresAt: z.string() });
+/** A phone's share of its copy's key (docs/phone-budget.md 13.2); never stored by the app outside its copy. */
+export const DeviceShare = z.object({ id: z.string(), share: z.string() });
+export type DeviceShare = z.infer<typeof DeviceShare>;
 export type DeviceLink = z.infer<typeof DeviceLink>;
 
 export type ImportResult = z.infer<typeof ImportResult>;
