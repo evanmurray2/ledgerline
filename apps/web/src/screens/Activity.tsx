@@ -9,17 +9,19 @@ import { api, type ActivityFilter } from '../api/endpoints';
 import { adjustAttention, qk, useActivity, useMoneyMutation } from '../api/hooks';
 import { toast } from '../components/Toast';
 import {
-  Button,
   Chip,
   CountBadge,
-  cx,
-  DESKTOP_WIDTH,
   DesktopHeader,
+  EmptyNote,
   HeaderAction,
   ErrorNote,
-  Icon,
   Loading,
+  PhoneHeader,
+  PrimaryButton,
+  ScreenBody,
+  SearchField,
   SoftButton,
+  softButtonClass,
   useIsDesktop,
   useShortcuts,
 } from '../components/ui';
@@ -28,7 +30,6 @@ import { useScreen } from '../lib/common';
 import { useCanWrite } from '../state/connectivity';
 import { usage } from '../usage/tracker';
 import { useQueryClient } from '@tanstack/react-query';
-
 import { sheetPath, Section, TxnRow, type NeedsRow, type Picking } from './ActivityRows';
 import { ActivityCategoryPicker, NeedsCategory } from './ActivityNeeds';
 
@@ -213,20 +214,15 @@ export function ActivityScreen() {
     />
   );
   const searchBox = (
-    <label key="search" className="flex min-h-11 items-center gap-2 rounded-xl bg-sunken px-3 text-muted">
-      <Icon name="search" size={18} />
-      <span className="sr-only">Search transactions</span>
-      <input
-        ref={searchRef}
-        type="search"
-        value={qInput}
-        onChange={(e) => setQInput(e.target.value)}
-        onKeyDown={(e) => e.key === 'Escape' && qInput && (e.stopPropagation(), setQInput(''))}
-        placeholder={desktop ? 'Search payee or amount  ( / )' : 'Search payee or amount'}
-        aria-keyshortcuts={desktop ? '/' : undefined}
-        className="min-h-10 flex-1 border-none bg-transparent text-[16px] text-ink outline-none placeholder:text-faint"
-      />
-    </label>
+    <SearchField
+      key="search"
+      ref={searchRef}
+      value={qInput}
+      onChange={setQInput}
+      label="Search transactions"
+      placeholder={desktop ? 'Search payee or amount  ( / )' : 'Search payee or amount'}
+      shortcut={desktop ? '/' : undefined}
+    />
   );
   const chips = (showAttentionChip || showPendingChip) && (
     <div key="chips" role="group" aria-label="Filter" className="chip-row">
@@ -259,155 +255,143 @@ export function ActivityScreen() {
       {desktop ? (
         <DesktopHeader title="Activity" right={addButton} below={[searchBox, chips]} />
       ) : (
-        <header className="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 pb-2.5 pt-3">
-          <div className="flex items-center justify-between gap-3">
-            <h1 className="m-0 text-[22px] font-bold">Activity</h1>
-            {addButton}
-          </div>
-          {searchBox}
-          {chips}
-        </header>
+        <PhoneHeader title="Activity" right={addButton} below={[searchBox, chips]} />
       )}
-      <div
-        className={cx(
-          'flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto pt-3',
-          desktop ? 'px-6 pb-8' : 'px-4 pb-6',
+      <ScreenBody>
+        {!v && (query.error ? <ErrorNote error={query.error} /> : <Loading />)}
+        {empty && <EmptyNote>No transactions match.</EmptyNote>}
+        {v && showAttnHead && (
+          // The count is already on the filter chip above.
+          <h2 className="m-0 px-0.5 text-[15px] font-bold">Needs attention</h2>
         )}
-      >
-        <div className={cx('flex flex-col gap-3.5', desktop && DESKTOP_WIDTH)}>
-          {!v && (query.error ? <ErrorNote error={query.error} /> : <Loading />)}
-          {empty && <p className="m-0 p-4 text-center text-[14px] text-muted">No transactions match.</p>}
-          {v && showAttnHead && (
-            // The count is already on the filter chip above.
-            <h2 className="m-0 px-0.5 text-[15px] font-bold">Needs attention</h2>
-          )}
-          {v && filter === 'attention' && !q && v.attentionCount === 0 && openNeeds.length === 0 && (
-            <p className="m-0 rounded-[14px] bg-funded-bg p-4 text-center text-[15px] font-semibold text-funded-fg">
-              Nothing needs attention.
-            </p>
-          )}
-          {v && v.moneyToMatch.length > 0 && (
-            <Section title="Money to match">
-              {v.moneyToMatch.map((r) => (
-                <TxnRow
-                  key={r.key}
-                  r={r}
-                  base="/activity"
-                  action={
+        {v && filter === 'attention' && !q && v.attentionCount === 0 && openNeeds.length === 0 && (
+          <p className="m-0 rounded-[14px] bg-funded-bg p-4 text-center text-[15px] font-semibold text-funded-fg">
+            Nothing needs attention.
+          </p>
+        )}
+        {v && v.moneyToMatch.length > 0 && (
+          <Section title="Money to match">
+            {v.moneyToMatch.map((r) => (
+              <TxnRow
+                key={r.key}
+                r={r}
+                base="/activity"
+                action={
+                  <Link
+                    to={sheetPath('/activity', r)}
+                    data-track="activity.match"
+                    aria-label={`Match ${r.payee}`}
+                    className={softButtonClass()}
+                  >
+                    Match
+                  </Link>
+                }
+              />
+            ))}
+          </Section>
+        )}
+        {v && v.transfersToSort.length > 0 && (
+          <Section title="Transfers to sort out">
+            {v.transfersToSort.map((r) => (
+              <TxnRow
+                key={r.key}
+                r={r}
+                base="/activity"
+                action={
+                  <Link
+                    to={sheetPath('/activity', r)}
+                    data-track="activity.transfer.pick"
+                    aria-label={`Pick ${r.payee}`}
+                    className={softButtonClass()}
+                  >
+                    Pick
+                  </Link>
+                }
+              />
+            ))}
+          </Section>
+        )}
+        {v && showNeeds && (
+          <NeedsCategory
+            needs={needs}
+            openNeeds={openNeeds}
+            q={q}
+            chosen={chosen}
+            selecting={selecting}
+            setSelecting={setSelecting}
+            sel={sel}
+            setSel={setSel}
+            openPicker={openPicker}
+          />
+        )}
+        {v && v.checkThese.length > 0 && (
+          <Section title="Check these">
+            {v.checkThese.map((r) => (
+              <TxnRow
+                key={r.key}
+                r={r}
+                base="/activity"
+                action={
+                  r.action === 'dismiss' ? (
+                    <SoftButton
+                      mutates
+                      track="activity.check.ok"
+                      aria-label={`OK ${r.payee}`}
+                      onClick={() => void dismiss(r)}
+                    >
+                      OK
+                    </SoftButton>
+                  ) : (
                     <Link
                       to={sheetPath('/activity', r)}
-                      data-track="activity.match"
-                      aria-label={`Match ${r.payee}`}
-                      className="hit flex h-9 shrink-0 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline"
+                      data-track="activity.check.review"
+                      aria-label={`Review ${r.payee}`}
+                      className={softButtonClass()}
                     >
-                      Match
+                      Review
                     </Link>
-                  }
-                />
-              ))}
-            </Section>
-          )}
-          {v && v.transfersToSort.length > 0 && (
-            <Section title="Transfers to sort out">
-              {v.transfersToSort.map((r) => (
-                <TxnRow
-                  key={r.key}
-                  r={r}
-                  base="/activity"
-                  action={
-                    <Link
-                      to={sheetPath('/activity', r)}
-                      data-track="activity.transfer.pick"
-                      aria-label={`Pick ${r.payee}`}
-                      className="hit flex h-9 shrink-0 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline"
-                    >
-                      Pick
-                    </Link>
-                  }
-                />
-              ))}
-            </Section>
-          )}
-          {v && showNeeds && (
-            <NeedsCategory
-              needs={needs}
-              openNeeds={openNeeds}
-              q={q}
-              chosen={chosen}
-              selecting={selecting}
-              setSelecting={setSelecting}
-              sel={sel}
-              setSel={setSel}
-              openPicker={openPicker}
-            />
-          )}
-          {v && v.checkThese.length > 0 && (
-            <Section title="Check these">
-              {v.checkThese.map((r) => (
-                <TxnRow
-                  key={r.key}
-                  r={r}
-                  base="/activity"
-                  action={
-                    r.action === 'dismiss' ? (
-                      <SoftButton
-                        mutates
-                        track="activity.check.ok"
-                        aria-label={`OK ${r.payee}`}
-                        onClick={() => void dismiss(r)}
-                      >
-                        OK
-                      </SoftButton>
-                    ) : (
-                      <Link
-                        to={sheetPath('/activity', r)}
-                        data-track="activity.check.review"
-                        aria-label={`Review ${r.payee}`}
-                        className="hit flex h-9 shrink-0 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline"
-                      >
-                        Review
-                      </Link>
-                    )
-                  }
-                />
-              ))}
-            </Section>
-          )}
-          {v && v.pending.length > 0 && (
-            <Section title="Pending" note={`counts now · ${formatCents(v.pendingTotal)}`}>
-              {v.pending.map((r) => (
-                <TxnRow key={r.key} r={r} base="/activity" />
-              ))}
-            </Section>
-          )}
-          {v && v.upcoming.length > 0 && (
-            <Section title="Upcoming" note="counts on its date">
-              {v.upcoming.map((r) => (
-                <TxnRow key={r.key} r={r} base="/activity" />
-              ))}
-            </Section>
-          )}
-          {v && v.posted.length > 0 && (
-            <Section title="Posted" note="newest first">
-              {v.posted.map((r) => (
-                <TxnRow key={r.key} r={r} base="/activity" style="posted" />
-              ))}
-            </Section>
-          )}
-        </div>
-      </div>
+                  )
+                }
+              />
+            ))}
+          </Section>
+        )}
+        {v && v.pending.length > 0 && (
+          <Section title="Pending" note={`counts now · ${formatCents(v.pendingTotal)}`}>
+            {v.pending.map((r) => (
+              <TxnRow key={r.key} r={r} base="/activity" />
+            ))}
+          </Section>
+        )}
+        {v && v.upcoming.length > 0 && (
+          <Section title="Upcoming" note="counts on its date">
+            {v.upcoming.map((r) => (
+              <TxnRow key={r.key} r={r} base="/activity" />
+            ))}
+          </Section>
+        )}
+        {v && v.posted.length > 0 && (
+          <Section title="Posted" note="newest first">
+            {v.posted.map((r) => (
+              <TxnRow key={r.key} r={r} base="/activity" style="posted" />
+            ))}
+          </Section>
+        )}
+      </ScreenBody>
       {selecting && (
         <div className="flex shrink-0 items-center gap-2.5 border-t border-line bg-surface px-4 py-2.5">
           <span className="flex-1 text-[14px] font-semibold">{selKeys.length} selected</span>
-          <Button
-            mutates="offline"
-            track="activity.select.choose"
-            disabled={selKeys.length === 0 || !canWrite}
-            onClick={() => openPicker({ keys: selKeys, row: null })}
-            className="h-11 rounded-xl bg-accent px-[18px] text-[15px] font-bold text-on-accent disabled:bg-disabled disabled:text-on-accent"
-          >
-            Choose category
-          </Button>
+          {/* The button keeps its own width next to the count. */}
+          <div className="shrink-0">
+            <PrimaryButton
+              mutates="offline"
+              track="activity.select.choose"
+              disabled={selKeys.length === 0 || !canWrite}
+              onClick={() => openPicker({ keys: selKeys, row: null })}
+            >
+              Choose category
+            </PrimaryButton>
+          </div>
         </div>
       )}
       {picking && v && (

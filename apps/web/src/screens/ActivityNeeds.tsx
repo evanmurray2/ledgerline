@@ -3,7 +3,7 @@
 import { Link } from '@tanstack/react-router';
 import type { ActivityView } from '@ledgerline/contracts';
 import { CategoryPickerSheet } from '../components/CategoryPicker';
-import { Button, cx } from '../components/ui';
+import { cx, Money, SectionTitle, SoftButton, TextButton } from '../components/ui';
 import { formatCents } from '../lib/money';
 import { rowMeta } from '../lib/common';
 import { useCanWrite } from '../state/connectivity';
@@ -30,32 +30,34 @@ export function NeedsCategory({
   setSel: (f: Record<string, boolean> | ((s: Record<string, boolean>) => Record<string, boolean>)) => void;
   openPicker: (p: Picking) => void;
 }) {
+  const note =
+    openNeeds.length === 0
+      ? 'done'
+      : `${openNeeds.length} · ${formatCents(openNeeds.reduce((s, r) => s + r.amount, 0))}`;
   return (
     <section className="flex shrink-0 flex-col gap-1.5">
-      <div className="flex min-h-9 items-center justify-between px-0.5">
-        <h2 className="m-0 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
-          Needs category{' '}
-          <span className="font-semibold normal-case tracking-normal text-muted">
-            ·{' '}
-            {openNeeds.length === 0
-              ? 'done'
-              : `${openNeeds.length} · ${formatCents(openNeeds.reduce((s, r) => s + r.amount, 0))}`}
-          </span>
-        </h2>
-        {openNeeds.length > 1 && (
-          <button
-            type="button"
-            data-track="activity.select"
-            onClick={() => {
-              setSelecting((x) => !x);
-              setSel({});
-            }}
-            className="hit h-9 px-2.5 text-[14px] font-bold text-accent"
-          >
-            {selecting ? 'Cancel' : 'Select'}
-          </button>
-        )}
-      </div>
+      <SectionTitle
+        note={openNeeds.length > 1 ? undefined : note}
+        action={
+          openNeeds.length > 1 && (
+            // SectionTitle spreads a note and an action apart; here the total sits next to Select.
+            <span className="flex items-center gap-3">
+              <span className="text-[12px] text-muted">{note}</span>
+              <TextButton
+                track="activity.select"
+                onClick={() => {
+                  setSelecting((x) => !x);
+                  setSel({});
+                }}
+              >
+                {selecting ? 'Cancel' : 'Select'}
+              </TextButton>
+            </span>
+          )
+        }
+      >
+        Needs category
+      </SectionTitle>
       <div className="overflow-hidden rounded-[14px] border border-line bg-surface">
         {openNeeds.length === 0 && (
           <p className="m-0 px-3 py-3.5 text-[14px] font-semibold text-funded-fg">
@@ -91,23 +93,25 @@ export function NeedsCategory({
                 >
                   <span className="flex justify-between gap-2">
                     <span className="text-[15px] font-semibold">{r.payee}</span>
-                    <span className="tnum text-[15px] font-bold">{formatCents(r.amount)}</span>
+                    <Money
+                      cents={r.amount}
+                      plus
+                      className={cx('text-[15px] font-bold', r.amount > 0 ? 'text-funded-fg' : 'text-ink')}
+                    />
                   </span>
                   <span className="text-[12px] text-muted">{rowMeta(r, 'needs')}</span>
                 </Link>
                 {!selecting && (
-                  <Button
+                  <SoftButton
                     mutates="offline"
+                    tone={label ? 'outline' : 'soft'}
                     track="activity.category.choose"
                     aria-label={`${label ? 'Change category for' : 'Choose category for'} ${r.payee} ${formatCents(r.amount)}`}
                     onClick={() => openPicker({ keys: [r.key], row: r })}
-                    className={cx(
-                      'hit h-9 max-w-[112px] shrink-0 truncate whitespace-nowrap rounded-full px-3 text-[13px] font-bold disabled:opacity-50',
-                      label ? 'bg-sunken text-none-fg' : 'bg-accent-soft text-accent',
-                    )}
+                    className="max-w-[112px]"
                   >
-                    {label ?? 'Choose'}
-                  </Button>
+                    <span className="truncate">{label ?? 'Choose'}</span>
+                  </SoftButton>
                 )}
               </div>
             );
@@ -156,22 +160,12 @@ export function ActivityCategoryPicker({
     >
       {row && (
         <div className="flex gap-4 pt-1">
-          <button
-            type="button"
-            data-track="activity.picker.split"
-            onClick={() => onSplit(row.key)}
-            className="hit flex h-10 items-center text-[14px] font-bold text-accent"
-          >
+          <TextButton track="activity.picker.split" onClick={() => onSplit(row.key)}>
             Split it…
-          </button>
-          <button
-            type="button"
-            data-track="activity.picker.transfer"
-            onClick={() => onTransfer(row.key)}
-            className="hit flex h-10 items-center text-[14px] font-bold text-accent"
-          >
+          </TextButton>
+          <TextButton track="activity.picker.transfer" onClick={() => onTransfer(row.key)}>
             It’s a transfer…
-          </button>
+          </TextButton>
         </div>
       )}
     </CategoryPickerSheet>
