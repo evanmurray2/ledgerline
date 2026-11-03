@@ -7,18 +7,17 @@ import { useAccounts, useBudget, useReports, useSession } from '../api/hooks';
 import {
   Card,
   cx,
-  DesktopHeader,
   EmptyNote,
   ErrorNote,
   Icon,
   Loading,
-  PhoneHeader,
   ScreenBody,
   SectionTitle,
   Segmented,
   useIsDesktop,
 } from '../components/ui';
-import { MonthSwitcher } from '../components/MonthSwitcher';
+import { MonthBar, TabHeader } from '../components/MonthBar';
+import { clampMonth } from '../state/month';
 import { formatCents, percentOf } from '../lib/money';
 import { monthLabel, monthShort } from '../lib/dates';
 import { useScreen } from '../lib/common';
@@ -223,7 +222,8 @@ export function ReportsScreen() {
   const search = useSearch({ strict: false }) as { month?: string };
   const session = useSession();
   const current = session.data?.budget.currentMonth;
-  const month = search.month ?? current;
+  // A later month (Budget looks ahead) shows this month: there's nothing to report yet.
+  const month = clampMonth(search.month, undefined, current) ?? current;
   const [view, setView] = useState<View>('spend');
   useScreen(`reports.${view}`);
   const q = useReports(month);
@@ -239,16 +239,12 @@ export function ReportsScreen() {
       ? `Month to date. Your share only: amounts owed to you are left out.${r.stillOwed ? ` ${formatCents(r.stillOwed)} is still owed to you.` : ''}`
       : 'Whole month. Your share only.'
     : '';
-  const monthNav = month && (
-    <MonthSwitcher month={month} min={min} max={current} onGo={go} track="reports.month" />
+  const monthNav = month && current && (
+    <MonthBar month={month} current={current} min={min} max={current} onGo={go} />
   );
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {desktop ? (
-        <DesktopHeader title="Reports" right={monthNav} />
-      ) : (
-        <PhoneHeader title="Reports" right={monthNav} />
-      )}
+      <TabHeader name="Reports" month={monthNav} />
       <ScreenBody>
         {!r ? (
           q.error ? (

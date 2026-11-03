@@ -11,6 +11,7 @@ import { useCopy } from '../copy/copy';
 import { useCanWrite, useConnectivity } from '../state/connectivity';
 import { pacificTime } from '../lib/dates';
 import { formatCents } from '../lib/money';
+import { useTabMonth } from '../state/month';
 
 type Tab = 'budget' | 'activity' | 'accounts' | 'reports' | 'settings';
 
@@ -33,15 +34,22 @@ function useBadges() {
   };
 }
 
+// The three month tabs side by side, then Accounts (today's balances, no month) with Settings behind it.
 const TABS: { id: Tab; name: string; to: string; icon: IconName; what: string }[] = [
   { id: 'budget', name: 'Budget', to: '/budget', icon: 'budget', what: '' },
   { id: 'activity', name: 'Activity', to: '/activity', icon: 'activity', what: 'need attention' },
-  { id: 'accounts', name: 'Accounts', to: '/accounts', icon: 'accounts', what: 'connection problem' },
   { id: 'reports', name: 'Reports', to: '/reports', icon: 'reports', what: '' },
+  { id: 'accounts', name: 'Accounts', to: '/accounts', icon: 'accounts', what: 'connection problem' },
 ];
+
+/** The app's month goes with the tab links to Budget, Activity and Reports (docs/month-header.md). */
+function tabSearch(id: Tab, month: string | undefined) {
+  return id === 'budget' || id === 'activity' || id === 'reports' ? { month } : undefined;
+}
 
 function TabBar({ active }: { active: Tab }) {
   const badges = useBadges();
+  const month = useTabMonth();
   const current = active === 'settings' ? 'accounts' : active;
   return (
     <nav
@@ -57,6 +65,7 @@ function TabBar({ active }: { active: Tab }) {
           <Link
             key={t.id}
             to={t.to}
+            search={tabSearch(t.id, month)}
             data-track={`tabs.${t.id}`}
             aria-current={on ? 'page' : undefined}
             aria-label={badge > 0 ? `${t.name}, ${badge} ${t.what}` : t.name}
@@ -88,12 +97,13 @@ function TabBar({ active }: { active: Tab }) {
 function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void; noteButton: boolean }) {
   const badges = useBadges();
   const canWrite = useCanWrite();
+  const month = useTabMonth();
   const rta = badges.rta;
   const items: { id: Tab; name: string; to: string; badge: number }[] = [
     { id: 'budget', name: 'Budget', to: '/budget', badge: 0 },
     { id: 'activity', name: 'Activity', to: '/activity', badge: badges.activity },
-    { id: 'accounts', name: 'Accounts', to: '/accounts', badge: badges.accounts },
     { id: 'reports', name: 'Reports', to: '/reports', badge: 0 },
+    { id: 'accounts', name: 'Accounts', to: '/accounts', badge: badges.accounts },
     { id: 'settings', name: 'Settings', to: '/settings', badge: 0 },
   ];
   const negative = rta !== undefined && rta < 0;
@@ -110,6 +120,7 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
           <Link
             key={n.id}
             to={n.to}
+            search={tabSearch(n.id, month)}
             data-track={`nav.${n.id}`}
             aria-current={on ? 'page' : undefined}
             className={cx(

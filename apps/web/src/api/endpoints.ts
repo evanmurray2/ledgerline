@@ -100,8 +100,8 @@ export const api = {
   setTarget: (id: string, body: In<typeof TargetRequest>) =>
     put(`/api/categories/${enc(id)}/target`, MutationResult, body),
 
-  activity: (filter: ActivityFilter, q?: string, cursor?: string) =>
-    get(`/api/activity${qs({ filter, q, cursor })}`, ActivityView),
+  activity: (filter: ActivityFilter, q?: string, cursor?: string, month?: string) =>
+    get(`/api/activity${qs({ filter, q, cursor, month })}`, ActivityView),
   txn: (key: string) => get(`/api/transactions/${enc(key)}`, TxnSheet),
   patchTxn: (key: string, body: In<typeof TxnPatch>) =>
     patch(`/api/transactions/${enc(key)}`, MutationResult, body),
