@@ -1,12 +1,11 @@
 name: deploy
-# Actions → deploy → Run workflow on main (or, once the repository variable DEPLOY_ON_MERGE is true, every merge to
-# main) → wait for this commit's ci run to pass → deploy (each Durable Object migrates itself when it starts) → smoke
-# test → rollback on failure. The only thing GitHub needs is the production environment's CLOUDFLARE_API_TOKEN; the
-# Worker keeps the secrets it already has (docs/runbooks/setup.md, decisions.md D-28).
+# Every merge to main (while the repository variable DEPLOY_ON_MERGE is true) → wait for this commit's ci run to pass →
+# deploy (each Durable Object migrates itself when it starts) → smoke test → rollback on failure. There is no manual
+# trigger: merging to main is the only way to deploy (D-49). The only thing GitHub needs is the production
+# environment's CLOUDFLARE_API_TOKEN; the Worker keeps the secrets it already has (docs/runbooks/setup.md, D-28).
 on:
   push:
     branches: [main]
-  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -15,7 +14,7 @@ concurrency:
 jobs:
   ci-passed:
     # Only main deploys, and only a commit whose ci run passed (waits while it is still running).
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.DEPLOY_ON_MERGE == 'true')
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ON_MERGE == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
