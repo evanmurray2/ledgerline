@@ -1,9 +1,9 @@
 // Offline start (api/hooks.ts useSession): the saved session stands in only when the server can't be reached.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, waitFor, cleanup } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { qk, useSession } from '../src/api/hooks';
+import { forgetSignedOut, qk, useSession } from '../src/api/hooks';
 import { connectivity } from '../src/state/connectivity';
 import { makeQueryClient } from '../src/App';
 
@@ -40,5 +40,41 @@ describe('offline start', () => {
     );
     await waitFor(() => expect(result.current.error).toBeTruthy());
     expect(result.current.data).toBeUndefined();
+  });
+});
+
+describe('signed out', () => {
+  it('keeps the sign-in screen’s check when the session ends while it is loading', async () => {
+    // The signed-out event comes after the copy is dropped, so the sign-in screen may already be asking.
+    let answer: (v: { setupOpen: boolean }) => void = () => {};
+    const qc = makeQueryClient();
+    qc.setQueryData(['budget', '2026-11'], { saved: true });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(
+      () =>
+        useQuery({
+          queryKey: qk.authStatus,
+          queryFn: () => new Promise<{ setupOpen: boolean }>((r) => (answer = r)),
+        }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.fetchStatus).toBe('fetching'));
+    forgetSignedOut(qc);
+    answer({ setupOpen: true });
+    await waitFor(() => expect(result.current.data).toEqual({ setupOpen: true }));
+    expect(qc.getQueryData(['budget', '2026-11'])).toBeUndefined();
+  });
+
+  it('keeps it, too, when the app was showing a session', () => {
+    const qc = makeQueryClient();
+    qc.setQueryData(qk.session, saved);
+    qc.setQueryData(qk.authStatus, { setupOpen: false });
+    qc.setQueryData(['budget', '2026-11'], { saved: true });
+    forgetSignedOut(qc);
+    expect(qc.getQueryData(qk.session)).toBeUndefined();
+    expect(qc.getQueryData(['budget', '2026-11'])).toBeUndefined();
+    expect(qc.getQueryData(qk.authStatus)).toEqual({ setupOpen: false });
   });
 });

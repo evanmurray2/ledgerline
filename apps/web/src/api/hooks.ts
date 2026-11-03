@@ -10,6 +10,8 @@ import { useEffect } from 'react';
 
 export const qk = {
   session: ['session'] as const,
+  /** What the sign-in screen shows (first-time setup or sign in); it belongs to the signed-out state. */
+  authStatus: ['auth-status'] as const,
   /** The last confirmed session, saved on the device for an offline start only (router.tsx). */
   savedSession: ['saved-session'] as const,
   budget: (month: string) => ['budget', month] as const,
@@ -195,4 +197,22 @@ export function useMoneyMutation<TVars, TResult>(
       usage.error(err instanceof ApiError ? err.code : 'unknown');
     },
   });
+}
+
+/**
+ * Forgets what a signed-in session loaded, once the app learns the session ended. The sign-in screen's own check
+ * (is setup open?) always stays: the event comes after the copy is dropped, so that check may already be in flight
+ * or answered, and removing it cancelled it silently and left the screen on "Sign in" with setup open (the passkey
+ * e2e failed that way on Nov 3).
+ */
+export function forgetSignedOut(qc: QueryClient): void {
+  const signInCheck = (q: { queryKey: readonly unknown[] }) => q.queryKey[0] === qk.authStatus[0];
+  // Only when the app was showing data; on the sign-in screen the session query already failed.
+  // Drop everything in memory too, so nothing from the ended session is saved again.
+  if (qc.getQueryData(qk.session)) {
+    qc.getMutationCache().clear();
+    qc.removeQueries({ predicate: (q) => !signInCheck(q) });
+  }
+  // Opened signed out with saved data on the device: drop it, but keep the session check that said so.
+  else qc.removeQueries({ predicate: (q) => q.queryKey[0] !== qk.session[0] && !signInCheck(q) });
 }

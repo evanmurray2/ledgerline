@@ -83,7 +83,7 @@ const NoPasskeys = () => (
 
 export function SignInScreen() {
   const qc = useQueryClient();
-  const status = useQuery({ queryKey: ['auth-status'], queryFn: api.authStatus, retry: 1 });
+  const status = useQuery({ queryKey: qk.authStatus, queryFn: api.authStatus, retry: 1 });
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);

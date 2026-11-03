@@ -15,7 +15,7 @@ import {
 import { AppShell } from './components/AppShell';
 import { ErrorNote, Loading } from './components/ui';
 import { useQueryClient } from '@tanstack/react-query';
-import { qk, useSession } from './api/hooks';
+import { forgetSignedOut, qk, useSession } from './api/hooks';
 import { copySettled, needsReload, reloadForVersion } from './state/version';
 import { connectivity } from './state/connectivity';
 import { usage } from './usage/tracker';
@@ -97,19 +97,7 @@ function Root() {
     const onReadOnly = () => void qc.invalidateQueries({ queryKey: qk.session });
     window.addEventListener('ledgerline:readonly', onReadOnly);
     // The session ended (24 hours, or signed out elsewhere): show sign-in.
-    const onSignedOut = () => {
-      // The sign-in screen's own check (is setup open?) always stays: it may already be in flight or answered, and
-      // dropping it left the screen on "Sign in" with setup open (the passkey e2e failed that way on Nov 3).
-      const signInCheck = (q: { queryKey: readonly unknown[] }) => q.queryKey[0] === 'auth-status';
-      // Only when the app was showing data; on the sign-in screen the session query already failed.
-      // Drop everything in memory too, so nothing from the ended session is saved again.
-      if (qc.getQueryData(qk.session)) {
-        qc.getMutationCache().clear();
-        qc.removeQueries({ predicate: (q) => !signInCheck(q) });
-      }
-      // Opened signed out with saved data on the device: drop it, but keep the session check that said so.
-      else qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'session' && !signInCheck(q) });
-    };
+    const onSignedOut = () => forgetSignedOut(qc);
     window.addEventListener('ledgerline:signedout', onSignedOut);
     return () => {
       window.removeEventListener('ledgerline:readonly', onReadOnly);
