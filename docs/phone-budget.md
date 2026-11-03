@@ -1,6 +1,6 @@
 # Working out the budget on the phone
 
-Status: proposal v1.1, Nov 3, 2026. Not decided. v1 got an adversarial review (1 blocker, 8 major, 9 minor); this revision includes its fixes, listed in section 15. Nothing here changes how money is counted: the same `computeBudget()` runs, in a different place, and section 9 shows how its inputs stay the same.
+Status: proposal v1.2, Nov 3, 2026. Not decided. v1 got an adversarial review (1 blocker, 8 major, 9 minor); v1.1 includes its fixes, listed in section 15. v1.2 adds the security design in section 13 (the copy encrypted with your passkey). Nothing here changes how money is counted: the same `computeBudget()` runs, in a different place, and section 9 shows how its inputs stay the same.
 
 ## 1. The question
 
@@ -76,17 +76,18 @@ Recommendation: build A. Decide on B after A has run for two weeks, with B's sha
 
 **Against:**
 
-|                                                | How bad, and what limits it                                                                                                                                                                                                                        |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| More of your history is stored on the phone    | Today at most 24 hours of saved screens. With this, the budget's transactions stay until sign-out, a "signed out" answer, or 7 days with no confirmed session. Section 13 has the controls; the threat model and a decision record change with it. |
-| Phone and server can disagree for a moment     | The phone shows what it last synced; today's screens are also as old as the last load. It shows "Updated 2 min ago" when it's been a while.                                                                                                        |
-| Two devices can show different numbers briefly | Each catches up on its next sync, and after a release, when it reloads. The shadow stage flags it.                                                                                                                                                 |
-| The phone's clock and time zone (B)            | "Today" and the current month use the budget's time zone and the server's clock (section 9), never the phone's, so travel can't move money between months.                                                                                         |
-| A slow phone (B)                               | Compute in a Web Worker so scrolling never stutters; keep month snapshots in memory and recompute from the edited month, as the server does now.                                                                                                   |
-| iOS can clear website storage                  | Home Screen apps aren't subject to Safari's 7-day rule, but iOS can still clear storage when the phone is low on space. The app asks for persistent storage (`navigator.storage.persist()`); if cleared anyway, the cost is one download.          |
-| A big change in a working app                  | Two parts, six stages, each reversible until the last (section 12).                                                                                                                                                                                |
-| More writes, not fewer                         | Every change to a transaction also writes its `change_log` row (section 11). Kept low by leaving history out of the log; measured in stage 0.                                                                                                      |
-| Server paths that need budget numbers (B)      | Archiving a category, removing one in use, mutation answers and projected fronts read server numbers today. Section 10 changes each.                                                                                                               |
+|                                                | How bad, and what limits it                                                                                                                                                                                                               |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| More of your history is stored on the phone    | Today at most 24 hours of saved screens, unencrypted. With this, the budget's transactions stay for up to 7 days without a confirmed session, encrypted with a key only your passkey can produce (section 13).                            |
+| Face ID more often                             | The copy locks after 5 idle minutes; today's session lasts 24 hours without a prompt.                                                                                                                                                     |
+| Phone and server can disagree for a moment     | The phone shows what it last synced; today's screens are also as old as the last load. It shows "Updated 2 min ago" when it's been a while.                                                                                               |
+| Two devices can show different numbers briefly | Each catches up on its next sync, and after a release, when it reloads. The shadow stage flags it.                                                                                                                                        |
+| The phone's clock and time zone (B)            | "Today" and the current month use the budget's time zone and the server's clock (section 9), never the phone's, so travel can't move money between months.                                                                                |
+| A slow phone (B)                               | Compute in a Web Worker so scrolling never stutters; keep month snapshots in memory and recompute from the edited month, as the server does now.                                                                                          |
+| iOS can clear website storage                  | Home Screen apps aren't subject to Safari's 7-day rule, but iOS can still clear storage when the phone is low on space. The app asks for persistent storage (`navigator.storage.persist()`); if cleared anyway, the cost is one download. |
+| A big change in a working app                  | Two parts, six stages, each reversible until the last (section 12).                                                                                                                                                                       |
+| More writes, not fewer                         | Every change to a transaction also writes its `change_log` row (section 11). Kept low by leaving history out of the log; measured in stage 0.                                                                                             |
+| Server paths that need budget numbers (B)      | Archiving a category, removing one in use, mutation answers and projected fronts read server numbers today. Section 10 changes each.                                                                                                      |
 
 ## 6. Shape
 
@@ -153,13 +154,13 @@ Transactions are sent **without the fields copied from other tables** (`payee` n
 
 ## 10. Server paths that need budget numbers (part B)
 
-| Path                                                                     | Today                                                                | In part B                                                                                                                                                                                                                                          |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Archive a category, or remove one in use: its available goes back to RTA | reads `month_snapshot` via `monthResult()` (`categories.ts:200-215`) | The phone sends the amount it computed and the `through` it computed at. The server refuses with "changed, try again" if any `change_log` row for that category's transactions or assignments is newer than `through`. Money moves exactly as now. |
-| "Is this category in use?"                                               | counts `budget_line` rows (`categories.ts:245`)                      | counts overlays and splits pointing at it                                                                                                                                                                                                          |
-| Every mutation answer                                                    | `MutationResult.rta`, `rtaUpdating`                                  | both become optional in one contract change old and new clients accept; the phone computes RTA                                                                                                                                                     |
-| Owed: projected fronts                                                   | uses the server's RTA (`activity.ts:1066`)                           | the phone runs `projectedFronts()`                                                                                                                                                                                                                 |
-| `/api/badges`, Needs attention, Assign suggestions, Reports              | server views                                                         | phone                                                                                                                                                                                                                                              |
+| Path                                                                     | Today                                                                | In part B                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Archive a category, or remove one in use: its available goes back to RTA | reads `month_snapshot` via `monthResult()` (`categories.ts:200-215`) | The server works out that one category's available itself, from its own transactions and assignments (independent of other categories by the Money rules; a property test confirms it). It never uses an amount from the phone. Money moves exactly as now. |
+| "Is this category in use?"                                               | counts `budget_line` rows (`categories.ts:245`)                      | counts overlays and splits pointing at it                                                                                                                                                                                                                   |
+| Every mutation answer                                                    | `MutationResult.rta`, `rtaUpdating`                                  | both become optional in one contract change old and new clients accept; the phone computes RTA                                                                                                                                                              |
+| Owed: projected fronts                                                   | uses the server's RTA (`activity.ts:1066`)                           | the phone runs `projectedFronts()`                                                                                                                                                                                                                          |
+| `/api/badges`, Needs attention, Assign suggestions, Reports              | server views                                                         | phone                                                                                                                                                                                                                                                       |
 
 **The server keeps computing until the last stage.** `planLineRebuild`, the recompute job and month totals keep running through stages 1–4, so every stage can be turned back with a setting and the shadow comparison has something to compare with. They're removed only in stage 5.
 
@@ -188,7 +189,8 @@ Each stage ships on its own and, until stage 5, can be turned back with a settin
    - first download on mobile data under 10 seconds;
    - cold open (read IndexedDB, build the copy) to the first Budget screen under 1 second;
    - (for B) full compute of the 36-month set on the iPhone under 150 ms, also with Lockdown Mode if the owner uses it;
-   - rows written for a 3,000-row backfill and a 200-row payee merge.
+   - rows written for a 3,000-row backfill and a 200-row payee merge;
+   - WebAuthn PRF works in the Home Screen app on the owner's iPhone, and decrypting the full copy takes under 100 ms.
 1. **Part A (4–5 days).** Activity, registers and search read the phone's copy. Budget, Accounts and Reports still come from the server.
 2. **Decide on B.** After two weeks of stage 1.
 3. **Shadow (2–3 days).** The phone computes in the background. Each Budget load compares the phone's Ready to Assign and every category's available with the server's, **only when the server isn't mid-recompute and both are at the same `through`**, and posts any difference.
@@ -199,17 +201,50 @@ Each stage ships on its own and, until stage 5, can be turned back with a settin
 
 ## 13. Data on the phone
 
-- One IndexedDB database per user and budget, so another person signing in on the same device starts empty.
-- Wiped on sign-out, on any "signed out" answer, and when no session has been confirmed for 7 days. A phone that's lost and stays offline keeps its copy for at most 7 days.
-- Safari and the Home Screen app keep separate storage: signing out in one doesn't wipe the other. Settings → Security lists the devices with a copy, and "Sign out other devices" makes each wipe its copy the next time it connects. The 7-day limit covers the ones that never connect again.
-- iOS protects website data while the phone is locked only to a degree we haven't verified. Don't count on more than "protected until the first unlock after a restart".
-- Optional: encrypt the copy with a key that only your passkey unlocks (WebAuthn PRF). It needs iOS 18 or later and a Face ID prompt each time the app opens. Owner's choice (section 14).
-- The threat model's "Saved data on the phone" row and a decision record change before stage 1 ships.
+**The aim:** a copy on the phone is no easier to read than the server. The server is protected by your passkey, so the copy is encrypted with a key only your passkey can produce. Whatever unlocks the copy (your passkey, behind Face ID or the phone's passcode) already unlocks the server, so a stolen phone gives a thief nothing your passkey wouldn't.
+
+| Threat                               | Server only, today                          | Plain copy on the phone                                                                          | Copy encrypted with your passkey (this design)          |
+| ------------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| Phone stolen while locked            | Needs your passkey (Face ID or passcode)    | Forensic tools may read website data once the phone has been unlocked since restart (unverified) | Unreadable without your passkey                         |
+| Phone taken while unlocked, app open | The session cookie works for up to 24 hours | Everything readable                                                                              | The app locks after 5 idle minutes and asks for Face ID |
+| Thief knows your passcode            | Can use your passkeys, so gets the server   | Same                                                                                             | Same: no worse than today                               |
+| Malicious script in the web app      | Can call the API while you're signed in     | Can also read the copy after sign-out                                                            | Can read only while unlocked, like the server           |
+| Phone backups (iCloud)               | Nothing on the phone                        | May include the copy (unverified)                                                                | Only ciphertext                                         |
+| Someone else using the same browser  | Separate sign-in                            | Needs a separate database                                                                        | Separate database, and their passkey can't unlock yours |
+
+**Encryption with the passkey (WebAuthn PRF).**
+
+- When you sign in or unlock, the passkey ceremony also asks for the PRF extension with a fixed salt kept on the device (the salt isn't secret). The passkey returns a secret that only that passkey can produce for that salt.
+- The phone derives a key-encryption key from it with HKDF in WebCrypto, as a non-extractable `CryptoKey` held only in memory.
+- That key unwraps a random 256-bit data key, stored wrapped next to the copy. Every row, the sync position and the outbox are stored AES-GCM encrypted under the data key. AES-GCM fails on a wrong key, so a forged passkey answer can't produce readable data.
+- Unlocking works offline: the WebAuthn ceremony runs on the device, and only the right passkey produces the right secret.
+- One Face ID does both jobs: the same ceremony signs you in to the server and unlocks the copy.
+- **Losing or replacing a passkey costs nothing.** The server is the master copy: a new passkey means a new data key and a fresh download. There are no recovery codes for the copy.
+- Decrypting a few MB at open takes milliseconds in WebCrypto; the copy is decrypted into the Web Worker's memory, as the design loads it there anyway. IndexedDB holds only ciphertext, so it has no plaintext indexes; searches run in memory.
+
+**Locking.** After 5 idle minutes, or when the app has been in the background for 5 minutes, the keys and the decrypted copy are dropped from memory and the next open asks for Face ID. While locked the phone doesn't sync; it syncs right after unlocking.
+
+**Wiping.** The copy, its wrapped key and the salt are deleted on sign-out, on any "signed out" answer from the server, after 7 days with no confirmed session, and when "Sign out other devices" reaches the device (it wipes when it next connects). Settings → Security lists the devices that hold a copy. Safari and the Home Screen app keep separate storage, so each holds its own copy and is wiped on its own.
+
+**One database per user and budget**, so another person signing in on the same device starts empty.
+
+**Without PRF** (older iOS, or a browser without it), the app keeps the copy in memory only for that visit and saves nothing, so offline opening isn't available there. Today's 24-hour saved screens go with stage 5.
+
+**Keeping a malicious script from sending data out.** The Content Security Policy already allows connections only to the app's own server and Plaid Link. Keep it that strict, with no inline scripts, and add a test that fails if `connect-src`, `img-src` or `script-src` gets looser.
+
+**The server never trusts numbers the phone works out.** Archiving a category is the only place the phone sends a computed amount (section 10). By the Money rules (1–3, 6, 11), a non-payment category's available depends only on its own transactions and assignments, so the server can work out that one category itself, reading only its lines. A property test confirms that independence; the server then ignores the phone's amount and uses its own.
+
+**On your phone:** turn on Stolen Device Protection (Settings → Face ID & Passcode). Away from familiar places it asks for Face ID, not just the passcode, before passwords and passkeys can be used, which protects the server and the copy alike.
+
+**Before stage 1 ships:**
+
+- Stage 0 confirms PRF works in the Home Screen app on the owner's iPhone (iOS 18 or later, passkey in iCloud Keychain). If it doesn't, part A waits.
+- `docs/threat-model.md` replaces its "Saved data on the phone" row with the table above, and a decision record notes the change.
 
 ## 14. Open questions for the owner
 
 1. Build part A? (Recommended.)
-2. Is a 7-day copy of your transactions on the phone acceptable? Or encrypt it with your passkey from the start, at the cost of a Face ID prompt each time the app opens?
+2. The copy is encrypted with your passkey and locks after 5 idle minutes, so opening the app after that asks for Face ID. Is 5 minutes right?
 3. Offline edits: wanted, or is offline viewing enough?
 4. Any device besides the iPhone that should keep a copy, such as a laptop browser?
 
@@ -230,3 +265,5 @@ v1 got an adversarial review the same day. Every finding was checked against the
 | M8    | Offline edits lost on re-keyed rows; ordered by arrival time; reducers duplicate SQL side effects                                                          | Major    | Key map, edit time, property test against routes, versioned outbox (section 12)                                                                 |
 | m1–m9 | Identity check reporting; the first-download set; half-applied pages; shared keys; code size; request count; totals description; old backups; version skew | Minor    | Sections 2, 5, 7, 8, 9, 10, 11                                                                                                                  |
 | —     | A simpler option was missing: transactions on the phone, budget still on the server                                                                        | Minor    | Now part A, recommended first (section 4)                                                                                                       |
+
+v1.2 (Nov 3, 2026): section 13 rewritten. The copy on the phone is encrypted with a key from your passkey (WebAuthn PRF), locks after 5 idle minutes, and is kept only where PRF works. The server works out an archived category's available itself instead of taking the phone's amount. Not yet reviewed.
