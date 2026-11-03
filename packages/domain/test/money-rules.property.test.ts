@@ -461,6 +461,58 @@ describe('rule 3: card refund', () => {
     );
   });
 
+  it('linked to a split purchase: gives back the funded part of every line, not just the first', () => {
+    // $100 on the card: $60 Groceries (c0, nothing left: new debt) and $40 Household (c1, funded). The $40
+    // Household item comes back as a refund linked to the purchase.
+    const p = tx('card', '2026-01-05', -10_000, {
+      type: 'split',
+      lines: [
+        { id: 's0', categoryId: 'c0', amount: cents(-6_000) },
+        { id: 's1', categoryId: 'c1', amount: cents(-4_000) },
+      ],
+    });
+    const { r, p: proj } = run({
+      accounts: [{ ...CHK, startingBalance: cents(1_000_000) }, CARD],
+      categories: cats(2, ['card']),
+      assignments: [{ categoryId: 'c1', month: START, amount: cents(4_000) }],
+      txns: [p, tx('card', '2026-01-20', 4_000, cat('c1'), { refundOf: p.key })],
+      current: START,
+    });
+    expect(cell(r, START, 'c1').available).toBe(4_000);
+    // The payment category gives back the $40 it set aside: the card owes $60, all of it the Groceries debt.
+    expect(card(r, START, 'card').available).toBe(0);
+    expect(checkIdentity(proj, r, START).ok).toBe(true);
+  });
+
+  it('a split refund keeps its link to the purchase', () => {
+    const p = tx('card', '2026-01-05', -5_000, cat('c0'));
+    const { r } = run({
+      accounts: [{ ...CHK, startingBalance: cents(1_000_000) }, CARD],
+      categories: cats(2, ['card']),
+      assignments: [{ categoryId: 'c0', month: START, amount: cents(5_000) }],
+      txns: [
+        p,
+        tx(
+          'card',
+          '2026-01-20',
+          5_000,
+          {
+            type: 'split',
+            lines: [
+              { id: 'r0', categoryId: 'c0', amount: cents(3_000) },
+              { id: 'r1', categoryId: 'c1', amount: cents(2_000) },
+            ],
+          },
+          { refundOf: p.key },
+        ),
+      ],
+      current: START,
+    });
+    expect(card(r, START, 'card').available).toBe(0);
+    expect(cell(r, START, 'c0').available).toBe(3_000);
+    expect(cell(r, START, 'c1').available).toBe(2_000);
+  });
+
   it('unlinked: P −= min(r, max(P, 0))', () => {
     fc.assert(
       fc.property(amt(0, 50_000), amt(1, 80_000), (pAssigned, rr) => {
@@ -887,7 +939,17 @@ describe('money back after credit overspending (decisions.md D-11, D-12)', () =>
 
   it('on any mix of card spending, refunds, statement credits, cash inflows and payments, card debt = payment category + unbudgeted debt − credit held', () => {
     const ev = fc.record({
-      kind: fc.constantFrom('buy', 'refund', 'linked', 'cashIn', 'cashOut', 'pay', 'credit'),
+      kind: fc.constantFrom(
+        'buy',
+        'splitBuy',
+        'refund',
+        'linked',
+        'splitLinked',
+        'cashIn',
+        'cashOut',
+        'pay',
+        'credit',
+      ),
       x: amt(1, 20_000),
       c: fc.integer({ min: 0, max: 1 }),
       m: fc.integer({ min: 0, max: 1 }),
@@ -916,6 +978,41 @@ describe('money back after credit overspending (decisions.md D-11, D-12)', () =>
               const t = tx('card', date, -e.x, cat(c));
               buys.push(t);
               txns.push(t);
+            } else if (e.kind === 'splitBuy') {
+              // Split across both categories; the first part may be zero-sized away from the second.
+              bal -= e.x;
+              const a0 = Math.floor(e.x / 3);
+              const t = tx('card', date, -e.x, {
+                type: 'split',
+                lines: [
+                  { id: 's0', categoryId: `c${e.c}`, amount: cents(-a0) },
+                  { id: 's1', categoryId: `c${1 - e.c}`, amount: cents(-(e.x - a0)) },
+                ],
+              });
+              buys.push(t);
+              txns.push(t);
+            } else if (e.kind === 'splitLinked' && buys.length > 0) {
+              // A refund split across both categories, linked to one purchase.
+              const b = buys[e.x % buys.length]!;
+              const back = txns.filter((t) => t.refundOf === b.key).reduce((s, t) => s + t.amount, 0);
+              const r0 = Math.min(e.x, -b.amount - back);
+              const h = Math.floor(r0 / 2);
+              if (r0 > 1 && onCard(r0))
+                txns.push(
+                  tx(
+                    'card',
+                    date,
+                    r0,
+                    {
+                      type: 'split',
+                      lines: [
+                        { id: 'r0', categoryId: 'c0', amount: cents(h) },
+                        { id: 'r1', categoryId: 'c1', amount: cents(r0 - h) },
+                      ],
+                    },
+                    { refundOf: b.key },
+                  ),
+                );
             } else if (e.kind === 'credit') {
               if (onCard(e.x)) txns.push(tx('card', date, e.x, { type: 'rta' }));
             } else if (e.kind === 'refund') {
@@ -925,6 +1022,7 @@ describe('money back after credit overspending (decisions.md D-11, D-12)', () =>
               const back = txns.filter((t) => t.refundOf === b.key).reduce((s, t) => s + t.amount, 0);
               const r0 = Math.min(e.x, -b.amount - back);
               const bc = b.use.type === 'category' ? b.use.categoryId : c;
+              // (A split purchase is refunded into one category here; splitLinked splits the refund too.)
               if (r0 > 0 && onCard(r0)) txns.push(tx('card', date, r0, cat(bc), { refundOf: b.key }));
             } else if (e.kind === 'cashIn') txns.push(tx('chk', date, e.x, cat(c)));
             else if (e.kind === 'cashOut') txns.push(tx('chk', date, -e.x, cat(c)));
