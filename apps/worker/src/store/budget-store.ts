@@ -34,6 +34,7 @@ import {
 } from './budget-jobs.js';
 import { connectionToken, makeProvider, pageSize } from '../sync/provider.js';
 import { writeBudgetState } from '../sync/breaker.js';
+import { answering } from './body.js';
 
 export interface StoreHealth {
   ok: boolean;
@@ -99,7 +100,7 @@ export class BudgetStore extends DurableObject<Env> {
 
   private serve(app: Hono<AppEnv>, request: Request, caller: Caller): Promise<Response> {
     const env = { ...this.appEnv(), CALLER: caller };
-    return Promise.resolve(
+    return answering(request, () =>
       app.fetch(
         request,
         env as never,
