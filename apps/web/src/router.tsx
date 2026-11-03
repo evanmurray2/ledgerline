@@ -28,6 +28,9 @@ import { AddTxnScreen, CheckPendingScreen, MatchScreen, TransferScreen } from '.
 import { AccountsScreen, RegisterScreen, RepairScreen } from './screens/Accounts';
 import { AddDeviceScreen, ReauthDialog, SignInScreen } from './screens/Auth';
 import { ApiError, errorMessage } from './api/client';
+import { checkSaved, getCopy, onCopyChanged, start as startCopy, syncNow, flush, useCopy } from './copy/copy';
+import { CopyScreen } from './screens/Lock';
+import { toast } from './components/Toast';
 
 // Screens opened now and then (Reports, Settings, Categories, first-run setup) load when first opened, so the app
 // starts with less to download and parse. After a new release, a missing piece reloads the app once.
@@ -56,8 +59,37 @@ function Root() {
   const session = useSession();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const qc = useQueryClient();
-  // Offline start: useSession() stands in the last confirmed session when the server can't be reached.
+  // Offline start: useSession() stands in the session saved in the copy when the server can't be reached.
   const s = session.data;
+  const copy = useCopy();
+  // A session the server confirmed just now (not the one saved in the copy).
+  const confirmed = session.isFetchedAfterMount && !session.error ? s : undefined;
+
+  useEffect(() => void checkSaved(), []);
+  // Every screen is worked out from the copy (D-44): open it once the server confirms who's signed in.
+  useEffect(() => {
+    if (confirmed && ['idle', 'locked'].includes(getCopy().status)) void startCopy(confirmed);
+    // Back online after opening with no signal: send what was changed and catch up.
+    if (confirmed && getCopy().status === 'ready' && getCopy().offline) void syncNow().then(() => flush());
+  }, [confirmed]);
+  // The copy changed (a sync brought news, or an offline edit): screens read it again.
+  useEffect(
+    () => onCopyChanged(() => void qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'session' })),
+    [qc],
+  );
+  useEffect(() => {
+    const onLocked = () => qc.clear();
+    const onRefused = (e: Event) =>
+      toast.show({
+        text: `${(e as CustomEvent<number>).detail} change(s) made offline couldn’t be saved. Your budget shows what the server has.`,
+      });
+    window.addEventListener('ledgerline:locked', onLocked);
+    window.addEventListener('ledgerline:edits-refused', onRefused);
+    return () => {
+      window.removeEventListener('ledgerline:locked', onLocked);
+      window.removeEventListener('ledgerline:edits-refused', onRefused);
+    };
+  }, [qc]);
 
   useEffect(() => {
     // The Worker refused a write because the daily limit was reached: refresh writeState and readOnlyUntil.
@@ -97,6 +129,20 @@ function Root() {
 
   const setupPath = path.startsWith('/setup') || path.startsWith('/welcome');
   if (path === '/add-device') return <AddDeviceScreen />;
+  const unreachable = session.error instanceof ApiError && session.error.network;
+  if (!s && unreachable && copy.hasSaved && copy.status !== 'ready')
+    return (
+      <CopyScreen copy={copy} session={null} onOffline={(saved) => qc.setQueryData(qk.savedSession, saved)} />
+    );
+  if (s && copy.status !== 'ready' && copy.status !== 'off' && copy.status !== 'idle')
+    return (
+      <CopyScreen
+        copy={copy}
+        session={confirmed ?? null}
+        onOffline={(saved) => qc.setQueryData(qk.savedSession, saved)}
+      />
+    );
+  if (s && copy.status === 'idle' && confirmed) return <Loading />;
   if (!s) {
     if (session.error instanceof ApiError && session.error.status === 401) return <SignInScreen />;
     if (session.error)
@@ -106,7 +152,9 @@ function Root() {
           <ErrorNote
             error={
               session.error instanceof ApiError &&
-              (session.error.code === 'daily_limit' || session.error.code === 'resting')
+              (session.error.code === 'daily_limit' ||
+                session.error.code === 'resting' ||
+                session.error.network)
                 ? new Error(errorMessage(session.error))
                 : session.error
             }

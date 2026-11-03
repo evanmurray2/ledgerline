@@ -21,6 +21,8 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "1.4.11",
+    "@types/sql.js": "1.4.11",
+    "sql.js": "1.14.2",
     "vitest": "4.1.12"
   }
 }

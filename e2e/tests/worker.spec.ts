@@ -1,7 +1,25 @@
 // The prototype's November through the real stack: SPA → Worker → local D1 (seeded fixture) → Money rules.
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 const rta = (page: Page) => page.getByTestId(test.info().project.name === 'desktop' ? 'nav-rta' : 'rta');
+
+/** Every row of one table, from the server's sync (a full download). */
+async function rows(request: APIRequestContext, table: string): Promise<Record<string, unknown>[]> {
+  const out: Record<string, unknown>[] = [];
+  let cursor: string | null = null;
+  for (;;) {
+    const r = await request.get(
+      `/api/sync?since=0&limit=500${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+    );
+    const p = (await r.json()) as {
+      cursor: string | null;
+      rows: { t: string; d: Record<string, unknown> }[];
+    };
+    out.push(...p.rows.filter((x) => x.t === table).map((x) => x.d));
+    if (!p.cursor) return out;
+    cursor = p.cursor;
+  }
+}
 
 test.beforeEach(async ({ page, request }) => {
   const r = await request.post('/__dev/seed-november', {
@@ -46,24 +64,18 @@ test('The app is served with its security headers, and nothing on Budget breaks 
   expect(violations).toEqual([]);
 });
 
-test('Opens with no signal: the saved screens show, with changes turned off', async ({ page, context }) => {
+test('In a browser tab nothing is kept on the device: with no signal it says it can’t connect', async ({
+  page,
+  context,
+}) => {
+  // Only the installed Home Screen app keeps a copy, encrypted with the passkey (D-44; passkey.spec.ts covers it).
   await page.goto('/budget');
   await expect(rta(page)).toHaveText('$981.90');
-  // The app's files are kept by its service worker, and the screen is saved on the device (at most every 2 s).
   await page.waitForFunction(async () => !!(await navigator.serviceWorker.ready).active);
-  await expect
-    .poll(
-      () =>
-        page.evaluate(() => window.localStorage.getItem('ledgerline-saved-data')?.includes('[\\"budget\\",')),
-      {
-        timeout: 5000,
-      },
-    )
-    .toBe(true);
+  expect(await page.evaluate(() => window.localStorage.getItem('ledgerline-saved-data'))).toBeNull();
   await context.setOffline(true);
   await page.reload();
-  await expect(rta(page)).toHaveText('$981.90');
-  await expect(page.getByText(/offline/i).first()).toBeVisible();
+  await expect(page.getByText('Couldn’t reach Ledgerline', { exact: false }).first()).toBeVisible();
   await context.setOffline(false);
 });
 
@@ -111,28 +123,22 @@ test('Activity: categorizing an uncategorized purchase persists', async ({ page 
   await expect(page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ })).toHaveCount(0);
 });
 
-test('Saved screens check for changes when the app opens again', async ({ page }) => {
+test('Changes made elsewhere show when the app opens again', async ({ page, request }) => {
   await page.goto('/activity');
   const chip = page.getByRole('button', { name: /^Needs attention \d+$/ });
   await expect(chip).toHaveText(/Needs attention [1-9]/);
   const before = Number((await chip.textContent())!.match(/\d+/)![0]);
-  // Let this screen be saved on the device (at most every 2 s)…
-  await expect
-    .poll(
-      () => page.evaluate(() => window.localStorage.getItem('ledgerline-saved-data')?.includes('"activity"')),
-      {
-        timeout: 5000,
-      },
-    )
-    .toBe(true);
-  await page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ }).click();
-  await page
-    .getByRole('dialog', { name: 'Choose a category' })
-    .getByRole('button', { name: 'Shopping' })
-    .first()
-    .click();
-  await expect(chip).toHaveText(`Needs attention ${before - 1}`);
-  // …then leave before the change is saved: reopening must not trust the old copy.
+  // Another device categorizes the Amazon purchase…
+  const txn = (await rows(request, 'bank_txn')).find(
+    (r) => r.amount === -3810 && /amazon/i.test(String(r.raw_name)),
+  )!;
+  const shopping = (await rows(request, 'category')).find((c) => c.name === 'Shopping')!;
+  const r = await request.patch(`/api/transactions/${encodeURIComponent(String(txn.txn_key))}`, {
+    headers: { 'content-type': 'application/json', 'x-ledgerline': '1' },
+    data: { categoryId: shopping.id },
+  });
+  expect(r.ok()).toBe(true);
+  // …and this one picks it up from the server's change log when it opens again.
   await page.reload();
   await expect(chip).toHaveText(`Needs attention ${before - 1}`);
 });
@@ -209,22 +215,23 @@ test('Pending: money you add goes to Ready to Assign, and a bank pending charge 
   await expect(rta(page)).toHaveText('$1,481.90');
 
   // A card hold with no estimate yet: set your own amount.
-  const v = (await (await request.get('/api/activity')).json()) as {
-    pending: { key: string; amount: number; badgeKind: string | null; sheet: string }[];
-  };
-  const hold = v.pending.find(
-    (r) => r.amount < 0 && r.badgeKind !== 'mine' && r.badgeKind !== 'est' && r.sheet === 'txn',
+  // Screens are worked out on the device (D-44): the server's own rows say which charge is a plain card hold.
+  const overlays = new Map((await rows(request, 'txn_overlay')).map((o) => [o.txn_key, o]));
+  const hold = (await rows(request, 'bank_txn')).find(
+    (r) =>
+      r.pending === 1 &&
+      r.removed_at === null &&
+      (r.amount as number) < 0 &&
+      !overlays.get(r.txn_key)?.estimated_amount &&
+      !overlays.get(r.txn_key)?.transfer_state,
   )!;
-  await page.goto(`/activity/txn/${encodeURIComponent(hold.key)}`);
+  const key = String(hold.txn_key);
+  await page.goto(`/activity/txn/${encodeURIComponent(key)}`);
   await page.getByRole('dialog').getByLabel('Your estimate').fill('123.45');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page).not.toHaveURL(/\/txn\//);
-  const after = (await (await request.get(`/api/transactions/${encodeURIComponent(hold.key)}`)).json()) as {
-    amount: number;
-    estimatedAmount: number;
-  };
-  expect(after.estimatedAmount).toBe(-12_345);
-  expect(after.amount).toBe(-12_345);
+  const after = (await rows(request, 'txn_overlay')).find((o) => o.txn_key === key)!;
+  expect(after.estimated_amount).toBe(-12_345);
 });
 
 test('Accounts: rename an account', async ({ page }) => {

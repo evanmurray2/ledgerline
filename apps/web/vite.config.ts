@@ -14,6 +14,8 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(process.env.APP_VERSION ?? 'dev'),
   },
   build: { outDir: 'dist', sourcemap: false, chunkSizeWarningLimit: 800 },
+  // The phone's engine (D-44) runs in a module Web Worker with code split from the app.
+  worker: { format: 'es' },
   server: {
     port: 5173,
     strictPort: true,

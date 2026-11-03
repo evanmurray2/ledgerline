@@ -1,0 +1,251 @@
+// The encrypted copy on the phone (docs/phone-budget.md section 13, decisions.md D-44).
+//
+// Keys:
+// - The passkey's PRF output (WebAuthn `prf` extension, salt kept on the device) is a secret only that passkey can
+//   produce. It never leaves the phone and is never stored.
+// - The server holds a share for each device (Settings → Sign-in → devices); it hands it out only after a sign-in and
+//   only while the device isn't revoked.
+// - HKDF(PRF output ‖ share) gives the key-encryption key, which unwraps the random data key. The data key encrypts
+//   the copy (AES-GCM, a fresh random IV every time, bound to this device by associated data).
+// - For offline unlock, the share is also kept wrapped under a key from the PRF output alone, with the last server
+//   time; offline unlock is refused 7 days after it.
+// All keys are non-extractable CryptoKeys held in memory and dropped on lock.
+
+const DB_NAME = 'ledgerline-copy';
+const STORE = 'copies';
+export const OFFLINE_DAYS = 7;
+const enc = new TextEncoder();
+
+export interface Wrapped {
+  iv: ArrayBuffer;
+  data: ArrayBuffer;
+}
+
+export interface CopyRecord {
+  /** `${email}:${budgetId}`: another person signing in on this device never sees this record. */
+  key: string;
+  who: { budgetId: string; userId: string; email: string };
+  deviceId: string;
+  salt: ArrayBuffer;
+  /** The data key, wrapped once per passkey that has unlocked this copy. */
+  keys: { credentialId: string; wrapped: Wrapped }[];
+  /** The server's share, wrapped under the PRF output alone, per passkey (offline unlock). */
+  shares: { credentialId: string; wrapped: Wrapped }[];
+  /** Server time of the last confirmed sign-in (ms). */
+  lastServerTime: number;
+  /** The passkey that set this copy up: unlocking asks for it alone. */
+  credentialIdHint?: string | null;
+  blob: Wrapped | null;
+  savedAt: number;
+}
+
+// ---------------------------------------------------------------- IndexedDB
+
+function idb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const r = indexedDB.open(DB_NAME, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(STORE, { keyPath: 'key' });
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error ?? new Error('storage'));
+  });
+}
+
+async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  const db = await idb();
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const t = db.transaction(STORE, mode);
+      const r = fn(t.objectStore(STORE));
+      t.oncomplete = () => resolve(r.result);
+      t.onerror = () => reject(t.error ?? new Error('storage'));
+      t.onabort = () => reject(t.error ?? new Error('storage'));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+export const recordKey = (email: string, budgetId: string) => `${email}:${budgetId}`;
+
+export async function loadRecord(key: string): Promise<CopyRecord | null> {
+  if (typeof indexedDB === 'undefined') return null;
+  return ((await tx('readonly', (s) => s.get(key)).catch(() => null)) as CopyRecord | undefined) ?? null;
+}
+
+/** The record last used on this device (for opening with no signal, before anyone has signed in). */
+export async function lastRecord(): Promise<CopyRecord | null> {
+  if (typeof indexedDB === 'undefined') return null;
+  const all = ((await tx('readonly', (s) => s.getAll()).catch(() => [])) as CopyRecord[]) ?? [];
+  return all.sort((a, b) => b.savedAt - a.savedAt)[0] ?? null;
+}
+
+export async function saveRecord(r: CopyRecord): Promise<void> {
+  await tx('readwrite', (s) => s.put(r));
+}
+
+export async function deleteRecord(key: string): Promise<void> {
+  if (typeof indexedDB === 'undefined') return;
+  await tx('readwrite', (s) => s.delete(key)).catch(() => undefined);
+}
+
+/** Every copy on this device (sign-out). */
+export async function deleteAll(): Promise<void> {
+  if (typeof indexedDB === 'undefined') return;
+  await new Promise<void>((resolve) => {
+    const r = indexedDB.deleteDatabase(DB_NAME);
+    r.onsuccess = r.onerror = r.onblocked = () => resolve();
+  });
+}
+
+// ---------------------------------------------------------------- crypto
+
+const buf = (u: Uint8Array): ArrayBuffer =>
+  u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength) as ArrayBuffer;
+
+export function randomBytes(n: number): ArrayBuffer {
+  return buf(crypto.getRandomValues(new Uint8Array(n)));
+}
+
+function concat(...parts: (ArrayBuffer | Uint8Array)[]): ArrayBuffer {
+  const out = new Uint8Array(parts.reduce((a, p) => a + p.byteLength, 0));
+  let o = 0;
+  for (const p of parts) {
+    out.set(p instanceof Uint8Array ? p : new Uint8Array(p), o);
+    o += p.byteLength;
+  }
+  return buf(out);
+}
+
+export function fromB64url(s: string): ArrayBuffer {
+  const b = atob(
+    s
+      .replace(/-/g, '+')
+      .replace(/_/g, '/')
+      .padEnd(Math.ceil(s.length / 4) * 4, '='),
+  );
+  return buf(Uint8Array.from(b, (c) => c.charCodeAt(0)));
+}
+
+export function toB64url(b: ArrayBuffer): string {
+  return btoa(String.fromCharCode(...new Uint8Array(b)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+/** A non-extractable AES-GCM key from HKDF-SHA-256 over `secret`. */
+async function hkdf(secret: ArrayBuffer, info: string): Promise<CryptoKey> {
+  const base = await crypto.subtle.importKey('raw', secret, 'HKDF', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt: new ArrayBuffer(0), info: enc.encode(info) },
+    base,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+export async function seal(key: CryptoKey, data: ArrayBuffer, aad: string): Promise<Wrapped> {
+  const iv = randomBytes(12);
+  const out = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: enc.encode(aad) },
+    key,
+    data,
+  );
+  return { iv, data: out };
+}
+
+/** Throws when the key is wrong or anything was changed (AES-GCM checks both). */
+export async function open(key: CryptoKey, w: Wrapped, aad: string): Promise<ArrayBuffer> {
+  return crypto.subtle.decrypt({ name: 'AES-GCM', iv: w.iv, additionalData: enc.encode(aad) }, key, w.data);
+}
+
+const info = (r: Pick<CopyRecord, 'who' | 'deviceId'>, what: string) =>
+  `ledgerline-copy-v1|${what}|${r.who.userId}|${r.who.budgetId}|${r.deviceId}`;
+const keyAad = (r: Pick<CopyRecord, 'deviceId' | 'salt'>, credentialId: string) =>
+  `key|${credentialId}|${toB64url(r.salt)}|${r.deviceId}`;
+const shareAad = (r: Pick<CopyRecord, 'deviceId'>, credentialId: string) =>
+  `share|${credentialId}|${r.deviceId}`;
+export const blobAad = (r: Pick<CopyRecord, 'deviceId'>) => `copy|v1|${r.deviceId}`;
+
+/** The key-encryption key: needs the passkey (PRF output) and the server's share. */
+export const kek = (r: Pick<CopyRecord, 'who' | 'deviceId'>, prf: ArrayBuffer, share: ArrayBuffer) =>
+  hkdf(concat(prf, share), info(r, 'kek'));
+/** Wraps the cached share for offline unlock: needs the passkey only. */
+const offlineKey = (r: Pick<CopyRecord, 'who' | 'deviceId'>, prf: ArrayBuffer) =>
+  hkdf(prf, info(r, 'offline'));
+
+async function importDataKey(raw: ArrayBuffer): Promise<CryptoKey> {
+  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+
+/** A new copy's keys: a random data key, wrapped for this passkey and share. */
+export async function newKeys(
+  r: Omit<CopyRecord, 'keys' | 'shares' | 'blob'>,
+  credentialId: string,
+  prf: ArrayBuffer,
+  share: ArrayBuffer,
+): Promise<{ record: CopyRecord; dataKey: CryptoKey }> {
+  const raw = randomBytes(32);
+  const wrapped = await seal(await kek(r, prf, share), raw, keyAad(r, credentialId));
+  const cached = await seal(await offlineKey(r, prf), share, shareAad(r, credentialId));
+  const dataKey = await importDataKey(raw);
+  new Uint8Array(raw).fill(0);
+  return {
+    record: {
+      ...r,
+      keys: [{ credentialId, wrapped }],
+      shares: [{ credentialId, wrapped: cached }],
+      blob: null,
+    },
+    dataKey,
+  };
+}
+
+/** Unlocks with a passkey's PRF output and the server's share (online). */
+export async function unlock(
+  r: CopyRecord,
+  credentialId: string,
+  prf: ArrayBuffer,
+  share: ArrayBuffer,
+): Promise<{ dataKey: CryptoKey; record: CopyRecord }> {
+  const k = r.keys.find((x) => x.credentialId === credentialId);
+  if (!k) throw new Error('other_passkey');
+  const raw = await open(await kek(r, prf, share), k.wrapped, keyAad(r, credentialId));
+  const dataKey = await importDataKey(raw);
+  new Uint8Array(raw).fill(0);
+  // Refresh the cached share (it may have been rotated) for offline unlock.
+  const cached = await seal(await offlineKey(r, prf), share, shareAad(r, credentialId));
+  const shares = [
+    ...r.shares.filter((x) => x.credentialId !== credentialId),
+    { credentialId, wrapped: cached },
+  ];
+  return { dataKey, record: { ...r, shares } };
+}
+
+/** Unlocks with no signal: the cached share, within 7 days of the last confirmed sign-in. */
+export async function unlockOffline(
+  r: CopyRecord,
+  credentialId: string,
+  prf: ArrayBuffer,
+  now = Date.now(),
+): Promise<CryptoKey> {
+  if (now < r.lastServerTime || now - r.lastServerTime > OFFLINE_DAYS * 86_400_000)
+    throw new Error('offline_expired');
+  const c = r.shares.find((x) => x.credentialId === credentialId);
+  const k = r.keys.find((x) => x.credentialId === credentialId);
+  if (!c || !k) throw new Error('other_passkey');
+  const share = await open(await offlineKey(r, prf), c.wrapped, shareAad(r, credentialId));
+  const raw = await open(await kek(r, prf, share), k.wrapped, keyAad(r, credentialId));
+  const dataKey = await importDataKey(raw);
+  new Uint8Array(raw).fill(0);
+  return dataKey;
+}
+
+export async function sealCopy(r: CopyRecord, dataKey: CryptoKey, bytes: ArrayBuffer): Promise<Wrapped> {
+  return seal(dataKey, bytes, blobAad(r));
+}
+
+export async function openCopy(r: CopyRecord, dataKey: CryptoKey): Promise<ArrayBuffer | null> {
+  return r.blob ? open(dataKey, r.blob, blobAad(r)) : null;
+}

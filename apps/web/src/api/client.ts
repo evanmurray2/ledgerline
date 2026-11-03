@@ -4,6 +4,16 @@ import { ApiError as ApiErrorBody, CSRF_HEADER } from '@ledgerline/contracts';
 import type { z } from 'zod';
 import { connectivity } from '../state/connectivity';
 import { clearSavedData } from '../state/saved';
+import {
+  afterChange,
+  archiveFields,
+  canEditOffline,
+  currentDeviceId,
+  editOffline,
+  read as readCopy,
+  readsLocally,
+  wipe,
+} from '../copy/copy';
 
 export class ApiError extends Error {
   readonly code: string;
@@ -118,10 +128,23 @@ async function send<S extends z.ZodType>(
   body?: unknown,
 ): Promise<z.infer<S>> {
   const mutation = method !== 'GET';
+  // Screens are worked out from the copy on this device (D-44, src/copy).
+  if (readsLocally(method, path)) return answer(method, path, schema, await readCopy(path));
+  // Changes made with no signal go to the copy now and to the server later (a short list; copy.ts).
+  if (mutation && (connectivity.isOffline() || !navigator.onLine) && canEditOffline(method, path))
+    return schema.parse(
+      withRta(await editOffline(method, path, body), await afterChange().catch(() => null)),
+    );
+  // Archiving sends the amount this phone shows, with the change number it was worked out at.
+  const archive = mutation ? /^\/api\/settings\/categories\/([^/]+)\/(archive|remove)$/.exec(path) : null;
+  if (archive && (archive[2] === 'remove' || (body as { archived?: boolean } | undefined)?.archived)) {
+    const f = await archiveFields(decodeURIComponent(archive[1]!));
+    if (f) body = { ...(body as object | undefined), ...f };
+  }
   // Resting (95% of a daily limit): only the session is asked, so the app knows when it's over.
   if (!mutation && connectivity.get().readsPaused && path !== '/api/session')
     throw new ApiError('resting', 'Reading is paused until the daily limit resets.', 503);
-  if (mutation && !connectivity.canWrite()) {
+  if (mutation && !connectivity.canWrite() && !canEditOffline(method, path)) {
     throw new ApiError(
       connectivity.isOffline() ? 'offline' : 'read_only',
       'Changes are turned off right now.',
@@ -132,11 +155,23 @@ async function send<S extends z.ZodType>(
     res = await fetch(path, {
       method,
       credentials: 'same-origin',
-      headers: mutation ? { ...MUTATION_HEADERS } : { accept: 'application/json' },
+      headers: mutation
+        ? {
+            ...MUTATION_HEADERS,
+            ...(path === '/api/settings/security/sign-out-others' && currentDeviceId()
+              ? { 'x-device-id': currentDeviceId()! }
+              : {}),
+          }
+        : { accept: 'application/json' },
       body: mutation && body !== undefined ? JSON.stringify(body) : mutation ? '{}' : undefined,
     });
   } catch {
     connectivity.reportNetworkError();
+    // The connection dropped on the way: an offline-capable change is kept on the phone instead.
+    if (mutation && canEditOffline(method, path))
+      return schema.parse(
+        withRta(await editOffline(method, path, body), await afterChange().catch(() => null)),
+      );
     throw new ApiError('network', 'Network request failed', 0, true);
   }
   connectivity.reportOk();
@@ -156,18 +191,52 @@ async function send<S extends z.ZodType>(
     const message = parsed.success ? parsed.data.message : res.statusText || 'Request failed';
     if (code === 'read_only' || code === 'readonly') onReadOnly?.();
     if (code === 'resting') connectivity.setReadsPaused(true);
-    // Signed out (session ended) or a fresh passkey check is needed: the app shows sign-in or "Confirm it's you".
+    // The session ended (24 hours, or locked): sign in again. The saved copy stays, encrypted (D-44).
     if (code === 'unauthenticated' && !path.startsWith('/api/auth/')) {
       clearSavedData();
       window.dispatchEvent(new Event('ledgerline:signedout'));
     }
+    // No longer a member of this budget: this phone's copy goes.
+    if (code === 'not_member') void wipe();
     if (code === 'reauth') window.dispatchEvent(new Event('ledgerline:reauth'));
     throw new ApiError(code, message, res.status);
   }
+  // The server no longer works out Ready to Assign: fill it from the copy once this change is synced into it.
+  if (mutation && isAck(json)) json = withRta(json, await afterChange().catch(() => null));
   const parsed = schema.safeParse(json);
   if (!parsed.success) {
     throw new ApiError('bad_response', `Unexpected response from ${method} ${path}`, res.status);
   }
+  return parsed.data;
+}
+
+function isAck(x: unknown): x is { ok: true } {
+  return typeof x === 'object' && x !== null && (x as { ok?: unknown }).ok === true && !('rta' in x);
+}
+
+function withRta(json: unknown, r: { rta: number; rtaUpdating: boolean } | null): unknown {
+  return r && typeof json === 'object' && json !== null && !('rta' in json) ? { ...json, ...r } : json;
+}
+
+/** A screen answered by the copy, parsed like a server answer. */
+function answer<S extends z.ZodType>(
+  method: string,
+  path: string,
+  schema: S,
+  r: { status: number; body: string },
+): z.infer<S> {
+  const json = r.body ? (JSON.parse(r.body) as unknown) : null;
+  if (r.status >= 300) {
+    const parsed = ApiErrorBody.safeParse(json);
+    throw new ApiError(
+      parsed.success ? parsed.data.error : `http_${r.status}`,
+      parsed.success ? parsed.data.message : 'Request failed',
+      r.status,
+    );
+  }
+  const parsed = schema.safeParse(json);
+  if (!parsed.success)
+    throw new ApiError('bad_response', `Unexpected response from ${method} ${path}`, r.status);
   return parsed.data;
 }
 

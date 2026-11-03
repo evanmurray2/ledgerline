@@ -9,6 +9,7 @@ import { qk } from '../api/hooks';
 import { Card, Field, PrimaryButton, SecondaryButton, inputClass, cx } from '../components/ui';
 import { toast } from '../components/Toast';
 import { clearSavedData } from '../state/saved';
+import { signIn as copySignIn, wipe } from '../copy/copy';
 
 /** Runs a WebAuthn ceremony and turns the browser's errors into plain sentences. */
 async function ceremony(fn: () => Promise<unknown>): Promise<string | null> {
@@ -24,7 +25,12 @@ async function ceremony(fn: () => Promise<unknown>): Promise<string | null> {
   }
 }
 
+/**
+ * Passkey sign-in. Outside the mock it goes through the copy (src/copy/copy.ts), which asks the passkey for its PRF
+ * output in the same Face ID prompt so the saved copy opens without a second one (D-44).
+ */
 export async function signInWithPasskey(): Promise<void> {
+  if (import.meta.env.VITE_MOCK !== '1') return copySignIn();
   const optionsJSON = (await api.loginOptions()) as Parameters<typeof startAuthentication>[0]['optionsJSON'];
   const response = await startAuthentication({ optionsJSON });
   await api.loginVerify({ response });
@@ -343,20 +349,27 @@ export function SignInSection() {
         </SecondaryButton>
       )}
       <Problem text={err} />
-      {(sec.data?.sessions ?? 0) > 1 && (
+      <Devices devices={sec.data?.devices ?? []} run={run} />
+      {((sec.data?.sessions ?? 0) > 1 || (sec.data?.devices ?? []).some((d) => !d.revoked)) && (
         <SecondaryButton
           track="settings.sign_out_others"
-          onClick={() => run(api.signOutOthers, () => toast.show({ text: 'Other devices are signed out' }))}
+          onClick={() =>
+            run(api.signOutOthers, () =>
+              toast.show({ text: 'Other devices are signed out and their copies turned off' }),
+            )
+          }
         >
-          Sign out other devices ({(sec.data?.sessions ?? 1) - 1})
+          Sign out other devices
         </SecondaryButton>
       )}
       <button
         type="button"
         data-track="settings.sign_out"
         onClick={() =>
-          run(api.signOut, () => {
+          run(api.signOut, async () => {
             clearSavedData();
+            // Signing out deletes the copy on this phone (D-44).
+            await wipe();
             window.location.assign('/');
           })
         }
@@ -365,5 +378,52 @@ export function SignInSection() {
         Sign out
       </button>
     </>
+  );
+}
+
+/** Phones that keep an encrypted copy of the budget (D-44): each can be turned off here. */
+function Devices({
+  devices,
+  run,
+}: {
+  devices: { id: string; name: string; createdAt: string; lastSeenAt: string | null; revoked: boolean }[];
+  run: (fn: () => Promise<unknown>, then?: () => void) => void;
+}) {
+  const live = devices.filter((d) => !d.revoked);
+  if (!live.length) return null;
+  const when = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'never';
+  return (
+    <Card>
+      <div className="flex flex-col gap-1 px-3 py-3">
+        <span className="text-[15px] font-semibold">Phones with a copy</span>
+        <span className="text-[13px] leading-snug text-muted">
+          These keep an encrypted copy of your budget so it opens fast and without signal. Turning one off
+          stops it opening its copy the next time it connects.
+        </span>
+      </div>
+      {live.map((d) => (
+        <div
+          key={d.id}
+          className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 py-2"
+        >
+          <span className="flex flex-col gap-0.5">
+            <span className="text-[15px] font-semibold">{d.name}</span>
+            <span className="text-[12px] text-muted">
+              Added {when(d.createdAt)} · last opened {when(d.lastSeenAt)}
+            </span>
+          </span>
+          <button
+            type="button"
+            data-track="settings.device.revoke"
+            className="hit h-9 rounded-full px-3 text-[13px] font-bold text-over-fg"
+            onClick={() => run(() => api.revokeDevice(d.id))}
+            aria-label={`Turn off the copy on ${d.name}`}
+          >
+            Turn off
+          </button>
+        </div>
+      ))}
+    </Card>
   );
 }

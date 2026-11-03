@@ -12,7 +12,8 @@ export const BUILD_ID = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev';
 export const SAVED_MAX_AGE = 24 * 60 * 60 * 1000;
 
 export function savingEnabled(): boolean {
-  return import.meta.env.PROD && import.meta.env.VITE_MOCK !== '1';
+  // Off since D-44: the encrypted copy (src/copy) replaces plain saved screens. clearSavedData() removes old ones.
+  return false;
 }
 
 export function makePersister() {
