@@ -307,7 +307,7 @@ export function SignInSection() {
         <div className="flex flex-col gap-1 px-3 py-3">
           <span className="text-[15px] font-semibold">Passkeys</span>
           <span className="text-[13px] leading-snug text-muted">
-            Sign-in uses a passkey on your device, with no password. Sessions end after 24 hours.
+            Sign-in uses a passkey on your device, with no password.
           </span>
         </div>
         {keys.map((k) => (
@@ -370,8 +370,10 @@ export function SignInSection() {
         </SecondaryButton>
       )}
       <Problem text={err} />
+      <SignIns signIns={sec.data?.signIns ?? []} run={run} />
       <Devices devices={live} here={here} run={run} />
-      {(others.length > 0 || (sec.data?.otherSessions ?? 0) > 0) && (
+      {/* One other sign-in has its own Sign out above; this is for several at once, or for the phones' copies. */}
+      {(others.length > 0 || (sec.data?.otherSessions ?? 0) > 1) && (
         <div className="flex flex-col gap-1.5">
           <SecondaryButton
             className="lg:self-start lg:px-6"
@@ -405,6 +407,64 @@ export function SignInSection() {
         Sign out of this device
       </button>
     </>
+  );
+}
+
+/** Where you're signed in, this device first: each other sign-in can be ended here. */
+function SignIns({
+  signIns,
+  run,
+}: {
+  signIns: { id: string; name: string; signedInAt: string; current: boolean }[];
+  run: (fn: () => Promise<unknown>, then?: () => void) => void;
+}) {
+  if (!signIns.length) return null;
+  const sorted = [...signIns.filter((x) => x.current), ...signIns.filter((x) => !x.current)];
+  const at = (iso: string) =>
+    new Date(iso).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  return (
+    <Card>
+      <div className="flex flex-col gap-1 px-3 py-3">
+        <span className="text-[15px] font-semibold">Signed in</span>
+        <span className="text-[13px] leading-snug text-muted">
+          Each sign-in lasts 24 hours. Signing one out makes that device use its passkey again.
+        </span>
+      </div>
+      {sorted.map((x) => (
+        <div
+          key={x.id}
+          className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 py-2"
+        >
+          <span className="flex flex-col gap-0.5">
+            <span className="text-[15px] font-semibold">{x.name}</span>
+            <span className="text-[12px] text-muted">Signed in {at(x.signedInAt)}</span>
+          </span>
+          {x.current ? (
+            <span className="shrink-0 px-3 text-[13px] font-semibold text-muted">This device</span>
+          ) : (
+            <button
+              type="button"
+              data-track="settings.sign_in.sign_out"
+              className="hit h-9 rounded-full px-3 text-[13px] font-bold text-over-fg"
+              onClick={() =>
+                run(
+                  () => api.signOutSession(x.id),
+                  () => toast.show({ text: `${x.name} is signed out` }),
+                )
+              }
+              aria-label={`Sign out ${x.name}`}
+            >
+              Sign out
+            </button>
+          )}
+        </div>
+      ))}
+    </Card>
   );
 }
 

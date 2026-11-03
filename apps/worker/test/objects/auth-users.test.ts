@@ -149,6 +149,37 @@ describe('more than one user', () => {
     expect((await other.call('GET', '/api/settings/security')).json.otherSessions).toBe(0);
   });
 
+  it('lists each sign-in and ends one at a time, only the user’s own and never this one', async () => {
+    const laptop = new Browser();
+    expect((await laptop.signIn(otherKey)).status).toBe(200);
+    const list = (await other.call('GET', '/api/settings/security')).json.signIns as {
+      id: string;
+      name: string;
+      current: boolean;
+    }[];
+    expect(list.map((x) => x.current).sort()).toEqual([false, true]);
+    // Ids are not the stored session ids (the cookie's hash).
+    const stored = (await dir.prepare(`SELECT id FROM auth_session`).all<{ id: string }>()).results.map(
+      (r) => r.id,
+    );
+    for (const x of list) expect(stored).not.toContain(x.id);
+    const here = list.find((x) => x.current)!;
+    const there = list.find((x) => !x.current)!;
+    // This device ends with Sign out, not here; another user can't end it either.
+    expect(
+      (await other.call('POST', '/api/settings/security/sign-out-session', { id: here.id })).status,
+    ).toBe(404);
+    expect(
+      (await owner.call('POST', '/api/settings/security/sign-out-session', { id: there.id })).status,
+    ).toBe(404);
+    expect((await laptop.call('GET', '/api/settings/security')).status).toBe(200);
+    expect(
+      (await other.call('POST', '/api/settings/security/sign-out-session', { id: there.id })).status,
+    ).toBe(200);
+    expect((await laptop.call('GET', '/api/settings/security')).status).toBe(401);
+    expect((await other.call('GET', '/api/settings/security')).status).toBe(200);
+  });
+
   it('registration for a user excludes only their own passkeys and never reveals another user’s', async () => {
     const o = await owner.call('POST', '/api/auth/register/options', {});
     const ids = ((o.json.excludeCredentials as { id: string }[]) ?? []).map((x) => x.id);
