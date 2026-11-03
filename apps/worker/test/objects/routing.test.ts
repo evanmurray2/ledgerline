@@ -67,6 +67,10 @@ class Browser {
       name: 'Test',
     });
   }
+  async signIn(a: SoftAuthenticator) {
+    const o = await this.call('POST', '/api/auth/login/options');
+    return this.call('POST', '/api/auth/login/verify', { response: await a.get(o.json as never) });
+  }
 }
 
 const ownerKey = new SoftAuthenticator(ORIGIN, 'ledgerline.test');
@@ -110,23 +114,88 @@ describe('routing', () => {
     expect((sec.json.passkeys as { id: string }[]).map((p) => p.id)).toEqual([ownerKey.id]);
   });
 
-  it('a phone gets its key share until it is revoked (D-45)', async () => {
+  it('a phone gets its key share until it is signed out (D-45)', async () => {
     const d = await owner.call('POST', '/api/settings/security/devices', { name: 'iPhone' });
     expect(d.status).toBe(200);
     const { id, share } = d.json as { id: string; share: string };
     expect(share).toMatch(/^[A-Za-z0-9_-]{43}$/);
     const again = await owner.call('POST', `/api/settings/security/devices/${id}/share`);
     expect(again.json).toEqual({ id, share });
-    const list = await owner.call('GET', '/api/settings/security');
-    expect((list.json as { devices: unknown[] }).devices).toEqual([
-      expect.objectContaining({ id, name: 'iPhone', revoked: false }),
-    ]);
     // Another user can't read it.
     expect((await other.call('POST', `/api/settings/security/devices/${id}/share`)).status).not.toBe(200);
-    expect((await owner.call('POST', `/api/settings/security/devices/${id}/revoke`)).status).toBe(200);
+    // The phone that's open now is one sign-in in the list, with the budget saved on it.
+    const status = async () => (await owner.call('POST', '/api/auth/copy-status', { device: id })).json;
+    expect(await status()).toEqual({ off: false });
+    const list = async () =>
+      (await owner.call('GET', '/api/settings/security')).json.signIns as {
+        id: string;
+        name: string;
+        current: boolean;
+        saved: boolean;
+        locked: boolean;
+      }[];
+    expect((await list()).filter((x) => x.current)).toEqual([
+      expect.objectContaining({ current: true, saved: true, locked: false }),
+    ]);
+    // Locked (its sign-in ended): still listed, so another device can sign it out.
+    const laptop = new Browser();
+    expect((await laptop.signIn(ownerKey)).status).toBe(200);
+    expect((await owner.call('POST', '/api/settings/security/sign-out')).status).toBe(200);
+    const locked = (
+      (await laptop.call('GET', '/api/settings/security')).json.signIns as {
+        id: string;
+        name: string;
+        current: boolean;
+        saved: boolean;
+        locked: boolean;
+      }[]
+    ).find((x) => x.locked)!;
+    expect(locked).toMatchObject({ name: 'iPhone', current: false, saved: true });
+    expect(await status()).toEqual({ off: false });
+    expect(
+      (await laptop.call('POST', '/api/settings/security/sign-out-session', { id: locked.id })).status,
+    ).toBe(200);
+    expect(await status()).toEqual({ off: true });
+    expect(await owner.signIn(ownerKey)).toMatchObject({ status: 200 });
     const gone = await owner.call('POST', `/api/settings/security/devices/${id}/share`);
     expect(gone.status).toBe(410);
     expect(gone.json).toMatchObject({ error: 'revoked' });
+    expect(await laptop.call('POST', '/api/settings/security/sign-out')).toMatchObject({ status: 200 });
+  });
+
+  it('signing out of this device forgets its copy; locking keeps it', async () => {
+    const d = await owner.call('POST', '/api/settings/security/devices', { name: 'iPhone' });
+    const { id } = d.json as { id: string };
+    const status = async () => (await owner.call('POST', '/api/auth/copy-status', { device: id })).json;
+    expect((await owner.call('POST', '/api/settings/security/sign-out')).status).toBe(200);
+    expect(await status()).toEqual({ off: false });
+    expect((await owner.signIn(ownerKey)).status).toBe(200);
+    expect((await owner.call('POST', `/api/settings/security/devices/${id}/share`)).status).toBe(200);
+    expect(
+      (await owner.call('POST', '/api/settings/security/sign-out', { forget: true, devices: [id] })).status,
+    ).toBe(200);
+    expect(await status()).toEqual({ off: true });
+    expect(await owner.call('POST', '/api/auth/copy-status', { device: 'nope' })).toMatchObject({
+      json: { off: true },
+    });
+    expect((await owner.signIn(ownerKey)).status).toBe(200);
+  });
+
+  it('signing out other devices turns their copies off and keeps this one', async () => {
+    const mine = (await owner.call('POST', '/api/settings/security/devices', { name: 'iPhone' })).json as {
+      id: string;
+    };
+    const ipad = new Browser();
+    expect((await ipad.signIn(ownerKey)).status).toBe(200);
+    const theirs = (await ipad.call('POST', '/api/settings/security/devices', { name: 'iPad' })).json as {
+      id: string;
+    };
+    expect((await owner.call('POST', '/api/settings/security/sign-out-others')).status).toBe(200);
+    const off = async (device: string) =>
+      (await owner.call('POST', '/api/auth/copy-status', { device })).json.off;
+    expect(await off(mine.id)).toBe(false);
+    expect(await off(theirs.id)).toBe(true);
+    expect((await ipad.call('GET', '/api/settings/security')).status).toBe(401);
   });
 
   it('rests at 95% of a daily limit: only sign-in and the session answer', async () => {

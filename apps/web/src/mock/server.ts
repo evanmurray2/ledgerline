@@ -572,6 +572,14 @@ function isParam(a: string | undefined, b: string): boolean {
 let mockSignIns = [
   { id: 'si_phone', name: 'iPhone · Home Screen app', signedInAt: '2026-11-14T08:00:00Z', current: true },
   { id: 'si_mac', name: 'Mac · Safari', signedInAt: '2026-11-13T21:30:00Z', current: false },
+  {
+    id: 'si_ipad',
+    name: 'iPad',
+    signedInAt: '2026-11-12T19:00:00Z',
+    current: false,
+    saved: true,
+    locked: true,
+  },
 ];
 
 /** Third path segment is an id under /settings/{categories,rules,payees,connections}. */

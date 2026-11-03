@@ -3,7 +3,14 @@
 import { useState } from 'react';
 import type { Session } from '@ledgerline/contracts';
 import { PrimaryButton, SecondaryButton } from '../components/ui';
-import { type CopyState, start, unlockOnline, unlockWithoutSignal, wipe } from '../copy/copy';
+import {
+  type CopyState,
+  type FullWhy,
+  signOutHere,
+  start,
+  unlockOnline,
+  unlockWithoutSignal,
+} from '../copy/copy';
 
 function Frame({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -18,6 +25,19 @@ function Frame({ title, children }: { title: string; children: React.ReactNode }
     </main>
   );
 }
+
+/** Why the whole budget is downloading instead of only what changed (also sent to the server's logs). */
+const WHY: Record<FullWhy, string> = {
+  memory: 'this device keeps your budget in memory only.',
+  first: 'there’s no saved copy on this phone yet.',
+  no_prf: 'your passkey didn’t give Ledgerline a key, so nothing is saved on this phone.',
+  turned_off: 'this phone was signed out from another device.',
+  unreadable_share: 'the saved copy couldn’t be opened (share).',
+  unreadable_key: 'the saved copy couldn’t be opened (key).',
+  unreadable_copy: 'the saved copy couldn’t be opened (copy).',
+  empty: 'the saved copy was empty.',
+  reset: 'your budget was restored on the server.',
+};
 
 function cancelled(e: unknown): string {
   const name = (e as { name?: string }).name;
@@ -53,6 +73,9 @@ export function CopyScreen({
         <p className="m-0 text-[15px] leading-relaxed text-ink-2" role="status">
           {copy.progress > 0 ? `Downloaded ${copy.progress.toLocaleString()} rows…` : 'One moment…'}
         </p>
+        {copy.why && (
+          <p className="m-0 text-[13px] leading-snug text-muted">Downloading everything: {WHY[copy.why]}</p>
+        )}
       </Frame>
     );
   if (copy.status === 'failed')
@@ -90,9 +113,9 @@ export function CopyScreen({
       {!offline && (
         <SecondaryButton
           disabled={busy}
-          onClick={() => go(() => wipe().then(() => window.location.assign('/')))}
+          onClick={() => go(() => signOutHere().then(() => window.location.assign('/')))}
         >
-          Remove the copy from this phone
+          Sign out and delete it from this phone
         </SecondaryButton>
       )}
     </Frame>

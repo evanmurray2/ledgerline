@@ -692,21 +692,24 @@ export const SecurityView = z.object({
   ),
   /** Signed-in sessions on all devices. */
   sessions: z.number().int(),
-  /** Signed-in sessions other than the one asking (what "Sign out other devices" would end). */
+  /** Entries in `signIns` other than this one (what "Sign out other devices" would sign out). */
   otherSessions: z.number().int().default(0),
-  /** Every unexpired sign-in, newest first, named by device and browser ("iPhone · Safari"). */
+  /**
+   * Where you're signed in, newest first: each sign-in, named by device and browser ("iPhone · Safari"), and each
+   * locked phone with a saved copy of the budget (D-45), which opens with Face ID. Signing one out ends its sign-in
+   * and turns its copy off, so the phone deletes it.
+   */
   signIns: z
-    .array(z.object({ id: z.string(), name: z.string(), signedInAt: z.string(), current: z.boolean() }))
-    .default([]),
-  /** Phones holding an encrypted copy of the budget (D-45). */
-  devices: z
     .array(
       z.object({
         id: z.string(),
         name: z.string(),
-        createdAt: z.string(),
-        lastSeenAt: z.string().nullable(),
-        revoked: z.boolean(),
+        signedInAt: z.string(),
+        current: z.boolean(),
+        /** The budget is saved on it. */
+        saved: z.boolean().default(false),
+        /** Locked: no sign-in right now, but its saved copy opens with Face ID. */
+        locked: z.boolean().default(false),
       }),
     )
     .default([]),
