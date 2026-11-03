@@ -226,15 +226,27 @@ test('Budget lists your groups first, then card payments, then Owed to you', asy
   expect(cards).toBeLessThan(owedY);
 });
 
-test('Set targets: a list of every category, and saving a target comes back to it', async ({ page }) => {
-  await page.goto('/budget/targets');
-  const list = page.getByRole('dialog', { name: 'Set targets' });
-  await list.getByRole('link', { name: /^Home repairs/ }).click();
+test('Set targets: a page like Categories, and saving a target comes back to it', async ({ page }, info) => {
+  await page.goto('/budget?month=2026-10');
+  if (info.project.name === 'phone') await page.getByRole('button', { name: 'More budget actions' }).click();
+  await page.getByRole('link', { name: 'Set targets' }).first().click();
+  await expect(page).toHaveURL(/\/targets\?month=2026-10/);
+  await expect(page.getByRole('heading', { name: 'Set targets' })).toBeVisible();
+  await page.getByRole('link', { name: /^Home repairs/ }).click();
   const sheet = page.getByRole('dialog', { name: 'Target' });
   await sheet.getByLabel('Have this much available').fill('50');
   await sheet.getByRole('button', { name: 'Save target' }).click();
-  await expect(page.getByRole('dialog', { name: 'Set targets' })).toBeVisible();
-  await expect(page).toHaveURL(/\/budget\/targets/);
+  await expect(sheet).toBeHidden();
+  await expect(page).toHaveURL(/\/targets\?month=2026-10/);
+  // Back returns to the Budget month it came from.
+  await page.getByRole('button', { name: 'Back to budget' }).click();
+  await expect(page).toHaveURL(/\/budget\?month=2026-10/);
+});
+
+test('Set targets: old links to the sheet open the page', async ({ page }) => {
+  await page.goto('/budget/targets');
+  await expect(page).toHaveURL(/\/targets$/);
+  await expect(page.getByRole('heading', { name: 'Set targets' })).toBeVisible();
 });
 
 test('Target: saving from a category goes back to the Budget, not the category', async ({ page }) => {
@@ -368,8 +380,8 @@ test('Accounts: Refresh syncs every bank; on a phone, so does pulling down', asy
   await drag('release');
   await expect(page.getByTestId('pull-refresh')).toContainText('Syncing banks…');
   await expect(page.getByTestId('pull-refresh')).toContainText('Up to date');
-  // The sync button next to the gear does the same.
-  await expect(page.getByRole('button', { name: 'Sync banks now' })).toBeEnabled();
+  // The Refresh button next to the gear does the same.
+  await expect(page.getByRole('button', { name: 'Refresh' })).toBeEnabled();
 });
 
 test('Desktop: type into Assigned, Tab saves and moves on, Escape puts it back', async ({ page }, info) => {

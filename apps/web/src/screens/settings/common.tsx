@@ -6,12 +6,15 @@ import { BackHeader, cx, DESKTOP_WIDTH, Icon, useIsDesktop } from '../../compone
 export function Page({
   title,
   back,
+  backSearch,
   right,
   footer,
   children,
 }: {
   title: string;
   back: string;
+  /** Kept on the way back, e.g. the Budget's month. */
+  backSearch?: Record<string, string | undefined>;
   right?: ReactNode;
   /** Stays at the bottom while the page scrolls (Save buttons). */
   footer?: ReactNode;
@@ -34,7 +37,7 @@ export function Page({
       ) : (
         <BackHeader
           title={title}
-          onBack={() => void navigate({ to: back })}
+          onBack={() => void navigate({ to: back, search: backSearch })}
           backLabel={`Back to ${back === '/settings' ? 'settings' : back === '/accounts' ? 'accounts' : back === '/budget' ? 'budget' : 'list'}`}
           right={right}
         />

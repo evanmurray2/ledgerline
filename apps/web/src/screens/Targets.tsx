@@ -1,6 +1,6 @@
 // Set targets (the list of every category) and the Target sheet for one category.
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { Link, Outlet, useNavigate, useParams, useRouterState, useSearch } from '@tanstack/react-router';
 import type { Target } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
 import { useCategoriesSettings, useCategorySheet, useMoneyMutation } from '../api/hooks';
@@ -21,6 +21,7 @@ import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { addMonths, monthLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
 import { useBudgetMonth } from './Budget';
+import { Page } from './settings/common';
 
 // ------------------------------------------------------------------ target
 
@@ -62,20 +63,19 @@ export function TargetScreen() {
   useScreen('target');
   const q = useCategorySheet(categoryId, month);
   const navigate = useNavigate();
-  // Where the target was opened from: the targets list, Categories (a new category), or the category sheet.
+  // Where the target was opened from: the Set targets page, Categories (a new category), or the category sheet.
   const from = (useSearch({ strict: false }) as { from?: string }).from;
+  const inTargets = useRouterState({ select: (s) => s.location.pathname.startsWith('/targets') });
   const m = month === current ? undefined : month;
   const back = () =>
-    from === 'targets'
-      ? void navigate({ to: '/budget/targets', search: { month: m } })
+    inTargets
+      ? void navigate({ to: '/targets', search: { month: m } })
       : from === 'categories'
         ? void navigate({ to: '/categories' })
         : void navigate({ to: `/budget/category/${categoryId}`, search: { month: m } });
   // After saving, skip the category sheet (it was only a stop on the way): back to the list or the budget.
   const done = () =>
-    from === 'targets' || from === 'categories'
-      ? back()
-      : void navigate({ to: '/budget', search: { month: m } });
+    inTargets || from === 'categories' ? back() : void navigate({ to: '/budget', search: { month: m } });
   const save = useMoneyMutation((v: { id: string; body: Parameters<typeof api.setTarget>[1] }) =>
     api.setTarget(v.id, v.body),
   );
@@ -335,35 +335,24 @@ export function TargetScreen() {
   );
 }
 
+/** Every category and its target, a page of its own like Categories; a row opens that category's Target sheet. */
 export function TargetsScreen() {
   useScreen('targets');
   const { month, current } = useBudgetMonth();
-  const navigate = useNavigate();
   const q = useCategoriesSettings();
   const m = month === current ? undefined : month;
-  const close = () => void navigate({ to: '/budget', search: { month: m } });
   const groups = (q.data?.groups ?? []).filter((g) => !g.system);
   const none = groups.flatMap((g) => g.categories).filter((c) => c.meta.endsWith('No target'));
   return (
-    <Sheet
-      label="Set targets"
-      track="targets"
-      onClose={close}
-      gap="small"
-      header={
-        <SheetTitle
-          title="Set targets"
-          sub={
-            !q.data
-              ? undefined
-              : none.length === 0
-                ? 'Every category has a target'
-                : `${none.length} ${none.length === 1 ? 'category has' : 'categories have'} no target yet`
-          }
-        />
-      }
-    >
+    <Page title="Set targets" back="/budget" backSearch={{ month: m }}>
       {!q.data && (q.error ? <ErrorNote error={q.error} /> : <Loading />)}
+      {q.data && (
+        <p className="m-0 text-[13px] text-muted">
+          {none.length === 0
+            ? 'Every category has a target.'
+            : `${none.length} ${none.length === 1 ? 'category has' : 'categories have'} no target yet.`}
+        </p>
+      )}
       {groups.map((g) => (
         <div key={g.id} className="flex shrink-0 flex-col gap-2">
           <Label>{g.name}</Label>
@@ -373,8 +362,8 @@ export function TargetsScreen() {
               return (
                 <Link
                   key={c.id}
-                  to={`/budget/category/${c.id}/target`}
-                  search={{ month: m, from: 'targets' }}
+                  to={`/targets/${c.id}`}
+                  search={{ month: m }}
                   data-track="targets.category"
                   className="flex min-h-14 items-center justify-between gap-3 border-t border-divider bg-surface px-3 py-2 text-ink no-underline first:border-t-0"
                 >
@@ -393,6 +382,7 @@ export function TargetsScreen() {
           </div>
         </div>
       ))}
-    </Sheet>
+      <Outlet />
+    </Page>
   );
 }

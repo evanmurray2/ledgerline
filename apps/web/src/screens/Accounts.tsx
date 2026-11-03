@@ -15,6 +15,7 @@ import {
   cx,
   DESKTOP_WIDTH,
   DesktopHeader,
+  HeaderAction,
   ErrorNote,
   Field,
   Icon,
@@ -189,32 +190,28 @@ export function AccountsScreen() {
         <DesktopHeader
           title="Accounts"
           right={
-            <button
-              type="button"
-              data-track="accounts.refresh"
+            <HeaderAction
+              track="accounts.refresh"
+              icon="refresh"
+              label={busy ? 'Syncing…' : 'Refresh'}
               disabled={!canWrite || busy}
+              spin={busy}
               onClick={() => void run()}
-              className="hit flex h-9 items-center gap-1.5 rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent disabled:opacity-50"
-            >
-              <Icon name="refresh" size={16} stroke={2.4} className={busy ? 'animate-spin' : undefined} />
-              {busy ? 'Syncing…' : 'Refresh'}
-            </button>
+            />
           }
         />
       ) : (
         <header className="flex min-h-14 shrink-0 items-center justify-between border-b border-line bg-surface pl-4 pr-1">
           <h1 className="m-0 text-[22px] font-bold">Accounts</h1>
           <span className="flex items-center">
-            <button
-              type="button"
-              data-track="accounts.refresh"
-              aria-label="Sync banks now"
+            <HeaderAction
+              track="accounts.refresh"
+              icon="refresh"
+              label={busy ? 'Syncing…' : 'Refresh'}
               disabled={!canWrite || busy}
+              spin={busy}
               onClick={() => void run()}
-              className="flex h-11 w-11 items-center justify-center text-ink-2 disabled:opacity-50"
-            >
-              <Icon name="refresh" size={21} className={busy ? 'animate-spin' : undefined} />
-            </button>
+            />
             <Link
               to="/settings"
               data-track="accounts.settings"

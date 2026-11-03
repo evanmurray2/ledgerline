@@ -213,3 +213,16 @@ Built all at once on the owner's word (D-46): no settings and no shadow comparis
 - [x] A refresh, or the phone restarting the app, no longer locks: within 10 minutes of the last activity the copy reopens without Face ID, using its data key held in IndexedDB (non-extractable; deleted on lock, sign-out and wipe). _Verify:_ passkey e2e reloads an open copy and checks there's no lock screen and no new sign-in.
 - [x] Activity hides a filter chip with nothing in it (Needs attention at 0, Not posted yet with no pending or upcoming rows) unless it's the one showing, and hides the chip row when neither is left, as Budget already did. `ActivityView.notPostedCount` carries the count. On a phone, Set targets moved from the bottom of the Budget into the ⋯ menu at the top, next to Edit categories. _Verify:_ `screens.test.tsx`; `app.spec.ts` "Categories open from Budget".
 - [x] `docs/design.md` and `docs/sync-spec.md` open with "What's true now": what later decisions replaced (Durable Objects, alarm jobs, the phone working out the budget, passkeys, no R2 or backups, no staging, deploys on merge), and each replaced section starts with a **Now** note naming the decision. The Money rules are unchanged. CLAUDE.md points sessions there first. _Verify:_ `pnpm check` (format).
+
+## 19. Design consistency (D-54, `docs/design-review.md`, Nov 3, 2026)
+
+- [x] Set targets is a page like Categories (`/targets`, Back to the Budget's month); a category's target opens as a sheet over it, in the side panel on a computer. Old `/budget/targets` links redirect. `screens/Targets.tsx` split out of `BudgetSheets.tsx`. _Verify:_ `app.spec.ts` "Set targets: a page like Categories…" and "old links…".
+- [x] One header action style (`HeaderAction`): Add on Activity, Refresh on Accounts (no longer a bare icon on a phone), New rule on Rules. _Verify:_ `app.spec.ts` "Accounts: Refresh syncs every bank…".
+- [ ] Phone headers: one `PhoneHeader` (56 px, 22 px title) for Activity, Accounts and Reports; `BackHeader` at 56 px (review 1).
+- [ ] One ⋯ menu: Register's account menu uses `OverflowMenu` (review 2).
+- [ ] Register's filter chips sit in the header with count badges, like Budget and Activity (review 4).
+- [ ] Buttons: hand-rolled pills and text links use the shared components (review 5).
+- [ ] Removing things confirms the same way: transaction delete gets Undo; removing a group or passkey, and signing out a device, confirm first (review 6).
+- [ ] Sheets: `SheetTitle` everywhere, and the main button in the sticky footer (review 7, 8).
+- [ ] The rest of the review: month switchers, section labels, Needs attention lists, empty states, banners, copy, duplicate Rename payee, desktop padding, icons (review 9 to 18).
+

@@ -96,7 +96,7 @@ export function OverflowMenu({
   className,
 }: {
   label?: string;
-  items: { to: string; name: string; track?: string }[];
+  items: { to: string; search?: Record<string, string | undefined>; name: string; track?: string }[];
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -137,6 +137,7 @@ export function OverflowMenu({
             <Link
               key={i.to}
               to={i.to}
+              search={i.search}
               data-track={i.track}
               onClick={() => setOpen(false)}
               className="flex h-10 items-center px-3.5 text-[14px] font-semibold text-ink no-underline hover:bg-surface-2"
@@ -343,6 +344,60 @@ export function SoftButton({ className, ...p }: BtnProps) {
       )}
       {...p}
     />
+  );
+}
+
+const HEADER_ACTION =
+  'hit flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline disabled:opacity-50';
+
+/**
+ * The one style for a screen's own action in its header (Add, Refresh), the same on phone and desktop: the soft
+ * pill with an icon and a word. Filled blue is kept for the main button of a sheet or form (Save, Assign).
+ */
+export function HeaderAction({
+  icon,
+  label,
+  to,
+  onClick,
+  disabled,
+  spin,
+  track,
+  ariaLabel,
+}: {
+  icon: IconName;
+  label: string;
+  /** A link (opens a sheet or page) or, without it, a button. */
+  to?: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  /** Turns the icon while the action runs (Refresh). */
+  spin?: boolean;
+  track: string;
+  ariaLabel?: string;
+}) {
+  const inner = (
+    <>
+      <Icon name={icon} size={16} stroke={2.4} className={spin ? 'animate-spin' : undefined} />
+      {label}
+    </>
+  );
+  if (to)
+    return (
+      <Link to={to} data-track={track} aria-label={ariaLabel} className={HEADER_ACTION}>
+        {inner}
+      </Link>
+    );
+  return (
+    <button
+      type="button"
+      data-track={track}
+      aria-label={ariaLabel}
+      disabled={disabled}
+      onClick={onClick}
+      className={HEADER_ACTION}
+    >
+      {inner}
+    </button>
   );
 }
 
