@@ -73,7 +73,11 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   await again.goto(String(link.json.url));
   await again.getByRole('button', { name: 'Create passkey' }).click();
   await expect(again.getByRole('alert')).toContainText('isn’t valid');
-  await other.close();
+  await again.close();
+  // Clearing that page's cookies signed the second device out too: it signs in again.
+  await phone.goto('/budget');
+  await phone.getByRole('button', { name: 'Sign in with passkey' }).click();
+  await expect(phone).toHaveURL(/\/welcome/);
 
   // Safari on an iPhone keeps an encrypted copy (D-45, D-48). Signing in gets the passkey's PRF output in the same
   // prompt.
@@ -128,12 +132,46 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   await expect(page.getByText('Couldn’t reach Ledgerline')).toBeHidden();
   await context.setOffline(false);
 
-  // Turned off from Settings → Sign-in (here, the API): the next sign-in can't open it, so it's replaced.
+  // Locking ends the sign-in and keeps the copy: opening again downloads only what changed, not everything.
   await page.reload();
-  const rev = await post(page, `/api/settings/security/devices/${first.deviceId}/revoke`);
-  expect(rev.status).toBe(200);
+  await expect(page).toHaveURL(/\/welcome/);
   await post(page, '/api/settings/security/sign-out');
+  const since: number[] = [];
+  page.on('request', (r) => {
+    const u = new URL(r.url());
+    if (u.pathname === '/api/sync') since.push(Number(u.searchParams.get('since')));
+  });
   await page.reload();
+  await page.getByRole('button', { name: 'Sign in with passkey' }).click();
+  await expect(page).toHaveURL(/\/welcome/);
+  await expect.poll(() => since.length, { timeout: 15_000 }).toBeGreaterThan(0);
+  expect(since[0]).toBeGreaterThan(0);
+  expect((await copy())?.deviceId).toBe(first.deviceId);
+
+  // Locked again, then signed out from the other device (Settings → Sign-in, here the API): the phone deletes its
+  // copy as soon as it opens, before anyone signs in.
+  await post(page, '/api/settings/security/sign-out');
+  const list = await phone.evaluate(async () => {
+    const r = await fetch('/api/settings/security');
+    return (await r.json()) as { signIns: { id: string; name: string; locked: boolean; saved: boolean }[] };
+  });
+  const locked = list.signIns.find((x) => x.locked && x.saved);
+  expect(locked?.name).toBe('iPhone');
+  const out = await phone.evaluate(async (id) => {
+    const r = await fetch('/api/settings/security/sign-out-session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-ledgerline': '1' },
+      body: JSON.stringify({ id }),
+    });
+    return r.status;
+  }, locked!.id);
+  expect(out).toBe(200);
+  await other.close();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  await expect.poll(async () => await copy(), { timeout: 15_000 }).toBeNull();
+
+  // Signing in again starts a new copy.
   await page.getByRole('button', { name: 'Sign in with passkey' }).click();
   await expect(page).toHaveURL(/\/welcome/);
   await expect.poll(async () => (await copy())?.deviceId, { timeout: 15_000 }).not.toBe(first.deviceId);

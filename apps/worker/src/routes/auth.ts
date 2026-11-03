@@ -411,6 +411,20 @@ authRoutes.post('/login/verify', async (c) => {
   return c.json({ ok: true });
 });
 
+/**
+ * Whether a phone's saved copy was signed out from another device (Settings → Sign-in). Asked without a sign-in, when
+ * the app opens and when its sign-in ends, so the phone deletes the copy before it shows anything. Device ids are
+ * 128 random bits and the answer says nothing else.
+ */
+authRoutes.post('/copy-status', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { device?: unknown };
+  if (typeof body.device !== 'string' || body.device.length > 64) return c.json({ off: true });
+  const d = await c.env.DB.prepare(`SELECT revoked_at, share FROM device WHERE id = ?1`)
+    .bind(body.device)
+    .first<{ revoked_at: number | null; share: string | null }>();
+  return c.json({ off: !d || d.revoked_at !== null || !d.share });
+});
+
 authRoutes.post('/logout', async (c) => {
   const token = readCookie(c.req.raw, SESSION_COOKIE);
   if (token)

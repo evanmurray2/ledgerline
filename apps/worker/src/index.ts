@@ -24,9 +24,13 @@ export function storeUnavailable(error: string): { error: string; message: strin
 const app = new Hono<AppEnv>();
 app.use('/api/*', apiHeaders);
 // Sign-in attempts per IP. Requests without a client IP only come from local runs and tests.
+// Checks that try nothing (what the sign-in screen shows, whether a phone was signed out) count separately, so
+// opening the app never uses up sign-in attempts.
+const AUTH_CHECKS = new Set(['/api/auth/status', '/api/auth/copy-status']);
 app.use('/api/auth/*', async (c, next) => {
   const ip = c.req.header('cf-connecting-ip');
-  if (ip && c.env.AUTH_LIMITER && !(await c.env.AUTH_LIMITER.limit({ key: `auth:${ip}` })).success)
+  const key = `${AUTH_CHECKS.has(c.req.path) ? 'check' : 'auth'}:${ip}`;
+  if (ip && c.env.AUTH_LIMITER && !(await c.env.AUTH_LIMITER.limit({ key })).success)
     return c.json({ error: 'rate_limited', message: 'Too many tries. Wait a minute and try again.' }, 429);
   return next();
 });

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { Session } from '@ledgerline/contracts';
 import { PrimaryButton, SecondaryButton } from '../components/ui';
-import { type CopyState, start, unlockOnline, unlockWithoutSignal, wipe } from '../copy/copy';
+import { type CopyState, signOutHere, start, unlockOnline, unlockWithoutSignal } from '../copy/copy';
 
 function Frame({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -90,9 +90,9 @@ export function CopyScreen({
       {!offline && (
         <SecondaryButton
           disabled={busy}
-          onClick={() => go(() => wipe().then(() => window.location.assign('/')))}
+          onClick={() => go(() => signOutHere().then(() => window.location.assign('/')))}
         >
-          Remove the copy from this phone
+          Sign out and delete it from this phone
         </SecondaryButton>
       )}
     </Frame>

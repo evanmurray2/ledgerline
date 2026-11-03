@@ -4,7 +4,8 @@
 // kept in memory for the visit only.
 //
 // Lock (13.4): after 10 idle minutes, or 10 minutes in the background, the keys, the copy and the server session are
-// dropped; opening again needs Face ID. Wipe: sign-out, a revoked device, no longer a member, or 7 days offline.
+// dropped; opening again needs Face ID. Wipe: signing out, here or from another device (Settings → Sign-in), no longer
+// a member, or 7 days offline.
 import { useSyncExternalStore } from 'react';
 import { CSRF_HEADER, type Session } from '@ledgerline/contracts';
 import { connectivity } from '../state/connectivity';
@@ -12,6 +13,7 @@ import { EngineHost, syncAll, type EngineIdentity, type SyncPage } from './host'
 import { assert, canUsePasskeys, keepsCopy, type RequestOptionsJSON } from './passkey';
 import {
   type CopyRecord,
+  allRecords,
   deleteAll,
   deleteRecord,
   fromB64url,
@@ -181,11 +183,9 @@ export async function start(session: Session): Promise<void> {
           if (e instanceof Error && e.message === 'other_passkey')
             throw new Error('Use the passkey you set this phone up with.');
           if (!(e instanceof CopyUnreadable)) throw e;
-          // The copy can't be opened. The server has everything, so start a new copy (and turn the old one off).
+          // The copy can't be opened. The server has everything, so start a new copy (the server turns the old one
+          // off when the new one is set up).
           console.warn(JSON.stringify({ event: 'copy_unreadable', step: e.step }));
-          await server('POST', `/api/settings/security/devices/${rec.deviceId}/revoke`).catch(
-            () => undefined,
-          );
           await deleteRecord(key);
           rec = null;
           dataKey = null;
@@ -541,7 +541,7 @@ export async function lock(): Promise<void> {
   await server('POST', '/api/settings/security/sign-out').catch(() => undefined);
 }
 
-/** Deletes this person's copy (sign-out, a revoked device, no longer a member). */
+/** Deletes this person's copy (sign-out, signed out from another device, no longer a member); `all`: every copy. */
 export async function wipe(all = false): Promise<void> {
   await host?.close();
   host = null;
@@ -553,16 +553,53 @@ export async function wipe(all = false): Promise<void> {
   set({ status: MOCK ? 'off' : 'idle', saved: false, hasSaved: false, queued: 0, offline: false });
 }
 
+/**
+ * Signed out from another device (Settings → Sign-in): the copies it turned off are deleted before anything is shown.
+ * Asked when the app opens and whenever the sign-in ends; with no signal it does nothing. A copy kept in memory only
+ * goes too when the sign-in ends, since nothing on this device can say it's still wanted.
+ */
+/**
+ * Sign out of this device: every copy saved here is deleted first, then the sign-in ends and the server forgets the
+ * copies' shares.
+ */
+export async function signOutHere(): Promise<void> {
+  const devices = MOCK ? [] : (await allRecords()).map((r) => r.deviceId);
+  await wipe(true);
+  await server('POST', '/api/settings/security/sign-out', { forget: true, devices });
+}
+
+let dropping: Promise<void> | null = null;
+export function dropSignedOut(signInEnded = false): Promise<void> {
+  // Several screens' requests can end at once: one check answers them all.
+  dropping ??= checkSignedOut(signInEnded).finally(() => {
+    dropping = null;
+  });
+  return dropping;
+}
+
+async function checkSignedOut(signInEnded: boolean): Promise<void> {
+  if (MOCK) return;
+  const saved = keepsCopy() ? await allRecords() : [];
+  if (!saved.length && signInEnded && host && !record && !state.offline) {
+    await wipe();
+    return;
+  }
+  for (const rec of saved) {
+    const r = await server<{ off: boolean }>('POST', '/api/auth/copy-status', { device: rec.deviceId }).catch(
+      () => null,
+    );
+    if (!r?.off) continue;
+    if (record?.key === rec.key) await wipe();
+    else await deleteRecord(rec.key);
+  }
+}
+
 /** Whether a saved copy exists on this device (for the no-signal screen). */
 export async function checkSaved(): Promise<boolean> {
+  if (!MOCK && canUsePasskeys() && keepsCopy()) await dropSignedOut();
   const has = !MOCK && canUsePasskeys() && keepsCopy() && (await lastRecord()) !== null;
   set({ hasSaved: has });
   return has;
-}
-
-/** This device's id, when it holds a saved copy (Sign out other devices keeps it on). */
-export function currentDeviceId(): string | null {
-  return record?.deviceId ?? null;
 }
 
 export function getCopy(): CopyState {

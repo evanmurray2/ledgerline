@@ -192,3 +192,8 @@ Built all at once on the owner's word (D-46): no settings and no shadow comparis
 - [x] Sessions merge once their PR's `ci` passed and GitHub shows no conflict; the `ci` run on `main` gates every deploy, and sessions catch up with "Update branch" instead of rebasing (`CLAUDE.md`). _Verify:_ the next merges go in without a rebase.
 - [x] New decisions are one file each in `docs/decisions/`, numbered just before merging (`tools/docs/next-decision.mjs`); `docs/build-plan.md` merges with `merge=union`. _Verify:_ `node tools/docs/next-decision.mjs` prints D-52 after this merge.
 - [x] A deploy whose `ci` a newer merge cancelled is skipped, not failed (`tools/ci/wait-for-ci.mjs`, `deploy.yml`). _Verify:_ the gate run against stubbed GitHub responses (passed → deploy, cancelled and superseded → skip, cancelled while latest or failed → fail); then the next pair of quick merges.
+
+## 17. One sign-in list (D-52, Nov 3, 2026)
+
+- [x] "Phones with a copy" and its Turn off are gone from Settings → Sign-in. A phone with a saved copy is listed with the sign-ins ("Locked · last opened …", "budget saved on it"); signing it out, or Sign out other devices, turns its copy off, and the phone deletes it when it next opens online (`/api/auth/copy-status`), before showing anything. Sign out of this device deletes the phone's copies first. _Verify:_ `test/objects/routing.test.ts`; passkey e2e.
+- [x] Reopening a phone with a saved copy downloads only what changed since the last sync, not every transaction. _Verify:_ passkey e2e checks the sync after a lock starts from `since > 0`.
