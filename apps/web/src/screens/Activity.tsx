@@ -17,6 +17,7 @@ import {
   cx,
   DESKTOP_WIDTH,
   DesktopHeader,
+  HeaderAction,
   ErrorNote,
   Icon,
   Loading,
@@ -308,15 +309,13 @@ export function ActivityScreen() {
   const empty = v && total === 0 && !showNeeds && !(filter === 'attention' && !q);
 
   const addButton = (
-    <Link
+    <HeaderAction
       to="/activity/add"
-      data-track="activity.add"
-      aria-label="Add a transaction"
-      className="hit flex h-9 items-center gap-1 rounded-full bg-accent px-3.5 text-[14px] font-bold text-on-accent no-underline"
-    >
-      <Icon name="plus" size={16} stroke={2.6} />
-      {desktop ? 'Add transaction' : 'Add'}
-    </Link>
+      track="activity.add"
+      icon="plus"
+      label={desktop ? 'Add transaction' : 'Add'}
+      ariaLabel={desktop ? undefined : 'Add transaction'}
+    />
   );
   const searchBox = (
     <label key="search" className="flex min-h-11 items-center gap-2 rounded-xl bg-sunken px-3 text-muted">

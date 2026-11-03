@@ -20,6 +20,7 @@ import {
   SecondaryButton,
   Segmented,
   Toggle,
+  HeaderAction,
 } from '../../components/ui';
 import { formatCents, parseCents, centsToInput } from '../../lib/money';
 import { dayLabel } from '../../lib/dates';
@@ -37,15 +38,7 @@ export function RulesScreen() {
     <Page
       title="Rules"
       back="/settings"
-      right={
-        <Link
-          to="/settings/rules/new"
-          data-track="rules.new"
-          className="hit flex h-9 items-center px-2 text-[15px] font-bold text-accent no-underline"
-        >
-          + New rule
-        </Link>
-      }
+      right={<HeaderAction to="/settings/rules/new" track="rules.new" icon="plus" label="New rule" />}
     >
       <p className="m-0 text-[13px] leading-snug text-muted">
         Rules run top to bottom on each new transaction; the first match wins. They never change a category
