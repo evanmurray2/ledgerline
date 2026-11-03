@@ -265,3 +265,24 @@ test('Exports: Usage and notes downloads as a JSON file', async ({ page }) => {
   const text = await (await import('node:fs/promises')).readFile((await d.path())!, 'utf8');
   expect(JSON.parse(text)).toMatchObject({ events: expect.any(Array), daily: expect.any(Array) });
 });
+
+test('Usage: leaving Settings records no visit to Appearance', async ({ page }) => {
+  const views: string[] = [];
+  page.on('request', (r) => {
+    if (!r.url().endsWith('/api/usage') || r.method() !== 'POST') return;
+    const body = r.postDataJSON() as { events: { event: string; screen: string }[] };
+    for (const e of body.events) if (e.event === 'view') views.push(e.screen);
+  });
+  // The first screen of a page load comes before usage is switched on, so Settings is opened from the app.
+  await page.goto('/accounts');
+  await page.getByRole('link', { name: 'Settings' }).first().click();
+  await expect(page).toHaveURL(/\/settings/);
+  await page.getByRole('link', { name: 'Budget' }).first().click();
+  await expect(page).toHaveURL(/\/budget/);
+  const sent = page.waitForRequest((r) => r.url().endsWith('/api/usage') && r.method() === 'POST');
+  await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+  await sent;
+  expect(views).toContain('settings');
+  expect(views).toContain('budget');
+  expect(views).not.toContain('settings.appearance');
+});
