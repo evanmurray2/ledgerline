@@ -169,6 +169,7 @@ Built all at once on the owner's word (D-46): no settings and no shadow comparis
 - [x] Unlocking with no signal opens the budget (it showed "Couldn't reach Ledgerline": the copy's saved session wasn't watched). _Verify:_ passkey e2e checks the budget opens after an offline unlock (fails before the fix).
 - [x] Faster screens after a sync: the phone rebuilds only the changed transactions' lines and recomputes from the earliest month touched, instead of everything from the budget start. _Verify:_ `test/engine.test.ts` (splits, a new pending row, moved money and an undone split, compared with the server).
 - [x] A copy the phone can't decrypt starts over instead of failing ("The operation failed for an operation-specific reason" on the owner's iPhone): online, the old device is turned off and a new copy downloads; offline, the message says which step failed and to go online. Unlocking only uses a sign-in whose PRF salt matches the copy's. _Verify:_ `apps/web/test/vault.test.ts` (named steps, salt check). Root cause on the iPhone still to confirm.
+
 - [ ] Drop `budget_line`, `month_snapshot`, `account_month_total` and `month_total_done` on the server: the second release of the removal (expand-only rule), after this one is deployed.
 - [ ] On the owner's iPhone after deploy: PRF in the Home Screen app with the existing passkey, first download time, Face ID unlock with no signal.
 - [ ] The mock API (`apps/web/src/mock`) still has its own engine for the mock tests; replace it with a sample sync dataset fed to the real engine.
@@ -182,3 +183,4 @@ Built all at once on the owner's word (D-46): no settings and no shadow comparis
 ## 15. Fixes (Nov 3, 2026)
 
 - [x] Activity → Check these: OK on a bank transaction that cleared at a new amount now clears it. It used to send "keep waiting", which only applies to an entry you added, so the server refused it and the row stayed. OK now marks the alert reviewed (`POST /api/transactions/:key/review`, which also records it in the audit log), and the mock API refuses "keep waiting" on bank rows as the server does. _Verify:_ `apps/worker/test/api.november.test.ts` "Check these: OK…", `e2e/tests/worker.spec.ts` "OK on a bank row…".
+- [x] Pending rows left beside their cleared rows (D-50): a date, phone number or reference code in the pending description no longer stops a posted row from claiming it; only store numbers on both sides must agree. The next sync heals earlier misses. _Verify:_ `packages/domain/test/bank-pending.test.ts` (store numbers), `apps/worker/test/pending-match.test.ts` (heal).

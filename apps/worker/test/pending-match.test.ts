@@ -334,6 +334,23 @@ describe('posted rows claim their pending rows', () => {
     expect(await healPending({ ...env, DB: db } as never, B, C, NOW)).toEqual({ changed: false });
   });
 
+  it('a date or phone number in the pending description no longer blocks the pair; the next sync heals it', async () => {
+    await sync([pend('ride-p', 18.5, '2026-11-09', 'LYFT *RIDE 11/09 855-865-9553')]);
+    await sync([
+      plaidTxn('ride', 'pa_card', 21.5, '2026-11-11', 'LYFT *RIDE SAN FRANCISCO CA', {
+        authorized_date: '2026-11-09',
+      }),
+    ]);
+    expect(await keyOf('ride')).toBe('p:ride-p');
+    expect(await visible(['ride', 'ride-p'])).toEqual([{ id: 'ride', status: 'posted' }]);
+    // As the owner's rows were before the fix: both rows, unpaired. The next sync's heal step pairs them.
+    await db.prepare(`UPDATE bank_txn SET txn_key = 'p:ride' WHERE provider_txn_id = 'ride'`).run();
+    expect(await visible(['ride', 'ride-p'])).toHaveLength(2);
+    expect(await healPending({ ...env, DB: db } as never, B, C, NOW)).toEqual({ changed: true });
+    expect(await keyOf('ride')).toBe('p:ride-p');
+    expect(await spent('p:ride-p')).toBe(-2150);
+  });
+
   it('never pairs yesterday’s posted coffee with today’s pending one', async () => {
     await sync([pend('cof-p', 5, '2026-11-12', 'BLUE BOTTLE')]);
     await sync([

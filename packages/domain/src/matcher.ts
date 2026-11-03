@@ -141,16 +141,32 @@ export type BankPendingDecision =
   | { kind: 'claim'; postedKey: string; pendingKey: string }
   | { kind: 'ambiguous'; postedKey: string; candidates: string[] };
 
-/** A description's cleaned trigrams and its numbers, worked out once per row (one row is compared with many). */
+/** A description's cleaned trigrams and its store numbers, worked out once per row (one row is compared with many). */
 interface Prepared {
   grams: Set<string>;
   nums: Set<string>;
+}
+
+/**
+ * The numbers in a description that can name a store or branch ("STARBUCKS 12345", "CAJUN SEAFOOD #3"): a number on
+ * its own, not a date, a phone number, a card's last four digits or part of a reference code ("MKTPL*ZX12A"), which
+ * change between a pending row and its posted row or are added to only one of them.
+ */
+export function storeNumbers(raw: string): Set<string> {
+  const s = raw
+    .toUpperCase()
+    .replace(/\b\d{1,2}\/\d{1,2}(\/\d{2,4})?\b/g, ' ') // dates
+    .replace(/\(?\b\d{3}\)?[-. ]?\d{3}[-. ]\d{4}\b/g, ' ') // phone numbers
+    .replace(/(X+|\*+)\d{4}\b/g, ' ') // card last-4
+    .replace(/\b\d+-[A-Z]+/g, ' ') // part of the name ("7-ELEVEN"), shared by every branch
+    .replace(/[A-Z0-9]*(?:[A-Z]\d|\d[A-Z])[A-Z0-9]*/g, ' '); // reference codes mixing letters and digits
+  return new Set((s.match(/\d+/g) ?? []).map((n) => n.replace(/^0+(?=\d)/, '')));
 }
 type Cache = Map<string, Prepared>;
 function prep(c: Cache, s: string): Prepared {
   let v = c.get(s);
   if (!v) {
-    v = { grams: trigrams(cleanDescription(s) || s), nums: new Set(s.match(/\d+/g) ?? []) };
+    v = { grams: trigrams(cleanDescription(s) || s), nums: storeNumbers(s) };
     c.set(s, v);
   }
   return v;
@@ -172,9 +188,9 @@ function eligible(p: BankPendingRow, q: UnlinkedPostedRow, c: Cache): number | n
   }
   const a = prep(c, p.payee);
   const b = prep(c, q.payee);
-  // A store number in the pending description must appear in the posted one: cleaning drops numbers, so two branches
-  // of one chain would otherwise look alike.
-  if (a.nums.size && ![...b.nums].some((n) => a.nums.has(n))) return null;
+  // When both descriptions name a store number, they must share one: cleaning drops numbers, so two branches of one
+  // chain would otherwise look alike. A number on only one side (the bank added or dropped it on posting) proves nothing.
+  if (a.nums.size && b.nums.size && ![...b.nums].some((n) => a.nums.has(n))) return null;
   // The same bank describes both: the names must look alike, unless the amount and the day agree exactly.
   const sim = jaccard(a.grams, b.grams);
   return sim >= 0.4 || (p.amount === q.amount && (q.authorizedDate ?? q.date) === pAuth) ? sim : null;
