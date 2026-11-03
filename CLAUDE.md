@@ -11,9 +11,10 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 
 ## Deploying
 
-- When the owner asks to deploy: first check that the `ci` run for that `main` commit passed (GitHub MCP `actions_list`, `list_workflow_runs`; `deploy.yml` also waits for it and refuses a commit whose `ci` failed). If it's still running, wait for it; if it failed, fix it first. Then trigger the GitHub workflow `deploy.yml` on `main` (GitHub MCP `actions_run_trigger`, method `run_workflow`), then check the run's result. It deploys, smoke-tests and rolls back on failure. Each Durable Object runs its own schema migrations when it starts.
+- Every merge to `main` deploys by itself: the repository variable `DEPLOY_ON_MERGE` is `true` (D-30), and `deploy.yml` waits for that commit's `ci`, deploys, smoke-tests and rolls back the code on failure. Deploys queue one at a time. After merging, check the `deploy` run for your merge commit; if it failed, tell the owner and fix it first.
+- To redeploy by hand (only when the owner asks): first check that the `ci` run for that `main` commit passed (GitHub MCP `actions_list`, `list_workflow_runs`; `deploy.yml` also waits for it and refuses a commit whose `ci` failed). If it's still running, wait for it; if it failed, fix it first. Then trigger the GitHub workflow `deploy.yml` on `main` (GitHub MCP `actions_run_trigger`, method `run_workflow`), then check the run's result. It deploys, smoke-tests and rolls back on failure. Each Durable Object runs its own schema migrations when it starts.
 - GitHub holds only the `production` environment's `CLOUDFLARE_API_TOKEN`. The Worker keeps its other secrets (`TOKEN_KEYS`, Plaid keys, `SETUP_CODE`, `OPS_TOKEN`) from the first deploy; a deploy never deletes a secret.
-- Deploy on merge is off until the repository variable `DEPLOY_ON_MERGE` is `true` (D-30).
+- A rollback undoes code, not migrations: those reach the owner's real budget on merge and are forward-only.
 - Never print, commit or ask the owner to paste secrets in chat.
 
 ## Hard rules from the owner
@@ -29,6 +30,22 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 
 - pnpm monorepo: `packages/domain` (Money rules, `computeBudget()`), `packages/contracts` (Zod), `apps/worker` (Hono + Durable Objects, alarms for background work), `apps/web` (React SPA), `e2e` (Playwright).
 - Checks before pushing: `pnpm check` (about 30 s). It formats, then runs lint, typecheck, unit and integration tests side by side and prints only what fails. For UI changes, run only the e2e tests that cover what you changed, e.g. `cd e2e && pnpm exec playwright test app.spec.ts -g "<test name>"` (the Worker suite: `pnpm --filter @ledgerline/web build` first, then `-c playwright.worker.config.ts`). Don't run the full `pnpm test:e2e`: CI runs it on every push. Chromium is preinstalled; don't run `playwright install`.
-- Don't wait for CI after a push; carry on working. Just before your next push, and when you finish a task, check the `ci` run for your previous push (it's usually done by then; GitHub MCP `actions_list`, `list_workflow_runs`). If it failed, fix that first.
+- Don't sit waiting for CI after a push; carry on working and check the PR's `ci` run before your next push and before merging (GitHub MCP `actions_list`, `list_workflow_runs`). If it failed, fix that first.
 - Migrations in `packages/db/budget-migrations` and `packages/db/directory-migrations` are forward-only once on `main` (`node tools/ci/migration-check.mjs`); add a new numbered file, then run `node tools/db/gen-store-migrations.mjs`.
-- Small commits on `main`, tests passing before each; keep `docs/build-plan.md` current.
+- Keep `docs/build-plan.md` current in the same PR as the work.
+
+## Several sessions at once
+
+The owner runs several Claude sessions side by side, each with its own container and branch.
+
+- Never push to `main`. Work on your session's branch, with small commits and tests passing before each, and open a PR into `main` when the task is done (or sooner, as a draft).
+- Merge your own PR, without asking, once all of these hold:
+  1. it is rebased on the latest `origin/main` (`git fetch origin main && git rebase origin/main`, then `git push --force-with-lease`; only ever force-push your own session's branch),
+  2. `pnpm check` passes locally after the rebase,
+  3. every `ci` job (`checks`, `e2e (mock)`, `e2e (worker)`) passed on the PR's latest commit, and
+  4. it doesn't need an answer from the owner (Money rules, Plaid links, secrets).
+     Then squash-merge with GitHub MCP `merge_pull_request` (`merge_method: squash`, `sha` set to the commit CI passed on). If `main` moved first or the merge is refused, rebase and repeat. After the merge, start any further work fresh from `origin/main` on the same branch name.
+- Numbers that two sessions could both take (decisions `D-n` in `docs/decisions.md`, migration files) belong to whoever merges first. Before merging, check `origin/main` and renumber yours if it was taken, including references to it.
+- Merge conflicts in shared docs (`docs/build-plan.md`, `docs/decisions.md`): keep both sides' entries.
+- Merging is deploying. Ask the owner before merging a PR that adds a migration (`packages/db/*-migrations`), and never trigger a manual deploy unless asked in your own session.
+- An owner's "yes" (to a Plaid link, a Money-rules choice, a deploy) applies only in the session where they said it.
