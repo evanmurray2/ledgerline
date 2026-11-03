@@ -160,6 +160,34 @@ export async function open(key: CryptoKey, w: Wrapped, aad: string): Promise<Arr
   return crypto.subtle.decrypt({ name: 'AES-GCM', iv: w.iv, additionalData: enc.encode(aad) }, key, w.data);
 }
 
+/** The copy couldn't be decrypted at `step` (the key from the passkey and share didn't fit, or it changed). */
+export class CopyUnreadable extends Error {
+  constructor(readonly step: 'share' | 'key' | 'copy') {
+    super(`copy_unreadable:${step}`);
+  }
+}
+
+async function openAt(
+  step: CopyUnreadable['step'],
+  key: CryptoKey,
+  w: Wrapped,
+  aad: string,
+): Promise<ArrayBuffer> {
+  try {
+    return await open(key, w, aad);
+  } catch {
+    throw new CopyUnreadable(step);
+  }
+}
+
+/** Same salt bytes (the passkey's PRF output depends on it). */
+export function sameBytes(a: ArrayBuffer, b: ArrayBuffer): boolean {
+  if (a.byteLength !== b.byteLength) return false;
+  const x = new Uint8Array(a);
+  const y = new Uint8Array(b);
+  return x.every((v, i) => v === y[i]);
+}
+
 const info = (r: Pick<CopyRecord, 'who' | 'deviceId'>, what: string) =>
   `ledgerline-copy-v1|${what}|${r.who.userId}|${r.who.budgetId}|${r.deviceId}`;
 const keyAad = (r: Pick<CopyRecord, 'deviceId' | 'salt'>, credentialId: string) =>
@@ -211,7 +239,7 @@ export async function unlock(
 ): Promise<{ dataKey: CryptoKey; record: CopyRecord }> {
   const k = r.keys.find((x) => x.credentialId === credentialId);
   if (!k) throw new Error('other_passkey');
-  const raw = await open(await kek(r, prf, share), k.wrapped, keyAad(r, credentialId));
+  const raw = await openAt('key', await kek(r, prf, share), k.wrapped, keyAad(r, credentialId));
   const dataKey = await importDataKey(raw);
   new Uint8Array(raw).fill(0);
   // Refresh the cached share (it may have been rotated) for offline unlock.
@@ -235,8 +263,8 @@ export async function unlockOffline(
   const c = r.shares.find((x) => x.credentialId === credentialId);
   const k = r.keys.find((x) => x.credentialId === credentialId);
   if (!c || !k) throw new Error('other_passkey');
-  const share = await open(await offlineKey(r, prf), c.wrapped, shareAad(r, credentialId));
-  const raw = await open(await kek(r, prf, share), k.wrapped, keyAad(r, credentialId));
+  const share = await openAt('share', await offlineKey(r, prf), c.wrapped, shareAad(r, credentialId));
+  const raw = await openAt('key', await kek(r, prf, share), k.wrapped, keyAad(r, credentialId));
   const dataKey = await importDataKey(raw);
   new Uint8Array(raw).fill(0);
   return dataKey;
@@ -247,5 +275,5 @@ export async function sealCopy(r: CopyRecord, dataKey: CryptoKey, bytes: ArrayBu
 }
 
 export async function openCopy(r: CopyRecord, dataKey: CryptoKey): Promise<ArrayBuffer | null> {
-  return r.blob ? open(dataKey, r.blob, blobAad(r)) : null;
+  return r.blob ? openAt('copy', dataKey, r.blob, blobAad(r)) : null;
 }

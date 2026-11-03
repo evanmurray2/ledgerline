@@ -25,6 +25,8 @@ import {
   sealCopy,
   unlock,
   unlockOffline,
+  CopyUnreadable,
+  sameBytes,
 } from './vault';
 
 export const LOCK_MS = 10 * 60_000;
@@ -152,7 +154,8 @@ export async function start(session: Session): Promise<void> {
     const p = pending;
     pending = null;
     if (rec) {
-      if (!p?.prf) {
+      // The passkey's PRF output only fits the salt this copy was set up with; any other sign-in asks again.
+      if (!p?.prf || !sameBytes(p.salt, rec.salt)) {
         set({ status: 'locked', hasSaved: true });
         return;
       }
@@ -167,14 +170,27 @@ export async function start(session: Session): Promise<void> {
         throw e;
       });
       if (share) {
-        const u = await unlock(rec, p.credentialId, p.prf, fromB64url(share.share)).catch((e: Error) => {
-          if (e.message === 'other_passkey') throw new Error('Use the passkey you set this phone up with.');
-          throw e;
-        });
-        rec = { ...u.record, lastServerTime: session ? Date.now() : rec.lastServerTime };
-        dataKey = u.dataKey;
-        record = rec;
-        await openHost(await openCopy(rec, u.dataKey));
+        try {
+          const u = await unlock(rec, p.credentialId, p.prf, fromB64url(share.share));
+          const bytes = await openCopy(rec, u.dataKey);
+          rec = { ...u.record, lastServerTime: Date.now() };
+          dataKey = u.dataKey;
+          record = rec;
+          await openHost(bytes);
+        } catch (e) {
+          if (e instanceof Error && e.message === 'other_passkey')
+            throw new Error('Use the passkey you set this phone up with.');
+          if (!(e instanceof CopyUnreadable)) throw e;
+          // The copy can't be opened. The server has everything, so start a new copy (and turn the old one off).
+          console.warn(JSON.stringify({ event: 'copy_unreadable', step: e.step }));
+          await server('POST', `/api/settings/security/devices/${rec.deviceId}/revoke`).catch(
+            () => undefined,
+          );
+          await deleteRecord(key);
+          rec = null;
+          dataKey = null;
+          record = null;
+        }
       } else rec = null;
     }
     if (!rec) {
@@ -241,15 +257,22 @@ export async function unlockWithoutSignal(onSession?: (s: Session) => void): Pro
   if (!a.prf) throw new Error('This passkey can’t unlock the copy.');
   set({ status: 'opening', error: null, offline: true });
   try {
+    const unreadable = (e: unknown): never => {
+      if (e instanceof CopyUnreadable)
+        throw new Error(
+          `This phone’s saved copy couldn’t be opened (${e.step}). Turn Airplane Mode off and open Ledgerline: it downloads your budget again.`,
+        );
+      throw e;
+    };
     dataKey = await unlockOffline(rec, a.credentialId, a.prf).catch((e: Error) => {
       if (e.message === 'offline_expired')
         throw new Error('Connect to the internet to open Ledgerline: it’s been more than 7 days.');
       if (e.message === 'other_passkey') throw new Error('Use the passkey you set this phone up with.');
-      throw e;
+      return unreadable(e);
     });
     record = rec;
     who = rec.who;
-    await openHost(await openCopy(rec, dataKey));
+    await openHost(await openCopy(rec, dataKey).catch(unreadable));
     const s = await host!.get('session');
     if (!s) throw new Error('The copy has no session saved.');
     const session = JSON.parse(s) as Session;
