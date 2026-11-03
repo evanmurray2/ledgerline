@@ -1,6 +1,8 @@
 import { defineConfig } from '@playwright/test';
+import { failureReport } from './report';
 
 // Runs the SPA with Vite in mock mode (every /api request answered in memory) on phone and desktop sizes.
+const report = failureReport('mock');
 const PORT = 5179;
 
 export default defineConfig({
@@ -10,10 +12,11 @@ export default defineConfig({
   workers: 4,
   timeout: 30_000,
   expect: { timeout: 7_000 },
-  reporter: [['list']],
+  reporter: report.reporter,
+  outputDir: report.outputDir,
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
-    trace: 'off',
+    ...report.use,
     colorScheme: 'light',
   },
   projects: [
