@@ -41,6 +41,7 @@ const SCREENS = (m: string) => [
   '/api/activity',
   '/api/activity?filter=attention',
   '/api/activity?filter=pending',
+  '/api/activity?q=groceries',
   '/api/accounts',
   `/api/reports?month=${m}`,
   '/api/owed',
