@@ -22,6 +22,16 @@ export function needsReload(serverVersion: string, built = BUILT_AS): boolean {
   return triedFor() !== serverVersion;
 }
 
+/**
+ * Whether the copy is in a state a reload can't hurt. While it is idle or opening, a sign-in may have just returned
+ * the passkey's key for the saved copy, held in memory only: reloading then would lose it and ask for Face ID a
+ * second time. Once the copy is open its key is held for a refresh (vault.ts holdKey), so the reload reopens it
+ * without Face ID.
+ */
+export function copySettled(status: string): boolean {
+  return status !== 'idle' && status !== 'opening';
+}
+
 function typing(): boolean {
   const el = document.activeElement;
   return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');

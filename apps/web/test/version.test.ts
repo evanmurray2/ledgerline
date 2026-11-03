@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { needsReload, reloadForVersion } from '../src/state/version';
+import { copySettled, needsReload, reloadForVersion } from '../src/state/version';
 
 afterEach(() => {
   window.sessionStorage.clear();
@@ -31,5 +31,11 @@ describe('reloading for a new release', () => {
     expect(reload).not.toHaveBeenCalled();
     document.dispatchEvent(new Event('visibilitychange'));
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits while the copy is opening, so a sign-in is not asked for Face ID again', () => {
+    expect(copySettled('idle')).toBe(false);
+    expect(copySettled('opening')).toBe(false);
+    for (const status of ['ready', 'locked', 'failed', 'off']) expect(copySettled(status)).toBe(true);
   });
 });
