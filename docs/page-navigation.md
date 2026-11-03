@@ -1,6 +1,7 @@
 # Page navigation: pills that go somewhere, and pages that slide (design, Nov 4, 2026)
 
-Status: **proposed**, pending the review below. Updates D-54 (pages and sheets) and D-55 (one look per meaning).
+Status: **revised after review** (see Review): ship the page enter animation; drop chevrons on pills; View
+Transitions only as a later, guarded follow-up. Updates D-54 (pages and sheets) and D-55 (one look per meaning).
 Nothing here changes how money is counted.
 
 ## Problem
@@ -37,13 +38,13 @@ Implementation: decide by the destination, not by hand. A small `isPagePath(to)`
 
 Every navigation gets one of three motions, decided centrally from where it comes from and goes to:
 
-| From → to | Motion |
-| --- | --- |
+| From → to                                                                                                      | Motion                                                                                                   |
+| -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | A tab or page → a page further in (Budget → Edit categories; Accounts → an account; Settings → Rules → a rule) | **Forward**: the new page slides in from the right over the old one, which shifts a little left and dims |
-| Back to a page less deep (Back button, Back after saving) | **Back**: the reverse |
-| Opening or closing a sheet (a child route drawn as a sheet) | **None** from this; the sheet keeps its slide-up |
-| Switching tabs (tab bar, sidebar) | **None**: tabs are places side by side, not deeper |
-| Anything else (sign-in, setup, a redirect, the first load) | **None** |
+| Back to a page less deep (Back button, Back after saving)                                                      | **Back**: the reverse                                                                                    |
+| Opening or closing a sheet (a child route drawn as a sheet)                                                    | **None** from this; the sheet keeps its slide-up                                                         |
+| Switching tabs (tab bar, sidebar)                                                                              | **None**: tabs are places side by side, not deeper                                                       |
+| Anything else (sign-in, setup, a redirect, the first load)                                                     | **None**                                                                                                 |
 
 - **Depth** comes from the page path, ignoring sheet segments: a tab's own screen (`/budget`, `/activity`,
   `/accounts`, `/reports`) is 0; a page opened from a tab (`/categories`, `/targets`, `/owed`, `/accounts/$id`,
@@ -81,6 +82,43 @@ Back slides it out); sheets slide up; tabs don't move."
 - Screenshots of the Budget header on a computer and the ⋯ menu on a phone.
 - On the owner's iPhone (Home Screen app): Budget → Edit categories → a category → Back → Back.
 
-## Review
+## Review (Nov 4, 2026)
 
-(Filled in by the adversarial review, before building.)
+An adversarial review (fresh reviewer, checked against the code) said **ship with changes**. Findings, checked:
+
+1. **Blocker.** The router runs every navigation, including redirects, the first load, month changes and search
+   keystrokes, through `document.startViewTransition` once `defaultViewTransition` is set
+   (`router-core/dist/esm/load-client.js:933`, `router.js:494-506`). On a browser with view transitions but no
+   transition types (Safari 18.0/18.1, not checked), it starts an untyped one: a crossfade on every navigation.
+2. **Major.** Browser back/forward and redirects animate too; a Safari tab's own swipe-back would animate twice.
+3. **Major: depth by path gives the wrong motion** in real flows:
+   - tab switches from a page (`/accounts/$id` → Budget tab) slide back;
+   - New category → its target goes through `/budget/category/$id/target?from=categories` (`Categories.tsx:315`),
+     so it slides back, then forward on Done;
+   - Repair from Bank connections lands on an Accounts sheet;
+   - Owed's Back always goes to Budget (`Owed.tsx:56`);
+   - Settings panes on a computer would slide the whole layout.
+4. **Major.** Phone sheets are portalled to `body`, outside `main`, so they'd crossfade in the root snapshot while
+   `main` slides. The desktop side panel opening or closing resizes `main` mid-slide.
+5. **Major.** Pages read from the on-device engine asynchronously, with no route loaders, so a page slides in blank
+   and its content pops in mid-slide.
+6. **Minor.** Back is a new navigation, so a page slides back in scrolled to the top.
+7. **Major (design).** A chevron on a pill has no established meaning. It reads as "next" or "more", and sits next to
+   the month switcher's own chevron. `Banner` with `to` already shows a chevron for sheets, so the rule would be
+   broken on day one. It patches D-54 rather than following it.
+8. **Minor.** e2e runs Chromium, so it can't show Safari's behavior.
+
+## Revised proposal (what gets built)
+
+- **No chevrons on pills.** Chevrons stay on rows and menu items that open a page. `Banner` follows the row rule
+  too (chevron only when it opens a page). The page's Back header is the signal that you've left the screen.
+- **Pages animate on arrival**, with plain CSS, no view transitions:
+  - `Page`, the Register, Owed and Set targets get an enter animation: a 24 px slide from the right and a fade,
+    220 ms, the sheets' easing.
+  - Coming back via Back plays it from the left (a module flag set by Back).
+  - Off under Reduce Motion.
+  - It works on every iOS version and can't affect sheets, tabs, the side panel or the first load: only a page
+    mounting animates. A tab's own screen never animates.
+- **View Transitions:** a possible follow-up only if this feels lacking. It would need the support guard,
+  route-id classification, no slide for tabs, Settings panes, sheets or the side panel, root naming off, loaders,
+  a swipe-back check and a test hook.
