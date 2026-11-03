@@ -69,8 +69,9 @@ If a run dies after moving the cursor, the next run, the cron or the daily maint
 | --- | --- |
 | Posted row with `pending_transaction_id` | Inherit that pending row's `txn_key` |
 | Manual pending | Same account, unmatched, dated 0–14 days before the posted date, amount within tolerance; auto-match only a unique best score on both sides |
-| Bank pending removed, no link | Match against unmatched posted rows in the same account from the last 14 days, whichever arrived first |
-| Posted row arrives first, no link | A live bank pending row with the same account and amount within tolerance is shown as "likely match" until the pending row is removed |
+| Posted row without the link, bank pending row still listed or removed (either order) | Claim it (D-47): same account and sign, amount within tolerance, pending authorized on the posted row's authorization day or the day before (else dated 0–14 days before), store number kept, names alike unless amount and day agree; best score first, each row once; ask only when a close alternative carries different edits |
+| Claimed pending row | Hidden at once (views), even while the bank still lists it; its later removal changes nothing |
+| Any match | Won't clear is cleared (flagged if it was set): a posted charge always counts |
 | Re-issued posted row | Same account, same amount, dates within 3 days, and exactly one candidate on each side: inherit; otherwise queue "Possible re-issue" |
 | Both rows carry user edits | For each field, the most recent edit wins, whichever row it was made on; the conflict is flagged for review |
 | Removed row's edits | Held 14 days for a late match, then archived (visible in the audit log, not lost) |

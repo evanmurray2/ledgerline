@@ -50,7 +50,7 @@ export function payeeKey(raw: string, merchantEntityId: string | null): string {
   return merchantEntityId ? `m:${merchantEntityId}` : `d:${cleanDescription(raw).replace(/\s/g, '')}`;
 }
 
-function trigrams(s: string): Set<string> {
+export function trigrams(s: string): Set<string> {
   const t = `  ${s.toLowerCase().replace(/[^a-z0-9 ]/g, '')} `;
   const out = new Set<string>();
   for (let i = 0; i < t.length - 2; i++) out.add(t.slice(i, i + 3));
@@ -59,8 +59,11 @@ function trigrams(s: string): Set<string> {
 
 /** Trigram similarity (Jaccard) in [0, 1]. */
 export function similarity(a: string, b: string): number {
-  const x = trigrams(a);
-  const y = trigrams(b);
+  return jaccard(trigrams(a), trigrams(b));
+}
+
+/** Jaccard index of two trigram sets (see trigrams), for callers comparing one string with many. */
+export function jaccard(x: ReadonlySet<string>, y: ReadonlySet<string>): number {
   if (x.size === 0 && y.size === 0) return 1;
   let inter = 0;
   for (const g of x) if (y.has(g)) inter++;

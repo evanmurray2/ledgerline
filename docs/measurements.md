@@ -12,6 +12,10 @@
 
 Working out the budget moved to the phone (D-45), which has no 10 ms limit; the iPhone timings are still to be taken after deploy.
 
+## Update: bank pending matching (Nov 3, 2026, D-47)
+
+`measure/sync.measure.ts`, sync processing step, two runs each, ms (median / p90): before 1.4–1.5 / 1.6–2.4, after 1.5–1.7 / 2.2–2.5 at count 500 (cold first steps 11 vs 14–17). `pairBankPending` alone: 1.9 ms for 400 unmatched posted rows against 60 pending rows (an extreme account), with each description cleaned once per call; older posted rows are read only when the batch brings a pending row for that account.
+
 ## Update: step sizes in the code match D-37 (Nov 2, 2026)
 
 The code had kept the D1-era sizes (apply 50 events, processing 100 events, recompute 6 months per request) while production ran in Durable Objects, where SQLite counts as CPU. They are now 25, 25 and 2 (decisions.md D-38). `apps/worker/measure` runs the same code on `node:sqlite` with the store's own migrations and now reports CPU **including** SQLite (`ms`), as a Durable Object pays it. Three runs, Node, ms (median / p90 / max):

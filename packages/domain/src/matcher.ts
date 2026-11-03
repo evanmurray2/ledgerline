@@ -2,7 +2,7 @@
 // caller passes candidate rows and applies the decisions in one batch behind the watermark fence.
 import { type Cents } from './money.js';
 import { type IsoDate, daysBetween } from './month.js';
-import { similarity } from './payee.js';
+import { cleanDescription, jaccard, similarity, trigrams } from './payee.js';
 
 export interface MatchRow {
   key: string;
@@ -119,6 +119,140 @@ export function matchOrphan(
   if (c.length === 1) return c[0]!.key;
   const scored = c.map((p) => ({ k: p.key, s: score(removedPending, p) })).sort((a, b) => b.s - a.s);
   return scored[0]!.s - scored[1]!.s >= CLOSE ? scored[0]!.k : 'ambiguous';
+}
+
+/** A bank pending row that a posted row could claim. */
+export interface BankPendingRow extends MatchRow {
+  /** The pending row's own authorization date (falls back to its date). */
+  authorizedDate: IsoDate | null;
+  /**
+   * What claiming it carries over that you set (category you chose, memo, estimate, splits...): '' when nothing. Two
+   * pending rows with the same signature are interchangeable, so which one a posted row claims changes nothing.
+   */
+  edits: string;
+}
+
+/** A posted row without the provider's link to its pending row. */
+export interface UnlinkedPostedRow extends MatchRow {
+  authorizedDate: IsoDate | null;
+}
+
+export type BankPendingDecision =
+  | { kind: 'claim'; postedKey: string; pendingKey: string }
+  | { kind: 'ambiguous'; postedKey: string; candidates: string[] };
+
+/** A description's cleaned trigrams and its numbers, worked out once per row (one row is compared with many). */
+interface Prepared {
+  grams: Set<string>;
+  nums: Set<string>;
+}
+type Cache = Map<string, Prepared>;
+function prep(c: Cache, s: string): Prepared {
+  let v = c.get(s);
+  if (!v) {
+    v = { grams: trigrams(cleanDescription(s) || s), nums: new Set(s.match(/\d+/g) ?? []) };
+    c.set(s, v);
+  }
+  return v;
+}
+
+/** Name similarity when the pair could be the same purchase, else null. */
+function eligible(p: BankPendingRow, q: UnlinkedPostedRow, c: Cache): number | null {
+  if (p.accountId !== q.accountId || Math.sign(p.amount) !== Math.sign(q.amount)) return null;
+  if (!withinTolerance(p.amount, q.amount, q.channel === 'other' ? 'card' : q.channel)) return null;
+  const pAuth = p.authorizedDate ?? p.date;
+  if (q.authorizedDate) {
+    // The bank says when the posted charge was authorized: the pending one was authorized that day or the day before
+    // (never after, which rules out yesterday's posted coffee claiming today's pending one).
+    const gap = daysBetween(pAuth, q.authorizedDate);
+    if (gap < 0 || gap > 1) return null;
+  } else {
+    const gap = daysBetween(p.date, q.date);
+    if (gap < 0 || gap > 14) return null;
+  }
+  const a = prep(c, p.payee);
+  const b = prep(c, q.payee);
+  // A store number in the pending description must appear in the posted one: cleaning drops numbers, so two branches
+  // of one chain would otherwise look alike.
+  if (a.nums.size && ![...b.nums].some((n) => a.nums.has(n))) return null;
+  // The same bank describes both: the names must look alike, unless the amount and the day agree exactly.
+  const sim = jaccard(a.grams, b.grams);
+  return sim >= 0.4 || (p.amount === q.amount && (q.authorizedDate ?? q.date) === pAuth) ? sim : null;
+}
+
+/** A pending row and a posted row could be the same purchase. */
+export function bankPendingEligible(p: BankPendingRow, q: UnlinkedPostedRow): boolean {
+  return eligible(p, q, new Map()) !== null;
+}
+
+function bankScore(p: BankPendingRow, q: UnlinkedPostedRow, sim: number): number {
+  const amt =
+    1 - Math.min(1, Math.abs(Math.abs(q.amount) - Math.abs(p.amount)) / Math.max(1, Math.abs(p.amount)));
+  const days = Math.abs(daysBetween(p.authorizedDate ?? p.date, q.authorizedDate ?? q.date));
+  const gap = 1 - Math.min(1, days / 14);
+  return Math.round((amt * 0.5 + gap * 0.2 + sim * 0.3) * 1000);
+}
+
+/**
+ * Pairs posted rows that came without the provider's link with bank pending rows (still listed or already removed),
+ * best scores first, each row at most once. A pairing is left for you only when a close alternative would change the
+ * result: another pending row carrying different edits, or another posted row that could take edits you made.
+ * Interchangeable twins (two tabs at the same bar, nothing set on either) are paired without asking.
+ */
+export function pairBankPending(
+  posted: readonly UnlinkedPostedRow[],
+  pending: readonly BankPendingRow[],
+): BankPendingDecision[] {
+  type Pair = { p: BankPendingRow; q: UnlinkedPostedRow; s: number };
+  const pairs: Pair[] = [];
+  const cache: Cache = new Map();
+  for (const q of posted)
+    for (const p of pending) {
+      const sim = eligible(p, q, cache);
+      if (sim !== null) pairs.push({ p, q, s: bankScore(p, q, sim) });
+    }
+  pairs.sort((a, b) => b.s - a.s || a.q.key.localeCompare(b.q.key) || a.p.key.localeCompare(b.p.key));
+  const takenP = new Map<string, Pair>();
+  const takenQ = new Map<string, Pair>();
+  for (const x of pairs)
+    if (!takenP.has(x.p.key) && !takenQ.has(x.q.key)) {
+      takenP.set(x.p.key, x);
+      takenQ.set(x.q.key, x);
+    }
+  const out: BankPendingDecision[] = [];
+  const ambiguous = new Set<string>();
+  for (const x of takenQ.values()) {
+    for (const y of pairs) {
+      if (y === x || y.s < x.s - CLOSE) continue;
+      if (y.q.key === x.q.key && y.p.key !== x.p.key) {
+        // Another pending row fits this posted row about as well: it matters only if they carry different edits,
+        // and when that row is itself taken, only if swapping the two pairs is about as good.
+        if (y.p.edits === x.p.edits) continue;
+        const other = takenP.get(y.p.key);
+        if (other) {
+          const swap = pairs.find((z) => z.p.key === x.p.key && z.q.key === other.q.key);
+          if (!swap || swap.s + y.s < x.s + other.s - CLOSE) continue;
+          ambiguous.add(other.q.key);
+        }
+        ambiguous.add(x.q.key);
+      } else if (y.p.key === x.p.key && y.q.key !== x.q.key && x.p.edits !== '') {
+        // Another posted row fits this pending row about as well, and the pending row carries your edits: unless that
+        // posted row is taking a pending row with the same edits, which one gets them matters.
+        if (takenQ.get(y.q.key)?.p.edits === x.p.edits) continue;
+        ambiguous.add(x.q.key);
+      }
+    }
+  }
+  for (const x of takenQ.values()) {
+    if (ambiguous.has(x.q.key))
+      out.push({
+        kind: 'ambiguous',
+        postedKey: x.q.key,
+        candidates: pairs.filter((y) => y.q.key === x.q.key).map((y) => y.p.key),
+      });
+    else out.push({ kind: 'claim', postedKey: x.q.key, pendingKey: x.p.key });
+  }
+  return out;
 }
 
 export type ReissueDecision =
