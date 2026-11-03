@@ -164,6 +164,7 @@ export function ActivityScreen() {
   // The list keeps categorized rows in place and the counts are adjusted here, so Activity isn't refetched after
   // each categorize (every refetch reads the database); it refreshes on the next visit.
   const categorize = useMoneyMutation(api.categorize, { quiet: ['activity'] });
+  const review = useMoneyMutation(api.reviewTxn);
   const saveRule = useMoneyMutation(api.saveRule, { money: false, invalidate: [qk.rules] });
   const [selecting, setSelecting] = useState(false);
   const [sel, setSel] = useState<Record<string, boolean>>({});
@@ -286,8 +287,8 @@ export function ActivityScreen() {
 
   const dismiss = async (r: TxnListRow) => {
     try {
-      await api.pendingCheck(r.key, { action: 'keep_waiting' });
-      void qc.invalidateQueries({ queryKey: ['activity'] });
+      // OK is shown on bank rows with an alert; they have no expected entry, so the alert itself is marked reviewed.
+      await review.mutateAsync(r.key);
       toast.show({ text: `${r.payee} · new amount accepted` });
     } catch (e) {
       toast.show({ text: e instanceof Error ? e.message : 'Couldn’t save that.' });

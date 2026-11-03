@@ -124,6 +124,21 @@ test('Activity: categorizing an uncategorized purchase persists', async ({ page 
   await expect(page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ })).toHaveCount(0);
 });
 
+test('Activity: OK on a bank row that cleared at a new amount clears it', async ({ page }) => {
+  await page.goto('/activity');
+  const chip = page.getByRole('button', { name: /^Needs attention \d+$/ });
+  const ok = page.getByRole('button', { name: 'OK Shake Shack' });
+  await expect(ok).toBeVisible();
+  const before = Number((await chip.textContent())!.match(/\d+/)![0]);
+  await ok.click();
+  await expect(page.getByText('Shake Shack · new amount accepted')).toBeVisible();
+  await expect(ok).toHaveCount(0);
+  await expect(chip).toHaveText(`Needs attention ${before - 1}`);
+  await page.reload();
+  await expect(chip).toHaveText(`Needs attention ${before - 1}`);
+  await expect(ok).toHaveCount(0);
+});
+
 test('Changes made elsewhere show when the app opens again', async ({ page, request }) => {
   await page.goto('/activity');
   const chip = page.getByRole('button', { name: /^Needs attention \d+$/ });
