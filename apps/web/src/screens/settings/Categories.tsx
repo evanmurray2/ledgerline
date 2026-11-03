@@ -20,6 +20,7 @@ import {
   SecondaryButton,
   Segmented,
   Toggle,
+  useIsDesktop,
 } from '../../components/ui';
 import { formatCents } from '../../lib/money';
 import { useScreen } from '../../lib/common';
@@ -31,6 +32,7 @@ import { Page } from './common';
 
 export function CategoriesScreen() {
   useScreen('settings.categories');
+  const desktop = useIsDesktop();
   const q = useCategoriesSettings();
   const archive = useMoneyMutation(
     (v: { id: string; archived: boolean }) => api.archiveCategory(v.id, v.archived),
@@ -90,7 +92,7 @@ export function CategoriesScreen() {
       {!v && (q.error ? <ErrorNote error={q.error} /> : <Loading />)}
       {v && (
         <p className="m-0 text-[13px] text-muted">
-          Tap a name to change or remove it. Drag the handles to reorder.
+          {desktop ? 'Click' : 'Tap'} a name to change or remove it. Drag the handles to reorder.
         </p>
       )}
       {/* Card payment categories are made by the app and can't be edited, so this screen leaves them out. */}

@@ -367,3 +367,35 @@ test('Accounts: Refresh syncs every bank; on a phone, so does pulling down', asy
   // The sync button next to the gear does the same.
   await expect(page.getByRole('button', { name: 'Sync banks now' })).toBeEnabled();
 });
+
+test('Desktop: type into Assigned, Tab saves and moves on, Escape puts it back', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'the table is desktop only');
+  await page.goto('/budget');
+  const groceries = page.getByLabel('Assigned to Groceries');
+  await groceries.click();
+  await expect(groceries).toHaveValue('600.00');
+  await groceries.fill('650');
+  await page.keyboard.press('Tab');
+  await expect(page.getByLabel('Assigned to Dining out')).toBeFocused();
+  await expect(rta(page)).toHaveText('$931.90');
+  await expect(groceries).toHaveValue('$650.00');
+  await page.keyboard.type('999');
+  await page.keyboard.press('Escape');
+  await expect(page.getByLabel('Assigned to Dining out')).toHaveValue('$200.00');
+  await expect(rta(page)).toHaveText('$931.90');
+});
+
+test('Desktop: the category panel steps to the next category with the arrow keys', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'the side panel is desktop only');
+  await page.goto('/budget');
+  await page
+    .getByRole('row', { name: /Groceries/ })
+    .getByRole('cell')
+    .nth(1)
+    .click();
+  await expect(page).toHaveURL(/\/budget\/category\/groceries/);
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByRole('dialog', { name: 'Dining out' })).toBeVisible();
+  await page.getByRole('button', { name: 'Previous category' }).click();
+  await expect(page.getByRole('dialog', { name: 'Groceries' })).toBeVisible();
+});

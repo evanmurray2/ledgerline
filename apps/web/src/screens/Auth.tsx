@@ -336,6 +336,7 @@ export function SignInSection() {
         </Card>
       ) : (
         <SecondaryButton
+          className="lg:self-start lg:px-6"
           track="settings.passkey.add_device"
           onClick={() => run(api.deviceLink, (r) => setLink(r as { url: string; expiresAt: string }))}
         >
@@ -345,6 +346,7 @@ export function SignInSection() {
       <Problem text={err} />
       {(sec.data?.sessions ?? 0) > 1 && (
         <SecondaryButton
+          className="lg:self-start lg:px-6"
           track="settings.sign_out_others"
           onClick={() => run(api.signOutOthers, () => toast.show({ text: 'Other devices are signed out' }))}
         >

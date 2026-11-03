@@ -3,7 +3,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import type { Target } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
-import { useAssignView, useCategoriesSettings, useCategorySheet, useMoneyMutation } from '../api/hooks';
+import {
+  useAssignView,
+  useBudget,
+  useCategoriesSettings,
+  useCategorySheet,
+  useMoneyMutation,
+} from '../api/hooks';
 import { CategoryField } from '../components/CategoryPicker';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import {
@@ -11,6 +17,7 @@ import {
   cx,
   ErrorNote,
   Field,
+  Icon,
   inputClass,
   Label,
   Loading,
@@ -20,6 +27,8 @@ import {
   STATUS,
   StatusWord,
   TONE,
+  useIsDesktop,
+  useShortcuts,
 } from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { addMonths, dayLabel, monthLabel, monthName } from '../lib/dates';
@@ -37,6 +46,50 @@ function useCloseToBudget(month: string | undefined, current: string | undefined
 
 export function CategorySheetScreen() {
   const { categoryId } = useParams({ strict: false }) as { categoryId: string };
+  // A fresh sheet per category, so going to the next one doesn't carry the typed amount along.
+  return <CategorySheet key={categoryId} categoryId={categoryId} />;
+}
+
+/** Desktop: up and down (the arrow buttons or keys) step through the categories in Budget order. */
+function useCategorySteps(categoryId: string, month: string | undefined, current: string | undefined) {
+  const desktop = useIsDesktop();
+  const navigate = useNavigate();
+  const b = useBudget(month).data;
+  const ids = b ? b.groups.flatMap((g) => g.categories.map((c) => c.id)) : [];
+  const i = ids.indexOf(categoryId);
+  const go = (id: string | undefined) =>
+    id &&
+    void navigate({
+      to: `/budget/category/${id}`,
+      search: { month: month === current ? undefined : month },
+    });
+  const prev = i > 0 ? () => go(ids[i - 1]) : undefined;
+  const next = i >= 0 && i < ids.length - 1 ? () => go(ids[i + 1]) : undefined;
+  useShortcuts({ ArrowUp: () => prev?.(), ArrowDown: () => next?.() }, desktop && i >= 0);
+  if (!desktop || i < 0) return null;
+  const btn = (label: string, key: string, icon: 'up' | 'down', fn: (() => void) | undefined) => (
+    <button
+      type="button"
+      aria-label={label}
+      aria-keyshortcuts={key}
+      title={`${label} (${key === 'ArrowUp' ? '↑' : '↓'})`}
+      disabled={!fn}
+      onClick={fn}
+      data-track={`category.${icon === 'up' ? 'prev' : 'next'}`}
+      className="flex h-11 w-9 items-center justify-center text-ink-2 disabled:text-line-strong"
+    >
+      <Icon name={icon} size={18} />
+    </button>
+  );
+  return (
+    <span className="flex shrink-0">
+      {btn('Previous category', 'ArrowUp', 'up', prev)}
+      {btn('Next category', 'ArrowDown', 'down', next)}
+    </span>
+  );
+}
+
+function CategorySheet({ categoryId }: { categoryId: string }) {
   const { month, current } = useBudgetMonth();
   useScreen('category');
   const q = useCategorySheet(categoryId, month);
@@ -48,6 +101,7 @@ export function CategorySheetScreen() {
   const [moveAmt, setMoveAmt] = useState('');
   const set = useMoneyMutation(api.setAssigned);
   const move = useMoneyMutation(api.move);
+  const steps = useCategorySteps(categoryId, month, current);
   const c = q.data;
 
   useEffect(() => {
@@ -92,12 +146,15 @@ export function CategorySheetScreen() {
       track="category"
       onClose={close}
       header={
-        <div className="flex flex-col gap-0.5">
-          <h1 className="m-0 text-[20px] font-bold">{c.name}</h1>
-          <span className={cx('inline-flex items-center gap-1 text-[13px] font-bold', TONE[st.tone].fg)}>
-            <StatusWord word="" tone={st.tone} icon={st.icon} />
-            {c.statusText}
-          </span>
+        <div className="flex items-start justify-between gap-1">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <h1 className="m-0 text-[20px] font-bold">{c.name}</h1>
+            <span className={cx('inline-flex items-center gap-1 text-[13px] font-bold', TONE[st.tone].fg)}>
+              <StatusWord word="" tone={st.tone} icon={st.icon} />
+              {c.statusText}
+            </span>
+          </div>
+          {steps}
         </div>
       }
       footer={

@@ -4,7 +4,17 @@ import { useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { ReportsView } from '@ledgerline/contracts';
 import { useAccounts, useReports, useSession } from '../api/hooks';
-import { cx, ErrorNote, Icon, Loading, Segmented, useIsDesktop } from '../components/ui';
+import {
+  cx,
+  DESKTOP_WIDTH,
+  DesktopHeader,
+  ErrorNote,
+  Icon,
+  Loading,
+  Segmented,
+  useIsDesktop,
+  useShortcuts,
+} from '../components/ui';
 import { formatCents, percentOf } from '../lib/money';
 import { addMonths, compareMonths, monthLabel, monthShort } from '../lib/dates';
 import { useScreen } from '../lib/common';
@@ -38,6 +48,7 @@ function Tiles({ r, desktop }: { r: ReportsView; desktop: boolean }) {
 
 function ByCategory({ r }: { r: ReportsView }) {
   const navigate = useNavigate();
+  const desktop = useIsDesktop();
   const sorted = [...r.byCategory].sort((a, b) => b.spent - a.spent);
   const max = sorted[0]?.spent ?? 1;
   return (
@@ -49,11 +60,18 @@ function ByCategory({ r }: { r: ReportsView }) {
           type="button"
           data-track="reports.category"
           onClick={() => void navigate({ to: '/activity', search: { q: c.name } })}
-          className="flex min-h-12 flex-col justify-center gap-1.5 border-t border-divider px-3 py-2 text-left first:border-t-0"
+          aria-label={`${c.name}, ${formatCents(c.spent)}: see its transactions`}
+          className={cx(
+            'flex min-h-12 flex-col justify-center gap-1.5 border-t border-divider px-3 py-2 text-left first:border-t-0',
+            desktop && 'hover:bg-surface-2',
+          )}
         >
-          <span className="flex justify-between text-[14px]">
+          <span className="flex items-center justify-between gap-2 text-[14px]">
             <span className="font-semibold">{c.name}</span>
-            <span className="tnum font-bold">{formatCents(c.spent)}</span>
+            <span className="flex items-center gap-1">
+              <span className="tnum font-bold">{formatCents(c.spent)}</span>
+              <Icon name="chevR" size={16} className="text-faint" />
+            </span>
           </span>
           <span aria-hidden="true" className="h-1.5 overflow-hidden rounded-sm bg-track">
             <span
@@ -67,7 +85,7 @@ function ByCategory({ r }: { r: ReportsView }) {
   );
 }
 
-function Trend({ r }: { r: ReportsView }) {
+function Trend({ r, desktop }: { r: ReportsView; desktop: boolean }) {
   const top = Math.max(1, ...r.trend.map((t) => t.spent));
   const label = r.trend
     .map(
@@ -97,8 +115,10 @@ function Trend({ r }: { r: ReportsView }) {
         })}
       </div>
       <span className="text-[12px] text-muted">
-        {r.monthToDate ? `${monthShort(r.month)} is month to date. ` : ''}Tap a category on the Spending view
-        to see its transactions.
+        {r.monthToDate ? `${monthShort(r.month)} is month to date. ` : ''}
+        {desktop
+          ? 'Click a category under Spending by category to see its transactions.'
+          : 'Tap a category on the Spending view to see its transactions.'}
       </span>
     </section>
   );
@@ -214,42 +234,57 @@ export function ReportsScreen() {
       ? `Month to date. Your share only: amounts owed to you are left out.${r.stillOwed ? ` ${formatCents(r.stillOwed)} is still owed to you.` : ''}`
       : 'Whole month. Your share only.'
     : '';
+  const canPrev = !!month;
+  useShortcuts(
+    {
+      '[': () => month && go(addMonths(month, -1)),
+      ']': () => month && !atEnd && go(addMonths(month, 1)),
+    },
+    desktop && canPrev,
+  );
+  const monthNav = month && (
+    <div className="flex items-center">
+      <button
+        type="button"
+        data-track="reports.month.prev"
+        aria-label="Previous month"
+        aria-keyshortcuts={desktop ? '[' : undefined}
+        title={desktop ? 'Previous month ( [ )' : undefined}
+        onClick={() => go(addMonths(month, -1))}
+        className="flex h-11 w-11 items-center justify-center text-ink-2"
+      >
+        <Icon name="chevL" size={20} />
+      </button>
+      <span className="min-w-[84px] text-center text-[15px] font-bold">{monthLabel(month)}</span>
+      <button
+        type="button"
+        data-track="reports.month.next"
+        aria-label="Next month"
+        aria-keyshortcuts={desktop ? ']' : undefined}
+        title={desktop ? 'Next month ( ] )' : undefined}
+        disabled={atEnd}
+        onClick={() => go(addMonths(month, 1))}
+        className="flex h-11 w-11 items-center justify-center text-ink-2 disabled:text-line-strong"
+      >
+        <Icon name="chevR" size={20} />
+      </button>
+    </div>
+  );
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header
-        className={cx(
-          'flex min-h-14 shrink-0 items-center justify-between border-b border-line bg-surface',
-          desktop ? 'px-6' : 'pl-4 pr-1',
-        )}
-      >
-        <h1 className="m-0 text-[22px] font-bold">Reports</h1>
-        {month && (
-          <div className="flex items-center">
-            <button
-              type="button"
-              data-track="reports.month.prev"
-              aria-label="Previous month"
-              onClick={() => go(addMonths(month, -1))}
-              className="flex h-11 w-11 items-center justify-center text-ink-2"
-            >
-              <Icon name="chevL" size={20} />
-            </button>
-            <span className="min-w-[84px] text-center text-[15px] font-bold">{monthLabel(month)}</span>
-            <button
-              type="button"
-              data-track="reports.month.next"
-              aria-label="Next month"
-              disabled={atEnd}
-              onClick={() => go(addMonths(month, 1))}
-              className="flex h-11 w-11 items-center justify-center text-ink-2 disabled:text-line-strong"
-            >
-              <Icon name="chevR" size={20} />
-            </button>
-          </div>
-        )}
-      </header>
+      {desktop ? (
+        <DesktopHeader title="Reports" right={monthNav} />
+      ) : (
+        <header className="flex min-h-14 shrink-0 items-center justify-between border-b border-line bg-surface pl-4 pr-1">
+          <h1 className="m-0 text-[22px] font-bold">Reports</h1>
+          {monthNav}
+        </header>
+      )}
       <div
-        className={cx('flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-3', desktop ? 'px-6' : 'px-4')}
+        className={cx(
+          'flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto',
+          desktop ? 'px-6 py-5' : 'px-4 py-3',
+        )}
       >
         {!r ? (
           q.error ? (
@@ -258,7 +293,7 @@ export function ReportsScreen() {
             <Loading />
           )
         ) : desktop ? (
-          <div className="mx-auto flex w-full max-w-[1000px] flex-col gap-4">
+          <div className={cx(DESKTOP_WIDTH, 'flex flex-col gap-4')}>
             <Tiles r={r} desktop />
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-2">
@@ -267,7 +302,7 @@ export function ReportsScreen() {
                 <ByCategory r={r} />
               </div>
               <div className="flex flex-col gap-3">
-                <Trend r={r} />
+                <Trend r={r} desktop />
                 <NetWorth r={r} />
               </div>
             </div>
@@ -294,7 +329,7 @@ export function ReportsScreen() {
             )}
             {view === 'trend' && (
               <>
-                <Trend r={r} />
+                <Trend r={r} desktop={false} />
                 <IncomeTable r={r} />
               </>
             )}

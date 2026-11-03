@@ -100,7 +100,7 @@ describe('Activity', () => {
     expect(screen.getByText('Check these')).toBeTruthy();
     expect(screen.getByText('counts now · $201.00')).toBeTruthy();
     expect(screen.getByText('Acme Corp payroll')).toBeTruthy();
-    expect(screen.getByText('Needs attention 8')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Needs attention 8' })).toBeTruthy();
   });
 
   it('categorizes from the picker with Undo and the Always offer', async () => {

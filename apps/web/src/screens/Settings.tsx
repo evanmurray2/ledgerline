@@ -7,7 +7,7 @@ import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-route
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
 import { qk, useConnections, usePayees, useRules, useSession } from '../api/hooks';
-import { BackHeader, Card, cx, Loading, Toggle, useIsDesktop } from '../components/ui';
+import { BackHeader, Card, cx, DesktopHeader, Loading, Toggle, useIsDesktop } from '../components/ui';
 import { useThemePref, writeThemePref, type ThemePref } from '../lib/theme';
 import { monthLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
@@ -54,9 +54,7 @@ export function SettingsLayout() {
   if (!desktop) return sub ? <Outlet /> : <SettingsHome />;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex min-h-16 shrink-0 items-center border-b border-line bg-surface px-6">
-        <h1 className="m-0 text-[22px] font-bold">Settings</h1>
-      </header>
+      <DesktopHeader title="Settings" wide />
       <div className="flex min-h-0 flex-1">
         <nav
           aria-label="Settings sections"
