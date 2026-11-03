@@ -9,7 +9,7 @@ import {
   type MutationAck,
   type Session,
 } from '@ledgerline/contracts';
-import { type Month, addMonths, cents, isMonth } from '@ledgerline/domain';
+import { type Month, addMonths, isMonth } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
 import { OPS_PATHS, REAUTH_MS, identify, needsRecentPasskey } from '../http/auth.js';
@@ -17,7 +17,6 @@ import { securityRoutes } from './security.js';
 import { csrf } from '../http/security.js';
 import { bumpOnChange, etags } from '../http/etag.js';
 import { Scoped, membership } from '../db/scoped.js';
-import { markDirty, recompute } from '../budget/recompute.js';
 import { budgetView } from '../views/budget.js';
 import { fresh } from '../views/common.js';
 import { usageToday, classifyUsage } from '../sync/breaker.js';
@@ -26,7 +25,6 @@ import { accountRoutes } from './accounts.js';
 import { settingsRoutes } from './settings.js';
 import { opsRoutes } from './ops.js';
 import { categorySheet, assignView } from '../views/category.js';
-import { derived } from '../budget/derived.js';
 import { syncRoutes, editOnce } from './sync.js';
 
 /**
@@ -72,7 +70,7 @@ budgetApi.use('*', csrf);
  * Screens are built on the phone from its own copy (D-45). On the server only these reads remain: the session, the
  * sync itself, bank connections (they need the Directory's link slots), exports and the ops health check.
  */
-const SERVER_READS = [
+export const SERVER_READS = [
   /^\/api\/session$/,
   /^\/api\/sync(\/|$)/,
   /^\/api\/health$/,
@@ -80,12 +78,13 @@ const SERVER_READS = [
   /^\/api\/settings\/rules\/export$/,
   /^\/api\/export\//,
 ];
-budgetApi.use('*', async (c, next) => {
-  if (derived.enabled || (c.req.method !== 'GET' && c.req.method !== 'HEAD')) return next();
+/** Mounted in front of budgetApi by the store (not by the phone's engine, which answers every screen). */
+export const serverReadsOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
+  if (c.req.method !== 'GET' && c.req.method !== 'HEAD') return next();
   const path = new URL(c.req.url).pathname;
   if (SERVER_READS.some((r) => r.test(path))) return next();
   return c.json({ error: 'on_device', message: 'This screen is worked out on your phone' }, 404);
-});
+};
 /** A change made offline and sent again after a dropped answer is applied once (routes/sync.ts). */
 budgetApi.use('*', editOnce);
 /** Unchanged screens answer 304; every change bumps the version (http/etag.ts). */
@@ -108,30 +107,11 @@ export function scoped(c: { env: AppEnv['Bindings']; get: (k: 'budgetId' | 'user
   return new Scoped(c.env.DB, c.get('budgetId'), c.get('userId'));
 }
 
-/** Continues an older edit's recompute in the store's jobs (decisions.md D-22). */
-export async function startRecompute(env: AppEnv['Bindings']): Promise<void> {
-  await env.JOBS?.recompute();
-}
-
-/** After a write: recompute before responding (one chunk), continue older months in a job. */
-export async function afterWrite(
-  env: AppEnv['Bindings'],
-  budgetId: string,
-  now: number,
-): Promise<MutationAck> {
-  // The server keeps nothing derived (D-45): the phone works out Ready to Assign after it syncs this change.
-  if (!derived.enabled) return { ok: true };
-  const r = await recompute(env.DB, budgetId, now);
-  if (!r.done) await startRecompute(env);
-  const b = await env.DB.prepare(`SELECT rta, summary_dirty_from FROM budget WHERE id = ?1`)
-    .bind(budgetId)
-    .first<{ rta: number; summary_dirty_from: string | null }>();
-  return {
-    ok: true,
-    rta: cents(b?.rta ?? 0),
-    rtaUpdating: b?.summary_dirty_from !== null && b?.summary_dirty_from !== undefined,
-  };
-}
+/**
+ * What a change answers. Nothing derived is worked out in a route (D-45): the phone's engine rebuilds lines and
+ * Ready to Assign afterwards (local/engine.ts derive()), on the server or in its own copy.
+ */
+export const ACK: MutationAck = { ok: true };
 
 export async function parse<T extends z.ZodType>(schema: T, req: Request): Promise<z.infer<T>> {
   const body = await req.json().catch(() => {
@@ -176,7 +156,7 @@ budgetApi.onError(onError);
 budgetApi.get('/session', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
-  const f = await fresh(c.env, s, now, () => startRecompute(c.env));
+  const f = await fresh(s, now);
   const [accounts, cats, settings] = await s.batch([
     s.q(`SELECT count(*) AS n FROM account WHERE budget_id = ?1`),
     s.q(`SELECT count(*) AS n FROM category WHERE budget_id = ?1 AND kind != 'cc_payment'`),
@@ -226,7 +206,7 @@ budgetApi.get('/budget/:month', async (c) => {
   const m = c.req.param('month');
   if (!isMonth(m)) throw new HttpError(400, 'invalid', 'month');
   const s = scoped(c);
-  const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env));
+  const f = await fresh(s, clock(c.env));
   return c.json(await budgetView(s, f, m));
 });
 
@@ -234,13 +214,13 @@ budgetApi.get('/budget/:month/assign', async (c) => {
   const m = c.req.param('month');
   if (!isMonth(m)) throw new HttpError(400, 'invalid', 'month');
   const s = scoped(c);
-  const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env));
+  const f = await fresh(s, clock(c.env));
   return c.json(await assignView(s, f, m));
 });
 
 budgetApi.get('/categories/:id/sheet', async (c) => {
   const s = scoped(c);
-  const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env));
+  const f = await fresh(s, clock(c.env));
   const m = c.req.query('month') ?? f.current;
   if (!isMonth(m)) throw new HttpError(400, 'invalid', 'month');
   const sheet = await categorySheet(s, f, c.req.param('id'), m);
@@ -282,9 +262,8 @@ async function addAssignments(
   stmts.push(
     s.audit(items.some((i) => i.set) ? 'assign.set' : 'assign.add', 'assignment', month, null, items, now),
   );
-  stmts.push(markDirty(c.env.DB, s.budgetId, month, now));
   await s.batch(stmts);
-  return afterWrite(c.env, s.budgetId, now);
+  return ACK;
 }
 
 budgetApi.post('/budget/assign', async (c) => {
@@ -336,15 +315,7 @@ budgetApi.put('/categories/:id/target', async (c) => {
     ),
     s.audit('target.set', 'category', id, null, t, now),
   ]);
-  if (!derived.enabled) return c.json({ ok: true } satisfies MutationAck);
-  const b = await s.first<{ rta: number; summary_dirty_from: string | null }>(
-    `SELECT rta, summary_dirty_from FROM budget WHERE id = ?1`,
-  );
-  return c.json({
-    ok: true,
-    rta: cents(b?.rta ?? 0),
-    rtaUpdating: b?.summary_dirty_from !== null,
-  } satisfies MutationAck);
+  return c.json(ACK);
 });
 
 budgetApi.route('/', syncRoutes);

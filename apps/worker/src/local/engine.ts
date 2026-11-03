@@ -8,7 +8,6 @@ import { localDate, type Month } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
 import type { Env } from '../env.js';
 import { budgetApi } from '../routes/api.js';
-import { derived } from '../budget/derived.js';
 import { markDirty, recompute } from '../budget/recompute.js';
 import { Scoped } from '../db/scoped.js';
 import {
@@ -55,7 +54,7 @@ const EMPTY: EngineState = {
 };
 
 /** What the next derive() has to redo, kept in the copy so a reload in between loses nothing. */
-interface PendingDerive {
+export interface PendingDerive {
   /** Every line, from the budget start (first download, an account or the budget's start or time zone changed). */
   full: boolean;
   /** Transactions whose lines to rebuild. */
@@ -110,8 +109,6 @@ export class LocalEngine {
     /** Called when Ready to Assign doesn't satisfy rule 10 (the identity check). */
     private readonly onIdentity?: (r: { difference: number; month: string }) => Promise<void>,
   ) {
-    // This engine works out everything derived (budget/derived.ts).
-    derived.enabled = true;
     const app = new Hono<AppEnv>();
     app.use('*', async (c, next) => {
       c.set('requestId', 'local');
@@ -387,25 +384,39 @@ export class LocalEngine {
         workers: 0,
         refreshedAt: null,
       }),
-      JOBS: {
-        sync: async () => undefined,
-        recompute: async () => {
-          for (let i = 0; i < 20; i++) {
-            const r = await recompute(this.db, this.who.budgetId, now, { maxMonths: 1200 });
-            if (r.done) break;
-          }
-        },
-      },
+      JOBS: { sync: async () => undefined },
     } as unknown as Env;
   }
 
   /**
    * Answers an app request from the copy with the server's own routes: every screen, and the short list of changes
-   * the phone may make offline (they're sent to the server later; web-entry.ts).
+   * the phone may make offline (they're sent to the server later; web-entry.ts). The routes only store what was
+   * entered, as on the server; after a change this works out what it affects (derive()) and adds Ready to Assign to
+   * the answer.
    */
   async request(method: string, path: string, body?: unknown): Promise<Response> {
     const now = await this.now();
     const mutation = method !== 'GET' && method !== 'HEAD';
+    const r = await this.route(method, path, body, now, mutation);
+    if (!mutation || r.status >= 300) return r;
+    const todo = await this.pendingDerive();
+    noteEdit(method, path, body, todo);
+    await this.db.batch([this.setPendingDerive(todo)]);
+    const { rta } = (await this.derive()) ?? { rta: 0 };
+    const text = await r.text();
+    const json = text ? (JSON.parse(text) as unknown) : null;
+    const ack =
+      json && typeof json === 'object' && !('rta' in json) ? { ...json, rta, rtaUpdating: false } : json;
+    return new Response(JSON.stringify(ack), { status: r.status, headers: r.headers });
+  }
+
+  private async route(
+    method: string,
+    path: string,
+    body: unknown,
+    now: number,
+    mutation: boolean,
+  ): Promise<Response> {
     const req = new Request(`https://engine.local${path}`, {
       method,
       headers: mutation
@@ -418,4 +429,24 @@ export class LocalEngine {
       passThroughOnException() {},
     } as never);
   }
+}
+
+/**
+ * What an offline edit (the short list in apps/web/src/copy/copy.ts) asks the next derive() to redo: a transaction's
+ * lines, or the months from an assignment on. A target changes nothing derived. Anything else rebuilds everything.
+ */
+export function noteEdit(method: string, path: string, body: unknown, todo: PendingDerive): void {
+  const b = (body ?? {}) as { keys?: unknown; month?: unknown };
+  const txn = method === 'PATCH' ? /^\/api\/transactions\/([^/]+)$/.exec(path) : null;
+  if (txn) todo.keys.push(decodeURIComponent(txn[1]!));
+  else if (method === 'POST' && path === '/api/transactions/categorize' && Array.isArray(b.keys))
+    todo.keys.push(...b.keys.map(String));
+  else if (
+    method === 'POST' &&
+    /^\/api\/budget\/(assign|set|move)$/.test(path) &&
+    typeof b.month === 'string'
+  ) {
+    if (!todo.fromMonth || b.month < todo.fromMonth) todo.fromMonth = b.month;
+  } else if (method === 'PUT' && /^\/api\/categories\/[^/]+\/target$/.test(path)) return;
+  else todo.full = true;
 }

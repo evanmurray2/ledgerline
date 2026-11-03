@@ -1,19 +1,19 @@
 // The real Worker answers every screen in the shape the app expects, on the seeded November budget. The web app's
 // mock API is checked against the same list (packages/contracts/src/screens.ts, apps/web/test/mock-contract.test.ts).
-import { SELF } from 'cloudflare:test';
+import { app } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { AccountsView, ActivityView, BudgetView } from '@ledgerline/contracts';
 import { SCREENS, fillScreen, screenIds } from '@ledgerline/contracts/screens';
 
 const get = async (path: string) => {
-  const r = await SELF.fetch(`https://ledgerline.test${path}`);
+  const r = await app(path);
   expect(r.status, path).toBe(200);
   return r.json();
 };
 
 describe('Worker answers match the contracts', () => {
   beforeAll(async () => {
-    const r = await SELF.fetch('https://ledgerline.test/__dev/seed-november', {
+    const r = await app('/__dev/seed-november', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-ledgerline': '1' },
       body: '{}',

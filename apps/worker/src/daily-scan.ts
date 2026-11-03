@@ -2,19 +2,12 @@
 import { localDate, type Month } from '@ledgerline/domain';
 import type { Env } from './env.js';
 import { Scoped } from './db/scoped.js';
-import { budgetMeta, planLineRebuild } from './ledger/ledger.js';
-import { recompute } from './budget/recompute.js';
+import { budgetMeta } from './ledger/ledger.js';
 import { ulid } from '@ledgerline/platform';
 import { bumpVersion } from './http/etag.js';
-import { derived } from './budget/derived.js';
 
 /** Upcoming entries count from their date; repeating ones schedule their next occurrence. Vanished pending rows get an alert. */
-export async function dailyScan(
-  env: Env,
-  budgetId: string,
-  now: number,
-  opts: { recompute?: boolean } = {},
-): Promise<{ materialized: number }> {
+export async function dailyScan(env: Env, budgetId: string, now: number): Promise<{ materialized: number }> {
   const s = new Scoped(env.DB, budgetId, 'system');
   const meta = await budgetMeta(s);
   if (!meta) return { materialized: 0 };
@@ -29,13 +22,9 @@ export async function dailyScan(
   }>(
     `SELECT m.txn_key, m.repeats, m.date, m.account_id, m.amount, m.payee_name FROM manual_pending m
      WHERE m.budget_id = ?1 AND m.kind = 'upcoming' AND m.deleted_at IS NULL AND m.date <= ?2
-       AND ${
-         // Where lines are worked out, a due row without lines still needs them; on the server (D-45), only
-         // repeating rows still need their next occurrence scheduled (scheduling sets repeats to 'never').
-         derived.enabled
-           ? `NOT EXISTS (SELECT 1 FROM budget_line l WHERE l.budget_id = m.budget_id AND l.txn_key = m.txn_key)`
-           : `m.repeats != 'never'`
-       } LIMIT 40`,
+       -- Only repeating rows need their next occurrence scheduled (scheduling sets repeats to 'never'). Their lines
+       -- are worked out on the phone (D-45).
+       AND m.repeats != 'never' LIMIT 40`,
     today,
   );
   const w: D1PreparedStatement[] = [];
@@ -81,22 +70,6 @@ export async function dailyScan(
     ),
   );
   if (w.length) await s.batch(w);
-  // Linked refund lines saved without their link (split refunds before Nov 3, 2026): rebuilt so each line gives
-  // back from the purchase (rule 3). Finds nothing once they're rebuilt.
-  const unlinked = !derived.enabled
-    ? []
-    : await s.all<{ txn_key: string }>(
-        `SELECT DISTINCT l.txn_key FROM budget_line l
-     JOIN txn_link k ON k.budget_id = l.budget_id AND k.from_key = l.txn_key AND k.kind = 'refund_of' AND k.undone_at IS NULL
-     WHERE l.budget_id = ?1 AND l.kind = 'cat' AND l.amount > 0 AND l.ref IS NULL LIMIT 40`,
-      );
-  const keys = [...new Set([...due.map((d) => d.txn_key), ...unlinked.map((r) => r.txn_key)])];
-  if (keys.length) {
-    const plan = await planLineRebuild(s, keys, meta, today, now);
-    await s.batch(plan.stmts);
-  }
-  // The job runner recomputes in its own small steps instead (docs/multi-user.md 6.1).
-  if (opts.recompute !== false) await recompute(env.DB, budgetId, now);
   await bumpVersion(env.DB, budgetId);
   return { materialized: due.length };
 }

@@ -6,7 +6,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../http/context.js';
 import type { Caller } from './directory.js';
 import { DIRECTORY_NAME } from './directory.js';
-import { budgetApi } from '../routes/api.js';
+import { budgetApi, serverReadsOnly } from '../routes/api.js';
 import { dev } from '../dev-seed.js';
 import { BUDGET_TABLES, NO_FILTER, chain, insertStatements, readChunk, tableMeta } from './dump.js';
 import type { Env } from '../env.js';
@@ -14,7 +14,7 @@ import { SqlD1 } from './adapter.js';
 import { appliedMigrations, migrate } from './migrate.js';
 import { BUDGET_MIGRATIONS } from './migrations.gen.js';
 import { JobRunner, type Handler, type Job } from './jobs.js';
-import { failSync, recomputeHandler, syncHandler, type SyncDeps, type SyncState } from './sync-job.js';
+import { failSync, syncHandler, type SyncDeps, type SyncState } from './sync-job.js';
 import {
   backstopHandler,
   dailyScanHandler,
@@ -25,7 +25,6 @@ import {
 } from './budget-jobs.js';
 import { connectionToken, makeProvider, pageSize } from '../sync/provider.js';
 import { writeBudgetState } from '../sync/breaker.js';
-import { derived } from '../budget/derived.js';
 
 export interface StoreHealth {
   ok: boolean;
@@ -46,8 +45,6 @@ export class BudgetStore extends DurableObject<Env> {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    // Integration tests run the phone's budget math here (D-45, budget/derived.ts); production never does.
-    if (env.LOCAL_ENGINE === '1' && env.PLAID_ENV !== 'production') derived.enabled = true;
     this.db = new SqlD1(ctx.storage);
     this.runner = new JobRunner(ctx.storage, this.handlers(), (job, err) => this.onFailed(job, err));
     void ctx.blockConcurrencyWhile(async () => {
@@ -75,7 +72,7 @@ export class BudgetStore extends DurableObject<Env> {
     this.ready();
     await this.ensureBudget(caller.budgetId);
     await this.rearm();
-    this.app ??= withCaller((app) => app.route('/api', budgetApi));
+    this.app ??= withCaller((app) => app.use('/api/*', serverReadsOnly).route('/api', budgetApi));
     return this.serve(this.app, request, caller);
   }
 
@@ -287,7 +284,7 @@ export class BudgetStore extends DurableObject<Env> {
 
   /**
    * The env every app function sees inside the store: the same bindings, with DB = this store's database, account
-   * usage from the Directory, and JOBS, so the routes that start a sync or an older-month recompute queue a job
+   * usage from the Directory, and JOBS, so the routes that start a sync queue a job
    * here (docs/multi-user.md 6.1).
    */
   private appEnv(): Env {
@@ -312,9 +309,6 @@ export class BudgetStore extends DurableObject<Env> {
         sync: async (runId, connectionId, trigger) => {
           const state: SyncState = { phase: 'begin', holder: runId, trigger };
           await this.enqueue('sync', { id: runId, connectionId, state, runAt: now() });
-        },
-        recompute: async () => {
-          await this.enqueue('recompute', { id: 'recompute', runAt: now() });
         },
       },
     };
@@ -364,9 +358,10 @@ export class BudgetStore extends DurableObject<Env> {
     const budgetId = () => this.budgetId();
     return {
       sync: async (job, now) => syncHandler(await this.syncDeps())(job, now),
-      recompute: async (job, now) => recomputeHandler(this.adapter(), await budgetId())(job, now),
+      // Queued by the server before D-45; there is nothing to recompute here now.
+      recompute: async () => ({ done: true }),
       backstop: (job, now) => backstopHandler(this.adapter(), this.enqueue)(job, now),
-      daily_scan: (job, now) => dailyScanHandler(this.appEnv(), budgetId, this.enqueue)(job, now),
+      daily_scan: (job, now) => dailyScanHandler(this.appEnv(), budgetId)(job, now),
       maintenance: (job, now) => maintenanceHandler(this.appEnv(), budgetId)(job, now),
       register_link: async (job) => {
         // Retried until the Directory answers; a duplicate Item is flagged on the connection (6.4).

@@ -9,7 +9,6 @@ import { CHUNK, LeaseLost, applyPage, beginRun, fetchPage, restartFetch } from '
 import { MAX_HANDOFFS, moveLease, releaseFailed, releaseSuccess, renew } from '../sync/lease.js';
 import { finalizeConnection, healPending, processPending } from '../sync/process.js';
 import { sleepUntilUtcMidnight } from '../sync/breaker.js';
-import { MONTHS_PER_CHUNK, recompute } from '../budget/recompute.js';
 import type { Handler, Job, StepResult } from './jobs.js';
 
 export const MAX_PAGES = 1000;
@@ -213,8 +212,7 @@ async function step(deps: SyncDeps, connectionId: string, s: SyncState, now: num
       return next({ ...s, phase: 'finalize' });
     }
     case 'finalize': {
-      await finalizeConnection(env, ctx(), s.runId!, { recompute: false });
-      await deps.enqueue('recompute', { id: 'recompute', state: {}, runAt: now });
+      await finalizeConnection(env, ctx(), s.runId!);
       return next({ ...s, phase: 'release' });
     }
     case 'release': {
@@ -236,14 +234,4 @@ async function step(deps: SyncDeps, connectionId: string, s: SyncState, now: num
       return { done: true };
     }
   }
-}
-
-/** Recompute as a job: MONTHS_PER_CHUNK per step until caught up. */
-export const STORE_MONTHS_PER_STEP = MONTHS_PER_CHUNK;
-
-export function recomputeHandler(db: D1Database, budgetId: string): Handler {
-  return async (_job, now) => {
-    const r = await recompute(db, budgetId, now, { maxMonths: STORE_MONTHS_PER_STEP });
-    return r.done || !r.ok ? { done: true } : { state: {}, runAt: now };
-  };
 }

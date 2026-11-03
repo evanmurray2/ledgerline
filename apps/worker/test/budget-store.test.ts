@@ -122,6 +122,6 @@ describe('BudgetStore scheduling', () => {
     expect(out.failures).toEqual(['new-failure']);
     expect(out.job).toMatchObject({ state: '{"phase":"start"}', attempts: 0, last_error: null });
     expect(Number(out.job.run_at)).toBeGreaterThan(Date.now());
-    expect(out.health).toEqual(['last_recompute', 'watchdog_ran_at']);
+    expect(out.health).toEqual(['watchdog_ran_at']);
   });
 });

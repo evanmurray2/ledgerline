@@ -1,5 +1,5 @@
 // The prototype's November numbers through the whole stack: D1 tables → overlay → budget lines → recompute → API.
-import { SELF } from 'cloudflare:test';
+import { app } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type {
   AccountsView,
@@ -12,12 +12,12 @@ import type {
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 const get = async <T>(p: string): Promise<T> => {
-  const r = await SELF.fetch(`https://ledgerline.test${p}`);
+  const r = await app(p);
   if (!r.ok) throw new Error(`${p} ${r.status} ${await r.text()}`);
   return (await r.json()) as T;
 };
 const post = async <T>(p: string, body: unknown): Promise<T> => {
-  const r = await SELF.fetch(`https://ledgerline.test${p}`, {
+  const r = await app(p, {
     method: 'POST',
     headers: H,
     body: JSON.stringify(body),
@@ -28,7 +28,7 @@ const post = async <T>(p: string, body: unknown): Promise<T> => {
 
 describe('November through the API', () => {
   beforeAll(async () => {
-    const r = await SELF.fetch('https://ledgerline.test/__dev/seed-november', {
+    const r = await app('/__dev/seed-november', {
       method: 'POST',
       headers: H,
       body: '{}',
@@ -175,7 +175,7 @@ describe('November through the API', () => {
   });
 
   it('rejects mutations without the CSRF header', async () => {
-    const r = await SELF.fetch('https://ledgerline.test/api/budget/assign', {
+    const r = await app('/api/budget/assign', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: '{}',
@@ -186,7 +186,7 @@ describe('November through the API', () => {
 
 describe('Overfunded wording', () => {
   beforeAll(async () => {
-    await SELF.fetch('https://ledgerline.test/__dev/seed-november', {
+    await app('/__dev/seed-november', {
       method: 'POST',
       headers: H,
       body: '{}',
@@ -195,7 +195,7 @@ describe('Overfunded wording', () => {
 
   it('a Set aside target says how much more was assigned, even when spending left less than the target', async () => {
     const put = (p: string, body: unknown) =>
-      SELF.fetch(`https://ledgerline.test${p}`, { method: 'PUT', headers: H, body: JSON.stringify(body) });
+      app(p, { method: 'PUT', headers: H, body: JSON.stringify(body) });
     const cat = 'shopping';
     expect(
       (
@@ -235,20 +235,17 @@ describe('Overfunded wording', () => {
     const shake = before.checkThese.find((r) => r.payee === 'Shake Shack')!;
     expect(shake.action).toBe('dismiss');
     // The bank row has no expected entry, so "keep waiting" can't be what OK sends.
-    const wrong = await SELF.fetch(
-      `https://ledgerline.test/api/transactions/${encodeURIComponent(shake.key)}/pending`,
-      {
-        method: 'POST',
-        headers: H,
-        body: JSON.stringify({ action: 'keep_waiting' }),
-      },
-    );
+    const wrong = await app(`/api/transactions/${encodeURIComponent(shake.key)}/pending`, {
+      method: 'POST',
+      headers: H,
+      body: JSON.stringify({ action: 'keep_waiting' }),
+    });
     expect(wrong.status).toBe(404);
     await post(`/api/transactions/${encodeURIComponent(shake.key)}/review`, {});
     const after = await get<ActivityView>('/api/activity?filter=attention');
     expect(after.checkThese.map((r) => r.payee)).toEqual(['Check #1043']);
     expect(after.attentionCount).toBe(before.attentionCount - 1);
-    const missing = await SELF.fetch('https://ledgerline.test/api/transactions/nope/review', {
+    const missing = await app('/api/transactions/nope/review', {
       method: 'POST',
       headers: H,
       body: '{}',

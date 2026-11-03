@@ -2,21 +2,13 @@
 import { Hono } from 'hono';
 import { clock } from '../../http/clock.js';
 import { RuleBody, type RulePreview, type RulesView } from '@ledgerline/contracts';
-import {
-  type Rule,
-  addDays,
-  cents,
-  evaluateRules,
-  formatCents,
-  localDate,
-  treeHolds,
-} from '@ledgerline/domain';
+import { type Rule, addDays, cents, evaluateRules, formatCents, treeHolds } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../../http/context.js';
-import { HttpError, afterWrite, parse, scoped } from '../api.js';
+import { ACK, HttpError, parse, scoped } from '../api.js';
 import { structure } from '../../views/common.js';
 import { listRow } from '../../views/rows.js';
-import { TX_COLUMNS, budgetMeta, planLineRebuild, type TxRow } from '../../ledger/ledger.js';
+import { TX_COLUMNS, type TxRow } from '../../ledger/ledger.js';
 import type { Scoped } from '../../db/scoped.js';
 
 export const rulesRoutes = new Hono<AppEnv>();
@@ -207,12 +199,7 @@ rulesRoutes.post('/settings/rules/:id/apply', async (c) => {
     if (keys.length >= 150) break;
   }
   if (w.length) await s.batch(w);
-  const meta = await budgetMeta(s);
-  if (meta && keys.length) {
-    const plan = await planLineRebuild(s, keys, meta, localDate(now, meta.timeZone), now);
-    await s.batch(plan.stmts);
-  }
-  return c.json(await afterWrite(c.env, s.budgetId, now));
+  return c.json(ACK);
 });
 
 rulesRoutes.delete('/settings/rules/:id', async (c) => {

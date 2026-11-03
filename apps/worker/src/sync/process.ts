@@ -8,7 +8,6 @@ import {
   type Month,
   type UnlinkedPostedRow,
   addDays,
-  addMonths,
   type Rule,
   cents,
   cleanDescription,
@@ -30,9 +29,7 @@ import { Scoped } from '../db/scoped.js';
 import { conditionFence, isFenceAbort } from './lease.js';
 import type { StepContext } from './steps.js';
 import { CHUNK } from './steps.js';
-import { budgetMeta, chunks, planLineRebuild } from '../ledger/ledger.js';
-import { clearTotals } from '../ledger/totals.js';
-import { recompute } from '../budget/recompute.js';
+import { budgetMeta, chunks } from '../ledger/ledger.js';
 import { makeProvider, connectionToken } from './provider.js';
 
 const MAX_WATERMARK_RETRIES = 3;
@@ -94,17 +91,15 @@ export async function processPending(env: Env, budgetId: string, now = Date.now(
     const through = evs[evs.length - 1]!.id;
     const today = localDate(now, b.time_zone);
     const meta = await budgetMeta(s);
-    const plan = meta ? await planProcessing(s, evs, today, now) : { stmts: [], keys: [] as string[] };
+    const plan = meta ? await planProcessing(s, evs, today, now) : { stmts: [] };
     const fence = () =>
       conditionFence(env.DB, `SELECT processed_through = ?1 FROM budget WHERE id = ?2`, expected, budgetId);
     try {
       // 1. Matches, categorization and transfers (idempotent: reprocessing the same events writes the same rows).
       if (plan.stmts.length) await env.DB.batch([fence(), ...plan.stmts]);
-      // 2. Budget lines from the updated rows, and the new watermark, behind the same fence.
-      const lines = meta ? (await planLineRebuild(s, plan.keys, meta, today, now)).stmts : [];
+      // 2. The new watermark, behind the same fence.
       await env.DB.batch([
         fence(),
-        ...lines,
         s.q(`UPDATE budget SET processed_through = ?2, updated_at = ?3 WHERE id = ?1`, through, now),
       ]);
       return { caughtUp: evs.length < CHUNK.process, processed: evs.length };
@@ -161,8 +156,6 @@ export async function healPending(
     );
   try {
     await env.DB.batch([fence(), ...plan.stmts]);
-    const lines = (await planLineRebuild(s, plan.keys, meta, today, now)).stmts;
-    if (lines.length) await env.DB.batch([fence(), ...lines]);
   } catch (e) {
     if (!isFenceAbort(e)) throw e;
     return { changed: false };
@@ -170,7 +163,7 @@ export async function healPending(
   return { changed: true };
 }
 
-/** Decides what the new events mean and returns the overlay writes plus the keys whose lines must be rebuilt. */
+/** Decides what the new events mean and returns the overlay writes. */
 async function planProcessing(
   s: Scoped,
   evs: EventRow[],
@@ -178,7 +171,7 @@ async function planProcessing(
   now: number,
   /** Healing (healPending): only the matching steps, for rows nothing new arrived for. */
   matchOnly = false,
-): Promise<{ stmts: D1PreparedStatement[]; keys: string[] }> {
+): Promise<{ stmts: D1PreparedStatement[] }> {
   const ids = [...new Set(evs.map((e) => e.provider_txn_id))];
   const ph = ids.map((_, i) => `?${i + 2}`).join(',');
   const rows: BankRow[] = [];
@@ -199,10 +192,8 @@ async function planProcessing(
   }
   void ph;
   const stmts: D1PreparedStatement[] = [];
-  const keys = new Set<string>();
   const live = rows.filter((r) => r.removed_at === null && r.account_id);
   const removed = rows.filter((r) => r.removed_at !== null && r.account_id);
-  for (const r of rows) keys.add(r.txn_key);
 
   // ---- 1. Provider link: a posted row naming its pending row inherits that row's txn_key (and so its overlay).
   const pendingIds = live
@@ -258,8 +249,6 @@ async function planProcessing(
     );
     inherited.add(postedId);
     claimed.add(fromKey);
-    keys.add(fromKey);
-    keys.add(`p:${postedId}`);
     // What you set on the posted row itself before it claimed the pending row (a category from a rule or the payee, a
     // memo) fills what the pending row leaves empty; a category you chose on the pending row always wins.
     stmts.push(
@@ -343,7 +332,6 @@ async function planProcessing(
           now,
         ),
       );
-      keys.add(`p:${other}`);
     }
     inherit(r.provider_txn_id, p.txn_key, 'provider', r.amount, p.estimated ?? p.amount);
   }
@@ -515,7 +503,7 @@ async function planProcessing(
     }
   }
 
-  if (matchOnly) return { stmts, keys: [...keys] };
+  if (matchOnly) return { stmts };
 
   // ---- 4. Re-issued posted rows, and removed pending rows nothing has claimed.
   const removedPosted = removed.filter((r) => !r.pending);
@@ -762,11 +750,7 @@ async function planProcessing(
       }
     }
   }
-  // Stored month totals (ledger/totals.ts) from the earliest month touched: re-keying a row onto a pending-at-link
-  // overlay can change which posted rows the budget counts. A month earlier covers card rows dated by authorization.
-  const earliest = rows.reduce<string | null>((m, r) => (m === null || r.date < m ? r.date : m), null);
-  if (earliest) stmts.push(clearTotals(s, addMonths(earliest.slice(0, 7) as Month, -1)));
-  return { stmts, keys: [...keys] };
+  return { stmts };
 }
 
 function alert(s: Scoped, type: string, ref: string, data: unknown, now: number): D1PreparedStatement {
@@ -781,13 +765,8 @@ function alert(s: Scoped, type: string, ref: string, data: unknown, now: number)
   );
 }
 
-/** After the watermark catches up: refresh balances and card liabilities, recompute, mark the sync done. */
-export async function finalizeConnection(
-  env: Env,
-  c: StepContext,
-  runId: string,
-  opts: { recompute?: boolean } = {},
-): Promise<{ recomputeDone: boolean }> {
+/** After the watermark catches up: refresh balances and card liabilities, mark the sync done. */
+export async function finalizeConnection(env: Env, c: StepContext, runId: string): Promise<void> {
   const now = Date.now();
   try {
     const provider = makeProvider(env);
@@ -839,10 +818,6 @@ export async function finalizeConnection(
       `UPDATE connection SET last_synced_at = ?2, last_attempt_at = ?2, error_code = NULL, status = 'ok' WHERE id = ?1`,
     ).bind(c.connectionId, now),
   ]);
-  // The job runner (docs/multi-user.md 6.1) recomputes in its own small steps instead.
-  if (opts.recompute === false) return { recomputeDone: false };
-  const r = await recompute(env.DB, c.budgetId, now);
-  return { recomputeDone: r.done };
 }
 
 export type { Month };

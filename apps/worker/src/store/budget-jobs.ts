@@ -1,17 +1,15 @@
 // A budget's recurring and on-demand jobs (docs/multi-user.md 6.1, 6.2): the sync backstop every 4 hours, the daily
 // scan at 08:10 UTC and maintenance at 10:20 UTC (today's cron times), plus starting a sync. Each store keeps its own
 // recurring rows, so nothing has to loop over every budget; a recurring row is never deleted, only moved forward.
-import { derived } from '../budget/derived.js';
 import { ulid } from '@ledgerline/platform';
 import type { Env } from '../env.js';
-import { recompute } from '../budget/recompute.js';
 import { dailyScan } from '../daily-scan.js';
-import { checkIdentityDb, rollUpUsage, watchdogBudgetStmts } from '../maintenance.js';
+import { rollUpUsage, watchdogBudgetStmts } from '../maintenance.js';
 import { processPending } from '../sync/process.js';
 import { acquire, requestSync } from '../sync/lease.js';
 import { bumpVersion } from '../http/etag.js';
 import type { Handler, StepResult } from './jobs.js';
-import { STORE_MONTHS_PER_STEP, type SyncState } from './sync-job.js';
+import type { SyncState } from './sync-job.js';
 
 export const BACKSTOP_ID = 'recurring:backstop';
 export const DAILY_SCAN_ID = 'recurring:daily_scan';
@@ -89,25 +87,24 @@ export function backstopHandler(db: D1Database, enqueue: Enqueue): Handler {
 }
 
 /** Daily at 08:10 UTC: due Upcoming entries come into the budget, vanished pending rows get an alert. */
-export function dailyScanHandler(env: Env, budgetId: () => Promise<string>, enqueue: Enqueue): Handler {
+export function dailyScanHandler(env: Env, budgetId: () => Promise<string>): Handler {
   return async (_job, now): Promise<StepResult> => {
-    const r = await dailyScan(env, await budgetId(), now, { recompute: false });
-    // Totals are worked out on the phone (D-45): on the server a recompute job would wake up only to find nothing to do.
-    if (derived.enabled) await enqueue('recompute', { id: 'recompute', runAt: now });
+    const r = await dailyScan(env, await budgetId(), now);
     // A full batch may mean more are due: run again shortly instead of waiting a day.
     return { state: {}, runAt: r.materialized >= SCAN_BATCH ? now + 1000 : nextUtc(now, 8, 10) };
   };
 }
 
 interface MaintState {
+  /** 'recompute' and 'identity' are from before D-45 (a run saved mid-way then carries on at the catch-up). */
   phase: 'start' | 'recompute' | 'identity' | 'catchup' | 'rollup' | 'watchdog' | 'prune' | 'bump';
-  dirtyBefore?: string | null;
-  written?: number;
   i?: number;
-  identity?: { ok: boolean; difference: number; literal: boolean };
 }
 
-/** Daily at 10:20 UTC: the daily maintenance steps (maintenance.ts), full recompute 2 months per step. */
+/**
+ * Daily at 10:20 UTC: the daily maintenance steps (maintenance.ts). The full recompute and the identity check run on
+ * the phone (D-45, local/engine.ts).
+ */
 export function maintenanceHandler(env: Env, budgetId: () => Promise<string>): Handler {
   return async (job, now): Promise<StepResult> => {
     const db = env.DB;
@@ -115,56 +112,10 @@ export function maintenanceHandler(env: Env, budgetId: () => Promise<string>): H
     const s = job.state as MaintState;
     const next = (state: MaintState): StepResult => ({ state, runAt: now });
     switch (s.phase ?? 'start') {
-      case 'start': {
-        // The full recompute and the identity check run on the phone (D-45, local/engine.ts).
-        if (!derived.enabled) return next({ phase: 'catchup', written: 0, i: 0 });
-        const r = await db
-          .prepare(`SELECT summary_dirty_from FROM budget WHERE id = ?1`)
-          .bind(b)
-          .first<{ summary_dirty_from: string | null }>();
-        return next({ phase: 'recompute', dirtyBefore: r?.summary_dirty_from ?? null, written: 0, i: 0 });
-      }
-      case 'recompute': {
-        // 1. Full recompute from budget start; any month that changes without a pending edit is drift.
-        const i = s.i ?? 0;
-        const r = await recompute(db, b, now, {
-          maxMonths: STORE_MONTHS_PER_STEP,
-          ...(i === 0 ? { force: true, fullFrom: true } : {}),
-        });
-        const written = (s.written ?? 0) + r.monthsWritten;
-        if (r.done || !r.ok || i >= 200) return next({ ...s, phase: 'identity', written });
-        return next({ ...s, written, i: i + 1 });
-      }
-      case 'identity': {
-        const identity = await checkIdentityDb(env, b);
-        const stmts = [
-          db
-            .prepare(
-              `INSERT INTO health_status (budget_id, key, value, at) VALUES (?1, 'last_recompute', ?2, ?3) ON CONFLICT (budget_id, key) DO UPDATE SET value = excluded.value, at = excluded.at`,
-            )
-            .bind(
-              b,
-              JSON.stringify({
-                monthsChanged: s.written ?? 0,
-                drift: s.dirtyBefore === null && (s.written ?? 0) > 0,
-                identity,
-              }),
-              now,
-            ),
-        ];
-        if (!identity.ok) {
-          stmts.push(
-            db
-              .prepare(
-                `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at) VALUES (?1, ?2, 'identity', ?3, ?4, ?5) ON CONFLICT (budget_id, type, ref_key) DO UPDATE SET data = excluded.data`,
-              )
-              .bind(ulid(now), b, new Date(now).toISOString().slice(0, 10), JSON.stringify(identity), now),
-          );
-          console.log(JSON.stringify({ event: 'identity_failed', count: identity.difference }));
-        }
-        await db.batch(stmts);
+      case 'start':
+      case 'recompute':
+      case 'identity':
         return next({ phase: 'catchup', i: 0 });
-      }
       case 'catchup': {
         // 2. Post-sync catch-up from the watermark.
         const r = await processPending(env, b, now);
