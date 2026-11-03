@@ -5,7 +5,19 @@ import { DumpChunk } from '@ledgerline/contracts';
 import { download, get, qs, saveFile } from '../../api/client';
 import { api, exportUrls } from '../../api/endpoints';
 import { qk, useAccounts } from '../../api/hooks';
-import { Card, cx, ErrorNote, Field, inputClass, PrimaryButton, SecondaryButton } from '../../components/ui';
+import {
+  Banner,
+  Card,
+  cx,
+  ErrorNote,
+  Field,
+  inputClass,
+  PrimaryButton,
+  SecondaryButton,
+  SectionTitle,
+  softButtonClass,
+  SoftButton,
+} from '../../components/ui';
 import { useScreen } from '../../lib/common';
 import { useCanWrite } from '../../state/connectivity';
 import { Page } from './common';
@@ -84,9 +96,11 @@ export function DataScreen() {
               searchable and in reports, never in a budget month.
             </span>
             <label
+              // The pill look on a label (the file input inside it is the control); the shared disabled look
+              // follows the input.
               className={cx(
-                'hit flex h-11 cursor-pointer items-center justify-center self-start rounded-full px-4 text-[14px] font-bold',
-                canWrite ? 'bg-accent-soft text-accent' : 'bg-sunken text-disabled',
+                softButtonClass(),
+                'cursor-pointer self-start has-[:disabled]:cursor-not-allowed has-[:disabled]:bg-sunken has-[:disabled]:text-disabled',
               )}
             >
               Choose file
@@ -117,13 +131,13 @@ export function DataScreen() {
               </select>
             </Field>
             <div className="flex gap-2">
-              <SecondaryButton className="h-10 flex-1" onClick={() => setFile(null)}>
+              <SecondaryButton className="flex-1" onClick={() => setFile(null)}>
                 Cancel
               </SecondaryButton>
               <PrimaryButton
                 mutates
                 track="data.import"
-                className="h-10 flex-[2]"
+                className="flex-[2]"
                 disabled={busy}
                 onClick={() => void doImport()}
               >
@@ -133,22 +147,20 @@ export function DataScreen() {
           </>
         )}
         {result && (
-          <p role="status" className="m-0 rounded-xl bg-success-soft p-3 text-[13px] text-funded-fg">
+          <Banner tone="success" icon="check">
             {result}
-          </p>
+          </Banner>
         )}
         {error ? <ErrorNote error={error} /> : null}
       </section>
-      <h2 className="m-0 mt-1 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">Export</h2>
+      <SectionTitle>Export</SectionTitle>
       <Card>
         {exportsList.map(([name, meta, href, filename]) => (
           <ExportRow key={name} name={name} meta={meta} href={href} filename={filename} />
         ))}
       </Card>
       <FullBackup />
-      <h2 className="m-0 mt-1 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
-        Recovery
-      </h2>
+      <SectionTitle>Recovery</SectionTitle>
       <Card>
         <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
           <span className="flex flex-col gap-0.5">
@@ -201,16 +213,14 @@ function ExportRow({
           <span className="text-[15px] font-semibold">{name}</span>
           <span className="text-[12px] text-muted">{meta}</span>
         </span>
-        <button
-          type="button"
-          data-track="data.export"
+        <SoftButton
+          track="data.export"
           aria-label={`Download ${name}`}
           disabled={busy}
           onClick={() => void run()}
-          className="hit flex h-9 shrink-0 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent disabled:opacity-60"
         >
           {busy ? 'Saving…' : 'Download'}
-        </button>
+        </SoftButton>
       </div>
       {error ? (
         <div className="px-3 pb-2">
@@ -260,15 +270,9 @@ function FullBackup() {
               : 'Every row of your budget, in a file that can be restored'}
           </span>
         </span>
-        <button
-          type="button"
-          data-track="data.backup"
-          disabled={state === 'working'}
-          onClick={() => void run()}
-          className="hit flex h-9 shrink-0 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent disabled:opacity-60"
-        >
+        <SoftButton track="data.backup" disabled={state === 'working'} onClick={() => void run()}>
           {state === 'working' ? 'Saving…' : 'Download'}
-        </button>
+        </SoftButton>
       </div>
       {error ? (
         <div className="px-3 pb-2">

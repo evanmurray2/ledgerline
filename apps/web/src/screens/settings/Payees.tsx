@@ -6,15 +6,18 @@ import { api } from '../../api/endpoints';
 import { qk, usePayees } from '../../api/hooks';
 import { Sheet } from '../../components/Sheet';
 import {
-  Button,
+  Banner,
   Card,
+  EmptyNote,
   ErrorNote,
   Field,
-  Icon,
   inputClass,
   Label,
   Loading,
   PrimaryButton,
+  SearchField,
+  SoftButton,
+  softButtonClass,
 } from '../../components/ui';
 import { useScreen } from '../../lib/common';
 import { usage } from '../../usage/tracker';
@@ -35,16 +38,7 @@ export function PayeesScreen() {
   );
   return (
     <Page title="Payees" back="/settings">
-      <label className="flex min-h-11 items-center gap-2 rounded-xl bg-sunken px-3 text-muted">
-        <Icon name="search" size={18} />
-        <input
-          aria-label="Search payees"
-          placeholder="Search payees"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="min-h-10 flex-1 border-none bg-transparent text-[16px] text-ink outline-none"
-        />
-      </label>
+      <SearchField label="Search payees" placeholder="Search payees" value={filter} onChange={setFilter} />
       {!v && (q.error ? <ErrorNote error={q.error} /> : <Loading />)}
       {v?.suggestions
         .filter((s) => !kept[s.name])
@@ -67,15 +61,16 @@ export function PayeesScreen() {
               Merge into <strong>{s.name}</strong>? Rules and past transactions follow.
             </span>
             <div className="flex gap-2">
-              <button
-                type="button"
-                data-track="payees.keep_separate"
+              <SoftButton
+                tone="outline"
+                track="payees.keep_separate"
                 onClick={() => setKept({ ...kept, [s.name]: true })}
-                className="hit h-9 flex-1 rounded-full border border-line-strong bg-surface text-[13px] font-bold text-ink-2"
+                className="flex-1"
               >
                 Keep separate
-              </button>
-              <Button
+              </SoftButton>
+              <SoftButton
+                tone="filled"
                 mutates
                 track="payees.merge"
                 onClick={async () => {
@@ -84,19 +79,20 @@ export function PayeesScreen() {
                   setMerged(s.name);
                   void qc.invalidateQueries({ queryKey: qk.payees });
                 }}
-                className="hit h-9 flex-1 rounded-full bg-accent text-[13px] font-bold text-on-accent"
+                className="flex-1"
               >
                 Merge {s.rawNames.length}
-              </Button>
+              </SoftButton>
             </div>
           </section>
         ))}
       {merged && (
-        <p role="status" className="m-0 rounded-xl bg-success-soft p-3 text-[14px] text-funded-fg">
+        <Banner tone="success" icon="check">
           Merged into {merged}
-        </p>
+        </Banner>
       )}
-      {v && (
+      {v && list.length === 0 && <EmptyNote>{filter ? 'No payee matches.' : 'No payees yet.'}</EmptyNote>}
+      {v && list.length > 0 && (
         <Card>
           {list.map((p) => (
             <div
@@ -110,11 +106,12 @@ export function PayeesScreen() {
                   {p.defaultCategory ? ` · usually ${p.defaultCategory}` : ''}
                 </span>
               </span>
+              {/* SoftLink takes no aria-label, so its class on a Link. */}
               <Link
                 to={`/settings/payees/${p.id}`}
                 data-track="payees.rename"
                 aria-label={`Rename ${p.name}`}
-                className="hit flex h-9 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline"
+                className={softButtonClass()}
               >
                 Rename
               </Link>
