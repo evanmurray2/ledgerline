@@ -1,6 +1,6 @@
 # Ledgerline: notes for Claude sessions
 
-A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `docs/build-plan.md` (what's done), `docs/decisions.md` (D-1 to D-49: why things differ from the design) and `docs/runbooks/setup.md`. `docs/design.md` and `docs/sync-spec.md` are the source of truth; record any contradiction in `docs/decisions.md`.
+A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `docs/build-plan.md` (what's done), `docs/decisions.md` and `docs/decisions/` (D-1 on: why things differ from the design) and `docs/runbooks/setup.md`. `docs/design.md` and `docs/sync-spec.md` are the source of truth; record any contradiction as a new decision (see Several sessions at once).
 
 ## Production
 
@@ -39,13 +39,16 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 The owner runs several Claude sessions side by side, each with its own container and branch.
 
 - Never push to `main`. Work on your session's branch, with small commits and tests passing before each, and open a PR into `main` when the task is done (or sooner, as a draft).
-- Merge your own PR, without asking, once all of these hold:
-  1. it is rebased on the latest `origin/main` (`git fetch origin main && git rebase origin/main`, then `git push --force-with-lease`; only ever force-push your own session's branch),
-  2. `pnpm check` passes locally after the rebase,
+- Merge your own PR, without asking, once all of these hold (no rebase onto the latest `main` needed, D-51):
+  1. GitHub shows no merge conflict with `main`,
+  2. `pnpm check` passes locally,
   3. every `ci` job (`checks`, `e2e (mock)`, `e2e (worker)`) passed on the PR's latest commit, and
   4. it doesn't need an answer from the owner (Money rules, Plaid links, secrets).
-     Then squash-merge with GitHub MCP `merge_pull_request` (`merge_method: squash`, `sha` set to the commit CI passed on). If `main` moved first or the merge is refused, rebase and repeat. After the merge, start any further work fresh from `origin/main` on the same branch name.
-- Numbers that two sessions could both take (decisions `D-n` in `docs/decisions.md`, migration files) belong to whoever merges first. Before merging, check `origin/main` and renumber yours if it was taken, including references to it.
-- Merge conflicts in shared docs (`docs/build-plan.md`, `docs/decisions.md`): keep both sides' entries.
+     Then squash-merge with GitHub MCP `merge_pull_request` (`merge_method: squash`, `sha` set to the commit CI passed on). After the merge, start any further work fresh from `origin/main` on the same branch name.
+- The safety check is the `ci` run on `main` after each merge: `deploy.yml` only deploys a commit whose `ci` passed. After merging, check `ci` and `deploy` for your merge commit. If `ci` on `main` failed, fix it first, even if your PR alone was green. A deploy shown as skipped is fine: a newer merge cancelled its `ci`, and the newer deploy ships it.
+- To catch up with `main` (a conflict, a PR that adds a migration, or a fix that needs the other side), use GitHub MCP `update_pull_request_branch`: it merges `main` into the PR, no force-push. If GitHub refuses because of a conflict, `git fetch origin main && git merge origin/main`, resolve, test and push. Never rebase or force-push another session's branch.
+- Decisions: one file per decision, `docs/decisions/D-<n>-<slug>.md` (D-1 to D-50 stay in the table in `docs/decisions.md`). Write `D-?` while working; just before merging, `git fetch origin main && node tools/docs/next-decision.mjs` gives the next free number. Rename the file and every reference to it.
+- Migration file numbers belong to whoever merges first; a PR adding one must be caught up with `main` first, and renumbered if its number was taken.
+- `docs/build-plan.md` merges with `merge=union` (`.gitattributes`), so a local merge keeps both sides' lines; check for an item listed twice. In any other shared-doc conflict, keep both sides' entries.
 - Merging is deploying. Ask the owner before merging a PR that adds a migration (`packages/db/*-migrations`).
 - An owner's "yes" (to a Plaid link, a Money-rules choice, a deploy) applies only in the session where they said it.
