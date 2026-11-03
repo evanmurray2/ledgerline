@@ -8,9 +8,11 @@ import { qk, useRules } from '../../api/hooks';
 import { CategoryField } from '../../components/CategoryPicker';
 import { toast } from '../../components/Toast';
 import {
-  Button,
   Card,
+  ConfirmInline,
   cx,
+  DangerLink,
+  EmptyNote,
   ErrorNote,
   Field,
   Icon,
@@ -18,7 +20,9 @@ import {
   Loading,
   PrimaryButton,
   SecondaryButton,
+  SectionTitle,
   Segmented,
+  TextButton,
   Toggle,
   HeaderAction,
 } from '../../components/ui';
@@ -38,7 +42,7 @@ export function RulesScreen() {
     <Page
       title="Rules"
       back="/settings"
-      right={<HeaderAction to="/settings/rules/new" track="rules.new" icon="plus" label="New rule" />}
+      right={<HeaderAction to="/settings/rules/new" track="rules.new" icon="plus" label="Add rule" />}
     >
       <p className="m-0 text-[13px] leading-snug text-muted">
         Rules run top to bottom on each new transaction; the first match wins. They never change a category
@@ -47,6 +51,7 @@ export function RulesScreen() {
       {!v && (q.error ? <ErrorNote error={q.error} /> : <Loading />)}
       {v && (
         <Card>
+          {v.rules.length === 0 && <EmptyNote inCard>No rules yet.</EmptyNote>}
           {v.rules.map((r, i) => {
             const [when, then] = r.summary.includes(' → ') ? r.summary.split(' → ') : [r.summary, ''];
             return (
@@ -279,7 +284,7 @@ export function RuleEditScreen() {
       }
     >
       <section className="flex flex-col gap-2">
-        <h2 className="m-0 text-[13px] font-bold text-ink-2">When all of these match</h2>
+        <SectionTitle>When all of these match</SectionTitle>
         {conds.map((c, i) => (
           <div key={c.id} className="flex flex-col gap-2 rounded-[14px] border border-line bg-surface p-3">
             <select
@@ -332,9 +337,8 @@ export function RuleEditScreen() {
             )}
           </div>
         ))}
-        <button
-          type="button"
-          data-track="rule.add_condition"
+        <TextButton
+          track="rule.add_condition"
           onClick={() =>
             setConds([
               ...conds,
@@ -347,13 +351,13 @@ export function RuleEditScreen() {
               },
             ])
           }
-          className="hit h-9 self-start text-[14px] font-bold text-accent"
         >
-          + Add condition
-        </button>
+          <Icon name="plus" size={16} stroke={2.6} />
+          Add condition
+        </TextButton>
       </section>
       <section className="flex flex-col gap-3">
-        <h2 className="m-0 text-[13px] font-bold text-ink-2">Then</h2>
+        <SectionTitle>Then</SectionTitle>
         <Field label="Category">
           <CategoryField
             track="rule.category"
@@ -407,9 +411,7 @@ export function RuleEditScreen() {
         </Card>
       </section>
       <section className="flex flex-col gap-1.5">
-        <h2 className="m-0 text-[13px] font-bold text-ink-2">
-          Matches in the last 90 days · {preview ? preview.n : '…'}
-        </h2>
+        <SectionTitle note={preview ? preview.n : '…'}>Matches in the last 90 days</SectionTitle>
         {preview && preview.rows.length > 0 && (
           <Card>
             {preview.rows.map((m) => (
@@ -451,42 +453,20 @@ export function RuleEditScreen() {
       </section>
       {!isNew &&
         (asking ? (
-          <div
-            role="alertdialog"
-            aria-label="Delete rule"
-            className="flex flex-col gap-2.5 rounded-xl bg-over-bg p-3 text-over-fg"
+          <ConfirmInline
+            label="Delete rule"
+            confirmLabel="Delete rule"
+            track="rule.delete.confirm"
+            onConfirm={() => void remove()}
+            onCancel={() => setAsking(false)}
           >
-            <span className="text-[14px] leading-snug">
-              Delete this rule? Transactions it already categorized keep their categories; new ones from this
-              payee will need a category.
-            </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setAsking(false)}
-                className="h-11 flex-1 rounded-[10px] border border-line-strong bg-surface text-[14px] font-bold text-ink-2"
-              >
-                Keep it
-              </button>
-              <Button
-                mutates
-                track="rule.delete.confirm"
-                onClick={() => void remove()}
-                className="h-11 flex-1 rounded-[10px] bg-danger text-[14px] font-bold text-on-danger"
-              >
-                Delete rule
-              </Button>
-            </div>
-          </div>
+            Delete this rule? Transactions it already categorized keep their categories; new ones from this
+            payee will need a category.
+          </ConfirmInline>
         ) : (
-          <button
-            type="button"
-            data-track="rule.delete"
-            onClick={() => setAsking(true)}
-            className="mt-4 min-h-10 self-start text-[14px] font-bold text-over-fg"
-          >
-            Delete this rule…
-          </button>
+          <DangerLink track="rule.delete" onClick={() => setAsking(true)} className="mt-4">
+            Delete rule…
+          </DangerLink>
         ))}
     </Page>
   );

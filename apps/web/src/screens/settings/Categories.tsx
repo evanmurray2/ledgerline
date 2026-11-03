@@ -5,12 +5,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { type CategoriesView } from '@ledgerline/contracts';
 import { api } from '../../api/endpoints';
 import { qk, useCategoriesSettings, useMoneyMutation } from '../../api/hooks';
-import { Sheet } from '../../components/Sheet';
+import { Sheet, SheetTitle } from '../../components/Sheet';
 import { moved, useReorder } from '../../components/reorder';
 import { toast } from '../../components/Toast';
 import {
-  Button,
   Card,
+  ConfirmInline,
+  DangerLink,
+  EmptyNote,
   ErrorNote,
   Field,
   Icon,
@@ -19,6 +21,8 @@ import {
   PrimaryButton,
   SecondaryButton,
   Segmented,
+  SoftButton,
+  TextButton,
   Toggle,
   useIsDesktop,
 } from '../../components/ui';
@@ -117,21 +121,17 @@ export function CategoriesScreen() {
         <Link
           to="/categories/new-group"
           data-track="categories.add_group"
-          className="flex h-11 shrink-0 items-center justify-center rounded-xl border border-dashed border-accent text-[14px] font-bold text-accent no-underline"
+          className="flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-dashed border-accent text-[14px] font-bold text-accent no-underline"
         >
-          + Group
+          <Icon name="plus" size={16} stroke={2.6} />
+          Add group
         </Link>
       )}
       {v && v.archived.length > 0 && (
         <>
-          <button
-            type="button"
-            data-track="categories.show_archived"
-            onClick={() => setShowArchived(!showArchived)}
-            className="min-h-9 self-start text-[14px] font-bold text-accent"
-          >
+          <TextButton track="categories.show_archived" onClick={() => setShowArchived(!showArchived)}>
             {showArchived ? 'Hide archived' : `Show archived (${v.archived.length})`}
-          </button>
+          </TextButton>
           {showArchived && (
             <Card>
               {v.archived.map((a) => (
@@ -143,14 +143,13 @@ export function CategoriesScreen() {
                     <span className="text-[15px] font-semibold">{a.name}</span>
                     <span className="text-[12px] text-muted">{a.meta}</span>
                   </span>
-                  <Button
+                  <SoftButton
                     mutates
                     track="categories.restore"
                     onClick={() => void doArchive(a.id, a.name, false)}
-                    className="hit h-9 rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent"
                   >
                     Restore
-                  </Button>
+                  </SoftButton>
                 </div>
               ))}
             </Card>
@@ -222,9 +221,7 @@ function GroupSection({
         <span className="pr-0.5 text-[12px] text-muted">{g.categories.length}</span>
       </div>
       <Card>
-        {g.categories.length === 0 && (
-          <p className="m-0 px-3 py-3 text-[13px] text-muted">No categories yet.</p>
-        )}
+        {g.categories.length === 0 && <EmptyNote inCard>No categories yet.</EmptyNote>}
         {g.categories.map((c, ci) => (
           <div
             key={c.id}
@@ -274,6 +271,7 @@ export function CategoryEditSheet() {
   // "Add category" at the end of a group opens this with that group chosen.
   const fromGroup = (useSearch({ strict: false }) as { group?: string }).group;
   const [asking, setAsking] = useState(false);
+  const [askingGroup, setAskingGroup] = useState(false);
   const existing = q.data?.groups
     .flatMap((g) => g.categories.map((c) => ({ ...c, groupId: g.id })))
     .find((c) => c.id === categoryId);
@@ -347,6 +345,16 @@ export function CategoryEditSheet() {
       setError(e);
     }
   };
+  const removeGroup = (group: { id: string; name: string }) =>
+    void api.removeGroup(group.id).then(
+      () => {
+        void qc.invalidateQueries({ queryKey: qk.categories });
+        void qc.invalidateQueries({ queryKey: ['budget'] });
+        toast.show({ text: `${group.name} removed` });
+        close();
+      },
+      (e: unknown) => setError(e),
+    );
   const title = groupEditId
     ? 'Rename group'
     : isGroup
@@ -360,7 +368,30 @@ export function CategoryEditSheet() {
       track="category_edit"
       onClose={close}
       gap="auto"
-      header={<h1 className="m-0 text-[20px] font-bold">{title}</h1>}
+      header={<SheetTitle title={title} />}
+      footer={
+        <div className="flex flex-col gap-2">
+          {error ? <ErrorNote error={error} /> : null}
+          <PrimaryButton
+            mutates
+            track="category_edit.save"
+            disabled={!n.trim() || busy || !canWrite}
+            onClick={() => void save()}
+          >
+            {isNew ? (isGroup ? 'Add group' : 'Add category') : 'Save'}
+          </PrimaryButton>
+          {isNew && !isGroup && (
+            <SecondaryButton
+              mutates
+              track="category_edit.save_target"
+              disabled={!n.trim() || busy || !canWrite}
+              onClick={() => void save(true)}
+            >
+              Add and set a target
+            </SecondaryButton>
+          )}
+        </div>
+      }
     >
       <div className="flex flex-col gap-3.5 pb-4">
         <Field label="Name">
@@ -425,92 +456,48 @@ export function CategoryEditSheet() {
             )}
           </>
         )}
-        {error ? <ErrorNote error={error} /> : null}
-        <PrimaryButton
-          mutates
-          track="category_edit.save"
-          disabled={!n.trim() || busy || !canWrite}
-          onClick={() => void save()}
-        >
-          {isNew ? (isGroup ? 'Add group' : 'Add category') : 'Save'}
-        </PrimaryButton>
         {editingGroup &&
-          (editingGroup.categories.length === 0 ? (
-            <Button
-              mutates
-              track="categories.remove_group"
-              onClick={() =>
-                void api.removeGroup(editingGroup.id).then(
-                  () => {
-                    void qc.invalidateQueries({ queryKey: qk.categories });
-                    void qc.invalidateQueries({ queryKey: ['budget'] });
-                    toast.show({ text: `${editingGroup.name} removed` });
-                    close();
-                  },
-                  (e: unknown) => setError(e),
-                )
-              }
-              className="mt-3 min-h-10 self-start text-[14px] font-bold text-over-fg"
-            >
-              Remove group {editingGroup.name}
-            </Button>
-          ) : (
+          (editingGroup.categories.length > 0 ? (
             <span className="text-[12px] leading-snug text-muted">
               To remove this group, move or remove its categories first.
             </span>
+          ) : askingGroup ? (
+            <ConfirmInline
+              label={`Remove ${editingGroup.name}`}
+              confirmLabel="Remove"
+              track="categories.remove_group.confirm"
+              onConfirm={() => removeGroup(editingGroup)}
+              onCancel={() => setAskingGroup(false)}
+              className="mt-3"
+            >
+              Remove the group {editingGroup.name}? It has no categories, so nothing else changes.
+            </ConfirmInline>
+          ) : (
+            <DangerLink track="categories.remove_group" onClick={() => setAskingGroup(true)} className="mt-3">
+              Remove {editingGroup.name}…
+            </DangerLink>
           ))}
-        {isNew && !isGroup && (
-          <SecondaryButton
-            mutates
-            track="category_edit.save_target"
-            disabled={!n.trim() || busy || !canWrite}
-            onClick={() => void save(true)}
-          >
-            Add and set a target
-          </SecondaryButton>
-        )}
         {!isNew &&
           existing &&
           (asking ? (
-            <div
-              role="alertdialog"
-              aria-label={`Remove ${existing.name}`}
-              className="mt-3 flex flex-col gap-2.5 rounded-xl bg-over-bg p-3 text-over-fg"
+            <ConfirmInline
+              label={`Remove ${existing.name}`}
+              confirmLabel="Remove"
+              track="category_edit.remove.confirm"
+              onConfirm={() => void remove()}
+              onCancel={() => setAsking(false)}
+              className="mt-3"
             >
-              <span className="text-[14px] leading-snug">
-                Remove {existing.name}?
-                {existing.available > 0
-                  ? ` Its ${formatCents(existing.available)} goes back to Ready to Assign.`
-                  : ''}{' '}
-                If it has history it’s archived, so past transactions and reports keep it.
-              </span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setAsking(false)}
-                  className="h-11 flex-1 rounded-[10px] border border-line-strong bg-surface text-[14px] font-bold text-ink-2"
-                >
-                  Keep it
-                </button>
-                <Button
-                  mutates
-                  track="category_edit.remove.confirm"
-                  onClick={() => void remove()}
-                  className="h-11 flex-1 rounded-[10px] bg-danger text-[14px] font-bold text-on-danger"
-                >
-                  Remove
-                </Button>
-              </div>
-            </div>
+              Remove {existing.name}?
+              {existing.available > 0
+                ? ` Its ${formatCents(existing.available)} goes back to Ready to Assign.`
+                : ''}{' '}
+              If it has history it’s archived, so past transactions and reports keep it.
+            </ConfirmInline>
           ) : (
-            <button
-              type="button"
-              data-track="category_edit.remove"
-              onClick={() => setAsking(true)}
-              className="mt-3 min-h-10 self-start text-[14px] font-bold text-over-fg"
-            >
+            <DangerLink track="category_edit.remove" onClick={() => setAsking(true)} className="mt-3">
               Remove {existing.name}…
-            </button>
+            </DangerLink>
           ))}
       </div>
     </Sheet>
