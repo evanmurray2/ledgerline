@@ -2,8 +2,8 @@ import { Hono } from 'hono';
 import { clock } from '../http/clock.js';
 import { SettingsPatch, SetupStart, StartingBalances } from '@ledgerline/contracts';
 import type { AppEnv } from '../http/context.js';
-import { HttpError, afterWrite, parse, scoped } from './api.js';
-import { budgetMeta, planStartLines, toLedgerAccount, type AccountRowDb } from '../ledger/ledger.js';
+import { ACK, HttpError, parse, scoped } from './api.js';
+import { budgetMeta, type AccountRowDb } from '../ledger/ledger.js';
 
 import { categoriesRoutes } from './settings/categories.js';
 import { rulesRoutes } from './settings/rules.js';
@@ -58,7 +58,6 @@ settingsRoutes.post('/setup/starting-balances', async (c) => {
         a.startingBalance,
         now,
       ),
-      ...planStartLines(s, toLedgerAccount({ ...row, starting_balance: a.startingBalance }), meta, now),
       s.audit(
         'account.starting_balance',
         'account',
@@ -70,7 +69,7 @@ settingsRoutes.post('/setup/starting-balances', async (c) => {
     );
   }
   await s.batch(w);
-  return c.json(await afterWrite(c.env, s.budgetId, now));
+  return c.json(ACK);
 });
 
 settingsRoutes.patch('/settings', async (c) => {

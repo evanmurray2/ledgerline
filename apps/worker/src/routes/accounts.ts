@@ -19,7 +19,7 @@ import {
   statementCovered,
 } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
-import { HttpError, parse, scoped, startRecompute } from './api.js';
+import { HttpError, parse, scoped } from './api.js';
 import { cards as loadCards, fresh, monthResult, shortDate, structure } from '../views/common.js';
 import { listRow } from '../views/rows.js';
 import { RECENT_TX, TX_COLUMNS, type TxRow } from '../ledger/ledger.js';
@@ -114,7 +114,7 @@ async function accountRows(s: Scoped, today: string): Promise<{ rows: AccountRow
 accountRoutes.get('/accounts', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
-  const f = await fresh(c.env, s, now, () => startRecompute(c.env));
+  const f = await fresh(s, now);
   const { rows } = await accountRows(s, f.today);
   const start = (f.budget.budget_start_month ?? f.current) as Month;
   const mr = await monthResult(s, f.current, start);
@@ -253,7 +253,7 @@ accountRoutes.post('/accounts/:id/name', async (c) => {
 accountRoutes.get('/accounts/:id/register', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
-  const f = await fresh(c.env, s, now);
+  const f = await fresh(s, now);
   const id = c.req.param('id');
   const show = c.req.query('show') ?? 'all';
   const { rows } = await accountRows(s, f.today);
@@ -309,7 +309,7 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
 accountRoutes.get('/reports', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
-  const f = await fresh(c.env, s, now, () => startRecompute(c.env));
+  const f = await fresh(s, now);
   const m = (c.req.query('month') ?? f.current) as Month;
   if (!isMonth(m)) throw new HttpError(400, 'invalid', 'month');
   const start = (f.budget.budget_start_month ?? f.current) as Month;

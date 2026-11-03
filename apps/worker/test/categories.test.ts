@@ -1,5 +1,5 @@
 // Settings → Categories: rename, reorder and remove categories and groups, on the seeded November budget.
-import { SELF } from 'cloudflare:test';
+import { app } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { BudgetView, CategoriesView } from '@ledgerline/contracts';
 import { ownerDb } from './store-db.js';
@@ -8,7 +8,7 @@ const db = ownerDb();
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 const call = async (method: string, p: string, body?: unknown) => {
-  const r = await SELF.fetch(`https://ledgerline.test${p}`, {
+  const r = await app(p, {
     method,
     headers: method === 'GET' ? {} : H,
     body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),

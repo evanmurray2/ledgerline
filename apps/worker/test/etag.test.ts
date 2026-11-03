@@ -1,4 +1,4 @@
-// Unchanged screens answer 304 for a couple of rows read; anything that can change a screen changes its ETag.
+// Unchanged server reads (the connections list) answer 304 for a couple of rows read; anything that can change a screen changes its ETag.
 import { SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ownerDb } from './store-db.js';
@@ -11,20 +11,20 @@ const get = (p: string, etag?: string) =>
 const post = (p: string, body: unknown) =>
   SELF.fetch(`https://ledgerline.test${p}`, { method: 'POST', headers: H, body: JSON.stringify(body) });
 
-describe('screen ETags', () => {
+describe('ETags on what the server still serves', () => {
   let tag = '';
   beforeAll(async () => {
     expect((await post('/__dev/seed-november', {})).status).toBe(200);
   });
 
-  it('an unchanged screen is 304, with no body', async () => {
-    const r = await get('/api/budget/2026-11');
+  it('an unchanged connections list is 304, with no body', async () => {
+    const r = await get('/api/settings/connections');
     expect(r.status).toBe(200);
     tag = r.headers.get('etag')!;
     expect(tag).toMatch(/^W\/"/);
     expect(r.headers.get('cache-control')).toBe('private, no-cache');
     await r.text();
-    const again = await get('/api/budget/2026-11', tag);
+    const again = await get('/api/settings/connections', tag);
     expect(again.status).toBe(304);
     expect(await again.text()).toBe('');
   });
@@ -37,7 +37,7 @@ describe('screen ETags', () => {
       (await post('/api/budget/assign', { month: '2026-11', items: [{ categoryId: cat!.id, amount: 100 }] }))
         .status,
     ).toBe(200);
-    const r = await get('/api/budget/2026-11', tag);
+    const r = await get('/api/settings/connections', tag);
     expect(r.status).toBe(200);
     expect(r.headers.get('etag')).not.toBe(tag);
     tag = r.headers.get('etag')!;
@@ -45,15 +45,15 @@ describe('screen ETags', () => {
 
   it('a sync applying or processing bank rows changes it, and so does a connection update', async () => {
     await db.prepare(`UPDATE apply_counter SET seq = seq + 1 WHERE id = 1`).run();
-    let r = await get('/api/budget/2026-11', tag);
+    let r = await get('/api/settings/connections', tag);
     expect(r.status).toBe(200);
     tag = r.headers.get('etag')!;
     await db.prepare(`UPDATE budget SET processed_through = processed_through + 1`).run();
-    r = await get('/api/budget/2026-11', tag);
+    r = await get('/api/settings/connections', tag);
     expect(r.status).toBe(200);
     tag = r.headers.get('etag')!;
     await db.prepare(`UPDATE connection SET last_synced_at = coalesce(last_synced_at, 0) + 1`).run();
-    r = await get('/api/budget/2026-11', tag);
+    r = await get('/api/settings/connections', tag);
     expect(r.status).toBe(200);
   });
 

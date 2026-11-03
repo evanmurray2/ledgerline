@@ -7,7 +7,6 @@ import { localDate } from '@ledgerline/domain';
 import { encryptToken, parseKeyring, ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../../http/context.js';
 import { HttpError, parse, scoped } from '../api.js';
-import { budgetMeta, planStartLines, toLedgerAccount, type AccountRowDb } from '../../ledger/ledger.js';
 import { acquire, isFenceAbort, requestSync } from '../../sync/lease.js';
 import { connectionToken, makeProvider } from '../../sync/provider.js';
 import type { Scoped } from '../../db/scoped.js';
@@ -227,14 +226,6 @@ export async function setUpLinkedAccounts(
   } catch (e) {
     if (isFenceAbort(e)) return { connectionId, accounts: [] };
     throw e;
-  }
-  const meta = await budgetMeta(s);
-  if (meta) {
-    const rows = await s.all<AccountRowDb>(
-      `SELECT * FROM account WHERE budget_id = ?1 AND provider_account_id IN (SELECT provider_account_id FROM provider_account WHERE connection_id = ?2)`,
-      connectionId,
-    );
-    await s.batch(rows.flatMap((r) => planStartLines(s, toLedgerAccount(r), meta, now)));
   }
   return { connectionId, accounts: out };
 }

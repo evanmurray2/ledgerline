@@ -30,19 +30,11 @@ import {
 } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
-import { HttpError, afterWrite, parse, scoped, startRecompute } from './api.js';
+import { ACK, HttpError, parse, scoped } from './api.js';
 import { editTime, liveKey } from './sync.js';
 import { fresh, monthResult, shortDate, structure } from '../views/common.js';
 import { categoryLabel, listRow } from '../views/rows.js';
-import {
-  RECENT_TX,
-  TX_COLUMNS,
-  budgetMeta,
-  chunks,
-  planLineRebuild,
-  txnCol,
-  type TxRow,
-} from '../ledger/ledger.js';
+import { RECENT_TX, TX_COLUMNS, chunks, txnCol, type TxRow } from '../ledger/ledger.js';
 import type { Scoped } from '../db/scoped.js';
 import { accountNames } from '../views/category.js';
 
@@ -53,22 +45,10 @@ async function names(s: Scoped) {
   return { cats: new Map(categories.map((c) => [c.id, c.name])), accts: await accountNames(s) };
 }
 
-/** Rebuild lines for `keys` after the caller's writes, then recompute; returns the mutation result. */
-async function commit(
-  c: Parameters<typeof scoped>[0],
-  writes: D1PreparedStatement[],
-  keys: string[],
-  now: number,
-) {
-  const s = scoped(c);
-  if (writes.length) await s.batch(writes);
-  const meta = await budgetMeta(s);
-  if (meta && keys.length) {
-    const today = localDate(now, meta.timeZone);
-    const plan = await planLineRebuild(s, keys, meta, today, now);
-    if (plan.stmts.length) await s.batch(plan.stmts);
-  }
-  return afterWrite(c.env, s.budgetId, now);
+/** Runs the caller's writes as one batch; returns the mutation result. */
+async function commit(c: Parameters<typeof scoped>[0], writes: D1PreparedStatement[]) {
+  if (writes.length) await scoped(c).batch(writes);
+  return ACK;
 }
 
 // ---------------------------------------------------------------- Activity
@@ -167,7 +147,7 @@ function postedQuery(
 
 activityRoutes.get('/activity', async (c) => {
   const s = scoped(c);
-  const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env));
+  const f = await fresh(s, clock(c.env));
   const filter = c.req.query('filter') ?? 'all';
   const q = (c.req.query('q') ?? '').trim().toLowerCase();
   const cursor = c.req.query('cursor');
@@ -644,7 +624,7 @@ activityRoutes.patch('/transactions/:key', async (c) => {
     );
   }
   w.push(s.audit('txn.edit', 'transaction', key, null, p, now));
-  return c.json(await commit(c, w, [key], now));
+  return c.json(await commit(c, w));
 });
 
 activityRoutes.post('/transactions/categorize', async (c) => {
@@ -676,7 +656,7 @@ activityRoutes.post('/transactions/categorize', async (c) => {
     );
   }
   w.push(s.audit('txn.categorize', 'transaction', null, null, r, now));
-  return c.json(await commit(c, w, r.keys, now));
+  return c.json(await commit(c, w));
 });
 
 activityRoutes.post('/transactions', async (c) => {
@@ -718,7 +698,7 @@ activityRoutes.post('/transactions', async (c) => {
     ),
     s.audit('txn.add', 'transaction', key, null, r, now),
   ];
-  return c.json(await commit(c, w, [key], now));
+  return c.json(await commit(c, w));
 });
 
 activityRoutes.post('/transactions/:key/pending', async (c) => {
@@ -750,7 +730,7 @@ activityRoutes.post('/transactions/:key/pending', async (c) => {
           ),
         ];
   w.push(s.audit(`pending.${r.action}`, 'transaction', key, null, null, now));
-  return c.json(await commit(c, w, [key], now));
+  return c.json(await commit(c, w));
 });
 
 activityRoutes.delete('/transactions/:key', async (c) => {
@@ -764,19 +744,14 @@ activityRoutes.delete('/transactions/:key', async (c) => {
   if (!m)
     throw new HttpError(422, 'bank_row', 'Bank transactions can’t be deleted; mark them won’t clear instead');
   return c.json(
-    await commit(
-      c,
-      [
-        s.q(
-          `UPDATE manual_pending SET deleted_at = ?3, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
-          key,
-          now,
-        ),
-        s.audit('txn.delete', 'transaction', key, null, null, now),
-      ],
-      [key],
-      now,
-    ),
+    await commit(c, [
+      s.q(
+        `UPDATE manual_pending SET deleted_at = ?3, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
+        key,
+        now,
+      ),
+      s.audit('txn.delete', 'transaction', key, null, null, now),
+    ]),
   );
 });
 
@@ -794,7 +769,7 @@ activityRoutes.post('/transactions/:key/review', async (c) => {
     ),
     s.audit('txn.review', 'transaction', key, null, null, now),
   ];
-  return c.json(await commit(c, w, [key], now));
+  return c.json(await commit(c, w));
 });
 
 // ---------------------------------------------------------------- matching money back
@@ -847,7 +822,7 @@ activityRoutes.get('/match/:key', async (c) => {
   const s = scoped(c);
   const key = c.req.param('key');
   const t = await loadTx(s, key);
-  const f = await fresh(c.env, s, clock(c.env));
+  const f = await fresh(s, clock(c.env));
   const { cats, accts } = await names(s);
   const { rows, raw } = await openItems(s, f.today);
   let left = t.amount;
@@ -923,7 +898,7 @@ activityRoutes.post('/match', async (c) => {
     ),
   );
   w.push(s.audit('match', 'transaction', r.inflowKey, null, r, now));
-  return c.json(await commit(c, w, [r.inflowKey], now));
+  return c.json(await commit(c, w));
 });
 
 activityRoutes.post('/match/:key/unlink', async (c) => {
@@ -950,7 +925,7 @@ activityRoutes.post('/match/:key/unlink', async (c) => {
       : []),
     s.audit('match.unlink', 'transaction', key, null, null, now),
   ];
-  return c.json(await commit(c, w, [key], now));
+  return c.json(await commit(c, w));
 });
 
 // ---------------------------------------------------------------- transfers
@@ -971,7 +946,6 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
     out.date,
   );
   const w: D1PreparedStatement[] = [];
-  const keys = [key, ...cands.map((x) => x.key)];
   if (r.otherKey) {
     const other = cands.find((x) => x.key === r.otherKey);
     if (!other) throw new HttpError(404, 'not_found', 'other side');
@@ -1018,7 +992,7 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
     );
   }
   w.push(s.audit('transfer.pick', 'transaction', key, null, r, now));
-  return c.json(await commit(c, w, keys, now));
+  return c.json(await commit(c, w));
 });
 
 activityRoutes.post('/transfers/:key/unpair', async (c) => {
@@ -1059,14 +1033,14 @@ activityRoutes.post('/transfers/:key/unpair', async (c) => {
       ),
     );
   w.push(s.audit('transfer.unpair', 'transaction', key, null, null, now));
-  return c.json(await commit(c, w, keys, now));
+  return c.json(await commit(c, w));
 });
 
 // ---------------------------------------------------------------- Owed to you
 
 activityRoutes.get('/owed', async (c) => {
   const s = scoped(c);
-  const f = await fresh(c.env, s, clock(c.env), () => startRecompute(c.env));
+  const f = await fresh(s, clock(c.env));
   const { cats } = await names(s);
   const { rows, raw } = await openItems(s, f.today);
   const fr = await s.all<{ txn_key: string; date: string; payee_name: string; amount: number }>(
@@ -1109,11 +1083,10 @@ activityRoutes.post('/owed/:id', async (c) => {
   const s = scoped(c);
   const id = c.req.param('id');
   const now = clock(c.env);
-  const f = await fresh(c.env, s, now);
-  const { rows, raw } = await openItems(s, f.today);
+  const f = await fresh(s, now);
+  const { rows } = await openItems(s, f.today);
   const o = rows.find((x) => x.id === id);
   if (!o) throw new HttpError(404, 'not_found', 'owed item');
-  const txnKey = raw.find((x) => x.id === id)!.txn_key;
   let w: D1PreparedStatement[];
   if (r.action === 'close') {
     // Rule 11: charge what's left to the original category this month; RTA gets it back.
@@ -1146,5 +1119,5 @@ activityRoutes.post('/owed/:id', async (c) => {
     ];
   }
   w.push(s.audit(`owed.${r.action}`, 'owed', id, null, r, now));
-  return c.json(await commit(c, w, [txnKey], now));
+  return c.json(await commit(c, w));
 });

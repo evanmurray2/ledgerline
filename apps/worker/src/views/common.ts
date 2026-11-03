@@ -1,4 +1,4 @@
-// Shared reads for the views: freshness (recompute before answering), month rows, categories, targets, cards.
+// Shared reads for the views: the budget row and dates, month rows, categories, targets, cards.
 import {
   type Cents,
   type Month,
@@ -14,8 +14,6 @@ import {
   computeBudget,
 } from '@ledgerline/domain';
 import type { Scoped } from '../db/scoped.js';
-import { recompute } from '../budget/recompute.js';
-import type { Env } from '../env.js';
 import { RECENT_TX } from '../ledger/ledger.js';
 
 export interface BudgetRow {
@@ -35,19 +33,11 @@ export interface Fresh {
   rtaUpdating: boolean;
 }
 
-/** Recomputes (at most one chunk) before answering, as the design requires; older edits finish in the recompute job. */
-export async function fresh(
-  env: Env,
-  s: Scoped,
-  now: number,
-  startRecompute?: () => Promise<void>,
-): Promise<Fresh> {
-  const r = await recompute(s.db, s.budgetId, now);
-  if (!r.done && startRecompute) await startRecompute();
+/** The budget row and today's dates for a screen (the engine has worked out everything derived beforehand). */
+export async function fresh(s: Scoped, now: number): Promise<Fresh> {
   const budget = (await s.first<BudgetRow>(
     `SELECT id, name, time_zone, budget_start_month, rta, summary_dirty_from, summary_month FROM budget WHERE id = ?1`,
   ))!;
-  void env;
   return {
     budget,
     current: currentMonth(now, budget.time_zone),

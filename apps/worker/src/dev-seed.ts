@@ -1,12 +1,10 @@
 // Local development and end-to-end tests only: loads the prototype's November 2026 (the canonical fixture in
-// packages/domain/test/fixtures/november.ts) into the dev user's BudgetStore through the real tables, overlay and
-// line rebuild. Served inside the store (BudgetStore.dev) only when DEV_ROUTES=1 outside production and without a
-// setup code.
+// packages/domain/test/fixtures/november.ts) into the dev user's BudgetStore through the real tables and overlay; the
+// phone works out the rest. Served inside the store (BudgetStore.dev) only when DEV_ROUTES=1 outside production and
+// without a setup code.
 import { Hono } from 'hono';
 import type { AppEnv } from './http/context.js';
 import { Scoped } from './db/scoped.js';
-import { budgetMeta, planLineRebuild, planStartLines } from './ledger/ledger.js';
-import { recompute } from './budget/recompute.js';
 import { clock } from './http/clock.js';
 import * as F from '../../../packages/domain/test/fixtures/november.js';
 
@@ -363,10 +361,8 @@ dev.post('/seed-november', async (c) => {
     ),
   );
   // Transactions: bank rows for everything the bank has; manual rows for the check and the upcoming bills.
-  const keys: string[] = [];
   const PAYEE_IDS = new Map<string, string>();
   for (const t of F.txns) {
-    keys.push(t.key);
     const name = PAYEES[t.key] ?? t.key;
     let pid = PAYEE_IDS.get(name);
     if (!pid) {
@@ -499,14 +495,6 @@ dev.post('/seed-november', async (c) => {
   }
   w.push(s.q(`UPDATE txn_overlay SET wtm_state = 'matched' WHERE budget_id = ?1 AND txn_key = 'n-zelle'`));
   for (let i = 0; i < w.length; i += 80) await env.DB.batch(w.slice(i, i + 80));
-  const meta = (await budgetMeta(s))!;
-  const startStmts = F.accounts.flatMap((a) => planStartLines(s, a, meta, now));
-  await env.DB.batch(startStmts);
-  for (let i = 0; i < keys.length; i += 40) {
-    const plan = await planLineRebuild(s, keys.slice(i, i + 40), meta, F.TODAY, now);
-    await env.DB.batch(plan.stmts);
-  }
-  let r = await recompute(env.DB, m.budgetId, now, { force: true, fullFrom: true });
-  while (!r.done && r.ok) r = await recompute(env.DB, m.budgetId, now);
-  return c.json({ ok: true, budgetId: m.budgetId, rta: r.rta });
+  // Lines, month snapshots and Ready to Assign are worked out on the phone (D-45).
+  return c.json({ ok: true, budgetId: m.budgetId });
 });

@@ -2,6 +2,7 @@
 // processing (rules, matcher, transfers, Waiting to match) → budget lines → recompute.
 import { env } from 'cloudflare:test';
 import { storeDb } from './store-db.js';
+import { workOut } from './work-out.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { PlaidProvider } from '@ledgerline/bank-provider';
 import { acquire } from '../src/sync/lease.js';
@@ -78,6 +79,8 @@ async function sync(
     db.prepare(`UPDATE connection SET sync_lock = NULL, lock_expires = NULL WHERE id = ?1`).bind(C),
     db.prepare(`UPDATE sync_run SET phase = 'done' WHERE id = ?1`).bind(run),
   ]);
+  // The phone works out the lines after it syncs (D-45).
+  await workOut(db, B, NOW);
 }
 
 const overlay = (key: string) =>

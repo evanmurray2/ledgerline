@@ -1,6 +1,6 @@
 // Pending transactions: money you add can go to Ready to Assign, amounts you added can change, and a bank pending
 // row takes your estimate even if it never had one. On the seeded November budget.
-import { SELF } from 'cloudflare:test';
+import { app } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { BudgetView, TxnSheet } from '@ledgerline/contracts';
 import { ownerDb } from './store-db.js';
@@ -9,7 +9,7 @@ const db = ownerDb();
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 const call = async (method: string, p: string, body?: unknown) => {
-  const r = await SELF.fetch(`https://ledgerline.test${p}`, {
+  const r = await app(p, {
     method,
     headers: method === 'GET' ? {} : H,
     body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),

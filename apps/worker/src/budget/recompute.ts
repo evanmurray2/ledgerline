@@ -19,19 +19,17 @@ import {
   encodeMonth,
 } from '@ledgerline/domain';
 import { conditionFence, isFenceAbort } from '../sync/lease.js';
-import { derived } from './derived.js';
 
 export const MAX_RECOMPUTE_RETRIES = 3;
 /**
- * Months recomputed per invocation. SQLite runs in the budget's Durable Object, on the same CPU as the app, so a
- * request or job step handles up to 2 months; older edits continue in the store's recompute job (decisions.md
- * D-22, revised by D-37; docs/measurements.md, phase 0).
+ * Months recomputed per call when the caller doesn't say. The phone's engine (local/engine.ts, the only caller since
+ * D-45) asks for every month at once.
  */
 export const MONTHS_PER_CHUNK = 2;
 
 export interface RecomputeResult {
   ok: boolean;
-  /** False when months remain dirty after this chunk; run again (the recompute job does). */
+  /** False when months remain dirty after this chunk; run again. */
   done: boolean;
   rta: number;
   from: Month | null;
@@ -97,8 +95,6 @@ export function lineFromRow(r: unknown[]): BudgetLine {
 
 /** Bumps the summary version and widens the dirty range; goes in the same batch as the edit that changes inputs. */
 export function markDirty(db: D1Database, budgetId: string, month: Month, now: number): D1PreparedStatement {
-  // On the server nothing derived is kept (D-45): a harmless read stands in, so callers' batches stay as they are.
-  if (!derived.enabled) return db.prepare(`SELECT 1 WHERE ?1 IS NULL`).bind(budgetId);
   return db
     .prepare(
       `UPDATE budget SET summary_version = summary_version + 1,
@@ -117,18 +113,6 @@ export async function recompute(
 ): Promise<RecomputeResult> {
   const maxMonths = opts.maxMonths ?? MONTHS_PER_CHUNK;
   let queries = 0;
-  if (!derived.enabled)
-    return {
-      ok: true,
-      done: true,
-      rta: 0,
-      from: null,
-      monthsComputed: 0,
-      monthsWritten: 0,
-      queries,
-      rowsWritten: 0,
-      cached: true,
-    };
   const none = (rta: number, cached: boolean, ok = true): RecomputeResult => ({
     ok,
     done: ok,

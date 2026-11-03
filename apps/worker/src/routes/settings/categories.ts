@@ -12,12 +12,9 @@ import {
 import { type Month, cents, formatCents } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../../http/context.js';
-import { HttpError, afterWrite, parse, scoped } from '../api.js';
+import { ACK, HttpError, parse, scoped } from '../api.js';
 import { fresh, monthResult, structure } from '../../views/common.js';
-import { markDirty } from '../../budget/recompute.js';
-import { derived } from '../../budget/derived.js';
 import type { Scoped } from '../../db/scoped.js';
-import type { Env } from '../../env.js';
 
 export const categoriesRoutes = new Hono<AppEnv>();
 
@@ -25,7 +22,7 @@ export const categoriesRoutes = new Hono<AppEnv>();
 
 categoriesRoutes.get('/settings/categories', async (c) => {
   const s = scoped(c);
-  const f = await fresh(c.env, s, clock(c.env));
+  const f = await fresh(s, clock(c.env));
   const { categories, groups, targets } = await structure(s);
   const start = (f.budget.budget_start_month ?? f.current) as Month;
   const mr = await monthResult(s, f.current, start);
@@ -185,13 +182,12 @@ categoriesRoutes.post('/settings/categories/:id/archive', async (c) => {
   if (!cat) throw new HttpError(404, 'not_found', 'category');
   if (cat.kind === 'cc_payment')
     throw new HttpError(422, 'system', 'Card payment categories can’t be archived');
-  await archiveCategory(c.env, s, id, r.archived, now, r);
-  return c.json(await afterWrite(c.env, s.budgetId, now));
+  await archiveCategory(s, id, r.archived, now, r);
+  return c.json(ACK);
 });
 
 /** Archive (or restore) a category. Archiving one that still has money moves the money to Ready to Assign first. */
 async function archiveCategory(
-  env: Env,
   s: Scoped,
   id: string,
   archived: boolean,
@@ -207,24 +203,17 @@ async function archiveCategory(
     ),
   ];
   if (archived) {
-    const f = await fresh(env, s, now);
-    const start = (f.budget.budget_start_month ?? f.current) as Month;
-    let avail: number;
-    if (derived.enabled) {
-      const mr = await monthResult(s, f.current, start);
-      avail = mr?.categories[id]?.available ?? 0;
-    } else {
-      // The server doesn't work out balances (D-45): the phone sends what it showed. A category's available can
-      // depend on other categories' card refunds (D-12), so it can't be checked here alone; instead nothing may have
-      // changed since the phone worked it out. Anything able to send this can already assign and move money.
-      avail = sent.available ?? 0;
-      if (avail !== 0) {
-        const latest = await s.db
-          .prepare(`SELECT coalesce(max(seq), 0) AS n FROM change_log`)
-          .first<{ n: number }>();
-        if (sent.through === undefined || (latest?.n ?? 0) > sent.through)
-          throw new HttpError(409, 'changed', 'Your budget changed. Try again.');
-      }
+    const f = await fresh(s, now);
+    // The server doesn't work out balances (D-45): the phone sends what it showed. A category's available can
+    // depend on other categories' card refunds (D-12), so it can't be checked here alone; instead nothing may have
+    // changed since the phone worked it out. Anything able to send this can already assign and move money.
+    const avail = sent.available ?? 0;
+    if (avail !== 0) {
+      const latest = await s.db
+        .prepare(`SELECT coalesce(max(seq), 0) AS n FROM change_log`)
+        .first<{ n: number }>();
+      if (sent.through === undefined || (latest?.n ?? 0) > sent.through)
+        throw new HttpError(409, 'changed', 'Your budget changed. Try again.');
     }
     if (avail > 0) {
       w.push(
@@ -236,7 +225,6 @@ async function archiveCategory(
           -avail,
           now,
         ),
-        markDirty(s.db, s.budgetId, f.current, now),
       );
     }
   }
@@ -266,7 +254,7 @@ categoriesRoutes.post('/settings/categories/:id/remove', async (c) => {
     id,
   );
   if ((used?.n ?? 0) > 0) {
-    await archiveCategory(c.env, s, id, true, now, sent);
+    await archiveCategory(s, id, true, now, sent);
     return c.json({ ok: true as const, outcome: 'archived' as const });
   }
   await s.batch([

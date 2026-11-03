@@ -1,11 +1,12 @@
 // Rows read per request in the budget's Durable Object. The free plan allows 5 million rows read a day and every
-// screen visit costs reads, so this test fails if a request grows past its budget. The data is shaped like a real first month: the November budget
+// request costs reads, so this test fails if a request grows past its budget. The data is shaped like a real first month: the November budget
 // plus about 600 transactions of history before it, and two months of daily card statement snapshots.
 import { createExecutionContext, env, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import worker from '../src/index.js';
 import type { SqlD1 } from '../src/store/adapter.js';
 import { budgetStub, directoryStub, ownerDb } from './store-db.js';
+import { app } from './phone.js';
 
 const db = ownerDb();
 
@@ -74,18 +75,7 @@ async function addHistory() {
       .run();
 }
 
-const SCREENS = [
-  '/api/badges',
-  '/api/session',
-  '/api/budget/2026-11',
-  '/api/activity?filter=attention',
-  '/api/activity',
-  '/api/accounts',
-  '/api/owed',
-  '/api/reports?month=2026-11',
-  '/api/settings/categories',
-];
-
+/** What the server still answers (D-45): the session, sync pages and changes. Screens are read on the phone. */
 describe('database reads per request', () => {
   it('stay within budget with six months of history', async () => {
     await call('/__dev/seed-november', 'POST');
@@ -93,8 +83,7 @@ describe('database reads per request', () => {
     const n = await db.prepare(`SELECT count(*) AS b FROM bank_txn`).first<{ b: number }>();
     expect(n!.b).toBeGreaterThan(550);
 
-    const out = [];
-    for (const p of SCREENS) out.push(await call(p));
+    const out = [await call('/api/session'), await call('/api/sync?since=0&limit=200')];
     const t = await db
       .prepare(
         `SELECT key FROM v_transaction WHERE category_id IS NULL AND date >= budget_from AND status = 'posted' LIMIT 1`,
@@ -103,9 +92,6 @@ describe('database reads per request', () => {
     const cat = await db
       .prepare(`SELECT id, name, group_id FROM category WHERE kind = 'spending' LIMIT 1`)
       .first<{ id: string; name: string; group_id: string }>();
-    // Accounts and Reports again: finished months' totals are stored now (ledger/totals.ts).
-    out.push({ ...(await call('/api/accounts')), p: 'accounts again' });
-    out.push({ ...(await call('/api/reports?month=2026-11')), p: 'reports again' });
     out.push(await call('/api/transactions/categorize', 'POST', { keys: [t!.key], categoryId: cat!.id }));
     out.push(
       await call('/api/budget/assign', 'POST', {
@@ -116,7 +102,8 @@ describe('database reads per request', () => {
     const reads = Object.fromEntries(out.map((o) => [o.p, o.reads]));
     for (const o of out) expect(o.status, o.p).toBe(200);
 
-    // The Activity list reads in date windows; paging through it still returns every posted row once, in order.
+    // The Activity list reads in date windows; paging through it on the phone still returns every posted row once,
+    // in order.
     const all = (
       await db
         .prepare(`SELECT key FROM v_transaction WHERE status = 'posted' ORDER BY date DESC, seq DESC`)
@@ -125,13 +112,7 @@ describe('database reads per request', () => {
     const seen: string[] = [];
     let cursor: string | null = null;
     for (let i = 0; i < 40; i++) {
-      const res = await worker.fetch(
-        new Request(
-          `https://ledgerline.test/api/activity${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
-        ),
-        env as never,
-        createExecutionContext(),
-      );
+      const res = await app(`/api/activity${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`);
       const v = (await res.json()) as { posted: { key: string }[]; nextCursor: string | null };
       seen.push(...v.posted.map((r) => r.key));
       cursor = v.nextCursor;
@@ -140,21 +121,9 @@ describe('database reads per request', () => {
     expect(seen).toEqual(all);
 
     const report = () => JSON.stringify(reads, null, 1);
-    // Every screen.
-    expect(reads['/api/badges'], report()).toBeLessThan(800);
     expect(reads['/api/session'], report()).toBeLessThan(100);
-    // Screens: what you budget is November, so history must not be read.
-    expect(reads['/api/budget/2026-11'], report()).toBeLessThan(1_500);
-    expect(reads['/api/activity?filter=attention'], report()).toBeLessThan(1_500);
-    expect(reads['/api/accounts'], report()).toBeLessThan(4_000);
-    expect(reads['/api/owed'], report()).toBeLessThan(1_500);
-    // The first Reports visit stores 13 months of totals (bounded; once per change to those months).
-    expect(reads['/api/reports?month=2026-11'], report()).toBeLessThan(7_000);
-    // The full Activity list pages through history 50 rows at a time.
-    expect(reads['/api/activity'], report()).toBeLessThan(2_500);
-    // Later visits read stored month totals; the first one after a change stores them.
-    expect(reads['accounts again'], report()).toBeLessThan(1_200);
-    expect(reads['reports again'], report()).toBeLessThan(1_500);
+    // A sync page reads the rows it sends (200) and their change-log entries.
+    expect(reads['/api/sync?since=0&limit=200'], report()).toBeLessThan(1_500);
     // Edits.
     expect(reads['/api/transactions/categorize'], report()).toBeLessThan(500);
     expect(reads['/api/budget/assign'], report()).toBeLessThan(500);

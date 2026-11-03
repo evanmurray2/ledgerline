@@ -4,12 +4,12 @@ import { env, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { PlaidProvider } from '@ledgerline/bank-provider';
 import { generate } from '../../../tools/plaid-mock/data.mjs';
+import { workOut } from './work-out.js';
 import { SqlD1 } from '../src/store/adapter.js';
 import { JobRunner } from '../src/store/jobs.js';
 import {
   failSync,
   nextUtcMidnight,
-  recomputeHandler,
   syncHandler,
   type SyncDeps,
   type SyncState,
@@ -112,7 +112,7 @@ describe('sync job', () => {
       // The sync job enqueues its follow-ups (recompute, hand-off) on the same runner.
       const runner: JobRunner = new JobRunner(st.storage, {
         sync: syncHandler(deps(db, 'b1', { enqueue: (kind, o) => runner.enqueue(kind, o, Date.now()) })),
-        recompute: recomputeHandler(db, 'b1'),
+        recompute: async () => ({ done: true }),
       });
       await runner.enqueue('sync', { id: 'sync:1', connectionId: 'c1', state: start('sync:1'), runAt: T }, T);
       let now = T;
@@ -209,8 +209,10 @@ describe('sync job', () => {
 
   it('a run that fails partway through applying, then runs again from the start, counts every row once', async () => {
     /** What the budget sees: bank rows, budget lines and month snapshots (no ids or times). */
-    const fingerprint = async (db: D1Database) =>
-      JSON.stringify([
+    const fingerprint = async (db: D1Database) => {
+      // The phone works out lines and months after it syncs (D-45).
+      await workOut(db, 'b1', T);
+      return JSON.stringify([
         (
           await db
             .prepare(
@@ -227,10 +229,11 @@ describe('sync job', () => {
         ).results,
         (await db.prepare(`SELECT month, state FROM month_snapshot ORDER BY month`).all()).results,
       ]);
+    };
     const runAll = async (db: D1Database, st: DurableObjectState, holder: string) => {
       const runner: JobRunner = new JobRunner(st.storage, {
         sync: syncHandler(deps(db, 'b1', { enqueue: (kind, o) => runner.enqueue(kind, o, Date.now()) })),
-        recompute: recomputeHandler(db, 'b1'),
+        recompute: async () => ({ done: true }),
       });
       await runner.enqueue('sync', { id: holder, connectionId: 'c1', state: start(holder), runAt: T }, T);
       let now = T;

@@ -1,11 +1,10 @@
-// The phone's local engine (D-45, src/local/engine.ts): a copy downloaded through /api/sync and worked out on the
-// phone shows exactly the screens the server shows for the same data, before and after changes. The "server" here
-// runs the same derived code (LOCAL_ENGINE in the test config), so its answers are the reference.
+// The phone's local engine (D-45, src/local/engine.ts): a copy kept up to date from the change log, rebuilding only
+// what changed, shows exactly the screens a fresh copy shows after downloading everything and working it all out.
+// Offline edits made on the copy show what the server's copy shows once they're sent.
 import { SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { LocalEngine, migrateLocal } from '../src/local/engine.js';
 import type { SyncPage } from '../src/routes/sync.js';
-import { derived } from '../src/budget/derived.js';
 import { storeDb } from './store-db.js';
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
@@ -50,6 +49,23 @@ const SCREENS = (m: string) => [
   '/api/settings/payees',
 ];
 
+let copies = 0;
+/** A new phone: downloads everything and works it all out from scratch (the reference). */
+async function freshCopy(budgetId: string): Promise<LocalEngine> {
+  const db = storeDb(`fresh-copy-${++copies}`);
+  await migrateLocal(db, Date.now());
+  const e = new LocalEngine(db, { budgetId, userId: 'phone', email: 'owner@example.com' });
+  await syncAll(e);
+  await e.derive();
+  return e;
+}
+
+async function sameScreens(engine: LocalEngine, month: string, budgetId: string) {
+  const ref = await freshCopy(budgetId);
+  for (const path of SCREENS(month))
+    expect(await phoneJson(engine, path), path).toEqual(await phoneJson(ref, path));
+}
+
 async function phoneJson(engine: LocalEngine, path: string) {
   const r = await engine.request('GET', path);
   expect(r.status, `phone ${path}`).toBe(200);
@@ -59,13 +75,14 @@ async function phoneJson(engine: LocalEngine, path: string) {
 describe('the phone works out the same screens as the server', () => {
   let engine: LocalEngine;
   let month: string;
+  let budgetId: string;
 
   beforeAll(async () => {
-    derived.enabled = true;
     const seed = await api('/__dev/seed-november', { method: 'POST', headers: H, body: '{}' });
     expect(seed.status).toBe(200);
     const session = (await json('/api/session')) as { budget: { id: string; currentMonth: string } };
     month = session.budget.currentMonth;
+    budgetId = session.budget.id;
     const db = storeDb('phone-copy');
     await migrateLocal(db, Date.now());
     engine = new LocalEngine(db, {
@@ -79,16 +96,16 @@ describe('the phone works out the same screens as the server', () => {
     const pages = await syncAll(engine);
     expect(pages).toBeGreaterThan(1);
     await engine.derive();
-    for (const path of SCREENS(month)) expect(await phoneJson(engine, path), path).toEqual(await json(path));
+    await sameScreens(engine, month, budgetId);
   });
 
   it('after changes on the server, from the change log alone', async () => {
-    const cats = (await json('/api/settings/categories')) as {
+    const cats = (await phoneJson(engine, '/api/settings/categories')) as {
       groups: { categories: { id: string; kind: string }[] }[];
     };
     const spending = cats.groups.flatMap((g) => g.categories).filter((c) => c.kind === 'spending');
     await post('/api/budget/assign', { month, items: [{ categoryId: spending[0]!.id, amount: 1234 }] });
-    const act = (await json('/api/activity')) as { posted: { key: string; amount: number }[] };
+    const act = (await phoneJson(engine, '/api/activity')) as { posted: { key: string; amount: number }[] };
     const out = act.posted.find((r) => r.amount < 0)!;
     await post(
       `/api/transactions/${encodeURIComponent(out.key)}`,
@@ -99,15 +116,15 @@ describe('the phone works out the same screens as the server', () => {
     await syncAll(engine);
     expect((await engine.state()).through).toBeGreaterThan(before);
     await engine.derive();
-    for (const path of SCREENS(month)) expect(await phoneJson(engine, path), path).toEqual(await json(path));
+    await sameScreens(engine, month, budgetId);
   });
 
   it('after splits, a new pending row and moved money, rebuilding only what changed', async () => {
-    const cats = (await json('/api/settings/categories')) as {
+    const cats = (await phoneJson(engine, '/api/settings/categories')) as {
       groups: { categories: { id: string; kind: string }[] }[];
     };
     const spending = cats.groups.flatMap((g) => g.categories).filter((c) => c.kind === 'spending');
-    const act = (await json('/api/activity')) as {
+    const act = (await phoneJson(engine, '/api/activity')) as {
       posted: { key: string; amount: number; accountId: string }[];
     };
     const out = act.posted.filter((r) => r.amount < -200)[1]!;
@@ -134,12 +151,37 @@ describe('the phone works out the same screens as the server', () => {
     await post('/api/budget/move', { month, from: spending[0]!.id, to: spending[4]!.id, amount: 1000 });
     await syncAll(engine);
     await engine.derive();
-    for (const path of SCREENS(month)) expect(await phoneJson(engine, path), path).toEqual(await json(path));
+    await sameScreens(engine, month, budgetId);
     // Undo the split: the purchase goes back to one category.
     await post(`/api/transactions/${encodeURIComponent(out.key)}`, { categoryId: spending[1]!.id }, 'PATCH');
     await syncAll(engine);
     await engine.derive();
-    for (const path of SCREENS(month)) expect(await phoneJson(engine, path), path).toEqual(await json(path));
+    await sameScreens(engine, month, budgetId);
+  });
+
+  it('offline edits on the copy show what a fresh copy shows once they are sent', async () => {
+    const cats = (await phoneJson(engine, '/api/settings/categories')) as {
+      groups: { categories: { id: string; kind: string }[] }[];
+    };
+    const spending = cats.groups.flatMap((g) => g.categories).filter((c) => c.kind === 'spending');
+    const act = (await phoneJson(engine, '/api/activity')) as { posted: { key: string; amount: number }[] };
+    const [a, b] = act.posted.filter((r) => r.amount < 0);
+    const edits: [string, string, unknown][] = [
+      ['POST', '/api/budget/assign', { month, items: [{ categoryId: spending[5]!.id, amount: 777 }] }],
+      ['POST', '/api/budget/move', { month, from: spending[5]!.id, to: 'rta', amount: 300 }],
+      ['PATCH', `/api/transactions/${encodeURIComponent(a!.key)}`, { categoryId: spending[6]!.id }],
+      ['POST', '/api/transactions/categorize', { keys: [b!.key], categoryId: spending[7]!.id }],
+    ];
+    for (const [method, path, body] of edits) {
+      const r = await engine.request(method, path, body);
+      expect(r.status, path).toBe(200);
+      // The engine works out the change at once and answers with the new Ready to Assign.
+      expect(((await r.json()) as { rta: number }).rta).toBe((await engine.rta()).rta);
+      expect(await engine.needsDerive()).toBe(false);
+    }
+    // Sent to the server, a fresh copy shows the same screens (the edits are in both copies now).
+    for (const [method, path, body] of edits) await post(path, body, method);
+    await sameScreens(engine, month, budgetId);
   });
 
   it('a new epoch throws the copy away', async () => {
@@ -160,26 +202,21 @@ describe('the phone works out the same screens as the server', () => {
 
 describe('the server keeps nothing derived (D-45)', () => {
   it('answers changes without Ready to Assign, refuses screens, and logs every change', async () => {
-    const session = (await json('/api/session')) as { budget: { currentMonth: string } };
+    const session = (await json('/api/session')) as { budget: { id: string; currentMonth: string } };
     const m = session.budget.currentMonth;
-    const cats = (await json('/api/settings/categories')) as {
+    const cats = (await phoneJson(await freshCopy(session.budget.id), '/api/settings/categories')) as {
       groups: { categories: { id: string; kind: string }[] }[];
     };
     const cat = cats.groups.flatMap((g) => g.categories).find((c) => c.kind === 'spending')!;
     const through = ((await json('/api/sync?since=0&limit=500')) as SyncPage).through;
-    derived.enabled = false;
-    try {
-      const ack = await post('/api/budget/set', { month: m, categoryId: cat.id, assigned: 4321 });
-      expect(ack).toEqual({ ok: true });
-      const screen = await api(`/api/budget/${m}`);
-      expect(screen.status).toBe(404);
-      expect(((await screen.json()) as { error: string }).error).toBe('on_device');
-      const page = (await json(`/api/sync?since=${through}`)) as SyncPage;
-      const a = page.rows.find((r) => r.t === 'assignment' && r.k[2] === cat.id && r.k[1] === m);
-      expect(a?.d).toMatchObject({ amount: 4321 });
-    } finally {
-      derived.enabled = true;
-    }
+    const ack = await post('/api/budget/set', { month: m, categoryId: cat.id, assigned: 4321 });
+    expect(ack).toEqual({ ok: true });
+    const screen = await api(`/api/budget/${m}`);
+    expect(screen.status).toBe(404);
+    expect(((await screen.json()) as { error: string }).error).toBe('on_device');
+    const page = (await json(`/api/sync?since=${through}`)) as SyncPage;
+    const a = page.rows.find((r) => r.t === 'assignment' && r.k[2] === cat.id && r.k[1] === m);
+    expect(a?.d).toMatchObject({ amount: 4321 });
   });
 
   it('every synced table has its change-log triggers', async () => {
