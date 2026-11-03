@@ -79,18 +79,14 @@ export function OverflowMenu({
         type="button"
         aria-label={label}
         aria-expanded={open}
-        aria-haspopup="menu"
+        aria-haspopup="true"
         onClick={() => setOpen(!open)}
         className="hit flex h-11 w-11 items-center justify-center rounded-full text-ink-2 hover:bg-sunken"
       >
         <Icon name="more" size={22} stroke={3} />
       </button>
       {open && (
-        <div
-          role="menu"
-          aria-label={label}
-          className="absolute right-0 top-11 z-30 flex min-w-[200px] flex-col rounded-xl border border-line bg-surface py-1 shadow-[0_8px_24px_var(--ll-shadow)]"
-        >
+        <div className="absolute right-0 top-11 z-30 flex min-w-[200px] flex-col rounded-xl border border-line bg-surface py-1 shadow-[0_8px_24px_var(--ll-shadow)]">
           {items.map((i) => {
             const cls = cx(
               'flex h-11 w-full items-center px-3.5 text-left text-[15px] font-semibold no-underline hover:bg-surface-2',
@@ -99,7 +95,6 @@ export function OverflowMenu({
             return i.to !== undefined ? (
               <Link
                 key={i.name}
-                role="menuitem"
                 to={i.to}
                 search={i.search}
                 data-track={i.track}
@@ -112,7 +107,6 @@ export function OverflowMenu({
               <button
                 key={i.name}
                 type="button"
-                role="menuitem"
                 data-track={i.track}
                 onClick={() => {
                   setOpen(false);
