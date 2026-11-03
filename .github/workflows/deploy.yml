@@ -1,8 +1,8 @@
 name: deploy
 # Every merge to main (while the repository variable DEPLOY_ON_MERGE is true) → wait for this commit's ci run to pass →
 # deploy (each Durable Object migrates itself when it starts) → smoke test → rollback on failure. There is no manual
-# trigger: merging to main is the only way to deploy (D-49). The only thing GitHub needs is the production environment's CLOUDFLARE_API_TOKEN; the
-# Worker keeps the secrets it already has (docs/runbooks/setup.md, decisions.md D-28).
+# trigger: merging to main is the only way to deploy (D-49). The only thing GitHub needs is the production
+# environment's CLOUDFLARE_API_TOKEN; the Worker keeps the secrets it already has (docs/runbooks/setup.md, D-28).
 on:
   push:
     branches: [main]
