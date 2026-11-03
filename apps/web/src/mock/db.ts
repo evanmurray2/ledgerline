@@ -1117,7 +1117,10 @@ export class MockDb {
   activity(filter: 'all' | 'attention' | 'pending', q: string): ActivityView {
     const ql = q.trim().toLowerCase();
     const match = (x: Txn) =>
-      !ql || `${x.payee} ${fmt(x.amount)} ${fmt(-x.amount)}`.toLowerCase().includes(ql);
+      !ql ||
+      `${x.payee} ${fmt(x.amount)} ${fmt(-x.amount)}`.toLowerCase().includes(ql) ||
+      // A category's name matches too, as on the server (Reports opens Activity searching for one).
+      (this.catName(x.categoryId) ?? '').toLowerCase().includes(ql);
     const byDateDesc = (a: Txn, b: Txn) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
     const moneyToMatch = this.visible('match');
     const transfersToSort = this.visible('xfer');

@@ -138,6 +138,16 @@ describe('November through the API', () => {
     expect(r.stillOwed).toBe(143060);
   });
 
+  it('Reports → Activity: searching a category name finds that category’s transactions', async () => {
+    const r = await get<ReportsView>('/api/reports?month=2026-11');
+    expect(r.byCategory.length).toBeGreaterThan(0);
+    for (const c of r.byCategory) {
+      const v = await get<ActivityView>(`/api/activity?q=${encodeURIComponent(c.name)}`);
+      const rows = [...v.posted, ...v.pending, ...v.upcoming];
+      expect(rows.length, c.name).toBeGreaterThan(0);
+    }
+  });
+
   it('after Cover $18.25, Fund $90 and $250, Add $20, Move $40 back from Gifts: RTA $643.65', async () => {
     let res = await post<MutationResult>('/api/budget/assign', {
       month: '2026-11',

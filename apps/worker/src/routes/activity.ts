@@ -137,6 +137,11 @@ function shiftDate(d: string, n: number): string {
   return t.toISOString().slice(0, 10);
 }
 
+/** A search matches a row's category name too (Reports opens Activity searching for a category), split lines included. */
+const CATEGORY_MATCH = `category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND lower(name) LIKE ?3)
+         OR key IN (SELECT sp.txn_key FROM txn_split sp JOIN category c ON c.id = sp.category_id
+                    WHERE sp.budget_id = ?1 AND lower(c.name) LIKE ?3)`;
+
 /**
  * One page of posted rows, newest first. With a window start, only rows dated (and so posted) on or after it are
  * read, through bank_txn_budget_date; 'all' reads every row (searches); 'none' reads nothing (the attention view).
@@ -152,7 +157,7 @@ function postedQuery(
     `SELECT ${TX_COLUMNS} FROM v_txn_bank WHERE budget_id = ?1 AND ${from === 'none' ? '0 AND ' : ''}status = 'posted'
        ${window ? 'AND posted_date >= ?4 AND date >= ?4' : ''}
        AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
-       ${q ? `AND (lower(payee) LIKE ?3 OR printf('%.2f', abs(amount) / 100.0) LIKE ?3)` : 'AND ?3 IS NULL'}
+       ${q ? `AND (lower(payee) LIKE ?3 OR printf('%.2f', abs(amount) / 100.0) LIKE ?3 OR ${CATEGORY_MATCH})` : 'AND ?3 IS NULL'}
      ORDER BY date DESC, seq DESC LIMIT 50`,
     cursor,
     q ? `%${q}%` : null,
@@ -185,7 +190,7 @@ activityRoutes.get('/activity', async (c) => {
       cursor ?? null,
       q,
     ),
-    s.q(`SELECT DISTINCT txn_key FROM txn_split WHERE budget_id = ?1`),
+    s.q(`SELECT txn_key, category_id FROM txn_split WHERE budget_id = ?1`),
     s.q(
       `SELECT txn_key, amount, fraction_num, fraction_den, canceled_at, closed_at FROM expected_reimbursement WHERE budget_id = ?1`,
     ),
@@ -198,7 +203,13 @@ activityRoutes.get('/activity', async (c) => {
       f.today,
     ),
   ]);
-  const splitKeys = new Set((splits!.results as { txn_key: string }[]).map((r) => r.txn_key));
+  const splitRows = splits!.results as { txn_key: string; category_id: string | null }[];
+  const splitKeys = new Set(splitRows.map((r) => r.txn_key));
+  // Categories whose name matches the search, and the split transactions with a line in one of them.
+  const qCats = new Set(q ? [...cats].filter(([, n]) => n.toLowerCase().includes(q)).map(([id]) => id) : []);
+  const qSplits = new Set(
+    splitRows.filter((r) => r.category_id && qCats.has(r.category_id)).map((r) => r.txn_key),
+  );
   const owedBy = new Map<string, { amount: number; label: string }>();
   for (const o of owed!.results as {
     txn_key: string;
@@ -227,7 +238,11 @@ activityRoutes.get('/activity', async (c) => {
       split: splitKeys.has(t.key),
     });
   const match = (t: TxRow) =>
-    !q || t.payee.toLowerCase().includes(q) || formatCents(Math.abs(t.amount)).includes(q);
+    !q ||
+    t.payee.toLowerCase().includes(q) ||
+    formatCents(Math.abs(t.amount)).includes(q) ||
+    (!!t.category_id && qCats.has(t.category_id)) ||
+    qSplits.has(t.key);
   const attnRows = (attn!.results as TxRow[]).filter(match);
   const moneyToMatch = attnRows
     .filter((t) => t.wtm_state === 'waiting' || t.wtm_state === 'send_back')
