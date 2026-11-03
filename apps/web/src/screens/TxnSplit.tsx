@@ -3,14 +3,24 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { api } from '../api/endpoints';
 import { useMoneyMutation, useTxn } from '../api/hooks';
-import { Sheet } from '../components/Sheet';
+import { Sheet, SheetTitle } from '../components/Sheet';
 import { CategoryField } from '../components/CategoryPicker';
-import { cx, ErrorNote, Field, inputClass, Loading, PrimaryButton } from '../components/ui';
+import {
+  Banner,
+  cx,
+  DangerLink,
+  ErrorNote,
+  Field,
+  Icon,
+  Loading,
+  PrimaryButton,
+  TextButton,
+} from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { dayLabel } from '../lib/dates';
 import { useCategoryOptions, useScreen } from '../lib/common';
 import { usage } from '../usage/tracker';
-import { useParentPath } from './TxnCommon';
+import { AMOUNT_INPUT, useParentPath } from './TxnCommon';
 
 interface Line {
   id: number;
@@ -99,12 +109,10 @@ export function SplitScreen() {
       gap="small"
       closeLabel="Back to transaction"
       header={
-        <div className="flex flex-col">
-          <h1 className="m-0 text-[19px] font-bold">Split {formatCents(t.amount)}</h1>
-          <span className="text-[13px] text-muted">
-            {t.payee} · {t.accountName} · {dayLabel(t.date)}
-          </span>
-        </div>
+        <SheetTitle
+          title={`Split ${formatCents(t.amount)}`}
+          sub={`${t.payee} · ${t.accountName} · ${dayLabel(t.date)}`}
+        />
       }
       footer={
         <PrimaryButton mutates track="split.save" disabled={!ok} onClick={() => void save()}>
@@ -130,8 +138,7 @@ export function SplitScreen() {
                 aria-label={`Amount for line ${i + 1}`}
                 inputMode="decimal"
                 className={cx(
-                  inputClass,
-                  'tnum',
+                  AMOUNT_INPUT,
                   l.id === rem && 'bg-sunken',
                   l.id === rem && neg && 'border-over-fg',
                 )}
@@ -153,18 +160,17 @@ export function SplitScreen() {
               Takes any difference
             </label>
             {lines.length > 2 && (
-              <button
-                type="button"
+              <DangerLink
                 aria-label={`Remove line ${i + 1}`}
                 onClick={() => {
                   const rest = lines.filter((x) => x.id !== l.id);
                   setLines(rest);
                   if (rem === l.id) setRem(rest[rest.length - 1]!.id);
                 }}
-                className="hit h-9 text-[13px] font-bold text-over-fg"
+                className="self-center"
               >
                 Remove
-              </button>
+              </DangerLink>
             )}
           </div>
           {l.categoryId === 'owed' && (
@@ -177,26 +183,26 @@ export function SplitScreen() {
           )}
         </div>
       ))}
-      <button
-        type="button"
-        data-track="split.add_line"
+      <TextButton
+        track="split.add_line"
         onClick={() => {
           setLines([...lines, { id: next, categoryId: '', input: '0.00' }]);
           setNext(next + 1);
         }}
-        className="h-11 self-start text-[14px] font-bold text-accent"
+        className="min-h-11"
       >
-        + Add a line
-      </button>
-      <div
-        className={cx(
-          'flex justify-between rounded-xl px-3 py-2.5 text-[14px] font-semibold',
-          neg ? 'bg-over-bg text-over-fg' : 'bg-success-soft text-funded-fg',
-        )}
-      >
-        <span>{neg ? 'Lines are more than the total by' : 'Lines add up to the total'}</span>
-        <span className="tnum">{neg ? formatCents(-remCents) : formatCents(total)}</span>
-      </div>
+        <Icon name="plus" size={16} stroke={2.4} />
+        Add line
+      </TextButton>
+      <Banner
+        tone={neg ? 'danger' : 'success'}
+        title={neg ? 'Lines are more than the total by' : 'Lines add up to the total'}
+        action={
+          <span className="tnum text-[14px] font-bold">
+            {neg ? formatCents(-remCents) : formatCents(total)}
+          </span>
+        }
+      />
       {patch.error && <ErrorNote error={patch.error} />}
     </Sheet>
   );

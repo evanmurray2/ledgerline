@@ -2,7 +2,8 @@
 // amount-led header and the "Bank says" lines with Rename payee.
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import type { TxnSheet } from '@ledgerline/contracts';
-import { cx } from '../components/ui';
+import { SheetTitle } from '../components/Sheet';
+import { cx, inputClass, textLinkClass } from '../components/ui';
 import { formatCents } from '../lib/money';
 import { dayLabel } from '../lib/dates';
 
@@ -18,6 +19,9 @@ export function useClose() {
   return () => void navigate({ to: parent });
 }
 
+/** The one amount box in the transaction sheets: inputClass at 18 px bold, as in the category sheet. */
+export const AMOUNT_INPUT = cx(inputClass, 'tnum text-[18px] font-bold');
+
 const TAG: Record<TxnSheet['kind'], string> = {
   pending: 'Pending',
   posted: 'Posted',
@@ -32,22 +36,13 @@ const TAG: Record<TxnSheet['kind'], string> = {
 export function TxnHeader({ t }: { t: TxnSheet }) {
   const est = t.kind === 'pending' && t.estimatedAmount !== null;
   return (
-    <div className="flex flex-col gap-0.5">
-      <span
-        className={cx(
-          'text-[13px] font-bold',
-          est ? 'text-info-fg' : t.kind === 'paidBack' ? 'text-owed-fg' : 'text-muted',
-        )}
-      >
-        {est ? 'Pending · your estimate' : t.wontClear ? 'Pending · won’t clear' : TAG[t.kind]}
-      </span>
-      <h1 className={cx('tnum m-0 text-[28px] font-bold', t.amount > 0 && 'text-funded-fg')}>
-        {t.kind === 'transfer' ? formatCents(Math.abs(t.amount)) : formatCents(t.amount, { plus: true })}
-      </h1>
-      <span className="text-[14px] text-muted">
-        {t.payee} · {t.accountName} · {dayLabel(t.date)}
-      </span>
-    </div>
+    <SheetTitle
+      tag={est ? 'Pending · your estimate' : t.wontClear ? 'Pending · won’t clear' : TAG[t.kind]}
+      tagClass={est ? 'text-info-fg' : t.kind === 'paidBack' ? 'text-owed-fg' : undefined}
+      amount={t.kind === 'transfer' ? formatCents(Math.abs(t.amount)) : formatCents(t.amount, { plus: true })}
+      amountClass={t.amount > 0 ? 'text-funded-fg' : undefined}
+      sub={`${t.payee} · ${t.accountName} · ${dayLabel(t.date)}`}
+    />
   );
 }
 
@@ -61,16 +56,12 @@ export function BankSays({ t, extra, ruleLink }: { t: TxnSheet; extra?: string; 
         <Link
           to={`${parent}/txn/${encodeURIComponent(t.key)}/rename`}
           data-track="txn.rename"
-          className="flex min-h-9 items-center font-bold no-underline"
+          className={textLinkClass}
         >
           Rename payee
         </Link>
         {ruleLink && t.categorizedBy?.startsWith('rule') && (
-          <Link
-            to="/settings/rules"
-            data-track="txn.see_rule"
-            className="flex min-h-9 items-center font-bold no-underline"
-          >
+          <Link to="/settings/rules" data-track="txn.see_rule" className={textLinkClass}>
             See {t.categorizedBy}
           </Link>
         )}

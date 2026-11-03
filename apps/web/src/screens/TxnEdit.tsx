@@ -8,8 +8,10 @@ import { useMoneyMutation } from '../api/hooks';
 import { Sheet } from '../components/Sheet';
 import { CategoryField } from '../components/CategoryPicker';
 import {
-  Button,
+  Banner,
+  ConfirmInline,
   cx,
+  DangerLink,
   ErrorNote,
   Field,
   inputClass,
@@ -17,13 +19,16 @@ import {
   PrimaryButton,
   Icon,
   Segmented,
+  SoftButton,
+  TextButton,
+  textLinkClass,
 } from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { addMonths, dayLabel, monthName, monthShort } from '../lib/dates';
 import { useCategoryOptions } from '../lib/common';
 import { usage } from '../usage/tracker';
 import { toast } from '../components/Toast';
-import { BankSays, TxnHeader, useParentPath } from './TxnCommon';
+import { AMOUNT_INPUT, BankSays, TxnHeader, useParentPath } from './TxnCommon';
 
 type OwedMode = 'none' | 'half' | 'all' | 'custom';
 
@@ -61,6 +66,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const [wont, setWont] = useState(t.wontClear);
   const [memo, setMemo] = useState(t.memo ?? '');
   const [linked, setLinked] = useState(true);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   // Owed to you, budget month and Won't clear are rarely changed: folded into one row unless one is set.
   const [more, setMore] = useState(t.owed.length > 0 || t.wontClear || t.budgetMonth !== t.date.slice(0, 7));
 
@@ -147,20 +153,22 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       }
     >
       {t.alerts.map((a) => (
-        <p key={a} className="m-0 rounded-xl bg-under-bg px-3 py-2 text-[13px] text-under-fg">
+        <Banner key={a} tone="warn" icon="alert">
           {a}
-        </p>
+        </Banner>
       ))}
       {canSetAmount && (
         <label className="flex shrink-0 items-center justify-between gap-3 rounded-[14px] bg-page p-3 text-[14px] font-semibold text-ink-2">
           {t.amount < 0 ? 'Amount out' : 'Amount in'}
-          <input
-            inputMode="decimal"
-            aria-label="Amount"
-            value={amt}
-            onChange={(e) => setAmt(e.target.value)}
-            className="tnum h-11 w-[120px] rounded-[10px] border border-line-strong bg-surface px-2.5 text-right text-[17px] font-bold text-ink"
-          />
+          <span className="w-[120px] shrink-0">
+            <input
+              inputMode="decimal"
+              aria-label="Amount"
+              value={amt}
+              onChange={(e) => setAmt(e.target.value)}
+              className={cx(AMOUNT_INPUT, 'text-right')}
+            />
+          </span>
         </label>
       )}
       {canEstimate && (
@@ -171,25 +179,26 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           </div>
           <label className="flex items-center justify-between gap-3 text-[14px] font-semibold text-ink-2">
             Your estimate
-            <input
-              inputMode="decimal"
-              placeholder={centsToInput(Math.abs(bank))}
-              value={est}
-              onChange={(e) => setEst(e.target.value)}
-              className="tnum h-11 w-[120px] rounded-[10px] border border-line-strong bg-surface px-2.5 text-right text-[17px] font-bold text-ink"
-            />
+            <span className="w-[120px] shrink-0">
+              <input
+                inputMode="decimal"
+                placeholder={centsToInput(Math.abs(bank))}
+                value={est}
+                onChange={(e) => setEst(e.target.value)}
+                className={cx(AMOUNT_INPUT, 'text-right')}
+              />
+            </span>
           </label>
           <div className="flex flex-wrap gap-1.5">
             {tips.map((tip) => (
-              <button
+              <SoftButton
                 key={tip.label}
-                type="button"
-                data-track="txn.tip"
+                tone="outline"
+                track="txn.tip"
                 onClick={() => setEst(centsToInput(tip.cents))}
-                className="hit h-9 rounded-full border border-line-strong bg-surface px-3 text-[13px] font-semibold text-ink-2"
               >
                 {tip.label}
-              </button>
+              </SoftButton>
             ))}
           </div>
           <span className="text-[12px] text-muted">
@@ -208,25 +217,16 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
                   {t.categoryLabel} · {t.accountName}
                 </span>
               </span>
-              <button
-                type="button"
-                data-track="txn.refund.unlink"
-                onClick={() => setLinked(false)}
-                className="hit h-9 shrink-0 rounded-full border border-line-strong px-3 text-[13px] font-bold text-ink-2"
-              >
+              <SoftButton tone="outline" track="txn.refund.unlink" onClick={() => setLinked(false)}>
                 Not this purchase
-              </button>
+              </SoftButton>
             </div>
           ) : (
             <div className="flex items-center justify-between gap-2 rounded-xl bg-page p-3 text-[13px] text-muted">
               <span>Not linked. It still counts as {t.categoryLabel} money back.</span>
-              <button
-                type="button"
-                onClick={() => setLinked(true)}
-                className="hit h-9 shrink-0 text-[13px] font-bold text-accent"
-              >
+              <TextButton onClick={() => setLinked(true)} className="self-center">
                 Link to {t.refundOf.label}
-              </button>
+              </TextButton>
             </div>
           )}
         </div>
@@ -252,7 +252,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
         </div>
       ) : (
         <div className="flex flex-col gap-1">
-          <div className="flex h-6 items-center justify-between">
+          <div className="flex min-h-9 items-center justify-between">
             <label htmlFor="txn-cat" className="text-[13px] font-semibold text-ink-2">
               Category
             </label>
@@ -260,7 +260,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
               <Link
                 to={`${parent}/txn/${encodeURIComponent(t.key)}/split`}
                 data-track="txn.split"
-                className="hit flex h-6 items-center text-[13px] font-bold text-accent no-underline"
+                className={cx(textLinkClass, 'self-center')}
               >
                 Split into categories
               </Link>
@@ -300,7 +300,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           <span className="text-[14px]">Part of this is money back for something you fronted?</span>
           <span className="flex shrink-0 items-center text-[14px] font-bold text-accent">
             Match
-            <Icon name="chevR" size={16} />
+            <Icon name="chevR" size={18} />
           </span>
         </Link>
       )}
@@ -351,7 +351,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
                 <div className="flex gap-2">
                   <Field label="Amount owed" className="flex-1 text-[12px]">
                     <input
-                      className={cx(inputClass, 'tnum')}
+                      className={AMOUNT_INPUT}
                       inputMode="decimal"
                       value={owed === 'custom' ? owedAmt : centsToInput(owedCents)}
                       readOnly={owed !== 'custom'}
@@ -443,20 +443,27 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
               : undefined
         }
       />
-      {(t.kind === 'manual' || t.kind === 'upcoming') && (
-        <Button
-          mutates
-          track="txn.delete"
-          onClick={async () => {
-            await del.mutateAsync(t.key);
-            toast.show({ text: `${t.payee} deleted` });
-            close();
-          }}
-          className="min-h-9 self-start text-[14px] font-bold text-over-fg"
-        >
-          Delete
-        </Button>
-      )}
+      {(t.kind === 'manual' || t.kind === 'upcoming') &&
+        (confirmDelete ? (
+          <ConfirmInline
+            label={`Delete ${t.payee}`}
+            confirmLabel="Delete"
+            track="txn.delete"
+            busy={del.isPending}
+            onCancel={() => setConfirmDelete(false)}
+            onConfirm={async () => {
+              await del.mutateAsync(t.key);
+              toast.show({ text: `${t.payee} deleted` });
+              close();
+            }}
+          >
+            Delete {t.payee}?
+          </ConfirmInline>
+        ) : (
+          <DangerLink mutates onClick={() => setConfirmDelete(true)}>
+            Delete…
+          </DangerLink>
+        ))}
     </Sheet>
   );
 }
