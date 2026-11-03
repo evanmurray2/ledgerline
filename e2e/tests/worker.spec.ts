@@ -255,3 +255,13 @@ test('Full backup: downloads every row of the budget as one file', async ({ page
   expect(lines.filter((l) => l.t === 'bank_txn').length).toBeGreaterThan(10);
   await expect(page.getByText('Saved. Keep it somewhere safe.')).toBeVisible();
 });
+
+test('Exports: Usage and notes downloads as a JSON file', async ({ page }) => {
+  await page.goto('/settings/data');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download Usage and notes (JSON)' }).click();
+  const d = await download;
+  expect(d.suggestedFilename()).toBe('ledgerline-usage.json');
+  const text = await (await import('node:fs/promises')).readFile((await d.path())!, 'utf8');
+  expect(JSON.parse(text)).toMatchObject({ events: expect.any(Array), daily: expect.any(Array) });
+});

@@ -150,25 +150,66 @@ async function send<S extends z.ZodType>(
       throw new ApiError('bad_response', 'Response was not JSON', res.status);
     }
   }
-  if (!res.ok) {
-    const parsed = ApiErrorBody.safeParse(json);
-    const code = parsed.success ? parsed.data.error : `http_${res.status}`;
-    const message = parsed.success ? parsed.data.message : res.statusText || 'Request failed';
-    if (code === 'read_only' || code === 'readonly') onReadOnly?.();
-    if (code === 'resting') connectivity.setReadsPaused(true);
-    // Signed out (session ended) or a fresh passkey check is needed: the app shows sign-in or "Confirm it's you".
-    if (code === 'unauthenticated' && !path.startsWith('/api/auth/')) {
-      clearSavedData();
-      window.dispatchEvent(new Event('ledgerline:signedout'));
-    }
-    if (code === 'reauth') window.dispatchEvent(new Event('ledgerline:reauth'));
-    throw new ApiError(code, message, res.status);
-  }
+  if (!res.ok) throw failure(res, json, path);
   const parsed = schema.safeParse(json);
   if (!parsed.success) {
     throw new ApiError('bad_response', `Unexpected response from ${method} ${path}`, res.status);
   }
   return parsed.data;
+}
+
+/** The error a failed response stands for, after telling the app (read-only, resting, signed out, passkey check). */
+function failure(res: Response, json: unknown, path: string): ApiError {
+  const parsed = ApiErrorBody.safeParse(json);
+  const code = parsed.success ? parsed.data.error : `http_${res.status}`;
+  const message = parsed.success ? parsed.data.message : res.statusText || 'Request failed';
+  if (code === 'read_only' || code === 'readonly') onReadOnly?.();
+  if (code === 'resting') connectivity.setReadsPaused(true);
+  // Signed out (session ended) or a fresh passkey check is needed: the app shows sign-in or "Confirm it's you".
+  if (code === 'unauthenticated' && !path.startsWith('/api/auth/')) {
+    clearSavedData();
+    window.dispatchEvent(new Event('ledgerline:signedout'));
+  }
+  if (code === 'reauth') window.dispatchEvent(new Event('ledgerline:reauth'));
+  return new ApiError(code, message, res.status);
+}
+
+/**
+ * Downloads a file from the Worker and saves it on the device. A refusal (such as the 15-minute passkey check
+ * exports need) is thrown like any API error, instead of being saved as the file.
+ */
+export async function download(path: string, filename: string): Promise<void> {
+  if (connectivity.get().readsPaused)
+    throw new ApiError('resting', 'Reading is paused until the daily limit resets.', 503);
+  let res: Response;
+  try {
+    res = await fetch(path, { credentials: 'same-origin' });
+  } catch {
+    connectivity.reportNetworkError();
+    throw new ApiError('network', 'Network request failed', 0, true);
+  }
+  connectivity.reportOk();
+  if (!res.ok) {
+    const text = await res.text();
+    let json: unknown = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      // Not JSON: the status alone says what went wrong.
+    }
+    throw failure(res, json, path);
+  }
+  saveFile(await res.blob(), filename);
+}
+
+/** Saves a file on the device. The link is freed a minute later: Safari on iPhone can drop a download freed at once. */
+export function saveFile(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 export const get = <S extends z.ZodType>(path: string, schema: S) => request('GET', path, schema);
