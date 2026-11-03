@@ -8,7 +8,7 @@ import { dailyScan } from '../daily-scan.js';
 import { rollUpUsage, watchdogBudgetStmts } from '../maintenance.js';
 import { processPending } from '../sync/process.js';
 import { acquire, requestSync } from '../sync/lease.js';
-import { bumpVersion } from '../http/etag.js';
+import { bumpVersion } from '../http/version.js';
 import type { Handler, StepResult } from './jobs.js';
 import type { SyncState } from './sync-job.js';
 
@@ -152,7 +152,7 @@ export function maintenanceHandler(env: Env, budgetId: () => Promise<string>): H
         ]);
         return next({ phase: 'bump' });
       case 'bump':
-        // The daily job's writes change what screens show: new ETags (http/etag.ts). Then wait for tomorrow.
+        // The daily job's writes change what screens show: a new data version (http/version.ts). Then wait for tomorrow.
         await bumpVersion(db, b);
         return { state: { phase: 'start' }, runAt: nextUtc(now, 10, 20) };
     }

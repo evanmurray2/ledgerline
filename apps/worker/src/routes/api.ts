@@ -16,7 +16,7 @@ import type { AppEnv } from '../http/context.js';
 import { OPS_PATHS, REAUTH_MS, identify, needsRecentPasskey } from '../http/auth.js';
 import { securityRoutes } from './security.js';
 import { csrf } from '../http/security.js';
-import { bumpOnChange, etags } from '../http/etag.js';
+import { bumpOnChange } from '../http/version.js';
 import { Scoped, membership } from '../db/scoped.js';
 import { budgetView } from '../views/budget.js';
 import { fresh } from '../views/common.js';
@@ -88,8 +88,7 @@ export const serverReadsOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
 };
 /** A change made offline and sent again after a dropped answer is applied once (routes/sync.ts). */
 budgetApi.use('*', editOnce);
-/** Unchanged screens answer 304; every change bumps the version (http/etag.ts). */
-budgetApi.use('*', etags);
+/** Every change bumps the budget's data version (http/version.ts). */
 budgetApi.use('*', bumpOnChange);
 
 /** Writes are refused when the account is at 90% of a daily limit (Sync spec F8). */

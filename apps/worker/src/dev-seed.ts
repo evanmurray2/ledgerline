@@ -143,7 +143,7 @@ dev.post('/seed-november', async (c) => {
   const env = c.env;
   const now = clock(env);
   const m = { budgetId: c.get('budgetId'), userId: c.get('userId') };
-  // Keep the budget's data_version climbing, so a browser's old ETags never match the new data.
+  // Keep the budget's data_version climbing, so totals stamped with an older one never match the new data.
   const version = Number(
     (await env.DB.prepare(`SELECT data_version AS v FROM budget WHERE id = ?1`)
       .bind(m.budgetId)

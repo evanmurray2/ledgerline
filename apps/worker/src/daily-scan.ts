@@ -5,7 +5,7 @@ import type { Env } from './env.js';
 import { Scoped } from './db/scoped.js';
 import { budgetMeta } from './ledger/ledger.js';
 import { ulid } from '@ledgerline/platform';
-import { bumpVersion } from './http/etag.js';
+import { bumpVersion } from './http/version.js';
 
 /** Upcoming entries count from their date; repeating ones schedule their next occurrence. Vanished pending rows get an alert. */
 export async function dailyScan(env: Env, budgetId: string, now: number): Promise<{ materialized: number }> {

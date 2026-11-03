@@ -9,7 +9,7 @@ export const apiHeaders: MiddlewareHandler = async (c, next) => {
   h.set('strict-transport-security', 'max-age=63072000; includeSubDomains');
   h.set('x-content-type-options', 'nosniff');
   h.set('referrer-policy', 'no-referrer');
-  // Screens revalidate with ETags (http/etag.ts) and say so themselves; everything else is never stored.
+  // Nothing the API answers is stored by the browser.
   if (!h.has('cache-control')) h.set('cache-control', 'no-store');
   h.set('content-security-policy', "default-src 'none'; frame-ancestors 'none'");
   h.set('x-frame-options', 'DENY');
