@@ -5,6 +5,7 @@ import { parseCents as $ } from '../src/money.js';
 import {
   bankPendingEligible,
   pairBankPending,
+  storeNumbers,
   type BankPendingRow,
   type UnlinkedPostedRow,
 } from '../src/matcher.js';
@@ -165,6 +166,48 @@ describe('posted rows claim bank pending rows', () => {
         post('b', '-14.38', '2026-11-02', '2026-11-01', 'CAJUN SEAFOOD #3 NEW ORLEANS LA'),
       ),
     ).toBe(true);
+  });
+
+  it('store numbers only: dates, phone numbers, card digits and reference codes never block a pair', () => {
+    expect([...storeNumbers('UBER *TRIP 10/30 HELP.UBER.COM 800-592-8996 CA')]).toEqual([]);
+    expect([...storeNumbers('AMAZON MKTPL*ZX12A XXXX1234')]).toEqual([]);
+    expect([...storeNumbers('STARBUCKS STORE 05521 SEATTLE WA')]).toEqual(['5521']);
+    expect([...storeNumbers('CAJUN SEAFOOD #3')]).toEqual(['3']);
+    expect([...storeNumbers('7-ELEVEN 34012')]).toEqual(['34012']);
+    // A date or reference code on the pending row only.
+    expect(
+      bankPendingEligible(
+        pend('a', '-18.50', '2026-10-30', 'UBER *TRIP 10/30'),
+        post('b', '-22.50', '2026-11-01', '2026-10-30', 'UBER *TRIP HELP.UBER.COM CA'),
+      ),
+    ).toBe(true);
+    expect(
+      bankPendingEligible(
+        pend('a', '-23.99', '2026-10-30', 'AMAZON MKTPL*ZX12A'),
+        post('b', '-24.99', '2026-11-01', '2026-10-30', 'AMAZON MKTPL*ZX9QK Amzn.com/bill WA'),
+      ),
+    ).toBe(true);
+    // A phone number on the pending row, none on the posted one.
+    expect(
+      bankPendingEligible(
+        pend('a', '-12.00', '2026-10-30', 'SQ *CAFE 206-555-0101'),
+        post('b', '-14.50', '2026-11-01', '2026-10-30', 'SQ *CAFE SEATTLE WA'),
+      ),
+    ).toBe(true);
+    // The store number only on the pending row: the bank dropped it on posting.
+    expect(
+      bankPendingEligible(
+        pend('a', '-5.00', '2026-11-03', 'STARBUCKS 12345'),
+        post('b', '-5.40', '2026-11-04', '2026-11-03', 'STARBUCKS NEW YORK NY'),
+      ),
+    ).toBe(true);
+    // Two branches of a chain whose name has a number.
+    expect(
+      bankPendingEligible(
+        pend('a', '-8.00', '2026-11-03', '7-ELEVEN 34012'),
+        post('b', '-8.00', '2026-11-04', '2026-11-03', '7-ELEVEN 39977 SEATTLE WA'),
+      ),
+    ).toBe(false);
   });
 
   it('keeps the tolerance: a $5 hold never claims a $28 tab, a refund never claims a purchase', () => {
