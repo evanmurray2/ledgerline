@@ -131,7 +131,11 @@ export class MockServer {
       }
       case 'GET activity': {
         const f = q.get('filter');
-        return db.activity(f === 'attention' || f === 'pending' ? f : 'all', q.get('q') ?? '');
+        return db.activity(
+          f === 'attention' || f === 'pending' ? f : 'all',
+          q.get('q') ?? '',
+          q.get('month') ?? undefined,
+        );
       }
       case 'GET transactions/:x':
         return db.txnSheet(b!);

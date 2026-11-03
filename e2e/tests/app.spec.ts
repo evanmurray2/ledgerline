@@ -446,3 +446,75 @@ test('Rename payee: the same sheet from a transaction and from Settings', async 
   await expect(sheet.getByLabel('Or merge into an existing payee')).toBeVisible();
   await expect(sheet.getByRole('button', { name: 'Save name' })).toBeVisible();
 });
+
+test('Month bar: the same place on every tab, and one month across Budget, Activity and Reports', async ({
+  page,
+}) => {
+  const phone = test.info().project.name === 'phone';
+  const nav = page.getByRole('navigation', { name: 'Main' });
+  const label = page.getByTestId('month-label');
+  await page.goto('/budget');
+  await expect(label).toHaveAccessibleName('November 2026');
+  const at = (await label.boundingBox())!;
+  await page.getByRole('button', { name: 'Previous month' }).click();
+  await expect(page).toHaveURL(/\/budget\?month=2026-10/);
+  // Off this month, the way back sits under (phone) or beside (desktop) the label, which doesn't move.
+  await expect(label).toContainText('October 2026');
+  expect((await label.boundingBox())!.x).toBe(at.x);
+  for (const tab of ['Activity', 'Reports'] as const) {
+    await nav.getByRole('link', { name: tab }).click();
+    await expect(page).toHaveURL(new RegExp(`/${tab.toLowerCase()}\\?month=2026-10`));
+    await expect(label).toContainText('October 2026');
+    const box = (await label.boundingBox())!;
+    expect([box.x, box.y, box.width]).toEqual([at.x, at.y, at.width]);
+  }
+  // Activity on a past month: that month's posted rows, to-dos still shown, no Not posted yet.
+  await nav.getByRole('link', { name: 'Activity' }).click();
+  await expect(page.getByRole('heading', { name: 'Needs attention' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Not posted yet/ })).toHaveCount(0);
+  // Accounts has no month: its name is where the month is.
+  await nav.getByRole('link', { name: /^Accounts/ }).click();
+  await expect(label).toHaveCount(0);
+  const title = page.getByRole('heading', { name: 'Accounts', level: 1 });
+  if (phone) {
+    const t = (await title.boundingBox())!;
+    expect(Math.abs(t.x + t.width / 2 - (at.x + at.width / 2))).toBeLessThan(1);
+  }
+  // From a screen without a month, the tabs keep the last one.
+  await nav.getByRole('link', { name: 'Budget' }).click();
+  await expect(page).toHaveURL(/\/budget\?month=2026-10/);
+  await label.click();
+  await expect(page).toHaveURL(/\/budget$/);
+  await expect(label).toHaveAccessibleName('November 2026');
+});
+
+test('Month bar: tabs go Budget, Activity, Reports, Accounts', async ({ page }) => {
+  await page.goto('/budget');
+  const links = page.getByRole('navigation', { name: 'Main' }).getByRole('link');
+  await expect(links.first()).toBeVisible();
+  const names: string[] = [];
+  for (const l of await links.all())
+    names.push(
+      ((await l.getAttribute('aria-label')) ?? (await l.innerText()))
+        .split(',')[0]!
+        .replace(/\d+/g, '')
+        .trim(),
+    );
+  expect(names.slice(0, 4)).toEqual(['Budget', 'Activity', 'Reports', 'Accounts']);
+});
+
+test('Activity: a transaction opened on October closes back to October; a search covers every month', async ({
+  page,
+}) => {
+  await page.goto('/activity?month=2026-10');
+  const label = page.getByTestId('month-label');
+  await expect(label).toContainText('October 2026');
+  await page.locator('[data-track="activity.row"]').first().click();
+  await expect(page).toHaveURL(/\/activity\/\w+\/[^?]+\?month=2026-10/);
+  await expect(label).toContainText('October 2026');
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/\/activity\?month=2026-10$/);
+  await expect(label).toContainText('October 2026');
+  await page.getByLabel('Search transactions').fill('Safeway');
+  await expect(page.getByTestId('all-months')).toHaveText('Searching all months');
+});

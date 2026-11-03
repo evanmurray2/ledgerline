@@ -10,12 +10,10 @@ import {
   Banner,
   Card,
   cx,
-  DesktopHeader,
   HeaderAction,
   ErrorNote,
   Icon,
   Loading,
-  PhoneHeader,
   ScreenBody,
   SectionTitle,
   SoftButton,
@@ -26,6 +24,7 @@ import { monthName, pacificTime, syncedLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
 import { useCanWrite } from '../state/connectivity';
 import { toast } from '../components/Toast';
+import { TabHeader } from '../components/MonthBar';
 import { PULL_HOLD, usePullToRefresh } from '../lib/pull';
 import { errorMessage } from '../api/client';
 import { getCopy, syncNow } from '../copy/copy';
@@ -176,30 +175,26 @@ export function AccountsScreen() {
       disabled={!canWrite || busy}
       spin={busy}
       onClick={() => void run()}
+      iconOnly={!desktop}
     />
   );
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {desktop ? (
-        <DesktopHeader title="Accounts" right={syncAction} />
-      ) : (
-        <PhoneHeader
-          title="Accounts"
-          right={
-            <>
-              {syncAction}
-              <Link
-                to="/settings"
-                data-track="accounts.settings"
-                aria-label="Settings"
-                className="hit flex h-11 w-11 items-center justify-center rounded-full text-ink-2 hover:bg-sunken"
-              >
-                <Icon name="gear" size={22} />
-              </Link>
-            </>
-          }
-        />
-      )}
+      {/* Accounts has no month: balances are today's. Its name sits where the other tabs' month does. */}
+      <TabHeader
+        name="Accounts"
+        left={
+          <Link
+            to="/settings"
+            data-track="accounts.settings"
+            aria-label="Settings"
+            className="hit flex h-11 w-11 items-center justify-center rounded-full text-ink-2 hover:bg-sunken"
+          >
+            <Icon name="gear" size={22} />
+          </Link>
+        }
+        right={syncAction}
+      />
       {/* The pull indicator sits over the top of the scroller, outside the content the pull moves down. */}
       <div className="relative flex min-h-0 flex-1 flex-col">
         <ScreenBody scrollRef={scroller} innerRef={body}>

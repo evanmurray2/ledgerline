@@ -291,6 +291,8 @@ const activityRoute = createRoute({
   validateSearch: (s: Record<string, unknown>) => ({
     filter: s.filter === 'attention' || s.filter === 'pending' ? s.filter : undefined,
     q: str(s.q),
+    // The app's month; a malformed one is dropped rather than refused by the server.
+    month: typeof s.month === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(s.month) ? s.month : undefined,
   }),
   component: ActivityScreen,
 });

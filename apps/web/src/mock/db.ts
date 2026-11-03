@@ -1114,8 +1114,13 @@ export class MockDb {
     return this.txns.filter((x) => x.section === section && !x.hidden);
   }
 
-  activity(filter: 'all' | 'attention' | 'pending', q: string): ActivityView {
+  activity(filter: 'all' | 'attention' | 'pending', q: string, month?: string): ActivityView {
     const ql = q.trim().toLowerCase();
+    // As on the server: a month shows that budget month's posted rows (a search looks through every month), and
+    // pending and upcoming rows only on this month.
+    const m = month && !ql ? month : undefined;
+    const inMonth = (x: Txn) => !m || (x.budgetMonth ?? x.date.slice(0, 7)) === m;
+    const past = !!m && m < this.currentMonth;
     const match = (x: Txn) =>
       !ql ||
       `${x.payee} ${fmt(x.amount)} ${fmt(-x.amount)}`.toLowerCase().includes(ql) ||
@@ -1162,17 +1167,19 @@ export class MockDb {
       checkThese: showAttn
         ? checkThese.filter(match).map((x) => ({ ...this.row(x), action: x.checkAction ?? 'review' }))
         : [],
-      pending: showRest ? pending.filter(match).map((x) => this.row(x)) : [],
+      pending: showRest && !past ? pending.filter(match).map((x) => this.row(x)) : [],
       pendingTotal: pendingCounted,
-      upcoming: showRest
-        ? this.visible('upcoming')
-            .filter(match)
-            .map((x) => this.row(x))
-        : [],
+      upcoming:
+        showRest && !past
+          ? this.visible('upcoming')
+              .filter(match)
+              .map((x) => this.row(x))
+          : [],
       posted:
         filter === 'all'
           ? this.visible('posted')
               .filter(match)
+              .filter(inMonth)
               .sort(byDateDesc)
               .map((x) => this.row(x))
           : [],

@@ -4,19 +4,20 @@
 // transaction from the payee used the same category, offers "Always" (a rule).
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate, useSearch } from '@tanstack/react-router';
-import type { TxnListRow } from '@ledgerline/contracts';
+import type { ActivityView, TxnListRow } from '@ledgerline/contracts';
 import { api, type ActivityFilter } from '../api/endpoints';
-import { adjustAttention, qk, useActivity, useMoneyMutation } from '../api/hooks';
+import { adjustAttention, qk, useActivity, useBudget, useMoneyMutation, useSession } from '../api/hooks';
+import { MonthBar, TabHeader } from '../components/MonthBar';
+import { monthName } from '../lib/dates';
+import { clampMonth } from '../state/month';
 import { toast } from '../components/Toast';
 import {
   Chip,
   CountBadge,
-  DesktopHeader,
   EmptyNote,
   HeaderAction,
   ErrorNote,
   Loading,
-  PhoneHeader,
   PrimaryButton,
   ScreenBody,
   SearchField,
@@ -36,9 +37,19 @@ import { ActivityCategoryPicker, NeedsCategory } from './ActivityNeeds';
 export { TxnRow } from './ActivityRows';
 
 export function ActivityScreen() {
-  const search = useSearch({ strict: false }) as { filter?: 'attention' | 'pending'; q?: string };
-  const filter: ActivityFilter = search.filter ?? 'all';
+  const search = useSearch({ strict: false }) as {
+    filter?: 'attention' | 'pending';
+    q?: string;
+    month?: string;
+  };
   const navigate = useNavigate();
+  // The app's month (docs/month-header.md): this month by default, never past it.
+  const current = useSession().data?.budget.currentMonth;
+  const min = useBudget(current).data?.minMonth;
+  const month = clampMonth(search.month, min, current) ?? current;
+  const past = !!month && !!current && month !== current;
+  // Not posted yet belongs to this month: on a past month the filter shows everything instead.
+  const filter: ActivityFilter = search.filter === 'pending' && past ? 'all' : (search.filter ?? 'all');
   const desktop = useIsDesktop();
   useScreen(filter === 'all' ? 'activity' : `activity.${filter}`);
   const [qInput, setQInput] = useState(search.q ?? '');
@@ -53,9 +64,11 @@ export function ActivityScreen() {
     setQInput(search.q ?? '');
   }, [search.q]);
 
-  const query = useActivity(filter, q);
-  const counts = useActivity('attention', '');
+  // A search looks through every month.
+  const query = useActivity(filter, q, q ? undefined : month);
   const v = query.data;
+  const more = useMorePosted(v, filter, q, q ? undefined : month);
+  const counts = useActivity('attention', '');
   const canWrite = useCanWrite({ offline: true });
   const qc = useQueryClient();
   // The list keeps categorized rows in place and the counts are adjusted here, so Activity isn't refetched after
@@ -101,7 +114,15 @@ export function ActivityScreen() {
   }, [v, q, total, query.isFetching]);
 
   const setFilter = (f: ActivityFilter) =>
-    navigate({ to: '/activity', search: { filter: f === 'all' ? undefined : f, q: q || undefined } });
+    navigate({
+      to: '/activity',
+      search: { filter: f === 'all' ? undefined : f, q: q || undefined, month: search.month },
+    });
+  const goMonth = (m: string) =>
+    void navigate({
+      to: '/activity',
+      search: { filter: search.filter, q: q || undefined, month: m === current ? undefined : m },
+    });
 
   const pickerGroups = v?.categoryPicker ?? [];
   const availOf = (id: string) =>
@@ -198,7 +219,7 @@ export function ActivityScreen() {
   const notPostedCount = counts.data?.notPostedCount ?? v?.notPostedCount ?? 0;
   // A filter with nothing in it is hidden, unless it's the one showing; with neither, the chip row goes too.
   const showAttentionChip = attentionCount > 0 || filter === 'attention';
-  const showPendingChip = notPostedCount > 0 || filter === 'pending';
+  const showPendingChip = !past && (notPostedCount > 0 || filter === 'pending');
   const showNeeds =
     filter !== 'pending' &&
     needs.filter((r) => !q || r.payee.toLowerCase().includes(q.toLowerCase())).length > 0;
@@ -211,6 +232,7 @@ export function ActivityScreen() {
       icon="plus"
       label={desktop ? 'Add transaction' : 'Add'}
       ariaLabel={desktop ? undefined : 'Add transaction'}
+      iconOnly={!desktop}
     />
   );
   const searchBox = (
@@ -252,14 +274,29 @@ export function ActivityScreen() {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      {desktop ? (
-        <DesktopHeader title="Activity" right={addButton} below={[searchBox, chips]} />
-      ) : (
-        <PhoneHeader title="Activity" right={addButton} below={[searchBox, chips]} />
-      )}
+      <TabHeader
+        name="Activity"
+        month={
+          month &&
+          current && <MonthBar month={month} current={current} min={min} max={current} onGo={goMonth} />
+        }
+        right={addButton}
+        below={[searchBox, chips]}
+      />
       <ScreenBody>
+        {q && month && (
+          <p className="m-0 px-0.5 text-[13px] text-muted" data-testid="all-months">
+            Searching all months
+          </p>
+        )}
         {!v && (query.error ? <ErrorNote error={query.error} /> : <Loading />)}
-        {empty && <EmptyNote>No transactions match.</EmptyNote>}
+        {empty && (
+          <EmptyNote>
+            {q || filter !== 'all' || !month
+              ? 'No transactions match.'
+              : `No transactions in ${monthName(month)}.`}
+          </EmptyNote>
+        )}
         {v && showAttnHead && (
           // The count is already on the filter chip above.
           <h2 className="m-0 px-0.5 text-[15px] font-bold">Needs attention</h2>
@@ -372,10 +409,15 @@ export function ActivityScreen() {
         )}
         {v && v.posted.length > 0 && (
           <Section title="Posted" note="newest first">
-            {v.posted.map((r) => (
+            {[...v.posted, ...more.rows].map((r) => (
               <TxnRow key={r.key} r={r} base="/activity" style="posted" />
             ))}
           </Section>
+        )}
+        {v && v.posted.length > 0 && more.cursor && (
+          <SoftButton track="activity.more" disabled={more.loading} onClick={() => void more.load()}>
+            {more.loading ? 'Loading…' : 'Show more'}
+          </SoftButton>
         )}
       </ScreenBody>
       {selecting && (
@@ -405,15 +447,46 @@ export function ActivityScreen() {
           }}
           onSplit={(key) => {
             setPicking(null);
-            void navigate({ to: `/activity/txn/${encodeURIComponent(key)}/split` });
+            void navigate({ to: `/activity/txn/${encodeURIComponent(key)}/split`, search: true });
           }}
           onTransfer={(key) => {
             setPicking(null);
-            void navigate({ to: `/activity/txn/${encodeURIComponent(key)}` });
+            void navigate({ to: `/activity/txn/${encodeURIComponent(key)}`, search: true });
           }}
         />
       )}
       <Outlet />
     </div>
   );
+}
+
+/**
+ * Posted rows after the first page of 50 ("Show more"), read with the page's cursor. Starts again whenever the
+ * list itself changes (another month, filter or search).
+ */
+function useMorePosted(v: ActivityView | undefined, filter: ActivityFilter, q: string, month?: string) {
+  const [state, setState] = useState<{ key: string; rows: TxnListRow[]; cursor: string | null }>({
+    key: '',
+    rows: [],
+    cursor: null,
+  });
+  const [loading, setLoading] = useState(false);
+  const key = `${filter}|${q}|${month ?? ''}|${v?.nextCursor ?? ''}`;
+  const mine = state.key === key;
+  const cursor = mine ? state.cursor : (v?.nextCursor ?? null);
+  const load = async () => {
+    if (!cursor) return;
+    setLoading(true);
+    try {
+      const page = await api.activity(filter, q || undefined, cursor, month);
+      setState({ key, rows: [...(mine ? state.rows : []), ...page.posted], cursor: page.nextCursor });
+    } catch (e) {
+      toast.show({ text: e instanceof Error ? e.message : 'Couldn’t load more.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+  // The server gives a cursor whenever a page holds 50 rows; a shorter page is the last.
+  const hasMore = !!cursor && (mine ? true : (v?.posted.length ?? 0) >= 50);
+  return { rows: mine ? state.rows : [], cursor: hasMore ? cursor : null, loading, load };
 }

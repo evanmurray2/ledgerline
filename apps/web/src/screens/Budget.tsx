@@ -10,17 +10,15 @@ import {
   Chip,
   CountBadge,
   cx,
-  DesktopHeader,
   ErrorNote,
   Icon,
   Loading,
   OverflowMenu,
-  PhoneHeader,
   ScreenBody,
   textLinkClass,
   useIsDesktop,
 } from '../components/ui';
-import { MonthSwitcher } from '../components/MonthSwitcher';
+import { MonthBar, TabHeader } from '../components/MonthBar';
 import { formatCents } from '../lib/money';
 import { useScreen } from '../lib/common';
 import { useCanWrite } from '../state/connectivity';
@@ -101,36 +99,14 @@ function RtaBar({ b, onFix }: { b: BudgetView; onFix: () => void }) {
   );
 }
 
-function MonthNav({
-  b,
-  month,
-  view,
-  desktop,
-}: {
-  b: BudgetView;
-  month: string;
-  view: View;
-  desktop: boolean;
-}) {
+function MonthNav({ b, month, view }: { b: BudgetView; month: string; view: View }) {
   const navigate = useNavigate();
   const go = (m: string) =>
     void navigate({
       to: '/budget',
       search: { month: m === b.currentMonth ? undefined : m, view: view === 'all' ? undefined : view },
     });
-  return (
-    <MonthSwitcher
-      title
-      month={month}
-      min={b.minMonth}
-      max={b.maxMonth}
-      onGo={go}
-      track="budget.month"
-      // Phone: centered in the row; the left padding balances the menu on the right.
-      className={desktop ? '-ml-3 gap-1' : '-ml-2 min-w-0 flex-1'}
-      labelClassName={desktop ? 'min-w-[170px] text-[22px]' : 'flex-1 pl-[52px] text-[17px]'}
-    />
-  );
+  return <MonthBar month={month} current={b.currentMonth} min={b.minMonth} max={b.maxMonth} onGo={go} />;
 }
 
 function ViewChips({
@@ -236,8 +212,9 @@ export function BudgetScreen() {
   if (desktop) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <DesktopHeader
-          title={<MonthNav b={b} month={month} view={view} desktop />}
+        <TabHeader
+          name="Budget"
+          month={<MonthNav b={b} month={month} view={view} />}
           right={
             <>
               {/* The header narrows when a side panel opens: these two fold into a menu instead of wrapping. */}
@@ -285,8 +262,9 @@ export function BudgetScreen() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PhoneHeader
-        title={<MonthNav b={b} month={month} view={view} desktop={false} />}
+      <TabHeader
+        name="Budget"
+        month={<MonthNav b={b} month={month} view={view} />}
         right={
           // Categories and targets belong to the budget, so they sit at the top of it; Settings stays behind the
           // gear on Accounts.

@@ -18,10 +18,12 @@ import {
 import {
   type Month,
   addDays,
+  addMonths,
   cents,
   daysBetween,
   formatCents,
   fractionOf,
+  isMonth,
   localDate,
   monthOfDate,
   owedList,
@@ -123,11 +125,42 @@ const CATEGORY_MATCH = `category_id IN (SELECT id FROM category WHERE budget_id 
          OR key IN (SELECT sp.txn_key FROM txn_split sp JOIN category c ON c.id = sp.category_id
                     WHERE sp.budget_id = ?1 AND lower(c.name) LIKE ?3)`;
 
+/** Which posted rows a page reads: a recent window from a date, 'all' (searches), 'none' (the attention view), or one budget month. */
+type PostedScope = string | 'all' | 'none' | { month: Month; start: Month };
+
+/**
+ * The budget month a row counts in, as Budget's Spent counts it (`linesForTxn`): its own month override or its
+ * date's month, never before the budget's first month. History (dated before the account's budget start) keeps
+ * its date's month: Budget doesn't count it.
+ */
+const ROW_MONTH = `CASE WHEN date >= budget_from OR pending_at_link = 1
+    THEN max(coalesce(budget_month, substr(date, 1, 7)), ?5) ELSE substr(date, 1, 7) END`;
+
 /**
  * One page of posted rows, newest first. With a window start, only rows dated (and so posted) on or after it are
  * read, through bank_txn_budget_date; 'all' reads every row (searches); 'none' reads nothing (the attention view).
+ * A month reads only posted dates that can hold it: a row's date is at most a month from its budget month (the
+ * override is the month before or after), and it posts within POST_LAG of its date. The budget's first month has
+ * no lower bound, since rows pending when a bank was linked count there.
  */
-function postedQuery(s: Scoped, from: string | 'all' | 'none', cursor: string | null, q: string): Stmt {
+function postedQuery(s: Scoped, from: PostedScope, cursor: string | null, q: string): Stmt {
+  if (typeof from === 'object') {
+    const first = from.month === from.start;
+    return s.q(
+      `SELECT ${TX_COLUMNS} FROM v_txn_bank WHERE budget_id = ?1 AND status = 'posted'
+         ${first ? 'AND ?4 IS NOT NULL' : 'AND posted_date >= ?4'}
+         AND posted_date < date(?6, '+4 months') AND ${ROW_MONTH} = ?7
+         AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
+         ${q ? `AND (lower(payee) LIKE ?3 OR printf('%.2f', abs(amount) / 100.0) LIKE ?3 OR ${CATEGORY_MATCH})` : 'AND ?3 IS NULL'}
+       ORDER BY date DESC, seq DESC LIMIT 50`,
+      cursor,
+      q ? `%${q}%` : null,
+      `${addMonths(from.month, -1)}-01`,
+      from.start,
+      `${addMonths(from.month, 2)}-01`,
+      from.month,
+    );
+  }
   const window = from !== 'all' && from !== 'none';
   return s.q(
     `SELECT ${TX_COLUMNS} FROM v_txn_bank WHERE budget_id = ?1 AND ${from === 'none' ? '0 AND ' : ''}status = 'posted'
@@ -147,6 +180,13 @@ activityRoutes.get('/activity', async (c) => {
   const filter = c.req.query('filter') ?? 'all';
   const q = (c.req.query('q') ?? '').trim().toLowerCase();
   const cursor = c.req.query('cursor');
+  // A month (Activity's month bar) shows that budget month's posted rows; a search looks through every month.
+  const monthQ = c.req.query('month');
+  if (monthQ !== undefined && !isMonth(monthQ)) throw new HttpError(400, 'invalid', 'month');
+  const start = (f.budget.budget_start_month ?? f.current) as Month;
+  const month = monthQ && !q ? (monthQ < start ? start : monthQ) : undefined;
+  // Pending and upcoming rows are waiting now: they show on this month, whatever their date, and never on a past one.
+  const past = !!month && month < f.current;
   const { cats, accts } = await names(s);
   const [attn, pend, upc, posted, splits, owed, links, stale] = await s.batch([
     s.q(ATTENTION_SQL),
@@ -162,7 +202,7 @@ activityRoutes.get('/activity', async (c) => {
     // Posted rows are bank rows only. Without a search, the first try reads only a recent window (see postedPage).
     postedQuery(
       s,
-      filter === 'attention' ? 'none' : q ? 'all' : windowStart(cursor, f.today),
+      filter === 'attention' ? 'none' : q ? 'all' : month ? { month, start } : windowStart(cursor, f.today),
       cursor ?? null,
       q,
     ),
@@ -267,7 +307,7 @@ activityRoutes.get('/activity', async (c) => {
     .reduce((a, t) => a - t.amount, 0);
   const upcoming = (upc!.results as TxRow[]).filter(match).map(row);
   let postedTx = posted!.results as TxRow[];
-  if (filter === 'all' && !q && postedTx.length < 50) {
+  if (filter === 'all' && !q && !month && postedTx.length < 50) {
     // The recent window had fewer than 50 rows: widen it, then read everything.
     const run = async (from: string) => (await postedQuery(s, from, cursor ?? null, q).all<TxRow>()).results;
     const wider = await run(shiftDate(windowStart(cursor, f.today), -180));
@@ -276,7 +316,6 @@ activityRoutes.get('/activity', async (c) => {
   const postedRows = postedTx.map(row);
   const last = postedTx[49];
   const { categories, groups } = await structure(s);
-  const start = (f.budget.budget_start_month ?? f.current) as Month;
   const mr = await monthResult(s, f.current, start);
   const picker = groups
     .filter((g) => !g.archived_at)
@@ -298,9 +337,9 @@ activityRoutes.get('/activity', async (c) => {
     transfersToSort,
     needsCategory,
     checkThese,
-    pending: filter === 'attention' ? [] : pending,
+    pending: filter === 'attention' || past ? [] : pending,
     pendingTotal: cents(pendingTotal),
-    upcoming: filter === 'attention' ? [] : upcoming,
+    upcoming: filter === 'attention' || past ? [] : upcoming,
     posted: filter === 'all' ? postedRows : [],
     nextCursor: last ? `${last.date}|${String(last.seq).padStart(15, '0')}` : null,
     categoryPicker: picker,

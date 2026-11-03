@@ -51,8 +51,10 @@ export function TxnRow({
         desktop && 'hover:bg-surface-2',
       )}
     >
+      {/* The sheet keeps the list's search (month, filter), so the list under it doesn't change. */}
       <Link
         to={sheetPath(base, r)}
+        search={true}
         data-track="activity.row"
         className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2.5 text-ink no-underline"
       >
