@@ -202,6 +202,9 @@ authRoutes.post('/register/options', async (c) => {
       ...(p.transports ? { transports: JSON.parse(p.transports) as never } : {}),
     })),
     authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
+    // PRF unlocks the encrypted copy on the phone (D-44). iCloud Keychain passkeys support it anyway; security keys
+    // only when asked for it at creation.
+    extensions: { prf: {} } as never,
   });
   const id = await putChallenge(env, now, options.challenge, 'register', grant);
   c.header('set-cookie', cookie(CHALLENGE_COOKIE, id, CHALLENGE_MS));
