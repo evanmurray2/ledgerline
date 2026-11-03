@@ -528,7 +528,7 @@ function FirstBudget({ b }: { b: BudgetView }) {
         Targets tell each category what it needs.
       </span>
       <Link
-        to="/budget/targets"
+        to="/targets"
         data-track="budget.first.targets"
         className="hit mt-1 flex h-10 items-center self-start rounded-full bg-accent px-4 text-[14px] font-bold text-on-accent no-underline"
       >
@@ -675,6 +675,7 @@ function MonthNav({
   const navigate = useNavigate();
   const canPrev = compareMonths(month, b.minMonth) > 0;
   const canNext = compareMonths(month, b.maxMonth) < 0;
+  const targetsSearch = { month: month === b.currentMonth ? undefined : month };
   const go = (m: string) =>
     navigate({
       to: '/budget',
@@ -728,7 +729,7 @@ function MonthNav({
           label="More budget actions"
           className="flex h-11 w-11 items-center justify-center"
           items={[
-            { to: '/budget/targets', name: 'Set targets', track: 'budget.set_targets' },
+            { to: '/targets', search: targetsSearch, name: 'Set targets', track: 'budget.set_targets' },
             { to: '/categories', name: 'Edit categories', track: 'budget.edit_categories' },
           ]}
         />
@@ -1184,6 +1185,7 @@ export function BudgetScreen() {
   if (!b) return <Loading />;
 
   const empty = allAssignedZero(b) && b.cards.every((c) => c.available === 0);
+  const targetsSearch = { month: month === b.currentMonth ? undefined : month };
   const today = session.data?.budget.today ?? '';
   const newMonth =
     month === b.currentMonth &&
@@ -1224,7 +1226,8 @@ export function BudgetScreen() {
                 Edit categories
               </Link>
               <Link
-                to="/budget/targets"
+                to="/targets"
+                search={targetsSearch}
                 data-track="budget.set_targets"
                 className="hit hidden h-9 items-center whitespace-nowrap px-2 text-[13px] font-bold text-accent no-underline @min-[560px]:flex"
               >
@@ -1235,7 +1238,7 @@ export function BudgetScreen() {
                 className="@min-[560px]:hidden"
                 items={[
                   { to: '/categories', name: 'Edit categories', track: 'budget.edit_categories' },
-                  { to: '/budget/targets', name: 'Set targets', track: 'budget.set_targets' },
+                  { to: '/targets', search: targetsSearch, name: 'Set targets', track: 'budget.set_targets' },
                 ]}
               />
             </>

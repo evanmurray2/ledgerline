@@ -215,3 +215,15 @@ Built all at once on the owner's word (D-46): no settings and no shadow comparis
 - [x] `docs/design.md` and `docs/sync-spec.md` open with "What's true now": what later decisions replaced (Durable Objects, alarm jobs, the phone working out the budget, passkeys, no R2 or backups, no staging, deploys on merge), and each replaced section starts with a **Now** note naming the decision. The Money rules are unchanged. CLAUDE.md points sessions there first. _Verify:_ `pnpm check` (format).
 - [x] Signing in right after a release asked for Face ID twice (sign in, then Unlock): the app reloaded for the new release before the copy opened, losing the key the sign-in's Face ID had just returned. It now waits until the copy is open (its key is then held for a refresh), so the reload reopens it without Face ID. _Verify:_ `apps/web/test/version.test.ts`.
 - [x] The filter chip rows (Activity, an account's register) no longer show a scroll bar: the chips' 44 px touch targets stuck out of the row, so it scrolled up and down. The row (`.chip-row`) now has room for them and hides its sideways scroll bar; it still swipes when the chips don't fit. _Verify:_ `app.spec.ts` "the filter chips row has no scroll bar".
+
+## 19. Design consistency (D-54, `docs/design-review.md`, Nov 3, 2026)
+
+- [x] Set targets is a page like Categories (`/targets`, Back to the Budget's month); a category's target opens as a sheet over it, in the side panel on a computer. Old `/budget/targets` links redirect. `screens/Targets.tsx` split out of `BudgetSheets.tsx`. _Verify:_ `app.spec.ts` "Set targets: a page like Categories…" and "old links…".
+- [x] One header action style (`HeaderAction`): Add on Activity, Refresh on Accounts (no longer a bare icon on a phone), New rule on Rules. _Verify:_ `app.spec.ts` "Accounts: Refresh syncs every bank…".
+- [ ] Phone headers: one `PhoneHeader` (56 px, 22 px title) for Activity, Accounts and Reports; `BackHeader` at 56 px (review 1).
+- [ ] One ⋯ menu: Register's account menu uses `OverflowMenu` (review 2).
+- [ ] Register's filter chips sit in the header with count badges, like Budget and Activity (review 4).
+- [ ] Buttons: hand-rolled pills and text links use the shared components (review 5).
+- [ ] Removing things confirms the same way: transaction delete gets Undo; removing a group or passkey, and signing out a device, confirm first (review 6).
+- [ ] Sheets: `SheetTitle` everywhere, and the main button in the sticky footer (review 7, 8).
+- [ ] The rest of the review: month switchers, section labels, Needs attention lists, empty states, banners, copy, duplicate Rename payee, desktop padding, icons (review 9 to 18).

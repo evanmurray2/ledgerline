@@ -20,7 +20,8 @@ import { copySettled, needsReload, reloadForVersion } from './state/version';
 import { connectivity } from './state/connectivity';
 import { usage } from './usage/tracker';
 import { BudgetScreen } from './screens/Budget';
-import { AssignSheetScreen, CategorySheetScreen, TargetScreen, TargetsScreen } from './screens/BudgetSheets';
+import { AssignSheetScreen, CategorySheetScreen } from './screens/BudgetSheets';
+import { TargetScreen, TargetsScreen } from './screens/Targets';
 import { CloseSheet, OwedScreen } from './screens/Owed';
 import { ActivityScreen } from './screens/Activity';
 import { RenamePayeeFromTxn, SplitScreen, TxnSheetScreen } from './screens/TxnSheets';
@@ -237,7 +238,7 @@ const budgetRoute = createRoute({
   validateSearch: (s: Record<string, unknown>) => ({
     month: str(s.month),
     view: s.view === 'attention' || s.view === 'low' ? (s.view as 'attention' | 'low') : undefined,
-    from: s.from === 'targets' || s.from === 'categories' ? (s.from as 'targets' | 'categories') : undefined,
+    from: s.from === 'categories' ? ('categories' as const) : undefined,
   }),
   component: BudgetScreen,
 });
@@ -251,10 +252,25 @@ const targetRoute = createRoute({
   path: 'category/$categoryId/target',
   component: TargetScreen,
 });
+// Set targets is a page of its own, like Categories; each category's target opens as a sheet over it.
 const targetsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/targets',
+  validateSearch: (s: Record<string, unknown>) => ({ month: str(s.month) }),
+  component: TargetsScreen,
+});
+const targetsTargetRoute = createRoute({
+  getParentRoute: () => targetsRoute,
+  path: '$categoryId',
+  component: TargetScreen,
+});
+// Old links (bookmarks, history) from when Set targets was a sheet over the Budget.
+const oldTargetsRoute = createRoute({
   getParentRoute: () => budgetRoute,
   path: 'targets',
-  component: TargetsScreen,
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: '/targets', search: { month: search.month } });
+  },
 });
 const assignRoute = createRoute({
   getParentRoute: () => budgetRoute,
@@ -441,7 +457,8 @@ const routeTree = rootRoute.addChildren([
   setupStartRoute,
   setupLinkRoute,
   setupCatsRoute,
-  budgetRoute.addChildren([categoryRoute, targetRoute, targetsRoute, assignRoute]),
+  budgetRoute.addChildren([categoryRoute, targetRoute, oldTargetsRoute, assignRoute]),
+  targetsRoute.addChildren([targetsTargetRoute]),
   owedRoute.addChildren([owedCloseRoute, owedMatchRoute]),
   activityRoute.addChildren([
     txnRoute,
