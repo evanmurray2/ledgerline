@@ -1,5 +1,14 @@
 // Small shared building blocks. Colors are always tokens (src/styles.css), never literals.
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+  type Ref,
+} from 'react';
+import { Link } from '@tanstack/react-router';
 import type { CategoryStatus } from '@ledgerline/contracts';
 import { formatCents } from '../lib/money';
 import { useDisabled } from './buttons';
@@ -60,6 +69,8 @@ export function useShortcuts(keys: Record<string, () => void>, enabled = true) {
 
 // ------------------------------------------------------------------ icons
 
+// Icon sizes: header buttons 22 px, row chevrons (a row that opens a page) 18 px in text-faint, icons in a
+// Banner 18 px, inline status icons 14 or 16 px.
 const ICONS = {
   chevL: 'M15 6l-6 6 6 6',
   chevR: 'M9 6l6 6-6 6',
@@ -409,36 +420,136 @@ export function Toggle({
   );
 }
 
+/**
+ * The one note or warning card. Tones: info, warn (needs you: sign in again), neutral, danger (over: overspent,
+ * negative), success (done). `icon` leads the card; `to` makes the whole card a link (repair, match).
+ */
 export function Banner({
   tone,
   title,
   children,
   action,
+  icon,
+  to,
+  track,
   role = 'status',
+  className,
 }: {
   tone: 'info' | 'warn' | 'neutral' | 'danger' | 'success';
   title?: ReactNode;
   children?: ReactNode;
   action?: ReactNode;
+  icon?: IconName;
+  to?: string;
+  track?: string;
   role?: 'status' | 'alert';
+  className?: string;
 }) {
   const cls = {
-    info: 'bg-info-bg text-info-fg',
+    info: 'bg-info-bg text-info-fg border border-transparent',
     warn: 'bg-warn-bg text-warn-fg border border-warn-border',
     neutral: 'bg-sunken text-none-fg border border-line',
-    danger: 'bg-over-bg text-over-fg',
+    danger: 'bg-over-bg text-over-fg border border-transparent',
     success: 'bg-success-soft text-funded-fg border border-success-border',
   }[tone];
-  return (
-    <div
-      role={role}
-      className={cx('flex shrink-0 items-start gap-3 rounded-xl px-3 py-2.5 text-[13px] leading-snug', cls)}
-    >
-      <div className="flex flex-1 flex-col gap-0.5">
+  const body = (
+    <>
+      {icon && <Icon name={icon} size={18} stroke={2.4} className="mt-px shrink-0" />}
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         {title && <span className="text-[14px] font-bold">{title}</span>}
         {children && <span>{children}</span>}
       </div>
+      {to && <Icon name="chevR" size={18} className="mt-px shrink-0 opacity-70" />}
       {action}
+    </>
+  );
+  const box = cx(
+    'flex shrink-0 items-start gap-2.5 rounded-xl px-3 py-2.5 text-[13px] leading-snug no-underline',
+    cls,
+    className,
+  );
+  if (to)
+    return (
+      <Link to={to} data-track={track} className={box}>
+        {body}
+      </Link>
+    );
+  return (
+    <div role={role} className={box}>
+      {body}
+    </div>
+  );
+}
+
+/** A neutral "nothing here" line: 14 px muted, centered. `inCard`: inside a Card, which draws the border. */
+export function EmptyNote({ children, inCard }: { children: ReactNode; inCard?: boolean }) {
+  return (
+    <p className={cx('m-0 p-4 text-center text-[14px] text-muted', !inCard && 'shrink-0')}>{children}</p>
+  );
+}
+
+/** The one search box: icon, type="search", Escape clears it. */
+export const SearchField = forwardRef<
+  HTMLInputElement,
+  {
+    value: string;
+    onChange: (v: string) => void;
+    label: string;
+    placeholder: string;
+    shortcut?: string;
+    className?: string;
+  }
+>(function SearchField({ value, onChange, label, placeholder, shortcut, className }, ref) {
+  return (
+    <label
+      className={cx(
+        'flex min-h-11 shrink-0 items-center gap-2 rounded-xl bg-sunken px-3 text-muted',
+        className,
+      )}
+    >
+      <Icon name="search" size={18} />
+      <span className="sr-only">{label}</span>
+      <input
+        ref={ref}
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => e.key === 'Escape' && value && (e.stopPropagation(), onChange(''))}
+        placeholder={placeholder}
+        aria-keyshortcuts={shortcut}
+        className="min-h-10 min-w-0 flex-1 border-none bg-transparent text-[16px] text-ink outline-none placeholder:text-faint"
+      />
+    </label>
+  );
+});
+
+/**
+ * The scrolling content under a screen's header: phone px-4 pt-3 pb-6, desktop px-6 pt-5 pb-8 in the content
+ * column, blocks gap-3 apart. Pass `scrollRef` for pull to sync.
+ */
+export function ScreenBody({
+  children,
+  scrollRef,
+  className,
+  innerRef,
+}: {
+  children: ReactNode;
+  scrollRef?: Ref<HTMLDivElement>;
+  innerRef?: Ref<HTMLDivElement>;
+  className?: string;
+}) {
+  const desktop = useIsDesktop();
+  return (
+    <div
+      ref={scrollRef}
+      className={cx(
+        'relative flex min-h-0 flex-1 flex-col overflow-y-auto',
+        desktop ? 'px-6 pb-8 pt-5' : 'px-4 pb-6 pt-3',
+      )}
+    >
+      <div ref={innerRef} className={cx('flex flex-col gap-3', desktop && DESKTOP_WIDTH, className)}>
+        {children}
+      </div>
     </div>
   );
 }
