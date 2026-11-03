@@ -151,8 +151,6 @@ dev.post('/seed-november', async (c) => {
   );
   await env.DB.batch(
     [
-      'budget_line',
-      'month_snapshot',
       'txn_link',
       'expected_reimbursement',
       'txn_split',
@@ -170,8 +168,6 @@ dev.post('/seed-november', async (c) => {
       'payee_alias',
       'payee',
       'liability_snapshot',
-      'account_month_total',
-      'month_total_done',
       'alert',
       'setting',
       'budget',

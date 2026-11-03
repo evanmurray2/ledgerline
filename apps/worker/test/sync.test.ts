@@ -2,7 +2,7 @@
 // processing (rules, matcher, transfers, Waiting to match) → budget lines → recompute.
 import { env } from 'cloudflare:test';
 import { storeDb } from './store-db.js';
-import { workOut } from './work-out.js';
+import { phoneTables, workOut } from './work-out.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { PlaidProvider } from '@ledgerline/bank-provider';
 import { acquire } from '../src/sync/lease.js';
@@ -93,6 +93,7 @@ const keyOf = async (providerId: string) =>
 
 describe('sync pipeline', () => {
   beforeAll(async () => {
+    await phoneTables(db);
     await db.batch([
       db
         .prepare(

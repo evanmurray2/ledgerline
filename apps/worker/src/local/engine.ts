@@ -75,6 +75,53 @@ export interface ApplyResult {
   caughtUp: boolean;
 }
 
+/** Server migrations the copy skips: they remove what only the phone keeps. */
+const SERVER_ONLY = new Set(['0006_drop_phone_tables_on_server.sql']);
+
+/**
+ * What the phone works out and keeps (D-45): budget lines, month snapshots and stored month totals. The server
+ * dropped these tables (migration 0006); the copy creates them itself, as migration 0001 defined them.
+ */
+export const PHONE_TABLES = [
+  `CREATE TABLE IF NOT EXISTS budget_line (
+    budget_id TEXT NOT NULL,
+    txn_key TEXT NOT NULL,
+    line TEXT NOT NULL,
+    month TEXT NOT NULL,
+    date TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('rta', 'cat', 'owed', 'close', 'payment', 'debt', 'wait', 'unsorted', 'uncat')),
+    account_id TEXT NOT NULL,
+    card INTEGER NOT NULL,
+    category_id TEXT,
+    amount INTEGER NOT NULL,
+    ref TEXT,
+    PRIMARY KEY (budget_id, txn_key, line)
+  ) WITHOUT ROWID`,
+  `CREATE INDEX IF NOT EXISTS budget_line_month ON budget_line(budget_id, month)`,
+  `CREATE TABLE IF NOT EXISTS month_snapshot (
+    budget_id TEXT NOT NULL,
+    month TEXT NOT NULL,
+    state TEXT NOT NULL,
+    hash TEXT NOT NULL,
+    PRIMARY KEY (budget_id, month)
+  ) WITHOUT ROWID`,
+  `CREATE TABLE IF NOT EXISTS account_month_total (
+    budget_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    month TEXT NOT NULL,
+    posted_all INTEGER NOT NULL,
+    posted_in_budget INTEGER NOT NULL,
+    PRIMARY KEY (budget_id, month, account_id)
+  ) WITHOUT ROWID`,
+  `CREATE TABLE IF NOT EXISTS month_total_done (
+    budget_id TEXT NOT NULL,
+    month TEXT NOT NULL,
+    computed_at INTEGER NOT NULL,
+    PRIMARY KEY (budget_id, month)
+  ) WITHOUT ROWID`,
+];
+
 /** Applies migrations to the local copy (idempotent: the same _migrations table the server objects use). */
 export async function migrateLocal(db: Db, now: number): Promise<void> {
   await db
@@ -84,7 +131,7 @@ export async function migrateLocal(db: Db, now: number): Promise<void> {
     (await db.prepare(`SELECT name FROM _migrations`).all<{ name: string }>()).results.map((r) => r.name),
   );
   for (const m of BUDGET_MIGRATIONS) {
-    if (done.has(m.name)) continue;
+    if (done.has(m.name) || SERVER_ONLY.has(m.name)) continue;
     await db.batch([
       ...splitStatements(m.sql).map((s) => db.prepare(s)),
       db.prepare(`INSERT INTO _migrations (name, applied_at) VALUES (?1, ?2)`).bind(m.name, now),
@@ -94,9 +141,10 @@ export async function migrateLocal(db: Db, now: number): Promise<void> {
   await db.batch(
     SYNC_TABLES.flatMap((t) => triggerNames(t.name)).map((n) => db.prepare(`DROP TRIGGER IF EXISTS ${n}`)),
   );
-  await db
-    .prepare(`CREATE TABLE IF NOT EXISTS local_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
-    .run();
+  await db.batch([
+    ...PHONE_TABLES.map((sql) => db.prepare(sql)),
+    db.prepare(`CREATE TABLE IF NOT EXISTS local_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)`),
+  ]);
 }
 
 export class LocalEngine {

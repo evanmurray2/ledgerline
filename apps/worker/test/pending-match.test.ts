@@ -2,7 +2,7 @@
 // and without the provider's link, the pending row removed before, with or after the posted row, or not for days.
 import { env } from 'cloudflare:test';
 import { storeDb } from './store-db.js';
-import { workOut } from './work-out.js';
+import { phoneTables, workOut } from './work-out.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { PlaidProvider } from '@ledgerline/bank-provider';
 import { acquire } from '../src/sync/lease.js';
@@ -114,6 +114,7 @@ const removal = (id: string) => ({ transaction_id: id, account_id: 'pa_card' });
 
 describe('posted rows claim their pending rows', () => {
   beforeAll(async () => {
+    await phoneTables(db);
     await db.batch([
       db
         .prepare(

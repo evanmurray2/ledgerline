@@ -47,9 +47,10 @@ describe('object migrations', () => {
         '0003_sync.sql',
         '0004_claimed_pending.sql',
         '0005_orphaned_overlay.sql',
+        '0006_drop_phone_tables_on_server.sql',
       ],
     });
-    expect(h.tables).toBe(41);
+    expect(h.tables).toBe(37); // the four the phone keeps were dropped (migration 0006)
     const d = await e.DIRECTORY.get(e.DIRECTORY.idFromName('directory-test')).health();
     expect(d).toMatchObject({
       ok: true,

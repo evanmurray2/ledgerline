@@ -6,8 +6,16 @@ import { localDate } from '@ledgerline/domain';
 import { Scoped } from '../src/db/scoped.js';
 import { budgetMeta, chunks, planLineRebuild } from '../src/ledger/ledger.js';
 import { recompute } from '../src/budget/recompute.js';
+import { clearTotals } from '../src/ledger/totals.js';
+import { PHONE_TABLES } from '../src/local/engine.js';
+
+/** The tables the phone keeps (the server dropped them in migration 0006), on a test database. */
+export async function phoneTables(db: Db): Promise<void> {
+  await db.batch(PHONE_TABLES.map((sql) => db.prepare(sql)));
+}
 
 export async function workOut(db: Db, budgetId: string, now: number): Promise<{ rta: number }> {
+  await phoneTables(db);
   const s = new Scoped(db, budgetId, 'test');
   const meta = await budgetMeta(s);
   if (!meta) return { rta: 0 };
@@ -23,6 +31,8 @@ export async function workOut(db: Db, budgetId: string, now: number): Promise<{ 
     const plan = await planLineRebuild(s, part, meta, today, now);
     if (plan.stmts.length) await s.batch(plan.stmts);
   }
+  // Stored month totals start over after a sync, as derive() does.
+  await s.batch([clearTotals(s)]);
   let r = await recompute(db, budgetId, now, { force: true, fullFrom: true, maxMonths: 1200 });
   for (let i = 0; !r.done && i < 20; i++) r = await recompute(db, budgetId, now, { maxMonths: 1200 });
   return { rta: r.rta };
