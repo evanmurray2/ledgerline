@@ -688,6 +688,8 @@ export class MockDb {
   linked = 4;
   checkDeleted = false;
   allyRepaired = false;
+  /** When pull to sync last brought the set-up banks up to date (null: the seeded 9:42 AM). */
+  refreshedAt: number | null = null;
   syncFailed = false;
   usageEvents: unknown[] = [];
   notes: unknown[] = [];
@@ -1327,7 +1329,11 @@ export class MockDb {
     const a = ACCOUNTS[id]!;
     const ally = id === 'ally' && !this.allyRepaired;
     const chaseFail = this.syncFailed && a.inst === 'Chase';
-    const synced = ally ? SYNC_ALLY : chaseFail ? Date.UTC(2026, 10, 14, 14, 10) : SYNC_TODAY;
+    const synced = ally
+      ? SYNC_ALLY
+      : chaseFail
+        ? Date.UTC(2026, 10, 14, 14, 10)
+        : (this.refreshedAt ?? SYNC_TODAY);
     const base = {
       id,
       name: this.accountNames.get(id) ?? a.name,

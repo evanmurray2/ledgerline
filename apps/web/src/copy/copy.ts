@@ -1,5 +1,5 @@
 // The budget's copy on this device (docs/phone-budget.md, decisions.md D-45): every screen is worked out from it by
-// the engine in a Web Worker; changes go to the server and come back through the sync. On an iPhone or iPad (Safari or the Home Screen app, D-47) with
+// the engine in a Web Worker; changes go to the server and come back through the sync. On an iPhone or iPad (Safari or the Home Screen app, D-48) with
 // a passkey that supports PRF, the copy is saved encrypted (vault.ts) and opens with no signal; anywhere else it's
 // kept in memory for the visit only.
 //

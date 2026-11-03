@@ -1,9 +1,9 @@
 // Accounts: net worth, Owed to you under the total, repair banner, failed-sync banner with Try now, cash and
 // cards (statement covered). Card and cash registers. Repair a connection through Plaid Link update mode.
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import type { AccountRow } from '@ledgerline/contracts';
+import type { AccountRow, AccountsView } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
 import { useAccounts, useBudget, useRegister, useSession, qk } from '../api/hooks';
 import { Sheet } from '../components/Sheet';
@@ -31,7 +31,31 @@ import { TxnRow } from './Activity';
 import { useCanWrite } from '../state/connectivity';
 import { usage } from '../usage/tracker';
 import { toast } from '../components/Toast';
-import { PULL_TRIGGER, usePullToRefresh } from '../lib/pull';
+import { PULL_HOLD, usePullToRefresh } from '../lib/pull';
+import { errorMessage } from '../api/client';
+import { getCopy, syncNow } from '../copy/copy';
+
+/** How often pull to sync looks for the banks' new data, and how long it keeps the indicator up before giving up. */
+const SYNC_CHECK_MS = 2_500;
+const SYNC_WAIT_MS = 45_000;
+/** The pull indicator before the first pull: tucked above the list (lib/pull.ts moves it from there). */
+const HIDDEN = { transform: `translate3d(0, -${PULL_HOLD}px, 0)`, opacity: 0 } as const;
+
+/** Banks that finished since `before`: synced again (their accounts' sync time moved on) or newly failed. */
+export function banksDone(before: AccountsView | undefined, now: AccountsView): number {
+  const last = (v: AccountsView | undefined) => {
+    const m = new Map<string, number>();
+    for (const g of v?.groups ?? [])
+      for (const a of g.accounts) m.set(a.institution, Math.max(m.get(a.institution) ?? 0, a.syncedAt ?? 0));
+    return m;
+  };
+  const was = last(before);
+  let done = 0;
+  for (const [bank, at] of last(now)) if (at > (was.get(bank) ?? 0)) done++;
+  const failed = new Set(before?.failures.map((f) => f.connectionId));
+  done += now.failures.filter((f) => !failed.has(f.connectionId)).length;
+  return done;
+}
 
 function accountSub(a: AccountRow): { text: string; warn: boolean } {
   if (a.connectionStatus !== 'ok') return { text: 'may be out of date', warn: true };
@@ -114,23 +138,51 @@ export function AccountsScreen() {
   const qc = useQueryClient();
   const canWrite = useCanWrite();
   const scroller = useRef<HTMLDivElement>(null);
-  const sync = async () => {
-    try {
-      const r = await api.refreshAll();
-      toast.show({
-        text:
-          r.started > 0
-            ? `Syncing ${r.started} ${r.started === 1 ? 'bank' : 'banks'}. New transactions show up in a minute or two.`
-            : 'Your banks synced in the last minute or are syncing now.',
-      });
-      void qc.invalidateQueries();
-      // Most syncs finish within half a minute: look again then.
-      window.setTimeout(() => void qc.invalidateQueries(), 30_000);
-    } catch (e) {
-      toast.show({ text: e instanceof Error ? e.message : 'Couldn’t start a sync. Try again.' });
-    }
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  // Syncing runs in the background on the Worker (most banks finish within half a minute). The indicator stays up
+  // and the list is checked every few seconds until each bank that started has synced or failed, so new
+  // transactions appear as soon as they land instead of after a fixed wait.
+  // A phone shows the result in the pull indicator; desktop has none, so it gets a toast.
+  const finish = (text: string) => {
+    if (desktop) toast.show({ text });
+    return text;
   };
-  const { pull, busy, run } = usePullToRefresh(scroller, sync, !desktop && canWrite);
+  const sync = async (): Promise<string | undefined> => {
+    const before = qc.getQueryData<AccountsView>(qk.accounts);
+    let started: number;
+    try {
+      started = (await api.refreshAll()).started;
+    } catch (e) {
+      toast.show({ text: errorMessage(e) });
+      return undefined;
+    }
+    if (started === 0) return finish('Already up to date');
+    const until = Date.now() + SYNC_WAIT_MS;
+    while (alive.current && Date.now() < until) {
+      await new Promise((r) => window.setTimeout(r, SYNC_CHECK_MS));
+      if (!alive.current) break;
+      // Screens are worked out from the copy on this phone (D-45): bring it up to date first.
+      if (getCopy().status === 'ready') await syncNow({ quiet: true }).catch(() => undefined);
+      const now = await qc
+        .fetchQuery({ queryKey: qk.accounts, queryFn: api.accounts, staleTime: 0 })
+        .catch(() => null);
+      if (now && banksDone(before, now) >= started) {
+        void qc.invalidateQueries();
+        return finish('Up to date');
+      }
+    }
+    void qc.invalidateQueries();
+    if (alive.current)
+      toast.show({ text: 'Your banks are still syncing. New transactions show up in a minute or two.' });
+    return undefined;
+  };
+  const { armed, busy, note, run, body, indicator } = usePullToRefresh(scroller, sync, !desktop && canWrite);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {desktop ? (
@@ -176,20 +228,30 @@ export function AccountsScreen() {
       )}
       <div
         ref={scroller}
-        className={cx('flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-3', desktop ? 'px-6' : 'px-4')}
+        className={cx(
+          'relative flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-3',
+          desktop ? 'px-6' : 'px-4',
+        )}
       >
-        {(pull > 0 || (busy && !desktop)) && (
+        {!desktop && (
           <div
+            ref={indicator}
             role="status"
             data-testid="pull-refresh"
-            style={{ height: busy ? 36 : pull }}
-            className="-mt-3 flex shrink-0 items-end justify-center gap-1.5 overflow-hidden pb-1 text-[13px] font-semibold text-muted"
+            aria-hidden={!busy && !note && !armed}
+            style={HIDDEN}
+            className="pointer-events-none absolute inset-x-0 top-0 flex h-11 items-center justify-center gap-1.5 text-[13px] font-semibold text-muted opacity-0"
           >
-            <Icon name="refresh" size={16} className={busy ? 'animate-spin' : undefined} />
-            {busy ? 'Syncing banks…' : pull >= PULL_TRIGGER ? 'Release to sync' : 'Pull to sync banks'}
+            <Icon
+              name={note ? 'check' : 'refresh'}
+              size={16}
+              stroke={2.2}
+              className={busy ? 'animate-spin' : note ? undefined : 'rotate-[var(--pull-turn,0deg)]'}
+            />
+            {busy ? 'Syncing banks…' : (note ?? (armed ? 'Release to sync' : 'Pull to sync banks'))}
           </div>
         )}
-        <div className={cx('flex flex-col gap-3', desktop && DESKTOP_WIDTH)}>
+        <div ref={body} className={cx('flex flex-col gap-3', desktop && DESKTOP_WIDTH)}>
           {!v ? (
             q.error ? (
               <ErrorNote error={q.error} />

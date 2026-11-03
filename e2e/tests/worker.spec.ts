@@ -68,7 +68,7 @@ test('With no passkey copy, nothing is kept on the device: with no signal it say
   page,
   context,
 }) => {
-  // A saved copy needs a passkey sign-in on an iPhone or iPad (D-45, D-47; passkey.spec.ts covers it). This
+  // A saved copy needs a passkey sign-in on an iPhone or iPad (D-45, D-48; passkey.spec.ts covers it). This
   // browser signs in without one.
   await page.goto('/budget');
   await expect(rta(page)).toHaveText('$981.90');

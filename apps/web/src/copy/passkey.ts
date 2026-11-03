@@ -20,7 +20,7 @@ export interface Assertion {
 }
 
 /**
- * Where the copy is saved on the device: an iPhone or iPad, in Safari or the Home Screen app (D-47; owner). On a
+ * Where the copy is saved on the device: an iPhone or iPad, in Safari or the Home Screen app (D-48; owner). On a
  * computer it's kept in memory only (browser extensions share the page's storage there).
  */
 export function keepsCopy(): boolean {

@@ -42,7 +42,7 @@ describe('object migrations', () => {
     expect(h).toMatchObject({
       ok: true,
       kind: 'budget',
-      migrations: ['0001_baseline.sql', '0002_jobs.sql', '0003_sync.sql'],
+      migrations: ['0001_baseline.sql', '0002_jobs.sql', '0003_sync.sql', '0004_claimed_pending.sql'],
     });
     expect(h.tables).toBe(41);
     const d = await e.DIRECTORY.get(e.DIRECTORY.idFromName('directory-test')).health();

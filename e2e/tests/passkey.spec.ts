@@ -75,7 +75,7 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   await expect(again.getByRole('alert')).toContainText('isn’t valid');
   await other.close();
 
-  // Safari on an iPhone keeps an encrypted copy (D-45, D-47). Signing in gets the passkey's PRF output in the same
+  // Safari on an iPhone keeps an encrypted copy (D-45, D-48). Signing in gets the passkey's PRF output in the same
   // prompt.
   await page.addInitScript(() =>
     Object.defineProperty(navigator, 'userAgent', {

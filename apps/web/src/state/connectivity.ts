@@ -25,6 +25,7 @@ let state: State = {
   loadedAt: null,
 };
 
+const MOCK = import.meta.env.VITE_MOCK === '1';
 const listeners = new Set<() => void>();
 function set(patch: Partial<State>) {
   const next = { ...state, ...patch };
@@ -59,7 +60,8 @@ export const connectivity = {
    */
   reportOk() {
     stopProbe();
-    set({ online: true, networkFailed: false, loadedAt: Date.now() });
+    // The mock API answers inside the page, so its answers say nothing about the network.
+    set({ online: MOCK ? state.online : true, networkFailed: false, loadedAt: Date.now() });
   },
   /** How the app checks the network is back after a failed request (api/client.ts registers it). */
   setProbe(fn: (() => Promise<boolean>) | null) {
@@ -115,7 +117,7 @@ async function runProbe() {
   const reachable = await probe().catch(() => false);
   if (reachable) {
     stopProbe();
-    set({ online: true, networkFailed: false });
+    set({ online: MOCK ? state.online : true, networkFailed: false });
   } else scheduleProbe();
 }
 

@@ -550,7 +550,12 @@ activityRoutes.patch('/transactions/:key', async (c) => {
     );
     edits.amount = editAt;
   }
-  if (p.wontClear !== undefined) set('wont_clear', p.wontClear ? 1 : 0);
+  if (p.wontClear !== undefined) {
+    // Only something not posted yet can fail to clear: a posted charge always counts.
+    if (p.wontClear && t.status === 'posted')
+      throw new HttpError(422, 'posted', 'This has posted, so it counts; it can’t be marked won’t clear');
+    set('wont_clear', p.wontClear ? 1 : 0);
+  }
   if (p.budgetMonth !== undefined) set('budget_month', p.budgetMonth);
   if (p.payeeName !== undefined) {
     if (t.payee_id)

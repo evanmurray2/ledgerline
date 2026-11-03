@@ -168,7 +168,7 @@ export function DataScreen() {
 
 /**
  * One export. It downloads through the app rather than a plain link, so the passkey check exports need opens
- * "Confirm it's you" instead of saving the refusal as the file.
+ * "Confirm it's you" and then downloads, instead of saving the refusal as the file.
  */
 function ExportRow({
   name,
