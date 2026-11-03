@@ -3,12 +3,12 @@
 // line rebuild. Served inside the store (BudgetStore.dev) only when DEV_ROUTES=1 outside production and without a
 // setup code.
 import { Hono } from 'hono';
-import type { AppEnv } from '../http/context.js';
-import { Scoped } from '../db/scoped.js';
-import { budgetMeta, planLineRebuild, planStartLines } from '../ledger/ledger.js';
-import { recompute } from '../budget/recompute.js';
-import { clock } from '../http/clock.js';
-import * as F from '../../../../packages/domain/test/fixtures/november.js';
+import type { AppEnv } from './http/context.js';
+import { Scoped } from './db/scoped.js';
+import { budgetMeta, planLineRebuild, planStartLines } from './ledger/ledger.js';
+import { recompute } from './budget/recompute.js';
+import { clock } from './http/clock.js';
+import * as F from '../../../packages/domain/test/fixtures/november.js';
 
 export const dev = new Hono<AppEnv>();
 

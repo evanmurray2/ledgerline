@@ -1,5 +1,7 @@
 # Phase 1 measurements (go/no-go)
 
+How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history.
+
 ## Update: sync pages for the phone's copy (Nov 3, 2026)
 
 `measure/phone.measure.ts`: `GET /api/sync` on a 3,000-transaction budget (node:sqlite, SQLite included, as a Durable Object pays it), 200 rows a page.

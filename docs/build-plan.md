@@ -191,3 +191,7 @@ Built all at once on the owner's word (D-46): no settings and no shadow comparis
 - [x] Sessions merge once their PR's `ci` passed and GitHub shows no conflict; the `ci` run on `main` gates every deploy, and sessions catch up with "Update branch" instead of rebasing (`CLAUDE.md`). _Verify:_ the next merges go in without a rebase.
 - [x] New decisions are one file each in `docs/decisions/`, numbered just before merging (`tools/docs/next-decision.mjs`); `docs/build-plan.md` merges with `merge=union`. _Verify:_ `node tools/docs/next-decision.mjs` prints D-52 after this merge.
 - [x] A deploy whose `ci` a newer merge cancelled is skipped, not failed (`tools/ci/wait-for-ci.mjs`, `deploy.yml`). _Verify:_ the gate run against stubbed GitHub responses (passed → deploy, cancelled and superseded → skip, cancelled while latest or failed → fail); then the next pair of quick merges.
+
+## 17. Cleanup (Nov 3, 2026)
+
+- [x] Removed the old workerd measuring tools (`tools/measure`, the `/__measure` routes, `MEASURE`); measuring runs `apps/worker/measure` on node:sqlite. The November seed moved out of the measure folder. CLAUDE.md asks sessions to split large files as they touch them. _Verify:_ `pnpm check`.

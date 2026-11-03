@@ -45,13 +45,9 @@ app.all('/api/*', async (c) => {
   // Responses from another object have immutable headers; copy so apiHeaders can add its own.
   return new Response(r.body, r);
 });
-// Local seed and measuring routes, served in the dev user's store: never in production, and only when enabled.
+// Local seed routes, served in the dev user's store: never in production, and only when enabled.
 app.all('/__dev/*', async (c) => {
   if (c.env.DEV_ROUTES !== '1' || c.env.PLAID_ENV === 'production' || c.env.SETUP_CODE) return c.notFound();
-  return routeDev(c.req.raw, c.env);
-});
-app.all('/__measure/*', async (c) => {
-  if (c.env.MEASURE !== '1' || c.env.PLAID_ENV === 'production' || c.env.SETUP_CODE) return c.notFound();
   return routeDev(c.req.raw, c.env);
 });
 // Everything else is the SPA (static assets with SPA fallback).

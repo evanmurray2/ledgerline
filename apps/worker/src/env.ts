@@ -47,8 +47,6 @@ export interface Env {
   CF_ANALYTICS_TOKEN?: string;
   /** Plaid page size: 500 by default, 250 if Phase 1 shows the apply step over budget. */
   SYNC_PAGE_SIZE?: string;
-  /** Enables /__measure routes (local measuring only; never in production). */
-  MEASURE?: string;
   APP_VERSION?: string;
   /** Inside a budget's Durable Object: today's account usage, from the Directory (docs/multi-user.md 9.2). */
   USAGE?: () => Promise<{

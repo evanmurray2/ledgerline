@@ -33,6 +33,7 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 - Don't sit waiting for CI after a push; carry on working and check the PR's `ci` run before your next push and before merging (GitHub MCP `actions_list`, `list_workflow_runs`). If it failed, fix that first.
 - Migrations in `packages/db/budget-migrations` and `packages/db/directory-migrations` are forward-only once on `main` (`node tools/ci/migration-check.mjs`); add a new numbered file, then run `node tools/db/gen-store-migrations.mjs`.
 - Keep `docs/build-plan.md` current in the same PR as the work.
+- Large files (over about 600 lines): when a task already changes one, split off the part you're working on into its own file, by feature (a sheet, a group of routes). Make the split its own commit with no change in behavior. Don't split files you aren't otherwise touching.
 
 ## Several sessions at once
 
