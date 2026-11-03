@@ -4,8 +4,8 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
 import { useAccounts, useSession, qk } from '../api/hooks';
-import { Sheet } from '../components/Sheet';
-import { ErrorNote, PrimaryButton } from '../components/ui';
+import { Sheet, SheetTitle } from '../components/Sheet';
+import { Banner, ErrorNote, PrimaryButton } from '../components/ui';
 import { formatCents } from '../lib/money';
 import { pacificDateTime, syncedLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
@@ -49,7 +49,7 @@ export function RepairScreen() {
       onClose={close}
       gap="auto"
       closeLabel="Back to accounts"
-      header={<h1 className="m-0 text-[20px] font-bold">Repair {inst}</h1>}
+      header={<SheetTitle title={`Repair ${inst}`} />}
       footer={
         step === 'after' ? (
           <PrimaryButton onClick={close}>Done</PrimaryButton>
@@ -66,13 +66,10 @@ export function RepairScreen() {
       }
     >
       {step === 'after' ? (
-        <div role="status" className="flex flex-col gap-1 rounded-[14px] bg-success-soft p-3 text-funded-fg">
-          <span className="text-[15px] font-bold">{inst} is connected again</span>
-          <span className="text-[13px] leading-snug">
-            New transactions are coming in. Your rules categorize what they can; anything else waits in
-            Activity.
-          </span>
-        </div>
+        <Banner tone="success" icon="check" title={`${inst} is connected again`}>
+          New transactions are coming in. Your rules categorize what they can; anything else waits in
+          Activity.
+        </Banner>
       ) : step === 'working' ? (
         <div
           role="status"
@@ -85,14 +82,11 @@ export function RepairScreen() {
         </div>
       ) : (
         <>
-          <div className="flex flex-col gap-1 rounded-[14px] border border-warn-border bg-warn-bg p-3 text-warn-fg">
-            <span className="text-[15px] font-bold">{inst} asked you to sign in again</span>
-            <span className="text-[13px] leading-snug">
-              This happens when a bank changes its login or asks for a new consent. Nothing is lost: we kept
-              everything up to the last sync
-              {repair?.lastSynced ? ` on ${syncedLabel(repair.lastSynced, today)}` : ''}.
-            </span>
-          </div>
+          <Banner tone="warn" icon="alert" title={`${inst} asked you to sign in again`}>
+            This happens when a bank changes its login or asks for a new consent. Nothing is lost: we kept
+            everything up to the last sync
+            {repair?.lastSynced ? ` on ${syncedLabel(repair.lastSynced, today)}` : ''}.
+          </Banner>
           <div className="shrink-0 overflow-hidden rounded-[14px] border border-line">
             {[
               ['Accounts on this login', accts.map((a) => a.name).join(', ') || '—'],
@@ -114,9 +108,7 @@ export function RepairScreen() {
             password. Repairing doesn’t use another of your 10 links.
           </p>
           {step === 'exited' && (
-            <p className="m-0 text-[13px] text-under-fg">
-              You closed the window before finishing. Nothing changed.
-            </p>
+            <Banner tone="neutral">You closed the window before finishing. Nothing changed.</Banner>
           )}
           {error ? <ErrorNote error={error} /> : null}
         </>

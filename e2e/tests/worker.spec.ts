@@ -288,7 +288,7 @@ test('Pending: money you add goes to Ready to Assign, and a bank pending charge 
 test('Accounts: rename an account', async ({ page }) => {
   await page.goto('/accounts/sapphire');
   await page.getByRole('button', { name: 'More for this account' }).click();
-  await page.getByRole('menuitem', { name: 'Rename account' }).click();
+  await page.getByRole('button', { name: 'Rename account' }).click();
   const sheet = page.getByRole('dialog', { name: 'Rename account' });
   await sheet.getByLabel('Name').fill('Travel card');
   await sheet.getByRole('button', { name: 'Save' }).click();

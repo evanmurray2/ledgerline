@@ -1,4 +1,4 @@
-// Accounts: net worth, Owed to you under the total, repair banner, failed-sync banner with Try now, cash and
+// Accounts: net worth, Owed to you under the total, repair banner, failed-sync banner with Sync now, cash and
 // cards (statement covered). The register is in AccountRegister.tsx and the Repair sheet in AccountRepair.tsx.
 import { useEffect, useRef, useState } from 'react';
 import { Link, Outlet } from '@tanstack/react-router';
@@ -10,12 +10,15 @@ import {
   Banner,
   Card,
   cx,
-  DESKTOP_WIDTH,
   DesktopHeader,
   HeaderAction,
   ErrorNote,
   Icon,
   Loading,
+  PhoneHeader,
+  ScreenBody,
+  SectionTitle,
+  SoftButton,
   useIsDesktop,
 } from '../components/ui';
 import { formatCents } from '../lib/money';
@@ -69,7 +72,6 @@ function SyncFailure({
 }) {
   const qc = useQueryClient();
   const [step, setStep] = useState<'failed' | 'trying' | 'ok' | 'error'>('failed');
-  const canWrite = useCanWrite();
   const retry = async () => {
     setStep('trying');
     try {
@@ -94,32 +96,20 @@ function SyncFailure({
         ? 'Synced just now.'
         : `This is usually on the bank’s side.${f.nextRetry ? ` We’ll try again at ${pacificTime(f.nextRetry)}` : ''}${f.lastGood ? `; last good sync was ${syncedLabel(f.lastGood, today)}.` : '.'}`;
   return (
-    <section
-      role="status"
-      className={cx(
-        'flex shrink-0 items-start gap-3 rounded-[14px] border p-3',
-        step === 'ok'
-          ? 'border-success-border bg-success-soft text-funded-fg'
-          : 'border-warn-border bg-warn-bg text-warn-fg',
-      )}
+    <Banner
+      tone={step === 'ok' ? 'success' : 'warn'}
+      icon={step === 'ok' ? 'check' : 'alert'}
+      title={title}
+      action={
+        (step === 'failed' || step === 'error') && (
+          <SoftButton tone="outline" mutates track="accounts.sync.retry" onClick={() => void retry()}>
+            Sync now
+          </SoftButton>
+        )
+      }
     >
-      <Icon name={step === 'ok' ? 'check' : 'alert'} size={20} stroke={2.4} />
-      <span className="flex flex-1 flex-col gap-0.5">
-        <span className="text-[14px] font-bold">{title}</span>
-        <span className="text-[13px] leading-snug">{text}</span>
-      </span>
-      {(step === 'failed' || step === 'error') && (
-        <button
-          type="button"
-          data-track="accounts.sync.retry"
-          disabled={!canWrite}
-          onClick={() => void retry()}
-          className="hit h-9 shrink-0 rounded-full bg-surface px-3 text-[13px] font-bold text-ink disabled:opacity-50"
-        >
-          Try now
-        </button>
-      )}
-    </section>
+      {text}
+    </Banner>
   );
 }
 
@@ -178,71 +168,41 @@ export function AccountsScreen() {
     return undefined;
   };
   const { armed, busy, note, run, body, indicator } = usePullToRefresh(scroller, sync, !desktop && canWrite);
+  const syncAction = (
+    <HeaderAction
+      track="accounts.refresh"
+      icon="refresh"
+      label={busy ? 'Syncing…' : 'Sync'}
+      disabled={!canWrite || busy}
+      spin={busy}
+      onClick={() => void run()}
+    />
+  );
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {desktop ? (
-        <DesktopHeader
+        <DesktopHeader title="Accounts" right={syncAction} />
+      ) : (
+        <PhoneHeader
           title="Accounts"
           right={
-            <HeaderAction
-              track="accounts.refresh"
-              icon="refresh"
-              label={busy ? 'Syncing…' : 'Refresh'}
-              disabled={!canWrite || busy}
-              spin={busy}
-              onClick={() => void run()}
-            />
+            <>
+              {syncAction}
+              <Link
+                to="/settings"
+                data-track="accounts.settings"
+                aria-label="Settings"
+                className="hit flex h-11 w-11 items-center justify-center rounded-full text-ink-2 hover:bg-sunken"
+              >
+                <Icon name="gear" size={22} />
+              </Link>
+            </>
           }
         />
-      ) : (
-        <header className="flex min-h-14 shrink-0 items-center justify-between border-b border-line bg-surface pl-4 pr-1">
-          <h1 className="m-0 text-[22px] font-bold">Accounts</h1>
-          <span className="flex items-center">
-            <HeaderAction
-              track="accounts.refresh"
-              icon="refresh"
-              label={busy ? 'Syncing…' : 'Refresh'}
-              disabled={!canWrite || busy}
-              spin={busy}
-              onClick={() => void run()}
-            />
-            <Link
-              to="/settings"
-              data-track="accounts.settings"
-              aria-label="Settings"
-              className="flex h-11 w-11 items-center justify-center text-ink-2"
-            >
-              <Icon name="gear" size={22} />
-            </Link>
-          </span>
-        </header>
       )}
-      <div
-        ref={scroller}
-        className={cx(
-          'relative flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-3',
-          desktop ? 'px-6' : 'px-4',
-        )}
-      >
-        {!desktop && (
-          <div
-            ref={indicator}
-            role="status"
-            data-testid="pull-refresh"
-            aria-hidden={!busy && !note && !armed}
-            style={HIDDEN}
-            className="pointer-events-none absolute inset-x-0 top-0 flex h-11 items-center justify-center gap-1.5 text-[13px] font-semibold text-muted opacity-0"
-          >
-            <Icon
-              name={note ? 'check' : 'refresh'}
-              size={16}
-              stroke={2.2}
-              className={busy ? 'animate-spin' : note ? undefined : 'rotate-[var(--pull-turn,0deg)]'}
-            />
-            {busy ? 'Syncing banks…' : (note ?? (armed ? 'Release to sync' : 'Pull to sync banks'))}
-          </div>
-        )}
-        <div ref={body} className={cx('flex flex-col gap-3', desktop && DESKTOP_WIDTH)}>
+      {/* The pull indicator sits over the top of the scroller, outside the content the pull moves down. */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <ScreenBody scrollRef={scroller} innerRef={body}>
           {!v ? (
             q.error ? (
               <ErrorNote error={q.error} />
@@ -274,27 +234,22 @@ export function AccountsScreen() {
                   <span>Owed to you · not in this total</span>
                   <span className="flex items-center gap-1">
                     <span className="tnum font-bold">{formatCents(v.owedOut)}</span>
-                    <Icon name="chevR" size={16} className="text-faint" />
+                    <Icon name="chevR" size={18} className="text-faint" />
                   </span>
                 </Link>
               </section>
               {v.repairs.map((r) => (
-                <Link
+                <Banner
                   key={r.connectionId}
+                  tone="warn"
+                  icon="alert"
                   to={`/accounts/repair/${r.connectionId}`}
-                  data-track="accounts.repair"
-                  className="flex min-h-14 shrink-0 items-center gap-2.5 rounded-[14px] border border-warn-border bg-warn-bg px-3 py-2 text-warn-fg no-underline"
+                  track="accounts.repair"
+                  title={`${r.institution} needs you to sign in again`}
                 >
-                  <Icon name="alert" size={20} stroke={2.4} />
-                  <span className="flex flex-1 flex-col gap-px">
-                    <span className="text-[14px] font-bold">{r.institution} needs you to sign in again</span>
-                    <span className="text-[12px]">
-                      Last synced {r.lastSynced ? syncedLabel(r.lastSynced, today) : 'never'}. Repairing keeps
-                      the same link.
-                    </span>
-                  </span>
-                  <span className="text-[14px] font-bold underline">Repair</span>
-                </Link>
+                  Last synced {r.lastSynced ? syncedLabel(r.lastSynced, today) : 'never'}. Repairing keeps the
+                  same link.
+                </Banner>
               ))}
               {v.failures.map((f) => (
                 <SyncFailure key={f.connectionId} f={f} today={today} />
@@ -306,12 +261,9 @@ export function AccountsScreen() {
               ))}
               {v.groups.map((g) => (
                 <section key={g.name} className="flex shrink-0 flex-col gap-1.5">
-                  <div className="flex min-h-9 items-center justify-between px-0.5">
-                    <h2 className="m-0 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
-                      {g.name}
-                    </h2>
-                    <span className="tnum text-[13px] font-semibold text-ink-2">{formatCents(g.total)}</span>
-                  </div>
+                  <SectionTitle note={<span className="tnum">{formatCents(g.total)}</span>}>
+                    {g.name}
+                  </SectionTitle>
                   <Card>
                     {g.accounts.map((a) => {
                       const sub = accountSub(a);
@@ -321,14 +273,15 @@ export function AccountsScreen() {
                           key={a.id}
                           to={`/accounts/${a.id}`}
                           data-track="accounts.account"
-                          className="flex min-h-14 items-center justify-between gap-2.5 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
+                          className="flex min-h-14 items-center gap-2.5 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
                         >
-                          <span className="flex min-w-0 flex-col gap-0.5">
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                             <span className="text-[15px] font-semibold">{a.name}</span>
                             <span
                               className={cx(
                                 'text-[12px]',
-                                a.connectionStatus !== 'ok' ? 'text-under-fg' : 'text-muted',
+                                // Needs a repair: the same warn color as the repair banner.
+                                a.connectionStatus !== 'ok' ? 'text-warn-fg' : 'text-muted',
                               )}
                             >
                               {a.meta}
@@ -344,11 +297,12 @@ export function AccountsScreen() {
                               {formatCents(credit ? -a.bank : a.bank)}
                             </span>
                             {sub.text && (
-                              <span className={cx('text-[12px]', sub.warn ? 'text-under-fg' : 'text-muted')}>
+                              <span className={cx('text-[12px]', sub.warn ? 'text-warn-fg' : 'text-muted')}>
                                 {sub.text}
                               </span>
                             )}
                           </span>
+                          <Icon name="chevR" size={18} className="-ml-1 shrink-0 text-faint" />
                         </Link>
                       );
                     })}
@@ -357,7 +311,25 @@ export function AccountsScreen() {
               ))}
             </>
           )}
-        </div>
+        </ScreenBody>
+        {!desktop && (
+          <div
+            ref={indicator}
+            role="status"
+            data-testid="pull-refresh"
+            aria-hidden={!busy && !note && !armed}
+            style={HIDDEN}
+            className="pointer-events-none absolute inset-x-0 top-0 flex h-11 items-center justify-center gap-1.5 text-[13px] font-semibold text-muted opacity-0"
+          >
+            <Icon
+              name={note ? 'check' : 'refresh'}
+              size={16}
+              stroke={2.2}
+              className={busy ? 'animate-spin' : note ? undefined : 'rotate-[var(--pull-turn,0deg)]'}
+            />
+            {busy ? 'Syncing banks…' : (note ?? (armed ? 'Release to sync' : 'Pull to sync banks'))}
+          </div>
+        )}
       </div>
       <Outlet />
     </div>
