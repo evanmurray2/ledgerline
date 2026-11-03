@@ -499,7 +499,7 @@ export function RegisterScreen() {
                 )}
               </section>
               {chips.length > 1 && (
-                <div role="group" aria-label="Show" className="flex gap-2 overflow-x-auto">
+                <div role="group" aria-label="Show" className="chip-row">
                   {chips.map(([id, name]) => (
                     <Chip
                       key={id}
