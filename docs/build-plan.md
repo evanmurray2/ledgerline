@@ -70,15 +70,15 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 ## 8. Backups, monitoring, operations (design Phase 5 prerequisites)
 
 - [x] `/api/health` (statuses only), watchdog in `health_status`, Accounts alerts. _Verify:_ integration tests.
-- [x] GitHub Actions: nightly backup (D1 export → age public key → Actions artifact with manifest, D-26), monitor every 6 hours, monthly keepalive. _Verify:_ `actionlint`; dry-run scripts tested locally.
+- [x] GitHub Actions: nightly backup (D1 export → age public key → Actions artifact with manifest, D-26), monitor every 6 hours, monthly keepalive. _Verify:_ `actionlint`; dry-run scripts tested locally. (Backup removed in D-29; monitor and keepalive removed in D-49.)
 - [x] Runbooks: first deploy, passkey setup, Plaid Production link, restore drill. _Verify:_ reviewed against the doc.
 - [x] Create the two D1 databases (Nov 1, 2026; ids in `wrangler.jsonc`).
-- [ ] **(manual)** Plaid keys, secrets, Cloudflare API tokens, GitHub environments and variables, first deploy (Actions → deploy) and first passkey (docs/runbooks/setup.md).
+- [ ] **(manual)** Plaid keys, secrets, Cloudflare API tokens, GitHub environments and variables, first deploy (a merge to `main`) and first passkey (docs/runbooks/setup.md).
 
 ## 9. CI and supply chain
 
 - [x] `ci.yml`: frozen install → lint, typecheck, format → unit → integration (local D1) → build → migration check → bundle budget → Playwright (fake provider). _Verify:_ green run on GitHub.
-- [x] `security.yml` (CodeQL, Gitleaks, OSV-Scanner, dependency review, zizmor, actionlint), `deploy.yml` (production with approval, rollback; no staging, D-36), `release.yml`, `nightly.yml`, `monitor.yml`, `keepalive.yml`, Dependabot, CODEOWNERS, PR template; actions pinned to SHAs. _Verify:_ `actionlint` clean; CI green.
+- [x] `security.yml` (CodeQL, Gitleaks, OSV-Scanner, dependency review, zizmor, actionlint), `deploy.yml` (production, rollback; no staging, D-36; merges to `main` only, no manual trigger, D-49), Dependabot, CODEOWNERS, PR template; actions pinned to SHAs. _Verify:_ `actionlint` clean; CI green. (`release.yml`, `nightly.yml`, `monitor.yml` and `keepalive.yml` removed, D-49.)
 
 ## 10. Durable Objects (decisions.md D-37, `docs/multi-user.md`)
 

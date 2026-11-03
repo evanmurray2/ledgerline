@@ -36,23 +36,21 @@ In the **Passwords** app, tap **+** and use the suggested strong password; then 
    - `PLAID_CLIENT_ID`, `PLAID_SECRET` (Production secret), and `PLAID_REDIRECT_URI` if you set one
    - `TOKEN_KEYS`, `SETUP_CODE`, `OPS_TOKEN`
    - `CF_ANALYTICS_TOKEN`: the Analytics token
-2. Optional, for the monitor: **Environments → New environment** `ops` (no reviewer) with the secret `OPS_TOKEN`.
-3. **Secrets and variables → Actions → Variables → New repository variable**, three times:
+2. **Secrets and variables → Actions → Variables → New repository variable**, three times:
    - `CLOUDFLARE_ACCOUNT_ID`: your Account ID
    - `PRODUCTION_URL`: `https://ledgerline.<subdomain>.workers.dev`
 
 ## 5. Deploy
 
-1. **Actions → deploy → Run workflow** (branch `main`).
-2. GitHub asks you to approve the production deployment (a notification in the GitHub app, or on the run page): **Review deployments → production → Approve and deploy**.
+1. Add the repository variable `DEPLOY_ON_MERGE` = `true`, then merge a PR into `main`. There is no Run workflow button: only a merge deploys (D-49).
+2. If you added a required reviewer, GitHub asks you to approve the production deployment (a notification in the GitHub app, or on the run page): **Review deployments → production → Approve and deploy**.
 3. Wait for the green check (a few minutes). It applies the database migrations, deploys the app with your secrets, and checks it.
 
 ## Redeploying later
 
 GitHub only needs the `production` environment with the secret `CLOUDFLARE_API_TOKEN` (the Deploy token). Under the environment's **Deployment branches and tags**, choose **Selected branches** and add `main`. The Worker keeps every secret it already has; add others to the environment only to change them.
 
-- **Deploy now:** Actions → **deploy** → **Run workflow**. Claude can start it for you too.
-- **Deploy on every merge:** add the repository variable `DEPLOY_ON_MERGE` = `true`. Add yourself under **Required reviewers** then, so each merge waits for your tap.
+- **Every merge to `main` deploys** while the repository variable `DEPLOY_ON_MERGE` is `true`. Set it to `false` to pause deploys. To redeploy (for example after changing a secret), merge a change. Add yourself under **Required reviewers** if you want each merge to wait for your tap.
 
 The account id and app address default to this account's (`f2d39c71e2c0819833de7942cdcc1222`, `https://ledgerline.ledger-line.workers.dev`); the variables `CLOUDFLARE_ACCOUNT_ID` and `PRODUCTION_URL` override them.
 
@@ -66,21 +64,19 @@ The setup code stops working once a passkey exists. For a non-Apple device, use 
 
 ## 7. Before linking a real bank
 
-1. Optional: **Actions → monitor → Run workflow**. It emails you (as a failed run) when a bank stops syncing for a day or usage passes 70% of a free limit.
-2. Link your first bank: **Settings → Bank connections**. Each link uses 1 of your 10, for good. Confirm the starting balance it shows.
-3. In Cloudflare: **Workers & Pages → ledgerline → Logs**. After that first sync, check CPU time per step: fetch about 3.5 ms, apply about 5.5 ms (`docs/measurements.md`).
-4. Run it beside your current budgeting tool for a month and reconcile.
-5. Now and then, download Settings → Import and export → JSON export and keep it in Files or iCloud (`docs/runbooks/restore.md`).
+1. Link your first bank: **Settings → Bank connections**. Each link uses 1 of your 10, for good. Confirm the starting balance it shows.
+2. In Cloudflare: **Workers & Pages → ledgerline → Logs**. After that first sync, check CPU time per step: fetch about 3.5 ms, apply about 5.5 ms (`docs/measurements.md`).
+3. Run it beside your current budgeting tool for a month and reconcile.
+4. Now and then, download Settings → Import and export → JSON export and keep it in Files or iCloud (`docs/runbooks/restore.md`).
 
 ## Optional extras
 
 - **Branch protection** (Settings → Rules → New ruleset on `main`): require a PR, passing checks, linear history, no force pushes.
-- **Nightly Plaid Sandbox test**: environment `sandbox` with `PLAID_SANDBOX_CLIENT_ID` and `PLAID_SANDBOX_SECRET`, and the variable `SANDBOX_E2E=true`.
 
 ## Recovery
 
-- **Lost every passkey?** In the Cloudflare dashboard, open [Durable Objects](https://dash.cloudflare.com/?to=/:account/workers/durable-objects), then the `Directory` object of the `ledgerline` Worker, and run `DELETE FROM passkey; DELETE FROM auth_session;` in its data browser (not tried yet from a phone; if it isn't there, ask a Claude session for a one-off fix). Then use the setup code again. If the old code may be known, change `SETUP_CODE` in the `production` environment and re-run deploy first.
-- **Rotating `TOKEN_KEYS`**: set it to `1:<old>,2:<new>` and add the secret `TOKEN_KEY_CURRENT` = `2` in the `production` environment, set the repository variable `ROTATE_TOKEN_KEYS` to `true`, then deploy. Old rows keep decrypting with key 1. Set `ROTATE_TOKEN_KEYS` back to `false` afterwards: without it, a deploy never replaces the Worker's `TOKEN_KEYS`, so a wrong value in GitHub can't make the saved bank logins unreadable.
+- **Lost every passkey?** In the Cloudflare dashboard, open [Durable Objects](https://dash.cloudflare.com/?to=/:account/workers/durable-objects), then the `Directory` object of the `ledgerline` Worker, and run `DELETE FROM passkey; DELETE FROM auth_session;` in its data browser (not tried yet from a phone; if it isn't there, ask a Claude session for a one-off fix). Then use the setup code again. If the old code may be known, change `SETUP_CODE` in the `production` environment and merge a change to redeploy first.
+- **Rotating `TOKEN_KEYS`**: set it to `1:<old>,2:<new>` and add the secret `TOKEN_KEY_CURRENT` = `2` in the `production` environment, set the repository variable `ROTATE_TOKEN_KEYS` to `true`, then merge a change to deploy. Old rows keep decrypting with key 1. Set `ROTATE_TOKEN_KEYS` back to `false` afterwards: without it, a deploy never replaces the Worker's `TOKEN_KEYS`, so a wrong value in GitHub can't make the saved bank logins unreadable.
 
 ## Local development (computer)
 

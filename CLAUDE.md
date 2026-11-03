@@ -1,6 +1,6 @@
 # Ledgerline: notes for Claude sessions
 
-A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `docs/build-plan.md` (what's done), `docs/decisions.md` (D-1 to D-48: why things differ from the design) and `docs/runbooks/setup.md`. `docs/design.md` and `docs/sync-spec.md` are the source of truth; record any contradiction in `docs/decisions.md`.
+A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `docs/build-plan.md` (what's done), `docs/decisions.md` (D-1 to D-49: why things differ from the design) and `docs/runbooks/setup.md`. `docs/design.md` and `docs/sync-spec.md` are the source of truth; record any contradiction in `docs/decisions.md`.
 
 ## Production
 
@@ -12,7 +12,7 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 ## Deploying
 
 - Every merge to `main` deploys by itself: the repository variable `DEPLOY_ON_MERGE` is `true` (D-30), and `deploy.yml` waits for that commit's `ci`, deploys, smoke-tests and rolls back the code on failure. Deploys queue one at a time. After merging, check the `deploy` run for your merge commit; if it failed, tell the owner and fix it first.
-- To redeploy by hand (only when the owner asks): first check that the `ci` run for that `main` commit passed (GitHub MCP `actions_list`, `list_workflow_runs`; `deploy.yml` also waits for it and refuses a commit whose `ci` failed). If it's still running, wait for it; if it failed, fix it first. Then trigger the GitHub workflow `deploy.yml` on `main` (GitHub MCP `actions_run_trigger`, method `run_workflow`), then check the run's result. It deploys, smoke-tests and rolls back on failure. Each Durable Object runs its own schema migrations when it starts.
+- There is no manual deploy (D-49): `deploy.yml` has no Run workflow button, and only a merge to `main` deploys. Never deploy any other way (no `wrangler deploy`, `wrangler rollback` or Cloudflare API or MCP calls that change the Worker) unless the owner first reverses D-49; to redeploy, merge a change. Each Durable Object runs its own schema migrations when it starts.
 - GitHub holds only the `production` environment's `CLOUDFLARE_API_TOKEN`. The Worker keeps its other secrets (`TOKEN_KEYS`, Plaid keys, `SETUP_CODE`, `OPS_TOKEN`) from the first deploy; a deploy never deletes a secret.
 - A rollback undoes code, not migrations: those reach the owner's real budget on merge and are forward-only.
 - Never print, commit or ask the owner to paste secrets in chat.
@@ -23,7 +23,7 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 - 10 ms of CPU per request or job step (SQLite runs in-process, so it counts); measure hot paths (`docs/measurements.md`).
 - Never mention any other budgeting app by name anywhere: code, comments, docs, UI copy, commit messages.
 - Stop and ask only when a choice would change how money is counted (Money rules in `docs/sync-spec.md`; `packages/domain`).
-- No off-site backups (D-29). No monitor or nightly Plaid Sandbox job wanted for now.
+- No off-site backups (D-29). No monitor or nightly Plaid Sandbox job wanted for now (their workflows were removed, D-49).
 - The owner works from an iPhone: give short, plain steps with direct links.
 
 ## Working in the repo
@@ -47,5 +47,5 @@ The owner runs several Claude sessions side by side, each with its own container
      Then squash-merge with GitHub MCP `merge_pull_request` (`merge_method: squash`, `sha` set to the commit CI passed on). If `main` moved first or the merge is refused, rebase and repeat. After the merge, start any further work fresh from `origin/main` on the same branch name.
 - Numbers that two sessions could both take (decisions `D-n` in `docs/decisions.md`, migration files) belong to whoever merges first. Before merging, check `origin/main` and renumber yours if it was taken, including references to it.
 - Merge conflicts in shared docs (`docs/build-plan.md`, `docs/decisions.md`): keep both sides' entries.
-- Merging is deploying. Ask the owner before merging a PR that adds a migration (`packages/db/*-migrations`), and never trigger a manual deploy unless asked in your own session.
+- Merging is deploying. Ask the owner before merging a PR that adds a migration (`packages/db/*-migrations`).
 - An owner's "yes" (to a Plaid link, a Money-rules choice, a deploy) applies only in the session where they said it.
