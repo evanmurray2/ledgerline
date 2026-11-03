@@ -1,6 +1,6 @@
 # Working out the budget on the phone
 
-Status: proposal v1.3, Nov 3, 2026. Not decided. v1 got an adversarial review (1 blocker, 8 major, 9 minor); v1.1 includes its fixes, listed in section 15. v1.2 added the security design in section 13; v1.3 includes the fixes from its security review (1 blocker, 7 major, 7 minor). Nothing here changes how money is counted: the same `computeBudget()` runs, in a different place, and section 9 shows how its inputs stay the same.
+Status: accepted v1.3, Nov 3, 2026 (decisions.md D-44). Building stages 0–4 behind settings; stage 5 waits for a clean shadow comparison. v1 got an adversarial review (1 blocker, 8 major, 9 minor); v1.1 includes its fixes, listed in section 15. v1.2 added the security design in section 13; v1.3 includes the fixes from its security review (1 blocker, 7 major, 7 minor). Nothing here changes how money is counted: the same `computeBudget()` runs, in a different place, and section 9 shows how its inputs stay the same.
 
 ## 1. The question
 
@@ -79,7 +79,7 @@ Recommendation: build A. Decide on B after A has run for two weeks, with B's sha
 |                                                | How bad, and what limits it                                                                                                                                                                                                               |
 | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | More of your history is stored on the phone    | Today at most 24 hours of saved screens, unencrypted. With this, encrypted with your passkey and a per-device server share. Someone with your passkey who keeps the phone offline keeps the last snapshot (section 13.6).                 |
-| Face ID more often                             | The copy locks after 5 idle minutes or in the background, and locking ends the server session; today a session lasts 24 hours without a prompt.                                                                                           |
+| Face ID more often                             | The copy locks after 10 idle minutes or in the background, and locking ends the server session; today a session lasts 24 hours without a prompt.                                                                                          |
 | Phone and server can disagree for a moment     | The phone shows what it last synced; today's screens are also as old as the last load. It shows "Updated 2 min ago" when it's been a while.                                                                                               |
 | Two devices can show different numbers briefly | Each catches up on its next sync, and after a release, when it reloads. The shadow stage flags it.                                                                                                                                        |
 | The phone's clock and time zone (B)            | "Today" and the current month use the budget's time zone and the server's clock (section 9), never the phone's, so travel can't move money between months.                                                                                |
@@ -208,7 +208,7 @@ Each stage ships on its own and, until stage 5, can be turned back with a settin
 | Threat                                             | Server only, today                          | This design                                                                                                                                                      |
 | -------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Phone stolen while locked                          | Needs your passkey (Face ID or passcode)    | Unreadable without your passkey                                                                                                                                  |
-| Phone taken while unlocked, app open               | The session cookie works for up to 24 hours | The app locks after 5 idle minutes or when it goes to the background, and ends the server session at the same time                                               |
+| Phone taken while unlocked, app open               | The session cookie works for up to 24 hours | The app locks after 10 idle minutes or when it goes to the background, and ends the server session at the same time                                              |
 | Thief who watched you type the passcode            | Can use your passkeys, so gets the server   | Same. Stolen Device Protection helps only away from familiar places                                                                                              |
 | Thief with the passkey who keeps the phone offline | Gets nothing new from the server            | **Keeps the last snapshot.** Revoking the device stops it from getting the server's share again, but can't reach a phone that never connects (13.6)              |
 | Malicious script in the web app                    | Can call the API while you're signed in     | Can read everything while you're signed in or unlocked, and can keep a usable key for later. Locking doesn't help against a script that's already running (13.5) |
@@ -235,7 +235,7 @@ Each stage ships on its own and, until stage 5, can be turned back with a settin
 
 ### 13.4 Lock and wipe
 
-- **Lock:** after 5 idle minutes, or 5 minutes after the app goes to the background, the keys, the decrypted copy, React Query's cache and the screens are dropped, and the server session is ended. iOS suspends timers in a backgrounded app, so the app records the time on `visibilitychange: hidden`, covers its content at once, and on return checks the elapsed time before drawing anything. While locked it doesn't sync. Unlocking online is a fresh sign-in.
+- **Lock:** after 10 idle minutes, or 10 minutes after the app goes to the background, the keys, the decrypted copy, React Query's cache and the screens are dropped, and the server session is ended. iOS suspends timers in a backgrounded app, so the app records the time on `visibilitychange: hidden`, covers its content at once, and on return checks the elapsed time before drawing anything. While locked it doesn't sync. Unlocking online is a fresh sign-in.
 - **Separate answers from the server:** `session_expired` asks for your passkey and keeps everything. `revoked` (the device row is revoked) and `not_member` wipe. Today a single `unauthenticated` answer covers all three (`api.ts`) and the app clears its data on it; plain 401s never wipe in this design.
 - **Wipe:** the database, wrapped keys, cached share, salt, the old saved-screens store (`ledgerline-saved-data`) and the query cache. The Worker closes its database connection on `versionchange` so `deleteDatabase` isn't blocked, and the app confirms the delete finished. Before a wipe the outbox is sent if the phone is online; edits that can't be sent are lost and the app says so.
 - **Triggers:** sign-out; `revoked` or `not_member`; the 7-day offline limit.
@@ -263,12 +263,12 @@ Each stage ships on its own and, until stage 5, can be turned back with a settin
 - Stage 0 tests on your iPhone: PRF in the Home Screen app; PRF with your existing passkey (it may have been created before iOS 18); offline unlock; and the iOS version floor. If PRF doesn't work in the Home Screen app, part A waits.
 - `docs/threat-model.md` takes the table in 13.1, and a decision record notes the change.
 
-## 14. Open questions for the owner
+## 14. Owner's answers (Nov 3, 2026)
 
-1. Build part A? (Recommended.)
-2. The copy locks after 5 idle minutes or in the background, and asks for Face ID to open again. Is 5 minutes right? And do you accept that someone with your passkey who keeps the phone offline keeps the last snapshot (section 13.6)?
-3. Offline edits: wanted, or is offline viewing enough?
-4. Any device besides the iPhone that should keep a copy, such as a laptop browser?
+1. Build part A and part B: yes. Stages 0–4 are built behind settings; stage 5 (deleting the derived tables) waits for two clean weeks of the shadow comparison.
+2. Lock after **10** idle minutes (or 10 minutes in the background). Accepted: someone with your passkey who keeps the phone offline keeps the last snapshot (section 13.6).
+3. Offline edits: included, for the short list in section 12.
+4. A copy is kept only in the Home Screen app on the iPhone; browsers keep data in memory only (13.4).
 
 ## 15. Review history
 
@@ -288,7 +288,7 @@ v1 got an adversarial review the same day. Every finding was checked against the
 | m1–m9 | Identity check reporting; the first-download set; half-applied pages; shared keys; code size; request count; totals description; old backups; version skew | Minor    | Sections 2, 5, 7, 8, 9, 10, 11                                                                                                                  |
 | —     | A simpler option was missing: transactions on the phone, budget still on the server                                                                        | Minor    | Now part A, recommended first (section 4)                                                                                                       |
 
-v1.2 (Nov 3, 2026): section 13 rewritten. The copy on the phone is encrypted with a key from your passkey (WebAuthn PRF), locks after 5 idle minutes, and is kept only where PRF works. The server works out an archived category's available itself instead of taking the phone's amount. Not yet reviewed.
+v1.2 (Nov 3, 2026): section 13 rewritten. The copy on the phone is encrypted with a key from your passkey (WebAuthn PRF), locks after 10 idle minutes, and is kept only where PRF works. The server works out an archived category's available itself instead of taking the phone's amount. Not yet reviewed.
 
 v1.2 got a security review the same day. Findings were checked against the code; all are fixed in v1.3.
 
