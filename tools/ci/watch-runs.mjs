@@ -6,6 +6,9 @@
 // prints as skipped. Run it from a Claude session as a background watcher instead of guessing with timers:
 //   node tools/ci/watch-runs.mjs <sha> ci            (a PR's latest commit)
 //   node tools/ci/watch-runs.mjs <sha> ci deploy     (a merge commit on main)
+// When a watched workflow hasn't started, it also checks the commit's pull request: a PR in conflict with `main` gets
+// no CI at all, so it reports the conflict and exits 1 instead of waiting for runs that never come. It does the same
+// when no run has started after 10 minutes (WATCH_NO_RUN_MIN).
 // The repository is public, so the Actions API needs no token here.
 import { execFileSync } from 'node:child_process';
 
@@ -19,6 +22,9 @@ const repo = process.env.GITHUB_REPOSITORY ?? 'evanmurray2/ledgerline';
 const every = Number(process.env.WATCH_INTERVAL_S ?? 30) * 1000;
 const limit = Date.now() + Number(process.env.WATCH_TIMEOUT_MIN ?? 60) * 60_000;
 const done = new Map();
+const started = Date.now();
+const noRunLimit = Number(process.env.WATCH_NO_RUN_MIN ?? 10) * 60_000;
+let lastPrCheck = 0;
 
 while (done.size < names.length) {
   if (Date.now() > limit) {
@@ -52,6 +58,28 @@ while (done.size < names.length) {
       done.set(name, result);
       console.log(`${name}: ${result} ${run.html_url}`);
     }
+    const missing = names.filter((n) => !done.has(n) && !runs.some((x) => x.name === n));
+    if (missing.length && Date.now() - started > 60_000 && Date.now() - lastPrCheck > 60_000) {
+      lastPrCheck = Date.now();
+      let conflict = null;
+      try {
+        conflict = conflictedPr(sha);
+      } catch {
+        // Couldn't ask about the PR this round: the no-run limit below still applies.
+      }
+      if (conflict) {
+        console.log(
+          `merge conflict: PR #${conflict.number} can't merge with ${conflict.base.ref}, so ${missing.join(', ')} won't run. ${conflict.html_url}`,
+        );
+        process.exit(1);
+      }
+      if (Date.now() - started > noRunLimit) {
+        console.log(
+          `no ${missing.join(', ')} run started for ${sha.slice(0, 12)} after ${noRunLimit / 60_000} minutes`,
+        );
+        process.exit(1);
+      }
+    }
   } catch {
     // A failed poll is retried on the next round.
   }
@@ -75,4 +103,15 @@ function api(path) {
 function supersededBy(at) {
   const c = api(`compare/${at}...main`);
   return c.status === 'ahead' ? c.commits.at(-1).sha : null;
+}
+
+/** The open pull request for `at` when GitHub says it conflicts with its base, else null. */
+function conflictedPr(at) {
+  for (const pr of api(`commits/${at}/pulls`)) {
+    if (pr.state !== 'open') continue;
+    // GitHub works out mergeability in the background: null means not yet known.
+    const full = api(`pulls/${pr.number}`);
+    if (full.mergeable === false || full.mergeable_state === 'dirty') return full;
+  }
+  return null;
 }
