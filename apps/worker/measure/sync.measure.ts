@@ -36,17 +36,16 @@ test('sync steps CPU', async () => {
   const out: Record<string, unknown> = {};
   for (const count of [500, 250, 100]) {
     const db = freshDb();
-    const d1 = db as unknown as D1Database;
     const now = Date.now();
     const ring = parseKeyring('1:' + Buffer.alloc(32, 7).toString('base64'), '1');
     const tok = await encryptToken(ring, 'access-sandbox-x', 'con1');
-    await d1.batch([
-      d1
+    await db.batch([
+      db
         .prepare(
           `INSERT INTO budget (id, name, budget_start_month, created_at, updated_at) VALUES ('b1','B','2023-11',?1,?1)`,
         )
         .bind(now),
-      d1
+      db
         .prepare(
           `INSERT INTO connection (id, budget_id, provider, institution_name, access_token_enc, key_version, linked_at, created_at, updated_at)
            VALUES ('con1','b1','plaid','Sandbox',?1,1,?2,?2,?2)`,
@@ -54,9 +53,9 @@ test('sync steps CPU', async () => {
         .bind(tok.enc, now),
     ]);
     const holder = 'run1';
-    await acquire(d1, 'con1', holder, now);
+    await acquire(db, 'con1', holder, now);
     const ctx = () => ({
-      db: d1,
+      db: db,
       connectionId: 'con1',
       budgetId: 'b1',
       holder,
@@ -91,11 +90,11 @@ test('sync steps CPU', async () => {
       }
     const processes: number[] = [];
     for (;;) {
-      const r = await cpu(db, () => processPending({ DB: d1 } as never, 'b1'));
+      const r = await cpu(db, () => processPending({ DB: db } as never, 'b1'));
       processes.push(r.ms);
       if (r.result.caughtUp) break;
     }
-    const n = (await d1.prepare('SELECT count(*) AS n FROM bank_txn').first<{ n: number }>())!.n;
+    const n = (await db.prepare('SELECT count(*) AS n FROM bank_txn').first<{ n: number }>())!.n;
     out[count] = {
       pages: page,
       txns: n,

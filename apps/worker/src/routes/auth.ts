@@ -1,6 +1,7 @@
 // Passkey sign-in (decisions.md D-27). Public routes: they run before the API's session check, behind the same
 // CSRF rules (JSON, the custom header, same-origin Origin). Each ceremony's challenge travels in a signed, HttpOnly,
 // five-minute cookie (http/challenge.ts): starting a ceremony writes nothing, and a finish is single use.
+import type { Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
 import {
   generateAuthenticationOptions,
@@ -253,7 +254,7 @@ authRoutes.post('/register/verify', async (c) => {
   ];
   // Re-check what allowed the ceremony, in the same statement as the insert, so a used link or a second setup
   // can't add a passkey.
-  let stmts: D1PreparedStatement[];
+  let stmts: Stmt[];
   let owner: string | null = null;
   if (ch.grant_kind === 'setup') {
     // The first passkey creates the first user (and their budget), who runs the instance.
@@ -293,7 +294,7 @@ authRoutes.post('/register/verify', async (c) => {
     throw e;
   });
   if (!res) return c.json(fail('That took too long. Try again.'), 400);
-  if ((res.at(-1)?.meta.changes ?? 0) !== 1)
+  if ((res.at(-1)?.changes ?? 0) !== 1)
     return c.json(fail('That code or link isn’t valid, or it has expired.'), 403);
   if (ch.grant_kind !== 'session') {
     const userId =

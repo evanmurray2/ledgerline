@@ -7,6 +7,7 @@
 // - processing: from the earliest month it touched (sync/process.ts), since it can re-key a row onto a
 //   pending-at-link overlay
 // - CSV history import and re-pointing an account (routes/ops.ts), and the dev seed: everything
+import type { Stmt } from '@ledgerline/db/sql';
 import { type Month, addMonths } from '@ledgerline/domain';
 import type { Scoped } from '../db/scoped.js';
 
@@ -23,7 +24,7 @@ const POST_LAG = '+4 months';
 const SUMS = `sum(amount) AS a, sum(CASE WHEN date >= budget_from OR pending_at_link = 1 THEN amount ELSE 0 END) AS b`;
 
 /** Clears stored totals for this budget from `from` on (or all of them). */
-export function clearTotals(s: Scoped, from: string | null = null): D1PreparedStatement {
+export function clearTotals(s: Scoped, from: string | null = null): Stmt {
   return from
     ? s.q(`DELETE FROM month_total_done WHERE budget_id = ?1 AND month >= ?2`, from.slice(0, 7))
     : s.q(`DELETE FROM month_total_done WHERE budget_id = ?1`);
@@ -95,7 +96,7 @@ export async function monthTotals(
     ),
   );
   const st = stamp!.results[0] as { applied: number; processed_through: number; data_version: number };
-  const writes: D1PreparedStatement[] = [];
+  const writes: Stmt[] = [];
   missing.forEach((m, i) => {
     const rows = computed[i]!.results as { account_id: string; a: number; b: number }[];
     writes.push(s.q(`DELETE FROM account_month_total WHERE budget_id = ?1 AND month = ?2`, m));

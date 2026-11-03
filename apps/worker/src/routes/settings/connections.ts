@@ -1,5 +1,6 @@
 // Settings → Bank connections: the Item meter, Link tokens, exchanging a new link, setting up its accounts, and
 // starting a sync (Finish setup, Refresh).
+import type { Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
 import { clock } from '../../http/clock.js';
 import { LinkExchange, LinkTokenRequest, type ConnectionsView } from '@ledgerline/contracts';
@@ -154,7 +155,7 @@ export async function setUpLinkedAccounts(
   // Each account budgets from the later of the budget start and the date it was linked (Budget start).
   const budgetFrom = today > startDate ? today : startDate;
   // The guard makes the whole batch a no-op if another attempt already finished setup.
-  const w: D1PreparedStatement[] = [
+  const w: Stmt[] = [
     s.q(
       `INSERT OR REPLACE INTO lease_guard (id, ok) VALUES (3, (SELECT setup_done = 0 FROM connection WHERE id = ?2 AND budget_id = ?1))`,
       connectionId,

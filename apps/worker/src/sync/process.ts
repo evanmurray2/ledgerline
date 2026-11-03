@@ -2,6 +2,7 @@
 // budget.processed_through, decides matches, categorization, transfers and Waiting to match with the pure domain
 // functions, and writes everything plus the new watermark in one batch behind a watermark fence. Reprocessing is
 // harmless: rules never overwrite a user's categorization.
+import type { Stmt } from '@ledgerline/db/sql';
 import {
   type BankPendingRow,
   type IsoDate,
@@ -171,7 +172,7 @@ async function planProcessing(
   now: number,
   /** Healing (healPending): only the matching steps, for rows nothing new arrived for. */
   matchOnly = false,
-): Promise<{ stmts: D1PreparedStatement[] }> {
+): Promise<{ stmts: Stmt[] }> {
   const ids = [...new Set(evs.map((e) => e.provider_txn_id))];
   const ph = ids.map((_, i) => `?${i + 2}`).join(',');
   const rows: BankRow[] = [];
@@ -191,7 +192,7 @@ async function planProcessing(
     );
   }
   void ph;
-  const stmts: D1PreparedStatement[] = [];
+  const stmts: Stmt[] = [];
   const live = rows.filter((r) => r.removed_at === null && r.account_id);
   const removed = rows.filter((r) => r.removed_at !== null && r.account_id);
 
@@ -753,7 +754,7 @@ async function planProcessing(
   return { stmts };
 }
 
-function alert(s: Scoped, type: string, ref: string, data: unknown, now: number): D1PreparedStatement {
+function alert(s: Scoped, type: string, ref: string, data: unknown, now: number): Stmt {
   return s.q(
     `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at) VALUES (?2, ?1, ?3, ?4, ?5, ?6)
      ON CONFLICT (budget_id, type, ref_key) DO UPDATE SET data = excluded.data`,
@@ -773,7 +774,7 @@ export async function finalizeConnection(env: Env, c: StepContext, runId: string
     const token = await connectionToken(env, c.connectionId);
     const conn = { id: c.connectionId, accessToken: token, providerItemId: null };
     const accounts = await provider.getAccounts(conn);
-    const stmts: D1PreparedStatement[] = accounts.map((a) =>
+    const stmts: Stmt[] = accounts.map((a) =>
       env.DB.prepare(
         `UPDATE provider_account SET current_balance = ?3, available_balance = ?4, credit_limit = ?5, balance_as_of = ?6, updated_at = ?6
          WHERE connection_id = ?1 AND provider_account_id = ?2`,

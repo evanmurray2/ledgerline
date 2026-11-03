@@ -1,4 +1,4 @@
-// The sync pipeline on a local D1 inside workerd: staged pages → apply (fenced, chunked) → watermark
+// The sync pipeline on a Durable Object's SQLite inside workerd: staged pages → apply (fenced, chunked) → watermark
 // processing (rules, matcher, transfers, Waiting to match) → budget lines → recompute.
 import { env } from 'cloudflare:test';
 import { storeDb } from './store-db.js';
@@ -224,7 +224,7 @@ describe('sync pipeline', () => {
     expect(await keyOf('tj2')).toBe(old);
   });
 
-  it('a page of 150 transactions with 100 different payees processes (D1 allows 100 bound parameters)', async () => {
+  it('a page of 150 transactions with 100 different payees processes (100 bound parameters at most)', async () => {
     const added = Array.from({ length: 150 }, (_, i) =>
       plaidTxn(`bulk${i}`, 'pa_card', 1 + i / 100, '2026-11-13', `SHOP ${i % 100}`, {
         merchant: `Shop ${i % 100}`,

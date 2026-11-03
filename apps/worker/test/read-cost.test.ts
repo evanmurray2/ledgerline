@@ -4,17 +4,20 @@
 import { createExecutionContext, env, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import worker from '../src/index.js';
-import type { SqlD1 } from '../src/store/adapter.js';
+import type { DurableDb } from '../src/store/adapter.js';
 import { budgetStub, directoryStub, ownerDb } from './store-db.js';
 import { app } from './phone.js';
 
 const db = ownerDb();
 
-/** Rows the budget's store has read so far: its SqlD1 counts every statement (store/adapter.ts). */
+/** Rows the budget's store has read so far: its DurableDb counts every statement (store/adapter.ts). */
 const storeReads = async () => {
   const id = await directoryStub().firstBudget();
   if (!id) return 0;
-  return runInDurableObject(budgetStub(id), async (o) => (o as unknown as { db: SqlD1 }).db.stats.rowsRead);
+  return runInDurableObject(
+    budgetStub(id),
+    async (o) => (o as unknown as { db: DurableDb }).db.stats.rowsRead,
+  );
 };
 
 const call = async (p: string, method = 'GET', body: unknown = {}) => {

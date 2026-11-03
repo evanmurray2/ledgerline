@@ -2,6 +2,7 @@
 // sync-tables.ts and asks for what changed since the last change number it holds. A full download (since=0) walks
 // every table in key order, then continues from the change number the download started at, so anything changed while
 // it ran is sent again. Each page is small enough for the 10 ms rule.
+import type { Db } from '@ledgerline/db/sql';
 import { Hono, type MiddlewareHandler } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../http/context.js';
@@ -49,7 +50,7 @@ function strip(t: SyncTable, row: Record<string, unknown>): Record<string, unkno
 
 const pkOf = (t: SyncTable, row: Record<string, unknown>) => t.pk.map((c) => row[c]);
 
-async function head(db: D1Database): Promise<number> {
+async function head(db: Db): Promise<number> {
   const r = await db.prepare(`SELECT coalesce(max(seq), 0) AS n FROM change_log`).first<{ n: number }>();
   return r?.n ?? 0;
 }

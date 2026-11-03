@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test';
 
-// The SPA served by the real Worker on local `wrangler dev`, with a local D1 seeded with the canonical November
+// The SPA served by the real Worker on local `wrangler dev`, with a local store seeded with the canonical November
 // fixture before each test (DEV_ROUTES) and "today" pinned to Nov 14, 2026 (FAKE_NOW). Build apps/web first.
 const PORT = 8799;
 

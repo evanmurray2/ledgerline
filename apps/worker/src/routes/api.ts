@@ -1,3 +1,4 @@
+import type { Result } from '@ledgerline/db/sql';
 import { Hono, type MiddlewareHandler } from 'hono';
 import { clock } from '../http/clock.js';
 import { z } from 'zod';
@@ -95,7 +96,7 @@ budgetApi.use('*', bumpOnChange);
 budgetApi.use('*', async (c, next) => {
   const m = c.req.method;
   if (m === 'GET' || m === 'HEAD') return next();
-  // Inside a budget's Durable Object, account usage comes from the Directory (USAGE); on D1, from usage_day.
+  // Inside a budget's Durable Object, account usage comes from the Directory (USAGE); elsewhere, from usage_day.
   const u = c.env.USAGE ? await c.env.USAGE() : await usageToday(c.env);
   const st = classifyUsage(u.written, u.read, u.do, u.workers);
   if (st === 'readonly' || st === 'rest')
@@ -162,7 +163,7 @@ budgetApi.get('/session', async (c) => {
     s.q(`SELECT count(*) AS n FROM category WHERE budget_id = ?1 AND kind != 'cc_payment'`),
     s.q(`SELECT key, value FROM setting WHERE budget_id = ?1`),
   ]);
-  const n = (r: D1Result | undefined) => (r?.results[0] as { n: number } | undefined)?.n ?? 0;
+  const n = (r: Result | undefined) => (r?.results[0] as { n: number } | undefined)?.n ?? 0;
   const setting = new Map(
     (settings!.results as { key: string; value: string }[]).map((r) => [
       r.key,

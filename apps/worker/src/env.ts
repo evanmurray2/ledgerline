@@ -1,9 +1,10 @@
+import type { Db } from '@ledgerline/db/sql';
 export interface Env {
   /**
-   * The SQLite database of the Durable Object running this code, behind a D1-shaped adapter (store/adapter.ts): a
-   * budget's own data inside a BudgetStore, users and sessions inside the Directory. Production has no D1.
+   * The SQLite database of the Durable Object running this code (store/adapter.ts; the phone's copy in the engine):
+   * a budget's own data inside a BudgetStore, users and sessions inside the Directory.
    */
-  DB: D1Database;
+  DB: Db;
   /** Sign-in attempts per IP (docs/multi-user.md 7.2). */
   AUTH_LIMITER?: RateLimit;
   /** docs/multi-user.md: the Directory (one object) and one BudgetStore per budget. */
@@ -40,7 +41,7 @@ export interface Env {
   FAKE_NOW?: string;
   /** Enables /__dev routes (seed data) in local development. Ignored in production. */
   DEV_ROUTES?: string;
-  /** Account-wide D1 usage via GraphQL Analytics (read-only token). */
+  /** Account-wide usage via GraphQL Analytics (read-only token). */
   CF_ACCOUNT_ID?: string;
   CF_ANALYTICS_TOKEN?: string;
   /** Plaid page size: 500 by default, 250 if Phase 1 shows the apply step over budget. */

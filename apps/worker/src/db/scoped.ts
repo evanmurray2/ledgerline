@@ -1,15 +1,16 @@
 // The one data-access layer every request goes through (design: Input and queries). A Scoped handle exists only
 // after the caller's membership in the budget was checked, and every statement it prepares must bind the budget
 // id as ?1, so a query can't skip the scope.
+import type { Db, Result, Stmt } from '@ledgerline/db/sql';
 export class Scoped {
   constructor(
-    readonly db: D1Database,
+    readonly db: Db,
     readonly budgetId: string,
     readonly userId: string,
   ) {}
 
   /** Prepares `sql` with ?1 = the budget id; the rest of `params` bind as ?2, ?3, … */
-  q(sql: string, ...params: unknown[]): D1PreparedStatement {
+  q(sql: string, ...params: unknown[]): Stmt {
     if (!/\?1\b/.test(sql)) throw new Error('scoped query must bind the budget id as ?1');
     return this.db.prepare(sql).bind(this.budgetId, ...params);
   }
@@ -22,11 +23,11 @@ export class Scoped {
     return this.q(sql, ...params).first<T>();
   }
 
-  async run(sql: string, ...params: unknown[]): Promise<D1Result> {
+  async run(sql: string, ...params: unknown[]): Promise<Result> {
     return this.q(sql, ...params).run();
   }
 
-  batch(stmts: D1PreparedStatement[]): Promise<D1Result[]> {
+  batch(stmts: Stmt[]): Promise<Result[]> {
     return this.db.batch(stmts);
   }
 
@@ -37,7 +38,7 @@ export class Scoped {
     before: unknown,
     after: unknown,
     now: number,
-  ): D1PreparedStatement {
+  ): Stmt {
     return this.q(
       `INSERT INTO audit_log (budget_id, user_id, action, entity, entity_id, before, after, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
       this.userId,
@@ -53,7 +54,7 @@ export class Scoped {
 
 /** The signed-in user's budget and email, from their membership (docs/multi-user.md 7.1). */
 export async function membership(
-  db: D1Database,
+  db: Db,
   userId: string,
 ): Promise<{ userId: string; budgetId: string; email: string } | null> {
   const r = await db
@@ -68,7 +69,7 @@ export async function membership(
 
 /** Bootstraps the first user and their budget (setup and local development), or finds them by email. */
 export async function resolveMembership(
-  db: D1Database,
+  db: Db,
   email: string,
   ownerEmail: string | undefined,
   now: number,

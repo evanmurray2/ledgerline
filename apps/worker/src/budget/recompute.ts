@@ -1,9 +1,10 @@
-// Budget recalculation (Sync spec: Budget recalculation). At most four D1 calls whatever the history:
+// Budget recalculation (Sync spec: Budget recalculation). At most four database calls whatever the history:
 //   1. the budget row (version, dirty month, start, time zone)
 //   2. one read batch: snapshot before the dirty month, categories, lines and assignments from it on, the cached
 //      month rows (to write only what changed) and refund targets
 //   3. computeBudget() in JavaScript
 //   4. one write batch behind a version fence: changed month rows, Ready to Assign, dirty flag cleared
+import type { Db, Stmt } from '@ledgerline/db/sql';
 import {
   computeBudget,
   currentMonth,
@@ -94,7 +95,7 @@ export function lineFromRow(r: unknown[]): BudgetLine {
 }
 
 /** Bumps the summary version and widens the dirty range; goes in the same batch as the edit that changes inputs. */
-export function markDirty(db: D1Database, budgetId: string, month: Month, now: number): D1PreparedStatement {
+export function markDirty(db: Db, budgetId: string, month: Month, now: number): Stmt {
   return db
     .prepare(
       `UPDATE budget SET summary_version = summary_version + 1,
@@ -106,7 +107,7 @@ export function markDirty(db: D1Database, budgetId: string, month: Month, now: n
 }
 
 export async function recompute(
-  db: D1Database,
+  db: Db,
   budgetId: string,
   now: number,
   opts: { force?: boolean; fullFrom?: boolean; maxMonths?: number } = {},
@@ -228,7 +229,7 @@ export async function recompute(
     const cached = new Map(
       (cachedRows!.results as { month: string; hash: string }[]).map((r) => [r.month, r.hash]),
     );
-    const writes: D1PreparedStatement[] = [
+    const writes: Stmt[] = [
       conditionFence(
         db,
         `SELECT summary_version = ?1 FROM budget WHERE id = ?2`,
@@ -276,7 +277,7 @@ export async function recompute(
     try {
       const res = await db.batch(writes);
       queries++;
-      const rowsWritten = res.reduce((a, r) => a + (r.meta.rows_written ?? 0), 0);
+      const rowsWritten = res.reduce((a, r) => a + r.rowsWritten, 0);
       return {
         ok: true,
         done: final,

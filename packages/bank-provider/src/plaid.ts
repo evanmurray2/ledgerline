@@ -299,7 +299,7 @@ export class PlaidProvider implements BankDataProvider {
     if (cursor) body.cursor = cursor;
     const res = await this.call('/transactions/sync', body);
     if (!res.ok) throw plaidError(res.status, await res.text());
-    // Kept as bytes: the fetch step reads only the tail, then decodes once to store the text in D1 (D-26).
+    // Kept as bytes: the fetch step reads only the tail, then decodes once to store the text (D-26).
     const bytes = new Uint8Array(await res.arrayBuffer());
     const { nextCursor, hasMore } = scanSyncTailBytes(bytes);
     return { body: bytes, nextCursor, hasMore };

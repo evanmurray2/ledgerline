@@ -1,5 +1,6 @@
 // Sync run lifecycle (Sync spec: Run lifecycle). Each exported function is the body of one sync job step, so the
 // measuring harness can time exactly what a step does. Steps return small JSON (ids, cursors, counts), never pages.
+import type { Db, Stmt } from '@ledgerline/db/sql';
 import {
   MUTATION_DURING_PAGINATION,
   ProviderError,
@@ -28,7 +29,7 @@ export interface RunState {
 }
 
 interface Ctx {
-  db: D1Database;
+  db: Db;
   connectionId: string;
   budgetId: string;
   holder: string;
@@ -58,7 +59,7 @@ export async function beginRun(c: Ctx, trigger: string): Promise<RunState> {
   const cursor = ((conn?.results[0] as { cursor: string | null } | undefined)?.cursor ?? null) as
     string | null;
   const prevRow = prev?.results[0] as SyncRunRow | undefined;
-  const stmts: D1PreparedStatement[] = [leaseFence(c.db, c.connectionId, c.holder, c.now)];
+  const stmts: Stmt[] = [leaseFence(c.db, c.connectionId, c.holder, c.now)];
   if (prevRow && (prevRow.phase === 'applying' || prevRow.phase === 'finalizing')) {
     // Adopt: move the not-yet-applied staged pages to this run and continue from applied_through.
     stmts.push(
@@ -182,7 +183,7 @@ export async function fetchPage(
     throw e;
   }
   // The body is stored once in raw_page as Plaid sent it, never parsed here, and without a checksum: hashing a
-  // 200 KB page costs over 1 ms of CPU and D1 already protects what it stores (decisions.md D-26). The page row
+  // 200 KB page costs over 1 ms of CPU and SQLite already protects what it stores (decisions.md D-26). The page row
   // and its body are written in the same fenced batch.
   const bytes = staged.body;
   const text = new TextDecoder().decode(bytes);
@@ -315,7 +316,7 @@ export async function applyPage(
   const plan = await planApply(c.db, c, runId, page, chunk, lastPage, pageRow, provider, body);
   try {
     const res = await c.db.batch(plan.stmts);
-    const rowsWritten = res.reduce((a, r) => a + (r.meta.rows_written ?? 0), 0);
+    const rowsWritten = res.reduce((a, r) => a + r.rowsWritten, 0);
     return {
       applied: true,
       events: plan.events,
@@ -342,7 +343,7 @@ export async function applyPage(
   }
 }
 
-type Preparer = Pick<D1Database, 'prepare'>;
+type Preparer = Pick<Db, 'prepare'>;
 
 /**
  * The apply step's compute: parse and normalize the page, hash each payload, and build the one batch that applies
@@ -358,16 +359,16 @@ export async function planApply(
   pageRow: PageRow,
   provider: Pick<BankDataProvider, 'parsePage'>,
   body: string,
-): Promise<{ stmts: D1PreparedStatement[]; events: number; pageDone: boolean }> {
+): Promise<{ stmts: Stmt[]; events: number; pageDone: boolean }> {
   const parsed = provider.parsePage(body);
   const from = chunk * CHUNK.apply;
   const to = Math.min(parsed.events.length, from + CHUNK.apply);
   const pageDone = to >= parsed.events.length;
-  const stmts: D1PreparedStatement[] = [
-    leaseFence(db as D1Database, c.connectionId, c.holder, c.now),
+  const stmts: Stmt[] = [
+    leaseFence(db as Db, c.connectionId, c.holder, c.now),
     // Chunks apply once per run and in order: a retried step whose batch already committed aborts here.
     conditionFence(
-      db as D1Database,
+      db as Db,
       `SELECT applied_through = ?1 AND applied_events = ?2 FROM sync_run WHERE id = ?3`,
       page - 1,
       from,
@@ -427,8 +428,7 @@ export async function planApply(
       .bind(runId, page, from, to, c.budgetId);
   stmts.push(clearTouchedMonths());
 
-  // Projection, built inside D1 from the events just inserted (in page order), so the transactions cross the wire
-  // once and the SQL work happens in D1 rather than in Worker CPU.
+  // Projection, built in SQL from the events just inserted (in page order), so the transactions are parsed once.
   stmts.push(
     db
       .prepare(

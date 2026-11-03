@@ -1,4 +1,4 @@
-// The prototype's November through the real stack: SPA → Worker → local D1 (seeded fixture) → Money rules.
+// The prototype's November through the real stack: SPA → Worker → local store (seeded fixture) → the phone's engine → Money rules.
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 const rta = (page: Page) => page.getByTestId(test.info().project.name === 'desktop' ? 'nav-rta' : 'rta');

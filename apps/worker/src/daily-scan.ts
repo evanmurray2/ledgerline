@@ -1,4 +1,5 @@
 // The daily scan, run by each budget's daily_scan job (store/budget-jobs.ts).
+import type { Stmt } from '@ledgerline/db/sql';
 import { localDate, type Month } from '@ledgerline/domain';
 import type { Env } from './env.js';
 import { Scoped } from './db/scoped.js';
@@ -27,7 +28,7 @@ export async function dailyScan(env: Env, budgetId: string, now: number): Promis
        AND m.repeats != 'never' LIMIT 40`,
     today,
   );
-  const w: D1PreparedStatement[] = [];
+  const w: Stmt[] = [];
   for (const d of due) {
     if (d.repeats === 'never') continue;
     const [y, mo, dd] = d.date.split('-').map(Number) as [number, number, number];

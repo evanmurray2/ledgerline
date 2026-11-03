@@ -1,4 +1,5 @@
 // Activity, transaction sheets and every edit to a transaction's overlay; matching, transfers and Owed to you.
+import type { Stmt } from '@ledgerline/db/sql';
 import { clock } from '../http/clock.js';
 import { Hono } from 'hono';
 import {
@@ -46,7 +47,7 @@ async function names(s: Scoped) {
 }
 
 /** Runs the caller's writes as one batch; returns the mutation result. */
-async function commit(c: Parameters<typeof scoped>[0], writes: D1PreparedStatement[]) {
+async function commit(c: Parameters<typeof scoped>[0], writes: Stmt[]) {
   if (writes.length) await scoped(c).batch(writes);
   return ACK;
 }
@@ -126,12 +127,7 @@ const CATEGORY_MATCH = `category_id IN (SELECT id FROM category WHERE budget_id 
  * One page of posted rows, newest first. With a window start, only rows dated (and so posted) on or after it are
  * read, through bank_txn_budget_date; 'all' reads every row (searches); 'none' reads nothing (the attention view).
  */
-function postedQuery(
-  s: Scoped,
-  from: string | 'all' | 'none',
-  cursor: string | null,
-  q: string,
-): D1PreparedStatement {
+function postedQuery(s: Scoped, from: string | 'all' | 'none', cursor: string | null, q: string): Stmt {
   const window = from !== 'all' && from !== 'none';
   return s.q(
     `SELECT ${TX_COLUMNS} FROM v_txn_bank WHERE budget_id = ?1 AND ${from === 'none' ? '0 AND ' : ''}status = 'posted'
@@ -471,7 +467,7 @@ activityRoutes.patch('/transactions/:key', async (c) => {
   const now = clock(c.env);
   // Most-recent-edit-wins uses when the edit was made, which for an offline edit is before it arrives.
   const editAt = editTime(c, now);
-  const w: D1PreparedStatement[] = [s.q(OVERLAY_UPSERT, key, now)];
+  const w: Stmt[] = [s.q(OVERLAY_UPSERT, key, now)];
   const set = (col: string, v: unknown) =>
     w.push(
       s.q(
@@ -638,7 +634,7 @@ activityRoutes.post('/transactions/categorize', async (c) => {
     );
     if (!ok) throw new HttpError(404, 'not_found', 'category');
   }
-  const w: D1PreparedStatement[] = [];
+  const w: Stmt[] = [];
   for (const key of r.keys) {
     w.push(
       s.q(OVERLAY_UPSERT, key, now),
@@ -865,7 +861,7 @@ activityRoutes.post('/match', async (c) => {
       throw new HttpError(404, 'not_found', 'owed item');
     if (i.amount > o.stillOwed) throw new HttpError(422, 'too_much', 'More than is still owed');
   }
-  const w: D1PreparedStatement[] = [s.q(OVERLAY_UPSERT, r.inflowKey, now)];
+  const w: Stmt[] = [s.q(OVERLAY_UPSERT, r.inflowKey, now)];
   for (const i of r.items) {
     w.push(
       s.q(
@@ -945,7 +941,7 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
     out.account_id,
     out.date,
   );
-  const w: D1PreparedStatement[] = [];
+  const w: Stmt[] = [];
   if (r.otherKey) {
     const other = cands.find((x) => x.key === r.otherKey);
     if (!other) throw new HttpError(404, 'not_found', 'other side');
@@ -1087,7 +1083,7 @@ activityRoutes.post('/owed/:id', async (c) => {
   const { rows } = await openItems(s, f.today);
   const o = rows.find((x) => x.id === id);
   if (!o) throw new HttpError(404, 'not_found', 'owed item');
-  let w: D1PreparedStatement[];
+  let w: Stmt[];
   if (r.action === 'close') {
     // Rule 11: charge what's left to the original category this month; RTA gets it back.
     w = [

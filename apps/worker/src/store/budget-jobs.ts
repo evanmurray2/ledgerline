@@ -1,6 +1,7 @@
 // A budget's recurring and on-demand jobs (docs/multi-user.md 6.1, 6.2): the sync backstop every 4 hours, the daily
 // scan at 08:10 UTC and maintenance at 10:20 UTC (today's cron times), plus starting a sync. Each store keeps its own
 // recurring rows, so nothing has to loop over every budget; a recurring row is never deleted, only moved forward.
+import type { Db } from '@ledgerline/db/sql';
 import { ulid } from '@ledgerline/platform';
 import type { Env } from '../env.js';
 import { dailyScan } from '../daily-scan.js';
@@ -52,7 +53,7 @@ export async function ensureRecurring(enqueue: Enqueue, now: number): Promise<vo
  * accounts are set up; records the request; takes the lease; queues a sync job holding it.
  */
 export async function startSyncJob(
-  db: D1Database,
+  db: Db,
   enqueue: Enqueue,
   connectionId: string,
   trigger: string,
@@ -72,7 +73,7 @@ export async function startSyncJob(
 }
 
 /** Every 4 hours: any connection without a successful sync in the last 4 hours, or with a request left by a failed run. */
-export function backstopHandler(db: D1Database, enqueue: Enqueue): Handler {
+export function backstopHandler(db: Db, enqueue: Enqueue): Handler {
   return async (_job, now): Promise<StepResult> => {
     const due = await db
       .prepare(

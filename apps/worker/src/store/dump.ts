@@ -2,6 +2,7 @@
 // time, in foreign-key order, in pieces of about 50 KB (CPU grows with bytes). Rows are read in primary-key order
 // with keyset pagination, so a piece can resume from its cursor. Each table gets a chained fingerprint over a
 // canonical encoding, so a restore proves it holds exactly what was saved.
+import type { Db, Stmt } from '@ledgerline/db/sql';
 
 /** A budget's tables, parents before children (computed from the schema's foreign keys). */
 export const BUDGET_TABLES = [
@@ -62,7 +63,7 @@ export interface Meta {
 const metaCache = new WeakMap<object, Map<string, Meta>>();
 
 /** Columns and primary key of a table in this database. */
-export async function tableMeta(db: D1Database, table: string): Promise<Meta> {
+export async function tableMeta(db: Db, table: string): Promise<Meta> {
   let perDb = metaCache.get(db);
   if (!perDb) {
     perDb = new Map();
@@ -81,8 +82,8 @@ export async function tableMeta(db: D1Database, table: string): Promise<Meta> {
     .first<string>('sql');
   const withoutRowid = /WITHOUT\s+ROWID/i.test(def ?? '');
   const integerKey = pkCols.length === 1 && /^INTEGER$/i.test(pkCols[0]!.type);
-  // Ordinary rowid tables keep their rowids, so queries without ORDER BY return rows in the same order in the new
-  // database as in D1 (a copy in key order once reordered categories inside month summaries: same numbers, new
+  // Ordinary rowid tables keep their rowids, so queries without ORDER BY return rows in the same order in the
+  // restored database (a copy in key order once reordered categories inside month summaries: same numbers, new
   // hashes). INTEGER PRIMARY KEY columns already are the rowid.
   const keepRowid = !withoutRowid && !integerKey;
   const m: Meta = keepRowid
@@ -92,7 +93,7 @@ export async function tableMeta(db: D1Database, table: string): Promise<Meta> {
   return m;
 }
 
-/** Tables whose destination intentionally holds fewer columns than D1 (the Directory's own view of a budget). */
+/** Tables whose destination intentionally holds fewer columns than the source (the Directory's own view of a budget). */
 
 /** The WHERE clause that selects one budget's rows of a table (source side), with its bound value. */
 export function budgetFilter(table: string, budgetId: string): { sql: string; args: unknown[] } {
@@ -103,7 +104,7 @@ export function budgetFilter(table: string, budgetId: string): { sql: string; ar
 
 export const NO_FILTER = { sql: '1', args: [] as unknown[] };
 
-/** Canonical encoding of a row: typed values in column order. The same on D1 and in a Durable Object. */
+/** Canonical encoding of a row: typed values in column order. */
 export function canon(row: Record<string, unknown>, cols: string[]): string {
   return cols
     .map((c) => {
@@ -137,7 +138,7 @@ export interface Chunk {
  * The same function on both sides gives the same chunk boundaries, so hashes chain identically.
  */
 export async function readChunk(
-  db: D1Database,
+  db: Db,
   table: string,
   meta: Meta,
   filter: { sql: string; args: unknown[] },
@@ -178,13 +179,8 @@ export async function chain(prev: string, text: string): Promise<string> {
   return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** Insert statements for a chunk's rows into the destination (one row per statement: D1's 100-parameter limit). */
-export function insertStatements(
-  db: D1Database,
-  table: string,
-  meta: Meta,
-  rows: Record<string, unknown>[],
-): D1PreparedStatement[] {
+/** Insert statements for a chunk's rows into the destination (one row per statement: the 100-parameter limit). */
+export function insertStatements(db: Db, table: string, meta: Meta, rows: Record<string, unknown>[]): Stmt[] {
   const cols = meta.cols;
   const sql = `INSERT INTO "${table}" (${cols.map((c) => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`;
   return rows.map((row) => db.prepare(sql).bind(...cols.map((c) => row[c] ?? null)));

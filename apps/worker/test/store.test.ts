@@ -1,9 +1,10 @@
-// Phase 1 of docs/multi-user.md: the Durable Objects migrate themselves, and the D1-shaped adapter behaves like D1
-// in everything the sync leases and fences rely on (changes === 1, a failed fence rolling back the whole batch,
-// RETURNING rows, bind coercion, D1 error wording).
+// Phase 1 of docs/multi-user.md: the Durable Objects migrate themselves, and the database interface does everything
+// the sync leases and fences rely on (changes === 1, a failed fence rolling back the whole batch, RETURNING rows,
+// bind coercion).
+import type { Db } from '@ledgerline/db/sql';
 import { env, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
-import { SqlD1 } from '../src/store/adapter.js';
+import { DurableDb } from '../src/store/adapter.js';
 import { migrate } from '../src/store/migrate.js';
 import { BUDGET_MIGRATIONS } from '../src/store/migrations.gen.js';
 import type { BudgetStore } from '../src/store/budget-store.js';
@@ -18,13 +19,11 @@ const NOW = 1_800_000_000_000;
 let n = 0;
 const budget = () => e.BUDGET.get(e.BUDGET.idFromName(`t-${++n}-${Math.random()}`));
 
-async function inStore<T>(fn: (db: D1Database, storage: DurableObjectStorage) => Promise<T>): Promise<T> {
-  return runInDurableObject(budget(), async (_obj, state) =>
-    fn(new SqlD1(state.storage) as unknown as D1Database, state.storage),
-  );
+async function inStore<T>(fn: (db: Db, storage: DurableObjectStorage) => Promise<T>): Promise<T> {
+  return runInDurableObject(budget(), async (_obj, state) => fn(new DurableDb(state.storage), state.storage));
 }
 
-async function seed(db: D1Database): Promise<void> {
+async function seed(db: Db): Promise<void> {
   await db.batch([
     db.prepare(
       `INSERT INTO budget (id, name, processed_through, created_at, updated_at) VALUES ('b1', 'B', 10, 0, 0)`,
@@ -75,7 +74,7 @@ describe('object migrations', () => {
   });
 });
 
-describe('D1-shaped adapter', () => {
+describe('the Durable Object database', () => {
   it('reports changes === 1 only for the holder, as the leases need', async () => {
     await inStore(async (db) => {
       await seed(db);
@@ -108,7 +107,7 @@ describe('D1-shaped adapter', () => {
     });
   });
 
-  it('returns RETURNING rows, last_row_id and D1-style meta', async () => {
+  it('returns RETURNING rows, changes and rows read', async () => {
     await inStore(async (db) => {
       await seed(db);
       const [ins] = await db.batch([
@@ -119,28 +118,23 @@ describe('D1-shaped adapter', () => {
           .bind('budget'),
       ]);
       expect(ins!.results).toEqual([{ id: expect.any(Number), screen: 'budget' }]);
-      const plain = await db
-        .prepare(
-          `INSERT INTO usage_event (budget_id, at, session_id, app_version, screen, event) VALUES ('b1', 0, 's', 'v', 'x', 'open')`,
-        )
-        .run();
-      expect(plain.meta.last_row_id).toBe((ins!.results[0] as { id: number }).id + 1);
+      expect(ins!.changes).toBe(1);
       const r = await db.prepare(`UPDATE budget SET rta = 5 WHERE id = 'b1'`).run();
-      expect(r.meta.changes).toBe(1);
+      expect(r.changes).toBe(1);
       const none = await db.prepare(`UPDATE budget SET rta = 5 WHERE id = 'nope'`).run();
-      expect(none.meta.changes).toBe(0);
+      expect(none.changes).toBe(0);
       const sel = await db.prepare(`SELECT id FROM budget`).all();
-      expect(sel.meta.changes).toBe(0);
-      expect(sel.meta.rows_read).toBeGreaterThan(0);
+      expect(sel.changes).toBe(0);
+      expect(sel.rowsRead).toBeGreaterThan(0);
     });
   });
 
-  it('coerces bind values like D1 and refuses undefined', async () => {
+  it('stores booleans as 0 or 1 and refuses undefined', async () => {
     await inStore(async (db) => {
       await seed(db);
       await db.prepare(`UPDATE connection SET setup_done = ?1 WHERE id = 'c1'`).bind(true).run();
       expect(await db.prepare(`SELECT setup_done FROM connection`).first('setup_done')).toBe(1);
-      expect(() => db.prepare(`SELECT ?1`).bind(undefined)).toThrow(/D1_TYPE_ERROR/);
+      expect(() => db.prepare(`SELECT ?1`).bind(undefined)).toThrow(/undefined/);
     });
   });
 });

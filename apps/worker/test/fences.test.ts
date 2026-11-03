@@ -1,4 +1,4 @@
-// Phase 1 go/no-go: the fences must roll back the whole D1 batch in every non-holding case.
+// Phase 1 go/no-go: the fences must roll back the whole batch in every non-holding case.
 import { storeDb } from './store-db.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {

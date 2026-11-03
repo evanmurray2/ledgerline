@@ -2,6 +2,7 @@
 // packages/domain/test/fixtures/november.ts) into the dev user's BudgetStore through the real tables and overlay; the
 // phone works out the rest. Served inside the store (BudgetStore.dev) only when DEV_ROUTES=1 outside production and
 // without a setup code.
+import type { Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
 import type { AppEnv } from './http/context.js';
 import { Scoped } from './db/scoped.js';
@@ -182,7 +183,7 @@ dev.post('/seed-november', async (c) => {
     .bind(m.budgetId, version + 1, now)
     .run();
   const s = new Scoped(env.DB, m.budgetId, m.userId);
-  const w: D1PreparedStatement[] = [
+  const w: Stmt[] = [
     s.q(
       `UPDATE budget SET budget_start_month = ?2, time_zone = 'America/Los_Angeles', updated_at = ?3 WHERE id = ?1`,
       F.START,

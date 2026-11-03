@@ -1,16 +1,12 @@
 // Connection lease (Sync spec: Connection lease). All SQL is parameterized; every statement is scoped by id.
+import type { Db, Stmt } from '@ledgerline/db/sql';
 
 export const LEASE_TTL_MS = 90 * 60 * 1000;
 export const MAX_HANDOFFS = 3;
 export const MAX_FETCH_RESTARTS = 3;
 
-/** A fence statement: the whole D1 batch aborts unless `ok` evaluates to 1. */
-export function leaseFence(
-  db: D1Database,
-  connectionId: string,
-  holder: string,
-  now: number,
-): D1PreparedStatement {
+/** A fence statement: the whole batch aborts unless `ok` evaluates to 1. */
+export function leaseFence(db: Db, connectionId: string, holder: string, now: number): Stmt {
   return db
     .prepare(
       `INSERT OR REPLACE INTO lease_guard (id, ok)
@@ -20,7 +16,7 @@ export function leaseFence(
 }
 
 /** Generic guard on an arbitrary scalar condition (watermark, summary version, applied_through). */
-export function conditionFence(db: D1Database, sqlScalar: string, ...params: unknown[]): D1PreparedStatement {
+export function conditionFence(db: Db, sqlScalar: string, ...params: unknown[]): Stmt {
   return db
     .prepare(`INSERT OR REPLACE INTO lease_guard (id, ok) VALUES (1, coalesce((${sqlScalar}), 0))`)
     .bind(...params);
@@ -31,7 +27,7 @@ export function isFenceAbort(e: unknown): boolean {
   return /CHECK constraint failed/i.test(m) && /ok = 1|lease_guard/i.test(m);
 }
 
-export async function requestSync(db: D1Database, connectionId: string, now: number): Promise<void> {
+export async function requestSync(db: Db, connectionId: string, now: number): Promise<void> {
   await db
     .prepare(
       `UPDATE connection SET resync_requested = 1, updated_at = ?2 WHERE id = ?1 AND removed_at IS NULL`,
@@ -41,12 +37,7 @@ export async function requestSync(db: D1Database, connectionId: string, now: num
 }
 
 /** Returns true when this run now holds the lease. Acquiring clears the request flag. */
-export async function acquire(
-  db: D1Database,
-  connectionId: string,
-  runId: string,
-  now: number,
-): Promise<boolean> {
+export async function acquire(db: Db, connectionId: string, runId: string, now: number): Promise<boolean> {
   const r = await db
     .prepare(
       `UPDATE connection SET sync_lock = ?1, lock_expires = ?2, resync_requested = 0, updated_at = ?3
@@ -54,12 +45,12 @@ export async function acquire(
     )
     .bind(runId, now + LEASE_TTL_MS, now, connectionId)
     .run();
-  return r.meta.changes === 1;
+  return r.changes === 1;
 }
 
 /** Every step starts here. Accepts the next holder during a hand-off. A removed connection's lease can't be renewed. */
 export async function renew(
-  db: D1Database,
+  db: Db,
   connectionId: string,
   holder: string,
   now: number,
@@ -72,12 +63,12 @@ export async function renew(
     )
     .bind(now + LEASE_TTL_MS, connectionId, holder, alsoAccept ?? holder)
     .run();
-  return r.meta.changes === 1;
+  return r.changes === 1;
 }
 
 /** Before sleeping for the write budget: keep the lease past the wake time. */
 export async function extendForSleep(
-  db: D1Database,
+  db: Db,
   connectionId: string,
   holder: string,
   wakeAt: number,
@@ -86,11 +77,11 @@ export async function extendForSleep(
     .prepare(`UPDATE connection SET lock_expires = ?1 WHERE id = ?2 AND sync_lock = ?3`)
     .bind(wakeAt + LEASE_TTL_MS, connectionId, holder)
     .run();
-  return r.meta.changes === 1;
+  return r.changes === 1;
 }
 
 /** Successful release: only when no request arrived mid-run. Returns false when a hand-off is needed. */
-export async function releaseSuccess(db: D1Database, connectionId: string, holder: string): Promise<boolean> {
+export async function releaseSuccess(db: Db, connectionId: string, holder: string): Promise<boolean> {
   const r = await db
     .prepare(
       `UPDATE connection SET sync_lock = NULL, lock_expires = NULL
@@ -98,11 +89,11 @@ export async function releaseSuccess(db: D1Database, connectionId: string, holde
     )
     .bind(connectionId, holder)
     .run();
-  return r.meta.changes === 1;
+  return r.changes === 1;
 }
 
 /** Failed release: leaves resync_requested for the next cron, so a failing run never hands off to itself. */
-export async function releaseFailed(db: D1Database, connectionId: string, holder: string): Promise<void> {
+export async function releaseFailed(db: Db, connectionId: string, holder: string): Promise<void> {
   await db
     .prepare(
       `UPDATE connection SET sync_lock = NULL, lock_expires = NULL, resync_requested = 1 WHERE id = ?1 AND sync_lock = ?2`,
@@ -113,7 +104,7 @@ export async function releaseFailed(db: D1Database, connectionId: string, holder
 
 /** Hand-off step 2: move the lease to the next instance. */
 export async function moveLease(
-  db: D1Database,
+  db: Db,
   connectionId: string,
   from: string,
   to: string,
@@ -126,5 +117,5 @@ export async function moveLease(
     )
     .bind(to, now + LEASE_TTL_MS, connectionId, from)
     .run();
-  return r.meta.changes === 1;
+  return r.changes === 1;
 }

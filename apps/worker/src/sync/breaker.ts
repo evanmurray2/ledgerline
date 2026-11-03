@@ -1,5 +1,6 @@
 // Write budget circuit breaker (Sync spec F8). Limits are account-wide, so the figures come from Cloudflare's
 // GraphQL Analytics API (refreshed into usage_day at most every 10 minutes) plus this app's own estimates since.
+import type { Db, Stmt } from '@ledgerline/db/sql';
 import type { Env } from '../env.js';
 import { extendForSleep } from './lease.js';
 
@@ -121,12 +122,7 @@ export async function writeBudgetState(env: Env): Promise<BudgetState> {
 }
 
 /** Adds this app's own row counts between analytics refreshes. */
-export function noteUsage(
-  db: D1Database,
-  written: number,
-  read: number,
-  now = Date.now(),
-): D1PreparedStatement {
+export function noteUsage(db: Db, written: number, read: number, now = Date.now()): Stmt {
   return db
     .prepare(
       `INSERT INTO usage_day (day, rows_read, rows_written, est_read, est_written, refreshed_at) VALUES (?1, 0, 0, ?3, ?2, 0)

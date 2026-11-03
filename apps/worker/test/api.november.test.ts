@@ -1,4 +1,4 @@
-// The prototype's November numbers through the whole stack: D1 tables → overlay → budget lines → recompute → API.
+// The prototype's November numbers through the whole stack: tables → overlay → sync → the phone's budget lines and recompute → API.
 import { app } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type {
