@@ -66,4 +66,15 @@ describe('signed out', () => {
     await waitFor(() => expect(result.current.data).toEqual({ setupOpen: true }));
     expect(qc.getQueryData(['budget', '2026-11'])).toBeUndefined();
   });
+
+  it('keeps it, too, when the app was showing a session', () => {
+    const qc = makeQueryClient();
+    qc.setQueryData(qk.session, saved);
+    qc.setQueryData(qk.authStatus, { setupOpen: false });
+    qc.setQueryData(['budget', '2026-11'], { saved: true });
+    forgetSignedOut(qc);
+    expect(qc.getQueryData(qk.session)).toBeUndefined();
+    expect(qc.getQueryData(['budget', '2026-11'])).toBeUndefined();
+    expect(qc.getQueryData(qk.authStatus)).toEqual({ setupOpen: false });
+  });
 });
