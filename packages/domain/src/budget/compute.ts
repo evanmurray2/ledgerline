@@ -99,8 +99,9 @@ export interface ComputeInput {
   /** Compute through at least this month (e.g. a future month being viewed). */
   through?: Month;
   /**
-   * Purchase line ids that refunds link to (txn_link refund_of). Only their funding is kept in month snapshots;
-   * when omitted, every card purchase is kept (fine for tests and full recomputes).
+   * Purchases that refunds link to (txn_link refund_of), each named by its first line id (`<txn key>:0`). The
+   * funding of every line of those purchases is kept in month snapshots; when omitted, every card purchase is
+   * kept (fine for tests and full recomputes).
    */
   refundTargets?: ReadonlySet<string>;
   /**
@@ -147,6 +148,14 @@ interface Chunk {
   line: string;
   card: string;
   amount: number;
+}
+
+/**
+ * The purchase a category line belongs to, as its first line id: `<txn key>:<n>` → `<txn key>:0`. A split
+ * purchase has one line per split (`:0`, `:1`, …); a refund links to the whole purchase (rule 3).
+ */
+export function purchaseOf(lineId: string): string {
+  return `${lineId.slice(0, lineId.lastIndexOf(':'))}:0`;
 }
 
 export function computeBudget(input: ComputeInput): ComputeResult {
@@ -196,6 +205,16 @@ export function computeBudget(input: ComputeInput): ComputeResult {
   const carry = new Map<string, number>(Object.entries(prev.carry));
   const pay = new Map<string, number>(Object.entries(prev.pay));
   const funded = new Map<string, Funded>(Object.entries(prev.funded).map(([k, v]) => [k, { ...v }]));
+  // Each purchase's funded lines, in line order, so a refund can give back the funded part of all of them.
+  const fundedLines = new Map<string, string[]>();
+  const noteFunded = (lineId: string) => {
+    const key = purchaseOf(lineId);
+    const ids = fundedLines.get(key) ?? [];
+    if (!ids.includes(lineId)) ids.push(lineId);
+    ids.sort((a, b) => Number(a.slice(a.lastIndexOf(':') + 1)) - Number(b.slice(b.lastIndexOf(':') + 1)));
+    fundedLines.set(key, ids);
+  };
+  for (const k of funded.keys()) noteFunded(k);
   const cum = { ...prev.cum };
   // Unbudgeted card debt per card (see identity.ts): starting debt, minus assignments to the payment category,
   // plus credit overspending forgiven at month end, minus negative payment balances moved to RTA.
@@ -351,7 +370,8 @@ export function computeBudget(input: ComputeInput): ComputeResult {
                 if (!arr) chunks.set(c, (arr = []));
                 arr.push({ line: l.id, card: l.accountId, amount: xc - f });
               }
-              if (!input.refundTargets || input.refundTargets.has(l.id))
+              if (!input.refundTargets || input.refundTargets.has(purchaseOf(l.id))) {
+                noteFunded(l.id);
                 funded.set(l.id, {
                   x,
                   f,
@@ -361,6 +381,7 @@ export function computeBudget(input: ComputeInput): ComputeResult {
                   month: m,
                   card: l.accountId,
                 });
+              }
             }
           } else if (l.amount > 0) {
             const r = l.amount;
@@ -370,10 +391,20 @@ export function computeBudget(input: ComputeInput): ComputeResult {
             if (l.card) {
               // Rule 3: card refund. P gives back what it had set aside for the purchase.
               const card = l.accountId;
-              const p = l.refundOf ? funded.get(l.refundOf) : undefined;
+              // g is the funded part of the whole linked purchase, every line of a split one, not yet given back.
+              const ps = l.refundOf
+                ? (fundedLines.get(purchaseOf(l.refundOf)) ?? []).map((id) => funded.get(id)!).filter(Boolean)
+                : [];
+              const p = ps.length ? ps : undefined;
               const Pv = P.get(card) ?? 0;
-              const g = p ? Math.min(r, p.f - p.refundedFunded) : Math.min(r, Math.max(Pv, 0));
-              if (p) p.refundedFunded += g;
+              const left = ps.reduce((t, x) => t + x.f - x.refundedFunded, 0);
+              const g = p ? Math.min(r, left) : Math.min(r, Math.max(Pv, 0));
+              let gl = g;
+              for (const x of ps) {
+                const t = Math.min(gl, x.f - x.refundedFunded);
+                x.refundedFunded += t;
+                gl -= t;
+              }
               P.set(card, Pv - g);
               cardAct.set(card, (cardAct.get(card) ?? 0) - g);
               let rest = r - g;
@@ -381,11 +412,9 @@ export function computeBudget(input: ComputeInput): ComputeResult {
               // one first (D-19), so they no longer count in the credit/cash split at month end.
               const arr = chunks.get(c);
               if (arr) {
-                const own = l.refundOf ? arr.find((k) => k.line === l.refundOf) : undefined;
-                const order = [
-                  ...(own ? [own] : []),
-                  ...arr.filter((k) => k !== own && k.card === card).reverse(),
-                ];
+                const linked = l.refundOf ? purchaseOf(l.refundOf) : undefined;
+                const own = linked ? arr.filter((k) => purchaseOf(k.line) === linked) : [];
+                const order = [...own, ...arr.filter((k) => !own.includes(k) && k.card === card).reverse()];
                 for (const k of order) {
                   if (rest <= 0) break;
                   const t = Math.min(rest, k.amount);
@@ -397,8 +426,12 @@ export function computeBudget(input: ComputeInput): ComputeResult {
               const forgivenBefore = K.get(card) ?? 0;
               h = payUnbudgeted(card, rest, c);
               if (p) {
-                const k0 = Math.max(forgivenBefore, 0) - Math.max(K.get(card) ?? 0, 0);
-                p.refundedForgiven += Math.min(k0, p.forgiven - p.refundedForgiven);
+                let k0 = Math.max(forgivenBefore, 0) - Math.max(K.get(card) ?? 0, 0);
+                for (const x of ps) {
+                  const t = Math.min(k0, x.forgiven - x.refundedForgiven);
+                  x.refundedForgiven += t;
+                  k0 -= t;
+                }
               }
               rest -= h;
               // A linked refund of a purchase whose forgiven debt you later assigned money to: the payment
@@ -510,7 +543,7 @@ export function computeBudget(input: ComputeInput): ComputeResult {
 
     const snapFunded: Record<string, Funded> = {};
     for (const [k, v] of funded)
-      if (!input.refundTargets || input.refundTargets.has(k)) snapFunded[k] = { ...v };
+      if (!input.refundTargets || input.refundTargets.has(purchaseOf(k))) snapFunded[k] = { ...v };
     months.push({
       month: m,
       categories,

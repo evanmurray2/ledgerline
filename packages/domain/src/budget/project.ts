@@ -222,6 +222,8 @@ export function linesForTxn(
             card,
             categoryId: sl.categoryId,
             amount: cents(amt),
+            // A split refund keeps its link: each refund line gives back from the same purchase (rule 3).
+            ...(t.refundOf && amt > 0 ? { refundOf: `${t.refundOf}:0` } : {}),
           });
         }
       });

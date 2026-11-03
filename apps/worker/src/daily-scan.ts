@@ -74,7 +74,14 @@ export async function dailyScan(
     ),
   );
   if (w.length) await s.batch(w);
-  const keys = due.map((d) => d.txn_key);
+  // Linked refund lines saved without their link (split refunds before Nov 3, 2026): rebuilt so each line gives
+  // back from the purchase (rule 3). Finds nothing once they're rebuilt.
+  const unlinked = await s.all<{ txn_key: string }>(
+    `SELECT DISTINCT l.txn_key FROM budget_line l
+     JOIN txn_link k ON k.budget_id = l.budget_id AND k.from_key = l.txn_key AND k.kind = 'refund_of' AND k.undone_at IS NULL
+     WHERE l.budget_id = ?1 AND l.kind = 'cat' AND l.amount > 0 AND l.ref IS NULL LIMIT 40`,
+  );
+  const keys = [...new Set([...due.map((d) => d.txn_key), ...unlinked.map((r) => r.txn_key)])];
   if (keys.length) {
     const plan = await planLineRebuild(s, keys, meta, today, now);
     await s.batch(plan.stmts);
@@ -82,7 +89,7 @@ export async function dailyScan(
   // The job runner recomputes in its own small steps instead (docs/multi-user.md 6.1).
   if (opts.recompute !== false) await recompute(env.DB, budgetId, now);
   await bumpVersion(env.DB, budgetId);
-  return { materialized: keys.length };
+  return { materialized: due.length };
 }
 
 export type { Month };
