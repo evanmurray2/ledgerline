@@ -268,6 +268,7 @@ const when = (iso: string | null) =>
 export function SignInSection() {
   const qc = useQueryClient();
   const sec = useQuery({ queryKey: ['security'], queryFn: api.security });
+  const listedOthers = (sec.data?.signIns ?? []).filter((x) => !x.current).length;
   const [link, setLink] = useState<{ url: string; expiresAt: string } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   /** The removal being confirmed: 'passkey:<id>', 'session:<id>', 'others' or 'here'. */
@@ -373,8 +374,9 @@ export function SignInSection() {
       )}
       <Problem text={err} />
       <SignIns signIns={sec.data?.signIns ?? []} run={run} asking={asking} setAsking={setAsking} />
-      {/* One other device has its own Sign out above; this is for several at once. */}
-      {(sec.data?.otherSessions ?? 0) > 1 &&
+      {/* One other device listed has its own Sign out above; this is for several at once, and for devices that are
+          signed out but still have the budget saved (not listed). */}
+      {(sec.data?.otherSessions ?? 0) > Math.min(1, listedOthers) &&
         (asking === 'others' ? (
           <ConfirmInline
             label="Sign out other devices"
@@ -389,8 +391,8 @@ export function SignInSection() {
             }
             onCancel={() => setAsking(null)}
           >
-            Sign out {sec.data?.otherSessions} other devices? It deletes the budget saved on them. This device
-            stays signed in.
+            Sign out your other devices? It deletes the budget saved on them, including devices that are
+            already signed out. This device stays signed in.
           </ConfirmInline>
         ) : (
           <div className="flex flex-col gap-1.5">
@@ -402,8 +404,8 @@ export function SignInSection() {
               Sign out other devices…
             </SecondaryButton>
             <span className="px-0.5 text-[12px] leading-snug text-muted">
-              Signs out {sec.data?.otherSessions} other devices and deletes the budget saved on them. This
-              device stays signed in.
+              Signs out your other devices and deletes the budget saved on them, including devices that are
+              already signed out. This device stays signed in.
             </span>
           </div>
         ))}
@@ -455,7 +457,6 @@ function SignIns({
     signedInAt: string;
     current: boolean;
     saved: boolean;
-    locked: boolean;
   }[];
   run: (fn: () => Promise<unknown>, then?: () => void) => void;
   asking: string | null;
@@ -475,8 +476,8 @@ function SignIns({
       <div className="flex flex-col gap-1 px-3 py-3">
         <span className="text-[15px] font-semibold">Signed in</span>
         <span className="text-[13px] leading-snug text-muted">
-          Each sign-in lasts 24 hours. A phone with your budget saved on it stays here while it’s locked.
-          Signing a device out deletes the budget saved on it.
+          Each sign-in lasts 24 hours, and ends after 10 idle minutes. Signing a device out deletes the budget
+          saved on it.
         </span>
       </div>
       {sorted.map((x) => (
@@ -485,7 +486,7 @@ function SignIns({
             <span className="flex flex-col gap-0.5">
               <span className="text-[15px] font-semibold">{x.name}</span>
               <span className="text-[12px] text-muted">
-                {x.locked ? `Locked since ${at(x.signedInAt)}` : `Signed in ${at(x.signedInAt)}`}
+                {`Signed in ${at(x.signedInAt)}`}
                 {x.saved ? ' · budget saved' : ''}
               </span>
             </span>

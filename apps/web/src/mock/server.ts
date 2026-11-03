@@ -491,9 +491,9 @@ export class MockServer {
               lastUsedAt: '2026-11-14T08:00:00Z',
             },
           ],
-          sessions: mockSignIns.length,
+          sessions: mockSignIns.filter((x) => x.live).length,
           otherSessions: mockSignIns.filter((x) => !x.current).length,
-          signIns: mockSignIns,
+          signIns: mockSignIns.filter((x) => x.live).map(({ live: _live, ...x }) => x),
         };
       case 'POST settings/security/device-link':
         return { url: `${location.origin}/add-device#mock-token`, expiresAt: '2026-11-14T20:10:00Z' };
@@ -568,17 +568,23 @@ function isParam(a: string | undefined, b: string): boolean {
   return false;
 }
 
-/** Settings → Sign-in in the mock: this phone and a laptop. */
+/** Settings → Sign-in in the mock: this phone and a laptop, and an iPad that's signed out with the budget saved. */
 let mockSignIns = [
-  { id: 'si_phone', name: 'iPhone · Home Screen app', signedInAt: '2026-11-14T08:00:00Z', current: true },
-  { id: 'si_mac', name: 'Mac · Safari', signedInAt: '2026-11-13T21:30:00Z', current: false },
+  {
+    id: 'si_phone',
+    name: 'iPhone · Home Screen app',
+    signedInAt: '2026-11-14T08:00:00Z',
+    current: true,
+    live: true,
+  },
+  { id: 'si_mac', name: 'Mac · Safari', signedInAt: '2026-11-13T21:30:00Z', current: false, live: true },
   {
     id: 'si_ipad',
     name: 'iPad',
     signedInAt: '2026-11-12T19:00:00Z',
     current: false,
     saved: true,
-    locked: true,
+    live: false,
   },
 ];
 

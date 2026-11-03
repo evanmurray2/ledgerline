@@ -36,6 +36,6 @@ describe('reloading for a new release', () => {
   it('waits while the copy is opening, so a sign-in is not asked for Face ID again', () => {
     expect(copySettled('idle')).toBe(false);
     expect(copySettled('opening')).toBe(false);
-    for (const status of ['ready', 'locked', 'failed', 'off']) expect(copySettled(status)).toBe(true);
+    for (const status of ['ready', 'signed_out', 'failed', 'off']) expect(copySettled(status)).toBe(true);
   });
 });

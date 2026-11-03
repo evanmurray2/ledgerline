@@ -132,29 +132,23 @@ describe('routing', () => {
         name: string;
         current: boolean;
         saved: boolean;
-        locked: boolean;
       }[];
     expect((await list()).filter((x) => x.current)).toEqual([
-      expect.objectContaining({ current: true, saved: true, locked: false }),
+      expect.objectContaining({ current: true, saved: true }),
     ]);
-    // Locked (its sign-in ended): still listed, so another device can sign it out.
+    // Signed out (10 idle minutes): no longer listed, but counted for "Sign out other devices", which turns its
+    // saved copy off.
     const laptop = new Browser();
     expect((await laptop.signIn(ownerKey)).status).toBe(200);
     expect((await owner.call('POST', '/api/settings/security/sign-out')).status).toBe(200);
-    const locked = (
-      (await laptop.call('GET', '/api/settings/security')).json.signIns as {
-        id: string;
-        name: string;
-        current: boolean;
-        saved: boolean;
-        locked: boolean;
-      }[]
-    ).find((x) => x.locked)!;
-    expect(locked).toMatchObject({ name: 'iPhone', current: false, saved: true });
+    const view = (await laptop.call('GET', '/api/settings/security')).json as {
+      otherSessions: number;
+      signIns: { current: boolean }[];
+    };
+    expect(view.signIns).toEqual([expect.objectContaining({ current: true })]);
+    expect(view.otherSessions).toBe(1);
     expect(await status()).toEqual({ off: false });
-    expect(
-      (await laptop.call('POST', '/api/settings/security/sign-out-session', { id: locked.id })).status,
-    ).toBe(200);
+    expect((await laptop.call('POST', '/api/settings/security/sign-out-others')).status).toBe(200);
     expect(await status()).toEqual({ off: true });
     expect(await owner.signIn(ownerKey)).toMatchObject({ status: 200 });
     const gone = await owner.call('POST', `/api/settings/security/devices/${id}/share`);

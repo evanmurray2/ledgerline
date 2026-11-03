@@ -3,10 +3,11 @@
 // supports PRF (D-53), the copy is saved encrypted (vault.ts), reopens downloading only what changed, and opens with
 // no signal; without PRF it's kept in memory for the visit only.
 //
-// Lock (13.4): after 10 idle minutes, or 10 minutes in the background, the keys, the copy and the server session are
-// dropped; opening again needs Face ID. A refresh or the app restarting isn't a lock: within 10 minutes of the last
-// activity the copy opens again with the data key held in IndexedDB (vault.ts holdKey). Wipe: signing out, here or from another device (Settings → Sign-in), no longer
-// a member, or 7 days offline.
+// Idle sign-out (D-56): after 10 idle minutes, or 10 minutes in the background, the keys, the copy in memory and the
+// server session are dropped and the app shows Sign in; that one Face ID also opens the saved copy. A refresh or the
+// app restarting within 10 minutes of the last activity reopens it with the data key held in IndexedDB (vault.ts
+// holdKey). Wipe: signing out, here or from another device (Settings → Sign-in), no longer a member, or 7 days
+// offline.
 import { useSyncExternalStore } from 'react';
 import { CSRF_HEADER, type Session } from '@ledgerline/contracts';
 import { connectivity } from '../state/connectivity';
@@ -29,19 +30,19 @@ import {
   recordKey,
   saveRecord,
   sealCopy,
-  unlock,
-  unlockOffline,
+  openKey,
+  openKeyOffline,
   CopyUnreadable,
   sameBytes,
 } from './vault';
 
-export const LOCK_MS = 10 * 60_000;
+export const IDLE_MS = 10 * 60_000;
 const SYNC_EVERY_MS = 2 * 60_000;
 
 export type CopyStatus =
   | 'off' // the mock API (development and tests)
   | 'idle' // nobody signed in yet
-  | 'locked' // a saved copy waits for Face ID
+  | 'signed_out' // a saved copy waits: Sign in opens it online, or Face ID with no signal
   | 'opening'
   | 'ready'
   | 'failed';
@@ -147,11 +148,11 @@ const fetchPage = (since: number, cursor: string | null) =>
     }`,
   );
 
-// ---------------------------------------------------------------- sign-in and unlock
+// ---------------------------------------------------------------- sign-in and opening the copy
 
 /**
  * Passkey sign-in. On an iPhone or iPad it asks the passkey for its PRF output in the same Face ID prompt, so the
- * copy can be set up or unlocked without a second one.
+ * copy can be set up or opened without a second one.
  */
 export async function signIn(): Promise<void> {
   const options = await server<RequestOptionsJSON>('POST', '/api/auth/login/options');
@@ -175,13 +176,14 @@ export async function start(session: Session): Promise<void> {
   who = identityOf(session);
   set({ status: 'opening', error: null, progress: 0, offline: false, why: null });
   let why: FullWhy | null = keepsCopy() ? 'first' : 'memory';
+  let memoryOnly = false;
   try {
     const key = recordKey(who.email, who.budgetId);
     let rec = keepsCopy() ? await loadRecord(key) : null;
     const p = pending;
     pending = null;
     // Reloaded while the copy was open and in use (within 10 minutes): it opens again without Face ID.
-    const kept = rec && !p?.prf ? await heldKey(key, LOCK_MS) : null;
+    const kept = rec && !p?.prf ? await heldKey(key, IDLE_MS) : null;
     if (rec && kept) {
       const st = await server<{ off: boolean }>('POST', '/api/auth/copy-status', { device: rec.deviceId });
       if (st.off) {
@@ -199,16 +201,19 @@ export async function start(session: Session): Promise<void> {
         } catch (e) {
           if (!(e instanceof CopyUnreadable)) throw e;
           await dropHeld(key);
-          set({ status: 'locked', hasSaved: true });
-          return;
+          return endSignIn();
         }
       }
     } else if (rec) {
-      // The passkey's PRF output only fits the salt this copy was set up with; any other sign-in asks again.
-      if (!p?.prf || !sameBytes(p.salt, rec.salt)) {
-        set({ status: 'locked', hasSaved: true });
-        return;
-      }
+      // Opened with a sign-in that's still valid but no Face ID (the app was closed in the background, past the
+      // 10 minutes): the sign-in ends and the app shows Sign in, whose one Face ID opens the copy.
+      if (!p) return endSignIn();
+      // The passkey's PRF output only fits the salt this copy was set up with. A fresh sign-in without it opens the
+      // budget in memory and leaves the saved copy for the next sign-in, instead of asking again.
+      if (!p.prf || !sameBytes(p.salt, rec.salt)) memoryOnly = true;
+    }
+    if (rec && !memoryOnly && !kept && p?.prf) {
+      const prf = p.prf;
       const share = await server<{ share: string }>(
         'POST',
         `/api/settings/security/devices/${rec.deviceId}/share`,
@@ -223,7 +228,7 @@ export async function start(session: Session): Promise<void> {
       });
       if (share) {
         try {
-          const u = await unlock(rec, p.credentialId, p.prf, fromB64url(share.share));
+          const u = await openKey(rec, p.credentialId, prf, fromB64url(share.share));
           const bytes = await openCopy(rec, u.dataKey);
           rec = { ...u.record, lastServerTime: Date.now() };
           dataKey = u.dataKey;
@@ -245,8 +250,11 @@ export async function start(session: Session): Promise<void> {
         }
       } else rec = null;
     }
-    if (!rec) {
-      if (keepsCopy() && p?.prf) {
+    if (!rec || memoryOnly) {
+      if (memoryOnly) {
+        record = null;
+        dataKey = null;
+      } else if (keepsCopy() && p?.prf) {
         const dev = await server<{ id: string; share: string }>('POST', '/api/settings/security/devices', {
           name: deviceName(),
         });
@@ -271,6 +279,7 @@ export async function start(session: Session): Promise<void> {
         dataKey = null;
         if (keepsCopy()) why = 'no_prf';
       }
+      if (memoryOnly) why = 'no_prf';
       await openHost(null);
     }
     await host!.put('session', JSON.stringify(session));
@@ -287,15 +296,8 @@ export async function start(session: Session): Promise<void> {
   }
 }
 
-/** The Unlock button: a fresh sign-in with Face ID that also unlocks the saved copy. */
-export async function unlockOnline(session: Session | null): Promise<void> {
-  await signIn();
-  set({ status: 'idle' });
-  if (session) await start(session);
-}
-
-/** Opening with no signal: the passkey unlocks the copy on its own for up to 7 days after the last sign-in. */
-export async function unlockWithoutSignal(onSession?: (s: Session) => void): Promise<Session> {
+/** Opening with no signal: the passkey opens the copy on its own for up to 7 days after the last sign-in. */
+export async function openWithoutSignal(onSession?: (s: Session) => void): Promise<Session> {
   const rec = await lastRecord();
   if (!rec) throw new Error('There’s no copy on this phone yet.');
   const a = await assert(
@@ -308,7 +310,7 @@ export async function unlockWithoutSignal(onSession?: (s: Session) => void): Pro
     },
     { salt: rec.salt, credentialId: rec.credentialIdHint ?? null },
   );
-  if (!a.prf) throw new Error('This passkey can’t unlock the copy.');
+  if (!a.prf) throw new Error('This passkey can’t open the saved budget.');
   set({ status: 'opening', error: null, offline: true });
   try {
     const unreadable = (e: unknown): never => {
@@ -318,7 +320,7 @@ export async function unlockWithoutSignal(onSession?: (s: Session) => void): Pro
         );
       throw e;
     };
-    dataKey = await unlockOffline(rec, a.credentialId, a.prf).catch((e: Error) => {
+    dataKey = await openKeyOffline(rec, a.credentialId, a.prf).catch((e: Error) => {
       if (e.message === 'offline_expired')
         throw new Error('Connect to the internet to open Ledgerline: it’s been more than 7 days.');
       if (e.message === 'other_passkey') throw new Error('Use the passkey you set this phone up with.');
@@ -352,7 +354,7 @@ async function openHost(bytes: ArrayBuffer | null): Promise<void> {
   await host.open(who!, bytes);
 }
 
-/** The name Settings → Sign-in shows for this device's saved copy while it's locked. */
+/** The name this device's saved copy is known by on the server (Settings → Sign-in). */
 function deviceName(): string {
   const ua = navigator.userAgent;
   if (/iPhone/.test(ua)) return 'iPhone';
@@ -540,10 +542,10 @@ export async function flush(): Promise<{ sent: number; refused: number }> {
   return { sent, refused };
 }
 
-// ---------------------------------------------------------------- lock, wipe, timers
+// ---------------------------------------------------------------- idle sign-out, wipe, timers
 
 let lastActive = Date.now();
-/** The activity time last written with the held key (a refresh within LOCK_MS of it skips Face ID). */
+/** The activity time last written with the held key (a refresh within IDLE_MS of it skips Face ID). */
 let heldActive = 0;
 let hiddenAt: number | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -558,14 +560,14 @@ function watch(): void {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       hiddenAt = Date.now();
-      // Time away counts toward the lock from now, even if the app is closed in the background.
+      // Time away counts toward the idle sign-out from now, even if the app is closed in the background.
       if (record && dataKey) void holdKey(record.key, dataKey, lastActive);
       document.documentElement.dataset.covered = '1';
     } else {
       const away = hiddenAt ? Date.now() - hiddenAt : 0;
       hiddenAt = null;
       // Timers don't run while iOS has the app in the background: check before anything is drawn.
-      if (away >= LOCK_MS) void lock();
+      if (away >= IDLE_MS) void signOutIdle();
       else {
         delete document.documentElement.dataset.covered;
         active();
@@ -579,12 +581,12 @@ function watch(): void {
   timer = setInterval(
     () => {
       if (state.status !== 'ready') return;
-      if (Date.now() - lastActive >= LOCK_MS) void lock();
+      if (Date.now() - lastActive >= IDLE_MS) void signOutIdle();
       else if (record && dataKey && lastActive !== heldActive) {
         heldActive = lastActive;
         void holdKey(record.key, dataKey, lastActive);
       }
-      if (Date.now() - lastActive >= LOCK_MS) return;
+      if (Date.now() - lastActive >= IDLE_MS) return;
       if (document.visibilityState === 'visible' && !state.offline && Date.now() - lastSync >= SYNC_EVERY_MS)
         void syncNow().catch(() => undefined);
     },
@@ -592,8 +594,23 @@ function watch(): void {
   );
 }
 
-/** Drops the keys, the copy in memory and the server session. The saved copy stays, encrypted. */
-export async function lock(): Promise<void> {
+/**
+ * Ends the server session, then tells the app, which shows Sign in (or, with no signal, the screen that opens the
+ * saved copy with Face ID). In this order so the app's next session check can't find the session that's ending.
+ */
+async function endSignIn(saved = true): Promise<void> {
+  set({
+    status: saved ? 'signed_out' : 'idle',
+    hasSaved: saved || state.hasSaved,
+    offline: false,
+    progress: 0,
+  });
+  await server('POST', '/api/settings/security/sign-out').catch(() => undefined);
+  window.dispatchEvent(new Event('ledgerline:signin-ended'));
+}
+
+/** 10 idle minutes: drops the keys, the copy in memory and the server session. The saved copy stays, encrypted. */
+export async function signOutIdle(): Promise<void> {
   if (state.status !== 'ready' && state.status !== 'opening') return;
   if (record && dataKey && host && !state.offline) await save().catch(() => undefined);
   if (record) await dropHeld(record.key);
@@ -603,9 +620,7 @@ export async function lock(): Promise<void> {
   record = null;
   pending = null;
   delete document.documentElement.dataset.covered;
-  set({ status: state.saved ? 'locked' : 'idle', offline: false, progress: 0 });
-  window.dispatchEvent(new Event('ledgerline:locked'));
-  await server('POST', '/api/settings/security/sign-out').catch(() => undefined);
+  return endSignIn(state.saved);
 }
 
 /** Deletes this person's copy (sign-out, signed out from another device, no longer a member); `all`: every copy. */

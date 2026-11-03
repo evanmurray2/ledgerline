@@ -7,10 +7,10 @@
 //   signed out (Settings → Sign-in).
 // - HKDF(PRF output ‖ share) gives the key-encryption key, which unwraps the random data key. The data key encrypts
 //   the copy (AES-GCM, a fresh random IV every time, bound to this device by associated data).
-// - For offline unlock, the share is also kept wrapped under a key from the PRF output alone, with the last server
-//   time; offline unlock is refused 7 days after it.
-// All keys are non-extractable CryptoKeys held in memory and dropped on lock. While the copy is open, the data key
-// is also held in IndexedDB so a refresh doesn't lock it (holdKey); locking deletes it.
+// - For opening with no signal, the share is also kept wrapped under a key from the PRF output alone, with the last
+//   server time; that's refused 7 days after it.
+// All keys are non-extractable CryptoKeys held in memory and dropped by the idle sign-out. While the copy is open,
+// the data key is also held in IndexedDB so a refresh doesn't ask for Face ID (holdKey); signing out deletes it.
 
 const DB_NAME = 'ledgerline-copy';
 const STORE = 'copies';
@@ -28,13 +28,13 @@ export interface CopyRecord {
   who: { budgetId: string; userId: string; email: string };
   deviceId: string;
   salt: ArrayBuffer;
-  /** The data key, wrapped once per passkey that has unlocked this copy. */
+  /** The data key, wrapped once per passkey that has opened this copy. */
   keys: { credentialId: string; wrapped: Wrapped }[];
-  /** The server's share, wrapped under the PRF output alone, per passkey (offline unlock). */
+  /** The server's share, wrapped under the PRF output alone, per passkey (opening with no signal). */
   shares: { credentialId: string; wrapped: Wrapped }[];
   /** Server time of the last confirmed sign-in (ms). */
   lastServerTime: number;
-  /** The passkey that set this copy up: unlocking asks for it alone. */
+  /** The passkey that set this copy up: opening it asks for it alone. */
   credentialIdHint?: string | null;
   blob: Wrapped | null;
   savedAt: number;
@@ -95,7 +95,7 @@ export async function deleteRecord(key: string): Promise<void> {
   await tx('readwrite', (s) => s.delete(key)).catch(() => undefined);
 }
 
-/** Every copy on this device (sign-out), and any unlock held for a refresh. */
+/** Every copy on this device (sign-out), and any key held for a refresh. */
 export async function deleteAll(): Promise<void> {
   if (typeof indexedDB === 'undefined') return;
   for (const name of [DB_NAME, HELD_DB])
@@ -105,11 +105,12 @@ export async function deleteAll(): Promise<void> {
     });
 }
 
-// ---------------------------------------------------------------- an unlock that survives a refresh
+// ---------------------------------------------------------------- an open copy that survives a refresh
 
 // While the copy is open, its data key (a non-extractable CryptoKey: the browser stores it but never hands out its
 // bytes) is kept here with the time of the last activity, so reloading the page or the phone restarting the app
-// doesn't ask for Face ID again. It's only used within LOCK_MS of that time, and locking deletes it.
+// doesn't ask for Face ID again. It's only used within IDLE_MS of that time, and signing out deletes it. (The
+// database keeps its old name so keys already held still work.)
 const HELD_DB = 'ledgerline-unlock';
 const HELD = 'held';
 
@@ -263,7 +264,7 @@ export const blobAad = (r: Pick<CopyRecord, 'deviceId'>) => `copy|v1|${r.deviceI
 /** The key-encryption key: needs the passkey (PRF output) and the server's share. */
 export const kek = (r: Pick<CopyRecord, 'who' | 'deviceId'>, prf: ArrayBuffer, share: ArrayBuffer) =>
   hkdf(concat(prf, share), info(r, 'kek'));
-/** Wraps the cached share for offline unlock: needs the passkey only. */
+/** Wraps the cached share for opening with no signal: needs the passkey only. */
 const offlineKey = (r: Pick<CopyRecord, 'who' | 'deviceId'>, prf: ArrayBuffer) =>
   hkdf(prf, info(r, 'offline'));
 
@@ -294,8 +295,8 @@ export async function newKeys(
   };
 }
 
-/** Unlocks with a passkey's PRF output and the server's share (online). */
-export async function unlock(
+/** Opens the data key with a passkey's PRF output and the server's share (online). */
+export async function openKey(
   r: CopyRecord,
   credentialId: string,
   prf: ArrayBuffer,
@@ -306,7 +307,7 @@ export async function unlock(
   const raw = await openAt('key', await kek(r, prf, share), k.wrapped, keyAad(r, credentialId));
   const dataKey = await importDataKey(raw);
   new Uint8Array(raw).fill(0);
-  // Refresh the cached share (it may have been rotated) for offline unlock.
+  // Refresh the cached share (it may have been rotated) for opening with no signal.
   const cached = await seal(await offlineKey(r, prf), share, shareAad(r, credentialId));
   const shares = [
     ...r.shares.filter((x) => x.credentialId !== credentialId),
@@ -315,8 +316,8 @@ export async function unlock(
   return { dataKey, record: { ...r, shares } };
 }
 
-/** Unlocks with no signal: the cached share, within 7 days of the last confirmed sign-in. */
-export async function unlockOffline(
+/** Opens the data key with no signal: the cached share, within 7 days of the last confirmed sign-in. */
+export async function openKeyOffline(
   r: CopyRecord,
   credentialId: string,
   prf: ArrayBuffer,
