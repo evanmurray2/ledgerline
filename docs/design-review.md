@@ -18,14 +18,14 @@ Findings are ranked by how visible they are to a phone user.
 
 Measured on the phone:
 
-| Screen | Markup | Height | Title |
-|---|---|---|---|
-| Budget | `Budget.tsx:1266` + MonthNav `:691` (`px-2 py-1.5`) | 56 px row (109 px with chips) | month, 17 px, centered |
-| Activity | `Activity.tsx:368` (`px-4 pt-3 pb-2.5`, no min-h) | 161 px with search and chips | 22 px |
-| Accounts | `Accounts.tsx:205` (`min-h-14 pl-4 pr-1`) | 56 px | 22 px |
-| Reports | `Reports.tsx:278` (a copy of Accounts' markup) | 56 px | 22 px |
-| Sub-pages (Owed, Register, Settings, all Settings pages, Categories) | `BackHeader`, `ui.tsx:675` (`py-2 pl-1 pr-4` + 44 px button) | 61 px (65 px with a subtitle) | 19 px |
-| Setup steps | `Setup.tsx:28`: back link, no border or background, `aria-label="Back"` | | none |
+| Screen                                                               | Markup                                                                  | Height                        | Title                  |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------- | ---------------------- |
+| Budget                                                               | `Budget.tsx:1266` + MonthNav `:691` (`px-2 py-1.5`)                     | 56 px row (109 px with chips) | month, 17 px, centered |
+| Activity                                                             | `Activity.tsx:368` (`px-4 pt-3 pb-2.5`, no min-h)                       | 161 px with search and chips  | 22 px                  |
+| Accounts                                                             | `Accounts.tsx:205` (`min-h-14 pl-4 pr-1`)                               | 56 px                         | 22 px                  |
+| Reports                                                              | `Reports.tsx:278` (a copy of Accounts' markup)                          | 56 px                         | 22 px                  |
+| Sub-pages (Owed, Register, Settings, all Settings pages, Categories) | `BackHeader`, `ui.tsx:675` (`py-2 pl-1 pr-4` + 44 px button)            | 61 px (65 px with a subtitle) | 19 px                  |
+| Setup steps                                                          | `Setup.tsx:28`: back link, no border or background, `aria-label="Back"` |                               | none                   |
 
 - Going from a tab screen to its sub-page, the header grows by 5 px and the title shrinks from 22 px to 19 px.
 - Budget is the only tab screen without a 22 px screen title.
@@ -77,26 +77,28 @@ Shared (`ui.tsx`): `PrimaryButton` (h-12, rounded-xl, 16 px, disabled `bg-disabl
 `bg-sunken text-disabled`), `Chip`.
 
 ### 5a. Soft accent pill (the most common small action), hand-rolled 12 times
+
 These copy SoftButton's classes, usually because the action is a `<Link>`:
 
-| File:line | Label | Differs from SoftButton |
-|---|---|---|
-| `Activity.tsx:407, 428, 544` | Match, Pick, Review | (Link) |
-| `BudgetSheets.tsx:271` @790df7f | Edit (target) | `px-3.5` |
-| `Connections.tsx:158` | Finish setup | `self-start` (Button) |
-| `Connections.tsx:222` | Repair on Accounts | (Link) |
-| `Categories.tsx:150` | Restore | (a Button that could simply be SoftButton) |
-| `Payees.tsx:117` | Rename | (Link) |
-| `Data.tsx:210, 268` | Download | `disabled:opacity-60` |
-| `Accounts.tsx:197` | Refresh (desktop) | `disabled:opacity-50`, icon |
-| `Owed.tsx:164` | Match money back | `px-4` on desktop, `flex-1` on phone |
-| `Activity.tsx:509` | Choose / category name | `disabled:opacity-50`; sunken when chosen |
-| `Data.tsx:85-89` | Choose file | **h-11**, `px-4`, **14 px** |
+| File:line                       | Label                  | Differs from SoftButton                    |
+| ------------------------------- | ---------------------- | ------------------------------------------ |
+| `Activity.tsx:407, 428, 544`    | Match, Pick, Review    | (Link)                                     |
+| `BudgetSheets.tsx:271` @790df7f | Edit (target)          | `px-3.5`                                   |
+| `Connections.tsx:158`           | Finish setup           | `self-start` (Button)                      |
+| `Connections.tsx:222`           | Repair on Accounts     | (Link)                                     |
+| `Categories.tsx:150`            | Restore                | (a Button that could simply be SoftButton) |
+| `Payees.tsx:117`                | Rename                 | (Link)                                     |
+| `Data.tsx:210, 268`             | Download               | `disabled:opacity-60`                      |
+| `Accounts.tsx:197`              | Refresh (desktop)      | `disabled:opacity-50`, icon                |
+| `Owed.tsx:164`                  | Match money back       | `px-4` on desktop, `flex-1` on phone       |
+| `Activity.tsx:509`              | Choose / category name | `disabled:opacity-50`; sunken when chosen  |
+| `Data.tsx:85-89`                | Choose file            | **h-11**, `px-4`, **14 px**                |
 
 **Fix:** export `softButtonClass` from `ui.tsx` (or give `SoftButton` an `asChild`/`to` prop) and use it for
 the Links. Give every small pill one disabled treatment (SoftButton's).
 
 ### 5b. Small filled accent pill: no component, four sizes
+
 - `Budget.tsx:337`: Fund all, h-9, 13 px, `px-3`
 - `Activity.tsx:315`: Add, h-9, **14 px**, `px-3.5`
 - `Budget.tsx:533`: Set targets (first budget), **h-10**, 14 px, `px-4`
@@ -107,6 +109,7 @@ the Links. Give every small pill one disabled treatment (SoftButton's).
 Fold the Activity Add button into whatever the header work decides.
 
 ### 5c. Small outline pill (secondary small action), five variants
+
 - `Budget.tsx:422`: Undo, `bg-surface`
 - `TxnSheets.tsx:307, 608, 717`: Not this purchase, Unlink, Unpair. No `bg-surface`.
 - `Owed.tsx:185`: Close out. No `bg-surface`.
@@ -117,6 +120,7 @@ Fold the Activity Add button into whatever the header work decides.
 **Fix:** add `SoftButton tone="outline"` (`border border-line-strong bg-surface text-ink-2`).
 
 ### 5d. Large buttons rebuilt by hand
+
 - Inline delete confirmations use `h-11 rounded-[10px] text-[14px]` for both "Keep it" and the red button
   (`Categories.tsx:491/499`, `Rules.tsx:474/482`, `BudgetSheets.tsx:617/625` @790df7f). The other inline
   confirmation, "Use 1 of your N links?" (`Connections.tsx:89-101`), uses `SecondaryButton` and
@@ -133,11 +137,12 @@ Fold the Activity Add button into whatever the header work decides.
   `primaryButtonClass`.
 
 ### 5e. Text-link buttons: 13, 14 and 15 px, five heights
+
 - 13 px: `Budget.tsx:1222/1229` (h-9), `BudgetSheets.tsx:284` "See all" (min-h-9), `TxnSheets.tsx:318`
   (h-9), `TxnSheets.tsx:355` "Split into categories" (**h-6**).
 - 14 px: `Activity.tsx:457` Select (h-9), `Activity.tsx:658/666` Split it… / It's a transfer… (h-10),
   `Categories.tsx:131` Show archived (min-h-9), `Rules.tsx:357` + Add condition (h-9), `TxnSheets.tsx:907`
-  + Add a line (h-11), `BudgetSheets.tsx:750` @790df7f Select all (h-9).
+  - Add a line (h-11), `BudgetSheets.tsx:750` @790df7f Select all (h-9).
 - 15 px: `Rules.tsx:44` + New rule.
 - `TxnSheets.tsx:104,113`: "Rename payee" and "See rule …" are bold but **muted** (they inherit
   `text-muted`). They are the only text links that aren't accent-colored.
