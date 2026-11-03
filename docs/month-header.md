@@ -104,7 +104,10 @@ On a computer: `[` and `]` (as now) on all four tabs, plus `t` for this month.
   chosen month. Paging (`cursor`) stays inside that month.
 - To-dos stay whatever the month (Needs category, Money to match, Transfers to sort, Check these): they're jobs
   waiting now, and hiding one would leave the Activity tab's count disagreeing with the screen.
-- Not posted yet (pending and upcoming) shows only on this month: they belong to now.
+- Not posted yet: **this month always shows every pending row, whatever its date** (owner, Nov 3, 2026). A charge
+  from Oct 30 that's still pending on Nov 3 is pending now, so it shows on November, not October. Upcoming rows
+  show on this month too. A past month never shows pending or upcoming rows. Once a row posts, it moves to the
+  month its date puts it in, like every posted row (which can be the month before).
 - **Search looks through every month.** While a search is typed, the bar's label shows "All months" and its
   chevrons are hidden, and a line above the results says "Searching all months". Clearing the search brings the
   month back.
