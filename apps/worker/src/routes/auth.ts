@@ -63,6 +63,7 @@ async function newSession(
   passkeyId: string,
   ua: string | null,
   challengeId: string,
+  replaces: string | null,
 ): Promise<string | null> {
   const token = randomToken();
   try {
@@ -84,6 +85,12 @@ async function newSession(
     if (/UNIQUE/i.test(String(e))) return null;
     throw e;
   }
+  // Signing in again on this browser ends its earlier session (unlocking the phone's copy signs in each time), so
+  // the leftovers never count as other devices in Settings → Sign-in.
+  if (replaces)
+    await env.DB.prepare(`DELETE FROM auth_session WHERE id = ?1 AND user_id = ?2`)
+      .bind(await tokenHash(replaces), userId)
+      .run();
   return token;
 }
 
@@ -295,7 +302,15 @@ authRoutes.post('/register/verify', async (c) => {
         .bind(cred.id)
         .first<string>('user_id'));
     if (!userId) return c.json(fail('The passkey couldn’t be verified.'), 400);
-    const token = await newSession(env, now, userId, cred.id, c.req.header('user-agent') ?? null, ch.id);
+    const token = await newSession(
+      env,
+      now,
+      userId,
+      cred.id,
+      c.req.header('user-agent') ?? null,
+      ch.id,
+      readCookie(c.req.raw, SESSION_COOKIE),
+    );
     if (!token) return c.json(fail('That took too long. Try again.'), 400);
     c.header('set-cookie', cookie(SESSION_COOKIE, token, SESSION_MS));
   }
@@ -382,7 +397,15 @@ authRoutes.post('/login/verify', async (c) => {
     return c.json({ ok: true });
   }
   await env.DB.batch(stmts);
-  const token = await newSession(env, now, pk.user_id, pk.id, c.req.header('user-agent') ?? null, ch.id);
+  const token = await newSession(
+    env,
+    now,
+    pk.user_id,
+    pk.id,
+    c.req.header('user-agent') ?? null,
+    ch.id,
+    readCookie(c.req.raw, SESSION_COOKIE),
+  );
   if (!token) return c.json(fail('That took too long. Try again.'), 400);
   c.header('set-cookie', cookie(SESSION_COOKIE, token, SESSION_MS));
   return c.json({ ok: true });

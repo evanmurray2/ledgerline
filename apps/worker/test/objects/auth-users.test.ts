@@ -129,6 +129,26 @@ describe('more than one user', () => {
     expect((await owner.call('GET', '/api/session')).status).toBe(200);
   });
 
+  it('signing in again on a browser replaces its session, so only real other devices count', async () => {
+    const before = await other.call('GET', '/api/settings/security');
+    expect(before.json.otherSessions).toBe(0);
+    // Unlocking the phone's copy signs in each time: the earlier session goes, nothing is left behind.
+    expect((await other.signIn(otherKey)).status).toBe(200);
+    expect((await other.signIn(otherKey)).status).toBe(200);
+    const again = await other.call('GET', '/api/settings/security');
+    expect(again.json).toMatchObject({ sessions: 1, otherSessions: 0 });
+    // A second browser is another device.
+    const laptop = new Browser();
+    expect((await laptop.signIn(otherKey)).status).toBe(200);
+    expect((await other.call('GET', '/api/settings/security')).json).toMatchObject({
+      sessions: 2,
+      otherSessions: 1,
+    });
+    await other.call('POST', '/api/settings/security/sign-out-others');
+    expect((await laptop.call('GET', '/api/settings/security')).status).toBe(401);
+    expect((await other.call('GET', '/api/settings/security')).json.otherSessions).toBe(0);
+  });
+
   it('registration for a user excludes only their own passkeys and never reveals another user’s', async () => {
     const o = await owner.call('POST', '/api/auth/register/options', {});
     const ids = ((o.json.excludeCredentials as { id: string }[]) ?? []).map((x) => x.id);

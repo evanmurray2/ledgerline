@@ -9,7 +9,7 @@ export const securityRoutes = new Hono<AppEnv>();
 
 securityRoutes.get('/settings/security', async (c) => {
   const now = clock(c.env);
-  const [pk, ss] = await c.env.DB.batch([
+  const [pk, ss, others] = await c.env.DB.batch([
     c.env.DB.prepare(
       `SELECT id, name, created_at, last_used_at FROM passkey WHERE user_id = ?1 ORDER BY created_at`,
     ).bind(c.get('userId')),
@@ -17,6 +17,9 @@ securityRoutes.get('/settings/security', async (c) => {
       now,
       c.get('userId'),
     ),
+    c.env.DB.prepare(
+      `SELECT count(*) AS n FROM auth_session WHERE expires_at > ?1 AND user_id = ?2 AND id != ?3`,
+    ).bind(now, c.get('userId'), c.get('sessionId')),
   ]);
   return c.json({
     passkeys: (
@@ -28,6 +31,7 @@ securityRoutes.get('/settings/security', async (c) => {
       lastUsedAt: p.last_used_at ? new Date(p.last_used_at).toISOString() : null,
     })),
     sessions: (ss!.results[0] as { n: number } | undefined)?.n ?? 0,
+    otherSessions: (others!.results[0] as { n: number } | undefined)?.n ?? 0,
     devices: (
       await c.env.DB.prepare(
         `SELECT id, name, created_at, last_seen_at, revoked_at FROM device WHERE user_id = ?1 ORDER BY created_at`,

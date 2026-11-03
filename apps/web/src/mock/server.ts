@@ -479,6 +479,7 @@ export class MockServer {
             },
           ],
           sessions: 1,
+          otherSessions: 0,
         };
       case 'POST settings/security/device-link':
         return { url: `${location.origin}/add-device#mock-token`, expiresAt: '2026-11-14T20:10:00Z' };
