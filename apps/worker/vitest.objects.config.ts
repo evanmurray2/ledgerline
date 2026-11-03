@@ -18,7 +18,6 @@ export default defineConfig(() => ({
           SETUP_CODE: 's'.repeat(40),
           OPS_TOKEN: 'o'.repeat(40),
           FAKE_NOW: '2026-11-14T20:00:00Z',
-          MEASURE: '0',
         },
       },
     }),

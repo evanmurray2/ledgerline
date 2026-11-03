@@ -199,3 +199,8 @@ Built all at once on the owner's word (D-46): no settings and no shadow comparis
 - [x] Reopening a phone with a saved copy downloads only what changed since the last sync, not every transaction. _Verify:_ passkey e2e checks the sync after a lock starts from `since > 0`.
 - [x] Find why the owner's device downloads the whole budget on every open (about 2,300 rows) instead of only changes. The loading screen now says why it's downloading everything, and the server logs the same reason (`sync_full`, `why`). _Verify:_ passkey e2e checks a reopen sends no `why` and a fresh copy sends `first`.
 - [x] Computers keep the encrypted copy too (D-53): the device that downloaded everything on every open was a computer (`sync_full` logged `why: memory`); it now reopens downloading only what changed. _Verify:_ passkey e2e, run on a desktop browser, checks a reopen syncs from `since > 0`.
+- [ ] Find why the owner's iPhone downloads the whole budget on every open (about 2,300 rows) instead of only changes. The loading screen now says why it's downloading everything, and the server logs the same reason (`sync_full`, `why`). _Verify:_ passkey e2e checks a reopen sends no `why` and a fresh copy sends `first`.
+
+## 18. Cleanup (Nov 3, 2026)
+
+- [x] Removed the old workerd measuring tools (`tools/measure`, the `/__measure` routes, `MEASURE`); measuring runs `apps/worker/measure` on node:sqlite. The November seed moved out of the measure folder. CLAUDE.md asks sessions to split large files as they touch them. _Verify:_ `pnpm check`.

@@ -1,10 +1,9 @@
 // Go/no-go: an assignment edit in the first budget month after 36 simulated months with 60 categories — database calls,
-// rows written and (Node) CPU. Writes .measure/budget.json. The workerd CPU of the same work comes from
-// tools/measure/budget-kernel.mjs.
+// rows written and (Node) CPU. Writes .measure/budget.json.
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { test, expect } from 'vitest';
 import { markDirty, recompute } from '../src/budget/recompute.js';
-import { seedBudget } from '../src/measure/budget-seed.js';
+import { seedBudget } from './budget-seed.js';
 import { cpu, freshDb, stats } from './harness.js';
 
 test('budget edit in the first month', async () => {

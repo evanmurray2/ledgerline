@@ -7,8 +7,7 @@ import type { AppEnv } from '../http/context.js';
 import type { Caller } from './directory.js';
 import { DIRECTORY_NAME } from './directory.js';
 import { budgetApi } from '../routes/api.js';
-import { dev } from '../measure/dev.js';
-import { measure } from '../measure/routes.js';
+import { dev } from '../dev-seed.js';
 import { BUDGET_TABLES, NO_FILTER, chain, insertStatements, readChunk, tableMeta } from './dump.js';
 import type { Env } from '../env.js';
 import { SqlD1 } from './adapter.js';
@@ -80,7 +79,7 @@ export class BudgetStore extends DurableObject<Env> {
     return this.serve(this.app, request, caller);
   }
 
-  /** Local development, e2e and measuring only: /__dev and /__measure (index.ts refuses them in production). */
+  /** Local development and e2e only: /__dev (index.ts refuses it in production). */
   async dev(request: Request, caller: Caller): Promise<Response> {
     this.ready();
     if (this.env.PLAID_ENV === 'production' || this.env.SETUP_CODE)
@@ -88,8 +87,6 @@ export class BudgetStore extends DurableObject<Env> {
     await this.ensureBudget(caller.budgetId);
     this.devApp ??= withCaller((app) => {
       app.route('/__dev', dev);
-      app.use('/__measure/*', async (c, next) => (this.env.MEASURE === '1' ? next() : c.notFound()));
-      app.route('/__measure', measure);
     });
     return this.serve(this.devApp, request, caller);
   }
