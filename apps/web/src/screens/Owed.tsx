@@ -7,7 +7,7 @@ import { useActivity, useMoneyMutation, useOwed, useBudget, useSession } from '.
 import { Sheet, SheetTitle } from '../components/Sheet';
 import {
   BackHeader,
-  DESKTOP_WIDTH,
+  Banner,
   Card,
   cx,
   ErrorNote,
@@ -17,7 +17,11 @@ import {
   OptionCard,
   PrimaryButton,
   SecondaryButton,
+  ScreenBody,
+  SectionTitle,
   Segmented,
+  SoftButton,
+  softButtonClass,
   useIsDesktop,
 } from '../components/ui';
 import { formatCents } from '../lib/money';
@@ -42,6 +46,8 @@ export function OwedScreen() {
   const waiting = activity.data?.moneyToMatch[0];
   const rta = budget.data?.rta ?? 0;
   const desktop = useIsDesktop();
+  // The row's two pills: side by side, half each, on the phone.
+  const pill = desktop ? 'px-4' : 'flex-1';
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -50,183 +56,163 @@ export function OwedScreen() {
         onBack={() => void navigate({ to: '/budget' })}
         backLabel="Back to budget"
       />
-      <div
-        className={cx(
-          'flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto',
-          desktop ? 'px-6 py-5' : 'px-4 pb-4 pt-3',
-        )}
-      >
-        <div className={cx('flex flex-col gap-3', desktop && DESKTOP_WIDTH)}>
-          {!v ? (
-            q.error ? (
-              <ErrorNote error={q.error} />
-            ) : (
-              <Loading />
-            )
+      <ScreenBody>
+        {!v ? (
+          q.error ? (
+            <ErrorNote error={q.error} />
           ) : (
-            <>
-              <section className="flex shrink-0 flex-col gap-1.5 rounded-[14px] border border-line bg-surface p-3">
-                <span className="text-[12px] text-muted">Out with others</span>
-                <span className="tnum text-[24px] font-bold">{formatCents(v.out)}</span>
-                <span className="text-[13px] leading-[1.45] text-ink-2">
-                  Money you front leaves Ready to Assign and comes back when you’re paid.
-                </span>
-              </section>
-              {waiting && (
-                <Link
-                  to={`/owed/match/${waiting.key}`}
-                  data-track="owed.waiting.match"
-                  className="flex min-h-14 shrink-0 items-center gap-2.5 rounded-[14px] bg-owed-bg px-3 py-2 text-owed-fg no-underline"
-                >
-                  <span className="flex flex-1 flex-col gap-px">
-                    <span className="text-[14px] font-bold">
-                      {waiting.payee} {formatCents(waiting.amount, { plus: true })} is waiting to match
-                    </span>
-                    <span className="text-[12px]">Held outside Ready to Assign until you match it.</span>
-                  </span>
-                  <span className="text-[14px] font-bold underline">Match</span>
-                </Link>
-              )}
-              {v.projected.map((p) => (
-                <div
-                  key={p.key}
-                  className="flex shrink-0 flex-col gap-1 rounded-xl bg-under-bg px-3 py-2.5 text-[13px] leading-[1.45] text-under-fg"
-                >
+            <Loading />
+          )
+        ) : (
+          <>
+            <Card className="flex flex-col gap-1.5 p-3">
+              <span className="text-[12px] text-muted">Out with others</span>
+              <span className="tnum text-[24px] font-bold">{formatCents(v.out)}</span>
+              <span className="text-[13px] leading-[1.45] text-ink-2">
+                Money you front leaves Ready to Assign and comes back when you’re paid.
+              </span>
+            </Card>
+            {waiting && (
+              <Link
+                to={`/owed/match/${waiting.key}`}
+                data-track="owed.waiting.match"
+                className="flex min-h-14 shrink-0 items-center gap-2.5 rounded-[14px] bg-owed-bg px-3 py-2 text-owed-fg no-underline"
+              >
+                <span className="flex flex-1 flex-col gap-px">
                   <span className="text-[14px] font-bold">
-                    {rta + (waiting?.amount ?? 0) >= p.owed
+                    {waiting.payee} {formatCents(waiting.amount, { plus: true })} is waiting to match
+                  </span>
+                  <span className="text-[12px]">Held outside Ready to Assign until you match it.</span>
+                </span>
+                <span className="text-[14px] font-bold underline">Match</span>
+              </Link>
+            )}
+            {v.projected.map((p) => {
+              const covered = rta + (waiting?.amount ?? 0) >= p.owed;
+              return (
+                <Banner
+                  key={p.key}
+                  tone={covered ? 'info' : 'warn'}
+                  title={
+                    covered
                       ? `${p.label} is covered`
-                      : `Keep ${formatCents(p.owed, { whole: true })} unassigned for ${p.label}`}
-                  </span>
-                  <span>
-                    It takes {formatCents(p.owed, { whole: true })} from Ready to Assign until it’s paid back.
-                  </span>
-                  {rta + (waiting?.amount ?? 0) < p.owed && (
-                    <span>
+                      : `Keep ${formatCents(p.owed, { whole: true })} unassigned for ${p.label}`
+                  }
+                >
+                  It takes {formatCents(p.owed, { whole: true })} from Ready to Assign until it’s paid back.
+                  {!covered && (
+                    <>
+                      {' '}
                       You have {formatCents(rta)} now
                       {waiting
                         ? `, or ${formatCents(rta + waiting.amount)} after you match ${waiting.payee.split(' ')[0]}`
                         : ''}
                       .
-                    </span>
+                    </>
                   )}
-                </div>
-              ))}
-              <h2 className="m-0 mt-1 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
-                Still owed
-              </h2>
-              <Card>
-                {v.items.filter(isOpen).length === 0 && (
-                  <p className="m-0 px-3 py-3.5 text-[14px] font-semibold text-funded-fg">
-                    Nothing is owed to you.
-                  </p>
-                )}
-                {v.items.filter(isOpen).map((o) => {
-                  const late = o.status === 'late';
-                  return (
-                    <div
-                      key={o.id}
-                      // Desktop: the buttons sit to the right of the amount instead of on a line of their own.
-                      className={cx(
-                        'flex gap-2 border-t border-divider p-3 first:border-t-0',
-                        desktop ? 'items-center gap-4' : 'flex-col',
-                      )}
+                </Banner>
+              );
+            })}
+            <SectionTitle>Still owed</SectionTitle>
+            <Card>
+              {v.items.filter(isOpen).length === 0 && (
+                <p className="m-0 px-3 py-3.5 text-[14px] font-semibold text-funded-fg">
+                  Nothing is owed to you.
+                </p>
+              )}
+              {v.items.filter(isOpen).map((o) => {
+                const late = o.status === 'late';
+                return (
+                  <div
+                    key={o.id}
+                    // Desktop: the buttons sit to the right of the amount instead of on a line of their own.
+                    className={cx(
+                      'flex gap-2 border-t border-divider p-3 first:border-t-0',
+                      desktop ? 'items-center gap-4' : 'flex-col',
+                    )}
+                  >
+                    <Link
+                      to={`/activity/txn/${o.txnKey}`}
+                      className="flex min-w-0 flex-1 justify-between gap-2.5 text-ink no-underline"
                     >
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="text-[15px] font-semibold">{o.label}</span>
+                        <span className="text-[12px] text-muted">{o.sub}</span>
+                        <span className={cx('text-[12px]', late ? 'text-under-fg' : 'text-muted')}>
+                          {late ? 'Late · ' : ''}
+                          {o.expectBy
+                            ? `${late ? 'expected' : 'Expected'} by ${dayLabel(o.expectBy)}`
+                            : 'No date'}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 flex-col items-end gap-0.5">
+                        <span className="tnum text-[15px] font-bold">{formatCents(o.still)}</span>
+                        <span className="text-[12px] text-muted">
+                          {o.still === o.amount
+                            ? 'all of it'
+                            : `of ${formatCents(o.amount, { whole: true })} owed`}
+                        </span>
+                      </span>
+                    </Link>
+                    <div className={cx('flex gap-2', desktop && 'shrink-0')}>
+                      {waiting ? (
+                        <Link
+                          to={`/owed/match/${waiting.key}`}
+                          data-track="owed.match"
+                          aria-label={`Match money back for ${o.label}`}
+                          className={cx(softButtonClass(), pill)}
+                        >
+                          Match money back
+                        </Link>
+                      ) : (
+                        <SoftButton disabled className={pill}>
+                          Nothing to match yet
+                        </SoftButton>
+                      )}
                       <Link
-                        to={`/activity/txn/${o.txnKey}`}
-                        className="flex min-w-0 flex-1 justify-between gap-2.5 text-ink no-underline"
+                        to={`/owed/close/${o.id}`}
+                        data-track="owed.close"
+                        aria-label={`Close out ${o.label}`}
+                        className={cx(softButtonClass('outline'), pill)}
                       >
-                        <span className="flex min-w-0 flex-col gap-0.5">
+                        Close out
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })}
+            </Card>
+            {v.items.some((o) => o.matched > 0) && (
+              <>
+                <SectionTitle>Paid back recently</SectionTitle>
+                <Card>
+                  {v.items
+                    .filter((o) => o.matched > 0)
+                    .map((o) => (
+                      <Link
+                        key={o.id}
+                        to={`/activity/txn/${o.txnKey}`}
+                        className="flex min-h-14 items-center justify-between border-t border-divider px-3 py-1.5 text-ink no-underline first:border-t-0"
+                      >
+                        <span className="flex flex-col gap-0.5">
                           <span className="text-[15px] font-semibold">{o.label}</span>
-                          <span className="text-[12px] text-muted">{o.sub}</span>
-                          <span className={cx('text-[12px]', late ? 'text-over-fg' : 'text-muted')}>
-                            {late ? 'Late · ' : ''}
-                            {o.expectBy
-                              ? `${late ? 'expected' : 'Expected'} by ${dayLabel(o.expectBy)}`
-                              : 'No date'}
+                          <span className="text-[12px] text-muted">
+                            {o.status === 'paid_back'
+                              ? 'Paid back in full'
+                              : `${formatCents(o.still)} still open`}
                           </span>
                         </span>
-                        <span className="flex shrink-0 flex-col items-end gap-0.5">
-                          <span className="tnum text-[15px] font-bold">{formatCents(o.still)}</span>
-                          <span className="text-[12px] text-muted">
-                            {o.still === o.amount
-                              ? 'all of it'
-                              : `of ${formatCents(o.amount, { whole: true })} owed`}
-                          </span>
+                        <span className="tnum text-[15px] font-bold text-funded-fg">
+                          {formatCents(o.matched, { plus: true })}
                         </span>
                       </Link>
-                      <div className={cx('flex gap-2', desktop && 'shrink-0')}>
-                        {waiting ? (
-                          <Link
-                            to={`/owed/match/${waiting.key}`}
-                            data-track="owed.match"
-                            aria-label={`Match money back for ${o.label}`}
-                            className={cx(
-                              'hit flex h-9 items-center justify-center rounded-full bg-accent-soft text-[13px] font-bold text-accent no-underline',
-                              desktop ? 'px-4' : 'flex-1',
-                            )}
-                          >
-                            Match money back
-                          </Link>
-                        ) : (
-                          <span
-                            className={cx(
-                              'flex h-9 items-center justify-center rounded-full bg-sunken text-[13px] font-bold text-muted',
-                              desktop ? 'px-4' : 'flex-1',
-                            )}
-                          >
-                            Nothing to match yet
-                          </span>
-                        )}
-                        <Link
-                          to={`/owed/close/${o.id}`}
-                          data-track="owed.close"
-                          aria-label={`Close out ${o.label}`}
-                          className={cx(
-                            'hit flex h-9 items-center justify-center rounded-full border border-line-strong text-[13px] font-bold text-ink-2 no-underline',
-                            desktop ? 'px-4' : 'flex-1',
-                          )}
-                        >
-                          Close out
-                        </Link>
-                      </div>
-                    </div>
-                  );
-                })}
-              </Card>
-              {v.items.some((o) => o.matched > 0) && (
-                <>
-                  <h2 className="m-0 mt-1 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
-                    Paid back recently
-                  </h2>
-                  <Card>
-                    {v.items
-                      .filter((o) => o.matched > 0)
-                      .map((o) => (
-                        <Link
-                          key={o.id}
-                          to={`/activity/txn/${o.txnKey}`}
-                          className="flex min-h-14 items-center justify-between border-t border-divider px-3 py-1.5 text-ink no-underline first:border-t-0"
-                        >
-                          <span className="flex flex-col gap-0.5">
-                            <span className="text-[15px] font-semibold">{o.label}</span>
-                            <span className="text-[12px] text-muted">
-                              {o.status === 'paid_back'
-                                ? 'Paid back in full'
-                                : `${formatCents(o.still)} still open`}
-                            </span>
-                          </span>
-                          <span className="tnum text-[15px] font-bold text-funded-fg">
-                            {formatCents(o.matched, { plus: true })}
-                          </span>
-                        </Link>
-                      ))}
-                  </Card>
-                </>
-              )}
-            </>
-          )}
-        </div>
-      </div>
+                    ))}
+                </Card>
+              </>
+            )}
+          </>
+        )}
+      </ScreenBody>
       <Outlet />
     </div>
   );
@@ -299,15 +285,24 @@ export function CloseSheet() {
       onClose={back}
       gap="auto"
       header={<SheetTitle title={label} sub={it.sub} />}
+      footer={
+        done ? undefined : (
+          <PrimaryButton
+            mutates
+            track="owed.close.confirm"
+            disabled={pick === 'snooze' && !date}
+            onClick={() => void confirm()}
+          >
+            {cur.cta}
+          </PrimaryButton>
+        )
+      }
     >
       {done ? (
         <div className="flex flex-col gap-3 pb-4">
-          <p
-            role="status"
-            className="m-0 rounded-xl bg-success-soft p-3 text-[14px] leading-[1.45] text-funded-fg"
-          >
+          <Banner tone="success" icon="check">
             {done.text}
-          </p>
+          </Banner>
           <div className="flex gap-2">
             {done.pick === 'snooze' && done.prevDate && (
               <SecondaryButton
@@ -359,15 +354,6 @@ export function CloseSheet() {
             </Field>
           )}
           {act.error && <ErrorNote error={act.error} />}
-          <PrimaryButton
-            mutates
-            track="owed.close.confirm"
-            className="mt-2"
-            disabled={pick === 'snooze' && !date}
-            onClick={() => void confirm()}
-          >
-            {cur.cta}
-          </PrimaryButton>
         </div>
       )}
     </Sheet>
