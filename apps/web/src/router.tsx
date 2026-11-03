@@ -16,7 +16,7 @@ import { AppShell } from './components/AppShell';
 import { ErrorNote, Loading } from './components/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { qk, useSession } from './api/hooks';
-import { needsReload, reloadForVersion } from './state/version';
+import { copySettled, needsReload, reloadForVersion } from './state/version';
 import { connectivity } from './state/connectivity';
 import { usage } from './usage/tracker';
 import { BudgetScreen } from './screens/Budget';
@@ -112,9 +112,12 @@ function Root() {
 
   // A new release is live: load its code (src/state/version.ts). Only on an answer fetched now, not a saved one.
   const fetchedVersion = session.isFetchedAfterMount ? s?.appVersion : undefined;
+  // Not while the copy is opening: a sign-in's Face ID key would be lost and Unlock would ask again. The effect above
+  // has already moved the copy to opening when a confirmed session starts it.
   useEffect(() => {
-    if (fetchedVersion && needsReload(fetchedVersion)) return reloadForVersion(fetchedVersion);
-  }, [fetchedVersion]);
+    if (fetchedVersion && needsReload(fetchedVersion) && copySettled(getCopy().status))
+      return reloadForVersion(fetchedVersion);
+  }, [fetchedVersion, copy.status]);
 
   useEffect(() => {
     if (!s) return;
