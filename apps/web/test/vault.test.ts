@@ -34,7 +34,7 @@ describe('the copy’s keys', () => {
   it('the passkey and the share open it', async () => {
     const { r, prf, share } = await made();
     const u = await unlock(r, 'cred1', prf, share);
-    expect(new TextDecoder().decode(await openCopy(r, u.dataKey))).toContain('the budget');
+    expect(new TextDecoder().decode((await openCopy(r, u.dataKey))!)).toContain('the budget');
   });
 
   it('a wrong share (a revoked device) or a wrong passkey output does not', async () => {
@@ -47,7 +47,7 @@ describe('the copy’s keys', () => {
   it('opens with no signal for 7 days after the last sign-in, never with the clock set back', async () => {
     const { r, prf } = await made();
     const key = await unlockOffline(r, 'cred1', prf, r.lastServerTime + 6 * 86_400_000);
-    expect(new TextDecoder().decode(await openCopy(r, key))).toContain('the budget');
+    expect(new TextDecoder().decode((await openCopy(r, key))!)).toContain('the budget');
     await expect(unlockOffline(r, 'cred1', prf, r.lastServerTime + 8 * 86_400_000)).rejects.toThrow(
       'offline_expired',
     );
