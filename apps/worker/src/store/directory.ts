@@ -43,6 +43,8 @@ export interface Caller {
   email: string;
   sessionId: string;
   verifiedAt: number;
+  /** The budget's sync epoch (migration 0006): changes when its database is restored. */
+  syncEpoch?: string;
 }
 
 export type AuthResult =
@@ -178,7 +180,11 @@ export class Directory extends DurableObject<Env> {
       };
     const m = await membership(env.DB, who.userId);
     if (!m)
-      return { ok: false, status: 403, body: { error: 'forbidden', message: 'Not a member of this budget' } };
+      return {
+        ok: false,
+        status: 403,
+        body: { error: 'not_member', message: 'Not a member of this budget' },
+      };
     // 95% of a daily limit: stop reading too, so the app never runs into Cloudflare's hard stop (sync/breaker.ts).
     if (restsDuring(method, path) && (await this.state(Date.now())) === 'rest')
       return { ok: false, status: 503, body: { ...RESTING } };
@@ -190,8 +196,32 @@ export class Directory extends DurableObject<Env> {
         email: m.email,
         sessionId: who.sessionId ?? '',
         verifiedAt: who.verifiedAt,
+        syncEpoch: this.syncEpoch(m.budgetId),
       },
     };
+  }
+
+  /** The budget's sync epoch (D-44, migration 0006). */
+  syncEpoch(budgetId: string): string {
+    const r = this.ctx.storage.sql.exec(`SELECT sync_epoch FROM budget WHERE id = ?`, budgetId).toArray()[0];
+    return r ? String(r.sync_epoch) : 'e0';
+  }
+
+  /**
+   * A new sync epoch for a budget whose database was restored, so every phone throws its copy away and downloads
+   * again. It lives here, not in the budget's own database, because a restore rolls that database back too.
+   */
+  async bumpSyncEpoch(budgetId: string): Promise<string> {
+    this.ready();
+    const bytes = crypto.getRandomValues(new Uint8Array(12));
+    const epoch = 'e' + [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+    this.ctx.storage.sql.exec(
+      `UPDATE budget SET sync_epoch = ?, updated_at = ? WHERE id = ?`,
+      epoch,
+      Date.now(),
+      budgetId,
+    );
+    return epoch;
   }
 
   /** The budget the ops token's health check reports on: the first one (the owner's). */

@@ -39,8 +39,12 @@ async function seed(db: D1Database): Promise<void> {
 describe('object migrations', () => {
   it('a budget store and the directory create their schemas at start', async () => {
     const h = await budget().health();
-    expect(h).toMatchObject({ ok: true, kind: 'budget', migrations: ['0001_baseline.sql', '0002_jobs.sql'] });
-    expect(h.tables).toBe(38);
+    expect(h).toMatchObject({
+      ok: true,
+      kind: 'budget',
+      migrations: ['0001_baseline.sql', '0002_jobs.sql', '0003_sync.sql'],
+    });
+    expect(h.tables).toBe(41);
     const d = await e.DIRECTORY.get(e.DIRECTORY.idFromName('directory-test')).health();
     expect(d).toMatchObject({
       ok: true,
@@ -51,8 +55,9 @@ describe('object migrations', () => {
         '0003_users.sql',
         '0004_do_usage.sql',
         '0005_worker_requests.sql',
+        '0006_devices.sql',
       ],
-      tables: 15,
+      tables: 16,
     });
   });
 

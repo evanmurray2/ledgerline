@@ -19,6 +19,7 @@ import {
   encodeMonth,
 } from '@ledgerline/domain';
 import { conditionFence, isFenceAbort } from '../sync/lease.js';
+import { derived } from './derived.js';
 
 export const MAX_RECOMPUTE_RETRIES = 3;
 /**
@@ -96,6 +97,8 @@ export function lineFromRow(r: unknown[]): BudgetLine {
 
 /** Bumps the summary version and widens the dirty range; goes in the same batch as the edit that changes inputs. */
 export function markDirty(db: D1Database, budgetId: string, month: Month, now: number): D1PreparedStatement {
+  // On the server nothing derived is kept (D-44): a harmless read stands in, so callers' batches stay as they are.
+  if (!derived.enabled) return db.prepare(`SELECT 1 WHERE ?1 IS NULL`).bind(budgetId);
   return db
     .prepare(
       `UPDATE budget SET summary_version = summary_version + 1,
@@ -114,6 +117,18 @@ export async function recompute(
 ): Promise<RecomputeResult> {
   const maxMonths = opts.maxMonths ?? MONTHS_PER_CHUNK;
   let queries = 0;
+  if (!derived.enabled)
+    return {
+      ok: true,
+      done: true,
+      rta: 0,
+      from: null,
+      monthsComputed: 0,
+      monthsWritten: 0,
+      queries,
+      rowsWritten: 0,
+      cached: true,
+    };
   const none = (rta: number, cached: boolean, ok = true): RecomputeResult => ({
     ok,
     done: ok,

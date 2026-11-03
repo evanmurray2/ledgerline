@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { clock } from '../../http/clock.js';
 import {
   ArchiveRequest,
+  RemoveCategoryRequest,
   CategoryUpsert,
   GroupUpsert,
   ReorderRequest,
@@ -14,6 +15,7 @@ import type { AppEnv } from '../../http/context.js';
 import { HttpError, afterWrite, parse, scoped } from '../api.js';
 import { fresh, monthResult, structure } from '../../views/common.js';
 import { markDirty } from '../../budget/recompute.js';
+import { derived } from '../../budget/derived.js';
 import type { Scoped } from '../../db/scoped.js';
 import type { Env } from '../../env.js';
 
@@ -183,7 +185,7 @@ categoriesRoutes.post('/settings/categories/:id/archive', async (c) => {
   if (!cat) throw new HttpError(404, 'not_found', 'category');
   if (cat.kind === 'cc_payment')
     throw new HttpError(422, 'system', 'Card payment categories can’t be archived');
-  await archiveCategory(c.env, s, id, r.archived, now);
+  await archiveCategory(c.env, s, id, r.archived, now, r);
   return c.json(await afterWrite(c.env, s.budgetId, now));
 });
 
@@ -194,6 +196,7 @@ async function archiveCategory(
   id: string,
   archived: boolean,
   now: number,
+  sent: { available?: number | undefined; through?: number | undefined } = {},
 ): Promise<void> {
   const w: D1PreparedStatement[] = [
     s.q(
@@ -206,8 +209,23 @@ async function archiveCategory(
   if (archived) {
     const f = await fresh(env, s, now);
     const start = (f.budget.budget_start_month ?? f.current) as Month;
-    const mr = await monthResult(s, f.current, start);
-    const avail = mr?.categories[id]?.available ?? 0;
+    let avail: number;
+    if (derived.enabled) {
+      const mr = await monthResult(s, f.current, start);
+      avail = mr?.categories[id]?.available ?? 0;
+    } else {
+      // The server doesn't work out balances (D-44): the phone sends what it showed. A category's available can
+      // depend on other categories' card refunds (D-12), so it can't be checked here alone; instead nothing may have
+      // changed since the phone worked it out. Anything able to send this can already assign and move money.
+      avail = sent.available ?? 0;
+      if (avail !== 0) {
+        const latest = await s.db
+          .prepare(`SELECT coalesce(max(seq), 0) AS n FROM change_log`)
+          .first<{ n: number }>();
+        if (sent.through === undefined || (latest?.n ?? 0) > sent.through)
+          throw new HttpError(409, 'changed', 'Your budget changed. Try again.');
+      }
+    }
     if (avail > 0) {
       w.push(
         s.q(
@@ -237,18 +255,18 @@ categoriesRoutes.post('/settings/categories/:id/remove', async (c) => {
   if (!cat) throw new HttpError(404, 'not_found', 'category');
   if (cat.kind === 'cc_payment')
     throw new HttpError(422, 'system', 'Card payment categories are made by the app');
+  const sent = await parse(RemoveCategoryRequest, c.req.raw).catch(() => ({}));
   const used = await s.first<{ n: number }>(
     `SELECT
        (SELECT count(*) FROM assignment WHERE budget_id = ?1 AND category_id = ?2 AND amount != 0)
      + (SELECT count(*) FROM txn_overlay WHERE budget_id = ?1 AND category_id = ?2)
      + (SELECT count(*) FROM txn_split WHERE budget_id = ?1 AND category_id = ?2)
-     + (SELECT count(*) FROM budget_line WHERE budget_id = ?1 AND category_id = ?2)
      + (SELECT count(*) FROM payee WHERE budget_id = ?1 AND default_category_id = ?2)
      + (SELECT count(*) FROM rule WHERE budget_id = ?1 AND actions LIKE '%' || ?2 || '%') AS n`,
     id,
   );
   if ((used?.n ?? 0) > 0) {
-    await archiveCategory(c.env, s, id, true, now);
+    await archiveCategory(c.env, s, id, true, now, sent);
     return c.json({ ok: true as const, outcome: 'archived' as const });
   }
   await s.batch([

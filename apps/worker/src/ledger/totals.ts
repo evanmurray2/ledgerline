@@ -7,6 +7,7 @@
 // - processing: from the earliest month it touched (sync/process.ts), since it can re-key a row onto a
 //   pending-at-link overlay
 // - CSV history import and re-pointing an account (routes/ops.ts), and the dev seed: everything
+import { derived } from '../budget/derived.js';
 import { type Month, addMonths } from '@ledgerline/domain';
 import type { Scoped } from '../db/scoped.js';
 
@@ -24,6 +25,7 @@ const SUMS = `sum(amount) AS a, sum(CASE WHEN date >= budget_from OR pending_at_
 
 /** Clears stored totals for this budget from `from` on (or all of them). */
 export function clearTotals(s: Scoped, from: string | null = null): D1PreparedStatement {
+  if (!derived.enabled) return s.q(`SELECT 1 WHERE ?1 IS NULL`);
   return from
     ? s.q(`DELETE FROM month_total_done WHERE budget_id = ?1 AND month >= ?2`, from.slice(0, 7))
     : s.q(`DELETE FROM month_total_done WHERE budget_id = ?1`);

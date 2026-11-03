@@ -26,6 +26,7 @@ import {
 } from './budget-jobs.js';
 import { connectionToken, makeProvider, pageSize } from '../sync/provider.js';
 import { writeBudgetState } from '../sync/breaker.js';
+import { derived } from '../budget/derived.js';
 
 export interface StoreHealth {
   ok: boolean;
@@ -46,6 +47,8 @@ export class BudgetStore extends DurableObject<Env> {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    // Integration tests run the phone's budget math here (D-44, budget/derived.ts); production never does.
+    if (env.LOCAL_ENGINE === '1' && env.PLAID_ENV !== 'production') derived.enabled = true;
     this.db = new SqlD1(ctx.storage);
     this.runner = new JobRunner(ctx.storage, this.handlers(), (job, err) => this.onFailed(job, err));
     void ctx.blockConcurrencyWhile(async () => {
@@ -183,7 +186,36 @@ export class BudgetStore extends DurableObject<Env> {
       if (want.count !== count || want.hash !== hash)
         differences.push(`${t}: ${count} row(s), backup has ${want.count}`);
     }
+    // Phones holding a copy of this budget download it again (D-44, docs/phone-budget.md section 8).
+    if (differences.length === 0) await this.newSyncEpoch();
     return { ok: differences.length === 0, differences };
+  }
+
+  /** A new sync epoch in the Directory for this budget: phones throw their copies away and download again. */
+  private async newSyncEpoch(): Promise<void> {
+    const id = await this.budgetId().catch(() => null);
+    if (!id || !this.env.DIRECTORY) return;
+    await this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName(DIRECTORY_NAME)).bumpSyncEpoch(id);
+  }
+
+  /**
+   * Point-in-time recovery (runbooks/restore.md): rolls this budget's database back to `at` (epoch ms, within the
+   * last 30 days). The sync epoch changes first, in the Directory, which the rollback can't reach; then the object
+   * restarts on the restored database. Returns the bookmark that undoes the restore.
+   */
+  async restoreTo(at: number): Promise<{ undo: string }> {
+    this.ready();
+    await this.newSyncEpoch();
+    const bookmark = await this.ctx.storage.getBookmarkForTime(at);
+    const undo = await this.ctx.storage.onNextSessionRestoreBookmark(bookmark);
+    // Restart after answering, so the caller gets the undo bookmark.
+    this.ctx.waitUntil(
+      (async () => {
+        await new Promise((r) => setTimeout(r, 100));
+        this.ctx.abort('restoring');
+      })(),
+    );
+    return { undo };
   }
 
   /** Daily safety net (6.2): recreate missing recurring jobs and make sure an alarm is set. */
@@ -371,6 +403,7 @@ function withCaller(mount: (app: Hono<AppEnv>) => void): Hono<AppEnv> {
     c.set('budgetId', who.budgetId);
     c.set('email', who.email);
     c.set('sessionId', who.sessionId);
+    c.set('syncEpoch', who.syncEpoch ?? 'e0');
     return next();
   });
   mount(app);

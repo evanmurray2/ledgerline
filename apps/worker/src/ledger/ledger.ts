@@ -17,6 +17,7 @@ import {
 } from '@ledgerline/domain';
 import type { Scoped } from '../db/scoped.js';
 import { markDirty } from '../budget/recompute.js';
+import { derived } from '../budget/derived.js';
 
 export interface TxRow {
   key: string;
@@ -386,7 +387,7 @@ export async function planLineRebuild(
   /** Pending edits not yet written, applied on top of what's stored (the caller writes them in the same batch). */
   override?: (t: LogicalTxn) => LogicalTxn | null,
 ): Promise<{ stmts: D1PreparedStatement[]; dirtyFrom: Month | null }> {
-  if (keys.length === 0) return { stmts: [], dirtyFrom: null };
+  if (keys.length === 0 || !derived.enabled) return { stmts: [], dirtyFrom: null };
   const keyChunks = chunks(keys);
   const [accts, ...oldMonths] = await s.batch([
     s.q(`SELECT id, kind FROM account WHERE budget_id = ?1`),
@@ -447,6 +448,7 @@ export function planStartLines(
   meta: BudgetMeta,
   now: number,
 ): D1PreparedStatement[] {
+  if (!derived.enabled) return [];
   const lines = startLines(a, meta.startMonth);
   const stmts = [s.q(`DELETE FROM budget_line WHERE budget_id = ?1 AND txn_key = ?2`, `start:${a.id}`)];
   for (const l of lines) {

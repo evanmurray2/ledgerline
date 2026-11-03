@@ -38,6 +38,8 @@ export interface Env {
   OWNER_EMAIL?: string;
   /** Local development and tests only: a fixed "now" (ISO time). Ignored in production. */
   FAKE_NOW?: string;
+  /** '1' in the integration tests only: run the phone's budget math in the store (budget/derived.ts). */
+  LOCAL_ENGINE?: string;
   /** Enables /__dev routes (seed data) in local development. Ignored in production. */
   DEV_ROUTES?: string;
   /** Account-wide D1 usage via GraphQL Analytics (read-only token). */

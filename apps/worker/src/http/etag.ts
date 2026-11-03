@@ -16,6 +16,7 @@ import { clock } from './clock.js';
 /** GETs that don't use the ETag: sign-in state, session (it carries the live usage brake), health and exports. */
 const SKIP = [
   /^\/api\/session$/,
+  /^\/api\/sync/,
   /^\/api\/settings\/security/,
   /^\/api\/health$/,
   /^\/api\/export\//,

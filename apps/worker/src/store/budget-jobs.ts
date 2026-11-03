@@ -1,6 +1,7 @@
 // A budget's recurring and on-demand jobs (docs/multi-user.md 6.1, 6.2): the sync backstop every 4 hours, the daily
 // scan at 08:10 UTC and maintenance at 10:20 UTC (today's cron times), plus starting a sync. Each store keeps its own
 // recurring rows, so nothing has to loop over every budget; a recurring row is never deleted, only moved forward.
+import { derived } from '../budget/derived.js';
 import { ulid } from '@ledgerline/platform';
 import type { Env } from '../env.js';
 import { recompute } from '../budget/recompute.js';
@@ -114,6 +115,8 @@ export function maintenanceHandler(env: Env, budgetId: () => Promise<string>): H
     const next = (state: MaintState): StepResult => ({ state, runAt: now });
     switch (s.phase ?? 'start') {
       case 'start': {
+        // The full recompute and the identity check run on the phone (D-44, local/engine.ts).
+        if (!derived.enabled) return next({ phase: 'catchup', written: 0, i: 0 });
         const r = await db
           .prepare(`SELECT summary_dirty_from FROM budget WHERE id = ?1`)
           .bind(b)
@@ -190,6 +193,9 @@ export function maintenanceHandler(env: Env, budgetId: () => Promise<string>): H
           db
             .prepare(`DELETE FROM job WHERE failed_at IS NOT NULL AND failed_at < ?1`)
             .bind(now - FAILED_JOB_KEEP_MS),
+          // Offline edit ids (routes/sync.ts) and moved transaction keys, after 30 days.
+          db.prepare(`DELETE FROM edit_seen WHERE at < ?1`).bind(now - 30 * 86_400_000),
+          db.prepare(`DELETE FROM txn_key_move WHERE at < ?1`).bind(now - 30 * 86_400_000),
         ]);
         return next({ phase: 'bump' });
       case 'bump':

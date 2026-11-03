@@ -123,7 +123,7 @@ describe('routing', () => {
       });
     await setWorkerRequests(96_000);
     try {
-      const b = await owner.call('GET', '/api/budget/2026-11');
+      const b = await owner.call('GET', '/api/sync?since=0');
       expect(b.status).toBe(503);
       expect(b.json).toMatchObject({ error: 'resting' });
       const w = await owner.call('POST', '/api/settings/groups', { name: 'Fun', isBills: false });
@@ -134,9 +134,9 @@ describe('routing', () => {
       expect((await owner.call('GET', '/api/auth/status')).status).toBe(200);
       // The Worker now refuses by itself for a few minutes, without asking the Directory.
       await setWorkerRequests(0);
-      expect((await owner.call('GET', '/api/budget/2026-11')).status).toBe(503);
+      expect((await owner.call('GET', '/api/sync?since=0')).status).toBe(503);
       resetRoutingCache();
-      expect((await owner.call('GET', '/api/budget/2026-11')).status).toBe(200);
+      expect((await owner.call('GET', '/api/sync?since=0')).status).toBe(200);
     } finally {
       await setWorkerRequests(0);
       resetRoutingCache();

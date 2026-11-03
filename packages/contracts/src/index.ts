@@ -145,6 +145,16 @@ export const MoveRequest = z.object({
 });
 export const SetAssignedRequest = z.object({ month, categoryId: id, assigned: cents });
 export const MutationResult = z.object({ ok: z.literal(true), rta: cents, rtaUpdating: z.boolean() });
+/**
+ * What the server answers to a change (D-44): it no longer works out Ready to Assign, so `rta` is absent; the app
+ * syncs and fills it from the phone's own compute before showing the result.
+ */
+export const MutationAck = z.object({
+  ok: z.literal(true),
+  rta: cents.optional(),
+  rtaUpdating: z.boolean().optional(),
+});
+export type MutationAck = z.infer<typeof MutationAck>;
 export type MutationResult = z.infer<typeof MutationResult>;
 
 export const AssignSuggestion = z.object({
@@ -478,7 +488,16 @@ export const GroupUpsert = z.object({
   name: z.string().min(1).max(60),
   isBills: z.boolean(),
 });
-export const ArchiveRequest = z.object({ archived: z.boolean() });
+/**
+ * Archiving a category moves what it still has to Ready to Assign. The phone works that amount out (D-44) and sends
+ * it with the change number it worked it out at; the server refuses with 409 `changed` if anything changed since.
+ */
+export const ArchiveRequest = z.object({
+  archived: z.boolean(),
+  available: cents.optional(),
+  through: z.number().int().nonnegative().optional(),
+});
+export const RemoveCategoryRequest = ArchiveRequest.omit({ archived: true });
 export const ReorderRequest = z.object({ ids: z.array(id).max(500) });
 
 // A plain union: `amount` appears twice (equals / between), which a discriminated union can't express.

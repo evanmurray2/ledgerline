@@ -31,6 +31,7 @@ import {
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
 import { HttpError, afterWrite, parse, scoped, startRecompute } from './api.js';
+import { editTime, liveKey } from './sync.js';
 import { fresh, monthResult, shortDate, structure } from '../views/common.js';
 import { categoryLabel, listRow } from '../views/rows.js';
 import {
@@ -470,9 +471,11 @@ const OVERLAY_UPSERT = `INSERT INTO txn_overlay (txn_key, budget_id, created_at,
 activityRoutes.patch('/transactions/:key', async (c) => {
   const p = await parse(TxnPatch, c.req.raw);
   const s = scoped(c);
-  const key = c.req.param('key');
+  const key = await liveKey(s, c.req.param('key'));
   const t = await loadTx(s, key);
   const now = clock(c.env);
+  // Most-recent-edit-wins uses when the edit was made, which for an offline edit is before it arrives.
+  const editAt = editTime(c, now);
   const w: D1PreparedStatement[] = [s.q(OVERLAY_UPSERT, key, now)];
   const set = (col: string, v: unknown) =>
     w.push(
@@ -498,7 +501,7 @@ activityRoutes.patch('/transactions/:key', async (c) => {
     set('transfer_state', null);
     if (t.wtm_state === 'waiting' && p.toRta) set('wtm_state', 'income');
     w.push(s.q(`DELETE FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`, key));
-    edits.category_id = now;
+    edits.category_id = editAt;
   }
   if (p.split !== undefined) {
     w.push(s.q(`DELETE FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`, key));
@@ -524,14 +527,14 @@ activityRoutes.patch('/transactions/:key', async (c) => {
       set('category_id', null);
       set('categorized_by', 'user');
     }
-    edits.split = now;
+    edits.split = editAt;
   }
   if (p.memo !== undefined) set('memo', p.memo);
   if (p.estimatedAmount !== undefined) {
     if (t.status !== 'pending' || t.source !== 'bank')
       throw new HttpError(422, 'not_pending', 'Only a bank pending amount can be estimated');
     set('estimated_amount', p.estimatedAmount);
-    edits.estimated_amount = now;
+    edits.estimated_amount = editAt;
   }
   if (p.amount !== undefined) {
     if (t.source !== 'manual')
@@ -545,7 +548,7 @@ activityRoutes.patch('/transactions/:key', async (c) => {
         now,
       ),
     );
-    edits.amount = now;
+    edits.amount = editAt;
   }
   if (p.wontClear !== undefined) set('wont_clear', p.wontClear ? 1 : 0);
   if (p.budgetMonth !== undefined) set('budget_month', p.budgetMonth);
@@ -777,7 +780,8 @@ async function openItems(s: Scoped, today: string) {
       `SELECT e.id, e.txn_key, e.amount, e.expect_by, e.closed_at, e.canceled_at, coalesce(${txnCol('e.txn_key', 'payee')}, '') AS payee,
          ${txnCol('e.txn_key', 'date')} AS date, ${txnCol('e.txn_key', 'category_id')} AS category_id, ${txnCol('e.txn_key', 'amount')} AS txn_amount
        FROM expected_reimbursement e WHERE e.budget_id = ?1
-         AND NOT EXISTS (SELECT 1 FROM manual_pending mp WHERE mp.budget_id = e.budget_id AND mp.txn_key = e.txn_key AND mp.kind = 'upcoming' AND mp.matched_txn_key IS NULL)`,
+         AND NOT EXISTS (SELECT 1 FROM manual_pending mp WHERE mp.budget_id = e.budget_id AND mp.txn_key = e.txn_key AND mp.kind = 'upcoming' AND mp.matched_txn_key IS NULL)
+       ORDER BY e.created_at, e.id`,
     ),
     s.q(
       `SELECT from_key, to_key, amount FROM txn_link WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND undone_at IS NULL`,

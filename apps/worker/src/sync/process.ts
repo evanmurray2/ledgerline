@@ -190,6 +190,12 @@ async function planProcessing(
         now,
       ),
     );
+    // An edit made offline to the posted row's own key lands on the key it now has (docs/phone-budget.md section 12).
+    stmts.push(
+      s.db
+        .prepare(`INSERT OR REPLACE INTO txn_key_move (old_key, new_key, at) VALUES (?1, ?2, ?3)`)
+        .bind(`p:${postedId}`, fromKey, now),
+    );
     inherited.add(postedId);
     keys.add(fromKey);
     const alerts: string[] = [];
