@@ -1,7 +1,7 @@
 // Settings pieces shared by every section: the page frame and a row that links to a page.
 import { type ReactNode } from 'react';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
-import { BackHeader, cx, DESKTOP_WIDTH, Icon, useIsDesktop } from '../../components/ui';
+import { BackHeader, cx, DESKTOP_WIDTH, Icon, PageFrame, useIsDesktop } from '../../components/ui';
 
 export function Page({
   title,
@@ -27,8 +27,9 @@ export function Page({
   const inPane = useRouterState({ select: (s) => s.location.pathname.startsWith('/settings') });
   const desktop = isDesktop && inPane;
   const width = isDesktop ? (inPane ? 'max-w-[680px]' : DESKTOP_WIDTH) : undefined;
+  // In the Settings pane on a computer, switching sections doesn't slide (the list beside it stays put).
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <PageFrame still={desktop}>
       {!desktop && (
         <BackHeader
           title={title}
@@ -59,7 +60,7 @@ export function Page({
           <div className={width}>{footer}</div>
         </div>
       )}
-    </div>
+    </PageFrame>
   );
 }
 

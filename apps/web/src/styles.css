@@ -351,7 +351,28 @@
 .ll-scrim {
   animation: ll-fade 180ms ease-out;
 }
+/* A page arriving: from the right when opened, from the left when Back returns to it (headers.tsx PageFrame). */
+@keyframes ll-page-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+@keyframes ll-page-back {
+  from {
+    transform: translateX(-24px);
+    opacity: 0;
+  }
+}
+.ll-page-in {
+  animation: ll-page-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ll-page-back {
+  animation: ll-page-back 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
 @media (prefers-reduced-motion: reduce) {
+  .ll-page-in,
+  .ll-page-back,
   .ll-sheet,
   .ll-scrim {
     animation: none;
