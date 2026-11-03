@@ -1,4 +1,4 @@
-# D-?: One look per meaning (Nov 3, 2026)
+# D-55: One look per meaning (Nov 3, 2026)
 
 The owner asked for the whole app to look and work the same way everywhere, on a phone and a computer, after
 the design review (`docs/design-review.md`) found 18 kinds of difference. D-54 settled pages vs sheets and the
