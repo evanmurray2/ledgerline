@@ -182,3 +182,9 @@ Built all at once on the owner's word (D-46): no settings and no shadow comparis
 
 - [x] Activity → Check these: OK on a bank transaction that cleared at a new amount now clears it. It used to send "keep waiting", which only applies to an entry you added, so the server refused it and the row stayed. OK now marks the alert reviewed (`POST /api/transactions/:key/review`, which also records it in the audit log), and the mock API refuses "keep waiting" on bank rows as the server does. _Verify:_ `apps/worker/test/api.november.test.ts` "Check these: OK…", `e2e/tests/worker.spec.ts` "OK on a bank row…".
 - [x] Pending rows left beside their cleared rows (D-50): a date, phone number or reference code in the pending description no longer stops a posted row from claiming it; only store numbers on both sides must agree. The next sync heals earlier misses. _Verify:_ `packages/domain/test/bank-pending.test.ts` (store numbers), `apps/worker/test/pending-match.test.ts` (heal).
+
+## 16. Merging without rebasing (D-51, Nov 3, 2026)
+
+- [x] Sessions merge once their PR's `ci` passed and GitHub shows no conflict; the `ci` run on `main` gates every deploy, and sessions catch up with "Update branch" instead of rebasing (`CLAUDE.md`). _Verify:_ the next merges go in without a rebase.
+- [x] New decisions are one file each in `docs/decisions/`, numbered just before merging (`tools/docs/next-decision.mjs`); `docs/build-plan.md` merges with `merge=union`. _Verify:_ `node tools/docs/next-decision.mjs` prints D-52 after this merge.
+- [x] A deploy whose `ci` a newer merge cancelled is skipped, not failed (`tools/ci/wait-for-ci.mjs`, `deploy.yml`). _Verify:_ the gate run against stubbed GitHub responses (passed → deploy, cancelled and superseded → skip, cancelled while latest or failed → fail); then the next pair of quick merges.

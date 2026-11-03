@@ -1,0 +1,3 @@
+# Two sessions adding lines here both keep theirs on a local merge or rebase (D-51). Check the result for
+# duplicated lines when both changed the same item.
+docs/build-plan.md merge=union
