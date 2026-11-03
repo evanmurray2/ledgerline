@@ -1,6 +1,6 @@
 # Ledgerline: notes for Claude sessions
 
-A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `docs/build-plan.md` (what's done), `docs/decisions.md` and `docs/decisions/` (D-1 on: why things differ from the design) and `docs/runbooks/setup.md`. `docs/design.md` and `docs/sync-spec.md` are the source of truth; record any contradiction as a new decision (see Several sessions at once).
+A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `docs/build-plan.md` (what's done), `docs/decisions.md` and `docs/decisions/` (D-1 on: why things differ from the design) and `docs/runbooks/setup.md`. `docs/design.md` and `docs/sync-spec.md` are the source of truth for the Money rules and the product; start with each one's "What's true now" section, which says what the later decisions replaced. Record any new contradiction as a decision (see Several sessions at once) and add it to that section.
 
 ## Production
 

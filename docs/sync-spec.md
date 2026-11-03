@@ -2,7 +2,18 @@
 
 This tab is the implementation contract for the bank sync engine and budget recalculation; the Design tab states what they guarantee. Revised Oct 31, 2026 after an independent review (findings F1–F12 are cited where each rule comes from).
 
+
+## What's true now (Nov 3, 2026)
+
+The **Money rules** and the matching mechanics below still stand exactly. The plumbing around them changed. Where a section disagrees, the decision named wins; each changed section starts with a **Now** note.
+
+- **Storage and jobs:** SQLite in Durable Objects instead of D1, and alarm jobs in each budget's store instead of Workflows (D-37, D-38; `apps/worker/src/store/jobs.ts`). A failed step backs off and is tried up to 6 times.
+- **Recalculation:** the phone works out budget lines, month snapshots and Ready to Assign from its own copy, with the same `computeBudget()`; the server keeps nothing derived and has no recompute (D-45, D-46). The guarantee in point 3 holds on the phone (`apps/worker/test/engine.test.ts`).
+- **Limits:** D1's limits no longer apply; Durable Object rows read and written, requests and Worker requests do, and SQLite's CPU counts toward the 10 ms (D-40; `docs/measurements.md`).
+
 ## Guarantees the code must uphold
+
+> **Now:** 1 and 2 stand. 3 holds on the phone, which does the recompute (D-45). 4 applies to the Durable Object daily limits, through the breaker (D-40).
 
 1. A sync never moves a connection's Plaid cursor backwards and never applies a page from a run that no longer holds the lease.
 2. Retrying any step adds nothing; every applied bank event is matched, ruled and reflected in the budget even if a run crashes partway.
@@ -10,6 +21,8 @@ This tab is the implementation contract for the bank sync engine and budget reca
 4. No background path can push the account past D1's daily write limit, because hitting it takes the whole app offline until 00:00 UTC.
 
 ## Free-plan limits this spec is built around
+
+> **Now:** D1 and Workflow limits no longer apply (D-37). What counts now: 10 ms of CPU per request or alarm step (SQLite included), Durable Object rows and requests, and Worker requests (D-40).
 
 | Limit | Value on Workers Free | Where it bites |
 | --- | --- | --- |
@@ -25,6 +38,8 @@ This tab is the implementation contract for the bank sync engine and budget reca
 | Steps per instance | 1,024 per instance; 3,000 steps per day across the account | Verify in Phase 1 |
 
 ## Connection lease (F1, F2)
+
+> **Now:** the lease and fences stand; steps are alarm job steps (store/jobs.ts), not Workflow steps (D-37).
 
 Columns on `connection`: `sync_lock` (owning `sync_run` id), `lock_expires`, `resync_requested`. Lease TTL is 90 minutes. Every step is configured with a 2-minute timeout and 3 retries, so a step's worst case (about 9 minutes) stays far below the TTL.
 
@@ -43,6 +58,8 @@ Columns on `connection`: `sync_lock` (owning `sync_run` id), `lock_expires`, `re
 
 ## Run lifecycle
 
+> **Now:** runs are alarm jobs (store/sync-job.ts); staged pages live in SQLite (D-26, D-37).
+
 `sync_run` columns: `id`, `connection_id`, `phase` (fetching, applying, finalizing, done, failed), `run_start_cursor`, `restart_count`, `pages_fetched`, `applied_through`, `next_cursor`.
 
 **Fetch.** Record `run_start_cursor` from `connection.cursor`. Step `fetch-{restart}-{i}` makes one `/transactions/sync` call with `count` 500 (Plaid's maximum, fewer calls per backfill), falling back to 250 if Phase 1 shows the apply step over budget, and writes one `sync_page` row. On `TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION`: delete this run's pages, increment `restart_count`, restart from `run_start_cursor`. After 3 restarts: phase failed, the lease is released (failed-run release, rule 6) and the flag stays set for the next cron.
@@ -52,6 +69,8 @@ Columns on `connection`: `sync_lock` (owning `sync_run` id), `lock_expires`, `re
 **Adopt, never delete (F1).** When a run acquires an expired lease and finds the previous run in `applying`, it adopts that run: the new instance continues from `applied_through` using the staged pages. A previous run still `fetching` has its pages deleted and fetching restarts from `connection.cursor`, which has not moved. Staging is pruned only for runs in `done` or `failed`.
 
 ## Post-apply work, driven by a watermark (F3)
+
+> **Now:** stands, at 25 events per step (D-38); it no longer rebuilds budget lines on the server (D-45).
 
 Matching, rules and recompute never depend on which run applied the events. `budget.processed_through` holds the highest `apply_seq` fully processed.
 
@@ -78,6 +97,8 @@ If a run dies after moving the cursor, the next run, the cron or the daily maint
 
 ## Budget recalculation (F5, F7, F9)
 
+> **Now:** this runs on the phone, over its own copy, in one pass with no chunking or recompute job (D-45, D-46). The definition of Ready to Assign stands.
+
 **Ready to Assign (one definition).** RTA is a single current number for today's month in the budget's time zone: all RTA inflows with a budget month up to the current month, minus all assignments in every month (future months included), minus cash overspending left uncovered at the end of each past month in every category. Inflows held in Waiting to match are excluded. Pending deposits count as RTA inflows as soon as they appear, and a reversal or changed amount adjusts RTA by the difference. Owed amounts on outflows are subtracted from RTA when paid and added back only when closed or cancelled; a payback reaches RTA once, as the matched inflow itself. Every month view shows this same number. Cached summaries store the month they were computed for; a read in a later month recomputes before answering. `computeBudget()` in `packages/domain` is the only implementation; the incremental path and the daily maintenance recompute both call it.
 
 **Recompute in at most four queries.**
@@ -90,6 +111,8 @@ If a run dies after moving the cursor, the next run, the cron or the daily maint
 That batch starts with a version fence (the lease-guard pattern on `summary_version = :v`) and clears `summary_dirty_from` in the same batch, so a stale recompute either writes everything or nothing. On a version mismatch it retries at most 3 times, then leaves the budget dirty for the next write or the daily maintenance job.
 
 ## Write budget circuit breaker (F8)
+
+> **Now:** counts Durable Object rows, requests and Worker requests, and stops reading at 95% (D-40).
 
 The limits are per account, so the breaker reads account-wide usage, not just this Worker's: D1 rows read and written today come from Cloudflare's GraphQL Analytics API, which also counts the staging Worker, migrations, console queries and backup exports. Sync runs and the daily maintenance job refresh the figure at most every 10 minutes into `usage_day`; between refreshes, a run adds its own `meta.rows_written` and `meta.rows_read` in memory as an estimate. Ordinary page views write nothing. Both daily limits take the whole app offline when hit: 100,000 rows written and 5 million rows read.
 
@@ -105,6 +128,8 @@ Since D-37 and D-40 the levels apply to the highest share of any daily limit: ro
 The step-8 hand-off, recompute retries and fetch restarts each have their own cap (3), so no loop is unbounded.
 
 ## Schema additions
+
+> **Now:** the tables are in each budget's store (D-37); budget lines and month snapshots exist only in the phone's copy (migration 0006).
 
 | Table or column | Purpose |
 | --- | --- |
@@ -142,6 +167,8 @@ Each rule is a property-based test, and rule 10 runs as an assertion in the dail
 
 ## Daily maintenance job
 
+> **Now:** an alarm job in each store, not a Workflow (D-37): post-sync catch-up, usage roll-up, watchdog, prune. The full recompute and the identity check run on the phone (D-45); there are no backups or outside monitor to watch (D-29, D-49).
+
 Third cron trigger, 10:20 UTC. One Workflow, steps in order, each under 10 ms of CPU:
 
 1. Full recompute, one month per step, from budget start; any difference from the cache is fixed and recorded as drift.
@@ -151,6 +178,8 @@ Third cron trigger, 10:20 UTC. One Workflow, steps in order, each under 10 ms of
 5. Watchdog: record last backup age, last monitor check and each connection's last sync in `health_status`; the app shows an alert on Accounts when any is overdue (backup over 36 hours, monitor over 24 hours, sync over 24 hours).
 
 ## Phase 1 measurements (go/no-go)
+
+> **Now:** history; current figures are in `docs/measurements.md`.
 
 Run on the free plan against Plaid Sandbox, with a simulated 36 months of history and 60 categories:
 
