@@ -17,6 +17,7 @@ This doc is the Oct 31 design, exported from Claude Docs and kept as written. Th
 | Sync sizes | 500 per Plaid page, a Workflow step per page | 100 per page; 25 events per apply or processing step | D-6, D-38 |
 | Environments and deploys | Staging, then production after approval; release, nightly and monitor workflows | No staging; every merge to `main` deploys after its `ci` passes; only `ci`, `deploy` and `security` workflows | D-30, D-36, D-49, D-51 |
 | Database layer | Drizzle over D1 | The app's own small interface over SQLite (`packages/db/src/sql.ts`) | Nov 3 cleanup |
+| Tabs and their header | Budget, Activity, Accounts, Reports; each tab's own title, Budget's own month | Budget, Activity, Reports, Accounts; one `‹ November 2026 ›` bar in the same place on Budget, Activity and Reports with one month for the three, Activity by month (`docs/month-header.md`) | D-? |
 
 ## Summary and constraints
 

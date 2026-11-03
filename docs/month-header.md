@@ -1,153 +1,130 @@
 # One month header on every tab
 
-Status: draft for review (Nov 3, 2026). Nothing built yet. Decision: D-? (number given just before merging).
+Status: built (Nov 3, 2026). Decision: D-? (`docs/decisions/D-?-one-month-header.md`). The first draft went
+through a design critique and an adversarial review against the code; what they changed is at the end.
 
 ## The problem
 
-The month moves around depending on the tab:
+The month moved around depending on the tab:
 
-| Tab      | Phone header today                                   | Desktop header today             |
-| -------- | ---------------------------------------------------- | -------------------------------- |
-| Budget   | `‹ November 2026 ›` is the title, centered, 17 px    | `‹ November 2026 ›` on the left, 22 px |
-| Activity | "Activity" title, Add pill on the right, no month    | same                             |
-| Accounts | "Accounts" title, Sync pill + gear, no month          | same, no gear                    |
-| Reports  | "Reports" title, small `‹ Nov 2026 ›` at 15 px on the right | same                      |
+| Tab      | Phone header before                                         | Desktop header before                  |
+| -------- | ----------------------------------------------------------- | -------------------------------------- |
+| Budget   | `‹ November 2026 ›` is the title, centered, 17 px           | `‹ November 2026 ›` on the left, 22 px |
+| Activity | "Activity" title, Add pill on the right, no month           | same                                   |
+| Accounts | "Accounts" title, Sync pill + gear, no month                | same, no gear                          |
+| Reports  | "Reports" title, small `‹ Nov 2026 ›` at 15 px on the right | same                                   |
 
-Each tab has its own month: going back to October on Budget and then opening Reports shows November. The owner
-wants `‹ November 2026 ›` at the top of every page, in the same place.
+Each tab also kept its own month: going back to October on Budget and then opening Reports showed November. The
+owner wants `‹ November 2026 ›` at the top of every page, in the same place.
 
-## Goals
+## What the owner chose (Nov 3, 2026)
 
-1. The month switcher is in exactly the same place, at the same size, on Budget, Activity, Accounts and Reports.
-   Switching tabs never moves it, and changing months never moves the chevrons.
-2. One month for the whole app: the month chosen on any tab is the month on every tab.
-3. Every tab shows something for that month. A control that does nothing on a screen is worse than no control.
-4. Getting back to this month is one tap.
-5. No change to how money is counted (`packages/domain` and the Money rules are untouched; this is display only).
-
-Not goals: a month picker grid, swipe left and right between months, or month headers on pushed screens
-(register, Settings pages, Targets, Categories).
+- The month bar on **Budget, Activity and Reports**, with one month shared between them.
+- **Accounts has no month**: its balances are today's, so a month there would change one line and suggest the
+  balances are that month's. Its name sits where the month is on the other tabs.
+- Activity on this month shows only this month's posted rows (a few days early in a month is fine), and **every
+  pending row, whatever its date**.
+- Tabs go **Budget, Activity, Reports, Accounts**: the three month tabs together, then Accounts (with Settings
+  behind its gear). The desktop sidebar follows: Budget, Activity, Reports, Accounts, Settings.
 
 ## The design
 
-### 1. The month bar (`MonthBar`, replaces the headers of the four tabs)
+### The header of the four tabs (`components/MonthBar.tsx`)
 
-**Phone, 56 px, three fixed columns: `44 px | switcher | 44 px`, with 8 px side padding.**
+**Phone, 56 px, three fixed columns: `44 px | middle | 44 px`, 8 px side padding.**
 
 ```
 ┌──────────────────────────────────────────┐
-│ [⚙]      ‹   November 2026   ›      [⋯]  │  56 px
+│ [ ]       ‹   November 2026   ›      [⋯] │  56 px
 ├──────────────────────────────────────────┤
-│ (optional second row: chips, search)     │
+│ (optional second row: search, chips)     │
 ```
 
-- The switcher is centered on the screen, not in the space that is left over. Both side slots are always
-  44 px wide, so it lands in the same place whether a tab has zero, one or two actions.
-- Each side slot holds at most one 44 px icon button, with a 22 px icon (the header button size we already use).
-  A tab with nothing there leaves the slot empty.
-- The label is 17 px bold and **fixed width**: as wide as "September 2026", the widest month, so the chevrons
-  don't move from month to month. Chevron buttons are 44 × 44 with a 22 px chevron, as in `MonthSwitcher` now.
-- At the first or last month a tab allows, that chevron is dimmed (as now).
+- The middle is centered on the screen, not in the space left over: both side slots are always 44 px, so the
+  month lands in the same place whatever buttons a tab has. A Playwright test checks the label's box is the same
+  on Budget, Activity and Reports, and that Accounts' title is centered on the same line.
+- The label is 17 px bold and fixed width (140 px, as wide as "September 2026"), so the chevrons don't move from
+  month to month. Under 360 px wide it shortens to "Sep 2026" (92 px); its spoken name stays the full month.
+- Each side slot holds at most one 44 px icon button with a 22 px icon:
 
-What goes in the slots:
+| Tab      | Left       | Right                            | Second row                                |
+| -------- | ---------- | -------------------------------- | ----------------------------------------- |
+| Budget   | —          | ⋯ (Set targets, Edit categories) | All / Needs attention / Low chips         |
+| Activity | —          | + Add transaction                | Search, filter chips                      |
+| Reports  | —          | —                                | — (Spending / Trends / Net worth in body) |
+| Accounts | ⚙ Settings | ↻ Sync (spins while syncing)     | —                                         |
 
-| Tab      | Left       | Right      | Second row                         |
-| -------- | ---------- | ---------- | ---------------------------------- |
-| Budget   | —          | ⋯ (Set targets, Edit categories) | All / Needs attention / Low chips (as now) |
-| Activity | —          | + (Add)    | Search, filter chips (as now)      |
-| Accounts | ⚙ Settings | ↻ Sync (spins while syncing) | —                          |
-| Reports  | —          | —          | — (the Spending / Trends / Net worth switch stays in the body) |
+Add and Sync are icon buttons on a phone (named "Add transaction" and "Sync"), not the labelled pills D-54
+brought in: a pill doesn't fit beside a centered month on a 375 px phone. On a computer they stay pills.
 
-This means Add and Sync become icon buttons on the phone, instead of the labelled pills D-55 brought in
-(`HeaderAction`). A pill doesn't fit: Accounts would need about 140 px on the right, and a matching 140 px on the
-left to keep the month centered, which leaves too little for the switcher on a 375 px phone. Their names stay
-in `aria-label`. The record for this: a new decision, D-?, which replaces this part of D-55.
+**Desktop, 64 px (`DesktopHeader`):** the month on the left edge of the content column, where Budget's was
+(22 px, 184 px fixed width); actions on the right as before. The sidebar shows the page, so there's no visible
+title on the month tabs; Accounts shows "Accounts" in that spot.
 
-**Desktop, 64 px (`DesktopHeader`):** the switcher sits on the left edge of the content column, where Budget's
-is now (22 px label, the same fixed width). Actions stay on the right as labelled pills: there's plenty of room.
-The sidebar already shows which page you're on, so there's no page title, as on Budget today. On a computer
-"the same place" means the same place on every page: left on a computer, centered on a phone.
+**Names for VoiceOver:** each month tab has a visually hidden `<h1>` ("Activity"); the bar is a group named
+"Month"; a polite live region reads the new month after a change.
 
-**Page names for VoiceOver.** Without a visible title, each tab gets a visually hidden `<h1>` ("Activity"),
-and the switcher is a `group` labelled "Month". `document.title` stays as it is.
+### Back to this month
 
-### 2. Back to this month
+Off this month, "Back to November" shows under the label on a phone (in the bar's bottom gap, so the label
+doesn't move) and beside the chevrons on a computer. The label is always a button (so focus stays on it): off this
+month it goes back, on this month it's `aria-disabled`. On a computer `[` and `]` step and `t` goes back.
 
-When the month on screen isn't this month, a small caption under the label says **"Back to today"** in the accent
-color. The whole label, caption included, is one button that goes to this month. That fits in the 56 px row as two
-lines (17 px + 12 px), so nothing else moves. On this month there's no caption and the label isn't a button.
+### One month for the app (`state/month.ts`)
 
-On a computer: `[` and `]` (as now) on all four tabs, plus `t` for this month.
+- The month is in each month tab's URL, `?month=2026-10`. No `month` means this month, so the app moves on by
+  itself when the month turns (when the session's `currentMonth` changes).
+- The tab bar and sidebar links to the month tabs carry the month of the screen you're on. From a screen without
+  one (Accounts, a register, Settings) they carry the last month a month screen showed. That's kept in memory
+  only: starting the app opens this month.
+- Ranges differ: Budget looks ahead (its `maxMonth`); Activity and Reports stop at this month. A later month
+  there shows this month with › dimmed, and the app's month isn't changed, so Budget still shows December.
+- A transaction sheet keeps the list's search (month, filter, search words): opening and closing one doesn't
+  change the list under it (`TxnRow` links and `useClose` keep the search).
 
-### 3. One month for the app
+### Activity by month
 
-- The month is part of each tab's URL, `?month=2026-10`, as on Budget and Reports now. With no `month`, a tab
-  shows this month. The URL stays the source of truth, so Back, reloads and links work as they do now.
-- The tab bar and the sidebar carry the month: their links to the four tabs include the `?month=` of the screen
-  you're on. Opening Reports from Budget's October keeps October.
-- From a screen without a month (a register, Settings, Targets): tapping a tab uses the last month you chose. That
-  month is held in memory only (`state/month.ts`), so starting the app again always opens on this month.
-- "This month" is stored as *no month*, never as `2026-11`, so the app moves to December by itself at midnight
-  on Nov 30 when you were on this month.
-- **Ranges differ per tab:** Budget can look ahead (its `maxMonth`); Reports, Activity and Accounts stop at this
-  month. If the chosen month is ahead of what a tab allows, that tab shows its last month with › dimmed, and the
-  chosen month doesn't change, so going back to Budget shows December again. The bar always shows the month the
-  screen is showing; it never claims December over November's numbers.
-- Each tab's first month is the budget's first month (`minMonth`).
+- **Posted rows**: those Budget counts in that month: the row's own month override (Save for next month, the
+  previous-month rule) or its date's month, and never before the budget's first month (`ROW_MONTH` in
+  `routes/activity.ts`, the same rule as `linesForTxn`). History (dated before an account's budget start) keeps its
+  date's month. The date is the one the list shows (a card purchase's authorized date), as in Budget.
+- **Pending and upcoming**: every one on this month, whatever its date; none on a past month. The Not posted yet
+  chip shows only on this month; `?filter=pending` on a past month shows everything.
+- **To-dos** (Money to match, Transfers to sort out, Needs category, Check these) show whatever the month: they're
+  waiting now, and the tab's count must match the screen.
+- **Search** looks through every month ("Searching all months" above the results); the bar stays as it is.
+- **Show more** reads the next 50 posted rows (the list had no paging before; a busy month can hold more than 50).
+- A past month with nothing posted says "No transactions in October."
+- While another month loads, the last month's rows aren't kept on screen under the new month's name.
+- Server: `GET /api/activity?month=YYYY-MM` (a malformed month is a 400; one before the budget is its first
+  month). The query reads posted dates from the month before to POST_LAG after the month after (an override moves
+  a row one month either way, and a row posts within POST_LAG of its date), through `bank_txn(budget_id, date)`;
+  the budget's first month has no lower bound (rows pending at link count there). No widening when a month is set.
+  The phone's engine runs the same route. _Verify:_ `apps/worker/test/activity-month.test.ts`.
 
-### 4. What each tab shows for the month
+### Screens without the bar
 
-**Budget and Reports:** unchanged.
+Screens opened from a tab keep `BackHeader`: a register, Owed to you, Targets, Categories, Rules, Settings.
 
-**Activity**
-- Posted rows: only those whose budget month (the same `monthOfDate` that puts a row in Budget's Spent) is the
-  chosen month. Paging (`cursor`) stays inside that month.
-- To-dos stay whatever the month (Needs category, Money to match, Transfers to sort, Check these): they're jobs
-  waiting now, and hiding one would leave the Activity tab's count disagreeing with the screen.
-- Not posted yet: **this month always shows every pending row, whatever its date** (owner, Nov 3, 2026). A charge
-  from Oct 30 that's still pending on Nov 3 is pending now, so it shows on November, not October. Upcoming rows
-  show on this month too. A past month never shows pending or upcoming rows. Once a row posts, it moves to the
-  month its date puts it in, like every posted row (which can be the month before).
-- **Search looks through every month.** While a search is typed, the bar's label shows "All months" and its
-  chevrons are hidden, and a line above the results says "Searching all months". Clearing the search brings the
-  month back.
-- On a past month with no posted rows: "No transactions in October."
-- Server and phone: `GET /api/activity?month=2026-10` narrows `postedQuery` to that month's dates. The phone's
-  engine answers the same route, so `engine.test.ts` gets a case for it. A month's query reads fewer rows than the
-  45-day window does now, so it fits the 10 ms CPU limit; measure it anyway (`docs/measurements.md`).
+### Usage ids
 
-**Accounts**
-- Balances stay as of today. The card says "Net worth today", and the change line becomes
-  "+$1,240 in October" for the chosen month.
-- `GET /api/accounts?month=2026-10` gives `netWorthChange` for that month (the `monthPosted` sum in
-  `routes/accounts.ts` takes the month instead of this one).
-- Repairs, failures and alerts don't depend on the month.
+`month.prev`, `month.next`, `month.today` (the screen is recorded by `useScreen`); `activity.more`. The old
+`budget.month.*` and `reports.month.*` ids are gone.
 
-### 5. Screens without the bar
+## What the reviews changed
 
-Screens you open from a tab keep `BackHeader`, so you can tell you've gone one level deeper: a register,
-Owed to you, Targets, Categories, Rules and the Settings pages. Settings on a computer is a sidebar page with no
-month; that one page is the exception to "every page".
+- **Accounts**: dropped from the month (owner). This also removed the reviewers' Accounts problems: the change
+  line counted calendar months over bank rows only, and a new query key would have broken Sync's wait.
+- **Activity's month rule**: the draft said `monthOfDate`, which ignores month overrides and the first-month
+  clamp, so October in Activity wouldn't have matched October in Budget. Now `ROW_MONTH`, as above.
+- **Paging**: the app never read `nextCursor`; a month with over 50 rows would have been cut off without a word.
+- **Speed**: a month bounded only from below would scan every later row. The query now has both bounds and skips
+  the 45/180-day widening.
+- **Sheets dropped the month**: opening a transaction on October showed November under it. Fixed.
+- **Stale rows**: `placeholderData` kept one month's rows under another month's name. Fixed.
+- **"Back to today"** moved the label and dropped focus: now "Back to November" in the bottom gap, label always a
+  button.
+- **Narrow phones**: "Sep 2026" under 360 px.
+- **Search**: the bar no longer changes to "All months"; a line above the results says so instead.
 
-### 6. Usage ids
-
-`month.prev`, `month.next` and `month.today`, with the screen already recorded (`useScreen`). The old
-`budget.month.*` and `reports.month.*` ids go away.
-
-## How it's built
-
-1. `components/MonthBar.tsx`: the phone and desktop bar, built on `MonthSwitcher` (fixed-width label, the
-   "Back to today" caption, `t`).
-2. `state/month.ts`: the last month chosen, in memory; `useAppMonth(tab)` reads `?month=`, clamps it to the tab's
-   range and returns `{ month, shown, go }`.
-3. `TabBar` and `DNav` links carry `?month=`.
-4. Routes `/activity` and `/accounts` accept `month`; Worker routes and the engine take it.
-5. Swap the four tabs' headers to `MonthBar`.
-6. Tests: unit tests for clamping and "this month" as no month; Playwright: the month stays put across the four
-   tabs on a phone (bounding box of the label is the same), October carries from Budget to Reports and Activity,
-   Back to today, search shows All months; Worker tests and `engine.test.ts` for the `month` parameter.
-
-## Open questions
-
-- Should Activity on a past month also show that month's to-dos only? (Proposed: no, to-dos are always shown.)
-- Accounts balances at the end of a past month were left out on purpose (the owner chose this, Nov 3, 2026).
+Left as is: the to-dos show on every month; Accounts keeps "+$X in November" for this month.
