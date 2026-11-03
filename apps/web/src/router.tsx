@@ -14,7 +14,7 @@ import {
 } from '@tanstack/react-router';
 import { AppShell } from './components/AppShell';
 import { ErrorNote, Loading } from './components/ui';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { qk, useSession } from './api/hooks';
 import { copySettled, needsReload, reloadForVersion } from './state/version';
 import { connectivity } from './state/connectivity';
@@ -55,6 +55,20 @@ const StartMonthScreen = lazyRouteComponent(setup, 'StartMonthScreen');
 const WelcomeScreen = lazyRouteComponent(setup, 'WelcomeScreen');
 
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+
+/** Queries kept when the app learns it's signed out: they're about signing in, not the budget. */
+const KEEP_SIGNED_OUT = new Set(['session', 'auth-status']);
+
+/** The session ended (24 hours, or signed out elsewhere), or the app opened signed out: drop the budget's data. */
+export function onSignedOutQueries(qc: QueryClient): void {
+  // Only when the app was showing data; on the sign-in screen the session query already failed.
+  // Drop everything in memory too, so nothing from the ended session is saved again.
+  if (qc.getQueryData(qk.session)) qc.clear();
+  // Opened signed out with saved data on the device: drop it, but keep the session check that said so and the
+  // sign-in screen's own check: removing that one while it loads leaves the screen waiting for an answer that
+  // never comes (it showed "Sign in" instead of first-time setup).
+  else qc.removeQueries({ predicate: (q) => !KEEP_SIGNED_OUT.has(String(q.queryKey[0])) });
+}
 
 function Root() {
   const session = useSession();
@@ -97,13 +111,7 @@ function Root() {
     const onReadOnly = () => void qc.invalidateQueries({ queryKey: qk.session });
     window.addEventListener('ledgerline:readonly', onReadOnly);
     // The session ended (24 hours, or signed out elsewhere): show sign-in.
-    const onSignedOut = () => {
-      // Only when the app was showing data; on the sign-in screen the session query already failed.
-      // Drop everything in memory too, so nothing from the ended session is saved again.
-      if (qc.getQueryData(qk.session)) qc.clear();
-      // Opened signed out with saved data on the device: drop it, but keep the session check that said so.
-      else qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'session' });
-    };
+    const onSignedOut = () => onSignedOutQueries(qc);
     window.addEventListener('ledgerline:signedout', onSignedOut);
     return () => {
       window.removeEventListener('ledgerline:readonly', onReadOnly);
