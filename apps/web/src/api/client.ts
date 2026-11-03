@@ -121,7 +121,38 @@ export function resetRecentChanges(): void {
   recent.clear();
 }
 
-async function send<S extends z.ZodType>(
+// "Confirm it's you" (D-27): a request refused for want of a recent passkey check waits while the app asks for the
+// passkey, then is sent once more, so the person doesn't have to do the thing again. Requests refused together share
+// one check. Without a dialog (or when the person says Not now) the refusal is thrown as before.
+let askForPasskey: (() => Promise<boolean>) | null = null;
+let asking: Promise<boolean> | null = null;
+/** The "Confirm it's you" dialog registers itself here; it resolves true once the passkey check succeeded. */
+export function setPasskeyCheck(fn: (() => Promise<boolean>) | null): void {
+  askForPasskey = fn;
+}
+async function afterPasskeyCheck<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (!(e instanceof ApiError && e.code === 'reauth') || !askForPasskey) throw e;
+    asking ??= askForPasskey().finally(() => {
+      asking = null;
+    });
+    if (!(await asking)) throw e;
+    return fn();
+  }
+}
+
+function send<S extends z.ZodType>(
+  method: Method,
+  path: string,
+  schema: S,
+  body?: unknown,
+): Promise<z.infer<S>> {
+  return afterPasskeyCheck(() => sendOnce(method, path, schema, body));
+}
+
+async function sendOnce<S extends z.ZodType>(
   method: Method,
   path: string,
   schema: S,
@@ -233,21 +264,25 @@ function failure(res: Response, json: unknown, path: string): ApiError {
   if (code === 'read_only' || code === 'readonly') onReadOnly?.();
   if (code === 'resting') connectivity.setReadsPaused(true);
   // The session ended (24 hours, or locked): sign in again. The saved copy stays, encrypted (D-45).
+  // A passkey check ("reauth") is handled by afterPasskeyCheck.
   if (code === 'unauthenticated' && !path.startsWith('/api/auth/')) {
     clearSavedData();
     window.dispatchEvent(new Event('ledgerline:signedout'));
   }
   // No longer a member of this budget: this phone's copy goes (D-45).
   if (code === 'not_member') void wipe();
-  if (code === 'reauth') window.dispatchEvent(new Event('ledgerline:reauth'));
   return new ApiError(code, message, res.status);
 }
 
 /**
- * Downloads a file from the Worker and saves it on the device. A refusal (such as the 15-minute passkey check
- * exports need) is thrown like any API error, instead of being saved as the file.
+ * Downloads a file from the Worker and saves it on the device. A refusal is thrown like any API error, instead of
+ * being saved as the file; the 15-minute passkey check exports need asks for the passkey and then downloads.
  */
-export async function download(path: string, filename: string): Promise<void> {
+export function download(path: string, filename: string): Promise<void> {
+  return afterPasskeyCheck(() => downloadOnce(path, filename));
+}
+
+async function downloadOnce(path: string, filename: string): Promise<void> {
   if (connectivity.get().readsPaused)
     throw new ApiError('resting', 'Reading is paused until the daily limit resets.', 503);
   let res: Response;

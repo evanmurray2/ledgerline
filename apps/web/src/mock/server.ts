@@ -497,6 +497,7 @@ export class MockServer {
         return { ok: true, connectionId: db.newId('c'), accounts: [] };
       }
       case 'POST settings/connections/refresh':
+        db.refreshedAt = (db.refreshedAt ?? Date.UTC(2026, 10, 14, 17, 42)) + 60_000;
         return { ok: true, started: 2 };
       case 'POST settings/connections/:y/refresh': {
         if (c === 'c-ally') db.allyRepaired = true;

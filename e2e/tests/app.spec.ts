@@ -332,10 +332,9 @@ test('No screen is taller than the phone: the page itself never scrolls, only it
 
 test('Accounts: Refresh syncs every bank; on a phone, so does pulling down', async ({ page }) => {
   await page.goto('/accounts');
-  const toast = page.getByText('Syncing 2 banks. New transactions show up in a minute or two.');
   if (test.info().project.name === 'desktop') {
     await page.getByRole('button', { name: 'Refresh' }).click();
-    await expect(toast).toBeVisible();
+    await expect(page.getByText('Up to date')).toBeVisible();
     return;
   }
   await page.getByTestId('net-worth').waitFor();
@@ -362,8 +361,10 @@ test('Accounts: Refresh syncs every bank; on a phone, so does pulling down', asy
     }, phase);
   await drag('pull');
   await expect(page.getByTestId('pull-refresh')).toContainText('Release to sync');
+  // Letting go keeps the indicator up while the banks sync, then says they're done.
   await drag('release');
-  await expect(toast).toBeVisible();
+  await expect(page.getByTestId('pull-refresh')).toContainText('Syncing banks…');
+  await expect(page.getByTestId('pull-refresh')).toContainText('Up to date');
   // The sync button next to the gear does the same.
   await expect(page.getByRole('button', { name: 'Sync banks now' })).toBeEnabled();
 });

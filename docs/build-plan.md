@@ -165,3 +165,9 @@ Built all at once on the owner's word (D-46): no settings and no shadow comparis
 - [ ] Drop `budget_line`, `month_snapshot`, `account_month_total` and `month_total_done` on the server: the second release of the removal (expand-only rule), after this one is deployed.
 - [ ] On the owner's iPhone after deploy: PRF in the Home Screen app with the existing passkey, first download time, Face ID unlock with no signal.
 - [ ] The mock API (`apps/web/src/mock`) still has its own engine for the mock tests; replace it with a sample sync dataset fed to the real engine.
+
+## 14. Passkey check and pull to sync (Nov 3, 2026)
+
+- [x] Confirm it's you carries on by itself: a request refused for want of the 15-minute passkey check waits while the dialog asks for the passkey, then is sent again (`api/client.ts` `setPasskeyCheck`), so linking a bank, exports and passkey changes no longer have to be done twice. Requests refused together share one check; Not now gives up as before. _Verify:_ `apps/web/test/client.test.ts` (passkey check, download).
+- [x] Syncing banks now (pull to sync, the sync button, Try again, Finish setup) no longer needs the passkey check: it only fetches what Plaid already has (D-27 lists linking, repairing, exports and passkeys). _Verify:_ `apps/worker/test/objects/auth.test.ts`.
+- [x] Pull to sync follows the finger without re-rendering the screen (transforms on the list and indicator, a rubber-band pull, about 110 px of finger to trigger). After letting go the indicator stays up saying Syncing banks… and the list is checked every 2.5 s until each bank that started has synced or failed (at most 45 s), then shows Up to date; the old toast said to wait a minute or two and nothing moved for 30 s. _Verify:_ e2e `Accounts: Refresh syncs every bank`.

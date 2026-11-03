@@ -191,6 +191,13 @@ describe('passkey sign-in', () => {
     expect(r).toMatchObject({ status: 401, json: { error: 'reauth' } });
     expect((await b.call('GET', '/api/export/json')).json).toMatchObject({ error: 'reauth' });
     expect((await b.call('GET', '/api/session')).status).toBe(200); // everything else still works
+    // Syncing banks now isn't sensitive: pull to sync and Try again work without the check.
+    expect((await b.call('POST', '/api/settings/connections/refresh')).json).not.toMatchObject({
+      error: 'reauth',
+    });
+    expect((await b.call('POST', '/api/settings/connections/c1/refresh')).json).not.toMatchObject({
+      error: 'reauth',
+    });
     expect((await b.call('POST', '/api/settings/security/device-link')).json).toMatchObject({
       error: 'reauth',
     });

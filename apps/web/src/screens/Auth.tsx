@@ -1,9 +1,9 @@
 // Passkey sign-in (decisions.md D-27): first-time setup with the setup code, signing in, adding a device from a
 // single-use link, the "Confirm it's you" check before linking a bank or exporting, and Settings → Sign-in.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { browserSupportsWebAuthn, startAuthentication, startRegistration } from '@simplewebauthn/browser';
-import { ApiError, errorMessage } from '../api/client';
+import { ApiError, errorMessage, setPasskeyCheck } from '../api/client';
 import { api } from '../api/endpoints';
 import { qk } from '../api/hooks';
 import { Card, Field, PrimaryButton, SecondaryButton, inputClass, cx } from '../components/ui';
@@ -203,18 +203,35 @@ export function AddDeviceScreen() {
   );
 }
 
-/** "Confirm it's you": linking a bank, exporting and changing passkeys need a passkey check within 15 minutes. */
+/**
+ * "Confirm it's you": linking a bank, exporting and changing passkeys need a passkey check within 15 minutes. The
+ * refused request waits here (api/client.ts setPasskeyCheck) and goes ahead by itself once the passkey is used.
+ */
 export function ReauthDialog() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const answer = useRef<((ok: boolean) => void) | null>(null);
+  const close = (ok: boolean) => {
+    setOpen(false);
+    answer.current?.(ok);
+    answer.current = null;
+  };
   useEffect(() => {
-    const on = () => {
-      setErr(null);
-      setOpen(true);
+    const ask = () =>
+      new Promise<boolean>((resolve) => {
+        answer.current?.(false);
+        answer.current = resolve;
+        setErr(null);
+        setBusy(false);
+        setOpen(true);
+      });
+    setPasskeyCheck(ask);
+    return () => {
+      setPasskeyCheck(null);
+      answer.current?.(false);
+      answer.current = null;
     };
-    window.addEventListener('ledgerline:reauth', on);
-    return () => window.removeEventListener('ledgerline:reauth', on);
   }, []);
   if (!open) return null;
   return (
@@ -229,8 +246,8 @@ export function ReauthDialog() {
           Confirm it’s you
         </h2>
         <p className="m-0 text-[15px] leading-relaxed text-ink-2">
-          Linking a bank, exporting your data and changing passkeys need a quick passkey check. Then try
-          again.
+          Linking a bank, exporting your data and changing passkeys need a quick passkey check. Then it
+          carries on by itself.
         </p>
         <Problem text={err} />
         <PrimaryButton
@@ -240,16 +257,15 @@ export function ReauthDialog() {
             void ceremony(signInWithPasskey).then((m) => {
               setBusy(false);
               setErr(m);
-              if (!m) {
-                setOpen(false);
-                toast.show({ text: 'Confirmed. Try that again.' });
-              }
+              if (!m) close(true);
             });
           }}
         >
           {busy ? 'Waiting for your passkey…' : 'Use passkey'}
         </PrimaryButton>
-        <SecondaryButton onClick={() => setOpen(false)}>Not now</SecondaryButton>
+        <SecondaryButton disabled={busy} onClick={() => close(false)}>
+          Not now
+        </SecondaryButton>
       </div>
     </div>
   );

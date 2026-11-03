@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../src/api/endpoints';
-import { ApiError, download, errorMessage, resetRecentChanges } from '../src/api/client';
+import { ApiError, download, errorMessage, resetRecentChanges, setPasskeyCheck } from '../src/api/client';
 import { connectivity } from '../src/state/connectivity';
 
 type Call = { url: string; init: RequestInit };
@@ -156,18 +156,67 @@ describe('API client', () => {
   });
 });
 
+describe('passkey check', () => {
+  it('sends a change again once the passkey check succeeds, sharing one check between requests', async () => {
+    let checked = false;
+    respond = (c) =>
+      checked || c.url.includes('session')
+        ? json({ linkToken: 'link-x' })
+        : json({ error: 'reauth', message: 'Confirm it’s you with your passkey' }, 401);
+    const asked = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      return (checked = true);
+    });
+    setPasskeyCheck(asked);
+    const [a, b] = await Promise.all([
+      api.linkToken({ mode: 'new' }),
+      api.deviceLink().catch((e: unknown) => e),
+    ]);
+    setPasskeyCheck(null);
+    expect(a).toEqual({ linkToken: 'link-x' });
+    expect(b).toBeDefined();
+    expect(asked).toHaveBeenCalledOnce();
+    expect(calls).toHaveLength(4);
+  });
+
+  it('gives up with the refusal when the person says Not now', async () => {
+    respond = () => json({ error: 'reauth', message: 'Confirm it’s you with your passkey' }, 401);
+    setPasskeyCheck(async () => false);
+    await expect(api.signOutOthers()).rejects.toMatchObject({ code: 'reauth' });
+    setPasskeyCheck(null);
+    expect(calls).toHaveLength(1);
+  });
+});
+
 describe('download', () => {
   it('asks for the passkey check instead of saving the refusal as the file', async () => {
     respond = () => json({ error: 'reauth', message: 'Confirm it’s you with your passkey' }, 401);
-    const asked = vi.fn();
-    window.addEventListener('ledgerline:reauth', asked);
+    const asked = vi.fn(async () => false); // Not now
+    setPasskeyCheck(asked);
     const save = vi.spyOn(URL, 'createObjectURL');
     const err = await download('/api/export/usage', 'ledgerline-usage.json').catch((e: unknown) => e);
-    window.removeEventListener('ledgerline:reauth', asked);
+    setPasskeyCheck(null);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).code).toBe('reauth');
     expect(asked).toHaveBeenCalledOnce();
     expect(save).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(1);
+  });
+
+  it('downloads by itself once the passkey check succeeds', async () => {
+    let checked = false;
+    respond = () =>
+      checked
+        ? json({ events: [], daily: [], notes: [] })
+        : json({ error: 'reauth', message: 'Confirm it’s you with your passkey' }, 401);
+    setPasskeyCheck(async () => (checked = true));
+    URL.createObjectURL = vi.fn(() => 'blob:usage');
+    URL.revokeObjectURL = vi.fn();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    await download('/api/export/usage', 'ledgerline-usage.json');
+    setPasskeyCheck(null);
+    expect(calls).toHaveLength(2);
+    expect(click).toHaveBeenCalledOnce();
   });
 
   it('saves the file under its name when the export is allowed', async () => {
