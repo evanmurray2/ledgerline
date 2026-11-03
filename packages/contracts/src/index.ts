@@ -226,6 +226,8 @@ export const TargetRequest = z.object({ categoryId: id, month, target: Target })
 
 export const ActivityView = z.object({
   attentionCount: z.number().int(),
+  /** Pending and upcoming rows, whatever the filter or search: Activity hides its Not posted yet chip at 0. */
+  notPostedCount: z.number().int(),
   moneyToMatch: z.array(TxnListRow),
   transfersToSort: z.array(TxnListRow),
   needsCategory: z.array(

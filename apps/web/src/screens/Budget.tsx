@@ -722,15 +722,16 @@ function MonthNav({
         <Icon name="chevR" size={22} />
       </button>
       {!desktop && (
-        // Categories belong to the budget; Settings stays behind the gear on Accounts.
-        <Link
-          to="/categories"
-          data-track="budget.edit_categories"
-          aria-label="Edit categories"
-          className="flex h-11 min-w-11 items-center justify-center px-1 text-[15px] font-bold text-accent no-underline"
-        >
-          Edit
-        </Link>
+        // Categories and targets belong to the budget, so they sit at the top of it; Settings stays behind the
+        // gear on Accounts.
+        <OverflowMenu
+          label="More budget actions"
+          className="flex h-11 w-11 items-center justify-center"
+          items={[
+            { to: '/budget/targets', name: 'Set targets', track: 'budget.set_targets' },
+            { to: '/categories', name: 'Edit categories', track: 'budget.edit_categories' },
+          ]}
+        />
       )}
     </div>
   );
@@ -867,13 +868,6 @@ function AllGroups({ b, month }: { b: BudgetView; month: string }) {
           ? 'Transactions will show up in Activity after the first sync, usually within a few minutes.'
           : 'Bars show how much of this month’s money is left.'}
       </p>
-      <Link
-        to="/budget/targets"
-        data-track="budget.set_targets"
-        className="hit flex h-10 shrink-0 items-center self-start text-[14px] font-bold text-accent no-underline"
-      >
-        Set targets
-      </Link>
     </>
   );
 }
