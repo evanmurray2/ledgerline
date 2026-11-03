@@ -6,10 +6,10 @@ import { useQueries } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
 import { useAccounts, useMoneyMutation, useTxn, useSession, qk } from '../api/hooks';
 import { CategoryField } from '../components/CategoryPicker';
-import { Sheet } from '../components/Sheet';
+import { Sheet, SheetTitle } from '../components/Sheet';
 import {
+  Banner,
   Button,
-  cx,
   ErrorNote,
   Field,
   inputClass,
@@ -22,7 +22,7 @@ import {
 import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { dayLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
-import { useClose } from './TxnCommon';
+import { AMOUNT_INPUT, useClose } from './TxnCommon';
 import { usage } from '../usage/tracker';
 
 export { MatchScreen } from './ActivityMatch';
@@ -76,24 +76,17 @@ export function TransferScreen() {
       onClose={close}
       gap="auto"
       header={
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[13px] text-muted">
-            {t.accountName} · {dayLabel(t.date)} · “{t.rawName}”
-          </span>
-          <h1 className="tnum m-0 text-[28px] font-bold">{formatCents(t.amount)}</h1>
-          <span className="text-[15px] font-bold">Where did this go?</span>
-        </div>
+        <SheetTitle
+          tag="Transfer to sort out"
+          amount={formatCents(t.amount)}
+          sub={`${t.accountName} · ${dayLabel(t.date)} · “${t.rawName}”`}
+        />
       }
     >
       <div className="flex flex-col gap-3 pb-4">
         {result ? (
           <>
-            <p
-              role="status"
-              className="m-0 rounded-xl bg-success-soft p-3 text-[14px] leading-snug text-funded-fg"
-            >
-              {result}
-            </p>
+            <Banner tone="success">{result}</Banner>
             <div className="flex gap-2">
               <SecondaryButton
                 mutates
@@ -114,6 +107,7 @@ export function TransferScreen() {
           </>
         ) : (
           <>
+            <span className="text-[15px] font-bold">Where did this go?</span>
             <p className="m-0 text-[13px] leading-snug text-muted">
               Transfers between your accounts pair up on their own. This one couldn’t:{' '}
               {candidates.length > 1
@@ -237,25 +231,35 @@ export function CheckPendingScreen() {
       onClose={close}
       gap="auto"
       header={
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[13px] text-muted">
-            {t.payee} · {t.accountName} · added by you {dayLabel(t.date)}
-          </span>
-          <h1 className="tnum m-0 text-[28px] font-bold">{formatCents(t.amount)}</h1>
-          <span className="text-[13px] font-semibold text-under-fg">
-            Not at the bank after {days} days · {cat}
-          </span>
-        </div>
+        <SheetTitle
+          tag={`Not at the bank after ${days} days`}
+          tagClass="text-under-fg"
+          amount={formatCents(t.amount)}
+          sub={`${t.payee} · ${t.accountName} · added by you ${dayLabel(t.date)} · ${cat}`}
+        />
+      }
+      footer={
+        done ? (
+          <PrimaryButton onClick={close}>Done</PrimaryButton>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {(keep.error || patch.error) && <ErrorNote error={keep.error ?? patch.error} />}
+            <PrimaryButton
+              mutates
+              track={`check.confirm.${pick}`}
+              danger={pick === 'delete'}
+              disabled={pick === 'match'}
+              onClick={() => void confirm()}
+            >
+              {cur.cta}
+            </PrimaryButton>
+          </div>
+        )
       }
     >
-      <div className="flex flex-col gap-2 pb-4">
+      <div className="flex flex-col gap-2">
         {done ? (
-          <>
-            <p role="status" className="m-0 rounded-xl bg-success-soft p-3 text-[14px] text-funded-fg">
-              {done}
-            </p>
-            <PrimaryButton onClick={close}>Done</PrimaryButton>
-          </>
+          <Banner tone="success">{done}</Banner>
         ) : (
           <>
             <p className="m-0 text-[13px] leading-snug text-muted">
@@ -275,7 +279,7 @@ export function CheckPendingScreen() {
               <div className="flex gap-2">
                 <Field label="Amount" className="flex-1">
                   <input
-                    className={cx(inputClass, 'tnum')}
+                    className={AMOUNT_INPUT}
                     inputMode="decimal"
                     value={amt}
                     onChange={(e) => setAmount(e.target.value)}
@@ -284,22 +288,11 @@ export function CheckPendingScreen() {
               </div>
             )}
             {pick === 'match' && (
-              <p className="m-0 rounded-xl bg-page p-3 text-[13px] text-muted">
+              <Banner tone="neutral">
                 No bank transaction near {formatCents(Math.abs(t.amount), { whole: true })} since{' '}
                 {dayLabel(t.date)} looks like this check yet. When one arrives, it will appear here to pick.
-              </p>
+              </Banner>
             )}
-            {(keep.error || patch.error) && <ErrorNote error={keep.error ?? patch.error} />}
-            <PrimaryButton
-              mutates
-              track={`check.confirm.${pick}`}
-              danger={pick === 'delete'}
-              disabled={pick === 'match'}
-              className="mt-2"
-              onClick={() => void confirm()}
-            >
-              {cur.cta}
-            </PrimaryButton>
           </>
         )}
       </div>
@@ -350,7 +343,7 @@ export function AddTxnScreen() {
       onClose={close}
       gap="small"
       closeLabel="Cancel"
-      header={<h1 className="m-0 text-[20px] font-bold">Add a transaction</h1>}
+      header={<SheetTitle title="Add a transaction" />}
       footer={
         <PrimaryButton mutates track="add_txn.add" disabled={!ok} onClick={() => void submit()}>
           Add
@@ -375,7 +368,7 @@ export function AddTxnScreen() {
       <div className="flex items-end gap-2">
         <Field label="Amount" className="flex-1">
           <input
-            className={cx(inputClass, 'tnum text-[18px] font-bold')}
+            className={AMOUNT_INPUT}
             inputMode="decimal"
             placeholder="0.00"
             value={amount}

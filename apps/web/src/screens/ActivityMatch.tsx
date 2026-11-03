@@ -3,8 +3,18 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from '@tanstack/react-router';
 import { api } from '../api/endpoints';
 import { useMatchView, useMoneyMutation, useSession, useBudget } from '../api/hooks';
-import { Sheet } from '../components/Sheet';
-import { cx, ErrorNote, Loading, PrimaryButton, SecondaryButton } from '../components/ui';
+import { Sheet, SheetTitle } from '../components/Sheet';
+import {
+  Banner,
+  cx,
+  EmptyNote,
+  ErrorNote,
+  Label,
+  Loading,
+  PrimaryButton,
+  SecondaryButton,
+  TextButton,
+} from '../components/ui';
 import { formatCents } from '../lib/money';
 import { dayLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
@@ -79,32 +89,44 @@ export function MatchScreen() {
       onClose={close}
       gap="small"
       header={
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[13px] text-muted">
-            {v.inflow.payee} · {v.inflow.accountName} · {dayLabel(v.inflow.date)}
-          </span>
-          <h1 className="tnum m-0 text-[28px] font-bold text-funded-fg">
-            {formatCents(inflow, { plus: true })}
-          </h1>
-          {!done && (
-            <>
-              <span className="text-[15px] font-bold">What is this money?</span>
-              <span className="text-[13px] text-muted">
-                It’s held in Waiting to match, outside Ready to Assign, until you decide.
-              </span>
-            </>
-          )}
-        </div>
+        <SheetTitle
+          tag="Waiting to match"
+          tagClass="text-owed-fg"
+          amount={formatCents(inflow, { plus: true })}
+          amountClass="text-funded-fg"
+          sub={`${v.inflow.payee} · ${v.inflow.accountName} · ${dayLabel(v.inflow.date)}`}
+        />
+      }
+      footer={
+        done ? undefined : (
+          <div className="flex flex-col gap-2">
+            {match.error && <ErrorNote error={match.error} />}
+            <div className="flex gap-2">
+              <SecondaryButton
+                mutates
+                track="match.income"
+                className="flex-1"
+                onClick={() => void submit(true)}
+              >
+                It’s income
+              </SecondaryButton>
+              <PrimaryButton
+                mutates
+                track="match.apply"
+                className="flex-[2]"
+                disabled={matched === 0}
+                onClick={() => void submit(false)}
+              >
+                {matched === 0 ? 'Pick what it pays back' : `Match ${formatCents(matched)}`}
+              </PrimaryButton>
+            </div>
+          </div>
+        )
       }
     >
       {done ? (
         <div className="flex flex-col gap-3">
-          <p
-            role="status"
-            className="m-0 rounded-xl bg-success-soft p-3 text-[14px] leading-snug text-funded-fg"
-          >
-            {done.text}
-          </p>
+          <Banner tone="success">{done.text}</Banner>
           <div className="flex gap-2">
             <SecondaryButton
               mutates
@@ -128,13 +150,15 @@ export function MatchScreen() {
         </div>
       ) : (
         <>
-          <h2 className="m-0 text-[12px] font-bold uppercase tracking-[0.4px] text-ink-2">
-            Money back for what’s owed to you
-          </h2>
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[15px] font-bold">What is this money?</span>
+            <span className="text-[13px] text-muted">
+              It’s held in Waiting to match, outside Ready to Assign, until you decide.
+            </span>
+          </div>
+          <Label>Money back for what’s owed to you</Label>
           <div className="shrink-0 overflow-hidden rounded-[14px] border border-line">
-            {applied.length === 0 && (
-              <p className="m-0 p-3 text-[14px] text-muted">Nothing is marked as owed to you.</p>
-            )}
+            {applied.length === 0 && <EmptyNote inCard>Nothing is marked as owed to you.</EmptyNote>}
             {applied.map((a) => (
               <label
                 key={a.id}
@@ -149,7 +173,7 @@ export function MatchScreen() {
                 />
                 <span className="flex flex-1 flex-col gap-0.5">
                   <span className="text-[15px] font-semibold">{a.label}</span>
-                  <span className={cx('text-[12px]', a.late ? 'text-over-fg' : 'text-muted')}>
+                  <span className={cx('text-[12px]', a.late ? 'text-under-fg' : 'text-muted')}>
                     {a.expectBy ? `${a.late ? 'Late · ' : ''}expected by ${dayLabel(a.expectBy)}` : 'No date'}
                   </span>
                 </span>
@@ -167,19 +191,14 @@ export function MatchScreen() {
             ))}
           </div>
           {other ? (
-            <p className="m-0 rounded-xl bg-page p-3 text-[13px] leading-snug text-muted">
+            <Banner tone="neutral">
               To match money back for something you didn’t mark, open that purchase in Activity and set Owed
               to you first. It then shows up here.
-            </p>
+            </Banner>
           ) : (
-            <button
-              type="button"
-              data-track="match.other"
-              onClick={() => setOther(true)}
-              className="min-h-9 self-start text-[14px] font-bold text-accent"
-            >
+            <TextButton track="match.other" onClick={() => setOther(true)}>
               It’s for something I didn’t mark…
-            </button>
+            </TextButton>
           )}
           {left > 0 && matched > 0 && (
             <fieldset className="m-0 flex flex-col gap-2 rounded-xl border border-line p-3">
@@ -209,26 +228,6 @@ export function MatchScreen() {
             it leaves your Owed to you list. Pick “It’s income” if it doesn’t pay anything back.
             {rta !== undefined ? ` Ready to Assign has ${formatCents(rta)} now.` : ''}
           </p>
-          {match.error && <ErrorNote error={match.error} />}
-          <div className="flex gap-2 pb-4">
-            <SecondaryButton
-              mutates
-              track="match.income"
-              className="flex-1"
-              onClick={() => void submit(true)}
-            >
-              It’s income
-            </SecondaryButton>
-            <PrimaryButton
-              mutates
-              track="match.apply"
-              className="flex-[2]"
-              disabled={matched === 0}
-              onClick={() => void submit(false)}
-            >
-              {matched === 0 ? 'Pick what it pays back' : `Match ${formatCents(matched)}`}
-            </PrimaryButton>
-          </div>
           <span className="sr-only">
             <Link to={parent}>Back</Link>
           </span>
