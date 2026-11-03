@@ -122,6 +122,10 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   await expect(page.getByRole('heading', { name: 'Ledgerline is locked' })).toBeVisible();
   await page.getByRole('button', { name: 'Unlock' }).click();
   await expect(page.getByRole('heading', { name: 'Ledgerline is locked' })).toBeHidden();
+  // The budget opens from the copy (here, first-run setup), not "Couldn't reach Ledgerline".
+  await expect(page).toHaveURL(/\/welcome/);
+  await expect(page.getByRole('heading', { name: 'Ledgerline', exact: true })).toBeVisible();
+  await expect(page.getByText('Couldn’t reach Ledgerline')).toBeHidden();
   await context.setOffline(false);
 
   // Turned off from Settings → Sign-in (here, the API): the next sign-in can't open it, so it's replaced.

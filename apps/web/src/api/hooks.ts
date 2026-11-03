@@ -41,6 +41,14 @@ export function useSession() {
     staleTime: () => connectivity.staleMs(60_000),
   });
   const net = useConnectivity();
+  // Watched, not just read: unlocking the copy with no signal puts its saved session here (copy.ts), and the app
+  // has to show it at once.
+  const savedQ = useQuery({
+    queryKey: qk.savedSession,
+    queryFn: () => qc.getQueryData<NonNullable<typeof q.data>>(qk.savedSession) ?? null,
+    enabled: false,
+    staleTime: Infinity,
+  });
   useEffect(() => {
     if (q.data) qc.setQueryData(qk.savedSession, q.data);
   }, [q.data, qc]);
@@ -48,8 +56,8 @@ export function useSession() {
   const unreachable =
     (q.error instanceof ApiError && q.error.network) ||
     (!q.error && (q.fetchStatus === 'paused' || !net.online || net.networkFailed));
-  const saved = unreachable ? qc.getQueryData<NonNullable<typeof q.data>>(qk.savedSession) : undefined;
-  return saved ? ({ ...q, data: saved } as typeof q) : q;
+  const saved = unreachable ? (savedQ.data ?? undefined) : undefined;
+  return saved ? ({ ...q, data: saved } as unknown as typeof q) : q;
 }
 export function useBudget(month: string | undefined) {
   return useQuery({ queryKey: qk.budget(month ?? ''), queryFn: () => api.budget(month!), enabled: !!month });

@@ -83,7 +83,7 @@ export function CopyScreen({
       )}
       <PrimaryButton
         disabled={busy}
-        onClick={() => go(() => (offline ? unlockWithoutSignal().then(onOffline) : unlockOnline(session)))}
+        onClick={() => go(() => (offline ? unlockWithoutSignal(onOffline) : unlockOnline(session)))}
       >
         {busy ? 'Waiting for Face ID…' : 'Unlock'}
       </PrimaryButton>
