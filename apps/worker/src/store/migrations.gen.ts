@@ -55,5 +55,9 @@ export const BUDGET_MIGRATIONS: StoreMigration[] = [
   {
     "name": "0005_orphaned_overlay.sql",
     "sql": "-- The daily scan's vanished-pending check looks for edits held on a removed bank row (txn_overlay.orphaned_at).\n-- Without an index it read every overlay row each day, which grows with the budget's whole history; this partial\n-- index holds only the few orphaned rows. Adds an index only: no data changes.\nCREATE INDEX txn_overlay_orphaned ON txn_overlay(budget_id, orphaned_at) WHERE orphaned_at IS NOT NULL;\n"
+  },
+  {
+    "name": "0006_drop_phone_tables_on_server.sql",
+    "sql": "-- expand-only: removal of budget_line, month_snapshot, account_month_total and month_total_done, unused on the\n-- server since D-45 (PR #19 stopped every server read and write of them and is deployed).\n-- They hold what the phone works out (budget lines, month snapshots, stored month totals). The phone's copy keeps\n-- them: its engine skips this migration and creates them itself (apps/worker/src/local/engine.ts, PHONE_TABLES).\nDROP INDEX IF EXISTS budget_line_month;\nDROP TABLE IF EXISTS budget_line;\nDROP TABLE IF EXISTS month_snapshot;\nDROP TABLE IF EXISTS account_month_total;\nDROP TABLE IF EXISTS month_total_done;\n"
   }
 ];

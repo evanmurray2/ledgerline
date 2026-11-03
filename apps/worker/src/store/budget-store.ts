@@ -9,7 +9,15 @@ import type { Caller } from './directory.js';
 import { DIRECTORY_NAME } from './directory.js';
 import { budgetApi, serverReadsOnly } from '../routes/api.js';
 import { dev } from '../dev-seed.js';
-import { BUDGET_TABLES, NO_FILTER, chain, insertStatements, readChunk, tableMeta } from './dump.js';
+import {
+  BUDGET_TABLES,
+  DROPPED_TABLES,
+  NO_FILTER,
+  chain,
+  insertStatements,
+  readChunk,
+  tableMeta,
+} from './dump.js';
 import type { Env } from '../env.js';
 import { DurableDb } from './adapter.js';
 import { appliedMigrations, migrate } from './migrate.js';
@@ -133,6 +141,8 @@ export class BudgetStore extends DurableObject<Env> {
         footer = o.tables;
         continue;
       }
+      // Worked out on the phone, not kept here (migration 0006): the phone works them out again.
+      if (o.t && DROPPED_TABLES.includes(o.t)) continue;
       if (!o.t || !o.r || !(BUDGET_TABLES as readonly string[]).includes(o.t))
         return { ok: false, reason: `unknown line` };
       rows.push({ t: o.t, r: o.r });

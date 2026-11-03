@@ -49,7 +49,7 @@ describe('full backup', () => {
     expect(lines[0]).toMatchObject({ format: 'ledgerline-dump', version: 1 });
     const footer = lines.at(-1) as { end: boolean; tables: Record<string, { count: number }> };
     expect(footer.end).toBe(true);
-    for (const t of ['bank_txn', 'category', 'assignment', 'budget_line', 'month_snapshot'])
+    for (const t of ['bank_txn', 'category', 'assignment', 'txn_overlay', 'payee'])
       expect(footer.tables[t]!.count, t).toBe(
         Number(await db.prepare(`SELECT count(*) AS n FROM ${t}`).first('n')),
       );
@@ -61,6 +61,23 @@ describe('full backup', () => {
       ok: false,
       reason: expect.stringMatching(/refused/),
     });
+  });
+
+  it('a backup from before migration 0006 still restores: rows of the dropped tables are skipped', async () => {
+    const text = await download();
+    const lines = text.split('\n');
+    const old = [
+      lines[0]!,
+      JSON.stringify({ t: 'budget_line', r: { budget_id: 'x', txn_key: 'k', line: '0', amount: 1 } }),
+      JSON.stringify({
+        t: 'month_snapshot',
+        r: { budget_id: 'x', month: '2026-11', state: '{}', hash: 'h' },
+      }),
+      ...lines.slice(1),
+    ].join('\n');
+    const fresh = e.BUDGET.get(e.BUDGET.idFromName('restore-old'));
+    expect(await fresh.restoreDump(old)).toMatchObject({ ok: true });
+    expect(await fresh.restoreVerify()).toEqual({ ok: true, differences: [] });
   });
 
   it('a changed line is caught by the fingerprints', async () => {

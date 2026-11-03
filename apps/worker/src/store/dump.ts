@@ -4,9 +4,16 @@
 // canonical encoding, so a restore proves it holds exactly what was saved.
 import type { Db, Stmt } from '@ledgerline/db/sql';
 
+/** Tables older backups hold that the server no longer keeps (migration 0006): a restore skips their rows. */
+export const DROPPED_TABLES: readonly string[] = [
+  'account_month_total',
+  'budget_line',
+  'month_snapshot',
+  'month_total_done',
+];
+
 /** A budget's tables, parents before children (computed from the schema's foreign keys). */
 export const BUDGET_TABLES = [
-  'account_month_total',
   'alert',
   'apply_counter',
   'audit_log',
@@ -14,13 +21,10 @@ export const BUDGET_TABLES = [
   'bank_page',
   'bank_txn',
   'budget',
-  'budget_line',
   'expected_reimbursement',
   'health_status',
   'holding_snapshot',
   'liability_snapshot',
-  'month_snapshot',
-  'month_total_done',
   'payee',
   'raw_page',
   'rule',
