@@ -3,7 +3,7 @@
 // supports PRF (D-53), the copy is saved encrypted (vault.ts), reopens downloading only what changed, and opens with
 // no signal; without PRF it's kept in memory for the visit only.
 //
-// Idle sign-out (D-56): after 10 idle minutes, or 10 minutes in the background, the keys, the copy in memory and the
+// Idle sign-out (D-57): after 10 idle minutes, or 10 minutes in the background, the keys, the copy in memory and the
 // server session are dropped and the app shows Sign in; that one Face ID also opens the saved copy. A refresh or the
 // app restarting within 10 minutes of the last activity reopens it with the data key held in IndexedDB (vault.ts
 // holdKey). Wipe: signing out, here or from another device (Settings → Sign-in), no longer a member, or 7 days

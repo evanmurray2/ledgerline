@@ -1,4 +1,4 @@
-# D-56: No lock screen: 10 idle minutes sign you out (Nov 3, 2026)
+# D-57: No lock screen: 10 idle minutes sign you out (Nov 3, 2026)
 
 **Decided by the owner.** After the app locked, the owner had to tap Unlock and then sign in again. Locking already ended the sign-in on the server (13.4), so "locked" only chose which screen came next, and that choice raced: the app ended the sign-in and checked it again at the same moment. If the check got there first, the Lock screen showed while holding a sign-in the server had already ended, and the next check of it dropped to Sign in. If the sign-out got there first, Sign in showed with no Lock screen. With the Worker and a fake clock, 2 of 3 runs after 11 minutes in the background showed Sign in. The owner asked to drop the lock idea everywhere, including Settings → Sign-in.
 
