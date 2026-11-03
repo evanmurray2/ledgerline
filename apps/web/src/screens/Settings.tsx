@@ -2,12 +2,12 @@
 // categories and groups, rules (with live preview), payees, bank connections (Item meter, confirm before Link), and
 // import and export. There is no email setting: the app sends no email (decisions.md D-24).
 import { SignInSection } from './Auth';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
 import { qk, useConnections, usePayees, useRules, useSession } from '../api/hooks';
-import { BackHeader, Card, cx, Loading, Toggle, useIsDesktop } from '../components/ui';
+import { BackHeader, Card, cx, DesktopHeader, Loading, Toggle, useIsDesktop } from '../components/ui';
 import { useThemePref, writeThemePref, type ThemePref } from '../lib/theme';
 import { monthLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
@@ -46,13 +46,15 @@ export function SettingsLayout() {
   const meta = useSectionMeta();
   const sub = path.replace(/^\/settings\/?/, '');
   const active = sub.split('/')[0] || 'appearance';
-  useScreen(sub ? `settings.${active}` : 'settings');
+  // While leaving Settings this still renders once with the next page's path: keep the last screen id then, or
+  // every exit would record a visit to Appearance.
+  const screen = useRef('settings');
+  if (path.startsWith('/settings')) screen.current = sub ? `settings.${active}` : 'settings';
+  useScreen(screen.current);
   if (!desktop) return sub ? <Outlet /> : <SettingsHome />;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex min-h-16 shrink-0 items-center border-b border-line bg-surface px-6">
-        <h1 className="m-0 text-[22px] font-bold">Settings</h1>
-      </header>
+      <DesktopHeader title="Settings" wide />
       <div className="flex min-h-0 flex-1">
         <nav
           aria-label="Settings sections"

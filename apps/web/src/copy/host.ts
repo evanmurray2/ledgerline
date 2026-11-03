@@ -1,5 +1,5 @@
 // Talks to the phone's engine, which runs in a Web Worker (apps/worker/src/local/web-entry.ts; docs/phone-budget.md,
-// D-44): opens the copy, feeds it sync pages from the server, and asks it for screens.
+// D-45): opens the copy, feeds it sync pages from the server, and asks it for screens.
 // The shapes below mirror apps/worker/src/local/engine.ts and routes/sync.ts (the web app's type check doesn't read
 // the Worker's sources, which need Cloudflare's types).
 

@@ -201,7 +201,7 @@ export class Directory extends DurableObject<Env> {
     };
   }
 
-  /** The budget's sync epoch (D-44, migration 0006). */
+  /** The budget's sync epoch (D-45, migration 0006). */
   syncEpoch(budgetId: string): string {
     const r = this.ctx.storage.sql.exec(`SELECT sync_epoch FROM budget WHERE id = ?`, budgetId).toArray()[0];
     return r ? String(r.sync_epoch) : 'e0';

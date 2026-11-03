@@ -1,6 +1,6 @@
 # Working out the budget on the phone
 
-Status: built, v1.4, Nov 3, 2026 (decisions.md D-44, D-45). The owner asked for everything at once, including stage 5; section 16 says what was built and how it differs from this design. v1 got an adversarial review (1 blocker, 8 major, 9 minor); v1.1 includes its fixes, listed in section 15. v1.2 added the security design in section 13; v1.3 includes the fixes from its security review (1 blocker, 7 major, 7 minor). Nothing here changes how money is counted: the same `computeBudget()` runs, in a different place, and section 9 shows how its inputs stay the same.
+Status: built, v1.4, Nov 3, 2026 (decisions.md D-45, D-46). The owner asked for everything at once, including stage 5; section 16 says what was built and how it differs from this design. v1 got an adversarial review (1 blocker, 8 major, 9 minor); v1.1 includes its fixes, listed in section 15. v1.2 added the security design in section 13; v1.3 includes the fixes from its security review (1 blocker, 7 major, 7 minor). Nothing here changes how money is counted: the same `computeBudget()` runs, in a different place, and section 9 shows how its inputs stay the same.
 
 ## 1. The question
 
@@ -304,7 +304,7 @@ v1.2 got a security review the same day. Findings were checked against the code;
 | M7    | Rows weren't bound to their ids, so they could be swapped or replayed                                                                                                            | Major    | Associated data, random IVs, encrypted manifest (13.3)                                                         |
 | m1–m7 | Background timers; blocked deletes; Safari copies; uncertain PRF facts; PRF output in the sign-in post; threat table gaps; clock rollback                                        | Minor    | 13.1, 13.2, 13.4, 13.7                                                                                         |
 
-## 16. As built (Nov 3, 2026, D-45)
+## 16. As built (Nov 3, 2026, D-46)
 
 - **One release, no stages or settings** (owner). `apps/worker/test/engine.test.ts` replaces the shadow comparison: a copy fed only by `/api/sync` gives exactly the server's answers for 11 screens, after a full download and after changes.
 - **The phone runs the server's own code.** The engine (`apps/worker/src/local/engine.ts`) keeps the stored tables in sql.js (`sqljs-d1.ts`) and answers screens with the server's routes and SQL, so there's one definition of every screen. So the sync sends the stored tables (`src/sync-tables.ts`), not screen-shaped transaction rows: a payee or account rename changes one row, and the views join it on the phone. Each sync with news rebuilds every budget line and recomputes from the budget start (no chunks: the phone has no 10 ms limit).

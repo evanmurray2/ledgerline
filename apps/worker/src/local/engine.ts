@@ -1,4 +1,4 @@
-// The phone's local engine (docs/phone-budget.md, decisions.md D-44). It keeps a copy of the budget's synced tables
+// The phone's local engine (docs/phone-budget.md, decisions.md D-45). It keeps a copy of the budget's synced tables
 // in its own SQLite (sql.js in the browser, a Durable Object's SQLite in tests), works out everything the server no
 // longer keeps (budget lines, month snapshots, Ready to Assign, month totals) with the same code the server used to
 // run, and answers the app's screen requests with the server's own routes. Nothing here talks to the network: the

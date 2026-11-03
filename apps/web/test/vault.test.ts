@@ -1,4 +1,4 @@
-// The copy's keys (docs/phone-budget.md 13.2, D-44): the passkey's PRF output and the device's server share together
+// The copy's keys (docs/phone-budget.md 13.2, D-45): the passkey's PRF output and the device's server share together
 // open the copy; neither alone does, another passkey doesn't, offline unlock stops after 7 days, and a changed copy
 // doesn't decrypt.
 import { describe, expect, it } from 'vitest';

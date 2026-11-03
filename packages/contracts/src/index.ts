@@ -146,7 +146,7 @@ export const MoveRequest = z.object({
 export const SetAssignedRequest = z.object({ month, categoryId: id, assigned: cents });
 export const MutationResult = z.object({ ok: z.literal(true), rta: cents, rtaUpdating: z.boolean() });
 /**
- * What the server answers to a change (D-44): it no longer works out Ready to Assign, so `rta` is absent; the app
+ * What the server answers to a change (D-45): it no longer works out Ready to Assign, so `rta` is absent; the app
  * syncs and fills it from the phone's own compute before showing the result.
  */
 export const MutationAck = z.object({
@@ -489,7 +489,7 @@ export const GroupUpsert = z.object({
   isBills: z.boolean(),
 });
 /**
- * Archiving a category moves what it still has to Ready to Assign. The phone works that amount out (D-44) and sends
+ * Archiving a category moves what it still has to Ready to Assign. The phone works that amount out (D-45) and sends
  * it with the change number it worked it out at; the server refuses with 409 `changed` if anything changed since.
  */
 export const ArchiveRequest = z.object({
@@ -692,7 +692,7 @@ export const SecurityView = z.object({
   ),
   /** Signed-in sessions on all devices. */
   sessions: z.number().int(),
-  /** Phones holding an encrypted copy of the budget (D-44). */
+  /** Phones holding an encrypted copy of the budget (D-45). */
   devices: z
     .array(
       z.object({

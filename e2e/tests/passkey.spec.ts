@@ -46,7 +46,7 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   // Signed in: a new budget starts at first-run setup.
   await expect(page).toHaveURL(/\/welcome/);
 
-  // In a browser tab nothing is saved on the device (D-44): the session ending shows sign-in.
+  // In a browser tab nothing is saved on the device (D-45): the session ending shows sign-in.
   await page.goto('/budget');
   expect(await page.evaluate(() => localStorage.getItem('ledgerline-saved-data'))).toBeNull();
   expect((await post(page, '/api/settings/security/sign-out')).status).toBe(200);
@@ -75,7 +75,7 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   await expect(again.getByRole('alert')).toContainText('isn’t valid');
   await other.close();
 
-  // The installed Home Screen app (D-44; Safari sets navigator.standalone there) keeps an encrypted copy. Signing
+  // The installed Home Screen app (D-45; Safari sets navigator.standalone there) keeps an encrypted copy. Signing
   // in there gets the passkey's PRF output in the same prompt.
   await page.addInitScript(() => Object.defineProperty(navigator, 'standalone', { value: true }));
   await post(page, '/api/settings/security/sign-out');

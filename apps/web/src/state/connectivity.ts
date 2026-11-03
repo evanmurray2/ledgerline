@@ -133,7 +133,7 @@ export function useConnectivity(): State {
 /** False while offline or read-only: every control that changes data uses this. */
 /**
  * Whether a control that changes data is on. `offline`: a change the copy on this device can take with no signal
- * and send later (D-44, src/copy/copy.ts: categorizing, a transaction's details, assigning, targets).
+ * and send later (D-45, src/copy/copy.ts: categorizing, a transaction's details, assigning, targets).
  */
 export function useCanWrite(opts: { offline?: boolean } = {}): boolean {
   const s = useConnectivity();

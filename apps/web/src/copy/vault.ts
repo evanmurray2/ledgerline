@@ -1,4 +1,4 @@
-// The encrypted copy on the phone (docs/phone-budget.md section 13, decisions.md D-44).
+// The encrypted copy on the phone (docs/phone-budget.md section 13, decisions.md D-45).
 //
 // Keys:
 // - The passkey's PRF output (WebAuthn `prf` extension, salt kept on the device) is a secret only that passkey can

@@ -1,4 +1,4 @@
--- Sync to the phone (docs/phone-budget.md section 8, decisions.md D-44). Every change to a table the phone keeps
+-- Sync to the phone (docs/phone-budget.md section 8, decisions.md D-45). Every change to a table the phone keeps
 -- (src/sync-tables.ts) is logged here by a trigger: one row per changed row, with a number that only goes up, so
 -- GET /api/sync?since=N can send exactly what changed. Rows are never deleted from change_log. Expand-only.
 CREATE TABLE change_log (

@@ -66,7 +66,7 @@ function Root() {
   const confirmed = session.isFetchedAfterMount && !session.error ? s : undefined;
 
   useEffect(() => void checkSaved(), []);
-  // Every screen is worked out from the copy (D-44): open it once the server confirms who's signed in.
+  // Every screen is worked out from the copy (D-45): open it once the server confirms who's signed in.
   useEffect(() => {
     if (confirmed && ['idle', 'locked'].includes(getCopy().status)) void startCopy(confirmed);
     // Back online after opening with no signal: send what was changed and catch up.

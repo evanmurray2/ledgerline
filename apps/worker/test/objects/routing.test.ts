@@ -110,7 +110,7 @@ describe('routing', () => {
     expect((sec.json.passkeys as { id: string }[]).map((p) => p.id)).toEqual([ownerKey.id]);
   });
 
-  it('a phone gets its key share until it is revoked (D-44)', async () => {
+  it('a phone gets its key share until it is revoked (D-45)', async () => {
     const d = await owner.call('POST', '/api/settings/security/devices', { name: 'iPhone' });
     expect(d.status).toBe(200);
     const { id, share } = d.json as { id: string; share: string };

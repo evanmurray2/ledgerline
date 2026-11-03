@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { DumpChunk } from '@ledgerline/contracts';
-import { get, qs } from '../../api/client';
+import { download, get, qs, saveFile } from '../../api/client';
 import { api, exportUrls } from '../../api/endpoints';
 import { qk, useAccounts } from '../../api/hooks';
 import { Card, cx, ErrorNote, Field, inputClass, PrimaryButton, SecondaryButton } from '../../components/ui';
@@ -52,11 +52,26 @@ export function DataScreen() {
       setBusy(false);
     }
   };
-  const exportsList: [string, string, string][] = [
-    ['Transactions (CSV)', 'Every transaction with category, memo and owed amounts', exportUrls.csv],
-    ['Everything (JSON)', 'Full export, including rules and payee merges', exportUrls.json],
-    ['Rules (JSON)', 'Your rules, in order', exportUrls.rules],
-    ['Usage and notes (JSON)', 'How you use the app, for reviewing what to change', exportUrls.usage],
+  const exportsList: [string, string, string, string][] = [
+    [
+      'Transactions (CSV)',
+      'Every transaction with category, memo and owed amounts',
+      exportUrls.csv,
+      'ledgerline-transactions.csv',
+    ],
+    [
+      'Everything (JSON)',
+      'Full export, including rules and payee merges',
+      exportUrls.json,
+      'ledgerline-export.json',
+    ],
+    ['Rules (JSON)', 'Your rules, in order', exportUrls.rules, 'ledgerline-rules.json'],
+    [
+      'Usage and notes (JSON)',
+      'How you use the app, for reviewing what to change',
+      exportUrls.usage,
+      'ledgerline-usage.json',
+    ],
   ];
   return (
     <Page title="Import and export" back="/settings">
@@ -126,25 +141,8 @@ export function DataScreen() {
       </section>
       <h2 className="m-0 mt-1 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">Export</h2>
       <Card>
-        {exportsList.map(([name, meta, href]) => (
-          <div
-            key={name}
-            className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 py-2 first:border-t-0"
-          >
-            <span className="flex flex-col gap-0.5">
-              <span className="text-[15px] font-semibold">{name}</span>
-              <span className="text-[12px] text-muted">{meta}</span>
-            </span>
-            <a
-              href={href}
-              download
-              data-track="data.export"
-              aria-label={`Download ${name}`}
-              className="hit flex h-9 shrink-0 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent no-underline"
-            >
-              Download
-            </a>
-          </div>
+        {exportsList.map(([name, meta, href, filename]) => (
+          <ExportRow key={name} name={name} meta={meta} href={href} filename={filename} />
         ))}
       </Card>
       <FullBackup />
@@ -169,6 +167,61 @@ export function DataScreen() {
 }
 
 /**
+ * One export. It downloads through the app rather than a plain link, so the passkey check exports need opens
+ * "Confirm it's you" instead of saving the refusal as the file.
+ */
+function ExportRow({
+  name,
+  meta,
+  href,
+  filename,
+}: {
+  name: string;
+  meta: string;
+  href: string;
+  filename: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const run = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await download(href, filename);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="border-t border-divider first:border-t-0">
+      <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
+        <span className="flex flex-col gap-0.5">
+          <span className="text-[15px] font-semibold">{name}</span>
+          <span className="text-[12px] text-muted">{meta}</span>
+        </span>
+        <button
+          type="button"
+          data-track="data.export"
+          aria-label={`Download ${name}`}
+          disabled={busy}
+          onClick={() => void run()}
+          className="hit flex h-9 shrink-0 items-center rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent disabled:opacity-60"
+        >
+          {busy ? 'Saving…' : 'Download'}
+        </button>
+      </div>
+      {error ? (
+        <div className="px-3 pb-2">
+          <ErrorNote error={error} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * The full backup (docs/multi-user.md 8.7): every row of the budget, downloaded in small pieces and saved as one
  * file. Unlike the JSON export, it can be restored, and it proves on restore that nothing changed.
  */
@@ -186,12 +239,10 @@ function FullBackup() {
         if (r.data) parts.push(r.data);
         cursor = r.cursor;
       } while (cursor);
-      const url = URL.createObjectURL(new Blob([parts.join('\n') + '\n'], { type: 'application/x-ndjson' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `ledgerline-backup-${new Date().toISOString().slice(0, 10)}.ndjson`;
-      a.click();
-      URL.revokeObjectURL(url);
+      saveFile(
+        new Blob([parts.join('\n') + '\n'], { type: 'application/x-ndjson' }),
+        `ledgerline-backup-${new Date().toISOString().slice(0, 10)}.ndjson`,
+      );
       setState('done');
     } catch (e) {
       setError(e);

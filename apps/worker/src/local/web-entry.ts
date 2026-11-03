@@ -1,4 +1,4 @@
-// The phone's engine in a Web Worker (docs/phone-budget.md, D-44). The web app (apps/web/src/copy/host.ts) starts it
+// The phone's engine in a Web Worker (docs/phone-budget.md, D-45). The web app (apps/web/src/copy/host.ts) starts it
 // with `new Worker(new URL(...))`; Vite bundles it with sql.js. It holds the decrypted copy in memory only: the app
 // decrypts the saved copy before `open` and encrypts what `export` returns. Messages are { id, op, ...args } and
 // every answer is { id, ok, value } or { id, ok: false, error }.

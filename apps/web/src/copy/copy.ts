@@ -1,4 +1,4 @@
-// The budget's copy on this device (docs/phone-budget.md, decisions.md D-44): every screen is worked out from it by
+// The budget's copy on this device (docs/phone-budget.md, decisions.md D-45): every screen is worked out from it by
 // the engine in a Web Worker; changes go to the server and come back through the sync. In the Home Screen app with
 // a passkey that supports PRF, the copy is saved encrypted (vault.ts) and opens with no signal; anywhere else it's
 // kept in memory for the visit only.
@@ -346,7 +346,7 @@ export async function afterChange(): Promise<{ rta: number; rtaUpdating: boolean
   return { rta: r.rta, rtaUpdating: r.updating };
 }
 
-/** Archiving a category: the amount the phone shows and the change number it was worked out at (D-44). */
+/** Archiving a category: the amount the phone shows and the change number it was worked out at (D-45). */
 export async function archiveFields(
   categoryId: string,
 ): Promise<{ available: number; through: number } | null> {

@@ -1,4 +1,4 @@
-// The phone's local engine (D-44, src/local/engine.ts): a copy downloaded through /api/sync and worked out on the
+// The phone's local engine (D-45, src/local/engine.ts): a copy downloaded through /api/sync and worked out on the
 // phone shows exactly the screens the server shows for the same data, before and after changes. The "server" here
 // runs the same derived code (LOCAL_ENGINE in the test config), so its answers are the reference.
 import { SELF } from 'cloudflare:test';
@@ -117,7 +117,7 @@ describe('the phone works out the same screens as the server', () => {
   });
 });
 
-describe('the server keeps nothing derived (D-44)', () => {
+describe('the server keeps nothing derived (D-45)', () => {
   it('answers changes without Ready to Assign, refuses screens, and logs every change', async () => {
     const session = (await json('/api/session')) as { budget: { currentMonth: string } };
     const m = session.budget.currentMonth;

@@ -2,7 +2,7 @@
 # files) before the Worker runs; API responses get theirs from apps/worker/src/http/security.ts.
 # Plaid Link is the only third-party code: its script and iframe come from cdn.plaid.com, and it talks to Plaid's API
 # hosts. 'wasm-unsafe-eval' lets the phone's engine compile SQLite (WebAssembly only; JavaScript eval stays off), and
-# workers come only from this site (D-44). apps/web/test/headers.test.ts fails if any of these gets looser.
+# workers come only from this site (D-45). apps/web/test/headers.test.ts fails if any of these gets looser.
 /*
   Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.plaid.com; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://production.plaid.com https://sandbox.plaid.com; frame-src https://cdn.plaid.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
   X-Frame-Options: DENY

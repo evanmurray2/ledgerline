@@ -1,4 +1,4 @@
-// The tables the phone keeps a copy of (docs/phone-budget.md section 7, decisions.md D-44), with their primary keys.
+// The tables the phone keeps a copy of (docs/phone-budget.md section 7, decisions.md D-45), with their primary keys.
 // The server logs every change to these in change_log (migration 0003's triggers), serves them from /api/sync, and
 // the phone's engine (src/local) writes them into its own SQLite. Everything else is either server-only (bank log,
 // sync runs, jobs, usage) or worked out on the phone (budget_line, month_snapshot, the month totals).

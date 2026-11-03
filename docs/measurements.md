@@ -10,7 +10,7 @@
 | Change page (600 changed transactions) | 4     | 3.9 / 4.2 / 4.2       |
 | Nothing new                            | 20    | 0.1 / 0.2 / 0.2       |
 
-Working out the budget moved to the phone (D-44), which has no 10 ms limit; the iPhone timings are still to be taken after deploy.
+Working out the budget moved to the phone (D-45), which has no 10 ms limit; the iPhone timings are still to be taken after deploy.
 
 ## Update: step sizes in the code match D-37 (Nov 2, 2026)
 

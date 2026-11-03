@@ -115,7 +115,7 @@ export function maintenanceHandler(env: Env, budgetId: () => Promise<string>): H
     const next = (state: MaintState): StepResult => ({ state, runAt: now });
     switch (s.phase ?? 'start') {
       case 'start': {
-        // The full recompute and the identity check run on the phone (D-44, local/engine.ts).
+        // The full recompute and the identity check run on the phone (D-45, local/engine.ts).
         if (!derived.enabled) return next({ phase: 'catchup', written: 0, i: 0 });
         const r = await db
           .prepare(`SELECT summary_dirty_from FROM budget WHERE id = ?1`)

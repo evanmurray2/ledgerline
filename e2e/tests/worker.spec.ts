@@ -68,7 +68,7 @@ test('In a browser tab nothing is kept on the device: with no signal it says it 
   page,
   context,
 }) => {
-  // Only the installed Home Screen app keeps a copy, encrypted with the passkey (D-44; passkey.spec.ts covers it).
+  // Only the installed Home Screen app keeps a copy, encrypted with the passkey (D-45; passkey.spec.ts covers it).
   await page.goto('/budget');
   await expect(rta(page)).toHaveText('$981.90');
   await page.waitForFunction(async () => !!(await navigator.serviceWorker.ready).active);
@@ -250,7 +250,7 @@ test('Pending: money you add goes to Ready to Assign, and a bank pending charge 
   await expect(rta(page)).toHaveText('$1,481.90');
 
   // A card hold with no estimate yet: set your own amount.
-  // Screens are worked out on the device (D-44): the server's own rows say which charge is a plain card hold.
+  // Screens are worked out on the device (D-45): the server's own rows say which charge is a plain card hold.
   const overlays = new Map((await rows(request, 'txn_overlay')).map((o) => [o.txn_key, o]));
   const hold = (await rows(request, 'bank_txn')).find(
     (r) =>
@@ -296,4 +296,35 @@ test('Full backup: downloads every row of the budget as one file', async ({ page
   expect(lines.at(-1)).toMatchObject({ end: true });
   expect(lines.filter((l) => l.t === 'bank_txn').length).toBeGreaterThan(10);
   await expect(page.getByText('Saved. Keep it somewhere safe.')).toBeVisible();
+});
+
+test('Exports: Usage and notes downloads as a JSON file', async ({ page }) => {
+  await page.goto('/settings/data');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download Usage and notes (JSON)' }).click();
+  const d = await download;
+  expect(d.suggestedFilename()).toBe('ledgerline-usage.json');
+  const text = await (await import('node:fs/promises')).readFile((await d.path())!, 'utf8');
+  expect(JSON.parse(text)).toMatchObject({ events: expect.any(Array), daily: expect.any(Array) });
+});
+
+test('Usage: leaving Settings records no visit to Appearance', async ({ page }) => {
+  const views: string[] = [];
+  page.on('request', (r) => {
+    if (!r.url().endsWith('/api/usage') || r.method() !== 'POST') return;
+    const body = r.postDataJSON() as { events: { event: string; screen: string }[] };
+    for (const e of body.events) if (e.event === 'view') views.push(e.screen);
+  });
+  // The first screen of a page load comes before usage is switched on, so Settings is opened from the app.
+  await page.goto('/accounts');
+  await page.getByRole('link', { name: 'Settings' }).first().click();
+  await expect(page).toHaveURL(/\/settings/);
+  await page.getByRole('link', { name: 'Budget' }).first().click();
+  await expect(page).toHaveURL(/\/budget/);
+  const sent = page.waitForRequest((r) => r.url().endsWith('/api/usage') && r.method() === 'POST');
+  await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+  await sent;
+  expect(views).toContain('settings');
+  expect(views).toContain('budget');
+  expect(views).not.toContain('settings.appearance');
 });

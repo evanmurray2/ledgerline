@@ -1,5 +1,5 @@
 // A D1Database-shaped handle on sql.js (SQLite compiled to WebAssembly), so the phone's engine runs the server's own
-// SQL unchanged (docs/phone-budget.md, D-44). Like store/adapter.ts, batch() is one transaction: a statement that
+// SQL unchanged (docs/phone-budget.md, D-45). Like store/adapter.ts, batch() is one transaction: a statement that
 // throws rolls the whole batch back. There's no 10 ms limit on the phone, so D1's statement limits aren't copied.
 import type { Database, SqlValue } from 'sql.js';
 

@@ -30,7 +30,7 @@ export async function dailyScan(
     `SELECT m.txn_key, m.repeats, m.date, m.account_id, m.amount, m.payee_name FROM manual_pending m
      WHERE m.budget_id = ?1 AND m.kind = 'upcoming' AND m.deleted_at IS NULL AND m.date <= ?2
        AND ${
-         // Where lines are worked out, a due row without lines still needs them; on the server (D-44), only
+         // Where lines are worked out, a due row without lines still needs them; on the server (D-45), only
          // repeating rows still need their next occurrence scheduled (scheduling sets repeats to 'never').
          derived.enabled
            ? `NOT EXISTS (SELECT 1 FROM budget_line l WHERE l.budget_id = m.budget_id AND l.txn_key = m.txn_key)`

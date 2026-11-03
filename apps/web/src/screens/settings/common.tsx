@@ -1,7 +1,7 @@
 // Settings pieces shared by every section: the page frame and a row that links to a page.
 import { type ReactNode } from 'react';
-import { Link, useNavigate } from '@tanstack/react-router';
-import { BackHeader, cx, Icon, useIsDesktop } from '../../components/ui';
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
+import { BackHeader, cx, DESKTOP_WIDTH, Icon, useIsDesktop } from '../../components/ui';
 
 export function Page({
   title,
@@ -17,8 +17,13 @@ export function Page({
   footer?: ReactNode;
   children: ReactNode;
 }) {
-  const desktop = useIsDesktop();
+  const isDesktop = useIsDesktop();
   const navigate = useNavigate();
+  // Inside Settings the page sits in the right-hand pane under the Settings header. Elsewhere on desktop
+  // (Categories, opened from Budget) it is a screen of its own, with the same header as every other screen.
+  const inPane = useRouterState({ select: (s) => s.location.pathname.startsWith('/settings') });
+  const desktop = isDesktop && inPane;
+  const width = isDesktop ? (inPane ? 'max-w-[680px]' : DESKTOP_WIDTH) : undefined;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {desktop ? (
@@ -37,14 +42,15 @@ export function Page({
       <div
         className={cx(
           'flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-3',
-          desktop ? 'px-6 pb-8' : 'px-4 pb-6',
+          isDesktop ? 'px-6 pb-8' : 'px-4 pb-6',
+          isDesktop && !inPane && 'pt-5',
         )}
       >
-        <div className={cx('flex flex-col gap-3', desktop && 'max-w-[680px]')}>{children}</div>
+        <div className={cx('flex flex-col gap-3', width)}>{children}</div>
       </div>
       {footer && (
-        <div className={cx('shrink-0 border-t border-line bg-surface py-3', desktop ? 'px-6' : 'px-4')}>
-          <div className={cx(desktop && 'max-w-[680px]')}>{footer}</div>
+        <div className={cx('shrink-0 border-t border-line bg-surface py-3', isDesktop ? 'px-6' : 'px-4')}>
+          <div className={width}>{footer}</div>
         </div>
       )}
     </div>

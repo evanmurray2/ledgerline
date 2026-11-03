@@ -1,4 +1,4 @@
-// The copy's own screens (D-44, src/copy/copy.ts): getting it ready, locked (Face ID to open), opening with no
+// The copy's own screens (D-45, src/copy/copy.ts): getting it ready, locked (Face ID to open), opening with no
 // signal, and what went wrong.
 import { useState } from 'react';
 import type { Session } from '@ledgerline/contracts';

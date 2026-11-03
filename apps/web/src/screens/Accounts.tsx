@@ -13,6 +13,8 @@ import {
   Card,
   Chip,
   cx,
+  DESKTOP_WIDTH,
+  DesktopHeader,
   ErrorNote,
   Field,
   Icon,
@@ -131,25 +133,25 @@ export function AccountsScreen() {
   const { pull, busy, run } = usePullToRefresh(scroller, sync, !desktop && canWrite);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header
-        className={cx(
-          'flex min-h-14 shrink-0 items-center justify-between border-b border-line bg-surface',
-          desktop ? 'px-6' : 'pl-4 pr-1',
-        )}
-      >
-        <h1 className="m-0 text-[22px] font-bold">Accounts</h1>
-        {desktop ? (
-          <button
-            type="button"
-            data-track="accounts.refresh"
-            disabled={!canWrite || busy}
-            onClick={() => void run()}
-            className="hit flex h-9 items-center gap-1.5 rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent disabled:opacity-50"
-          >
-            <Icon name="refresh" size={16} stroke={2.4} className={busy ? 'animate-spin' : undefined} />
-            {busy ? 'Syncing…' : 'Refresh'}
-          </button>
-        ) : (
+      {desktop ? (
+        <DesktopHeader
+          title="Accounts"
+          right={
+            <button
+              type="button"
+              data-track="accounts.refresh"
+              disabled={!canWrite || busy}
+              onClick={() => void run()}
+              className="hit flex h-9 items-center gap-1.5 rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent disabled:opacity-50"
+            >
+              <Icon name="refresh" size={16} stroke={2.4} className={busy ? 'animate-spin' : undefined} />
+              {busy ? 'Syncing…' : 'Refresh'}
+            </button>
+          }
+        />
+      ) : (
+        <header className="flex min-h-14 shrink-0 items-center justify-between border-b border-line bg-surface pl-4 pr-1">
+          <h1 className="m-0 text-[22px] font-bold">Accounts</h1>
           <span className="flex items-center">
             <button
               type="button"
@@ -170,8 +172,8 @@ export function AccountsScreen() {
               <Icon name="gear" size={22} />
             </Link>
           </span>
-        )}
-      </header>
+        </header>
+      )}
       <div
         ref={scroller}
         className={cx('flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-3', desktop ? 'px-6' : 'px-4')}
@@ -187,7 +189,7 @@ export function AccountsScreen() {
             {busy ? 'Syncing banks…' : pull >= PULL_TRIGGER ? 'Release to sync' : 'Pull to sync banks'}
           </div>
         )}
-        <div className={cx('flex flex-col gap-3', desktop && 'mx-auto w-full max-w-[720px]')}>
+        <div className={cx('flex flex-col gap-3', desktop && DESKTOP_WIDTH)}>
           {!v ? (
             q.error ? (
               <ErrorNote error={q.error} />
@@ -357,7 +359,7 @@ export function RegisterScreen() {
       <div
         className={cx('flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-3', desktop ? 'px-6' : 'px-4')}
       >
-        <div className={cx('flex flex-col gap-3', desktop && 'mx-auto w-full max-w-[720px]')}>
+        <div className={cx('flex flex-col gap-3', desktop && DESKTOP_WIDTH)}>
           {!a || !v ? (
             all.error ? (
               <ErrorNote error={all.error} />

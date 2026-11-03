@@ -97,7 +97,7 @@ export function lineFromRow(r: unknown[]): BudgetLine {
 
 /** Bumps the summary version and widens the dirty range; goes in the same batch as the edit that changes inputs. */
 export function markDirty(db: D1Database, budgetId: string, month: Month, now: number): D1PreparedStatement {
-  // On the server nothing derived is kept (D-44): a harmless read stands in, so callers' batches stay as they are.
+  // On the server nothing derived is kept (D-45): a harmless read stands in, so callers' batches stay as they are.
   if (!derived.enabled) return db.prepare(`SELECT 1 WHERE ?1 IS NULL`).bind(budgetId);
   return db
     .prepare(

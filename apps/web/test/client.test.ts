@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../src/api/endpoints';
-import { ApiError, errorMessage, resetRecentChanges } from '../src/api/client';
+import { ApiError, download, errorMessage, resetRecentChanges } from '../src/api/client';
 import { connectivity } from '../src/state/connectivity';
 
 type Call = { url: string; init: RequestInit };
@@ -153,5 +153,35 @@ describe('API client', () => {
     expect(calls).toHaveLength(2);
     expect(errorMessage(new ApiError('resting', 'x'))).toMatch(/resting to stay inside/);
     expect(connectivity.staleMs(120_000)).toBe(15 * 60_000);
+  });
+});
+
+describe('download', () => {
+  it('asks for the passkey check instead of saving the refusal as the file', async () => {
+    respond = () => json({ error: 'reauth', message: 'Confirm it’s you with your passkey' }, 401);
+    const asked = vi.fn();
+    window.addEventListener('ledgerline:reauth', asked);
+    const save = vi.spyOn(URL, 'createObjectURL');
+    const err = await download('/api/export/usage', 'ledgerline-usage.json').catch((e: unknown) => e);
+    window.removeEventListener('ledgerline:reauth', asked);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).code).toBe('reauth');
+    expect(asked).toHaveBeenCalledOnce();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('saves the file under its name when the export is allowed', async () => {
+    respond = () => json({ events: [], daily: [], notes: [] });
+    URL.createObjectURL = vi.fn(() => 'blob:usage');
+    URL.revokeObjectURL = vi.fn();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      expect(this.download).toBe('ledgerline-usage.json');
+      expect(this.href).toBe('blob:usage');
+    });
+    await download('/api/export/usage', 'ledgerline-usage.json');
+    expect(click).toHaveBeenCalledOnce();
+    expect(calls[0]!.init.credentials).toBe('same-origin');
   });
 });

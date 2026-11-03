@@ -1,5 +1,13 @@
 // Small shared building blocks. Colors are always tokens (src/styles.css), never literals.
-import { useEffect, useState, useSyncExternalStore, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ButtonHTMLAttributes,
+  type ReactNode,
+} from 'react';
+import { Link } from '@tanstack/react-router';
 import type { CategoryStatus } from '@ledgerline/contracts';
 import { useCanWrite } from '../state/connectivity';
 import { formatCents } from '../lib/money';
@@ -21,6 +29,124 @@ export function useIsDesktop(): boolean {
     subscribeDesktop,
     () => window.matchMedia(DESKTOP_QUERY).matches,
     () => false,
+  );
+}
+
+/** Every desktop screen's content column: one width, centered, so headers and lists line up across screens. */
+export const DESKTOP_WIDTH = 'mx-auto w-full max-w-[960px]';
+
+/** True while the user is typing somewhere, so single-key shortcuts don't fire. */
+function typing(e: KeyboardEvent): boolean {
+  const t = e.target as HTMLElement | null;
+  return !!t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+}
+
+/**
+ * Single-key desktop shortcuts ("/" for search, "[" and "]" for months). Ignored while typing, with a modifier
+ * held, or while a sheet covers the screen (the page under it is inert then).
+ */
+export function useShortcuts(keys: Record<string, () => void>, enabled = true) {
+  const ref = useRef(keys);
+  ref.current = keys;
+  useEffect(() => {
+    if (!enabled) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || typing(e) || e.defaultPrevented) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      const fn = ref.current[e.key];
+      if (!fn) return;
+      e.preventDefault();
+      fn();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [enabled]);
+}
+
+/**
+ * The one desktop page header: 64 px, title on the left, actions on the right, and an optional second row
+ * (search, filters). Both rows line up with the content column unless `wide` (Settings has its own panes).
+ */
+export function DesktopHeader({
+  title,
+  right,
+  below,
+  wide,
+}: {
+  title: ReactNode;
+  right?: ReactNode;
+  below?: ReactNode;
+  wide?: boolean;
+}) {
+  return (
+    <header className="@container shrink-0 border-b border-line bg-surface px-6">
+      <div className={cx('flex h-16 items-center justify-between gap-3', !wide && DESKTOP_WIDTH)}>
+        {typeof title === 'string' ? <h1 className="m-0 truncate text-[22px] font-bold">{title}</h1> : title}
+        {right && <div className="flex min-w-0 shrink-0 items-center gap-2">{right}</div>}
+      </div>
+      {below && <div className={cx('flex flex-col gap-2.5 pb-3', !wide && DESKTOP_WIDTH)}>{below}</div>}
+    </header>
+  );
+}
+
+/** A "More" button with a short list of links, for header actions that don't fit. */
+export function OverflowMenu({
+  label = 'More',
+  items,
+  className,
+}: {
+  label?: string;
+  items: { to: string; name: string; track?: string }[];
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setOpen(false);
+      ref.current?.querySelector('button')?.focus();
+    };
+    document.addEventListener('pointerdown', away);
+    window.addEventListener('keydown', esc, true);
+    return () => {
+      document.removeEventListener('pointerdown', away);
+      window.removeEventListener('keydown', esc, true);
+    };
+  }, [open]);
+  return (
+    <div ref={ref} className={cx('relative', className)}>
+      <button
+        type="button"
+        aria-label={label}
+        aria-expanded={open}
+        aria-haspopup="true"
+        onClick={() => setOpen(!open)}
+        className="hit flex h-9 w-9 items-center justify-center rounded-full text-ink-2 hover:bg-sunken"
+      >
+        <Icon name="more" size={22} stroke={3} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-10 z-30 flex min-w-[180px] flex-col rounded-xl border border-line bg-surface py-1 shadow-[0_8px_24px_var(--ll-shadow)]">
+          {items.map((i) => (
+            <Link
+              key={i.to}
+              to={i.to}
+              data-track={i.track}
+              onClick={() => setOpen(false)}
+              className="flex h-10 items-center px-3.5 text-[14px] font-semibold text-ink no-underline hover:bg-surface-2"
+            >
+              {i.name}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -146,7 +272,7 @@ export function Money({ cents, plus, className }: { cents: number; plus?: boolea
 // ------------------------------------------------------------------ buttons
 
 type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  /** Changes data: disabled while offline or read-only. 'offline': also works offline with the copy (D-44). */
+  /** Changes data: disabled while offline or read-only. 'offline': also works offline with the copy (D-45). */
   mutates?: boolean | 'offline';
   track?: string;
 };
@@ -433,9 +559,16 @@ export function Toggle({
         {label}
         {help && <span className="text-[12px] font-normal text-muted">{help}</span>}
       </span>
+      {/* An on/off setting reads as a switch; checkboxes are kept for picking items from a list. */}
       <input
         type="checkbox"
-        className="hit h-6 w-6 shrink-0 accent-[var(--ll-accent)]"
+        role="switch"
+        className={cx(
+          'hit relative h-7 w-12 shrink-0 cursor-pointer appearance-none rounded-full transition-colors',
+          "before:absolute before:left-[3px] before:top-[3px] before:h-[22px] before:w-[22px] before:rounded-full before:bg-surface before:shadow-[0_1px_2px_var(--ll-shadow)] before:transition-transform before:content-['']",
+          'checked:bg-accent checked:before:translate-x-5 disabled:cursor-not-allowed disabled:opacity-50',
+          checked ? '' : 'bg-faint',
+        )}
         checked={checked}
         disabled={off}
         data-track={track}
@@ -513,21 +646,34 @@ export function BackHeader({
   backLabel: string;
   right?: ReactNode;
 }) {
-  return (
-    <header className="flex shrink-0 items-center gap-1 border-b border-line bg-surface py-2 pl-1 pr-4">
+  const desktop = useIsDesktop();
+  const inner = (
+    <>
       <button
         type="button"
         onClick={onBack}
         aria-label={backLabel}
-        className="flex h-11 w-11 items-center justify-center text-ink-2"
+        className={cx('flex h-11 w-11 shrink-0 items-center justify-center text-ink-2', desktop && '-ml-3')}
       >
         <Icon name="back" size={22} />
       </button>
       <div className="flex min-w-0 flex-1 flex-col">
-        <h1 className="m-0 truncate text-[19px] font-bold">{title}</h1>
-        {sub && <span className="text-[13px] text-muted">{sub}</span>}
+        <h1 className={cx('m-0 truncate font-bold', desktop ? 'text-[22px]' : 'text-[19px]')}>{title}</h1>
+        {sub && <span className="truncate text-[13px] text-muted">{sub}</span>}
       </div>
       {right}
+    </>
+  );
+  // Desktop: the same 64 px header as every other screen, lined up with the content column.
+  if (desktop)
+    return (
+      <header className="shrink-0 border-b border-line bg-surface px-6">
+        <div className={cx(DESKTOP_WIDTH, 'flex min-h-16 items-center gap-1 py-1')}>{inner}</div>
+      </header>
+    );
+  return (
+    <header className="flex shrink-0 items-center gap-1 border-b border-line bg-surface py-2 pl-1 pr-4">
+      {inner}
     </header>
   );
 }

@@ -27,7 +27,7 @@ async function ceremony(fn: () => Promise<unknown>): Promise<string | null> {
 
 /**
  * Passkey sign-in. Outside the mock it goes through the copy (src/copy/copy.ts), which asks the passkey for its PRF
- * output in the same Face ID prompt so the saved copy opens without a second one (D-44).
+ * output in the same Face ID prompt so the saved copy opens without a second one (D-45).
  */
 export async function signInWithPasskey(): Promise<void> {
   if (import.meta.env.VITE_MOCK !== '1') return copySignIn();
@@ -342,6 +342,7 @@ export function SignInSection() {
         </Card>
       ) : (
         <SecondaryButton
+          className="lg:self-start lg:px-6"
           track="settings.passkey.add_device"
           onClick={() => run(api.deviceLink, (r) => setLink(r as { url: string; expiresAt: string }))}
         >
@@ -352,6 +353,7 @@ export function SignInSection() {
       <Devices devices={sec.data?.devices ?? []} run={run} />
       {((sec.data?.sessions ?? 0) > 1 || (sec.data?.devices ?? []).some((d) => !d.revoked)) && (
         <SecondaryButton
+          className="lg:self-start lg:px-6"
           track="settings.sign_out_others"
           onClick={() =>
             run(api.signOutOthers, () =>
@@ -368,7 +370,7 @@ export function SignInSection() {
         onClick={() =>
           run(api.signOut, async () => {
             clearSavedData();
-            // Signing out deletes the copy on this phone (D-44).
+            // Signing out deletes the copy on this phone (D-45).
             await wipe();
             window.location.assign('/');
           })
@@ -381,7 +383,7 @@ export function SignInSection() {
   );
 }
 
-/** Phones that keep an encrypted copy of the budget (D-44): each can be turned off here. */
+/** Phones that keep an encrypted copy of the budget (D-45): each can be turned off here. */
 function Devices({
   devices,
   run,

@@ -69,7 +69,7 @@ export const identity: MiddlewareHandler<AppEnv> = async (c, next) => {
 budgetApi.use('*', csrf);
 
 /**
- * Screens are built on the phone from its own copy (D-44). On the server only these reads remain: the session, the
+ * Screens are built on the phone from its own copy (D-45). On the server only these reads remain: the session, the
  * sync itself, bank connections (they need the Directory's link slots), exports and the ops health check.
  */
 const SERVER_READS = [
@@ -119,7 +119,7 @@ export async function afterWrite(
   budgetId: string,
   now: number,
 ): Promise<MutationAck> {
-  // The server keeps nothing derived (D-44): the phone works out Ready to Assign after it syncs this change.
+  // The server keeps nothing derived (D-45): the phone works out Ready to Assign after it syncs this change.
   if (!derived.enabled) return { ok: true };
   const r = await recompute(env.DB, budgetId, now);
   if (!r.done) await startRecompute(env);

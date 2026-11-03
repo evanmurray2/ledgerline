@@ -214,7 +214,7 @@ async function archiveCategory(
       const mr = await monthResult(s, f.current, start);
       avail = mr?.categories[id]?.available ?? 0;
     } else {
-      // The server doesn't work out balances (D-44): the phone sends what it showed. A category's available can
+      // The server doesn't work out balances (D-45): the phone sends what it showed. A category's available can
       // depend on other categories' card refunds (D-12), so it can't be checked here alone; instead nothing may have
       // changed since the phone worked it out. Anything able to send this can already assign and move money.
       avail = sent.available ?? 0;

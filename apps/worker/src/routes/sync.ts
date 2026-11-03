@@ -1,4 +1,4 @@
-// Sync to the phone (docs/phone-budget.md section 8, decisions.md D-44). The phone keeps a copy of the tables in
+// Sync to the phone (docs/phone-budget.md section 8, decisions.md D-45). The phone keeps a copy of the tables in
 // sync-tables.ts and asks for what changed since the last change number it holds. A full download (since=0) walks
 // every table in key order, then continues from the change number the download started at, so anything changed while
 // it ran is sent again. Each page is small enough for the 10 ms rule.

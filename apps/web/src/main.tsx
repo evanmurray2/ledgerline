@@ -8,7 +8,7 @@ import { App } from './App';
 import { setReadOnlyHandler } from './api/client';
 import { clearSavedData } from './state/saved';
 
-// Plain saved screens from before D-44 are deleted: the copy on this phone is encrypted now.
+// Plain saved screens from before D-45 are deleted: the copy on this phone is encrypted now.
 clearSavedData();
 applyTheme();
 watchTheme();

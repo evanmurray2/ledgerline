@@ -13,13 +13,17 @@ import {
   badgeClass,
   Button,
   Chip,
+  CountBadge,
   cx,
+  DESKTOP_WIDTH,
+  DesktopHeader,
   ErrorNote,
   Icon,
   Loading,
   SectionTitle,
   SoftButton,
   useIsDesktop,
+  useShortcuts,
 } from '../components/ui';
 import { formatCents } from '../lib/money';
 import { rowMeta, useScreen } from '../lib/common';
@@ -70,6 +74,7 @@ export function TxnRow({
       className={cx(
         'flex gap-2.5 border-t border-divider px-3 py-2 first:border-t-0',
         stacked ? 'flex-col' : 'items-center',
+        desktop && 'hover:bg-surface-2',
       )}
     >
       <Link
@@ -81,7 +86,9 @@ export function TxnRow({
           <span className={cx('text-[15px] font-semibold', r.wontClear && 'text-faint line-through')}>
             {r.payee}
           </span>
-          <span className="text-[12px] text-muted">{rowMeta(r, style)}</span>
+          <span className={cx('text-muted', desktop ? 'text-[13px]' : 'text-[12px]')}>
+            {rowMeta(r, style)}
+          </span>
           {!stacked && badge}
         </span>
         <span className="flex shrink-0 flex-col items-end gap-0.5">
@@ -138,6 +145,8 @@ export function ActivityScreen() {
   const desktop = useIsDesktop();
   useScreen(filter === 'all' ? 'activity' : `activity.${filter}`);
   const [qInput, setQInput] = useState(search.q ?? '');
+  const searchRef = useRef<HTMLInputElement>(null);
+  useShortcuts({ '/': () => searchRef.current?.focus() }, desktop);
   const [q, setQ] = useState(search.q ?? '');
   useEffect(() => {
     const id = setTimeout(() => setQ(qInput.trim()), 250);
@@ -293,64 +302,76 @@ export function ActivityScreen() {
     needs.filter((r) => !q || r.payee.toLowerCase().includes(q.toLowerCase())).length > 0;
   const empty = v && total === 0 && !showNeeds && !(filter === 'attention' && !q);
 
+  const addButton = (
+    <Link
+      to="/activity/add"
+      data-track="activity.add"
+      aria-label="Add a transaction"
+      className="hit flex h-9 items-center gap-1 rounded-full bg-accent px-3.5 text-[14px] font-bold text-on-accent no-underline"
+    >
+      <Icon name="plus" size={16} stroke={2.6} />
+      {desktop ? 'Add transaction' : 'Add'}
+    </Link>
+  );
+  const searchBox = (
+    <label key="search" className="flex min-h-11 items-center gap-2 rounded-xl bg-sunken px-3 text-muted">
+      <Icon name="search" size={18} />
+      <span className="sr-only">Search transactions</span>
+      <input
+        ref={searchRef}
+        type="search"
+        value={qInput}
+        onChange={(e) => setQInput(e.target.value)}
+        onKeyDown={(e) => e.key === 'Escape' && qInput && (e.stopPropagation(), setQInput(''))}
+        placeholder={desktop ? 'Search payee or amount  ( / )' : 'Search payee or amount'}
+        aria-keyshortcuts={desktop ? '/' : undefined}
+        className="min-h-10 flex-1 border-none bg-transparent text-[16px] text-ink outline-none placeholder:text-faint"
+      />
+    </label>
+  );
+  const chips = (
+    <div key="chips" role="group" aria-label="Filter" className="flex gap-2 overflow-x-auto pb-0.5">
+      <Chip pressed={filter === 'all'} onClick={() => void setFilter('all')} track="activity.filter.all">
+        All
+      </Chip>
+      <Chip
+        pressed={filter === 'attention'}
+        onClick={() => void setFilter('attention')}
+        track="activity.filter.attention"
+      >
+        Needs attention <CountBadge n={attentionCount} inverted={filter === 'attention'} />
+      </Chip>
+      <Chip
+        pressed={filter === 'pending'}
+        onClick={() => void setFilter('pending')}
+        track="activity.filter.pending"
+      >
+        Not posted yet
+      </Chip>
+    </div>
+  );
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <header
-        className={cx(
-          'flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface pb-2.5',
-          desktop ? 'px-6 pt-4' : 'px-4 pt-3',
-        )}
-      >
-        <div className="flex items-center justify-between gap-3">
-          <h1 className="m-0 text-[22px] font-bold">Activity</h1>
-          <Link
-            to="/activity/add"
-            data-track="activity.add"
-            aria-label="Add a transaction"
-            className="hit flex h-9 items-center gap-1 rounded-full bg-accent px-3.5 text-[14px] font-bold text-on-accent no-underline"
-          >
-            <Icon name="plus" size={16} stroke={2.6} />
-            {desktop ? 'Add transaction' : 'Add'}
-          </Link>
-        </div>
-        <label className="flex min-h-11 items-center gap-2 rounded-xl bg-sunken px-3 text-muted">
-          <Icon name="search" size={18} />
-          <span className="sr-only">Search transactions</span>
-          <input
-            type="search"
-            value={qInput}
-            onChange={(e) => setQInput(e.target.value)}
-            placeholder="Search payee or amount"
-            className="min-h-10 flex-1 border-none bg-transparent text-[16px] text-ink outline-none placeholder:text-faint"
-          />
-        </label>
-        <div role="group" aria-label="Filter" className="flex gap-2 overflow-x-auto pb-0.5">
-          <Chip pressed={filter === 'all'} onClick={() => void setFilter('all')} track="activity.filter.all">
-            All
-          </Chip>
-          <Chip
-            pressed={filter === 'attention'}
-            onClick={() => void setFilter('attention')}
-            track="activity.filter.attention"
-          >
-            Needs attention {attentionCount}
-          </Chip>
-          <Chip
-            pressed={filter === 'pending'}
-            onClick={() => void setFilter('pending')}
-            track="activity.filter.pending"
-          >
-            Not posted yet
-          </Chip>
-        </div>
-      </header>
+      {desktop ? (
+        <DesktopHeader title="Activity" right={addButton} below={[searchBox, chips]} />
+      ) : (
+        <header className="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 pb-2.5 pt-3">
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="m-0 text-[22px] font-bold">Activity</h1>
+            {addButton}
+          </div>
+          {searchBox}
+          {chips}
+        </header>
+      )}
       <div
         className={cx(
           'flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto pt-3',
           desktop ? 'px-6 pb-8' : 'px-4 pb-6',
         )}
       >
-        <div className={cx('flex flex-col gap-3.5', desktop && 'mx-auto w-full max-w-[880px]')}>
+        <div className={cx('flex flex-col gap-3.5', desktop && DESKTOP_WIDTH)}>
           {!v && (query.error ? <ErrorNote error={query.error} /> : <Loading />)}
           {empty && <p className="m-0 p-4 text-center text-[14px] text-muted">No transactions match.</p>}
           {v && showAttnHead && (

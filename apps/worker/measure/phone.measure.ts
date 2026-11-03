@@ -1,4 +1,4 @@
-// The server's side of the phone copy (D-44): CPU of GET /api/sync pages on a 3,000-transaction budget, for the full
+// The server's side of the phone copy (D-45): CPU of GET /api/sync pages on a 3,000-transaction budget, for the full
 // download and for change pages. Writes .measure/phone.json for docs/measurements.md. Node CPU, SQLite included, as a
 // Durable Object pays it.
 import { writeFileSync, mkdirSync } from 'node:fs';

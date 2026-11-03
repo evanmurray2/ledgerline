@@ -8,7 +8,7 @@ import { cx, Icon, useIsDesktop, type IconName } from './ui';
 import { NoteSheet } from '../screens/Note';
 import { useBadgeCounts, useSession } from '../api/hooks';
 import { useCopy } from '../copy/copy';
-import { useConnectivity } from '../state/connectivity';
+import { useCanWrite, useConnectivity } from '../state/connectivity';
 import { pacificTime } from '../lib/dates';
 import { formatCents } from '../lib/money';
 
@@ -87,6 +87,7 @@ function TabBar({ active }: { active: Tab }) {
 
 function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void; noteButton: boolean }) {
   const badges = useBadges();
+  const canWrite = useCanWrite();
   const rta = badges.rta;
   const items: { id: Tab; name: string; to: string; badge: number }[] = [
     { id: 'budget', name: 'Budget', to: '/budget', badge: 0 },
@@ -154,15 +155,24 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
         <span className="tnum text-[22px] font-bold" data-testid="nav-rta">
           {badges.rtaUpdating ? 'Updating' : rta === undefined ? '—' : formatCents(rta)}
         </span>
-        {active !== 'budget' && !done && (
-          <Link
-            to="/budget/assign"
-            data-track="nav.assign"
-            className="hit mt-1.5 flex h-9 items-center justify-center rounded-full bg-rta-fg text-[14px] font-bold text-rta-btn-fg no-underline"
-          >
-            Assign
-          </Link>
-        )}
+        {/* The one Assign button on desktop, on every screen, so the amount isn't repeated in a header. */}
+        {!done &&
+          (canWrite ? (
+            <Link
+              to="/budget/assign"
+              data-track="nav.assign"
+              className="hit mt-1.5 flex h-9 items-center justify-center rounded-full bg-rta-fg text-[14px] font-bold text-rta-btn-fg no-underline"
+            >
+              Assign
+            </Link>
+          ) : (
+            <span
+              aria-disabled="true"
+              className="mt-1.5 flex h-9 items-center justify-center rounded-full bg-rta-fg/50 text-[14px] font-bold text-rta-btn-fg"
+            >
+              Assign
+            </span>
+          ))}
       </div>
     </nav>
   );

@@ -4,7 +4,7 @@ There is no off-site backup (decisions.md D-29). Recovery uses what Cloudflare k
 
 ## Undo recent damage (last 30 days)
 
-Each budget lives in its own Durable Object, with Cloudflare's 30-day point-in-time recovery. Restoring goes through the app, so every phone's copy is downloaded again (D-44): the restore changes the budget's sync epoch in the Directory first.
+Each budget lives in its own Durable Object, with Cloudflare's 30-day point-in-time recovery. Restoring goes through the app, so every phone's copy is downloaded again (D-45): the restore changes the budget's sync epoch in the Directory first.
 
 From a computer, signed in to Ledgerline in a browser (sign in again first: it needs a passkey check in the last 15 minutes), open the browser's console on the Ledgerline tab and run, with a time just before the damage and your budget's name:
 

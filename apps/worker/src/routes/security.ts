@@ -50,7 +50,7 @@ securityRoutes.get('/settings/security', async (c) => {
   });
 });
 
-// ---- Phones with an encrypted copy (docs/phone-budget.md 13.2, decisions.md D-44). Each copy's key needs the
+// ---- Phones with an encrypted copy (docs/phone-budget.md 13.2, decisions.md D-45). Each copy's key needs the
 // user's passkey and this server-held share, so revoking a device stops it unlocking its copy again once it
 // connects. These routes need a passkey check within 15 minutes (every unlock is a fresh sign-in).
 
@@ -137,7 +137,7 @@ securityRoutes.post('/settings/security/sign-out-others', async (c) => {
   const r = await c.env.DB.prepare(`DELETE FROM auth_session WHERE id != ?1 AND user_id = ?2`)
     .bind(c.get('sessionId'), c.get('userId'))
     .run();
-  // Every other phone's copy too (D-44): their shares go, so they wipe their copies the next time they connect.
+  // Every other phone's copy too (D-45): their shares go, so they wipe their copies the next time they connect.
   await c.env.DB.prepare(
     `UPDATE device SET revoked_at = coalesce(revoked_at, ?3), share = NULL WHERE user_id = ?1 AND id IS NOT ?2`,
   )

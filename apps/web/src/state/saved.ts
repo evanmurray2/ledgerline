@@ -12,7 +12,7 @@ export const BUILD_ID = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev';
 export const SAVED_MAX_AGE = 24 * 60 * 60 * 1000;
 
 export function savingEnabled(): boolean {
-  // Off since D-44: the encrypted copy (src/copy) replaces plain saved screens. clearSavedData() removes old ones.
+  // Off since D-45: the encrypted copy (src/copy) replaces plain saved screens. clearSavedData() removes old ones.
   return false;
 }
 

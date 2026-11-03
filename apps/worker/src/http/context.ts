@@ -8,7 +8,7 @@ export interface Vars {
   requestId: string;
   /** Hash id of the signed-in session ('' for the ops token and local development). */
   sessionId: string;
-  /** Changes when the budget's database is restored; phones holding a copy download it again (D-44). */
+  /** Changes when the budget's database is restored; phones holding a copy download it again (D-45). */
   syncEpoch: string;
 }
 

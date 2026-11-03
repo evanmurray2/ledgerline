@@ -1,4 +1,4 @@
--- Phones that keep an encrypted copy of a budget (docs/phone-budget.md section 13, decisions.md D-44). The copy's
+-- Phones that keep an encrypted copy of a budget (docs/phone-budget.md section 13, decisions.md D-45). The copy's
 -- key needs both the user's passkey and this row's share, which the server hands out only after a sign-in and only
 -- while the device isn't revoked. Expand-only.
 CREATE TABLE device (

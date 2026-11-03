@@ -47,7 +47,7 @@ export class BudgetStore extends DurableObject<Env> {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    // Integration tests run the phone's budget math here (D-44, budget/derived.ts); production never does.
+    // Integration tests run the phone's budget math here (D-45, budget/derived.ts); production never does.
     if (env.LOCAL_ENGINE === '1' && env.PLAID_ENV !== 'production') derived.enabled = true;
     this.db = new SqlD1(ctx.storage);
     this.runner = new JobRunner(ctx.storage, this.handlers(), (job, err) => this.onFailed(job, err));
@@ -186,7 +186,7 @@ export class BudgetStore extends DurableObject<Env> {
       if (want.count !== count || want.hash !== hash)
         differences.push(`${t}: ${count} row(s), backup has ${want.count}`);
     }
-    // Phones holding a copy of this budget download it again (D-44, docs/phone-budget.md section 8).
+    // Phones holding a copy of this budget download it again (D-45, docs/phone-budget.md section 8).
     if (differences.length === 0) await this.newSyncEpoch();
     return { ok: differences.length === 0, differences };
   }
