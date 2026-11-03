@@ -48,10 +48,13 @@ export function OverflowMenu({
   label = 'More',
   items,
   className,
+  track,
 }: {
   label?: string;
   items: MenuItem[];
   className?: string;
+  /** Usage id for opening the menu. */
+  track?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -80,6 +83,7 @@ export function OverflowMenu({
         aria-label={label}
         aria-expanded={open}
         aria-haspopup="true"
+        data-track={track}
         onClick={() => setOpen(!open)}
         className="hit flex h-11 w-11 items-center justify-center rounded-full text-ink-2 hover:bg-sunken"
       >

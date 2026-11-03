@@ -73,6 +73,7 @@ export function RegisterScreen() {
           a && canWrite ? (
             <OverflowMenu
               label="More for this account"
+              track="account.menu"
               items={[{ name: 'Rename account', track: 'account.rename', onClick: () => setRenaming(true) }]}
             />
           ) : undefined
