@@ -50,6 +50,8 @@ export interface CopyState {
   offline: boolean;
   /** Downloading: rows so far. */
   progress: number;
+  /** Why everything is being downloaded, not just what changed (null: only changes). */
+  why: FullWhy | null;
   error: string | null;
   /** Changes made offline not yet on the server. */
   queued: number;
@@ -64,10 +66,23 @@ let state: CopyState = {
   saved: false,
   offline: false,
   progress: 0,
+  why: null,
   error: null,
   queued: 0,
   hasSaved: false,
 };
+
+/** Why a sync starts from nothing; sent with the first request (`why`) and shown while it downloads. */
+export type FullWhy =
+  | 'memory' // this device keeps the budget in memory only (a computer)
+  | 'first' // no saved copy on this phone yet
+  | 'no_prf' // the passkey gave no key, so nothing can be saved
+  | 'turned_off' // signed out from another device
+  | 'unreadable_share'
+  | 'unreadable_key'
+  | 'unreadable_copy'
+  | 'empty' // a saved copy with nothing in it
+  | 'reset'; // the server's copy was restored, or a change made offline was refused
 const listeners = new Set<() => void>();
 function set(patch: Partial<CopyState>) {
   state = { ...state, ...patch };
@@ -121,7 +136,12 @@ async function server<T>(
 }
 
 const fetchPage = (since: number, cursor: string | null) =>
-  server<SyncPage>('GET', `/api/sync?since=${since}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+  server<SyncPage>(
+    'GET',
+    `/api/sync?since=${since}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}${
+      since === 0 && !cursor ? `&why=${state.why ?? 'reset'}` : ''
+    }`,
+  );
 
 // ---------------------------------------------------------------- sign-in and unlock
 
@@ -149,7 +169,8 @@ function identityOf(s: Session): EngineIdentity {
 export async function start(session: Session): Promise<void> {
   if (MOCK || state.status === 'opening' || state.status === 'ready') return;
   who = identityOf(session);
-  set({ status: 'opening', error: null, progress: 0, offline: false });
+  set({ status: 'opening', error: null, progress: 0, offline: false, why: null });
+  let why: FullWhy | null = keepsCopy() ? 'first' : 'memory';
   try {
     const key = recordKey(who.email, who.budgetId);
     let rec = keepsCopy() ? await loadRecord(key) : null;
@@ -167,6 +188,7 @@ export async function start(session: Session): Promise<void> {
       ).catch(async (e: { code?: string }) => {
         if (e.code === 'revoked') {
           await deleteRecord(key);
+          why = 'turned_off';
           return null;
         }
         throw e;
@@ -179,6 +201,7 @@ export async function start(session: Session): Promise<void> {
           dataKey = u.dataKey;
           record = rec;
           await openHost(bytes);
+          why = bytes ? null : 'empty';
         } catch (e) {
           if (e instanceof Error && e.message === 'other_passkey')
             throw new Error('Use the passkey you set this phone up with.');
@@ -186,6 +209,7 @@ export async function start(session: Session): Promise<void> {
           // The copy can't be opened. The server has everything, so start a new copy (the server turns the old one
           // off when the new one is set up).
           console.warn(JSON.stringify({ event: 'copy_unreadable', step: e.step }));
+          why = `unreadable_${e.step}`;
           await deleteRecord(key);
           rec = null;
           dataKey = null;
@@ -217,11 +241,12 @@ export async function start(session: Session): Promise<void> {
       } else {
         record = null;
         dataKey = null;
+        if (keepsCopy()) why = 'no_prf';
       }
       await openHost(null);
     }
     await host!.put('session', JSON.stringify(session));
-    set({ saved: record !== null, hasSaved: record !== null });
+    set({ saved: record !== null, hasSaved: record !== null, why });
     await syncNow();
     set({ status: 'ready' });
     watch();
@@ -325,6 +350,7 @@ export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
         set({ progress: state.progress + p.rows.length });
         return p;
       });
+      if (state.why) set({ why: null });
       if (r.rows > 0 || !(await host!.state()).through) await host!.derive();
       if (record) {
         record = { ...record, lastServerTime: Date.now() };
