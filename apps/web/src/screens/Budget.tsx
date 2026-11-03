@@ -1,6 +1,6 @@
 // Budget (home): month switcher, All / Needs attention, card payment rows pinned first, the Owed to you row,
-// collapsible groups with totals, status words and bars. Desktop shows the same data as a table with
-// Assigned, Spent and Available columns. Needs attention offers one-tap fixes with amounts.
+// collapsible groups with totals, status words and bars. Desktop shows the same data, bars and status words as
+// a table with Assigned, Spent and Available columns. Needs attention offers one-tap fixes with amounts.
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Link, Outlet, useNavigate, useRouterState, useSearch } from '@tanstack/react-router';
 import type { AttentionItem, BudgetCategoryRow, BudgetView, CardRow } from '@ledgerline/contracts';
@@ -960,8 +960,24 @@ function AssignedCell({
       onChange={(e) => edit(e.target.value)}
       onBlur={() => void commit()}
       onKeyDown={onKeyDown}
-      className="tnum h-9 w-full max-w-[140px] rounded-lg border border-transparent bg-transparent px-2 text-right text-[14px] text-ink-2 outline-none hover:border-line-strong focus:border-accent focus:bg-surface focus:text-ink disabled:hover:border-transparent"
+      className="tnum h-9 w-full max-w-[140px] rounded-lg border border-transparent bg-surface-2 px-2 text-right text-[14px] text-ink-2 outline-none hover:border-line-strong focus:border-accent focus:bg-surface focus:text-ink disabled:bg-transparent disabled:hover:border-transparent"
     />
+  );
+}
+
+/**
+ * Spent, so spending stands out: nothing spent fades back, money spent reads dark with the share of the
+ * month's money it used beneath it (not for overspent rows: their red pill already says it).
+ */
+function SpentCell({ row }: { row: BudgetCategoryRow }) {
+  if (row.status === 'invested') return <span className="text-ink">Invested {formatCents(row.spent)}</span>;
+  if (row.spent === 0) return <span className="text-faint">{formatCents(0)}</span>;
+  const used = row.leftPercent === null || row.status === 'overspent' ? null : 100 - row.leftPercent;
+  return (
+    <span className="flex flex-col items-end gap-0.5">
+      <span className="font-semibold text-ink">{formatCents(row.spent)}</span>
+      {used !== null && <span className="text-[12px] text-muted">{used}% used</span>}
+    </span>
   );
 }
 
@@ -980,7 +996,7 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
       key={`g-${name}`}
       className={cx(
         head,
-        'border-t border-line bg-surface-2 py-1.5 text-[12px] font-bold uppercase tracking-[0.5px] text-ink-2',
+        'border-t border-line-strong bg-sunken py-2 text-[12px] font-bold uppercase tracking-[0.5px] text-ink',
       )}
     >
       <span role="rowheader" className="px-3.5">
@@ -989,10 +1005,16 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
       {totals && (
         <>
           {/* 15px: the Assigned field's own padding and border, so the totals line up with its amount. */}
-          <span role="cell" className="tnum pl-3.5 pr-[15px] text-right tracking-normal">
+          <span
+            role="cell"
+            className="tnum pl-3.5 pr-[15px] text-right font-semibold tracking-normal text-ink-2"
+          >
             {formatCents(totals.assigned)}
           </span>
-          <span role="cell" className={cx('tnum px-3.5 text-right tracking-normal', spentCls)}>
+          <span
+            role="cell"
+            className={cx('tnum px-3.5 text-right font-semibold tracking-normal text-ink-2', spentCls)}
+          >
             {formatCents(totals.spent)}
           </span>
           <span role="cell" className="tnum px-6 text-right tracking-normal">
@@ -1005,10 +1027,11 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
   const row = (r: {
     key: string;
     name: string;
-    detail: string;
+    detail: ReactNode;
     assigned: ReactNode;
-    spent: string;
+    spent: ReactNode;
     avail: string;
+    bar?: { percent: number; tone: Tone } | null;
     tone: Tone | null;
     open: () => void;
     track: string;
@@ -1036,6 +1059,12 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
           {r.name}
           <span className="text-[13px] font-normal text-muted">{r.detail}</span>
         </button>
+        {/* The phone's bar: how much of the month's money is left, readable without the numbers. */}
+        {r.bar && (
+          <div className="mb-1.5 max-w-[320px]">
+            <Bar percent={r.bar.percent} tone={r.bar.tone} />
+          </div>
+        )}
       </span>
       <span role="cell" className="tnum flex justify-end px-1.5 py-1 text-right text-ink-2">
         {r.assigned}
@@ -1089,11 +1118,21 @@ function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
             row({
               key: c.id,
               name: c.name,
-              detail: isQuiet(c.status) ? c.detail : `${STATUS[c.status].word} · ${c.detail}`,
+              detail: isQuiet(c.status) ? (
+                <>
+                  <span className="sr-only">{STATUS[c.status].word} · </span>
+                  {c.detail}
+                </>
+              ) : (
+                <>
+                  <StatusWord {...STATUS[c.status]} /> · {c.detail}
+                </>
+              ),
               assigned: <AssignedCell id={c.id} name={c.name} cents={c.assigned} month={month} />,
-              spent: c.status === 'invested' ? `Invested ${formatCents(c.spent)}` : formatCents(c.spent),
+              spent: <SpentCell row={c} />,
               avail: formatCents(c.available),
               tone: isQuiet(c.status) ? null : STATUS[c.status].tone,
+              bar: c.leftPercent === null ? null : { percent: c.leftPercent, tone: catTone(c) },
               open: () => void navigate({ to: `/budget/category/${c.id}`, search: { month } }),
               track: 'budget.category',
             }),
