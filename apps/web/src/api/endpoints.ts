@@ -111,6 +111,8 @@ export const api = {
   newTxn: (body: In<typeof NewTxnRequest>) => post('/api/transactions', MutationResult, body),
   pendingCheck: (key: string, body: In<typeof PendingCheckAction>) =>
     post(`/api/transactions/${enc(key)}/pending`, MutationResult, body),
+  /** Clears a bank transaction's alert (e.g. it cleared at a different amount): the OK on Check these. */
+  reviewTxn: (key: string) => post(`/api/transactions/${enc(key)}/review`, MutationResult),
   deleteTxn: (key: string) => del(`/api/transactions/${enc(key)}`, MutationResult),
 
   match: (inflowKey: string) => get(`/api/match/${enc(inflowKey)}`, MatchView),
