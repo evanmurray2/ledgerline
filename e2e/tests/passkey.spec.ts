@@ -137,9 +137,12 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   await expect(page).toHaveURL(/\/welcome/);
   await post(page, '/api/settings/security/sign-out');
   const since: number[] = [];
+  const why: string[] = [];
   page.on('request', (r) => {
     const u = new URL(r.url());
-    if (u.pathname === '/api/sync') since.push(Number(u.searchParams.get('since')));
+    if (u.pathname !== '/api/sync') return;
+    since.push(Number(u.searchParams.get('since')));
+    if (u.searchParams.get('why')) why.push(u.searchParams.get('why')!);
   });
   await page.reload();
   await page.getByRole('button', { name: 'Sign in with passkey' }).click();
@@ -174,5 +177,11 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   // Signing in again starts a new copy.
   await page.getByRole('button', { name: 'Sign in with passkey' }).click();
   await expect(page).toHaveURL(/\/welcome/);
-  await expect.poll(async () => (await copy())?.deviceId, { timeout: 15_000 }).not.toBe(first.deviceId);
+  await expect
+    .poll(async () => (await copy())?.blob && (await copy())?.deviceId !== first.deviceId, {
+      timeout: 15_000,
+    })
+    .toBe(true);
+  // Only that fresh start downloaded everything, and it said why (the server logs it).
+  expect(why).toEqual(['first']);
 });
