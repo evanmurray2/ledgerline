@@ -76,6 +76,6 @@ The Worker serves the SPA and a JSON API under `/api`. Every request needs a sig
 | `POST /api/settings/restore`                                             | `{ before, confirm }` (recent passkey check)                                    | `{ ok, undo }` (runbooks/restore.md)                                                              |
 | `POST /api/settings/security/devices`                                    | `{ name }` (recent passkey check)                                               | `{ id, share }`                                                                                   |
 | `POST /api/settings/security/devices/:id/share`                          | (recent passkey check)                                                          | `{ id, share }`, or `410 { error: "revoked" }`                                                    |
-| `POST /api/auth/copy-status`                                             | `{ device }` (no sign-in; D-52)                                                  | `{ off }`: `true` once that phone was signed out                                                  |
+| `POST /api/auth/copy-status`                                             | `{ device }` (no sign-in; D-52)                                                 | `{ off }`: `true` once that phone was signed out                                                  |
 
 Changes made offline are sent later with `x-edit-id` (applied once) and `x-edit-at` (when the edit was made, for most-recent-edit-wins).
