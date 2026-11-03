@@ -3,6 +3,7 @@
 // longer keeps (budget lines, month snapshots, Ready to Assign, month totals) with the same code the server used to
 // run, and answers the app's screen requests with the server's own routes. Nothing here talks to the network: the
 // browser host (web-entry.ts) fetches sync pages and hands them in.
+import type { Db, Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
 import { localDate, type Month } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
@@ -75,7 +76,7 @@ export interface ApplyResult {
 }
 
 /** Applies migrations to the local copy (idempotent: the same _migrations table the server objects use). */
-export async function migrateLocal(db: D1Database, now: number): Promise<void> {
+export async function migrateLocal(db: Db, now: number): Promise<void> {
   await db
     .prepare(`CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`)
     .run();
@@ -102,7 +103,7 @@ export class LocalEngine {
   private readonly app: Hono<AppEnv>;
 
   constructor(
-    readonly db: D1Database,
+    readonly db: Db,
     private readonly who: EngineIdentity,
     /** The device's clock; corrected by the measured offset from the server. */
     private readonly deviceNow: () => number = () => Date.now(),
@@ -130,7 +131,7 @@ export class LocalEngine {
     return r ? { ...EMPTY, ...(JSON.parse(r.value) as Partial<EngineState>) } : { ...EMPTY };
   }
 
-  private setState(s: EngineState): D1PreparedStatement {
+  private setState(s: EngineState): Stmt {
     return this.db
       .prepare(
         `INSERT INTO local_state (key, value) VALUES ('sync', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
@@ -160,7 +161,7 @@ export class LocalEngine {
       await this.clear();
       return { reset: true, rows: 0, caughtUp: false };
     }
-    const stmts: D1PreparedStatement[] = [this.db.prepare(`PRAGMA defer_foreign_keys = ON`)];
+    const stmts: Stmt[] = [this.db.prepare(`PRAGMA defer_foreign_keys = ON`)];
     // What the next derive() must redo (read before the rows change: a moved or deleted row's old key counts too).
     const todo = await this.pendingDerive();
     if (st.cursor || page.cursor || st.through === 0) todo.full = true;
@@ -189,7 +190,7 @@ export class LocalEngine {
     return r ? (JSON.parse(r.value) as PendingDerive) : { full: false, keys: [], fromMonth: null };
   }
 
-  private setPendingDerive(p: PendingDerive): D1PreparedStatement {
+  private setPendingDerive(p: PendingDerive): Stmt {
     return this.db
       .prepare(
         `INSERT INTO local_state (key, value) VALUES ('derive', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
@@ -241,7 +242,7 @@ export class LocalEngine {
     }
   }
 
-  private rowStatements(r: SyncRow): D1PreparedStatement[] {
+  private rowStatements(r: SyncRow): Stmt[] {
     const t = SYNC_TABLES.find((x) => x.name === r.t);
     if (!t) return [];
     const where = t.pk.map((c, i) => `${c} = ?${i + 1}`).join(' AND ');
@@ -291,7 +292,7 @@ export class LocalEngine {
     if (!todo.full && last?.value === today) {
       // Nothing that counts changed (payees, rules, alerts, balances, targets…): the numbers stand.
       if (!todo.keys.length && !todo.fromMonth && !todo.fromStart) return { rta: (await this.rta()).rta };
-      const stmts: D1PreparedStatement[] = [];
+      const stmts: Stmt[] = [];
       if (todo.keys.length) {
         for (const part of chunks([...new Set(todo.keys)], 450)) {
           const plan = await planLineRebuild(s, part, meta, today, now);

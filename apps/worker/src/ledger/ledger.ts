@@ -1,6 +1,7 @@
 // Loads logical transactions (v_transaction + splits, owed marks and links) into the domain's LogicalTxn shape,
 // and keeps budget_line in step with them: every write that changes a transaction rebuilds that transaction's
 // lines and marks the budget dirty from the earliest month affected.
+import type { Stmt } from '@ledgerline/db/sql';
 import {
   type AccountKind,
   type BudgetLine,
@@ -195,7 +196,7 @@ function inList(keys: readonly string[], first: number): string {
   return keys.map((_, i) => `?${first + i}`).join(',');
 }
 
-/** D1 allows at most 100 bound parameters per statement; IN lists are split into chunks of this size. */
+/** SQLite in a Durable Object allows at most 100 bound parameters per statement; IN lists are split into chunks of this size. */
 export const IN_CHUNK = 90;
 
 export function chunks<T>(xs: readonly T[], n = IN_CHUNK): T[][] {
@@ -385,7 +386,7 @@ export async function planLineRebuild(
   now: number,
   /** Pending edits not yet written, applied on top of what's stored (the caller writes them in the same batch). */
   override?: (t: LogicalTxn) => LogicalTxn | null,
-): Promise<{ stmts: D1PreparedStatement[]; dirtyFrom: Month | null }> {
+): Promise<{ stmts: Stmt[]; dirtyFrom: Month | null }> {
   if (keys.length === 0) return { stmts: [], dirtyFrom: null };
   const keyChunks = chunks(keys);
   const [accts, ...oldMonths] = await s.batch([
@@ -406,7 +407,7 @@ export async function planLineRebuild(
     const m = (r.results[0] as { m: string | null } | undefined)?.m ?? null;
     if (m && (!dirty || m < dirty)) dirty = m;
   }
-  const stmts: D1PreparedStatement[] = keyChunks.map((k) =>
+  const stmts: Stmt[] = keyChunks.map((k) =>
     s.q(`DELETE FROM budget_line WHERE budget_id = ?1 AND txn_key IN (${inList(k, 2)})`, ...k),
   );
   const rows: LineRow[] = [];
@@ -441,12 +442,7 @@ export async function planLineRebuild(
 }
 
 /** Starting-balance lines for one account (rule 8), rebuilt when the account or its starting balance changes. */
-export function planStartLines(
-  s: Scoped,
-  a: LedgerAccount,
-  meta: BudgetMeta,
-  now: number,
-): D1PreparedStatement[] {
+export function planStartLines(s: Scoped, a: LedgerAccount, meta: BudgetMeta, now: number): Stmt[] {
   const lines = startLines(a, meta.startMonth);
   const stmts = [s.q(`DELETE FROM budget_line WHERE budget_id = ?1 AND txn_key = ?2`, `start:${a.id}`)];
   for (const l of lines) {

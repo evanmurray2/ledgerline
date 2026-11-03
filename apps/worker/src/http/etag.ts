@@ -1,6 +1,6 @@
 // Conditional GETs: every screen response carries an ETag built from counters that change whenever anything it
 // shows can change. The browser revalidates with If-None-Match, and an unchanged screen costs a couple of rows
-// read instead of the whole screen (D1's free plan allows 5 million rows read a day; docs/measurements.md).
+// read instead of the whole screen (the free plan allows 5 million rows read a day; docs/measurements.md).
 //
 // What moves the tag:
 // - budget.data_version: every successful change through the API (bumpOnChange) and the daily jobs (bumpVersion)
@@ -8,6 +8,7 @@
 // - budget.summary_version, rta, summary_month, summary_dirty_from: recomputes
 // - connections' updated_at and last_synced_at: sync results, balances, repairs
 // - today's date in the budget's time zone, and the deployed app version
+import type { Db } from '@ledgerline/db/sql';
 import type { MiddlewareHandler } from 'hono';
 import { localDate } from '@ledgerline/domain';
 import type { AppEnv } from './context.js';
@@ -25,7 +26,7 @@ const SKIP = [
 /** Changes that don't alter any screen. */
 const NO_BUMP = new Set(['/api/usage', '/api/notes']);
 
-export async function bumpVersion(db: D1Database, budgetId: string): Promise<void> {
+export async function bumpVersion(db: Db, budgetId: string): Promise<void> {
   await db.prepare(`UPDATE budget SET data_version = data_version + 1 WHERE id = ?1`).bind(budgetId).run();
 }
 

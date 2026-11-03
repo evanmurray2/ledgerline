@@ -1,7 +1,7 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   // Production. All data lives in SQLite Durable Objects (docs/multi-user.md): a Directory and one store per
-  // budget. D1 and Workflows were removed on Nov 2, 2026 after the move (decisions.md D-37). Local dev, tests and e2e
+  // budget (decisions.md D-37). Local dev, tests and e2e
   // use this same config, with local settings from .dev.vars or --var.
   "name": "ledgerline",
   "main": "src/index.ts",

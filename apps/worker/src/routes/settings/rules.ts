@@ -1,4 +1,5 @@
 // Settings → Rules: list, save, live preview, apply to past transactions, delete and export.
+import type { Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
 import { clock } from '../../http/clock.js';
 import { RuleBody, type RulePreview, type RulesView } from '@ledgerline/contracts';
@@ -179,7 +180,7 @@ rulesRoutes.post('/settings/rules/:id/apply', async (c) => {
   const txs = (await recentTxns(s, 3650)).filter(
     (t) => !t.category_id && !t.to_rta && !t.transfer_state && !t.wtm_state && t.categorized_by !== 'user',
   );
-  const w: D1PreparedStatement[] = [];
+  const w: Stmt[] = [];
   const keys: string[] = [];
   for (const t of txs) {
     const res = evaluateRules(ruleTxn(t), [rule], null);

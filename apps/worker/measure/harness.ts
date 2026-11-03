@@ -1,12 +1,12 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { cpuUsage } from 'node:process';
-import { NodeD1, applyMigrations } from '../../../packages/db/src/node-d1.js';
+import { NodeDb, applyMigrations } from '../../../packages/db/src/node-db.js';
 
 /** The BudgetStore's own schema: production runs these in each budget's Durable Object. */
 export const MIGRATIONS_DIR = new URL('../../../packages/db/budget-migrations/', import.meta.url);
 
-export function freshDb(): NodeD1 {
-  const d = new NodeD1();
+export function freshDb(): NodeDb {
+  const d = new NodeDb();
   applyMigrations(
     d,
     readdirSync(MIGRATIONS_DIR)
@@ -21,26 +21,16 @@ function micros(): number {
   return u.user + u.system;
 }
 
-/**
- * CPU of fn() in ms. In a Durable Object SQLite runs on the same thread as the app, so `ms` includes it; `jsMs` is
- * the app's own share (without SQLite) and `execMs` the time executing statements and building rows.
- */
+/** CPU of fn() in ms. In a Durable Object SQLite runs on the same thread as the app, so it is included. */
 export async function cpu<T>(
-  db: NodeD1,
+  db: NodeDb,
   fn: () => Promise<T>,
-): Promise<{ ms: number; jsMs: number; execMs: number; result: T; queries: number; statements: number }> {
+): Promise<{ ms: number; result: T; queries: number; statements: number }> {
   db.resetStats();
   const t0 = micros();
   const result = await fn();
   const total = micros() - t0;
-  return {
-    ms: total / 1000,
-    jsMs: (total - db.stats.sqliteMicros) / 1000,
-    execMs: db.stats.execMicros / 1000,
-    result,
-    queries: db.stats.queries,
-    statements: db.stats.statements,
-  };
+  return { ms: total / 1000, result, queries: db.stats.queries, statements: db.stats.statements };
 }
 
 export function stats(xs: number[]): { first: number; median: number; p90: number; max: number } {

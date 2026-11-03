@@ -197,7 +197,7 @@ securityRoutes.post('/settings/security/passkeys/:id/remove', async (c) => {
   )
     .bind(id, c.get('userId'))
     .run();
-  if (r.meta.changes !== 1)
+  if (r.changes !== 1)
     return c.json({ error: 'last_passkey', message: 'You can’t remove your only passkey.' }, 409);
   return c.json({ ok: true });
 });
@@ -217,7 +217,7 @@ securityRoutes.post('/settings/security/sign-out-others', async (c) => {
     )
     .bind(userId, c.get('sessionId'), clock(c.env))
     .run();
-  return c.json({ ok: true, ended: r.meta.changes });
+  return c.json({ ok: true, ended: r.changes });
 });
 
 /** Signs out one other device, by the id Settings shows: its sign-in ends and its saved copy is turned off. */

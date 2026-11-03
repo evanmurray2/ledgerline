@@ -1,12 +1,13 @@
 // What the phone's engine does after a sync (local/engine.ts derive(), D-45), run on a test database: rebuild every
 // transaction's budget lines and recompute every month. Tests that build a budget by hand (no accounts' starting
 // balances, so no start lines to rebuild) check the server's rows through this.
+import type { Db } from '@ledgerline/db/sql';
 import { localDate } from '@ledgerline/domain';
 import { Scoped } from '../src/db/scoped.js';
 import { budgetMeta, chunks, planLineRebuild } from '../src/ledger/ledger.js';
 import { recompute } from '../src/budget/recompute.js';
 
-export async function workOut(db: D1Database, budgetId: string, now: number): Promise<{ rta: number }> {
+export async function workOut(db: Db, budgetId: string, now: number): Promise<{ rta: number }> {
   const s = new Scoped(db, budgetId, 'test');
   const meta = await budgetMeta(s);
   if (!meta) return { rta: 0 };

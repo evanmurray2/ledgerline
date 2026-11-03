@@ -1,12 +1,11 @@
 // The one Durable Object for users, passkeys, sessions, invites, Plaid slots and routing (docs/multi-user.md 5.2).
-// It serves sign-in (/api/auth/*) and Settings → Sign-in (/api/settings/security/*) with the same
-// routes the D1 path uses, and answers authenticate() for every other request so the Worker knows whose budget
-// to open.
+// It serves sign-in (/api/auth/*) and Settings → Sign-in (/api/settings/security/*), and answers authenticate() for
+// every other request so the Worker knows whose budget to open.
 import { DurableObject } from 'cloudflare:workers';
 import { Hono } from 'hono';
 import type { Env } from '../env.js';
 import type { AppEnv } from '../http/context.js';
-import { SqlD1 } from './adapter.js';
+import { DurableDb } from './adapter.js';
 import { migrate } from './migrate.js';
 import { DIRECTORY_MIGRATIONS } from './migrations.gen.js';
 import { storeHealth, type StoreHealth } from './budget-store.js';
@@ -55,7 +54,7 @@ export type AuthResult =
 const STATE_MS = 60_000;
 
 export class Directory extends DurableObject<Env> {
-  protected readonly db: SqlD1;
+  protected readonly db: DurableDb;
   private startError: string | null = null;
   private app: Hono<AppEnv> | null = null;
   private readonly runner: JobRunner;
@@ -63,7 +62,7 @@ export class Directory extends DurableObject<Env> {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    this.db = new SqlD1(ctx.storage);
+    this.db = new DurableDb(ctx.storage);
     this.runner = new JobRunner(ctx.storage, this.handlers(), async (job, err) => {
       console.log(JSON.stringify({ event: 'job_failed', kind: job.kind, id: job.id, error: err }));
     });
@@ -110,7 +109,7 @@ export class Directory extends DurableObject<Env> {
     return {
       // Expired sign-in state (D-27), daily.
       auth_prune: async (_job, now) => {
-        await this.db.batch(pruneAuthStmts(this.db as unknown as D1Database, now) as never);
+        await this.db.batch(pruneAuthStmts(this.db, now) as never);
         return { state: {}, runAt: nextUtc(now, 10, 20) };
       },
       // Account usage from GraphQL Analytics, every 30 minutes, for the write breaker. Durable Object requests and
@@ -141,7 +140,7 @@ export class Directory extends DurableObject<Env> {
     };
   }
 
-  /** Sign-in and Settings → Sign-in, with the D1 path's own routes on the Directory's database. */
+  /** Sign-in and Settings → Sign-in, on the Directory's database. */
   override async fetch(request: Request): Promise<Response> {
     this.ready();
     if (!this.app) {
@@ -159,7 +158,7 @@ export class Directory extends DurableObject<Env> {
     } as never);
   }
 
-  /** For every other API request: the signed-in user's budget, or why not (same answers as the D1 path). */
+  /** For every other API request: the signed-in user's budget, or why not. */
   async authenticate(cookie: string | null, method: string, path: string): Promise<AuthResult> {
     this.ready();
     const env = this.appEnv();
@@ -252,7 +251,7 @@ export class Directory extends DurableObject<Env> {
 
   /** Adds a store's own row counts to today's account usage (between analytics refreshes). */
   async noteUsage(written: number, read: number): Promise<void> {
-    await noteUsage(this.db as unknown as D1Database, written, read).run();
+    await noteUsage(this.db, written, read).run();
   }
 
   /**
@@ -296,6 +295,6 @@ export class Directory extends DurableObject<Env> {
   }
 
   private appEnv(): Env {
-    return { ...this.env, DB: this.db as unknown as D1Database };
+    return { ...this.env, DB: this.db };
   }
 }

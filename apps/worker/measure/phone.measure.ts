@@ -36,25 +36,24 @@ function provider(count: number): PlaidProvider {
 
 test('sync pages CPU', async () => {
   const db = freshDb();
-  const d1 = db as unknown as D1Database;
   const now = Date.now();
   const ring = parseKeyring('1:' + Buffer.alloc(32, 7).toString('base64'), '1');
   const tok = await encryptToken(ring, 'access-sandbox-x', 'con1');
-  await d1.batch([
-    d1
+  await db.batch([
+    db
       .prepare(
         `INSERT INTO budget (id, name, budget_start_month, created_at, updated_at) VALUES ('b1','B','2023-11',?1,?1)`,
       )
       .bind(now),
-    d1
+    db
       .prepare(
         `INSERT INTO connection (id, budget_id, provider, institution_name, access_token_enc, key_version, linked_at, created_at, updated_at)
          VALUES ('con1','b1','plaid','Sandbox',?1,1,?2,?2,?2)`,
       )
       .bind(tok.enc, now),
   ]);
-  await acquire(d1, 'con1', 'run1', now);
-  const ctx = () => ({ db: d1, connectionId: 'con1', budgetId: 'b1', holder: 'run1', now: Date.now() });
+  await acquire(db, 'con1', 'run1', now);
+  const ctx = () => ({ db: db, connectionId: 'con1', budgetId: 'b1', holder: 'run1', now: Date.now() });
   await beginRun(ctx(), 'measure');
   const p = provider(500);
   let cursor: string | null = null;
@@ -78,7 +77,7 @@ test('sync pages CPU', async () => {
   });
   app.route('/api', syncRoutes);
   const get = async (q: string) =>
-    (await app.request(`/api/sync?${q}`, {}, { DB: d1, PLAID_ENV: 'sandbox' })).json() as Promise<SyncPage>;
+    (await app.request(`/api/sync?${q}`, {}, { DB: db, PLAID_ENV: 'sandbox' })).json() as Promise<SyncPage>;
 
   const out: Record<string, unknown> = { pageRows: SYNC_PAGE_ROWS };
   const full: number[] = [];
@@ -95,7 +94,7 @@ test('sync pages CPU', async () => {
   }
   out.fullDownload = { requests: full.length, rows, ms: stats(full) };
   // 600 transactions changed (categorized, say), then change pages.
-  await d1
+  await db
     .prepare(
       `UPDATE bank_txn SET updated_at = updated_at + 1 WHERE provider_txn_id IN (SELECT provider_txn_id FROM bank_txn LIMIT 600)`,
     )

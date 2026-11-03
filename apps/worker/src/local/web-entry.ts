@@ -5,7 +5,7 @@
 import initSqlJs from 'sql.js';
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { LocalEngine, migrateLocal, type EngineIdentity } from './engine.js';
-import { SqlJsD1 } from './sqljs-d1.js';
+import { SqlJsDb } from './sqljs-db.js';
 import type { SyncPage } from '../routes/sync.js';
 
 interface Ctx {
@@ -29,10 +29,10 @@ type Msg =
   | { id: number; op: 'close' };
 
 let sqlite: Awaited<ReturnType<typeof initSqlJs>> | null = null;
-let db: SqlJsD1 | null = null;
+let db: SqlJsDb | null = null;
 let engine: LocalEngine | null = null;
 
-function need(): { db: SqlJsD1; engine: LocalEngine } {
+function need(): { db: SqlJsDb; engine: LocalEngine } {
   if (!db || !engine) throw new Error('The copy isn’t open');
   return { db, engine };
 }
@@ -42,11 +42,10 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
     case 'open': {
       sqlite ??= await initSqlJs({ locateFile: () => wasmUrl });
       db?.db.close();
-      db = new SqlJsD1(m.bytes ? new sqlite.Database(new Uint8Array(m.bytes)) : new sqlite.Database());
-      const d1 = db as unknown as D1Database;
-      await migrateLocal(d1, Date.now());
+      db = new SqlJsDb(m.bytes ? new sqlite.Database(new Uint8Array(m.bytes)) : new sqlite.Database());
+      await migrateLocal(db, Date.now());
       engine = new LocalEngine(
-        d1,
+        db,
         m.who,
         () => Date.now(),
         async (r) => ctx.postMessage({ event: 'identity', ...r }),

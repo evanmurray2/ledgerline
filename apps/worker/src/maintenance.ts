@@ -1,5 +1,6 @@
 // The daily maintenance job's pieces (Sync spec: Daily maintenance job): the rule 10 identity assertion, usage
 // roll-up and pruning, and the watchdog. store/budget-jobs.ts runs them as alarm steps, each sized for 10 ms of CPU.
+import type { Db, Stmt } from '@ledgerline/db/sql';
 import {
   type Month,
   type StoredMonth,
@@ -126,7 +127,7 @@ export async function rollUpUsage(env: Env, budgetId: string, now: number): Prom
 }
 
 /** The budget's half of the watchdog (docs/multi-user.md 5.6: the auth prune runs in the Directory). */
-export function watchdogBudgetStmts(db: D1Database, budgetId: string, now: number): D1PreparedStatement[] {
+export function watchdogBudgetStmts(db: Db, budgetId: string, now: number): Stmt[] {
   // The watchdog records that it ran; the Accounts alerts compare it with the monitor's last check.
   return [
     db
@@ -144,7 +145,7 @@ export function watchdogBudgetStmts(db: D1Database, budgetId: string, now: numbe
 }
 
 /** Expired sign-in state (decisions.md D-27). */
-export function pruneAuthStmts(db: D1Database, now: number): D1PreparedStatement[] {
+export function pruneAuthStmts(db: Db, now: number): Stmt[] {
   return [
     db.prepare(`DELETE FROM auth_session WHERE expires_at <= ?1`).bind(now),
     db.prepare(`DELETE FROM auth_challenge WHERE expires_at <= ?1`).bind(now),

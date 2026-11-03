@@ -124,6 +124,8 @@ No transaction ever spans two objects. Every change that touches both is a serie
 
 ### 5.5 The D1-shaped adapter
 
+_Replaced on Nov 3, 2026 by the app's own interface over SQLite (`packages/db/src/sql.ts`): the same prepare, bind and batch calls, no D1 names or D1-only behavior._
+
 Inside an object, `env.DB` is an adapter with D1's interface over `ctx.storage.sql`.
 
 - **Binding values:** bound values are coerced as D1 does it. Booleans become 0 or 1, `undefined` throws, and `ArrayBuffer` and `Uint8Array` become blobs.

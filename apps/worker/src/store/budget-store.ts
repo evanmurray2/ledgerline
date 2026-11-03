@@ -1,6 +1,7 @@
 // One Durable Object per budget, holding all of that budget's data in its own SQLite database
 // (docs/multi-user.md 5.3). It migrates itself at start, runs its background work on alarms (6.1) and keeps its own
 // recurring jobs (6.2). The Worker reaches it only after the Directory has said whose budget it is.
+import type { Db } from '@ledgerline/db/sql';
 import { DurableObject } from 'cloudflare:workers';
 import { Hono } from 'hono';
 import type { AppEnv } from '../http/context.js';
@@ -10,7 +11,7 @@ import { budgetApi, serverReadsOnly } from '../routes/api.js';
 import { dev } from '../dev-seed.js';
 import { BUDGET_TABLES, NO_FILTER, chain, insertStatements, readChunk, tableMeta } from './dump.js';
 import type { Env } from '../env.js';
-import { SqlD1 } from './adapter.js';
+import { DurableDb } from './adapter.js';
 import { appliedMigrations, migrate } from './migrate.js';
 import { BUDGET_MIGRATIONS } from './migrations.gen.js';
 import { JobRunner, type Handler, type Job } from './jobs.js';
@@ -35,7 +36,7 @@ export interface StoreHealth {
 }
 
 export class BudgetStore extends DurableObject<Env> {
-  protected readonly db: SqlD1;
+  protected readonly db: DurableDb;
   private startError: string | null = null;
   private armed = false;
   private readonly runner: JobRunner;
@@ -45,7 +46,7 @@ export class BudgetStore extends DurableObject<Env> {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    this.db = new SqlD1(ctx.storage);
+    this.db = new DurableDb(ctx.storage);
     this.runner = new JobRunner(ctx.storage, this.handlers(), (job, err) => this.onFailed(job, err));
     void ctx.blockConcurrencyWhile(async () => {
       try {
@@ -278,8 +279,8 @@ export class BudgetStore extends DurableObject<Env> {
     }
   }
 
-  private adapter(): D1Database {
-    return this.db as unknown as D1Database;
+  private adapter(): Db {
+    return this.db;
   }
 
   /**

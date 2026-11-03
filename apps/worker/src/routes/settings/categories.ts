@@ -1,4 +1,5 @@
 // Settings → Categories and groups: list, add, rename, archive, remove and reorder.
+import type { Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
 import { clock } from '../../http/clock.js';
 import {
@@ -194,7 +195,7 @@ async function archiveCategory(
   now: number,
   sent: { available?: number | undefined; through?: number | undefined } = {},
 ): Promise<void> {
-  const w: D1PreparedStatement[] = [
+  const w: Stmt[] = [
     s.q(
       `UPDATE category SET archived_at = ?3, updated_at = ?4 WHERE budget_id = ?1 AND id = ?2`,
       id,

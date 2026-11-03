@@ -1,3 +1,4 @@
+import type { Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
 import { clock } from '../http/clock.js';
 import { SettingsPatch, SetupStart, StartingBalances } from '@ledgerline/contracts';
@@ -44,7 +45,7 @@ settingsRoutes.post('/setup/starting-balances', async (c) => {
   const now = clock(c.env);
   const meta = await budgetMeta(s);
   if (!meta) throw new HttpError(409, 'not_started', 'Set the budget start first');
-  const w: D1PreparedStatement[] = [];
+  const w: Stmt[] = [];
   for (const a of r.accounts) {
     const row = await s.first<AccountRowDb>(
       `SELECT * FROM account WHERE budget_id = ?1 AND id = ?2`,
@@ -76,7 +77,7 @@ settingsRoutes.patch('/settings', async (c) => {
   const r = await parse(SettingsPatch, c.req.raw);
   const s = scoped(c);
   const now = clock(c.env);
-  const w: D1PreparedStatement[] = [];
+  const w: Stmt[] = [];
   for (const [k, v] of Object.entries(r)) {
     if (v === undefined) continue;
     w.push(

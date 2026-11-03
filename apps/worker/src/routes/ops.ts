@@ -1,4 +1,5 @@
 // Usage tracking, notes, health, webhooks, import and export.
+import type { Stmt } from '@ledgerline/db/sql';
 import { clock } from '../http/clock.js';
 import { Hono } from 'hono';
 import type { DumpChunk } from '@ledgerline/contracts';
@@ -42,7 +43,7 @@ opsRoutes.post('/usage', async (c) => {
   const room = Math.max(0, USAGE_DAILY_CAP - (today?.n ?? 0));
   const events = r.events.slice(0, room);
   if (!events.length) return c.body(null, 204);
-  const stmts: D1PreparedStatement[] = [];
+  const stmts: Stmt[] = [];
   for (let i = 0; i < events.length; i += 12) {
     const chunk = events.slice(i, i + 12);
     stmts.push(
@@ -57,7 +58,7 @@ opsRoutes.post('/usage', async (c) => {
       ),
     );
   }
-  // Account usage lives in usage_day: in this database on D1, in the Directory after the move (multi-user.md 5.6).
+  // Account usage lives in the Directory's usage_day (multi-user.md 5.6); without one, in this database.
   if (!c.env.NOTE_USAGE) stmts.push(noteUsage(c.env.DB, events.length * 2, 1));
   await s.batch(stmts);
   if (c.env.NOTE_USAGE) await c.env.NOTE_USAGE(events.length * 2, 1);
@@ -318,7 +319,7 @@ opsRoutes.post('/import/csv', async (c) => {
     `Import · ${r.accountId}`,
   );
   const providerAccountId = acct.provider_account_id ?? `csv:${acct.id}`;
-  const stmts: D1PreparedStatement[] = [];
+  const stmts: Stmt[] = [];
   if (!conn) {
     conn = { id: `con_${ulid(now)}` };
     stmts.push(

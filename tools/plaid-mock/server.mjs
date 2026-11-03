@@ -1,6 +1,6 @@
 // A local stand-in for the Plaid API, used when Plaid Sandbox keys are not available and by end-to-end tests.
 // It serves the same request and response shapes as Plaid's /transactions/sync and friends, with transaction
-// objects sized like Sandbox's (location, counterparties, personal_finance_category and so on), so CPU and D1
+// objects sized like Sandbox's (location, counterparties, personal_finance_category and so on), so CPU and database
 // measurements see realistic payloads. It is not a Plaid client and never talks to Plaid.
 //
 // Usage: node tools/plaid-mock/server.mjs [--port 8788] [--txns 3000] [--seed 1]

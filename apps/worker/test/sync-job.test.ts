@@ -1,11 +1,11 @@
-// Bank sync as an alarm job (docs/multi-user.md 6.1), inside a real Durable Object. The same handler run against
-// D1 and against the adapter must produce identical rows: moving the data changes nothing about what a sync writes.
+// Bank sync as an alarm job (docs/multi-user.md 6.1), inside a real Durable Object.
+import type { Db } from '@ledgerline/db/sql';
 import { env, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { PlaidProvider } from '@ledgerline/bank-provider';
 import { generate } from '../../../tools/plaid-mock/data.mjs';
 import { workOut } from './work-out.js';
-import { SqlD1 } from '../src/store/adapter.js';
+import { DurableDb } from '../src/store/adapter.js';
 import { JobRunner } from '../src/store/jobs.js';
 import {
   failSync,
@@ -51,7 +51,7 @@ const provider = new PlaidProvider({
   },
 });
 
-async function seed(db: D1Database, B: string, C: string): Promise<void> {
+async function seed(db: Db, B: string, C: string): Promise<void> {
   await db.batch([
     db
       .prepare(
@@ -80,7 +80,7 @@ async function seed(db: D1Database, B: string, C: string): Promise<void> {
   ]);
 }
 
-function deps(db: D1Database, B: string, over: Partial<SyncDeps> = {}, queue: unknown[] = []): SyncDeps {
+function deps(db: Db, B: string, over: Partial<SyncDeps> = {}, queue: unknown[] = []): SyncDeps {
   return {
     env: { ...e, DB: db },
     budgetId: B,
@@ -96,7 +96,7 @@ function deps(db: D1Database, B: string, over: Partial<SyncDeps> = {}, queue: un
   };
 }
 
-async function acquireFor(db: D1Database, C: string, holder: string): Promise<void> {
+async function acquireFor(db: Db, C: string, holder: string): Promise<void> {
   const { acquire } = await import('../src/sync/lease.js');
   expect(await acquire(db, C, holder, Date.now())).toBe(true);
 }
@@ -106,7 +106,7 @@ const start = (holder: string): SyncState => ({ phase: 'begin', holder, trigger:
 describe('sync job', () => {
   it('runs to completion through the alarm runner: rows applied, run done, lease released, recompute queued and run', async () => {
     await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName('sync-runner')), async (_o, st) => {
-      const db = new SqlD1(st.storage) as unknown as D1Database;
+      const db = new DurableDb(st.storage);
       await seed(db, 'b1', 'c1');
       await acquireFor(db, 'c1', 'sync:1');
       // The sync job enqueues its follow-ups (recompute, hand-off) on the same runner.
@@ -137,7 +137,7 @@ describe('sync job', () => {
 
   it('pauses until 00:00 UTC when the account is near its daily limit, keeping the lease', async () => {
     await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName('sync-pause')), async (_o, st) => {
-      const db = new SqlD1(st.storage) as unknown as D1Database;
+      const db = new DurableDb(st.storage);
       await seed(db, 'b1', 'c1');
       await acquireFor(db, 'c1', 'p');
       const h = syncHandler(deps(db, 'b1', { budgetState: async () => 'pause' }));
@@ -155,7 +155,7 @@ describe('sync job', () => {
 
   it('a lost lease ends the run as failed and asks for a new sync', async () => {
     await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName('sync-lost')), async (_o, st) => {
-      const db = new SqlD1(st.storage) as unknown as D1Database;
+      const db = new DurableDb(st.storage);
       await seed(db, 'b1', 'c1');
       await acquireFor(db, 'c1', 'l');
       const h = syncHandler(deps(db, 'b1'));
@@ -169,7 +169,7 @@ describe('sync job', () => {
 
   it('a bank that needs signing in again ends the run at once and is marked for repair', async () => {
     await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName('sync-login')), async (_o, st) => {
-      const db = new SqlD1(st.storage) as unknown as D1Database;
+      const db = new DurableDb(st.storage);
       await seed(db, 'b1', 'c1');
       await acquireFor(db, 'c1', 'x');
       const expired = new PlaidProvider({
@@ -195,7 +195,7 @@ describe('sync job', () => {
 
   it('a removed connection loses its lease, so its sync stops', async () => {
     await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName('sync-removed')), async (_o, st) => {
-      const db = new SqlD1(st.storage) as unknown as D1Database;
+      const db = new DurableDb(st.storage);
       await seed(db, 'b1', 'c1');
       await acquireFor(db, 'c1', 'r');
       const h = syncHandler(deps(db, 'b1'));
@@ -209,7 +209,7 @@ describe('sync job', () => {
 
   it('a run that fails partway through applying, then runs again from the start, counts every row once', async () => {
     /** What the budget sees: bank rows, budget lines and month snapshots (no ids or times). */
-    const fingerprint = async (db: D1Database) => {
+    const fingerprint = async (db: Db) => {
       // The phone works out lines and months after it syncs (D-45).
       await workOut(db, 'b1', T);
       return JSON.stringify([
@@ -230,7 +230,7 @@ describe('sync job', () => {
         (await db.prepare(`SELECT month, state FROM month_snapshot ORDER BY month`).all()).results,
       ]);
     };
-    const runAll = async (db: D1Database, st: DurableObjectState, holder: string) => {
+    const runAll = async (db: Db, st: DurableObjectState, holder: string) => {
       const runner: JobRunner = new JobRunner(st.storage, {
         sync: syncHandler(deps(db, 'b1', { enqueue: (kind, o) => runner.enqueue(kind, o, Date.now()) })),
         recompute: async () => ({ done: true }),
@@ -248,7 +248,7 @@ describe('sync job', () => {
     const clean = await runInDurableObject(
       e.BUDGET.get(e.BUDGET.idFromName('sync-clean')),
       async (_o, st) => {
-        const db = new SqlD1(st.storage) as unknown as D1Database;
+        const db = new DurableDb(st.storage);
         await seed(db, 'b1', 'c1');
         await acquireFor(db, 'c1', 'one');
         await runAll(db, st, 'one');
@@ -259,7 +259,7 @@ describe('sync job', () => {
     const replayed = await runInDurableObject(
       e.BUDGET.get(e.BUDGET.idFromName('sync-replay')),
       async (_o, st) => {
-        const db = new SqlD1(st.storage) as unknown as D1Database;
+        const db = new DurableDb(st.storage);
         await seed(db, 'b1', 'c1');
         await acquireFor(db, 'c1', 'first');
         // The first run fetches every page and applies part of them, then fails for good.
@@ -295,7 +295,7 @@ describe('sync job', () => {
 
   it('a sync requested mid-run hands the lease to a new sync job', async () => {
     await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName('sync-handoff')), async (_o, st) => {
-      const db = new SqlD1(st.storage) as unknown as D1Database;
+      const db = new DurableDb(st.storage);
       await seed(db, 'b1', 'c1');
       await acquireFor(db, 'c1', 'h');
       const queue: Array<{ kind: string; id?: string; state?: SyncState }> = [];

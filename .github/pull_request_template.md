@@ -7,6 +7,6 @@
 ## How it was verified
 
 - [ ] `pnpm lint && pnpm typecheck && pnpm test`
-- [ ] Integration tests (local D1)
+- [ ] Integration tests (Durable Objects)
 - [ ] Playwright (if UI changed)
 - [ ] CPU budget unaffected, or re-measured (docs/measurements.md)
