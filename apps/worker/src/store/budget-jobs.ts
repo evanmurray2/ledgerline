@@ -92,7 +92,8 @@ export function backstopHandler(db: D1Database, enqueue: Enqueue): Handler {
 export function dailyScanHandler(env: Env, budgetId: () => Promise<string>, enqueue: Enqueue): Handler {
   return async (_job, now): Promise<StepResult> => {
     const r = await dailyScan(env, await budgetId(), now, { recompute: false });
-    await enqueue('recompute', { id: 'recompute', runAt: now });
+    // Totals are worked out on the phone (D-45): on the server a recompute job would wake up only to find nothing to do.
+    if (derived.enabled) await enqueue('recompute', { id: 'recompute', runAt: now });
     // A full batch may mean more are due: run again shortly instead of waiting a day.
     return { state: {}, runAt: r.materialized >= SCAN_BATCH ? now + 1000 : nextUtc(now, 8, 10) };
   };
