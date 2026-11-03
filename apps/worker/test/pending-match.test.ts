@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { PlaidProvider } from '@ledgerline/bank-provider';
 import { acquire } from '../src/sync/lease.js';
 import { applyPage, beginRun, rawPageKey } from '../src/sync/steps.js';
-import { processPending } from '../src/sync/process.js';
+import { healPending, processPending } from '../src/sync/process.js';
 
 const db = storeDb('pending-match');
 const NOW = Date.parse('2026-11-14T20:00:00Z');
@@ -313,6 +313,25 @@ describe('posted rows claim their pending rows', () => {
     expect(await overlay('p:el-p')).toMatchObject({ category_id: 'dining', categorized_by: 'payee' });
     expect(await visible(['el', 'el-p'])).toEqual([{ id: 'el', status: 'posted' }]);
     expect(await spent('p:el')).toBe(0);
+  });
+
+  it('a sync with no news from the bank still heals a pair an older release left unpaired', async () => {
+    await sync([pend('old-p', 42.75, '2026-11-08', 'JUNEBUG')]);
+    await sync([
+      plaidTxn('old', 'pa_card', 42.75, '2026-11-10', 'TST*JUNEBUG New Orleans LA', {
+        authorized_date: '2026-11-08',
+      }),
+    ]);
+    // As the owner's card was before the fix: both rows, unpaired.
+    await db.prepare(`UPDATE bank_txn SET txn_key = 'p:old' WHERE provider_txn_id = 'old'`).run();
+    await db.prepare(`UPDATE txn_overlay SET wont_clear = 1 WHERE txn_key = 'p:old-p'`).run();
+    expect(await visible(['old', 'old-p'])).toHaveLength(2);
+    expect(await healPending({ ...env, DB: db } as never, B, C, NOW)).toEqual({ changed: true });
+    expect(await keyOf('old')).toBe('p:old-p');
+    expect(await visible(['old', 'old-p'])).toEqual([{ id: 'old', status: 'posted' }]);
+    expect(await spent('p:old-p')).toBe(-4275);
+    // Nothing left to heal: a second run changes nothing.
+    expect(await healPending({ ...env, DB: db } as never, B, C, NOW)).toEqual({ changed: false });
   });
 
   it('never pairs yesterday’s posted coffee with today’s pending one', async () => {

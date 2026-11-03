@@ -116,12 +116,68 @@ export async function processPending(env: Env, budgetId: string, now = Date.now(
   return { caughtUp: false, processed: 0 };
 }
 
+/**
+ * After every sync of a connection, whether or not the bank sent anything: its accounts' pending rows that no posted
+ * row has claimed are matched again (D-47 step 3), so a pairing missed earlier, or by an older release, heals on the
+ * next sync instead of waiting for the bank to send news about that row. Behind the same watermark fence as
+ * processing, so the two never claim a row twice; on a lost race it simply waits for the next sync.
+ */
+export async function healPending(
+  env: Env,
+  budgetId: string,
+  connectionId: string,
+  now = Date.now(),
+): Promise<{ changed: boolean }> {
+  const s = new Scoped(env.DB, budgetId, 'system');
+  const b = await s.first<{ processed_through: number; time_zone: string }>(
+    `SELECT processed_through, time_zone FROM budget WHERE id = ?1`,
+  );
+  const meta = b ? await budgetMeta(s) : null;
+  if (!b || !meta) return { changed: false };
+  const today = localDate(now, b.time_zone);
+  const open = await s.all<{ provider_txn_id: string }>(
+    `SELECT b.provider_txn_id FROM bank_txn b
+     WHERE b.budget_id = ?1 AND b.connection_id = ?2 AND b.pending = 1 AND b.date >= ?3
+       AND NOT EXISTS (SELECT 1 FROM bank_txn x WHERE x.txn_key = b.txn_key AND x.pending = 0 AND x.removed_at IS NULL)
+     ORDER BY b.date DESC LIMIT ?4`,
+    connectionId,
+    addDays(today, -44),
+    CHUNK.process,
+  );
+  if (!open.length) return { changed: false };
+  const evs: EventRow[] = open.map((r, i) => ({
+    id: i,
+    kind: 'modified',
+    provider_txn_id: r.provider_txn_id,
+  }));
+  const plan = await planProcessing(s, evs, today, now, true);
+  if (!plan.stmts.length) return { changed: false };
+  const fence = () =>
+    conditionFence(
+      env.DB,
+      `SELECT processed_through = ?1 FROM budget WHERE id = ?2`,
+      b.processed_through,
+      budgetId,
+    );
+  try {
+    await env.DB.batch([fence(), ...plan.stmts]);
+    const lines = (await planLineRebuild(s, plan.keys, meta, today, now)).stmts;
+    if (lines.length) await env.DB.batch([fence(), ...lines]);
+  } catch (e) {
+    if (!isFenceAbort(e)) throw e;
+    return { changed: false };
+  }
+  return { changed: true };
+}
+
 /** Decides what the new events mean and returns the overlay writes plus the keys whose lines must be rebuilt. */
 async function planProcessing(
   s: Scoped,
   evs: EventRow[],
   today: IsoDate,
   now: number,
+  /** Healing (healPending): only the matching steps, for rows nothing new arrived for. */
+  matchOnly = false,
 ): Promise<{ stmts: D1PreparedStatement[]; keys: string[] }> {
   const ids = [...new Set(evs.map((e) => e.provider_txn_id))];
   const ph = ids.map((_, i) => `?${i + 2}`).join(',');
@@ -458,6 +514,8 @@ async function planProcessing(
       }
     }
   }
+
+  if (matchOnly) return { stmts, keys: [...keys] };
 
   // ---- 4. Re-issued posted rows, and removed pending rows nothing has claimed.
   const removedPosted = removed.filter((r) => !r.pending);
