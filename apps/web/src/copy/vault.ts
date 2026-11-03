@@ -9,7 +9,8 @@
 //   the copy (AES-GCM, a fresh random IV every time, bound to this device by associated data).
 // - For offline unlock, the share is also kept wrapped under a key from the PRF output alone, with the last server
 //   time; offline unlock is refused 7 days after it.
-// All keys are non-extractable CryptoKeys held in memory and dropped on lock.
+// All keys are non-extractable CryptoKeys held in memory and dropped on lock. While the copy is open, the data key
+// is also held in IndexedDB so a refresh doesn't lock it (holdKey); locking deletes it.
 
 const DB_NAME = 'ledgerline-copy';
 const STORE = 'copies';
@@ -94,13 +95,70 @@ export async function deleteRecord(key: string): Promise<void> {
   await tx('readwrite', (s) => s.delete(key)).catch(() => undefined);
 }
 
-/** Every copy on this device (sign-out). */
+/** Every copy on this device (sign-out), and any unlock held for a refresh. */
 export async function deleteAll(): Promise<void> {
   if (typeof indexedDB === 'undefined') return;
-  await new Promise<void>((resolve) => {
-    const r = indexedDB.deleteDatabase(DB_NAME);
-    r.onsuccess = r.onerror = r.onblocked = () => resolve();
+  for (const name of [DB_NAME, HELD_DB])
+    await new Promise<void>((resolve) => {
+      const r = indexedDB.deleteDatabase(name);
+      r.onsuccess = r.onerror = r.onblocked = () => resolve();
+    });
+}
+
+// ---------------------------------------------------------------- an unlock that survives a refresh
+
+// While the copy is open, its data key (a non-extractable CryptoKey: the browser stores it but never hands out its
+// bytes) is kept here with the time of the last activity, so reloading the page or the phone restarting the app
+// doesn't ask for Face ID again. It's only used within LOCK_MS of that time, and locking deletes it.
+const HELD_DB = 'ledgerline-unlock';
+const HELD = 'held';
+
+interface Held {
+  key: string;
+  dataKey: CryptoKey;
+  lastActive: number;
+}
+
+async function held<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const r = indexedDB.open(HELD_DB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(HELD, { keyPath: 'key' });
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error ?? new Error('storage'));
   });
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const t = db.transaction(HELD, mode);
+      const r = fn(t.objectStore(HELD));
+      t.oncomplete = () => resolve(r.result);
+      t.onerror = () => reject(t.error ?? new Error('storage'));
+      t.onabort = () => reject(t.error ?? new Error('storage'));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+export async function holdKey(key: string, dataKey: CryptoKey, lastActive: number): Promise<void> {
+  if (typeof indexedDB === 'undefined') return;
+  await held('readwrite', (s) => s.put({ key, dataKey, lastActive } satisfies Held)).catch(() => undefined);
+}
+
+/** The held data key, when the last activity was less than `maxAge` ago; an older one is deleted. */
+export async function heldKey(key: string, maxAge: number, now = Date.now()): Promise<CryptoKey | null> {
+  if (typeof indexedDB === 'undefined') return null;
+  const h = (await held('readonly', (s) => s.get(key)).catch(() => undefined)) as Held | undefined;
+  if (!h) return null;
+  if (now < h.lastActive || now - h.lastActive >= maxAge) {
+    await dropHeld(key);
+    return null;
+  }
+  return h.dataKey;
+}
+
+export async function dropHeld(key: string): Promise<void> {
+  if (typeof indexedDB === 'undefined') return;
+  await held('readwrite', (s) => s.delete(key)).catch(() => undefined);
 }
 
 // ---------------------------------------------------------------- crypto
