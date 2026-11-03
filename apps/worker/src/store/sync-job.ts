@@ -7,7 +7,7 @@ import { ProviderError, type BankDataProvider } from '@ledgerline/bank-provider'
 import type { Env } from '../env.js';
 import { CHUNK, LeaseLost, applyPage, beginRun, fetchPage, restartFetch } from '../sync/steps.js';
 import { MAX_HANDOFFS, moveLease, releaseFailed, releaseSuccess, renew } from '../sync/lease.js';
-import { finalizeConnection, processPending } from '../sync/process.js';
+import { finalizeConnection, healPending, processPending } from '../sync/process.js';
 import { sleepUntilUtcMidnight } from '../sync/breaker.js';
 import { MONTHS_PER_CHUNK, recompute } from '../budget/recompute.js';
 import type { Handler, Job, StepResult } from './jobs.js';
@@ -16,7 +16,7 @@ export const MAX_PAGES = 1000;
 const MAX_PROCESS_STEPS = 400;
 
 export interface SyncState {
-  phase: 'begin' | 'fetch' | 'restart' | 'apply' | 'process' | 'finalize' | 'release';
+  phase: 'begin' | 'fetch' | 'restart' | 'apply' | 'process' | 'heal' | 'finalize' | 'release';
   /** Lease holder: this job's id. */
   holder: string;
   trigger: string;
@@ -204,8 +204,13 @@ async function step(deps: SyncDeps, connectionId: string, s: SyncState, now: num
       // Watermark-driven, independent of which run applied the events (F3).
       const r = await processPending(env, budgetId);
       const k = (s.k ?? 0) + 1;
-      if (r.caughtUp || k > MAX_PROCESS_STEPS) return next({ ...s, phase: 'finalize' });
+      if (r.caughtUp || k > MAX_PROCESS_STEPS) return next({ ...s, phase: 'heal' });
       return next({ ...s, k });
+    }
+    case 'heal': {
+      // Pending rows a posted row should have claimed, whether or not the bank sent news about them (D-47).
+      await healPending(env, budgetId, connectionId, now).catch(() => ({ changed: false }));
+      return next({ ...s, phase: 'finalize' });
     }
     case 'finalize': {
       await finalizeConnection(env, ctx(), s.runId!, { recompute: false });
