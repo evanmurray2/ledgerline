@@ -478,12 +478,19 @@ export class MockServer {
               lastUsedAt: '2026-11-14T08:00:00Z',
             },
           ],
-          sessions: 1,
+          sessions: mockSignIns.length,
+          otherSessions: mockSignIns.filter((x) => !x.current).length,
+          signIns: mockSignIns,
         };
       case 'POST settings/security/device-link':
         return { url: `${location.origin}/add-device#mock-token`, expiresAt: '2026-11-14T20:10:00Z' };
       case 'POST settings/security/sign-out':
+        return { ok: true };
       case 'POST settings/security/sign-out-others':
+        mockSignIns = mockSignIns.filter((x) => x.current);
+        return { ok: true };
+      case 'POST settings/security/sign-out-session':
+        mockSignIns = mockSignIns.filter((x) => x.current || x.id !== (body as { id?: string }).id);
         return { ok: true };
       case 'GET settings/connections':
         return db.connectionsView();
@@ -548,6 +555,12 @@ function isParam(a: string | undefined, b: string): boolean {
   return false;
 }
 
+/** Settings → Sign-in in the mock: this phone and a laptop. */
+let mockSignIns = [
+  { id: 'si_phone', name: 'iPhone · Home Screen app', signedInAt: '2026-11-14T08:00:00Z', current: true },
+  { id: 'si_mac', name: 'Mac · Safari', signedInAt: '2026-11-13T21:30:00Z', current: false },
+];
+
 /** Third path segment is an id under /settings/{categories,rules,payees,connections}. */
 function isParam2(a: string | undefined, c: string): boolean {
   if (a !== 'settings') return false;
@@ -561,6 +574,7 @@ function isParam2(a: string | undefined, c: string): boolean {
     'device-link',
     'sign-out',
     'sign-out-others',
+    'sign-out-session',
     'refresh',
   ].includes(c);
 }

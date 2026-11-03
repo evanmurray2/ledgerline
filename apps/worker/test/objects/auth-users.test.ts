@@ -129,6 +129,57 @@ describe('more than one user', () => {
     expect((await owner.call('GET', '/api/session')).status).toBe(200);
   });
 
+  it('signing in again on a browser replaces its session, so only real other devices count', async () => {
+    const before = await other.call('GET', '/api/settings/security');
+    expect(before.json.otherSessions).toBe(0);
+    // Unlocking the phone's copy signs in each time: the earlier session goes, nothing is left behind.
+    expect((await other.signIn(otherKey)).status).toBe(200);
+    expect((await other.signIn(otherKey)).status).toBe(200);
+    const again = await other.call('GET', '/api/settings/security');
+    expect(again.json).toMatchObject({ sessions: 1, otherSessions: 0 });
+    // A second browser is another device.
+    const laptop = new Browser();
+    expect((await laptop.signIn(otherKey)).status).toBe(200);
+    expect((await other.call('GET', '/api/settings/security')).json).toMatchObject({
+      sessions: 2,
+      otherSessions: 1,
+    });
+    await other.call('POST', '/api/settings/security/sign-out-others');
+    expect((await laptop.call('GET', '/api/settings/security')).status).toBe(401);
+    expect((await other.call('GET', '/api/settings/security')).json.otherSessions).toBe(0);
+  });
+
+  it('lists each sign-in and ends one at a time, only the user’s own and never this one', async () => {
+    const laptop = new Browser();
+    expect((await laptop.signIn(otherKey)).status).toBe(200);
+    const list = (await other.call('GET', '/api/settings/security')).json.signIns as {
+      id: string;
+      name: string;
+      current: boolean;
+    }[];
+    expect(list.map((x) => x.current).sort()).toEqual([false, true]);
+    // Ids are not the stored session ids (the cookie's hash).
+    const stored = (await dir.prepare(`SELECT id FROM auth_session`).all<{ id: string }>()).results.map(
+      (r) => r.id,
+    );
+    for (const x of list) expect(stored).not.toContain(x.id);
+    const here = list.find((x) => x.current)!;
+    const there = list.find((x) => !x.current)!;
+    // This device ends with Sign out, not here; another user can't end it either.
+    expect(
+      (await other.call('POST', '/api/settings/security/sign-out-session', { id: here.id })).status,
+    ).toBe(404);
+    expect(
+      (await owner.call('POST', '/api/settings/security/sign-out-session', { id: there.id })).status,
+    ).toBe(404);
+    expect((await laptop.call('GET', '/api/settings/security')).status).toBe(200);
+    expect(
+      (await other.call('POST', '/api/settings/security/sign-out-session', { id: there.id })).status,
+    ).toBe(200);
+    expect((await laptop.call('GET', '/api/settings/security')).status).toBe(401);
+    expect((await other.call('GET', '/api/settings/security')).status).toBe(200);
+  });
+
   it('registration for a user excludes only their own passkeys and never reveals another user’s', async () => {
     const o = await owner.call('POST', '/api/auth/register/options', {});
     const ids = ((o.json.excludeCredentials as { id: string }[]) ?? []).map((x) => x.id);

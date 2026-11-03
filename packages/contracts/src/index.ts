@@ -692,6 +692,12 @@ export const SecurityView = z.object({
   ),
   /** Signed-in sessions on all devices. */
   sessions: z.number().int(),
+  /** Signed-in sessions other than the one asking (what "Sign out other devices" would end). */
+  otherSessions: z.number().int().default(0),
+  /** Every unexpired sign-in, newest first, named by device and browser ("iPhone · Safari"). */
+  signIns: z
+    .array(z.object({ id: z.string(), name: z.string(), signedInAt: z.string(), current: z.boolean() }))
+    .default([]),
   /** Phones holding an encrypted copy of the budget (D-45). */
   devices: z
     .array(

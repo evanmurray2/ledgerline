@@ -4,30 +4,50 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../http/context.js';
 import { clock } from '../http/clock.js';
 import { DEVICE_LINK_MS, SESSION_COOKIE, cookie, randomToken, tokenHash } from '../http/auth.js';
+import { describeAgent } from '../http/agent.js';
 
 export const securityRoutes = new Hono<AppEnv>();
 
+/** The id Settings shows for a sign-in: a hash of the stored hash, so the stored id (the cookie's hash) never leaves. */
+const signInId = async (sessionId: string) => (await tokenHash(`sign-in:${sessionId}`)).slice(0, 24);
+
+/** This user's unexpired sign-ins, newest first. */
+async function signIns(db: AppEnv['Bindings']['DB'], userId: string, now: number) {
+  return (
+    await db
+      .prepare(
+        `SELECT id, created_at, user_agent FROM auth_session WHERE expires_at > ?1 AND user_id = ?2 ORDER BY created_at DESC`,
+      )
+      .bind(now, userId)
+      .all<{ id: string; created_at: number; user_agent: string | null }>()
+  ).results;
+}
+
 securityRoutes.get('/settings/security', async (c) => {
   const now = clock(c.env);
-  const [pk, ss] = await c.env.DB.batch([
-    c.env.DB.prepare(
-      `SELECT id, name, created_at, last_used_at FROM passkey WHERE user_id = ?1 ORDER BY created_at`,
-    ).bind(c.get('userId')),
-    c.env.DB.prepare(`SELECT count(*) AS n FROM auth_session WHERE expires_at > ?1 AND user_id = ?2`).bind(
-      now,
-      c.get('userId'),
-    ),
-  ]);
+  const pk = await c.env.DB.prepare(
+    `SELECT id, name, created_at, last_used_at FROM passkey WHERE user_id = ?1 ORDER BY created_at`,
+  )
+    .bind(c.get('userId'))
+    .all<{ id: string; name: string; created_at: number; last_used_at: number | null }>();
+  const sessions = await signIns(c.env.DB, c.get('userId'), now);
   return c.json({
-    passkeys: (
-      pk!.results as { id: string; name: string; created_at: number; last_used_at: number | null }[]
-    ).map((p) => ({
+    passkeys: pk.results.map((p) => ({
       id: p.id,
       name: p.name,
       createdAt: new Date(p.created_at).toISOString(),
       lastUsedAt: p.last_used_at ? new Date(p.last_used_at).toISOString() : null,
     })),
-    sessions: (ss!.results[0] as { n: number } | undefined)?.n ?? 0,
+    sessions: sessions.length,
+    otherSessions: sessions.filter((x) => x.id !== c.get('sessionId')).length,
+    signIns: await Promise.all(
+      sessions.map(async (x) => ({
+        id: await signInId(x.id),
+        name: describeAgent(x.user_agent),
+        signedInAt: new Date(x.created_at).toISOString(),
+        current: x.id === c.get('sessionId'),
+      })),
+    ),
     devices: (
       await c.env.DB.prepare(
         `SELECT id, name, created_at, last_seen_at, revoked_at FROM device WHERE user_id = ?1 ORDER BY created_at`,
@@ -144,6 +164,20 @@ securityRoutes.post('/settings/security/sign-out-others', async (c) => {
     .bind(c.get('userId'), c.req.header('x-device-id') ?? null, clock(c.env))
     .run();
   return c.json({ ok: true, ended: r.meta.changes });
+});
+
+/** Ends one other sign-in, by the id Settings shows. This one ends with Sign out instead. */
+securityRoutes.post('/settings/security/sign-out-session', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { id?: unknown };
+  const sessions = await signIns(c.env.DB, c.get('userId'), clock(c.env));
+  let target: string | undefined;
+  for (const x of sessions) if ((await signInId(x.id)) === body.id) target = x.id;
+  if (!target || target === c.get('sessionId'))
+    return c.json({ error: 'not_found', message: 'That sign-in has already ended.' }, 404);
+  await c.env.DB.prepare(`DELETE FROM auth_session WHERE id = ?1 AND user_id = ?2`)
+    .bind(target, c.get('userId'))
+    .run();
+  return c.json({ ok: true });
 });
 
 securityRoutes.post('/settings/security/sign-out', async (c) => {

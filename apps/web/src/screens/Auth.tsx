@@ -9,7 +9,7 @@ import { qk } from '../api/hooks';
 import { Card, Field, PrimaryButton, SecondaryButton, inputClass, cx } from '../components/ui';
 import { toast } from '../components/Toast';
 import { clearSavedData } from '../state/saved';
-import { signIn as copySignIn, wipe } from '../copy/copy';
+import { currentDeviceId, signIn as copySignIn, wipe } from '../copy/copy';
 
 /** Runs a WebAuthn ceremony and turns the browser's errors into plain sentences. */
 async function ceremony(fn: () => Promise<unknown>): Promise<string | null> {
@@ -296,6 +296,10 @@ export function SignInSection() {
     );
   };
   const keys = sec.data?.passkeys ?? [];
+  // This phone's own copy is listed as "This phone": it leaves with Sign out of this device, never from the list.
+  const here = currentDeviceId();
+  const live = (sec.data?.devices ?? []).filter((d) => !d.revoked);
+  const others = live.filter((d) => d.id !== here);
   return (
     <>
       <h2 className="m-0 mt-1 px-0.5 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">Sign-in</h2>
@@ -303,7 +307,7 @@ export function SignInSection() {
         <div className="flex flex-col gap-1 px-3 py-3">
           <span className="text-[15px] font-semibold">Passkeys</span>
           <span className="text-[13px] leading-snug text-muted">
-            Sign-in uses a passkey on your device, with no password. Sessions end after 24 hours.
+            Sign-in uses a passkey on your device, with no password.
           </span>
         </div>
         {keys.map((k) => (
@@ -366,19 +370,26 @@ export function SignInSection() {
         </SecondaryButton>
       )}
       <Problem text={err} />
-      <Devices devices={sec.data?.devices ?? []} run={run} />
-      {((sec.data?.sessions ?? 0) > 1 || (sec.data?.devices ?? []).some((d) => !d.revoked)) && (
-        <SecondaryButton
-          className="lg:self-start lg:px-6"
-          track="settings.sign_out_others"
-          onClick={() =>
-            run(api.signOutOthers, () =>
-              toast.show({ text: 'Other devices are signed out and their copies turned off' }),
-            )
-          }
-        >
-          Sign out other devices
-        </SecondaryButton>
+      <SignIns signIns={sec.data?.signIns ?? []} run={run} />
+      <Devices devices={live} here={here} run={run} />
+      {/* One other sign-in has its own Sign out above; this is for several at once, or for the phones' copies. */}
+      {(others.length > 0 || (sec.data?.otherSessions ?? 0) > 1) && (
+        <div className="flex flex-col gap-1.5">
+          <SecondaryButton
+            className="lg:self-start lg:px-6"
+            track="settings.sign_out_others"
+            onClick={() =>
+              run(api.signOutOthers, () =>
+                toast.show({ text: 'Other devices are signed out and their copies turned off' }),
+              )
+            }
+          >
+            Sign out other devices
+          </SecondaryButton>
+          <span className="px-0.5 text-[12px] leading-snug text-muted">
+            {otherSummary(sec.data?.otherSessions ?? 0, others.length)} This device stays signed in.
+          </span>
+        </div>
       )}
       <button
         type="button"
@@ -393,22 +404,93 @@ export function SignInSection() {
         }
         className="flex h-12 shrink-0 items-center justify-center rounded-xl border border-line-strong bg-surface text-[16px] font-bold text-over-fg"
       >
-        Sign out
+        Sign out of this device
       </button>
     </>
   );
 }
 
-/** Phones that keep an encrypted copy of the budget (D-45): each can be turned off here. */
-function Devices({
-  devices,
+/** Where you're signed in, this device first: each other sign-in can be ended here. */
+function SignIns({
+  signIns,
   run,
 }: {
-  devices: { id: string; name: string; createdAt: string; lastSeenAt: string | null; revoked: boolean }[];
+  signIns: { id: string; name: string; signedInAt: string; current: boolean }[];
   run: (fn: () => Promise<unknown>, then?: () => void) => void;
 }) {
-  const live = devices.filter((d) => !d.revoked);
-  if (!live.length) return null;
+  if (!signIns.length) return null;
+  const sorted = [...signIns.filter((x) => x.current), ...signIns.filter((x) => !x.current)];
+  const at = (iso: string) =>
+    new Date(iso).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  return (
+    <Card>
+      <div className="flex flex-col gap-1 px-3 py-3">
+        <span className="text-[15px] font-semibold">Signed in</span>
+        <span className="text-[13px] leading-snug text-muted">
+          Each sign-in lasts 24 hours. Signing one out makes that device use its passkey again.
+        </span>
+      </div>
+      {sorted.map((x) => (
+        <div
+          key={x.id}
+          className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 py-2"
+        >
+          <span className="flex flex-col gap-0.5">
+            <span className="text-[15px] font-semibold">{x.name}</span>
+            <span className="text-[12px] text-muted">Signed in {at(x.signedInAt)}</span>
+          </span>
+          {x.current ? (
+            <span className="shrink-0 px-3 text-[13px] font-semibold text-muted">This device</span>
+          ) : (
+            <button
+              type="button"
+              data-track="settings.sign_in.sign_out"
+              className="hit h-9 rounded-full px-3 text-[13px] font-bold text-over-fg"
+              onClick={() =>
+                run(
+                  () => api.signOutSession(x.id),
+                  () => toast.show({ text: `${x.name} is signed out` }),
+                )
+              }
+              aria-label={`Sign out ${x.name}`}
+            >
+              Sign out
+            </button>
+          )}
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+/** What "Sign out other devices" would do, counted from the other sign-ins and the other phones' copies. */
+function otherSummary(sessions: number, phones: number) {
+  const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
+  const parts = [
+    sessions > 0 && `ends ${n(sessions, 'other sign-in', 'other sign-ins')}`,
+    phones > 0 && `turns off ${n(phones, 'other phone’s copy', 'other phones’ copies')}`,
+  ].filter(Boolean);
+  const text = parts.join(' and ');
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+}
+
+/** Phones that keep an encrypted copy of the budget (D-45): this one first, and each other one can be turned off. */
+function Devices({
+  devices,
+  here,
+  run,
+}: {
+  devices: { id: string; name: string; createdAt: string; lastSeenAt: string | null }[];
+  here: string | null;
+  run: (fn: () => Promise<unknown>, then?: () => void) => void;
+}) {
+  if (!devices.length) return null;
+  const sorted = [...devices.filter((d) => d.id === here), ...devices.filter((d) => d.id !== here)];
   const when = (iso: string | null) =>
     iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'never';
   return (
@@ -420,7 +502,7 @@ function Devices({
           stops it opening its copy the next time it connects.
         </span>
       </div>
-      {live.map((d) => (
+      {sorted.map((d) => (
         <div
           key={d.id}
           className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 py-2"
@@ -428,18 +510,24 @@ function Devices({
           <span className="flex flex-col gap-0.5">
             <span className="text-[15px] font-semibold">{d.name}</span>
             <span className="text-[12px] text-muted">
-              Added {when(d.createdAt)} · last opened {when(d.lastSeenAt)}
+              {d.id === here
+                ? `Added ${when(d.createdAt)}`
+                : `Added ${when(d.createdAt)} · last opened ${when(d.lastSeenAt)}`}
             </span>
           </span>
-          <button
-            type="button"
-            data-track="settings.device.revoke"
-            className="hit h-9 rounded-full px-3 text-[13px] font-bold text-over-fg"
-            onClick={() => run(() => api.revokeDevice(d.id))}
-            aria-label={`Turn off the copy on ${d.name}`}
-          >
-            Turn off
-          </button>
+          {d.id === here ? (
+            <span className="shrink-0 px-3 text-[13px] font-semibold text-muted">This phone</span>
+          ) : (
+            <button
+              type="button"
+              data-track="settings.device.revoke"
+              className="hit h-9 rounded-full px-3 text-[13px] font-bold text-over-fg"
+              onClick={() => run(() => api.revokeDevice(d.id))}
+              aria-label={`Turn off the copy on ${d.name}`}
+            >
+              Turn off
+            </button>
+          )}
         </div>
       ))}
     </Card>
