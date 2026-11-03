@@ -4,17 +4,12 @@ import { Link, Outlet, useNavigate, useParams } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/endpoints';
 import { qk, usePayees } from '../../api/hooks';
-import { Sheet } from '../../components/Sheet';
 import {
   Banner,
   Card,
   EmptyNote,
   ErrorNote,
-  Field,
-  inputClass,
-  Label,
   Loading,
-  PrimaryButton,
   SearchField,
   SoftButton,
   softButtonClass,
@@ -22,6 +17,7 @@ import {
 import { useScreen } from '../../lib/common';
 import { usage } from '../../usage/tracker';
 import { Page } from './common';
+import { RenamePayeeSheet as RenamePayeeView } from '../../components/RenamePayee';
 
 // ------------------------------------------------------------------ payees
 
@@ -136,84 +132,33 @@ export function RenamePayeeSheet() {
   const navigate = useNavigate();
   const close = () => void navigate({ to: '/settings/payees' });
   const p = q.data?.payees.find((x) => x.id === payeeId);
-  const [name, setName] = useState<string | null>(null);
-  const [into, setInto] = useState('');
-  const [error, setError] = useState<unknown>(null);
-  const raw = q.data?.suggestions.find((s) => s.payeeIds.includes(payeeId))?.rawNames ?? [];
-  if (!p)
+  if (!p || !q.data)
     return (
-      <Sheet label="Rename payee" track="payee.rename" onClose={close} gap="auto">
-        {q.error ? <ErrorNote error={q.error} /> : <Loading />}
-      </Sheet>
+      <RenamePayeeView
+        onClose={close}
+        loading={{ error: q.error }}
+        name=""
+        rawNames={[]}
+        onSave={async () => {}}
+      />
     );
-  const value = name ?? p.name;
-  const save = async () => {
-    setError(null);
-    try {
-      if (into) {
-        const target = q.data!.payees.find((x) => x.id === into)!;
-        await api.mergePayees({ ids: [into, p.id], name: target.name });
-      } else await api.renamePayee(p.id, { name: value.trim(), remember: p.remember });
-      await qc.invalidateQueries({ queryKey: qk.payees });
-      void qc.invalidateQueries({ queryKey: ['activity'] });
-      close();
-    } catch (e) {
-      setError(e);
-    }
-  };
+  const raw = q.data.suggestions.find((s) => s.payeeIds.includes(payeeId))?.rawNames ?? [];
+  const others = q.data.payees.filter((x) => x.id !== p.id);
   return (
-    <Sheet
-      label="Rename payee"
-      track="payee.rename"
+    <RenamePayeeView
       onClose={close}
-      gap="auto"
-      header={<h1 className="m-0 text-[20px] font-bold">Rename payee</h1>}
-    >
-      <div className="flex flex-col gap-3 pb-4">
-        <Field label="Show as">
-          <input
-            className={inputClass}
-            value={value}
-            disabled={!!into}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </Field>
-        {raw.length > 0 && (
-          <div className="flex flex-col gap-1.5">
-            <Label>Bank names that become this payee</Label>
-            <Card>
-              {raw.map((r) => (
-                <div
-                  key={r}
-                  className="border-t border-divider px-3 py-2.5 font-mono text-[13px] first:border-t-0"
-                >
-                  {r}
-                </div>
-              ))}
-            </Card>
-          </div>
-        )}
-        <Field label="Or merge into an existing payee">
-          <select className={inputClass} value={into} onChange={(e) => setInto(e.target.value)}>
-            <option value="">Don’t merge</option>
-            {q
-              .data!.payees.filter((x) => x.id !== p.id)
-              .map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.name}
-                </option>
-              ))}
-          </select>
-        </Field>
-        <p className="m-0 text-[12px] leading-snug text-muted">
-          Applies to past and future transactions. Rules follow the new name. The bank’s description stays on
-          each transaction.
-        </p>
-        {error ? <ErrorNote error={error} /> : null}
-        <PrimaryButton mutates track="payee.rename.save" disabled={!value.trim()} onClick={() => void save()}>
-          Save
-        </PrimaryButton>
-      </div>
-    </Sheet>
+      name={p.name}
+      rawNames={raw.map((name) => ({ name }))}
+      mergeInto={others.map((x) => ({ id: x.id, name: x.name }))}
+      onSave={async (name, into) => {
+        if (into) {
+          const target = others.find((x) => x.id === into)!;
+          await api.mergePayees({ ids: [into, p.id], name: target.name });
+        } else await api.renamePayee(p.id, { name, remember: p.remember });
+        await qc.invalidateQueries({ queryKey: qk.payees });
+        void qc.invalidateQueries({ queryKey: ['activity'] });
+        close();
+      }}
+    />
   );
 }

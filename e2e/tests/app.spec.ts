@@ -429,3 +429,20 @@ test('Desktop: the category panel steps to the next category with the arrow keys
   await page.getByRole('button', { name: 'Previous category' }).click();
   await expect(page.getByRole('dialog', { name: 'Groceries' })).toBeVisible();
 });
+
+test('Rename payee: the same sheet from a transaction and from Settings', async ({ page }) => {
+  await page.goto('/activity/txn/uber');
+  await page.getByRole('link', { name: 'Rename payee' }).click();
+  let sheet = page.getByRole('dialog', { name: 'Rename payee' });
+  await expect(sheet.getByRole('heading', { name: 'Rename payee' })).toBeVisible();
+  await expect(sheet.getByText('Bank names that become this payee')).toBeVisible();
+  await sheet.getByLabel('Show as').fill('Uber rides');
+  await sheet.getByRole('button', { name: 'Save name' }).click();
+  await expect(sheet).toBeHidden();
+
+  await page.goto('/settings/payees/p-uber');
+  sheet = page.getByRole('dialog', { name: 'Rename payee' });
+  await expect(sheet.getByRole('heading', { name: 'Rename payee' })).toBeVisible();
+  await expect(sheet.getByLabel('Or merge into an existing payee')).toBeVisible();
+  await expect(sheet.getByRole('button', { name: 'Save name' })).toBeVisible();
+});
