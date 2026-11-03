@@ -334,7 +334,7 @@ export function ActivityScreen() {
     </label>
   );
   const chips = (showAttentionChip || showPendingChip) && (
-    <div key="chips" role="group" aria-label="Filter" className="flex gap-2 overflow-x-auto pb-0.5">
+    <div key="chips" role="group" aria-label="Filter" className="chip-row">
       <Chip pressed={filter === 'all'} onClick={() => void setFilter('all')} track="activity.filter.all">
         All
       </Chip>

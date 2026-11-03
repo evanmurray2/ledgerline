@@ -66,6 +66,20 @@ test('Undo on a fix puts the money back', async ({ page }) => {
   await expect(rta(page)).toHaveText('$981.90');
 });
 
+test('Activity: the filter chips row has no scroll bar', async ({ page }) => {
+  await page.goto('/activity');
+  const row = page.getByRole('group', { name: 'Filter' });
+  await expect(row.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
+  // The chips' 44 px touch targets used to overflow the row, which then scrolled up and down.
+  const { scroll, client, bar } = await row.evaluate((el) => ({
+    scroll: el.scrollHeight,
+    client: el.clientHeight,
+    bar: getComputedStyle(el).scrollbarWidth,
+  }));
+  expect(scroll).toBeLessThanOrEqual(client);
+  expect(bar).toBe('none');
+});
+
 test('Activity: categorize from the picker, undo, and accept the Always offer', async ({ page }) => {
   await page.goto('/activity');
   await expect(page.getByText(/Needs category/)).toBeVisible();

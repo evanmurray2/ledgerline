@@ -225,3 +225,4 @@ Built all at once on the owner's word (D-46): no settings and no shadow comparis
 - [ ] Removing things confirms the same way: transaction delete gets Undo; removing a group or passkey, and signing out a device, confirm first (review 6).
 - [ ] Sheets: `SheetTitle` everywhere, and the main button in the sticky footer (review 7, 8).
 - [ ] The rest of the review: month switchers, section labels, Needs attention lists, empty states, banners, copy, duplicate Rename payee, desktop padding, icons (review 9 to 18).
+- [x] The filter chip rows (Activity, an account's register) no longer show a scroll bar: the chips' 44 px touch targets stuck out of the row, so it scrolled up and down. The row (`.chip-row`) now has room for them and hides its sideways scroll bar; it still swipes when the chips don't fit. _Verify:_ `app.spec.ts` "the filter chips row has no scroll bar".
