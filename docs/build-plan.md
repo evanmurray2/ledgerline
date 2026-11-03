@@ -79,6 +79,7 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 
 - [x] `ci.yml`: frozen install → lint, typecheck, format → unit → integration (local D1) → build → migration check → bundle budget → Playwright (fake provider). _Verify:_ green run on GitHub.
 - [x] `security.yml` (CodeQL, Gitleaks, OSV-Scanner, dependency review, zizmor, actionlint), `deploy.yml` (production, rollback; no staging, D-36; merges to `main` only, no manual trigger, D-49), Dependabot, CODEOWNERS, PR template; actions pinned to SHAs. _Verify:_ `actionlint` clean; CI green. (`release.yml`, `nightly.yml`, `monitor.yml` and `keepalive.yml` removed, D-49.)
+- [x] CodeQL's two open alerts fixed: the usage session id falls back to `crypto.getRandomValues` (never `Math.random`), and `centsToInput` strips every `$`. _Verify:_ CodeQL code-scanning suite finds none locally.
 
 ## 10. Durable Objects (decisions.md D-37, `docs/multi-user.md`)
 

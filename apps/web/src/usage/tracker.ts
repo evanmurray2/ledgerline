@@ -28,7 +28,9 @@ function randomId(): string {
   try {
     return crypto.randomUUID().replace(/-/g, '').slice(0, 32);
   } catch {
-    return Math.random().toString(36).slice(2, 18);
+    // randomUUID needs a secure context; getRandomValues doesn't.
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
   }
 }
 

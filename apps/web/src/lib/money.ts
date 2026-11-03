@@ -31,7 +31,7 @@ export function formatCents(cents: number, opts: FormatOptions = {}): string {
 /** Plain number for an input box: 21240 → "212.40", -500 → "−5.00". */
 export function centsToInput(cents: number): string {
   const f = formatCents(cents);
-  return f.replace('$', '').replace(/,/g, '');
+  return f.replace(/[$,]/g, '');
 }
 
 const MONEY_RE = /^([−-])?\s*\$?\s*(\d{1,3}(?:,\d{3})+|\d+)?(?:\.(\d{0,2}))?$/;
