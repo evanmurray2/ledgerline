@@ -64,11 +64,12 @@ test('The app is served with its security headers, and nothing on Budget breaks 
   expect(violations).toEqual([]);
 });
 
-test('In a browser tab nothing is kept on the device: with no signal it says it can’t connect', async ({
+test('With no passkey copy, nothing is kept on the device: with no signal it says it can’t connect', async ({
   page,
   context,
 }) => {
-  // Only the installed Home Screen app keeps a copy, encrypted with the passkey (D-45; passkey.spec.ts covers it).
+  // A saved copy needs a passkey sign-in on an iPhone or iPad (D-45, D-47; passkey.spec.ts covers it). This
+  // browser signs in without one.
   await page.goto('/budget');
   await expect(rta(page)).toHaveText('$981.90');
   await page.waitForFunction(async () => !!(await navigator.serviceWorker.ready).active);

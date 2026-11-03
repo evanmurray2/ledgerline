@@ -19,7 +19,18 @@ export interface Assertion {
   prf: ArrayBuffer | null;
 }
 
-/** An installed Home Screen app: the only place the copy is kept on the device (13.4). */
+/**
+ * Where the copy is saved on the device: an iPhone or iPad, in Safari or the Home Screen app (D-47; owner). On a
+ * computer it's kept in memory only (browser extensions share the page's storage there).
+ */
+export function keepsCopy(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (isStandalone()) return true;
+  const ua = navigator.userAgent;
+  return /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+}
+
+/** An installed Home Screen app. */
 export function isStandalone(): boolean {
   if (typeof window === 'undefined') return false;
   const nav = navigator as Navigator & { standalone?: boolean };
