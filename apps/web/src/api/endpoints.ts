@@ -159,6 +159,8 @@ export const api = {
     post('/api/settings/connections/link-token', LinkToken, body),
   exchange: (publicToken: string) => post('/api/settings/connections/exchange', Exchange, { publicToken }),
   refreshConnection: (id: string) => post(`/api/settings/connections/${enc(id)}/refresh`, Ok),
+  refreshAll: () =>
+    post('/api/settings/connections/refresh', z.object({ ok: z.literal(true), started: z.number().int() })),
 
   setupStart: (body: In<typeof SetupStart>) => post('/api/setup/start', Ok, body),
   startingBalances: (body: In<typeof StartingBalances>) =>

@@ -329,3 +329,41 @@ test('No screen is taller than the phone: the page itself never scrolls, only it
     expect(r.bounce, path).toBe('none');
   }
 });
+
+test('Accounts: Refresh syncs every bank; on a phone, so does pulling down', async ({ page }) => {
+  await page.goto('/accounts');
+  const toast = page.getByText('Syncing 2 banks. New transactions show up in a minute or two.');
+  if (test.info().project.name === 'desktop') {
+    await page.getByRole('button', { name: 'Refresh' }).click();
+    await expect(toast).toBeVisible();
+    return;
+  }
+  await page.getByTestId('net-worth').waitFor();
+  // A touch dragged down from the top of the list: the indicator says to release.
+  const drag = (phase: 'pull' | 'release') =>
+    page.evaluate(async (phase) => {
+      const el = document.querySelector('[data-testid="net-worth"]')!.closest('.overflow-y-auto')!;
+      const touch = (y: number) => new Touch({ identifier: 1, target: el, clientX: 100, clientY: y });
+      const fire = (type: string, y: number) =>
+        el.dispatchEvent(
+          new TouchEvent(type, {
+            touches: type === 'touchend' ? [] : [touch(y)],
+            changedTouches: [touch(y)],
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      if (phase === 'release') return void fire('touchend', 300);
+      fire('touchstart', 100);
+      for (let y = 110; y <= 300; y += 20) {
+        fire('touchmove', y);
+        await new Promise((r) => requestAnimationFrame(r));
+      }
+    }, phase);
+  await drag('pull');
+  await expect(page.getByTestId('pull-refresh')).toContainText('Release to sync');
+  await drag('release');
+  await expect(toast).toBeVisible();
+  // The sync button next to the gear does the same.
+  await expect(page.getByRole('button', { name: 'Sync banks now' })).toBeEnabled();
+});

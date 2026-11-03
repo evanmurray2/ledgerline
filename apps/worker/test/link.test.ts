@@ -106,4 +106,29 @@ describe('linking a bank', () => {
     const again = await db.prepare(`SELECT count(*) AS n FROM account`).first<{ n: number }>();
     expect(again!.n).toBe(2);
   });
+
+  it('Refresh on Accounts syncs set-up banks, but not one just synced or needing repair', async () => {
+    const lastSync = async () =>
+      (await db.prepare(`SELECT last_synced_at FROM connection`).first<{ last_synced_at: number | null }>())!;
+    await db.prepare(`UPDATE connection SET sync_lock = NULL, lock_expires = NULL, last_synced_at = 0`).run();
+    await db.prepare(`DELETE FROM job WHERE kind = 'sync'`).run();
+    await db.prepare(`DELETE FROM sync_run`).run();
+    const r = await call('POST', '/api/settings/connections/refresh');
+    expect(r.status).toBe(200);
+    expect(r.json).toEqual({ ok: true, started: 1 });
+    expect(await syncsStarted()).toBeGreaterThan(0);
+
+    // Synced a moment ago: a second pull starts nothing.
+    await db
+      .prepare(`UPDATE connection SET sync_lock = NULL, lock_expires = NULL, last_synced_at = ?1`)
+      .bind(Date.parse('2026-11-14T20:00:00Z'))
+      .run(); // vitest.config FAKE_NOW
+    expect((await call('POST', '/api/settings/connections/refresh')).json).toEqual({ ok: true, started: 0 });
+    expect((await lastSync()).last_synced_at).not.toBe(0);
+
+    // A bank whose login needs repair is left for Repair.
+    await db.prepare(`UPDATE connection SET last_synced_at = 0, status = 'login_required'`).run();
+    expect((await call('POST', '/api/settings/connections/refresh')).json).toEqual({ ok: true, started: 0 });
+    await db.prepare(`UPDATE connection SET status = 'ok'`).run();
+  });
 });

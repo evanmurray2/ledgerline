@@ -94,6 +94,7 @@ Legend: `[x]` done and verified · `[ ]` not done · **(manual)** needs the owne
 - [x] Delete the empty `ledgerline` D1 database (D-38). _Verify:_ the account lists no D1 databases (Nov 2, 2026).
 - [x] Breaker counts Worker requests and rests at 95% (D-40): reading stops too, saved screens stay on view, the Worker refuses by itself for 5 minutes; from 90% screens check every 15 minutes. _Verify:_ `apps/worker/test/breaker.test.ts`, `apps/worker/test/objects/routing.test.ts` (rests at 95%), `apps/web/test/client.test.ts`.
 - [x] Recovering from a day over the free limit (Nov 3, 2026): the Directory and each BudgetStore retry a failed start on the next call instead of refusing until evicted, and the deploy smoke test keeps a release when the only failure is Cloudflare's daily limit (the old release needed the deleted D1 database, so rolling back to it could never help).
+- [x] Refresh on Accounts (design.md, When data updates; it was in the design but never built): pull down on a phone, or tap the sync icon next to the gear; Refresh on desktop. Syncs every set-up bank from what Plaid has already collected; skips banks needing repair and banks synced or tried in the last minute. _Verify:_ `apps/worker/test/link.test.ts`, e2e `Accounts: Refresh syncs every bank`.
 - [ ] Activity screen: check CPU on the real app's analytics; build a stored recent-rows list only if p95 is 8 ms or more.
 - [ ] Later, only if wanted: invites, People with a reset link, Plaid link slots per user, account deletion, an isolation test (`docs/multi-user.md` 7.3, 7.4, 9.1, 10, 11).
 

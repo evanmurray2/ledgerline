@@ -1,6 +1,6 @@
 // Accounts: net worth, Owed to you under the total, repair banner, failed-sync banner with Try now, cash and
 // cards (statement covered). Card and cash registers. Repair a connection through Plaid Link update mode.
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, Outlet, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AccountRow } from '@ledgerline/contracts';
@@ -28,6 +28,8 @@ import { runPlaidLink } from '../lib/plaid';
 import { TxnRow } from './Activity';
 import { useCanWrite } from '../state/connectivity';
 import { usage } from '../usage/tracker';
+import { toast } from '../components/Toast';
+import { PULL_TRIGGER, usePullToRefresh } from '../lib/pull';
 
 function accountSub(a: AccountRow): { text: string; warn: boolean } {
   if (a.connectionStatus !== 'ok') return { text: 'may be out of date', warn: true };
@@ -107,6 +109,26 @@ export function AccountsScreen() {
   const desktop = useIsDesktop();
   const v = q.data;
   const today = session.data?.budget.today ?? '';
+  const qc = useQueryClient();
+  const canWrite = useCanWrite();
+  const scroller = useRef<HTMLDivElement>(null);
+  const sync = async () => {
+    try {
+      const r = await api.refreshAll();
+      toast.show({
+        text:
+          r.started > 0
+            ? `Syncing ${r.started} ${r.started === 1 ? 'bank' : 'banks'}. New transactions show up in a minute or two.`
+            : 'Your banks synced in the last minute or are syncing now.',
+      });
+      void qc.invalidateQueries();
+      // Most syncs finish within half a minute: look again then.
+      window.setTimeout(() => void qc.invalidateQueries(), 30_000);
+    } catch (e) {
+      toast.show({ text: e instanceof Error ? e.message : 'Couldn’t start a sync. Try again.' });
+    }
+  };
+  const { pull, busy, run } = usePullToRefresh(scroller, sync, !desktop && canWrite);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header
@@ -116,20 +138,55 @@ export function AccountsScreen() {
         )}
       >
         <h1 className="m-0 text-[22px] font-bold">Accounts</h1>
-        {!desktop && (
-          <Link
-            to="/settings"
-            data-track="accounts.settings"
-            aria-label="Settings"
-            className="flex h-11 w-11 items-center justify-center text-ink-2"
+        {desktop ? (
+          <button
+            type="button"
+            data-track="accounts.refresh"
+            disabled={!canWrite || busy}
+            onClick={() => void run()}
+            className="hit flex h-9 items-center gap-1.5 rounded-full bg-accent-soft px-3 text-[13px] font-bold text-accent disabled:opacity-50"
           >
-            <Icon name="gear" size={22} />
-          </Link>
+            <Icon name="refresh" size={16} stroke={2.4} className={busy ? 'animate-spin' : undefined} />
+            {busy ? 'Syncing…' : 'Refresh'}
+          </button>
+        ) : (
+          <span className="flex items-center">
+            <button
+              type="button"
+              data-track="accounts.refresh"
+              aria-label="Sync banks now"
+              disabled={!canWrite || busy}
+              onClick={() => void run()}
+              className="flex h-11 w-11 items-center justify-center text-ink-2 disabled:opacity-50"
+            >
+              <Icon name="refresh" size={21} className={busy ? 'animate-spin' : undefined} />
+            </button>
+            <Link
+              to="/settings"
+              data-track="accounts.settings"
+              aria-label="Settings"
+              className="flex h-11 w-11 items-center justify-center text-ink-2"
+            >
+              <Icon name="gear" size={22} />
+            </Link>
+          </span>
         )}
       </header>
       <div
+        ref={scroller}
         className={cx('flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-3', desktop ? 'px-6' : 'px-4')}
       >
+        {(pull > 0 || (busy && !desktop)) && (
+          <div
+            role="status"
+            data-testid="pull-refresh"
+            style={{ height: busy ? 36 : pull }}
+            className="-mt-3 flex shrink-0 items-end justify-center gap-1.5 overflow-hidden pb-1 text-[13px] font-semibold text-muted"
+          >
+            <Icon name="refresh" size={16} className={busy ? 'animate-spin' : undefined} />
+            {busy ? 'Syncing banks…' : pull >= PULL_TRIGGER ? 'Release to sync' : 'Pull to sync banks'}
+          </div>
+        )}
         <div className={cx('flex flex-col gap-3', desktop && 'mx-auto w-full max-w-[720px]')}>
           {!v ? (
             q.error ? (

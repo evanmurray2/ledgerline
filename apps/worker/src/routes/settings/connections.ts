@@ -308,6 +308,27 @@ connectionsRoutes.post('/settings/connections/exchange', async (c) => {
   return c.json({ ok: true, ...res });
 });
 
+/** A refresh within this long of a bank's last sync or attempt skips that bank, so repeated pulls don't pile up. */
+export const REFRESH_COOLDOWN_MS = 60_000;
+
+/**
+ * Pull-to-refresh on Accounts (design.md, When data updates): syncs every set-up bank now. It fetches only what Plaid
+ * has already collected. Banks that need their login repaired, and banks synced or tried in the last minute, are left.
+ */
+connectionsRoutes.post('/settings/connections/refresh', async (c) => {
+  const s = scoped(c);
+  const now = clock(c.env);
+  const conns = await s.all<{ id: string }>(
+    `SELECT id FROM connection WHERE budget_id = ?1 AND removed_at IS NULL AND setup_done = 1
+       AND status != 'login_required'
+       AND max(coalesce(last_synced_at, 0), coalesce(last_attempt_at, 0)) < ?2`,
+    now - REFRESH_COOLDOWN_MS,
+  );
+  let started = 0;
+  for (const conn of conns) if (await startSync(c.env, s.budgetId, conn.id, 'refresh')) started++;
+  return c.json({ ok: true, started });
+});
+
 connectionsRoutes.post('/settings/connections/:id/refresh', async (c) => {
   const s = scoped(c);
   const conn = await s.first<{ id: string; setup_done: number }>(

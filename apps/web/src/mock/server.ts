@@ -496,6 +496,8 @@ export class MockServer {
         db.linked += 1;
         return { ok: true, connectionId: db.newId('c'), accounts: [] };
       }
+      case 'POST settings/connections/refresh':
+        return { ok: true, started: 2 };
       case 'POST settings/connections/:y/refresh': {
         if (c === 'c-ally') db.allyRepaired = true;
         if (c === 'c-chase') db.syncFailed = false;
@@ -558,5 +560,6 @@ function isParam2(a: string | undefined, c: string): boolean {
     'device-link',
     'sign-out',
     'sign-out-others',
+    'refresh',
   ].includes(c);
 }
