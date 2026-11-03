@@ -3,9 +3,11 @@
 // doesn't decrypt.
 import { describe, expect, it } from 'vitest';
 import {
+  CopyUnreadable,
   newKeys,
   openCopy,
   randomBytes,
+  sameBytes,
   sealCopy,
   unlock,
   unlockOffline,
@@ -63,5 +65,15 @@ describe('the copy’s keys', () => {
     data[5] = data[5]! ^ 1;
     await expect(openCopy({ ...r, blob: { ...r.blob!, data: data.buffer } }, dataKey)).rejects.toThrow();
     await expect(openCopy({ ...r, deviceId: 'dev2' }, dataKey)).rejects.toThrow();
+  });
+
+  it('says which step could not be opened, so the app can start a new copy', async () => {
+    const { r, prf } = await made();
+    await expect(unlock(r, 'cred1', prf, randomBytes(32))).rejects.toEqual(new CopyUnreadable('key'));
+    await expect(unlockOffline(r, 'cred1', randomBytes(32), r.lastServerTime)).rejects.toEqual(
+      new CopyUnreadable('share'),
+    );
+    expect(sameBytes(r.salt, r.salt.slice(0))).toBe(true);
+    expect(sameBytes(r.salt, randomBytes(32))).toBe(false);
   });
 });
