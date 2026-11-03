@@ -4,7 +4,8 @@
 // no signal; without PRF it's kept in memory for the visit only.
 //
 // Lock (13.4): after 10 idle minutes, or 10 minutes in the background, the keys, the copy and the server session are
-// dropped; opening again needs Face ID. Wipe: signing out, here or from another device (Settings → Sign-in), no longer
+// dropped; opening again needs Face ID. A refresh or the app restarting isn't a lock: within 10 minutes of the last
+// activity the copy opens again with the data key held in IndexedDB (vault.ts holdKey). Wipe: signing out, here or from another device (Settings → Sign-in), no longer
 // a member, or 7 days offline.
 import { useSyncExternalStore } from 'react';
 import { CSRF_HEADER, type Session } from '@ledgerline/contracts';
@@ -16,6 +17,9 @@ import {
   allRecords,
   deleteAll,
   deleteRecord,
+  dropHeld,
+  heldKey,
+  holdKey,
   fromB64url,
   lastRecord,
   loadRecord,
@@ -176,7 +180,30 @@ export async function start(session: Session): Promise<void> {
     let rec = keepsCopy() ? await loadRecord(key) : null;
     const p = pending;
     pending = null;
-    if (rec) {
+    // Reloaded while the copy was open and in use (within 10 minutes): it opens again without Face ID.
+    const kept = rec && !p?.prf ? await heldKey(key, LOCK_MS) : null;
+    if (rec && kept) {
+      const st = await server<{ off: boolean }>('POST', '/api/auth/copy-status', { device: rec.deviceId });
+      if (st.off) {
+        await dropHeld(key);
+        await deleteRecord(key);
+        rec = null;
+        why = 'turned_off';
+      } else {
+        try {
+          const bytes = await openCopy(rec, kept);
+          dataKey = kept;
+          record = rec;
+          await openHost(bytes);
+          why = bytes ? null : 'empty';
+        } catch (e) {
+          if (!(e instanceof CopyUnreadable)) throw e;
+          await dropHeld(key);
+          set({ status: 'locked', hasSaved: true });
+          return;
+        }
+      }
+    } else if (rec) {
       // The passkey's PRF output only fits the salt this copy was set up with; any other sign-in asks again.
       if (!p?.prf || !sameBytes(p.salt, rec.salt)) {
         set({ status: 'locked', hasSaved: true });
@@ -187,6 +214,7 @@ export async function start(session: Session): Promise<void> {
         `/api/settings/security/devices/${rec.deviceId}/share`,
       ).catch(async (e: { code?: string }) => {
         if (e.code === 'revoked') {
+          await dropHeld(key);
           await deleteRecord(key);
           why = 'turned_off';
           return null;
@@ -246,6 +274,7 @@ export async function start(session: Session): Promise<void> {
       await openHost(null);
     }
     await host!.put('session', JSON.stringify(session));
+    if (record && dataKey) await holdKey(record.key, dataKey, Date.now());
     set({ saved: record !== null, hasSaved: record !== null, why });
     await syncNow();
     set({ status: 'ready' });
@@ -514,6 +543,8 @@ export async function flush(): Promise<{ sent: number; refused: number }> {
 // ---------------------------------------------------------------- lock, wipe, timers
 
 let lastActive = Date.now();
+/** The activity time last written with the held key (a refresh within LOCK_MS of it skips Face ID). */
+let heldActive = 0;
 let hiddenAt: number | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -527,6 +558,8 @@ function watch(): void {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       hiddenAt = Date.now();
+      // Time away counts toward the lock from now, even if the app is closed in the background.
+      if (record && dataKey) void holdKey(record.key, dataKey, lastActive);
       document.documentElement.dataset.covered = '1';
     } else {
       const away = hiddenAt ? Date.now() - hiddenAt : 0;
@@ -547,11 +580,12 @@ function watch(): void {
     () => {
       if (state.status !== 'ready') return;
       if (Date.now() - lastActive >= LOCK_MS) void lock();
-      else if (
-        document.visibilityState === 'visible' &&
-        !state.offline &&
-        Date.now() - lastSync >= SYNC_EVERY_MS
-      )
+      else if (record && dataKey && lastActive !== heldActive) {
+        heldActive = lastActive;
+        void holdKey(record.key, dataKey, lastActive);
+      }
+      if (Date.now() - lastActive >= LOCK_MS) return;
+      if (document.visibilityState === 'visible' && !state.offline && Date.now() - lastSync >= SYNC_EVERY_MS)
         void syncNow().catch(() => undefined);
     },
     Math.min(SYNC_EVERY_MS, 30_000),
@@ -562,6 +596,7 @@ function watch(): void {
 export async function lock(): Promise<void> {
   if (state.status !== 'ready' && state.status !== 'opening') return;
   if (record && dataKey && host && !state.offline) await save().catch(() => undefined);
+  if (record) await dropHeld(record.key);
   await host?.close();
   host = null;
   dataKey = null;
@@ -580,6 +615,7 @@ export async function wipe(all = false): Promise<void> {
   dataKey = null;
   const key = record?.key ?? (who ? recordKey(who.email, who.budgetId) : null);
   record = null;
+  if (key) await dropHeld(key);
   if (all) await deleteAll();
   else if (key) await deleteRecord(key);
   set({ status: MOCK ? 'off' : 'idle', saved: false, hasSaved: false, queued: 0, offline: false });
@@ -622,7 +658,10 @@ async function checkSignedOut(signInEnded: boolean): Promise<void> {
     );
     if (!r?.off) continue;
     if (record?.key === rec.key) await wipe();
-    else await deleteRecord(rec.key);
+    else {
+      await dropHeld(rec.key);
+      await deleteRecord(rec.key);
+    }
   }
 }
 

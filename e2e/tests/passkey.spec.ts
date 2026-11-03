@@ -145,6 +145,22 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   expect(since[0]).toBeGreaterThan(0);
   expect((await copy())?.deviceId).toBe(first.deviceId);
 
+  // A refresh while it's open and in use doesn't lock it: no passkey prompt, no new sign-in.
+  let signIns = 0;
+  const countSignIns = (r: { url(): string }) => {
+    if (r.url().includes('/api/auth/login/verify')) signIns++;
+  };
+  page.on('request', countSignIns);
+  const before = since.length;
+  await page.reload();
+  await expect(page).toHaveURL(/\/welcome/);
+  await expect(page.getByRole('heading', { name: 'Ledgerline', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Ledgerline is locked' })).toBeHidden();
+  await expect.poll(() => since.length, { timeout: 15_000 }).toBeGreaterThan(before);
+  expect(since.at(-1)).toBeGreaterThan(0);
+  expect(signIns).toBe(0);
+  page.off('request', countSignIns);
+
   // Locked again, then signed out from the other device (Settings → Sign-in, here the API): the phone deletes its
   // copy as soon as it opens, before anyone signs in.
   await post(page, '/api/settings/security/sign-out');
