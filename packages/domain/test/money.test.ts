@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { ceilDiv, cents, formatCents, fractionOf, parseCents, splitEvenly } from '../src/money.js';
-import { currentMonth, localDate, month, parseImportDate } from '../src/month.js';
+import { currentMonth, localDate, localTime, month, nextLocalTime, parseImportDate } from '../src/month.js';
 
 describe('parseCents', () => {
   it('reads the usual ways an amount is written', () => {
@@ -73,6 +73,29 @@ describe('the month boundary in Los Angeles', () => {
     expect(currentMonth(Date.parse('2026-12-01T07:59:00Z'), LA)).toBe(month('2026-11'));
     expect(localDate(Date.parse('2026-12-01T08:01:00Z'), LA)).toBe('2026-12-01');
     expect(currentMonth(Date.parse('2026-12-01T08:01:00Z'), LA)).toBe(month('2026-12'));
+  });
+
+  it('a clock time shows in the budget time zone, not UTC', () => {
+    expect(localTime(Date.parse('2026-11-14T17:42:00Z'), LA)).toBe('9:42 AM');
+    expect(localTime(Date.parse('2026-07-14T17:42:00Z'), LA)).toBe('10:42 AM');
+  });
+
+  it('a daily job keeps its local clock time through daylight saving', () => {
+    const at = (iso: string) => new Date(nextLocalTime(Date.parse(iso), LA, 5, 0)).toISOString();
+    // Standard time: 5 AM PST is 13:00 UTC; summer time: 5 AM PDT is 12:00 UTC.
+    expect(at('2026-11-14T10:00:00Z')).toBe('2026-11-14T13:00:00.000Z');
+    expect(at('2026-07-14T10:00:00Z')).toBe('2026-07-14T12:00:00.000Z');
+    // Strictly after now: at 5 AM exactly, the next run is tomorrow.
+    expect(at('2026-11-14T13:00:00Z')).toBe('2026-11-15T13:00:00.000Z');
+    // Late evening Pacific is already the next UTC day; the next 5 AM is the next Pacific morning.
+    expect(at('2026-11-15T07:30:00Z')).toBe('2026-11-15T13:00:00.000Z');
+    // Across the fall change (Nov 1, 2026) and the spring change (Mar 8, 2026).
+    expect(at('2026-10-31T13:00:00Z')).toBe('2026-11-01T13:00:00.000Z');
+    expect(at('2026-03-07T13:00:00Z')).toBe('2026-03-08T12:00:00.000Z');
+    // Another zone works the same way.
+    expect(
+      new Date(nextLocalTime(Date.parse('2026-11-14T00:00:00Z'), 'America/New_York', 5, 0)).toISOString(),
+    ).toBe('2026-11-14T10:00:00.000Z');
   });
 
   it('daylight saving time moves the boundary by an hour', () => {

@@ -207,7 +207,7 @@ If a step fails:
 
 ### 6.2 Recurring jobs
 
-- Each store keeps three **recurring job rows**: the sync backstop every 4 hours, the daily scan at 08:10 UTC, and maintenance at 10:20 UTC (the same times as today). A recurring row is never deleted; finishing a run just moves its `run_at` forward.
+- Each store keeps three **recurring job rows**: the sync backstop every 4 hours, the daily scan at 5:00 AM and maintenance at 2:20 AM in the budget's time zone (each run reads the time zone again, so daylight saving and a change of zone are followed). A recurring row is never deleted; finishing a run just moves its `run_at` forward.
 - The one daily cron trigger refreshes account usage and starts an `ensure_all` job in the Directory. That job calls `ensureJobs` on `ENSURE_BATCH` budgets per step (default 25), from a cursor, until every budget has been checked that day. This covers any number of budgets without a longer cron run. `ensureJobs` recreates any missing recurring rows, checks that an alarm is set, re-registers any of the store's items missing from `connection_route`, and reports failed jobs.
 - With one budget, the cron makes one call.
 

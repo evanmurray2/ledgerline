@@ -9,7 +9,7 @@ import { NoteSheet } from '../screens/Note';
 import { useBadgeCounts, useSession } from '../api/hooks';
 import { useCopy } from '../copy/copy';
 import { useCanWrite, useConnectivity } from '../state/connectivity';
-import { pacificTime } from '../lib/dates';
+import { budgetTime } from '../lib/dates';
 import { formatCents } from '../lib/money';
 import { useTabMonth } from '../state/month';
 
@@ -178,7 +178,7 @@ export function StatusBanner() {
   const copy = useCopy();
   const offline = !c.online || c.networkFailed;
   if (!offline && !c.readOnly && !c.readsPaused) return null;
-  const loaded = c.loadedAt ? pacificTime(c.loadedAt) : null;
+  const loaded = c.loadedAt ? budgetTime(c.loadedAt) : null;
   if (offline)
     return (
       <div
@@ -194,7 +194,7 @@ export function StatusBanner() {
         </span>
       </div>
     );
-  const until = c.readOnlyUntil ? pacificTime(c.readOnlyUntil) : 'midnight UTC';
+  const until = c.readOnlyUntil ? budgetTime(c.readOnlyUntil) : 'midnight UTC';
   if (c.readsPaused) return <RestingBanner until={until} />;
   return <ReadOnlyBanner until={until} />;
 }

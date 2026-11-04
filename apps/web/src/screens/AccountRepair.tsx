@@ -7,7 +7,7 @@ import { useAccounts, useSession, qk } from '../api/hooks';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import { Banner, ErrorNote, PrimaryButton } from '../components/ui';
 import { formatCents } from '../lib/money';
-import { pacificDateTime, syncedLabel } from '../lib/dates';
+import { budgetDateTime, syncedLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
 import { runPlaidLink } from '../lib/plaid';
 import { usage } from '../usage/tracker';
@@ -86,7 +86,7 @@ export function RepairScreen() {
           <div className="shrink-0 overflow-hidden rounded-lg border border-line">
             {[
               ['Accounts on this login', accts.map((a) => a.name).join(', ') || '—'],
-              ['Last good sync', repair?.lastSynced ? pacificDateTime(repair.lastSynced) : '—'],
+              ['Last good sync', repair?.lastSynced ? budgetDateTime(repair.lastSynced) : '—'],
               ['Balance shown', accts[0] ? `${formatCents(accts[0].bank)} (may be out of date)` : '—'],
               ['Budget effect', 'None until new data arrives'],
             ].map(([k, val]) => (

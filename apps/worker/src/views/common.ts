@@ -192,10 +192,12 @@ export async function cards(s: Scoped, today: string): Promise<CardInfo[]> {
       `SELECT account_id, sum(-amount) AS u FROM budget_line WHERE budget_id = ?1 AND kind = 'uncat' AND card = 0 GROUP BY account_id`,
     ),
     s.q(
-      // Each card's latest statement: one row per card, read through the liability_day index.
+      // Each card's latest statement: the newest write (a later sync the same day updates its day's row). Not the
+      // latest as_of: snapshot days were UTC days before they followed the budget's time zone, so an older write can
+      // carry a later day.
       `SELECT l.provider_account_id, l.statement_balance, l.due_date FROM account a
        JOIN liability_snapshot l ON l.id = (SELECT x.id FROM liability_snapshot x WHERE x.budget_id = ?1
-         AND x.provider_account_id = a.provider_account_id ORDER BY x.as_of DESC LIMIT 1)
+         AND x.provider_account_id = a.provider_account_id ORDER BY x.created_at DESC LIMIT 1)
        WHERE a.budget_id = ?1 AND a.kind = 'credit' AND a.provider_account_id IS NOT NULL`,
     ),
   ]);

@@ -3,7 +3,13 @@
 import { env, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import type { BudgetStore } from '../src/store/budget-store.js';
-import { BACKSTOP_ID, DAILY_SCAN_ID, MAINTENANCE_ID } from '../src/store/budget-jobs.js';
+import {
+  BACKSTOP_ID,
+  DAILY_SCAN_ID,
+  MAINTENANCE_ID,
+  nextMaintenance,
+  nextScan,
+} from '../src/store/budget-jobs.js';
 
 const e = env as unknown as { BUDGET: DurableObjectNamespace<BudgetStore> };
 const store = (name: string) => e.BUDGET.get(e.BUDGET.idFromName(name));
@@ -32,6 +38,31 @@ describe('BudgetStore scheduling', () => {
     expect(a.ok).toBe(true);
     expect(b.jobs.map((j) => j.id).sort()).toEqual([BACKSTOP_ID, DAILY_SCAN_ID, MAINTENANCE_ID].sort());
     expect(await runInDurableObject(s, async (_o, st) => st.storage.getAlarm())).not.toBeNull();
+  });
+
+  it('the daily jobs run at local clock times in the budget time zone', async () => {
+    const s = store('local-times');
+    await seedBudget(s);
+    await runInDurableObject(s, async (_o, st) => {
+      st.storage.sql.exec(`UPDATE budget SET time_zone = 'America/New_York'`);
+    });
+    const before = Date.now();
+    await s.ensureJobs();
+    const runAt = await runInDurableObject(s, async (_o, st) => {
+      const at = (id: string) =>
+        Number(st.storage.sql.exec(`SELECT run_at FROM job WHERE id = ?`, id).one().run_at);
+      return { scan: at(DAILY_SCAN_ID), maint: at(MAINTENANCE_ID) };
+    });
+    const clock = (t: number) =>
+      new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(t);
+    expect(clock(runAt.scan)).toBe('5:00 AM');
+    expect(clock(runAt.maint)).toBe('2:20 AM');
+    expect(runAt.scan).toBe(nextScan(before, 'America/New_York'));
+    expect(runAt.maint).toBe(nextMaintenance(before, 'America/New_York'));
   });
 
   it('the first API call puts back an alarm Cloudflare dropped while jobs wait', async () => {

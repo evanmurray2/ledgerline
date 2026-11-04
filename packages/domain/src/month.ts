@@ -92,6 +92,63 @@ export function localDate(epochMs: number, timeZone: string): IsoDate {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
+const timeFormatters = new Map<string, Intl.DateTimeFormat>();
+
+/** Clock time in a time zone, e.g. "4:05 PM". */
+export function localTime(epochMs: number, timeZone: string): string {
+  let fmt = timeFormatters.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: '2-digit' });
+    timeFormatters.set(timeZone, fmt);
+  }
+  return fmt.format(new Date(epochMs));
+}
+
+const clockFormatters = new Map<string, Intl.DateTimeFormat>();
+
+/** How far a time zone's clock is ahead of UTC at an instant, in ms (negative west of UTC). */
+function zoneOffset(epochMs: number, timeZone: string): number {
+  let fmt = clockFormatters.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    clockFormatters.set(timeZone, fmt);
+  }
+  const parts = fmt.formatToParts(new Date(epochMs));
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  const wall = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'));
+  return wall - Math.floor(epochMs / 60_000) * 60_000;
+}
+
+/**
+ * The next instant strictly after now when the clock in a time zone reads hour:minute, so a daily job keeps its
+ * local time through daylight saving changes. A time the clock skips (2:30 AM on the spring change) comes an hour
+ * later that day.
+ */
+export function nextLocalTime(now: number, timeZone: string, hour: number, minute: number): number {
+  const today = localDate(now, timeZone);
+  for (let i = 0; ; i++) {
+    const d = addDays(today, i);
+    const wall = Date.UTC(
+      Number(d.slice(0, 4)),
+      Number(d.slice(5, 7)) - 1,
+      Number(d.slice(8, 10)),
+      hour,
+      minute,
+    );
+    // Guess with the offset at the wall time read as UTC, then correct once with the offset at the guess.
+    const t = wall - zoneOffset(wall - zoneOffset(wall, timeZone), timeZone);
+    if (t > now) return t;
+  }
+}
+
 export function currentMonth(epochMs: number, timeZone: string): Month {
   return monthOfDate(localDate(epochMs, timeZone));
 }
