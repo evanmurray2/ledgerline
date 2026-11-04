@@ -41,7 +41,7 @@ function useSectionMeta() {
   const needRepair = conns?.items.filter((i) => i.status === 'login_required' || i.status === 'error') ?? [];
   const text: Record<string, string> = {
     appearance: 'Light, Dark or Match device',
-    payees: payees ? `Rename and merge · ${payees.payees.length} payees` : 'Rename and merge',
+    payees: payees ? `Rename and join · ${payees.payees.length} payees` : 'Rename and join',
     connections: conns
       ? `${conns.used} of ${conns.limit} links used${needRepair[0] ? ` · ${needRepair[0].institution} needs repair` : ''}`
       : '',

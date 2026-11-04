@@ -44,7 +44,7 @@ const SCREENS: { name: string; path: string; ready?: string; prepare?: (page: Pa
   { name: 'settings', path: '/settings', ready: 'Record how I use the app' },
   { name: 'categories', path: '/categories', ready: 'Groceries' },
   { name: 'category-edit', path: '/categories/groceries', ready: 'Edit category' },
-  { name: 'payees', path: '/settings/payees', ready: 'Looks like the same payee' },
+  { name: 'payees', path: '/settings/payees', ready: 'Trader Joe’s' },
   { name: 'payee-rename', path: '/settings/payees/p-uber', ready: 'Show as' },
   { name: 'connections', path: '/settings/connections', ready: '4 of 10 links used' },
   { name: 'data', path: '/settings/data', ready: 'Import past transactions' },

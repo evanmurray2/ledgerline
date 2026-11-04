@@ -15,6 +15,7 @@ import {
   MutationResult,
   OwedView,
   PayeesView,
+  MergeResult,
   RegisterView,
   ReportsView,
   Session,
@@ -142,7 +143,8 @@ export const api = {
   removeGroup: (id: string) => post(`/api/settings/groups/${enc(id)}/remove`, Ok),
 
   payees: () => get('/api/settings/payees', PayeesView),
-  mergePayees: (body: In<typeof MergePayees>) => post('/api/settings/payees/merge', Ok, body),
+  mergePayees: (body: In<typeof MergePayees>) => post('/api/settings/payees/merge', MergeResult, body),
+  undoMergePayees: (undoId: string) => post(`/api/settings/payees/merge/${enc(undoId)}/undo`, Ok, {}),
   renameAccount: (id: string, body: In<typeof RenameAccount>) =>
     post(`/api/accounts/${enc(id)}/name`, Ok, body),
   renamePayee: (id: string, body: In<typeof RenamePayee>) =>
