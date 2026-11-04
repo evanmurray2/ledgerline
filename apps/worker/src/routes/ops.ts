@@ -19,7 +19,6 @@ import { classifyUsage, noteUsage, usageToday, utcDay, READ_LIMIT, WRITE_LIMIT }
 import { makeProvider } from '../sync/provider.js';
 import { startSync } from './settings/connections.js';
 import { TX_COLUMNS, budgetMeta, planLineRebuild, type TxRow } from '../ledger/ledger.js';
-import { clearTotals } from '../ledger/totals.js';
 
 export const opsRoutes = new Hono<AppEnv>();
 
@@ -286,7 +285,7 @@ opsRoutes.get('/export/usage', async (c) => {
 
 /**
  * CSV history import (date, payee, amount[, memo]): rows are history only (they never enter the budget), used for
- * analytics, payee learning and drift checks. Stored as a 'csv' connection's bank rows so the projection treats them
+ * analytics and drift checks (read-only, D-61). Stored as a 'csv' connection's bank rows so the projection treats them
  * like any provider's.
  */
 opsRoutes.post('/import/csv', async (c) => {
@@ -393,8 +392,7 @@ opsRoutes.post('/import/csv', async (c) => {
         ),
       );
   }
-  // New history rows, and possibly an account re-pointed at them: stored month totals start over (ledger/totals.ts).
-  stmts.push(clearTotals(s));
+  // Month totals live on the phone (D-45): its copy starts them over when these rows arrive (local/engine.ts).
   for (let i = 0; i < stmts.length; i += 100) await s.batch(stmts.slice(i, i + 100));
   const meta = await budgetMeta(s);
   void meta;
