@@ -205,6 +205,13 @@
   --breakpoint-lg: 64rem;
 }
 
+/* The unit text sizes are counted in (see body below). Registered as a length so it is worked out once, on body. */
+@property --ll-u {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 1px;
+}
+
 @layer base {
   html,
   body,
@@ -224,6 +231,24 @@
   /* A list that reaches its end stops there instead of handing the swipe to the page. */
   .overflow-y-auto {
     overscroll-behavior-y: contain;
+  }
+
+  /*
+   * Text follows the iPhone's Text Size setting (vite.config.ts turns every px font size into N * --ll-u).
+   * iPhone and iPad Safari give the system body font, 17 px at the standard setting, so --ll-u is its 17th:
+   * 1px as standard, more or less as the setting changes, kept between 0.85px and 1.3px so the screens' fixed
+   * heights still hold the text. Registered as a length, it is worked out on body and passed down as is. Body
+   * keeps the system size (its own font size can't use --ll-u); everything inside it is reset to 16 units.
+   */
+  @supports (font: -apple-system-body) {
+    body {
+      font: -apple-system-body;
+      line-height: 1.5;
+      --ll-u: clamp(0.85px, calc(1em / 17), 1.3px);
+    }
+  }
+  body > * {
+    font-size: calc(16 * var(--ll-u));
   }
 
   body {

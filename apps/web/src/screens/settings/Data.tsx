@@ -21,6 +21,7 @@ import {
 import { useScreen } from '../../lib/common';
 import { useCanWrite } from '../../state/connectivity';
 import { Page } from './common';
+import { Why } from '../../components/Why';
 
 // ------------------------------------------------------------------ import and export
 
@@ -164,9 +165,12 @@ export function DataScreen() {
           <span className="text-[13px] text-ink-2">Last 30 days</span>
         </div>
       </Card>
-      <span className="text-[12px] text-muted">
-        Rewinding is done in Cloudflare, not from this screen, so a stolen session can’t wipe your data. For a
-        copy older than 30 days, download the full backup above and keep it somewhere safe.
+      <span className="flex flex-col gap-1 text-[12px] text-muted">
+        <span>For a copy older than 30 days, download the full backup above.</span>
+        <Why>
+          Rewinding is done in Cloudflare, not from this screen, so a stolen session can’t wipe your data.
+          Keep the backup somewhere safe.
+        </Why>
       </span>
     </Page>
   );

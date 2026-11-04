@@ -24,6 +24,7 @@ import { dayLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
 import { AMOUNT_INPUT, useClose } from './TxnCommon';
 import { usage } from '../usage/tracker';
+import { Why } from '../components/Why';
 
 export { MatchScreen } from './ActivityMatch';
 
@@ -345,7 +346,21 @@ export function AddTxnScreen() {
       closeLabel="Cancel"
       header={<SheetTitle title="Add a transaction" />}
       footer={
-        <PrimaryButton mutates track="add_txn.add" disabled={!ok} onClick={() => void submit()}>
+        <PrimaryButton
+          mutates
+          track="add_txn.add"
+          disabled={!ok}
+          why={
+            !cents || cents <= 0
+              ? 'Enter an amount'
+              : !payee.trim()
+                ? 'Enter a payee'
+                : !acct
+                  ? 'Choose an account'
+                  : ''
+          }
+          onClick={() => void submit()}
+        >
           Add
         </PrimaryButton>
       }
@@ -440,10 +455,13 @@ export function AddTxnScreen() {
           </select>
         </Field>
       )}
-      <p className="m-0 text-[12px] leading-snug text-muted">
-        When the bank shows a matching transaction, the two are merged and the bank’s amount wins. If nothing
-        matches in {kind === 'pending' ? 7 : 3} days, you’ll see an alert.
-      </p>
+      <div className="flex flex-col gap-1 text-[12px] leading-snug text-muted">
+        <span>When the bank shows it, the bank’s amount wins.</span>
+        <Why>
+          When the bank shows a matching transaction, the two are merged. If nothing matches in{' '}
+          {kind === 'pending' ? 7 : 3} days, you’ll see an alert.
+        </Why>
+      </div>
       {add.error && <ErrorNote error={add.error} />}
     </Sheet>
   );

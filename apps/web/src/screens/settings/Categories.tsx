@@ -376,6 +376,7 @@ export function CategoryEditSheet() {
             mutates
             track="category_edit.save"
             disabled={!n.trim() || busy || !canWrite}
+            why={!n.trim() ? 'Enter a name to save' : ''}
             onClick={() => void save()}
           >
             {isNew ? (isGroup ? 'Add group' : 'Add category') : 'Save'}

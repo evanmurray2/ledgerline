@@ -73,6 +73,13 @@ export function RenamePayeeSheet({ onClose, loading, name, rawNames, others, onS
             mutates={match ? true : 'offline'}
             track={match ? 'payee.join' : 'payee.rename.save'}
             disabled={busy || !value.trim() || (!match && value.trim() === name)}
+            why={
+              !value.trim()
+                ? 'Enter a name to save'
+                : !match && value.trim() === name
+                  ? 'Change the name to save'
+                  : ''
+            }
             onClick={() => void save()}
           >
             {match ? (online ? 'Join payees' : 'Joining needs a connection') : 'Save name'}

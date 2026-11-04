@@ -8,6 +8,7 @@ import type { ActivityView, TxnListRow } from '@ledgerline/contracts';
 import { api, type ActivityFilter } from '../api/endpoints';
 import { adjustAttention, qk, useActivity, useBudget, useMoneyMutation, useSession } from '../api/hooks';
 import { MonthBar, TabHeader } from '../components/MonthBar';
+import { OverflowMenu } from '../components/headers';
 import { monthName } from '../lib/dates';
 import { clampMonth } from '../state/month';
 import { toast } from '../components/Toast';
@@ -21,6 +22,7 @@ import {
   PrimaryButton,
   ScreenBody,
   SearchField,
+  SectionTitle,
   SoftButton,
   softButtonClass,
   useIsDesktop,
@@ -362,6 +364,15 @@ export function ActivityScreen() {
           month &&
           current && <MonthBar month={month} current={current} min={min} max={current} onGo={goMonth} />
         }
+        // Phone: Settings from every tab (on desktop it is in the sidebar). Add keeps the right-hand place.
+        left={
+          desktop ? undefined : (
+            <OverflowMenu
+              label="More"
+              items={[{ to: '/settings', name: 'Settings', track: 'activity.settings' }]}
+            />
+          )
+        }
         right={addButton}
         below={[searchBox, chips]}
       />
@@ -381,7 +392,8 @@ export function ActivityScreen() {
         )}
         {v && showAttnHead && (
           // The count is already on the filter chip above.
-          <h2 className="m-0 px-0.5 text-[15px] font-bold">Needs attention</h2>
+          // Same look as every other section heading (small capitals).
+          <SectionTitle>Needs attention</SectionTitle>
         )}
         {v && filter === 'attention' && !q && v.attentionCount === 0 && openNeeds.length === 0 && (
           <p className="m-0 rounded-[14px] bg-funded-bg p-4 text-center text-[15px] font-semibold text-funded-fg">

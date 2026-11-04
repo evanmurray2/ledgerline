@@ -2,7 +2,7 @@
 // collapsible groups with totals, status words and bars. Desktop shows the same data, bars and status words as
 // a table with Assigned, Spent and Available columns (BudgetTable). Needs attention offers one-tap fixes with
 // amounts (BudgetAttention); the phone list is BudgetRows, the notes above it BudgetStates.
-import { useRef } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { Link, Outlet, useNavigate, useSearch } from '@tanstack/react-router';
 import type { BudgetView } from '@ledgerline/contracts';
 import { useBudget, useSession } from '../api/hooks';
@@ -43,7 +43,30 @@ export function useBudgetMonth(): { month: string | undefined; current: string |
 
 // ------------------------------------------------------------------ screen
 
-function RtaBar({ b, onFix }: { b: BudgetView; onFix: () => void }) {
+/**
+ * True once the list is scrolled down, false again on any scroll up or near the top: the Ready to Assign bar
+ * folds to one thin line meanwhile, so more of the list shows.
+ */
+function useScrolledDown(ref: RefObject<HTMLDivElement | null>, ready: boolean): boolean {
+  const [down, setDown] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let last = el.scrollTop;
+    const onScroll = () => {
+      const top = el.scrollTop;
+      if (top < 48) setDown(false);
+      else if (top > last + 4) setDown(true);
+      else if (top < last - 4) setDown(false);
+      last = top;
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [ref, ready]);
+  return down;
+}
+
+function RtaBar({ b, onFix, thin }: { b: BudgetView; onFix: () => void; thin: boolean }) {
   const canWrite = useCanWrite();
   const neg = b.rta < 0;
   // Every dollar assigned: a quiet line, nothing to do.
@@ -56,16 +79,21 @@ function RtaBar({ b, onFix }: { b: BudgetView; onFix: () => void }) {
         </span>
       </div>
     );
+  // Folded while scrolling down; never when below zero, which needs fixing now.
+  const fold = thin && !neg;
+  const btn = fold ? 'h-8 px-4 text-[14px]' : 'h-10 px-[22px] text-[15px]';
   return (
     <div
+      data-thin={fold || undefined}
       className={cx(
-        'flex shrink-0 items-center justify-between gap-3 px-4 py-2.5',
+        'flex shrink-0 items-center justify-between gap-3 px-4 transition-[padding] duration-150',
+        fold ? 'py-1' : 'py-2.5',
         neg ? 'bg-danger text-on-danger' : 'bg-rta-bg text-rta-fg',
       )}
     >
-      <div className="flex flex-col gap-px">
+      <div className={cx('flex', fold ? 'items-baseline gap-2' : 'flex-col gap-px')}>
         <span className="text-[12px] font-semibold">Ready to Assign</span>
-        <span className="tnum text-[22px] font-bold" data-testid="rta">
+        <span className={cx('tnum font-bold', fold ? 'text-[16px]' : 'text-[22px]')} data-testid="rta">
           {b.rtaUpdating ? 'Updating' : formatCents(b.rta)}
         </span>
       </div>
@@ -83,14 +111,17 @@ function RtaBar({ b, onFix }: { b: BudgetView; onFix: () => void }) {
         <Link
           to="/budget/assign"
           data-track="budget.assign"
-          className="hit flex h-10 items-center rounded-full bg-rta-fg px-[22px] text-[15px] font-bold text-rta-btn-fg no-underline"
+          className={cx(
+            'hit flex items-center rounded-full bg-rta-fg font-bold text-rta-btn-fg no-underline',
+            btn,
+          )}
         >
           Assign
         </Link>
       ) : (
         <span
           aria-disabled="true"
-          className="flex h-10 items-center rounded-full bg-on-accent/50 px-[22px] text-[15px] font-bold text-muted"
+          className={cx('flex items-center rounded-full bg-on-accent/50 font-bold text-muted', btn)}
         >
           Assign
         </span>
@@ -144,7 +175,7 @@ function ViewChips({
       )}
       {showLow && (
         <Chip pressed={view === 'low'} onClick={() => set('low')} track="budget.filter.low">
-          Low <CountBadge n={lowCount} inverted={view === 'low'} />
+          Running low <CountBadge n={lowCount} inverted={view === 'low'} />
         </Chip>
       )}
     </div>
@@ -173,6 +204,7 @@ export function BudgetScreen() {
   const session = useSession();
   const b = q.data;
   const scroller = useRef<HTMLDivElement>(null);
+  const thin = useScrolledDown(scroller, !!b);
 
   if (!month || !current) return <Loading />;
   if (q.error && !b)
@@ -268,13 +300,14 @@ export function BudgetScreen() {
         name="Budget"
         month={<MonthNav b={b} month={month} view={view} />}
         right={
-          // Categories and targets belong to the budget, so they sit at the top of it; Settings stays behind the
-          // gear on Accounts.
+          // Categories and targets belong to the budget, so they sit at the top of it. Settings is in this menu
+          // too, so it can be opened from every tab (on desktop it is in the sidebar).
           <OverflowMenu
             label="More budget actions"
             items={[
               { to: '/targets', search: targetsSearch, name: 'Set targets', track: 'budget.set_targets' },
               { to: '/categories', name: 'Edit categories', track: 'budget.edit_categories' },
+              { to: '/settings', name: 'Settings', track: 'budget.settings' },
             ]}
           />
         }
@@ -286,7 +319,7 @@ export function BudgetScreen() {
       />
       {b.syncProblem && <SyncProblem text={b.syncProblem} />}
       <ScreenBody scrollRef={scroller}>{content}</ScreenBody>
-      <RtaBar b={b} onFix={() => scroller.current?.scrollTo({ top: 0, behavior: 'smooth' })} />
+      <RtaBar b={b} thin={thin} onFix={() => scroller.current?.scrollTo({ top: 0, behavior: 'smooth' })} />
       <Outlet />
     </div>
   );

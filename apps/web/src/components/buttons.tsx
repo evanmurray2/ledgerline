@@ -41,7 +41,28 @@ export function Button({
   );
 }
 
-export function PrimaryButton({ className, danger, ...p }: BtnProps & { danger?: boolean }) {
+export function PrimaryButton({
+  className,
+  danger,
+  why,
+  ...p
+}: BtnProps & {
+  danger?: boolean;
+  /** Shown above the button while `disabled` is set, to say what to do first ("Change the amount to save"). Pass
+   * '' when no reason applies (busy, offline): the button keeps its place either way. */
+  why?: string;
+}) {
+  if (why !== undefined)
+    return (
+      <div className="flex w-full flex-col gap-1.5">
+        {p.disabled && why && (
+          <p className="m-0 text-center text-[13px] text-muted" data-testid="disabled-why">
+            {why}
+          </p>
+        )}
+        <PrimaryButton className={className} danger={danger} {...p} />
+      </div>
+    );
   return (
     <Button
       className={cx(

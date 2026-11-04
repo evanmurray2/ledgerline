@@ -115,7 +115,19 @@ export function SplitScreen() {
         />
       }
       footer={
-        <PrimaryButton mutates track="split.save" disabled={!ok} onClick={() => void save()}>
+        <PrimaryButton
+          mutates
+          track="split.save"
+          disabled={!ok}
+          why={
+            unchosen
+              ? 'Choose a category for each line'
+              : neg
+                ? 'The lines add up to more than the total'
+                : ''
+          }
+          onClick={() => void save()}
+        >
           {ok ? 'Save split' : neg ? 'Lines are over the total' : 'Choose a category for every line'}
         </PrimaryButton>
       }

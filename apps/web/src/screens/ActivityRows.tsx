@@ -40,11 +40,26 @@ export function TxnRow({
   const desktop = useIsDesktop();
   // On a phone a row with a button stacks: the text gets the full width, and the badge and button share a line.
   const stacked = !!action && !desktop;
-  const badge = r.badge && (
-    <span className={cx('self-start rounded-md px-2 py-0.5 text-[12px] font-bold', badgeClass(r.badgeKind))}>
-      {r.badge}
+  // Tags: the status first (filled), then the category (outlined), so neither crowds the grey line.
+  const category = r.categoryLabel && r.categoryLabel !== r.badge ? r.categoryLabel : null;
+  const badge = (r.badge || category) && (
+    <span className="flex min-w-0 flex-wrap gap-1.5">
+      {r.badge && (
+        <span className={cx('rounded-md px-2 py-0.5 text-[12px] font-bold', badgeClass(r.badgeKind))}>
+          {r.badge}
+        </span>
+      )}
+      {category && (
+        <span className="rounded-md border border-line px-2 py-[1px] text-[12px] font-semibold text-ink-2">
+          {category}
+        </span>
+      )}
     </span>
   );
+  const meta = rowMeta(r, style);
+  // The grey line under the amount only when it adds a number ("bank $31.40"); words such as "held" or
+  // "card hold" repeat the tag.
+  const sub = r.sub && /\d/.test(r.sub) ? r.sub : null;
   return (
     <div
       className={cx(
@@ -64,9 +79,7 @@ export function TxnRow({
           <span className={cx('text-[15px] font-semibold', r.wontClear && 'text-faint line-through')}>
             {r.payee}
           </span>
-          <span className={cx('text-muted', desktop ? 'text-[13px]' : 'text-[12px]')}>
-            {rowMeta(r, style)}
-          </span>
+          {meta && <span className={cx('text-muted', desktop ? 'text-[13px]' : 'text-[12px]')}>{meta}</span>}
           {!stacked && badge}
         </span>
         <span className="flex shrink-0 flex-col items-end gap-0.5">
@@ -75,7 +88,7 @@ export function TxnRow({
               ? formatCents(Math.abs(r.amount))
               : formatCents(r.amount, { plus: true })}
           </span>
-          {r.sub && style !== 'register' && <span className="text-[12px] text-muted">{r.sub}</span>}
+          {sub && <span className="text-[12px] text-muted">{sub}</span>}
         </span>
       </Link>
       {stacked ? (

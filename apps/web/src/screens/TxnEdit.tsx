@@ -68,7 +68,6 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const [linked, setLinked] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // Owed to you, budget month and Won't clear are rarely changed: folded into one row unless one is set.
-  const [more, setMore] = useState(t.owed.length > 0 || t.wontClear || t.budgetMonth !== t.date.slice(0, 7));
 
   useEffect(() => {
     usage.startTask('categorize');
@@ -304,27 +303,8 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           </span>
         </Link>
       )}
-      {outflow && !isIncome && !more && (
-        <button
-          type="button"
-          data-track="txn.more"
-          aria-expanded={false}
-          onClick={() => setMore(true)}
-          className="flex min-h-14 shrink-0 items-center justify-between gap-3 rounded-[14px] border border-line px-3 py-2 text-left"
-        >
-          <span className="flex flex-col gap-px">
-            <span className="text-[15px] font-semibold">More</span>
-            <span className="text-[12px] text-muted">
-              Owed to you, budget month{t.status === 'pending' ? ', won’t clear' : ''}
-            </span>
-          </span>
-          <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-[14px] text-muted">
-            Not owed · {monthShort(month)}
-            <Icon name="chevD" size={18} />
-          </span>
-        </button>
-      )}
-      {outflow && !isIncome && more && (
+      {/* Owed to you and the budget month change the totals, so they always show (no More to open). */}
+      {outflow && !isIncome && (
         <div className="shrink-0 overflow-hidden rounded-[14px] border border-line">
           <div className="flex flex-col gap-2 p-3">
             <span className="flex flex-col gap-px text-[15px] font-semibold">
