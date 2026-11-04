@@ -6,7 +6,7 @@ import { useId, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
-import { qk, useConnections, usePayees, useRules, useSession } from '../api/hooks';
+import { qk, useConnections, usePayees, useSession } from '../api/hooks';
 import {
   BackHeader,
   PageFrame,
@@ -30,20 +30,17 @@ import { Page, RowLink } from './settings/common';
 
 const SECTIONS: { id: string; name: string; to: string }[] = [
   { id: 'appearance', name: 'Appearance and preferences', to: '/settings/appearance' },
-  { id: 'rules', name: 'Rules', to: '/settings/rules' },
   { id: 'payees', name: 'Payees', to: '/settings/payees' },
   { id: 'connections', name: 'Bank connections', to: '/settings/connections' },
   { id: 'data', name: 'Import and export', to: '/settings/data' },
 ];
 
 function useSectionMeta() {
-  const rules = useRules().data;
   const conns = useConnections().data;
   const payees = usePayees().data;
   const needRepair = conns?.items.filter((i) => i.status === 'login_required' || i.status === 'error') ?? [];
   const text: Record<string, string> = {
     appearance: 'Light, Dark or Match device',
-    rules: rules ? `${rules.rules.length} rules` : '',
     payees: payees ? `Rename and merge · ${payees.payees.length} payees` : 'Rename and merge',
     connections: conns
       ? `${conns.used} of ${conns.limit} links used${needRepair[0] ? ` · ${needRepair[0].institution} needs repair` : ''}`
@@ -193,7 +190,6 @@ function SettingsHome() {
       <ScreenBody>
         <SectionTitle>Budget</SectionTitle>
         <Card>
-          <RowLink to="/settings/rules" name="Rules" meta={meta.text.rules ?? ''} track="settings.rules" />
           <RowLink
             to="/settings/payees"
             name="Payees"
@@ -278,7 +274,6 @@ export function AppearanceSection() {
 }
 
 export { CategoriesScreen, CategoryEditSheet } from './settings/Categories';
-export { RulesScreen, RuleEditScreen } from './settings/Rules';
 export { PayeesScreen, RenamePayeeSheet } from './settings/Payees';
 export { ConnectionsScreen, LinkBankFlow, LinkMeter } from './settings/Connections';
 export { DataScreen } from './settings/Data';

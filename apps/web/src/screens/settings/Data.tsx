@@ -71,13 +71,7 @@ export function DataScreen() {
       exportUrls.csv,
       'ledgerline-transactions.csv',
     ],
-    [
-      'Everything (JSON)',
-      'Full export, including rules and payee merges',
-      exportUrls.json,
-      'ledgerline-export.json',
-    ],
-    ['Rules (JSON)', 'Your rules, in order', exportUrls.rules, 'ledgerline-rules.json'],
+    ['Everything (JSON)', 'Full export, including payee merges', exportUrls.json, 'ledgerline-export.json'],
     [
       'Usage and notes (JSON)',
       'How you use the app, for reviewing what to change',

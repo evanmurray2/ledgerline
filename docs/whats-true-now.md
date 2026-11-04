@@ -16,9 +16,11 @@ One line per entry; add yours at the end of its list. This file merges with `mer
 - **Database layer:** the design said Drizzle over D1. Now the app's own small interface over SQLite (`packages/db/src/sql.ts`). Nov 3 cleanup.
 - **Tabs and their header:** the design said Budget, Activity, Accounts, Reports, each with its own title and Budget with its own month. Now Budget, Activity, Reports, Accounts; one `‹ November 2026 ›` bar in the same place on Budget, Activity and Reports with one month for the three, Activity by month (`docs/month-header.md`). D-58.
 - **Progress tracking:** `docs/build-plan.md` lists open work only; work up to Nov 4, 2026 is in `docs/build-history.md`. D-59.
+- **Categorization:** the design said an ordered rule list, then the payee's remembered category. Now no rules and no remembered category: Needs category suggests the category you've used most for the payee and you OK it (`docs/payees.md`). D-60.
 
 ## Sync spec (`docs/sync-spec.md`)
 
 - **Storage and jobs:** SQLite in Durable Objects instead of D1, and alarm jobs in each budget's store instead of Workflows (D-37, D-38; `apps/worker/src/store/jobs.ts`). A failed step backs off and is tried up to 6 times.
 - **Recalculation:** the phone works out budget lines, month snapshots and Ready to Assign from its own copy, with the same `computeBudget()`; the server keeps nothing derived and has no recompute (D-45, D-46). The guarantee in point 3 holds on the phone (`apps/worker/test/engine.test.ts`).
 - **Limits:** D1's limits no longer apply; Durable Object rows read and written, requests and Worker requests do, and SQLite's CPU counts toward the 10 ms (D-40; `docs/measurements.md`).
+- **Rules:** processing writes no rule results; it finds the payee, transfers and Waiting to match, and sets no category. D-60.

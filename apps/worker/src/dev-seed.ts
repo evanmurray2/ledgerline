@@ -333,30 +333,6 @@ dev.post('/seed-november', async (c) => {
       ),
     );
   }
-  // Rules the prototype shows: rent (2/3 owed, counts in the previous month in the first 5 days) and Trader Joe's.
-  w.push(
-    s.q(
-      `INSERT INTO rule (id, budget_id, sort, name, conditions, actions, created_at, updated_at) VALUES ('r_rent', ?1, 1, 'Rent', ?2, ?3, ?4, ?4)`,
-      JSON.stringify({
-        all: [
-          { field: 'payee', op: 'is', value: 'Rent' },
-          { field: 'direction', op: 'is', value: 'out' },
-        ],
-      }),
-      JSON.stringify([
-        { type: 'set_category', categoryId: 'rent' },
-        { type: 'previous_month_if_within_days', days: 5 },
-        { type: 'mark_owed', num: 2, den: 3, minAmount: 250000, expectByDay: 15 },
-      ]),
-      now,
-    ),
-    s.q(
-      `INSERT INTO rule (id, budget_id, sort, name, conditions, actions, created_at, updated_at) VALUES ('r_tj', ?1, 2, 'Trader Joe’s', ?2, ?3, ?4, ?4)`,
-      JSON.stringify({ all: [{ field: 'payee', op: 'contains', value: 'Trader Joe' }] }),
-      JSON.stringify([{ type: 'set_category', categoryId: 'groceries' }]),
-      now,
-    ),
-  );
   // Transactions: bank rows for everything the bank has; manual rows for the check and the upcoming bills.
   const PAYEE_IDS = new Map<string, string>();
   for (const t of F.txns) {

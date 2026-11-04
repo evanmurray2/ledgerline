@@ -26,7 +26,6 @@ export const qk = {
   register: (id: string, show: RegisterShow) => ['register', id, show] as const,
   reports: (month: string) => ['reports', month] as const,
   categories: ['settings', 'categories'] as const,
-  rules: ['settings', 'rules'] as const,
   payees: ['settings', 'payees'] as const,
   connections: ['settings', 'connections'] as const,
 };
@@ -134,9 +133,6 @@ export function useReports(month: string | undefined) {
 }
 export function useCategoriesSettings() {
   return useQuery({ queryKey: qk.categories, queryFn: api.categories });
-}
-export function useRules() {
-  return useQuery({ queryKey: qk.rules, queryFn: api.rules });
 }
 export function usePayees() {
   return useQuery({ queryKey: qk.payees, queryFn: api.payees });

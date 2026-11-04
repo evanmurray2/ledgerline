@@ -45,7 +45,6 @@ const SCREENS = (m: string) => [
   `/api/reports?month=${m}`,
   '/api/owed',
   '/api/settings/categories',
-  '/api/settings/rules',
   '/api/settings/payees',
 ];
 

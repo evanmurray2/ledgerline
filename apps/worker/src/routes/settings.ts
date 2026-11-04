@@ -7,14 +7,12 @@ import { ACK, HttpError, parse, scoped } from './api.js';
 import { budgetMeta, type AccountRowDb } from '../ledger/ledger.js';
 
 import { categoriesRoutes } from './settings/categories.js';
-import { rulesRoutes } from './settings/rules.js';
 import { payeesRoutes } from './settings/payees.js';
 import { connectionsRoutes } from './settings/connections.js';
 
 /** Settings: each section has its own routes in settings/; first run and preferences are here. */
 export const settingsRoutes = new Hono<AppEnv>();
 settingsRoutes.route('/', categoriesRoutes);
-settingsRoutes.route('/', rulesRoutes);
 settingsRoutes.route('/', payeesRoutes);
 settingsRoutes.route('/', connectionsRoutes);
 
