@@ -3,7 +3,7 @@ import { type Month, addMonths, cents, elapsedShare, formatCents, targetFor } fr
 import type { Scoped } from '../db/scoped.js';
 import { categoryRows } from './budget.js';
 import { cards as loadCards, monthLong, structure, type Fresh } from './common.js';
-import { listRow, type ListSource } from './rows.js';
+import { NOT_HISTORY, listRow, type ListSource } from './rows.js';
 import { TX_COLUMNS } from '../ledger/ledger.js';
 
 const fmt = (c: number) => formatCents(c);
@@ -38,13 +38,13 @@ export async function categorySheet(
     ),
     s.q(
       `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND (category_id = ?2 OR key IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1 AND category_id = ?2))
-         AND coalesce(budget_month, substr(date, 1, 7)) = ?3 ORDER BY date DESC, seq DESC LIMIT 3`,
+         AND coalesce(budget_month, substr(date, 1, 7)) = ?3 AND ${NOT_HISTORY} ORDER BY date DESC, seq DESC LIMIT 3`,
       id,
       month,
     ),
     s.q(
       `SELECT count(*) AS n FROM v_transaction WHERE budget_id = ?1 AND (category_id = ?2 OR key IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1 AND category_id = ?2))
-         AND coalesce(budget_month, substr(date, 1, 7)) = ?3`,
+         AND coalesce(budget_month, substr(date, 1, 7)) = ?3 AND ${NOT_HISTORY}`,
       id,
       month,
     ),

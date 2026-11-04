@@ -661,9 +661,14 @@ test('Desktop: Budget header pills for Edit categories and Set targets, like Syn
     await expect(pill).toHaveClass(/rounded-full/);
   }
 });
-test('A row from before the budget opens read-only from the register', async ({ page }) => {
+test('A row from before the budget is never listed, and its sheet is read-only', async ({ page }) => {
   await page.goto('/accounts/checking');
-  await page.getByText('Old Bakery').first().click();
+  await expect(page.getByText('Everyday Checking').first()).toBeVisible();
+  await expect(page.getByText('Old Bakery')).toHaveCount(0);
+  await page.goto('/activity?q=old%20bakery');
+  await expect(page.getByText('Old Bakery')).toHaveCount(0);
+  // A saved link still opens it, read-only.
+  await page.goto(`/accounts/checking/txn/${encodeURIComponent('p:csv_checking_2026-09-28_0')}`);
   const sheet = page.getByRole('dialog');
   await expect(sheet.getByText('Not counted')).toBeVisible();
   await expect(sheet.getByText('Before your budget')).toBeVisible();

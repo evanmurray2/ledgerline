@@ -10,6 +10,9 @@ export function isHistory(t: Pick<TxRow, 'status' | 'date' | 'budget_from' | 'pe
   return t.status === 'posted' && !!t.budget_from && t.date < t.budget_from && !t.pending_at_link;
 }
 
+/** isHistory as SQL, negated: rows the app lists. "Before your budget" rows are never listed (D-61, D-62). */
+export const NOT_HISTORY = `NOT (status = 'posted' AND budget_from IS NOT NULL AND date < budget_from AND coalesce(pending_at_link, 0) = 0)`;
+
 export function categoryLabel(
   t: TxRow,
   categoryNames: ReadonlyMap<string, string>,

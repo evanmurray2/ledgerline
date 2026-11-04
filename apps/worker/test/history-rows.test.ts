@@ -1,8 +1,8 @@
-// Rows before an account's budget start ("Before your budget", D-61) are read-only and stay out of Activity's lists
-// and Settings → Payees; a search and the account's register still show them.
+// Rows before an account's budget start ("Before your budget", D-61) are read-only and are never listed: not in
+// Activity (searches too), the account's register, a category sheet or Settings → Payees (D-62).
 import { app } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { ActivityView, PayeesView, TxnSheet } from '@ledgerline/contracts';
+import type { ActivityView, CategorySheet, PayeesView, RegisterView, TxnSheet } from '@ledgerline/contracts';
 import { ownerDb } from './store-db.js';
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
@@ -68,15 +68,39 @@ describe('Before your budget', () => {
     expect((await get<TxnSheet>(sheetPath)).categoryId).toBeNull();
   });
 
-  it('is left out of Activity’s month and plain lists, but a search finds it', async () => {
+  it('is left out of Activity’s month and plain lists and its searches', async () => {
     const oct = await get<ActivityView>('/api/activity?month=2026-10');
     expect(oct.posted.map((r) => r.key)).not.toContain(KEY);
     expect(oct.posted.length).toBeGreaterThan(0);
     const plain = await get<ActivityView>('/api/activity');
     expect(plain.posted.map((r) => r.key)).not.toContain(KEY);
     const found = await get<ActivityView>('/api/activity?q=old%20bakery');
-    const row = found.posted.find((r) => r.key === KEY);
-    expect(row?.badge).toBe('Before your budget');
+    expect(found.posted.map((r) => r.key)).not.toContain(KEY);
+  });
+
+  it('is left out of the account’s register', async () => {
+    for (const show of ['all', 'needs']) {
+      const v = await get<RegisterView>(`/api/accounts/marcus/register?show=${show}`);
+      const keys = v.days.flatMap((d) => d.rows.map((r) => r.key));
+      expect(keys, show).not.toContain(KEY);
+      expect(v.days.flatMap((d) => d.rows.map((r) => r.badge))).not.toContain('Before your budget');
+    }
+    expect((await get<RegisterView>('/api/accounts/marcus/register')).days.length).toBeGreaterThan(0);
+  });
+
+  it('is left out of a category sheet’s recent rows and count, even with a category', async () => {
+    const cats = await get<ActivityView>('/api/activity?month=2026-11');
+    const categoryId = cats.categoryPicker[0]!.categories[0]!.id;
+    const db = ownerDb();
+    await db
+      .prepare(`UPDATE txn_overlay SET category_id = ?2 WHERE txn_key = ?1`)
+      .bind(KEY, categoryId)
+      .run();
+    const v = await get<CategorySheet>(`/api/categories/${categoryId}/sheet?month=2026-10`);
+    expect(v.recent.map((r) => r.key)).not.toContain(KEY);
+    await db.prepare(`UPDATE txn_overlay SET category_id = NULL WHERE txn_key = ?1`).bind(KEY).run();
+    const without = await get<CategorySheet>(`/api/categories/${categoryId}/sheet?month=2026-10`);
+    expect(v.recentTotal).toBe(without.recentTotal);
   });
 
   it('a payee seen only before the budget is left out of Settings → Payees', async () => {
