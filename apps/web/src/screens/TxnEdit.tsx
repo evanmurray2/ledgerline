@@ -61,7 +61,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const sign = (t.bankAmount ?? t.amount) < 0 ? -1 : 1;
   const [est, setEst] = useState(t.estimatedAmount !== null ? centsToInput(Math.abs(t.estimatedAmount)) : '');
   const [amt, setAmt] = useState(centsToInput(Math.abs(t.amount)));
-  const [owed, setOwed] = useState<OwedMode>(t.owed.length ? 'half' : 'none');
+  const [owed, setOwed] = useState<OwedMode>(t.owed[0]?.share ?? 'none');
   const [owedAmt, setOwedAmt] = useState(t.owed[0] ? centsToInput(t.owed[0].amount) : '');
   const [expectBy, setExpectBy] = useState(t.owed[0]?.expectBy ?? '');
   const [month, setMonth] = useState(t.budgetMonth);
@@ -122,7 +122,10 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
     const hadOwed = t.owed.length > 0;
     if (
       (outflow && (owed !== 'none') !== hadOwed) ||
-      (owed !== 'none' && owed !== (hadOwed ? 'half' : 'none'))
+      (owed !== 'none' &&
+        (owed !== (t.owed[0]?.share ?? 'none') ||
+          (owed === 'custom' && owedCents !== t.owed[0]?.amount) ||
+          expectBy !== (t.owed[0]?.expectBy ?? '')))
     ) {
       body.markOwed =
         owed === 'none'

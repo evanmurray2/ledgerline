@@ -41,7 +41,7 @@ transactionRoutes.get('/transactions/:key', async (c) => {
       key,
     ),
     s.q(
-      `SELECT id, amount, expect_by, closed_at, canceled_at FROM expected_reimbursement WHERE budget_id = ?1 AND txn_key = ?2`,
+      `SELECT id, amount, fraction_num, fraction_den, expect_by, closed_at, canceled_at FROM expected_reimbursement WHERE budget_id = ?1 AND txn_key = ?2`,
       key,
     ),
     s.q(
@@ -68,6 +68,8 @@ transactionRoutes.get('/transactions/:key', async (c) => {
   const owedRows = ow!.results as {
     id: string;
     amount: number;
+    fraction_num: number | null;
+    fraction_den: number | null;
     expect_by: string | null;
     closed_at: number | null;
     canceled_at: number | null;
@@ -157,6 +159,7 @@ transactionRoutes.get('/transactions/:key', async (c) => {
     budgetMonthOverridden: t.budget_month !== null,
     owed: owedView.map((o) => ({
       id: o.id,
+      share: owedShare(owedRows.find((r) => r.id === o.id)),
       amount: o.amount,
       matched: o.matched,
       expectBy: o.expectBy,
@@ -503,3 +506,13 @@ transactionRoutes.post('/transactions/:key/review', async (c) => {
   ];
   return c.json(await commit(c, w));
 });
+
+/** Which share the sheet shows as picked: a fraction of the amount (half, all) or a fixed amount. */
+function owedShare(
+  r: { fraction_num: number | null; fraction_den: number | null } | undefined,
+): 'half' | 'all' | 'custom' {
+  if (!r || r.fraction_num === null || !r.fraction_den) return 'custom';
+  if (r.fraction_num * 2 === r.fraction_den) return 'half';
+  if (r.fraction_num === r.fraction_den) return 'all';
+  return 'custom';
+}
