@@ -1,6 +1,6 @@
 # Payees and categories: suggest, then OK
 
-Status: proposal, v2.1, Nov 4, 2026. Nothing is built yet. This replaces v1–v1.2 of this doc (a duplicate-review
+Status: agreed, v2.2, Nov 4, 2026. Being built (section 8). This replaces v1–v1.2 of this doc (a duplicate-review
 page with rule rewrites), which the owner turned down in favour of something simpler; section 12 says what was
 dropped and why. v2 got an adversarial review (2 blockers, 5 major, 6 minor); v2.1 includes its fixes, listed in
 section 11.
@@ -19,9 +19,8 @@ The owner's choices (Nov 3–4, 2026):
 **Does this change how money is counted?** Not if the owner has no rules today. Suggestions only fill in what you
 OK, and no Money rule changes (`docs/sync-spec.md`). But rules can do more than set a category: a rule can split
 a transaction, mark part of it as owed to you, mark it as a transfer, or count it in the previous month (the
-design's rent rule does the last two). Removing rules stops all of that for new transactions. So before PR 1 the
-owner checks Settings → Rules (section 9, question 1); if any rule exists, it is listed in the PR and the owner
-decides.
+design's rent rule does the last two). Removing rules stops all of that for new transactions. The owner checked:
+Settings → Rules shows 0 rules (section 9), so nothing changes.
 
 ## 1. How it works today
 
@@ -326,11 +325,10 @@ payees, the Payees view leaving out history-only payees, `toRta` refused on mone
 e2e (mock) for OK, OK all with Undo, Join, and joining by rename at iPhone size. Rules tests and e2e go with the
 feature.
 
-## 9. Questions for the owner
+## 9. The owner's answers (Nov 4, 2026)
 
-1. **Do you have any rules?** Open Settings → Rules. If it says 0 rules, removing them changes nothing. If there
-   are some, send a screenshot and I'll say what each one does before removing it.
-2. **OK all:** keep it? It confirms every row with a strong suggestion in one tap, with Undo. Proposal: keep.
+1. **Rules:** Settings → Rules shows 0 rules, so removing them changes nothing about any money.
+2. **OK all:** keep it.
 
 ## 10. Not in this change
 
