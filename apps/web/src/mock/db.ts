@@ -78,7 +78,8 @@ interface Txn {
   kind: TxnSheet['kind'];
   section: 'match' | 'xfer' | 'needs' | 'check' | 'pending' | 'upcoming' | 'posted' | 'register';
   checkAction?: 'dismiss' | 'review';
-  history?: { title: string; categories: string[]; consistent: boolean } | null;
+  /** Your past categories for this payee in this direction, as [category id, times used], most used first. */
+  history?: [string, number][] | null;
   estimate?: number | null;
   bankAmount?: number | null;
   memo?: string | null;
@@ -359,12 +360,18 @@ function initialTxns(): Txn[] {
     t('a1', 'Amazon', 'sapphire', '2026-11-13', -3810, 'needs', {
       card: 'sapphire',
       rawName: 'AMZN MKTP US*2K4',
-      history: { title: 'You’ve used for Amazon', categories: ['shopping', 'household'], consistent: false },
+      history: [
+        ['shopping', 3],
+        ['household', 2],
+      ],
     }),
     t('a2', 'Amazon', 'freedom', '2026-11-11', -2320, 'needs', {
       card: 'freedom',
       rawName: 'AMAZON.COM*9X1',
-      history: { title: 'You’ve used for Amazon', categories: ['shopping', 'household'], consistent: false },
+      history: [
+        ['shopping', 3],
+        ['household', 2],
+      ],
     }),
     t('cvs', 'CVS Pharmacy', 'freedom', '2026-11-11', -1843, 'needs', {
       card: 'freedom',
@@ -374,7 +381,7 @@ function initialTxns(): Txn[] {
     t('bb', 'Blue Bottle Coffee', 'sapphire', '2026-11-14', -675, 'needs', {
       card: 'sapphire',
       rawName: 'SQ *BLUE BOTTLE COFFEE',
-      history: { title: 'Every past Blue Bottle Coffee', categories: ['dining'], consistent: true },
+      history: [['dining', 4]],
     }),
     t('uber', 'Uber Eats', 'sapphire', '2026-11-13', -3600, 'pending', {
       status: 'pending',
@@ -1102,6 +1109,19 @@ export class MockDb {
     return ACCOUNTS[id]?.short ?? id;
   }
 
+  /** As the server's suggestion (docs/payees.md 2.1): the most used, strong when used twice and for most rows. */
+  suggestion(h: [string, number][]) {
+    const top = h[0];
+    if (!top) return null;
+    const total = h.reduce((a, [, n]) => a + n, 0);
+    return {
+      categoryId: top[0],
+      toRta: false,
+      name: this.catName(top[0]) ?? top[0],
+      strong: top[1] >= 2 && top[1] * 2 > total,
+    };
+  }
+
   catName(id: string | null): string | null {
     if (!id) return null;
     if (id.startsWith('pay-'))
@@ -1175,13 +1195,13 @@ export class MockDb {
       needsCategory: showAttn
         ? needs.filter(match).map((x) => ({
             ...this.row(x),
-            history: x.history
+            history: x.history?.length
               ? {
-                  title: x.history.title,
-                  categories: x.history.categories.map((c) => this.catName(c) ?? c),
-                  consistent: x.history.consistent,
+                  title: `You’ve used for ${x.payee}`,
+                  categories: x.history.map(([id, count]) => ({ id, name: this.catName(id) ?? id, count })),
                 }
               : null,
+            suggestion: this.suggestion(x.history ?? []),
           }))
         : [],
       checkThese: showAttn

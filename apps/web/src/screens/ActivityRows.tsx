@@ -6,6 +6,8 @@ import { formatCents } from '../lib/money';
 import { rowMeta } from '../lib/common';
 
 export type NeedsRow = ActivityView['needsCategory'][number];
+/** A row categorized while on Activity: it stays in place with its new category. */
+export type Chosen = { row: NeedsRow; categoryId: string | null; toRta?: boolean; name: string };
 
 export function sheetPath(base: string, r: Pick<TxnListRow, 'key' | 'sheet'>): string {
   const seg =

@@ -97,7 +97,7 @@ test('Activity: the filter chips row has no scroll bar', async ({ page }) => {
   expect(bar).toBe('none');
 });
 
-test('Activity: categorize from the picker, undo, and accept the Always offer', async ({ page }) => {
+test('Activity: categorize from the picker, undo, and OK a suggestion', async ({ page }) => {
   await page.goto('/activity');
   await expect(page.getByText(/Needs category/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
@@ -115,17 +115,26 @@ test('Activity: categorize from the picker, undo, and accept the Always offer', 
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(page.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
 
-  // Every past Blue Bottle Coffee was Dining out, so the toast offers a rule.
-  await page.getByRole('button', { name: /Choose category for Blue Bottle Coffee/ }).click();
-  await page
-    .getByRole('dialog', { name: 'Choose a category' })
-    .getByRole('button', { name: 'Dining out' })
-    .first()
-    .click();
+  // Blue Bottle Coffee has always been Dining out, so it comes suggested: OK takes it, with no rule offer.
+  await page.getByRole('button', { name: /^OK Dining out for Blue Bottle Coffee/ }).click();
   const toastBox = page.getByRole('status').filter({ hasText: 'Blue Bottle Coffee → Dining out' });
-  await expect(toastBox.getByText('Put every Blue Bottle Coffee in Dining out from now on?')).toBeVisible();
-  await toastBox.getByRole('button', { name: 'Always' }).click();
-  await expect(toastBox).toContainText('rule made');
+  await expect(toastBox).toBeVisible();
+  await expect(toastBox.getByRole('button', { name: 'Always' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Change category for Blue Bottle Coffee/ })).toHaveText(
+    'Dining out',
+  );
+});
+
+test('Activity: OK all takes every strong suggestion, with one Undo', async ({ page }) => {
+  await page.goto('/activity?filter=attention');
+  await expect(page.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
+  await page.getByRole('button', { name: 'OK 3 suggestions' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '3 transactions categorized' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Needs attention 5' })).toBeVisible();
+  // CVS Pharmacy has no suggestion, so it still waits.
+  await expect(page.getByRole('button', { name: /Choose category for CVS Pharmacy/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
 });
 
 test('Activity: Select several gives many transactions one category', async ({ page }) => {

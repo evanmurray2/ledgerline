@@ -12,4 +12,5 @@ export * from './status.js';
 export * from './rules.js';
 export * from './matcher.js';
 export * from './payee.js';
+export * from './suggest.js';
 export * from './transfers.js';
