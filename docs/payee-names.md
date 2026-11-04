@@ -152,7 +152,7 @@ job, run once after the migration, in three parts. Each part works in chunks und
 2. **Tell which names the owner chose.** A payee is `user`-named when its name is not what the old rules would have
    made from any of its rows (`merchant_name`, or `titleCase(cleanDescription(raw_name))`). An audit row isn't
    enough: the 17 merges in the backup include Hulu's, made under the app's own name. This test catches renames through the transaction `payeeName` edit, which writes no audit row, too. It
-   needs the old rules once, so the job carries a frozen copy of `cleanDescription` and `titleCase`, deleted in PR 4
+   needs the old rules once, so the job carries a frozen copy of `cleanDescription` and `titleCase`, deleted in PR 3
    (11). All other payees are `sync`-named.
 3. **Re-file every transaction.** All aliases are rebuilt:
    - A `user`-named payee keeps its name and its transactions, and their keys become its aliases first.
@@ -222,13 +222,6 @@ unique best on both sides, else you're asked.
 - A pending row whose merchant Plaid can't name, and whose amount changed (a tip), now stays beside its posted row
   until the bank removes it. The backup has none. Pairing by hand is an open item in `docs/build-plan.md`.
 
-### 9.5 Watch it for a week
-
-The backup has only 5 such pairs, over three days. So PR 3 runs the new rules beside the old ones for one
-week on every sync, and records only counts (pairs both made, pairs only the old rules made, only the new, conflicts)
-as a usage event with fixed ids. No names or amounts leave the store. If "only the old rules" is more than a few a
-week, the owner decides whether to switch (13). Then PR 4 deletes the old rules and the shadow run.
-
 ## 10. Check against the owner's backup (Nov 4, 2026)
 
 The owner's full backup (751 bank rows, 184 Plaid pages, 310 payees), read in a scratch session; nothing from it is in
@@ -269,16 +262,15 @@ none.
 
 ## 11. Plan
 
-Four PRs, deployed in this order:
+Three PRs, deployed in this order:
 
 1. **Store Plaid's names** (3, migration): the two columns, `NormalizedTxn`, the import, and part 1 of the job (8.1).
    No change on screen. The owner OKs the merge, since it adds a migration.
 2. **Name and key payees from Plaid** (4–7) and **re-file existing payees** (8.2, 8.3). `named_by` set by rename,
    join and the `payeeName` edit. `cleanDescription`, `titleCase`, `clusterPayees` and `payeeKey`'s `d:` key go,
    except the job's frozen copy.
-3. **Shadow-run the new pending rules** (9.5), after the owner's OK to section 9.
-4. **Switch the pending matcher** (9.3), after the week's counts: delete the trigram and store-number code, the
-   shadow run and the job's frozen copy. Update the Matching mechanics row in `docs/sync-spec.md` through a decision
+3. **Switch the pending matcher** (9.3), after the owner's OK to section 9, with no test week (13): delete the
+   trigram and store-number code and the job's frozen copy. Update the Matching mechanics row in `docs/sync-spec.md` through a decision
    that changes D-47 and D-50.
 
 Docs: decisions (`docs/decisions/D-?-payee-names-from-plaid.md`, `docs/decisions/D-?-pending-match-without-text.md`)
@@ -303,8 +295,7 @@ Tests:
 ## 12. Limits, and what's not in this change
 
 - **CPU (10 ms).** Payee lookup is at most five map lookups per row; the matcher compares keys instead of building
-  trigrams, which is cheaper. The job is chunked and measured. The shadow run doubles the matcher's work for one week;
-  measure it.
+  trigrams, which is cheaper. The job is chunked and measured.
 - **Phone.** Nothing new synced (3). Moved transactions reach the phone through the normal sync of `txn_overlay`.
 - **Plaid.** No new calls, links or products.
 - **Not in this change:** per-person Venmo payees; splitting a payee that's already joined; merchant logos; Plaid's
@@ -319,4 +310,5 @@ Tests:
    Plaid names equals one of the payee's exactly (4).
 4. **Plaid fields:** add none until checked against real data. Checked (10): only `name` and the merchant
    counterparty are added.
-5. **Pending matcher (section 9): waiting for the owner's OK**, since it changes which rows pair.
+5. **Pending matcher (section 9):** no test week; it switches in one PR. The rules themselves wait for the owner's
+   OK, since they change which rows pair.
