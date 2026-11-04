@@ -27,22 +27,20 @@ export function useCategoryOptions() {
 }
 
 /** The second line of a transaction row: account, date and category in the prototype's order. */
+/**
+ * A row's grey line: where and when, two facts at most. The category and any status show as tags under it
+ * (TxnRow), and a register's rows already sit under their account and date, so theirs is empty.
+ */
 export function rowMeta(r: TxnListRow, style: 'list' | 'posted' | 'needs' | 'register' = 'list'): string {
   const date = dayLabel(r.date);
   const parts =
-    style === 'posted'
-      ? [date, r.accountName, r.categoryLabel]
-      : style === 'needs'
-        ? [r.accountName, date]
-        : style === 'register'
-          ? [
-              r.status === 'pending' ? 'Pending' : null,
-              r.categoryLabel ?? (r.badge === 'Needs category' ? null : null),
-              r.sub,
-            ]
-          : r.status === 'upcoming'
-            ? [date, r.categoryLabel]
-            : [r.accountName, date, r.categoryLabel];
+    style === 'register'
+      ? []
+      : style === 'posted'
+        ? [date, r.accountName]
+        : r.status === 'upcoming' && style === 'list'
+          ? [date]
+          : [r.accountName, date];
   return parts.filter((p): p is string => !!p).join(' · ');
 }
 

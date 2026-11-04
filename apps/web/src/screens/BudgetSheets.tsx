@@ -165,6 +165,15 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
           track={mode === 'assign' ? 'category.save' : 'category.move'}
           onClick={save}
           disabled={mode === 'assign' ? !changed : !moveOk}
+          why={
+            mode === 'assign'
+              ? !changed
+                ? 'Change the amount to save'
+                : ''
+              : !moveOk
+                ? 'Choose a category and an amount to move'
+                : ''
+          }
         >
           {mode === 'assign'
             ? 'Save'

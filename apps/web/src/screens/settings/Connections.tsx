@@ -23,6 +23,7 @@ import { runPlaidLink } from '../../lib/plaid';
 import { usage } from '../../usage/tracker';
 import { useCanWrite } from '../../state/connectivity';
 import { Page } from './common';
+import { Why } from '../../components/Why';
 
 // ------------------------------------------------------------------ connections
 
@@ -41,9 +42,11 @@ export function LinkMeter({ used, limit }: { used: number; limit: number }) {
           <span key={i} className={cx('h-2 flex-1 rounded-sm', i < used ? 'bg-accent' : 'bg-track')} />
         ))}
       </div>
-      <span className="text-xs leading-snug text-muted">
-        The free Plaid plan allows {limit} bank logins ever. Removing one doesn’t give it back, so repair a
-        broken login instead of re-adding it.
+      <span className="flex flex-col gap-1 text-xs leading-snug text-muted">
+        <span>Removing a link doesn’t give it back.</span>
+        <Why>
+          The free Plaid plan allows {limit} bank logins ever. Repair a broken login instead of re-adding it.
+        </Why>
       </span>
     </section>
   );

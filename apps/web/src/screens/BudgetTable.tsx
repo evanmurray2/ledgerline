@@ -91,18 +91,19 @@ function AssignedCell({
       onChange={(e) => edit(e.target.value)}
       onBlur={() => void commit()}
       onKeyDown={onKeyDown}
-      className="tnum h-9 w-full max-w-[140px] rounded-md border border-transparent bg-surface-2 px-2 text-right text-md text-ink-2 outline-none hover:border-line-strong focus:border-accent focus:bg-surface focus:text-ink disabled:bg-transparent disabled:hover:border-transparent"
+      // Reads as a plain number; the box shows only on hover and while editing.
+      className="tnum h-9 w-full max-w-[140px] rounded-md border border-transparent bg-transparent px-2 text-right text-md font-semibold text-ink outline-none hover:border-line-strong hover:bg-surface-2 focus:border-accent focus:bg-surface disabled:hover:border-transparent disabled:hover:bg-transparent"
     />
   );
 }
 
 /**
- * Spent, so spending stands out: nothing spent fades back, money spent reads dark with the share of the
- * month's money it used beneath it (not for overspent rows: their red pill already says it).
+ * Spent, in the same dark ink as every amount, with the share of the month's money it used beneath it (not for
+ * overspent rows: their red pill already says it).
  */
 function SpentCell({ row }: { row: BudgetCategoryRow }) {
   if (row.status === 'invested') return <span className="text-ink">Invested {formatCents(row.spent)}</span>;
-  if (row.spent === 0) return <span className="text-faint">{formatCents(0)}</span>;
+  if (row.spent === 0) return <span className="font-semibold text-ink">{formatCents(0)}</span>;
   const used = row.leftPercent === null || row.status === 'overspent' ? null : 100 - row.leftPercent;
   return (
     <span className="flex flex-col items-end gap-0.5">

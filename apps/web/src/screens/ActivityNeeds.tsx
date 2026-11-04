@@ -3,7 +3,17 @@
 import { Link } from '@tanstack/react-router';
 import type { ActivityView } from '@ledgerline/contracts';
 import { CategoryPickerSheet } from '../components/CategoryPicker';
-import { Checkbox, cx, Money, SecondaryButton, SectionTitle, SoftButton, TextButton } from '../components/ui';
+import {
+  Button,
+  Checkbox,
+  cx,
+  Icon,
+  Money,
+  SecondaryButton,
+  SectionTitle,
+  SoftButton,
+  TextButton,
+} from '../components/ui';
 import { formatCents } from '../lib/money';
 import { rowMeta } from '../lib/common';
 import { useCanWrite } from '../state/connectivity';
@@ -129,30 +139,33 @@ export function NeedsCategory({
                     New · <span className="font-mono">{r.rawName}</span>
                   </span>
                 ) : null}
+                {!selecting && sug && (
+                  // The guess reads as text you can tap to change; the button says what it does. Both sit under
+                  // the row's text, so the payee and the bank's text keep the full width.
+                  <span className="flex items-center justify-between gap-2.5">
+                    <Button
+                      mutates="offline"
+                      track="activity.category.choose"
+                      aria-label={`Choose category for ${r.payee} ${formatCents(r.amount)}`}
+                      onClick={() => openPicker({ keys: [r.key], row: r })}
+                      className="hit inline-flex min-h-9 min-w-0 items-center gap-1.5 text-md font-semibold text-ink-2"
+                    >
+                      <span className="truncate">{sug.name}</span>
+                      <Icon name="pencil" size={16} className="shrink-0 text-muted" />
+                    </Button>
+                    <SoftButton
+                      mutates="offline"
+                      tone="filled"
+                      track="activity.category.ok"
+                      aria-label={`Use ${sug.name} for ${r.payee} ${formatCents(r.amount)}`}
+                      onClick={() => onAccept(r)}
+                      className="max-w-[60%]"
+                    >
+                      <span className="truncate">Use {sug.name}</span>
+                    </SoftButton>
+                  </span>
+                )}
               </span>
-              {!selecting && sug && (
-                <span className="flex shrink-0 items-center gap-1.5">
-                  <SoftButton
-                    mutates="offline"
-                    tone="outline"
-                    track="activity.category.choose"
-                    aria-label={`Choose category for ${r.payee} ${formatCents(r.amount)}`}
-                    onClick={() => openPicker({ keys: [r.key], row: r })}
-                    className="max-w-[140px]"
-                  >
-                    <span className="truncate">{sug.name}</span>
-                  </SoftButton>
-                  <SoftButton
-                    mutates="offline"
-                    tone="filled"
-                    track="activity.category.ok"
-                    aria-label={`OK ${sug.name} for ${r.payee} ${formatCents(r.amount)}`}
-                    onClick={() => onAccept(r)}
-                  >
-                    OK
-                  </SoftButton>
-                </span>
-              )}
               {!selecting && !sug && (
                 <SoftButton
                   mutates="offline"
@@ -175,7 +188,7 @@ export function NeedsCategory({
           track="activity.category.ok_all"
           onClick={() => onAcceptAll(strong)}
         >
-          OK {strong.length} suggestions
+          Use {strong.length} suggestions
         </SecondaryButton>
       )}
     </section>

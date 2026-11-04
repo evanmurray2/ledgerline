@@ -49,7 +49,9 @@ export function Button({
 
 /**
  * The full-width main button. `busy`: the step is running (a save, Face ID): it can't be tapped again, keeps
- * its color and shows a spinner before the label.
+ * its color and shows a spinner before the label. `why`: shown above the button while it is disabled, to say
+ * what to do first ("Change the amount to save"); pass '' when no reason applies (busy, offline), so the button
+ * keeps its place either way.
  */
 export function PrimaryButton({
   className,
@@ -57,8 +59,22 @@ export function PrimaryButton({
   busy,
   disabled,
   children,
+  why,
   ...p
-}: BtnProps & { danger?: boolean; busy?: boolean }) {
+}: BtnProps & { danger?: boolean; busy?: boolean; why?: string }) {
+  if (why !== undefined)
+    return (
+      <div className="flex w-full flex-col gap-1.5">
+        {disabled && !busy && why && (
+          <p className="m-0 text-center text-sm text-muted" data-testid="disabled-why">
+            {why}
+          </p>
+        )}
+        <PrimaryButton className={className} danger={danger} busy={busy} disabled={disabled} {...p}>
+          {children}
+        </PrimaryButton>
+      </div>
+    );
   return (
     <Button
       className={cx(

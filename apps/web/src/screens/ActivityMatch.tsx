@@ -21,6 +21,7 @@ import { dayLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
 import { useClose, useParentPath } from './TxnCommon';
 import { usage } from '../usage/tracker';
+import { Why } from '../components/Why';
 
 function useRta() {
   const session = useSession();
@@ -220,11 +221,14 @@ export function MatchScreen() {
               ))}
             </fieldset>
           )}
-          <p className="m-0 text-xs leading-snug text-muted">
-            Either way the money goes to Ready to Assign. Matching also marks what it pays back as settled, so
-            it leaves your Owed to you list. Pick “It’s income” if it doesn’t pay anything back.
-            {rta !== undefined ? ` Ready to Assign has ${formatCents(rta)} now.` : ''}
-          </p>
+          <div className="flex flex-col gap-1 text-xs leading-snug text-muted">
+            <span>Either way the money goes to Ready to Assign.</span>
+            <Why>
+              Matching also marks what it pays back as settled, so it leaves your Owed to you list. Pick “It’s
+              income” if it doesn’t pay anything back.
+              {rta !== undefined ? ` Ready to Assign has ${formatCents(rta)} now.` : ''}
+            </Why>
+          </div>
           <span className="sr-only">
             <Link to={parent}>Back</Link>
           </span>

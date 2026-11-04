@@ -40,7 +40,7 @@ test('Needs attention fixes move money and Ready to Assign reads $643.65', async
   }
   // Low has its own filter.
   await expect(page.getByRole('button', { name: 'Add $20.00 for Personal care' })).toHaveCount(0);
-  await page.getByRole('button', { name: /^Low \d/ }).click();
+  await page.getByRole('button', { name: /^Running low \d/ }).click();
   await page.getByRole('button', { name: 'Add $20.00 for Personal care' }).click();
   await expect(rta(page)).toHaveText('$643.65');
   await expect(page.getByText('Done just now')).toBeVisible();
@@ -116,7 +116,7 @@ test('Activity: categorize from the picker, undo, and OK a suggestion', async ({
   await expect(page.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
 
   // Blue Bottle Coffee has always been Dining out, so it comes suggested: OK takes it, with no rule offer.
-  await page.getByRole('button', { name: /^OK Dining out for Blue Bottle Coffee/ }).click();
+  await page.getByRole('button', { name: /^Use Dining out for Blue Bottle Coffee/ }).click();
   const toastBox = page.getByRole('status').filter({ hasText: 'Blue Bottle Coffee → Dining out' });
   await expect(toastBox).toBeVisible();
   await expect(toastBox.getByRole('button', { name: 'Always' })).toHaveCount(0);
@@ -129,7 +129,7 @@ test('Activity: OK all takes every strong suggestion, with one Undo', async ({ p
   await page.goto('/activity?filter=attention');
   await expect(page.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
   // The second Amazon is a new payee offered as "Same as your Amazon?", so OK all leaves it for you.
-  await page.getByRole('button', { name: 'OK 2 suggestions' }).click();
+  await page.getByRole('button', { name: 'Use 2 suggestions' }).click();
   await expect(page.getByRole('status').filter({ hasText: '2 transactions categorized' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Needs attention 6' })).toBeVisible();
   // CVS Pharmacy has no suggestion, so it still waits.

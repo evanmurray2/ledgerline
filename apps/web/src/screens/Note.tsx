@@ -52,6 +52,7 @@ export function NoteSheet({ onClose }: { onClose: () => void }) {
             track="note.save"
             busy={busy}
             disabled={!text.trim() || busy}
+            why={!text.trim() ? 'Write a note to save' : ''}
             onClick={() => void save()}
           >
             Save note

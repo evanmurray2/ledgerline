@@ -207,6 +207,7 @@ export function TargetScreen() {
           mutates
           track="target.save"
           disabled={!target}
+          why={!target ? 'Enter an amount to save' : ''}
           onClick={() => target && void submit(target)}
         >
           Save target

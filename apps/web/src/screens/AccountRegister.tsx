@@ -141,9 +141,21 @@ export function RegisterScreen() {
                     >
                       <span className="font-semibold">{a.name.split(' ')[0]} payment category</span>
                       <span className="flex items-center gap-1">
-                        <span className={cx('tnum font-bold', card.short > 0 ? 'text-over-fg' : 'text-ink')}>
-                          {formatCents(card.available)}
-                          {card.short > 0 ? ` · ${formatCents(card.short)} short` : ' available'}
+                        {/* The amount on one line, its status under it, so the two never wrap together. */}
+                        <span className="flex flex-col items-end leading-tight">
+                          <span
+                            className={cx('tnum font-bold', card.short > 0 ? 'text-over-fg' : 'text-ink')}
+                          >
+                            {formatCents(card.available)}
+                          </span>
+                          <span
+                            className={cx(
+                              'tnum text-xs',
+                              card.short > 0 ? 'font-semibold text-over-fg' : 'text-muted',
+                            )}
+                          >
+                            {card.short > 0 ? `${formatCents(card.short)} short` : 'available'}
+                          </span>
                         </span>
                         <Icon name="chevR" size={18} className="shrink-0 text-faint" />
                       </span>

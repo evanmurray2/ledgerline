@@ -10,6 +10,7 @@ import { monthLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
 import { LinkBankFlow } from './Settings';
 import { StatusBanner } from '../components/AppShell';
+import { Why } from '../components/Why';
 
 function Step({
   n,
@@ -153,6 +154,7 @@ export function LinkBanksScreen() {
         <PrimaryButton
           track="setup.link.continue"
           disabled={linked.length === 0}
+          why={linked.length === 0 ? 'Link a bank to continue' : ''}
           onClick={() => void navigate({ to: '/setup/categories' })}
         >
           Continue
@@ -188,14 +190,14 @@ export function LinkBanksScreen() {
       <span className="text-sm text-muted">
         {conns.data?.used ?? 0} of {conns.data?.limit ?? 10} logins used
       </span>
-      <p className="m-0 text-sm leading-snug text-muted">
-        Linking opens Plaid’s secure window; Ledgerline never sees your bank password. We ask for 6 months of
-        history, which can’t be changed later. Older history can be imported from a CSV file in Settings.
-      </p>
-      <p className="m-0 text-sm leading-snug text-muted">
-        Only bank accounts and cards are tracked. Investment and retirement accounts stay outside the app;
-        money you send to them counts as Invested.
-      </p>
+      <div className="flex flex-col gap-1 text-sm leading-snug text-muted">
+        <span>Ledgerline never sees your bank password.</span>
+        <Why>
+          Linking opens Plaid’s secure window. We ask for 6 months of history, which can’t be changed later.
+          Older history can be imported from a CSV file in Settings. Only bank accounts and cards are tracked.
+          Investment and retirement accounts stay outside the app; money you send to them counts as Invested.
+        </Why>
+      </div>
     </Step>
   );
 }
@@ -289,6 +291,7 @@ export function FirstSortScreen() {
             track="setup.finish"
             busy={busy}
             disabled={busy || count === 0}
+            why={count === 0 ? 'Keep or add at least one category' : ''}
             onClick={() => void finish()}
           >
             Go to my budget

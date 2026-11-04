@@ -114,7 +114,11 @@ describe('Activity', () => {
   it('OK takes the suggested category, with Undo and no rule offer', async () => {
     renderAt('/activity');
     fireEvent.click(
-      await screen.findByRole('button', { name: /^OK Dining out for Blue Bottle Coffee/ }, { timeout: 4000 }),
+      await screen.findByRole(
+        'button',
+        { name: /^Use Dining out for Blue Bottle Coffee/ },
+        { timeout: 4000 },
+      ),
     );
     await text(
       'Blue Bottle Coffee → Dining out · Dining out is now overspent by $25.00. Cover it on Budget.',

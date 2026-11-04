@@ -29,6 +29,9 @@ that theme's colors (the theme preview in Settings does).
 
 Tailwind's own sizes are cleared; these are the only ones.
 
+The sizes are at the iPhone's standard Text Size. They follow that setting (Settings → Display & Brightness → Text
+Size) between 0.85 and 1.3 times; from `text-lg` up a size never drops below its value (`styles.css`, `--ll-u`).
+
 | Class       | Size  | Use                                                         |
 | ----------- | ----- | ----------------------------------------------------------- |
 | `text-xs`   | 12 px | Small notes under a row, badges, tab labels, section labels |
