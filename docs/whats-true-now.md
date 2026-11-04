@@ -7,7 +7,7 @@ One line per entry; add yours at the end of its list. This file merges with `mer
 ## Design (`docs/design.md`)
 
 - **Data:** the design said one D1 database. Now SQLite in Durable Objects: a `Directory` (users, sessions, routing) and one `BudgetStore` per budget (`docs/multi-user.md`). D-37, D-38.
-- **Background work:** the design said Workflows and three crons. Now alarm jobs inside each store (sync, 4-hour backstop, daily scan, daily maintenance); one cron at 10:20 UTC wakes the Directory. D-37, D-38.
+- **Background work:** the design said Workflows and three crons. Now alarm jobs inside each store (sync, 4-hour backstop, daily scan at 5:00 AM and maintenance at 2:20 AM in the budget's time zone); one cron at 10:20 UTC wakes the Directory. D-37, D-38.
 - **Who works out the budget:** the design said the Worker, on every request, with cached month summaries. Now the phone: it keeps an encrypted copy (`GET /api/sync`) and works out every screen with the same code; the server stores what was entered and imported, and keeps nothing derived. D-45, D-46, D-53; `docs/phone-budget.md`.
 - **Sign-in:** the design said Cloudflare Access. Now passkeys in the Worker. D-27.
 - **Raw Plaid pages and backups:** the design said R2 and a nightly encrypted export. Now raw pages in SQLite; no off-site backup; Cloudflare's 30-day point-in-time recovery, plus a full backup download from Settings. D-26, D-29, D-37.

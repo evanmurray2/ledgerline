@@ -1,7 +1,8 @@
 // A budget's recurring and on-demand jobs (docs/multi-user.md 6.1, 6.2): the sync backstop every 4 hours, the daily
-// scan at 08:10 UTC and maintenance at 10:20 UTC (today's cron times), plus starting a sync. Each store keeps its own
+// scan at 5:00 AM and maintenance at 2:20 AM in the budget's time zone, plus starting a sync. Each store keeps its own
 // recurring rows, so nothing has to loop over every budget; a recurring row is never deleted, only moved forward.
 import type { Db } from '@ledgerline/db/sql';
+import { nextLocalTime } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { Env } from '../env.js';
 import { dailyScan } from '../daily-scan.js';
@@ -17,6 +18,20 @@ export const DAILY_SCAN_ID = 'recurring:daily_scan';
 export const MAINTENANCE_ID = 'recurring:maintenance';
 const FOUR_HOURS = 4 * 3_600_000;
 const SCAN_BATCH = 40; // dailyScan's LIMIT
+/** The budget table's default, for a store whose budget row can't be read. */
+const DEFAULT_ZONE = 'America/Los_Angeles';
+
+/** Local clock times of the daily jobs. Each run reads the budget's time zone again, so a change takes effect the next day. */
+export const nextScan = (now: number, timeZone: string): number => nextLocalTime(now, timeZone, 5, 0);
+export const nextMaintenance = (now: number, timeZone: string): number => nextLocalTime(now, timeZone, 2, 20);
+
+async function budgetZone(db: Db, budgetId: string): Promise<string> {
+  const b = await db
+    .prepare(`SELECT time_zone FROM budget WHERE id = ?1`)
+    .bind(budgetId)
+    .first<{ time_zone: string }>();
+  return b?.time_zone ?? DEFAULT_ZONE;
+}
 
 /** The next time (UTC) at hour:minute strictly after now. */
 export function nextUtc(now: number, hour: number, minute: number): number {
@@ -37,13 +52,13 @@ export interface Enqueue {
 export const FAILED_JOB_KEEP_MS = 30 * 86_400_000;
 
 /** Recreates any missing recurring row (idempotent). Called when a store's budget is created and by the daily ensureJobs. */
-export async function ensureRecurring(enqueue: Enqueue, now: number): Promise<void> {
+export async function ensureRecurring(enqueue: Enqueue, now: number, timeZone: string): Promise<void> {
   await enqueue('backstop', { id: BACKSTOP_ID, runAt: now + FOUR_HOURS, recurring: true });
-  await enqueue('daily_scan', { id: DAILY_SCAN_ID, runAt: nextUtc(now, 8, 10), recurring: true });
+  await enqueue('daily_scan', { id: DAILY_SCAN_ID, runAt: nextScan(now, timeZone), recurring: true });
   await enqueue('maintenance', {
     id: MAINTENANCE_ID,
     state: { phase: 'start' },
-    runAt: nextUtc(now, 10, 20),
+    runAt: nextMaintenance(now, timeZone),
     recurring: true,
   });
 }
@@ -87,12 +102,14 @@ export function backstopHandler(db: Db, enqueue: Enqueue): Handler {
   };
 }
 
-/** Daily at 08:10 UTC: due Upcoming entries come into the budget, vanished pending rows get an alert. */
+/** Daily at 5:00 AM local: repeating Upcoming entries get their next date, vanished pending rows get an alert. */
 export function dailyScanHandler(env: Env, budgetId: () => Promise<string>): Handler {
   return async (_job, now): Promise<StepResult> => {
-    const r = await dailyScan(env, await budgetId(), now);
+    const b = await budgetId();
+    const r = await dailyScan(env, b, now);
     // A full batch may mean more are due: run again shortly instead of waiting a day.
-    return { state: {}, runAt: r.materialized >= SCAN_BATCH ? now + 1000 : nextUtc(now, 8, 10) };
+    if (r.materialized >= SCAN_BATCH) return { state: {}, runAt: now + 1000 };
+    return { state: {}, runAt: nextScan(now, await budgetZone(env.DB, b)) };
   };
 }
 
@@ -102,7 +119,7 @@ interface MaintState {
 }
 
 /**
- * Daily at 10:20 UTC: the daily maintenance steps (maintenance.ts). The full recompute and the identity check run on
+ * Daily at 2:20 AM local: the daily maintenance steps (maintenance.ts). The full recompute and the identity check run on
  * the phone (D-45, local/engine.ts).
  */
 export function maintenanceHandler(env: Env, budgetId: () => Promise<string>): Handler {
@@ -153,7 +170,7 @@ export function maintenanceHandler(env: Env, budgetId: () => Promise<string>): H
       case 'bump':
         // The daily job's writes change what screens show: a new data version (http/version.ts). Then wait for tomorrow.
         await bumpVersion(db, b);
-        return { state: { phase: 'start' }, runAt: nextUtc(now, 10, 20) };
+        return { state: { phase: 'start' }, runAt: nextMaintenance(now, await budgetZone(db, b)) };
     }
   };
 }

@@ -224,13 +224,19 @@ export class BudgetStore extends DurableObject<Env> {
     return { undo };
   }
 
+  /** The budget's time zone, which sets the daily jobs' local clock times. */
+  private timeZone(): string {
+    const r = this.ctx.storage.sql.exec(`SELECT time_zone FROM budget LIMIT 1`).toArray()[0];
+    return typeof r?.time_zone === 'string' ? r.time_zone : 'America/Los_Angeles';
+  }
+
   /** Daily safety net (6.2): recreate missing recurring jobs and make sure an alarm is set. */
   async ensureJobs(): Promise<{ ok: boolean; jobs: ReturnType<JobRunner['list']> }> {
     this.ready();
     const now = Date.now();
     const budgetId = await this.budgetId().catch(() => null);
     if (!budgetId) return { ok: false, jobs: [] };
-    await ensureRecurring(this.enqueue, now);
+    await ensureRecurring(this.enqueue, now, this.timeZone());
     // Every Plaid Item this budget holds is routed to it in the Directory (6.4); missing routes are re-registered.
     const items = this.ctx.storage.sql
       .exec(
@@ -337,7 +343,7 @@ export class BudgetStore extends DurableObject<Env> {
       now,
     ).rowsWritten;
     // A new budget gets its sync backstop, daily scan and maintenance now, not at the next daily check.
-    if (created > 0) await ensureRecurring(this.enqueue, now);
+    if (created > 0) await ensureRecurring(this.enqueue, now, this.timeZone());
     this.cachedBudgetId = budgetId;
   }
 

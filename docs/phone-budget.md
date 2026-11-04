@@ -146,7 +146,7 @@ Transactions are sent **without the fields copied from other tables** (`payee` n
 **When things count.** Two inputs depend on time, and both come from the server so the phone counts money at exactly the moments the server does:
 
 - **Today and the current month:** the budget's time zone applied to `serverTime` plus the phone's measured offset from it. The phone's own time zone is never used.
-- **Upcoming rows:** the server counts a scheduled row from the day the daily scan picks it up, not from local midnight (`project()` uses the `today` the lines were built with; the scan runs at 08:10 UTC). The server sends `upcomingThrough`, the date its lines were last built with, and the phone passes that to `project()` instead of its own date. If the owner wants upcoming rows to count from local midnight instead, that changes when money counts, and is a separate decision.
+- **Upcoming rows:** the phone counts a scheduled row from local midnight of its date, in the budget's time zone (`derive()` in `local/engine.ts` passes its own `today` to `project()`). The daily scan (5:00 AM in the budget's time zone) only schedules the next date of a repeating row and raises alerts, so its run time doesn't change when money counts. `upcomingThrough` was planned but not built.
 
 **Guarantee 3 in part B:** "Every number on screen is a from-scratch compute of the data the phone holds, and the phone's data equals the server's as of `through` and `epoch`."
 

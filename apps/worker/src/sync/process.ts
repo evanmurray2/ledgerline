@@ -707,6 +707,11 @@ export async function finalizeConnection(env: Env, c: StepContext, runId: string
     );
     if (provider.getLiabilities) {
       const liab = await provider.getLiabilities(conn).catch(() => []);
+      // One snapshot per card per day in the budget's time zone.
+      const zone = await env.DB.prepare(`SELECT time_zone FROM budget WHERE id = ?1`)
+        .bind(c.budgetId)
+        .first<{ time_zone: string }>();
+      const snapshotDay = localDate(now, zone?.time_zone ?? 'America/Los_Angeles');
       for (const l of liab) {
         stmts.push(
           env.DB.prepare(
@@ -720,7 +725,7 @@ export async function finalizeConnection(env: Env, c: StepContext, runId: string
             ulid(now),
             c.budgetId,
             l.providerAccountId,
-            new Date(now).toISOString().slice(0, 10),
+            snapshotDay,
             l.statementBalance,
             l.statementDate,
             l.dueDate,
