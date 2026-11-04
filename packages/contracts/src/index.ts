@@ -272,7 +272,17 @@ export type ActivityView = z.infer<typeof ActivityView>;
 
 export const TxnSheet = z.object({
   key: z.string(),
-  kind: z.enum(['pending', 'posted', 'income', 'refund', 'paidBack', 'transfer', 'manual', 'upcoming']),
+  kind: z.enum([
+    'pending',
+    'posted',
+    'income',
+    'refund',
+    'paidBack',
+    'transfer',
+    'manual',
+    'upcoming',
+    'history',
+  ]),
   payee: z.string(),
   /** The payee this transaction is under; null for a manual entry (it has only a name). */
   payeeId: id.nullable().optional(),

@@ -146,6 +146,8 @@ export class MockServer {
       case 'PATCH transactions/:x': {
         const r = parse(TxnPatch, body);
         const x = db.txn(b!);
+        if (x.kind === 'history')
+          throw new MockHttpError(409, 'history', 'This is before your budget, so it can’t be changed');
         if (r.categoryId !== undefined || r.toRta) db.categorize([x.key], r.categoryId ?? null, r.toRta);
         if (r.memo !== undefined) x.memo = r.memo;
         if (r.wontClear !== undefined) x.wontClear = r.wontClear;
@@ -184,6 +186,8 @@ export class MockServer {
       }
       case 'POST transactions/categorize': {
         const r = parse(CategorizeRequest, body);
+        if (r.keys.some((k) => db.txn(k).kind === 'history'))
+          throw new MockHttpError(409, 'history', 'This is before your budget, so it can’t be changed');
         db.categorize(r.keys, r.categoryId, r.toRta);
         return this.ok();
       }

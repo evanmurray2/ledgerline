@@ -32,6 +32,7 @@ const TAG: Record<TxnSheet['kind'], string> = {
   transfer: 'Transfer',
   manual: 'Added by you',
   upcoming: 'Upcoming',
+  history: 'Before your budget',
 };
 
 export function TxnHeader({ t }: { t: TxnSheet }) {

@@ -1,31 +1,23 @@
-// Activity, transaction sheets and every edit to a transaction's overlay; matching, transfers and Owed to you.
+// Activity; matching, transfers and Owed to you. The transaction sheet and its edits are in transactions.ts.
 import type { Stmt } from '@ledgerline/db/sql';
 import { clock } from '../http/clock.js';
 import { Hono } from 'hono';
 import {
-  CategorizeRequest,
   MatchRequest,
-  NewTxnRequest,
   OwedAction,
-  PendingCheckAction,
   TransferPick,
-  TxnPatch,
   type ActivityView,
   type MatchView,
   type OwedView,
-  type TxnSheet,
 } from '@ledgerline/contracts';
 import {
   type Month,
-  addDays,
   addMonths,
   cents,
   daysBetween,
   formatCents,
-  fractionOf,
   isMonth,
   localDate,
-  monthOfDate,
   owedList,
   owedOut,
   projectedFronts,
@@ -35,26 +27,13 @@ import {
 } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
-import { ACK, HttpError, parse, scoped } from './api.js';
-import { editTime, liveKey } from './sync.js';
+import { HttpError, parse, scoped } from './api.js';
 import { fresh, monthResult, shortDate, structure } from '../views/common.js';
-import { categoryLabel, listRow } from '../views/rows.js';
+import { listRow } from '../views/rows.js';
 import { RECENT_TX, TX_COLUMNS, chunks, txnCol, type TxRow } from '../ledger/ledger.js';
 import type { Scoped } from '../db/scoped.js';
-import { accountNames } from '../views/category.js';
-
+import { OVERLAY_UPSERT, commit, loadTx, names, refuseHistory } from './txn-common.js';
 export const activityRoutes = new Hono<AppEnv>();
-
-async function names(s: Scoped) {
-  const { categories } = await structure(s);
-  return { cats: new Map(categories.map((c) => [c.id, c.name])), accts: await accountNames(s) };
-}
-
-/** Runs the caller's writes as one batch; returns the mutation result. */
-async function commit(c: Parameters<typeof scoped>[0], writes: Stmt[]) {
-  if (writes.length) await scoped(c).batch(writes);
-  return ACK;
-}
 
 // ---------------------------------------------------------------- Activity
 
@@ -132,11 +111,15 @@ type PostedScope = string | 'all' | 'none' | { month: Month; start: Month };
 
 /**
  * The budget month a row counts in, as Budget's Spent counts it (`linesForTxn`): its own month override or its
- * date's month, never before the budget's first month. History (dated before the account's budget start) keeps
- * its date's month: Budget doesn't count it.
+ * date's month, never before the budget's first month. Only for rows the budget counts (IN_BUDGET).
  */
-const ROW_MONTH = `CASE WHEN date >= budget_from OR pending_at_link = 1
-    THEN max(coalesce(budget_month, substr(date, 1, 7)), ?5) ELSE substr(date, 1, 7) END`;
+const ROW_MONTH = `max(coalesce(budget_month, substr(date, 1, 7)), ?5)`;
+
+/**
+ * Posted rows the budget counts: dated from the account's budget start, or pending when it was linked. Activity's
+ * lists leave out the rest ("Before your budget", D-61); a search still finds them, and so does the account's register.
+ */
+const IN_BUDGET = `(date >= budget_from OR pending_at_link = 1)`;
 
 /**
  * One page of posted rows, newest first. With a window start, only rows dated (and so posted) on or after it are
@@ -151,7 +134,7 @@ function postedQuery(s: Scoped, from: PostedScope, cursor: string | null, q: str
     return s.q(
       `SELECT ${TX_COLUMNS} FROM v_txn_bank WHERE budget_id = ?1 AND status = 'posted'
          ${first ? 'AND ?4 IS NOT NULL' : 'AND posted_date >= ?4'}
-         AND posted_date < date(?6, '+4 months') AND ${ROW_MONTH} = ?7
+         AND posted_date < date(?6, '+4 months') AND ${IN_BUDGET} AND ${ROW_MONTH} = ?7
          AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
          ${q ? `AND (lower(payee) LIKE ?3 OR printf('%.2f', abs(amount) / 100.0) LIKE ?3 OR ${CATEGORY_MATCH})` : 'AND ?3 IS NULL'}
        ORDER BY date DESC, seq DESC LIMIT 50`,
@@ -167,6 +150,7 @@ function postedQuery(s: Scoped, from: PostedScope, cursor: string | null, q: str
   return s.q(
     `SELECT ${TX_COLUMNS} FROM v_txn_bank WHERE budget_id = ?1 AND ${from === 'none' ? '0 AND ' : ''}status = 'posted'
        ${window ? 'AND posted_date >= ?4 AND date >= ?4' : ''}
+       ${q ? '' : `AND ${IN_BUDGET}`}
        AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
        ${q ? `AND (lower(payee) LIKE ?3 OR printf('%.2f', abs(amount) / 100.0) LIKE ?3 OR ${CATEGORY_MATCH})` : 'AND ?3 IS NULL'}
      ORDER BY date DESC, seq DESC LIMIT 50`,
@@ -380,480 +364,6 @@ activityRoutes.get('/activity', async (c) => {
   return c.json(view);
 });
 
-// ---------------------------------------------------------------- transaction sheet
-
-async function loadTx(s: Scoped, key: string): Promise<TxRow> {
-  const t = await s.first<TxRow>(
-    `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND key = ?2`,
-    key,
-  );
-  if (!t) throw new HttpError(404, 'not_found', 'transaction');
-  return t;
-}
-
-activityRoutes.get('/transactions/:key', async (c) => {
-  const s = scoped(c);
-  const key = c.req.param('key');
-  const t = await loadTx(s, key);
-  const { cats, accts } = await names(s);
-  const [sp, ow, pb, rf, rule] = await s.batch([
-    s.q(
-      `SELECT id, category_id, amount, memo, absorbs_remainder FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2 ORDER BY sort`,
-      key,
-    ),
-    s.q(
-      `SELECT id, amount, expect_by, closed_at, canceled_at FROM expected_reimbursement WHERE budget_id = ?1 AND txn_key = ?2`,
-      key,
-    ),
-    s.q(
-      `SELECT l.from_key, l.to_key, l.amount, coalesce(${txnCol('l.from_key', 'payee')}, '') AS label FROM txn_link l
-       WHERE l.budget_id = ?1 AND l.kind = 'reimbursement_of' AND l.undone_at IS NULL AND (l.from_key = ?2 OR l.to_key IN (SELECT id FROM expected_reimbursement WHERE budget_id = ?1 AND txn_key = ?2))`,
-      key,
-    ),
-    s.q(
-      `SELECT l.to_key, coalesce(${txnCol('l.to_key', 'payee')}, '') AS label, ${txnCol('l.to_key', 'date')} AS date FROM txn_link l
-       WHERE l.budget_id = ?1 AND l.kind = 'refund_of' AND l.undone_at IS NULL AND l.from_key = ?2`,
-      key,
-    ),
-    s.q(`SELECT name FROM rule WHERE budget_id = ?1 AND id = ?2`, t.rule_id ?? ''),
-  ]);
-  const splits = sp!.results as {
-    id: string;
-    category_id: string | null;
-    amount: number;
-    memo: string | null;
-    absorbs_remainder: number;
-  }[];
-  const pbs = pb!.results as { from_key: string; to_key: string; amount: number; label: string }[];
-  const owedRows = ow!.results as {
-    id: string;
-    amount: number;
-    expect_by: string | null;
-    closed_at: number | null;
-    canceled_at: number | null;
-  }[];
-  const today = new Date().toISOString().slice(0, 10);
-  const owedView = owedList(
-    owedRows.map((o) => ({
-      id: o.id,
-      txnKey: key,
-      amount: cents(o.amount),
-      expectBy: o.expect_by,
-      closedAt: o.closed_at ? 'x' : null,
-      canceledAt: o.canceled_at ? 'x' : null,
-    })),
-    pbs
-      .filter((p) => owedRows.some((o) => o.id === p.to_key))
-      .map((p) => ({ inflowKey: p.from_key, itemId: p.to_key, amount: cents(p.amount) })),
-    today,
-  );
-  const refund = (rf!.results[0] as { to_key: string; label: string; date: string } | undefined) ?? null;
-  const kind: TxnSheet['kind'] =
-    t.transfer_state === 'paired' || t.transfer_state === 'unsorted'
-      ? 'transfer'
-      : t.status === 'upcoming'
-        ? 'upcoming'
-        : t.source === 'manual'
-          ? 'manual'
-          : pbs.some((p) => p.from_key === key) || owedView.some((o) => o.status === 'paid_back')
-            ? 'paidBack'
-            : refund || (t.account_kind === 'credit' && t.amount > 0)
-              ? 'refund'
-              : t.amount > 0
-                ? 'income'
-                : t.status === 'pending'
-                  ? 'pending'
-                  : 'posted';
-  const alerts: string[] = [];
-  if (t.alert && !t.reviewed_at)
-    for (const a of JSON.parse(t.alert) as string[])
-      alerts.push(
-        a.startsWith('amount_changed')
-          ? 'Amount changed on clearing'
-          : a === 'cleared_despite_wont_clear'
-            ? 'Cleared despite won’t clear'
-            : a,
-      );
-  const ruleName = (rule!.results[0] as { name: string } | undefined)?.name;
-  const sheet: TxnSheet = {
-    key,
-    kind,
-    payee: t.payee,
-    payeeId: t.payee_id,
-    rawName: t.raw_name,
-    accountId: t.account_id,
-    accountName: accts.get(t.account_id) ?? t.account_name,
-    date: t.date,
-    postedDate: t.posted_date,
-    amount: cents(t.amount),
-    bankAmount: t.bank_amount === null ? null : cents(t.bank_amount),
-    estimatedAmount: t.estimated_amount === null ? null : cents(t.estimated_amount),
-    status: t.status,
-    wontClear: t.wont_clear === 1,
-    categoryId: t.category_id,
-    categoryLabel: categoryLabel(t, cats, splits.length > 0),
-    categorizedBy:
-      t.categorized_by === 'rule'
-        ? `Rule: ${ruleName ?? 'rule'}`
-        : t.categorized_by === 'payee'
-          ? 'Remembered for this payee'
-          : t.categorized_by === 'user'
-            ? 'You'
-            : null,
-    split: splits.length
-      ? splits.map((x) => ({
-          id: x.id,
-          categoryId: x.category_id,
-          amount: cents(x.amount),
-          memo: x.memo,
-          absorbsRemainder: x.absorbs_remainder === 1,
-        }))
-      : null,
-    memo: t.memo,
-    budgetMonth: (t.budget_month ?? monthOfDate(t.date)) as Month,
-    budgetMonthOverridden: t.budget_month !== null,
-    owed: owedView.map((o) => ({
-      id: o.id,
-      amount: o.amount,
-      matched: o.matched,
-      expectBy: o.expectBy,
-      status: o.status,
-    })),
-    paybacks: pbs.map((p) => ({
-      inflowKey: p.from_key,
-      itemId: p.to_key,
-      amount: cents(p.amount),
-      label: p.label,
-    })),
-    refundOf: refund ? { key: refund.to_key, label: `${refund.label} · ${shortDate(refund.date)}` } : null,
-    alerts,
-  };
-  return c.json(sheet);
-});
-
-const OVERLAY_UPSERT = `INSERT INTO txn_overlay (txn_key, budget_id, created_at, updated_at) VALUES (?2, ?1, ?3, ?3) ON CONFLICT (txn_key) DO NOTHING`;
-
-activityRoutes.patch('/transactions/:key', async (c) => {
-  const p = await parse(TxnPatch, c.req.raw);
-  const s = scoped(c);
-  const key = await liveKey(s, c.req.param('key'));
-  const t = await loadTx(s, key);
-  const now = clock(c.env);
-  // Most-recent-edit-wins uses when the edit was made, which for an offline edit is before it arrives.
-  const editAt = editTime(c, now);
-  const w: Stmt[] = [s.q(OVERLAY_UPSERT, key, now)];
-  const set = (col: string, v: unknown) =>
-    w.push(
-      s.q(
-        `UPDATE txn_overlay SET ${col} = ?3, updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
-        key,
-        v,
-        now,
-      ),
-    );
-  const edits: Record<string, number> = {};
-  if (p.categoryId !== undefined || p.toRta !== undefined) {
-    if (p.categoryId) {
-      const ok = await s.first(
-        `SELECT id FROM category WHERE budget_id = ?1 AND id = ?2 AND kind != 'cc_payment'`,
-        p.categoryId,
-      );
-      if (!ok) throw new HttpError(404, 'not_found', 'category');
-    }
-    set('category_id', p.categoryId ?? null);
-    set('to_rta', p.toRta ? 1 : 0);
-    set('categorized_by', 'user');
-    set('transfer_state', null);
-    if (t.wtm_state === 'waiting' && p.toRta) set('wtm_state', 'income');
-    w.push(s.q(`DELETE FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`, key));
-    edits.category_id = editAt;
-  }
-  if (p.split !== undefined) {
-    w.push(s.q(`DELETE FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`, key));
-    if (p.split) {
-      const total = p.split.reduce((a, l) => a + l.amount, 0);
-      if (total !== t.amount)
-        throw new HttpError(422, 'split_total', `Split lines must add up to ${formatCents(t.amount)}`);
-      p.split.forEach((l, i) =>
-        w.push(
-          s.q(
-            `INSERT INTO txn_split (id, budget_id, txn_key, category_id, amount, memo, absorbs_remainder, sort, created_at) VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
-            `${key}:s${i}`,
-            key,
-            l.categoryId,
-            l.amount,
-            l.memo,
-            l.absorbsRemainder ? 1 : 0,
-            i,
-            now,
-          ),
-        ),
-      );
-      set('category_id', null);
-      set('categorized_by', 'user');
-    }
-    edits.split = editAt;
-  }
-  if (p.memo !== undefined) set('memo', p.memo);
-  if (p.estimatedAmount !== undefined) {
-    if (t.status !== 'pending' || t.source !== 'bank')
-      throw new HttpError(422, 'not_pending', 'Only a bank pending amount can be estimated');
-    set('estimated_amount', p.estimatedAmount);
-    edits.estimated_amount = editAt;
-  }
-  if (p.amount !== undefined) {
-    if (t.source !== 'manual')
-      throw new HttpError(422, 'not_manual', 'Only a transaction you added can change its amount');
-    if (p.amount === 0) throw new HttpError(422, 'zero_amount', 'Enter an amount');
-    w.push(
-      s.q(
-        `UPDATE manual_pending SET amount = ?3, updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
-        key,
-        p.amount,
-        now,
-      ),
-    );
-    edits.amount = editAt;
-  }
-  if (p.wontClear !== undefined) {
-    // Only something not posted yet can fail to clear: a posted charge always counts.
-    if (p.wontClear && t.status === 'posted')
-      throw new HttpError(422, 'posted', 'This has posted, so it counts; it can’t be marked won’t clear');
-    set('wont_clear', p.wontClear ? 1 : 0);
-  }
-  if (p.budgetMonth !== undefined) set('budget_month', p.budgetMonth);
-  if (p.payeeName !== undefined) {
-    if (t.payee_id)
-      w.push(
-        s.q(
-          `UPDATE payee SET name = ?3, updated_at = ?4 WHERE budget_id = ?1 AND id = ?2`,
-          t.payee_id,
-          p.payeeName,
-          now,
-        ),
-      );
-    else if (t.source === 'manual')
-      w.push(
-        s.q(
-          `UPDATE manual_pending SET payee_name = ?3, updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
-          key,
-          p.payeeName,
-          now,
-        ),
-      );
-  }
-  if (p.markOwed !== undefined) {
-    if (p.markOwed === null) {
-      w.push(
-        s.q(
-          `UPDATE expected_reimbursement SET canceled_at = ?3, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2 AND canceled_at IS NULL`,
-          key,
-          now,
-        ),
-      );
-    } else {
-      if (t.amount >= 0) throw new HttpError(422, 'not_outflow', 'Only money going out can be owed to you');
-      const x = cents(-t.amount);
-      const m = p.markOwed;
-      const [num, den] =
-        m.mode === 'half'
-          ? [1, 2]
-          : m.mode === 'even'
-            ? [(m.n ?? 2) - 1, m.n ?? 2]
-            : m.mode === 'all'
-              ? [1, 1]
-              : m.mode === 'fraction'
-                ? [m.num ?? 1, m.den ?? 2]
-                : [null, null];
-      const amount = num !== null && den ? fractionOf(x, num, den) : cents(Math.min(m.amount ?? 0, x));
-      if (amount <= 0) throw new HttpError(422, 'invalid', 'Owed amount must be more than zero');
-      w.push(
-        s.q(
-          `INSERT INTO expected_reimbursement (id, budget_id, txn_key, amount, fraction_num, fraction_den, expect_by, created_at, updated_at)
-           VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?8)
-           ON CONFLICT (id) DO UPDATE SET amount = excluded.amount, fraction_num = excluded.fraction_num, fraction_den = excluded.fraction_den,
-             expect_by = excluded.expect_by, canceled_at = NULL, closed_at = NULL, updated_at = excluded.updated_at`,
-          `${key}:owed`,
-          key,
-          amount,
-          num,
-          den,
-          m.expectBy,
-          now,
-        ),
-      );
-    }
-  }
-  if (Object.keys(edits).length) {
-    w.push(
-      s.q(
-        `UPDATE txn_overlay SET field_edits = json_patch(coalesce(field_edits, '{}'), ?3) WHERE budget_id = ?1 AND txn_key = ?2`,
-        key,
-        JSON.stringify(edits),
-      ),
-    );
-  }
-  w.push(s.audit('txn.edit', 'transaction', key, null, p, now));
-  return c.json(await commit(c, w));
-});
-
-activityRoutes.post('/transactions/categorize', async (c) => {
-  const r = await parse(CategorizeRequest, c.req.raw);
-  const s = scoped(c);
-  const now = clock(c.env);
-  if (r.categoryId) {
-    const ok = await s.first(
-      `SELECT id FROM category WHERE budget_id = ?1 AND id = ?2 AND kind != 'cc_payment' AND archived_at IS NULL`,
-      r.categoryId,
-    );
-    if (!ok) throw new HttpError(404, 'not_found', 'category');
-  }
-  if (r.toRta) {
-    // Only money in can go to Ready to Assign.
-    for (const k of chunks(r.keys)) {
-      const ph = k.map((_, i) => `?${i + 2}`).join(',');
-      const out = await s.first(
-        `SELECT 1 FROM bank_txn WHERE budget_id = ?1 AND txn_key IN (${ph}) AND amount < 0 AND removed_at IS NULL
-         UNION ALL SELECT 1 FROM manual_pending WHERE budget_id = ?1 AND txn_key IN (${ph}) AND amount < 0 LIMIT 1`,
-        ...k,
-      );
-      if (out) throw new HttpError(422, 'not_inflow', 'Only money coming in can go to Ready to Assign');
-    }
-  }
-  const w: Stmt[] = [];
-  for (const key of r.keys) {
-    w.push(
-      s.q(OVERLAY_UPSERT, key, now),
-      s.q(
-        `UPDATE txn_overlay SET category_id = ?3, to_rta = ?4, categorized_by = 'user', transfer_state = NULL, updated_at = ?5,
-           wtm_state = CASE WHEN wtm_state = 'waiting' AND ?4 = 1 THEN 'income' ELSE wtm_state END,
-           field_edits = json_patch(coalesce(field_edits, '{}'), json_object('category_id', ?5))
-         WHERE budget_id = ?1 AND txn_key = ?2`,
-        key,
-        r.categoryId,
-        r.toRta ? 1 : 0,
-        now,
-      ),
-      s.q(`DELETE FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`, key),
-    );
-  }
-  w.push(s.audit('txn.categorize', 'transaction', null, null, r, now));
-  return c.json(await commit(c, w));
-});
-
-activityRoutes.post('/transactions', async (c) => {
-  const r = await parse(NewTxnRequest, c.req.raw);
-  const s = scoped(c);
-  const now = clock(c.env);
-  const acct = await s.first(`SELECT id FROM account WHERE budget_id = ?1 AND id = ?2`, r.accountId);
-  if (!acct) throw new HttpError(404, 'not_found', 'account');
-  if (r.categoryId) {
-    const ok = await s.first(
-      `SELECT id FROM category WHERE budget_id = ?1 AND id = ?2 AND kind != 'cc_payment'`,
-      r.categoryId,
-    );
-    if (!ok) throw new HttpError(404, 'not_found', 'category');
-  }
-  // Only money in can go to Ready to Assign.
-  const toRta = r.toRta === true && r.amount > 0;
-  const key = `m:${ulid(now)}`;
-  const w = [
-    s.q(
-      `INSERT INTO manual_pending (id, budget_id, txn_key, account_id, kind, date, amount, payee_name, repeats, created_at, updated_at)
-       VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)`,
-      ulid(now),
-      key,
-      r.accountId,
-      r.kind,
-      r.date,
-      r.amount,
-      r.payee,
-      r.repeats,
-      now,
-    ),
-    s.q(
-      `INSERT INTO txn_overlay (txn_key, budget_id, category_id, to_rta, categorized_by, created_at, updated_at) VALUES (?2, ?1, ?3, ?4, 'user', ?5, ?5)`,
-      key,
-      toRta ? null : r.categoryId,
-      toRta ? 1 : 0,
-      now,
-    ),
-    s.audit('txn.add', 'transaction', key, null, r, now),
-  ];
-  return c.json(await commit(c, w));
-});
-
-activityRoutes.post('/transactions/:key/pending', async (c) => {
-  const r = await parse(PendingCheckAction, c.req.raw);
-  const s = scoped(c);
-  const key = c.req.param('key');
-  const now = clock(c.env);
-  const m = await s.first<{ date: string }>(
-    `SELECT date FROM manual_pending WHERE budget_id = ?1 AND txn_key = ?2 AND deleted_at IS NULL`,
-    key,
-  );
-  if (!m) throw new HttpError(404, 'not_found', 'expected transaction');
-  const today = new Date(now).toISOString().slice(0, 10);
-  const w =
-    r.action === 'keep_waiting'
-      ? [
-          s.q(
-            `UPDATE manual_pending SET stale_snooze_until = ?3, updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
-            key,
-            addDays(today, 14),
-            now,
-          ),
-        ]
-      : [
-          s.q(
-            `UPDATE manual_pending SET deleted_at = ?3, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
-            key,
-            now,
-          ),
-        ];
-  w.push(s.audit(`pending.${r.action}`, 'transaction', key, null, null, now));
-  return c.json(await commit(c, w));
-});
-
-activityRoutes.delete('/transactions/:key', async (c) => {
-  const s = scoped(c);
-  const key = c.req.param('key');
-  const now = clock(c.env);
-  const m = await s.first(
-    `SELECT id FROM manual_pending WHERE budget_id = ?1 AND txn_key = ?2 AND deleted_at IS NULL`,
-    key,
-  );
-  if (!m)
-    throw new HttpError(422, 'bank_row', 'Bank transactions can’t be deleted; mark them won’t clear instead');
-  return c.json(
-    await commit(c, [
-      s.q(
-        `UPDATE manual_pending SET deleted_at = ?3, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
-        key,
-        now,
-      ),
-      s.audit('txn.delete', 'transaction', key, null, null, now),
-    ]),
-  );
-});
-
-activityRoutes.post('/transactions/:key/review', async (c) => {
-  const s = scoped(c);
-  const key = c.req.param('key');
-  const now = clock(c.env);
-  const o = await s.first(`SELECT 1 FROM txn_overlay WHERE budget_id = ?1 AND txn_key = ?2`, key);
-  if (!o) throw new HttpError(404, 'not_found', 'transaction');
-  const w = [
-    s.q(
-      `UPDATE txn_overlay SET reviewed_at = ?3, alert = NULL, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
-      key,
-      now,
-    ),
-    s.audit('txn.review', 'transaction', key, null, null, now),
-  ];
-  return c.json(await commit(c, w));
-});
-
 // ---------------------------------------------------------------- matching money back
 
 async function openItems(s: Scoped, today: string) {
@@ -936,6 +446,7 @@ activityRoutes.post('/match', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
   const t = await loadTx(s, r.inflowKey);
+  refuseHistory(t);
   if (t.amount <= 0) throw new HttpError(422, 'not_inflow', 'Only money coming in can be matched');
   const total = r.items.reduce((a, i) => a + i.amount, 0);
   if (total > t.amount) throw new HttpError(422, 'too_much', 'More matched than came in');
@@ -1018,10 +529,11 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
   const key = c.req.param('key');
   const now = clock(c.env);
   const out = await loadTx(s, key);
+  refuseHistory(out);
   if (out.transfer_state !== 'unsorted' || out.amount >= 0)
     throw new HttpError(422, 'not_unclear', 'Not a transfer to sort out');
-  const cands = await s.all<{ key: string; account_id: string }>(
-    `SELECT key, account_id FROM ${RECENT_TX} WHERE budget_id = ?1 AND transfer_state = 'unsorted' AND amount = ?2 AND account_id != ?3
+  const cands = await s.all<TxRow>(
+    `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1 AND transfer_state = 'unsorted' AND amount = ?2 AND account_id != ?3
        AND abs(julianday(date) - julianday(?4)) <= 5`,
     -out.amount,
     out.account_id,
@@ -1031,6 +543,7 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
   if (r.otherKey) {
     const other = cands.find((x) => x.key === r.otherKey);
     if (!other) throw new HttpError(404, 'not_found', 'other side');
+    refuseHistory(other);
     w.push(
       s.q(
         `UPDATE txn_overlay SET transfer_state = 'paired', transfer_account_id = ?3, categorized_by = 'user', updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
