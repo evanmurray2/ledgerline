@@ -285,7 +285,7 @@ opsRoutes.get('/export/usage', async (c) => {
 
 /**
  * CSV history import (date, payee, amount[, memo]): rows are history only (they never enter the budget), used for
- * analytics and drift checks (read-only, D-?). Stored as a 'csv' connection's bank rows so the projection treats them
+ * analytics and drift checks (read-only, D-60). Stored as a 'csv' connection's bank rows so the projection treats them
  * like any provider's.
  */
 opsRoutes.post('/import/csv', async (c) => {

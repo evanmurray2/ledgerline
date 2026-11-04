@@ -1,4 +1,4 @@
-# D-?: "Before your budget" rows are read-only and stay out of Activity and Payees (Nov 4, 2026)
+# D-60: "Before your budget" rows are read-only and stay out of Activity and Payees (Nov 4, 2026)
 
 **Decided by the owner.** Posted rows dated before an account's budget start ("history", `isHistory` in `apps/worker/src/views/rows.ts`) never enter the budget, but the app still let you edit them like any other row, and they could show on Activity's first month. The owner asked whether to hide them, make them read-only, or delete them. Deleting was ruled out: the budget already skips them, Reports and net worth add them up, the drift check uses them, and with no off-site backups (D-29) and Plaid's 10-link limit a delete couldn't be undone. An adversarial review of the plan found the choices below; the owner picked each one.
 

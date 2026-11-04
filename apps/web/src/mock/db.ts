@@ -470,7 +470,7 @@ function initialTxns(): Txn[] {
       badge: 'Transfer',
       kind: 'transfer',
     }),
-    // Posted before the account's budget start: read-only, and only in the register and searches (D-?).
+    // Posted before the account's budget start: read-only, and only in the register and searches (D-60).
     t('oldbakery', 'Old Bakery', 'chk', '2026-09-28', -1234, 'register', {
       label: 'Not budgeted',
       badge: 'Before your budget',

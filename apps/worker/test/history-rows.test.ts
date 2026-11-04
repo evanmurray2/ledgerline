@@ -1,4 +1,4 @@
-// Rows before an account's budget start ("Before your budget", D-?) are read-only and stay out of Activity's lists
+// Rows before an account's budget start ("Before your budget", D-60) are read-only and stay out of Activity's lists
 // and Settings → Payees; a search and the account's register still show them.
 import { app } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';

@@ -178,7 +178,7 @@ rulesRoutes.post('/settings/rules/:id/apply', async (c) => {
     enabled: true,
   };
   // Applies only to past rows left uncategorized: rules never overwrite a category you set by hand, and never
-  // touch rows before the account's budget start, which are read-only (D-?).
+  // touch rows before the account's budget start, which are read-only (D-60).
   const txs = (await recentTxns(s, 3650)).filter(
     (t) =>
       !isHistory(t) &&
