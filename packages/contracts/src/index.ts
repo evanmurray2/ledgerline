@@ -242,8 +242,16 @@ export const ActivityView = z.object({
   transfersToSort: z.array(TxnListRow),
   needsCategory: z.array(
     TxnListRow.extend({
+      /** The categories you've used for this payee in this direction, most used first (docs/payees.md 2.3). */
       history: z
-        .object({ title: z.string(), categories: z.array(z.string()), consistent: z.boolean() })
+        .object({
+          title: z.string(),
+          categories: z.array(z.object({ id, name: z.string(), count: z.number().int() })),
+        })
+        .nullable(),
+      /** The suggested category (docs/payees.md 2.1): `categoryId` null with `toRta` for Ready to Assign. */
+      suggestion: z
+        .object({ categoryId: id.nullable(), toRta: z.boolean(), name: z.string(), strong: z.boolean() })
         .nullable(),
     }),
   ),

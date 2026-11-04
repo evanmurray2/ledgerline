@@ -1,12 +1,12 @@
 // Activity: search, All / Needs attention / Not posted yet. Needs attention groups: Money to match, Transfers
 // to sort out, Needs category (with Select several and the category picker), Check these. Under All the same
-// groups sit on top, then Pending, Upcoming and Posted. Categorizing shows an Undo toast and, when every past
-// transaction from the payee used the same category, offers "Always" (a rule).
+// groups sit on top, then Pending, Upcoming and Posted. A row can carry a suggested category with OK, and OK all
+// takes every strong suggestion (docs/payees.md 2.2). Categorizing shows an Undo toast.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate, useSearch } from '@tanstack/react-router';
 import type { ActivityView, TxnListRow } from '@ledgerline/contracts';
 import { api, type ActivityFilter } from '../api/endpoints';
-import { adjustAttention, qk, useActivity, useBudget, useMoneyMutation, useSession } from '../api/hooks';
+import { adjustAttention, useActivity, useBudget, useMoneyMutation, useSession } from '../api/hooks';
 import { MonthBar, TabHeader } from '../components/MonthBar';
 import { monthName } from '../lib/dates';
 import { clampMonth } from '../state/month';
@@ -31,7 +31,7 @@ import { useScreen } from '../lib/common';
 import { useCanWrite } from '../state/connectivity';
 import { usage } from '../usage/tracker';
 import { useQueryClient } from '@tanstack/react-query';
-import { sheetPath, Section, TxnRow, type NeedsRow, type Picking } from './ActivityRows';
+import { sheetPath, Section, TxnRow, type Chosen, type NeedsRow, type Picking } from './ActivityRows';
 import { ActivityCategoryPicker, NeedsCategory } from './ActivityNeeds';
 
 export { TxnRow } from './ActivityRows';
@@ -75,14 +75,11 @@ export function ActivityScreen() {
   // each categorize (every refetch reads the database); it refreshes on the next visit.
   const categorize = useMoneyMutation(api.categorize, { quiet: ['activity'] });
   const review = useMoneyMutation(api.reviewTxn);
-  const saveRule = useMoneyMutation(api.saveRule, { money: false, invalidate: [qk.rules] });
   const [selecting, setSelecting] = useState(false);
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const [picking, setPicking] = useState<Picking | null>(null);
   /** Rows categorized while on this screen stay in place with their new category, as in the prototype. */
-  const [chosen, setChosen] = useState<
-    Record<string, { row: NeedsRow; categoryId: string | null; name: string }>
-  >({});
+  const [chosen, setChosen] = useState<Record<string, Chosen>>({});
   const reportedEmpty = useRef('');
 
   /** Keys in the order the server first listed them, so categorized rows keep their place. */
@@ -96,7 +93,9 @@ export function ActivityScreen() {
     const pos = (k: string) => order.current.indexOf(k);
     return [...live, ...kept].sort((a, b) => pos(a.key) - pos(b.key));
   }, [v, chosen]);
-  const openNeeds = needs.filter((r) => !chosen[r.key] || chosen[r.key]!.categoryId === null);
+  const openNeeds = needs.filter(
+    (r) => !chosen[r.key] || (chosen[r.key]!.categoryId === null && !chosen[r.key]!.toRta),
+  );
 
   const total = v
     ? v.moneyToMatch.length +
@@ -135,72 +134,125 @@ export function ActivityScreen() {
     setPicking(p);
   };
 
-  const assign = async (keys: string[], categoryId: string) => {
-    const rows = needs.filter((r) => keys.includes(r.key));
-    const prev = Object.fromEntries(keys.map((k) => [k, chosen[k]?.categoryId ?? null]));
-    const name = nameOf(categoryId);
-    const before = availOf(categoryId);
+  /** Where rows go: a category, or Ready to Assign (`categoryId` null, money in only). */
+  type Target = { categoryId: string | null; toRta?: boolean; name: string };
+
+  const assign = async (keys: string[], categoryId: string) =>
+    assignAll([{ keys, target: { categoryId, name: nameOf(categoryId) } }]);
+
+  /** Categorizes each group of rows in one request per target, with one toast and one Undo for all of them. */
+  const assignAll = async (parts: { keys: string[]; target: Target }[], okAll = false) => {
+    const keys = parts.flatMap((p) => p.keys);
+    if (!keys.length) return;
+    const prev = Object.fromEntries(
+      keys.map((k) => [
+        k,
+        chosen[k] ? { categoryId: chosen[k]!.categoryId, toRta: !!chosen[k]!.toRta } : null,
+      ]),
+    );
+    const before = new Map(
+      parts.map((p) => [p.target.categoryId, p.target.categoryId ? availOf(p.target.categoryId) : undefined]),
+    );
     setPicking(null);
     setSelecting(false);
     setSel({});
+    const done: string[] = [];
     try {
-      await categorize.mutateAsync({ keys, categoryId });
+      for (const p of parts) {
+        await categorize.mutateAsync({
+          keys: p.keys,
+          categoryId: p.target.categoryId,
+          toRta: p.target.toRta,
+        });
+        done.push(...p.keys);
+      }
     } catch (e) {
       toast.show({ text: e instanceof Error ? e.message : 'Couldn’t categorize that.' });
-      return;
+      if (!done.length) return;
     }
     usage.endTask('categorize');
-    adjustAttention(qc, -keys.filter((k) => prev[k] === null).length);
+    adjustAttention(qc, -done.filter((k) => prev[k] === null).length);
+    const byKey = new Map(parts.flatMap((p) => p.keys.map((k) => [k, p.target] as const)));
     setChosen((c) => ({
       ...c,
-      ...Object.fromEntries(rows.map((r) => [r.key, { row: r, categoryId, name }])),
+      ...Object.fromEntries(
+        needs
+          .filter((r) => done.includes(r.key))
+          .map((r) => {
+            const t = byKey.get(r.key)!;
+            return [r.key, { row: r, categoryId: t.categoryId, toRta: !!t.toRta, name: t.name }];
+          }),
+      ),
     }));
-    const spent = rows.reduce((s, r) => s - r.amount, 0);
-    const after = before === undefined ? null : before - spent;
+    // What each category has left after these rows, from what the picker showed before: below 0 is overspent.
+    const after = (p: (typeof parts)[number]) => {
+      const b = p.target.categoryId ? before.get(p.target.categoryId) : undefined;
+      if (b === undefined) return null;
+      return b + needs.filter((r) => p.keys.includes(r.key)).reduce((a, r) => a + r.amount, 0);
+    };
+    const over = parts.filter((p) => (after(p) ?? 0) < 0);
+    const first = needs.find((r) => r.key === keys[0]);
+    const one = parts.length === 1 ? parts[0]! : null;
+    const left = one ? after(one) : null;
     const warn =
-      after !== null && after < 0
-        ? ` · ${name} is now overspent by ${formatCents(-after)}. Cover it on Budget.`
+      one && left !== null && left < 0
+        ? ` · ${one.target.name} is now overspent by ${formatCents(-left)}. Cover it on Budget.`
         : '';
-    const first = rows[0];
-    const text = `${rows.length === 1 && first ? first.payee : `${rows.length} transactions`} → ${name}${warn}`;
-    const offerRule = rows.length === 1 && first?.history?.consistent && first.history.categories[0] === name;
-    const id = toast.show({
+    const overAll = over.length
+      ? ` · ${over.length} ${over.length === 1 ? 'category' : 'categories'} now overspent`
+      : '';
+    const text = okAll
+      ? `${done.length} transactions categorized${overAll}`
+      : `${keys.length === 1 && first ? first.payee : `${keys.length} transactions`} → ${one?.target.name ?? 'category'}${warn}`;
+    toast.show({
       text,
       undo: async () => {
-        const back = keys.filter((k) => prev[k] === null);
+        const back = done.filter((k) => prev[k] === null);
         if (back.length) {
           await categorize.mutateAsync({ keys: back, categoryId: null });
           adjustAttention(qc, back.length);
         }
-        for (const k of keys.filter((x) => prev[x]))
-          await categorize.mutateAsync({ keys: [k], categoryId: prev[k]! });
+        for (const k of done.filter((x) => prev[x]))
+          await categorize.mutateAsync({
+            keys: [k],
+            categoryId: prev[k]!.categoryId,
+            toRta: prev[k]!.toRta || undefined,
+          });
         usage.undo('categorize');
         setChosen((c) => {
-          const drop = new Set(keys);
+          const drop = new Set(done);
           return Object.fromEntries(Object.entries(c).filter(([k]) => !drop.has(k)));
         });
       },
-      offer:
-        offerRule && first
-          ? {
-              text: `Put every ${first.payee} in ${name} from now on?`,
-              label: 'Always',
-              onIgnore: () => usage.suggestion('rule_offer', 'ignored'),
-              onAccept: async () => {
-                usage.suggestion('rule_offer', 'always');
-                await saveRule.mutateAsync({
-                  name: first.payee,
-                  conditions: { all: [{ field: 'payee', op: 'is', value: first.payee }] },
-                  actions: [{ type: 'set_category', categoryId }],
-                  applyToPending: true,
-                  stopAfter: true,
-                  enabled: true,
-                });
-                toast.update(id, { text: `${text} · rule made`, offer: undefined, ms: 6000 });
-              },
-            }
-          : undefined,
     });
+  };
+
+  /** OK on one row: categorize it with its suggestion. */
+  const accept = (r: NeedsRow) => {
+    const sug = r.suggestion;
+    if (!sug) return;
+    usage.startTask('categorize');
+    void assignAll([
+      { keys: [r.key], target: { categoryId: sug.categoryId, toRta: sug.toRta, name: sug.name } },
+    ]);
+  };
+
+  /** OK all: every open row shown (under the search) with a strong suggestion, one request per category. */
+  const strongRows = (rows: NeedsRow[]) => rows.filter((r) => r.suggestion?.strong);
+  const acceptAll = (rows: NeedsRow[]) => {
+    const groups = new Map<string, { keys: string[]; target: Target }>();
+    for (const r of strongRows(rows)) {
+      const s = r.suggestion!;
+      const k = s.toRta ? 'rta' : s.categoryId!;
+      const g = groups.get(k) ?? {
+        keys: [],
+        target: { categoryId: s.categoryId, toRta: s.toRta, name: s.name },
+      };
+      g.keys.push(r.key);
+      groups.set(k, g);
+    }
+    usage.startTask('categorize');
+    void assignAll([...groups.values()], true);
   };
 
   const dismiss = async (r: TxnListRow) => {
@@ -361,6 +413,8 @@ export function ActivityScreen() {
             sel={sel}
             setSel={setSel}
             openPicker={openPicker}
+            onAccept={accept}
+            onAcceptAll={acceptAll}
           />
         )}
         {v && v.checkThese.length > 0 && (
