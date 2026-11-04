@@ -17,8 +17,6 @@ import {
   PayeesView,
   RegisterView,
   ReportsView,
-  RulePreview,
-  RulesView,
   Session,
   TxnSheet,
 } from '@ledgerline/contracts';
@@ -34,7 +32,6 @@ import type {
   NoteRequest,
   OwedAction,
   PendingCheckAction,
-  RuleBody,
   SetAssignedRequest,
   SettingsPatch,
   StartingBalances,
@@ -144,12 +141,6 @@ export const api = {
     ),
   removeGroup: (id: string) => post(`/api/settings/groups/${enc(id)}/remove`, Ok),
 
-  rules: () => get('/api/settings/rules', RulesView),
-  saveRule: (body: In<typeof RuleBody>) => post('/api/settings/rules', OkId, body),
-  previewRule: (body: In<typeof RuleBody>) => post('/api/settings/rules/preview', RulePreview, body),
-  applyRule: (id: string) => post(`/api/settings/rules/${enc(id)}/apply`, MutationResult),
-  deleteRule: (id: string) => del(`/api/settings/rules/${enc(id)}`, Ok),
-
   payees: () => get('/api/settings/payees', PayeesView),
   mergePayees: (body: In<typeof MergePayees>) => post('/api/settings/payees/merge', Ok, body),
   renameAccount: (id: string, body: In<typeof RenameAccount>) =>
@@ -178,5 +169,4 @@ export const exportUrls = {
   json: '/api/export/json',
   csv: '/api/export/csv',
   usage: '/api/export/usage',
-  rules: '/api/settings/rules/export',
 } as const;

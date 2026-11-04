@@ -117,7 +117,7 @@ const ROW_MONTH = `max(coalesce(budget_month, substr(date, 1, 7)), ?5)`;
 
 /**
  * Posted rows the budget counts: dated from the account's budget start, or pending when it was linked. Activity's
- * lists leave out the rest ("Before your budget", D-60); a search still finds them, and so does the account's register.
+ * lists leave out the rest ("Before your budget", D-61); a search still finds them, and so does the account's register.
  */
 const IN_BUDGET = `(date >= budget_from OR pending_at_link = 1)`;
 

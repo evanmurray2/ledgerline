@@ -87,7 +87,7 @@ month it goes back, on this month it's `aria-disabled`. On a computer `[` and `]
 - **Posted rows**: those Budget counts in that month: the row's own month override (Save for next month, the
   previous-month rule) or its date's month, and never before the budget's first month (`ROW_MONTH` in
   `routes/activity.ts`, the same rule as `linesForTxn`). History (dated before an account's budget start) isn't
-  listed on any month (D-60); a search finds it. The date is the one the list shows (a card purchase's authorized date), as in Budget.
+  listed on any month (D-61); a search finds it. The date is the one the list shows (a card purchase's authorized date), as in Budget.
 - **Pending and upcoming**: every one on this month, whatever its date; none on a past month. The Not posted yet
   chip shows only on this month; `?filter=pending` on a past month shows everything.
 - **To-dos** (Money to match, Transfers to sort out, Needs category, Check these) show whatever the month: they're

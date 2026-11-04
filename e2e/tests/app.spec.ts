@@ -557,7 +557,7 @@ test('Pages slide in when opened and back when Back returns to them; tabs and th
   await expect(page.getByRole('heading', { name: 'Settings', exact: true }).first()).toBeVisible();
   await page.waitForTimeout(1600);
   if (info.project.name === 'phone') {
-    await page.getByRole('link', { name: /^Rules/ }).click();
+    await page.getByRole('link', { name: /^Payees/ }).click();
     await expect(page.locator('.ll-page-in')).toHaveCount(1);
     expect(await anim('.ll-page-in')).toBe('ll-page-in');
     await page.getByRole('button', { name: 'Back to settings' }).click();

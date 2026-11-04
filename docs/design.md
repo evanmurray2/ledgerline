@@ -225,6 +225,8 @@ Every match records who made it (provider, auto, or you) and can be undone, whic
 
 ## Categorization rules and payee cleanup
 
+> **Now:** there are no rules and no remembered category; Needs category suggests the payee's most used category and you OK it (D-60, `docs/payees.md`). Payee normalization below still stands.
+
 Categorization is deterministic: an ordered rule list, then the payee's remembered category, then nothing. Anything unmatched lands in an Uncategorized inbox for you. No ML; Plaid's own category is available only as a rule condition, never applied automatically.
 
 **Evaluation order for each new transaction**

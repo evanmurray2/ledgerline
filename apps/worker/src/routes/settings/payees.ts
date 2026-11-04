@@ -10,7 +10,7 @@ export const payeesRoutes = new Hono<AppEnv>();
 
 /**
  * Rows the budget counts. Payees seen only before the budget start ("Before your budget") are left out of this
- * list and its merge suggestions (D-60); they stay in the database, so a payee that comes back keeps its name.
+ * list and its merge suggestions (D-61); they stay in the database, so a payee that comes back keeps its name.
  */
 const IN_BUDGET = `(status != 'posted' OR date >= budget_from OR pending_at_link = 1)`;
 

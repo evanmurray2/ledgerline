@@ -46,8 +46,6 @@ const ConnectionsScreen = lazyRouteComponent(settings, 'ConnectionsScreen');
 const DataScreen = lazyRouteComponent(settings, 'DataScreen');
 const PayeesScreen = lazyRouteComponent(settings, 'PayeesScreen');
 const RenamePayeeSheet = lazyRouteComponent(settings, 'RenamePayeeSheet');
-const RuleEditScreen = lazyRouteComponent(settings, 'RuleEditScreen');
-const RulesScreen = lazyRouteComponent(settings, 'RulesScreen');
 const SettingsLayout = lazyRouteComponent(settings, 'SettingsLayout');
 const FirstSortScreen = lazyRouteComponent(setup, 'FirstSortScreen');
 const LinkBanksScreen = lazyRouteComponent(setup, 'LinkBanksScreen');
@@ -425,15 +423,20 @@ const oldCategoryRoute = createRoute({
     throw redirect({ to: `/categories/${params.categoryId}` });
   },
 });
+// Rules were removed (docs/payees.md): old links land on Settings.
 const rulesRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'rules',
-  component: RulesScreen,
+  beforeLoad: () => {
+    throw redirect({ to: '/settings' });
+  },
 });
 const ruleEditRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'rules/$ruleId',
-  component: RuleEditScreen,
+  beforeLoad: () => {
+    throw redirect({ to: '/settings' });
+  },
 });
 const payeesRoute = createRoute({
   getParentRoute: () => settingsRoute,

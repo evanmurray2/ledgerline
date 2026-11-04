@@ -48,7 +48,7 @@ export function TxnHeader({ t }: { t: TxnSheet }) {
   );
 }
 
-export function BankSays({ t, extra, ruleLink }: { t: TxnSheet; extra?: string; ruleLink?: boolean }) {
+export function BankSays({ t, extra }: { t: TxnSheet; extra?: string }) {
   const parent = useParentPath();
   return (
     <div className="flex flex-col gap-1 text-[12px] text-muted">
@@ -62,11 +62,6 @@ export function BankSays({ t, extra, ruleLink }: { t: TxnSheet; extra?: string; 
         >
           Rename payee
         </Link>
-        {ruleLink && t.categorizedBy?.startsWith('rule') && (
-          <Link to="/settings/rules" data-track="txn.see_rule" className={textLinkClass}>
-            See {t.categorizedBy}
-          </Link>
-        )}
       </div>
     </div>
   );

@@ -26,7 +26,6 @@ import {
   TxnPatch,
   UsageBatch,
   ImportCsvRequest,
-  RuleBody,
   type MutationResult,
 } from '@ledgerline/contracts';
 import type { z } from 'zod';
@@ -438,43 +437,6 @@ export class MockServer {
       }
       case 'POST settings/groups/:y/remove':
         throw new MockHttpError(409, 'not_empty', 'Move or remove the categories in this group first.');
-      case 'GET settings/rules':
-        return db.rulesView();
-      case 'POST settings/rules': {
-        const r = parse(RuleBody, body);
-        if (r.id) {
-          const existing = db.rules.find((x) => x.id === r.id);
-          if (existing) {
-            existing.body = { ...r, id: r.id };
-            return { ok: true, id: r.id };
-          }
-        }
-        const id = db.newId('r');
-        const payee = r.conditions.all.find((x) => x.field === 'payee');
-        const act = r.actions.find((x) => x.type === 'set_category');
-        db.rules.push({
-          id,
-          body: { ...r, id },
-          summary: `${payee && 'value' in payee ? `Payee is ${payee.value}` : r.name} → ${act && act.type === 'set_category' ? (db.catName(act.categoryId) ?? '') : 'Review'}`,
-          matches90d: 1,
-        });
-        return { ok: true, id };
-      }
-      case 'POST settings/rules/preview': {
-        const r = parse(RuleBody, body);
-        const payee = r.conditions.all.find((x) => x.field === 'payee');
-        const val = payee && 'value' in payee ? String(payee.value).toLowerCase() : '';
-        const matches = db.txns
-          .filter((x) => val && x.payee.toLowerCase().includes(val))
-          .map((x) => db.row(x));
-        return { matches, uncategorizedMatches: matches.filter((m) => m.categoryLabel === null).length };
-      }
-      case 'POST settings/rules/:y/apply':
-        return this.ok();
-      case 'DELETE settings/rules/:y': {
-        db.rules = db.rules.filter((x) => x.id !== c);
-        return { ok: true };
-      }
       case 'GET settings/payees':
         return db.payeesView();
       case 'POST settings/payees/merge': {

@@ -106,7 +106,7 @@ describe('database reads per request', () => {
     for (const o of out) expect(o.status, o.p).toBe(200);
 
     // The Activity list reads in date windows; paging through it on the phone still returns every posted row the
-    // budget counts once, in order (rows before an account's budget start aren't listed, D-60).
+    // budget counts once, in order (rows before an account's budget start aren't listed, D-61).
     const all = (
       await db
         .prepare(

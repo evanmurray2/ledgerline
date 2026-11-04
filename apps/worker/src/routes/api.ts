@@ -77,7 +77,6 @@ export const SERVER_READS = [
   /^\/api\/sync(\/|$)/,
   /^\/api\/health$/,
   /^\/api\/settings\/connections$/,
-  /^\/api\/settings\/rules\/export$/,
   /^\/api\/export\//,
 ];
 /** Mounted in front of budgetApi by the store (not by the phone's engine, which answers every screen). */

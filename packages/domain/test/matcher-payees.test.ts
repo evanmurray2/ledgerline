@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { parseCents as $, cents } from '../src/money.js';
-import { applySplit, evaluateRules, shouldOfferAlways, type Rule, type RuleTxn } from '../src/rules.js';
 import {
   matchOrphan,
   matchPosted,
@@ -12,87 +11,6 @@ import {
 } from '../src/matcher.js';
 import { cleanDescription, clusterPayees, similarity } from '../src/payee.js';
 import { detectTransfers } from '../src/transfers.js';
-
-const rent: Rule = {
-  id: 'r-rent',
-  name: 'Rent',
-  conditions: {
-    all: [
-      { field: 'payee', op: 'is', value: 'Rent' },
-      { field: 'direction', op: 'is', value: 'out' },
-    ],
-  },
-  actions: [
-    { type: 'set_category', categoryId: 'rent' },
-    { type: 'previous_month_if_within_days', days: 5 },
-    { type: 'mark_owed', num: 2, den: 3, minAmount: $('2500'), expectByDay: 15 },
-  ],
-  applyToPending: true,
-  stopAfter: true,
-  enabled: true,
-};
-const tx = (o: Partial<RuleTxn>): RuleTxn => ({
-  payeeId: null,
-  payeeName: 'X',
-  description: 'X',
-  accountId: 'chk',
-  amount: $('-10'),
-  date: '2026-11-14',
-  pending: false,
-  providerCategory: null,
-  ...o,
-});
-
-describe('rules engine', () => {
-  it('the rent rule: category, counts in the previous month in the first 5 days, 2/3 owed, expected by the 15th', () => {
-    const r = evaluateRules(tx({ payeeName: 'Rent', amount: $('-3000'), date: '2026-11-01' }), [rent], null);
-    expect(r.categoryId).toBe('rent');
-    expect(r.budgetMonth).toBe('2026-10');
-    expect(r.owed).toEqual({ amount: $('2000'), num: 2, den: 3, expectBy: '2026-11-15' });
-    expect(r.by).toEqual({ ruleId: 'r-rent' });
-  });
-  it('never marks more than the transaction, and not under the minimum', () => {
-    expect(evaluateRules(tx({ payeeName: 'Rent', amount: $('-2000') }), [rent], null).owed).toBeUndefined();
-  });
-  it('first match wins; payee default only when no rule set a category', () => {
-    const a: Rule = {
-      ...rent,
-      id: 'a',
-      conditions: { all: [{ field: 'description', op: 'contains', value: 'vanguard' }] },
-      actions: [{ type: 'set_category', categoryId: 'invest' }],
-    };
-    const b: Rule = { ...a, id: 'b', actions: [{ type: 'set_category', categoryId: 'other' }] };
-    expect(evaluateRules(tx({ description: 'VANGUARD BUY' }), [a, b], null).categoryId).toBe('invest');
-    expect(
-      evaluateRules(tx({ description: 'TJ' }), [a, b], { categoryId: 'groceries', remember: true }),
-    ).toEqual({ categoryId: 'groceries', by: 'payee' });
-    expect(
-      evaluateRules(tx({ description: 'TJ' }), [a, b], { categoryId: 'groceries', remember: false }),
-    ).toEqual({});
-  });
-  it('rules can skip pending rows', () => {
-    const r = { ...rent, applyToPending: false };
-    expect(
-      evaluateRules(tx({ payeeName: 'Rent', amount: $('-3000'), pending: true }), [r], null).categoryId,
-    ).toBeUndefined();
-  });
-  it('splits: the remainder goes to the marked (or largest) line', () => {
-    expect(
-      applySplit($('-182.40'), [
-        { categoryId: 'g', fixed: $('140') },
-        { categoryId: 'h', fixed: $('40') },
-      ]),
-    ).toEqual([
-      { categoryId: 'g', amount: $('-142.40'), absorbsRemainder: true },
-      { categoryId: 'h', amount: $('-40'), absorbsRemainder: false },
-    ]);
-  });
-  it('"Always" is offered only for payees categorized the same way at least twice and never differently', () => {
-    expect(shouldOfferAlways(['dining', 'dining'])).toBe('dining');
-    expect(shouldOfferAlways(['dining'])).toBeNull();
-    expect(shouldOfferAlways(['shopping', 'household'])).toBeNull();
-  });
-});
 
 const row = (o: Partial<MatchRow>): MatchRow => ({
   key: 'k',

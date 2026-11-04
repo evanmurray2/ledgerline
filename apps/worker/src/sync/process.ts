@@ -1,7 +1,7 @@
 // Post-apply work driven by the watermark (Sync spec F3). Each step reads up to CHUNK.process events after
 // budget.processed_through, decides matches, categorization, transfers and Waiting to match with the pure domain
 // functions, and writes everything plus the new watermark in one batch behind a watermark fence. Reprocessing is
-// harmless: rules never overwrite a user's categorization.
+// harmless: it never overwrites a user's categorization. Categories come only from you (docs/payees.md: no rules).
 import type { Stmt } from '@ledgerline/db/sql';
 import {
   type BankPendingRow,
@@ -9,12 +9,10 @@ import {
   type Month,
   type UnlinkedPostedRow,
   addDays,
-  type Rule,
   cents,
   cleanDescription,
   currentMonth,
   detectTransfers,
-  evaluateRules,
   localDate,
   matchPosted,
   matchReissues,
@@ -557,14 +555,13 @@ async function planProcessing(
     }
   }
 
-  // ---- 5. Categorization for rows without your categorization: payee, rules, payee default; transfers; Waiting to match.
+  // ---- 5. For rows without your categorization: the payee, transfers and Waiting to match. No category is set.
   const fresh = live.filter((r) => !inherited.has(r.provider_txn_id));
   if (fresh.length) {
     const freshChunks = chunks(fresh.map((r) => r.txn_key));
-    const [ruleRows, aliases, ...overlayChunks] = await s.batch([
-      s.q(`SELECT * FROM rule WHERE budget_id = ?1 AND enabled = 1 ORDER BY sort`),
+    const [aliases, ...overlayChunks] = await s.batch([
       s.q(
-        `SELECT a.pattern, a.merchant_entity_id, p.id, p.name, p.remember_category, p.default_category_id FROM payee_alias a JOIN payee p ON p.id = a.payee_id WHERE a.budget_id = ?1`,
+        `SELECT a.pattern, a.merchant_entity_id, p.id, p.name FROM payee_alias a JOIN payee p ON p.id = a.payee_id WHERE a.budget_id = ?1`,
       ),
       ...freshChunks.map((k) =>
         s.q(
@@ -574,40 +571,19 @@ async function planProcessing(
       ),
     ]);
     const overlays = { results: overlayChunks.flatMap((r) => r.results) };
-    const rules: Rule[] = (
-      ruleRows!.results as {
-        id: string;
-        name: string;
-        conditions: string;
-        actions: string;
-        apply_to_pending: number;
-        stop_after: number;
-        enabled: number;
-      }[]
-    ).map((r) => ({
-      id: r.id,
-      name: r.name,
-      conditions: JSON.parse(r.conditions),
-      actions: JSON.parse(r.actions),
-      applyToPending: r.apply_to_pending === 1,
-      stopAfter: r.stop_after === 1,
-      enabled: r.enabled === 1,
-    }));
     const userSet = new Set(
       (overlays.results as { txn_key: string; categorized_by: string | null }[])
         .filter((o) => o.categorized_by === 'user')
         .map((o) => o.txn_key),
     );
-    const byKey = new Map<string, { id: string; name: string; remember: number; def: string | null }>();
+    const byKey = new Map<string, { id: string; name: string }>();
     for (const a of aliases!.results as {
       pattern: string | null;
       merchant_entity_id: string | null;
       id: string;
       name: string;
-      remember_category: number;
-      default_category_id: string | null;
     }[]) {
-      const v = { id: a.id, name: a.name, remember: a.remember_category, def: a.default_category_id };
+      const v = { id: a.id, name: a.name };
       if (a.merchant_entity_id) byKey.set(`m:${a.merchant_entity_id}`, v);
       if (a.pattern) byKey.set(`d:${a.pattern}`, v);
     }
@@ -645,7 +621,7 @@ async function planProcessing(
         // First sight of this payee: create it and its alias, so later imports resolve through it.
         const id = ulid(now);
         const name = r.merchant_name ?? titleCase(cleanDescription(r.raw_name) || r.raw_name);
-        payee = { id, name, remember: 0, def: null };
+        payee = { id, name };
         byKey.set(pk, payee);
         stmts.push(
           s.q(
@@ -665,26 +641,8 @@ async function planProcessing(
         );
       }
       const tr = transfers.get(r.txn_key);
-      const res = evaluateRules(
-        {
-          payeeId: payee.id,
-          payeeName: payee.name,
-          description: r.raw_name,
-          accountId: r.account_id!,
-          amount: cents(r.amount),
-          date: r.date,
-          pending: r.pending === 1,
-          providerCategory: r.provider_category,
-        },
-        rules,
-        payee.def ? { categoryId: payee.def, remember: payee.remember === 1 } : null,
-      );
-      const waiting =
-        !tr && !isHistory(r) && r.amount > 0 && res.categoryId === undefined && P2P.test(r.raw_name)
-          ? 'waiting'
-          : null;
+      const waiting = !tr && !isHistory(r) && r.amount > 0 && P2P.test(r.raw_name) ? 'waiting' : null;
       const pendingAtLink = r.pending === 1 && r.budget_from !== null && r.date < r.budget_from ? 1 : 0;
-      const by = res.by === 'payee' ? 'payee' : res.by ? 'rule' : null;
       stmts.push(
         s.q(
           `INSERT INTO txn_overlay (txn_key, budget_id, payee_id, category_id, memo, budget_month, transfer_state, transfer_account_id,
@@ -704,51 +662,18 @@ async function planProcessing(
              updated_at = excluded.updated_at`,
           r.txn_key,
           payee.id,
-          tr ? null : (res.categoryId ?? null),
-          res.memo ?? null,
-          res.budgetMonth ?? null,
-          tr ? tr.state : res.transferTo ? 'paired' : null,
-          tr ? tr.other || null : (res.transferTo ?? null),
+          null,
+          null,
+          null,
+          tr ? tr.state : null,
+          tr ? tr.other || null : null,
           waiting,
-          tr ? 'auto' : by,
-          res.by && res.by !== 'payee' ? res.by.ruleId : null,
+          tr ? 'auto' : null,
+          null,
           pendingAtLink,
           now,
         ),
       );
-      if (res.split) {
-        stmts.push(s.q(`DELETE FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`, r.txn_key));
-        res.split.forEach((l, i) =>
-          stmts.push(
-            s.q(
-              `INSERT INTO txn_split (id, budget_id, txn_key, category_id, amount, absorbs_remainder, sort, created_at) VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8)`,
-              `${r.txn_key}:s${i}`,
-              r.txn_key,
-              l.categoryId,
-              l.amount,
-              l.absorbsRemainder ? 1 : 0,
-              i,
-              now,
-            ),
-          ),
-        );
-      }
-      if (res.owed) {
-        stmts.push(
-          s.q(
-            `INSERT OR IGNORE INTO expected_reimbursement (id, budget_id, txn_key, amount, fraction_num, fraction_den, expect_by, rule_id, created_at, updated_at)
-             VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)`,
-            `${r.txn_key}:owed`,
-            r.txn_key,
-            res.owed.amount,
-            res.owed.num ?? null,
-            res.owed.den ?? null,
-            res.owed.expectBy,
-            res.by && res.by !== 'payee' ? res.by.ruleId : null,
-            now,
-          ),
-        );
-      }
     }
   }
   return { stmts };

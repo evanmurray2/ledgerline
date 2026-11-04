@@ -188,11 +188,6 @@ describe('Settings', () => {
     fireEvent.click(screen.getByRole('button', { name: /Link another bank/ }));
     expect(await screen.findByText('Use 1 of your 6 remaining links?')).toBeTruthy();
   });
-
-  it('rules list parses despite the contract’s duplicate discriminator', async () => {
-    renderAt('/settings/rules');
-    await text('Payee is Trader Joe’s');
-  });
 });
 
 describe('States', () => {

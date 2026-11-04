@@ -1,8 +1,8 @@
-// Rows before an account's budget start ("Before your budget", D-60) are read-only and stay out of Activity's lists
+// Rows before an account's budget start ("Before your budget", D-61) are read-only and stay out of Activity's lists
 // and Settings → Payees; a search and the account's register still show them.
 import { app } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { ActivityView, PayeesView, RulePreview, TxnSheet } from '@ledgerline/contracts';
+import type { ActivityView, PayeesView, TxnSheet } from '@ledgerline/contracts';
 import { ownerDb } from './store-db.js';
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
@@ -71,23 +71,6 @@ describe('Before your budget', () => {
     const found = await get<ActivityView>('/api/activity?q=old%20bakery');
     const row = found.posted.find((r) => r.key === KEY);
     expect(row?.badge).toBe('Before your budget');
-  });
-
-  it('a rule matches it but never counts it as one to apply', async () => {
-    const cats = await get<ActivityView>('/api/activity?month=2026-11');
-    const categoryId = cats.categoryPicker[0]!.categories[0]!.id;
-    const r = await send('POST', '/api/settings/rules/preview', {
-      name: 'Bakery',
-      conditions: { all: [{ field: 'description', op: 'contains', value: 'Old Bakery' }] },
-      actions: [{ type: 'set_category', categoryId }],
-      applyToPending: false,
-      stopAfter: false,
-      enabled: true,
-    });
-    expect(r.status).toBe(200);
-    const p = (await r.json()) as RulePreview;
-    expect(p.matches.map((m) => m.key)).toContain(KEY);
-    expect(p.uncategorizedMatches).toBe(0);
   });
 
   it('a payee seen only before the budget is left out of Settings → Payees', async () => {

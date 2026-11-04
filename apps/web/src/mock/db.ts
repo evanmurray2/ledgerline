@@ -20,8 +20,6 @@ import type {
   PayeesView,
   RegisterView,
   ReportsView,
-  RuleBody,
-  RulesView,
   Session,
   Target,
   TxnListRow,
@@ -477,7 +475,7 @@ function initialTxns(): Txn[] {
       badge: 'Transfer',
       kind: 'transfer',
     }),
-    // Posted before the account's budget start: read-only, and only in the register and searches (D-60).
+    // Posted before the account's budget start: read-only, and only in the register and searches (D-61).
     t('oldbakery', 'Old Bakery', 'chk', '2026-09-28', -1234, 'register', {
       label: 'Not budgeted',
       badge: 'Before your budget',
@@ -588,111 +586,11 @@ function initialOwed(): Owed[] {
   ];
 }
 
-interface RuleRow {
-  id: string;
-  body: RuleBody & { id: string };
-  summary: string;
-  matches90d: number;
-}
-
-function rule(n: number, when: string, then: string, uses: number, body: Partial<RuleBody>): RuleRow {
-  const id = `r${n}`;
-  return {
-    id,
-    summary: `${when} → ${then}`,
-    matches90d: uses,
-    body: {
-      id,
-      name: when,
-      conditions: { all: [] },
-      actions: [{ type: 'flag_review' }],
-      applyToPending: true,
-      stopAfter: true,
-      enabled: true,
-      ...body,
-    },
-  };
-}
-
-function initialRules(): RuleRow[] {
-  const payee = (v: string) => ({ field: 'payee' as const, op: 'is' as const, value: v });
-  const setCat = (c: string) => ({ type: 'set_category' as const, categoryId: c });
-  return [
-    rule(
-      1,
-      'Payee is Rent (Zelle to Bay Prop Mgmt)',
-      'Rent · $2,000 owed to you · count in previous month if day 1–5',
-      3,
-      {
-        name: 'Rent',
-        conditions: {
-          all: [payee('Bay Prop Mgmt'), { field: 'amount', op: 'between', min: -310000, max: -290000 }],
-        },
-        actions: [
-          setCat('rent'),
-          { type: 'mark_owed', fixed: 200000 },
-          { type: 'previous_month_if_within_days', days: 5 },
-        ],
-      },
-    ),
-    rule(2, 'Payee is Acme Corp payroll', 'Ready to Assign', 6, {
-      conditions: { all: [payee('Acme Corp payroll')] },
-      actions: [{ type: 'flag_review' }],
-    }),
-    rule(3, 'Payee is Trader Joe’s', 'Groceries', 14, {
-      conditions: { all: [payee('Trader Joe’s')] },
-      actions: [setCat('groceries')],
-    }),
-    rule(4, 'Payee is Comcast', 'Internet', 2, {
-      conditions: { all: [payee('Comcast')] },
-      actions: [setCat('internet')],
-    }),
-    rule(5, 'Payee is PG&E', 'Electric', 2, {
-      conditions: { all: [payee('PG&E')] },
-      actions: [setCat('electric')],
-    }),
-    rule(6, 'Payee is Shell or Chevron', 'Gas', 5, {
-      conditions: { all: [], any: [[payee('Shell')], [payee('Chevron')]] },
-      actions: [setCat('gas')],
-    }),
-    rule(7, 'Description contains “VANGUARD”', 'Investments', 2, {
-      conditions: { all: [{ field: 'description', op: 'contains', value: 'VANGUARD' }] },
-      actions: [setCat('invest')],
-    }),
-    rule(8, 'Payee is Uber Eats, amount under $60', 'Dining out', 4, {
-      conditions: { all: [payee('Uber Eats'), { field: 'amount', op: 'between', min: -6000, max: 0 }] },
-      actions: [setCat('dining')],
-    }),
-    rule(9, 'Payee is Netflix or Spotify', 'Subscriptions', 4, {
-      conditions: { all: [], any: [[payee('Netflix')], [payee('Spotify')]] },
-      actions: [setCat('subs')],
-    }),
-    rule(10, 'Payee is Safeway or Whole Foods', 'Groceries', 7, {
-      conditions: { all: [], any: [[payee('Safeway')], [payee('Whole Foods')]] },
-      actions: [setCat('groceries')],
-    }),
-    rule(11, 'Payee is Blue Bottle Coffee', 'Dining out', 1, {
-      conditions: { all: [payee('Blue Bottle Coffee')] },
-      actions: [setCat('dining')],
-    }),
-    rule(12, 'Account is Freedom, description has “REWARDS”', 'Rewards (to card payment)', 1, {
-      conditions: {
-        all: [
-          { field: 'account', op: 'is', value: 'freedom' },
-          { field: 'description', op: 'contains', value: 'REWARDS' },
-        ],
-      },
-      actions: [{ type: 'flag_review' }],
-    }),
-  ];
-}
-
 export class MockDb {
   scenario: Scenario;
   cats: Cat[] = initialCats();
   txns: Txn[] = initialTxns();
   owed: Owed[] = initialOwed();
-  rules: RuleRow[] = initialRules();
   rta = 98190;
   /** Extra money released into each card's payment category (covering overspending, categorizing). */
   cardFund = { sapphire: 0, freedom: 0 };
@@ -1722,12 +1620,6 @@ export class MockDb {
       archived: this.cats
         .filter((c) => c.archived)
         .map((c) => ({ id: c.id, name: c.name, meta: c.archivedMeta ?? 'Archived today' })),
-    };
-  }
-
-  rulesView(): RulesView {
-    return {
-      rules: this.rules.map((r) => ({ ...r.body, id: r.id, summary: r.summary, matches90d: r.matches90d })),
     };
   }
 

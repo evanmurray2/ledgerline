@@ -249,9 +249,7 @@ categoriesRoutes.post('/settings/categories/:id/remove', async (c) => {
     `SELECT
        (SELECT count(*) FROM assignment WHERE budget_id = ?1 AND category_id = ?2 AND amount != 0)
      + (SELECT count(*) FROM txn_overlay WHERE budget_id = ?1 AND category_id = ?2)
-     + (SELECT count(*) FROM txn_split WHERE budget_id = ?1 AND category_id = ?2)
-     + (SELECT count(*) FROM payee WHERE budget_id = ?1 AND default_category_id = ?2)
-     + (SELECT count(*) FROM rule WHERE budget_id = ?1 AND actions LIKE '%' || ?2 || '%') AS n`,
+     + (SELECT count(*) FROM txn_split WHERE budget_id = ?1 AND category_id = ?2) AS n`,
     id,
   );
   if ((used?.n ?? 0) > 0) {

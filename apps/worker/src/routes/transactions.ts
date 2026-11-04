@@ -29,7 +29,7 @@ import { OVERLAY_UPSERT, commit, loadTx, names } from './txn-common.js';
 
 export const transactionRoutes = new Hono<AppEnv>();
 
-/** Rows before the account's budget start are read-only (D-60): the budget never counts them, so nothing on them changes. */
+/** Rows before the account's budget start are read-only (D-61): the budget never counts them, so nothing on them changes. */
 function refuseHistory(t: TxRow): void {
   if (isHistory(t)) throw new HttpError(409, 'history', 'This is before your budget, so it can’t be changed');
 }

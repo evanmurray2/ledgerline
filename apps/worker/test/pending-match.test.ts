@@ -158,15 +158,6 @@ describe('posted rows claim their pending rows', () => {
         .bind(B),
       db
         .prepare(
-          `INSERT INTO rule (id, budget_id, sort, name, conditions, actions, created_at, updated_at) VALUES ('r1', ?1, 1, 'TJ', ?2, ?3, 0, 0)`,
-        )
-        .bind(
-          B,
-          JSON.stringify({ all: [{ field: 'description', op: 'contains', value: 'TRADER JOE' }] }),
-          JSON.stringify([{ type: 'set_category', categoryId: 'groceries' }]),
-        ),
-      db
-        .prepare(
           `INSERT INTO budget_line (budget_id, txn_key, line, month, date, seq, kind, account_id, card, category_id, amount, ref) VALUES (?1, 'start:a_chk', 'start', '2026-10', '2026-10-01', -1, 'rta', 'a_chk', 0, NULL, 500000, NULL)`,
         )
         .bind(B),

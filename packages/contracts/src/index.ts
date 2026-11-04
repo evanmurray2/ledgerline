@@ -530,70 +530,6 @@ export const ArchiveRequest = z.object({
 export const RemoveCategoryRequest = ArchiveRequest.omit({ archived: true });
 export const ReorderRequest = z.object({ ids: z.array(id).max(500) });
 
-// A plain union: `amount` appears twice (equals / between), which a discriminated union can't express.
-export const RuleCondition = z.union([
-  z.object({ field: z.literal('payee'), op: z.enum(['is', 'contains']), value: z.string().max(120) }),
-  z.object({
-    field: z.literal('description'),
-    op: z.enum(['contains', 'matches']),
-    value: z.string().max(200),
-  }),
-  z.object({ field: z.literal('account'), op: z.literal('is'), value: id }),
-  z.object({ field: z.literal('amount'), op: z.literal('equals'), value: cents }),
-  z.object({ field: z.literal('amount'), op: z.literal('between'), min: cents, max: cents }),
-  z.object({ field: z.literal('direction'), op: z.literal('is'), value: z.enum(['in', 'out']) }),
-  z.object({ field: z.literal('provider_category'), op: z.literal('is'), value: z.string().max(80) }),
-  z.object({
-    field: z.literal('day_of_month'),
-    op: z.literal('between'),
-    min: z.number().int(),
-    max: z.number().int(),
-  }),
-]);
-export const RuleAction = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('set_category'), categoryId: id }),
-  z.object({ type: z.literal('set_payee'), payeeId: id }),
-  z.object({ type: z.literal('set_memo'), memo: z.string().max(200) }),
-  z.object({
-    type: z.literal('split'),
-    lines: z.array(
-      z.object({
-        categoryId: id,
-        fixed: cents.optional(),
-        percent: z.number().optional(),
-        absorbsRemainder: z.boolean().optional(),
-      }),
-    ),
-  }),
-  z.object({ type: z.literal('mark_transfer'), accountId: id }),
-  z.object({
-    type: z.literal('mark_owed'),
-    num: z.number().int().optional(),
-    den: z.number().int().optional(),
-    fixed: cents.optional(),
-    minAmount: cents.optional(),
-    expectByDay: z.number().int().optional(),
-    expectByDays: z.number().int().optional(),
-  }),
-  z.object({ type: z.literal('previous_month_if_within_days'), days: z.number().int().min(1).max(15) }),
-  z.object({ type: z.literal('flag_review') }),
-]);
-export const RuleBody = z.object({
-  id: id.optional(),
-  name: z.string().min(1).max(80),
-  conditions: z.object({ all: z.array(RuleCondition), any: z.array(z.array(RuleCondition)).optional() }),
-  actions: z.array(RuleAction).min(1),
-  applyToPending: z.boolean(),
-  stopAfter: z.boolean(),
-  enabled: z.boolean(),
-});
-export type RuleBody = z.infer<typeof RuleBody>;
-export const RulesView = z.object({
-  rules: z.array(RuleBody.extend({ id, summary: z.string(), matches90d: z.number().int() })),
-});
-export type RulesView = z.infer<typeof RulesView>;
-export const RulePreview = z.object({ matches: z.array(TxnListRow), uncategorizedMatches: z.number().int() });
-
 export const PayeesView = z.object({
   suggestions: z.array(
     z.object({
@@ -753,7 +689,6 @@ export type DeviceShare = z.infer<typeof DeviceShare>;
 export type DeviceLink = z.infer<typeof DeviceLink>;
 
 export type ImportResult = z.infer<typeof ImportResult>;
-export type RulePreview = z.infer<typeof RulePreview>;
 
 // ---------------------------------------------------------------- full backup (docs/multi-user.md 8.7)
 

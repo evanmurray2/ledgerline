@@ -1,4 +1,4 @@
-// A row from before the account's budget start ("Before your budget", D-60): shown for reference, never changed.
+// A row from before the account's budget start ("Before your budget", D-61): shown for reference, never changed.
 import type { TxnSheet } from '@ledgerline/contracts';
 import { Sheet } from '../components/Sheet';
 import { Banner, Label, PrimaryButton } from '../components/ui';
