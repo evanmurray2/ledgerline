@@ -17,7 +17,6 @@ import {
   useIsDesktop,
 } from '../components/ui';
 import { MonthBar, TabHeader } from '../components/MonthBar';
-import { OverflowMenu } from '../components/headers';
 import { clampMonth } from '../state/month';
 import { formatCents, percentOf } from '../lib/money';
 import { monthLabel, monthShort } from '../lib/dates';
@@ -245,19 +244,7 @@ export function ReportsScreen() {
   );
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <TabHeader
-        name="Reports"
-        month={monthNav}
-        // Phone: Settings from every tab (on desktop it is in the sidebar).
-        right={
-          desktop ? undefined : (
-            <OverflowMenu
-              label="More"
-              items={[{ to: '/settings', name: 'Settings', track: 'reports.settings' }]}
-            />
-          )
-        }
-      />
+      <TabHeader name="Reports" month={monthNav} />
       <ScreenBody>
         {!r ? (
           q.error ? (

@@ -97,10 +97,10 @@ month it goes back, on this month it's `aria-disabled`. On a computer `[` and `]
 - A past month with nothing posted says "No transactions in October."
 - While another month loads, the last month's rows aren't kept on screen under the new month's name.
 - Server: `GET /api/activity?month=YYYY-MM` (a malformed month is a 400; one before the budget is its first
-  month). The query reads posted dates from the month before to POST_LAG after the month after (an override moves
+  month). The query reads posted dates from the month before to POST*LAG after the month after (an override moves
   a row one month either way, and a row posts within POST_LAG of its date), through `bank_txn(budget_id, date)`;
   the budget's first month has no lower bound (rows pending at link count there). No widening when a month is set.
-  The phone's engine runs the same route. _Verify:_ `apps/worker/test/activity-month.test.ts`.
+  The phone's engine runs the same route. \_Verify:* `apps/worker/test/activity-month.test.ts`.
 
 ### Screens without the bar
 
