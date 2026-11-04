@@ -85,3 +85,28 @@ describe('Before your budget', () => {
     expect(v.payees.map((p) => p.name)).not.toContain('Old Bakery');
   });
 });
+
+describe('Before your budget, on a payee with budget transactions', () => {
+  it('leaves the history row’s bank name out of the payee’s bank names', async () => {
+    const before = await get<PayeesView>('/api/settings/payees');
+    const p = before.payees.find((x) => x.bankNames.length < 10)!;
+    const r = await send('POST', '/api/import/csv', {
+      accountId: 'marcus',
+      csv: 'date,payee,amount\n2026-10-01,OLD HISTORY TEXT,-5.00\n',
+    });
+    expect(r.status, await r.clone().text()).toBe(200);
+    const db = ownerDb();
+    const now = Date.now();
+    const budget = (await db.prepare(`SELECT id FROM budget`).first<{ id: string }>())!.id;
+    await db
+      .prepare(
+        `INSERT INTO txn_overlay (txn_key, budget_id, payee_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?4)
+         ON CONFLICT (txn_key) DO UPDATE SET payee_id = excluded.payee_id`,
+      )
+      .bind('p:csv_marcus_2026-10-01_0', budget, p.id, now)
+      .run();
+    const after = (await get<PayeesView>('/api/settings/payees')).payees.find((x) => x.id === p.id)!;
+    expect(after.bankNames.map((b) => b.name)).not.toContain('OLD HISTORY TEXT');
+    expect(after.bankNames.reduce((t, b) => t + b.count, 0)).toBe(after.transactions);
+  });
+});

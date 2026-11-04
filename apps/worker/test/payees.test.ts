@@ -24,6 +24,8 @@ describe('payees', () => {
     for (const p of v.payees) {
       expect(p.transactions).toBeGreaterThan(0);
       expect(p.bankNames.length).toBeGreaterThan(0);
+      // Bank names count budget transactions only, not history before the budget start.
+      if (p.bankNames.length < 10) expect(p.bankNames.reduce((t, x) => t + x.count, 0)).toBe(p.transactions);
     }
     expect(Array.isArray(v.others)).toBe(true);
   });

@@ -53,8 +53,16 @@ function useScrolledDown(ref: RefObject<HTMLDivElement | null>, ready: boolean):
     const el = ref.current;
     if (!el) return;
     let last = el.scrollTop;
+    let height = el.clientHeight;
     const onScroll = () => {
       const top = el.scrollTop;
+      // Folding or unfolding the bar resizes the list, which moves scrollTop at the bottom of the list. That isn't
+      // a scroll by the user: reacting to it folds and unfolds the bar in a loop.
+      if (el.clientHeight !== height) {
+        height = el.clientHeight;
+        last = top;
+        return;
+      }
       if (top < 48) setDown(false);
       else if (top > last + 4) setDown(true);
       else if (top < last - 4) setDown(false);

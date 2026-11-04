@@ -26,8 +26,10 @@ payeesRoutes.get('/settings/payees', async (c) => {
       `SELECT payee_id, count(*) AS n FROM v_txn_bank WHERE budget_id = ?1 AND payee_id IS NOT NULL
          AND (date >= budget_from OR pending_at_link = 1 OR status != 'posted') GROUP BY payee_id`,
     ),
+    // Bank names behind those budget transactions only: history doesn't show on the Rename sheet.
     s.q(
       `SELECT payee_id, raw_name, count(*) AS n FROM v_txn_bank WHERE budget_id = ?1 AND payee_id IS NOT NULL
+         AND (date >= budget_from OR pending_at_link = 1 OR status != 'posted')
        GROUP BY payee_id, raw_name ORDER BY n DESC`,
     ),
     // Your categories for money out, per payee: "usually" (docs/payees.md 2.1).
