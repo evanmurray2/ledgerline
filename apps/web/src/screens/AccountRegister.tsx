@@ -107,14 +107,14 @@ export function RegisterScreen() {
           )
         ) : (
           <>
-            <section className="flex shrink-0 flex-col gap-2.5 rounded-[14px] border border-line bg-surface p-3">
+            <section className="flex shrink-0 flex-col gap-2.5 rounded-lg border border-line bg-surface p-3">
               {a.kind === 'credit' ? (
                 <>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="flex flex-col gap-0.5">
-                      <span className="text-[12px] text-muted">You owe the bank</span>
-                      <span className="tnum text-[20px] font-bold">{formatCents(a.bank)}</span>
-                      <span className="text-[12px] text-muted">
+                      <span className="text-xs text-muted">You owe the bank</span>
+                      <span className="tnum text-2xl font-bold">{formatCents(a.bank)}</span>
+                      <span className="text-xs text-muted">
                         {a.pending > 0
                           ? `+ ${formatCents(a.pending)} pending at the bank`
                           : 'nothing pending'}
@@ -122,15 +122,12 @@ export function RegisterScreen() {
                     </div>
                     {a.statement && (
                       <div className="flex flex-col gap-0.5">
-                        <span className="text-[12px] text-muted">
+                        <span className="text-xs text-muted">
                           Statement{a.statement.due ? ` due ${dayLabel(a.statement.due)}` : ''}
                         </span>
-                        <span className="tnum text-[20px] font-bold">{formatCents(a.statement.balance)}</span>
+                        <span className="tnum text-2xl font-bold">{formatCents(a.statement.balance)}</span>
                         <span
-                          className={cx(
-                            'text-[12px]',
-                            a.statement.covered ? 'text-funded-fg' : 'text-over-fg',
-                          )}
+                          className={cx('text-xs', a.statement.covered ? 'text-funded-fg' : 'text-over-fg')}
                         >
                           {a.statement.covered ? 'Covered by payment category' : 'Not covered yet'}
                         </span>
@@ -140,7 +137,7 @@ export function RegisterScreen() {
                   {card && (
                     <Link
                       to="/budget"
-                      className="flex min-h-10 items-center justify-between gap-3 rounded-xl bg-page px-3 py-2 text-[14px] text-ink no-underline"
+                      className="flex min-h-10 items-center justify-between gap-3 rounded-lg bg-page px-3 py-2 text-md text-ink no-underline"
                     >
                       <span className="font-semibold">{a.name.split(' ')[0]} payment category</span>
                       <span className="flex items-center gap-1">
@@ -155,11 +152,11 @@ export function RegisterScreen() {
                 </>
               ) : (
                 <>
-                  <div className="flex justify-between text-[14px]">
+                  <div className="flex justify-between text-md">
                     <span className="text-muted">Balance at bank</span>
                     <span className="tnum font-bold">{formatCents(a.bank)}</span>
                   </div>
-                  <div className="flex justify-between text-[14px]">
+                  <div className="flex justify-between text-md">
                     <span className="text-muted">After pending and your checks</span>
                     <span className="tnum font-bold">{formatCents(a.working)}</span>
                   </div>
@@ -167,7 +164,7 @@ export function RegisterScreen() {
               )}
               {v.note && <Banner tone="danger">{v.note}</Banner>}
               {a.kind !== 'credit' && (
-                <p className="m-0 text-[12px] leading-snug text-muted">
+                <p className="m-0 text-xs leading-snug text-muted">
                   Upcoming bills aren’t subtracted here; they count in your budget on their dates.
                 </p>
               )}
@@ -240,6 +237,7 @@ function RenameAccountSheet({ id, name, close }: { id: string; name: string; clo
           <PrimaryButton
             mutates
             track="account.rename.save"
+            busy={busy}
             disabled={!next || busy}
             onClick={() => void save()}
           >
@@ -258,7 +256,7 @@ function RenameAccountSheet({ id, name, close }: { id: string; name: string; clo
           onKeyDown={(e) => e.key === 'Enter' && void save()}
         />
       </Field>
-      <p className="m-0 text-[13px] leading-snug text-muted">
+      <p className="m-0 text-sm leading-snug text-muted">
         Only the name in Ledgerline changes. For a card, its payment category is renamed too.
       </p>
     </Sheet>

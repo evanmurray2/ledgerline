@@ -3,7 +3,7 @@
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import type { TxnSheet } from '@ledgerline/contracts';
 import { SheetTitle } from '../components/Sheet';
-import { cx, inputClass, textLinkClass } from '../components/ui';
+import { textLinkClass } from '../components/ui';
 import { formatCents } from '../lib/money';
 import { dayLabel } from '../lib/dates';
 
@@ -19,9 +19,6 @@ export function useClose() {
   // Back to the screen as it was: its month, filter and search stay.
   return () => void navigate({ to: parent, search: true });
 }
-
-/** The one amount box in the transaction sheets: inputClass at 18 px bold, as in the category sheet. */
-export const AMOUNT_INPUT = cx(inputClass, 'tnum text-[18px] font-bold');
 
 const TAG: Record<TxnSheet['kind'], string> = {
   pending: 'Pending',
@@ -51,7 +48,7 @@ export function TxnHeader({ t }: { t: TxnSheet }) {
 export function BankSays({ t, extra }: { t: TxnSheet; extra?: string }) {
   const parent = useParentPath();
   return (
-    <div className="flex flex-col gap-1 text-[12px] text-muted">
+    <div className="flex flex-col gap-1 text-xs text-muted">
       <span>Bank says: {t.rawName}</span>
       {extra && <span>{extra}</span>}
       <div className="flex gap-4">

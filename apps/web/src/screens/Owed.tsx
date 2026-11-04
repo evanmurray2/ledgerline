@@ -67,9 +67,9 @@ export function OwedScreen() {
         ) : (
           <>
             <Card className="flex flex-col gap-1.5 p-3">
-              <span className="text-[12px] text-muted">Out with others</span>
-              <span className="tnum text-[24px] font-bold">{formatCents(v.out)}</span>
-              <span className="text-[13px] leading-[1.45] text-ink-2">
+              <span className="text-xs text-muted">Out with others</span>
+              <span className="tnum text-4xl font-bold">{formatCents(v.out)}</span>
+              <span className="text-sm leading-normal text-ink-2">
                 Money you front leaves Ready to Assign and comes back when you’re paid.
               </span>
             </Card>
@@ -77,15 +77,15 @@ export function OwedScreen() {
               <Link
                 to={`/owed/match/${waiting.key}`}
                 data-track="owed.waiting.match"
-                className="flex min-h-14 shrink-0 items-center gap-2.5 rounded-[14px] bg-owed-bg px-3 py-2 text-owed-fg no-underline"
+                className="flex min-h-14 shrink-0 items-center gap-2.5 rounded-lg bg-owed-bg px-3 py-2 text-owed-fg no-underline"
               >
                 <span className="flex flex-1 flex-col gap-px">
-                  <span className="text-[14px] font-bold">
+                  <span className="text-md font-bold">
                     {waiting.payee} {formatCents(waiting.amount, { plus: true })} is waiting to match
                   </span>
-                  <span className="text-[12px]">Held outside Ready to Assign until you match it.</span>
+                  <span className="text-xs">Held outside Ready to Assign until you match it.</span>
                 </span>
-                <span className="text-[14px] font-bold underline">Match</span>
+                <span className="text-md font-bold underline">Match</span>
               </Link>
             )}
             {v.projected.map((p) => {
@@ -117,7 +117,7 @@ export function OwedScreen() {
             <SectionTitle>Still owed</SectionTitle>
             <Card>
               {v.items.filter(isOpen).length === 0 && (
-                <p className="m-0 px-3 py-3.5 text-[14px] font-semibold text-funded-fg">
+                <p className="m-0 px-3 py-3.5 text-md font-semibold text-funded-fg">
                   Nothing is owed to you.
                 </p>
               )}
@@ -137,9 +137,9 @@ export function OwedScreen() {
                       className="flex min-w-0 flex-1 justify-between gap-2.5 text-ink no-underline"
                     >
                       <span className="flex min-w-0 flex-col gap-0.5">
-                        <span className="text-[15px] font-semibold">{o.label}</span>
-                        <span className="text-[12px] text-muted">{o.sub}</span>
-                        <span className={cx('text-[12px]', late ? 'text-under-fg' : 'text-muted')}>
+                        <span className="text-base font-semibold">{o.label}</span>
+                        <span className="text-xs text-muted">{o.sub}</span>
+                        <span className={cx('text-xs', late ? 'text-under-fg' : 'text-muted')}>
                           {late ? 'Late · ' : ''}
                           {o.expectBy
                             ? `${late ? 'expected' : 'Expected'} by ${dayLabel(o.expectBy)}`
@@ -147,8 +147,8 @@ export function OwedScreen() {
                         </span>
                       </span>
                       <span className="flex shrink-0 flex-col items-end gap-0.5">
-                        <span className="tnum text-[15px] font-bold">{formatCents(o.still)}</span>
-                        <span className="text-[12px] text-muted">
+                        <span className="tnum text-base font-bold">{formatCents(o.still)}</span>
+                        <span className="text-xs text-muted">
                           {o.still === o.amount
                             ? 'all of it'
                             : `of ${formatCents(o.amount, { whole: true })} owed`}
@@ -196,14 +196,14 @@ export function OwedScreen() {
                         className="flex min-h-14 items-center justify-between border-t border-divider px-3 py-1.5 text-ink no-underline first:border-t-0"
                       >
                         <span className="flex flex-col gap-0.5">
-                          <span className="text-[15px] font-semibold">{o.label}</span>
-                          <span className="text-[12px] text-muted">
+                          <span className="text-base font-semibold">{o.label}</span>
+                          <span className="text-xs text-muted">
                             {o.status === 'paid_back'
                               ? 'Paid back in full'
                               : `${formatCents(o.still)} still open`}
                           </span>
                         </span>
-                        <span className="tnum text-[15px] font-bold text-funded-fg">
+                        <span className="tnum text-base font-bold text-funded-fg">
                           {formatCents(o.matched, { plus: true })}
                         </span>
                       </Link>

@@ -48,8 +48,8 @@ function CategoryRowPhone({ row, month }: { row: BudgetCategoryRow; month: strin
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
-          <span className="text-[15px] font-semibold">{row.name}</span>
-          <span className="truncate text-[12px] leading-[1.45] text-muted">
+          <span className="text-base font-semibold">{row.name}</span>
+          <span className="truncate text-xs leading-normal text-muted">
             {quiet ? (
               <span className="sr-only">{st.word} · </span>
             ) : (
@@ -61,7 +61,7 @@ function CategoryRowPhone({ row, month }: { row: BudgetCategoryRow; month: strin
           </span>
         </div>
         {quiet ? (
-          <span className="tnum shrink-0 px-2.5 text-[15px] font-semibold">{formatCents(row.available)}</span>
+          <span className="tnum shrink-0 px-2.5 text-base font-semibold">{formatCents(row.available)}</span>
         ) : (
           <Pill tone={catTone(row)}>{formatCents(row.available)}</Pill>
         )}
@@ -81,8 +81,8 @@ function CardRowPhone({ card }: { card: CardRow }) {
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
-          <span className="text-[15px] font-semibold">{card.name}</span>
-          <span className="truncate text-[12px] leading-[1.45] text-muted">
+          <span className="text-base font-semibold">{card.name}</span>
+          <span className="truncate text-xs leading-normal text-muted">
             {card.status === 'short' ? (
               <>
                 <StatusWord word="Short" tone={tone} icon="alert" /> ·{' '}
@@ -96,9 +96,7 @@ function CardRowPhone({ card }: { card: CardRow }) {
         {card.status === 'short' ? (
           <Pill tone={tone}>{formatCents(card.available)}</Pill>
         ) : (
-          <span className="tnum shrink-0 px-2.5 text-[15px] font-semibold">
-            {formatCents(card.available)}
-          </span>
+          <span className="tnum shrink-0 px-2.5 text-base font-semibold">{formatCents(card.available)}</span>
         )}
       </div>
     </Link>
@@ -121,8 +119,8 @@ function OwedRowPhone({ b }: { b: BudgetView }) {
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
-          <span className="text-[15px] font-semibold">Owed to you</span>
-          <span className="text-[12px] leading-[1.45] text-muted">
+          <span className="text-base font-semibold">Owed to you</span>
+          <span className="text-xs leading-normal text-muted">
             <StatusWord word={t.word} tone={t.tone} icon={t.icon} /> · {formatCents(b.owed.out)} out · comes
             back to Ready to Assign
           </span>
@@ -157,7 +155,7 @@ export function GroupHeader({
     right && !toggle ? 'pr-2' : 'pr-3',
     divider && 'border-b border-line',
   );
-  const label = 'm-0 flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.6px]';
+  const label = 'm-0 flex items-center gap-1.5 text-xs font-bold uppercase tracking-caps';
   if (toggle)
     return (
       <button
@@ -205,7 +203,7 @@ function Group({
       <GroupHeader
         title={name}
         icon={collapsed ? 'chevR' : 'chevD'}
-        right={<span className="tnum text-[12px] text-muted">{total}</span>}
+        right={<span className="tnum text-xs text-muted">{total}</span>}
         divider={!collapsed}
         toggle={{ expanded: !collapsed, onClick: () => toggle(id), track: 'budget.group.toggle' }}
       />
@@ -276,7 +274,7 @@ export function AllGroups({ b, month }: { b: BudgetView; month: string }) {
           <OwedRowPhone b={b} />
         </Group>
       )}
-      <p className="m-0 text-[12px] text-muted">
+      <p className="m-0 text-xs text-muted">
         {empty
           ? 'Transactions will show up in Activity after the first sync, usually within a few minutes.'
           : 'Bars show how much of this month’s money is left.'}

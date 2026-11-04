@@ -8,16 +8,18 @@ import { useMoneyMutation } from '../api/hooks';
 import { Sheet } from '../components/Sheet';
 import { CategoryField } from '../components/CategoryPicker';
 import {
+  amountInputClass,
   Banner,
+  Checkbox,
   ConfirmInline,
   cx,
   DangerLink,
   ErrorNote,
   Field,
+  Icon,
   inputClass,
   Label,
   PrimaryButton,
-  Icon,
   Segmented,
   SoftButton,
   TextButton,
@@ -28,7 +30,7 @@ import { addMonths, dayLabel, monthName, monthShort } from '../lib/dates';
 import { useCategoryOptions } from '../lib/common';
 import { usage } from '../usage/tracker';
 import { toast } from '../components/Toast';
-import { AMOUNT_INPUT, BankSays, TxnHeader, useParentPath } from './TxnCommon';
+import { BankSays, TxnHeader, useParentPath } from './TxnCommon';
 
 type OwedMode = 'none' | 'half' | 'all' | 'custom';
 
@@ -158,7 +160,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
         </Banner>
       ))}
       {canSetAmount && (
-        <label className="flex shrink-0 items-center justify-between gap-3 rounded-[14px] bg-page p-3 text-[14px] font-semibold text-ink-2">
+        <label className="flex shrink-0 items-center justify-between gap-3 rounded-lg bg-page p-3 text-md font-semibold text-ink-2">
           {t.amount < 0 ? 'Amount out' : 'Amount in'}
           <span className="w-[120px] shrink-0">
             <input
@@ -166,18 +168,18 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
               aria-label="Amount"
               value={amt}
               onChange={(e) => setAmt(e.target.value)}
-              className={cx(AMOUNT_INPUT, 'text-right')}
+              className={cx(amountInputClass, 'text-right')}
             />
           </span>
         </label>
       )}
       {canEstimate && (
-        <div className="flex shrink-0 flex-col gap-2 rounded-[14px] bg-page p-3">
-          <div className="flex justify-between text-[14px]">
+        <div className="flex shrink-0 flex-col gap-2 rounded-lg bg-page p-3">
+          <div className="flex justify-between text-md">
             <span className="text-muted">Bank amount</span>
             <span className="tnum font-bold">{formatCents(Math.abs(bank))}</span>
           </div>
-          <label className="flex items-center justify-between gap-3 text-[14px] font-semibold text-ink-2">
+          <label className="flex items-center justify-between gap-3 text-md font-semibold text-ink-2">
             Your estimate
             <span className="w-[120px] shrink-0">
               <input
@@ -185,7 +187,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
                 placeholder={centsToInput(Math.abs(bank))}
                 value={est}
                 onChange={(e) => setEst(e.target.value)}
-                className={cx(AMOUNT_INPUT, 'text-right')}
+                className={cx(amountInputClass, 'text-right')}
               />
             </span>
           </label>
@@ -201,7 +203,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
               </SoftButton>
             ))}
           </div>
-          <span className="text-[12px] text-muted">
+          <span className="text-xs text-muted">
             When it posts, the bank amount replaces yours and you’ll see an alert if they differ.
           </span>
         </div>
@@ -210,10 +212,10 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
         <div className="flex flex-col gap-1.5">
           <Label>Refund of</Label>
           {linked ? (
-            <div className="flex items-center justify-between gap-2 rounded-xl border border-line p-3">
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-line p-3">
               <span className="flex flex-col">
-                <span className="text-[14px] font-semibold">{t.refundOf.label}</span>
-                <span className="text-[12px] text-muted">
+                <span className="text-md font-semibold">{t.refundOf.label}</span>
+                <span className="text-xs text-muted">
                   {t.categoryLabel} · {t.accountName}
                 </span>
               </span>
@@ -222,7 +224,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
               </SoftButton>
             </div>
           ) : (
-            <div className="flex items-center justify-between gap-2 rounded-xl bg-page p-3 text-[13px] text-muted">
+            <div className="flex items-center justify-between gap-2 rounded-lg bg-page p-3 text-sm text-muted">
               <span>Not linked. It still counts as {t.categoryLabel} money back.</span>
               <TextButton onClick={() => setLinked(true)} className="self-center">
                 Link to {t.refundOf.label}
@@ -232,8 +234,8 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
         </div>
       )}
       {isIncome ? (
-        <div className="flex flex-col gap-2 rounded-[14px] border border-line p-3">
-          <span className="text-[15px] font-semibold">Goes to</span>
+        <div className="flex flex-col gap-2 rounded-lg border border-line p-3">
+          <span className="text-base font-semibold">Goes to</span>
           <Segmented
             label="Goes to"
             track="txn.income.month"
@@ -244,7 +246,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
               ['next', `Save for ${monthName(addMonths(t.date.slice(0, 7), 1))}`],
             ]}
           />
-          <span className="text-[12px] text-muted">
+          <span className="text-xs text-muted">
             {month === t.date.slice(0, 7)
               ? `Adds ${formatCents(t.amount)} to Ready to Assign in ${monthName(month)}.`
               : `Holds it until ${monthName(month)} 1, so next month starts already funded.`}
@@ -253,7 +255,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       ) : (
         <div className="flex flex-col gap-1">
           <div className="flex min-h-9 items-center justify-between">
-            <label htmlFor="txn-cat" className="text-[13px] font-semibold text-ink-2">
+            <label htmlFor="txn-cat" className="text-sm font-semibold text-ink-2">
               Category
             </label>
             {outflow && (
@@ -269,15 +271,17 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           {t.split ? (
             <Link
               to={`${parent}/txn/${encodeURIComponent(t.key)}/split`}
-              className="flex min-h-11 items-center rounded-[10px] border border-line-strong px-3 text-[15px] text-ink no-underline"
+              data-track="txn.split.open"
+              className={cx(inputClass, 'flex items-center justify-between gap-2 no-underline')}
             >
-              {t.categoryLabel ?? 'Split'}
+              <span className="truncate">{t.categoryLabel ?? 'Split'}</span>
+              <Icon name="chevR" size={18} className="shrink-0 text-muted" />
             </Link>
           ) : (
             <CategorySelect id="txn-cat" value={cat} onChange={setCat} allowRta={isRefund || t.amount > 0} />
           )}
           {t.categorizedBy && (
-            <span className="text-[12px] text-muted">
+            <span className="text-xs text-muted">
               {cat === (t.categoryId ?? '')
                 ? `Set by ${t.categorizedBy}.`
                 : `Set by you. ${t.categorizedBy.replace(/^r/, 'R')} won’t change it back.`}
@@ -286,7 +290,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
         </div>
       )}
       {isRefund && (
-        <p className="m-0 text-[13px] leading-snug text-muted">
+        <p className="m-0 text-sm leading-snug text-muted">
           The {formatCents(t.amount)} goes back to {catName}, the category that paid for it. On a card it also
           lowers what you owe, so the card’s payment category needs {formatCents(t.amount)} less.
         </p>
@@ -295,10 +299,10 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
         <Link
           to="/owed"
           data-track="txn.income.match"
-          className="flex min-h-12 shrink-0 items-center justify-between gap-3 rounded-[14px] border border-line px-3 text-ink no-underline"
+          className="flex min-h-12 shrink-0 items-center justify-between gap-3 rounded-lg border border-line px-3 text-ink no-underline"
         >
-          <span className="text-[14px]">Part of this is money back for something you fronted?</span>
-          <span className="flex shrink-0 items-center text-[14px] font-bold text-accent">
+          <span className="text-md">Part of this is money back for something you fronted?</span>
+          <span className="flex shrink-0 items-center text-md font-bold text-accent">
             Match
             <Icon name="chevR" size={18} />
           </span>
@@ -310,26 +314,26 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           data-track="txn.more"
           aria-expanded={false}
           onClick={() => setMore(true)}
-          className="flex min-h-14 shrink-0 items-center justify-between gap-3 rounded-[14px] border border-line px-3 py-2 text-left"
+          className="flex min-h-14 shrink-0 items-center justify-between gap-3 rounded-lg border border-line px-3 py-2 text-left"
         >
           <span className="flex flex-col gap-px">
-            <span className="text-[15px] font-semibold">More</span>
-            <span className="text-[12px] text-muted">
+            <span className="text-base font-semibold">More</span>
+            <span className="text-xs text-muted">
               Owed to you, budget month{t.status === 'pending' ? ', won’t clear' : ''}
             </span>
           </span>
-          <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-[14px] text-muted">
+          <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-md text-muted">
             Not owed · {monthShort(month)}
             <Icon name="chevD" size={18} />
           </span>
         </button>
       )}
       {outflow && !isIncome && more && (
-        <div className="shrink-0 overflow-hidden rounded-[14px] border border-line">
+        <div className="shrink-0 overflow-hidden rounded-lg border border-line">
           <div className="flex flex-col gap-2 p-3">
-            <span className="flex flex-col gap-px text-[15px] font-semibold">
+            <span className="flex flex-col gap-px text-base font-semibold">
               Owed to you
-              <span className="text-[12px] font-normal text-muted">Part you’ll get back from someone</span>
+              <span className="text-xs font-normal text-muted">Part you’ll get back from someone</span>
             </span>
             <Segmented
               label="Owed to you"
@@ -349,16 +353,16 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
             {owed !== 'none' && (
               <>
                 <div className="flex gap-2">
-                  <Field label="Amount owed" className="flex-1 text-[12px]">
+                  <Field label="Amount owed" className="flex-1 text-xs">
                     <input
-                      className={AMOUNT_INPUT}
+                      className={amountInputClass}
                       inputMode="decimal"
                       value={owed === 'custom' ? owedAmt : centsToInput(owedCents)}
                       readOnly={owed !== 'custom'}
                       onChange={(e) => setOwedAmt(e.target.value)}
                     />
                   </Field>
-                  <Field label="Expect by" className="flex-1 text-[12px]">
+                  <Field label="Expect by" className="flex-1 text-xs">
                     <input
                       type="date"
                       className={inputClass}
@@ -367,7 +371,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
                     />
                   </Field>
                 </div>
-                <span className="text-[12px] leading-snug text-muted">
+                <span className="text-xs leading-snug text-muted">
                   {catName} is charged only your share. The rest comes out of Ready to Assign until it’s paid
                   back
                   {t.accountName.match(/Sapphire|Freedom|card/i)
@@ -378,9 +382,9 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
               </>
             )}
           </div>
-          <div className="flex min-h-14 items-center justify-between border-t border-divider px-3 text-[15px] font-semibold">
+          <div className="flex min-h-14 items-center justify-between border-t border-divider px-3 text-base font-semibold">
             <span className="flex flex-col gap-px">
-              Counts in<span className="text-[12px] font-normal text-muted">Budget month</span>
+              Counts in<span className="text-xs font-normal text-muted">Budget month</span>
             </span>
             <div role="group" aria-label="Counts in" className="flex gap-1">
               {months.map((m) => (
@@ -391,7 +395,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
                   aria-pressed={month === m}
                   onClick={() => setMonth(m)}
                   className={cx(
-                    'hit h-9 rounded-lg border px-2.5 text-[13px] font-bold',
+                    'hit h-9 rounded-md border px-2.5 text-sm font-bold',
                     month === m
                       ? 'border-accent bg-accent-soft text-accent'
                       : 'border-line-strong bg-surface text-ink-2',
@@ -403,16 +407,14 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
             </div>
           </div>
           {t.status === 'pending' && (
-            <label className="flex min-h-14 items-center justify-between gap-3 border-t border-divider px-3 text-[15px] font-semibold">
+            <label className="flex min-h-14 items-center justify-between gap-3 border-t border-divider px-3 text-base font-semibold">
               <span className="flex flex-col gap-px">
                 Won’t clear
-                <span className="text-[12px] font-normal text-muted">
+                <span className="text-xs font-normal text-muted">
                   {owed !== 'none' ? 'Turning this on removes what’s owed' : 'Stop counting this hold'}
                 </span>
               </span>
-              <input
-                type="checkbox"
-                className="hit h-6 w-6 accent-[var(--ll-accent)]"
+              <Checkbox
                 checked={wont}
                 data-track="txn.wont_clear"
                 onChange={() => {

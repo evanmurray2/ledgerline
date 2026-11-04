@@ -95,7 +95,7 @@ export function CategoriesScreen() {
     <Page title="Categories" back="/budget">
       {!v && (q.error ? <ErrorNote error={q.error} /> : <Loading />)}
       {v && (
-        <p className="m-0 text-[13px] text-muted">
+        <p className="m-0 text-sm text-muted">
           {desktop ? 'Click' : 'Tap'} a name to change or remove it. Drag the handles to reorder.
         </p>
       )}
@@ -121,7 +121,7 @@ export function CategoriesScreen() {
         <Link
           to="/categories/new-group"
           data-track="categories.add_group"
-          className="flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-dashed border-accent text-[14px] font-bold text-accent no-underline"
+          className="flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-dashed border-accent text-md font-bold text-accent no-underline"
         >
           <Icon name="plus" size={16} stroke={2.6} />
           Add group
@@ -140,8 +140,8 @@ export function CategoriesScreen() {
                   className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 first:border-t-0"
                 >
                   <span className="flex flex-col gap-0.5">
-                    <span className="text-[15px] font-semibold">{a.name}</span>
-                    <span className="text-[12px] text-muted">{a.meta}</span>
+                    <span className="text-base font-semibold">{a.name}</span>
+                    <span className="text-xs text-muted">{a.meta}</span>
                   </span>
                   <SoftButton
                     mutates
@@ -205,7 +205,7 @@ function GroupSection({
 }) {
   const rows = useReorder(g.categories.length, (from, to) => onMoveCategory(g.id, from, to));
   return (
-    <section ref={sectionRef} style={style} className="flex shrink-0 flex-col gap-1.5 rounded-[14px] bg-page">
+    <section ref={sectionRef} style={style} className="flex shrink-0 flex-col gap-1.5 rounded-lg bg-page">
       <div className="flex min-h-11 items-center gap-1">
         {handle}
         <Link
@@ -214,11 +214,9 @@ function GroupSection({
           aria-label={`Rename group ${g.name}`}
           className="flex min-h-11 min-w-0 flex-1 items-center no-underline"
         >
-          <h2 className="m-0 truncate text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">
-            {g.name}
-          </h2>
+          <h2 className="m-0 truncate text-sm font-bold uppercase tracking-caps text-ink-2">{g.name}</h2>
         </Link>
-        <span className="pr-0.5 text-[12px] text-muted">{g.categories.length}</span>
+        <span className="pr-0.5 text-xs text-muted">{g.categories.length}</span>
       </div>
       <Card>
         {g.categories.length === 0 && <EmptyNote inCard>No categories yet.</EmptyNote>}
@@ -239,8 +237,8 @@ function GroupSection({
               data-track="categories.open"
               className="flex min-w-0 flex-1 flex-col gap-0.5 py-2 text-ink no-underline"
             >
-              <span className="text-[15px] font-semibold">{c.name}</span>
-              <span className="truncate text-[12px] text-muted">{c.meta}</span>
+              <span className="text-base font-semibold">{c.name}</span>
+              <span className="truncate text-xs text-muted">{c.meta}</span>
             </Link>
           </div>
         ))}
@@ -248,7 +246,7 @@ function GroupSection({
           to="/categories/new"
           search={{ group: g.id }}
           data-track="categories.add"
-          className="flex min-h-12 items-center gap-1.5 border-t border-divider px-3 text-[14px] font-bold text-accent no-underline first:border-t-0"
+          className="flex min-h-12 items-center gap-1.5 border-t border-divider px-3 text-md font-bold text-accent no-underline first:border-t-0"
         >
           <Icon name="plus" size={16} stroke={2.6} />
           Add category
@@ -375,6 +373,7 @@ export function CategoryEditSheet() {
           <PrimaryButton
             mutates
             track="category_edit.save"
+            busy={busy}
             disabled={!n.trim() || busy || !canWrite}
             onClick={() => void save()}
           >
@@ -422,9 +421,7 @@ export function CategoryEditSheet() {
               </select>
             </Field>
             <div className="flex flex-col gap-1.5">
-              <span className="text-[13px] font-semibold text-ink-2">
-                In reports, money out of it counts as
-              </span>
+              <span className="text-sm font-semibold text-ink-2">In reports, money out of it counts as</span>
               <Segmented
                 label="Counts as"
                 value={k}
@@ -434,7 +431,7 @@ export function CategoryEditSheet() {
                   ['saving', 'Saving or investing'],
                 ]}
               />
-              <span className="text-[12px] leading-snug text-muted">
+              <span className="text-xs leading-snug text-muted">
                 {k === 'saving'
                   ? 'Use for money leaving your budget to grow somewhere else, like a brokerage or an IRA. Shown as Invested, not Spent.'
                   : 'Most categories. Sinking funds like Vacation or Car insurance are Spending too: the money is spent when you use it.'}
@@ -445,11 +442,11 @@ export function CategoryEditSheet() {
                 to={`/budget/category/${existing.id}/target`}
                 search={{ from: 'categories' }}
                 data-track="category_edit.target"
-                className="flex min-h-14 items-center justify-between rounded-xl border border-line px-3 text-ink no-underline"
+                className="flex min-h-14 items-center justify-between rounded-lg border border-line px-3 text-ink no-underline"
               >
                 <span className="flex flex-col gap-0.5">
-                  <span className="text-[15px] font-semibold">Target</span>
-                  <span className="text-[12px] text-muted">{existing.meta}</span>
+                  <span className="text-base font-semibold">Target</span>
+                  <span className="text-xs text-muted">{existing.meta}</span>
                 </span>
                 <Icon name="chevR" size={18} className="text-faint" />
               </Link>
@@ -458,7 +455,7 @@ export function CategoryEditSheet() {
         )}
         {editingGroup &&
           (editingGroup.categories.length > 0 ? (
-            <span className="text-[12px] leading-snug text-muted">
+            <span className="text-xs leading-snug text-muted">
               To remove this group, move or remove its categories first.
             </span>
           ) : askingGroup ? (

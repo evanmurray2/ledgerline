@@ -4,7 +4,7 @@ import { useState, type ReactNode } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { PanelSlotContext, useModalOpen } from './Sheet';
 import { ToastHost } from './Toast';
-import { cx, Icon, useIsDesktop, type IconName } from './ui';
+import { CountBadge, cx, Icon, useIsDesktop, type IconName } from './ui';
 import { NoteSheet } from '../screens/Note';
 import { useBadgeCounts, useSession } from '../api/hooks';
 import { useCopy } from '../copy/copy';
@@ -70,21 +70,13 @@ function TabBar({ active }: { active: Tab }) {
             aria-current={on ? 'page' : undefined}
             aria-label={badge > 0 ? `${t.name}, ${badge} ${t.what}` : t.name}
             className={cx(
-              'relative flex min-h-12 flex-col items-center justify-center gap-[3px] text-[11px] no-underline',
+              'relative flex min-h-12 flex-col items-center justify-center gap-[3px] text-xs no-underline',
               on ? 'font-bold text-accent' : 'font-medium text-muted',
             )}
           >
             <Icon name={t.icon} size={22} />
             {badge > 0 && (
-              <span
-                aria-hidden="true"
-                className={cx(
-                  'absolute left-1/2 top-0.5 ml-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-[9px] px-[5px] text-[11px] font-bold',
-                  problem ? 'bg-danger text-on-danger' : 'bg-count-bg text-count-fg',
-                )}
-              >
-                {badge}
-              </span>
+              <CountBadge n={badge} danger={problem} size="sm" className="absolute left-1/2 top-0.5 ml-1.5" />
             )}
             <span aria-hidden="true">{t.name}</span>
           </Link>
@@ -113,7 +105,7 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
       aria-label="Main"
       className="flex h-full w-[220px] shrink-0 flex-col gap-1 border-r border-line bg-surface px-3 py-5"
     >
-      <span className="px-2.5 pb-4 text-[18px] font-bold">Ledgerline</span>
+      <span className="px-2.5 pb-4 text-xl font-bold">Ledgerline</span>
       {items.map((n) => {
         const on = n.id === active;
         return (
@@ -124,21 +116,12 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
             data-track={`nav.${n.id}`}
             aria-current={on ? 'page' : undefined}
             className={cx(
-              'hit flex h-10 items-center justify-between rounded-lg px-2.5 text-[14px] font-semibold no-underline',
+              'hit flex h-10 items-center justify-between rounded-md px-2.5 text-md font-semibold no-underline',
               on ? 'bg-accent-soft text-accent' : 'bg-transparent text-ink-2',
             )}
           >
             <span>{n.name}</span>
-            {n.badge > 0 && (
-              <span
-                className={cx(
-                  'flex h-5 min-w-5 items-center justify-center rounded-[10px] px-1.5 text-[12px] font-bold',
-                  n.id === 'accounts' ? 'bg-danger text-on-danger' : 'bg-count-bg text-count-fg',
-                )}
-              >
-                {n.badge}
-              </span>
-            )}
+            {n.badge > 0 && <CountBadge n={n.badge} danger={n.id === 'accounts'} />}
           </Link>
         );
       })}
@@ -147,14 +130,14 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
           type="button"
           data-track="nav.note"
           onClick={onNote}
-          className="mt-2 flex h-10 items-center gap-2 rounded-lg px-2.5 text-[14px] font-semibold text-ink-2"
+          className="mt-2 flex h-10 items-center gap-2 rounded-md px-2.5 text-md font-semibold text-ink-2"
         >
           <Icon name="note" size={18} /> Note
         </button>
       )}
       <div
         className={cx(
-          'mt-auto flex flex-col gap-0.5 rounded-xl p-3',
+          'mt-auto flex flex-col gap-0.5 rounded-lg p-3',
           negative
             ? 'bg-danger text-on-danger'
             : done
@@ -162,8 +145,8 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
               : 'bg-rta-bg text-rta-fg',
         )}
       >
-        <span className="text-[12px] font-semibold">{done ? 'All money assigned' : 'Ready to Assign'}</span>
-        <span className="tnum text-[22px] font-bold" data-testid="nav-rta">
+        <span className="text-xs font-semibold">{done ? 'All money assigned' : 'Ready to Assign'}</span>
+        <span className="tnum text-3xl font-bold" data-testid="nav-rta">
           {badges.rtaUpdating ? 'Updating' : rta === undefined ? '—' : formatCents(rta)}
         </span>
         {/* The one Assign button on desktop, on every screen, so the amount isn't repeated in a header. */}
@@ -172,14 +155,14 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
             <Link
               to="/budget/assign"
               data-track="nav.assign"
-              className="hit mt-1.5 flex h-9 items-center justify-center rounded-full bg-rta-fg text-[14px] font-bold text-rta-btn-fg no-underline"
+              className="hit mt-1.5 flex h-9 items-center justify-center rounded-full bg-rta-fg text-md font-bold text-rta-btn-fg no-underline"
             >
               Assign
             </Link>
           ) : (
             <span
               aria-disabled="true"
-              className="mt-1.5 flex h-9 items-center justify-center rounded-full bg-rta-fg/50 text-[14px] font-bold text-rta-btn-fg"
+              className="mt-1.5 flex h-9 items-center justify-center rounded-full bg-rta-fg/50 text-md font-bold text-rta-btn-fg"
             >
               Assign
             </span>
@@ -203,8 +186,8 @@ export function StatusBanner() {
         data-testid="offline-banner"
         className="flex shrink-0 flex-col gap-1 border-b border-line bg-sunken px-4 py-2.5 text-none-fg"
       >
-        <span className="text-[14px] font-bold">You’re offline</span>
-        <span className="text-[13px] leading-snug">
+        <span className="text-md font-bold">You’re offline</span>
+        <span className="text-sm leading-snug">
           {copy.status === 'ready'
             ? `Categorizing, editing a transaction and assigning still work${copy.queued ? ` (${copy.queued} waiting to send)` : ''}; they’re sent when you’re back online. Other changes are off.`
             : `${loaded ? `Showing what was loaded at ${loaded}.` : 'Showing what was last loaded.'} Changes are off until you’re back online.`}
@@ -224,8 +207,8 @@ function RestingBanner({ until }: { until: string }) {
       data-testid="resting-banner"
       className="flex shrink-0 flex-col gap-1 border-b border-warn-border bg-warn-bg px-4 py-2 text-warn-fg"
     >
-      <span className="text-[14px] font-bold">Resting until {until}</span>
-      <span className="text-[13px] leading-snug">
+      <span className="text-md font-bold">Resting until {until}</span>
+      <span className="text-sm leading-snug">
         The app has nearly used today’s free allowance, so it has stopped loading and saving to stay online.
         Screens show what was last saved on this device. Nothing is lost.
       </span>
@@ -242,19 +225,19 @@ function ReadOnlyBanner({ until }: { until: string }) {
       className="flex shrink-0 flex-col gap-1 border-b border-warn-border bg-warn-bg px-4 py-2 text-warn-fg"
     >
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[14px] font-bold">View only until {until}</span>
+        <span className="text-md font-bold">View only until {until}</span>
         <button
           type="button"
           data-track="banner.readonly.why"
           aria-expanded={why}
           onClick={() => setWhy(!why)}
-          className="hit h-7 shrink-0 text-[14px] font-bold underline"
+          className="hit h-7 shrink-0 text-md font-bold underline"
         >
           {why ? 'Hide' : 'Why?'}
         </button>
       </div>
       {why && (
-        <span className="text-[13px] leading-snug">
+        <span className="text-sm leading-snug">
           The app has used today’s free allowance for saving changes. Changes start again at {until}, and bank
           sync catches up then. Nothing is lost.
         </span>
@@ -310,7 +293,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           data-track="app.note"
           aria-label="Write a note about this screen"
           onClick={() => setNoteOpen(true)}
-          className="fixed bottom-[calc(150px+env(safe-area-inset-bottom,0px))] right-4 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface text-ink-2 shadow-sm"
+          className="fixed bottom-[calc(150px+env(safe-area-inset-bottom,0px))] right-4 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface text-ink-2 shadow-raised"
         >
           <Icon name="note" size={18} />
         </button>
