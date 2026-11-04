@@ -18,6 +18,13 @@ async function withPasskeyDevice(page: Page) {
   return cdp;
 }
 
+/** The Sign in screen asks for the passkey by itself: `open` shows it, and the sign-in goes through with no tap. */
+async function signsInByItself(page: Page, open: () => Promise<unknown>) {
+  const verified = page.waitForResponse((r) => r.url().includes('/api/auth/login/verify'));
+  await open();
+  expect((await verified).status()).toBe(200);
+}
+
 const post = (page: Page, path: string) =>
   page.evaluate(async (p) => {
     const r = await fetch(p, {
@@ -50,9 +57,7 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   await page.goto('/budget');
   expect(await page.evaluate(() => localStorage.getItem('ledgerline-saved-data'))).toBeNull();
   expect((await post(page, '/api/settings/security/sign-out')).status).toBe(200);
-  await page.goto('/budget');
-  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
-  await page.getByRole('button', { name: 'Sign in with passkey' }).click();
+  await signsInByItself(page, () => page.goto('/budget'));
   await expect(page).toHaveURL(/\/welcome/);
 
   // A second device: a link from this one, opened in a separate browser with its own authenticator.
@@ -75,15 +80,13 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   await expect(again.getByRole('alert')).toContainText('isn’t valid');
   await again.close();
   // Clearing that page's cookies signed the second device out too: it signs in again.
-  await phone.goto('/budget');
-  await phone.getByRole('button', { name: 'Sign in with passkey' }).click();
+  await signsInByItself(phone, () => phone.goto('/budget'));
   await expect(phone).toHaveURL(/\/welcome/);
 
   // A computer keeps an encrypted copy too, like a phone (D-53). Signing in gets the passkey's PRF output in the same
   // prompt.
   await post(page, '/api/settings/security/sign-out');
-  await page.goto('/budget');
-  await page.getByRole('button', { name: 'Sign in with passkey' }).click();
+  await signsInByItself(page, () => page.goto('/budget'));
   await expect(page).toHaveURL(/\/welcome/);
 
   // One device with a copy, saved encrypted: nothing readable in it.
@@ -138,8 +141,7 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
     since.push(Number(u.searchParams.get('since')));
     if (u.searchParams.get('why')) why.push(u.searchParams.get('why')!);
   });
-  await page.reload();
-  await page.getByRole('button', { name: 'Sign in with passkey' }).click();
+  await signsInByItself(page, () => page.reload());
   await expect(page).toHaveURL(/\/welcome/);
   await expect.poll(() => since.length, { timeout: 15_000 }).toBeGreaterThan(0);
   expect(since[0]).toBeGreaterThan(0);
@@ -173,10 +175,8 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
     }, v);
   await setVisibility('hidden');
   await page.clock.setSystemTime(Date.now() + 11 * 60_000);
-  await setVisibility('visible');
-  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
   const syncsBefore = since.length;
-  await page.getByRole('button', { name: 'Sign in with passkey' }).click();
+  await signsInByItself(page, () => setVisibility('visible'));
   await expect(page).toHaveURL(/\/welcome/);
   await expect(page.getByRole('heading', { name: 'Ledgerline', exact: true })).toBeVisible();
   await expect.poll(() => since.length, { timeout: 15_000 }).toBeGreaterThan(syncsBefore);
@@ -205,8 +205,11 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   });
   expect(out).toBe(200);
   await other.close();
+  // After "Sign out of this device" the Sign in screen waits for a tap; that keeps Face ID from opening at once.
+  await page.evaluate(() => sessionStorage.setItem('ledgerline-signed-out-here', '1'));
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sign in with passkey' })).toBeEnabled();
   await expect.poll(async () => await copy(), { timeout: 15_000 }).toBeNull();
 
   // Signing in again starts a new copy.

@@ -68,6 +68,19 @@ const NoPasskeys = () => (
   <Problem text="This browser can’t use passkeys. Open Ledgerline in Safari, Chrome, Edge or Firefox." />
 );
 
+/** Set when you sign out of this device, so the Sign in screen that follows doesn't ask for Face ID by itself. */
+const SIGNED_OUT_HERE = 'ledgerline-signed-out-here';
+
+function takeSignedOutHere(): boolean {
+  try {
+    const was = sessionStorage.getItem(SIGNED_OUT_HERE) === '1';
+    sessionStorage.removeItem(SIGNED_OUT_HERE);
+    return was;
+  } catch {
+    return false;
+  }
+}
+
 export function SignInScreen() {
   const qc = useQueryClient();
   const status = useQuery({ queryKey: qk.authStatus, queryFn: api.authStatus, retry: 1 });
@@ -76,6 +89,30 @@ export function SignInScreen() {
   const [err, setErr] = useState<string | null>(null);
   const done = () => void qc.invalidateQueries({ queryKey: qk.session });
   const supported = browserSupportsWebAuthn();
+  const signIn = (auto: boolean) => {
+    setBusy(true);
+    void ceremony(signInWithPasskey).then((m) => {
+      setBusy(false);
+      // Face ID that opened by itself and was cancelled isn't a problem: the button is there.
+      setErr(auto && m?.startsWith('Cancelled') ? null : m);
+      if (!m) done();
+    });
+  };
+  // The passkey prompt opens by itself once per visit to this screen, as soon as the page is in front (Safari lets a
+  // page start it without a tap since iOS 17.4). Not after signing out here: that would ask again at once.
+  const asked = useRef(false);
+  const ready = supported && status.data?.hasPasskey === true && !status.data.setupOpen;
+  useEffect(() => {
+    if (!ready || asked.current) return;
+    const go = () => {
+      if (asked.current || document.visibilityState !== 'visible') return;
+      asked.current = true;
+      if (!takeSignedOutHere()) signIn(true);
+    };
+    go();
+    document.addEventListener('visibilitychange', go);
+    return () => document.removeEventListener('visibilitychange', go);
+  }, [ready]);
 
   if (status.data?.setupOpen) {
     return (
@@ -119,7 +156,7 @@ export function SignInScreen() {
   return (
     <Frame title="Sign in">
       <p className="m-0 text-base leading-relaxed text-ink-2">
-        Use the passkey on this device. Your session lasts 24 hours.
+        Use the passkey on this device. You stay signed in until you leave Ledgerline unused for 10 minutes.
       </p>
       {!supported && <NoPasskeys />}
       {status.data && !status.data.hasPasskey && (
@@ -129,14 +166,7 @@ export function SignInScreen() {
       <PrimaryButton
         busy={busy}
         disabled={busy || !supported || status.data?.hasPasskey === false}
-        onClick={() => {
-          setBusy(true);
-          void ceremony(signInWithPasskey).then((m) => {
-            setBusy(false);
-            setErr(m);
-            if (!m) done();
-          });
-        }}
+        onClick={() => signIn(false)}
       >
         {busy ? 'Waiting for your passkey…' : 'Sign in with passkey'}
       </PrimaryButton>
@@ -417,6 +447,11 @@ export function SignInSection() {
               async () => {
                 // The budget saved on this phone is deleted first (D-45), then the sign-in ends.
                 clearSavedData();
+                try {
+                  sessionStorage.setItem(SIGNED_OUT_HERE, '1');
+                } catch {
+                  // Without it, the Sign in screen just asks for Face ID by itself.
+                }
                 await (import.meta.env.VITE_MOCK === '1' ? api.signOut() : signOutHere());
               },
               () => window.location.assign('/'),
@@ -473,8 +508,8 @@ function SignIns({
       <div className="flex flex-col gap-1 px-3 py-3">
         <span className="text-base font-semibold">Signed in</span>
         <span className="text-sm leading-snug text-muted">
-          Each sign-in lasts 24 hours, and ends after 10 idle minutes. Signing a device out deletes the budget
-          saved on it.
+          Each sign-in ends after 10 idle minutes, or after 24 hours at most. Signing a device out deletes the
+          budget saved on it.
         </span>
       </div>
       {sorted.map((x) => (
