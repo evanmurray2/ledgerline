@@ -173,6 +173,8 @@ export const AssignSuggestion = z.object({
   reason: z.enum(['cover', 'target', 'card']),
   detail: z.string(),
   amount: cents,
+  /** Ticked when the sheet opens: overspending, card shortfalls and underfunded targets, not Low categories. */
+  preselected: z.boolean(),
 });
 export const AssignView = z.object({ month, rta: cents, suggestions: z.array(AssignSuggestion) });
 export type AssignView = z.infer<typeof AssignView>;

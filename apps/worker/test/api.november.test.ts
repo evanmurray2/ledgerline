@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type {
   AccountsView,
   ActivityView,
+  AssignView,
   BudgetView,
   MutationResult,
   OwedView,
@@ -152,6 +153,15 @@ describe('November through the API', () => {
       const rows = [...v.posted, ...v.pending, ...v.upcoming];
       expect(rows.length, c.name).toBeGreaterThan(0);
     }
+  });
+
+  it('Assign: cover, then underfunded targets, all ticked when the sheet opens', async () => {
+    const v = await get<AssignView>('/api/budget/2026-11/assign');
+    expect(v.suggestions.map((x) => [x.categoryId, x.reason, x.amount, x.preselected])).toEqual([
+      ['dining', 'cover', 1825, true],
+      ['car', 'target', 9000, true],
+      ['vacation', 'target', 25000, true],
+    ]);
   });
 
   it('after Cover $18.25, Fund $90 and $250, Add $20, Move $40 back from Gifts: RTA $643.65', async () => {

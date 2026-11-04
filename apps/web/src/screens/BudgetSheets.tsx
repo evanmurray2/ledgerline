@@ -343,8 +343,7 @@ export function AssignSheetScreen() {
       </Sheet>
     );
   }
-  const defaultOn = (s: (typeof v.suggestions)[number]) =>
-    s.reason !== 'target' || /^Underfunded/.test(s.detail);
+  const defaultOn = (s: (typeof v.suggestions)[number]) => s.preselected;
   const isOn = (s: (typeof v.suggestions)[number]) =>
     off[s.categoryId] === undefined ? defaultOn(s) : !off[s.categoryId];
   const chosen = v.suggestions.filter(isOn);
