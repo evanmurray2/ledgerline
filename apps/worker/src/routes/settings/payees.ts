@@ -8,6 +8,12 @@ import { parse, scoped } from '../api.js';
 
 export const payeesRoutes = new Hono<AppEnv>();
 
+/**
+ * Rows the budget counts. Payees seen only before the budget start ("Before your budget") are left out of this
+ * list and its merge suggestions (D-?); they stay in the database, so a payee that comes back keeps its name.
+ */
+const IN_BUDGET = `(status != 'posted' OR date >= budget_from OR pending_at_link = 1)`;
+
 // ---------------------------------------------------------------- payees
 
 payeesRoutes.get('/settings/payees', async (c) => {
@@ -15,10 +21,13 @@ payeesRoutes.get('/settings/payees', async (c) => {
   const [p, raw] = await s.batch([
     s.q(
       `SELECT p.id, p.name, p.remember_category, c.name AS def, (SELECT count(*) FROM txn_overlay o WHERE o.budget_id = p.budget_id AND o.payee_id = p.id) AS n
-       FROM payee p LEFT JOIN category c ON c.id = p.default_category_id WHERE p.budget_id = ?1 AND p.merged_into IS NULL ORDER BY n DESC LIMIT 300`,
+       FROM payee p LEFT JOIN category c ON c.id = p.default_category_id WHERE p.budget_id = ?1 AND p.merged_into IS NULL
+         AND p.id IN (SELECT payee_id FROM v_transaction WHERE budget_id = ?1 AND payee_id IS NOT NULL AND ${IN_BUDGET})
+       ORDER BY n DESC LIMIT 300`,
     ),
     s.q(
       `SELECT v.raw_name AS raw, v.merchant_entity_id, v.payee AS merchant_name, v.payee_id, count(*) AS n FROM v_transaction v WHERE v.budget_id = ?1
+         AND ${IN_BUDGET}
        GROUP BY v.raw_name, v.payee_id ORDER BY n DESC LIMIT 500`,
     ),
   ]);

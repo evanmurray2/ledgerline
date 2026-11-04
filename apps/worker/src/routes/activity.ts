@@ -109,11 +109,15 @@ type PostedScope = string | 'all' | 'none' | { month: Month; start: Month };
 
 /**
  * The budget month a row counts in, as Budget's Spent counts it (`linesForTxn`): its own month override or its
- * date's month, never before the budget's first month. History (dated before the account's budget start) keeps
- * its date's month: Budget doesn't count it.
+ * date's month, never before the budget's first month. Only for rows the budget counts (IN_BUDGET).
  */
-const ROW_MONTH = `CASE WHEN date >= budget_from OR pending_at_link = 1
-    THEN max(coalesce(budget_month, substr(date, 1, 7)), ?5) ELSE substr(date, 1, 7) END`;
+const ROW_MONTH = `max(coalesce(budget_month, substr(date, 1, 7)), ?5)`;
+
+/**
+ * Posted rows the budget counts: dated from the account's budget start, or pending when it was linked. Activity's
+ * lists leave out the rest ("Before your budget", D-?); a search still finds them, and so does the account's register.
+ */
+const IN_BUDGET = `(date >= budget_from OR pending_at_link = 1)`;
 
 /**
  * One page of posted rows, newest first. With a window start, only rows dated (and so posted) on or after it are
@@ -128,7 +132,7 @@ function postedQuery(s: Scoped, from: PostedScope, cursor: string | null, q: str
     return s.q(
       `SELECT ${TX_COLUMNS} FROM v_txn_bank WHERE budget_id = ?1 AND status = 'posted'
          ${first ? 'AND ?4 IS NOT NULL' : 'AND posted_date >= ?4'}
-         AND posted_date < date(?6, '+4 months') AND ${ROW_MONTH} = ?7
+         AND posted_date < date(?6, '+4 months') AND ${IN_BUDGET} AND ${ROW_MONTH} = ?7
          AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
          ${q ? `AND (lower(payee) LIKE ?3 OR printf('%.2f', abs(amount) / 100.0) LIKE ?3 OR ${CATEGORY_MATCH})` : 'AND ?3 IS NULL'}
        ORDER BY date DESC, seq DESC LIMIT 50`,
@@ -144,6 +148,7 @@ function postedQuery(s: Scoped, from: PostedScope, cursor: string | null, q: str
   return s.q(
     `SELECT ${TX_COLUMNS} FROM v_txn_bank WHERE budget_id = ?1 AND ${from === 'none' ? '0 AND ' : ''}status = 'posted'
        ${window ? 'AND posted_date >= ?4 AND date >= ?4' : ''}
+       ${q ? '' : `AND ${IN_BUDGET}`}
        AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
        ${q ? `AND (lower(payee) LIKE ?3 OR printf('%.2f', abs(amount) / 100.0) LIKE ?3 OR ${CATEGORY_MATCH})` : 'AND ?3 IS NULL'}
      ORDER BY date DESC, seq DESC LIMIT 50`,

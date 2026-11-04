@@ -8,7 +8,7 @@ import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../../http/context.js';
 import { ACK, HttpError, parse, scoped } from '../api.js';
 import { structure } from '../../views/common.js';
-import { listRow } from '../../views/rows.js';
+import { isHistory, listRow } from '../../views/rows.js';
 import { TX_COLUMNS, type TxRow } from '../../ledger/ledger.js';
 import type { Scoped } from '../../db/scoped.js';
 
@@ -146,8 +146,9 @@ rulesRoutes.post('/settings/rules/preview', async (c) => {
   );
   const view: RulePreview = {
     matches: hits.slice(0, 50).map((t) => listRow(t, accts, cats)),
-    uncategorizedMatches: hits.filter((t) => !t.category_id && !t.to_rta && !t.transfer_state && !t.wtm_state)
-      .length,
+    uncategorizedMatches: hits.filter(
+      (t) => !isHistory(t) && !t.category_id && !t.to_rta && !t.transfer_state && !t.wtm_state,
+    ).length,
   };
   return c.json(view);
 });
@@ -176,9 +177,16 @@ rulesRoutes.post('/settings/rules/:id/apply', async (c) => {
     stopAfter: row.stop_after === 1,
     enabled: true,
   };
-  // Applies only to uncategorized history: rules never overwrite a category you set by hand.
+  // Applies only to past rows left uncategorized: rules never overwrite a category you set by hand, and never
+  // touch rows before the account's budget start, which are read-only (D-?).
   const txs = (await recentTxns(s, 3650)).filter(
-    (t) => !t.category_id && !t.to_rta && !t.transfer_state && !t.wtm_state && t.categorized_by !== 'user',
+    (t) =>
+      !isHistory(t) &&
+      !t.category_id &&
+      !t.to_rta &&
+      !t.transfer_state &&
+      !t.wtm_state &&
+      t.categorized_by !== 'user',
   );
   const w: Stmt[] = [];
   const keys: string[] = [];

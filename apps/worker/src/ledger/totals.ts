@@ -6,7 +6,7 @@
 // - the sync's apply step: the months of every row it touches, before and after (sync/steps.ts)
 // - processing: from the earliest month it touched (sync/process.ts), since it can re-key a row onto a
 //   pending-at-link overlay
-// - CSV history import and re-pointing an account (routes/ops.ts), and the dev seed: everything
+// - CSV history import and re-pointing an account (routes/ops.ts): the phone's copy, when the rows arrive
 import type { Stmt } from '@ledgerline/db/sql';
 import { type Month, addMonths } from '@ledgerline/domain';
 import type { Scoped } from '../db/scoped.js';

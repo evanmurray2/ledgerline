@@ -23,11 +23,16 @@ import type { AppEnv } from '../http/context.js';
 import { HttpError, parse, scoped } from './api.js';
 import { editTime, liveKey } from './sync.js';
 import { shortDate } from '../views/common.js';
-import { categoryLabel } from '../views/rows.js';
-import { txnCol } from '../ledger/ledger.js';
+import { categoryLabel, isHistory } from '../views/rows.js';
+import { TX_COLUMNS, chunks, txnCol, type TxRow } from '../ledger/ledger.js';
 import { OVERLAY_UPSERT, commit, loadTx, names } from './txn-common.js';
 
 export const transactionRoutes = new Hono<AppEnv>();
+
+/** Rows before the account's budget start are read-only (D-?): the budget never counts them, so nothing on them changes. */
+function refuseHistory(t: TxRow): void {
+  if (isHistory(t)) throw new HttpError(409, 'history', 'This is before your budget, so it can’t be changed');
+}
 
 transactionRoutes.get('/transactions/:key', async (c) => {
   const s = scoped(c);
@@ -86,8 +91,9 @@ transactionRoutes.get('/transactions/:key', async (c) => {
     today,
   );
   const refund = (rf!.results[0] as { to_key: string; label: string; date: string } | undefined) ?? null;
-  const kind: TxnSheet['kind'] =
-    t.transfer_state === 'paired' || t.transfer_state === 'unsorted'
+  const kind: TxnSheet['kind'] = isHistory(t)
+    ? 'history'
+    : t.transfer_state === 'paired' || t.transfer_state === 'unsorted'
       ? 'transfer'
       : t.status === 'upcoming'
         ? 'upcoming'
@@ -173,6 +179,7 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
   const s = scoped(c);
   const key = await liveKey(s, c.req.param('key'));
   const t = await loadTx(s, key);
+  refuseHistory(t);
   const now = clock(c.env);
   // Most-recent-edit-wins uses when the edit was made, which for an offline edit is before it arrives.
   const editAt = editTime(c, now);
@@ -342,6 +349,13 @@ transactionRoutes.post('/transactions/categorize', async (c) => {
       r.categoryId,
     );
     if (!ok) throw new HttpError(404, 'not_found', 'category');
+  }
+  for (const ids of chunks(r.keys)) {
+    const rows = await s.all<TxRow>(
+      `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND key IN (${ids.map((_, i) => `?${i + 2}`).join(',')})`,
+      ...ids,
+    );
+    rows.forEach(refuseHistory);
   }
   const w: Stmt[] = [];
   for (const key of r.keys) {

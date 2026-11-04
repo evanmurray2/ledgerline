@@ -105,11 +105,14 @@ describe('database reads per request', () => {
     const reads = Object.fromEntries(out.map((o) => [o.p, o.reads]));
     for (const o of out) expect(o.status, o.p).toBe(200);
 
-    // The Activity list reads in date windows; paging through it on the phone still returns every posted row once,
-    // in order.
+    // The Activity list reads in date windows; paging through it on the phone still returns every posted row the
+    // budget counts once, in order (rows before an account's budget start aren't listed, D-?).
     const all = (
       await db
-        .prepare(`SELECT key FROM v_transaction WHERE status = 'posted' ORDER BY date DESC, seq DESC`)
+        .prepare(
+          `SELECT key FROM v_transaction WHERE status = 'posted' AND (date >= budget_from OR pending_at_link = 1)
+           ORDER BY date DESC, seq DESC`,
+        )
         .all<{ key: string }>()
     ).results.map((r) => r.key);
     const seen: string[] = [];

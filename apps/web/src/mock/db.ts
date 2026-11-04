@@ -470,6 +470,15 @@ function initialTxns(): Txn[] {
       badge: 'Transfer',
       kind: 'transfer',
     }),
+    // Posted before the account's budget start: read-only, and only in the register and searches (D-?).
+    t('oldbakery', 'Old Bakery', 'chk', '2026-09-28', -1234, 'register', {
+      label: 'Not budgeted',
+      badge: 'Before your budget',
+      badgeKind: 'hold',
+      sub: 'not budgeted',
+      kind: 'history',
+      rawName: 'OLD BAKERY SF',
+    }),
     t('vanguard', 'Vanguard', 'chk', '2026-11-01', -150000, 'register', {
       categoryId: 'invest',
       rawName: 'VANGUARD BUY INVESTMENT',

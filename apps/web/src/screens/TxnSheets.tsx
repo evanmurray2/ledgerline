@@ -1,5 +1,5 @@
-// Transaction sheet: picks the variant (edit, paid back, paired transfer; TxnEdit.tsx, TxnLinked.tsx). Also
-// Rename payee. Split lives in TxnSplit.tsx.
+// Transaction sheet: picks the variant (edit, paid back, paired transfer, before your budget; TxnEdit.tsx,
+// TxnLinked.tsx, TxnHistory.tsx). Also Rename payee. Split lives in TxnSplit.tsx.
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { api } from '../api/endpoints';
 import { useMoneyMutation, useTxn, usePayees, qk } from '../api/hooks';
@@ -10,6 +10,7 @@ import { RenamePayeeSheet } from '../components/RenamePayee';
 import { useClose, useParentPath } from './TxnCommon';
 import { EditTxn } from './TxnEdit';
 import { PaidBack, PairedTransfer } from './TxnLinked';
+import { HistoryTxn } from './TxnHistory';
 
 export { useParentPath } from './TxnCommon';
 export { SplitScreen } from './TxnSplit';
@@ -26,6 +27,7 @@ export function TxnSheetScreen() {
         {q.error ? <ErrorNote error={q.error} /> : <Loading />}
       </Sheet>
     );
+  if (t.kind === 'history') return <HistoryTxn t={t} close={close} />;
   if (t.kind === 'transfer') return <PairedTransfer t={t} close={close} />;
   if (t.kind === 'paidBack') return <PaidBack t={t} close={close} />;
   return <EditTxn t={t} close={close} />;

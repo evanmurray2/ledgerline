@@ -574,3 +574,16 @@ test('Desktop: Budget header pills for Edit categories and Set targets, like Syn
     await expect(pill).toHaveClass(/rounded-full/);
   }
 });
+test('A row from before the budget opens read-only from the register', async ({ page }) => {
+  await page.goto('/accounts/chk');
+  await page.getByText('Old Bakery').click();
+  const sheet = page.getByRole('dialog');
+  await expect(sheet.getByText('Not counted')).toBeVisible();
+  await expect(sheet.getByText('Before your budget')).toBeVisible();
+  await expect(sheet.getByText('OLD BAKERY SF')).toBeVisible();
+  // Nothing to change: no note box, no Rename payee.
+  await expect(sheet.getByPlaceholder('Add a note')).toHaveCount(0);
+  await expect(sheet.getByText('Rename payee')).toHaveCount(0);
+  await sheet.getByRole('button', { name: 'Done' }).click();
+  await expect(page).toHaveURL(/\/accounts\/chk$/);
+});
