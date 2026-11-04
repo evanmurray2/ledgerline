@@ -139,7 +139,7 @@ money.
   categorized keep their category, and their "set by rule" chip still shows.
 - **Rules you may have:** a rule made with Always stops applying to new transactions. The suggestion (2.1) takes
   over, since the category you made the rule from is the payee's most used one.
-- **Docs:** a new decision (`docs/decisions/D-?-no-rules.md`), and rows in the "What's true now" tables of
+- **Docs:** a new decision (`docs/decisions/D-?-no-rules.md`), and entries in `docs/whats-true-now.md` (D-59) for
   `docs/design.md` (Categorization rules; rule-made paybacks such as the rent rule; the Rules settings screen)
   and `docs/sync-spec.md` (rule results in the processing batch). Money rule 13 (projected fronts) still applies
   to owed items you mark yourself.
@@ -313,7 +313,7 @@ Four PRs, none with a migration, in this order so there's never a stretch with n
 
 1. **Suggest, then OK** (section 2): the grouped query, OK, OK all, the picker order, the server checks; the
    remembered category and the Always offer go.
-2. **Remove rules** (section 3), after the owner's check, with the decision and the "What's true now" rows.
+2. **Remove rules** (section 3), after the owner's check, with the decision and the `docs/whats-true-now.md` entries.
 3. **Payees page and rename = merge** (sections 5 and 6): the plain list without history, search across bank
    text, the Rename sheet with joining and Undo, offline renaming by payee id.
 4. **New payees** (section 4): "New" and the bank text on rows, the suggested join.
