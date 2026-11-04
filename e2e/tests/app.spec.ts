@@ -128,13 +128,27 @@ test('Activity: categorize from the picker, undo, and OK a suggestion', async ({
 test('Activity: OK all takes every strong suggestion, with one Undo', async ({ page }) => {
   await page.goto('/activity?filter=attention');
   await expect(page.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
-  await page.getByRole('button', { name: 'OK 3 suggestions' }).click();
-  await expect(page.getByRole('status').filter({ hasText: '3 transactions categorized' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Needs attention 5' })).toBeVisible();
+  // The second Amazon is a new payee offered as "Same as your Amazon?", so OK all leaves it for you.
+  await page.getByRole('button', { name: 'OK 2 suggestions' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '2 transactions categorized' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Needs attention 6' })).toBeVisible();
   // CVS Pharmacy has no suggestion, so it still waits.
   await expect(page.getByRole('button', { name: /Choose category for CVS Pharmacy/ })).toBeVisible();
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(page.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
+});
+
+test('Activity: a new payee shows its bank text, and Same as your… joins it into yours, with Undo', async ({
+  page,
+}) => {
+  await page.goto('/activity?filter=attention');
+  await expect(page.getByText('CVS/PHARMACY #0812')).toBeVisible();
+  await expect(page.getByText('Same as your Amazon?')).toBeVisible();
+  await page.getByRole('button', { name: 'Join Amazon into your Amazon' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Joined into Amazon' })).toBeVisible();
+  await expect(page.getByText('Same as your Amazon?')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByText('Same as your Amazon?')).toBeVisible();
 });
 
 test('Activity: Select several gives many transactions one category', async ({ page }) => {

@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate, useSearch } from '@tanstack/react-router';
 import type { ActivityView, TxnListRow } from '@ledgerline/contracts';
 import { api, type ActivityFilter } from '../api/endpoints';
-import { adjustAttention, useActivity, useBudget, useMoneyMutation, useSession } from '../api/hooks';
+import { adjustAttention, qk, useActivity, useBudget, useMoneyMutation, useSession } from '../api/hooks';
 import { MonthBar, TabHeader } from '../components/MonthBar';
 import { monthName } from '../lib/dates';
 import { clampMonth } from '../state/month';
@@ -237,6 +237,34 @@ export function ActivityScreen() {
     ]);
   };
 
+  /** Join a new payee into your payee of the same name (docs/payees.md 4.3), with Undo; Activity loads again. */
+  const join = async (r: NeedsRow) => {
+    if (!r.sameAs || !r.payeeId) return;
+    const into = r.sameAs;
+    const refresh = () => {
+      void qc.invalidateQueries({ queryKey: ['activity'] });
+      void qc.invalidateQueries({ queryKey: qk.payees });
+    };
+    try {
+      const res = await api.mergePayees({ keep: into.id, ids: [into.id, r.payeeId] });
+      refresh();
+      toast.show({
+        text: `Joined into ${into.name}`,
+        undo: async () => {
+          try {
+            await api.undoMergePayees(res.undoId);
+            usage.undo('payee_join');
+          } catch (e) {
+            toast.show({ text: e instanceof Error ? e.message : 'Couldn’t undo that.' });
+          }
+          refresh();
+        },
+      });
+    } catch (e) {
+      toast.show({ text: e instanceof Error ? e.message : 'Couldn’t join those payees.' });
+    }
+  };
+
   /** OK all: every open row shown (under the search) with a strong suggestion, one request per category. */
   const strongRows = (rows: NeedsRow[]) => rows.filter((r) => r.suggestion?.strong);
   const acceptAll = (rows: NeedsRow[]) => {
@@ -415,6 +443,7 @@ export function ActivityScreen() {
             openPicker={openPicker}
             onAccept={accept}
             onAcceptAll={acceptAll}
+            onJoin={(r) => void join(r)}
           />
         )}
         {v && v.checkThese.length > 0 && (

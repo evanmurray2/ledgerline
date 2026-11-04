@@ -109,6 +109,14 @@ export function clusterPayees(rows: readonly PayeeRaw[], threshold = 0.5): Payee
     }));
 }
 
+/** Payee names compare without case, outer spaces or the curly/straight apostrophe difference. */
+export function samePayeeName(a: string, b: string): boolean {
+  return payeeNameKey(a) === payeeNameKey(b);
+}
+export function payeeNameKey(s: string): string {
+  return s.trim().replace(/[’‘]/g, "'").toLowerCase();
+}
+
 export function titleCase(s: string): string {
   return s.toLowerCase().replace(/\b[a-z]/g, (m) => m.toUpperCase());
 }
