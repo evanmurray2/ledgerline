@@ -3,13 +3,9 @@
 This tab is the implementation contract for the bank sync engine and budget recalculation; the Design tab states what they guarantee. Revised Oct 31, 2026 after an independent review (findings F1–F12 are cited where each rule comes from).
 
 
-## What's true now (Nov 3, 2026)
+## What's true now
 
-The **Money rules** and the matching mechanics below still stand exactly. The plumbing around them changed. Where a section disagrees, the decision named wins; each changed section starts with a **Now** note.
-
-- **Storage and jobs:** SQLite in Durable Objects instead of D1, and alarm jobs in each budget's store instead of Workflows (D-37, D-38; `apps/worker/src/store/jobs.ts`). A failed step backs off and is tried up to 6 times.
-- **Recalculation:** the phone works out budget lines, month snapshots and Ready to Assign from its own copy, with the same `computeBudget()`; the server keeps nothing derived and has no recompute (D-45, D-46). The guarantee in point 3 holds on the phone (`apps/worker/test/engine.test.ts`).
-- **Limits:** D1's limits no longer apply; Durable Object rows read and written, requests and Worker requests do, and SQLite's CPU counts toward the 10 ms (D-40; `docs/measurements.md`).
+The **Money rules** and the matching mechanics below still stand exactly. The plumbing around them changed: see [`docs/whats-true-now.md`](whats-true-now.md). Where a section disagrees, the decision named wins; each changed section starts with a **Now** note.
 
 ## Guarantees the code must uphold
 
