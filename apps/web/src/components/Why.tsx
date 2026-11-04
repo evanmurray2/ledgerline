@@ -26,11 +26,11 @@ export function Why({
           e.stopPropagation();
           setOpen(!open);
         }}
-        className="hit self-start text-[13px] font-bold underline"
+        className="hit self-start text-sm font-bold underline"
       >
         {open ? 'Hide' : label}
       </button>
-      {open && <span className="text-[13px] leading-snug">{children}</span>}
+      {open && <span className="text-sm leading-snug">{children}</span>}
     </span>
   );
 }
@@ -51,7 +51,7 @@ export function OneBanner({ items }: { items: ReactNode[] }) {
         type="button"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="hit self-start px-0.5 text-[13px] font-bold text-accent"
+        className="hit self-start px-0.5 text-sm font-bold text-accent"
       >
         {open ? 'Show less' : `${shown.length - 1} more`}
       </button>

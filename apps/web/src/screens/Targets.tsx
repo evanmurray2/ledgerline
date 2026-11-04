@@ -6,12 +6,14 @@ import { api } from '../api/endpoints';
 import { useCategoriesSettings, useCategorySheet, useMoneyMutation } from '../api/hooks';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import {
+  amountInputClass,
   Card,
   ConfirmInline,
   cx,
   DangerLink,
   ErrorNote,
   Field,
+  inputBoxClass,
   inputClass,
   Loading,
   OptionCard,
@@ -213,7 +215,7 @@ export function TargetScreen() {
       }
     >
       <fieldset className="m-0 flex flex-col gap-2 border-none p-0">
-        <legend className="pb-2 text-[13px] font-bold text-ink-2">What kind of target?</legend>
+        <legend className="pb-2 text-sm font-bold text-ink-2">What kind of target?</legend>
         {KINDS.map((k) => (
           <OptionCard
             key={k.id}
@@ -235,7 +237,7 @@ export function TargetScreen() {
         }
       >
         <input
-          className={cx(inputClass, 'tnum text-[18px] font-bold')}
+          className={amountInputClass}
           inputMode="decimal"
           placeholder="0.00"
           value={amount}
@@ -281,7 +283,7 @@ export function TargetScreen() {
       {kind === 'no_date' && (
         <Field label="Add each month (optional)">
           <input
-            className={cx(inputClass, 'tnum text-[18px]')}
+            className={cx(inputBoxClass, 'tnum text-xl')}
             inputMode="decimal"
             placeholder="0.00"
             value={monthly}
@@ -289,7 +291,7 @@ export function TargetScreen() {
           />
         </Field>
       )}
-      <p className="m-0 rounded-xl bg-page p-3 text-[14px] leading-[1.45]">
+      <p className="m-0 rounded-lg bg-page p-3 text-md leading-normal">
         <strong>{summary[0]}</strong>
         <br />
         {summary[1]}
@@ -329,7 +331,7 @@ export function TargetsScreen() {
     <Page title="Set targets" back="/budget" backSearch={{ month: m }}>
       {!q.data && (q.error ? <ErrorNote error={q.error} /> : <Loading />)}
       {q.data && (
-        <p className="m-0 text-[13px] text-muted">
+        <p className="m-0 text-sm text-muted">
           {none.length === 0
             ? 'Every category has a target.'
             : `${none.length} ${none.length === 1 ? 'category has' : 'categories have'} no target yet.`}
@@ -350,8 +352,8 @@ export function TargetsScreen() {
                   className="flex min-h-14 items-center gap-3 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
                 >
                   <span className="flex min-w-0 flex-col gap-0.5">
-                    <span className="text-[15px] font-semibold">{c.name}</span>
-                    <span className={cx('truncate text-[12px]', missing ? 'text-accent' : 'text-muted')}>
+                    <span className="text-base font-semibold">{c.name}</span>
+                    <span className={cx('truncate text-xs', missing ? 'text-accent' : 'text-muted')}>
                       {missing ? 'Add a target' : c.meta}
                     </span>
                   </span>

@@ -6,7 +6,9 @@ import { useAssignView, useBudget, useCategorySheet, useMoneyMutation } from '..
 import { CategoryField } from '../components/CategoryPicker';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import {
+  amountInputClass,
   Card,
+  Checkbox,
   cx,
   EmptyNote,
   ErrorNote,
@@ -180,20 +182,17 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
       }
     >
       <div className="grid grid-cols-3 gap-2">
-        <div className="flex flex-col gap-0.5 rounded-xl bg-page p-2.5">
-          <span className="text-[12px] text-muted">Assigned</span>
-          <span className="tnum text-[16px] font-bold">{formatCents(c.assigned)}</span>
+        <div className="flex flex-col gap-0.5 rounded-lg bg-page p-2.5">
+          <span className="text-xs text-muted">Assigned</span>
+          <span className="tnum text-lg font-bold">{formatCents(c.assigned)}</span>
         </div>
-        <div className="flex flex-col gap-0.5 rounded-xl bg-page p-2.5">
-          <span className="text-[12px] text-muted">{c.status === 'invested' ? 'Invested' : 'Spent'}</span>
-          <span className="tnum text-[16px] font-bold">{formatCents(c.spent)}</span>
+        <div className="flex flex-col gap-0.5 rounded-lg bg-page p-2.5">
+          <span className="text-xs text-muted">{c.status === 'invested' ? 'Invested' : 'Spent'}</span>
+          <span className="tnum text-lg font-bold">{formatCents(c.spent)}</span>
         </div>
-        <div className={cx('flex flex-col gap-0.5 rounded-xl p-2.5', TONE[st.tone].bg)}>
-          <span className={cx('text-[12px]', TONE[st.tone].fg)}>Available</span>
-          <span
-            className={cx('tnum text-[16px] font-bold', TONE[st.tone].fg)}
-            data-testid="category-available"
-          >
+        <div className={cx('flex flex-col gap-0.5 rounded-lg p-2.5', TONE[st.tone].bg)}>
+          <span className={cx('text-xs', TONE[st.tone].fg)}>Available</span>
+          <span className={cx('tnum text-lg font-bold', TONE[st.tone].fg)} data-testid="category-available">
             {formatCents(available)}
           </span>
         </div>
@@ -212,7 +211,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
         <>
           <Field label={`Assigned in ${monthName(month)}`}>
             <input
-              className={cx(inputClass, 'tnum text-[18px] font-bold')}
+              className={amountInputClass}
               inputMode="decimal"
               value={assigned ?? ''}
               onChange={(e) => setAssigned(e.target.value)}
@@ -237,7 +236,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
               />
             )}
           </div>
-          <p className="m-0 text-[12px] text-muted">
+          <p className="m-0 text-xs text-muted">
             The difference comes from or goes back to Ready to Assign ({formatCents(c.rta)}).
           </p>
         </>
@@ -254,14 +253,14 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
           </Field>
           <Field label="Amount">
             <input
-              className={cx(inputClass, 'tnum text-[18px] font-bold')}
+              className={amountInputClass}
               inputMode="decimal"
               placeholder="0.00"
               value={moveAmt}
               onChange={(e) => setMoveAmt(e.target.value)}
             />
           </Field>
-          <p className="m-0 text-[12px] text-muted">
+          <p className="m-0 text-xs text-muted">
             {c.name} would have {formatCents(c.available - (moveCents ?? 0))} left.
           </p>
         </>
@@ -270,8 +269,8 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
       <Card className="flex items-center justify-between gap-3 p-3">
         <div className="flex flex-col gap-0.5">
           <Label>Target</Label>
-          <span className="text-[14px] font-semibold">{c.targetText}</span>
-          <span className="text-[12px] text-muted">{c.targetHelp}</span>
+          <span className="text-md font-semibold">{c.targetText}</span>
+          <span className="text-xs text-muted">{c.targetHelp}</span>
         </div>
         <SoftLink to={`/budget/category/${c.id}/target`} search={{ month }} track="category.target.edit">
           Edit
@@ -295,11 +294,11 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
           <Link
             key={r.key}
             to={`/activity/txn/${r.key}`}
-            className="flex min-h-12 items-center justify-between border-t border-divider text-[14px] text-ink no-underline"
+            className="flex min-h-12 items-center justify-between border-t border-divider text-md text-ink no-underline"
           >
             <span className="flex flex-col gap-px">
               <span className="font-semibold">{r.payee}</span>
-              <span className="text-[12px] text-muted">
+              <span className="text-xs text-muted">
                 {[
                   dayLabel(r.date),
                   r.accountName,
@@ -383,7 +382,7 @@ export function AssignSheetScreen() {
       }
       footer={
         <div className="flex flex-col gap-2">
-          <div className="flex justify-between text-[14px]">
+          <div className="flex justify-between text-md">
             <span className="text-muted">Left to assign after this</span>
             <span
               className={cx('tnum font-bold', left < 0 ? 'text-over-fg' : 'text-ink')}
@@ -393,7 +392,7 @@ export function AssignSheetScreen() {
             </span>
           </div>
           {left < 0 && (
-            <p role="alert" className="m-0 text-[13px] leading-snug text-over-fg">
+            <p role="alert" className="m-0 text-sm leading-snug text-over-fg">
               That’s {formatCents(-left)} more than you have. Ready to Assign would go negative and show in
               Needs attention until you take money back from a category.
             </p>
@@ -441,18 +440,16 @@ export function AssignSheetScreen() {
                 key={s.categoryId}
                 className="flex min-h-14 items-center gap-3 border-t border-divider px-3 py-1.5 first:border-t-0"
               >
-                <input
-                  type="checkbox"
-                  className="hit h-[22px] w-[22px] shrink-0 accent-[var(--ll-accent)]"
+                <Checkbox
                   checked={isOn(s)}
                   data-track="assign.suggestion"
                   onChange={() => setOff((o) => ({ ...o, [s.categoryId]: isOn(s) }))}
                 />
                 <span className="flex flex-1 flex-col gap-0.5">
-                  <span className="text-[15px] font-semibold">{s.name}</span>
-                  <span className="text-[12px] text-muted">{s.detail}</span>
+                  <span className="text-base font-semibold">{s.name}</span>
+                  <span className="text-xs text-muted">{s.detail}</span>
                 </span>
-                <span className="tnum text-[15px] font-bold">{formatCents(s.amount)}</span>
+                <span className="tnum text-base font-bold">{formatCents(s.amount)}</span>
               </label>
             ))}
           </Card>
@@ -460,7 +457,7 @@ export function AssignSheetScreen() {
       )}
       <Label>Or assign to any category</Label>
       <div className="flex gap-2">
-        <Field label="Category" className="flex-[3] text-[12px]">
+        <Field label="Category" className="flex-[3] text-xs">
           <CategoryField
             track="assign.category"
             value={catId}
@@ -468,7 +465,7 @@ export function AssignSheetScreen() {
             groups={groups.map((g) => ({ key: g.id, name: g.name, categories: g.categories }))}
           />
         </Field>
-        <Field label="Amount" className="flex-[2] text-[12px]">
+        <Field label="Amount" className="flex-[2] text-xs">
           <input
             className={cx(inputClass, 'tnum')}
             inputMode="decimal"

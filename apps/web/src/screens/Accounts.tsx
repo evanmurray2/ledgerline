@@ -117,7 +117,7 @@ function Problems({ items }: { items: ReactElement[] }) {
         data-track="accounts.problems"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="flex min-h-11 items-center gap-2.5 rounded-xl border border-warn-border bg-warn-bg px-3 py-2.5 text-left text-[14px] font-bold text-warn-fg"
+        className="flex min-h-11 items-center gap-2.5 rounded-lg border border-warn-border bg-warn-bg px-3 py-2.5 text-left text-md font-bold text-warn-fg"
       >
         <Icon name="alert" size={18} stroke={2.4} className="shrink-0" />
         <span className="flex-1">{items.length} banks need you</span>
@@ -220,15 +220,15 @@ export function AccountsScreen() {
             )
           ) : (
             <>
-              <section className="flex shrink-0 flex-col gap-1 rounded-[14px] border border-line bg-surface p-3">
-                <span className="text-[12px] text-muted">Net worth</span>
+              <section className="flex shrink-0 flex-col gap-1 rounded-lg border border-line bg-surface p-3">
+                <span className="text-xs text-muted">Net worth</span>
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="tnum text-[26px] font-bold" data-testid="net-worth">
+                  <span className="tnum text-4xl font-bold" data-testid="net-worth">
                     {formatCents(v.netWorth)}
                   </span>
                   <span
                     className={cx(
-                      'tnum text-[13px] font-semibold',
+                      'tnum text-sm font-semibold',
                       v.netWorthChange >= 0 ? 'text-funded-fg' : 'text-over-fg',
                     )}
                   >
@@ -238,7 +238,7 @@ export function AccountsScreen() {
                 <Link
                   to="/owed"
                   data-track="accounts.owed"
-                  className="mt-1 flex min-h-10 items-center justify-between border-t border-divider pt-1 text-[13px] text-ink-2 no-underline"
+                  className="mt-1 flex min-h-10 items-center justify-between border-t border-divider pt-1 text-sm text-ink-2 no-underline"
                 >
                   <span>Owed to you · not in this total</span>
                   <span className="flex items-center gap-1">
@@ -284,10 +284,10 @@ export function AccountsScreen() {
                           className="flex min-h-14 items-center gap-2.5 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
                         >
                           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                            <span className="text-[15px] font-semibold">{a.name}</span>
+                            <span className="text-base font-semibold">{a.name}</span>
                             <span
                               className={cx(
-                                'text-[12px]',
+                                'text-xs',
                                 // Needs a repair: the same warn color as the repair banner.
                                 a.connectionStatus !== 'ok' ? 'text-warn-fg' : 'text-muted',
                               )}
@@ -299,13 +299,13 @@ export function AccountsScreen() {
                             <span
                               className={cx(
                                 // A card balance isn't a problem: red is kept for overspending and broken links.
-                                'tnum text-[15px] font-bold text-ink',
+                                'tnum text-base font-bold text-ink',
                               )}
                             >
                               {formatCents(credit ? -a.bank : a.bank)}
                             </span>
                             {sub.text && (
-                              <span className={cx('text-[12px]', sub.warn ? 'text-warn-fg' : 'text-muted')}>
+                              <span className={cx('text-xs', sub.warn ? 'text-warn-fg' : 'text-muted')}>
                                 {sub.text}
                               </span>
                             )}
@@ -327,7 +327,7 @@ export function AccountsScreen() {
             data-testid="pull-refresh"
             aria-hidden={!busy && !note && !armed}
             style={HIDDEN}
-            className="pointer-events-none absolute inset-x-0 top-0 flex h-11 items-center justify-center gap-1.5 text-[13px] font-semibold text-muted opacity-0"
+            className="pointer-events-none absolute inset-x-0 top-0 flex h-11 items-center justify-center gap-1.5 text-sm font-semibold text-muted opacity-0"
           >
             <Icon
               name={note ? 'check' : 'refresh'}

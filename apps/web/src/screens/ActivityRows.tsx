@@ -45,12 +45,12 @@ export function TxnRow({
   const badge = (r.badge || category) && (
     <span className="flex min-w-0 flex-wrap gap-1.5">
       {r.badge && (
-        <span className={cx('rounded-md px-2 py-0.5 text-[12px] font-bold', badgeClass(r.badgeKind))}>
+        <span className={cx('rounded-sm px-2 py-0.5 text-xs font-bold', badgeClass(r.badgeKind))}>
           {r.badge}
         </span>
       )}
       {category && (
-        <span className="rounded-md border border-line px-2 py-[1px] text-[12px] font-semibold text-ink-2">
+        <span className="rounded-sm border border-line px-2 py-[1px] text-xs font-semibold text-ink-2">
           {category}
         </span>
       )}
@@ -76,19 +76,19 @@ export function TxnRow({
         className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2.5 text-ink no-underline"
       >
         <span className="flex min-w-0 flex-col gap-[3px]">
-          <span className={cx('text-[15px] font-semibold', r.wontClear && 'text-faint line-through')}>
+          <span className={cx('text-base font-semibold', r.wontClear && 'text-faint line-through')}>
             {r.payee}
           </span>
-          {meta && <span className={cx('text-muted', desktop ? 'text-[13px]' : 'text-[12px]')}>{meta}</span>}
+          {meta && <span className={cx('text-muted', desktop ? 'text-sm' : 'text-xs')}>{meta}</span>}
           {!stacked && badge}
         </span>
         <span className="flex shrink-0 flex-col items-end gap-0.5">
-          <span className={cx('tnum text-[15px] font-bold', amountClass(r))}>
+          <span className={cx('tnum text-base font-bold', amountClass(r))}>
             {r.sheet === 'txn' && r.badge === 'Transfer'
               ? formatCents(Math.abs(r.amount))
               : formatCents(r.amount, { plus: true })}
           </span>
-          {sub && <span className="text-[12px] text-muted">{sub}</span>}
+          {sub && <span className="text-xs text-muted">{sub}</span>}
         </span>
       </Link>
       {stacked ? (
@@ -119,7 +119,7 @@ export function Section({
       <SectionTitle note={note} action={action}>
         {title}
       </SectionTitle>
-      <div className="overflow-hidden rounded-[14px] border border-line bg-surface">{children}</div>
+      <div className="overflow-hidden rounded-lg border border-line bg-surface">{children}</div>
     </section>
   );
 }

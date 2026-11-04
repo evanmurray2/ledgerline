@@ -92,7 +92,7 @@ function AssignedCell({
       onBlur={() => void commit()}
       onKeyDown={onKeyDown}
       // Reads as a plain number; the box shows only on hover and while editing.
-      className="tnum h-9 w-full max-w-[140px] rounded-lg border border-transparent bg-transparent px-2 text-right text-[14px] font-semibold text-ink outline-none hover:border-line-strong hover:bg-surface-2 focus:border-accent focus:bg-surface disabled:hover:border-transparent disabled:hover:bg-transparent"
+      className="tnum h-9 w-full max-w-[140px] rounded-md border border-transparent bg-transparent px-2 text-right text-md font-semibold text-ink outline-none hover:border-line-strong hover:bg-surface-2 focus:border-accent focus:bg-surface disabled:hover:border-transparent disabled:hover:bg-transparent"
     />
   );
 }
@@ -108,7 +108,7 @@ function SpentCell({ row }: { row: BudgetCategoryRow }) {
   return (
     <span className="flex flex-col items-end gap-0.5">
       <span className="font-semibold text-ink">{formatCents(row.spent)}</span>
-      {used !== null && <span className="text-[12px] text-muted">{used}% used</span>}
+      {used !== null && <span className="text-xs text-muted">{used}% used</span>}
     </span>
   );
 }
@@ -128,7 +128,7 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
       key={`g-${name}`}
       className={cx(
         head,
-        'border-t border-line-strong bg-sunken py-2 text-[12px] font-bold uppercase tracking-[0.5px] text-ink',
+        'border-t border-line-strong bg-sunken py-2 text-xs font-bold uppercase tracking-caps text-ink',
       )}
     >
       <span role="rowheader" className="px-3.5">
@@ -186,10 +186,10 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
           type="button"
           data-track={r.track}
           onClick={r.open}
-          className="flex min-h-11 w-full flex-col items-start justify-center gap-0.5 text-left text-[14px] font-semibold text-ink"
+          className="flex min-h-11 w-full flex-col items-start justify-center gap-0.5 text-left text-md font-semibold text-ink"
         >
           {r.name}
-          <span className="text-[13px] font-normal text-muted">{r.detail}</span>
+          <span className="text-sm font-normal text-muted">{r.detail}</span>
         </button>
         {/* The phone's bar: how much of the month's money is left, readable without the numbers. */}
         {r.bar && (
@@ -221,10 +221,10 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
   const t = owedTone(b);
   return (
     <Card className="@container min-w-0 overflow-x-auto">
-      <div role="table" aria-label={`Budget for ${monthLabel(month)}`} className="text-[14px]">
+      <div role="table" aria-label={`Budget for ${monthLabel(month)}`} className="text-md">
         <div
           role="row"
-          className={cx(head, 'border-b border-line bg-surface-2 text-[12px] font-bold text-ink-2')}
+          className={cx(head, 'border-b border-line bg-surface-2 text-xs font-bold text-ink-2')}
         >
           <span role="columnheader" className="px-3.5 py-2.5">
             Category

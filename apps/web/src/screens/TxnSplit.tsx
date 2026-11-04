@@ -6,6 +6,7 @@ import { useMoneyMutation, useTxn } from '../api/hooks';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import { CategoryField } from '../components/CategoryPicker';
 import {
+  amountInputClass,
   Banner,
   cx,
   DangerLink,
@@ -20,7 +21,7 @@ import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { dayLabel } from '../lib/dates';
 import { useCategoryOptions, useScreen } from '../lib/common';
 import { usage } from '../usage/tracker';
-import { AMOUNT_INPUT, useParentPath } from './TxnCommon';
+import { useParentPath } from './TxnCommon';
 
 interface Line {
   id: number;
@@ -133,9 +134,9 @@ export function SplitScreen() {
       }
     >
       {lines.map((l, i) => (
-        <div key={l.id} className="flex shrink-0 flex-col gap-2 rounded-[14px] border border-line p-3">
+        <div key={l.id} className="flex shrink-0 flex-col gap-2 rounded-lg border border-line p-3">
           <div className="flex gap-2">
-            <Field label="Category" className="flex-[3] text-[12px]">
+            <Field label="Category" className="flex-[3] text-xs">
               <CategoryField
                 ariaLabel={`Category for line ${i + 1}`}
                 track="split.category"
@@ -145,12 +146,12 @@ export function SplitScreen() {
                 specials={[{ id: 'owed', name: 'Owed to you' }]}
               />
             </Field>
-            <Field label="Amount" className="flex-[2] text-[12px]">
+            <Field label="Amount" className="flex-[2] text-xs">
               <input
                 aria-label={`Amount for line ${i + 1}`}
                 inputMode="decimal"
                 className={cx(
-                  AMOUNT_INPUT,
+                  amountInputClass,
                   l.id === rem && 'bg-sunken',
                   l.id === rem && neg && 'border-over-fg',
                 )}
@@ -161,11 +162,11 @@ export function SplitScreen() {
             </Field>
           </div>
           <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 text-[13px] text-ink-2">
+            <label className="flex items-center gap-2 text-sm text-ink-2">
               <input
                 type="radio"
                 name="rem"
-                className="hit h-5 w-5 accent-[var(--ll-accent)]"
+                className="hit h-5 w-5 accent-accent"
                 checked={rem === l.id}
                 onChange={() => setRem(l.id)}
               />
@@ -185,11 +186,9 @@ export function SplitScreen() {
               </DangerLink>
             )}
           </div>
-          {l.categoryId === 'owed' && (
-            <span className="text-[12px] text-owed-fg">This line is owed to you.</span>
-          )}
+          {l.categoryId === 'owed' && <span className="text-xs text-owed-fg">This line is owed to you.</span>}
           {rem === l.id && (
-            <span className="text-[12px] text-muted">
+            <span className="text-xs text-muted">
               Fills in automatically with whatever the other lines leave.
             </span>
           )}
@@ -210,9 +209,7 @@ export function SplitScreen() {
         tone={neg ? 'danger' : 'success'}
         title={neg ? 'Lines are more than the total by' : 'Lines add up to the total'}
         action={
-          <span className="tnum text-[14px] font-bold">
-            {neg ? formatCents(-remCents) : formatCents(total)}
-          </span>
+          <span className="tnum text-md font-bold">{neg ? formatCents(-remCents) : formatCents(total)}</span>
         }
       />
       {patch.error && <ErrorNote error={patch.error} />}

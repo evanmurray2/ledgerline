@@ -8,8 +8,8 @@ export function Frame({ title, children }: { title: string; children: ReactNode 
     <main className="flex min-h-dvh items-center justify-center bg-page px-4 py-10">
       <div className="flex w-full max-w-[400px] flex-col gap-4">
         <div className="flex flex-col gap-1">
-          <span className="text-[13px] font-bold uppercase tracking-[0.5px] text-accent">Ledgerline</span>
-          <h1 className="m-0 text-[26px] font-bold text-ink">{title}</h1>
+          <span className="text-sm font-bold uppercase tracking-caps text-accent">Ledgerline</span>
+          <h1 className="m-0 text-4xl font-bold text-ink">{title}</h1>
         </div>
         {children}
       </div>

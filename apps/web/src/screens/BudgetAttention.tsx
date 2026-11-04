@@ -109,7 +109,7 @@ export function AttentionList({ b, month, low = false }: { b: BudgetView; month:
   return (
     <>
       {open.length === 0 && (
-        <p className="m-0 shrink-0 rounded-[14px] bg-funded-bg p-4 text-center text-[15px] font-semibold text-funded-fg">
+        <p className="m-0 shrink-0 rounded-lg bg-funded-bg p-4 text-center text-base font-semibold text-funded-fg">
           {low ? 'Nothing is running low.' : 'Nothing needs attention.'}
         </p>
       )}
@@ -154,12 +154,12 @@ export function AttentionList({ b, month, low = false }: { b: BudgetView; month:
                   className="flex min-h-11 min-w-0 flex-1 flex-col justify-center gap-[3px] text-ink no-underline"
                 >
                   <span className="flex justify-between gap-2">
-                    <span className="text-[15px] font-semibold">{a.name}</span>
+                    <span className="text-base font-semibold">{a.name}</span>
                     {/* Overspent, Short card and Owed amounts are the problem itself; for the rest the balance is
                         just context, and the button says what it needs. */}
                     <span
                       className={cx(
-                        'tnum text-[14px] font-bold',
+                        'tnum text-md font-bold',
                         sec.title === 'Overspent' || sec.title === 'Card payments' || a.link === 'owed'
                           ? TONE[t.tone].fg
                           : 'text-ink-2',
@@ -168,7 +168,7 @@ export function AttentionList({ b, month, low = false }: { b: BudgetView; month:
                       {formatCents(a.amount)}
                     </span>
                   </span>
-                  <span className="text-[12px] text-muted">{a.detail}</span>
+                  <span className="text-xs text-muted">{a.detail}</span>
                 </Link>
                 {a.fix && (
                   <SoftButton
@@ -197,12 +197,12 @@ export function AttentionList({ b, month, low = false }: { b: BudgetView; month:
             >
               <div className="flex min-h-11 min-w-0 flex-1 flex-col justify-center gap-[3px]">
                 <span className="flex justify-between gap-2">
-                  <span className="text-[15px] font-semibold">{f.name}</span>
-                  <span className="tnum text-[14px] font-bold text-muted">
+                  <span className="text-base font-semibold">{f.name}</span>
+                  <span className="tnum text-md font-bold text-muted">
                     {formatCents(availOf(f.categoryId) ?? 0)}
                   </span>
                 </span>
-                <span className="text-[12px] text-muted">
+                <span className="text-xs text-muted">
                   {f.delta < 0
                     ? `Moved ${formatCents(-f.delta)} back to Ready to Assign`
                     : `Added ${formatCents(f.delta)} from Ready to Assign`}

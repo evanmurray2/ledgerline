@@ -50,6 +50,7 @@ export function NoteSheet({ onClose }: { onClose: () => void }) {
           <PrimaryButton
             mutates
             track="note.save"
+            busy={busy}
             disabled={!text.trim() || busy}
             why={!text.trim() ? 'Write a note to save' : ''}
             onClick={() => void save()}
@@ -70,9 +71,9 @@ export function NoteSheet({ onClose }: { onClose: () => void }) {
             placeholder="What was annoying or missing?"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            className="w-full rounded-xl border border-line-strong bg-surface p-3 text-[16px] text-ink"
+            className="w-full rounded-lg border border-line-strong bg-surface p-3 text-lg text-ink"
           />
-          <span className="text-[12px] leading-snug text-muted">
+          <span className="text-xs leading-snug text-muted">
             Saved with the screen name and your last 20 taps, so it’s clear what you were doing. No amounts or
             payee names are attached.
           </span>

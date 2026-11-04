@@ -69,7 +69,7 @@ export function ToastHost({ aboveTabs }: { aboveTabs: boolean }) {
     <div
       role="status"
       className={cx(
-        'fixed z-50 flex flex-col gap-1.5 rounded-[14px] bg-inverse px-3 py-2.5 text-on-inverse shadow-[0_4px_12px_var(--ll-shadow)]',
+        'fixed z-50 flex flex-col gap-1.5 rounded-lg bg-inverse px-3 py-2.5 text-on-inverse shadow-raised',
         desktop
           ? 'bottom-6 right-6 w-[380px]'
           : cx(
@@ -78,14 +78,14 @@ export function ToastHost({ aboveTabs }: { aboveTabs: boolean }) {
             ),
       )}
     >
-      <div className="flex items-center justify-between gap-2 text-[14px]">
+      <div className="flex items-center justify-between gap-2 text-md">
         <span>{t.text}</span>
         {t.undo && (
           <button
             type="button"
             data-track="toast.undo"
             disabled={!canWrite}
-            className="hit h-9 shrink-0 px-2 text-[14px] font-bold underline disabled:opacity-50"
+            className="hit h-9 shrink-0 px-2 text-md font-bold underline disabled:opacity-50"
             onClick={async () => {
               const u = t.undo!;
               toast.dismiss(t.id);
@@ -97,13 +97,13 @@ export function ToastHost({ aboveTabs }: { aboveTabs: boolean }) {
         )}
       </div>
       {t.offer && (
-        <div className="flex items-center justify-between gap-2 border-t border-inverse-line pt-1.5 text-[13px] text-inverse-muted">
+        <div className="flex items-center justify-between gap-2 border-t border-inverse-line pt-1.5 text-sm text-inverse-muted">
           <span>{t.offer.text}</span>
           <button
             type="button"
             data-track="toast.always"
             disabled={!canWrite}
-            className="hit h-9 shrink-0 rounded-full bg-on-inverse px-3 text-[13px] font-bold text-inverse disabled:opacity-50"
+            className="hit h-9 shrink-0 rounded-full bg-on-inverse px-3 text-sm font-bold text-inverse disabled:opacity-50"
             onClick={() => void t.offer!.onAccept()}
           >
             {t.offer.label}

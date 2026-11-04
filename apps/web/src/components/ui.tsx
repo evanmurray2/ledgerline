@@ -1,20 +1,13 @@
-// Small shared building blocks. Colors are always tokens (src/styles.css), never literals.
-import {
-  forwardRef,
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-  type Ref,
-} from 'react';
+// Small shared building blocks. Colors, sizes, corners and shadows are always tokens (src/styles.css,
+// docs/design-system.md), never literals.
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode, type Ref } from 'react';
 import { Link } from '@tanstack/react-router';
 import type { CategoryStatus } from '@ledgerline/contracts';
 import { formatCents } from '../lib/money';
-import { useDisabled } from './buttons';
 
 export * from './buttons';
 export * from './headers';
+export * from './fields';
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ');
@@ -167,7 +160,7 @@ export function Pill({ tone, children, className }: { tone: Tone; children: Reac
   return (
     <span
       className={cx(
-        'tnum shrink-0 rounded-full px-2.5 py-1 text-[14px] font-bold',
+        'tnum shrink-0 rounded-full px-2.5 py-1 text-md font-bold',
         TONE[tone].bg,
         TONE[tone].fg,
         className,
@@ -210,7 +203,7 @@ export function Chip({
       aria-pressed={pressed}
       onClick={onClick}
       className={cx(
-        'hit flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border px-4 text-[13px] font-semibold',
+        'hit flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border px-4 text-sm font-semibold',
         pressed ? 'border-inverse bg-inverse text-on-inverse' : 'border-line-strong bg-surface text-ink',
         className,
       )}
@@ -220,12 +213,30 @@ export function Chip({
   );
 }
 
-/** A count of to-dos. Gray unless `danger`: red is kept for real problems (overspending, broken links). */
-export function CountBadge({ n, inverted, danger }: { n: number; inverted?: boolean; danger?: boolean }) {
+/**
+ * A count of to-dos. Gray unless `danger`: red is kept for real problems (overspending, broken links).
+ * size 'sm': the smaller one on a phone tab icon.
+ */
+export function CountBadge({
+  n,
+  inverted,
+  danger,
+  size,
+  className,
+}: {
+  n: number;
+  inverted?: boolean;
+  danger?: boolean;
+  size?: 'sm';
+  className?: string;
+}) {
   return (
     <span
+      aria-hidden={size === 'sm' || undefined}
       className={cx(
-        'flex h-5 min-w-5 items-center justify-center rounded-[10px] px-1.5 text-[12px] font-bold',
+        'flex items-center justify-center rounded-full text-xs font-bold',
+        size === 'sm' ? 'h-[18px] min-w-[18px] px-[5px]' : 'h-5 min-w-5 px-1.5',
+        className,
         inverted
           ? 'bg-on-inverse text-inverse'
           : danger
@@ -259,7 +270,7 @@ export function Segmented<T extends string>({
     <div
       role="group"
       aria-label={label}
-      className="grid gap-1 rounded-[10px] bg-sunken p-[3px]"
+      className="grid gap-1 rounded-lg bg-sunken p-[3px]"
       style={{ gridTemplateColumns: `repeat(${cols ?? options.length}, minmax(0, 1fr))` }}
     >
       {options.map(([v, name]) => (
@@ -271,8 +282,8 @@ export function Segmented<T extends string>({
           aria-pressed={v === value}
           onClick={() => onChange(v)}
           className={cx(
-            'hit h-9 rounded-lg px-1 text-[14px] font-bold text-ink disabled:text-disabled',
-            v === value ? 'bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.08)]' : 'bg-transparent',
+            'hit h-9 rounded-md px-1 text-md font-bold text-ink disabled:text-disabled',
+            v === value ? 'bg-surface shadow-low' : 'bg-transparent',
           )}
         >
           {name}
@@ -306,7 +317,7 @@ export function OptionCard({
       disabled={disabled}
       onClick={onClick}
       className={cx(
-        'flex min-h-[60px] w-full items-start gap-3 rounded-xl border-2 px-3 py-2.5 text-left text-ink',
+        'flex min-h-[60px] w-full items-start gap-3 rounded-lg border-2 px-3 py-2.5 text-left text-ink',
         selected ? 'border-accent bg-accent-soft' : 'border-line-strong bg-surface',
       )}
     >
@@ -320,8 +331,8 @@ export function OptionCard({
         <span className={cx('h-2.5 w-2.5 rounded-full', selected ? 'bg-accent' : 'bg-transparent')} />
       </span>
       <span className="flex flex-col gap-0.5">
-        <span className="text-[15px] font-bold">{title}</span>
-        {desc && <span className="text-[13px] leading-snug text-muted">{desc}</span>}
+        <span className="text-base font-bold">{title}</span>
+        {desc && <span className="text-sm leading-snug text-muted">{desc}</span>}
       </span>
     </button>
   );
@@ -331,9 +342,7 @@ export function OptionCard({
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <section
-      className={cx('shrink-0 overflow-hidden rounded-[14px] border border-line bg-surface', className)}
-    >
+    <section className={cx('shrink-0 overflow-hidden rounded-lg border border-line bg-surface', className)}>
       {children}
     </section>
   );
@@ -350,75 +359,10 @@ export function SectionTitle({
 }) {
   return (
     <div className="flex min-h-9 items-center justify-between px-0.5">
-      <h2 className="m-0 text-[13px] font-bold uppercase tracking-[0.5px] text-ink-2">{children}</h2>
-      {note !== undefined && <span className="text-[12px] text-muted">{note}</span>}
+      <h2 className="m-0 text-sm font-bold uppercase tracking-caps text-ink-2">{children}</h2>
+      {note !== undefined && <span className="text-xs text-muted">{note}</span>}
       {action}
     </div>
-  );
-}
-
-export function Label({ children }: { children: ReactNode }) {
-  return <span className="text-[12px] font-bold uppercase tracking-[0.4px] text-ink-2">{children}</span>;
-}
-
-export const inputClass =
-  'h-11 w-full rounded-[10px] border border-line-strong bg-surface px-3 text-[16px] text-ink placeholder:text-faint disabled:bg-sunken disabled:text-muted';
-
-export function Field({
-  label,
-  children,
-  className,
-}: {
-  label: string;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <label className={cx('flex flex-col gap-1.5 text-[13px] font-semibold text-ink-2', className)}>
-      {label}
-      {children}
-    </label>
-  );
-}
-
-export function Toggle({
-  label,
-  help,
-  checked,
-  onChange,
-  track,
-  mutates,
-}: {
-  label: string;
-  help?: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  track?: string;
-  mutates?: boolean;
-}) {
-  const off = useDisabled(mutates, false);
-  return (
-    <label className="flex min-h-14 items-center justify-between gap-3 border-t border-divider px-3 py-2 text-[15px] font-semibold first:border-t-0">
-      <span className="flex flex-col gap-px">
-        {label}
-        {help && <span className="text-[12px] font-normal text-muted">{help}</span>}
-      </span>
-      {/* An on/off setting reads as a switch; checkboxes are kept for picking items from a list. */}
-      <input
-        type="checkbox"
-        role="switch"
-        className={cx(
-          'hit relative h-7 w-12 shrink-0 cursor-pointer appearance-none rounded-full transition-colors',
-          "before:absolute before:left-[3px] before:top-[3px] before:h-[22px] before:w-[22px] before:rounded-full before:bg-surface before:shadow-[0_1px_2px_var(--ll-shadow)] before:transition-transform before:content-['']",
-          'checked:bg-accent checked:before:translate-x-5 disabled:cursor-not-allowed disabled:opacity-50',
-          checked ? '' : 'bg-faint',
-        )}
-        checked={checked}
-        disabled={off}
-        data-track={track}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-    </label>
   );
 }
 
@@ -458,7 +402,7 @@ export function Banner({
     <>
       {icon && <Icon name={icon} size={18} stroke={2.4} className="mt-px shrink-0" />}
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        {title && <span className="text-[14px] font-bold">{title}</span>}
+        {title && <span className="text-md font-bold">{title}</span>}
         {children && <span>{children}</span>}
       </div>
       {to && <Icon name="chevR" size={18} className="mt-px shrink-0 opacity-70" />}
@@ -466,7 +410,7 @@ export function Banner({
     </>
   );
   const box = cx(
-    'flex shrink-0 items-start gap-2.5 rounded-xl px-3 py-2.5 text-[13px] leading-snug no-underline',
+    'flex shrink-0 items-start gap-2.5 rounded-lg px-3 py-2.5 text-sm leading-snug no-underline',
     cls,
     className,
   );
@@ -485,45 +429,8 @@ export function Banner({
 
 /** A neutral "nothing here" line: 14 px muted, centered. `inCard`: inside a Card, which draws the border. */
 export function EmptyNote({ children, inCard }: { children: ReactNode; inCard?: boolean }) {
-  return (
-    <p className={cx('m-0 p-4 text-center text-[14px] text-muted', !inCard && 'shrink-0')}>{children}</p>
-  );
+  return <p className={cx('m-0 p-4 text-center text-md text-muted', !inCard && 'shrink-0')}>{children}</p>;
 }
-
-/** The one search box: icon, type="search", Escape clears it. */
-export const SearchField = forwardRef<
-  HTMLInputElement,
-  {
-    value: string;
-    onChange: (v: string) => void;
-    label: string;
-    placeholder: string;
-    shortcut?: string;
-    className?: string;
-  }
->(function SearchField({ value, onChange, label, placeholder, shortcut, className }, ref) {
-  return (
-    <label
-      className={cx(
-        'flex min-h-11 shrink-0 items-center gap-2 rounded-xl bg-sunken px-3 text-muted',
-        className,
-      )}
-    >
-      <Icon name="search" size={18} />
-      <span className="sr-only">{label}</span>
-      <input
-        ref={ref}
-        type="search"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => e.key === 'Escape' && value && (e.stopPropagation(), onChange(''))}
-        placeholder={placeholder}
-        aria-keyshortcuts={shortcut}
-        className="min-h-10 min-w-0 flex-1 border-none bg-transparent text-[16px] text-ink outline-none placeholder:text-faint"
-      />
-    </label>
-  );
-});
 
 /**
  * The scrolling content under a screen's header: phone px-4 pt-3 pb-6, desktop px-6 pt-5 pb-8 in the content
@@ -563,7 +470,7 @@ export function Loading({ label = 'Loading' }: { label?: string }) {
     return () => clearTimeout(id);
   }, []);
   return (
-    <p role="status" aria-live="polite" className="m-0 p-6 text-center text-[14px] text-muted">
+    <p role="status" aria-live="polite" className="m-0 p-6 text-center text-md text-muted">
       {show ? `${label}…` : ''}
     </p>
   );
@@ -571,7 +478,7 @@ export function Loading({ label = 'Loading' }: { label?: string }) {
 
 export function ErrorNote({ error }: { error: unknown }) {
   return (
-    <p role="alert" className="m-0 rounded-xl bg-over-bg p-3 text-[14px] text-over-fg">
+    <p role="alert" className="m-0 rounded-lg bg-over-bg p-3 text-md text-over-fg">
       {error instanceof Error ? error.message : 'Something went wrong.'}
     </p>
   );

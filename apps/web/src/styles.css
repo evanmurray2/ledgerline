@@ -5,17 +5,20 @@
 @import '@fontsource/public-sans/700.css';
 
 /*
- * One token set for the whole app. Light values first; the dark block swaps them. data-theme on <html> is
- * always resolved to 'light' or 'dark' by src/lib/theme.ts (Match device follows prefers-color-scheme there).
+ * One token set for the whole app (docs/design-system.md). Light values first; the dark block swaps them.
+ * data-theme on <html> is always resolved to 'light' or 'dark' by src/lib/theme.ts (Match device follows
+ * prefers-color-scheme there). Any element can set data-theme too: the theme preview in Settings uses it to
+ * draw the other theme's colors from these same tokens.
  */
-:root {
+:root,
+[data-theme='light'] {
   --ll-page: #f5f6f8;
   --ll-surface: #ffffff;
   --ll-surface-2: #f9fafb;
   --ll-sunken: #f2f4f7;
   --ll-divider: #f0f1f3;
-  --ll-border: #e5e7eb;
-  --ll-border-strong: #d0d5dd;
+  --ll-line: #e5e7eb;
+  --ll-line-strong: #d0d5dd;
   --ll-track: #e4e7ec;
   --ll-ink: #111827;
   --ll-ink-2: #374151;
@@ -65,6 +68,7 @@
   --ll-danger: #b42318;
   --ll-on-danger: #ffffff;
   --ll-shadow: rgba(16, 24, 40, 0.25);
+  --ll-shadow-soft: rgba(16, 24, 40, 0.12);
   /* Ready to Assign bar. Dark mode keeps a deep blue so it doesn't glow brighter than everything else. */
   --ll-rta-bg: #1d4ed8;
   --ll-rta-fg: #ffffff;
@@ -77,14 +81,15 @@
   color-scheme: light;
 }
 
-:root[data-theme='dark'] {
+:root[data-theme='dark'],
+[data-theme='dark'] {
   --ll-page: #0e1014;
   --ll-surface: #181b21;
   --ll-surface-2: #1d2128;
   --ll-sunken: #252a32;
   --ll-divider: #262b33;
-  --ll-border: #2c323b;
-  --ll-border-strong: #4a525e;
+  --ll-line: #2c323b;
+  --ll-line-strong: #4a525e;
   --ll-track: #3a404a;
   --ll-ink: #f2f4f7;
   --ll-ink-2: #d0d5dd;
@@ -133,6 +138,7 @@
   --ll-danger: #f97066;
   --ll-on-danger: #181b21;
   --ll-shadow: rgba(0, 0, 0, 0.6);
+  --ll-shadow-soft: rgba(0, 0, 0, 0.5);
   --ll-rta-bg: #1e3a8a;
   --ll-rta-fg: #ffffff;
   --ll-rta-btn-fg: #1e3a8a;
@@ -142,15 +148,53 @@
   color-scheme: dark;
 }
 
+/*
+ * The only text sizes, corners and shadows (Tailwind's own are cleared): text-xs ... text-4xl, rounded-sm ...
+ * rounded-xl, shadow-low/raised/overlay. Text boxes stay at 16 px or more (text-lg): iPhone Safari zooms in on
+ * a smaller one when it is tapped.
+ */
+@theme {
+  --radius-*: initial;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 20px;
+
+  --tracking-caps: 0.5px;
+}
+
+/*
+ * Text sizes count in --ll-u (1px, or the iPhone's Text Size setting: see body below), so text grows and shrinks
+ * with that setting. `inline` puts the sum in each class, so --ll-u is read where the text is. From text-lg up a
+ * size never drops below its px value, so a text box never falls under 16 px.
+ */
 @theme inline {
+  --text-*: initial;
+  --text-xs: calc(12 * var(--ll-u));
+  --text-sm: calc(13 * var(--ll-u));
+  --text-md: calc(14 * var(--ll-u));
+  --text-base: calc(15 * var(--ll-u));
+  --text-lg: max(16px, calc(16 * var(--ll-u)));
+  --text-xl: max(17px, calc(17 * var(--ll-u)));
+  --text-2xl: max(20px, calc(20 * var(--ll-u)));
+  --text-3xl: max(22px, calc(22 * var(--ll-u)));
+  --text-4xl: max(26px, calc(26 * var(--ll-u)));
+}
+
+@theme inline {
+  --shadow-*: initial;
+  /* low: a selected segment, a switch's knob. raised: a toast, a floating button. overlay: a menu, sheet, dialog. */
+  --shadow-low: 0 1px 2px var(--ll-shadow-soft);
+  --shadow-raised: 0 4px 12px var(--ll-shadow);
+  --shadow-overlay: 0 0 24px var(--ll-shadow);
   --font-sans: 'Public Sans', system-ui, sans-serif;
   --color-page: var(--ll-page);
   --color-surface: var(--ll-surface);
   --color-surface-2: var(--ll-surface-2);
   --color-sunken: var(--ll-sunken);
   --color-divider: var(--ll-divider);
-  --color-line: var(--ll-border);
-  --color-line-strong: var(--ll-border-strong);
+  --color-line: var(--ll-line);
+  --color-line-strong: var(--ll-line-strong);
   --color-track: var(--ll-track);
   --color-ink: var(--ll-ink);
   --color-ink-2: var(--ll-ink-2);
@@ -234,7 +278,7 @@
   }
 
   /*
-   * Text follows the iPhone's Text Size setting (vite.config.ts turns every px font size into N * --ll-u).
+   * Text follows the iPhone's Text Size setting (the text-* sizes above count in --ll-u).
    * iPhone and iPad Safari give the system body font, 17 px at the standard setting, so --ll-u is its 17th:
    * 1px as standard, more or less as the setting changes, kept between 0.85px and 1.3px so the screens' fixed
    * heights still hold the text. Registered as a length, it is worked out on body and passed down as is. Body
