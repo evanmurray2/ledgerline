@@ -7,7 +7,7 @@ import { createMemoryHistory } from '@tanstack/react-router';
 import { App, makeQueryClient } from '../src/App';
 import { installMock } from '../src/mock/install';
 import type { MockServer } from '../src/mock/server';
-import { novemberCopy } from '../../worker/src/local/november-copy';
+import { novemberCopy } from '#november-node';
 import { connectivity } from '../src/state/connectivity';
 
 let server: MockServer;

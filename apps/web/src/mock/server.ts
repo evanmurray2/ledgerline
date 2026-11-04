@@ -4,8 +4,9 @@
 // sign-in list, usage events and notes, and the daily-limit scenarios.
 import { CSRF_HEADER, LinkExchange, LinkTokenRequest, NoteRequest, UsageBatch } from '@ledgerline/contracts';
 import type { z } from 'zod';
-import type { LocalEngine } from '../../../worker/src/local/engine';
-import type { SqlJsDb } from '../../../worker/src/local/sqljs-db';
+
+type LocalEngine = MockCopy['engine'];
+type SqlJsDb = MockCopy['db'];
 
 export type Scenario = 'default' | 'firstrun' | 'empty' | 'readonly' | 'resting' | 'syncfail' | 'newmonth';
 
@@ -15,7 +16,7 @@ export interface MockResponse {
 }
 
 /** Opens a November copy; the browser passes one that knows where sql.js's wasm is. */
-export type OpenCopy = (now: () => number) => Promise<{ engine: LocalEngine; db: SqlJsDb }>;
+export type OpenCopy = (now: () => number) => Promise<MockCopy>;
 
 class MockHttpError extends Error {
   constructor(

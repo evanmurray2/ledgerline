@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { AccountsView, ActivityView, BudgetView } from '@ledgerline/contracts';
 import { SCREENS, fillScreen, screenIds } from '@ledgerline/contracts/screens';
 import { MockServer, type Scenario } from '../src/mock/server';
-import { novemberCopy } from '../../worker/src/local/november-copy';
+import { novemberCopy } from '#november-node';
 
 const SCENARIOS: Scenario[] = ['default', 'firstrun', 'empty', 'readonly', 'syncfail', 'newmonth'];
 

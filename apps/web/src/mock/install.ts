@@ -26,8 +26,7 @@ export function scenarioFromUrl(search: string): Scenario {
 }
 
 /** The browser's copy (sql.js's wasm from the bundle); tests in Node pass their own. */
-const browserCopy: OpenCopy = async (now) =>
-  (await import('../../../worker/src/local/november-browser')).openNovemberCopy(now);
+const browserCopy: OpenCopy = async (now) => (await import('#november-browser')).openNovemberCopy(now);
 
 export function installMock(
   scenario: Scenario = 'default',
