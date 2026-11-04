@@ -142,9 +142,7 @@ export function Sheet({
       style={drag ? { transform: `translateY(${drag}px)` } : undefined}
       className={cx(
         'flex min-h-0 flex-col bg-surface text-ink outline-none',
-        desktop || isDesktop
-          ? 'h-full'
-          : 'll-sheet max-h-full rounded-t-[20px] shadow-[0_-8px_24px_var(--ll-shadow)]',
+        desktop || isDesktop ? 'h-full' : 'll-sheet max-h-full rounded-t-xl shadow-overlay',
         !desktop && (gap === 'auto' ? 'flex-none' : 'flex-1'),
         !desktop && !drag && 'transition-transform duration-150',
       )}
@@ -250,15 +248,13 @@ export function SheetTitle({
 }) {
   return (
     <div className="flex flex-col gap-0.5">
-      {tag && <span className={cx('text-[13px] font-bold', tagClass ?? 'text-muted')}>{tag}</span>}
+      {tag && <span className={cx('text-sm font-bold', tagClass ?? 'text-muted')}>{tag}</span>}
       {amount !== undefined ? (
-        <h1 className={cx('tnum m-0 text-[28px] font-bold leading-tight', amountClass)}>{amount}</h1>
+        <h1 className={cx('tnum m-0 text-4xl font-bold leading-tight', amountClass)}>{amount}</h1>
       ) : (
-        <h1 className="m-0 text-[20px] font-bold leading-tight">{title}</h1>
+        <h1 className="m-0 text-2xl font-bold leading-tight">{title}</h1>
       )}
-      {sub && (
-        <span className={cx('text-muted', amount !== undefined ? 'text-[14px]' : 'text-[13px]')}>{sub}</span>
-      )}
+      {sub && <span className={cx('text-muted', amount !== undefined ? 'text-md' : 'text-sm')}>{sub}</span>}
     </div>
   );
 }

@@ -49,7 +49,7 @@ function RtaBar({ b, onFix }: { b: BudgetView; onFix: () => void }) {
   // Every dollar assigned: a quiet line, nothing to do.
   if (b.rta === 0 && !b.rtaUpdating)
     return (
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-surface px-4 py-2 text-[13px] text-muted">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-surface px-4 py-2 text-sm text-muted">
         <span className="font-semibold">All money assigned</span>
         <span className="tnum font-bold text-ink-2" data-testid="rta">
           {formatCents(0)}
@@ -64,8 +64,8 @@ function RtaBar({ b, onFix }: { b: BudgetView; onFix: () => void }) {
       )}
     >
       <div className="flex flex-col gap-px">
-        <span className="text-[12px] font-semibold">Ready to Assign</span>
-        <span className="tnum text-[22px] font-bold" data-testid="rta">
+        <span className="text-xs font-semibold">Ready to Assign</span>
+        <span className="tnum text-3xl font-bold" data-testid="rta">
           {b.rtaUpdating ? 'Updating' : formatCents(b.rta)}
         </span>
       </div>
@@ -75,7 +75,7 @@ function RtaBar({ b, onFix }: { b: BudgetView; onFix: () => void }) {
           type="button"
           data-track="budget.over.fix"
           onClick={onFix}
-          className="hit flex h-10 items-center rounded-full bg-on-danger px-[22px] text-[15px] font-bold text-danger"
+          className="hit flex h-10 items-center rounded-full bg-on-danger px-[22px] text-base font-bold text-danger"
         >
           Take back
         </button>
@@ -83,14 +83,14 @@ function RtaBar({ b, onFix }: { b: BudgetView; onFix: () => void }) {
         <Link
           to="/budget/assign"
           data-track="budget.assign"
-          className="hit flex h-10 items-center rounded-full bg-rta-fg px-[22px] text-[15px] font-bold text-rta-btn-fg no-underline"
+          className="hit flex h-10 items-center rounded-full bg-rta-fg px-[22px] text-base font-bold text-rta-btn-fg no-underline"
         >
           Assign
         </Link>
       ) : (
         <span
           aria-disabled="true"
-          className="flex h-10 items-center rounded-full bg-on-accent/50 px-[22px] text-[15px] font-bold text-muted"
+          className="flex h-10 items-center rounded-full bg-on-accent/50 px-[22px] text-base font-bold text-muted"
         >
           Assign
         </span>
@@ -155,7 +155,7 @@ function SyncProblem({ text }: { text: string }) {
   return (
     <Link
       to="/accounts"
-      className="flex items-center gap-2 bg-warn-bg px-4 py-2 text-[13px] font-semibold text-warn-fg no-underline"
+      className="flex items-center gap-2 bg-warn-bg px-4 py-2 text-sm font-semibold text-warn-fg no-underline"
     >
       <Icon name="alert" size={16} stroke={2.6} />
       {text} · see Accounts

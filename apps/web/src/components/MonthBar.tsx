@@ -33,7 +33,7 @@ export function TabHeader({
   const heading = month ? (
     <h1 className="sr-only">{name}</h1>
   ) : (
-    <h1 className={cx('m-0 truncate font-bold', desktop ? 'text-[22px]' : 'text-[17px]')}>{name}</h1>
+    <h1 className={cx('m-0 truncate font-bold', desktop ? 'text-3xl' : 'text-xl')}>{name}</h1>
   );
   if (desktop)
     return (
@@ -92,7 +92,7 @@ export function MonthBar({
   );
   const back = `Back to ${monthName(current)}`;
   const chevron =
-    'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-ink-2 disabled:text-line-strong';
+    'flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-ink-2 disabled:text-line-strong';
   return (
     <div role="group" aria-label="Month" className={cx('flex items-center', desktop ? '-ml-3' : 'h-14')}>
       <button
@@ -117,7 +117,7 @@ export function MonthBar({
         onClick={() => away && onGo(current)}
         className={cx(
           'relative flex shrink-0 flex-col items-center justify-center font-bold text-ink',
-          desktop ? 'h-11 w-[184px] text-[22px]' : 'h-14 w-[140px] text-[17px] max-[359px]:w-[92px]',
+          desktop ? 'h-11 w-[184px] text-3xl' : 'h-14 w-[140px] text-xl max-[359px]:w-[92px]',
           !away && 'cursor-default',
         )}
       >
@@ -127,7 +127,7 @@ export function MonthBar({
         )}
         {/* Under the label, in the bar's bottom gap, so the label doesn't move when it shows. */}
         {away && !desktop && (
-          <span className="absolute bottom-1 whitespace-nowrap text-[12px] font-semibold text-accent">
+          <span className="absolute bottom-1 whitespace-nowrap text-xs font-semibold text-accent">
             {back}
           </span>
         )}
@@ -154,7 +154,7 @@ export function MonthBar({
           aria-keyshortcuts="t"
           title={`${back} ( t )`}
           onClick={() => onGo(current)}
-          className="hit ml-2 h-9 rounded-full px-3 text-[14px] font-semibold text-accent hover:bg-accent-soft"
+          className="hit ml-2 h-9 rounded-full px-3 text-md font-semibold text-accent hover:bg-accent-soft"
         >
           {back}
         </button>

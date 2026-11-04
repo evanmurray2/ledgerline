@@ -54,3 +54,18 @@ describe('theme preference', () => {
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
   });
 });
+
+describe('status bar color', () => {
+  it('takes both colors from index.html and gives both tags the chosen theme’s', () => {
+    document.head.innerHTML =
+      '<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">' +
+      '<meta name="theme-color" content="#181b21" media="(prefers-color-scheme: dark)">';
+    const tags = () =>
+      [...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')].map((m) => m.content);
+    writeThemePref('dark');
+    expect(tags()).toEqual(['#181b21', '#181b21']);
+    writeThemePref('light');
+    expect(tags()).toEqual(['#ffffff', '#ffffff']);
+    document.head.innerHTML = '';
+  });
+});

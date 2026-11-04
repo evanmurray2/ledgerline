@@ -6,6 +6,12 @@ import { cx, Icon, type IconName } from './ui';
 
 // ------------------------------------------------------------------ buttons
 
+/**
+ * Hover (only on a computer: Tailwind wraps hover: in @media (hover: hover)) and pressed. not-disabled: also
+ * matches links, which are never :disabled.
+ */
+const PRESS = 'not-disabled:active:opacity-70';
+
 export type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   /** Changes data: disabled while offline or read-only. 'offline': also works offline with the copy (D-45). */
   mutates?: boolean | 'offline';
@@ -41,18 +47,42 @@ export function Button({
   );
 }
 
-export function PrimaryButton({ className, danger, ...p }: BtnProps & { danger?: boolean }) {
+/**
+ * The full-width main button. `busy`: the step is running (a save, Face ID): it can't be tapped again, keeps
+ * its color and shows a spinner before the label.
+ */
+export function PrimaryButton({
+  className,
+  danger,
+  busy,
+  disabled,
+  children,
+  ...p
+}: BtnProps & { danger?: boolean; busy?: boolean }) {
   return (
     <Button
       className={cx(
         // shrink-0: in a scrolling column a button would otherwise be squeezed below its height.
-        'flex h-12 w-full shrink-0 items-center justify-center rounded-xl px-4 text-[16px] font-bold',
-        danger ? 'bg-danger text-on-danger' : 'bg-accent text-on-accent',
-        'disabled:bg-disabled-bg disabled:text-muted',
+        'flex h-12 w-full shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-lg font-bold',
+        danger
+          ? 'bg-danger text-on-danger not-disabled:hover:opacity-90'
+          : 'bg-accent text-on-accent not-disabled:hover:bg-accent-strong',
+        busy ? 'cursor-progress' : 'disabled:bg-disabled-bg disabled:text-muted',
+        PRESS,
         className,
       )}
+      disabled={disabled || busy}
+      aria-busy={busy || undefined}
       {...p}
-    />
+    >
+      {busy && (
+        <span
+          aria-hidden="true"
+          className="size-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none"
+        />
+      )}
+      {children}
+    </Button>
   );
 }
 
@@ -61,7 +91,8 @@ export function SecondaryButton({ className, danger, ...p }: BtnProps & { danger
   return (
     <Button
       className={cx(
-        'flex h-12 shrink-0 items-center justify-center rounded-xl border border-line-strong bg-surface px-4 text-[16px] font-bold disabled:text-disabled',
+        'flex h-12 shrink-0 items-center justify-center rounded-lg border border-line-strong bg-surface px-4 text-lg font-bold disabled:text-disabled not-disabled:hover:bg-sunken',
+        PRESS,
         danger ? 'text-over-fg' : 'text-ink-2',
         className,
       )}
@@ -78,11 +109,12 @@ export function SecondaryButton({ className, danger, ...p }: BtnProps & { danger
 export type PillTone = 'soft' | 'filled' | 'outline';
 export function softButtonClass(tone: PillTone = 'soft'): string {
   return cx(
-    'hit inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[13px] font-bold no-underline',
-    tone === 'soft' && 'bg-accent-soft text-accent',
-    tone === 'filled' && 'bg-accent text-on-accent',
-    tone === 'outline' && 'border border-line-strong bg-surface text-ink-2',
+    'hit inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-3 text-sm font-bold no-underline',
+    tone === 'soft' && 'bg-accent-soft text-accent not-disabled:hover:brightness-95',
+    tone === 'filled' && 'bg-accent text-on-accent not-disabled:hover:bg-accent-strong',
+    tone === 'outline' && 'border border-line-strong bg-surface text-ink-2 not-disabled:hover:bg-sunken',
     'disabled:border-transparent disabled:bg-sunken disabled:text-disabled',
+    PRESS,
   );
 }
 
@@ -114,8 +146,11 @@ export function SoftLink({
 }
 
 /** A text button or link: 14 px bold, accent ("Show archived", "Select", "Add line"). */
-export const textLinkClass =
-  'hit inline-flex min-h-9 shrink-0 items-center gap-1 self-start text-[14px] font-bold text-accent no-underline disabled:text-disabled';
+export const textLinkClass = cx(
+  'hit inline-flex min-h-9 shrink-0 items-center gap-1 self-start text-md font-bold text-accent no-underline disabled:text-disabled',
+  'not-disabled:hover:underline',
+  PRESS,
+);
 
 export function TextButton({ className, ...p }: BtnProps) {
   return <Button className={cx(textLinkClass, className)} {...p} />;
@@ -126,7 +161,8 @@ export function DangerLink({ className, ...p }: BtnProps) {
   return (
     <Button
       className={cx(
-        'min-h-10 self-start text-[14px] font-bold text-over-fg disabled:text-disabled',
+        'min-h-10 self-start text-md font-bold text-over-fg disabled:text-disabled not-disabled:hover:underline',
+        PRESS,
         className,
       )}
       {...p}
@@ -164,9 +200,9 @@ export function ConfirmInline({
     <div
       role="alertdialog"
       aria-label={label}
-      className={cx('flex shrink-0 flex-col gap-2.5 rounded-xl bg-over-bg p-3 text-over-fg', className)}
+      className={cx('flex shrink-0 flex-col gap-2.5 rounded-lg bg-over-bg p-3 text-over-fg', className)}
     >
-      <span className="text-[14px] leading-snug">{children}</span>
+      <span className="text-md leading-snug">{children}</span>
       <div className="flex gap-2">
         <SecondaryButton onClick={onCancel} className="flex-1">
           Keep it
@@ -175,6 +211,7 @@ export function ConfirmInline({
           danger
           mutates={mutates}
           track={track}
+          busy={busy}
           disabled={busy}
           onClick={onConfirm}
           className="flex-1"
@@ -187,8 +224,10 @@ export function ConfirmInline({
 }
 
 const HEADER_ACTION = softButtonClass();
-const ICON_ACTION =
-  'hit flex h-11 w-11 items-center justify-center rounded-full text-ink-2 hover:bg-sunken disabled:text-line-strong';
+const ICON_ACTION = cx(
+  'hit flex h-11 w-11 items-center justify-center rounded-full text-ink-2 not-disabled:hover:bg-sunken disabled:text-line-strong',
+  PRESS,
+);
 
 /**
  * The one style for a screen's own action in its header (Add, Refresh), the same on phone and desktop: the soft

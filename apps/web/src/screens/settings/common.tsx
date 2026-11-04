@@ -48,7 +48,7 @@ export function Page({
         <div className={cx('flex flex-col gap-3', width)}>
           {desktop && (
             <div className="flex min-h-9 items-center justify-between gap-3">
-              <h2 className="m-0 text-[18px] font-bold">{title}</h2>
+              <h2 className="m-0 text-xl font-bold">{title}</h2>
               {right}
             </div>
           )}
@@ -85,8 +85,8 @@ export function RowLink({
       className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
     >
       <span className="flex flex-col gap-0.5">
-        <span className="text-[15px] font-semibold">{name}</span>
-        <span className={cx('text-[12px]', warn ? 'text-warn-fg' : 'text-muted')}>{meta}</span>
+        <span className="text-base font-semibold">{name}</span>
+        <span className={cx('text-xs', warn ? 'text-warn-fg' : 'text-muted')}>{meta}</span>
       </span>
       <Icon name="chevR" size={18} className="text-faint" />
     </Link>

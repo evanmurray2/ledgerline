@@ -14,6 +14,8 @@ applyTheme();
 watchTheme();
 installConnectivityListeners();
 installUsageListeners();
+// iPhone Safari shows :active (the pressed look on buttons) only when the page listens for touches.
+document.addEventListener('touchstart', () => undefined, { passive: true });
 
 async function start() {
   // Mock API for development and tests only. Vite replaces import.meta.env.VITE_MOCK at build time, so in a

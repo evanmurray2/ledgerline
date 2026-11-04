@@ -25,7 +25,7 @@ export function DesktopHeader({
   return (
     <header className="@container shrink-0 border-b border-line bg-surface px-6">
       <div className={cx('flex h-16 items-center justify-between gap-3', !wide && DESKTOP_WIDTH)}>
-        {typeof title === 'string' ? <h1 className="m-0 truncate text-[22px] font-bold">{title}</h1> : title}
+        {typeof title === 'string' ? <h1 className="m-0 truncate text-3xl font-bold">{title}</h1> : title}
         {right && <div className="flex min-w-0 shrink-0 items-center gap-2">{right}</div>}
       </div>
       {below && <div className={cx('flex flex-col gap-2.5 pb-3', !wide && DESKTOP_WIDTH)}>{below}</div>}
@@ -90,10 +90,10 @@ export function OverflowMenu({
         <Icon name="more" size={22} stroke={3} />
       </button>
       {open && (
-        <div className="absolute right-0 top-11 z-30 flex min-w-[200px] flex-col rounded-xl border border-line bg-surface py-1 shadow-[0_8px_24px_var(--ll-shadow)]">
+        <div className="absolute right-0 top-11 z-30 flex min-w-[200px] flex-col rounded-lg border border-line bg-surface py-1 shadow-overlay">
           {items.map((i) => {
             const cls = cx(
-              'flex h-11 w-full items-center px-3.5 text-left text-[15px] font-semibold no-underline hover:bg-surface-2',
+              'flex h-11 w-full items-center px-3.5 text-left text-base font-semibold no-underline hover:bg-surface-2',
               i.danger ? 'text-over-fg' : 'text-ink',
             );
             return i.to !== undefined ? (
@@ -141,7 +141,7 @@ export function PhoneHeader({
   return (
     <header className="shrink-0 border-b border-line bg-surface">
       <div className="flex min-h-14 items-center justify-between gap-2 pl-4 pr-2">
-        {typeof title === 'string' ? <h1 className="m-0 truncate text-[22px] font-bold">{title}</h1> : title}
+        {typeof title === 'string' ? <h1 className="m-0 truncate text-3xl font-bold">{title}</h1> : title}
         {right && <div className="flex shrink-0 items-center gap-1">{right}</div>}
       </div>
       {below && <div className="flex flex-col gap-2.5 px-4 pb-2.5">{below}</div>}
@@ -206,8 +206,8 @@ export function BackHeader({
         <Icon name="back" size={22} />
       </button>
       <div className="flex min-w-0 flex-1 flex-col">
-        <h1 className={cx('m-0 truncate font-bold', desktop ? 'text-[22px]' : 'text-[19px]')}>{title}</h1>
-        {sub && <span className="truncate text-[13px] text-muted">{sub}</span>}
+        <h1 className={cx('m-0 truncate font-bold', desktop ? 'text-3xl' : 'text-2xl')}>{title}</h1>
+        {sub && <span className="truncate text-sm text-muted">{sub}</span>}
       </div>
       {right && <div className="flex shrink-0 items-center gap-1">{right}</div>}
     </>

@@ -8,6 +8,7 @@ import { useAccounts, useMoneyMutation, useTxn, useSession, qk } from '../api/ho
 import { CategoryField } from '../components/CategoryPicker';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import {
+  amountInputClass,
   Banner,
   Button,
   ErrorNote,
@@ -22,7 +23,7 @@ import {
 import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { dayLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
-import { AMOUNT_INPUT, useClose } from './TxnCommon';
+import { useClose } from './TxnCommon';
 import { usage } from '../usage/tracker';
 
 export { MatchScreen } from './ActivityMatch';
@@ -107,8 +108,8 @@ export function TransferScreen() {
           </>
         ) : (
           <>
-            <span className="text-[15px] font-bold">Where did this go?</span>
-            <p className="m-0 text-[13px] leading-snug text-muted">
+            <span className="text-base font-bold">Where did this go?</span>
+            <p className="m-0 text-sm leading-snug text-muted">
               Transfers between your accounts pair up on their own. This one couldn’t:{' '}
               {candidates.length > 1
                 ? `${candidates.length} accounts received ${formatCents(-t.amount)} within a few days.`
@@ -126,11 +127,11 @@ export function TransferScreen() {
                     usage.suggestion('transfer_pick', 'paired');
                     setResult(lines(account.name));
                   }}
-                  className="flex min-h-14 w-full items-center justify-between gap-2 rounded-xl border border-line-strong bg-surface px-3 py-2 text-left"
+                  className="flex min-h-14 w-full items-center justify-between gap-2 rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"
                 >
                   <span className="flex flex-col">
-                    <span className="text-[15px] font-semibold">{account.name}</span>
-                    <span className="text-[12px] text-muted">
+                    <span className="text-base font-semibold">{account.name}</span>
+                    <span className="text-xs text-muted">
                       {dayLabel(row.date)} · “{row.payee}”
                     </span>
                   </span>
@@ -146,10 +147,10 @@ export function TransferScreen() {
                   await pick.mutateAsync({ otherKey: null });
                   setResult(lines(null));
                 }}
-                className="flex min-h-14 w-full flex-col items-start justify-center rounded-xl border border-line-strong bg-surface px-3 py-2 text-left"
+                className="flex min-h-14 w-full flex-col items-start justify-center rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"
               >
-                <span className="text-[15px] font-semibold">Neither, it was a payment</span>
-                <span className="text-[12px] text-muted">Categorize it like any other spending</span>
+                <span className="text-base font-semibold">Neither, it was a payment</span>
+                <span className="text-xs text-muted">Categorize it like any other spending</span>
               </Button>
             </div>
             {pick.error && <ErrorNote error={pick.error} />}
@@ -262,7 +263,7 @@ export function CheckPendingScreen() {
           <Banner tone="success">{done}</Banner>
         ) : (
           <>
-            <p className="m-0 text-[13px] leading-snug text-muted">
+            <p className="m-0 text-sm leading-snug text-muted">
               It still counts in {cat} and your checking balance. Checks often take a few weeks to be cashed.
             </p>
             {opts.map((o) => (
@@ -279,7 +280,7 @@ export function CheckPendingScreen() {
               <div className="flex gap-2">
                 <Field label="Amount" className="flex-1">
                   <input
-                    className={AMOUNT_INPUT}
+                    className={amountInputClass}
                     inputMode="decimal"
                     value={amt}
                     onChange={(e) => setAmount(e.target.value)}
@@ -360,7 +361,7 @@ export function AddTxnScreen() {
           ['upcoming', 'Coming up'],
         ]}
       />
-      <p className="m-0 text-[13px] leading-snug text-muted">
+      <p className="m-0 text-sm leading-snug text-muted">
         {kind === 'pending'
           ? 'Something you paid that the bank hasn’t shown yet, like a check. It counts in your budget now.'
           : 'A bill or paycheck on a future date. It counts in your budget from that date.'}
@@ -368,7 +369,7 @@ export function AddTxnScreen() {
       <div className="flex items-end gap-2">
         <Field label="Amount" className="flex-1">
           <input
-            className={AMOUNT_INPUT}
+            className={amountInputClass}
             inputMode="decimal"
             placeholder="0.00"
             value={amount}
@@ -440,7 +441,7 @@ export function AddTxnScreen() {
           </select>
         </Field>
       )}
-      <p className="m-0 text-[12px] leading-snug text-muted">
+      <p className="m-0 text-xs leading-snug text-muted">
         When the bank shows a matching transaction, the two are merged and the bank’s amount wins. If nothing
         matches in {kind === 'pending' ? 7 : 3} days, you’ll see an alert.
       </p>

@@ -46,17 +46,17 @@ export function PayeesScreen() {
               aria-label={`Rename ${p.name}`}
               className="flex min-h-14 flex-col justify-center gap-0.5 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
             >
-              <span className="text-[15px] font-semibold break-words">{p.name}</span>
-              <span className="text-[12px] text-muted">
+              <span className="text-base font-semibold break-words">{p.name}</span>
+              <span className="text-xs text-muted">
                 {txnCount(p.transactions)}
                 {p.usual ? ` · usually ${p.usual}` : ''}
               </span>
-              {bank && <span className="font-mono text-[12px] text-ink-2 break-words">{bank}</span>}
+              {bank && <span className="font-mono text-xs text-ink-2 break-words">{bank}</span>}
             </Link>
           ))}
         </Card>
       )}
-      <p className="m-0 text-[12px] leading-snug text-muted">
+      <p className="m-0 text-xs leading-snug text-muted">
         Rename a payee to another payee’s name to join them. The bank’s own text is always kept on each
         transaction.
       </p>

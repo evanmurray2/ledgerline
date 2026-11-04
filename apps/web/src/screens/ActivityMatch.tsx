@@ -6,6 +6,7 @@ import { useMatchView, useMoneyMutation, useSession, useBudget } from '../api/ho
 import { Sheet, SheetTitle } from '../components/Sheet';
 import {
   Banner,
+  Checkbox,
   cx,
   EmptyNote,
   ErrorNote,
@@ -142,7 +143,7 @@ export function MatchScreen() {
             </SecondaryButton>
             <Link
               to="/owed"
-              className="flex h-12 flex-[2] items-center justify-center rounded-xl bg-accent text-[16px] font-bold text-on-accent no-underline"
+              className="flex h-12 flex-[2] items-center justify-center rounded-lg bg-accent text-lg font-bold text-on-accent no-underline"
             >
               See what’s still owed
             </Link>
@@ -151,37 +152,33 @@ export function MatchScreen() {
       ) : (
         <>
           <div className="flex flex-col gap-0.5">
-            <span className="text-[15px] font-bold">What is this money?</span>
-            <span className="text-[13px] text-muted">
+            <span className="text-base font-bold">What is this money?</span>
+            <span className="text-sm text-muted">
               It’s held in Waiting to match, outside Ready to Assign, until you decide.
             </span>
           </div>
           <Label>Money back for what’s owed to you</Label>
-          <div className="shrink-0 overflow-hidden rounded-[14px] border border-line">
+          <div className="shrink-0 overflow-hidden rounded-lg border border-line">
             {applied.length === 0 && <EmptyNote inCard>Nothing is marked as owed to you.</EmptyNote>}
             {applied.map((a) => (
               <label
                 key={a.id}
                 className="flex min-h-14 items-center gap-3 border-t border-divider px-3 py-1.5 first:border-t-0"
               >
-                <input
-                  type="checkbox"
-                  className="hit h-[22px] w-[22px] shrink-0 accent-[var(--ll-accent)]"
+                <Checkbox
                   checked={!!on[a.id]}
                   data-track="match.item"
                   onChange={() => setOn({ ...on, [a.id]: !on[a.id] })}
                 />
                 <span className="flex flex-1 flex-col gap-0.5">
-                  <span className="text-[15px] font-semibold">{a.label}</span>
-                  <span className={cx('text-[12px]', a.late ? 'text-under-fg' : 'text-muted')}>
+                  <span className="text-base font-semibold">{a.label}</span>
+                  <span className={cx('text-xs', a.late ? 'text-under-fg' : 'text-muted')}>
                     {a.expectBy ? `${a.late ? 'Late · ' : ''}expected by ${dayLabel(a.expectBy)}` : 'No date'}
                   </span>
                 </span>
                 <span className="flex flex-col items-end">
-                  <span className="tnum text-[15px] font-bold">
-                    {on[a.id] ? formatCents(a.applied) : '—'}
-                  </span>
-                  <span className="text-[12px] text-muted">
+                  <span className="tnum text-base font-bold">{on[a.id] ? formatCents(a.applied) : '—'}</span>
+                  <span className="text-xs text-muted">
                     {on[a.id] && a.applied < a.still
                       ? `of ${formatCents(a.still)}, rest stays owed`
                       : `of ${formatCents(a.still)}`}
@@ -201,8 +198,8 @@ export function MatchScreen() {
             </TextButton>
           )}
           {left > 0 && matched > 0 && (
-            <fieldset className="m-0 flex flex-col gap-2 rounded-xl border border-line p-3">
-              <legend className="px-1 text-[13px] font-bold text-ink-2">The other {formatCents(left)}</legend>
+            <fieldset className="m-0 flex flex-col gap-2 rounded-lg border border-line p-3">
+              <legend className="px-1 text-sm font-bold text-ink-2">The other {formatCents(left)}</legend>
               {(
                 [
                   ['keep', 'Keep it waiting to match'],
@@ -210,11 +207,11 @@ export function MatchScreen() {
                   ['send_back', 'I’ll send it back (stays out of Ready to Assign until the money leaves)'],
                 ] as const
               ).map(([id, name]) => (
-                <label key={id} className="flex min-h-9 items-center gap-2 text-[14px]">
+                <label key={id} className="flex min-h-9 items-center gap-2 text-md">
                   <input
                     type="radio"
                     name="rest"
-                    className="hit h-5 w-5 accent-[var(--ll-accent)]"
+                    className="hit h-5 w-5 accent-accent"
                     checked={rest === id}
                     onChange={() => setRest(id)}
                   />
@@ -223,7 +220,7 @@ export function MatchScreen() {
               ))}
             </fieldset>
           )}
-          <p className="m-0 text-[12px] leading-snug text-muted">
+          <p className="m-0 text-xs leading-snug text-muted">
             Either way the money goes to Ready to Assign. Matching also marks what it pays back as settled, so
             it leaves your Owed to you list. Pick “It’s income” if it doesn’t pay anything back.
             {rta !== undefined ? ` Ready to Assign has ${formatCents(rta)} now.` : ''}
