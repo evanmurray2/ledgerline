@@ -763,37 +763,38 @@ export class MockDb {
       .reduce((a, x) => a - x.amount, 0);
   }
 
+  /** Dining out's credit overspending on Freedom not yet covered (the seed's $18.25). */
+  private diningCredit(): number {
+    const dining = this.catById('dining')!;
+    return 1825 - Math.min(1825, Math.max(0, dining.assigned - 20000));
+  }
+
   cards(): CardRow[] {
     if (this.scenario === 'empty') {
+      const empty = (id: 'sapphire' | 'freedom', name: string, owed: number, due: string | null) => {
+        const available = this.cardFund[id];
+        const short = Math.max(0, owed - available);
+        return {
+          accountId: id,
+          categoryId: `pay-${id}`,
+          name,
+          available,
+          owed,
+          budgetedPending: 0,
+          uncategorized: 0,
+          need: owed,
+          short,
+          status: short > 0 ? 'short' : 'covered',
+          statement: due ? { balance: owed, due, covered: available >= owed } : null,
+          detail:
+            short > 0
+              ? `Card balance ${fmt(owed)} · needs funding${due ? ' · statement due Oct 25' : ''}`
+              : 'covered',
+        } satisfies CardRow;
+      };
       return [
-        {
-          accountId: 'sapphire',
-          categoryId: 'pay-sapphire',
-          name: 'Sapphire Preferred',
-          available: 0,
-          owed: 104260,
-          budgetedPending: 0,
-          uncategorized: 0,
-          need: 104260,
-          short: 104260,
-          status: 'short',
-          statement: { balance: 104260, due: '2026-10-25', covered: false },
-          detail: 'Card balance $1,042.60 · needs funding · statement due Oct 25',
-        },
-        {
-          accountId: 'freedom',
-          categoryId: 'pay-freedom',
-          name: 'Freedom Unlimited',
-          available: 0,
-          owed: 17080,
-          budgetedPending: 0,
-          uncategorized: 0,
-          need: 17080,
-          short: 17080,
-          status: 'short',
-          statement: null,
-          detail: 'Card balance $170.80 · needs funding',
-        },
+        empty('sapphire', 'Sapphire Preferred', 104260, '2026-10-25'),
+        empty('freedom', 'Freedom Unlimited', 17080, null),
       ];
     }
     const dining = this.catById('dining')!;
@@ -970,6 +971,25 @@ export class MockDb {
           link: 'category',
         });
     }
+    for (const card of this.cards().filter((x) => x.short > 0)) {
+      // Freedom's shortfall is Dining out's credit overspending: covering Dining out funds the card too.
+      const diningFix = card.accountId === 'freedom' && this.scenario !== 'empty' ? this.diningCredit() : 0;
+      const fund = card.short - diningFix;
+      out.push({
+        section: 'Card payments',
+        key: `card:${card.accountId}`,
+        name: card.name,
+        amount: card.available,
+        detail:
+          fund > 0
+            ? `${fmt(card.short)} of card spending not covered`
+            : 'Cover Dining out to cover this card',
+        categoryId: card.categoryId,
+        fix: fund > 0 ? { verb: 'Fund', amount: fund } : null,
+        link: 'card',
+        accountId: card.accountId,
+      });
+    }
     const nopa = this.owed.find((o) => o.id === 'nopa' && o.status === 'late');
     if (nopa)
       out.push({
@@ -1036,7 +1056,7 @@ export class MockDb {
 
   assignView(month: string): AssignView {
     const suggestions: AssignView['suggestions'] = this.attention()
-      .filter((a) => a.categoryId && a.fix)
+      .filter((a) => a.categoryId && a.fix && a.section !== 'Card payments')
       .map((a) => ({
         categoryId: a.categoryId!,
         name: a.name,
