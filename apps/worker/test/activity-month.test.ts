@@ -1,6 +1,6 @@
 // Activity's month bar (docs/month-header.md): `?month=` lists the posted rows Budget counts in that month, a
 // search looks through every month, and pending and upcoming rows show on this month only.
-import { app } from './phone.js';
+import { app, syncPhone } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ActivityView, TxnSheet } from '@ledgerline/contracts';
 
@@ -11,8 +11,6 @@ const get = async <T>(p: string): Promise<T> => {
   return (await r.json()) as T;
 };
 const keys = (v: ActivityView) => v.posted.map((r) => r.key).sort();
-const sheetMonth = async (key: string) =>
-  (await get<TxnSheet>(`/api/transactions/${encodeURIComponent(key)}`)).budgetMonth;
 
 describe('Activity by month', () => {
   beforeAll(async () => {
@@ -32,8 +30,15 @@ describe('Activity by month', () => {
     const oct = await get<ActivityView>('/api/activity?month=2026-10');
     expect(nov.posted.length).toBeGreaterThan(0);
     expect(oct.posted.length).toBeGreaterThan(0);
+    // Each row's budget month from its sheet. Nothing changes in between, so sync the copy once and read every sheet
+    // from it: a sync round trip per sheet made this test take seconds and time out on a busy machine.
+    const copy = await syncPhone();
     const months = new Map<string, string>();
-    for (const r of all.posted) months.set(r.key, await sheetMonth(r.key));
+    for (const r of all.posted) {
+      const res = await copy.request('GET', `/api/transactions/${encodeURIComponent(r.key)}`);
+      expect(res.status, r.key).toBe(200);
+      months.set(r.key, ((await res.json()) as TxnSheet).budgetMonth);
+    }
     expect(keys(nov)).toEqual(
       [...months]
         .filter(([, m]) => m === '2026-11')
