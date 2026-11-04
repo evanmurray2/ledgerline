@@ -2,9 +2,9 @@
 
 A review of `apps/web/src` for the same kind of thing looking or behaving differently across screens, on a phone
 (390 px) and a computer (1280 px), checked in the mock app (`VITE_MOCK=1`). Line numbers refer to commit `790df7f`
-(`git show 790df7f:<path>`); they will drift as the fixes land. `docs/build-plan.md` section 19 tracks what's done.
+(`git show 790df7f:<path>`); they will drift as the fixes land. `docs/build-history.md` section 19 tracks what's done.
 
-**Status:** fixed (D-54, D-55; `docs/build-plan.md` section 19). Left as they are, on purpose: Unpair transfer has
+**Status:** fixed (D-54, D-55; `docs/build-history.md` section 19). Left as they are, on purpose: Unpair transfer has
 no Undo (it needs a server change), Owed's "waiting to match" card keeps its own color, Budget's sync-problem strip
 stays a full-width strip under the header, and the Ready to Assign bar keeps its own buttons.
 

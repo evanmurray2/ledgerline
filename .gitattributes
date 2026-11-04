@@ -1,3 +1,4 @@
-# Two sessions adding lines here both keep theirs on a local merge or rebase (D-51). Check the result for
-# duplicated lines when both changed the same item.
+# These files are lists where each PR only adds or deletes its own lines, so a local merge or rebase keeps both
+# sides' lines (D-51, D-59). GitHub's own merge ignores this. Check the result for an entry listed twice.
 docs/build-plan.md merge=union
+docs/whats-true-now.md merge=union

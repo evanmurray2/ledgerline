@@ -1,6 +1,6 @@
 # Ledgerline: notes for Claude sessions
 
-A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `docs/build-plan.md` (what's done), `docs/decisions.md` and `docs/decisions/` (D-1 on: why things differ from the design) and `docs/runbooks/setup.md`. `docs/design.md` and `docs/sync-spec.md` are the source of truth for the Money rules and the product; start with each one's "What's true now" section, which says what the later decisions replaced. Record any new contradiction as a decision (see Several sessions at once) and add it to that section.
+A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `docs/build-plan.md` (open work), `docs/decisions.md` and `docs/decisions/` (D-1 on: why things differ from the design) and `docs/runbooks/setup.md`. `docs/design.md` and `docs/sync-spec.md` are the source of truth for the Money rules and the product; start with `docs/whats-true-now.md`, which says what the later decisions replaced. Record any new contradiction as a decision (see Several sessions at once) and add a line to that file.
 
 ## Production
 
@@ -34,7 +34,7 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 - Don't sit waiting for CI after a push; carry on working and check the PR's `ci` run before your next push and before merging (GitHub MCP `actions_list`, `list_workflow_runs`). If it failed, fix that first.
 - Watch CI and deploys; never guess. Don't use `sleep`, timed check-ins (`send_later`) or a fixed number of minutes to decide that CI has passed or a deploy is done. Start a background watcher that polls the real runs and reports the moment each one finishes: `node tools/ci/watch-runs.mjs <sha> ci` for a PR's latest commit, `node tools/ci/watch-runs.mjs <sha> ci deploy` for a merge commit (Bash with `run_in_background`; it exits 0 when all passed or were skipped, 1 on a failure, cancel or timeout; when a newer merge cancelled the commit's `ci`, it follows the newest commit on `main`, whose deploy ships both). Subscribing to the PR (`subscribe_pr_activity`) also wakes you on its CI, but nothing wakes you for `deploy` on `main`, so always watch that one after a merge. Start it right after every push to a PR, not only before merging: it also exits 1 when the PR has a merge conflict with `main` (GitHub runs no CI then, and nothing else wakes you) or when no run starts within 10 minutes. Tell the owner only what the watcher reported.
 - Migrations in `packages/db/budget-migrations` and `packages/db/directory-migrations` are forward-only once on `main` (`node tools/ci/migration-check.mjs`); add a new numbered file, then run `node tools/db/gen-store-migrations.mjs`.
-- Keep `docs/build-plan.md` current in the same PR as the work.
+- `docs/build-plan.md` lists open work only, one line per item: add a line for work you leave, delete the line in the PR that finishes it. Don't log finished work there (the PR description does that). `docs/build-history.md` is frozen.
 - Large files (over about 600 lines): when a task already changes one, split off the part you're working on into its own file, by feature (a sheet, a group of routes). Make the split its own commit with no change in behavior. Don't split files you aren't otherwise touching.
 
 ## Several sessions at once
@@ -52,6 +52,6 @@ The owner runs several Claude sessions side by side, each with its own container
 - To catch up with `main` (a conflict, a PR that adds a migration, or a fix that needs the other side), use GitHub MCP `update_pull_request_branch`: it merges `main` into the PR, no force-push. If GitHub refuses because of a conflict, `git fetch origin main && git merge origin/main`, resolve, test and push. Never rebase or force-push another session's branch.
 - Decisions: one file per decision, `docs/decisions/D-<n>-<slug>.md` (D-1 to D-50 stay in the table in `docs/decisions.md`). Write `D-?` while working; just before merging, `git fetch origin main && node tools/docs/next-decision.mjs` gives the next free number. Rename the file and every reference to it.
 - Migration file numbers belong to whoever merges first; a PR adding one must be caught up with `main` first, and renumbered if its number was taken.
-- `docs/build-plan.md` merges with `merge=union` (`.gitattributes`), so a local merge keeps both sides' lines; check for an item listed twice. In any other shared-doc conflict, keep both sides' entries.
+- `docs/build-plan.md` and `docs/whats-true-now.md` merge with `merge=union` (`.gitattributes`), so a local merge keeps both sides' lines; check for an item listed twice. GitHub's own merge ignores this. Keep both one line per entry. In any other shared-doc conflict, keep both sides' entries.
 - Merging is deploying. Ask the owner before merging a PR that adds a migration (`packages/db/*-migrations`).
 - An owner's "yes" (to a Plaid link, a Money-rules choice, a deploy) applies only in the session where they said it.
