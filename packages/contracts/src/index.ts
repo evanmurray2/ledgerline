@@ -274,6 +274,8 @@ export const TxnSheet = z.object({
   key: z.string(),
   kind: z.enum(['pending', 'posted', 'income', 'refund', 'paidBack', 'transfer', 'manual', 'upcoming']),
   payee: z.string(),
+  /** The payee this transaction is under; null for a manual entry (it has only a name). */
+  payeeId: id.nullable().optional(),
   rawName: z.string(),
   accountId: id,
   accountName: z.string(),
@@ -521,26 +523,31 @@ export const RemoveCategoryRequest = ArchiveRequest.omit({ archived: true });
 export const ReorderRequest = z.object({ ids: z.array(id).max(500) });
 
 export const PayeesView = z.object({
-  suggestions: z.array(
-    z.object({
-      name: z.string(),
-      rawNames: z.array(z.string()),
-      transactions: z.number().int(),
-      payeeIds: z.array(id),
-    }),
-  ),
+  /** Payees with at least one transaction from the budget onward (docs/payees.md section 6). */
   payees: z.array(
     z.object({
       id,
       name: z.string(),
+      /** Budget transactions only; history isn't counted. */
       transactions: z.number().int(),
-      remember: z.boolean(),
-      defaultCategory: z.string().nullable(),
+      /** The category you've used most for money out to this payee. */
+      usual: z.string().nullable(),
+      /** The bank's own texts behind this payee, most used first (at most 10). */
+      bankNames: z.array(z.object({ name: z.string(), count: z.number().int() })),
     }),
   ),
+  /** Payees not listed (only history), for the same-name check when renaming. */
+  others: z.array(z.object({ id, name: z.string() })),
 });
 export type PayeesView = z.infer<typeof PayeesView>;
-export const MergePayees = z.object({ ids: z.array(id).min(2), name: z.string().min(1).max(120) });
+/** Join payees into `keep` (rename = merge). `{ ids, name }` from an older app means `keep = ids[0]`. */
+export const MergePayees = z.object({
+  keep: id.optional(),
+  ids: z.array(id).min(2).max(50),
+  name: z.string().min(1).max(120).optional(),
+});
+export const MergeResult = z.object({ ok: z.literal(true), undoId: z.string() });
+export type MergeResult = z.infer<typeof MergeResult>;
 export const RenameAccount = z.object({ name: z.string().trim().min(1).max(60) });
 export const RenamePayee = z.object({ name: z.string().min(1).max(120), remember: z.boolean().optional() });
 

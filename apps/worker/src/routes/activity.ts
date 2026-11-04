@@ -479,6 +479,7 @@ activityRoutes.get('/transactions/:key', async (c) => {
     key,
     kind,
     payee: t.payee,
+    payeeId: t.payee_id,
     rawName: t.raw_name,
     accountId: t.account_id,
     accountName: accts.get(t.account_id) ?? t.account_name,

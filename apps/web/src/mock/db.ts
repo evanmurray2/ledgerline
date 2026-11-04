@@ -536,6 +536,42 @@ function initialTxns(): Txn[] {
   ];
 }
 
+interface MockPayee {
+  id: string;
+  name: string;
+  transactions: number;
+  usual: string | null;
+  bankNames: { name: string; count: number }[];
+  mergedInto?: string;
+}
+
+function initialPayees(): MockPayee[] {
+  const p = (
+    id: string,
+    name: string,
+    transactions: number,
+    usual: string | null,
+    ...bank: string[]
+  ): MockPayee => ({
+    id,
+    name,
+    transactions,
+    usual,
+    bankNames: bank.map((b, i) => ({ name: b, count: i === 0 ? transactions : 1 })),
+  });
+  return [
+    p('p-tj', 'Trader Joe’s', 14, 'Groceries', 'TRADER JOE S #123 OAKLAND CA'),
+    p('p-amazon', 'Amazon', 9, 'Shopping', 'AMZN MKTP US*2K4', 'AMAZON.COM*9X1'),
+    p('p-uber', 'Uber Eats', 6, 'Dining out', 'UBER EATS'),
+    p('p-bb', 'Blue Bottle Coffee', 5, 'Dining out', 'SQ *BLUE BOTTLE COFFEE'),
+    p('p-venmo', 'Venmo cashout', 4, null, 'VENMO CASHOUT'),
+    p('p-cvs', 'CVS Pharmacy', 3, null, 'CVS/PHARMACY #0812'),
+    p('p-rent', 'Rent', 3, 'Rent', 'RENT PAYMENT'),
+    p('p-bb2', 'Bluebottle Coffee', 4, null, 'BLUEBOTTLECOFFEE OAKLAND'),
+    p('p-comcast', 'Comcast', 2, 'Internet', 'COMCAST CABLE'),
+  ];
+}
+
 function initialOwed(): Owed[] {
   return [
     {
@@ -589,7 +625,9 @@ export class MockDb {
   setupStep: Session['budget']['setupStep'] = 'done';
   tracking = true;
   noteButton = false;
-  merged = false;
+  payees: MockPayee[] = initialPayees();
+  /** Joins that can still be undone, by undo id. */
+  joins = new Map<string, { keep: string; names: Record<string, string> }>();
   linked = 4;
   checkDeleted = false;
   allyRepaired = false;
@@ -1152,6 +1190,7 @@ export class MockDb {
       key: x.key,
       kind: x.kind,
       payee: x.payee,
+      payeeId: this.payeeByName(x.payee)?.id ?? null,
       rawName: x.rawName,
       accountId: x.accountId,
       accountName: ACCOUNTS[x.accountId]?.name ?? x.accountId,
@@ -1616,33 +1655,63 @@ export class MockDb {
 
   payeesView(): PayeesView {
     return {
-      suggestions: this.merged
-        ? []
-        : [
-            {
-              name: 'Blue Bottle Coffee',
-              rawNames: ['SQ *BLUE BOTTLE COFFEE', 'TST* BLUE BOTTLE', 'BLUEBOTTLECOFFEE OAKLAND'],
-              transactions: 11,
-              payeeIds: ['p-bb', 'p-bb2', 'p-bb3'],
-            },
-          ],
-      payees: [
-        { id: 'p-amazon', name: 'Amazon', transactions: 9, remember: false, defaultCategory: null },
-        {
-          id: 'p-bb',
-          name: 'Blue Bottle Coffee',
-          transactions: this.merged ? 11 : 5,
-          remember: true,
-          defaultCategory: 'Dining out',
-        },
-        { id: 'p-comcast', name: 'Comcast', transactions: 2, remember: true, defaultCategory: 'Internet' },
-        { id: 'p-cvs', name: 'CVS Pharmacy', transactions: 3, remember: false, defaultCategory: null },
-        { id: 'p-rent', name: 'Rent', transactions: 3, remember: true, defaultCategory: 'Rent' },
-        { id: 'p-tj', name: 'Trader Joe’s', transactions: 14, remember: true, defaultCategory: 'Groceries' },
-        { id: 'p-uber', name: 'Uber Eats', transactions: 6, remember: true, defaultCategory: 'Dining out' },
-        { id: 'p-venmo', name: 'Venmo cashout', transactions: 4, remember: false, defaultCategory: null },
-      ],
+      payees: this.payees
+        .filter((p) => !p.mergedInto)
+        .map(({ id, name, transactions, usual, bankNames }) => ({
+          id,
+          name,
+          transactions,
+          usual,
+          bankNames,
+        })),
+      others: [],
     };
+  }
+
+  payeeByName(name: string): MockPayee | undefined {
+    return this.payees.find((p) => !p.mergedInto && p.name === name);
+  }
+
+  renamePayee(id: string, name: string) {
+    const p = this.payees.find((x) => x.id === id);
+    if (!p) throw new MockHttpError(404, 'not_found', 'No such payee');
+    if (p.mergedInto)
+      throw new MockHttpError(409, 'payee_changed', 'This payee was joined into another one.');
+    const taken = this.payees.find(
+      (x) => x.id !== id && !x.mergedInto && x.name.trim().toLowerCase() === name.trim().toLowerCase(),
+    );
+    if (taken)
+      throw new MockHttpError(409, 'name_taken', `You have a payee named ${taken.name}. Join them instead.`);
+    for (const t of this.txns) if (t.payee === p.name) t.payee = name.trim();
+    p.name = name.trim();
+  }
+
+  joinPayees(keep: string, ids: string[]): string {
+    const k = this.payees.find((x) => x.id === keep && !x.mergedInto);
+    const rest = this.payees.filter((x) => ids.includes(x.id) && x.id !== keep && !x.mergedInto);
+    if (!k || rest.length !== ids.length - 1)
+      throw new MockHttpError(409, 'payee_changed', 'This payee changed. Pull to refresh.');
+    const undoId = this.newId('join');
+    this.joins.set(undoId, { keep, names: Object.fromEntries([k, ...rest].map((p) => [p.id, p.name])) });
+    for (const p of rest) {
+      p.mergedInto = keep;
+      k.transactions += p.transactions;
+      k.bankNames = [...k.bankNames, ...p.bankNames];
+      for (const t of this.txns) if (t.payee === p.name) t.payee = k.name;
+    }
+    return undoId;
+  }
+
+  undoJoin(undoId: string) {
+    const j = this.joins.get(undoId);
+    if (!j) throw new MockHttpError(404, 'not_found', 'No such join');
+    const k = this.payees.find((x) => x.id === j.keep)!;
+    for (const p of this.payees.filter((x) => x.mergedInto === j.keep && j.names[x.id])) {
+      p.mergedInto = undefined;
+      k.transactions -= p.transactions;
+      k.bankNames = k.bankNames.filter((b) => !p.bankNames.includes(b));
+    }
+    this.joins.delete(undoId);
   }
 
   connectionsView(): ConnectionsView {

@@ -87,6 +87,11 @@ export class MockServer {
   private route(method: string, p: string[], q: URLSearchParams, body: unknown): unknown {
     const db = this.db;
     const [a, b, c, d] = p;
+    // Undo a join: settings/payees/merge/<id>/undo has one segment more than the keys below.
+    if (method === 'POST' && a === 'settings' && b === 'payees' && c === 'merge' && p[4] === 'undo') {
+      db.undoJoin(d!);
+      return { ok: true };
+    }
     const key = `${method} ${a ?? ''}${b !== undefined ? '/' + (isParam(a, b) ? ':x' : b) : ''}${c !== undefined ? '/' + (isParam2(a, c) ? ':y' : c) : ''}${d !== undefined ? '/' + d : ''}`;
     switch (key) {
       case 'GET session':
@@ -436,12 +441,12 @@ export class MockServer {
       case 'GET settings/payees':
         return db.payeesView();
       case 'POST settings/payees/merge': {
-        parse(MergePayees, body);
-        db.merged = true;
-        return { ok: true };
+        const r = parse(MergePayees, body);
+        return { ok: true, undoId: db.joinPayees(r.keep ?? r.ids[0]!, r.ids) };
       }
       case 'POST settings/payees/:y': {
-        parse(RenamePayee, body);
+        const r = parse(RenamePayee, body);
+        db.renamePayee(c!, r.name);
         return { ok: true };
       }
       // Sign-in (decisions.md D-27): the mock is always signed in with one passkey.

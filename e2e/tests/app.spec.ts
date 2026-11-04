@@ -461,7 +461,7 @@ test('Rename payee: the same sheet from a transaction and from Settings', async 
   await page.getByRole('link', { name: 'Rename payee' }).click();
   let sheet = page.getByRole('dialog', { name: 'Rename payee' });
   await expect(sheet.getByRole('heading', { name: 'Rename payee' })).toBeVisible();
-  await expect(sheet.getByText('Bank names that become this payee')).toBeVisible();
+  await expect(sheet.getByText('Bank names')).toBeVisible();
   await sheet.getByLabel('Show as').fill('Uber rides');
   await sheet.getByRole('button', { name: 'Save name' }).click();
   await expect(sheet).toBeHidden();
@@ -469,8 +469,33 @@ test('Rename payee: the same sheet from a transaction and from Settings', async 
   await page.goto('/settings/payees/p-uber');
   sheet = page.getByRole('dialog', { name: 'Rename payee' });
   await expect(sheet.getByRole('heading', { name: 'Rename payee' })).toBeVisible();
-  await expect(sheet.getByLabel('Or merge into an existing payee')).toBeVisible();
+  await expect(sheet.getByText('UBER EATS')).toBeVisible();
   await expect(sheet.getByRole('button', { name: 'Save name' })).toBeVisible();
+});
+
+test('Payees: search by bank text, and renaming to another payee’s name joins them, with Undo', async ({
+  page,
+}) => {
+  await page.goto('/settings/payees');
+  await expect(page.getByText('Looks like the same payee')).toHaveCount(0);
+  await page.getByLabel('Search payees').fill('BLUEBOTTLECOFFEE');
+  await expect(page.getByRole('link', { name: 'Rename Bluebottle Coffee' })).toBeVisible();
+  await page.getByRole('link', { name: 'Rename Bluebottle Coffee' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Rename payee' });
+  await sheet.getByLabel('Show as').fill('Blue');
+  // Payees starting with what you typed are offered as chips.
+  await sheet.getByRole('button', { name: 'Blue Bottle Coffee' }).click();
+  await expect(
+    sheet.getByText('You have a payee named Blue Bottle Coffee. Saving joins them.'),
+  ).toBeVisible();
+  await sheet.getByRole('button', { name: 'Join payees' }).click();
+  await expect(sheet).toBeHidden();
+  await expect(page.getByRole('status').filter({ hasText: 'Joined into Blue Bottle Coffee' })).toBeVisible();
+  await page.getByLabel('Search payees').fill('');
+  await expect(page.getByRole('link', { name: 'Rename Bluebottle Coffee' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Rename Blue Bottle Coffee' })).toContainText('9 transactions');
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByRole('link', { name: 'Rename Bluebottle Coffee' })).toBeVisible();
 });
 
 test('Month bar: the same place on every tab, and one month across Budget, Activity and Reports', async ({

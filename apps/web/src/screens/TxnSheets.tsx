@@ -6,7 +6,7 @@ import { useMoneyMutation, useTxn, usePayees, qk } from '../api/hooks';
 import { Sheet } from '../components/Sheet';
 import { ErrorNote, Loading } from '../components/ui';
 import { useScreen } from '../lib/common';
-import { RenamePayeeSheet } from '../components/RenamePayee';
+import { RenamePayeeSheet, txnCount, usePayeeSave } from '../components/RenamePayee';
 import { useClose, useParentPath } from './TxnCommon';
 import { EditTxn } from './TxnEdit';
 import { PaidBack, PairedTransfer } from './TxnLinked';
@@ -41,17 +41,11 @@ export function RenamePayeeFromTxn() {
   const navigate = useNavigate();
   const parent = useParentPath();
   const back = () => void navigate({ to: `${parent}/txn/${encodeURIComponent(key)}` });
+  const save = usePayeeSave();
   const patch = useMoneyMutation(
     (v: { key: string; body: Parameters<typeof api.patchTxn>[1] }) => api.patchTxn(v.key, v.body),
     { invalidate: [qk.payees] },
   );
-  const rename = useMoneyMutation(
-    (v: { id: string; name: string }) => api.renamePayee(v.id, { name: v.name, remember: true }),
-    { invalidate: [qk.payees] },
-  );
-  const merge = useMoneyMutation((v: { ids: string[]; name: string }) => api.mergePayees(v), {
-    invalidate: [qk.payees],
-  });
   const t = q.data;
   if (!t)
     return (
@@ -63,23 +57,22 @@ export function RenamePayeeFromTxn() {
         onSave={async () => {}}
       />
     );
-  const all = payees.data?.payees ?? [];
-  const payee = all.find((p) => p.name === t.payee);
+  const v = payees.data;
+  const payee = t.payeeId ? v?.payees.find((p) => p.id === t.payeeId) : undefined;
+  const others = t.payeeId && v ? [...v.payees, ...v.others].filter((p) => p.id !== t.payeeId) : undefined;
   return (
     <RenamePayeeSheet
       onClose={back}
       name={t.payee}
-      rawNames={[
-        { name: t.rawName, meta: payee ? `${payee.transactions} transactions` : 'this transaction' },
-      ]}
-      mergeInto={
-        payee ? all.filter((p) => p.id !== payee.id).map((p) => ({ id: p.id, name: p.name })) : undefined
+      rawNames={
+        payee?.bankNames.length
+          ? payee.bankNames.map((b) => ({ name: b.name, meta: txnCount(b.count) }))
+          : [{ name: t.rawName, meta: 'this transaction' }]
       }
+      others={others?.map((p) => ({ id: p.id, name: p.name }))}
       onSave={async (name, into) => {
-        if (payee && into) {
-          const target = all.find((p) => p.id === into)!;
-          await merge.mutateAsync({ ids: [into, payee.id], name: target.name });
-        } else if (payee) await rename.mutateAsync({ id: payee.id, name });
+        // A bank row renames (or joins) its payee by id; a manual entry has only a name.
+        if (t.payeeId) await save(t.payeeId, name, into);
         else await patch.mutateAsync({ key: t.key, body: { payeeName: name } });
         back();
       }}
