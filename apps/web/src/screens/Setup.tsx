@@ -127,7 +127,7 @@ export function StartMonthScreen() {
       </h1>
       <p className="m-0 text-[15px] leading-snug text-ink-2">
         You start with what’s in your checking and savings today. Earlier bank history comes in for reports
-        and rules, but older months aren’t budgeted.
+        and searches, but older months aren’t budgeted.
       </p>
       <Banner tone="neutral">
         Card balances aren’t subtracted: each card gets a payment category you fund instead.

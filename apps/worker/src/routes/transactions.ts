@@ -131,6 +131,7 @@ transactionRoutes.get('/transactions/:key', async (c) => {
     wontClear: t.wont_clear === 1,
     categoryId: t.category_id,
     categoryLabel: categoryLabel(t, cats, splits.length > 0),
+    // 'rule' and 'payee' are only on rows categorized before D-60; they keep their label.
     categorizedBy:
       t.categorized_by === 'rule'
         ? `Rule: ${ruleName ?? 'rule'}`

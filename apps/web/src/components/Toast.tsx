@@ -1,4 +1,4 @@
-// One toast at a time, with optional Undo and a second line offering an action (the "Always" rule offer).
+// One toast at a time, with optional Undo and a second line offering an action.
 import { useEffect, useSyncExternalStore } from 'react';
 import { cx, useIsDesktop } from './ui';
 import { useCanWrite } from '../state/connectivity';

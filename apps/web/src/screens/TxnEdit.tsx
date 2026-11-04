@@ -1,4 +1,4 @@
-// Editing a transaction: pending with your estimate and tip shortcuts, posted (set by rule), income (Save for
+// Editing a transaction: pending with your estimate and tip shortcuts, posted (a row a rule set before D-60 keeps its chip), income (Save for
 // next month), card refund, upcoming / manual.
 import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';

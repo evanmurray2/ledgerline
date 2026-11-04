@@ -26,7 +26,6 @@ the UI; none of them edits the contract.
 | Card refund · Not this purchase                             | `TxnPatch` has no way to unlink a refund from its purchase (`refundOf`).                                      | The toggle is local only until saved; nothing is sent.                                         |
 | Transfer pick · Undo                                        | No action that returns a picked transfer to "unsorted".                                                       | Undo calls `POST /api/transfers/:key/unpair`.                                                  |
 | Transaction · It's a transfer to an unlinked account (D-20) | `TxnPatch` has no transfer target.                                                                            | "Transfer to account…" options are listed but disabled.                                        |
-| Edit rule · Rename payee to                                 | `set_payee` needs a `payeeId`, and there's no endpoint that creates a payee.                                  | Field left out.                                                                                |
 | Settings · stop tracking                                    | The design offers to delete the stored log when tracking is turned off; there's no delete endpoint.           | Shows that collection stopped and that raw events age out after 90 days.                       |
 | Repair                                                      | `LinkExchange` is for new Items; Plaid update mode returns no new public token to exchange.                   | After Link succeeds in repair mode the app calls `POST /api/settings/connections/:id/refresh`. |
 
@@ -39,4 +38,4 @@ the UI; none of them edits the contract.
   screen shows a "Take it back from" list that calls `POST /api/budget/move` to `rta`.
 - Mutations with no body (`unlink`, `unpair`, `refresh`, `apply`) send `{}` so they still carry
   `content-type: application/json`.
-- Sign out links to `/cdn-cgi/access/logout` (Cloudflare Access).
+- Sign out calls `POST /api/settings/security/sign-out` (passkeys, D-27).

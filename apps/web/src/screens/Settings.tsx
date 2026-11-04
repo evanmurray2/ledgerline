@@ -1,5 +1,5 @@
 // Settings: the layout, the home page, appearance and preferences. Each section has its own file in settings/:
-// categories and groups, rules (with live preview), payees, bank connections (Item meter, confirm before Link), and
+// categories and groups, payees, bank connections (Item meter, confirm before Link), and
 // import and export. There is no email setting: the app sends no email (decisions.md D-24).
 import { SignInSection } from './Auth';
 import { useId, useRef, useState } from 'react';
