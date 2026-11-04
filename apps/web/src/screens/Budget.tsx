@@ -300,14 +300,12 @@ export function BudgetScreen() {
         name="Budget"
         month={<MonthNav b={b} month={month} view={view} />}
         right={
-          // Categories and targets belong to the budget, so they sit at the top of it. Settings is in this menu
-          // too, so it can be opened from every tab (on desktop it is in the sidebar).
+          // Categories and targets belong to the budget, so they sit at the top of it.
           <OverflowMenu
             label="More budget actions"
             items={[
               { to: '/targets', search: targetsSearch, name: 'Set targets', track: 'budget.set_targets' },
               { to: '/categories', name: 'Edit categories', track: 'budget.edit_categories' },
-              { to: '/settings', name: 'Settings', track: 'budget.settings' },
             ]}
           />
         }

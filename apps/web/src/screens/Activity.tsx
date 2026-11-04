@@ -8,7 +8,6 @@ import type { ActivityView, TxnListRow } from '@ledgerline/contracts';
 import { api, type ActivityFilter } from '../api/endpoints';
 import { adjustAttention, qk, useActivity, useBudget, useMoneyMutation, useSession } from '../api/hooks';
 import { MonthBar, TabHeader } from '../components/MonthBar';
-import { OverflowMenu } from '../components/headers';
 import { monthName } from '../lib/dates';
 import { clampMonth } from '../state/month';
 import { toast } from '../components/Toast';
@@ -363,15 +362,6 @@ export function ActivityScreen() {
         month={
           month &&
           current && <MonthBar month={month} current={current} min={min} max={current} onGo={goMonth} />
-        }
-        // Phone: Settings from every tab (on desktop it is in the sidebar). Add keeps the right-hand place.
-        left={
-          desktop ? undefined : (
-            <OverflowMenu
-              label="More"
-              items={[{ to: '/settings', name: 'Settings', track: 'activity.settings' }]}
-            />
-          )
         }
         right={addButton}
         below={[searchBox, chips]}
