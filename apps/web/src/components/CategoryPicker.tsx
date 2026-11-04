@@ -43,6 +43,7 @@ export function CategoryPickerSheet({
   specials = [],
   suggestedTitle,
   suggested = [],
+  suggestedCounts,
   value,
   onPick,
   onClose,
@@ -58,6 +59,8 @@ export function CategoryPickerSheet({
   suggestedTitle?: string;
   /** Category ids to offer first, e.g. what this payee usually gets. */
   suggested?: string[];
+  /** How often each suggested category was used, shown next to its name. */
+  suggestedCounts?: Record<string, number>;
   value?: string;
   onPick: (id: string) => void;
   onClose: () => void;
@@ -133,6 +136,9 @@ export function CategoryPickerSheet({
                       className="hit flex h-10 items-center gap-2 rounded-full border border-accent bg-accent-soft px-3.5 text-[14px] font-bold text-accent"
                     >
                       {c.name}
+                      {suggestedCounts?.[c.id] !== undefined && (
+                        <span className="tnum font-semibold text-ink-2">{suggestedCounts[c.id]}</span>
+                      )}
                       {c.available !== undefined && c.available < 0 && (
                         <span className="tnum font-semibold text-over-fg">{formatCents(c.available)}</span>
                       )}

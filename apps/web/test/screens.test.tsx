@@ -111,23 +111,28 @@ describe('Activity', () => {
     expect(screen.queryByRole('button', { name: /Needs attention/ })).toBeNull();
   });
 
-  it('categorizes from the picker with Undo and the Always offer', async () => {
+  it('OK takes the suggested category, with Undo and no rule offer', async () => {
     renderAt('/activity');
     fireEvent.click(
-      await screen.findByRole(
-        'button',
-        { name: /Choose category for Blue Bottle Coffee/ },
-        { timeout: 4000 },
-      ),
+      await screen.findByRole('button', { name: /^OK Dining out for Blue Bottle Coffee/ }, { timeout: 4000 }),
     );
-    const dialog = await screen.findByRole('dialog', { name: 'Choose a category' });
-    fireEvent.click(within(dialog).getAllByRole('button', { name: /^Dining out/ })[0]!);
     await text(
       'Blue Bottle Coffee → Dining out · Dining out is now overspent by $25.00. Cover it on Budget.',
     );
-    expect(screen.getByRole('button', { name: 'Always' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Always' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy();
     expect(server.db.txn('bb').categoryId).toBe('dining');
+  });
+
+  it('the picker lists the payee’s past categories most used first, with counts', async () => {
+    renderAt('/activity');
+    fireEvent.click(
+      (await screen.findAllByRole('button', { name: /^Choose category for Amazon/ }, { timeout: 4000 }))[0]!,
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Choose a category' });
+    expect(within(dialog).getByText('You’ve used for Amazon')).toBeTruthy();
+    fireEvent.click(within(dialog).getAllByRole('button', { name: /^Household/ })[0]!);
+    await waitFor(() => expect(server.db.txn('a1').categoryId).toBe('household'));
   });
 });
 

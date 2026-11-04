@@ -88,7 +88,15 @@ export const CardRow = z.object({
 export type CardRow = z.infer<typeof CardRow>;
 
 export const AttentionItem = z.object({
-  section: z.enum(['Ready to Assign', 'Overspent', 'Underfunded', 'Low', 'Overfunded', 'Owed to you']),
+  section: z.enum([
+    'Ready to Assign',
+    'Overspent',
+    'Card payments',
+    'Underfunded',
+    'Low',
+    'Overfunded',
+    'Owed to you',
+  ]),
   key: z.string(),
   name: z.string(),
   amount: cents,
@@ -98,7 +106,9 @@ export const AttentionItem = z.object({
   fix: z
     .object({ verb: z.enum(['Cover', 'Fund', 'Add', 'Move', 'Review', 'Move money']), amount: cents })
     .nullable(),
-  link: z.enum(['owed', 'category', 'assign']).nullable(),
+  link: z.enum(['owed', 'category', 'assign', 'card']).nullable(),
+  /** Card payments: the card account, whose screen the row opens. */
+  accountId: id.nullable().optional(),
 });
 export type AttentionItem = z.infer<typeof AttentionItem>;
 
@@ -232,8 +242,16 @@ export const ActivityView = z.object({
   transfersToSort: z.array(TxnListRow),
   needsCategory: z.array(
     TxnListRow.extend({
+      /** The categories you've used for this payee in this direction, most used first (docs/payees.md 2.3). */
       history: z
-        .object({ title: z.string(), categories: z.array(z.string()), consistent: z.boolean() })
+        .object({
+          title: z.string(),
+          categories: z.array(z.object({ id, name: z.string(), count: z.number().int() })),
+        })
+        .nullable(),
+      /** The suggested category (docs/payees.md 2.1): `categoryId` null with `toRta` for Ready to Assign. */
+      suggestion: z
+        .object({ categoryId: id.nullable(), toRta: z.boolean(), name: z.string(), strong: z.boolean() })
         .nullable(),
     }),
   ),

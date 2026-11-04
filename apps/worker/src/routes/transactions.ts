@@ -345,10 +345,22 @@ transactionRoutes.post('/transactions/categorize', async (c) => {
   const now = clock(c.env);
   if (r.categoryId) {
     const ok = await s.first(
-      `SELECT id FROM category WHERE budget_id = ?1 AND id = ?2 AND kind != 'cc_payment'`,
+      `SELECT id FROM category WHERE budget_id = ?1 AND id = ?2 AND kind != 'cc_payment' AND archived_at IS NULL`,
       r.categoryId,
     );
     if (!ok) throw new HttpError(404, 'not_found', 'category');
+  }
+  if (r.toRta) {
+    // Only money in can go to Ready to Assign.
+    for (const k of chunks(r.keys)) {
+      const ph = k.map((_, i) => `?${i + 2}`).join(',');
+      const out = await s.first(
+        `SELECT 1 FROM bank_txn WHERE budget_id = ?1 AND txn_key IN (${ph}) AND amount < 0 AND removed_at IS NULL
+         UNION ALL SELECT 1 FROM manual_pending WHERE budget_id = ?1 AND txn_key IN (${ph}) AND amount < 0 LIMIT 1`,
+        ...k,
+      );
+      if (out) throw new HttpError(422, 'not_inflow', 'Only money coming in can go to Ready to Assign');
+    }
   }
   for (const ids of chunks(r.keys)) {
     const rows = await s.all<TxRow>(

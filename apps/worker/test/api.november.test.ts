@@ -64,8 +64,14 @@ describe('November through the API', () => {
     });
     expect(b.owed).toEqual({ out: 143060, late: 1, status: 'late' });
     const fixes = Object.fromEntries(
-      b.attention.filter((a) => a.categoryId).map((a) => [a.name, `${a.fix?.verb} ${a.fix?.amount}`]),
+      b.attention
+        .filter((a) => a.categoryId && a.section !== 'Card payments')
+        .map((a) => [a.name, `${a.fix?.verb} ${a.fix?.amount}`]),
     );
+    // Freedom is short only by Dining out's credit overspending: covering Dining out funds it, so no Fund button.
+    expect(b.attention.filter((a) => a.section === 'Card payments')).toMatchObject([
+      { name: 'Freedom Unlimited', fix: null, link: 'card', detail: 'Cover Dining out to cover this card' },
+    ]);
     expect(fixes).toEqual({
       'Dining out': 'Cover 1825',
       'Car insurance': 'Fund 9000',

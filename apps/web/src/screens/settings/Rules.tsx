@@ -82,9 +82,6 @@ export function RulesScreen() {
           })}
         </Card>
       )}
-      <span className="text-[12px] text-muted">
-        To make a rule quickly, categorize a payee the same way twice; Activity will offer “Always”.
-      </span>
     </Page>
   );
 }

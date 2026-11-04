@@ -52,6 +52,23 @@ test('Needs attention fixes move money and Ready to Assign reads $643.65', async
   await expect(page.getByText('$18.25 of card spending not covered')).toHaveCount(0);
 });
 
+test('Needs attention: a Short card shows under Card payments, and Fund covers it', async ({ page }) => {
+  // Freedom is short only by Dining out's overspending: covering Dining out covers the card too.
+  await page.goto('/budget?view=attention');
+  await expect(page.getByText('Cover Dining out to cover this card')).toBeVisible();
+  await expect(page.getByRole('button', { name: /for Freedom Unlimited/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Cover $18.25 for Dining out' }).click();
+  await expect(page.getByText('Cover Dining out to cover this card')).toHaveCount(0);
+
+  // A new budget: card debt from before the start has no money set aside yet.
+  await page.goto('/budget?mock=empty&view=attention');
+  await expect(page.getByRole('heading', { name: 'Card payments' })).toBeVisible();
+  await page.getByRole('button', { name: 'Fund $1,042.60 for Sapphire Preferred' }).click();
+  await expect(page.getByText('Added $1,042.60 from Ready to Assign')).toBeVisible();
+  await expect(page.getByRole('button', { name: /for Sapphire Preferred/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Fund $170.80 for Freedom Unlimited' })).toBeVisible();
+});
+
 test('Fund all funds every underfunded category at once', async ({ page }) => {
   await page.goto('/budget?view=attention');
   await page.getByRole('button', { name: /Fund all · \$340\.00/ }).click();
@@ -80,7 +97,7 @@ test('Activity: the filter chips row has no scroll bar', async ({ page }) => {
   expect(bar).toBe('none');
 });
 
-test('Activity: categorize from the picker, undo, and accept the Always offer', async ({ page }) => {
+test('Activity: categorize from the picker, undo, and OK a suggestion', async ({ page }) => {
   await page.goto('/activity');
   await expect(page.getByText(/Needs category/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
@@ -98,17 +115,26 @@ test('Activity: categorize from the picker, undo, and accept the Always offer', 
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(page.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
 
-  // Every past Blue Bottle Coffee was Dining out, so the toast offers a rule.
-  await page.getByRole('button', { name: /Choose category for Blue Bottle Coffee/ }).click();
-  await page
-    .getByRole('dialog', { name: 'Choose a category' })
-    .getByRole('button', { name: 'Dining out' })
-    .first()
-    .click();
+  // Blue Bottle Coffee has always been Dining out, so it comes suggested: OK takes it, with no rule offer.
+  await page.getByRole('button', { name: /^OK Dining out for Blue Bottle Coffee/ }).click();
   const toastBox = page.getByRole('status').filter({ hasText: 'Blue Bottle Coffee → Dining out' });
-  await expect(toastBox.getByText('Put every Blue Bottle Coffee in Dining out from now on?')).toBeVisible();
-  await toastBox.getByRole('button', { name: 'Always' }).click();
-  await expect(toastBox).toContainText('rule made');
+  await expect(toastBox).toBeVisible();
+  await expect(toastBox.getByRole('button', { name: 'Always' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Change category for Blue Bottle Coffee/ })).toHaveText(
+    'Dining out',
+  );
+});
+
+test('Activity: OK all takes every strong suggestion, with one Undo', async ({ page }) => {
+  await page.goto('/activity?filter=attention');
+  await expect(page.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
+  await page.getByRole('button', { name: 'OK 3 suggestions' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '3 transactions categorized' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Needs attention 5' })).toBeVisible();
+  // CVS Pharmacy has no suggestion, so it still waits.
+  await expect(page.getByRole('button', { name: /Choose category for CVS Pharmacy/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
 });
 
 test('Activity: Select several gives many transactions one category', async ({ page }) => {

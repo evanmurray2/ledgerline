@@ -21,7 +21,9 @@ import {
   owedList,
   owedOut,
   projectedFronts,
-  shouldOfferAlways,
+  rankPastUses,
+  suggestCategory,
+  type PastUse,
 } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
@@ -251,27 +253,59 @@ activityRoutes.get('/activity', async (c) => {
   const uncats = attnRows.filter(
     (t) => !t.category_id && !t.to_rta && !t.transfer_state && !t.wtm_state && !(t.alert && !t.reviewed_at),
   );
-  // Past categories of each payee, for the picker ("You’ve used for Amazon") and the Always offer.
+  // Your past categories for each payee, by direction: the suggestion and the picker's list (docs/payees.md 2.1).
   const payeeIds = [...new Set(uncats.map((t) => t.payee_id).filter((x): x is string => !!x))];
-  const hist = new Map<string, (string | null)[]>();
+  const uses = new Map<string, PastUse[]>();
   for (const ids of chunks(payeeIds)) {
-    const h = await s.all<{ payee_id: string; category_id: string | null }>(
-      `SELECT payee_id, category_id FROM txn_overlay WHERE budget_id = ?1 AND categorized_by = 'user' AND payee_id IN (${ids.map((_, i) => `?${i + 2}`).join(',')})`,
+    const h = await s.all<{
+      payee_id: string;
+      money_in: number;
+      category_id: string | null;
+      to_rta: number;
+      n: number;
+      last: number;
+    }>(
+      `SELECT o.payee_id, b.amount > 0 AS money_in, o.category_id, o.to_rta, count(*) AS n, max(o.updated_at) AS last
+       FROM txn_overlay o JOIN bank_txn b ON b.txn_key = o.txn_key AND b.removed_at IS NULL
+       WHERE o.budget_id = ?1 AND o.categorized_by = 'user' AND (o.category_id IS NOT NULL OR o.to_rta = 1)
+         AND o.payee_id IN (${ids.map((_, i) => `?${i + 2}`).join(',')})
+       GROUP BY o.payee_id, money_in, o.category_id, o.to_rta`,
       ...ids,
     );
-    for (const r of h) hist.set(r.payee_id, [...(hist.get(r.payee_id) ?? []), r.category_id]);
+    for (const r of h) {
+      const k = `${r.payee_id}:${r.money_in ? 'in' : 'out'}`;
+      uses.set(k, [
+        ...(uses.get(k) ?? []),
+        { categoryId: r.category_id, toRta: r.to_rta === 1, n: r.n, last: r.last },
+      ]);
+    }
   }
+  const { categories, groups } = await structure(s);
+  const usable = new Set(
+    categories.filter((c) => !c.archived_at && c.kind !== 'cc_payment').map((c) => c.id),
+  );
+  const canUse = (id: string) => usable.has(id);
   const needsCategory = uncats.map((t) => {
-    const hs = t.payee_id ? (hist.get(t.payee_id) ?? []) : [];
-    const consistent = shouldOfferAlways(hs);
-    const list = [...new Set(hs.filter((x): x is string => !!x))].map((id) => cats.get(id) ?? id);
+    const moneyIn = t.amount > 0;
+    const past = t.payee_id ? (uses.get(`${t.payee_id}:${moneyIn ? 'in' : 'out'}`) ?? []) : [];
+    const ranked = rankPastUses(past, false, canUse);
+    const sug = suggestCategory(past, moneyIn, canUse);
     return {
       ...row(t),
-      history: list.length
+      history: ranked.length
         ? {
-            title: consistent ? `Every past ${t.payee}` : `You’ve used for ${t.payee}`,
-            categories: list,
-            consistent: consistent !== null,
+            title: `You’ve used for ${t.payee}`,
+            categories: ranked.map((u) => ({
+              id: u.categoryId!,
+              name: cats.get(u.categoryId!) ?? '',
+              count: u.n,
+            })),
+          }
+        : null,
+      suggestion: sug
+        ? {
+            ...sug,
+            name: sug.toRta ? 'Ready to Assign' : (cats.get(sug.categoryId!) ?? 'category'),
           }
         : null,
     };
@@ -299,7 +333,6 @@ activityRoutes.get('/activity', async (c) => {
   }
   const postedRows = postedTx.map(row);
   const last = postedTx[49];
-  const { categories, groups } = await structure(s);
   const mr = await monthResult(s, f.current, start);
   const picker = groups
     .filter((g) => !g.archived_at)

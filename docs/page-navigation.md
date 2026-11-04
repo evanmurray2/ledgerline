@@ -68,7 +68,7 @@ Which screens are pages and which are sheets (D-54). Routes, URLs, Back targets,
 
 ## Decision to record
 
-D-60 updates D-54: "A control that goes to a page says so (a chevron), and going to a page moves (it slides in, and
+D-? updates D-54: "A control that goes to a page says so (a chevron), and going to a page moves (it slides in, and
 Back slides it out); sheets slide up; tabs don't move."
 
 ## Verification plan

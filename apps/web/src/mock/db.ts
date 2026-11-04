@@ -78,7 +78,8 @@ interface Txn {
   kind: TxnSheet['kind'];
   section: 'match' | 'xfer' | 'needs' | 'check' | 'pending' | 'upcoming' | 'posted' | 'register';
   checkAction?: 'dismiss' | 'review';
-  history?: { title: string; categories: string[]; consistent: boolean } | null;
+  /** Your past categories for this payee in this direction, as [category id, times used], most used first. */
+  history?: [string, number][] | null;
   estimate?: number | null;
   bankAmount?: number | null;
   memo?: string | null;
@@ -359,12 +360,18 @@ function initialTxns(): Txn[] {
     t('a1', 'Amazon', 'sapphire', '2026-11-13', -3810, 'needs', {
       card: 'sapphire',
       rawName: 'AMZN MKTP US*2K4',
-      history: { title: 'You’ve used for Amazon', categories: ['shopping', 'household'], consistent: false },
+      history: [
+        ['shopping', 3],
+        ['household', 2],
+      ],
     }),
     t('a2', 'Amazon', 'freedom', '2026-11-11', -2320, 'needs', {
       card: 'freedom',
       rawName: 'AMAZON.COM*9X1',
-      history: { title: 'You’ve used for Amazon', categories: ['shopping', 'household'], consistent: false },
+      history: [
+        ['shopping', 3],
+        ['household', 2],
+      ],
     }),
     t('cvs', 'CVS Pharmacy', 'freedom', '2026-11-11', -1843, 'needs', {
       card: 'freedom',
@@ -374,7 +381,7 @@ function initialTxns(): Txn[] {
     t('bb', 'Blue Bottle Coffee', 'sapphire', '2026-11-14', -675, 'needs', {
       card: 'sapphire',
       rawName: 'SQ *BLUE BOTTLE COFFEE',
-      history: { title: 'Every past Blue Bottle Coffee', categories: ['dining'], consistent: true },
+      history: [['dining', 4]],
     }),
     t('uber', 'Uber Eats', 'sapphire', '2026-11-13', -3600, 'pending', {
       status: 'pending',
@@ -772,37 +779,38 @@ export class MockDb {
       .reduce((a, x) => a - x.amount, 0);
   }
 
+  /** Dining out's credit overspending on Freedom not yet covered (the seed's $18.25). */
+  private diningCredit(): number {
+    const dining = this.catById('dining')!;
+    return 1825 - Math.min(1825, Math.max(0, dining.assigned - 20000));
+  }
+
   cards(): CardRow[] {
     if (this.scenario === 'empty') {
+      const empty = (id: 'sapphire' | 'freedom', name: string, owed: number, due: string | null) => {
+        const available = this.cardFund[id];
+        const short = Math.max(0, owed - available);
+        return {
+          accountId: id,
+          categoryId: `pay-${id}`,
+          name,
+          available,
+          owed,
+          budgetedPending: 0,
+          uncategorized: 0,
+          need: owed,
+          short,
+          status: short > 0 ? 'short' : 'covered',
+          statement: due ? { balance: owed, due, covered: available >= owed } : null,
+          detail:
+            short > 0
+              ? `Card balance ${fmt(owed)} · needs funding${due ? ' · statement due Oct 25' : ''}`
+              : 'covered',
+        } satisfies CardRow;
+      };
       return [
-        {
-          accountId: 'sapphire',
-          categoryId: 'pay-sapphire',
-          name: 'Sapphire Preferred',
-          available: 0,
-          owed: 104260,
-          budgetedPending: 0,
-          uncategorized: 0,
-          need: 104260,
-          short: 104260,
-          status: 'short',
-          statement: { balance: 104260, due: '2026-10-25', covered: false },
-          detail: 'Card balance $1,042.60 · needs funding · statement due Oct 25',
-        },
-        {
-          accountId: 'freedom',
-          categoryId: 'pay-freedom',
-          name: 'Freedom Unlimited',
-          available: 0,
-          owed: 17080,
-          budgetedPending: 0,
-          uncategorized: 0,
-          need: 17080,
-          short: 17080,
-          status: 'short',
-          statement: null,
-          detail: 'Card balance $170.80 · needs funding',
-        },
+        empty('sapphire', 'Sapphire Preferred', 104260, '2026-10-25'),
+        empty('freedom', 'Freedom Unlimited', 17080, null),
       ];
     }
     const dining = this.catById('dining')!;
@@ -979,6 +987,25 @@ export class MockDb {
           link: 'category',
         });
     }
+    for (const card of this.cards().filter((x) => x.short > 0)) {
+      // Freedom's shortfall is Dining out's credit overspending: covering Dining out funds the card too.
+      const diningFix = card.accountId === 'freedom' && this.scenario !== 'empty' ? this.diningCredit() : 0;
+      const fund = card.short - diningFix;
+      out.push({
+        section: 'Card payments',
+        key: `card:${card.accountId}`,
+        name: card.name,
+        amount: card.available,
+        detail:
+          fund > 0
+            ? `${fmt(card.short)} of card spending not covered`
+            : 'Cover Dining out to cover this card',
+        categoryId: card.categoryId,
+        fix: fund > 0 ? { verb: 'Fund', amount: fund } : null,
+        link: 'card',
+        accountId: card.accountId,
+      });
+    }
     const nopa = this.owed.find((o) => o.id === 'nopa' && o.status === 'late');
     if (nopa)
       out.push({
@@ -1045,7 +1072,7 @@ export class MockDb {
 
   assignView(month: string): AssignView {
     const suggestions: AssignView['suggestions'] = this.attention()
-      .filter((a) => a.categoryId && a.fix)
+      .filter((a) => a.categoryId && a.fix && a.section !== 'Card payments')
       .map((a) => ({
         categoryId: a.categoryId!,
         name: a.name,
@@ -1089,6 +1116,19 @@ export class MockDb {
 
   private accountName(id: string) {
     return ACCOUNTS[id]?.short ?? id;
+  }
+
+  /** As the server's suggestion (docs/payees.md 2.1): the most used, strong when used twice and for most rows. */
+  suggestion(h: [string, number][]) {
+    const top = h[0];
+    if (!top) return null;
+    const total = h.reduce((a, [, n]) => a + n, 0);
+    return {
+      categoryId: top[0],
+      toRta: false,
+      name: this.catName(top[0]) ?? top[0],
+      strong: top[1] >= 2 && top[1] * 2 > total,
+    };
   }
 
   catName(id: string | null): string | null {
@@ -1164,13 +1204,13 @@ export class MockDb {
       needsCategory: showAttn
         ? needs.filter(match).map((x) => ({
             ...this.row(x),
-            history: x.history
+            history: x.history?.length
               ? {
-                  title: x.history.title,
-                  categories: x.history.categories.map((c) => this.catName(c) ?? c),
-                  consistent: x.history.consistent,
+                  title: `You’ve used for ${x.payee}`,
+                  categories: x.history.map(([id, count]) => ({ id, name: this.catName(id) ?? id, count })),
                 }
               : null,
+            suggestion: this.suggestion(x.history ?? []),
           }))
         : [],
       checkThese: showAttn
