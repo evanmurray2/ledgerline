@@ -18,7 +18,7 @@ import { HttpError, parse, scoped } from './api.js';
 import { classifyUsage, noteUsage, usageToday, utcDay, READ_LIMIT, WRITE_LIMIT } from '../sync/breaker.js';
 import { makeProvider } from '../sync/provider.js';
 import { startSync } from './settings/connections.js';
-import { TX_COLUMNS, budgetMeta, planLineRebuild, type TxRow } from '../ledger/ledger.js';
+import { TX_COLUMNS, type TxRow } from '../ledger/ledger.js';
 
 export const opsRoutes = new Hono<AppEnv>();
 
@@ -394,9 +394,6 @@ opsRoutes.post('/import/csv', async (c) => {
   }
   // Month totals live on the phone (D-45): its copy starts them over when these rows arrive (local/engine.ts).
   for (let i = 0; i < stmts.length; i += 100) await s.batch(stmts.slice(i, i + 100));
-  const meta = await budgetMeta(s);
-  void meta;
-  void planLineRebuild;
   const res: ImportResult = { imported, skipped, history };
   return c.json(res);
 });

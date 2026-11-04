@@ -173,6 +173,8 @@ export const AssignSuggestion = z.object({
   reason: z.enum(['cover', 'target', 'card']),
   detail: z.string(),
   amount: cents,
+  /** Ticked when the sheet opens: overspending, card shortfalls and underfunded targets, not Low categories. */
+  preselected: z.boolean(),
 });
 export const AssignView = z.object({ month, rta: cents, suggestions: z.array(AssignSuggestion) });
 export type AssignView = z.infer<typeof AssignView>;
@@ -467,7 +469,24 @@ export const AccountsView = z.object({
       nextRetry: z.number().int().nullable(),
     }),
   ),
-  alerts: z.array(z.object({ kind: z.enum(['monitor', 'sync', 'history_changed']), text: z.string() })),
+  alerts: z.array(
+    z.object({
+      kind: z.enum([
+        'monitor',
+        'sync',
+        'history_changed',
+        'ambiguous_match',
+        'vanished_pending',
+        'possible_reissue',
+        'identity',
+      ]),
+      text: z.string(),
+      /** The stored alert's id when you can dismiss it (POST /api/alerts/:id/dismiss); absent for live checks. */
+      id: z.string().optional(),
+      /** The transaction it is about, when that row still exists. */
+      txnKey: z.string().optional(),
+    }),
+  ),
 });
 export type AccountsView = z.infer<typeof AccountsView>;
 

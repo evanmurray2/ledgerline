@@ -418,7 +418,6 @@ const SERVER_READS = [
   /^\/api\/auth\//,
   /^\/api\/settings\/connections$/,
   /^\/api\/settings\/security/,
-  /^\/api\/settings\/rules\/export$/,
   /^\/api\/export\//,
 ];
 

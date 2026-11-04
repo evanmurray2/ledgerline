@@ -67,8 +67,7 @@ export function RepairScreen() {
     >
       {step === 'after' ? (
         <Banner tone="success" icon="check" title={`${inst} is connected again`}>
-          New transactions are coming in. Your rules categorize what they can; anything else waits in
-          Activity.
+          New transactions are coming in. Anything that needs a category waits in Activity.
         </Banner>
       ) : step === 'working' ? (
         <div role="status" className="flex flex-col items-center gap-2 rounded-lg bg-page p-5 text-center">

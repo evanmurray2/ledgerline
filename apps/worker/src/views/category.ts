@@ -1,13 +1,5 @@
 import type { AssignView, CategorySheet, TxnListRow } from '@ledgerline/contracts';
-import {
-  type Month,
-  addMonths,
-  cents,
-  elapsedShare,
-  formatCents,
-  monthOfDate,
-  targetFor,
-} from '@ledgerline/domain';
+import { type Month, addMonths, cents, elapsedShare, formatCents, targetFor } from '@ledgerline/domain';
 import type { Scoped } from '../db/scoped.js';
 import { categoryRows } from './budget.js';
 import { cards as loadCards, monthLong, structure, type Fresh } from './common.js';
@@ -132,6 +124,7 @@ export async function assignView(s: Scoped, f: Fresh, month: Month): Promise<Ass
         reason: 'cover',
         detail: `Cover ${fmt(-r.row.available)} of overspending`,
         amount: cents(-r.row.available),
+        preselected: true,
       });
   const info = await loadCards(s, f.today);
   const cats = await s.all<{ id: string; card_account_id: string }>(
@@ -153,6 +146,7 @@ export async function assignView(s: Scoped, f: Fresh, month: Month): Promise<Ass
         reason: 'card',
         detail: `Card debt not yet budgeted`,
         amount: cents(short),
+        preselected: true,
       });
   }
   for (const r of rows) {
@@ -173,9 +167,9 @@ export async function assignView(s: Scoped, f: Fresh, month: Month): Promise<Ass
       reason: 'target',
       detail: r.row.detail,
       amount: r.row.need,
+      preselected: r.row.status !== 'low',
     });
   }
-  void monthOfDate;
   return { month, rta: cents(f.budget.rta), suggestions };
 }
 

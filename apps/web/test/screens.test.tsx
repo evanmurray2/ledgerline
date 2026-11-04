@@ -1,20 +1,49 @@
-// Renders each main screen against the mock API (November 2026) and checks the key numbers.
+// Renders each main screen against the mock API (November 2026, worked out by the real engine) and checks the key
+// numbers.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import { createMemoryHistory } from '@tanstack/react-router';
 import { App, makeQueryClient } from '../src/App';
 import { installMock } from '../src/mock/install';
-import type { MockServer } from '../src/mock/server';
-import type { Scenario } from '../src/mock/db';
+import type { MockServer, Scenario } from '../src/mock/server';
+import { novemberCopy } from '#november-node';
 import { connectivity } from '../src/state/connectivity';
 
 let server: MockServer;
 
 function renderAt(path: string, scenario: Scenario = 'default') {
-  server = installMock(scenario, 0);
+  server = installMock(scenario, 0, (now) => novemberCopy(now));
+  return show(path);
+}
+
+function show(path: string) {
   const history = createMemoryHistory({ initialEntries: [path] });
   return render(<App history={history} queryClient={makeQueryClient()} />);
 }
+
+/** Categorizes rows through the mock API before the screen opens (the November seed has no payee history). */
+async function categorize(keys: string[], categoryId: string) {
+  const r = await server.handle(
+    'POST',
+    '/api/transactions/categorize',
+    { 'content-type': 'application/json', 'x-ledgerline': '1' },
+    { keys, categoryId },
+  );
+  expect(r.status).toBe(200);
+}
+
+/** What the copy stored: Ready to Assign, and a transaction's category. */
+const storedRta = async () =>
+  (await (await server.db()).prepare(`SELECT rta FROM budget`).first<{ rta: number }>())!.rta;
+const categoryOf = async (key: string) =>
+  (
+    await (
+      await server.db()
+    )
+      .prepare(`SELECT category_id FROM txn_overlay WHERE txn_key = ?1`)
+      .bind(key)
+      .first<{ category_id: string | null }>()
+  )?.category_id ?? null;
 
 const text = (s: string | RegExp) => screen.findAllByText(s, undefined, { timeout: 4000 });
 
@@ -55,7 +84,7 @@ describe('Budget', () => {
     fireEvent.click(cover);
     await waitFor(() => expect(screen.getByTestId('rta').textContent).toBe('$963.65'), { timeout: 4000 });
     expect(screen.getByText('Done just now')).toBeTruthy();
-    expect(server.db.rta).toBe(96365);
+    expect(await storedRta()).toBe(96365);
   });
 
   it('desktop shows the table with Assigned, Spent and Available', async () => {
@@ -71,10 +100,10 @@ describe('Budget', () => {
 
   it('category sheet shows assigned, spent and available', async () => {
     renderAt('/budget/category/groceries');
-    await text('Refill to $600 every month');
+    await text('Refill to $600.00 every month');
     expect(screen.getByTestId('category-available').textContent).toBe('$212.40');
     expect(screen.getByText('$387.60')).toBeTruthy();
-    expect(screen.getByText('See all 9')).toBeTruthy();
+    expect(screen.getByText('See all 4')).toBeTruthy();
   });
 
   it('assign sheet totals the suggestions', async () => {
@@ -86,7 +115,7 @@ describe('Budget', () => {
 
   it('first budget state asks to give the money a job', async () => {
     renderAt('/budget', 'empty');
-    await text(/Give your \$21,840\.00 a job/);
+    await text(/Give your \$22,164\.46 a job/);
   });
 });
 
@@ -94,13 +123,13 @@ describe('Activity', () => {
   it('shows the Needs attention groups and lists', async () => {
     renderAt('/activity');
     await text('Money to match');
-    expect(screen.getByText('+$1,018.00')).toBeTruthy();
-    expect(screen.getByText('Transfers to sort out')).toBeTruthy();
+    expect(screen.getAllByText('+$1,018.00').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Transfers to sort out')).toBeNull();
     expect(screen.getByText(/4 · −\$86\.48/)).toBeTruthy();
     expect(screen.getByText('Check these')).toBeTruthy();
     expect(screen.getByText('counts now · $201.00')).toBeTruthy();
     expect(screen.getByText('Acme Corp payroll')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Needs attention 8' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Needs attention 7' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Not posted yet' })).toBeTruthy();
   });
 
@@ -112,31 +141,29 @@ describe('Activity', () => {
   });
 
   it('OK takes the suggested category, with Undo and no rule offer', async () => {
-    renderAt('/activity');
+    server = installMock('default', 0, (now) => novemberCopy(now));
+    await categorize(['n-amazon-f'], 'household');
+    show('/activity');
     fireEvent.click(
-      await screen.findByRole(
-        'button',
-        { name: /^Use Dining out for Blue Bottle Coffee/ },
-        { timeout: 4000 },
-      ),
+      await screen.findByRole('button', { name: /^Use Household for Amazon/ }, { timeout: 4000 }),
     );
-    await text(
-      'Blue Bottle Coffee → Dining out · Dining out is now overspent by $25.00. Cover it on Budget.',
-    );
+    await text(/^Amazon → Household/);
     expect(screen.queryByRole('button', { name: 'Always' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy();
-    expect(server.db.txn('bb').categoryId).toBe('dining');
+    expect(await categoryOf('n-amazon-s')).toBe('household');
   });
 
   it('the picker lists the payee’s past categories most used first, with counts', async () => {
-    renderAt('/activity');
+    server = installMock('default', 0, (now) => novemberCopy(now));
+    await categorize(['n-amazon-f'], 'household');
+    show('/activity');
     fireEvent.click(
       (await screen.findAllByRole('button', { name: /^Choose category for Amazon/ }, { timeout: 4000 }))[0]!,
     );
     const dialog = await screen.findByRole('dialog', { name: 'Choose a category' });
     expect(within(dialog).getByText('You’ve used for Amazon')).toBeTruthy();
     fireEvent.click(within(dialog).getAllByRole('button', { name: /^Household/ })[0]!);
-    await waitFor(() => expect(server.db.txn('a1').categoryId).toBe('household'));
+    await waitFor(async () => expect(await categoryOf('n-amazon-s')).toBe('household'));
   });
 });
 
@@ -148,8 +175,8 @@ describe('Accounts and Reports', () => {
     );
     expect(screen.getByText('$1,430.60')).toBeTruthy();
     expect(screen.getByText('Ally needs you to sign in again')).toBeTruthy();
-    expect(screen.getByText('$23,612.40')).toBeTruthy();
-    expect(screen.getByText('−$1,057.05')).toBeTruthy();
+    expect(screen.getByText('$23,492.40')).toBeTruthy();
+    expect(screen.getByText('$1,138.05')).toBeTruthy();
   });
 
   it('card register shows what you owe and the payment category', async () => {
@@ -171,7 +198,7 @@ describe('Accounts and Reports', () => {
     renderAt('/owed');
     await text('Still owed');
     expect(screen.getByText('$1,430.60')).toBeTruthy();
-    expect(screen.getAllByText('Rent · Sam').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Rent').length).toBeGreaterThan(0);
   });
 });
 

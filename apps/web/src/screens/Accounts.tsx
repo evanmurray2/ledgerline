@@ -62,6 +62,58 @@ function accountSub(a: AccountRow): { text: string; warn: boolean } {
   return { text: '', warn: false };
 }
 
+/** One Accounts alert. A stored one has Dismiss; one about a transaction that still exists opens it. */
+function StoredAlert({ a }: { a: AccountsView['alerts'][number] }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const dismiss = async () => {
+    if (!a.id) return;
+    setBusy(true);
+    try {
+      await api.dismissAlert(a.id);
+      void qc.invalidateQueries({ queryKey: qk.accounts });
+    } catch (e) {
+      toast.show({ text: errorMessage(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Banner
+      tone="warn"
+      icon="alert"
+      action={
+        a.id ? (
+          <SoftButton
+            tone="outline"
+            mutates
+            disabled={busy}
+            track={`accounts.alert.dismiss.${a.kind}`}
+            onClick={() => void dismiss()}
+          >
+            Dismiss
+          </SoftButton>
+        ) : undefined
+      }
+    >
+      {a.text}
+      {a.txnKey && (
+        <>
+          {' '}
+          <Link
+            to="/activity/txn/$key"
+            params={{ key: a.txnKey }}
+            data-track={`accounts.alert.open.${a.kind}`}
+            className="font-semibold text-inherit underline"
+          >
+            Open it
+          </Link>
+        </>
+      )}
+    </Banner>
+  );
+}
+
 function SyncFailure({
   f,
 }: {
@@ -106,7 +158,7 @@ function SyncFailure({
  * At most one banner: a single problem shows as its own one-line banner; several fold into "2 banks need you",
  * which opens to show each. The account rows below still say which balances may be out of date.
  */
-function Problems({ items }: { items: ReactElement[] }) {
+function Problems({ items, banks }: { items: ReactElement[]; banks: number }) {
   const [open, setOpen] = useState(false);
   if (items.length === 0) return null;
   if (items.length === 1) return items[0]!;
@@ -120,7 +172,9 @@ function Problems({ items }: { items: ReactElement[] }) {
         className="flex min-h-11 items-center gap-2.5 rounded-lg border border-warn-border bg-warn-bg px-3 py-2.5 text-left text-md font-bold text-warn-fg"
       >
         <Icon name="alert" size={18} stroke={2.4} className="shrink-0" />
-        <span className="flex-1">{items.length} banks need you</span>
+        <span className="flex-1">
+          {items.length} {banks === items.length ? 'banks need you' : 'things need you'}
+        </span>
         <Icon name="chevD" size={18} className={cx('shrink-0 opacity-70', open && 'rotate-180')} />
       </button>
       {open && items}
@@ -248,6 +302,7 @@ export function AccountsScreen() {
                 </Link>
               </section>
               <Problems
+                banks={v.repairs.length + v.failures.length}
                 items={[
                   ...v.repairs.map((r) => (
                     <Banner
@@ -260,11 +315,7 @@ export function AccountsScreen() {
                     />
                   )),
                   ...v.failures.map((f) => <SyncFailure key={f.connectionId} f={f} />),
-                  ...v.alerts.map((a) => (
-                    <Banner key={a.text} tone="warn">
-                      {a.text}
-                    </Banner>
-                  )),
+                  ...v.alerts.map((a) => <StoredAlert key={a.id ?? a.text} a={a} />),
                 ]}
               />
               {v.groups.map((g) => (

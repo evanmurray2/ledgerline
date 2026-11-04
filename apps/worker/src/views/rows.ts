@@ -85,6 +85,7 @@ export function listRow(
     badgeKind = 'rule';
     sub = 'transfer';
   } else if (t.categorized_by === 'rule' || t.categorized_by === 'payee') {
+    // Only rows categorized before rules were removed: they keep their chip (D-60). Nothing new is set this way.
     badge = 'By rule';
     badgeKind = 'rule';
   }
