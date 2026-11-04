@@ -97,8 +97,7 @@ export function dailyScanHandler(env: Env, budgetId: () => Promise<string>): Han
 }
 
 interface MaintState {
-  /** 'recompute' and 'identity' are from before D-45 (a run saved mid-way then carries on at the catch-up). */
-  phase: 'start' | 'recompute' | 'identity' | 'catchup' | 'rollup' | 'watchdog' | 'prune' | 'bump';
+  phase: 'start' | 'catchup' | 'rollup' | 'watchdog' | 'prune' | 'bump';
   i?: number;
 }
 
@@ -113,9 +112,9 @@ export function maintenanceHandler(env: Env, budgetId: () => Promise<string>): H
     const s = job.state as MaintState;
     const next = (state: MaintState): StepResult => ({ state, runAt: now });
     switch (s.phase ?? 'start') {
+      // A phase this code doesn't know (a run saved by an older release) starts over at the catch-up.
+      default:
       case 'start':
-      case 'recompute':
-      case 'identity':
         return next({ phase: 'catchup', i: 0 });
       case 'catchup': {
         // 2. Post-sync catch-up from the watermark.
