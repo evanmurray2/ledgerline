@@ -83,6 +83,22 @@ test('Undo on a fix puts the money back', async ({ page }) => {
   await expect(rta(page)).toHaveText('$981.90');
 });
 
+test('At the bottom of the list the Ready to Assign bar stays still', async ({ page }) => {
+  // Folding the bar makes the list taller, which moved the scroll position and unfolded it again, in a loop.
+  await page.goto('/budget?view=attention');
+  await page.getByRole('button', { name: 'Cover $18.25 for Dining out' }).click();
+  const undo = page.getByRole('button', { name: 'Undo' });
+  await undo.scrollIntoViewIfNeeded();
+  await page.mouse.wheel(0, 2000);
+  await page.waitForTimeout(500);
+  const ys: number[] = [];
+  for (let i = 0; i < 8; i++) {
+    ys.push((await undo.boundingBox())!.y);
+    await page.waitForTimeout(100);
+  }
+  expect(new Set(ys).size).toBe(1);
+});
+
 test('Activity: the filter chips row has no scroll bar', async ({ page }) => {
   await page.goto('/activity');
   const row = page.getByRole('group', { name: 'Filter' });
