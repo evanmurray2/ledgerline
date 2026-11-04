@@ -323,7 +323,15 @@ export const TxnSheet = z.object({
   budgetMonth: month,
   budgetMonthOverridden: z.boolean(),
   owed: z.array(
-    z.object({ id, amount: cents, matched: cents, expectBy: date.nullable(), status: z.string() }),
+    z.object({
+      id,
+      /** The share picked when it was marked: a fraction (half, all) or a fixed amount (custom). */
+      share: z.enum(['half', 'all', 'custom']),
+      amount: cents,
+      matched: cents,
+      expectBy: date.nullable(),
+      status: z.string(),
+    }),
   ),
   paybacks: z.array(z.object({ inflowKey: z.string(), itemId: id, amount: cents, label: z.string() })),
   refundOf: z.object({ key: z.string(), label: z.string() }).nullable(),
