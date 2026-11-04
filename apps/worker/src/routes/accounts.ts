@@ -21,7 +21,7 @@ import {
 import type { AppEnv } from '../http/context.js';
 import { HttpError, parse, scoped } from './api.js';
 import { cards as loadCards, fresh, monthResult, shortDate, structure } from '../views/common.js';
-import { listRow } from '../views/rows.js';
+import { isHistory, listRow } from '../views/rows.js';
 import { RECENT_TX, TX_COLUMNS, type TxRow } from '../ledger/ledger.js';
 import { inBudgetByAccount, monthTotals } from '../ledger/totals.js';
 import type { Scoped } from '../db/scoped.js';
@@ -322,11 +322,13 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
     `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND account_id = ?2 ORDER BY date DESC, seq DESC LIMIT 300`,
     id,
   );
+  // "Before your budget" rows are never listed (D-62), but the running balance still walks through them.
   const keep = (t: TxRow) =>
-    show === 'all' ||
-    (show === 'pending' && t.status !== 'posted') ||
-    (show === 'needs' && !t.category_id && !t.to_rta && !t.transfer_state && !t.wtm_state) ||
-    (show === 'transfers' && t.transfer_state !== null);
+    !isHistory(t) &&
+    (show === 'all' ||
+      (show === 'pending' && t.status !== 'posted') ||
+      (show === 'needs' && !t.category_id && !t.to_rta && !t.transfer_state && !t.wtm_state) ||
+      (show === 'transfers' && t.transfer_state !== null));
   const credit = account.kind === 'credit';
   const days: RegisterView['days'] = [];
   const pend = txs.filter((t) => t.status !== 'posted' && keep(t));

@@ -117,8 +117,8 @@ type PostedScope = string | 'all' | 'none' | { month: Month; start: Month };
 const ROW_MONTH = `max(coalesce(budget_month, substr(date, 1, 7)), ?5)`;
 
 /**
- * Posted rows the budget counts: dated from the account's budget start, or pending when it was linked. Activity's
- * lists leave out the rest ("Before your budget", D-61); a search still finds them, and so does the account's register.
+ * Posted rows the budget counts: dated from the account's budget start, or pending when it was linked. Activity
+ * leaves out the rest ("Before your budget", D-61), searches included (D-62).
  */
 const IN_BUDGET = `(date >= budget_from OR pending_at_link = 1)`;
 
@@ -151,7 +151,7 @@ function postedQuery(s: Scoped, from: PostedScope, cursor: string | null, q: str
   return s.q(
     `SELECT ${TX_COLUMNS} FROM v_txn_bank WHERE budget_id = ?1 AND ${from === 'none' ? '0 AND ' : ''}status = 'posted'
        ${window ? 'AND posted_date >= ?4 AND date >= ?4' : ''}
-       ${q ? '' : `AND ${IN_BUDGET}`}
+       AND ${IN_BUDGET}
        AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
        ${q ? `AND (lower(payee) LIKE ?3 OR printf('%.2f', abs(amount) / 100.0) LIKE ?3 OR ${CATEGORY_MATCH})` : 'AND ?3 IS NULL'}
      ORDER BY date DESC, seq DESC LIMIT 50`,

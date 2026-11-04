@@ -16,7 +16,7 @@ One line per entry; add yours at the end of its list. This file merges with `mer
 - **Database layer:** the design said Drizzle over D1. Now the app's own small interface over SQLite (`packages/db/src/sql.ts`). Nov 3 cleanup.
 - **Tabs and their header:** the design said Budget, Activity, Accounts, Reports, each with its own title and Budget with its own month. Now Budget, Activity, Reports, Accounts; one `‹ November 2026 ›` bar in the same place on Budget, Activity and Reports with one month for the three, Activity by month (`docs/month-header.md`). D-58.
 - **Progress tracking:** `docs/build-plan.md` lists open work only; work up to Nov 4, 2026 is in `docs/build-history.md`. D-59.
-- **Rows before the budget start:** the design said they're used for payee learning and editable like any row. Now read-only (no category, note or Owed to you), left out of Activity's lists and Settings → Payees, still in registers, searches and Reports. D-61.
+- **Rows before the budget start:** the design said they're used for payee learning and editable like any row. Now read-only (no category, note or Owed to you), never listed: not in Activity (searches too), registers, category sheets or Settings → Payees. Reports and net worth still add them up. D-61, D-62.
 - **Categorization:** the design said an ordered rule list, then the payee's remembered category. Now no rules and no remembered category: Needs category suggests the category you've used most for the payee and you OK it (`docs/payees.md`). D-60.
 
 ## Sync spec (`docs/sync-spec.md`)
