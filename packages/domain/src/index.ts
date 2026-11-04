@@ -9,7 +9,6 @@ export * from './budget/fronts.js';
 export * from './budget/store.js';
 export * from './targets.js';
 export * from './status.js';
-export * from './rules.js';
 export * from './matcher.js';
 export * from './payee.js';
 export * from './suggest.js';

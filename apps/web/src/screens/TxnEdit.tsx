@@ -434,7 +434,6 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       </Field>
       <BankSays
         t={t}
-        ruleLink
         extra={
           t.status === 'posted' && t.kind === 'posted' && t.postedDate
             ? `Posted ${dayLabel(t.postedDate)}`

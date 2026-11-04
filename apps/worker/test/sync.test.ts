@@ -1,5 +1,5 @@
 // The sync pipeline on a Durable Object's SQLite inside workerd: staged pages → apply (fenced, chunked) → watermark
-// processing (rules, matcher, transfers, Waiting to match) → budget lines → recompute.
+// processing (matcher, transfers, Waiting to match) → budget lines → recompute.
 import { env } from 'cloudflare:test';
 import { storeDb } from './store-db.js';
 import { phoneTables, workOut } from './work-out.js';
@@ -137,15 +137,6 @@ describe('sync pipeline', () => {
         .bind(B),
       db
         .prepare(
-          `INSERT INTO rule (id, budget_id, sort, name, conditions, actions, created_at, updated_at) VALUES ('r1', ?1, 1, 'TJ', ?2, ?3, 0, 0)`,
-        )
-        .bind(
-          B,
-          JSON.stringify({ all: [{ field: 'description', op: 'contains', value: 'TRADER JOE' }] }),
-          JSON.stringify([{ type: 'set_category', categoryId: 'groceries' }]),
-        ),
-      db
-        .prepare(
           `INSERT INTO budget_line (budget_id, txn_key, line, month, date, seq, kind, account_id, card, category_id, amount, ref) VALUES (?1, 'start:a_chk', 'start', '2026-10', '2026-10-01', -1, 'rta', 'a_chk', 0, NULL, 500000, NULL)`,
         )
         .bind(B),
@@ -174,11 +165,12 @@ describe('sync pipeline', () => {
     expect(tj).toEqual({ amount: -6422, pending: 0 }); // Plaid's outflow sign flipped
   });
 
-  it('rules categorize, transfers pair, person-to-person money waits to match', async () => {
+  it('sync sets no category, transfers pair, person-to-person money waits to match', async () => {
+    // Categories only ever come from you (docs/payees.md): sync finds the payee and leaves the category empty.
     expect(await overlay(await keyOf('tj'))).toMatchObject({
-      category_id: 'groceries',
-      categorized_by: 'rule',
-      rule_id: 'r1',
+      category_id: null,
+      categorized_by: null,
+      rule_id: null,
     });
     expect(await overlay(await keyOf('xfer-out'))).toMatchObject({
       transfer_state: 'paired',
