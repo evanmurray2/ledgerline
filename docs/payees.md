@@ -218,8 +218,9 @@ One sheet, opened from a transaction (Rename payee) or from the Payees page (a r
   doesn't list, and the server checks again on save.
 - Under the field, as you type, up to 3 existing payees whose names start with what you've typed, as tappable
   chips, so joining doesn't depend on spelling the name exactly.
-- **Bank names:** the bank's own texts behind this payee (up to 10, most used first), each with its transaction
-  count. Always filled in (it used to be empty for most payees).
+- **Bank names:** the bank's own texts behind this payee's budget transactions (up to 10, most used first), each
+  with its transaction count. Rows before the budget start ("Before your budget") don't count, as on the Payees
+  page. Always filled in (it used to be empty for most payees).
 - The merge drop-down and the remember switch go.
 - After **Join payees**: the toast "Joined into Blue Bottle Coffee" · Undo.
 - Offline: a plain rename works (5.3); joining needs a connection, so the button reads "Joining needs a
