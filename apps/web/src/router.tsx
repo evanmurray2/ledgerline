@@ -30,7 +30,7 @@ import { AccountsScreen, RegisterScreen, RepairScreen } from './screens/Accounts
 import { AddDeviceScreen, ReauthDialog, SignInScreen } from './screens/Auth';
 import { ApiError, errorMessage } from './api/client';
 import { checkSaved, getCopy, onCopyChanged, start as startCopy, syncNow, flush, useCopy } from './copy/copy';
-import { CopyScreen } from './screens/Lock';
+import { CopyScreen } from './screens/Copy';
 import { toast } from './components/Toast';
 
 // Screens opened now and then (Reports, Settings, Categories, first-run setup) load when first opened, so the app
@@ -69,7 +69,7 @@ function Root() {
   useEffect(() => void checkSaved(), []);
   // Every screen is worked out from the copy (D-45): open it once the server confirms who's signed in.
   useEffect(() => {
-    if (confirmed && ['idle', 'locked'].includes(getCopy().status)) void startCopy(confirmed);
+    if (confirmed && ['idle', 'signed_out'].includes(getCopy().status)) void startCopy(confirmed);
     // Back online after opening with no signal: send what was changed and catch up.
     if (confirmed && getCopy().status === 'ready' && getCopy().offline) void syncNow().then(() => flush());
   }, [confirmed]);
@@ -79,15 +79,20 @@ function Root() {
     [qc],
   );
   useEffect(() => {
-    const onLocked = () => qc.clear();
+    // 10 idle minutes: the sign-in has ended (copy.ts endSignIn). Everything in memory goes, and the session is
+    // checked again now (clearing alone wouldn't ask): it says signed out, so Sign in shows.
+    const onEnded = () => {
+      qc.removeQueries({ predicate: (q) => q.queryKey[0] !== qk.session[0] });
+      void qc.resetQueries({ queryKey: qk.session });
+    };
     const onRefused = (e: Event) =>
       toast.show({
         text: `${(e as CustomEvent<number>).detail} change(s) made offline couldn’t be saved. Your budget shows what the server has.`,
       });
-    window.addEventListener('ledgerline:locked', onLocked);
+    window.addEventListener('ledgerline:signin-ended', onEnded);
     window.addEventListener('ledgerline:edits-refused', onRefused);
     return () => {
-      window.removeEventListener('ledgerline:locked', onLocked);
+      window.removeEventListener('ledgerline:signin-ended', onEnded);
       window.removeEventListener('ledgerline:edits-refused', onRefused);
     };
   }, [qc]);
@@ -132,7 +137,7 @@ function Root() {
     return (
       <CopyScreen copy={copy} session={null} onOffline={(saved) => qc.setQueryData(qk.savedSession, saved)} />
     );
-  if (s && copy.status !== 'ready' && copy.status !== 'off' && copy.status !== 'idle')
+  if (s && (copy.status === 'opening' || copy.status === 'failed'))
     return (
       <CopyScreen
         copy={copy}
@@ -140,7 +145,8 @@ function Root() {
         onOffline={(saved) => qc.setQueryData(qk.savedSession, saved)}
       />
     );
-  if (s && copy.status === 'idle' && confirmed) return <Loading />;
+  // Starting the copy, or ending a sign-in after 10 idle minutes (Sign in follows).
+  if (s && (copy.status === 'idle' ? confirmed : copy.status === 'signed_out')) return <Loading />;
   if (!s) {
     if (session.error instanceof ApiError && session.error.status === 401) return <SignInScreen />;
     if (session.error)
@@ -291,6 +297,8 @@ const activityRoute = createRoute({
   validateSearch: (s: Record<string, unknown>) => ({
     filter: s.filter === 'attention' || s.filter === 'pending' ? s.filter : undefined,
     q: str(s.q),
+    // The app's month; a malformed one is dropped rather than refused by the server.
+    month: typeof s.month === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(s.month) ? s.month : undefined,
   }),
   component: ActivityScreen,
 });

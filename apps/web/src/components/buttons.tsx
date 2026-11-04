@@ -187,6 +187,8 @@ export function ConfirmInline({
 }
 
 const HEADER_ACTION = softButtonClass();
+const ICON_ACTION =
+  'hit flex h-11 w-11 items-center justify-center rounded-full text-ink-2 hover:bg-sunken disabled:text-line-strong';
 
 /**
  * The one style for a screen's own action in its header (Add, Refresh), the same on phone and desktop: the soft
@@ -196,16 +198,21 @@ export function HeaderAction({
   icon,
   label,
   to,
+  search,
   onClick,
   disabled,
   spin,
   track,
   ariaLabel,
+  iconOnly,
 }: {
   icon: IconName;
   label: string;
+  /** A phone tab's header: a 44 px icon button named by `label`, so the month stays centered (docs/month-header.md). */
+  iconOnly?: boolean;
   /** A link (opens a sheet or page) or, without it, a button. */
   to?: string;
+  search?: Record<string, string | undefined>;
   onClick?: () => void;
   disabled?: boolean;
   /** Turns the icon while the action runs (Refresh). */
@@ -213,15 +220,19 @@ export function HeaderAction({
   track: string;
   ariaLabel?: string;
 }) {
-  const inner = (
+  const inner = iconOnly ? (
+    <Icon name={icon} size={22} className={spin ? 'animate-spin' : undefined} />
+  ) : (
     <>
       <Icon name={icon} size={16} stroke={2.4} className={spin ? 'animate-spin' : undefined} />
       {label}
     </>
   );
+  const cls = iconOnly ? ICON_ACTION : HEADER_ACTION;
+  if (iconOnly) ariaLabel ??= label;
   if (to)
     return (
-      <Link to={to} data-track={track} aria-label={ariaLabel} className={HEADER_ACTION}>
+      <Link to={to} search={search} data-track={track} aria-label={ariaLabel} className={cls}>
         {inner}
       </Link>
     );
@@ -232,7 +243,7 @@ export function HeaderAction({
       aria-label={ariaLabel}
       disabled={disabled}
       onClick={onClick}
-      className={HEADER_ACTION}
+      className={cls}
     >
       {inner}
     </button>

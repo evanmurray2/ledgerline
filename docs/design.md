@@ -3,20 +3,9 @@
 Oct 31, 2026 · @Evan
 
 
-## What's true now (Nov 3, 2026)
+## What's true now
 
-This doc is the Oct 31 design, exported from Claude Docs and kept as written. The system has moved on in the places below. Where a section here disagrees, the decision named wins (`docs/decisions.md`, `docs/decisions/`); each replaced section starts with a **Now** note. The Money rules and the budgeting model are unchanged.
-
-| Area | The design said | What runs now | Why |
-| --- | --- | --- | --- |
-| Data | One D1 database | SQLite in Durable Objects: a `Directory` (users, sessions, routing) and one `BudgetStore` per budget (`docs/multi-user.md`) | D-37, D-38 |
-| Background work | Workflows and three crons | Alarm jobs inside each store (sync, 4-hour backstop, daily scan, daily maintenance); one cron at 10:20 UTC wakes the Directory | D-37, D-38 |
-| Who works out the budget | The Worker, on every request, with cached month summaries | The phone: it keeps an encrypted copy (`GET /api/sync`) and works out every screen with the same code; the server stores what was entered and imported, and keeps nothing derived | D-45, D-46, D-53; `docs/phone-budget.md` |
-| Sign-in | Cloudflare Access | Passkeys in the Worker | D-27 |
-| Raw Plaid pages and backups | R2; nightly encrypted export | Raw pages in SQLite; no off-site backup; Cloudflare's 30-day point-in-time recovery, plus a full backup download from Settings | D-26, D-29, D-37 |
-| Sync sizes | 500 per Plaid page, a Workflow step per page | 100 per page; 25 events per apply or processing step | D-6, D-38 |
-| Environments and deploys | Staging, then production after approval; release, nightly and monitor workflows | No staging; every merge to `main` deploys after its `ci` passes; only `ci`, `deploy` and `security` workflows | D-30, D-36, D-49, D-51 |
-| Database layer | Drizzle over D1 | The app's own small interface over SQLite (`packages/db/src/sql.ts`) | Nov 3 cleanup |
+This doc is the Oct 31 design, kept as written. What later decisions replaced is listed in [`docs/whats-true-now.md`](whats-true-now.md); each replaced section here starts with a **Now** note. The Money rules and the budgeting model are unchanged.
 
 ## Summary and constraints
 
@@ -497,7 +486,7 @@ Threats this design accepts: a compromise of your Cloudflare account or your ide
 
 ## Repository and CI/CD
 
-> **Now:** no staging (D-36); every merge to `main` deploys after its `ci` passes (D-30, D-49); release, nightly and monitor workflows are gone (D-49); sessions merge without rebasing (D-51). `docs/build-plan.md` tracks the rest.
+> **Now:** no staging (D-36); every merge to `main` deploys after its `ci` passes (D-30, D-49); release, nightly and monitor workflows are gone (D-49); sessions merge without rebasing (D-51). `docs/build-plan.md` lists open work; `docs/whats-true-now.md` lists the rest.
 
 A TypeScript pnpm monorepo whose core budgeting logic is a pure package with no I/O, so the hardest logic is the most tested and the least tied to Cloudflare.
 
@@ -550,7 +539,7 @@ D1 databases used: production and staging (2 of the 10 free); CI and nightly job
 
 ## Risks, open questions and plan
 
-> **Now:** progress is tracked in `docs/build-plan.md`; measurements are in `docs/measurements.md`.
+> **Now:** open work is listed in `docs/build-plan.md`, work up to Nov 4, 2026 in `docs/build-history.md`; measurements are in `docs/measurements.md`.
 
 **Risks**
 

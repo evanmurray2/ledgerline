@@ -1,4 +1,4 @@
-// The frame of the screens shown before the app opens (sign-in, adding a device, the locked copy): the Ledgerline
+// The frame of the screens shown before the app opens (sign-in, adding a device, opening the saved copy with no signal): the Ledgerline
 // label, a 26 px title and a narrow column on the page background. Problem shows what went wrong in it.
 import { type ReactNode } from 'react';
 import { ErrorNote } from './ui';

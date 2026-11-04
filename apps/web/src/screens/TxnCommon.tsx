@@ -16,7 +16,8 @@ export function useParentPath(): string {
 export function useClose() {
   const navigate = useNavigate();
   const parent = useParentPath();
-  return () => void navigate({ to: parent });
+  // Back to the screen as it was: its month, filter and search stay.
+  return () => void navigate({ to: parent, search: true });
 }
 
 /** The one amount box in the transaction sheets: inputClass at 18 px bold, as in the category sheet. */
