@@ -75,6 +75,8 @@ describe('the phone works out the same screens as the server', () => {
   let engine: LocalEngine;
   let month: string;
   let budgetId: string;
+  // The purchase the next test splits, and the category the test after it puts it back in.
+  let split: { key: string; categoryId: string };
 
   beforeAll(async () => {
     const seed = await api('/__dev/seed-november', { method: 'POST', headers: H, body: '{}' });
@@ -151,8 +153,16 @@ describe('the phone works out the same screens as the server', () => {
     await syncAll(engine);
     await engine.derive();
     await sameScreens(engine, month, budgetId);
-    // Undo the split: the purchase goes back to one category.
-    await post(`/api/transactions/${encodeURIComponent(out.key)}`, { categoryId: spending[1]!.id }, 'PATCH');
+    split = { key: out.key, categoryId: spending[1]!.id };
+  });
+
+  // Its own test: each check builds a fresh reference copy, and two in one test came near the 5 s limit under load.
+  it('after a split is undone, rebuilding only what changed', async () => {
+    await post(
+      `/api/transactions/${encodeURIComponent(split.key)}`,
+      { categoryId: split.categoryId },
+      'PATCH',
+    );
     await syncAll(engine);
     await engine.derive();
     await sameScreens(engine, month, budgetId);
