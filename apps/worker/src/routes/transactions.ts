@@ -25,14 +25,9 @@ import { editTime, liveKey } from './sync.js';
 import { shortDate } from '../views/common.js';
 import { categoryLabel, isHistory } from '../views/rows.js';
 import { TX_COLUMNS, chunks, txnCol, type TxRow } from '../ledger/ledger.js';
-import { OVERLAY_UPSERT, commit, loadTx, names } from './txn-common.js';
+import { OVERLAY_UPSERT, commit, loadTx, names, refuseHistory } from './txn-common.js';
 
 export const transactionRoutes = new Hono<AppEnv>();
-
-/** Rows before the account's budget start are read-only (D-61): the budget never counts them, so nothing on them changes. */
-function refuseHistory(t: TxRow): void {
-  if (isHistory(t)) throw new HttpError(409, 'history', 'This is before your budget, so it can’t be changed');
-}
 
 transactionRoutes.get('/transactions/:key', async (c) => {
   const s = scoped(c);

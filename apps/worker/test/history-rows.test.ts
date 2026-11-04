@@ -59,6 +59,12 @@ describe('Before your budget', () => {
     }
     const r = await send('POST', '/api/transactions/categorize', { keys: [KEY], categoryId });
     expect(r.status).toBe(409);
+    expect((await send('POST', '/api/match', { inflowKey: KEY, items: [], rest: 'income' })).status).toBe(
+      409,
+    );
+    expect(
+      (await send('POST', `/api/transfers/${encodeURIComponent(KEY)}/pick`, { otherKey: null })).status,
+    ).toBe(409);
     expect((await get<TxnSheet>(sheetPath)).categoryId).toBeNull();
   });
 

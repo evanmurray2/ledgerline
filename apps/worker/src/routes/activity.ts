@@ -32,7 +32,7 @@ import { fresh, monthResult, shortDate, structure } from '../views/common.js';
 import { listRow } from '../views/rows.js';
 import { RECENT_TX, TX_COLUMNS, chunks, txnCol, type TxRow } from '../ledger/ledger.js';
 import type { Scoped } from '../db/scoped.js';
-import { OVERLAY_UPSERT, commit, loadTx, names } from './txn-common.js';
+import { OVERLAY_UPSERT, commit, loadTx, names, refuseHistory } from './txn-common.js';
 export const activityRoutes = new Hono<AppEnv>();
 
 // ---------------------------------------------------------------- Activity
@@ -446,6 +446,7 @@ activityRoutes.post('/match', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
   const t = await loadTx(s, r.inflowKey);
+  refuseHistory(t);
   if (t.amount <= 0) throw new HttpError(422, 'not_inflow', 'Only money coming in can be matched');
   const total = r.items.reduce((a, i) => a + i.amount, 0);
   if (total > t.amount) throw new HttpError(422, 'too_much', 'More matched than came in');
@@ -528,10 +529,11 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
   const key = c.req.param('key');
   const now = clock(c.env);
   const out = await loadTx(s, key);
+  refuseHistory(out);
   if (out.transfer_state !== 'unsorted' || out.amount >= 0)
     throw new HttpError(422, 'not_unclear', 'Not a transfer to sort out');
-  const cands = await s.all<{ key: string; account_id: string }>(
-    `SELECT key, account_id FROM ${RECENT_TX} WHERE budget_id = ?1 AND transfer_state = 'unsorted' AND amount = ?2 AND account_id != ?3
+  const cands = await s.all<TxRow>(
+    `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1 AND transfer_state = 'unsorted' AND amount = ?2 AND account_id != ?3
        AND abs(julianday(date) - julianday(?4)) <= 5`,
     -out.amount,
     out.account_id,
@@ -541,6 +543,7 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
   if (r.otherKey) {
     const other = cands.find((x) => x.key === r.otherKey);
     if (!other) throw new HttpError(404, 'not_found', 'other side');
+    refuseHistory(other);
     w.push(
       s.q(
         `UPDATE txn_overlay SET transfer_state = 'paired', transfer_account_id = ?3, categorized_by = 'user', updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
