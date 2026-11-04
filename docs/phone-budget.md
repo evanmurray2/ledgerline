@@ -316,7 +316,8 @@ v1.2 got a security review the same day. Findings were checked against the code;
 - **Upcoming rows** count from midnight in the budget's time zone on the phone. The server's daily scan counted them about 10 minutes after midnight, at most 40 a day.
 - **Search and payee history** cover all history: the whole budget is synced, so "Search older" wasn't needed.
 - **Lock** (since D-57, an idle sign-out: Sign in, no lock screen) ends the server session too; unlocking online is a fresh sign-in, which also returns the PRF output in the same Face ID prompt. Registration asks for the `prf` extension, which security keys need and iCloud passkeys don't.
-- **Not built yet:** dropping the derived tables (next release), the iPhone checks in stage 0, and replacing the mock API's own engine with a sample dataset.
+- **Not built yet:** dropping the derived tables (next release) and the iPhone checks in stage 0.
+- **Mock API:** since Nov 4, 2026 it runs the real engine over the November fixture (`apps/worker/src/local/november-copy.ts`, loaded by `apps/web/src/mock/server.ts`); `mock/db.ts` is gone.
 - **Safari too (D-48, owner):** on an iPhone or iPad the copy is saved in Safari as well as in the Home Screen app; computers keep it in memory only.
 - **No separate device list (D-52, owner):** "Phones with a copy" and its Turn off are gone. A phone with a saved copy is one of the sign-ins in Settings → Sign-in, shown as locked when it has no session; signing it out turns its copy off and the phone deletes it the next time it opens online, before showing anything.
 - **Computers too (D-53, owner):** every device saves the encrypted copy when its passkey gives the PRF output, so a computer reopens downloading only what changed, like the phone.

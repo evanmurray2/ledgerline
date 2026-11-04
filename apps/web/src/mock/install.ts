@@ -1,8 +1,7 @@
-// Mock mode (VITE_MOCK=1, dev and tests only): answers every /api request from memory, so the SPA runs and
-// is testable without the Worker. `?mock=<scenario>` in the URL picks a starting state (readonly, firstrun,
+// Mock mode (VITE_MOCK=1, dev and tests only): answers every /api request from a November copy worked out by the
+// phone's real engine (server.ts), so the SPA runs and is testable without the Worker. `?mock=<scenario>` in the URL picks a starting state (readonly, firstrun,
 // empty, syncfail, newmonth). window.__ledgerlineMock lets end-to-end tests inspect and reset it.
-import { MockServer } from './server';
-import type { Scenario } from './db';
+import { MockServer, type OpenCopy, type Scenario } from './server';
 
 const SCENARIOS: Scenario[] = ['default', 'firstrun', 'empty', 'readonly', 'resting', 'syncfail', 'newmonth'];
 
@@ -26,8 +25,16 @@ export function scenarioFromUrl(search: string): Scenario {
   return SCENARIOS.includes(s as Scenario) ? (s as Scenario) : 'default';
 }
 
-export function installMock(scenario: Scenario = 'default', delayMs = 40): MockServer {
-  const server = new MockServer(scenario);
+/** The browser's copy (sql.js's wasm from the bundle); tests in Node pass their own. */
+const browserCopy: OpenCopy = async (now) =>
+  (await import('../../../worker/src/local/november-browser')).openNovemberCopy(now);
+
+export function installMock(
+  scenario: Scenario = 'default',
+  delayMs = 40,
+  open: OpenCopy = browserCopy,
+): MockServer {
+  const server = new MockServer(scenario, open);
   const realFetch = globalThis.fetch?.bind(globalThis);
   const mockFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -40,7 +47,7 @@ export function installMock(scenario: Scenario = 'default', delayMs = 40): MockS
     let body: unknown = undefined;
     if (typeof init?.body === 'string' && init.body) body = JSON.parse(init.body);
     if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
-    const res = server.handle(method, url, headersToRecord(init?.headers), body);
+    const res = await server.handle(method, url, headersToRecord(init?.headers), body);
     return new Response(res.status === 204 ? null : JSON.stringify(res.body), {
       status: res.status,
       headers: { 'content-type': 'application/json' },

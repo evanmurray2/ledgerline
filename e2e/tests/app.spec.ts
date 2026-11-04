@@ -1,4 +1,4 @@
-// End-to-end flows against the SPA in mock mode, on phone (390 x 844) and desktop (1280 x 800).
+// End-to-end flows against the SPA in mock mode (the real engine over the November fixture, apps/web/src/mock), on phone (390 x 844) and desktop (1280 x 800).
 import { expect, test, type Page } from '@playwright/test';
 
 /** Ready to Assign: the bottom bar on a phone, the sidebar on desktop. */
@@ -63,10 +63,10 @@ test('Needs attention: a Short card shows under Card payments, and Fund covers i
   // A new budget: card debt from before the start has no money set aside yet.
   await page.goto('/budget?mock=empty&view=attention');
   await expect(page.getByRole('heading', { name: 'Card payments' })).toBeVisible();
-  await page.getByRole('button', { name: 'Fund $1,042.60 for Sapphire Preferred' }).click();
-  await expect(page.getByText('Added $1,042.60 from Ready to Assign')).toBeVisible();
+  await page.getByRole('button', { name: 'Fund $842.17 for Sapphire Preferred' }).click();
+  await expect(page.getByText('Added $842.17 from Ready to Assign')).toBeVisible();
   await expect(page.getByRole('button', { name: /for Sapphire Preferred/ })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Fund $170.80 for Freedom Unlimited' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Fund $214.88 for Freedom Unlimited' })).toBeVisible();
 });
 
 test('Fund all funds every underfunded category at once', async ({ page }) => {
@@ -86,7 +86,7 @@ test('Undo on a fix puts the money back', async ({ page }) => {
 test('Activity: the filter chips row has no scroll bar', async ({ page }) => {
   await page.goto('/activity');
   const row = page.getByRole('group', { name: 'Filter' });
-  await expect(row.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
+  await expect(row.getByRole('button', { name: 'Needs attention 7' })).toBeVisible();
   // The chips' 44 px touch targets used to overflow the row, which then scrolled up and down.
   const { scroll, client, bar } = await row.evaluate((el) => ({
     scroll: el.scrollHeight,
@@ -100,7 +100,7 @@ test('Activity: the filter chips row has no scroll bar', async ({ page }) => {
 test('Activity: categorize from the picker, undo, and OK a suggestion', async ({ page }) => {
   await page.goto('/activity');
   await expect(page.getByText(/Needs category/)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Needs attention 7' })).toBeVisible();
 
   await page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ }).click();
   const picker = page.getByRole('dialog', { name: 'Choose a category' });
@@ -110,10 +110,10 @@ test('Activity: categorize from the picker, undo, and OK a suggestion', async ({
   await expect(page.getByRole('button', { name: /Change category for Amazon −\$38\.10/ })).toHaveText(
     'Shopping',
   );
-  await expect(page.getByRole('button', { name: 'Needs attention 7' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Needs attention 6' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Undo' }).click();
-  await expect(page.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Needs attention 7' })).toBeVisible();
 
   // Blue Bottle Coffee has always been Dining out, so it comes suggested: OK takes it, with no rule offer.
   await page.getByRole('button', { name: /^OK Dining out for Blue Bottle Coffee/ }).click();
@@ -127,15 +127,15 @@ test('Activity: categorize from the picker, undo, and OK a suggestion', async ({
 
 test('Activity: OK all takes every strong suggestion, with one Undo', async ({ page }) => {
   await page.goto('/activity?filter=attention');
-  await expect(page.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Needs attention 7' })).toBeVisible();
   // The second Amazon is a new payee offered as "Same as your Amazon?", so OK all leaves it for you.
   await page.getByRole('button', { name: 'OK 2 suggestions' }).click();
   await expect(page.getByRole('status').filter({ hasText: '2 transactions categorized' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Needs attention 6' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Needs attention 5' })).toBeVisible();
   // CVS Pharmacy has no suggestion, so it still waits.
   await expect(page.getByRole('button', { name: /Choose category for CVS Pharmacy/ })).toBeVisible();
   await page.getByRole('button', { name: 'Undo' }).click();
-  await expect(page.getByRole('button', { name: 'Needs attention 8' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Needs attention 7' })).toBeVisible();
 });
 
 test('Activity: a new payee shows its bank text, and Same as your… joins it into yours, with Undo', async ({
@@ -263,7 +263,7 @@ test('Bank connections confirm before linking and update the meter', async ({ pa
 });
 
 test('Match money back returns it to Ready to Assign', async ({ page }) => {
-  await page.goto('/activity/match/venmo');
+  await page.goto('/activity/match/n-venmo');
   await page.getByRole('button', { name: 'Match $1,018.00' }).click();
   await expect(
     page.getByText('Matched $1,018.00. 2 items are paid back, and Ready to Assign is now $1,999.90.'),
@@ -323,7 +323,7 @@ test('Categories: add one to a group, then set its target', async ({ page }) => 
   await page.goto('/categories');
   await page.getByRole('link', { name: 'Add category' }).nth(1).click();
   const sheet = page.getByRole('dialog', { name: 'New category' });
-  await expect(sheet.getByLabel('Group')).toHaveValue('g-everyday');
+  await expect(sheet.getByLabel('Group')).toHaveValue('g_everyday');
   await sheet.getByLabel('Name').fill('Climbing');
   await sheet.getByRole('button', { name: 'Add and set a target' }).click();
   const target = page.getByRole('dialog', { name: 'Target' });
@@ -471,7 +471,7 @@ test('Desktop: the category panel steps to the next category with the arrow keys
 });
 
 test('Rename payee: the same sheet from a transaction and from Settings', async ({ page }) => {
-  await page.goto('/activity/txn/uber');
+  await page.goto('/activity/txn/n-uber');
   await page.getByRole('link', { name: 'Rename payee' }).click();
   let sheet = page.getByRole('dialog', { name: 'Rename payee' });
   await expect(sheet.getByRole('heading', { name: 'Rename payee' })).toBeVisible();
@@ -480,7 +480,8 @@ test('Rename payee: the same sheet from a transaction and from Settings', async 
   await sheet.getByRole('button', { name: 'Save name' }).click();
   await expect(sheet).toBeHidden();
 
-  await page.goto('/settings/payees/p-uber');
+  await page.goto('/settings/payees');
+  await page.getByRole('link', { name: 'Rename Uber Eats' }).click();
   sheet = page.getByRole('dialog', { name: 'Rename payee' });
   await expect(sheet.getByRole('heading', { name: 'Rename payee' })).toBeVisible();
   await expect(sheet.getByText('UBER EATS')).toBeVisible();
@@ -507,7 +508,7 @@ test('Payees: search by bank text, and renaming to another payee’s name joins 
   await expect(page.getByRole('status').filter({ hasText: 'Joined into Blue Bottle Coffee' })).toBeVisible();
   await page.getByLabel('Search payees').fill('');
   await expect(page.getByRole('link', { name: 'Rename Bluebottle Coffee' })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Rename Blue Bottle Coffee' })).toContainText('9 transactions');
+  await expect(page.getByRole('link', { name: 'Rename Blue Bottle Coffee' })).toContainText('4 transactions');
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(page.getByRole('link', { name: 'Rename Bluebottle Coffee' })).toBeVisible();
 });
@@ -640,15 +641,15 @@ test('Desktop: Budget header pills for Edit categories and Set targets, like Syn
   }
 });
 test('A row from before the budget opens read-only from the register', async ({ page }) => {
-  await page.goto('/accounts/chk');
-  await page.getByText('Old Bakery').click();
+  await page.goto('/accounts/checking');
+  await page.getByText('Old Bakery').first().click();
   const sheet = page.getByRole('dialog');
   await expect(sheet.getByText('Not counted')).toBeVisible();
   await expect(sheet.getByText('Before your budget')).toBeVisible();
-  await expect(sheet.getByText('OLD BAKERY SF')).toBeVisible();
+  await expect(sheet.getByText('OLD BAKERY SF', { exact: true })).toBeVisible();
   // Nothing to change: no note box, no Rename payee.
   await expect(sheet.getByPlaceholder('Add a note')).toHaveCount(0);
   await expect(sheet.getByText('Rename payee')).toHaveCount(0);
   await sheet.getByRole('button', { name: 'Done' }).click();
-  await expect(page).toHaveURL(/\/accounts\/chk$/);
+  await expect(page).toHaveURL(/\/accounts\/checking$/);
 });

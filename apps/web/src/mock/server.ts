@@ -1,39 +1,30 @@
-// Routes /api requests to the in-memory MockDb, validating bodies with the shared contracts like the Worker.
-import {
-  ArchiveRequest,
-  AssignRequest,
-  CategorizeRequest,
-  CategoryUpsert,
-  CSRF_HEADER,
-  GroupUpsert,
-  LinkExchange,
-  LinkTokenRequest,
-  MatchRequest,
-  MergePayees,
-  MoveRequest,
-  NewTxnRequest,
-  NoteRequest,
-  OwedAction,
-  PendingCheckAction,
-  RenameAccount,
-  RenamePayee,
-  SetAssignedRequest,
-  SettingsPatch,
-  SetupStart,
-  StartingBalances,
-  TargetRequest,
-  TransferPick,
-  TxnPatch,
-  UsageBatch,
-  ImportCsvRequest,
-  type MutationResult,
-} from '@ledgerline/contracts';
+// The mock API (VITE_MOCK=1, dev and tests only). Every screen and every change is answered by the phone's real
+// engine over a November 2026 copy (apps/worker/src/local/november-copy.ts), so the mock runs the server's own
+// routes and Money rules. Only what needs a real server is answered here: passkey sign-in, Plaid Link, the
+// sign-in list, usage events and notes, and the daily-limit scenarios.
+import { CSRF_HEADER, LinkExchange, LinkTokenRequest, NoteRequest, UsageBatch } from '@ledgerline/contracts';
 import type { z } from 'zod';
-import { MockDb, MockHttpError, type Scenario, type Txn } from './db';
+import type { LocalEngine } from '../../../worker/src/local/engine';
+import type { SqlJsDb } from '../../../worker/src/local/sqljs-db';
+
+export type Scenario = 'default' | 'firstrun' | 'empty' | 'readonly' | 'resting' | 'syncfail' | 'newmonth';
 
 export interface MockResponse {
   status: number;
   body: unknown;
+}
+
+/** Opens a November copy; the browser passes one that knows where sql.js's wasm is. */
+export type OpenCopy = (now: () => number) => Promise<{ engine: LocalEngine; db: SqlJsDb }>;
+
+class MockHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
 }
 
 function parse<S extends z.ZodType>(schema: S, body: unknown): z.infer<S> {
@@ -43,518 +34,108 @@ function parse<S extends z.ZodType>(schema: S, body: unknown): z.infer<S> {
   return r.data;
 }
 
-export class MockServer {
-  db: MockDb;
-  /** Every mutation request's headers, for tests that check the CSRF header. */
-  lastMutationHeaders: Record<string, string> | null = null;
-
-  constructor(scenario: Scenario = 'default') {
-    this.db = new MockDb(scenario);
-  }
-
-  reset(scenario: Scenario = 'default') {
-    this.db = new MockDb(scenario);
-  }
-
-  private ok(): MutationResult {
-    return { ok: true, rta: this.db.rta, rtaUpdating: false };
-  }
-
-  handle(method: string, url: string, headers: Record<string, string>, body: unknown): MockResponse {
-    try {
-      const u = new URL(url, 'http://mock.local');
-      const path = u.pathname.replace(/\/+$/, '');
-      const p = path.split('/').slice(2).map(decodeURIComponent); // drop '' and 'api'
-      const mutation = method !== 'GET';
-      if (this.db.scenario === 'resting' && p[0] !== 'session' && p[0] !== 'auth')
-        throw new MockHttpError(503, 'resting', 'Resting until the daily limit resets');
-      if (mutation) {
-        this.lastMutationHeaders = headers;
-        if (headers[CSRF_HEADER] !== '1' || !(headers['content-type'] ?? '').startsWith('application/json'))
-          throw new MockHttpError(403, 'csrf', 'Missing CSRF header');
-        if (this.db.writeState === 'readonly' && p[0] !== 'usage' && p[0] !== 'notes')
-          throw new MockHttpError(503, 'read_only', 'Writes are paused until the daily limit resets');
-      }
-      const r = this.route(method, p, u.searchParams, body ?? {});
-      return { status: r === null ? 204 : 200, body: r };
-    } catch (e) {
-      if (e instanceof MockHttpError)
-        return { status: e.status, body: { error: e.code, message: e.message } };
-      return { status: 500, body: { error: 'internal', message: e instanceof Error ? e.message : 'error' } };
-    }
-  }
-
-  private route(method: string, p: string[], q: URLSearchParams, body: unknown): unknown {
-    const db = this.db;
-    const [a, b, c, d] = p;
-    // Undo a join: settings/payees/merge/<id>/undo has one segment more than the keys below.
-    if (method === 'POST' && a === 'settings' && b === 'payees' && c === 'merge' && p[4] === 'undo') {
-      db.undoJoin(d!);
-      return { ok: true };
-    }
-    const key = `${method} ${a ?? ''}${b !== undefined ? '/' + (isParam(a, b) ? ':x' : b) : ''}${c !== undefined ? '/' + (isParam2(a, c) ? ':y' : c) : ''}${d !== undefined ? '/' + d : ''}`;
-    switch (key) {
-      case 'GET session':
-        return db.session();
-      case 'GET badges': {
-        const a = db.accounts();
-        return {
-          activity: db.activity('attention', '').attentionCount,
-          accounts: a.repairs.length + a.failures.length,
-          rta: db.rta,
-          rtaUpdating: false,
-        };
-      }
-      case 'GET budget/:x':
-        return db.budget(b!);
-      case 'GET budget/:x/assign':
-        return db.assignView(b!);
-      case 'POST budget/assign': {
-        const r = parse(AssignRequest, body);
-        for (const it of r.items) db.addAssigned(it.categoryId, it.amount);
-        return this.ok();
-      }
-      case 'POST budget/set': {
-        const r = parse(SetAssignedRequest, body);
-        const cat = db.catById(r.categoryId);
-        if (!cat) throw new MockHttpError(404, 'not_found', 'No such category');
-        db.addAssigned(r.categoryId, r.assigned - cat.assigned);
-        return this.ok();
-      }
-      case 'POST budget/move': {
-        const r = parse(MoveRequest, body);
-        db.move(r.from, r.to, r.amount);
-        return this.ok();
-      }
-      case 'GET categories/:x/sheet':
-        return db.categorySheet(b!, q.get('month') ?? db.currentMonth);
-      case 'PUT categories/:x/target': {
-        const r = parse(TargetRequest, body);
-        db.setTarget(b!, r.target);
-        return this.ok();
-      }
-      case 'GET activity': {
-        const f = q.get('filter');
-        return db.activity(
-          f === 'attention' || f === 'pending' ? f : 'all',
-          q.get('q') ?? '',
-          q.get('month') ?? undefined,
-        );
-      }
-      case 'GET transactions/:x':
-        return db.txnSheet(b!);
-      case 'PATCH transactions/:x': {
-        const r = parse(TxnPatch, body);
-        const x = db.txn(b!);
-        if (x.kind === 'history')
-          throw new MockHttpError(409, 'history', 'This is before your budget, so it can’t be changed');
-        if (r.categoryId !== undefined || r.toRta) db.categorize([x.key], r.categoryId ?? null, r.toRta);
-        if (r.memo !== undefined) x.memo = r.memo;
-        if (r.wontClear !== undefined) x.wontClear = r.wontClear;
-        if (r.payeeName) x.payee = r.payeeName;
-        if (r.budgetMonth !== undefined) x.budgetMonth = r.budgetMonth ?? undefined;
-        // Estimates (bank pending) and amounts (added by you) are signed like the transaction.
-        const next =
-          r.amount ??
-          (r.estimatedAmount !== undefined && r.estimatedAmount !== null ? r.estimatedAmount : null);
-        if (next !== null) {
-          const diff = next - x.amount;
-          const cat = x.categoryId ? db.catById(x.categoryId) : undefined;
-          if (cat) {
-            cat.available += diff;
-            cat.spent -= diff;
-          }
-          x.amount = next;
-          if (r.amount === undefined) x.estimate = Math.abs(next);
-        }
-        if (r.split) {
-          if (x.categoryId) db.categorize([x.key], null);
-          x.split = r.split
-            .filter((s) => s.categoryId)
-            .map((s) => ({ categoryId: s.categoryId!, amount: s.amount }));
-          for (const s of x.split) {
-            const cat = db.catById(s.categoryId);
-            if (cat) {
-              cat.available += s.amount;
-              cat.spent -= s.amount;
-            }
-          }
-          x.label = 'Split · ' + x.split.map((s) => db.catName(s.categoryId)).join(' · ');
-          if (x.section === 'needs') x.section = 'posted';
-        }
-        return this.ok();
-      }
-      case 'POST transactions/categorize': {
-        const r = parse(CategorizeRequest, body);
-        if (r.keys.some((k) => db.txn(k).kind === 'history'))
-          throw new MockHttpError(409, 'history', 'This is before your budget, so it can’t be changed');
-        db.categorize(r.keys, r.categoryId, r.toRta);
-        return this.ok();
-      }
-      case 'POST transactions': {
-        const r = parse(NewTxnRequest, body);
-        const k = db.newId('t');
-        const x: Txn = {
-          key: k,
-          payee: r.payee,
-          rawName: 'Added by you',
-          accountId: r.accountId,
-          date: r.date,
-          amount: r.amount,
-          status: r.kind === 'pending' ? 'pending' : 'upcoming',
-          wontClear: false,
-          categoryId: null,
-          label: r.repeats === 'never' ? null : r.repeats,
-          badge: r.kind === 'pending' ? 'Added by you' : null,
-          badgeKind: r.kind === 'pending' ? 'mine' : null,
-          sub: r.kind === 'pending' ? 'added by you' : null,
-          sheet: 'txn',
-          kind: r.kind === 'pending' ? 'manual' : 'upcoming',
-          section: r.kind === 'pending' ? 'pending' : 'upcoming',
-        };
-        db.txns.push(x);
-        if ((r.categoryId || r.toRta) && r.kind === 'pending') db.categorize([k], r.categoryId, r.toRta);
-        else x.categoryId = r.categoryId;
-        return this.ok();
-      }
-      case 'POST transactions/:x/review': {
-        const x = db.txn(b!);
-        if (x.section === 'check' && x.checkAction === 'dismiss') {
-          x.section = x.status === 'pending' ? 'pending' : 'posted';
-          x.badge = null;
-          x.badgeKind = null;
-          x.sub = null;
-        }
-        return this.ok();
-      }
-      case 'POST transactions/:x/pending': {
-        const r = parse(PendingCheckAction, body);
-        const x = db.txn(b!);
-        // As on the server, only an entry you added has an expected row to keep waiting on or delete.
-        if (x.kind !== 'manual' && x.kind !== 'upcoming')
-          throw new MockHttpError(404, 'not_found', 'expected transaction');
-        if (r.action === 'delete') {
-          if (x.categoryId) db.categorize([x.key], null);
-          x.hidden = true;
-          if (x.key === 'check') db.checkDeleted = true;
-        } else {
-          x.section = x.status === 'pending' ? 'pending' : 'posted';
-          x.badge = x.status === 'pending' ? 'Added by you' : null;
-          x.badgeKind = x.status === 'pending' ? 'mine' : null;
-          x.sub = x.status === 'pending' ? 'added by you' : null;
-          if (x.key === 'check') x.hidden = false;
-        }
-        return this.ok();
-      }
-      case 'DELETE transactions/:x': {
-        const x = db.txn(b!);
-        if (x.categoryId) db.categorize([x.key], null);
-        x.hidden = true;
-        return this.ok();
-      }
-      case 'GET match/:x':
-        return db.matchView(b!);
-      case 'POST match': {
-        const r = parse(MatchRequest, body);
-        const x = db.txn(r.inflowKey);
-        const matched = r.items.reduce((s, it) => s + it.amount, 0);
-        if (matched > x.amount) throw new MockHttpError(400, 'too_much', 'More than the deposit');
-        for (const it of r.items) {
-          const o = db.owed.find((y) => y.id === it.itemId);
-          if (!o) continue;
-          o.amount -= it.amount;
-          o.matched += it.amount;
-          if (o.amount <= 0) o.status = 'paid_back';
-        }
-        const rest = x.amount - matched;
-        db.rta += matched + (r.rest === 'income' ? rest : 0);
-        if (rest > 0 && r.rest !== 'income') {
-          x.amount = rest;
-          x.badge = 'Waiting to match';
-        } else {
-          x.section = 'posted';
-          x.label = 'Ready to Assign';
-          x.badge = matched > 0 ? 'Paid back' : 'Income';
-          x.badgeKind = 'match';
-          x.sub = matched > 0 ? 'paid back' : 'income';
-          x.sheet = 'txn';
-          x.kind = matched > 0 ? 'paidBack' : 'income';
-        }
-        return this.ok();
-      }
-      case 'POST match/:x/unlink': {
-        const x = db.txn(b!);
-        const rent = db.owed.find((o) => o.id === 'rent');
-        if (x.key === 'zelle' && rent) {
-          rent.amount += 100000;
-          rent.matched -= 100000;
-          rent.status = 'open';
-        }
-        db.rta -= x.amount;
-        x.section = 'match';
-        x.label = 'not in Ready to Assign';
-        x.badge = 'Waiting to match';
-        x.badgeKind = 'match';
-        x.sub = 'held';
-        x.sheet = 'match';
-        return this.ok();
-      }
-      case 'POST transfers/:x/pick': {
-        const r = parse(TransferPick, body);
-        const x = db.txn(b!);
-        if (r.otherKey === null) {
-          db.rta += 40000;
-          for (const k of ['marcus-200', 'ally-200']) db.txn(k).label = 'Ready to Assign · income';
-          x.section = 'needs';
-          x.sheet = 'txn';
-          x.badge = null;
-          x.badgeKind = null;
-          x.label = null;
-          x.sub = null;
-        } else {
-          db.rta += 20000;
-          x.section = 'posted';
-          x.sheet = 'txn';
-          x.badge = 'Transfer';
-          x.badgeKind = 'rule';
-          x.label = r.otherKey === 'marcus-200' ? 'to Marcus Savings' : 'to Ally Savings';
-          x.sub = 'transfer';
-          const other = db.txn(r.otherKey);
-          other.label = 'Transfer from Everyday Checking';
-          other.badge = 'Transfer';
-          other.kind = 'transfer';
-          const income = db.txn(r.otherKey === 'marcus-200' ? 'ally-200' : 'marcus-200');
-          income.label = 'Ready to Assign · income';
-        }
-        return this.ok();
-      }
-      case 'POST transfers/:x/unpair': {
-        const x = db.txn(b!);
-        x.section = 'needs';
-        x.badge = null;
-        x.badgeKind = null;
-        x.label = null;
-        x.kind = 'posted';
-        return this.ok();
-      }
-      case 'GET owed':
-        return db.owedView();
-      case 'POST owed/:x': {
-        const r = parse(OwedAction, body);
-        const o = db.owed.find((y) => y.id === b);
-        if (!o) throw new MockHttpError(404, 'not_found', 'No such item');
-        if (r.action === 'snooze') {
-          o.status = 'open';
-          o.expectBy = r.expectBy ?? '2026-11-30';
-        } else {
-          const cat = db.catById(o.categoryId);
-          if (cat) {
-            cat.available -= o.amount;
-            cat.spent += o.amount;
-          }
-          db.rta += o.amount;
-          o.status = r.action === 'close' ? 'closed' : 'canceled';
-        }
-        return this.ok();
-      }
-      case 'GET accounts':
-        return db.accounts();
-      case 'POST alerts/:x/dismiss':
-        db.storedAlerts = db.storedAlerts.filter((a) => a.id !== b);
-        return this.ok();
-      case 'POST accounts/:x/name': {
-        db.accountNames.set(b!, parse(RenameAccount, body).name);
-        return this.ok();
-      }
-      case 'GET accounts/:x/register': {
-        const show = q.get('show');
-        return db.register(b!, show === 'pending' || show === 'needs' || show === 'transfers' ? show : 'all');
-      }
-      case 'GET reports':
-        return db.reports(q.get('month') ?? db.currentMonth);
-      case 'GET settings/categories':
-        return db.categoriesView();
-      case 'POST settings/categories': {
-        const r = parse(CategoryUpsert, body);
-        const g = (r.groupId ?? 'g-everyday').replace('g-', '') as 'bills' | 'everyday' | 'savings';
-        if (r.id) {
-          const c = db.catById(r.id);
-          if (!c) throw new MockHttpError(404, 'not_found', 'No such category');
-          c.name = r.name;
-          c.group = g;
-          c.kind = r.kind;
-          return { ok: true, id: c.id };
-        }
-        const id = db.newId('c');
-        db.cats.push({
-          id,
-          name: r.name,
-          group: ['bills', 'everyday', 'savings'].includes(g) ? g : 'everyday',
-          kind: r.kind,
-          assigned: 0,
-          spent: 0,
-          available: 0,
-          refill: null,
-          bill: g === 'bills',
-          invest: r.kind === 'saving',
-          noTarget: true,
-          reached: false,
-          need: null,
-          added: 0,
-          goal: null,
-          baseDetail: 'No target yet',
-          overNote: null,
-          carry: null,
-          target: { type: 'none' },
-          targetText: 'No target',
-          archived: false,
-        });
-        return { ok: true, id };
-      }
-      case 'POST settings/groups': {
-        parse(GroupUpsert, body);
-        return { ok: true, id: db.newId('g') };
-      }
-      case 'POST settings/categories/:y/archive': {
-        const r = parse(ArchiveRequest, body);
-        const cat = db.catById(c!);
-        if (!cat) throw new MockHttpError(404, 'not_found', 'No such category');
-        if (r.archived && cat.available !== 0) {
-          db.rta += cat.available;
-          cat.assigned -= cat.available;
-          cat.available = 0;
-        }
-        cat.archived = r.archived;
-        cat.archivedMeta = 'Archived today';
-        return this.ok();
-      }
-      case 'POST settings/categories/reorder':
-      case 'POST settings/groups/reorder':
-        return { ok: true };
-      case 'POST settings/categories/:y/remove': {
-        const cat = db.catById(c!);
-        if (!cat) throw new MockHttpError(404, 'not_found', 'No such category');
-        if (cat.available !== 0) {
-          db.rta += cat.available;
-          cat.assigned -= cat.available;
-          cat.available = 0;
-        }
-        cat.archived = true;
-        cat.archivedMeta = 'Archived today';
-        return { ok: true, outcome: 'archived' };
-      }
-      case 'POST settings/groups/:y/remove':
-        throw new MockHttpError(409, 'not_empty', 'Move or remove the categories in this group first.');
-      case 'GET settings/payees':
-        return db.payeesView();
-      case 'POST settings/payees/merge': {
-        const r = parse(MergePayees, body);
-        return { ok: true, undoId: db.joinPayees(r.keep ?? r.ids[0]!, r.ids) };
-      }
-      case 'POST settings/payees/:y': {
-        const r = parse(RenamePayee, body);
-        db.renamePayee(c!, r.name);
-        return { ok: true };
-      }
-      // Sign-in (decisions.md D-27): the mock is always signed in with one passkey.
-      case 'GET auth/status':
-        return { signedIn: true, hasPasskey: true, setupOpen: false };
-      case 'GET settings/security':
-        return {
-          passkeys: [
-            {
-              id: 'pk_mock',
-              name: 'iPhone',
-              createdAt: '2026-10-31T18:00:00Z',
-              lastUsedAt: '2026-11-14T08:00:00Z',
-            },
-          ],
-          sessions: mockSignIns.filter((x) => x.live).length,
-          otherSessions: mockSignIns.filter((x) => !x.current).length,
-          signIns: mockSignIns.filter((x) => x.live).map(({ live: _live, ...x }) => x),
-        };
-      case 'POST settings/security/device-link':
-        return { url: `${location.origin}/add-device#mock-token`, expiresAt: '2026-11-14T20:10:00Z' };
-      case 'POST settings/security/sign-out':
-        return { ok: true };
-      case 'POST settings/security/sign-out-others':
-        mockSignIns = mockSignIns.filter((x) => x.current);
-        return { ok: true };
-      case 'POST settings/security/sign-out-session':
-        mockSignIns = mockSignIns.filter((x) => x.current || x.id !== (body as { id?: string }).id);
-        return { ok: true };
-      case 'GET settings/connections':
-        return db.connectionsView();
-      case 'POST settings/connections/link-token': {
-        const r = parse(LinkTokenRequest, body);
-        return { linkToken: `link-sandbox-mock-${r.mode}` };
-      }
-      case 'POST settings/connections/exchange': {
-        parse(LinkExchange, body);
-        db.linked += 1;
-        return { ok: true, connectionId: db.newId('c'), accounts: [] };
-      }
-      case 'POST settings/connections/refresh':
-        db.refreshedAt = (db.refreshedAt ?? Date.UTC(2026, 10, 14, 17, 42)) + 60_000;
-        return { ok: true, started: 2 };
-      case 'POST settings/connections/:y/refresh': {
-        if (c === 'c-ally') db.allyRepaired = true;
-        if (c === 'c-chase') db.syncFailed = false;
-        return { ok: true };
-      }
-      case 'POST setup/start': {
-        parse(SetupStart, body);
-        db.setupStep = 'link';
-        return { ok: true };
-      }
-      case 'POST setup/starting-balances': {
-        parse(StartingBalances, body);
-        db.setupStep = 'done';
-        return this.ok();
-      }
-      case 'PATCH settings': {
-        const r = parse(SettingsPatch, body);
-        if (r.tracking !== undefined) db.tracking = r.tracking;
-        if (r.noteButton !== undefined) db.noteButton = r.noteButton;
-        return { ok: true };
-      }
-      case 'POST import/csv': {
-        parse(ImportCsvRequest, body);
-        return { imported: 4812, skipped: 214, history: 4812 };
-      }
-      case 'POST usage': {
-        const r = parse(UsageBatch, body);
-        db.usageEvents.push(...r.events);
-        return null;
-      }
-      case 'POST notes': {
-        db.notes.push(parse(NoteRequest, body));
-        return { ok: true };
-      }
-      default:
-        throw new MockHttpError(404, 'not_found', `No mock for ${method} /api/${p.join('/')}`);
-    }
-  }
+/** The mock's clock: Nov 14, 2026 at 10 AM Pacific; Dec 1 for a new month, Oct 1 for an empty budget. */
+export function scenarioNow(scenario: Scenario): number {
+  if (scenario === 'newmonth') return Date.UTC(2026, 11, 1, 18, 0);
+  if (scenario === 'empty') return Date.UTC(2026, 9, 1, 18, 0);
+  return Date.UTC(2026, 10, 14, 18, 0);
 }
 
-/** Second path segment is an id for these resources. */
-function isParam(a: string | undefined, b: string): boolean {
-  if (a === 'budget') return b !== 'assign' && b !== 'set' && b !== 'move';
-  if (a === 'transactions') return b !== 'categorize';
-  if (
-    a === 'match' ||
-    a === 'categories' ||
-    a === 'owed' ||
-    a === 'accounts' ||
-    a === 'transfers' ||
-    a === 'alerts'
-  )
+/** Categories an empty budget keeps (the prototype's empty state). */
+const EMPTY_KEEPS = ['rent', 'electric', 'internet', 'groceries', 'dining', 'gas'];
+
+/** Turns the November copy into a scenario's starting state, through the same tables the server keeps. */
+async function shape(db: SqlJsDb, scenario: Scenario, now: number): Promise<boolean> {
+  const run = (sql: string) => db.prepare(sql).run();
+  if (scenario === 'syncfail') {
+    await run(
+      `UPDATE connection SET status = 'error', last_attempt_at = ${now - 3_600_000} WHERE id = 'con_chase'`,
+    );
+    return false;
+  }
+  if (scenario === 'empty' || scenario === 'firstrun') {
+    for (const t of [
+      'txn_link',
+      'expected_reimbursement',
+      'txn_split',
+      'manual_pending',
+      'txn_overlay',
+      'bank_txn',
+      'assignment',
+      'target',
+      'alert',
+    ])
+      await run(`DELETE FROM ${t}`);
+    if (scenario === 'empty') {
+      const keep = EMPTY_KEEPS.map((c) => `'${c}'`).join(', ');
+      await run(`DELETE FROM category WHERE kind != 'cc_payment' AND id NOT IN (${keep})`);
+      await run(
+        `DELETE FROM category_group WHERE id NOT IN (SELECT group_id FROM category WHERE group_id IS NOT NULL)`,
+      );
+    } else {
+      for (const t of [
+        'category',
+        'category_group',
+        'liability_snapshot',
+        'account',
+        'provider_account',
+        'connection',
+      ])
+        await run(`DELETE FROM ${t}`);
+      await run(`UPDATE budget SET budget_start_month = NULL`);
+    }
     return true;
+  }
   return false;
 }
 
+/**
+ * What the mock tests use that the November fixture doesn't have, with no change to any amount, category or date:
+ * payee history (Blue Bottle Coffee twice Dining out, Amazon twice Household and once Shopping, so both come suggested), a second
+ * "Amazon" payee offered as "Same as your Amazon?", a "Bluebottle Coffee" spelling to join, a bank text on CVS,
+ * and a row from before the budget on checking (imported through the real CSV route).
+ */
+async function mockHistory(engine: LocalEngine, db: SqlJsDb, now: number): Promise<void> {
+  const run = (sql: string, ...args: unknown[]) =>
+    db
+      .prepare(sql)
+      .bind(...args)
+      .run();
+  const payeeOf = async (key: string) =>
+    (await db
+      .prepare(`SELECT payee_id FROM txn_overlay WHERE txn_key = ?1`)
+      .bind(key)
+      .first<{ payee_id: string }>())!.payee_id;
+  const point = async (keys: string[], payeeId: string, raw: string) => {
+    for (const k of keys) {
+      await run(`UPDATE txn_overlay SET payee_id = ?2 WHERE txn_key = ?1`, k, payeeId);
+      await run(`UPDATE bank_txn SET raw_name = ?2 WHERE txn_key = ?1`, k, raw);
+    }
+  };
+  const newPayee = async (id: string, name: string) =>
+    run(
+      `INSERT INTO payee (id, budget_id, name, created_at, updated_at) SELECT ?1, id, ?2, ?3, ?3 FROM budget`,
+      id,
+      name,
+      now,
+    );
+  await point(['o-dining', 'n-dining'], await payeeOf('n-bluebottle'), 'BLUE BOTTLE COFFEE');
+  await point(['o-target', 'n-target', 'o-household'], await payeeOf('n-amazon-s'), 'AMAZON.COM');
+  await newPayee('py_amazon_mktp', 'Amazon');
+  await point(['n-amazon-f'], 'py_amazon_mktp', 'AMZN MKTP US*2K4');
+  await newPayee('py_bluebottle_sf', 'Bluebottle Coffee');
+  await point(['o-personal'], 'py_bluebottle_sf', 'BLUEBOTTLECOFFEE SF');
+  await run(`UPDATE bank_txn SET raw_name = 'CVS/PHARMACY #0812' WHERE txn_key = 'n-cvs'`);
+  const r = await engine.request('POST', '/api/import/csv', {
+    accountId: 'checking',
+    csv: 'date,payee,amount\n2026-09-28,OLD BAKERY SF,-12.34\n',
+  });
+  if (r.status !== 200) throw new Error(`mock history: ${await r.text()}`);
+  await run(`UPDATE payee SET name = 'Old Bakery' WHERE name = 'OLD BAKERY SF'`);
+}
+
 /** Settings → Sign-in in the mock: this phone and a laptop, and an iPad that's signed out with the budget saved. */
-let mockSignIns = [
+const SIGN_INS = () => [
   {
     id: 'si_phone',
     name: 'iPhone · Home Screen app',
@@ -573,20 +154,174 @@ let mockSignIns = [
   },
 ];
 
-/** Third path segment is an id under /settings/{categories,rules,payees,connections}. */
-function isParam2(a: string | undefined, c: string): boolean {
-  if (a !== 'settings') return false;
-  return ![
-    'merge',
-    'preview',
-    'export',
-    'reorder',
-    'link-token',
-    'exchange',
-    'device-link',
-    'sign-out',
-    'sign-out-others',
-    'sign-out-session',
-    'refresh',
-  ].includes(c);
+export class MockServer {
+  /** Every mutation request's headers, for tests that check the CSRF header. */
+  lastMutationHeaders: Record<string, string> | null = null;
+  usageEvents: unknown[] = [];
+  notes: unknown[] = [];
+  private signIns = SIGN_INS();
+  private ready: Promise<{ engine: LocalEngine; db: SqlJsDb }>;
+  readonly now: number;
+
+  constructor(
+    readonly scenario: Scenario,
+    private readonly open: OpenCopy,
+  ) {
+    this.now = scenarioNow(scenario);
+    this.ready = this.start();
+  }
+
+  private async start() {
+    const copy = await this.open(() => this.now);
+    if (this.scenario !== 'empty' && this.scenario !== 'firstrun')
+      await mockHistory(copy.engine, copy.db, this.now);
+    if (await shape(copy.db, this.scenario, this.now)) {
+      await copy.db
+        .prepare(`UPDATE local_state SET value = ?1 WHERE key = 'derive'`)
+        .bind(JSON.stringify({ full: true, keys: [], fromMonth: null }))
+        .run();
+      await copy.engine.derive();
+    }
+    return copy;
+  }
+
+  /** The copy, for tests that look at what a change stored. */
+  async db(): Promise<SqlJsDb> {
+    return (await this.ready).db;
+  }
+
+  private get readOnly() {
+    return this.scenario === 'readonly' || this.scenario === 'resting';
+  }
+
+  async handle(
+    method: string,
+    url: string,
+    headers: Record<string, string>,
+    body: unknown,
+  ): Promise<MockResponse> {
+    try {
+      const u = new URL(url, 'http://mock.local');
+      const path = u.pathname.replace(/\/+$/, '');
+      const mutation = method !== 'GET' && method !== 'HEAD';
+      if (this.scenario === 'resting' && !/^\/api\/(session|auth)(\/|$)/.test(path))
+        throw new MockHttpError(503, 'resting', 'Resting until the daily limit resets');
+      if (mutation) {
+        this.lastMutationHeaders = headers;
+        if (headers[CSRF_HEADER] !== '1' || !(headers['content-type'] ?? '').startsWith('application/json'))
+          throw new MockHttpError(403, 'csrf', 'Missing CSRF header');
+        if (this.readOnly && !/^\/api\/(usage|notes)$/.test(path))
+          throw new MockHttpError(503, 'read_only', 'Writes are paused until the daily limit resets');
+      }
+      const own = this.stub(method, path, body ?? {});
+      if (own !== undefined) {
+        if (method === 'POST' && path === '/api/settings/connections/exchange') await this.linked();
+        return { status: own === null ? 204 : 200, body: own };
+      }
+      const { engine } = await this.ready;
+      const r = await engine.request(method, `${path}${u.search}`, mutation ? (body ?? {}) : undefined);
+      if (r.status === 200 && method === 'POST') await this.synced(path);
+      const text = await r.text();
+      let json: unknown = text ? (JSON.parse(text) as unknown) : null;
+      if (path === '/api/session' && r.status === 200) json = this.session(json as Record<string, unknown>);
+      return { status: r.status, body: json };
+    } catch (e) {
+      if (e instanceof MockHttpError)
+        return { status: e.status, body: { error: e.code, message: e.message } };
+      return { status: 500, body: { error: 'internal', message: e instanceof Error ? e.message : 'error' } };
+    }
+  }
+
+  private syncs = 0;
+
+  /**
+   * A sync the server would run in the background (POST …/refresh), done at once: the bank's sync time moves on, and
+   * a bank that failed or needed signing in is fine again.
+   */
+  private async synced(path: string): Promise<void> {
+    const one = /^\/api\/settings\/connections\/([^/]+)\/refresh$/.exec(path);
+    if (!one && path !== '/api/settings/connections/refresh') return;
+    const { db } = await this.ready;
+    const at = this.now + ++this.syncs * 60_000;
+    if (one)
+      await db
+        .prepare(
+          `UPDATE connection SET status = 'ok', last_synced_at = ?2, last_attempt_at = ?2 WHERE id = ?1`,
+        )
+        .bind(decodeURIComponent(one[1]!), at)
+        .run();
+    else
+      await db
+        .prepare(`UPDATE connection SET last_synced_at = ?1, last_attempt_at = ?1 WHERE removed_at IS NULL`)
+        .bind(at)
+        .run();
+  }
+
+  /** Plaid Link finished: a new connection, as the exchange would store it. */
+  private async linked(): Promise<void> {
+    const { db } = await this.ready;
+    await db
+      .prepare(
+        `INSERT INTO connection (id, budget_id, provider, provider_item_id, institution_name, status, last_synced_at, linked_at, created_at, updated_at)
+         SELECT ?1, id, 'plaid', ?1, 'New bank', 'ok', ?2, ?2, ?2, ?2 FROM budget`,
+      )
+      .bind(`con_mock_${++this.syncs}`, this.now)
+      .run();
+  }
+
+  /** The daily-limit scenarios, on top of the engine's own session. */
+  private session(s: Record<string, unknown>): unknown {
+    if (!this.readOnly) return s;
+    return {
+      ...s,
+      writeState: 'readonly',
+      readOnlyUntil: '2026-11-15T00:00:00.000Z',
+      readsPaused: this.scenario === 'resting',
+    };
+  }
+
+  /** What only a real server can answer. `undefined`: the engine answers. */
+  private stub(method: string, path: string, body: unknown): unknown {
+    switch (`${method} ${path}`) {
+      case 'GET /api/auth/status':
+        return { signedIn: true, hasPasskey: true, setupOpen: false };
+      case 'GET /api/settings/security':
+        return {
+          passkeys: [
+            {
+              id: 'pk_mock',
+              name: 'iPhone',
+              createdAt: '2026-10-31T18:00:00Z',
+              lastUsedAt: '2026-11-14T08:00:00Z',
+            },
+          ],
+          sessions: this.signIns.filter((x) => x.live).length,
+          otherSessions: this.signIns.filter((x) => !x.current).length,
+          signIns: this.signIns.filter((x) => x.live).map(({ live: _live, ...x }) => x),
+        };
+      case 'POST /api/settings/security/device-link':
+        return { url: `${location.origin}/add-device#mock-token`, expiresAt: '2026-11-14T20:10:00Z' };
+      case 'POST /api/settings/security/sign-out':
+        return { ok: true };
+      case 'POST /api/settings/security/sign-out-others':
+        this.signIns = this.signIns.filter((x) => x.current);
+        return { ok: true };
+      case 'POST /api/settings/security/sign-out-session':
+        this.signIns = this.signIns.filter((x) => x.current || x.id !== (body as { id?: string }).id);
+        return { ok: true };
+      case 'POST /api/settings/connections/link-token':
+        return { linkToken: `link-sandbox-mock-${parse(LinkTokenRequest, body).mode}` };
+      case 'POST /api/settings/connections/exchange':
+        parse(LinkExchange, body);
+        return { ok: true, connectionId: 'con_mock', accounts: [] };
+      case 'POST /api/usage':
+        this.usageEvents.push(...parse(UsageBatch, body).events);
+        return null;
+      case 'POST /api/notes':
+        this.notes.push(parse(NoteRequest, body));
+        return { ok: true };
+      default:
+        return undefined;
+    }
+  }
 }
