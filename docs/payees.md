@@ -1,6 +1,6 @@
 # Payees and categories: suggest, then OK
 
-Status: agreed, v2.2, Nov 4, 2026. Being built (section 8). This replaces v1–v1.2 of this doc (a duplicate-review
+Status: built, v2.2, Nov 4, 2026 (PRs #45, #46, #48 and the "New payees" PR). This replaces v1–v1.2 of this doc (a duplicate-review
 page with rule rewrites), which the owner turned down in favour of something simpler; section 12 says what was
 dropped and why. v2 got an adversarial review (2 blockers, 5 major, 6 minor); v2.1 includes its fixes, listed in
 section 11.

@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import type { Stmt } from '@ledgerline/db/sql';
 import { clock } from '../../http/clock.js';
 import { MergePayees, RenamePayee, type MergeResult, type PayeesView } from '@ledgerline/contracts';
-import { payeeKey, rankPastUses } from '@ledgerline/domain';
+import { payeeKey, rankPastUses, samePayeeName } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../../http/context.js';
 import { HttpError, parse, scoped } from '../api.js';
@@ -11,9 +11,6 @@ import { chunks } from '../../ledger/ledger.js';
 
 export const payeesRoutes = new Hono<AppEnv>();
 
-/** Names compare without case, outer spaces or the curly/straight apostrophe difference. */
-export const sameName = (a: string, b: string) => norm(a) === norm(b);
-const norm = (s: string) => s.trim().replace(/[’‘]/g, "'").toLowerCase();
 /** `?from, ?from+1, …` for an IN list of `n` values. */
 const places = (n: number, from: number) => Array.from({ length: n }, (_, i) => `?${i + from}`).join(',');
 
@@ -269,7 +266,7 @@ payeesRoutes.post('/settings/payees/:id', async (c) => {
   if (!me) throw new HttpError(404, 'not_found', 'payee');
   // A rename sent before this payee was joined into another (say, queued offline) mustn't rename the other one.
   if (me.merged_into) throw new HttpError(409, 'payee_changed', 'This payee was joined into another one.');
-  const taken = all.find((p) => p.id !== id && !p.merged_into && sameName(p.name, r.name));
+  const taken = all.find((p) => p.id !== id && !p.merged_into && samePayeeName(p.name, r.name));
   if (taken)
     throw new HttpError(409, 'name_taken', `You have a payee named ${taken.name}. Join them instead.`);
   await s.batch([

@@ -21,6 +21,7 @@ import {
   owedList,
   owedOut,
   projectedFronts,
+  payeeNameKey,
   rankPastUses,
   suggestCategory,
   type PastUse,
@@ -253,8 +254,25 @@ activityRoutes.get('/activity', async (c) => {
   const uncats = attnRows.filter(
     (t) => !t.category_id && !t.to_rta && !t.transfer_state && !t.wtm_state && !(t.alert && !t.reviewed_at),
   );
+  // Payees you've categorized, by name: a payee you haven't is new, and one with the same name as yours gets
+  // "Same as your …?" (docs/payees.md 4.2, 4.3).
+  const known = uncats.length
+    ? await s.all<{ id: string; name: string }>(
+        `SELECT p.id, p.name FROM payee p WHERE p.budget_id = ?1 AND p.merged_into IS NULL
+           AND EXISTS (SELECT 1 FROM txn_overlay o WHERE o.budget_id = ?1 AND o.payee_id = p.id AND o.categorized_by = 'user')`,
+      )
+    : [];
+  const knownIds = new Set(known.map((p) => p.id));
+  const knownByName = new Map(known.map((p) => [payeeNameKey(p.name), p]));
+  const sameAsOf = (t: TxRow) => {
+    if (!t.payee_id || knownIds.has(t.payee_id)) return null;
+    const p = knownByName.get(payeeNameKey(t.payee));
+    return p && p.id !== t.payee_id ? p : null;
+  };
   // Your past categories for each payee, by direction: the suggestion and the picker's list (docs/payees.md 2.1).
-  const payeeIds = [...new Set(uncats.map((t) => t.payee_id).filter((x): x is string => !!x))];
+  const payeeIds = [
+    ...new Set(uncats.flatMap((t) => [t.payee_id, sameAsOf(t)?.id]).filter((x): x is string => !!x)),
+  ];
   const uses = new Map<string, PastUse[]>();
   for (const ids of chunks(payeeIds)) {
     const h = await s.all<{
@@ -287,14 +305,21 @@ activityRoutes.get('/activity', async (c) => {
   const canUse = (id: string) => usable.has(id);
   const needsCategory = uncats.map((t) => {
     const moneyIn = t.amount > 0;
-    const past = t.payee_id ? (uses.get(`${t.payee_id}:${moneyIn ? 'in' : 'out'}`) ?? []) : [];
+    const sameAs = sameAsOf(t);
+    // A "Same as" row suggests what you use for your payee of that name.
+    const from = sameAs?.id ?? t.payee_id;
+    const past = from ? (uses.get(`${from}:${moneyIn ? 'in' : 'out'}`) ?? []) : [];
     const ranked = rankPastUses(past, false, canUse);
     const sug = suggestCategory(past, moneyIn, canUse);
     return {
       ...row(t),
+      payeeId: t.payee_id,
+      rawName: t.raw_name,
+      newPayee: !!t.payee_id && !knownIds.has(t.payee_id),
+      sameAs: sameAs ? { id: sameAs.id, name: sameAs.name } : null,
       history: ranked.length
         ? {
-            title: `You’ve used for ${t.payee}`,
+            title: `You’ve used for ${sameAs?.name ?? t.payee}`,
             categories: ranked.map((u) => ({
               id: u.categoryId!,
               name: cats.get(u.categoryId!) ?? '',

@@ -242,6 +242,13 @@ export const ActivityView = z.object({
   transfersToSort: z.array(TxnListRow),
   needsCategory: z.array(
     TxnListRow.extend({
+      payeeId: id.nullable().optional(),
+      /** The bank's own text, shown under a new payee. */
+      rawName: z.string().optional(),
+      /** You haven't categorized any of this payee's transactions yet (docs/payees.md 4.2). */
+      newPayee: z.boolean().optional(),
+      /** A payee you have categorized with exactly this name: "Same as your …?" with Join (docs/payees.md 4.3). */
+      sameAs: z.object({ id, name: z.string() }).nullable().optional(),
       /** The categories you've used for this payee in this direction, most used first (docs/payees.md 2.3). */
       history: z
         .object({

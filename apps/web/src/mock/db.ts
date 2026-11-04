@@ -78,6 +78,11 @@ interface Txn {
   checkAction?: 'dismiss' | 'review';
   /** Your past categories for this payee in this direction, as [category id, times used], most used first. */
   history?: [string, number][] | null;
+  /** A first-time payee (docs/payees.md 4.2), and the mock payee id it is under. */
+  newPayee?: boolean;
+  payeeRef?: string;
+  /** Your payee with the same name, offered as "Same as your …?" until the two are joined. */
+  sameAs?: { id: string; name: string };
   estimate?: number | null;
   bankAmount?: number | null;
   memo?: string | null;
@@ -366,6 +371,9 @@ function initialTxns(): Txn[] {
     t('a2', 'Amazon', 'freedom', '2026-11-11', -2320, 'needs', {
       card: 'freedom',
       rawName: 'AMAZON.COM*9X1',
+      newPayee: true,
+      payeeRef: 'p-amazon2',
+      sameAs: { id: 'p-amazon', name: 'Amazon' },
       history: [
         ['shopping', 3],
         ['household', 2],
@@ -375,6 +383,7 @@ function initialTxns(): Txn[] {
       card: 'freedom',
       rawName: 'CVS/PHARMACY #0812',
       history: null,
+      newPayee: true,
     }),
     t('bb', 'Blue Bottle Coffee', 'sapphire', '2026-11-14', -675, 'needs', {
       card: 'sapphire',
@@ -570,7 +579,8 @@ function initialPayees(): MockPayee[] {
   });
   return [
     p('p-tj', 'Trader Joe’s', 14, 'Groceries', 'TRADER JOE S #123 OAKLAND CA'),
-    p('p-amazon', 'Amazon', 9, 'Shopping', 'AMZN MKTP US*2K4', 'AMAZON.COM*9X1'),
+    p('p-amazon', 'Amazon', 8, 'Shopping', 'AMZN MKTP US*2K4'),
+    p('p-amazon2', 'Amazon', 1, null, 'AMAZON.COM*9X1'),
     p('p-uber', 'Uber Eats', 6, 'Dining out', 'UBER EATS'),
     p('p-bb', 'Blue Bottle Coffee', 5, 'Dining out', 'SQ *BLUE BOTTLE COFFEE'),
     p('p-venmo', 'Venmo cashout', 4, null, 'VENMO CASHOUT'),
@@ -1147,6 +1157,7 @@ export class MockDb {
                 }
               : null,
             suggestion: this.suggestion(x.history ?? []),
+            ...this.newPayeeFields(x),
           }))
         : [],
       checkThese: showAttn
@@ -1674,6 +1685,17 @@ export class MockDb {
           bankNames,
         })),
       others: [],
+    };
+  }
+
+  /** New and "Same as" for a needs row, until its payee is joined into another. */
+  newPayeeFields(x: Txn) {
+    const joined = !!x.payeeRef && !!this.payees.find((p) => p.id === x.payeeRef)?.mergedInto;
+    return {
+      payeeId: (joined ? x.sameAs?.id : x.payeeRef) ?? this.payeeByName(x.payee)?.id ?? null,
+      rawName: x.rawName,
+      newPayee: !!x.newPayee && !joined,
+      sameAs: !joined && x.sameAs ? x.sameAs : null,
     };
   }
 

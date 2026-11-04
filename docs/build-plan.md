@@ -13,7 +13,6 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] A way to match a pending row to a posted row by hand, and a screen for `ambiguous_match` and `vanished_pending` alerts (the alert table is not shown anywhere yet).
 - [ ] On the owner's iPhone after deploy: PRF in the Home Screen app with the existing passkey, first download time, Face ID unlock with no signal.
 - [ ] The mock API (`apps/web/src/mock`) still has its own engine for the mock tests; replace it with a sample sync dataset fed to the real engine.
-- [ ] Payees and categories, suggest then OK (`docs/payees.md`, agreed Nov 4): left: 4. "New" payees and the suggested Join.
 
 ## Contract gaps (not blocking)
 

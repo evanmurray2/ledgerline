@@ -21,6 +21,7 @@ export function NeedsCategory({
   openPicker,
   onAccept,
   onAcceptAll,
+  onJoin,
 }: {
   needs: NeedsRow[];
   openNeeds: NeedsRow[];
@@ -33,11 +34,14 @@ export function NeedsCategory({
   openPicker: (p: Picking) => void;
   onAccept: (r: NeedsRow) => void;
   onAcceptAll: (rows: NeedsRow[]) => void;
+  onJoin: (r: NeedsRow) => void;
 }) {
+  const online = useCanWrite();
   const shown = needs.filter((r) => !q || r.payee.toLowerCase().includes(q.toLowerCase()));
   const open = (r: NeedsRow) =>
     !chosen[r.key] || (chosen[r.key]!.categoryId === null && !chosen[r.key]!.toRta);
-  const strong = shown.filter((r) => open(r) && r.suggestion?.strong);
+  // OK all leaves out "Same as" rows: those wait for you to Join or not (docs/payees.md 4.3).
+  const strong = shown.filter((r) => open(r) && r.suggestion?.strong && !(r.sameAs && online));
   const note =
     openNeeds.length === 0
       ? 'done'
@@ -94,20 +98,42 @@ export function NeedsCategory({
                   onChange={() => setSel((s) => ({ ...s, [r.key]: !s[r.key] }))}
                 />
               )}
-              <Link
-                to={sheetPath('/activity', r)}
-                className="flex min-h-11 min-w-0 flex-1 flex-col justify-center gap-[3px] text-ink no-underline"
-              >
-                <span className="flex justify-between gap-2">
-                  <span className="text-[15px] font-semibold">{r.payee}</span>
-                  <Money
-                    cents={r.amount}
-                    plus
-                    className={cx('text-[15px] font-bold', r.amount > 0 ? 'text-funded-fg' : 'text-ink')}
-                  />
-                </span>
-                <span className="text-[12px] text-muted">{rowMeta(r, 'needs')}</span>
-              </Link>
+              <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+                <Link
+                  to={sheetPath('/activity', r)}
+                  className="flex min-h-11 min-w-0 flex-col justify-center gap-[3px] text-ink no-underline"
+                >
+                  <span className="flex justify-between gap-2">
+                    <span className="text-[15px] font-semibold">{r.payee}</span>
+                    <Money
+                      cents={r.amount}
+                      plus
+                      className={cx('text-[15px] font-bold', r.amount > 0 ? 'text-funded-fg' : 'text-ink')}
+                    />
+                  </span>
+                  <span className="text-[12px] text-muted">{rowMeta(r, 'needs')}</span>
+                </Link>
+                {!label && r.sameAs && online ? (
+                  // Outside the row's link: Join is its own action (docs/payees.md 4.3).
+                  <span className="flex flex-col gap-0.5 text-[12px]">
+                    <span className="flex flex-wrap items-center gap-x-2 text-ink-2">
+                      Same as your {r.sameAs.name}?
+                      <TextButton
+                        track="activity.payee.join"
+                        aria-label={`Join ${r.payee} into your ${r.sameAs.name}`}
+                        onClick={() => onJoin(r)}
+                      >
+                        Join
+                      </TextButton>
+                    </span>
+                    {r.rawName && <span className="font-mono text-muted break-words">{r.rawName}</span>}
+                  </span>
+                ) : !label && r.newPayee && r.rawName ? (
+                  <span className="text-[12px] text-muted break-words">
+                    New · <span className="font-mono">{r.rawName}</span>
+                  </span>
+                ) : null}
+              </span>
               {!selecting && sug && (
                 <span className="flex shrink-0 items-center gap-1.5">
                   <SoftButton
