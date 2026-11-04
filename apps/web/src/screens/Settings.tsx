@@ -79,14 +79,14 @@ export function SettingsLayout() {
                 data-track={`settings.section.${s.id}`}
                 aria-current={on ? 'page' : undefined}
                 className={cx(
-                  'flex flex-col gap-0.5 rounded-lg px-3 py-2 no-underline',
+                  'flex flex-col gap-0.5 rounded-md px-3 py-2 no-underline',
                   on ? 'bg-accent-soft text-accent' : 'text-ink-2',
                 )}
               >
-                <span className="text-[14px] font-semibold">{s.name}</span>
+                <span className="text-md font-semibold">{s.name}</span>
                 <span
                   className={cx(
-                    'text-[12px]',
+                    'text-xs',
                     s.id === 'connections' && meta.repair ? 'text-warn-fg' : 'text-muted',
                   )}
                 >
@@ -135,22 +135,22 @@ function Preferences() {
     <>
       <Card>
         <div className="flex min-h-14 items-center justify-between gap-3 px-3 py-2">
-          <span className="flex flex-col gap-px text-[15px] font-semibold">
+          <span className="flex flex-col gap-px text-base font-semibold">
             Time zone
-            <span className="text-[12px] font-normal text-muted">
+            <span className="text-xs font-normal text-muted">
               Decides which day and month a transaction falls in
             </span>
           </span>
-          <span className="shrink-0 whitespace-nowrap text-[14px] text-ink-2">
+          <span className="shrink-0 whitespace-nowrap text-md text-ink-2">
             {s.budget.timeZone === 'America/Los_Angeles' ? 'US Pacific' : s.budget.timeZone}
           </span>
         </div>
         <div className="flex min-h-14 items-center justify-between gap-3 border-t border-divider px-3 py-2">
-          <span className="flex flex-col gap-px text-[15px] font-semibold">
+          <span className="flex flex-col gap-px text-base font-semibold">
             Budget started
-            <span className="text-[12px] font-normal text-muted">Earlier transactions are history only</span>
+            <span className="text-xs font-normal text-muted">Earlier transactions are history only</span>
           </span>
-          <span className="shrink-0 whitespace-nowrap text-[14px] text-ink-2">
+          <span className="shrink-0 whitespace-nowrap text-md text-ink-2">
             {s.budget.startMonth ? monthLabel(s.budget.startMonth).replace(/^(\w{3})\w*/, '$1') : '—'}
           </span>
         </div>
@@ -239,19 +239,20 @@ function ThemeChoice() {
           data-track={`settings.theme.${t.id}`}
           onClick={() => setTheme(t.id)}
           className={cx(
-            'flex min-w-0 flex-col gap-1.5 rounded-xl border-2 bg-surface p-2.5 text-left',
+            'flex min-w-0 flex-col gap-1.5 rounded-lg border-2 bg-surface p-2.5 text-left',
             pref === t.id ? 'border-accent' : 'border-line',
           )}
         >
-          <span aria-hidden="true" className="flex h-10 overflow-hidden rounded-lg border border-line">
-            <span className="flex-1" style={{ background: t.id === 'dark' ? '#181B21' : '#FFFFFF' }} />
+          <span aria-hidden="true" className="flex h-10 overflow-hidden rounded-md border border-line">
+            {/* data-theme draws each half from that theme's tokens. Match device: half light, half dark. */}
+            <span data-theme={t.id === 'dark' ? 'dark' : 'light'} className="flex-1 bg-surface" />
             <span
-              className="flex-1"
-              style={{ background: t.id === 'light' ? '#F5F6F8' : t.id === 'dark' ? '#0E1014' : '#181B21' }}
+              data-theme={t.id === 'light' ? 'light' : 'dark'}
+              className={cx('flex-1', t.id === 'device' ? 'bg-surface' : 'bg-page')}
             />
           </span>
-          <span className="text-[14px] font-bold leading-tight">{t.name}</span>
-          <span id={`${id}-${t.id}`} className="text-[12px] leading-snug text-muted">
+          <span className="text-md font-bold leading-tight">{t.name}</span>
+          <span id={`${id}-${t.id}`} className="text-xs leading-snug text-muted">
             {t.desc}
           </span>
         </button>
@@ -264,7 +265,7 @@ export function AppearanceSection() {
   return (
     <Page title="Appearance" back="/settings">
       <ThemeChoice />
-      <p className="m-0 text-[13px] text-muted">
+      <p className="m-0 text-sm text-muted">
         Saved on this device. Every screen follows it, on phone and desktop.
       </p>
       <SectionTitle>Preferences</SectionTitle>

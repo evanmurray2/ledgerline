@@ -5,6 +5,7 @@ import type { OwedView } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
 import { useActivity, useMoneyMutation, useOwed, useBudget, useSession } from '../api/hooks';
 import { Sheet, SheetTitle } from '../components/Sheet';
+import { OneBanner, Why } from '../components/Why';
 import {
   BackHeader,
   PageFrame,
@@ -20,7 +21,7 @@ import {
   SecondaryButton,
   ScreenBody,
   SectionTitle,
-  Segmented,
+  Icon,
   SoftButton,
   softButtonClass,
   useIsDesktop,
@@ -67,57 +68,55 @@ export function OwedScreen() {
         ) : (
           <>
             <Card className="flex flex-col gap-1.5 p-3">
-              <span className="text-[12px] text-muted">Out with others</span>
-              <span className="tnum text-[24px] font-bold">{formatCents(v.out)}</span>
-              <span className="text-[13px] leading-[1.45] text-ink-2">
+              <span className="text-xs text-muted">Out with others</span>
+              <span className="tnum text-4xl font-bold">{formatCents(v.out)}</span>
+              <span className="text-sm leading-normal text-ink-2">
                 Money you front leaves Ready to Assign and comes back when you’re paid.
               </span>
             </Card>
-            {waiting && (
-              <Link
-                to={`/owed/match/${waiting.key}`}
-                data-track="owed.waiting.match"
-                className="flex min-h-14 shrink-0 items-center gap-2.5 rounded-[14px] bg-owed-bg px-3 py-2 text-owed-fg no-underline"
-              >
-                <span className="flex flex-1 flex-col gap-px">
-                  <span className="text-[14px] font-bold">
-                    {waiting.payee} {formatCents(waiting.amount, { plus: true })} is waiting to match
-                  </span>
-                  <span className="text-[12px]">Held outside Ready to Assign until you match it.</span>
-                </span>
-                <span className="text-[14px] font-bold underline">Match</span>
-              </Link>
-            )}
-            {v.projected.map((p) => {
-              const covered = rta + (waiting?.amount ?? 0) >= p.owed;
-              return (
-                <Banner
-                  key={p.key}
-                  tone={covered ? 'info' : 'warn'}
-                  title={
-                    covered
-                      ? `${p.label} is covered`
-                      : `Keep ${formatCents(p.owed, { whole: true })} unassigned for ${p.label}`
-                  }
-                >
-                  It takes {formatCents(p.owed, { whole: true })} from Ready to Assign until it’s paid back.
-                  {!covered && (
-                    <>
-                      {' '}
-                      You have {formatCents(rta)} now
-                      {waiting
-                        ? `, or ${formatCents(rta + waiting.amount)} after you match ${waiting.payee.split(' ')[0]}`
-                        : ''}
-                      .
-                    </>
-                  )}
-                </Banner>
-              );
-            })}
+            {/* One banner at a time: a shortfall first, then money waiting to match, then what's covered. */}
+            <OneBanner
+              items={[
+                ...v.projected
+                  .filter((p) => rta + (waiting?.amount ?? 0) < p.owed)
+                  .map((p) => (
+                    <Banner
+                      key={p.key}
+                      tone="warn"
+                      title={`Keep ${formatCents(p.owed, { whole: true })} unassigned for ${p.label}`}
+                    >
+                      <Why track="owed.projected.why">
+                        It takes {formatCents(p.owed, { whole: true })} from Ready to Assign until it’s paid
+                        back. You have {formatCents(rta)} now
+                        {waiting
+                          ? `, or ${formatCents(rta + waiting.amount)} after you match ${waiting.payee.split(' ')[0]}`
+                          : ''}
+                        .
+                      </Why>
+                    </Banner>
+                  )),
+                waiting && (
+                  <Link
+                    key="waiting"
+                    to={`/owed/match/${waiting.key}`}
+                    data-track="owed.waiting.match"
+                    className="flex min-h-11 shrink-0 items-center gap-2.5 rounded-lg bg-owed-bg px-3 py-2 text-owed-fg no-underline"
+                  >
+                    <span className="flex-1 text-md font-bold">
+                      {waiting.payee} {formatCents(waiting.amount, { plus: true })} is waiting to match
+                    </span>
+                    <span className="text-md font-bold underline">Match</span>
+                  </Link>
+                ),
+                ...v.projected
+                  .filter((p) => rta + (waiting?.amount ?? 0) >= p.owed)
+                  .map((p) => <Banner key={p.key} tone="info" title={`${p.label} is covered`} />),
+              ]}
+            />
             <SectionTitle>Still owed</SectionTitle>
             <Card>
               {v.items.filter(isOpen).length === 0 && (
-                <p className="m-0 px-3 py-3.5 text-[14px] font-semibold text-funded-fg">
+                <p className="m-0 px-3 py-3.5 text-md font-semibold text-funded-fg">
                   Nothing is owed to you.
                 </p>
               )}
@@ -137,9 +136,9 @@ export function OwedScreen() {
                       className="flex min-w-0 flex-1 justify-between gap-2.5 text-ink no-underline"
                     >
                       <span className="flex min-w-0 flex-col gap-0.5">
-                        <span className="text-[15px] font-semibold">{o.label}</span>
-                        <span className="text-[12px] text-muted">{o.sub}</span>
-                        <span className={cx('text-[12px]', late ? 'text-under-fg' : 'text-muted')}>
+                        <span className="text-base font-semibold">{o.label}</span>
+                        <span className="text-xs text-muted">{o.sub}</span>
+                        <span className={cx('text-xs', late ? 'text-under-fg' : 'text-muted')}>
                           {late ? 'Late · ' : ''}
                           {o.expectBy
                             ? `${late ? 'expected' : 'Expected'} by ${dayLabel(o.expectBy)}`
@@ -147,8 +146,8 @@ export function OwedScreen() {
                         </span>
                       </span>
                       <span className="flex shrink-0 flex-col items-end gap-0.5">
-                        <span className="tnum text-[15px] font-bold">{formatCents(o.still)}</span>
-                        <span className="text-[12px] text-muted">
+                        <span className="tnum text-base font-bold">{formatCents(o.still)}</span>
+                        <span className="text-xs text-muted">
                           {o.still === o.amount
                             ? 'all of it'
                             : `of ${formatCents(o.amount, { whole: true })} owed`}
@@ -196,14 +195,14 @@ export function OwedScreen() {
                         className="flex min-h-14 items-center justify-between border-t border-divider px-3 py-1.5 text-ink no-underline first:border-t-0"
                       >
                         <span className="flex flex-col gap-0.5">
-                          <span className="text-[15px] font-semibold">{o.label}</span>
-                          <span className="text-[12px] text-muted">
+                          <span className="text-base font-semibold">{o.label}</span>
+                          <span className="text-xs text-muted">
                             {o.status === 'paid_back'
                               ? 'Paid back in full'
                               : `${formatCents(o.still)} still open`}
                           </span>
                         </span>
-                        <span className="tnum text-[15px] font-bold text-funded-fg">
+                        <span className="tnum text-base font-bold text-funded-fg">
                           {formatCents(o.matched, { plus: true })}
                         </span>
                       </Link>
@@ -292,6 +291,7 @@ export function CloseSheet() {
             mutates
             track="owed.close.confirm"
             disabled={pick === 'snooze' && !date}
+            why={pick === 'snooze' && !date ? 'Choose a new date' : ''}
             onClick={() => void confirm()}
           >
             {cur.cta}
@@ -326,14 +326,7 @@ export function CloseSheet() {
         </div>
       ) : (
         <div className="flex flex-col gap-2 pb-4">
-          {items.length > 1 && (
-            <Segmented
-              label="Which item"
-              value={sel}
-              onChange={setSel}
-              options={items.map((x) => [x.id, x.label.split(' · ')[0] ?? x.label] as const)}
-            />
-          )}
+          {items.length > 1 && <ItemStepper items={items} sel={sel} onChange={setSel} />}
           {opts.map((o) => (
             <OptionCard
               key={o.id}
@@ -358,5 +351,53 @@ export function CloseSheet() {
         </div>
       )}
     </Sheet>
+  );
+}
+
+/**
+ * ‹ Rent · 1 of 3 › : steps through the open items. Tabs here would read as a choice of mode, as they do
+ * elsewhere in the app; arrows say "the next one".
+ */
+function ItemStepper({
+  items,
+  sel,
+  onChange,
+}: {
+  items: { id: string; label: string }[];
+  sel: string;
+  onChange: (id: string) => void;
+}) {
+  const i = Math.max(
+    0,
+    items.findIndex((x) => x.id === sel),
+  );
+  const name = (n: number) => items[n]!.label.split(' · ')[0] ?? items[n]!.label;
+  const arrow = (to: number, dir: 'chevL' | 'chevR', what: string) => (
+    <button
+      type="button"
+      data-track="owed.close.step"
+      aria-label={to >= 0 && to < items.length ? `${what}: ${name(to)}` : what}
+      disabled={to < 0 || to >= items.length}
+      onClick={() => onChange(items[to]!.id)}
+      className="hit flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-sunken disabled:text-disabled"
+    >
+      <Icon name={dir} size={20} stroke={2.5} />
+    </button>
+  );
+  return (
+    <div
+      role="group"
+      aria-label="Which item"
+      className="flex items-center justify-between rounded-lg bg-page px-1 py-1"
+    >
+      {arrow(i - 1, 'chevL', 'Previous')}
+      <span className="flex min-w-0 flex-col items-center" aria-live="polite">
+        <span className="truncate text-base font-bold">{name(i)}</span>
+        <span className="text-xs text-muted">
+          {i + 1} of {items.length}
+        </span>
+      </span>
+      {arrow(i + 1, 'chevR', 'Next')}
+    </div>
   );
 }

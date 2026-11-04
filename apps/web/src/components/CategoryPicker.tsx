@@ -23,14 +23,14 @@ export interface PickerSpecial {
   name: string;
 }
 
-const listBox = 'shrink-0 overflow-hidden rounded-xl border border-line';
+const listBox = 'shrink-0 overflow-hidden rounded-lg border border-line';
 const rowCls =
-  'flex min-h-12 w-full items-center justify-between gap-3 border-t border-divider bg-surface px-3 text-left text-[15px] text-ink first:border-t-0 disabled:text-disabled';
+  'flex min-h-12 w-full items-center justify-between gap-3 border-t border-divider bg-surface px-3 text-left text-base text-ink first:border-t-0 disabled:text-disabled';
 
 function Avail({ cents }: { cents: number | undefined }) {
   if (cents === undefined) return null;
   return (
-    <span className={cx('tnum text-[13px]', cents < 0 ? 'text-over-fg' : 'text-muted')}>
+    <span className={cx('tnum text-sm', cents < 0 ? 'text-over-fg' : 'text-muted')}>
       {formatCents(cents)}
     </span>
   );
@@ -93,7 +93,7 @@ export function CategoryPickerSheet({
       <span className="flex min-w-0 items-center gap-2">
         {value === c.id && <Icon name="check" size={16} stroke={2.6} className="shrink-0 text-accent" />}
         <span className="truncate">{c.name}</span>
-        {showGroup && c.group && <span className="shrink-0 text-[13px] text-muted">· {c.group}</span>}
+        {showGroup && c.group && <span className="shrink-0 text-sm text-muted">· {c.group}</span>}
       </span>
       <Avail cents={c.available} />
     </button>
@@ -133,7 +133,7 @@ export function CategoryPickerSheet({
                       disabled={disabled}
                       data-track={`${track}.suggested`}
                       onClick={pick(c.id)}
-                      className="hit flex h-10 items-center gap-2 rounded-full border border-accent bg-accent-soft px-3.5 text-[14px] font-bold text-accent"
+                      className="hit flex h-10 items-center gap-2 rounded-full border border-accent bg-accent-soft px-3.5 text-md font-bold text-accent"
                     >
                       {c.name}
                       {suggestedCounts?.[c.id] !== undefined && (

@@ -92,7 +92,7 @@ test('Needs attention fixes reach $643.65 through the API', async ({ page }) => 
     await page.getByRole('button', { name }).click();
     await expect(rta(page)).toHaveText(after);
   }
-  await page.getByRole('button', { name: /^Low \d/ }).click();
+  await page.getByRole('button', { name: /^Running low \d/ }).click();
   await page.getByRole('button', { name: 'Add $20.00 for Personal care' }).click();
   await expect(rta(page)).toHaveText('$643.65');
   await page.reload();

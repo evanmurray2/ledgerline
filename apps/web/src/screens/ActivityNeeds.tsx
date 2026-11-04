@@ -3,7 +3,17 @@
 import { Link } from '@tanstack/react-router';
 import type { ActivityView } from '@ledgerline/contracts';
 import { CategoryPickerSheet } from '../components/CategoryPicker';
-import { cx, Money, SecondaryButton, SectionTitle, SoftButton, TextButton } from '../components/ui';
+import {
+  Button,
+  Checkbox,
+  cx,
+  Icon,
+  Money,
+  SecondaryButton,
+  SectionTitle,
+  SoftButton,
+  TextButton,
+} from '../components/ui';
 import { formatCents } from '../lib/money';
 import { rowMeta } from '../lib/common';
 import { useCanWrite } from '../state/connectivity';
@@ -54,7 +64,7 @@ export function NeedsCategory({
           openNeeds.length > 1 && (
             // SectionTitle spreads a note and an action apart; here the total sits next to Select.
             <span className="flex items-center gap-3">
-              <span className="text-[12px] text-muted">{note}</span>
+              <span className="text-xs text-muted">{note}</span>
               <TextButton
                 track="activity.select"
                 onClick={() => {
@@ -70,11 +80,9 @@ export function NeedsCategory({
       >
         Needs category
       </SectionTitle>
-      <div className="overflow-hidden rounded-[14px] border border-line bg-surface">
+      <div className="overflow-hidden rounded-lg border border-line bg-surface">
         {openNeeds.length === 0 && (
-          <p className="m-0 px-3 py-3.5 text-[14px] font-semibold text-funded-fg">
-            Everything has a category.
-          </p>
+          <p className="m-0 px-3 py-3.5 text-md font-semibold text-funded-fg">Everything has a category.</p>
         )}
         {shown.map((r) => {
           const c = chosen[r.key];
@@ -90,9 +98,7 @@ export function NeedsCategory({
               )}
             >
               {selecting && !label && (
-                <input
-                  type="checkbox"
-                  className="hit h-[22px] w-[22px] shrink-0 accent-[var(--ll-accent)]"
+                <Checkbox
                   checked={on}
                   aria-label={`Select ${r.payee} ${formatCents(r.amount)}`}
                   onChange={() => setSel((s) => ({ ...s, [r.key]: !s[r.key] }))}
@@ -104,18 +110,18 @@ export function NeedsCategory({
                   className="flex min-h-11 min-w-0 flex-col justify-center gap-[3px] text-ink no-underline"
                 >
                   <span className="flex justify-between gap-2">
-                    <span className="text-[15px] font-semibold">{r.payee}</span>
+                    <span className="text-base font-semibold">{r.payee}</span>
                     <Money
                       cents={r.amount}
                       plus
-                      className={cx('text-[15px] font-bold', r.amount > 0 ? 'text-funded-fg' : 'text-ink')}
+                      className={cx('text-base font-bold', r.amount > 0 ? 'text-funded-fg' : 'text-ink')}
                     />
                   </span>
-                  <span className="text-[12px] text-muted">{rowMeta(r, 'needs')}</span>
+                  <span className="text-xs text-muted">{rowMeta(r, 'needs')}</span>
                 </Link>
                 {!label && r.sameAs && online ? (
                   // Outside the row's link: Join is its own action (docs/payees.md 4.3).
-                  <span className="flex flex-col gap-0.5 text-[12px]">
+                  <span className="flex flex-col gap-0.5 text-xs">
                     <span className="flex flex-wrap items-center gap-x-2 text-ink-2">
                       Same as your {r.sameAs.name}?
                       <TextButton
@@ -129,34 +135,37 @@ export function NeedsCategory({
                     {r.rawName && <span className="font-mono text-muted break-words">{r.rawName}</span>}
                   </span>
                 ) : !label && r.newPayee && r.rawName ? (
-                  <span className="text-[12px] text-muted break-words">
+                  <span className="text-xs text-muted break-words">
                     New · <span className="font-mono">{r.rawName}</span>
                   </span>
                 ) : null}
+                {!selecting && sug && (
+                  // The guess reads as text you can tap to change; the button says what it does. Both sit under
+                  // the row's text, so the payee and the bank's text keep the full width.
+                  <span className="flex items-center justify-between gap-2.5">
+                    <Button
+                      mutates="offline"
+                      track="activity.category.choose"
+                      aria-label={`Choose category for ${r.payee} ${formatCents(r.amount)}`}
+                      onClick={() => openPicker({ keys: [r.key], row: r })}
+                      className="hit inline-flex min-h-9 min-w-0 items-center gap-1.5 text-md font-semibold text-ink-2"
+                    >
+                      <span className="truncate">{sug.name}</span>
+                      <Icon name="pencil" size={16} className="shrink-0 text-muted" />
+                    </Button>
+                    <SoftButton
+                      mutates="offline"
+                      tone="filled"
+                      track="activity.category.ok"
+                      aria-label={`Use ${sug.name} for ${r.payee} ${formatCents(r.amount)}`}
+                      onClick={() => onAccept(r)}
+                      className="max-w-[60%]"
+                    >
+                      <span className="truncate">Use {sug.name}</span>
+                    </SoftButton>
+                  </span>
+                )}
               </span>
-              {!selecting && sug && (
-                <span className="flex shrink-0 items-center gap-1.5">
-                  <SoftButton
-                    mutates="offline"
-                    tone="outline"
-                    track="activity.category.choose"
-                    aria-label={`Choose category for ${r.payee} ${formatCents(r.amount)}`}
-                    onClick={() => openPicker({ keys: [r.key], row: r })}
-                    className="max-w-[140px]"
-                  >
-                    <span className="truncate">{sug.name}</span>
-                  </SoftButton>
-                  <SoftButton
-                    mutates="offline"
-                    tone="filled"
-                    track="activity.category.ok"
-                    aria-label={`OK ${sug.name} for ${r.payee} ${formatCents(r.amount)}`}
-                    onClick={() => onAccept(r)}
-                  >
-                    OK
-                  </SoftButton>
-                </span>
-              )}
               {!selecting && !sug && (
                 <SoftButton
                   mutates="offline"
@@ -179,7 +188,7 @@ export function NeedsCategory({
           track="activity.category.ok_all"
           onClick={() => onAcceptAll(strong)}
         >
-          OK {strong.length} suggestions
+          Use {strong.length} suggestions
         </SecondaryButton>
       )}
     </section>

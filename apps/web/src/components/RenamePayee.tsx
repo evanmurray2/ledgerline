@@ -72,7 +72,15 @@ export function RenamePayeeSheet({ onClose, loading, name, rawNames, others, onS
           <PrimaryButton
             mutates={match ? true : 'offline'}
             track={match ? 'payee.join' : 'payee.rename.save'}
+            busy={busy}
             disabled={busy || !value.trim() || (!match && value.trim() === name)}
+            why={
+              !value.trim()
+                ? 'Enter a name to save'
+                : !match && value.trim() === name
+                  ? 'Change the name to save'
+                  : ''
+            }
             onClick={() => void save()}
           >
             {match ? (online ? 'Join payees' : 'Joining needs a connection') : 'Save name'}
@@ -84,7 +92,7 @@ export function RenamePayeeSheet({ onClose, loading, name, rawNames, others, onS
         <input className={inputClass} value={value} onChange={(e) => setTyped(e.target.value)} />
       </Field>
       {match && (
-        <p className="m-0 text-[13px] leading-snug text-ink-2">
+        <p className="m-0 text-sm leading-snug text-ink-2">
           You have a payee named {match.name}. Saving joins them.
         </p>
       )}
@@ -96,7 +104,7 @@ export function RenamePayeeSheet({ onClose, loading, name, rawNames, others, onS
               type="button"
               data-track="payee.rename.chip"
               onClick={() => setTyped(o.name)}
-              className="hit flex h-10 items-center rounded-full border border-accent bg-accent-soft px-3.5 text-[14px] font-bold text-accent"
+              className="hit flex h-10 items-center rounded-full border border-accent bg-accent-soft px-3.5 text-md font-bold text-accent"
             >
               {o.name}
             </button>
@@ -112,14 +120,14 @@ export function RenamePayeeSheet({ onClose, loading, name, rawNames, others, onS
                 key={r.name}
                 className="flex items-center justify-between gap-3 border-t border-divider px-3 py-2.5 first:border-t-0"
               >
-                <span className="min-w-0 break-words font-mono text-[13px]">{r.name}</span>
-                {r.meta && <span className="shrink-0 text-[12px] text-muted">{r.meta}</span>}
+                <span className="min-w-0 break-words font-mono text-sm">{r.name}</span>
+                {r.meta && <span className="shrink-0 text-xs text-muted">{r.meta}</span>}
               </div>
             ))}
           </Card>
         </div>
       )}
-      <p className="m-0 text-[12px] leading-snug text-muted">
+      <p className="m-0 text-xs leading-snug text-muted">
         Applies to past and future transactions. The bank’s own text stays on each transaction.
       </p>
     </Sheet>

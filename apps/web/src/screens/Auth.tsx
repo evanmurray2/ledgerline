@@ -16,7 +16,6 @@ import {
   SecondaryButton,
   SectionTitle,
   inputClass,
-  cx,
 } from '../components/ui';
 import { toast } from '../components/Toast';
 import { clearSavedData } from '../state/saved';
@@ -81,7 +80,7 @@ export function SignInScreen() {
   if (status.data?.setupOpen) {
     return (
       <Frame title="Set up sign-in">
-        <p className="m-0 text-[15px] leading-relaxed text-ink-2">
+        <p className="m-0 text-base leading-relaxed text-ink-2">
           Ledgerline signs you in with a passkey: Face ID, Touch ID, Windows Hello or your phone’s screen
           lock. There’s no password. Enter the setup code you saved as the <code>SETUP_CODE</code> secret to
           create your first passkey.
@@ -110,7 +109,7 @@ export function SignInScreen() {
             />
           </Field>
           <Problem text={err} />
-          <PrimaryButton type="submit" disabled={busy || !supported || code.trim().length === 0}>
+          <PrimaryButton type="submit" busy={busy} disabled={busy || !supported || code.trim().length === 0}>
             {busy ? 'Waiting for your passkey…' : 'Create passkey'}
           </PrimaryButton>
         </form>
@@ -119,7 +118,7 @@ export function SignInScreen() {
   }
   return (
     <Frame title="Sign in">
-      <p className="m-0 text-[15px] leading-relaxed text-ink-2">
+      <p className="m-0 text-base leading-relaxed text-ink-2">
         Use the passkey on this device. Your session lasts 24 hours.
       </p>
       {!supported && <NoPasskeys />}
@@ -128,6 +127,7 @@ export function SignInScreen() {
       )}
       <Problem text={err} />
       <PrimaryButton
+        busy={busy}
         disabled={busy || !supported || status.data?.hasPasskey === false}
         onClick={() => {
           setBusy(true);
@@ -140,7 +140,7 @@ export function SignInScreen() {
       >
         {busy ? 'Waiting for your passkey…' : 'Sign in with passkey'}
       </PrimaryButton>
-      <p className="m-0 text-[13px] leading-snug text-muted">
+      <p className="m-0 text-sm leading-snug text-muted">
         New phone or computer? On a device that’s signed in, go to Settings → Sign-in → Add a device.
       </p>
     </Frame>
@@ -160,7 +160,7 @@ export function AddDeviceScreen() {
   if (ok)
     return (
       <Frame title="This device is set up">
-        <p className="m-0 text-[15px] text-ink-2">
+        <p className="m-0 text-base text-ink-2">
           You’re signed in. Next time, sign in with this device’s passkey.
         </p>
         <PrimaryButton onClick={() => window.location.assign('/budget')}>Open Ledgerline</PrimaryButton>
@@ -168,13 +168,14 @@ export function AddDeviceScreen() {
     );
   return (
     <Frame title="Add this device">
-      <p className="m-0 text-[15px] leading-relaxed text-ink-2">
+      <p className="m-0 text-base leading-relaxed text-ink-2">
         Create a passkey on this device so you can sign in here. The link works once, for 10 minutes.
       </p>
       {!browserSupportsWebAuthn() && <NoPasskeys />}
       {!token && <Problem text="This link is missing its code. Make a new one in Settings → Sign-in." />}
       <Problem text={err} />
       <PrimaryButton
+        busy={busy}
         disabled={busy || !token}
         onClick={() => {
           setBusy(true);
@@ -228,17 +229,18 @@ export function ReauthDialog() {
         role="dialog"
         aria-modal="true"
         aria-labelledby="reauth-title"
-        className="flex w-full max-w-[400px] flex-col gap-3 rounded-2xl bg-surface p-5 shadow-lg"
+        className="flex w-full max-w-[400px] flex-col gap-3 rounded-lg bg-surface p-5 shadow-overlay"
       >
-        <h2 id="reauth-title" className="m-0 text-[19px] font-bold">
+        <h2 id="reauth-title" className="m-0 text-2xl font-bold">
           Confirm it’s you
         </h2>
-        <p className="m-0 text-[15px] leading-relaxed text-ink-2">
+        <p className="m-0 text-base leading-relaxed text-ink-2">
           Linking a bank, exporting your data and changing passkeys need a quick passkey check. Then it
           carries on by itself.
         </p>
         <Problem text={err} />
         <PrimaryButton
+          busy={busy}
           disabled={busy}
           onClick={() => {
             setBusy(true);
@@ -292,8 +294,8 @@ export function SignInSection() {
       <SectionTitle>Sign-in</SectionTitle>
       <Card>
         <div className="flex flex-col gap-1 px-3 py-3">
-          <span className="text-[15px] font-semibold">Passkeys</span>
-          <span className="text-[13px] leading-snug text-muted">
+          <span className="text-base font-semibold">Passkeys</span>
+          <span className="text-sm leading-snug text-muted">
             Sign-in uses a passkey on your device, with no password.
           </span>
         </div>
@@ -301,8 +303,8 @@ export function SignInSection() {
           <div key={k.id} className="flex flex-col border-t border-divider">
             <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
               <span className="flex flex-col gap-0.5">
-                <span className="text-[15px] font-semibold">{k.name}</span>
-                <span className="text-[12px] text-muted">
+                <span className="text-base font-semibold">{k.name}</span>
+                <span className="text-xs text-muted">
                   Added {when(k.createdAt)} · last used {when(k.lastUsedAt)}
                 </span>
               </span>
@@ -340,14 +342,9 @@ export function SignInSection() {
       </Card>
       {link ? (
         <Card className="flex flex-col gap-2 p-3">
-          <span className="text-[15px] font-semibold">Open this link on the new device</span>
-          <input
-            readOnly
-            className={cx(inputClass, 'text-[13px]')}
-            value={link.url}
-            aria-label="Device link"
-          />
-          <span className="text-[12px] text-muted">
+          <span className="text-base font-semibold">Open this link on the new device</span>
+          <input readOnly className={inputClass} value={link.url} aria-label="Device link" />
+          <span className="text-xs text-muted">
             It works once, until{' '}
             {new Date(link.expiresAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}.
             Send it to yourself with AirDrop or a message to yourself, not to anyone else.
@@ -403,7 +400,7 @@ export function SignInSection() {
             >
               Sign out other devices…
             </SecondaryButton>
-            <span className="px-0.5 text-[12px] leading-snug text-muted">
+            <span className="px-0.5 text-xs leading-snug text-muted">
               Signs out your other devices and deletes the budget saved on them, including devices that are
               already signed out. This device stays signed in.
             </span>
@@ -474,8 +471,8 @@ function SignIns({
   return (
     <Card>
       <div className="flex flex-col gap-1 px-3 py-3">
-        <span className="text-[15px] font-semibold">Signed in</span>
-        <span className="text-[13px] leading-snug text-muted">
+        <span className="text-base font-semibold">Signed in</span>
+        <span className="text-sm leading-snug text-muted">
           Each sign-in lasts 24 hours, and ends after 10 idle minutes. Signing a device out deletes the budget
           saved on it.
         </span>
@@ -484,14 +481,14 @@ function SignIns({
         <div key={x.id} className="flex flex-col border-t border-divider">
           <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
             <span className="flex flex-col gap-0.5">
-              <span className="text-[15px] font-semibold">{x.name}</span>
-              <span className="text-[12px] text-muted">
+              <span className="text-base font-semibold">{x.name}</span>
+              <span className="text-xs text-muted">
                 {`Signed in ${at(x.signedInAt)}`}
                 {x.saved ? ' · budget saved' : ''}
               </span>
             </span>
             {x.current ? (
-              <span className="shrink-0 px-3 text-[13px] font-semibold text-muted">This device</span>
+              <span className="shrink-0 px-3 text-sm font-semibold text-muted">This device</span>
             ) : (
               asking !== `session:${x.id}` && (
                 <DangerLink

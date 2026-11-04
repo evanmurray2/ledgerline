@@ -57,7 +57,16 @@ const SCREENS: { name: string; path: string; ready?: string; prepare?: (page: Pa
   { name: 'data', path: '/settings/data', ready: 'Import past transactions' },
   { name: 'state-empty', path: '/budget?mock=empty', ready: 'a job' },
   { name: 'state-readonly', path: '/budget?mock=readonly', ready: 'View only until' },
-  { name: 'state-sync', path: '/accounts?mock=syncfail', ready: 'Sync now' },
+  {
+    name: 'state-sync',
+    path: '/accounts?mock=syncfail',
+    ready: '2 banks need you',
+    // Several problems fold into one banner: open it to show each.
+    prepare: async (p) => {
+      await p.getByRole('button', { name: '2 banks need you' }).click();
+      await p.getByText('Sync now').waitFor();
+    },
+  },
   { name: 'state-newmonth', path: '/budget?mock=newmonth', ready: 'has started' },
   {
     name: 'state-overassigned',

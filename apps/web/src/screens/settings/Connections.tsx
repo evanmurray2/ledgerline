@@ -23,27 +23,30 @@ import { runPlaidLink } from '../../lib/plaid';
 import { usage } from '../../usage/tracker';
 import { useCanWrite } from '../../state/connectivity';
 import { Page } from './common';
+import { Why } from '../../components/Why';
 
 // ------------------------------------------------------------------ connections
 
 export function LinkMeter({ used, limit }: { used: number; limit: number }) {
   const left = Math.max(0, limit - used);
   return (
-    <section className="flex shrink-0 flex-col gap-2 rounded-[14px] border border-line bg-surface p-3">
+    <section className="flex shrink-0 flex-col gap-2 rounded-lg border border-line bg-surface p-3">
       <div className="flex items-baseline justify-between">
-        <span className="text-[15px] font-bold" data-testid="link-meter">
+        <span className="text-base font-bold" data-testid="link-meter">
           {used} of {limit} links used
         </span>
-        <span className="text-[13px] text-muted">{left} left, for good</span>
+        <span className="text-sm text-muted">{left} left, for good</span>
       </div>
       <div aria-hidden="true" className="flex gap-1">
         {Array.from({ length: limit }, (_, i) => (
           <span key={i} className={cx('h-2 flex-1 rounded-sm', i < used ? 'bg-accent' : 'bg-track')} />
         ))}
       </div>
-      <span className="text-[12px] leading-snug text-muted">
-        The free Plaid plan allows {limit} bank logins ever. Removing one doesn’t give it back, so repair a
-        broken login instead of re-adding it.
+      <span className="flex flex-col gap-1 text-xs leading-snug text-muted">
+        <span>Removing a link doesn’t give it back.</span>
+        <Why>
+          The free Plaid plan allows {limit} bank logins ever. Repair a broken login instead of re-adding it.
+        </Why>
       </span>
     </section>
   );
@@ -87,10 +90,10 @@ export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label
         <div
           role="alertdialog"
           aria-label="Use a link"
-          className="flex flex-col gap-2.5 rounded-[14px] border border-accent bg-accent-soft p-3"
+          className="flex flex-col gap-2.5 rounded-lg border border-accent bg-accent-soft p-3"
         >
-          <span className="text-[15px] font-bold">Use 1 of your {left} remaining links?</span>
-          <span className="text-[13px] leading-snug text-ink-2">
+          <span className="text-base font-bold">Use 1 of your {left} remaining links?</span>
+          <span className="text-sm leading-snug text-ink-2">
             After this, {v.used + 1} of {v.limit} links are used, for good. If a bank you already linked
             stopped syncing, repair it from Accounts instead. Linking opens Plaid’s secure window; Ledgerline
             never sees your bank password.
@@ -122,7 +125,7 @@ export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label
             mutates
             track="connections.link"
             onClick={() => setStep('confirm')}
-            className="flex h-12 w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-accent text-[15px] font-bold text-accent disabled:border-line disabled:text-disabled"
+            className="flex h-12 w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-accent text-base font-bold text-accent disabled:border-line disabled:text-disabled"
           >
             <Icon name="plus" size={16} stroke={2.6} />
             {label ?? `Link another bank (uses 1 of ${left})`}
@@ -202,16 +205,16 @@ export function ConnectionsScreen() {
                   <div className="flex items-start justify-between gap-2">
                     <span className="flex flex-col gap-0.5">
                       <span
-                        className={cx('text-[15px] font-semibold', it.status === 'removed' && 'text-muted')}
+                        className={cx('text-base font-semibold', it.status === 'removed' && 'text-muted')}
                       >
                         {it.institution}
                         {it.status === 'removed' ? ' (removed)' : ''}
                       </span>
-                      <span className="text-[12px] text-muted">
+                      <span className="text-xs text-muted">
                         {it.accounts} · linked {syncedLabel(it.linkedAt, '')}
                       </span>
                     </span>
-                    <span className={cx('shrink-0 rounded-md px-2 py-0.5 text-[12px] font-bold', st.cls)}>
+                    <span className={cx('shrink-0 rounded-sm px-2 py-0.5 text-xs font-bold', st.cls)}>
                       {!it.setupDone
                         ? 'Setup unfinished'
                         : it.status === 'ok' && it.lastSynced
@@ -237,7 +240,7 @@ export function ConnectionsScreen() {
           </Card>
           <LinkBankFlow />
           {v.environment === 'sandbox' && (
-            <p className="m-0 text-[12px] text-muted">Plaid Sandbox: test banks only.</p>
+            <p className="m-0 text-xs text-muted">Plaid Sandbox: test banks only.</p>
           )}
         </>
       )}

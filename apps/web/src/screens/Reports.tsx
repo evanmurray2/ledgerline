@@ -17,6 +17,7 @@ import {
   useIsDesktop,
 } from '../components/ui';
 import { MonthBar, TabHeader } from '../components/MonthBar';
+import { OverflowMenu } from '../components/headers';
 import { clampMonth } from '../state/month';
 import { formatCents, percentOf } from '../lib/money';
 import { monthLabel, monthShort } from '../lib/dates';
@@ -40,9 +41,9 @@ function Tiles({ r, desktop }: { r: ReportsView; desktop: boolean }) {
     <section className={cx('grid shrink-0 gap-2', desktop ? 'grid-cols-4' : 'grid-cols-3')}>
       {tiles.map(([k, v, note]) => (
         <Card key={k} className="flex flex-col gap-0.5 p-2.5">
-          <span className="text-[12px] text-muted">{k}</span>
-          <span className="tnum text-[16px] font-bold">{formatCents(v)}</span>
-          {desktop && <span className="text-[12px] text-muted">{note}</span>}
+          <span className="text-xs text-muted">{k}</span>
+          <span className="tnum text-lg font-bold">{formatCents(v)}</span>
+          {desktop && <span className="text-xs text-muted">{note}</span>}
         </Card>
       ))}
     </section>
@@ -69,7 +70,7 @@ function ByCategory({ r }: { r: ReportsView }) {
             desktop && 'hover:bg-surface-2',
           )}
         >
-          <span className="flex items-center justify-between gap-2 text-[14px]">
+          <span className="flex items-center justify-between gap-2 text-md">
             <span className="font-semibold">{c.name}</span>
             <span className="flex items-center gap-1">
               <span className="tnum font-bold">{formatCents(c.spent)}</span>
@@ -98,26 +99,26 @@ function Trend({ r, desktop }: { r: ReportsView; desktop: boolean }) {
     .join(', ');
   return (
     <Card className="flex flex-col gap-2 p-3">
-      <span className="text-[14px] font-bold">Spent, last {r.trend.length} months</span>
+      <span className="text-md font-bold">Spent, last {r.trend.length} months</span>
       <div role="img" aria-label={`Spending by month: ${label}`} className="flex h-[170px] items-end gap-2">
         {r.trend.map((t, i) => {
           const last = i === r.trend.length - 1;
           return (
             <div key={t.month} className="flex flex-1 flex-col items-center justify-end gap-1">
-              <span className="tnum text-[12px] text-muted">{kShort(t.spent)}</span>
+              <span className="tnum text-xs text-muted">{kShort(t.spent)}</span>
               <span
                 className={cx(
-                  'w-full max-w-9 rounded-t-md',
+                  'w-full max-w-9 rounded-t-sm',
                   last && r.monthToDate ? 'bg-disabled' : 'bg-accent',
                 )}
                 style={{ height: `${Math.round((t.spent * 120) / top)}px` }}
               />
-              <span className="text-[12px] text-muted">{monthShort(t.month)}</span>
+              <span className="text-xs text-muted">{monthShort(t.month)}</span>
             </div>
           );
         })}
       </div>
-      <span className="text-[12px] text-muted">
+      <span className="text-xs text-muted">
         {r.monthToDate ? `${monthShort(r.month)} is month to date. ` : ''}
         {desktop
           ? 'Click a category under Spending by category to see its transactions.'
@@ -140,7 +141,7 @@ function IncomeTable({ r }: { r: ReportsView }) {
       {rows.map(([k, v]) => (
         <div
           key={k}
-          className="flex justify-between border-t border-divider px-3 py-2.5 text-[14px] first:border-t-0"
+          className="flex justify-between border-t border-divider px-3 py-2.5 text-md first:border-t-0"
         >
           <span className="text-muted">{k}</span>
           <span className="tnum font-bold">{formatCents(v)}</span>
@@ -166,8 +167,8 @@ function NetWorth({ r }: { r: ReportsView }) {
   return (
     <Card className="flex flex-col gap-2 p-3">
       <div className="flex items-baseline justify-between">
-        <span className="text-[14px] font-bold">Net worth</span>
-        <span className="tnum text-[20px] font-bold">{formatCents(last.value)}</span>
+        <span className="text-md font-bold">Net worth</span>
+        <span className="tnum text-2xl font-bold">{formatCents(last.value)}</span>
       </div>
       <svg
         role="img"
@@ -184,7 +185,7 @@ function NetWorth({ r }: { r: ReportsView }) {
           vectorEffect="non-scaling-stroke"
         />
       </svg>
-      <div className="flex justify-between text-[12px] text-muted">
+      <div className="flex justify-between text-xs text-muted">
         <span>
           {monthShort(pts[0]!.month)} {pts[0]!.month.slice(0, 4)}
         </span>
@@ -208,7 +209,7 @@ function WorthTable() {
       {rows.map(([k, v]) => (
         <div
           key={k}
-          className="flex justify-between border-t border-divider px-3 py-2.5 text-[14px] first:border-t-0"
+          className="flex justify-between border-t border-divider px-3 py-2.5 text-md first:border-t-0"
         >
           <span className={k === 'Net worth' ? 'font-bold' : 'text-muted'}>{k}</span>
           <span className={cx('tnum font-bold', v < 0 && 'text-over-fg')}>{formatCents(v)}</span>
@@ -244,7 +245,19 @@ export function ReportsScreen() {
   );
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <TabHeader name="Reports" month={monthNav} />
+      <TabHeader
+        name="Reports"
+        month={monthNav}
+        // Phone: Settings from every tab (on desktop it is in the sidebar).
+        right={
+          desktop ? undefined : (
+            <OverflowMenu
+              label="More"
+              items={[{ to: '/settings', name: 'Settings', track: 'reports.settings' }]}
+            />
+          )
+        }
+      />
       <ScreenBody>
         {!r ? (
           q.error ? (
@@ -258,7 +271,7 @@ export function ReportsScreen() {
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1">
                 <SectionTitle>Spending by category</SectionTitle>
-                <p className="m-0 px-0.5 pb-1 text-[12px] leading-snug text-muted">{note}</p>
+                <p className="m-0 px-0.5 pb-1 text-xs leading-snug text-muted">{note}</p>
                 <ByCategory r={r} />
               </div>
               <div className="flex flex-col gap-3">
@@ -283,7 +296,7 @@ export function ReportsScreen() {
             {view === 'spend' && (
               <>
                 <Tiles r={r} desktop={false} />
-                <p className="m-0 text-[12px] leading-snug text-muted">{note}</p>
+                <p className="m-0 text-xs leading-snug text-muted">{note}</p>
                 <ByCategory r={r} />
               </>
             )}
@@ -297,7 +310,7 @@ export function ReportsScreen() {
               <>
                 <NetWorth r={r} />
                 <WorthTable />
-                <p className="m-0 text-[12px] leading-snug text-muted">
+                <p className="m-0 text-xs leading-snug text-muted">
                   Bank and card accounts only. Owed to you ({formatCents(r.stillOwed)}) is not counted until
                   it’s paid back.
                 </p>

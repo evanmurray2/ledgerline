@@ -37,6 +37,8 @@ Settings → Rules shows 0 rules (section 9), so nothing changes.
 
 ## 2. Categories: suggest, then OK
 
+**Now (Nov 4 design critique):** on screen, the suggestion reads as text with a pencil ("Shopping ✎", tap to choose another) under the row, and the OK button says what it does: **Use Shopping**; OK all reads **Use 2 suggestions**. The behaviour below is unchanged.
+
 ### 2.1 The suggestion
 
 For each row in Needs category, the suggested category is the one **you** have used most for this payee, in the

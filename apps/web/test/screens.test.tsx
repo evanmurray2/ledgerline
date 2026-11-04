@@ -145,7 +145,7 @@ describe('Activity', () => {
     await categorize(['n-amazon-f'], 'household');
     show('/activity');
     fireEvent.click(
-      await screen.findByRole('button', { name: /^OK Household for Amazon/ }, { timeout: 4000 }),
+      await screen.findByRole('button', { name: /^Use Household for Amazon/ }, { timeout: 4000 }),
     );
     await text(/^Amazon → Household/);
     expect(screen.queryByRole('button', { name: 'Always' })).toBeNull();

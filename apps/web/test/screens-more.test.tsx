@@ -50,6 +50,8 @@ describe('Accounts: stored alerts', () => {
       )
       .run();
     show('/accounts');
+    // With Ally to repair, three problems fold into one line until opened.
+    fireEvent.click(await screen.findByRole('button', { name: /3 things need you/ }, T));
     await screen.findByText(/could match more than one pending row/, undefined, T);
     expect(screen.getByText(/usually a released hold/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Open it' }).getAttribute('href')).toBe('/activity/txn/n-shell');

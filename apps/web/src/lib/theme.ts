@@ -50,10 +50,12 @@ export function resolveTheme(pref: ThemePref, prefersDark: boolean): ResolvedThe
 export function applyTheme(): ResolvedTheme {
   const resolved = resolveTheme(readThemePref(), systemPrefersDark());
   document.documentElement.setAttribute('data-theme', resolved);
-  // The phone's status bar follows the app's theme, not only the device's (index.html has one per scheme).
-  for (const m of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
-    m.content = resolved === 'dark' ? '#181b21' : '#ffffff';
-  }
+  // The phone's status bar follows the app's theme, not only the device's. index.html has one tag per scheme,
+  // each with that theme's surface color: remember both, then give both tags the chosen theme's color.
+  const metas = [...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')];
+  for (const m of metas) m.dataset.color ??= m.content;
+  const color = metas.find((m) => m.getAttribute('media')?.includes(resolved))?.dataset.color;
+  if (color) for (const m of metas) m.content = color;
   return resolved;
 }
 

@@ -21,6 +21,7 @@ import {
 import { useScreen } from '../../lib/common';
 import { useCanWrite } from '../../state/connectivity';
 import { Page } from './common';
+import { Why } from '../../components/Why';
 
 // ------------------------------------------------------------------ import and export
 
@@ -81,11 +82,11 @@ export function DataScreen() {
   ];
   return (
     <Page title="Import and export" back="/settings">
-      <section className="flex shrink-0 flex-col gap-2.5 rounded-[14px] border border-line bg-surface p-3">
-        <span className="text-[15px] font-bold">Import past transactions</span>
+      <section className="flex shrink-0 flex-col gap-2.5 rounded-lg border border-line bg-surface p-3">
+        <span className="text-base font-bold">Import past transactions</span>
         {!file ? (
           <>
-            <span className="text-[13px] leading-snug text-muted">
+            <span className="text-sm leading-snug text-muted">
               Upload a CSV export from your old budgeting app or bank. Its transactions become history:
               searchable and in reports, never in a budget month.
             </span>
@@ -110,8 +111,8 @@ export function DataScreen() {
           </>
         ) : (
           <>
-            <span className="font-mono text-[13px]">{file.name}</span>
-            <div className="flex justify-between text-[14px]">
+            <span className="font-mono text-sm">{file.name}</span>
+            <div className="flex justify-between text-md">
               <span className="text-muted">Rows</span>
               <span className="tnum font-bold">{file.rows.toLocaleString('en-US')}</span>
             </div>
@@ -132,6 +133,7 @@ export function DataScreen() {
                 mutates
                 track="data.import"
                 className="flex-[2]"
+                busy={busy}
                 disabled={busy}
                 onClick={() => void doImport()}
               >
@@ -158,15 +160,18 @@ export function DataScreen() {
       <Card>
         <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
           <span className="flex flex-col gap-0.5">
-            <span className="text-[15px] font-semibold">Undo window</span>
-            <span className="text-[12px] text-muted">The database can be rewound to any minute</span>
+            <span className="text-base font-semibold">Undo window</span>
+            <span className="text-xs text-muted">The database can be rewound to any minute</span>
           </span>
-          <span className="text-[13px] text-ink-2">Last 30 days</span>
+          <span className="text-sm text-ink-2">Last 30 days</span>
         </div>
       </Card>
-      <span className="text-[12px] text-muted">
-        Rewinding is done in Cloudflare, not from this screen, so a stolen session can’t wipe your data. For a
-        copy older than 30 days, download the full backup above and keep it somewhere safe.
+      <span className="flex flex-col gap-1 text-xs text-muted">
+        <span>For a copy older than 30 days, download the full backup above.</span>
+        <Why>
+          Rewinding is done in Cloudflare, not from this screen, so a stolen session can’t wipe your data.
+          Keep the backup somewhere safe.
+        </Why>
       </span>
     </Page>
   );
@@ -204,8 +209,8 @@ function ExportRow({
     <div className="border-t border-divider first:border-t-0">
       <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
         <span className="flex flex-col gap-0.5">
-          <span className="text-[15px] font-semibold">{name}</span>
-          <span className="text-[12px] text-muted">{meta}</span>
+          <span className="text-base font-semibold">{name}</span>
+          <span className="text-xs text-muted">{meta}</span>
         </span>
         <SoftButton
           track="data.export"
@@ -257,8 +262,8 @@ function FullBackup() {
     <Card>
       <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
         <span className="flex flex-col gap-0.5">
-          <span className="text-[15px] font-semibold">Full backup</span>
-          <span className="text-[12px] text-muted">
+          <span className="text-base font-semibold">Full backup</span>
+          <span className="text-xs text-muted">
             {state === 'done'
               ? 'Saved. Keep it somewhere safe.'
               : 'Every row of your budget, in a file that can be restored'}

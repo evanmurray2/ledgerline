@@ -1,11 +1,11 @@
 // Accounts: net worth, Owed to you under the total, repair banner, failed-sync banner with Sync now, cash and
 // cards (statement covered). The register is in AccountRegister.tsx and the Repair sheet in AccountRepair.tsx.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { Link, Outlet } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AccountRow, AccountsView } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
-import { useAccounts, useSession, qk } from '../api/hooks';
+import { useAccounts, qk } from '../api/hooks';
 import {
   Banner,
   Card,
@@ -20,7 +20,7 @@ import {
   useIsDesktop,
 } from '../components/ui';
 import { formatCents } from '../lib/money';
-import { monthName, pacificTime, syncedLabel } from '../lib/dates';
+import { monthName } from '../lib/dates';
 import { useScreen } from '../lib/common';
 import { useCanWrite } from '../state/connectivity';
 import { toast } from '../components/Toast';
@@ -116,10 +116,8 @@ function StoredAlert({ a }: { a: AccountsView['alerts'][number] }) {
 
 function SyncFailure({
   f,
-  today,
 }: {
   f: { connectionId: string; institution: string; lastGood: number | null; nextRetry: number | null };
-  today: string;
 }) {
   const qc = useQueryClient();
   const [step, setStep] = useState<'failed' | 'trying' | 'ok' | 'error'>('failed');
@@ -140,12 +138,6 @@ function SyncFailure({
       : step === 'ok'
         ? `${f.institution} is up to date`
         : `${f.institution} didn’t finish syncing`;
-  const text =
-    step === 'trying'
-      ? `Picking up from ${f.lastGood ? pacificTime(f.lastGood) : 'the last good sync'}.`
-      : step === 'ok'
-        ? 'Synced just now.'
-        : `This is usually on the bank’s side.${f.nextRetry ? ` We’ll try again at ${pacificTime(f.nextRetry)}` : ''}${f.lastGood ? `; last good sync was ${syncedLabel(f.lastGood, today)}.` : '.'}`;
   return (
     <Banner
       tone={step === 'ok' ? 'success' : 'warn'}
@@ -158,19 +150,43 @@ function SyncFailure({
           </SoftButton>
         )
       }
-    >
-      {text}
-    </Banner>
+    />
+  );
+}
+
+/**
+ * At most one banner: a single problem shows as its own one-line banner; several fold into "2 banks need you",
+ * which opens to show each. The account rows below still say which balances may be out of date.
+ */
+function Problems({ items, banks }: { items: ReactElement[]; banks: number }) {
+  const [open, setOpen] = useState(false);
+  if (items.length === 0) return null;
+  if (items.length === 1) return items[0]!;
+  return (
+    <div className="flex shrink-0 flex-col gap-1.5">
+      <button
+        type="button"
+        data-track="accounts.problems"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="flex min-h-11 items-center gap-2.5 rounded-lg border border-warn-border bg-warn-bg px-3 py-2.5 text-left text-md font-bold text-warn-fg"
+      >
+        <Icon name="alert" size={18} stroke={2.4} className="shrink-0" />
+        <span className="flex-1">
+          {items.length} {banks === items.length ? 'banks need you' : 'things need you'}
+        </span>
+        <Icon name="chevD" size={18} className={cx('shrink-0 opacity-70', open && 'rotate-180')} />
+      </button>
+      {open && items}
+    </div>
   );
 }
 
 export function AccountsScreen() {
   useScreen('accounts');
   const q = useAccounts();
-  const session = useSession();
   const desktop = useIsDesktop();
   const v = q.data;
-  const today = session.data?.budget.today ?? '';
   const qc = useQueryClient();
   const canWrite = useCanWrite();
   const scroller = useRef<HTMLDivElement>(null);
@@ -258,15 +274,15 @@ export function AccountsScreen() {
             )
           ) : (
             <>
-              <section className="flex shrink-0 flex-col gap-1 rounded-[14px] border border-line bg-surface p-3">
-                <span className="text-[12px] text-muted">Net worth</span>
+              <section className="flex shrink-0 flex-col gap-1 rounded-lg border border-line bg-surface p-3">
+                <span className="text-xs text-muted">Net worth</span>
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="tnum text-[26px] font-bold" data-testid="net-worth">
+                  <span className="tnum text-4xl font-bold" data-testid="net-worth">
                     {formatCents(v.netWorth)}
                   </span>
                   <span
                     className={cx(
-                      'tnum text-[13px] font-semibold',
+                      'tnum text-sm font-semibold',
                       v.netWorthChange >= 0 ? 'text-funded-fg' : 'text-over-fg',
                     )}
                   >
@@ -276,7 +292,7 @@ export function AccountsScreen() {
                 <Link
                   to="/owed"
                   data-track="accounts.owed"
-                  className="mt-1 flex min-h-10 items-center justify-between border-t border-divider pt-1 text-[13px] text-ink-2 no-underline"
+                  className="mt-1 flex min-h-10 items-center justify-between border-t border-divider pt-1 text-sm text-ink-2 no-underline"
                 >
                   <span>Owed to you · not in this total</span>
                   <span className="flex items-center gap-1">
@@ -285,25 +301,23 @@ export function AccountsScreen() {
                   </span>
                 </Link>
               </section>
-              {v.repairs.map((r) => (
-                <Banner
-                  key={r.connectionId}
-                  tone="warn"
-                  icon="alert"
-                  to={`/accounts/repair/${r.connectionId}`}
-                  track="accounts.repair"
-                  title={`${r.institution} needs you to sign in again`}
-                >
-                  Last synced {r.lastSynced ? syncedLabel(r.lastSynced, today) : 'never'}. Repairing keeps the
-                  same link.
-                </Banner>
-              ))}
-              {v.failures.map((f) => (
-                <SyncFailure key={f.connectionId} f={f} today={today} />
-              ))}
-              {v.alerts.map((a) => (
-                <StoredAlert key={a.id ?? a.text} a={a} />
-              ))}
+              <Problems
+                banks={v.repairs.length + v.failures.length}
+                items={[
+                  ...v.repairs.map((r) => (
+                    <Banner
+                      key={r.connectionId}
+                      tone="warn"
+                      icon="alert"
+                      to={`/accounts/repair/${r.connectionId}`}
+                      track="accounts.repair"
+                      title={`${r.institution} needs you to sign in again`}
+                    />
+                  )),
+                  ...v.failures.map((f) => <SyncFailure key={f.connectionId} f={f} />),
+                  ...v.alerts.map((a) => <StoredAlert key={a.id ?? a.text} a={a} />),
+                ]}
+              />
               {v.groups.map((g) => (
                 <section key={g.name} className="flex shrink-0 flex-col gap-1.5">
                   <SectionTitle note={<span className="tnum">{formatCents(g.total)}</span>}>
@@ -321,10 +335,10 @@ export function AccountsScreen() {
                           className="flex min-h-14 items-center gap-2.5 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
                         >
                           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                            <span className="text-[15px] font-semibold">{a.name}</span>
+                            <span className="text-base font-semibold">{a.name}</span>
                             <span
                               className={cx(
-                                'text-[12px]',
+                                'text-xs',
                                 // Needs a repair: the same warn color as the repair banner.
                                 a.connectionStatus !== 'ok' ? 'text-warn-fg' : 'text-muted',
                               )}
@@ -336,13 +350,13 @@ export function AccountsScreen() {
                             <span
                               className={cx(
                                 // A card balance isn't a problem: red is kept for overspending and broken links.
-                                'tnum text-[15px] font-bold text-ink',
+                                'tnum text-base font-bold text-ink',
                               )}
                             >
                               {formatCents(credit ? -a.bank : a.bank)}
                             </span>
                             {sub.text && (
-                              <span className={cx('text-[12px]', sub.warn ? 'text-warn-fg' : 'text-muted')}>
+                              <span className={cx('text-xs', sub.warn ? 'text-warn-fg' : 'text-muted')}>
                                 {sub.text}
                               </span>
                             )}
@@ -364,7 +378,7 @@ export function AccountsScreen() {
             data-testid="pull-refresh"
             aria-hidden={!busy && !note && !armed}
             style={HIDDEN}
-            className="pointer-events-none absolute inset-x-0 top-0 flex h-11 items-center justify-center gap-1.5 text-[13px] font-semibold text-muted opacity-0"
+            className="pointer-events-none absolute inset-x-0 top-0 flex h-11 items-center justify-center gap-1.5 text-sm font-semibold text-muted opacity-0"
           >
             <Icon
               name={note ? 'check' : 'refresh'}

@@ -43,11 +43,11 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
           <Label>Pays back</Label>
           <Link
             to="/owed"
-            className="flex items-center justify-between gap-2 rounded-xl border border-line p-3 text-ink no-underline"
+            className="flex items-center justify-between gap-2 rounded-lg border border-line p-3 text-ink no-underline"
           >
             <span className="flex flex-col">
-              <span className="text-[14px] font-semibold">{pb.label}</span>
-              <span className="text-[12px] text-muted">{formatCents(pb.amount)} matched</span>
+              <span className="text-md font-semibold">{pb.label}</span>
+              <span className="text-xs text-muted">{formatCents(pb.amount)} matched</span>
             </span>
             <span className="tnum font-bold">{formatCents(pb.amount)}</span>
           </Link>
@@ -64,7 +64,7 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
           >
             Unlink
           </SoftButton>
-          <p className="m-0 text-[13px] leading-snug text-muted">
+          <p className="m-0 text-sm leading-snug text-muted">
             It went to Ready to Assign and settled {formatCents(pb.amount, { whole: true })} of what was owed
             for {pb.label.split(' · ')[0]}.
           </p>
@@ -103,7 +103,7 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
       {t.memo && (
         <div className="flex flex-col gap-1">
           <Label>Memo</Label>
-          <span className="text-[15px]">{t.memo}</span>
+          <span className="text-base">{t.memo}</span>
         </div>
       )}
       <BankSays t={t} extra={`Matched by you on ${dayLabel(t.date)}`} />
@@ -134,25 +134,25 @@ export function PairedTransfer({ t, close }: { t: TxnSheet; close: () => void })
       <div className="flex flex-col gap-3">
         {!unpaired ? (
           <>
-            <div className="shrink-0 overflow-hidden rounded-[14px] border border-line">
+            <div className="shrink-0 overflow-hidden rounded-lg border border-line">
               <div className="flex items-center justify-between gap-2 px-3 py-2.5">
                 <span className="flex flex-col">
-                  <span className="text-[14px] font-semibold">From {t.accountName}</span>
-                  <span className="text-[12px] text-muted">{t.rawName}</span>
+                  <span className="text-md font-semibold">From {t.accountName}</span>
+                  <span className="text-xs text-muted">{t.rawName}</span>
                 </span>
                 <span className="tnum font-bold">{formatCents(-amt)}</span>
               </div>
               <div className="flex items-center justify-between gap-2 border-t border-divider px-3 py-2.5">
                 <span className="flex flex-col">
-                  <span className="text-[14px] font-semibold">
+                  <span className="text-md font-semibold">
                     To {other} · {dayLabel(t.date)}
                   </span>
-                  <span className="text-[12px] text-muted">Deposit</span>
+                  <span className="text-xs text-muted">Deposit</span>
                 </span>
                 <span className="tnum font-bold text-funded-fg">{formatCents(amt, { plus: true })}</span>
               </div>
             </div>
-            <p className="m-0 text-[13px] leading-snug text-muted">
+            <p className="m-0 text-sm leading-snug text-muted">
               Paired automatically: same amount, opposite sides, within 5 days, and no other account had a
               match. Both accounts are in your budget, so this moves money without changing any category.
             </p>

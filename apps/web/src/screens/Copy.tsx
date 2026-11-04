@@ -50,11 +50,11 @@ export function CopyScreen({
   if (copy.status === 'opening')
     return (
       <Frame title="Getting your budget ready">
-        <p className="m-0 text-[15px] leading-relaxed text-ink-2" role="status">
+        <p className="m-0 text-base leading-relaxed text-ink-2" role="status">
           {copy.progress > 0 ? `Downloaded ${copy.progress.toLocaleString()} rows…` : 'One moment…'}
         </p>
         {copy.why && (
-          <p className="m-0 text-[13px] leading-snug text-muted">Downloading everything: {WHY[copy.why]}</p>
+          <p className="m-0 text-sm leading-snug text-muted">Downloading everything: {WHY[copy.why]}</p>
         )}
       </Frame>
     );
@@ -63,7 +63,7 @@ export function CopyScreen({
       <Frame title="Couldn’t open your budget">
         <Problem text={copy.error} />
         {session && (
-          <PrimaryButton disabled={busy} onClick={() => go(() => start(session))}>
+          <PrimaryButton busy={busy} disabled={busy} onClick={() => go(() => start(session))}>
             Try again
           </PrimaryButton>
         )}
@@ -72,12 +72,12 @@ export function CopyScreen({
   // No signal: the saved copy opens with Face ID alone (online, Sign in opens it).
   return (
     <Frame title="No signal">
-      <p className="m-0 text-[15px] leading-relaxed text-ink-2">
+      <p className="m-0 text-base leading-relaxed text-ink-2">
         Your budget is saved on this phone, encrypted. Open it with Face ID to look and make small changes.
         They’re sent when you’re back online.
       </p>
       <Problem text={err} />
-      <PrimaryButton disabled={busy} onClick={() => go(() => openWithoutSignal(onOffline))}>
+      <PrimaryButton busy={busy} disabled={busy} onClick={() => go(() => openWithoutSignal(onOffline))}>
         {busy ? 'Waiting for Face ID…' : 'Open with Face ID'}
       </PrimaryButton>
     </Frame>

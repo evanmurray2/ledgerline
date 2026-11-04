@@ -70,12 +70,9 @@ export function RepairScreen() {
           New transactions are coming in. Anything that needs a category waits in Activity.
         </Banner>
       ) : step === 'working' ? (
-        <div
-          role="status"
-          className="flex flex-col items-center gap-2 rounded-[14px] bg-page p-5 text-center"
-        >
-          <span className="text-[15px] font-bold">Catching up on {inst}</span>
-          <span className="text-[13px] text-muted">
+        <div role="status" className="flex flex-col items-center gap-2 rounded-lg bg-page p-5 text-center">
+          <span className="text-base font-bold">Catching up on {inst}</span>
+          <span className="text-sm text-muted">
             Pulling transactions since the last sync. You can leave this screen; we’ll keep going.
           </span>
         </div>
@@ -86,7 +83,7 @@ export function RepairScreen() {
             everything up to the last sync
             {repair?.lastSynced ? ` on ${syncedLabel(repair.lastSynced, today)}` : ''}.
           </Banner>
-          <div className="shrink-0 overflow-hidden rounded-[14px] border border-line">
+          <div className="shrink-0 overflow-hidden rounded-lg border border-line">
             {[
               ['Accounts on this login', accts.map((a) => a.name).join(', ') || '—'],
               ['Last good sync', repair?.lastSynced ? pacificDateTime(repair.lastSynced) : '—'],
@@ -95,14 +92,14 @@ export function RepairScreen() {
             ].map(([k, val]) => (
               <div
                 key={k}
-                className="flex justify-between gap-3 border-t border-divider px-3 py-2.5 text-[14px] first:border-t-0"
+                className="flex justify-between gap-3 border-t border-divider px-3 py-2.5 text-md first:border-t-0"
               >
                 <span className="text-muted">{k}</span>
                 <span className="text-right font-semibold">{val}</span>
               </div>
             ))}
           </div>
-          <p className="m-0 text-[13px] leading-snug text-muted">
+          <p className="m-0 text-sm leading-snug text-muted">
             Repair opens Plaid’s secure window. You sign in with {inst} there; Ledgerline never sees your bank
             password. Repairing doesn’t use another of your 10 links.
           </p>

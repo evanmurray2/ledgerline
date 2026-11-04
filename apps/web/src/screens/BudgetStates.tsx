@@ -70,8 +70,8 @@ export function OverAssigned({ b, month }: { b: BudgetView; month: string }) {
             className="flex items-center gap-3 border-t border-divider px-3 py-2.5 first:border-t-0"
           >
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="text-[15px] font-semibold">{c.name}</span>
-              <span className="text-[12px] text-muted">
+              <span className="text-base font-semibold">{c.name}</span>
+              <span className="text-xs text-muted">
                 {formatCents(c.available)} · {c.detail}
               </span>
             </span>
@@ -89,7 +89,7 @@ export function OverAssigned({ b, month }: { b: BudgetView; month: string }) {
           </div>
         ))}
       </Card>
-      <p className="m-0 text-[12px] leading-snug text-muted">
+      <p className="m-0 text-xs leading-snug text-muted">
         The app never takes money from your categories on its own.
       </p>
     </>
@@ -99,9 +99,9 @@ export function OverAssigned({ b, month }: { b: BudgetView; month: string }) {
 export function FirstBudget({ b }: { b: BudgetView }) {
   const owed = b.cards.reduce((s, c) => s + c.owed, 0);
   return (
-    <section className="flex shrink-0 flex-col gap-1.5 rounded-[14px] bg-accent-soft p-3.5 text-ink">
-      <span className="text-[17px] font-bold">Give your {formatCents(b.rta)} a job</span>
-      <span className="text-[13px] leading-snug text-ink-2">
+    <section className="flex shrink-0 flex-col gap-1.5 rounded-lg bg-accent-soft p-3.5 text-ink">
+      <span className="text-xl font-bold">Give your {formatCents(b.rta)} a job</span>
+      <span className="text-sm leading-snug text-ink-2">
         Fund your card payments first ({formatCents(owed)} owed), then bills, everyday spending and savings.
         Targets tell each category what it needs.
       </span>
@@ -122,12 +122,12 @@ export function NewMonth({ b, month }: { b: BudgetView; month: string }) {
   return (
     <>
       <Card className="flex flex-col gap-2 p-3.5">
-        <h2 className="m-0 text-[17px] font-bold">{monthName(month)} has started</h2>
-        <span className="text-[13px] text-muted">
+        <h2 className="m-0 text-xl font-bold">{monthName(month)} has started</h2>
+        <span className="text-sm text-muted">
           Nothing moved on its own. Every category keeps what it had left in {monthName(prev)}, and Ready to
           Assign carried over.
         </span>
-        <div className="flex items-center justify-between border-t border-divider pt-2 text-[14px]">
+        <div className="flex items-center justify-between border-t border-divider pt-2 text-md">
           <span className="font-semibold">Ready to Assign</span>
           <span className="tnum font-bold">{formatCents(b.rta)}</span>
         </div>
@@ -135,10 +135,10 @@ export function NewMonth({ b, month }: { b: BudgetView; month: string }) {
       {total > 0 && (
         <Card className="flex flex-col gap-2 p-3.5">
           <div className="flex items-center justify-between">
-            <h2 className="m-0 text-[15px] font-bold">Targets for {monthName(month)}</h2>
-            <span className="tnum text-[15px] font-bold">{formatCents(total)}</span>
+            <h2 className="m-0 text-base font-bold">Targets for {monthName(month)}</h2>
+            <span className="tnum text-base font-bold">{formatCents(total)}</span>
           </div>
-          <span className="text-[13px] text-muted">
+          <span className="text-sm text-muted">
             {filled
               ? 'Filled every refill target and this month’s share of each savings goal.'
               : 'Refill targets plus this month’s share of each savings goal.'}

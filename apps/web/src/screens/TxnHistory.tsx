@@ -23,18 +23,18 @@ export function HistoryTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       </Banner>
       <div className="flex flex-col gap-1">
         <Label>Bank says</Label>
-        <span className="text-[14px] text-ink">{t.rawName}</span>
+        <span className="text-md text-ink">{t.rawName}</span>
       </div>
       {t.categoryId && t.categoryLabel && (
         <div className="flex flex-col gap-1">
           <Label>Category</Label>
-          <span className="text-[14px] text-ink">{t.categoryLabel}</span>
+          <span className="text-md text-ink">{t.categoryLabel}</span>
         </div>
       )}
       {t.memo && (
         <div className="flex flex-col gap-1">
           <Label>Note</Label>
-          <span className="text-[14px] text-ink">{t.memo}</span>
+          <span className="text-md text-ink">{t.memo}</span>
         </div>
       )}
     </Sheet>
