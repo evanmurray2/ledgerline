@@ -88,7 +88,15 @@ export const CardRow = z.object({
 export type CardRow = z.infer<typeof CardRow>;
 
 export const AttentionItem = z.object({
-  section: z.enum(['Ready to Assign', 'Overspent', 'Underfunded', 'Low', 'Overfunded', 'Owed to you']),
+  section: z.enum([
+    'Ready to Assign',
+    'Overspent',
+    'Card payments',
+    'Underfunded',
+    'Low',
+    'Overfunded',
+    'Owed to you',
+  ]),
   key: z.string(),
   name: z.string(),
   amount: cents,
@@ -98,7 +106,9 @@ export const AttentionItem = z.object({
   fix: z
     .object({ verb: z.enum(['Cover', 'Fund', 'Add', 'Move', 'Review', 'Move money']), amount: cents })
     .nullable(),
-  link: z.enum(['owed', 'category', 'assign']).nullable(),
+  link: z.enum(['owed', 'category', 'assign', 'card']).nullable(),
+  /** Card payments: the card account, whose screen the row opens. */
+  accountId: id.nullable().optional(),
 });
 export type AttentionItem = z.infer<typeof AttentionItem>;
 

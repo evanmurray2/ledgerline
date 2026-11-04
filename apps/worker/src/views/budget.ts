@@ -339,6 +339,37 @@ export async function budgetView(s: Scoped, f: Fresh, month: Month): Promise<Bud
       link: null,
     });
   }
+  // A Short card: fund its payment category with what covering its overspent categories won't (starting debt,
+  // earlier months). Covering a category also funds the card, so that part isn't counted twice (as on Assign).
+  for (const c of cardRows) {
+    if (c.short <= 0 || !c.categoryId) continue;
+    const creditFix = rows.reduce(
+      (a, r) =>
+        a +
+        (r.info.archived_at
+          ? 0
+          : (r.row.creditOverspent.find((x) => x.cardAccountId === c.accountId)?.amount ?? 0)),
+      0,
+    );
+    const fund = c.short - creditFix;
+    const over = rows.filter(
+      (r) => !r.info.archived_at && r.row.creditOverspent.some((x) => x.cardAccountId === c.accountId),
+    );
+    attention.push({
+      section: 'Card payments',
+      key: `card:${c.accountId}`,
+      name: c.name,
+      amount: c.available,
+      detail:
+        fund > 0
+          ? `${fmt(c.short)} of card spending not covered`
+          : `Cover ${over.map((r) => r.row.name).join(', ')} to cover this card`,
+      categoryId: c.categoryId,
+      fix: fund > 0 ? { verb: 'Fund', amount: cents(fund) } : null,
+      link: 'card',
+      accountId: c.accountId,
+    });
+  }
   if (isCurrent) {
     for (const o of late) {
       const it = items.find((i) => i.id === o.id)!;

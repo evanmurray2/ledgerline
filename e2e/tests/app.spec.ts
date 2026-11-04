@@ -52,6 +52,23 @@ test('Needs attention fixes move money and Ready to Assign reads $643.65', async
   await expect(page.getByText('$18.25 of card spending not covered')).toHaveCount(0);
 });
 
+test('Needs attention: a Short card shows under Card payments, and Fund covers it', async ({ page }) => {
+  // Freedom is short only by Dining out's overspending: covering Dining out covers the card too.
+  await page.goto('/budget?view=attention');
+  await expect(page.getByText('Cover Dining out to cover this card')).toBeVisible();
+  await expect(page.getByRole('button', { name: /for Freedom Unlimited/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Cover $18.25 for Dining out' }).click();
+  await expect(page.getByText('Cover Dining out to cover this card')).toHaveCount(0);
+
+  // A new budget: card debt from before the start has no money set aside yet.
+  await page.goto('/budget?mock=empty&view=attention');
+  await expect(page.getByRole('heading', { name: 'Card payments' })).toBeVisible();
+  await page.getByRole('button', { name: 'Fund $1,042.60 for Sapphire Preferred' }).click();
+  await expect(page.getByText('Added $1,042.60 from Ready to Assign')).toBeVisible();
+  await expect(page.getByRole('button', { name: /for Sapphire Preferred/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Fund $170.80 for Freedom Unlimited' })).toBeVisible();
+});
+
 test('Fund all funds every underfunded category at once', async ({ page }) => {
   await page.goto('/budget?view=attention');
   await page.getByRole('button', { name: /Fund all · \$340\.00/ }).click();

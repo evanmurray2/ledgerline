@@ -20,6 +20,7 @@ interface DoneFix {
 const SECTION_ORDER: AttentionItem['section'][] = [
   'Ready to Assign',
   'Overspent',
+  'Card payments',
   'Underfunded',
   'Low',
   'Overfunded',
@@ -28,6 +29,7 @@ const SECTION_ORDER: AttentionItem['section'][] = [
 const SECTION_TONE: Record<AttentionItem['section'], { tone: Tone; icon: IconName }> = {
   'Ready to Assign': { tone: 'over', icon: 'alert' },
   Overspent: { tone: 'over', icon: 'alert' },
+  'Card payments': { tone: 'over', icon: 'alert' },
   Underfunded: { tone: 'under', icon: 'half' },
   Low: { tone: 'low', icon: 'down' },
   Overfunded: { tone: 'overfunded', icon: 'up' },
@@ -75,7 +77,9 @@ export function AttentionList({ b, month, low = false }: { b: BudgetView; month:
     title: s,
     items: open.filter((a) => a.section === s),
   })).filter((s) => s.items.length);
-  const availOf = (id: string) => b.groups.flatMap((g) => g.categories).find((c) => c.id === id)?.available;
+  const availOf = (id: string) =>
+    b.groups.flatMap((g) => g.categories).find((c) => c.id === id)?.available ??
+    b.cards.find((c) => c.categoryId === id)?.available;
   const run = async (a: AttentionItem) => {
     if (!a.fix) return;
     if (a.link === 'owed') return navigate({ to: '/owed' });
@@ -140,21 +144,25 @@ export function AttentionList({ b, month, low = false }: { b: BudgetView; month:
                   to={
                     a.link === 'owed'
                       ? '/owed'
-                      : a.categoryId
-                        ? `/budget/category/${a.categoryId}`
-                        : '/budget'
+                      : a.link === 'card' && a.accountId
+                        ? `/accounts/${a.accountId}`
+                        : a.categoryId
+                          ? `/budget/category/${a.categoryId}`
+                          : '/budget'
                   }
-                  search={a.categoryId ? { month } : undefined}
+                  search={a.categoryId && a.link !== 'card' ? { month } : undefined}
                   className="flex min-h-11 min-w-0 flex-1 flex-col justify-center gap-[3px] text-ink no-underline"
                 >
                   <span className="flex justify-between gap-2">
                     <span className="text-[15px] font-semibold">{a.name}</span>
-                    {/* Overspent and Owed amounts are the problem itself; for the rest the balance is just
-                        context, and the button says what it needs. */}
+                    {/* Overspent, Short card and Owed amounts are the problem itself; for the rest the balance is
+                        just context, and the button says what it needs. */}
                     <span
                       className={cx(
                         'tnum text-[14px] font-bold',
-                        sec.title === 'Overspent' || a.link === 'owed' ? TONE[t.tone].fg : 'text-ink-2',
+                        sec.title === 'Overspent' || sec.title === 'Card payments' || a.link === 'owed'
+                          ? TONE[t.tone].fg
+                          : 'text-ink-2',
                       )}
                     >
                       {formatCents(a.amount)}
