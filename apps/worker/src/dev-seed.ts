@@ -2,7 +2,7 @@
 // packages/domain/test/fixtures/november.ts) into the dev user's BudgetStore through the real tables and overlay; the
 // phone works out the rest. Served inside the store (BudgetStore.dev) only when DEV_ROUTES=1 outside production and
 // without a setup code.
-import type { Stmt } from '@ledgerline/db/sql';
+import type { Db, Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
 import type { AppEnv } from './http/context.js';
 import { Scoped } from './db/scoped.js';
@@ -140,9 +140,19 @@ const PAYEES: Record<string, string> = {
 };
 
 dev.post('/seed-november', async (c) => {
-  const env = c.env;
-  const now = clock(env);
-  const m = { budgetId: c.get('budgetId'), userId: c.get('userId') };
+  const budgetId = c.get('budgetId');
+  await seedNovember(c.env.DB, budgetId, c.get('userId'), clock(c.env));
+  // Lines, month snapshots and Ready to Assign are worked out on the phone (D-45).
+  return c.json({ ok: true, budgetId });
+});
+
+/**
+ * Loads November into any budget database: the dev user's store (above) or the web app's mock copy
+ * (apps/web/src/mock), which then works it out with the phone's own engine.
+ */
+export async function seedNovember(db: Db, budgetId: string, userId: string, now: number): Promise<void> {
+  const env = { DB: db };
+  const m = { budgetId, userId };
   // Keep the budget's data_version climbing, so totals stamped with an older one never match the new data.
   const version = Number(
     (await env.DB.prepare(`SELECT data_version AS v FROM budget WHERE id = ?1`)
@@ -468,6 +478,4 @@ dev.post('/seed-november', async (c) => {
   }
   w.push(s.q(`UPDATE txn_overlay SET wtm_state = 'matched' WHERE budget_id = ?1 AND txn_key = 'n-zelle'`));
   for (let i = 0; i < w.length; i += 80) await env.DB.batch(w.slice(i, i + 80));
-  // Lines, month snapshots and Ready to Assign are worked out on the phone (D-45).
-  return c.json({ ok: true, budgetId: m.budgetId });
-});
+}
