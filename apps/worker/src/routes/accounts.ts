@@ -139,7 +139,9 @@ accountRoutes.get('/accounts', async (c) => {
     ),
     s.q(`SELECT key, value, at FROM health_status WHERE budget_id = ?1`),
     s.q(
-      `SELECT ref_key, data FROM alert WHERE budget_id = ?1 AND type = 'history_changed' AND acked_at IS NULL`,
+      `SELECT id, type, ref_key, data FROM alert WHERE budget_id = ?1 AND acked_at IS NULL
+         AND type IN ('history_changed', 'ambiguous_match', 'vanished_pending', 'possible_reissue', 'identity')
+       ORDER BY created_at`,
     ),
     s.q(
       `SELECT id, txn_key, amount, expect_by, closed_at, canceled_at FROM expected_reimbursement e WHERE budget_id = ?1 AND NOT EXISTS (SELECT 1 FROM manual_pending mp WHERE mp.budget_id = e.budget_id AND mp.txn_key = e.txn_key AND mp.kind = 'upcoming' AND mp.matched_txn_key IS NULL)`,
@@ -197,13 +199,7 @@ accountRoutes.get('/accounts', async (c) => {
   for (const cn of connRows)
     if (cn.status === 'ok' && cn.last_synced_at && now - cn.last_synced_at > 24 * 3_600_000)
       alerts.push({ kind: 'sync', text: `${cn.institution_name} hasn’t synced in over a day` });
-  for (const a of hist!.results as { ref_key: string; data: string }[]) {
-    const d = JSON.parse(a.data) as { month: string; amount: number };
-    alerts.push({
-      kind: 'history_changed',
-      text: `History changed in ${d.month}: a posted transaction of ${formatCents(d.amount)} was removed or re-issued`,
-    });
-  }
+  for (const a of hist!.results as StoredAlert[]) alerts.push(storedAlert(a));
   const view: AccountsView = {
     netWorth: cents(netWorth),
     netWorthChange: cents((monthPosted!.results[0] as { p: number | null }).p ?? 0),
@@ -227,6 +223,66 @@ accountRoutes.get('/accounts', async (c) => {
     alerts,
   };
   return c.json(view);
+});
+
+interface StoredAlert {
+  id: string;
+  type: string;
+  ref_key: string;
+  data: string | null;
+}
+
+/** An alert the sync, the daily scan or a phone saved (the `alert` table), as one line on Accounts. */
+export function storedAlert(a: StoredAlert): AccountsView['alerts'][number] {
+  const d = (a.data ? JSON.parse(a.data) : {}) as Record<string, unknown>;
+  const base = { id: a.id };
+  switch (a.type) {
+    case 'history_changed':
+      return {
+        ...base,
+        kind: 'history_changed',
+        text: `History changed in ${String(d.month)}: a posted transaction of ${formatCents(Number(d.amount))} was removed or re-issued`,
+      };
+    case 'ambiguous_match':
+      return {
+        ...base,
+        kind: 'ambiguous_match',
+        txnKey: a.ref_key,
+        text: 'A posted charge could match more than one pending row. Check that it took the right one.',
+      };
+    case 'vanished_pending':
+      return {
+        ...base,
+        kind: 'vanished_pending',
+        text: 'A pending charge left the bank 5 days ago and nothing posted for it. This is usually a released hold.',
+      };
+    case 'possible_reissue':
+      return {
+        ...base,
+        kind: 'possible_reissue',
+        text: 'The bank removed a posted transaction and added new ones. It may have re-issued it; check for a double.',
+      };
+    default:
+      return {
+        ...base,
+        kind: 'identity',
+        text: `Ready to Assign didn’t add up on a phone for ${String(d.month)} (off by ${formatCents(Math.abs(Number(d.difference)))}). Sync again; if it stays, tell the developer.`,
+      };
+  }
+}
+
+/** Dismiss a stored alert. It stays in the table, marked as seen. */
+accountRoutes.post('/alerts/:id/dismiss', async (c) => {
+  const s = scoped(c);
+  const now = clock(c.env);
+  const id = c.req.param('id');
+  const a = await s.first<{ id: string }>(`SELECT id FROM alert WHERE budget_id = ?1 AND id = ?2`, id);
+  if (!a) throw new HttpError(404, 'not_found', 'alert');
+  await s.batch([
+    s.q(`UPDATE alert SET acked_at = ?3 WHERE budget_id = ?1 AND id = ?2 AND acked_at IS NULL`, id, now),
+    s.audit('alert.dismiss', 'alert', id, null, null, now),
+  ]);
+  return c.json({ ok: true as const });
 });
 
 /** Rename an account. A card's payment category follows the new name. Syncs never change a name. */

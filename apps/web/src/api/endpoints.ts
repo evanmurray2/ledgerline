@@ -145,6 +145,7 @@ export const api = {
   payees: () => get('/api/settings/payees', PayeesView),
   mergePayees: (body: In<typeof MergePayees>) => post('/api/settings/payees/merge', MergeResult, body),
   undoMergePayees: (undoId: string) => post(`/api/settings/payees/merge/${enc(undoId)}/undo`, Ok, {}),
+  dismissAlert: (id: string) => post(`/api/alerts/${enc(id)}/dismiss`, Ok, {}),
   renameAccount: (id: string, body: In<typeof RenameAccount>) =>
     post(`/api/accounts/${enc(id)}/name`, Ok, body),
   renamePayee: (id: string, body: In<typeof RenamePayee>) =>

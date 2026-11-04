@@ -10,7 +10,7 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 
 - [ ] Activity screen: check CPU on the real app's analytics; build a stored recent-rows list only if p95 is 8 ms or more.
 - [ ] Later, only if wanted: invites, People with a reset link, Plaid link slots per user, account deletion, an isolation test (`docs/multi-user.md` 7.3, 7.4, 9.1, 10, 11).
-- [ ] A way to match a pending row to a posted row by hand, and a screen for `ambiguous_match` and `vanished_pending` alerts (the alert table is not shown anywhere yet).
+- [ ] A way to match a pending row to a posted row by hand (an `ambiguous_match` alert on Accounts only opens the posted row today).
 - [ ] On the owner's iPhone after deploy: PRF in the Home Screen app with the existing passkey, first download time, Face ID unlock with no signal.
 - [ ] The mock API (`apps/web/src/mock`) still has its own engine for the mock tests; replace it with a sample sync dataset fed to the real engine.
 

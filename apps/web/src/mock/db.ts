@@ -1407,6 +1407,9 @@ export class MockDb {
     }
   }
 
+  /** Stored alerts (the Worker's `alert` table); none in the prototype's November. */
+  storedAlerts: AccountsView['alerts'] = [];
+
   accounts(): AccountsView {
     const cash = ['chk', 'ally', 'marcus'].map((id) => this.accountRow(id));
     const cards = ['sapphire', 'freedom'].map((id) => this.accountRow(id));
@@ -1432,7 +1435,7 @@ export class MockDb {
             },
           ]
         : [],
-      alerts: [],
+      alerts: [...this.storedAlerts],
     };
   }
 

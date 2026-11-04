@@ -62,6 +62,58 @@ function accountSub(a: AccountRow): { text: string; warn: boolean } {
   return { text: '', warn: false };
 }
 
+/** One Accounts alert. A stored one has Dismiss; one about a transaction that still exists opens it. */
+function StoredAlert({ a }: { a: AccountsView['alerts'][number] }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const dismiss = async () => {
+    if (!a.id) return;
+    setBusy(true);
+    try {
+      await api.dismissAlert(a.id);
+      void qc.invalidateQueries({ queryKey: qk.accounts });
+    } catch (e) {
+      toast.show({ text: errorMessage(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Banner
+      tone="warn"
+      icon="alert"
+      action={
+        a.id ? (
+          <SoftButton
+            tone="outline"
+            mutates
+            disabled={busy}
+            track={`accounts.alert.dismiss.${a.kind}`}
+            onClick={() => void dismiss()}
+          >
+            Dismiss
+          </SoftButton>
+        ) : undefined
+      }
+    >
+      {a.text}
+      {a.txnKey && (
+        <>
+          {' '}
+          <Link
+            to="/activity/txn/$key"
+            params={{ key: a.txnKey }}
+            data-track={`accounts.alert.open.${a.kind}`}
+            className="font-semibold text-inherit underline"
+          >
+            Open it
+          </Link>
+        </>
+      )}
+    </Banner>
+  );
+}
+
 function SyncFailure({
   f,
   today,
@@ -250,9 +302,7 @@ export function AccountsScreen() {
                 <SyncFailure key={f.connectionId} f={f} today={today} />
               ))}
               {v.alerts.map((a) => (
-                <Banner key={a.text} tone="warn">
-                  {a.text}
-                </Banner>
+                <StoredAlert key={a.id ?? a.text} a={a} />
               ))}
               {v.groups.map((g) => (
                 <section key={g.name} className="flex shrink-0 flex-col gap-1.5">

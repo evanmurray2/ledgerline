@@ -359,6 +359,9 @@ export class MockServer {
       }
       case 'GET accounts':
         return db.accounts();
+      case 'POST alerts/:x/dismiss':
+        db.storedAlerts = db.storedAlerts.filter((a) => a.id !== b);
+        return this.ok();
       case 'POST accounts/:x/name': {
         db.accountNames.set(b!, parse(RenameAccount, body).name);
         return this.ok();
@@ -538,7 +541,14 @@ export class MockServer {
 function isParam(a: string | undefined, b: string): boolean {
   if (a === 'budget') return b !== 'assign' && b !== 'set' && b !== 'move';
   if (a === 'transactions') return b !== 'categorize';
-  if (a === 'match' || a === 'categories' || a === 'owed' || a === 'accounts' || a === 'transfers')
+  if (
+    a === 'match' ||
+    a === 'categories' ||
+    a === 'owed' ||
+    a === 'accounts' ||
+    a === 'transfers' ||
+    a === 'alerts'
+  )
     return true;
   return false;
 }

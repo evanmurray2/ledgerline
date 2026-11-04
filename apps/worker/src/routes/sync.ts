@@ -155,7 +155,7 @@ syncRoutes.get('/sync', async (c) => {
 
 /**
  * Ready to Assign worked out on a phone that doesn't satisfy rule 10 (the identity check, sync spec): saved as an
- * `identity` alert, which shows in Needs attention on every device.
+ * `identity` alert, which shows on Accounts on every device until dismissed.
  */
 syncRoutes.post('/identity-alert', async (c) => {
   const body = z
