@@ -92,6 +92,18 @@ export function localDate(epochMs: number, timeZone: string): IsoDate {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
+const timeFormatters = new Map<string, Intl.DateTimeFormat>();
+
+/** Clock time in a time zone, e.g. "4:05 PM". */
+export function localTime(epochMs: number, timeZone: string): string {
+  let fmt = timeFormatters.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: '2-digit' });
+    timeFormatters.set(timeZone, fmt);
+  }
+  return fmt.format(new Date(epochMs));
+}
+
 export function currentMonth(epochMs: number, timeZone: string): Month {
   return monthOfDate(localDate(epochMs, timeZone));
 }

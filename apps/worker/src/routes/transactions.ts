@@ -15,6 +15,7 @@ import {
   cents,
   formatCents,
   fractionOf,
+  localDate,
   monthOfDate,
   owedList,
 } from '@ledgerline/domain';
@@ -34,7 +35,7 @@ transactionRoutes.get('/transactions/:key', async (c) => {
   const key = c.req.param('key');
   const t = await loadTx(s, key);
   const { cats, accts } = await names(s);
-  const [sp, ow, pb, rf, rule] = await s.batch([
+  const [sp, ow, pb, rf, rule, bz] = await s.batch([
     s.q(
       `SELECT id, category_id, amount, memo, absorbs_remainder FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2 ORDER BY sort`,
       key,
@@ -54,6 +55,7 @@ transactionRoutes.get('/transactions/:key', async (c) => {
       key,
     ),
     s.q(`SELECT name FROM rule WHERE budget_id = ?1 AND id = ?2`, t.rule_id ?? ''),
+    s.q(`SELECT time_zone FROM budget WHERE id = ?1`),
   ]);
   const splits = sp!.results as {
     id: string;
@@ -70,7 +72,8 @@ transactionRoutes.get('/transactions/:key', async (c) => {
     closed_at: number | null;
     canceled_at: number | null;
   }[];
-  const today = new Date().toISOString().slice(0, 10);
+  const zone = (bz!.results[0] as { time_zone: string } | undefined)?.time_zone ?? 'America/Los_Angeles';
+  const today = localDate(clock(c.env), zone);
   const owedView = owedList(
     owedRows.map((o) => ({
       id: o.id,
@@ -439,7 +442,8 @@ transactionRoutes.post('/transactions/:key/pending', async (c) => {
     key,
   );
   if (!m) throw new HttpError(404, 'not_found', 'expected transaction');
-  const today = new Date(now).toISOString().slice(0, 10);
+  const b = await s.first<{ time_zone: string }>(`SELECT time_zone FROM budget WHERE id = ?1`);
+  const today = localDate(now, b?.time_zone ?? 'America/Los_Angeles');
   const w =
     r.action === 'keep_waiting'
       ? [

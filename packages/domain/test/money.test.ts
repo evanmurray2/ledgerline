@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { ceilDiv, cents, formatCents, fractionOf, parseCents, splitEvenly } from '../src/money.js';
-import { currentMonth, localDate, month, parseImportDate } from '../src/month.js';
+import { currentMonth, localDate, localTime, month, parseImportDate } from '../src/month.js';
 
 describe('parseCents', () => {
   it('reads the usual ways an amount is written', () => {
@@ -73,6 +73,11 @@ describe('the month boundary in Los Angeles', () => {
     expect(currentMonth(Date.parse('2026-12-01T07:59:00Z'), LA)).toBe(month('2026-11'));
     expect(localDate(Date.parse('2026-12-01T08:01:00Z'), LA)).toBe('2026-12-01');
     expect(currentMonth(Date.parse('2026-12-01T08:01:00Z'), LA)).toBe(month('2026-12'));
+  });
+
+  it('a clock time shows in the budget time zone, not UTC', () => {
+    expect(localTime(Date.parse('2026-11-14T17:42:00Z'), LA)).toBe('9:42 AM');
+    expect(localTime(Date.parse('2026-07-14T17:42:00Z'), LA)).toBe('10:42 AM');
   });
 
   it('daylight saving time moves the boundary by an hour', () => {

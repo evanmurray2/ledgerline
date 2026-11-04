@@ -55,29 +55,38 @@ export function compareMonths(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-const PACIFIC = 'America/Los_Angeles';
+// Clock times show in the budget's time zone (Settings → Time zone), not the phone's. The session sets it
+// (api/hooks.ts useSession); US Pacific until the session has loaded.
+let budgetZone = 'America/Los_Angeles';
 
-/** An instant (ISO string or epoch ms) as a Pacific clock time, e.g. "4:00 PM". */
-export function pacificTime(at: string | number): string {
-  const d = new Date(at);
-  if (Number.isNaN(d.getTime())) return '';
-  return new Intl.DateTimeFormat('en-US', { timeZone: PACIFIC, hour: 'numeric', minute: '2-digit' }).format(
-    d,
-  );
+export function setBudgetTimeZone(timeZone: string): void {
+  budgetZone = timeZone;
 }
 
-/** Epoch ms as "Nov 12" or "9:42 AM" when it's today in Pacific time. */
+function zoneDate(d: Date): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: budgetZone }).format(d);
+}
+
+/** An instant (ISO string or epoch ms) as a clock time in the budget's time zone, e.g. "4:00 PM". */
+export function budgetTime(at: string | number): string {
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: budgetZone,
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(d);
+}
+
+/** Epoch ms as "Nov 12", or "9:42 AM" when it's today in the budget's time zone. */
 export function syncedLabel(at: number | null, today: string): string {
   if (at === null) return 'never';
-  const d = new Date(at);
-  const ymd = new Intl.DateTimeFormat('en-CA', { timeZone: PACIFIC }).format(d);
-  if (ymd === today) return pacificTime(at);
+  const ymd = zoneDate(new Date(at));
+  if (ymd === today) return budgetTime(at);
   return dayLabel(ymd);
 }
 
-/** Epoch ms as "Nov 12, 6:10 AM" in Pacific time. */
-export function pacificDateTime(at: number): string {
-  const d = new Date(at);
-  const ymd = new Intl.DateTimeFormat('en-CA', { timeZone: PACIFIC }).format(d);
-  return `${dayLabel(ymd)}, ${pacificTime(at)}`;
+/** Epoch ms as "Nov 12, 6:10 AM" in the budget's time zone. */
+export function budgetDateTime(at: number): string {
+  return `${dayLabel(zoneDate(new Date(at)))}, ${budgetTime(at)}`;
 }

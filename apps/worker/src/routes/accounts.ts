@@ -14,6 +14,8 @@ import {
   cents,
   formatCents,
   isMonth,
+  localDate,
+  localTime,
   owedList,
   owedOut,
   statementCovered,
@@ -43,7 +45,11 @@ interface AcctDb {
   connection_id: string | null;
 }
 
-async function accountRows(s: Scoped, today: string): Promise<{ rows: AccountRow[]; raw: AcctDb[] }> {
+async function accountRows(
+  s: Scoped,
+  today: string,
+  timeZone: string,
+): Promise<{ rows: AccountRow[]; raw: AcctDb[] }> {
   const [acc, pend] = await s.batch([
     s.q(
       `SELECT a.id, a.name, a.kind, a.budget_from, a.starting_balance, a.provider_account_id, pa.mask, pa.current_balance AS bank,
@@ -89,7 +95,7 @@ async function accountRows(s: Scoped, today: string): Promise<{ rows: AccountRow
       ? { balance: ci.statement.balance, due: ci.statement.due, covered: true }
       : null;
     const synced = a.last_synced_at
-      ? `synced ${new Date(a.last_synced_at).toISOString().slice(11, 16)} UTC`
+      ? `synced ${syncedWhen(a.last_synced_at, today, timeZone)}`
       : 'not synced yet';
     return {
       id: a.id,
@@ -111,11 +117,17 @@ async function accountRows(s: Scoped, today: string): Promise<{ rows: AccountRow
   return { rows, raw };
 }
 
+/** A sync time in the budget's time zone: "9:42 AM" today, "Nov 12" on an earlier day. */
+function syncedWhen(at: number, today: string, timeZone: string): string {
+  const day = localDate(at, timeZone);
+  return day === today ? localTime(at, timeZone) : shortDate(day);
+}
+
 accountRoutes.get('/accounts', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
   const f = await fresh(s, now);
-  const { rows } = await accountRows(s, f.today);
+  const { rows } = await accountRows(s, f.today, f.budget.time_zone);
   const start = (f.budget.budget_start_month ?? f.current) as Month;
   const mr = await monthResult(s, f.current, start);
   for (const r of rows) {
@@ -312,7 +324,7 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
   const f = await fresh(s, now);
   const id = c.req.param('id');
   const show = c.req.query('show') ?? 'all';
-  const { rows } = await accountRows(s, f.today);
+  const { rows } = await accountRows(s, f.today, f.budget.time_zone);
   const account = rows.find((r) => r.id === id);
   if (!account) throw new HttpError(404, 'not_found', 'account');
   const { categories } = await structure(s);
@@ -413,7 +425,7 @@ accountRoutes.get('/reports', async (c) => {
     .map(([id, v]) => ({ categoryId: id, name: kinds.get(id)?.name ?? id, spent: v.spent }))
     .sort((a, b) => b.spent - a.spent);
   // Net worth at each month end: today's figure minus everything posted after that month.
-  const { rows } = await accountRows(s, f.today);
+  const { rows } = await accountRows(s, f.today, f.budget.time_zone);
   const nwNow = rows.reduce((a, r) => a + (r.kind === 'credit' ? -r.bank : r.bank), 0);
   // Posted totals per month over the last 13 months (ledger/totals.ts: stored for finished months).
   const totals = await monthTotals(s, addMonths(f.current, -12), f.current, Date.now());
