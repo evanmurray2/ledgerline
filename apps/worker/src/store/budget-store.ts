@@ -15,6 +15,7 @@ import {
   NO_FILTER,
   chain,
   insertStatements,
+  narrowMeta,
   readChunk,
   tableMeta,
 } from './dump.js';
@@ -186,6 +187,15 @@ export class BudgetStore extends DurableObject<Env> {
         reason: `nothing from this piece was written: ${e instanceof Error ? e.message : e}`,
       };
     }
+    // The columns each table had in the backup: restoreVerify fingerprints only those, so a backup from before a
+    // migration added a column still verifies.
+    const cols = header ? {} : ((await this.ctx.storage.get<Record<string, string[]>>('restore_cols')) ?? {});
+    for (const { t, r } of rows) {
+      const have = new Set(cols[t] ?? []);
+      for (const c of Object.keys(r)) have.add(c);
+      cols[t] = [...have];
+    }
+    await this.ctx.storage.put('restore_cols', cols);
     if (footer !== undefined) await this.ctx.storage.put('restore_footer', footer);
     this.cachedBudgetId = null;
     return { ok: true, rows: rows.length };
@@ -195,10 +205,11 @@ export class BudgetStore extends DurableObject<Env> {
   async restoreVerify(): Promise<{ ok: boolean; differences: string[] }> {
     const footer =
       (await this.ctx.storage.get<Record<string, { count: number; hash: string }>>('restore_footer')) ?? {};
+    const backupCols = (await this.ctx.storage.get<Record<string, string[]>>('restore_cols')) ?? {};
     const db = this.adapter();
     const differences: string[] = [];
     for (const t of BUDGET_TABLES) {
-      const meta = await tableMeta(db, t);
+      const meta = narrowMeta(await tableMeta(db, t), backupCols[t]);
       let count = 0;
       let hash = '';
       let cursor: unknown[] | null = null;

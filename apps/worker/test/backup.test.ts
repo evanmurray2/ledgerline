@@ -5,6 +5,7 @@ import { createExecutionContext, env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import worker from '../src/index.js';
 import type { BudgetStore } from '../src/store/budget-store.js';
+import { budgetFilter, chain, narrowMeta, readChunk, tableMeta } from '../src/store/dump.js';
 import { ownerDb } from './store-db.js';
 
 const e = env as unknown as { BUDGET: DurableObjectNamespace<BudgetStore> };
@@ -77,6 +78,57 @@ describe('full backup', () => {
     ].join('\n');
     const fresh = e.BUDGET.get(e.BUDGET.idFromName('restore-old'));
     expect(await fresh.restoreDump(old)).toMatchObject({ ok: true });
+    expect(await fresh.restoreVerify()).toEqual({ ok: true, differences: [] });
+  });
+
+  it('a backup from before migration 0007 restores with the new columns at their defaults, and verifies', async () => {
+    // A store from before 0007 had no payee.named_by, bank_txn.plaid_name, manual_pending.covers_provider_txn_id
+    // or not_same, and fingerprinted only the columns it had. Rebuild such a file from today's download.
+    const added: Record<string, string[]> = {
+      payee: ['named_by'],
+      bank_txn: ['plaid_name'],
+      manual_pending: ['covers_provider_txn_id'],
+    };
+    const lines = (await download()).split('\n');
+    const budgetId = (JSON.parse(lines[0]!) as { budgetId: string }).budgetId;
+    const footerAt = lines.findIndex((l) => l.startsWith('{"end"'));
+    const footer = JSON.parse(lines[footerAt]!) as {
+      end: true;
+      tables: Record<string, { count: number; hash: string }>;
+    };
+    delete footer.tables.not_same;
+    for (const [t, gone] of Object.entries(added)) {
+      const meta = await tableMeta(db, t);
+      const old = narrowMeta(
+        meta,
+        meta.cols.filter((c) => !gone.includes(c)),
+      );
+      let hash = '';
+      let count = 0;
+      let cursor: unknown[] | null = null;
+      do {
+        const c = await readChunk(db, t, old, budgetFilter(t, budgetId), cursor);
+        count += c.rows.length;
+        hash = c.rows.length ? await chain(hash, c.text) : hash;
+        cursor = c.cursor;
+      } while (cursor);
+      footer.tables[t] = { count, hash };
+    }
+    expect(footer.tables.payee!.count).toBeGreaterThan(0);
+    const old = lines
+      .filter((l, i) => i !== footerAt && !l.startsWith('{"t":"not_same"'))
+      .map((l) => {
+        if (!l.startsWith('{"t":')) return l;
+        const o = JSON.parse(l) as { t: string; r: Record<string, unknown> };
+        const gone = added[o.t] ?? [];
+        return JSON.stringify({
+          t: o.t,
+          r: Object.fromEntries(Object.entries(o.r).filter(([c]) => !gone.includes(c))),
+        });
+      });
+    old.push(JSON.stringify(footer));
+    const fresh = e.BUDGET.get(e.BUDGET.idFromName('restore-before-0007'));
+    expect(await fresh.restoreDump(old.join('\n'))).toMatchObject({ ok: true });
     expect(await fresh.restoreVerify()).toEqual({ ok: true, differences: [] });
   });
 

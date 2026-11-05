@@ -184,9 +184,22 @@ export async function chain(prev: string, text: string): Promise<string> {
   return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** Insert statements for a chunk's rows into the destination (one row per statement: the 100-parameter limit). */
+/**
+ * Insert statements for a chunk's rows into the destination (one row per statement: the 100-parameter limit). Only
+ * the columns a row has are written, so a backup from before a migration added a column restores with that column's
+ * default.
+ */
 export function insertStatements(db: Db, table: string, meta: Meta, rows: Record<string, unknown>[]): Stmt[] {
-  const cols = meta.cols;
-  const sql = `INSERT INTO "${table}" (${cols.map((c) => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`;
-  return rows.map((row) => db.prepare(sql).bind(...cols.map((c) => row[c] ?? null)));
+  return rows.map((row) => {
+    const cols = meta.cols.filter((c) => c in row);
+    const sql = `INSERT INTO "${table}" (${cols.map((c) => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`;
+    return db.prepare(sql).bind(...cols.map((c) => row[c] ?? null));
+  });
+}
+
+/** A table's meta narrowed to the columns a backup had, so its fingerprint compares like with like. */
+export function narrowMeta(meta: Meta, backupCols: readonly string[] | undefined): Meta {
+  if (!backupCols) return meta;
+  const keep = new Set(backupCols);
+  return { ...meta, cols: meta.cols.filter((c) => keep.has(c)) };
 }
