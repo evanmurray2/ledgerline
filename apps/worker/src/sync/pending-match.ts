@@ -110,7 +110,9 @@ export async function planMatches(
     const row = live.find((r) => r.provider_txn_id === postedId);
     if (row) tookOver.push({ row, key });
   };
-  const notSame = await loadNotSame(s);
+  // Read once, and only when a pair could be made with an entry.
+  let notSameP: ReturnType<typeof loadNotSame> | null = null;
+  const notSameFor = () => (notSameP ??= loadNotSame(s));
   /** A posted row takes your entry's key; the pending row the entry covers (`pendingKey`) is claimed with it. */
   const matchEntry = (
     postedId: string,
@@ -188,7 +190,11 @@ export async function planMatches(
     if (!p || p.txn_key === r.txn_key || claimed.has(p.txn_key)) continue;
     // Your entry covers the pending row: the posted row takes the entry's key, and the pending row goes with it.
     const cover = linkCovers.get(r.pending_provider_txn_id);
-    if (cover && !usedEntries.has(cover.txn_key) && !notSame(`p:${r.provider_txn_id}`, cover.txn_key)) {
+    if (
+      cover &&
+      !usedEntries.has(cover.txn_key) &&
+      !(await notSameFor())(`p:${r.provider_txn_id}`, cover.txn_key)
+    ) {
       if (r.txn_key === cover.txn_key) continue;
       matchEntry(r.provider_txn_id, r.amount, cover, 'auto', p.txn_key);
       continue;
@@ -315,7 +321,11 @@ export async function planMatches(
           const q = postedRows.find((x) => x.provider_txn_id === d.postedKey)!;
           const p = pendingRows.find((x) => x.txn_key === d.pendingKey)!;
           const cover = covers.get(p.provider_txn_id);
-          if (cover && !usedEntries.has(cover.txn_key) && !notSame(`p:${q.provider_txn_id}`, cover.txn_key))
+          if (
+            cover &&
+            !usedEntries.has(cover.txn_key) &&
+            !(await notSameFor())(`p:${q.provider_txn_id}`, cover.txn_key)
+          )
             matchEntry(q.provider_txn_id, q.amount, cover, 'auto', p.txn_key);
           else inherit(q.provider_txn_id, p.txn_key, 'auto', q.amount, p.estimated_amount ?? p.amount);
         } else {
@@ -355,7 +365,7 @@ export async function planMatches(
       names: plaidNames(r),
       channel: channel(r),
     }));
-    for (const d of pairEntries(bank, openEntries().map(entryRow), notSame)) {
+    for (const d of pairEntries(bank, openEntries().map(entryRow), await notSameFor())) {
       const r = unlinkedPosted.find((x) => `p:${x.provider_txn_id}` === d.bankKey)!;
       if (d.kind === 'pair') {
         const m = entries.find((x) => x.txn_key === d.entryKey)!;
@@ -367,7 +377,8 @@ export async function planMatches(
 
   // ---- 4. New bank pending rows and your entries: an entry covers the bank's pending row on exact evidence (9.2).
   // Only rows still counting: not claimed by a posted row, not covered already; only entries not covering one.
-  if (newPending.length) {
+  const free = openEntries().filter((m) => !m.covering);
+  if (newPending.length && free.length) {
     const ids = newPending.map((r) => r.provider_txn_id);
     const taken = new Set<string>();
     for (const k of chunks(ids))
@@ -380,8 +391,7 @@ export async function planMatches(
       ))
         taken.add(t.provider_txn_id);
     const open = newPending.filter((r) => !taken.has(r.provider_txn_id));
-    const free = openEntries().filter((m) => !m.covering);
-    if (open.length && free.length) {
+    if (open.length) {
       const bank: BankSideRow[] = open.map((r) => ({
         key: `p:${r.provider_txn_id}`,
         accountId: r.account_id!,
@@ -391,7 +401,7 @@ export async function planMatches(
         names: plaidNames(r),
         channel: channel(r),
       }));
-      for (const d of pairEntries(bank, free.map(entryRow), notSame)) {
+      for (const d of pairEntries(bank, free.map(entryRow), await notSameFor())) {
         if (d.kind === 'pair') stmts.push(...coverStmts(s, d.entryKey, d.bankKey.slice(2), now));
         else stmts.push(askStmt(s, d.bankKey, d.candidates, now));
       }
