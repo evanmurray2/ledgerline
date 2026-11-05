@@ -121,17 +121,20 @@ export function bankPendingEligible(p: BankPendingRow, q: UnlinkedPostedRow): bo
 }
 
 /** Exact evidence (9): the same merchant, or the same amount on the same day (authorization day, else date). */
-export function bankPendingEvidence(p: BankPendingRow, q: UnlinkedPostedRow): boolean {
-  if (sameMerchant(p, q)) return true;
-  return p.amount === q.amount && (p.authorizedDate ?? p.date) === (q.authorizedDate ?? q.date);
+export function bankPendingEvidence(
+  p: BankPendingRow,
+  q: UnlinkedPostedRow,
+  same = sameMerchant(p, q),
+): boolean {
+  return same || (p.amount === q.amount && (p.authorizedDate ?? p.date) === (q.authorizedDate ?? q.date));
 }
 
-function bankScore(p: BankPendingRow, q: UnlinkedPostedRow): number {
+function bankScore(p: BankPendingRow, q: UnlinkedPostedRow, same: boolean): number {
   const amt =
     1 - Math.min(1, Math.abs(Math.abs(q.amount) - Math.abs(p.amount)) / Math.max(1, Math.abs(p.amount)));
   const days = Math.abs(daysBetween(p.authorizedDate ?? p.date, q.authorizedDate ?? q.date));
   const gap = 1 - Math.min(1, days / 14);
-  return Math.round((amt * 0.5 + gap * 0.2 + (sameMerchant(p, q) ? 0.3 : 0)) * 1000);
+  return Math.round((amt * 0.5 + gap * 0.2 + (same ? 0.3 : 0)) * 1000);
 }
 
 /**
@@ -151,12 +154,22 @@ export function pairBankPending(
   type Pair = { p: BankPendingRow; q: UnlinkedPostedRow; s: number };
   const all: Pair[] = [];
   const pairs: Pair[] = [];
+  // Each row's merchant keys, worked out once (one row is compared with many).
+  const keys = new Map<MatchRow, ReadonlySet<string>>();
+  const keysOf = (r: MatchRow) => {
+    let k = keys.get(r);
+    if (!k) keys.set(r, (k = new Set(merchantKeys(r))));
+    return k;
+  };
   for (const q of posted)
     for (const p of pending) {
       if (!bankPendingEligible(p, q) || notSame(q.key, p.key)) continue;
-      const x = { p, q, s: bankScore(p, q) };
+      const qk = keysOf(q);
+      let same = false;
+      for (const k of keysOf(p)) if (qk.has(k)) same = true;
+      const x = { p, q, s: bankScore(p, q, same) };
       all.push(x);
-      if (bankPendingEvidence(p, q)) pairs.push(x);
+      if (bankPendingEvidence(p, q, same)) pairs.push(x);
     }
   const order = (a: Pair, b: Pair) =>
     b.s - a.s || a.q.key.localeCompare(b.q.key) || a.p.key.localeCompare(b.p.key);
@@ -202,11 +215,12 @@ export function pairBankPending(
     else out.push({ kind: 'claim', postedKey: x.q.key, pendingKey: x.p.key });
   }
   // The rest: a posted row with candidates that no pairing above took, none with exact evidence for it.
-  all.sort(order);
+  const free = new Map<string, Pair[]>();
+  for (const y of all)
+    if (!takenQ.has(y.q.key) && !takenP.has(y.p.key)) free.set(y.q.key, [...(free.get(y.q.key) ?? []), y]);
   for (const q of posted) {
-    if (takenQ.has(q.key)) continue;
-    const free = all.filter((y) => y.q.key === q.key && !takenP.has(y.p.key)).map((y) => y.p.key);
-    if (free.length) out.push({ kind: 'ask', postedKey: q.key, candidates: free });
+    const c = free.get(q.key);
+    if (c) out.push({ kind: 'ask', postedKey: q.key, candidates: c.sort(order).map((y) => y.p.key) });
   }
   return out;
 }

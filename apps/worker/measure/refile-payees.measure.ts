@@ -1,8 +1,8 @@
 // CPU of the payee filing that changed in docs/payee-names.md PR 2: the processing step (step 5 files rows by
 // Plaid's keys, sync/file-fresh.ts) and one step of the one-time re-file job (sync/refile-payees.ts), on a
 // 3,000-transaction history at 100 per page. For the job, every payee is first turned back into one the old rules
-// made (named_by 'user', its keys gone), so every transaction is filed again. Writes .measure/refile-payees.json for
-// docs/measurements.md.
+// made (named_by 'user', its keys gone), so every transaction is filed again. Then the one-time deletion of the old
+// cleaned-text aliases (sync/drop-text-aliases.ts, PR 4). Writes .measure/refile-payees.json for docs/measurements.md.
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { expect, test } from 'vitest';
 import { PlaidProvider } from '@ledgerline/bank-provider';
@@ -11,6 +11,7 @@ import { acquire } from '../src/sync/lease.js';
 import { applyPage, beginRun, fetchPage } from '../src/sync/steps.js';
 import { processPending } from '../src/sync/process.js';
 import { refilePayeesStep, type RefileState } from '../src/sync/refile-payees.js';
+import { dropTextAliasesStep } from '../src/sync/drop-text-aliases.js';
 import { cpu, freshDb, stats } from './harness.js';
 
 const TOTAL = 3000;
@@ -105,6 +106,27 @@ test('payee filing CPU: processing step and re-file job step', async () => {
   expect(audit).not.toBeNull();
   out.process = { steps: processes.length, stepMs: stats(processes) };
   out.refile = { payees, steps: steps.length, stepMs: stats(steps), result: JSON.parse(audit!.after) };
+  // Then the old cleaned-text aliases go (drop-text-aliases.ts): as many as the owner's payees (310), plus these.
+  await db
+    .prepare(
+      `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 310)
+     INSERT INTO payee_alias (id, budget_id, pattern, merchant_entity_id, payee_id, created_at)
+     SELECT 'more_' || i, 'b1', 'OLDTEXT' || i, NULL, (SELECT id FROM payee LIMIT 1), 0 FROM n`,
+    )
+    .run();
+  const drops: number[] = [];
+  for (;;) {
+    const r = await cpu(db, () => dropTextAliasesStep(db));
+    drops.push(r.ms);
+    if (r.result.done) break;
+  }
+  const old = await db
+    .prepare(
+      `SELECT count(*) AS n FROM payee_alias WHERE pattern NOT LIKE 'n:%' AND merchant_entity_id IS NULL`,
+    )
+    .first<{ n: number }>();
+  expect(old!.n).toBe(0);
+  out.dropTextAliases = { steps: drops.length, stepMs: stats(drops) };
   mkdirSync('.measure', { recursive: true });
   writeFileSync('.measure/refile-payees.json', JSON.stringify(out, null, 2));
   console.log(JSON.stringify(out, null, 2));
