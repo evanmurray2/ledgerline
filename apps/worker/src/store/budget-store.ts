@@ -30,12 +30,17 @@ import {
   ensureRecurring,
   fillPlaidNameHandler,
   maintenanceHandler,
+  refilePayeesHandler,
   startSyncJob,
   type Enqueue,
 } from './budget-jobs.js';
 import { connectionToken, makeProvider, pageSize } from '../sync/provider.js';
 import { writeBudgetState } from '../sync/breaker.js';
 import { answering } from './body.js';
+import { QUEUE_REFILE } from '../sync/refile-payees.js';
+
+/** Storage key: the store has checked once whether its payees need the re-file job (sync/refile-payees.ts). */
+const REFILE_CHECKED = 'payee_refile_checked';
 
 export interface StoreHealth {
   ok: boolean;
@@ -61,14 +66,25 @@ export class BudgetStore extends DurableObject<Env> {
     void ctx.blockConcurrencyWhile(async () => {
       try {
         const { applied } = migrate(ctx.storage, BUDGET_MIGRATIONS, Date.now());
+        // Payees made by the old rules are filed again once (docs/payee-names.md 8), with no migration: checked
+        // once per store, and queued only where old payees exist and the job hasn't run.
+        const queued = await this.queueRefileOnce().catch(() => false);
         // A migration may queue a job (0007 queues the plaid_name fill): point the alarm at it now, not at the next
         // job already waiting (up to 4 hours away). A failure here only delays it to that alarm.
-        if (applied.length) await this.runner.scheduleNext(Date.now()).catch(() => null);
+        if (applied.length || queued) await this.runner.scheduleNext(Date.now()).catch(() => null);
       } catch (e) {
         // Refuse to serve a half-migrated schema; health() reports why.
         this.startError = e instanceof Error ? e.message : String(e);
       }
     });
+  }
+
+  /** Queues the payee re-file job if this store needs it; true when it did. Runs its check once per store. */
+  private async queueRefileOnce(): Promise<boolean> {
+    if (await this.ctx.storage.get<boolean>(REFILE_CHECKED)) return false;
+    const n = this.ctx.storage.sql.exec(QUEUE_REFILE, Date.now()).rowsWritten;
+    await this.ctx.storage.put(REFILE_CHECKED, true);
+    return n > 0;
   }
 
   // ---- RPC
@@ -386,6 +402,7 @@ export class BudgetStore extends DurableObject<Env> {
       daily_scan: (job, now) => dailyScanHandler(this.appEnv(), budgetId)(job, now),
       maintenance: (job, now) => maintenanceHandler(this.appEnv(), budgetId)(job, now),
       fill_plaid_name: (job, now) => fillPlaidNameHandler(this.adapter(), budgetId)(job, now),
+      refile_payees: (job, now) => refilePayeesHandler(this.adapter(), budgetId)(job, now),
       register_link: async (job) => {
         // Retried until the Directory answers; a duplicate Item is flagged on the connection (6.4).
         const { itemId, connectionId } = job.state as { itemId: string; connectionId: string };
