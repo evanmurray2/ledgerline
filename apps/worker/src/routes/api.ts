@@ -22,6 +22,7 @@ import { budgetView } from '../views/budget.js';
 import { fresh } from '../views/common.js';
 import { usageToday, classifyUsage } from '../sync/breaker.js';
 import { activityRoutes } from './activity.js';
+import { activityViewRoutes } from './activity-view.js';
 import { transactionRoutes } from './transactions.js';
 import { accountRoutes } from './accounts.js';
 import { settingsRoutes } from './settings.js';
@@ -319,6 +320,7 @@ budgetApi.put('/categories/:id/target', async (c) => {
 });
 
 budgetApi.route('/', syncRoutes);
+budgetApi.route('/', activityViewRoutes);
 budgetApi.route('/', activityRoutes);
 budgetApi.route('/', transactionRoutes);
 budgetApi.route('/', accountRoutes);
