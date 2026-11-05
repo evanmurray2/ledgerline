@@ -2,6 +2,20 @@
 
 How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history.
 
+## Update: the pending matcher without text (Nov 5, 2026)
+
+`docs/payee-names.md` 9.3, PR 4: a posted row and a bank pending row pair only on exact evidence (merchant keys compared as sets, worked out once per row), and the rest is asked about. Same files as below, five runs each of `measure/entry-covers.measure.ts` and three of `measure/refile-payees.measure.ts`, against `main` before this change. ms:
+
+| Step                                            | Before (main)                | Now                          |
+| ----------------------------------------------- | ---------------------------- | ---------------------------- |
+| Processing, backfill (refile-payees.measure.ts) | 4.6–4.7 median / 6.2–7.3 p90 | 4.1–4.4 median / 5.2–5.9 p90 |
+| Processing, the 25 pending rows                 | 23–34                        | 30–37                        |
+| Processing, the 25 posted rows                  | 16–27                        | 12–24                        |
+| Heal step (after it), median / max              | 4.3–5.3 / 6.3–8.5            | 4.0–6.1 / 4.4–6.6            |
+| Deleting old cleaned-text aliases, 100 a step   | —                            | 0.3–0.4 median / 0.7 max     |
+
+`pairBankPending` alone, 245 posted rows against 25 pending rows: 0.64 ms median (3.1 first call), against 0.73 (6.4) with the cleaned-text likeness. The pending step writes 163 statements instead of 151: 4 more "Same purchase?" questions (22 against 18) for posted rows whose candidates have no exact evidence, and one read of the questions already asked, so a batch or heal step that asks the same again writes nothing. That step was over 10 ms before too (`docs/build-plan.md`).
+
 ## Update: entries cover bank pending rows, "Same purchase?" (Nov 5, 2026)
 
 `measure/entry-covers.measure.ts`: after a 3,000-transaction history at 100 per page, one sync brings the card 25 bank pending rows and 25 posted rows (10 with the provider's link) while 40 entries you added wait on it (15 with the Plaid name of a pending row), processed in 25-event steps (`src/sync/pending-match.ts`, steps 1–4 of `docs/payee-names.md` 9.2), then the heal step. The same file run on `main` before this change is the baseline. Three runs each, ms:

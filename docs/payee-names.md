@@ -1,6 +1,6 @@
 # Payee names from Plaid, and no cleanup of bank text
 
-Status: approved, v7, Nov 5, 2026. Being built (section 11). Asked by the owner after a Hulu charge arrived as "Hlu Huluplus Hulu".
+Status: approved, v7, Nov 5, 2026. Built: PRs #61–#63 and PR 4 of section 11. Asked by the owner after a Hulu charge arrived as "Hlu Huluplus Hulu".
 v5 followed an adversarial review of v4 and is simpler: two keys instead of five, no stop list, no name ranks, and
 a pending matcher with three plain rules. v6 added the owner's answers of Nov 5 and a fix for an entry and the bank's
 pending row counting twice. v7 follows a second review: the app pairs only on exact evidence and asks "Same

@@ -82,6 +82,8 @@ If a run dies after moving the cursor, the next run, the cron or the daily maint
 
 > **Now:** the manual pending row is replaced (D-64, `docs/payee-names.md` 9.1, 9.2). Your entry pairs with a bank row only on exact evidence (your typed name equals one of its Plaid names, or the same amount on the same day), never on a score; otherwise "Same purchase?" asks, with Yes and No, and Not the same undoes a pair. An entry also covers a bank pending row: the bank row is hidden and the entry counts until the charge posts, then the posted row takes the entry's key. Batch order: link, posted ↔ bank pending, posted ↔ entries, bank pending ↔ entries. The other rows stand.
 
+> **Now:** the row "Posted row without the link, bank pending row" pairs without text (D-?, `docs/payee-names.md` 9.3). Candidates as written, but a candidate pairs only on exact evidence: the same merchant (Plaid's merchant id, or a Plaid name equal to a Plaid name) or the same amount on the same day. Names alike and store numbers (D-50) are gone. Among candidates with exact evidence, best score first (same merchant 1 or 0), each row once, twins paired, a close alternative with different edits asked. A posted row with candidates but no exact evidence raises "Same purchase?".
+
 | Case | Rule |
 | --- | --- |
 | Posted row with `pending_transaction_id` | Inherit that pending row's `txn_key` |
