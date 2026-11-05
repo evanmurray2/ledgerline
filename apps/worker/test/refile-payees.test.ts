@@ -6,7 +6,6 @@ import { Hono } from 'hono';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { PlaidProvider } from '@ledgerline/bank-provider';
 import { CSRF_HEADER, type MergeResult } from '@ledgerline/contracts';
-import { cleanDescription } from '@ledgerline/domain';
 import { budgetStub, storeDb } from './store-db.js';
 import { acquire } from '../src/sync/lease.js';
 import { applyPage, beginRun, rawPageKey } from '../src/sync/steps.js';
@@ -131,6 +130,15 @@ async function asOldRulesMadeThem(): Promise<void> {
       }>()
   ).results;
   const title = (s: string) => s.toLowerCase().replace(/\b[a-z]/g, (m) => m.toUpperCase());
+  // The old rules' cleaned text, enough for these rows (the app no longer cleans bank text).
+  const oldText = (raw: string) =>
+    raw
+      .toUpperCase()
+      .replace(/\s+[A-Z][A-Z .'-]*\sCA$/, '')
+      .replace(/\.COM\b.*$/, '')
+      .replace(/#?\d+|\*+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   const stmts = [
     db.prepare(`UPDATE txn_overlay SET payee_id = NULL WHERE budget_id = ?1`).bind(B),
     db.prepare(`DELETE FROM payee_alias WHERE budget_id = ?1`).bind(B),
@@ -140,7 +148,7 @@ async function asOldRulesMadeThem(): Promise<void> {
   for (const r of rows) {
     const key = r.merchant_entity_id
       ? `m:${r.merchant_entity_id}`
-      : `d:${cleanDescription(r.raw_name).replace(/\s/g, '')}`;
+      : `d:${oldText(r.raw_name).replace(/\s/g, '')}`;
     let id = made.get(key);
     if (!id) {
       id = `old_${made.size}`;
@@ -150,7 +158,7 @@ async function asOldRulesMadeThem(): Promise<void> {
           .prepare(
             `INSERT INTO payee (id, budget_id, name, created_at, updated_at) VALUES (?1, ?2, ?3, 0, 0)`,
           )
-          .bind(id, B, r.merchant_name ?? title(cleanDescription(r.raw_name))),
+          .bind(id, B, r.merchant_name ?? title(oldText(r.raw_name))),
         db
           .prepare(
             `INSERT INTO payee_alias (id, budget_id, pattern, merchant_entity_id, payee_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 0)`,

@@ -317,8 +317,8 @@ async function refileChunk(
     if (!had || rank(r) > rank(had) || (rank(r) === rank(had) && r.first_apply_seq > had.first_apply_seq))
       rowOf.set(r.txn_key, r);
   }
-  const keysOf = new Map(keys.map((k) => [k, rowKeys(rowOf.get(k)!).keys]));
-  const owners = (await loadOwners(s, [...keysOf.values()].flat())).keys;
+  const keysOf = new Map(keys.map((k) => [k, rowKeys(rowOf.get(k)!)]));
+  const owners = await loadOwners(s, [...keysOf.values()].flat());
   // An old payee that holds no key yet is used again for the first new payee its rows make, so its id (and links to
   // it) stay; it is named afresh by section 5.
   const olds = [...new Set(next.map((t) => t.payee_id))];

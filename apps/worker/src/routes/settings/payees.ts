@@ -8,7 +8,7 @@ import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../../http/context.js';
 import { HttpError, parse, scoped } from '../api.js';
 import { chunks } from '../../ledger/ledger.js';
-import { claimName, insertKey, legacyTextKey, rowKeys } from '../../sync/payee-keys.js';
+import { claimName, insertKey, rowKeys } from '../../sync/payee-keys.js';
 
 export const payeesRoutes = new Hono<AppEnv>();
 
@@ -254,12 +254,11 @@ payeesRoutes.post('/settings/payees/merge/:undoId/undo', async (c) => {
     }
   }
   // Rows that synced in after the join: back to the payee whose moved key filed them (their first key that one of
-  // the moved keys is; the old cleaned-text pattern last).
+  // the moved keys is).
   const byKey = new Map<string, string>();
   for (const a of before.aliases) {
     if (a.merchant && !byKey.has(`m:${a.merchant}`)) byKey.set(`m:${a.merchant}`, a.payee);
-    if (a.pattern && !byKey.has(a.pattern.startsWith('n:') ? a.pattern : `d:${a.pattern}`))
-      byKey.set(a.pattern.startsWith('n:') ? a.pattern : `d:${a.pattern}`, a.payee);
+    if (a.pattern?.startsWith('n:') && !byKey.has(a.pattern)) byKey.set(a.pattern, a.payee);
   }
   if (byKey.size) {
     const since = await s.all<{
@@ -278,8 +277,9 @@ payeesRoutes.post('/settings/payees/merge/:undoId/undo', async (c) => {
     for (const t of since) {
       if (listed.has(t.txn_key)) continue;
       listed.add(t.txn_key);
-      const { keys } = rowKeys(t);
-      const to = keys.map((k) => byKey.get(k)).find((p) => p) ?? byKey.get(`d:${legacyTextKey(t.raw_name)}`);
+      const to = rowKeys(t)
+        .map((k) => byKey.get(k))
+        .find((p) => p);
       if (to)
         w.push(
           s.q(`UPDATE txn_overlay SET payee_id = ?3 WHERE budget_id = ?1 AND txn_key = ?2`, t.txn_key, to),
