@@ -22,7 +22,8 @@ export async function refreshUsage(
     body: JSON.stringify({ query, variables: { accountTag: env.CF_ACCOUNT_ID, date: day } }),
   });
   if (!res.ok) return null;
-  const j = (await res.json()) as {
+  const j = (await res.json().catch(() => null)) as {
+    errors?: unknown[] | null;
     data?: {
       viewer?: {
         accounts?: {
@@ -30,9 +31,15 @@ export async function refreshUsage(
         }[];
       };
     };
-  };
-  const acct = j.data?.viewer?.accounts?.[0];
-  const groups = acct?.durableObjectsPeriodicGroups ?? [];
+  } | null;
+  // GraphQL reports errors (a used-up rate limit, for one) with HTTP 200 and no data. Keep the last count then:
+  // writing zeros would tell the breaker nothing was used today (seen Nov 5, 2026).
+  const acct = j?.data?.viewer?.accounts?.[0];
+  if (!acct || j?.errors?.length) {
+    console.log(JSON.stringify({ event: 'rows_usage_unavailable', errors: j?.errors ?? null }));
+    return null;
+  }
+  const groups = acct.durableObjectsPeriodicGroups ?? [];
   const rowsRead = groups.reduce((a, g) => a + g.sum.rowsRead, 0);
   const rowsWritten = groups.reduce((a, g) => a + g.sum.rowsWritten, 0);
   const d = await doUsage(env, day);
