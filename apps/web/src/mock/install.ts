@@ -1,9 +1,18 @@
 // Mock mode (VITE_MOCK=1, dev and tests only): answers every /api request from a November copy worked out by the
 // phone's real engine (server.ts), so the SPA runs and is testable without the Worker. `?mock=<scenario>` in the URL picks a starting state (readonly, firstrun,
-// empty, syncfail, newmonth). window.__ledgerlineMock lets end-to-end tests inspect and reset it.
+// empty, syncfail, newmonth, samepurchase). window.__ledgerlineMock lets end-to-end tests inspect and reset it.
 import { MockServer, type OpenCopy, type Scenario } from './server';
 
-const SCENARIOS: Scenario[] = ['default', 'firstrun', 'empty', 'readonly', 'resting', 'syncfail', 'newmonth'];
+const SCENARIOS: Scenario[] = [
+  'default',
+  'firstrun',
+  'empty',
+  'readonly',
+  'resting',
+  'syncfail',
+  'newmonth',
+  'samepurchase',
+];
 
 declare global {
   interface Window {

@@ -10,7 +10,7 @@ import { TxnRow } from './ActivityRows';
 
 type Card = ActivityView['samePurchase'][number];
 
-const named = (r: TxnListRow) => `${r.payee} ${formatCents(r.amount)}`;
+const named = (r: TxnListRow) => `${r.payee} ${formatCents(Math.abs(r.amount))}`;
 
 export function SamePurchase({ cards }: { cards: Card[] }) {
   const answer = useMoneyMutation(api.samePurchase);
