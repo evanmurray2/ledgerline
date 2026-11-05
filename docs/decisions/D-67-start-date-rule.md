@@ -58,7 +58,10 @@ owner can't see.
 **Limits.** If Plaid's first sync runs hours after the link, rows that posted in between count as in the balance
 at link, and the bank difference shows them. A late refund on a card with no starting debt makes its unbudgeted
 debt negative, as a credit balance at start would. A pending row from before the start can't be marked "won't
-clear"; it leaves the starting balance when the bank removes it.
+clear"; it leaves the starting balance when the bank removes it. The reissue match is by account, amount and posted
+date only: two same-day purchases of the same amount, one reissued and one sent late, both stay history (the bank
+difference shows it), and a reissue with a new posted date counts as late. Setup saves the balance the screen showed
+with the time of the latest sync, so a sync that finishes between the two can leave its rows out.
 
 **Money effect.** On the owner's budget of Nov 5: Wells Fargo active cash's starting debt grows by $156.87, Amex
 platinum's by $187.53, and Atmos Summit's by $124.80 (four purchases, which leave Fun money, so it gets $124.80 back).

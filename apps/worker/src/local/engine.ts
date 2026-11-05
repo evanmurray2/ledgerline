@@ -286,6 +286,9 @@ export class LocalEngine {
           if (old?.[c]) todo.keys.push(String(old[c]));
           if (r.d?.[c]) todo.keys.push(String(r.d[c]));
         }
+        // A posted bank row removed can change another row's place: a reissue of it keeps its arrival, so that row
+        // moves out of the starting balance (ledger/link.ts, D-67). Rare, so everything is rebuilt.
+        if (r.t === 'bank_txn' && r.d?.removed_at && r.d.pending === 0) todo.full = true;
         // An entry's cover hides the bank pending row it covers (docs/payee-names.md 9.2): any change to the entry
         // (the cover, deleted, matched) can show or hide that row, before or after.
         if (r.t === 'manual_pending')

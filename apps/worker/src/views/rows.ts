@@ -58,7 +58,7 @@ export function listRow(
   let sub: string | null = null;
   let sheet: TxnListRow['sheet'] = 'txn';
   const history = isHistory(t);
-  if (history) {
+  if (history && !t.wont_clear) {
     // Before the account's budget start: shown for reference, never budgeted, never needs anything.
     badge = 'Before your budget';
     badgeKind = 'hold';
