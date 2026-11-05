@@ -225,7 +225,7 @@ Every match records who made it (provider, auto, or you) and can be undone, whic
 
 ## Categorization rules and payee cleanup
 
-> **Now:** there are no rules and no remembered category; Needs category suggests the payee's most used category and you OK it (D-60, `docs/payees.md`). Payee normalization below is replaced too (D-?, `docs/payee-names.md`).
+> **Now:** there are no rules and no remembered category; Needs category suggests the payee's most used category and you OK it (D-60, `docs/payees.md`). Payee normalization below is replaced too (D-63, `docs/payee-names.md`).
 
 Categorization is deterministic: an ordered rule list, then the payee's remembered category, then nothing. Anything unmatched lands in an Uncategorized inbox for you. No ML; Plaid's own category is available only as a rule condition, never applied automatically.
 
@@ -248,7 +248,7 @@ Each categorized transaction records which rule (or payee default, or you) set t
 
 **Payee normalization and merge**
 
-> **Now:** no cleanup of bank text. A payee comes from Plaid's merchant id, merchant name and name, compared only by case, outer spaces and apostrophes; a new payee is named after Plaid's merchant name, else its name, else the bank text exactly (D-?, `docs/payee-names.md` 4–8).
+> **Now:** no cleanup of bank text. A payee comes from Plaid's merchant id, merchant name and name, compared only by case, outer spaces and apostrophes; a new payee is named after Plaid's merchant name, else its name, else the bank text exactly (D-63, `docs/payee-names.md` 4–8).
 
 Raw bank descriptions are noisy (`SQ *BLUE BOTTLE 0123 OAKLAND CA`, `TST* BLUE BOTTLE`, `BLUEBOTTLE COFFEE`). Pipeline:
 

@@ -1,4 +1,4 @@
-# D-?: Payees from Plaid's values, no cleanup of bank text (Nov 5, 2026)
+# D-63: Payees from Plaid's values, no cleanup of bank text (Nov 5, 2026)
 
 **Decided by the owner** (`docs/payee-names.md`, approved v7, answers in its section 13). PR 2 of its section 11.
 

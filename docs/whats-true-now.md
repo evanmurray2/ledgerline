@@ -18,7 +18,7 @@ One line per entry; add yours at the end of its list. This file merges with `mer
 - **Progress tracking:** `docs/build-plan.md` lists open work only; work up to Nov 4, 2026 is in `docs/build-history.md`. D-59.
 - **Rows before the budget start:** the design said they're used for payee learning and editable like any row. Now read-only (no category, note or Owed to you), never listed: not in Activity (searches too), registers, category sheets or Settings → Payees. Reports and net worth still add them up. D-61, D-62.
 - **Categorization:** the design said an ordered rule list, then the payee's remembered category. Now no rules and no remembered category: Needs category suggests the category you've used most for the payee and you OK it (`docs/payees.md`). D-60.
-- **Payee normalization:** the design said payees come from cleaned bank text (prefixes, store numbers, city stripped; title case) and look-alikes join. Now Plaid's values as sent: merchant id, merchant name and Plaid's name are the keys, compared only by case, outer spaces and apostrophes; a new payee's name follows Plaid only while it's new; existing transactions were filed again once (`docs/payee-names.md` 4–8). D-? (`docs/decisions/D-?-payee-names-from-plaid.md`).
+- **Payee normalization:** the design said payees come from cleaned bank text (prefixes, store numbers, city stripped; title case) and look-alikes join. Now Plaid's values as sent: merchant id, merchant name and Plaid's name are the keys, compared only by case, outer spaces and apostrophes; a new payee's name follows Plaid only while it's new; existing transactions were filed again once (`docs/payee-names.md` 4–8). D-63 (`docs/decisions/D-63-payee-names-from-plaid.md`).
 
 ## Sync spec (`docs/sync-spec.md`)
 
