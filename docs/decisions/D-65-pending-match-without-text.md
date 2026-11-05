@@ -1,4 +1,4 @@
-# D-?: A posted row and the bank's pending row pair without text, only on exact evidence (Nov 5, 2026)
+# D-65: A posted row and the bank's pending row pair without text, only on exact evidence (Nov 5, 2026)
 
 **Decided by the owner** (`docs/payee-names.md`, approved v7, answers 1 and 5 in its section 13). PR 4 of its
 section 11 (9.3). Changes D-47 (1) and (2) and replaces D-50.
@@ -38,6 +38,7 @@ rested on a guess from text. The owner asked for no cleanup of bank text anywher
 evidence or your Yes. A tipped charge whose pending row has another Plaid name now waits for your answer, and until
 then both rows count, as when nothing paired before. Every posted charge still counts exactly once.
 
-**Not in this change.** Not the same on a pair of two bank rows (D-64 has it for pairs with your entry). A busy card
-without authorization dates (Bank of America) can raise more questions than D-47 did: each posted row whose
-candidates in the 14-day window have no exact evidence is asked about once, until it pairs or you answer.
+**Not in this change.** Not the same on a pair of two bank rows (D-64 has it for pairs with your entry). A busy card can
+raise more questions than D-47 did: each posted row whose candidates have no exact evidence is asked about once,
+until it pairs or you answer. Bank of America sends an authorization date on every row (181 of 181 posted rows in
+the owner's Nov 4 backup), so its window is the same day or the day before, not 14 days.
