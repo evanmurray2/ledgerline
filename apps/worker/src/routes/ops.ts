@@ -18,7 +18,7 @@ import { HttpError, parse, scoped } from './api.js';
 import { classifyUsage, noteUsage, usageToday, utcDay, READ_LIMIT, WRITE_LIMIT } from '../sync/breaker.js';
 import { makeProvider } from '../sync/provider.js';
 import { startSync } from './settings/connections.js';
-import { TX_COLUMNS, type TxRow } from '../ledger/ledger.js';
+import { TX_COLUMNS, uncovered, type TxRow } from '../ledger/ledger.js';
 
 export const opsRoutes = new Hono<AppEnv>();
 
@@ -236,7 +236,8 @@ function csvCell(v: unknown): string {
 opsRoutes.get('/export/csv', async (c) => {
   const s = scoped(c);
   const rows = await s.all<TxRow & { category_name: string | null }>(
-    `SELECT v.*, c.name AS category_name FROM v_transaction v LEFT JOIN category c ON c.id = v.category_id WHERE v.budget_id = ?1 ORDER BY v.date`,
+    `SELECT v.*, c.name AS category_name FROM v_transaction v LEFT JOIN category c ON c.id = v.category_id WHERE v.budget_id = ?1 AND ${uncovered('v')}
+     ORDER BY v.date`,
   );
   const head = ['date', 'account', 'payee', 'amount', 'status', 'category', 'memo', 'raw_name'];
   const body = rows.map((r) =>
