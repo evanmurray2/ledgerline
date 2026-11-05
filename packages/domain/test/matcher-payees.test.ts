@@ -9,7 +9,7 @@ import {
   type MatchRow,
   type PostedRow,
 } from '../src/matcher.js';
-import { cleanDescription, clusterPayees, similarity } from '../src/payee.js';
+import { cleanDescription, similarity } from '../src/payee.js';
 import { detectTransfers } from '../src/transfers.js';
 
 const row = (o: Partial<MatchRow>): MatchRow => ({
@@ -82,17 +82,11 @@ describe('pending matcher', () => {
 });
 
 describe('payees and transfers', () => {
-  it('cleans the doc’s Blue Bottle examples to one name', () => {
+  // The pending matcher's text likeness (PR 4 of docs/payee-names.md 11 removes it).
+  it('cleans the doc’s Blue Bottle examples to one name for the matcher', () => {
     expect(cleanDescription('SQ *BLUE BOTTLE 0123 OAKLAND CA')).toBe('BLUE BOTTLE');
     expect(cleanDescription('TST* BLUE BOTTLE')).toBe('BLUE BOTTLE');
     expect(similarity('BLUE BOTTLE', 'BLUEBOTTLE COFFEE')).toBeGreaterThan(0.3);
-    const c = clusterPayees([
-      { raw: 'SQ *BLUE BOTTLE 0123 OAKLAND CA', merchantEntityId: null, merchantName: null, count: 10 },
-      { raw: 'TST* BLUE BOTTLE', merchantEntityId: null, merchantName: null, count: 8 },
-      { raw: 'SAFEWAY #1234', merchantEntityId: null, merchantName: null, count: 3 },
-    ]);
-    expect(c).toHaveLength(1);
-    expect(c[0]!.transactions).toBe(18);
   });
   it('transfers: one matching inflow pairs; two make it unclear', () => {
     const t = (

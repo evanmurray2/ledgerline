@@ -5,7 +5,7 @@ import { SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { LocalEngine, migrateLocal } from '../src/local/engine.js';
 import type { SyncPage } from '../src/routes/sync.js';
-import { storeDb } from './store-db.js';
+import { ownerDb, storeDb } from './store-db.js';
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 const api = async (path: string, init?: RequestInit) => SELF.fetch(`https://ledgerline.test${path}`, init);
@@ -190,6 +190,33 @@ describe('the phone works out the same screens as the server', () => {
     }
     // Sent to the server, a fresh copy shows the same screens (the edits are in both copies now).
     for (const [method, path, body] of edits) await post(path, body, method);
+    await sameScreens(engine, month, budgetId);
+  });
+
+  it('rename and join give the payee the key of its name, on the phone as on the server', async () => {
+    const list = (await phoneJson(engine, '/api/settings/payees')) as { payees: { id: string }[] };
+    const [p0, p1, p2] = list.payees;
+    const alias = (d: { prepare: typeof engine.db.prepare }, pattern: string) =>
+      d
+        .prepare(
+          `SELECT a.id, a.payee_id, p.named_by FROM payee_alias a JOIN payee p ON p.id = a.payee_id WHERE a.pattern = ?1`,
+        )
+        .bind(pattern)
+        .all<{ id: string; payee_id: string; named_by: string }>();
+    // Renamed offline on the phone: the copy has the key at once, under the id the server will give it.
+    const r = await engine.request('POST', `/api/settings/payees/${p0!.id}`, { name: 'Phone named' });
+    expect(r.status).toBe(200);
+    const local = (await alias(engine.db, 'n:phone named')).results;
+    expect(local).toEqual([{ id: 'n:phone named', payee_id: p0!.id, named_by: 'user' }]);
+    await post(`/api/settings/payees/${p0!.id}`, { name: 'Phone named' });
+    expect((await alias(ownerDb(), 'n:phone named')).results).toEqual(local);
+    await post('/api/settings/payees/merge', { keep: p1!.id, ids: [p1!.id, p2!.id], name: 'Joined name' });
+    await syncAll(engine);
+    expect((await alias(engine.db, 'n:phone named')).results).toEqual(local);
+    expect((await alias(engine.db, 'n:joined name')).results).toEqual([
+      { id: 'n:joined name', payee_id: p1!.id, named_by: 'user' },
+    ]);
+    await engine.derive();
     await sameScreens(engine, month, budgetId);
   });
 

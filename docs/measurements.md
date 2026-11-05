@@ -2,6 +2,18 @@
 
 How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history.
 
+## Update: payees from Plaid, and the one-time re-file (Nov 5, 2026)
+
+`measure/refile-payees.measure.ts`: a 3,000-transaction history at 100 per page (`tools/plaid-mock`), processed to the end, then every payee turned back into one the old rules made and the re-file job of `docs/payee-names.md` 8 (`src/sync/refile-payees.ts`) run to the end. Three runs, ms (median / p90 / max):
+
+| Step                                                  | Steps | ms median / p90 / max      |
+| ----------------------------------------------------- | ----- | -------------------------- |
+| Processing, before (cleaned text, every alias loaded) | 121   | 4.3–4.6 / 6.8–6.9 / 16–22  |
+| Processing, now (the batch's keys only)               | 121   | 4.2–4.6 / 5.3–6.2 / 17–26  |
+| Re-file job, 40 transactions a step                   | 80    | 2.2–2.3 / 5.3–7.3 / 7.7–10 |
+
+The max of processing is the first, cold step of each run, as before. The mock gives every row a new merchant id, so each row also writes a key; real merchant ids repeat, so production writes fewer.
+
 ## Update: the one-time plaid_name fill (Nov 5, 2026)
 
 `measure/fill-plaid-name.measure.ts`: the job step of `docs/payee-names.md` 8.1 (`src/sync/fill-plaid-name.ts`) on a 3,000-transaction history, every `plaid_name` cleared, run to the end. One raw page is parsed per step and at most 100 rows are written. Two runs, ms (median / p90 / max):

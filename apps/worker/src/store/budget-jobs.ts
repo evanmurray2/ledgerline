@@ -9,6 +9,7 @@ import { dailyScan } from '../daily-scan.js';
 import { rollUpUsage, watchdogBudgetStmts } from '../maintenance.js';
 import { processPending } from '../sync/process.js';
 import { fillPlaidNameStep, type FillPlaidNameState } from '../sync/fill-plaid-name.js';
+import { QUEUE_REFILE, refilePayeesStep, type RefileState } from '../sync/refile-payees.js';
 import { acquire, requestSync } from '../sync/lease.js';
 import { bumpVersion } from '../http/version.js';
 import type { Handler, StepResult } from './jobs.js';
@@ -179,11 +180,21 @@ export function maintenanceHandler(env: Env, budgetId: () => Promise<string>): H
 /**
  * Once, after migration 0007 (docs/payee-names.md 8.1): Plaid's name for rows imported before bank_txn.plaid_name
  * existed, one raw page per step (sync/fill-plaid-name.ts). Steps follow each other at once; the job ends when no row
- * is left to fill.
+ * is left to fill, and queues the re-file job (8.2, 8.3) where it hasn't run.
  */
 export function fillPlaidNameHandler(db: Db, budgetId: () => Promise<string>): Handler {
   return async (job, now): Promise<StepResult> => {
     const r = await fillPlaidNameStep(db, await budgetId(), job.state as FillPlaidNameState);
-    return r.done ? { done: true } : { state: r.state, runAt: now };
+    if (!r.done) return { state: r.state, runAt: now };
+    await db.prepare(QUEUE_REFILE).bind(now).run();
+    return { done: true };
+  };
+}
+
+/** Once (docs/payee-names.md 8.2, 8.3): every existing transaction filed again by the new payee rules. */
+export function refilePayeesHandler(db: Db, budgetId: () => Promise<string>): Handler {
+  return async (job, now): Promise<StepResult> => {
+    const r = await refilePayeesStep(db, await budgetId(), job.id, job.state as RefileState, now);
+    return r.done ? { done: true } : { state: r.state, runAt: r.runAt };
   };
 }

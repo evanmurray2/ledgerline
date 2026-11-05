@@ -258,7 +258,7 @@ Four PRs, in this order. Only the first has a migration, so the owner OKs one me
 4. **Pending matcher** (9.3): exact evidence only, the card for the rest; delete the cleanup code, the old `d:`
    aliases and their lookup.
 
-Docs: decisions (`D-?-payee-names-from-plaid.md`, `D-?-pending-match-without-text.md`,
+Docs: decisions (`D-63-payee-names-from-plaid.md`, `D-?-pending-match-without-text.md`,
 `D-?-manual-entry-meets-bank-pending.md`) and entries in
 `docs/whats-true-now.md` for `docs/design.md`, `docs/payees.md` (4) and `docs/sync-spec.md`. Delete the build-plan
 line.

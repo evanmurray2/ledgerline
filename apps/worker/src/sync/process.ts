@@ -27,7 +27,7 @@ import type { StepContext } from './steps.js';
 import { CHUNK } from './steps.js';
 import { budgetMeta, chunks } from '../ledger/ledger.js';
 import { makeProvider, connectionToken } from './provider.js';
-import { planFresh } from './file-fresh.js';
+import { planFresh, type Inherited } from './file-fresh.js';
 
 const MAX_WATERMARK_RETRIES = 3;
 
@@ -53,6 +53,7 @@ export interface BankRow {
   pending: number;
   pending_provider_txn_id: string | null;
   raw_name: string;
+  plaid_name: string | null;
   merchant_name: string | null;
   merchant_entity_id: string | null;
   provider_category: string | null;
@@ -176,7 +177,7 @@ async function planProcessing(
     rows.push(
       ...(await s.all<BankRow>(
         `SELECT b.provider_txn_id, b.txn_key, a.id AS account_id, a.kind AS account_kind, a.budget_from, b.amount, b.date, b.pending,
-           b.pending_provider_txn_id, b.raw_name, b.merchant_name, b.merchant_entity_id, b.provider_category, b.payment_channel,
+           b.pending_provider_txn_id, b.raw_name, b.plaid_name, b.merchant_name, b.merchant_entity_id, b.provider_category, b.payment_channel,
            b.removed_at, b.first_apply_seq, c.linked_at
          FROM bank_txn b
          LEFT JOIN account a ON a.budget_id = b.budget_id AND a.provider_account_id = b.provider_account_id
@@ -220,6 +221,8 @@ async function planProcessing(
       });
   }
   const inherited = new Set<string>();
+  /** This batch's posted rows that took over another row's key, with that key (step 5 files those without a payee). */
+  const tookOver: Inherited[] = [];
   /** Pending keys claimed in this batch: each pending row is claimed once. */
   const claimed = new Set<string>();
   const inherit = (
@@ -245,6 +248,8 @@ async function planProcessing(
     );
     inherited.add(postedId);
     claimed.add(fromKey);
+    const row = live.find((r) => r.provider_txn_id === postedId);
+    if (row) tookOver.push({ row, key: fromKey });
     // What you set on the posted row itself before it claimed the pending row (a category from a rule or the payee, a
     // memo) fills what the pending row leaves empty; a category you chose on the pending row always wins.
     stmts.push(
@@ -554,7 +559,7 @@ async function planProcessing(
 
   // ---- 5. For rows without your categorization: the payee, transfers and Waiting to match. No category is set.
   const fresh = live.filter((r) => !inherited.has(r.provider_txn_id));
-  if (fresh.length) stmts.push(...(await planFresh(s, fresh, now)));
+  if (fresh.length || tookOver.length) stmts.push(...(await planFresh(s, fresh, now, tookOver)));
   return { stmts };
 }
 

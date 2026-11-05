@@ -225,7 +225,7 @@ Every match records who made it (provider, auto, or you) and can be undone, whic
 
 ## Categorization rules and payee cleanup
 
-> **Now:** there are no rules and no remembered category; Needs category suggests the payee's most used category and you OK it (D-60, `docs/payees.md`). Payee normalization below still stands.
+> **Now:** there are no rules and no remembered category; Needs category suggests the payee's most used category and you OK it (D-60, `docs/payees.md`). Payee normalization below is replaced too (D-63, `docs/payee-names.md`).
 
 Categorization is deterministic: an ordered rule list, then the payee's remembered category, then nothing. Anything unmatched lands in an Uncategorized inbox for you. No ML; Plaid's own category is available only as a rule condition, never applied automatically.
 
@@ -247,6 +247,8 @@ Categorization is deterministic: an ordered rule list, then the payee's remember
 Each categorized transaction records which rule (or payee default, or you) set the category, shown as a small chip. Rules are never created silently. When you categorize a payee the same way every time (at least twice, never differently), the undo toast offers **Always**, which makes a rule in one tap. Payees with mixed history, like Amazon, get no offer, but their past categories appear at the top of the picker. Saving a rule shows a live preview of the last 90 days of matches and offers to apply it to uncategorized history. Rules never overwrite a category you set by hand. Rules are exportable as JSON.
 
 **Payee normalization and merge**
+
+> **Now:** no cleanup of bank text. A payee comes from Plaid's merchant id, merchant name and name, compared only by case, outer spaces and apostrophes; a new payee is named after Plaid's merchant name, else its name, else the bank text exactly (D-63, `docs/payee-names.md` 4–8).
 
 Raw bank descriptions are noisy (`SQ *BLUE BOTTLE 0123 OAKLAND CA`, `TST* BLUE BOTTLE`, `BLUEBOTTLE COFFEE`). Pipeline:
 

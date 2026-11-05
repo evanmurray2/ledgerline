@@ -3,11 +3,12 @@ import { Hono } from 'hono';
 import type { Stmt } from '@ledgerline/db/sql';
 import { clock } from '../../http/clock.js';
 import { MergePayees, RenamePayee, type MergeResult, type PayeesView } from '@ledgerline/contracts';
-import { payeeKey, rankPastUses, samePayeeName } from '@ledgerline/domain';
+import { nameKey, rankPastUses, samePayeeName } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../../http/context.js';
 import { HttpError, parse, scoped } from '../api.js';
 import { chunks } from '../../ledger/ledger.js';
+import { claimName, insertKey, legacyTextKey, rowKeys } from '../../sync/payee-keys.js';
 
 export const payeesRoutes = new Hono<AppEnv>();
 
@@ -88,6 +89,10 @@ interface MergeBefore {
   aliases: { id: string; payee: string; pattern: string | null; merchant: string | null }[];
   /** The transactions that moved, by the payee they were on. */
   keys: Record<string, string[]>;
+  /** Each joined payee's named_by before (joins since docs/payee-names.md PR 2; older ones have none). */
+  namedBy?: Record<string, string>;
+  /** The key `n:<name>` the join gave the kept payee, if no payee had it (docs/payee-names.md 4). */
+  added?: string;
 }
 
 payeesRoutes.post('/settings/payees/merge', async (c) => {
@@ -98,14 +103,15 @@ payeesRoutes.post('/settings/payees/merge', async (c) => {
   const ids = [...new Set(r.ids)];
   if (ids.length !== r.ids.length || ids.length < 2 || !ids.includes(keep))
     throw new HttpError(422, 'bad_merge', 'Pick at least two different payees, including the one to keep.');
-  const found = await s.all<{ id: string; name: string; merged_into: string | null }>(
-    `SELECT id, name, merged_into FROM payee WHERE budget_id = ?1 AND id IN (${places(ids.length, 2)})`,
+  const found = await s.all<{ id: string; name: string; named_by: string; merged_into: string | null }>(
+    `SELECT id, name, named_by, merged_into FROM payee WHERE budget_id = ?1 AND id IN (${places(ids.length, 2)})`,
     ...ids,
   );
   if (found.length !== ids.length || found.some((p) => p.merged_into))
     throw new HttpError(409, 'payee_changed', 'This payee changed. Pull to refresh.');
   const rest = ids.filter((x) => x !== keep);
-  const [aliases, moved] = await s.batch([
+  const name = r.name ?? found.find((p) => p.id === keep)!.name;
+  const [aliases, moved, named] = await s.batch([
     s.q(
       `SELECT id, payee_id, pattern, merchant_entity_id FROM payee_alias WHERE budget_id = ?1 AND payee_id IN (${places(rest.length, 2)})`,
       ...rest,
@@ -114,6 +120,7 @@ payeesRoutes.post('/settings/payees/merge', async (c) => {
       `SELECT txn_key, payee_id FROM txn_overlay WHERE budget_id = ?1 AND payee_id IN (${places(rest.length, 2)})`,
       ...rest,
     ),
+    s.q(`SELECT 1 FROM payee_alias WHERE budget_id = ?1 AND pattern = ?2`, nameKey(name)),
   ]);
   const before: MergeBefore = {
     keep,
@@ -128,14 +135,21 @@ payeesRoutes.post('/settings/payees/merge', async (c) => {
       }[]
     ).map((a) => ({ id: a.id, payee: a.payee_id, pattern: a.pattern, merchant: a.merchant_entity_id })),
     keys: {},
+    namedBy: Object.fromEntries(found.map((p) => [p.id, p.named_by])),
+    ...(named!.results.length ? {} : { added: nameKey(name) }),
   };
   for (const m of moved!.results as { txn_key: string; payee_id: string }[])
     (before.keys[m.payee_id] ??= []).push(m.txn_key);
   const undoId = ulid(now);
-  const name = r.name ?? found.find((p) => p.id === keep)!.name;
-  // Aliases and transactions move to the kept payee; raw bank descriptions stay untouched.
+  // Aliases and transactions move to the kept payee; raw bank descriptions stay untouched. A join is your choice of
+  // name: sync never renames the payee (docs/payee-names.md 6), and the payee gets the key of its name.
   await s.batch([
-    s.q(`UPDATE payee SET name = ?3, updated_at = ?4 WHERE budget_id = ?1 AND id = ?2`, keep, name, now),
+    s.q(
+      `UPDATE payee SET name = ?3, named_by = 'user', updated_at = ?4 WHERE budget_id = ?1 AND id = ?2`,
+      keep,
+      name,
+      now,
+    ),
     s.q(
       `UPDATE payee_alias SET payee_id = ?2 WHERE budget_id = ?1 AND payee_id IN (${places(rest.length, 3)})`,
       keep,
@@ -152,6 +166,7 @@ payeesRoutes.post('/settings/payees/merge', async (c) => {
       now,
       ...rest,
     ),
+    ...(before.added ? [insertKey(s, before.added, keep, now)] : []),
     s.audit('payee.merge', 'payee_merge', undoId, before, { keep, ids, name }, now),
   ]);
   const out: MergeResult = { ok: true, undoId };
@@ -175,7 +190,9 @@ payeesRoutes.post('/settings/payees/merge/:undoId/undo', async (c) => {
   const b = row!.results[0] as { id: number; before: string } | undefined;
   if (!b) throw new HttpError(404, 'not_found', 'merge');
   if (done!.results.length) return c.json({ ok: true });
-  const before = JSON.parse(b.before) as MergeBefore;
+  // The first release recorded no `before` (the JSON text 'null'): there is nothing to put back.
+  const before = (b.before ? (JSON.parse(b.before) as MergeBefore | null) : null) ?? null;
+  if (!before?.names) throw new HttpError(409, 'payee_changed', 'Can’t undo now: this payee changed since.');
   const ids = Object.keys(before.names);
   const now_ = await s.all<{ id: string; updated_at: number; merged_into: string | null }>(
     `SELECT id, updated_at, merged_into FROM payee WHERE budget_id = ?1 AND id IN (${places(ids.length, 2)})`,
@@ -184,7 +201,8 @@ payeesRoutes.post('/settings/payees/merge/:undoId/undo', async (c) => {
   // Nothing may have changed since: a rename, another join, or the kept payee joined into another.
   const later = await s.first(
     `SELECT 1 FROM audit_log WHERE budget_id = ?1 AND id > ?2 AND (
-       (action = 'payee.rename' AND entity_id IN (${places(ids.length, 3)}))
+       action = 'payee.refile'
+       OR (action = 'payee.rename' AND entity_id IN (${places(ids.length, 3)}))
        OR (action = 'payee.merge' AND EXISTS (SELECT 1 FROM json_each(json_extract(after, '$.ids')) WHERE value IN (${places(ids.length, 3)}))))
      LIMIT 1`,
     b.id,
@@ -203,14 +221,24 @@ payeesRoutes.post('/settings/payees/merge/:undoId/undo', async (c) => {
   for (const [id, name] of Object.entries(before.names))
     w.push(
       s.q(
-        `UPDATE payee SET name = ?3, merged_into = NULL, updated_at = ?4 WHERE budget_id = ?1 AND id = ?2`,
+        `UPDATE payee SET name = ?3, merged_into = NULL, named_by = coalesce(?5, named_by), updated_at = ?4
+         WHERE budget_id = ?1 AND id = ?2`,
         id,
         name,
         now,
+        before.namedBy?.[id] ?? null,
       ),
     );
   for (const a of before.aliases)
     w.push(s.q(`UPDATE payee_alias SET payee_id = ?3 WHERE budget_id = ?1 AND id = ?2`, a.id, a.payee));
+  if (before.added)
+    w.push(
+      s.q(
+        `DELETE FROM payee_alias WHERE budget_id = ?1 AND id = ?2 AND payee_id = ?3`,
+        before.added,
+        before.keep,
+      ),
+    );
   const listed = new Set<string>();
   for (const [payee, keys] of Object.entries(before.keys)) {
     for (const k of chunks(keys)) {
@@ -225,23 +253,33 @@ payeesRoutes.post('/settings/payees/merge/:undoId/undo', async (c) => {
       for (const x of k) listed.add(x);
     }
   }
-  // Rows that synced in after the join: back to the payee of the moved alias their bank text resolves through.
+  // Rows that synced in after the join: back to the payee whose moved key filed them (their first key that one of
+  // the moved keys is; the old cleaned-text pattern last).
   const byKey = new Map<string, string>();
   for (const a of before.aliases) {
-    if (a.merchant) byKey.set(`m:${a.merchant}`, a.payee);
-    if (a.pattern) byKey.set(`d:${a.pattern}`, a.payee);
+    if (a.merchant && !byKey.has(`m:${a.merchant}`)) byKey.set(`m:${a.merchant}`, a.payee);
+    if (a.pattern && !byKey.has(a.pattern.startsWith('n:') ? a.pattern : `d:${a.pattern}`))
+      byKey.set(a.pattern.startsWith('n:') ? a.pattern : `d:${a.pattern}`, a.payee);
   }
   if (byKey.size) {
-    const since = await s.all<{ txn_key: string; raw_name: string; merchant_entity_id: string | null }>(
-      `SELECT o.txn_key, b.raw_name, b.merchant_entity_id FROM txn_overlay o JOIN bank_txn b ON b.txn_key = o.txn_key
+    const since = await s.all<{
+      txn_key: string;
+      raw_name: string;
+      plaid_name: string | null;
+      merchant_name: string | null;
+      merchant_entity_id: string | null;
+    }>(
+      `SELECT o.txn_key, b.raw_name, b.plaid_name, b.merchant_name, b.merchant_entity_id
+       FROM txn_overlay o JOIN bank_txn b ON b.txn_key = o.txn_key
        WHERE o.budget_id = ?1 AND o.payee_id = ?2 AND o.created_at >= ?3`,
       before.keep,
       before.at,
     );
     for (const t of since) {
       if (listed.has(t.txn_key)) continue;
-      const to =
-        byKey.get(payeeKey(t.raw_name, t.merchant_entity_id)) ?? byKey.get(payeeKey(t.raw_name, null));
+      listed.add(t.txn_key);
+      const { keys } = rowKeys(t);
+      const to = keys.map((k) => byKey.get(k)).find((p) => p) ?? byKey.get(`d:${legacyTextKey(t.raw_name)}`);
       if (to)
         w.push(
           s.q(`UPDATE txn_overlay SET payee_id = ?3 WHERE budget_id = ?1 AND txn_key = ?2`, t.txn_key, to),
@@ -272,6 +310,7 @@ payeesRoutes.post('/settings/payees/:id', async (c) => {
   if (taken)
     throw new HttpError(409, 'name_taken', `You have a payee named ${taken.name}. Join them instead.`);
   // A name you chose is yours: sync never renames it (docs/payee-names.md 6).
+  // It also gets the key of its new name, so a later row whose Plaid name is that name finds it (4).
   await s.batch([
     s.q(
       `UPDATE payee SET name = ?3, named_by = 'user', updated_at = ?4 WHERE budget_id = ?1 AND id = ?2`,
@@ -279,6 +318,7 @@ payeesRoutes.post('/settings/payees/:id', async (c) => {
       r.name.trim(),
       now,
     ),
+    claimName(s, id, r.name, now),
     s.audit('payee.rename', 'payee', id, { name: me.name }, r, now),
   ]);
   return c.json({ ok: true });
