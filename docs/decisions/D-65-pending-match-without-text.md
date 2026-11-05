@@ -38,7 +38,18 @@ rested on a guess from text. The owner asked for no cleanup of bank text anywher
 evidence or your Yes. A tipped charge whose pending row has another Plaid name now waits for your answer, and until
 then both rows count, as when nothing paired before. Every posted charge still counts exactly once.
 
-**Not in this change.** Not the same on a pair of two bank rows (D-64 has it for pairs with your entry). A busy card can
+**Not the same on two bank rows** (built after this change). A posted row that took a bank pending row's key, by
+step 2 or by your Yes (`txn_link` kind `pending_match`, not made by the provider), has Not the same on its sheet
+(`POST /api/transactions/:key/not-same`, `routes/same-purchase.ts`). The pending row keeps the key and its overlay
+(what you set on the pair is on it); the posted row gets its own key back (`ownKeyStmt`, as when the provider's link
+wins) and is filed again as a new posted row (`sync/file-fresh.ts`, a payee and no category); the link is marked
+undone and the pair goes into `not_same`, which step 2 and the heal step honor. A pending row still listed counts
+again as pending; one the bank already removed stays gone, so only the posted row counts. Not restored: the won't
+clear and the estimate `inherit()` cleared on the pending row, and what the posted row's own overlay filled in when
+it paired. A pair made by the provider's link (`pending_transaction_id`) isn't offered and the route refuses it (409):
+its link wins (D-47), and the next sync would pair them again.
+
+**Not in this change.** A busy card can
 raise more questions than D-47 did: each posted row whose candidates have no exact evidence is asked about once,
 until it pairs or you answer. Bank of America sends an authorization date on every row (181 of 181 posted rows in
 the owner's Nov 4 backup), so its window is the same day or the day before, not 14 days.
