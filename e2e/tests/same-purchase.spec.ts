@@ -60,7 +60,10 @@ test('Not the same on a posted row paired with the bank’s pending row: the pen
   page,
 }) => {
   await page.goto('/activity?mock=samepurchase');
-  await page.getByRole('link', { name: /^PHO 24 SAN FRANCISCO/ }).first().click();
+  await page
+    .getByRole('link', { name: /^PHO 24 SAN FRANCISCO/ })
+    .first()
+    .click();
   await expect(page.getByText('Same purchase as')).toBeVisible();
   await page
     .getByRole('button', { name: 'Not the same: PHO 24 SAN FRANCISCO and Bank pending: PHO 24 · Nov 11' })

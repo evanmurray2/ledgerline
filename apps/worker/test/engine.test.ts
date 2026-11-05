@@ -280,9 +280,7 @@ describe('the phone works out the same screens as the server', () => {
       )
       .first<{ provider_txn_id: string }>())!.provider_txn_id;
     await ownerDb().batch([
-      ownerDb()
-        .prepare(`UPDATE bank_txn SET txn_key = 'n-shell' WHERE provider_txn_id = ?1`)
-        .bind(posted),
+      ownerDb().prepare(`UPDATE bank_txn SET txn_key = 'n-shell' WHERE provider_txn_id = ?1`).bind(posted),
       ownerDb()
         .prepare(
           `INSERT INTO txn_link (id, budget_id, kind, from_key, to_key, created_by, created_at)

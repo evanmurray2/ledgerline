@@ -47,7 +47,11 @@ export const removal = (id: string, account: number) => ({ transaction_id: id, a
 /** A budget `B` with connection `C` and credit cards `a_1`…`a_<accounts>` (Plaid accounts `pa_<n>`), at `now`. */
 export function bankSync(name: string, B: string, C: string, accounts: number, now: number) {
   const db = storeDb(name);
-  const engine = new LocalEngine(db, { budgetId: B, userId: `u_${B}`, email: 'owner@example.com' }, () => now);
+  const engine = new LocalEngine(
+    db,
+    { budgetId: B, userId: `u_${B}`, email: 'owner@example.com' },
+    () => now,
+  );
   let runN = 0;
 
   async function setup(): Promise<void> {

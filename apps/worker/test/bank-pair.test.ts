@@ -60,9 +60,10 @@ describe('Not the same on two bank rows', () => {
     expect(own?.payee_id).toBeTruthy();
     expect(own?.category_id ?? null).toBeNull();
     expect((await sheet('p:bb')).pairedWith).toBeNull();
-    expect(
-      await db.prepare(`SELECT a_key, b_key FROM not_same WHERE a_key = 'p:bb'`).first(),
-    ).toEqual({ a_key: 'p:bb', b_key: 'p:bb-p' });
+    expect(await db.prepare(`SELECT a_key, b_key FROM not_same WHERE a_key = 'p:bb'`).first()).toEqual({
+      a_key: 'p:bb',
+      b_key: 'p:bb-p',
+    });
 
     // The heal step and the next syncs of either row never pair them again.
     await heal();
