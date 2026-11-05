@@ -220,6 +220,7 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
       timeout: 15_000,
     })
     .toBe(true);
-  // Only that fresh start downloaded everything, and it said why (the server logs it).
-  expect(why).toEqual(['first']);
+  // Only that fresh start downloaded everything, and it said why (the server logs it): the copy was deleted when the
+  // app opened because it was signed out from the other device, not "no copy yet".
+  expect(why).toEqual(['turned_off']);
 });
