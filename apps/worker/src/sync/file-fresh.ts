@@ -192,7 +192,8 @@ export async function planFresh(
  * While a payee is new (sync named it and none of its transactions has your category), its name is the name (5) of
  * the row that made it, as Plaid sends that row now (docs/payee-names.md 6). The row that made it is the payee's
  * earliest transaction (date, then arrival): the first row filed into it, both live and in the re-file job, which
- * files in date order. The name never becomes another payee's name.
+ * files in date order. The name never becomes another payee's name. Only a batch row whose name differs from its
+ * payee's is looked at further, so a batch that changes no name reads only its payees' rows.
  */
 async function planNewNames(
   s: Scoped,
@@ -201,63 +202,65 @@ async function planNewNames(
   userTaken: Set<string>,
   now: number,
 ): Promise<Stmt[]> {
-  const ids = [...batchRows.keys()].filter((id) => !userTaken.has(id));
-  if (!ids.length) return [];
-  const names = new Map(created);
-  const candidates = new Set(created.keys());
-  const existing = ids.filter((id) => !created.has(id));
-  for (const k of chunks(existing)) {
-    const [payees, user] = await s.batch([
-      s.q(
-        `SELECT id, name, named_by, merged_into FROM payee WHERE budget_id = ?1 AND id IN (${inList(k.length)})`,
-        ...k,
-      ),
-      s.q(
-        `SELECT DISTINCT payee_id FROM txn_overlay WHERE budget_id = ?1 AND categorized_by = 'user' AND payee_id IN (${inList(k.length)})`,
-        ...k,
-      ),
-    ]);
-    const mine = new Set((user!.results as { payee_id: string }[]).map((u) => u.payee_id));
-    for (const p of payees!.results as {
-      id: string;
-      name: string;
-      named_by: string;
-      merged_into: string | null;
-    }[]) {
-      names.set(p.id, p.name);
-      if (p.named_by === 'sync' && !p.merged_into && !mine.has(p.id)) candidates.add(p.id);
+  // Each payee's earliest row in this batch (a posted row that took over a key stands for that key).
+  const firstIn = new Map<string, { key: string; row: BankRow }>();
+  const before = (a: { key: string; row: BankRow }, b: { key: string; row: BankRow }) =>
+    a.row.date < b.row.date ||
+    (a.row.date === b.row.date &&
+      (a.row.first_apply_seq < b.row.first_apply_seq ||
+        (a.row.first_apply_seq === b.row.first_apply_seq && !a.row.pending && !!b.row.pending)));
+  for (const [id, rows] of batchRows) {
+    if (userTaken.has(id)) continue;
+    for (const r of rows) {
+      const had = firstIn.get(id);
+      if (!had || before(r, had)) firstIn.set(id, r);
     }
   }
-  const look = ids.filter((id) => candidates.has(id));
-  if (!look.length) return [];
-  // Each payee's earliest transaction: its rows already filed, and this batch's.
-  type First = { key: string; date: string; seq: number };
-  const first = new Map<string, First>();
-  const earlier = (a: First, b: First | undefined) =>
-    !b || a.date < b.date || (a.date === b.date && (a.seq < b.seq || (a.seq === b.seq && a.key < b.key)));
-  const consider = (payee: string, f: First) => {
-    if (earlier(f, first.get(payee))) first.set(payee, f);
-  };
-  for (const k of chunks(look.filter((id) => !created.has(id))))
-    for (const r of await s.all<{ payee_id: string; txn_key: string; date: string; first_apply_seq: number }>(
-      `SELECT o.payee_id, b.txn_key, b.date, b.first_apply_seq FROM txn_overlay o JOIN bank_txn b ON b.txn_key = o.txn_key
-       WHERE o.budget_id = ?1 AND o.payee_id IN (${inList(k.length)})`,
+  const names = new Map(created);
+  const existing = [...firstIn.keys()].filter((id) => !created.has(id));
+  const isSync = new Set(created.keys());
+  for (const k of chunks(existing))
+    for (const p of await s.all<{ id: string; name: string; named_by: string; merged_into: string | null }>(
+      `SELECT id, name, named_by, merged_into FROM payee WHERE budget_id = ?1 AND id IN (${inList(k.length)})`,
       ...k,
-    ))
-      consider(r.payee_id, { key: r.txn_key, date: r.date, seq: r.first_apply_seq });
-  for (const id of look)
-    for (const b of batchRows.get(id)!)
-      consider(id, { key: b.key, date: b.row.date, seq: b.row.first_apply_seq });
+    )) {
+      names.set(p.id, p.name);
+      if (p.named_by === 'sync' && !p.merged_into) isSync.add(p.id);
+    }
+  const want = new Map<string, string>();
+  for (const [id, f] of firstIn) {
+    if (!isSync.has(id)) continue;
+    const n = newPayeeName(payeeSource(f.row));
+    if (n !== names.get(id)) want.set(id, n);
+  }
+  if (!want.size) return [];
+  // Still new, and that row is its earliest transaction: no row filed before has your category or comes first.
+  const look = [...want.keys()];
+  const stays = new Set<string>();
+  for (const k of chunks(
+    look.filter((id) => !created.has(id)),
+    30,
+  )) {
+    const checks = k.map((id) => {
+      const f = firstIn.get(id)!;
+      return s.q(
+        `SELECT ?2 AS id WHERE EXISTS (SELECT 1 FROM txn_overlay o WHERE o.budget_id = ?1 AND o.payee_id = ?2 AND o.categorized_by = 'user')
+           OR EXISTS (SELECT 1 FROM txn_overlay o JOIN bank_txn b ON b.txn_key = o.txn_key
+             WHERE o.budget_id = ?1 AND o.payee_id = ?2 AND o.txn_key != ?3
+               AND (b.date < ?4 OR (b.date = ?4 AND b.first_apply_seq < ?5)))`,
+        id,
+        f.key,
+        f.row.date,
+        f.row.first_apply_seq,
+      );
+    });
+    for (const r of await s.batch(checks)) for (const x of r.results as { id: string }[]) stays.add(x.id);
+  }
   const out: Stmt[] = [];
   let taken: Map<string, string> | null = null;
   for (const id of look) {
-    const f = first.get(id);
-    // The row that made it, as it came in this batch (a posted row that took over its key counts as that row).
-    const rows = batchRows.get(id)!.filter((b) => b.key === f?.key);
-    const row = rows.find((b) => !b.row.pending) ?? rows[0];
-    if (!row) continue;
-    const want = newPayeeName(payeeSource(row.row));
-    if (want === names.get(id)) continue;
+    if (stays.has(id)) continue;
+    const name = want.get(id)!;
     if (!taken) {
       taken = new Map<string, string>();
       for (const p of await s.all<{ id: string; name: string }>(
@@ -266,17 +269,17 @@ async function planNewNames(
         taken.set(payeeNameKey(p.name), p.id);
       for (const [pid, n] of names) taken.set(payeeNameKey(n), pid);
     }
-    const holder = taken.get(payeeNameKey(want));
+    const holder = taken.get(payeeNameKey(name));
     if (holder && holder !== id) continue;
     const was = payeeNameKey(names.get(id) ?? '');
     if (taken.get(was) === id) taken.delete(was);
-    taken.set(payeeNameKey(want), id);
-    names.set(id, want);
+    taken.set(payeeNameKey(name), id);
+    names.set(id, name);
     out.push(
       s.q(
         `UPDATE payee SET name = ?3, updated_at = ?4 WHERE budget_id = ?1 AND id = ?2 AND named_by = 'sync'`,
         id,
-        want,
+        name,
         now,
       ),
     );
