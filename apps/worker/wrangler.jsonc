@@ -8,7 +8,9 @@
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
   "preview_urls": false,
-  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
+  // Workers Logs: one log per request and alarm (path, status, CPU time), kept 3 days. A separate free allowance
+  // (200,000 log events a day); it uses none of the request, row or CPU limits.
+  "observability": { "enabled": true, "logs": { "invocation_logs": true } },
   // docs/multi-user.md: the Directory and one BudgetStore per budget.
   "durable_objects": {
     "bindings": [
