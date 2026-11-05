@@ -5,13 +5,27 @@ import type { TxRow } from '../ledger/ledger.js';
 
 export type ListSource = TxRow;
 
-/** Posted before its account's budget start and not pending at link: history, outside the budget (Budget start). */
-export function isHistory(t: Pick<TxRow, 'status' | 'date' | 'budget_from' | 'pending_at_link'>): boolean {
-  return t.status === 'posted' && !!t.budget_from && t.date < t.budget_from && !t.pending_at_link;
+/**
+ * A bank row dated before its account's budget start, pending or posted: outside the budget (Budget start). It is
+ * history, or part of the starting balance when it wasn't in the balance at link (ledger/start-part.ts, D-67).
+ */
+export function isHistory(t: Pick<TxRow, 'source' | 'date' | 'budget_from'>): boolean {
+  return t.source === 'bank' && !!t.budget_from && t.date < t.budget_from;
 }
 
-/** isHistory as SQL, negated: rows the app lists. "Before your budget" rows are never listed (D-61, D-62). */
-export const NOT_HISTORY = `NOT (status = 'posted' AND budget_from IS NOT NULL AND date < budget_from AND coalesce(pending_at_link, 0) = 0)`;
+/**
+ * Whether a list leaves the row out: posted "Before your budget" rows are never listed (D-61, D-62). A pending one
+ * from before the start is listed under Pending, as the account's pending total counts it, with that badge (D-67).
+ */
+export function hiddenFromLists(t: Pick<TxRow, 'source' | 'status' | 'date' | 'budget_from'>): boolean {
+  return isHistory(t) && t.status === 'posted';
+}
+
+/** hiddenFromLists as SQL, negated: rows the app lists. */
+export const NOT_HISTORY = `NOT (source = 'bank' AND status = 'posted' AND budget_from IS NOT NULL AND date < budget_from)`;
+
+/** isHistory as SQL, negated: rows in the budget, the only ones that can need you. */
+export const IN_BUDGET_ROWS = `NOT (source = 'bank' AND budget_from IS NOT NULL AND date < budget_from)`;
 
 export function categoryLabel(
   t: TxRow,
@@ -44,11 +58,11 @@ export function listRow(
   let sub: string | null = null;
   let sheet: TxnListRow['sheet'] = 'txn';
   const history = isHistory(t);
-  if (history) {
+  if (history && !t.wont_clear) {
     // Before the account's budget start: shown for reference, never budgeted, never needs anything.
     badge = 'Before your budget';
     badgeKind = 'hold';
-    sub = 'not budgeted';
+    sub = t.status === 'pending' ? 'starting balance' : 'not budgeted';
   } else if (t.wont_clear) {
     badge = 'Won’t clear';
     badgeKind = 'hold';

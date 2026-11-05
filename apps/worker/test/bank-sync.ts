@@ -44,8 +44,12 @@ export const pend = (id: string, account: number, amount: number, date: string, 
   plaidTxn(id, account, amount, date, name, { pending: true, ...o });
 export const removal = (id: string, account: number) => ({ transaction_id: id, account_id: `pa_${account}` });
 
-/** A budget `B` with connection `C` and credit cards `a_1`…`a_<accounts>` (Plaid accounts `pa_<n>`), at `now`. */
-export function bankSync(name: string, B: string, C: string, accounts: number, now: number) {
+/**
+ * A budget `B` with connection `C` and credit cards `a_1`…`a_<accounts>` (Plaid accounts `pa_<n>`), at `start`
+ * (`setNow` moves the clock, for a sync that comes later).
+ */
+export function bankSync(name: string, B: string, C: string, accounts: number, start: number) {
+  let now = start;
   const db = storeDb(name);
   const engine = new LocalEngine(
     db,
@@ -174,5 +178,9 @@ export function bankSync(name: string, B: string, C: string, accounts: number, n
     return { status: r.status, json: (await r.json()) as unknown };
   };
 
-  return { db, engine, setup, sync, heal, keyOf, overlay, listed, counted, asks, call };
+  const setNow = (t: number) => {
+    now = t;
+  };
+
+  return { db, engine, setup, sync, heal, keyOf, overlay, listed, counted, asks, call, setNow };
 }

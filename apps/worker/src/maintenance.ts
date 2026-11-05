@@ -14,6 +14,7 @@ import { clock } from './http/clock.js';
 import { Scoped } from './db/scoped.js';
 import { lineFromRow } from './budget/recompute.js';
 import { RECENT_TX } from './ledger/ledger.js';
+import { adjustments } from './ledger/start-part.js';
 
 /** Rule 10 on the stored data: working balances vs categories + RTA + held amounts − unbudgeted card debt + later months. */
 export async function checkIdentityDb(
@@ -32,7 +33,7 @@ export async function checkIdentityDb(
   const [work, held, snaps, curLines, cats] = await s.batch([
     s.q(
       `SELECT (SELECT coalesce(sum(starting_balance), 0) FROM account WHERE budget_id = ?1) +
-              (SELECT coalesce(sum(amount), 0) FROM ${RECENT_TX} WHERE budget_id = ?1 AND wont_clear = 0 AND (date >= budget_from OR pending_at_link = 1)
+              (SELECT coalesce(sum(amount), 0) FROM ${RECENT_TX} WHERE budget_id = ?1 AND wont_clear = 0 AND (date >= budget_from OR pending_at_link = 1 OR bank_pending = 1)
                  AND (status != 'upcoming' OR date <= ?2)) AS w`,
       today,
     ),
@@ -47,7 +48,17 @@ export async function checkIdentityDb(
     ),
     s.q(`SELECT id, kind, card_account_id FROM category WHERE budget_id = ?1`),
   ]);
-  const working = (work!.results[0] as { w: number }).w;
+  // Rows that move a starting balance beyond what the sum above holds (ledger/start-part.ts, D-67).
+  let working = (work!.results[0] as { w: number }).w;
+  for (const v of (await adjustments(s, now)).sum.values()) working += v;
+  // A row pending at link that posted with a date before the earliest budget start: RECENT_TX reads posted rows from
+  // that date on, but the budget counts it in the starting balance.
+  const early = await s.first<{ a: number }>(
+    `SELECT coalesce(sum(amount), 0) AS a FROM v_txn_bank WHERE budget_id = ?1 AND status = 'posted' AND wont_clear = 0
+       AND key IN (SELECT txn_key FROM txn_overlay WHERE budget_id = ?1 AND pending_at_link = 1)
+       AND posted_date < (SELECT min(budget_from) FROM account WHERE budget_id = ?1)`,
+  );
+  working += early?.a ?? 0;
   const h = new Map((held!.results as { kind: string; a: number }[]).map((r) => [r.kind, r.a]));
   const months = (snaps!.results as { month: string; state: string }[]).map((r) => ({
     month: r.month as Month,

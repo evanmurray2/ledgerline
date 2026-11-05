@@ -26,6 +26,7 @@ import { editTime, liveKey } from './sync.js';
 import { shortDate } from '../views/common.js';
 import { categoryLabel, isHistory } from '../views/rows.js';
 import { TX_COLUMNS, chunks, txnCol, type TxRow } from '../ledger/ledger.js';
+import { linkInfo, roleOf } from '../ledger/link.js';
 import { OVERLAY_UPSERT, commit, loadTx, names, refuseHistory } from './txn-common.js';
 import { claimName } from '../sync/payee-keys.js';
 import { coverAfterAmount, pairedWith } from './same-purchase.js';
@@ -121,9 +122,12 @@ transactionRoutes.get('/transactions/:key', async (c) => {
             : a,
       );
   const ruleName = (rule!.results[0] as { name: string } | undefined)?.name;
+  // A row before the budget start may be part of the starting balance rather than plain history (D-67).
+  const inStart = kind === 'history' && roleOf(t, await linkInfo(s)) === 'before';
   const sheet: TxnSheet = {
     key,
     kind,
+    ...(inStart ? { inStartingBalance: true } : {}),
     payee: t.payee,
     payeeId: t.payee_id,
     rawName: t.raw_name,

@@ -4,6 +4,7 @@
 import { type Cents, cents } from '../money.js';
 import { type IsoDate, type Month, monthOfDate } from '../month.js';
 import type { BudgetLine } from './lines.js';
+import type { StartRole } from './start.js';
 
 export type AccountKind = 'checking' | 'savings' | 'credit';
 
@@ -60,8 +61,12 @@ export interface LogicalTxn {
   seq: number;
   /** Budget-month override ("counted in Oct", "Save for December"). */
   budgetMonth?: Month;
-  /** Pending at link (or the posted row it became): budgeted even if dated before budgetFrom. */
-  pendingAtLink?: boolean;
+  /**
+   * How the row relates to the starting balance (start.ts, D-67): 'before' rows (dated before budgetFrom, not in the
+   * balance at link) join the starting balance; 'linkDay' rows (in the budget, already in the balance at link) come
+   * out of it.
+   */
+  startRole?: StartRole;
   use: TxnUse;
   /** Card refunds: the purchase this refunds. */
   refundOf?: string;
@@ -88,8 +93,26 @@ export interface ProjectOptions {
   today: IsoDate;
 }
 
+/** Dated before the account's budget start and not part of its starting balance: never counted. */
 export function isHistory(t: LogicalTxn, acct: LedgerAccount): boolean {
-  return t.date < acct.budgetFrom && !t.pendingAtLink;
+  return t.date < acct.budgetFrom && t.startRole !== 'before';
+}
+
+/**
+ * A line that moves the account's starting balance by `amount` (money terms: positive adds to a checking balance or
+ * takes from a card's debt), as startLines() places it: in the start month, on budgetFrom, before that day's rows.
+ */
+function startShiftLine(key: string, a: LedgerAccount, startMonth: Month, amount: number): BudgetLine[] {
+  if (amount === 0) return [];
+  const base = {
+    id: `${key}:start`,
+    month: clampMonth(monthOfDate(a.budgetFrom), startMonth),
+    date: a.budgetFrom,
+    seq: -1,
+  };
+  return a.kind === 'credit'
+    ? [{ kind: 'debt', ...base, cardAccountId: a.id, amount: cents(-amount) }]
+    : [{ kind: 'rta', ...base, accountId: a.id, card: false, amount: cents(amount) }];
 }
 
 /** Lines for an account's starting balance (rule 8). */
@@ -135,6 +158,11 @@ export interface TxnEffect {
   waiting: number;
   unsorted: number;
   uncategorized: number;
+  /**
+   * Added to the account's working balance besides the transaction's amount: a 'linkDay' row's amount comes out of
+   * the starting balance, so it is in the working balance once.
+   */
+  startShift: number;
 }
 
 /** One transaction's effect on the budget. Transactions are independent of each other, so lines can be rebuilt per transaction. */
@@ -145,10 +173,20 @@ export function linesForTxn(
   startMonth: Month,
   today: IsoDate,
 ): TxnEffect {
-  const none: TxnEffect = { counts: false, lines: [], waiting: 0, unsorted: 0, uncategorized: 0 };
+  const none: TxnEffect = {
+    counts: false,
+    lines: [],
+    waiting: 0,
+    unsorted: 0,
+    uncategorized: 0,
+    startShift: 0,
+  };
   if (isHistory(t, acct)) return none;
   if (t.wontClear) return none;
   if (t.status === 'upcoming' && t.date > today) return none;
+  // Part of the starting balance (D-67): no category, Owed to you or transfer; it only moves the starting balance.
+  if (t.date < acct.budgetFrom)
+    return { ...none, counts: true, lines: startShiftLine(t.key, acct, startMonth, t.amount) };
   const lines: BudgetLine[] = [];
   let waiting = 0;
   let unsorted = 0;
@@ -263,7 +301,11 @@ export function linesForTxn(
       break;
     }
   }
-  return { counts: true, lines, waiting, unsorted, uncategorized };
+  if (t.startRole === 'linkDay') {
+    lines.push(...startShiftLine(t.key, acct, startMonth, -t.amount));
+    return { counts: true, lines, waiting, unsorted, uncategorized, startShift: -t.amount };
+  }
+  return { counts: true, lines, waiting, unsorted, uncategorized, startShift: 0 };
 }
 
 export function project(o: ProjectOptions): Projection {
@@ -285,7 +327,7 @@ export function project(o: ProjectOptions): Projection {
     const e = linesForTxn(t, acct, kinds, o.startMonth, o.today);
     if (!e.counts) continue;
     counted++;
-    working[acct.id] = (working[acct.id] ?? 0) + t.amount;
+    working[acct.id] = (working[acct.id] ?? 0) + t.amount + e.startShift;
     lines.push(...e.lines);
     waiting += e.waiting;
     unsorted += e.unsorted;

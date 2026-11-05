@@ -2,13 +2,12 @@
 // the Worker; the SPA uses the inferred types. Money is integer cents everywhere; months are 'YYYY-MM', dates
 // 'YYYY-MM-DD'. Mutations require `content-type: application/json` and the `x-ledgerline: 1` header.
 import { z } from 'zod';
+import { cents, date, id, month } from './scalars.js';
+import { AccountRow, StartBalance } from './accounts.js';
+
+export * from './accounts.js';
 
 export const CSRF_HEADER = 'x-ledgerline';
-
-const cents = z.number().int();
-const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const id = z.string().min(1).max(80);
 
 // ---------------------------------------------------------------- session
 
@@ -299,6 +298,8 @@ export const TxnSheet = z.object({
     'upcoming',
     'history',
   ]),
+  /** A 'history' row that is part of the account's starting balance (D-67), not just before it. */
+  inStartingBalance: z.boolean().optional(),
   payee: z.string(),
   /** The payee this transaction is under; null for a manual entry (it has only a name). */
   payeeId: id.nullable().optional(),
@@ -455,67 +456,12 @@ export const OwedAction = z.object({
 
 // ---------------------------------------------------------------- accounts
 
-export const AccountRow = z.object({
-  id,
-  name: z.string(),
-  kind: z.enum(['checking', 'savings', 'credit']),
-  institution: z.string(),
-  mask: z.string().nullable(),
-  /** Bank-reported (cleared). Cards: amount owed, positive. */
-  bank: cents,
-  pending: cents,
-  /** Cleared + pending, excluding won't-clear. */
-  working: cents,
-  syncedAt: z.number().int().nullable(),
-  connectionStatus: z.enum(['ok', 'login_required', 'error']),
-  drift: cents.nullable(),
-  statement: z.object({ balance: cents, due: date.nullable(), covered: z.boolean() }).nullable(),
-  meta: z.string(),
-});
-export type AccountRow = z.infer<typeof AccountRow>;
-
-export const AccountsView = z.object({
-  netWorth: cents,
-  netWorthChange: cents,
-  month,
-  owedOut: cents,
-  groups: z.array(z.object({ name: z.string(), total: cents, accounts: z.array(AccountRow) })),
-  repairs: z.array(
-    z.object({ connectionId: id, institution: z.string(), lastSynced: z.number().int().nullable() }),
-  ),
-  failures: z.array(
-    z.object({
-      connectionId: id,
-      institution: z.string(),
-      lastGood: z.number().int().nullable(),
-      nextRetry: z.number().int().nullable(),
-    }),
-  ),
-  alerts: z.array(
-    z.object({
-      kind: z.enum([
-        'monitor',
-        'sync',
-        'history_changed',
-        'ambiguous_match',
-        'vanished_pending',
-        'possible_reissue',
-        'identity',
-      ]),
-      text: z.string(),
-      /** The stored alert's id when you can dismiss it (POST /api/alerts/:id/dismiss); absent for live checks. */
-      id: z.string().optional(),
-      /** The transaction it is about, when that row still exists. */
-      txnKey: z.string().optional(),
-    }),
-  ),
-});
-export type AccountsView = z.infer<typeof AccountsView>;
-
 export const RegisterView = z.object({
   account: AccountRow,
   days: z.array(z.object({ label: z.string(), balance: cents.nullable(), rows: z.array(TxnListRow) })),
   note: z.string().nullable(),
+  /** Linked accounts only. */
+  start: StartBalance.nullable().optional(),
 });
 export type RegisterView = z.infer<typeof RegisterView>;
 

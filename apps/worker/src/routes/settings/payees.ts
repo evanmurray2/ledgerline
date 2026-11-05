@@ -21,16 +21,16 @@ payeesRoutes.get('/settings/payees', async (c) => {
   const s = scoped(c);
   const [payees, counts, names, uses, cats] = await s.batch([
     s.q(`SELECT id, name FROM payee WHERE budget_id = ?1 AND merged_into IS NULL ORDER BY name`),
-    // Budget transactions per payee: the same test as Activity's (history is before the account's budget start and
-    // not pending at link).
+    // Budget transactions per payee: the same test as Activity's (a bank row dated before the account's budget start
+    // is outside the budget, D-67).
     s.q(
       `SELECT payee_id, count(*) AS n FROM v_txn_bank WHERE budget_id = ?1 AND payee_id IS NOT NULL
-         AND (date >= budget_from OR pending_at_link = 1 OR status != 'posted') GROUP BY payee_id`,
+         AND date >= budget_from GROUP BY payee_id`,
     ),
     // Bank names behind those budget transactions only: history doesn't show on the Rename sheet.
     s.q(
       `SELECT payee_id, raw_name, count(*) AS n FROM v_txn_bank WHERE budget_id = ?1 AND payee_id IS NOT NULL
-         AND (date >= budget_from OR pending_at_link = 1 OR status != 'posted')
+         AND date >= budget_from
        GROUP BY payee_id, raw_name ORDER BY n DESC`,
     ),
     // Your categories for money out, per payee: "usually" (docs/payees.md 2.1).

@@ -52,7 +52,12 @@ settingsRoutes.post('/setup/starting-balances', async (c) => {
     if (!row) throw new HttpError(404, 'not_found', 'account');
     w.push(
       s.q(
-        `UPDATE account SET starting_balance = ?3, starting_balance_confirmed_at = ?4, updated_at = ?4 WHERE budget_id = ?1 AND id = ?2`,
+        // Confirmed at the time of the bank balance the app showed (its last sync), not of the save: rows that came
+        // in after it aren't in it (ledger/link.ts, D-67).
+        `UPDATE account SET starting_balance = ?3, updated_at = ?4,
+           starting_balance_confirmed_at = min(?4, coalesce((SELECT pa.balance_as_of FROM provider_account pa
+             WHERE pa.budget_id = account.budget_id AND pa.provider_account_id = account.provider_account_id), ?4))
+         WHERE budget_id = ?1 AND id = ?2`,
         a.accountId,
         a.startingBalance,
         now,

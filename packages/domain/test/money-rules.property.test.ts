@@ -12,74 +12,9 @@ import { checkIdentity } from '../src/budget/identity.js';
 import { project, type LedgerAccount, type LogicalTxn, type TxnUse } from '../src/budget/project.js';
 import { projectedFronts } from '../src/budget/fronts.js';
 import { cents, type Cents } from '../src/money.js';
-import { addMonths, month, monthRange, type Month } from '../src/month.js';
+import { addMonths, monthRange, type Month } from '../src/month.js';
 
-const START = month('2026-01');
-const RUNS = Number(process.env.FC_RUNS ?? 300);
-
-// ---------------------------------------------------------------- small builders
-
-const amt = (lo: number, hi: number) => fc.integer({ min: lo, max: hi }).map((n) => cents(n));
-
-function cats(n: number, cards: string[]): BudgetCategory[] {
-  return [
-    ...Array.from({ length: n }, (_, i) => ({ id: `c${i}`, kind: 'spending' as const })),
-    ...cards.map((c) => ({ id: `pay_${c}`, kind: 'cc_payment' as const, cardAccountId: c })),
-  ];
-}
-
-function run(o: {
-  accounts: LedgerAccount[];
-  categories: BudgetCategory[];
-  assignments: Assignment[];
-  txns: LogicalTxn[];
-  current: Month;
-  today?: string;
-}): { r: ComputeResult; p: ReturnType<typeof project> } {
-  const p = project({
-    accounts: o.accounts,
-    txns: o.txns,
-    startMonth: START,
-    today: o.today ?? `${o.current}-28`,
-  });
-  const r = computeBudget({
-    startMonth: START,
-    currentMonth: o.current,
-    categories: o.categories,
-    assignments: o.assignments,
-    lines: p.lines,
-  });
-  return { r, p };
-}
-
-const cell = (r: ComputeResult, m: Month, c: string) => r.months.find((x) => x.month === m)!.categories[c]!;
-const card = (r: ComputeResult, m: Month, c: string) => r.months.find((x) => x.month === m)!.cards[c]!;
-
-let seq = 0;
-function tx(
-  accountId: string,
-  date: string,
-  amount: number,
-  use: TxnUse,
-  extra: Partial<LogicalTxn> = {},
-): LogicalTxn {
-  seq++;
-  return { key: `t${seq}`, accountId, date, amount: cents(amount), status: 'posted', seq, use, ...extra };
-}
-const cat = (categoryId: string): TxnUse => ({ type: 'category', categoryId });
-
-const CHK: LedgerAccount = {
-  id: 'chk',
-  kind: 'checking',
-  budgetFrom: '2026-01-01',
-  startingBalance: cents(0),
-};
-const CARD: LedgerAccount = {
-  id: 'card',
-  kind: 'credit',
-  budgetFrom: '2026-01-01',
-  startingBalance: cents(0),
-};
+import { START, RUNS, amt, cats, run, cell, card, tx, cat, CHK, CARD } from './ledger-helpers.js';
 
 // ---------------------------------------------------------------- random ledgers
 
@@ -686,46 +621,6 @@ describe('rule 7: card coverage', () => {
       ),
       { numRuns: RUNS },
     );
-  });
-});
-
-describe('rule 8: starting balances', () => {
-  it('checking and savings become RTA inflows; a card’s starting debt never touches RTA and P starts at 0', () => {
-    fc.assert(
-      fc.property(amt(0, 1_000_000), amt(0, 1_000_000), amt(0, 500_000), (c, s, d) => {
-        const { r } = run({
-          accounts: [
-            { ...CHK, startingBalance: c },
-            { id: 'sav', kind: 'savings', budgetFrom: '2026-01-01', startingBalance: s },
-            { ...CARD, startingBalance: cents(-d) },
-          ],
-          categories: cats(1, ['card']),
-          assignments: [],
-          txns: [],
-          current: START,
-        });
-        expect(r.rta).toBe(c + s);
-        expect(card(r, START, 'card').available).toBe(0);
-        expect(r.unbudgetedCardDebt.card).toBe(d);
-      }),
-      { numRuns: RUNS },
-    );
-  });
-
-  it('transactions before an account’s budget_from are history, except those pending at link', () => {
-    const acct = { ...CHK, budgetFrom: '2026-01-15', startingBalance: cents(100_000) };
-    const { r, p } = run({
-      accounts: [acct],
-      categories: cats(1, []),
-      assignments: [],
-      txns: [
-        tx('chk', '2026-01-10', -5_000, cat('c0')),
-        tx('chk', '2026-01-12', -2_000, cat('c0'), { pendingAtLink: true }),
-      ],
-      current: START,
-    });
-    expect(cell(r, START, 'c0').available).toBe(-2_000);
-    expect(p.working.chk).toBe(98_000);
   });
 });
 
