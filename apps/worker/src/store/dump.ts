@@ -25,6 +25,7 @@ export const BUDGET_TABLES = [
   'health_status',
   'holding_snapshot',
   'liability_snapshot',
+  'not_same',
   'payee',
   'raw_page',
   'rule',

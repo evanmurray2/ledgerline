@@ -2,6 +2,17 @@
 
 How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history.
 
+## Update: the one-time plaid_name fill (Nov 5, 2026)
+
+`measure/fill-plaid-name.measure.ts`: the job step of `docs/payee-names.md` 8.1 (`src/sync/fill-plaid-name.ts`) on a 3,000-transaction history, every `plaid_name` cleared, run to the end. One raw page is parsed per step and at most 100 rows are written. Two runs, ms (median / p90 / max):
+
+| Page size (transactions, bytes) | Steps | ms median / p90 / max   |
+| ------------------------------- | ----- | ----------------------- |
+| 100 (about 205 KB, production)  | 31    | 3.3 / 4.6–5.7 / 6.6–8.1 |
+| 500 (about 1 MB)                | 31    | 8.0 / 9.7–10.9 / 11–12  |
+
+Production pages hold 100 transactions (D-6; the owner's largest page is about 220 KB), so the job fits. A 500-transaction page doesn't fit, as for the apply step.
+
 ## Update: sync pages for the phone's copy (Nov 3, 2026)
 
 `measure/phone.measure.ts`: `GET /api/sync` on a 3,000-transaction budget (node:sqlite, SQLite included, as a Durable Object pays it), 200 rows a page.

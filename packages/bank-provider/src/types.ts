@@ -11,7 +11,10 @@ export interface NormalizedTxn {
   authorizedDate: string | null;
   pending: boolean;
   pendingProviderTxnId: string | null;
+  /** The bank's own text (Plaid's original_description, else its name). */
   rawName: string;
+  /** Plaid's short `name`, as sent (docs/payee-names.md 3). */
+  plaidName: string | null;
   merchantName: string | null;
   merchantEntityId: string | null;
   providerCategory: string | null;

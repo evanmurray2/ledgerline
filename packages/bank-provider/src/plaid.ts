@@ -92,6 +92,7 @@ export function normalizePlaidTxn(t: PlaidTxn): NormalizedTxn {
     pending: t.pending,
     pendingProviderTxnId: t.pending_transaction_id ?? null,
     rawName: t.original_description ?? t.name ?? '',
+    plaidName: t.name ?? null,
     merchantName: t.merchant_name ?? null,
     merchantEntityId: t.merchant_entity_id ?? null,
     providerCategory: t.personal_finance_category?.detailed ?? null,

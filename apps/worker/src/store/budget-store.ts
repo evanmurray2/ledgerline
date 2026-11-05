@@ -28,6 +28,7 @@ import {
   backstopHandler,
   dailyScanHandler,
   ensureRecurring,
+  fillPlaidNameHandler,
   maintenanceHandler,
   startSyncJob,
   type Enqueue,
@@ -59,7 +60,10 @@ export class BudgetStore extends DurableObject<Env> {
     this.runner = new JobRunner(ctx.storage, this.handlers(), (job, err) => this.onFailed(job, err));
     void ctx.blockConcurrencyWhile(async () => {
       try {
-        migrate(ctx.storage, BUDGET_MIGRATIONS, Date.now());
+        const { applied } = migrate(ctx.storage, BUDGET_MIGRATIONS, Date.now());
+        // A migration may queue a job (0007 queues the plaid_name fill): point the alarm at it now, not at the next
+        // job already waiting (up to 4 hours away). A failure here only delays it to that alarm.
+        if (applied.length) await this.runner.scheduleNext(Date.now()).catch(() => null);
       } catch (e) {
         // Refuse to serve a half-migrated schema; health() reports why.
         this.startError = e instanceof Error ? e.message : String(e);
@@ -381,6 +385,7 @@ export class BudgetStore extends DurableObject<Env> {
       backstop: (job, now) => backstopHandler(this.adapter(), this.enqueue)(job, now),
       daily_scan: (job, now) => dailyScanHandler(this.appEnv(), budgetId)(job, now),
       maintenance: (job, now) => maintenanceHandler(this.appEnv(), budgetId)(job, now),
+      fill_plaid_name: (job, now) => fillPlaidNameHandler(this.adapter(), budgetId)(job, now),
       register_link: async (job) => {
         // Retried until the Directory answers; a duplicate Item is flagged on the connection (6.4).
         const { itemId, connectionId } = job.state as { itemId: string; connectionId: string };

@@ -420,20 +420,20 @@ export async function planApply(
       .prepare(
         `INSERT INTO bank_txn (provider_txn_id, budget_id, connection_id, provider_account_id, amount, date, authorized_date,
            pending, pending_provider_txn_id, raw_name, merchant_name, merchant_entity_id, provider_category, payment_channel,
-           txn_key, removed_at, first_apply_seq, last_apply_seq, created_at, updated_at)
+           plaid_name, txn_key, removed_at, first_apply_seq, last_apply_seq, created_at, updated_at)
          SELECT provider_txn_id, budget_id, connection_id, provider_account_id,
            json_extract(payload, '$.amount'), json_extract(payload, '$.date'), json_extract(payload, '$.authorizedDate'),
            json_extract(payload, '$.pending'), json_extract(payload, '$.pendingProviderTxnId'), json_extract(payload, '$.rawName'),
            json_extract(payload, '$.merchantName'), json_extract(payload, '$.merchantEntityId'),
            json_extract(payload, '$.providerCategory'), json_extract(payload, '$.paymentChannel'),
-           'p:' || provider_txn_id, NULL, id, id, ?3, ?3
+           json_extract(payload, '$.plaidName'), 'p:' || provider_txn_id, NULL, id, id, ?3, ?3
          FROM bank_event WHERE sync_run_id = ?1 AND page = ?2 AND position >= ?4 AND position < ?5 AND kind != 'removed' ORDER BY id
          ON CONFLICT (provider_txn_id) DO UPDATE SET
            amount = excluded.amount, date = excluded.date, authorized_date = excluded.authorized_date,
            pending = excluded.pending, pending_provider_txn_id = excluded.pending_provider_txn_id,
            raw_name = excluded.raw_name, merchant_name = excluded.merchant_name,
            merchant_entity_id = excluded.merchant_entity_id, provider_category = excluded.provider_category,
-           payment_channel = excluded.payment_channel, removed_at = NULL,
+           payment_channel = excluded.payment_channel, plaid_name = excluded.plaid_name, removed_at = NULL,
            last_apply_seq = excluded.last_apply_seq, updated_at = excluded.updated_at`,
       )
       .bind(runId, page, c.now, from, to),

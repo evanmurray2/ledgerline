@@ -4,6 +4,7 @@ import {
   PLAID_DAYS_REQUESTED,
   PlaidProvider,
   classifyWebhook,
+  normalizePlaidTxn,
   parsePlaidSyncPage,
   plaidAmountToCents,
   resetWebhookKeyCache,
@@ -67,6 +68,21 @@ describe('Plaid adapter', () => {
       ['removed', 't0', 'removed/0'],
     ]);
     expect(p.events[0]!.payload).toMatchObject({ amount: -1250, pending: true, merchantName: 'Shop' });
+  });
+
+  it("keeps Plaid's name next to the bank text, and null when Plaid sends none", () => {
+    const base = { transaction_id: 't', account_id: 'a', amount: 1, date: '2026-11-01', pending: false };
+    expect(
+      normalizePlaidTxn({ ...base, name: 'Hulu', original_description: 'HLU*HULUPLUS HULU.COM/BILL CA' }),
+    ).toMatchObject({ rawName: 'HLU*HULUPLUS HULU.COM/BILL CA', plaidName: 'Hulu' });
+    expect(normalizePlaidTxn({ ...base, name: 'Shell' })).toMatchObject({
+      rawName: 'Shell',
+      plaidName: 'Shell',
+    });
+    expect(normalizePlaidTxn({ ...base, original_description: 'SHELL 123' })).toMatchObject({
+      rawName: 'SHELL 123',
+      plaidName: null,
+    });
     expect(() =>
       parsePlaidSyncPage(
         JSON.stringify({

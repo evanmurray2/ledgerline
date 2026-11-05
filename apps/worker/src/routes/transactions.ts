@@ -268,10 +268,11 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
   }
   if (p.budgetMonth !== undefined) set('budget_month', p.budgetMonth);
   if (p.payeeName !== undefined) {
+    // A name you typed is yours: sync never renames it (docs/payee-names.md 6).
     if (t.payee_id)
       w.push(
         s.q(
-          `UPDATE payee SET name = ?3, updated_at = ?4 WHERE budget_id = ?1 AND id = ?2`,
+          `UPDATE payee SET name = ?3, named_by = 'user', updated_at = ?4 WHERE budget_id = ?1 AND id = ?2`,
           t.payee_id,
           p.payeeName,
           now,
