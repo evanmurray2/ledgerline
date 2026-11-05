@@ -115,7 +115,7 @@ export const api = {
   /** "Same purchase?" (docs/payee-names.md 9.1): Yes or No for one candidate of a card. */
   samePurchase: (v: { id: string } & In<typeof SamePurchaseAnswer>) =>
     post(`/api/same-purchase/${enc(v.id)}`, MutationResult, { answer: v.answer, key: v.key }),
-  /** Not the same: undoes a pair of your entry and a bank row, and remembers No. */
+  /** Not the same: undoes a pair (your entry and a bank row, or two bank rows), and remembers No. */
   notSame: (key: string) => post(`/api/transactions/${enc(key)}/not-same`, MutationResult),
 
   match: (inflowKey: string) => get(`/api/match/${enc(inflowKey)}`, MatchView),
