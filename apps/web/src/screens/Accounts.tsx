@@ -360,6 +360,11 @@ export function AccountsScreen() {
                                 {sub.text}
                               </span>
                             )}
+                            {a.drift !== null && (
+                              <span className="tnum text-xs text-muted" data-testid="bank-drift">
+                                {formatCents(Math.abs(a.drift))} off from bank
+                              </span>
+                            )}
                           </span>
                           <Icon name="chevR" size={18} className="-ml-1 shrink-0 text-faint" />
                         </Link>

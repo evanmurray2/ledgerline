@@ -179,6 +179,31 @@ describe('Accounts and Reports', () => {
     expect(screen.getByText('$1,138.05')).toBeTruthy();
   });
 
+  it('an account whose transactions differ from the bank balance says by how much', async () => {
+    renderAt('/accounts');
+    await screen.findByTestId('net-worth', undefined, { timeout: 4000 });
+    expect(screen.queryAllByTestId('bank-drift')).toHaveLength(0);
+    cleanup();
+    // The bank reports $40 more than the starting balance plus the posted rows add up to.
+    await (
+      await server.db()
+    )
+      .prepare(
+        `UPDATE provider_account SET current_balance = current_balance + 4000
+         WHERE provider_account_id = (SELECT provider_account_id FROM account WHERE id = 'checking')`,
+      )
+      .run();
+    show('/accounts');
+    expect((await screen.findByTestId('bank-drift', undefined, { timeout: 4000 })).textContent).toBe(
+      '$40.00 off from bank',
+    );
+    cleanup();
+    show('/accounts/checking');
+    expect((await screen.findByTestId('bank-drift', undefined, { timeout: 4000 })).textContent).toContain(
+      'differ from the bank balance by $40.00',
+    );
+  });
+
   it('card register shows what you owe and the payment category', async () => {
     renderAt('/accounts/sapphire');
     await text('You owe the bank');

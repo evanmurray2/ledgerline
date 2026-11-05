@@ -174,6 +174,13 @@ export function RegisterScreen() {
                   </div>
                 </>
               )}
+              {a.drift !== null && (
+                <p className="m-0 text-xs leading-snug text-muted" data-testid="bank-drift">
+                  Your transactions differ from the bank balance by{' '}
+                  <span className="tnum">{formatCents(Math.abs(a.drift))}</span>. One may be missing or
+                  doubled. A small difference often clears after a day.
+                </p>
+              )}
               {v.note && <Banner tone="danger">{v.note}</Banner>}
               {a.kind !== 'credit' && (
                 <p className="m-0 text-xs leading-snug text-muted">
