@@ -1,4 +1,4 @@
-// Rows that move an account's starting balance (packages/domain/src/budget/start.ts, D-?): which ones, for the bank
+// Rows that move an account's starting balance (packages/domain/src/budget/start.ts, D-67): which ones, for the bank
 // difference and rule 10's working balance (adjustments), the notes on Accounts, and the account's Starting balance
 // sheet (startSheet). The budget lines get each row's role in loadTxns (ledger.ts).
 import type { StartBalance } from '@ledgerline/contracts';
@@ -51,7 +51,7 @@ export async function adjustments(s: Scoped, now: number): Promise<Adjustments> 
   const sum = new Map<string, number>();
   const recent = new Map<string, Recent>();
   const note = (t: TxRow) => {
-    if (t.seq < now - NOTE_MS || !cameInLater(t.seq, links.get(t.account_id) ?? null)) return;
+    if (t.seq < now - NOTE_MS || !cameInLater(t.seq, links.accounts.get(t.account_id) ?? null)) return;
     const was = recent.get(t.account_id);
     if (!was || t.seq > was.at)
       recent.set(t.account_id, { payee: t.payee, date: t.date, amount: t.amount, at: t.seq });
@@ -83,7 +83,7 @@ export async function startSheet(
       account.id,
     ),
   ]);
-  const link = links.get(account.id) ?? null;
+  const link = links.accounts.get(account.id) ?? null;
   if (!link) return null;
   const out: StartBalance['rows'] = [];
   let total = account.starting_balance;

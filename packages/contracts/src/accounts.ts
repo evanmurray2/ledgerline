@@ -18,7 +18,7 @@ export const AccountRow = z.object({
   connectionStatus: z.enum(['ok', 'login_required', 'error']),
   drift: cents.nullable(),
   /**
-   * A row from before the budget start that came in after the link, in the last 7 days (D-?): "Starting debt
+   * A row from before the budget start that came in after the link, in the last 7 days (D-67): "Starting debt
    * updated: Hertz $187.53".
    */
   startNote: z.string().nullable().optional(),
@@ -66,7 +66,7 @@ export const AccountsView = z.object({
 export type AccountsView = z.infer<typeof AccountsView>;
 
 /**
- * How the bank's balance at link became the account's starting balance (D-?). Money terms: positive is money in a
+ * How the bank's balance at link became the account's starting balance (D-67). Money terms: positive is money in a
  * checking account; a card's debt is negative.
  */
 export const StartBalance = z.object({

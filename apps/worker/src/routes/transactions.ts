@@ -122,7 +122,7 @@ transactionRoutes.get('/transactions/:key', async (c) => {
             : a,
       );
   const ruleName = (rule!.results[0] as { name: string } | undefined)?.name;
-  // A row before the budget start may be part of the starting balance rather than plain history (D-?).
+  // A row before the budget start may be part of the starting balance rather than plain history (D-67).
   const inStart = kind === 'history' && roleOf(t, await linkInfo(s)) === 'before';
   const sheet: TxnSheet = {
     key,

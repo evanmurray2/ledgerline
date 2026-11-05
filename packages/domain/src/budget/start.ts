@@ -1,4 +1,4 @@
-// Which bank rows belong to an account's starting balance (D-?). The budget starts on a date: a row dated before
+// Which bank rows belong to an account's starting balance (D-67). The budget starts on a date: a row dated before
 // budgetFrom is part of the starting balance, one dated on or after it is in the budget. The stored starting balance
 // is the bank's balance at the moment of the link, so two kinds of rows need an adjustment:
 //

@@ -1,4 +1,4 @@
-// Money rule 8 (starting balances) as property-based tests, with the budget start date rule (D-?). Split from
+// Money rule 8 (starting balances) as property-based tests, with the budget start date rule (D-67). Split from
 // money-rules.property.test.ts.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -28,7 +28,7 @@ describe('rule 8: starting balances', () => {
     );
   });
 
-  it('transactions before an account’s budget_from are history; rows not in the balance at link join the starting balance (D-?)', () => {
+  it('transactions before an account’s budget_from are history; rows not in the balance at link join the starting balance (D-67)', () => {
     const acct = { ...CHK, budgetFrom: '2026-01-15', startingBalance: cents(100_000) };
     const { r, p } = run({
       accounts: [acct],

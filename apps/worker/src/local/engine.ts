@@ -78,7 +78,7 @@ export interface ApplyResult {
 
 /**
  * Bump when the rules that turn rows into budget lines or stored totals change, so every copy rebuilds them once
- * (2: rows dated before the budget start move the starting balance, D-?).
+ * (2: rows dated before the budget start move the starting balance, D-67).
  */
 export const DERIVE_VERSION = 2;
 const derivedMark = (today: string) => `${today}#${DERIVE_VERSION}`;

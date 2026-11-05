@@ -1,4 +1,4 @@
--- D-?: a bank row dated before its account's budget start is part of the starting balance (pending at link, or sent
+-- D-67: a bank row dated before its account's budget start is part of the starting balance (pending at link, or sent
 -- late by the bank) or history; it is never in a category (packages/domain/src/budget/start.ts). Until now a row
 -- pending at link was budgeted in its category, so those categories are cleared here, once.
 -- Expand-only: no schema change. Row changes only, on the server's store and on the phone's copy alike.
@@ -71,3 +71,8 @@ WHERE txn_key IN (
     AND (CASE WHEN a.kind = 'credit' AND b.amount < 0 AND b.authorized_date IS NOT NULL THEN b.authorized_date ELSE b.date END) < a.budget_from
 )
   AND (category_id IS NOT NULL OR to_rta = 1 OR categorized_by IS NOT NULL);
+
+-- 4. Indexes for the reads that place rows (apps/worker/src/ledger/link.ts): each connection's first row, and the
+-- posted rows the bank removed (a reissue keeps the removed row's arrival). Expand-only.
+CREATE INDEX IF NOT EXISTS bank_txn_connection_created ON bank_txn(budget_id, connection_id, created_at);
+CREATE INDEX IF NOT EXISTS bank_txn_removed_posted ON bank_txn(budget_id) WHERE removed_at IS NOT NULL AND pending = 0;

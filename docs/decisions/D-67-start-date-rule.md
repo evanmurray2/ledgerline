@@ -1,4 +1,4 @@
-# D-?: The budget start is a date: rows dated before it belong to the starting balance (Nov 5, 2026)
+# D-67: The budget start is a date: rows dated before it belong to the starting balance (Nov 5, 2026)
 
 **Decided by the owner** (chat, Nov 5, 2026). Changes `docs/design.md` Budget start ("Every transaction pending at
 link, and the posted transaction it becomes, is budgeted even if its date is earlier") and the reading of Money rule 8
@@ -28,8 +28,10 @@ owner can't see.
      first sync, when that sync ran within an hour of the link). It counts in the budget like any row and comes out
      of the starting balance, so it counts once.
    - "In the balance at link" means the row arrived within an hour of the connection's first row, or before the
-     stored balance was saved (Setup's last step saves it again). A link made before the account's budget start
-     keeps only the pending rule. CSV history rows have no link.
+     stored balance was read (Setup's last step saves it again, and records the time of the bank balance it showed).
+     A posted row that matches a removed posted row (same account, amount and posted date: the bank sending it again)
+     keeps that row's arrival. A link made before the account's budget start keeps only the pending rule. CSV history
+     rows have no link.
 3. **No new storage.** The role comes from what is stored: each row's first arrival (`bank_txn.created_at`), the
    connection's `linked_at` and first row, the account's `starting_balance_confirmed_at`, and `pending_at_link`.
    Filing now compares the budget date when it marks a row pending at link.
@@ -45,12 +47,18 @@ owner can't see.
    - The read-only sheet of such a row says "Part of your starting balance" instead of "Not counted".
    - Setup's link step says that purchases from before the start are part of the starting balance, and that some
      may come in over the next 2 weeks.
-   - Lists (Activity, registers, payees, category sheets) leave out every bank row dated before the start, pending
-     ones included. Before this change, a row pending at link was listed and budgeted.
+   - Lists leave out posted rows dated before the start, as before (D-62). A pending one is listed under Pending
+     with the "Before your budget" badge, because the account's pending total counts it; its sheet is read-only. It
+     never shows in Needs attention or in payee counts.
 6. **Existing rows** (migration 0008): rows pending at link and dated before the start lose their category,
    Ready to Assign mark and splits. The old values go to the audit log (`transaction.starting_balance`). A card's
    pending purchase authorized before the start is marked pending at link. The phone's engine rebuilds every line
    once (`DERIVE_VERSION` 2).
+
+**Limits.** If Plaid's first sync runs hours after the link, rows that posted in between count as in the balance
+at link, and the bank difference shows them. A late refund on a card with no starting debt makes its unbudgeted
+debt negative, as a credit balance at start would. A pending row from before the start can't be marked "won't
+clear"; it leaves the starting balance when the bank removes it.
 
 **Money effect.** On the owner's budget of Nov 5: Wells Fargo active cash's starting debt grows by $156.87, Amex
 platinum's by $187.53, and Atmos Summit's by $124.80 (four purchases, which leave Fun money, so it gets $124.80 back).

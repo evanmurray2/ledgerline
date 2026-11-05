@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => window.localStorage.setItem('ledgerline-theme', 'light'));
 });
 
-test('An account’s starting balance opens a sheet with each step (D-?)', async ({ page }) => {
+test('An account’s starting balance opens a sheet with each step (D-67)', async ({ page }) => {
   await page.goto('/accounts/sapphire');
   await page.getByRole('button', { name: /^Starting debt/ }).click();
   const sheet = page.getByRole('dialog', { name: 'Starting debt' });

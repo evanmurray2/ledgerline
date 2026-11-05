@@ -116,7 +116,7 @@ export async function planFresh(
   }
   stmts.push(...(await planNewNames(s, batchRows, created, userTaken, now)));
 
-  // A row dated before the account's budget start (history, or part of the starting balance, D-?) is never budgeted,
+  // A row dated before the account's budget start (history, or part of the starting balance, D-67) is never budgeted,
   // so it gets no transfer or Waiting-to-match state: nothing about it needs your attention. The date is the one
   // the budget uses: the authorized date for a card purchase (v_txn_bank).
   const budgetDate = (r: BankRow) =>

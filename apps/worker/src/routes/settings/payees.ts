@@ -22,7 +22,7 @@ payeesRoutes.get('/settings/payees', async (c) => {
   const [payees, counts, names, uses, cats] = await s.batch([
     s.q(`SELECT id, name FROM payee WHERE budget_id = ?1 AND merged_into IS NULL ORDER BY name`),
     // Budget transactions per payee: the same test as Activity's (a bank row dated before the account's budget start
-    // is outside the budget, D-?).
+    // is outside the budget, D-67).
     s.q(
       `SELECT payee_id, count(*) AS n FROM v_txn_bank WHERE budget_id = ?1 AND payee_id IS NOT NULL
          AND date >= budget_from GROUP BY payee_id`,

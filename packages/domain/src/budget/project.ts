@@ -62,7 +62,7 @@ export interface LogicalTxn {
   /** Budget-month override ("counted in Oct", "Save for December"). */
   budgetMonth?: Month;
   /**
-   * How the row relates to the starting balance (start.ts, D-?): 'before' rows (dated before budgetFrom, not in the
+   * How the row relates to the starting balance (start.ts, D-67): 'before' rows (dated before budgetFrom, not in the
    * balance at link) join the starting balance; 'linkDay' rows (in the budget, already in the balance at link) come
    * out of it.
    */
@@ -184,7 +184,7 @@ export function linesForTxn(
   if (isHistory(t, acct)) return none;
   if (t.wontClear) return none;
   if (t.status === 'upcoming' && t.date > today) return none;
-  // Part of the starting balance (D-?): no category, Owed to you or transfer; it only moves the starting balance.
+  // Part of the starting balance (D-67): no category, Owed to you or transfer; it only moves the starting balance.
   if (t.date < acct.budgetFrom)
     return { ...none, counts: true, lines: startShiftLine(t.key, acct, startMonth, t.amount) };
   const lines: BudgetLine[] = [];

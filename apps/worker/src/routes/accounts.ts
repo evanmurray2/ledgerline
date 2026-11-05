@@ -23,7 +23,7 @@ import {
 import type { AppEnv } from '../http/context.js';
 import { HttpError, parse, scoped } from './api.js';
 import { cards as loadCards, fresh, monthResult, shortDate, structure } from '../views/common.js';
-import { isHistory, listRow } from '../views/rows.js';
+import { hiddenFromLists, listRow } from '../views/rows.js';
 import { RECENT_TX, TX_COLUMNS, uncovered, type TxRow } from '../ledger/ledger.js';
 import { inBudgetByAccount, monthTotals } from '../ledger/totals.js';
 import type { Scoped } from '../db/scoped.js';
@@ -82,7 +82,7 @@ async function accountRows(
       Date.now(),
     ),
   );
-  // Late rows from before the start and link-day rows (ledger/start-part.ts, D-?): the stored sums leave them out.
+  // Late rows from before the start and link-day rows (ledger/start-part.ts, D-67): the stored sums leave them out.
   const startAdjust = await adjustments(s, now);
   const cardInfo = new Map((await loadCards(s, today)).map((c) => [c.accountId, c]));
   const raw = acc!.results as AcctDb[];
@@ -346,7 +346,7 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
   );
   // "Before your budget" rows are never listed (D-62), but the running balance still walks through them.
   const keep = (t: TxRow) =>
-    !isHistory(t) &&
+    !hiddenFromLists(t) &&
     (show === 'all' ||
       (show === 'pending' && t.status !== 'posted') ||
       (show === 'needs' && !t.category_id && !t.to_rta && !t.transfer_state && !t.wtm_state) ||

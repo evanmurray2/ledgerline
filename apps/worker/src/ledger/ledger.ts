@@ -19,7 +19,7 @@ import {
 } from '@ledgerline/domain';
 import type { Scoped } from '../db/scoped.js';
 import { markDirty } from '../budget/recompute.js';
-import { linkInfo, roleOf } from './link.js';
+import { NO_LINKS, linkInfo, roleOf } from './link.js';
 
 export interface TxRow {
   key: string;
@@ -261,7 +261,7 @@ export async function loadTxns(
     for (const r of ow!.results as OwedRow[]) owedBy.set(r.txn_key, [...(owedBy.get(r.txn_key) ?? []), r]);
     for (const r of ln!.results as { from_key: string; to_key: string }[]) refund.set(r.from_key, r.to_key);
   }
-  const links = rows.some((r) => r.source === 'bank') ? await linkInfo(s) : new Map();
+  const links = rows.some((r) => r.source === 'bank') ? await linkInfo(s) : NO_LINKS;
   const logical = new Map<string, LogicalTxn>();
   for (const r of rows)
     logical.set(

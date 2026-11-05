@@ -204,7 +204,7 @@ describe('Accounts and Reports', () => {
     );
   });
 
-  it('an account’s starting balance opens a sheet with each step, and a late row from before the start (D-?)', async () => {
+  it('an account’s starting balance opens a sheet with each step, and a late row from before the start (D-67)', async () => {
     renderAt('/accounts');
     await screen.findByTestId('net-worth', undefined, { timeout: 4000 });
     cleanup();

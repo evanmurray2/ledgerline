@@ -141,7 +141,7 @@ money.
   categorized keep their category, and their "set by rule" chip still shows.
 - **Rules you may have:** a rule made with Always stops applying to new transactions. The suggestion (2.1) takes
   over, since the category you made the rule from is the payee's most used one.
-- **Docs:** a new decision (`docs/decisions/D-?-no-rules.md`), and entries in `docs/whats-true-now.md` (D-59) for
+- **Docs:** a new decision (`docs/decisions/D-67-no-rules.md`), and entries in `docs/whats-true-now.md` (D-59) for
   `docs/design.md` (Categorization rules; rule-made paybacks such as the rent rule; the Rules settings screen)
   and `docs/sync-spec.md` (rule results in the processing batch). Money rule 13 (projected fronts) still applies
   to owed items you mark yourself.

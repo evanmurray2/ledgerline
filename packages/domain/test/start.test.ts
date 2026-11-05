@@ -15,7 +15,7 @@ const row = (o: Partial<Parameters<typeof startRole>[0]>) => ({
   ...o,
 });
 
-describe('startRole (D-?)', () => {
+describe('startRole (D-67)', () => {
   it('a row posted before the link, in the first sync, is history', () => {
     expect(startRole(row({}), FROM, link)).toBeNull();
     expect(startRole(row({ firstSeenAt: link.firstSeen! + FIRST_SYNC_MS }), FROM, link)).toBeNull();

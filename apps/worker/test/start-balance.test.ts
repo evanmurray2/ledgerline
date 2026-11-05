@@ -1,10 +1,10 @@
-// Rows dated before the budget start move the starting balance (D-?): a row pending at link, a posted row the bank
+// Rows dated before the budget start move the starting balance (D-67): a row pending at link, a posted row the bank
 // sent days later, and a link-day row already in the balance at link. Through the real sync, the phone's engine and
 // its routes: the starting debt, the bank difference, rule 10, the Starting balance sheet and the read-only sheet.
 import { env } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { AccountsView, RegisterView, TxnSheet } from '@ledgerline/contracts';
-import { bankSync, pend, plaidTxn } from './bank-sync.js';
+import { bankSync, pend, plaidTxn, removal } from './bank-sync.js';
 import { checkIdentityDb } from '../src/maintenance.js';
 
 const B = 'b_start';
@@ -14,7 +14,7 @@ const MIN = 60_000;
 const DAY = 86_400_000;
 const h = bankSync('start-balance', B, C, 1, LINK + MIN);
 
-describe('rows before the budget start (D-?)', () => {
+describe('rows before the budget start (D-67)', () => {
   beforeAll(async () => {
     await h.setup();
     // Linked on the budget start (Oct 1) owing $100.00: that balance holds the Sep 28 and Oct 1 purchases, not the
@@ -105,5 +105,61 @@ describe('rows before the budget start (D-?)', () => {
     const a = (r.json as AccountsView).groups.flatMap((g) => g.accounts).find((x) => x.id === 'a_1')!;
     expect(a.drift).toBe(1000);
     expect(a.startNote ?? null).toBeNull();
+  });
+});
+
+const B2 = 'b_start2';
+const C2 = 'c_start2';
+const h2 = bankSync('start-balance-2', B2, C2, 1, LINK + MIN);
+
+describe('rows before the budget start: a reissue and a pending row that moves before the start (D-67)', () => {
+  beforeAll(async () => {
+    await h2.setup();
+    await h2.db.batch([
+      h2.db.prepare(`UPDATE connection SET linked_at = ?2 WHERE id = ?1`).bind(C2, LINK),
+      h2.db.prepare(`UPDATE account SET starting_balance = -2000 WHERE id = 'a_1'`),
+      h2.db
+        .prepare(
+          `INSERT INTO provider_account (id, budget_id, connection_id, provider_account_id, name, type, subtype, current_balance, created_at, updated_at)
+           VALUES ('pa_row_2', ?1, ?2, 'pa_1', 'Card 1', 'credit', 'credit card', 2000, 0, 0)`,
+        )
+        .bind(B2, C2),
+    ]);
+    // At link: a purchase already in the balance, and a hold dated on the start with no authorized date yet.
+    await h2.sync([
+      plaidTxn('sep28', 1, 20, '2026-09-28', 'OLD PURCHASE'),
+      pend('hold', 1, 7, '2026-10-01', 'HOLD', { authorized_date: null }),
+    ]);
+    // Day 3: the bank sends the old purchase again under a new id, and gives the hold an authorized date before the
+    // start.
+    h2.setNow(LINK + 3 * DAY);
+    await h2.sync(
+      [
+        plaidTxn('sep28b', 1, 20, '2026-09-28', 'OLD PURCHASE'),
+        pend('hold', 1, 7, '2026-10-01', 'HOLD', { authorized_date: '2026-09-30' }),
+      ],
+      [removal('sep28', 1)],
+    );
+    await h2.engine.derive();
+  });
+
+  it('a reissued row from before the link stays history: no false bank difference', async () => {
+    const r = await h2.call('GET', '/api/accounts');
+    const a = (r.json as AccountsView).groups.flatMap((g) => g.accounts).find((x) => x.id === 'a_1')!;
+    expect(a.drift).toBeNull();
+    // The hold came with the first sync, so nothing came in late.
+    expect(a.startNote ?? null).toBeNull();
+    const reg = (await h2.call('GET', '/api/accounts/a_1/register')).json as RegisterView;
+    expect(reg.start!.rows.map((x) => [x.payee, x.role])).toEqual([['HOLD', 'before']]);
+    // The pending row is listed, as the pending total counts it.
+    expect(reg.days.flatMap((d) => d.rows).map((x) => x.payee)).toEqual(['HOLD']);
+  });
+
+  it('rule 10 holds with the pending row in the starting debt', async () => {
+    const id = await checkIdentityDb(
+      { ...env, DB: h2.db, FAKE_NOW: new Date(LINK + 3 * DAY).toISOString() } as never,
+      B2,
+    );
+    expect(id).toMatchObject({ ok: true });
   });
 });

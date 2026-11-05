@@ -1,4 +1,4 @@
-// An account's starting balance, step by step (D-?): the bank's balance at link, the rows from before the budget
+// An account's starting balance, step by step (D-67): the bank's balance at link, the rows from before the budget
 // start that came in later, the link day's rows the budget counts instead, and the total the budget uses.
 import type { StartBalance } from '@ledgerline/contracts';
 import { Sheet, SheetTitle } from '../components/Sheet';

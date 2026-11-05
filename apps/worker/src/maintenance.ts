@@ -33,7 +33,7 @@ export async function checkIdentityDb(
   const [work, held, snaps, curLines, cats] = await s.batch([
     s.q(
       `SELECT (SELECT coalesce(sum(starting_balance), 0) FROM account WHERE budget_id = ?1) +
-              (SELECT coalesce(sum(amount), 0) FROM ${RECENT_TX} WHERE budget_id = ?1 AND wont_clear = 0 AND (date >= budget_from OR pending_at_link = 1)
+              (SELECT coalesce(sum(amount), 0) FROM ${RECENT_TX} WHERE budget_id = ?1 AND wont_clear = 0 AND (date >= budget_from OR pending_at_link = 1 OR bank_pending = 1)
                  AND (status != 'upcoming' OR date <= ?2)) AS w`,
       today,
     ),
@@ -48,7 +48,7 @@ export async function checkIdentityDb(
     ),
     s.q(`SELECT id, kind, card_account_id FROM category WHERE budget_id = ?1`),
   ]);
-  // Rows that move a starting balance beyond what the sum above holds (ledger/start-part.ts, D-?).
+  // Rows that move a starting balance beyond what the sum above holds (ledger/start-part.ts, D-67).
   let working = (work!.results[0] as { w: number }).w;
   for (const v of (await adjustments(s, now)).sum.values()) working += v;
   // A row pending at link that posted with a date before the earliest budget start: RECENT_TX reads posted rows from
