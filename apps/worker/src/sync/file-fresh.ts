@@ -37,14 +37,9 @@ export async function planFresh(
       ...inherited.flatMap((i) => [i.key, `p:${i.row.provider_txn_id}`]),
     ]),
   ];
-  const keysOf = new Map<BankRow, ReturnType<typeof rowKeys>>();
+  const keysOf = new Map<BankRow, string[]>();
   for (const r of [...fresh, ...inherited.map((i) => i.row)]) keysOf.set(r, rowKeys(r));
-  const allKeys = [...keysOf.values()];
-  const owners = await loadOwners(
-    s,
-    allKeys.flatMap((k) => k.keys),
-    allKeys.map((k) => k.legacy),
-  );
+  const owners = await loadOwners(s, [...keysOf.values()].flat());
   const overlayChunks = await s.batch(
     chunks(overlayKeys).map((k) =>
       s.q(
@@ -65,14 +60,14 @@ export async function planFresh(
     [...overlay.entries()].filter(([, o]) => o.categorized_by === 'user').map(([k]) => k),
   );
 
-  // ---- Filing (4): a filed row keeps its payee; a new row goes to the first of its keys a payee has, else (the old
-  // rules' cleaned text, a fallback until every payee has its keys) a new payee. Its keys no payee has go to its payee.
+  // ---- Filing (4): a filed row keeps its payee; a new row goes to the first of its keys a payee has, else to a new
+  // payee. Its keys no payee has go to its payee.
   const created = new Map<string, string>();
   /** The rows of this batch on each payee, for the name of a new payee (6). */
   const batchRows = new Map<string, { key: string; row: BankRow }[]>();
   const file = (r: BankRow, key: string, current: string | null | undefined): string => {
-    const { keys, legacy } = keysOf.get(r)!;
-    let payee = current ?? keys.map((k) => owners.keys.get(k)).find((p) => p) ?? owners.legacy.get(legacy);
+    const keys = keysOf.get(r)!;
+    let payee = current ?? keys.map((k) => owners.get(k)).find((p) => p);
     if (!payee) {
       payee = ulid(now);
       const name = newPayeeName(payeeSource(r));
@@ -88,8 +83,8 @@ export async function planFresh(
       );
     }
     for (const k of keys) {
-      if (owners.keys.has(k)) continue;
-      owners.keys.set(k, payee);
+      if (owners.has(k)) continue;
+      owners.set(k, payee);
       stmts.push(insertKey(s, k, payee, now));
     }
     const l = batchRows.get(payee) ?? [];

@@ -1,15 +1,17 @@
 // Processing steps 1–4 (process.ts planProcessing), in the batch order of docs/payee-names.md 9.2: (1) the provider's
-// link; (2) posted rows and bank pending rows without a link (D-47); (3) posted rows and your entries; (4) new bank
-// pending rows and your entries (a cover). Each step skips rows an earlier step claimed in the same batch, and a
+// link; (2) posted rows and bank pending rows without a link (D-47, 9.3); (3) posted rows and your entries; (4) new
+// bank pending rows and your entries (a cover). Each step skips rows an earlier step claimed in the same batch, and a
 // posted row tries bank pending rows before entries, so a leftover entry never takes a charge whose pending row still
 // counts. A posted row that claims a covered pending row takes the covering entry's key, as if it had paired with the
-// entry. Entries pair only on exact evidence; otherwise "Same purchase?" asks (9.1).
+// entry. Without the provider's link, rows pair only on exact evidence (Plaid's merchant id or names, or the same
+// amount on the same day); otherwise "Same purchase?" asks (9.1). No bank text is compared.
 import type { Stmt } from '@ledgerline/db/sql';
 import {
   type BankPendingRow,
   type BankSideRow,
   type EntryRow,
   type IsoDate,
+  type Merchant,
   type UnlinkedPostedRow,
   addDays,
   cents,
@@ -28,6 +30,15 @@ export function channel(r: { payment_channel: string | null; raw_name: string })
   if (/\bCHECK\b|\bCHK\b/i.test(r.raw_name)) return 'check';
   if (r.payment_channel === 'online' && /\bACH\b/i.test(r.raw_name)) return 'ach';
   return r.payment_channel === 'in store' || r.payment_channel === 'online' ? 'card' : 'other';
+}
+
+/** A bank row's Plaid fields the matcher compares (sameMerchant). */
+export function merchantOf(r: {
+  merchant_entity_id: string | null;
+  merchant_name: string | null;
+  plaid_name: string | null;
+}): Merchant {
+  return { merchantEntityId: r.merchant_entity_id, merchantName: r.merchant_name, plaidName: r.plaid_name };
 }
 
 export function alert(s: Scoped, type: string, ref: string, data: unknown, now: number): Stmt {
@@ -113,6 +124,28 @@ export async function planMatches(
   // Read once, and only when a pair could be made with an entry.
   let notSameP: ReturnType<typeof loadNotSame> | null = null;
   const notSameFor = () => (notSameP ??= loadNotSame(s));
+  /** "Same purchase?" per bank row (its own key), written once at the end: steps 2 and 3 can ask about one row. */
+  const asks = new Map<string, string[]>();
+  const ask = (ref: string, candidates: string[]) =>
+    asks.set(ref, [...new Set([...(asks.get(ref) ?? []), ...candidates])]);
+  /** Posted rows step 2 left for you (asked, or ambiguous), with their pending candidates' keys. */
+  const held = new Map<string, string[]>();
+  /** The entry covering each pending row step 2 read (by the pending row's key). */
+  const coveredBy = new Map<string, string>();
+  const done = async (): Promise<Matches> => {
+    // Only questions that changed: a sync (or the heal step) asking the same again writes nothing.
+    const asked = new Map<string, string | null>();
+    for (const k of chunks([...asks.keys()]))
+      for (const a of await s.all<{ ref_key: string; data: string | null }>(
+        `SELECT ref_key, data FROM alert WHERE budget_id = ?1 AND type = 'same_purchase'
+           AND ref_key IN (${k.map((_, i) => `?${i + 2}`).join(',')})`,
+        ...k,
+      ))
+        asked.set(a.ref_key, a.data);
+    for (const [ref, c] of asks)
+      if (asked.get(ref) !== JSON.stringify({ candidates: c })) stmts.push(askStmt(s, ref, c, now));
+    return { inherited, tookOver, claimed, inherit };
+  };
   /** A posted row takes your entry's key; the pending row the entry covers (`pendingKey`) is claimed with it. */
   const matchEntry = (
     postedId: string,
@@ -169,8 +202,8 @@ export async function planMatches(
       });
   }
   const linkCovers = pendingIds.length ? await coverOf(pendingIds) : new Map<string, Entry>();
-  // The provider's link wins over a look-alike: a posted row that claimed this pending row by likeness gets its own
-  // key back (and is matched again on its own).
+  // The provider's link wins over a pair made without it: a posted row that claimed this pending row without the link
+  // gets its own key back (and is matched again on its own).
   const linkTargets = live
     .filter((r) => !r.pending && r.pending_provider_txn_id)
     .map((r) => pendingByProvider.get(r.pending_provider_txn_id!)?.txn_key)
@@ -212,10 +245,11 @@ export async function planMatches(
     inherit(r.provider_txn_id, p.txn_key, 'provider', r.amount, p.estimated ?? p.amount);
   }
 
-  // ---- 2. Bank pending rows a posted row came without a link to (D-47). Some banks send no link and keep listing the
-  // pending row for hours or days after it posts, and the removal can come before or after the posted row. So every
-  // batch looks again at the touched accounts' recent unmatched posted rows and unclaimed pending rows (still listed or
-  // removed): whichever order they came in, they pair as soon as both are here, and earlier misses heal.
+  // ---- 2. Bank pending rows a posted row came without a link to (D-47, 9.3). Some banks send no link and keep listing
+  // the pending row for hours or days after it posts, and the removal can come before or after the posted row. So
+  // every batch looks again at the touched accounts' recent unmatched posted rows and unclaimed pending rows (still
+  // listed or removed): whichever order they came in, they pair as soon as both are here, and earlier misses heal.
+  // They pair only on exact evidence; a posted row with candidates but none with exact evidence is asked about.
   // To stay inside the CPU budget, older posted rows are read only for accounts where this batch brings a pending row
   // (new, changed or removed); otherwise only this batch's own posted rows look for a pending row.
   const accts = [...new Set(rows.filter((r) => r.account_id).map((r) => r.account_id!))];
@@ -227,7 +261,9 @@ export async function planMatches(
   const since = addDays(earliest0 < today ? earliest0 : today, -30);
   if (accts.length && (pendAccts.length || batchPosted.length)) {
     const inAccts = accts.map((_, i) => `?${i + 3}`).join(',');
-    const POSTED = `SELECT b.provider_txn_id, b.txn_key, a.id AS account_id, b.amount, b.date, b.authorized_date, b.raw_name, b.payment_channel
+    const COLS = `b.provider_txn_id, b.txn_key, a.id AS account_id, b.amount, b.date, b.authorized_date, b.raw_name, b.payment_channel,
+         b.merchant_entity_id, b.merchant_name, b.plaid_name`;
+    const POSTED = `SELECT ${COLS}
          FROM bank_txn b JOIN account a ON a.budget_id = b.budget_id AND a.provider_account_id = b.provider_account_id
          WHERE b.budget_id = ?1 AND b.pending = 0 AND b.removed_at IS NULL AND b.txn_key = 'p:' || b.provider_txn_id`;
     const [postedOld, pendingC, ...postedNew] = await s.batch([
@@ -237,7 +273,7 @@ export async function planMatches(
         ...pendAccts,
       ),
       s.q(
-        `SELECT b.provider_txn_id, b.txn_key, a.id AS account_id, b.amount, b.date, b.authorized_date, b.raw_name, b.payment_channel,
+        `SELECT ${COLS},
            o.categorized_by, o.category_id, o.memo, o.estimated_amount, o.budget_month, o.to_rta, o.transfer_state,
            (SELECT count(*) FROM txn_split t WHERE t.txn_key = b.txn_key) AS splits
          FROM bank_txn b JOIN account a ON a.budget_id = b.budget_id AND a.provider_account_id = b.provider_account_id
@@ -260,6 +296,9 @@ export async function planMatches(
       authorized_date: string | null;
       raw_name: string;
       payment_channel: string | null;
+      merchant_entity_id: string | null;
+      merchant_name: string | null;
+      plaid_name: string | null;
     };
     const seen = new Set<string>();
     const postedRows = [postedOld!, ...postedNew]
@@ -282,6 +321,10 @@ export async function planMatches(
     ).filter((r) => !claimed.has(r.txn_key));
     if (postedRows.length && pendingRows.length) {
       const covers = await coverOf(pendingRows.map((r) => r.provider_txn_id));
+      for (const r of pendingRows) {
+        const c = covers.get(r.provider_txn_id);
+        if (c) coveredBy.set(r.txn_key, c.txn_key);
+      }
       const edits = (r: (typeof pendingRows)[number]) => {
         const e = {
           // A category you chose (cleared is not a choice), a transfer or Ready to Assign you set.
@@ -303,7 +346,7 @@ export async function planMatches(
         amount: cents(r.amount),
         date: r.date,
         authorizedDate: r.authorized_date,
-        payee: r.raw_name,
+        ...merchantOf(r),
         channel: channel(r),
         edits: edits(r),
       }));
@@ -313,10 +356,14 @@ export async function planMatches(
         amount: cents(r.amount),
         date: r.date,
         authorizedDate: r.authorized_date,
-        payee: r.raw_name,
+        ...merchantOf(r),
         channel: channel(r),
       }));
-      for (const d of pairBankPending(post, pend)) {
+      // A pending row your entry covers is hidden: you're asked about the entry instead, and No to the entry counts.
+      const notSame = await notSameFor();
+      const no = (q: string, p: string) =>
+        notSame(`p:${q}`, p) || (coveredBy.has(p) && notSame(`p:${q}`, coveredBy.get(p)!));
+      for (const d of pairBankPending(post, pend, no)) {
         if (d.kind === 'claim') {
           const q = postedRows.find((x) => x.provider_txn_id === d.postedKey)!;
           const p = pendingRows.find((x) => x.txn_key === d.pendingKey)!;
@@ -329,7 +376,10 @@ export async function planMatches(
             matchEntry(q.provider_txn_id, q.amount, cover, 'auto', p.txn_key);
           else inherit(q.provider_txn_id, p.txn_key, 'auto', q.amount, p.estimated_amount ?? p.amount);
         } else {
-          stmts.push(alert(s, 'ambiguous_match', `p:${d.postedKey}`, { candidates: d.candidates }, now));
+          held.set(d.postedKey, d.candidates);
+          const candidates = [...new Set(d.candidates.map((k) => coveredBy.get(k) ?? k))];
+          if (d.kind === 'ask') ask(`p:${d.postedKey}`, candidates);
+          else stmts.push(alert(s, 'ambiguous_match', `p:${d.postedKey}`, { candidates }, now));
         }
       }
     }
@@ -340,7 +390,7 @@ export async function planMatches(
     (r) => !r.pending && !inherited.has(r.provider_txn_id) && r.txn_key === `p:${r.provider_txn_id}`,
   );
   const newPending = live.filter((r) => r.pending && !claimed.has(r.txn_key));
-  if (!unlinkedPosted.length && !newPending.length) return { inherited, tookOver, claimed, inherit };
+  if (!unlinkedPosted.length && !newPending.length) return done();
   const entryAccts = [...new Set([...unlinkedPosted, ...newPending].map((r) => r.account_id!))];
   const entries = await s.all<EntryDb>(
     `SELECT m.txn_key, m.account_id, m.amount, m.date, m.payee_name, m.covers_provider_txn_id,
@@ -367,11 +417,14 @@ export async function planMatches(
     }));
     for (const d of pairEntries(bank, openEntries().map(entryRow), await notSameFor())) {
       const r = unlinkedPosted.find((x) => `p:${x.provider_txn_id}` === d.bankKey)!;
-      if (d.kind === 'pair') {
+      // Step 2 left this posted row for you: it pairs with an entry only when every pending row it was asked about
+      // is one that entry covers (claimed with it); otherwise the entry joins the question.
+      const wait = held.get(r.provider_txn_id);
+      if (d.kind === 'pair' && !wait?.some((k) => coveredBy.get(k) !== d.entryKey)) {
         const m = entries.find((x) => x.txn_key === d.entryKey)!;
         // The pending row it covers is claimed with it (unless it's gone or another posted row has it).
         matchEntry(r.provider_txn_id, r.amount, m, 'auto');
-      } else stmts.push(askStmt(s, d.bankKey, d.candidates, now));
+      } else ask(d.bankKey, d.kind === 'pair' ? [d.entryKey] : d.candidates);
     }
   }
 
@@ -403,9 +456,9 @@ export async function planMatches(
       }));
       for (const d of pairEntries(bank, free.map(entryRow), await notSameFor())) {
         if (d.kind === 'pair') stmts.push(...coverStmts(s, d.entryKey, d.bankKey.slice(2), now));
-        else stmts.push(askStmt(s, d.bankKey, d.candidates, now));
+        else ask(d.bankKey, d.candidates);
       }
     }
   }
-  return { inherited, tookOver, claimed, inherit };
+  return done();
 }

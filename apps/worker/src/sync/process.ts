@@ -22,7 +22,7 @@ import { CHUNK } from './steps.js';
 import { budgetMeta, chunks } from '../ledger/ledger.js';
 import { makeProvider, connectionToken } from './provider.js';
 import { planFresh } from './file-fresh.js';
-import { alert, channel, planMatches } from './pending-match.js';
+import { alert, channel, merchantOf, planMatches } from './pending-match.js';
 
 const MAX_WATERMARK_RETRIES = 3;
 
@@ -199,7 +199,7 @@ async function planProcessing(
     accountId: r.account_id!,
     amount: cents(r.amount),
     date: r.date,
-    payee: r.merchant_name ?? r.raw_name,
+    ...merchantOf(r),
     channel: channel(r),
   });
   for (const d of matchReissues(removedPosted.map(asRow), addedPosted.map(asRow))) {
@@ -217,7 +217,7 @@ async function planProcessing(
   }
   const removedPending = removed.filter((x) => x.pending && !claimed.has(x.txn_key));
   if (removedPending.length) {
-    // Already claimed by a posted row (by the provider's link, or earlier by likeness): nothing to hold.
+    // Already claimed by a posted row (by the provider's link, or earlier without it): nothing to hold.
     const held = new Set<string>();
     for (const k of chunks(removedPending.map((r) => r.txn_key)))
       for (const h of await s.all<{ txn_key: string }>(

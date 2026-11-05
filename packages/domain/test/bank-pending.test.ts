@@ -1,54 +1,110 @@
-// Posted rows that arrive without the provider's link claim their bank pending rows (D-47). The cases come from a
-// real card whose bank sends no link and keeps the pending rows listed for hours after posting.
+// Posted rows that arrive without the provider's link claim their bank pending rows (D-47), on exact evidence only
+// (docs/payee-names.md 9.3): the same merchant (Plaid's merchant id, or a Plaid name equal to a Plaid name), or the
+// same amount on the same day. Otherwise "Same purchase?" asks. The cases come from a real card whose bank sends no
+// link and keeps the pending rows listed for hours after posting.
 import { describe, expect, it } from 'vitest';
 import { parseCents as $ } from '../src/money.js';
 import {
   bankPendingEligible,
+  bankPendingEvidence,
+  merchantKeys,
   pairBankPending,
-  storeNumbers,
+  sameMerchant,
   type BankPendingRow,
+  type Merchant,
   type UnlinkedPostedRow,
 } from '../src/matcher.js';
 
-const pend = (key: string, amount: string, date: string, payee: string, edits = ''): BankPendingRow => ({
+/** Plaid's fields: a string is Plaid's `name` only; an object sets any of them. */
+type Who = string | Partial<Merchant>;
+const who = (w: Who): Merchant => ({
+  merchantEntityId: null,
+  merchantName: null,
+  plaidName: null,
+  ...(typeof w === 'string' ? { plaidName: w } : w),
+});
+const pend = (key: string, amount: string, date: string, w: Who, edits = ''): BankPendingRow => ({
   key,
   accountId: 'card',
   amount: $(amount),
   date,
   authorizedDate: date,
-  payee,
+  ...who(w),
   channel: 'card',
   edits,
 });
-const post = (
-  key: string,
-  amount: string,
-  date: string,
-  auth: string | null,
-  payee: string,
-): UnlinkedPostedRow => ({
+const post = (key: string, amount: string, date: string, auth: string | null, w: Who): UnlinkedPostedRow => ({
   key,
   accountId: 'card',
   amount: $(amount),
   date,
   authorizedDate: auth,
-  payee,
+  ...who(w),
   channel: 'card',
 });
 
+describe('exact evidence', () => {
+  it('same merchant: the merchant id, or a Plaid name equal to a Plaid name (case and spaces aside)', () => {
+    expect(sameMerchant(who({ merchantEntityId: 'm1' }), who({ merchantEntityId: 'm1' }))).toBe(true);
+    expect(sameMerchant(who('JUNEBUG'), who({ merchantName: 'Junebug ' }))).toBe(true);
+    expect(sameMerchant(who({ merchantName: 'Junebug' }), who('TST*JUNEBUG New Orleans LA'))).toBe(false);
+    // Different merchant ids don't block a pair: the names may still agree (one payee, two ids).
+    expect(
+      sameMerchant(
+        who({ merchantEntityId: 'm1', merchantName: 'Uber' }),
+        who({ merchantEntityId: 'm2', merchantName: 'Uber' }),
+      ),
+    ).toBe(true);
+    // Rows without any Plaid name never share a merchant: the bank text is not a key here.
+    expect(sameMerchant(who({}), who({}))).toBe(false);
+    expect(merchantKeys(who({ merchantEntityId: 'm1', merchantName: 'Hulu', plaidName: 'HULU' }))).toEqual([
+      'm:m1',
+      'n:hulu',
+      'n:hulu',
+    ]);
+  });
+
+  it('same amount on the same day (authorization day, else date) is evidence; a close amount is not', () => {
+    expect(
+      bankPendingEvidence(
+        pend('p', '-23.50', '2026-10-31', 'PAYPAL *ACME'),
+        post('q', '-23.50', '2026-11-01', '2026-10-31', 'ACME WIDGETS INC'),
+      ),
+    ).toBe(true);
+    expect(
+      bankPendingEvidence(
+        pend('p', '-23.50', '2026-10-31', 'PAYPAL *ACME'),
+        post('q', '-23.51', '2026-11-01', '2026-10-31', 'ACME WIDGETS INC'),
+      ),
+    ).toBe(false);
+    expect(
+      bankPendingEvidence(
+        pend('p', '-23.50', '2026-10-31', 'PAYPAL *ACME'),
+        post('q', '-23.50', '2026-11-01', '2026-11-01', 'ACME WIDGETS INC'),
+      ),
+    ).toBe(false);
+  });
+});
+
 describe('posted rows claim bank pending rows', () => {
-  it('pairs a card’s posted rows with their pending rows: tips, renamed descriptors, exact amounts', () => {
+  it('pairs a card’s posted rows with their pending rows: a tip with the same name, an exact amount and day', () => {
     const d = pairBankPending(
       [
-        post('junebug', '-42.75', '2026-11-02', '2026-10-30', 'TST*JUNEBUG New Orleans LA'),
+        post('junebug', '-42.75', '2026-11-02', '2026-10-30', {
+          merchantName: 'Junebug',
+          plaidName: 'JUNEBUG',
+        }),
         post('heard', '-25.30', '2026-11-02', '2026-10-31', 'PY *HEARD DAT KITCHEN NEW ORLE'),
-        post('eliz', '-97.90', '2026-11-02', '2026-11-01', "ELIZABETH'S RESTAURANT NEW ORL"),
+        post('eliz', '-97.90', '2026-11-02', '2026-11-01', { merchantEntityId: 'eliz' }),
         post('nola', '-46.86', '2026-10-31', '2026-10-30', 'NOLA POBOYS 504-522-2639 LA'),
       ],
       [
         pend('p-junebug', '-35.75', '2026-10-30', 'JUNEBUG', 'cat:dining'),
         pend('p-heard', '-25.30', '2026-10-31', 'PY HEARD DAT KITCHEN', 'cat:dining'),
-        pend('p-eliz', '-97.90', '2026-11-01', 'ELIZABETH S RESTAURANT'),
+        pend('p-eliz', '-97.90', '2026-11-01', {
+          merchantEntityId: 'eliz',
+          plaidName: 'ELIZABETH S RESTAURANT',
+        }),
         pend('p-claib', '-50.00', '2026-11-01', 'Claiborne Express', 'cat:travel'),
         pend('p-cookies', '-9.54', '2026-11-01', 'INSOMNIA COOKIES-NEW ORL'),
       ],
@@ -63,11 +119,30 @@ describe('posted rows claim bank pending rows', () => {
     expect(d).toHaveLength(3); // nola has no pending row; the other pending rows haven't posted
   });
 
+  it('a tip whose pending row has another Plaid name: "Same purchase?" asks, best first', () => {
+    const d = pairBankPending(
+      [post('tab', '-28.50', '2026-11-02', '2026-10-31', 'CAFE LAFITTE 504-5256724 LA')],
+      [
+        pend('p-hold', '-25.00', '2026-10-31', 'SOMEWHERE ELSE'),
+        pend('p-tab', '-23.50', '2026-10-31', 'CAFE LAFITTE'),
+      ],
+    );
+    expect(d).toEqual([{ kind: 'ask', postedKey: 'tab', candidates: ['p-hold', 'p-tab'] }]);
+    // No to a candidate takes it out; No to every one leaves nothing to ask.
+    expect(
+      pairBankPending(
+        [post('tab', '-28.50', '2026-11-02', '2026-10-31', 'X')],
+        [pend('p', '-23.50', '2026-10-31', 'Y')],
+        () => true,
+      ),
+    ).toEqual([]);
+  });
+
   it('two tabs at the same bar with nothing set on either are interchangeable: paired without asking', () => {
     const d = pairBankPending(
       [
-        post('a', '-28.50', '2026-11-02', '2026-10-31', 'CAFE LAFITTE 504-5256724 LA'),
-        post('b', '-28.25', '2026-11-02', '2026-10-31', 'CAFE LAFITTE 504-5256724 LA'),
+        post('a', '-28.50', '2026-11-02', '2026-10-31', 'CAFE LAFITTE'),
+        post('b', '-28.25', '2026-11-02', '2026-10-31', 'CAFE LAFITTE'),
       ],
       [
         pend('p1', '-23.50', '2026-10-31', 'CAFE LAFITTE'),
@@ -116,11 +191,38 @@ describe('posted rows claim bank pending rows', () => {
     expect(d).toEqual([{ kind: 'ambiguous', postedKey: 'a', candidates: ['p1'] }]);
   });
 
+  it('two branches of a chain: one merchant id each, so a close amount asks; an exact amount and day pairs', () => {
+    const branch = (id: string) => ({ merchantEntityId: id, plaidName: `STARBUCKS ${id}` });
+    expect(
+      pairBankPending(
+        [post('b', '-5.40', '2026-11-04', '2026-11-03', branch('67890'))],
+        [pend('a', '-5.00', '2026-11-03', branch('12345'))],
+      ),
+    ).toEqual([{ kind: 'ask', postedKey: 'b', candidates: ['a'] }]);
+    expect(
+      pairBankPending(
+        [post('b', '-5.00', '2026-11-04', '2026-11-03', branch('67890'))],
+        [pend('a', '-5.00', '2026-11-03', branch('12345'))],
+      ),
+    ).toEqual([{ kind: 'claim', postedKey: 'b', pendingKey: 'a' }]);
+  });
+
+  it('the same merchant beats an exact amount on the same day from another merchant', () => {
+    const d = pairBankPending(
+      [post('q', '-20.00', '2026-11-04', '2026-11-03', { merchantEntityId: 'shop' })],
+      [
+        pend('other', '-20.00', '2026-11-03', 'ELSEWHERE'),
+        pend('mine', '-20.00', '2026-11-03', { merchantEntityId: 'shop' }),
+      ],
+    );
+    expect(d).toEqual([{ kind: 'claim', postedKey: 'q', pendingKey: 'mine' }]);
+  });
+
   it('never pairs yesterday’s posted purchase with today’s pending one', () => {
     expect(
       bankPendingEligible(
         pend('today', '-5.00', '2026-11-03', 'BLUE BOTTLE'),
-        post('yesterday', '-5.00', '2026-11-03', '2026-11-02', 'SQ *BLUE BOTTLE'),
+        post('yesterday', '-5.00', '2026-11-03', '2026-11-02', 'BLUE BOTTLE'),
       ),
     ).toBe(false);
     // Authorized the day after the pending row is fine (the parking charge: pending Oct 31, authorized Nov 1).
@@ -130,84 +232,6 @@ describe('posted rows claim bank pending rows', () => {
         post('park-posted', '-0.40', '2026-11-02', '2026-11-01', '90949 - NEW ORLEANS PARKINEW O'),
       ),
     ).toBe(true);
-  });
-
-  it('needs names that look alike, unless amount and day agree exactly', () => {
-    expect(
-      bankPendingEligible(
-        pend('lafitte', '-23.50', '2026-10-31', 'CAFE LAFITTE'),
-        post('monde', '-23.50', '2026-11-01', '2026-11-01', 'CAFE DU MONDE'),
-      ),
-    ).toBe(false);
-    expect(
-      bankPendingEligible(
-        pend('x', '-23.50', '2026-10-31', 'PAYPAL *ACME'),
-        post('y', '-23.50', '2026-11-01', '2026-10-31', 'ACME WIDGETS INC'),
-      ),
-    ).toBe(true);
-  });
-
-  it('a store number in the pending description must match: two branches of one chain never pair', () => {
-    expect(
-      bankPendingEligible(
-        pend('a', '-5.00', '2026-11-03', 'STARBUCKS 12345'),
-        post('b', '-5.40', '2026-11-04', '2026-11-03', 'STARBUCKS STORE 67890 NEW YORK NY'),
-      ),
-    ).toBe(false);
-    expect(
-      bankPendingEligible(
-        pend('a', '-5.00', '2026-11-03', 'STARBUCKS 12345'),
-        post('b', '-5.40', '2026-11-04', '2026-11-03', 'STARBUCKS STORE 12345 NEW YORK NY'),
-      ),
-    ).toBe(true);
-    expect(
-      bankPendingEligible(
-        pend('a', '-14.38', '2026-11-01', 'CAJUN SEAFOOD #3'),
-        post('b', '-14.38', '2026-11-02', '2026-11-01', 'CAJUN SEAFOOD #3 NEW ORLEANS LA'),
-      ),
-    ).toBe(true);
-  });
-
-  it('store numbers only: dates, phone numbers, card digits and reference codes never block a pair', () => {
-    expect([...storeNumbers('UBER *TRIP 10/30 HELP.UBER.COM 800-592-8996 CA')]).toEqual([]);
-    expect([...storeNumbers('AMAZON MKTPL*ZX12A XXXX1234')]).toEqual([]);
-    expect([...storeNumbers('STARBUCKS STORE 05521 SEATTLE WA')]).toEqual(['5521']);
-    expect([...storeNumbers('CAJUN SEAFOOD #3')]).toEqual(['3']);
-    expect([...storeNumbers('7-ELEVEN 34012')]).toEqual(['34012']);
-    // A date or reference code on the pending row only.
-    expect(
-      bankPendingEligible(
-        pend('a', '-18.50', '2026-10-30', 'UBER *TRIP 10/30'),
-        post('b', '-22.50', '2026-11-01', '2026-10-30', 'UBER *TRIP HELP.UBER.COM CA'),
-      ),
-    ).toBe(true);
-    expect(
-      bankPendingEligible(
-        pend('a', '-23.99', '2026-10-30', 'AMAZON MKTPL*ZX12A'),
-        post('b', '-24.99', '2026-11-01', '2026-10-30', 'AMAZON MKTPL*ZX9QK Amzn.com/bill WA'),
-      ),
-    ).toBe(true);
-    // A phone number on the pending row, none on the posted one.
-    expect(
-      bankPendingEligible(
-        pend('a', '-12.00', '2026-10-30', 'SQ *CAFE 206-555-0101'),
-        post('b', '-14.50', '2026-11-01', '2026-10-30', 'SQ *CAFE SEATTLE WA'),
-      ),
-    ).toBe(true);
-    // The store number only on the pending row: the bank dropped it on posting.
-    expect(
-      bankPendingEligible(
-        pend('a', '-5.00', '2026-11-03', 'STARBUCKS 12345'),
-        post('b', '-5.40', '2026-11-04', '2026-11-03', 'STARBUCKS NEW YORK NY'),
-      ),
-    ).toBe(true);
-    // Two branches of a chain whose name has a number.
-    expect(
-      bankPendingEligible(
-        pend('a', '-8.00', '2026-11-03', '7-ELEVEN 34012'),
-        post('b', '-8.00', '2026-11-04', '2026-11-03', '7-ELEVEN 39977 SEATTLE WA'),
-      ),
-    ).toBe(false);
   });
 
   it('keeps the tolerance: a $5 hold never claims a $28 tab, a refund never claims a purchase', () => {

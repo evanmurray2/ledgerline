@@ -1,29 +1,45 @@
-// Pending matcher and re-issue matcher (design: Pending transactions; Sync spec: Matching mechanics). Pure: the
-// caller passes candidate rows and applies the decisions in one batch behind the watermark fence.
+// Pending matcher and re-issue matcher (design: Pending transactions; Sync spec: Matching mechanics;
+// docs/payee-names.md 9.3). Pure: the caller passes candidate rows and applies the decisions in one batch behind the
+// watermark fence. No text is compared: two rows are the same merchant only when Plaid says so (sameMerchant).
 import { type Cents } from './money.js';
 import { type IsoDate, daysBetween } from './month.js';
-import { cleanDescription, jaccard, similarity, trigrams } from './payee.js';
+import { nameKey } from './payee.js';
 
-export interface MatchRow {
+/** What Plaid says about who was paid, as sent: its merchant id, `merchant_name` and `name`. */
+export interface Merchant {
+  merchantEntityId: string | null;
+  merchantName: string | null;
+  plaidName: string | null;
+}
+
+export interface MatchRow extends Merchant {
   key: string;
   accountId: string;
   amount: Cents;
   date: IsoDate;
-  payee: string;
   /** 'card' purchases get a tip/fuel tolerance; 'ach' and 'check' match exactly. */
   channel: 'card' | 'ach' | 'check' | 'other';
 }
 
-export interface PostedRow extends MatchRow {
-  providerTxnId: string;
-  pendingProviderTxnId: string | null;
+const present = (s: string | null): s is string => s !== null && s.trim() !== '';
+
+/**
+ * A row's merchant keys (docs/payee-names.md 4) without the bank-text fallback: `m:<merchant id>`, and `n:` of
+ * `merchant_name` and of Plaid's `name`. Both names share one `n:` space, so a merchant name can equal a Plaid name.
+ */
+export function merchantKeys(r: Merchant): string[] {
+  const keys: string[] = [];
+  if (present(r.merchantEntityId)) keys.push(`m:${r.merchantEntityId}`);
+  if (present(r.merchantName)) keys.push(nameKey(r.merchantName));
+  if (present(r.plaidName)) keys.push(nameKey(r.plaidName));
+  return keys;
 }
 
-export type MatchDecision =
-  | { kind: 'inherit'; postedKey: string; fromKey: string; by: 'provider' | 'auto' }
-  | { kind: 'ambiguous'; postedKey: string; candidates: string[] }
-  | { kind: 'likely'; postedKey: string; pendingKey: string }
-  | { kind: 'none'; postedKey: string };
+/** Same merchant (9): the two rows share a merchant key: the merchant id, or a Plaid name equal to a Plaid name. */
+export function sameMerchant(a: Merchant, b: Merchant): boolean {
+  const k = merchantKeys(a);
+  return k.length > 0 && merchantKeys(b).some((x) => k.includes(x));
+}
 
 /** Tolerance: max($5, 25%) for card purchases (tips, fuel holds); exact for ACH and checks. */
 export function withinTolerance(expected: Cents, actual: Cents, channel: MatchRow['channel']): boolean {
@@ -33,7 +49,7 @@ export function withinTolerance(expected: Cents, actual: Cents, channel: MatchRo
   return diff <= Math.max(500, Math.floor(Math.abs(expected) / 4));
 }
 
-/** Higher is better: amount closeness, date gap and payee similarity. */
+/** Higher is better: amount closeness 50%, date gap 20%, same merchant 30% (1 or 0). */
 export function score(pending: MatchRow, posted: MatchRow): number {
   const amt =
     1 -
@@ -42,68 +58,11 @@ export function score(pending: MatchRow, posted: MatchRow): number {
       Math.abs(Math.abs(posted.amount) - Math.abs(pending.amount)) / Math.max(1, Math.abs(pending.amount)),
     );
   const gap = 1 - Math.min(1, Math.max(0, daysBetween(pending.date, posted.date)) / 14);
-  const name = similarity(pending.payee, posted.payee);
+  const name = sameMerchant(pending, posted) ? 1 : 0;
   return Math.round((amt * 0.5 + gap * 0.2 + name * 0.3) * 1000);
 }
 
 const CLOSE = 25; // scores within this of the best count as "equally good"
-
-/**
- * Matches posted rows to pending rows (bank pending or your manual ones). Order of authority: the provider's link,
- * then a unique best candidate on both sides (same account, unmatched, dated 0–14 days before, within tolerance),
- * else ambiguous (you pick).
- */
-export function matchPosted(
-  posted: readonly PostedRow[],
-  manualPending: readonly MatchRow[],
-  bankPendingByProviderId: ReadonlyMap<string, string>,
-): MatchDecision[] {
-  const out: MatchDecision[] = [];
-  const unlinked: PostedRow[] = [];
-  for (const p of posted) {
-    const k = p.pendingProviderTxnId ? bankPendingByProviderId.get(p.pendingProviderTxnId) : undefined;
-    if (k) out.push({ kind: 'inherit', postedKey: p.key, fromKey: k, by: 'provider' });
-    else unlinked.push(p);
-  }
-  const eligible = (m: MatchRow, p: MatchRow) => {
-    if (m.accountId !== p.accountId) return false;
-    const gap = daysBetween(m.date, p.date);
-    return (
-      gap >= 0 &&
-      gap <= 14 &&
-      withinTolerance(m.amount, p.amount, p.channel === 'other' ? m.channel : p.channel)
-    );
-  };
-  // Best candidate per posted row, and per pending row; auto-match only when each is the other's unique best.
-  const bestFor = new Map<string, { key: string; s: number; tie: boolean; all: string[] }>();
-  for (const p of unlinked) {
-    const cands = manualPending.filter((m) => eligible(m, p)).map((m) => ({ key: m.key, s: score(m, p) }));
-    if (cands.length === 0) continue;
-    cands.sort((a, b) => b.s - a.s);
-    const top = cands[0]!;
-    const tie = cands.length > 1 && top.s - cands[1]!.s < CLOSE;
-    bestFor.set(p.key, {
-      key: top.key,
-      s: top.s,
-      tie,
-      all: cands.filter((c) => top.s - c.s < CLOSE).map((c) => c.key),
-    });
-  }
-  const claims = new Map<string, string[]>();
-  for (const [pk, b] of bestFor) claims.set(b.key, [...(claims.get(b.key) ?? []), pk]);
-  for (const p of unlinked) {
-    const b = bestFor.get(p.key);
-    if (!b) {
-      out.push({ kind: 'none', postedKey: p.key });
-      continue;
-    }
-    const rivals = claims.get(b.key) ?? [];
-    if (!b.tie && rivals.length === 1)
-      out.push({ kind: 'inherit', postedKey: p.key, fromKey: b.key, by: 'auto' });
-    else out.push({ kind: 'ambiguous', postedKey: p.key, candidates: b.all });
-  }
-  return out;
-}
 
 /** Orphan recovery: a bank pending row removed with no provider link, matched against unmatched posted rows. */
 export function matchOrphan(
@@ -139,95 +98,82 @@ export interface UnlinkedPostedRow extends MatchRow {
 
 export type BankPendingDecision =
   | { kind: 'claim'; postedKey: string; pendingKey: string }
-  | { kind: 'ambiguous'; postedKey: string; candidates: string[] };
-
-/** A description's cleaned trigrams and its store numbers, worked out once per row (one row is compared with many). */
-interface Prepared {
-  grams: Set<string>;
-  nums: Set<string>;
-}
+  /** Several candidates with exact evidence and different edits (the `ambiguous_match` alert). */
+  | { kind: 'ambiguous'; postedKey: string; candidates: string[] }
+  /** Candidates, none with exact evidence: "Same purchase?" (docs/payee-names.md 9.1), best first. */
+  | { kind: 'ask'; postedKey: string; candidates: string[] };
 
 /**
- * The numbers in a description that can name a store or branch ("STARBUCKS 12345", "CAJUN SEAFOOD #3"): a number on
- * its own, not a date, a phone number, a card's last four digits or part of a reference code ("MKTPL*ZX12A"), which
- * change between a pending row and its posted row or are added to only one of them.
+ * A candidate (docs/payee-names.md 9): same account and sign, amount within tolerance, and the pending row authorized
+ * the same day as the posted row or the day before (else dated 0–14 days before).
  */
-export function storeNumbers(raw: string): Set<string> {
-  const s = raw
-    .toUpperCase()
-    .replace(/\b\d{1,2}\/\d{1,2}(\/\d{2,4})?\b/g, ' ') // dates
-    .replace(/\(?\b\d{3}\)?[-. ]?\d{3}[-. ]\d{4}\b/g, ' ') // phone numbers
-    .replace(/(X+|\*+)\d{4}\b/g, ' ') // card last-4
-    .replace(/\b\d+-[A-Z]+/g, ' ') // part of the name ("7-ELEVEN"), shared by every branch
-    .replace(/[A-Z0-9]*(?:[A-Z]\d|\d[A-Z])[A-Z0-9]*/g, ' '); // reference codes mixing letters and digits
-  return new Set((s.match(/\d+/g) ?? []).map((n) => n.replace(/^0+(?=\d)/, '')));
-}
-type Cache = Map<string, Prepared>;
-function prep(c: Cache, s: string): Prepared {
-  let v = c.get(s);
-  if (!v) {
-    v = { grams: trigrams(cleanDescription(s) || s), nums: storeNumbers(s) };
-    c.set(s, v);
-  }
-  return v;
-}
-
-/** Name similarity when the pair could be the same purchase, else null. */
-function eligible(p: BankPendingRow, q: UnlinkedPostedRow, c: Cache): number | null {
-  if (p.accountId !== q.accountId || Math.sign(p.amount) !== Math.sign(q.amount)) return null;
-  if (!withinTolerance(p.amount, q.amount, q.channel === 'other' ? 'card' : q.channel)) return null;
-  const pAuth = p.authorizedDate ?? p.date;
+export function bankPendingEligible(p: BankPendingRow, q: UnlinkedPostedRow): boolean {
+  if (p.accountId !== q.accountId || Math.sign(p.amount) !== Math.sign(q.amount)) return false;
+  if (!withinTolerance(p.amount, q.amount, q.channel === 'other' ? 'card' : q.channel)) return false;
   if (q.authorizedDate) {
     // The bank says when the posted charge was authorized: the pending one was authorized that day or the day before
     // (never after, which rules out yesterday's posted coffee claiming today's pending one).
-    const gap = daysBetween(pAuth, q.authorizedDate);
-    if (gap < 0 || gap > 1) return null;
-  } else {
-    const gap = daysBetween(p.date, q.date);
-    if (gap < 0 || gap > 14) return null;
+    const gap = daysBetween(p.authorizedDate ?? p.date, q.authorizedDate);
+    return gap >= 0 && gap <= 1;
   }
-  const a = prep(c, p.payee);
-  const b = prep(c, q.payee);
-  // When both descriptions name a store number, they must share one: cleaning drops numbers, so two branches of one
-  // chain would otherwise look alike. A number on only one side (the bank added or dropped it on posting) proves nothing.
-  if (a.nums.size && b.nums.size && ![...b.nums].some((n) => a.nums.has(n))) return null;
-  // The same bank describes both: the names must look alike, unless the amount and the day agree exactly.
-  const sim = jaccard(a.grams, b.grams);
-  return sim >= 0.4 || (p.amount === q.amount && (q.authorizedDate ?? q.date) === pAuth) ? sim : null;
+  const gap = daysBetween(p.date, q.date);
+  return gap >= 0 && gap <= 14;
 }
 
-/** A pending row and a posted row could be the same purchase. */
-export function bankPendingEligible(p: BankPendingRow, q: UnlinkedPostedRow): boolean {
-  return eligible(p, q, new Map()) !== null;
+/** Exact evidence (9): the same merchant, or the same amount on the same day (authorization day, else date). */
+export function bankPendingEvidence(
+  p: BankPendingRow,
+  q: UnlinkedPostedRow,
+  same = sameMerchant(p, q),
+): boolean {
+  return same || (p.amount === q.amount && (p.authorizedDate ?? p.date) === (q.authorizedDate ?? q.date));
 }
 
-function bankScore(p: BankPendingRow, q: UnlinkedPostedRow, sim: number): number {
+function bankScore(p: BankPendingRow, q: UnlinkedPostedRow, same: boolean): number {
   const amt =
     1 - Math.min(1, Math.abs(Math.abs(q.amount) - Math.abs(p.amount)) / Math.max(1, Math.abs(p.amount)));
   const days = Math.abs(daysBetween(p.authorizedDate ?? p.date, q.authorizedDate ?? q.date));
   const gap = 1 - Math.min(1, days / 14);
-  return Math.round((amt * 0.5 + gap * 0.2 + sim * 0.3) * 1000);
+  return Math.round((amt * 0.5 + gap * 0.2 + (same ? 0.3 : 0)) * 1000);
 }
 
 /**
- * Pairs posted rows that came without the provider's link with bank pending rows (still listed or already removed),
- * best scores first, each row at most once. A pairing is left for you only when a close alternative would change the
- * result: another pending row carrying different edits, or another posted row that could take edits you made.
- * Interchangeable twins (two tabs at the same bar, nothing set on either) are paired without asking.
+ * Pairs posted rows that came without the provider's link with bank pending rows (still listed or already removed).
+ * A candidate pairs only on exact evidence (bankPendingEvidence); among those, best scores first, each row at most
+ * once. A pairing is left for you only when a close alternative would change the result: another pending row carrying
+ * different edits, or another posted row that could take edits you made. Interchangeable twins (two tabs at the same
+ * bar, nothing set on either) are paired without asking. A posted row left with candidates but none with exact
+ * evidence is asked about ("Same purchase?"). `notSame(postedKey, pendingKey)` is a pair you answered No to: never a
+ * candidate.
  */
 export function pairBankPending(
   posted: readonly UnlinkedPostedRow[],
   pending: readonly BankPendingRow[],
+  notSame: (postedKey: string, pendingKey: string) => boolean = () => false,
 ): BankPendingDecision[] {
   type Pair = { p: BankPendingRow; q: UnlinkedPostedRow; s: number };
+  const all: Pair[] = [];
   const pairs: Pair[] = [];
-  const cache: Cache = new Map();
+  // Each row's merchant keys, worked out once (one row is compared with many).
+  const keys = new Map<MatchRow, ReadonlySet<string>>();
+  const keysOf = (r: MatchRow) => {
+    let k = keys.get(r);
+    if (!k) keys.set(r, (k = new Set(merchantKeys(r))));
+    return k;
+  };
   for (const q of posted)
     for (const p of pending) {
-      const sim = eligible(p, q, cache);
-      if (sim !== null) pairs.push({ p, q, s: bankScore(p, q, sim) });
+      if (!bankPendingEligible(p, q) || notSame(q.key, p.key)) continue;
+      const qk = keysOf(q);
+      let same = false;
+      for (const k of keysOf(p)) if (qk.has(k)) same = true;
+      const x = { p, q, s: bankScore(p, q, same) };
+      all.push(x);
+      if (bankPendingEvidence(p, q, same)) pairs.push(x);
     }
-  pairs.sort((a, b) => b.s - a.s || a.q.key.localeCompare(b.q.key) || a.p.key.localeCompare(b.p.key));
+  const order = (a: Pair, b: Pair) =>
+    b.s - a.s || a.q.key.localeCompare(b.q.key) || a.p.key.localeCompare(b.p.key);
+  pairs.sort(order);
   const takenP = new Map<string, Pair>();
   const takenQ = new Map<string, Pair>();
   for (const x of pairs)
@@ -267,6 +213,14 @@ export function pairBankPending(
         candidates: pairs.filter((y) => y.q.key === x.q.key).map((y) => y.p.key),
       });
     else out.push({ kind: 'claim', postedKey: x.q.key, pendingKey: x.p.key });
+  }
+  // The rest: a posted row with candidates that no pairing above took, none with exact evidence for it.
+  const free = new Map<string, Pair[]>();
+  for (const y of all)
+    if (!takenQ.has(y.q.key) && !takenP.has(y.p.key)) free.set(y.q.key, [...(free.get(y.q.key) ?? []), y]);
+  for (const q of posted) {
+    const c = free.get(q.key);
+    if (c) out.push({ kind: 'ask', postedKey: q.key, candidates: c.sort(order).map((y) => y.p.key) });
   }
   return out;
 }
