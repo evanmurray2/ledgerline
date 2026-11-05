@@ -1,4 +1,4 @@
-// Step 5 of processing (process.ts planProcessing): for new rows without your categorization, the payee, transfers
+// Step 6 of processing (process.ts planProcessing): for new rows without your categorization, the payee, transfers
 // and Waiting to match. No category is set. Payees follow docs/payee-names.md 4–6 (sync/payee-keys.ts).
 import type { Stmt } from '@ledgerline/db/sql';
 import { cents, detectTransfers, newPayeeName, payeeNameKey } from '@ledgerline/domain';

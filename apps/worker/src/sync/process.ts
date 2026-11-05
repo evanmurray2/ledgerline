@@ -45,6 +45,7 @@ export interface BankRow {
   budget_from: string | null;
   amount: number;
   date: string;
+  authorized_date: string | null;
   pending: number;
   pending_provider_txn_id: string | null;
   raw_name: string;
@@ -99,8 +100,9 @@ export async function processPending(env: Env, budgetId: string, now = Date.now(
 
 /**
  * After every sync of a connection, whether or not the bank sent anything: its accounts' pending rows that no posted
- * row has claimed are matched again (D-47 step 3), so a pairing missed earlier, or by an older release, heals on the
- * next sync instead of waiting for the bank to send news about that row. Behind the same watermark fence as
+ * row has claimed are matched again (D-47, step 2 of pending-match.ts) and checked for covers (step 4), so a pairing
+ * missed earlier, by an older release, or with an entry added since, heals on the next sync instead of waiting for
+ * the bank to send news about that row. Behind the same watermark fence as
  * processing, so the two never claim a row twice; on a lost race it simply waits for the next sync.
  */
 export async function healPending(
@@ -165,7 +167,7 @@ async function planProcessing(
     const chunk = ids.slice(i, i + 90);
     rows.push(
       ...(await s.all<BankRow>(
-        `SELECT b.provider_txn_id, b.txn_key, a.id AS account_id, a.kind AS account_kind, a.budget_from, b.amount, b.date, b.pending,
+        `SELECT b.provider_txn_id, b.txn_key, a.id AS account_id, a.kind AS account_kind, a.budget_from, b.amount, b.date, b.authorized_date, b.pending,
            b.pending_provider_txn_id, b.raw_name, b.plaid_name, b.merchant_name, b.merchant_entity_id, b.provider_category, b.payment_channel,
            b.removed_at, b.first_apply_seq, c.linked_at
          FROM bank_txn b
@@ -187,7 +189,7 @@ async function planProcessing(
 
   if (matchOnly) return { stmts };
 
-  // ---- 4. Re-issued posted rows, and removed pending rows nothing has claimed.
+  // ---- 5. Re-issued posted rows, and removed pending rows nothing has claimed.
   const removedPosted = removed.filter((r) => !r.pending);
   const addedPosted = live.filter(
     (r) => !r.pending && !inherited.has(r.provider_txn_id) && r.txn_key === `p:${r.provider_txn_id}`,
@@ -227,18 +229,22 @@ async function planProcessing(
     for (const r of removedPending) {
       if (held.has(r.txn_key)) continue;
       // Removed with no posted successor yet: hold its edits (14 days) and flag a vanished pending after 5 days (daily
-      // scan). A posted row that arrives later still claims it (step 3).
+      // scan). A posted row that arrives later still claims it (step 2). A row your entry covers vanished from
+      // nothing: the entry still counts for it (docs/payee-names.md 9.2).
       stmts.push(
         s.q(
-          `UPDATE txn_overlay SET orphaned_at = coalesce(orphaned_at, ?3) WHERE budget_id = ?1 AND txn_key = ?2`,
+          `UPDATE txn_overlay SET orphaned_at = coalesce(orphaned_at, ?3) WHERE budget_id = ?1 AND txn_key = ?2
+             AND NOT EXISTS (SELECT 1 FROM manual_pending m WHERE m.budget_id = ?1 AND m.covers_provider_txn_id = ?4
+               AND m.deleted_at IS NULL AND m.matched_txn_key IS NULL)`,
           r.txn_key,
           now,
+          r.provider_txn_id,
         ),
       );
     }
   }
 
-  // ---- 5. For rows without your categorization: the payee, transfers and Waiting to match. No category is set.
+  // ---- 6. For rows without your categorization: the payee, transfers and Waiting to match. No category is set.
   const fresh = live.filter((r) => !inherited.has(r.provider_txn_id));
   if (fresh.length || tookOver.length) stmts.push(...(await planFresh(s, fresh, now, tookOver)));
   return { stmts };
