@@ -1,4 +1,4 @@
-# D-?: Your entry covers the bank's pending row; entries pair only on exact evidence (Nov 5, 2026)
+# D-64: Your entry covers the bank's pending row; entries pair only on exact evidence (Nov 5, 2026)
 
 **Decided by the owner** (`docs/payee-names.md`, approved v7, answers 5 and 8 in its section 13). PR 3 of its
 section 11 (9.1, 9.2).

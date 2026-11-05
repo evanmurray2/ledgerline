@@ -259,7 +259,7 @@ Four PRs, in this order. Only the first has a migration, so the owner OKs one me
    aliases and their lookup.
 
 Docs: decisions (`D-63-payee-names-from-plaid.md`, `D-?-pending-match-without-text.md`,
-`D-?-manual-entry-meets-bank-pending.md`) and entries in
+`D-64-entry-covers-bank-pending.md`) and entries in
 `docs/whats-true-now.md` for `docs/design.md`, `docs/payees.md` (4) and `docs/sync-spec.md`. Delete the build-plan
 line.
 

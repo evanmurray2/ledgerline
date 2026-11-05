@@ -80,7 +80,7 @@ If a run dies after moving the cursor, the next run, the cron or the daily maint
 
 ## Matching mechanics (F4, F10)
 
-> **Now:** the manual pending row is replaced (D-?, `docs/payee-names.md` 9.1, 9.2). Your entry pairs with a bank row only on exact evidence (your typed name equals one of its Plaid names, or the same amount on the same day), never on a score; otherwise "Same purchase?" asks, with Yes and No, and Not the same undoes a pair. An entry also covers a bank pending row: the bank row is hidden and the entry counts until the charge posts, then the posted row takes the entry's key. Batch order: link, posted ↔ bank pending, posted ↔ entries, bank pending ↔ entries. The other rows stand.
+> **Now:** the manual pending row is replaced (D-64, `docs/payee-names.md` 9.1, 9.2). Your entry pairs with a bank row only on exact evidence (your typed name equals one of its Plaid names, or the same amount on the same day), never on a score; otherwise "Same purchase?" asks, with Yes and No, and Not the same undoes a pair. An entry also covers a bank pending row: the bank row is hidden and the entry counts until the charge posts, then the posted row takes the entry's key. Batch order: link, posted ↔ bank pending, posted ↔ entries, bank pending ↔ entries. The other rows stand.
 
 | Case | Rule |
 | --- | --- |
