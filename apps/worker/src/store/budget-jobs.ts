@@ -8,6 +8,7 @@ import type { Env } from '../env.js';
 import { dailyScan } from '../daily-scan.js';
 import { rollUpUsage, watchdogBudgetStmts } from '../maintenance.js';
 import { processPending } from '../sync/process.js';
+import { fillPlaidNameStep, type FillPlaidNameState } from '../sync/fill-plaid-name.js';
 import { acquire, requestSync } from '../sync/lease.js';
 import { bumpVersion } from '../http/version.js';
 import type { Handler, StepResult } from './jobs.js';
@@ -172,5 +173,17 @@ export function maintenanceHandler(env: Env, budgetId: () => Promise<string>): H
         await bumpVersion(db, b);
         return { state: { phase: 'start' }, runAt: nextMaintenance(now, await budgetZone(db, b)) };
     }
+  };
+}
+
+/**
+ * Once, after migration 0007 (docs/payee-names.md 8.1): Plaid's name for rows imported before bank_txn.plaid_name
+ * existed, one raw page per step (sync/fill-plaid-name.ts). Steps follow each other at once; the job ends when no row
+ * is left to fill.
+ */
+export function fillPlaidNameHandler(db: Db, budgetId: () => Promise<string>): Handler {
+  return async (job, now): Promise<StepResult> => {
+    const r = await fillPlaidNameStep(db, await budgetId(), job.state as FillPlaidNameState);
+    return r.done ? { done: true } : { state: r.state, runAt: now };
   };
 }
