@@ -11,7 +11,8 @@ test-results/
 .DS_Store
 *.tsbuildinfo
 .measure/
-.claude/
+.claude/*
+!.claude/settings.json
 .bundle/
 e2e/screenshots/
 e2e/test-results/
