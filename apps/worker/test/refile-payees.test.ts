@@ -163,8 +163,11 @@ async function asOldRulesMadeThem(): Promise<void> {
   await db.batch(stmts);
 }
 
-/** A join as the old release recorded it: no named_by and no added key in its audit row. */
-async function oldJoin(keep: string, other: string, name?: string): Promise<string> {
+/**
+ * A join as the old release recorded it: no named_by and no added key in its audit row. `first` is how the first
+ * release recorded it, as in the owner's data: `before` is the JSON text 'null' and `after` has no `keep`.
+ */
+async function oldJoin(keep: string, other: string, name?: string, first = false): Promise<string> {
   const r = await post('/settings/payees/merge', { keep, ids: [keep, other], ...(name ? { name } : {}) });
   expect(r.status, await r.clone().text()).toBe(200);
   const { undoId } = (await r.json()) as MergeResult;
@@ -174,6 +177,15 @@ async function oldJoin(keep: string, other: string, name?: string): Promise<stri
         `UPDATE audit_log SET before = json_remove(before, '$.namedBy', '$.added') WHERE action = 'payee.merge' AND entity_id = ?1`,
       )
       .bind(undoId),
+    ...(first
+      ? [
+          db
+            .prepare(
+              `UPDATE audit_log SET before = 'null', after = json_remove(after, '$.keep') WHERE action = 'payee.merge' AND entity_id = ?1`,
+            )
+            .bind(undoId),
+        ]
+      : []),
     db.prepare(`UPDATE payee SET named_by = 'user' WHERE budget_id = ?1`).bind(B),
     db.prepare(`DELETE FROM payee_alias WHERE pattern LIKE 'n:%'`),
   ]);
@@ -275,7 +287,7 @@ describe('the payee re-file job', () => {
     const b = (await payeeOf('hulu-b'))!;
     expect([a.name, b.name]).toEqual(['Hlu Huluplus Hulu', 'Hulu']);
     // Nov 2, a merge under the name the app had made.
-    hluUndo = await oldJoin(a.id, b.id);
+    hluUndo = await oldJoin(a.id, b.id, undefined, true);
     // A payee you renamed, and a join under a name you picked.
     gas = (await payeeOf('gas-1'))!.id;
     expect((await post(`/settings/payees/${gas}`, { name: 'My gas' })).status).toBe(200);

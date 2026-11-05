@@ -190,7 +190,9 @@ payeesRoutes.post('/settings/payees/merge/:undoId/undo', async (c) => {
   const b = row!.results[0] as { id: number; before: string } | undefined;
   if (!b) throw new HttpError(404, 'not_found', 'merge');
   if (done!.results.length) return c.json({ ok: true });
-  const before = JSON.parse(b.before) as MergeBefore;
+  // The first release recorded no `before` (the JSON text 'null'): there is nothing to put back.
+  const before = (b.before ? (JSON.parse(b.before) as MergeBefore | null) : null) ?? null;
+  if (!before?.names) throw new HttpError(409, 'payee_changed', 'Can’t undo now: this payee changed since.');
   const ids = Object.keys(before.names);
   const now_ = await s.all<{ id: string; updated_at: number; merged_into: string | null }>(
     `SELECT id, updated_at, merged_into FROM payee WHERE budget_id = ?1 AND id IN (${places(ids.length, 2)})`,

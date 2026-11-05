@@ -241,12 +241,14 @@ async function chosenNames(s: Scoped): Promise<{ user: string[]; sync: string[] 
     chosen.set(r, (chosen.get(r) ?? new Set()).add(payeeNameKey(name)));
   };
   for (const r of [...rows, ...(typed!.results as AuditRow[])]) {
-    const after = r.after ? (JSON.parse(r.after) as { name?: unknown; keep?: unknown }) : {};
+    // Old rows store the JSON text 'null' for an empty side.
+    const after = (r.after ? (JSON.parse(r.after) as { name?: unknown; keep?: unknown } | null) : null) ?? {};
     if (r.action === 'payee.rename' || r.action === 'txn.edit') choose(r.entity_id, after.name);
     else if (r.action === 'payee.merge' && !undone.has(r.entity_id)) {
-      const before = r.before
-        ? (JSON.parse(r.before) as { names?: Record<string, string>; namedBy?: unknown })
-        : {};
+      const before =
+        (r.before
+          ? (JSON.parse(r.before) as { names?: Record<string, string>; namedBy?: unknown } | null)
+          : null) ?? {};
       const names = Object.values(before.names ?? {}).map(payeeNameKey);
       if (before.namedBy || (typeof after.name === 'string' && !names.includes(payeeNameKey(after.name))))
         choose(typeof after.keep === 'string' ? after.keep : null, after.name);
