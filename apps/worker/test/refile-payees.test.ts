@@ -20,6 +20,11 @@ import {
   type RefileState,
 } from '../src/sync/refile-payees.js';
 import { FILL_PLAID_NAME_ID } from '../src/sync/fill-plaid-name.js';
+import {
+  DROP_TEXT_ALIASES_ID,
+  DROP_TEXT_ALIASES_ROWS,
+  QUEUE_DROP_TEXT_ALIASES,
+} from '../src/sync/drop-text-aliases.js';
 
 const STORE = 'refile-payees';
 const db = storeDb(STORE);
@@ -454,5 +459,61 @@ describe('the payee re-file job', () => {
         1,
       );
     });
+  });
+  it('then the old cleaned-text aliases go: queued once the job is done, deleted a step at a time', async () => {
+    const store = budgetStub('drop-text-aliases');
+    const n = DROP_TEXT_ALIASES_ROWS + 20;
+    const left = await runInDurableObject(store, async (o, st) => {
+      const sql = st.storage.sql;
+      sql.exec(`INSERT INTO budget (id, name, created_at, updated_at) VALUES ('b_drop', 'B', 0, 0)`);
+      sql.exec(
+        `INSERT INTO payee (id, budget_id, name, created_at, updated_at) VALUES ('p1', 'b_drop', 'Shell', 0, 0)`,
+      );
+      for (let i = 0; i < n; i++)
+        sql.exec(
+          `INSERT INTO payee_alias (id, budget_id, pattern, payee_id, created_at) VALUES (?, 'b_drop', ?, 'p1', 0)`,
+          `old_${i}`,
+          `SHELLOIL${i}`,
+        );
+      sql.exec(
+        `INSERT INTO payee_alias (id, budget_id, pattern, merchant_entity_id, payee_id, created_at) VALUES
+           ('n:shell', 'b_drop', 'n:shell', NULL, 'p1', 0), ('m_old', 'b_drop', NULL, 'ent_shell', 'p1', 0)`,
+      );
+      const queued = () => sql.exec(`SELECT id FROM job WHERE id = ?`, DROP_TEXT_ALIASES_ID).toArray().length;
+      // Not while the re-file job hasn't finished (QUEUE_REFILE still needs them).
+      sql.exec(QUEUE_DROP_TEXT_ALIASES, NOW);
+      expect(queued()).toBe(0);
+      // The re-file job's last step: its audit row, then the job queues the deletion as it ends.
+      sql.exec(
+        `INSERT INTO audit_log (budget_id, action, entity, created_at) VALUES ('b_drop', 'payee.refile', 'payee', 0)`,
+      );
+      sql.exec(
+        `INSERT INTO job (id, kind, state, run_at, created_at, updated_at) VALUES (?, 'refile_payees', '{"phase":"done"}', 0, 0, 0)`,
+        REFILE_PAYEES_ID,
+      );
+      for (
+        let i = 0;
+        i < 10 &&
+        sql.exec(`SELECT 1 FROM job WHERE failed_at IS NULL AND run_at <= ?`, Date.now()).toArray().length;
+        i++
+      )
+        await o.alarm();
+      expect(sql.exec(`SELECT id FROM job`).toArray()).toEqual([]);
+      // Queued once only: the job row is gone and nothing is left to delete.
+      sql.exec(QUEUE_DROP_TEXT_ALIASES, NOW);
+      expect(queued()).toBe(0);
+      return sql
+        .exec(`SELECT id FROM payee_alias ORDER BY id`)
+        .toArray()
+        .map((r) => r.id);
+    });
+    // The `n:` key and the merchant id stay; every cleaned-text pattern is gone, and the phone is told.
+    expect(left).toEqual(['m_old', 'n:shell']);
+    const logged = await runInDurableObject(store, async (_o, st) =>
+      st.storage.sql
+        .exec(`SELECT count(*) AS n FROM change_log WHERE tbl = 'payee_alias' AND deleted = 1`)
+        .one(),
+    );
+    expect(logged.n).toBe(n);
   });
 });

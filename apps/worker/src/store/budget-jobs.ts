@@ -10,6 +10,7 @@ import { rollUpUsage, watchdogBudgetStmts } from '../maintenance.js';
 import { processPending } from '../sync/process.js';
 import { fillPlaidNameStep, type FillPlaidNameState } from '../sync/fill-plaid-name.js';
 import { QUEUE_REFILE, refilePayeesStep, type RefileState } from '../sync/refile-payees.js';
+import { QUEUE_DROP_TEXT_ALIASES, dropTextAliasesStep } from '../sync/drop-text-aliases.js';
 import { acquire, requestSync } from '../sync/lease.js';
 import { bumpVersion } from '../http/version.js';
 import type { Handler, StepResult } from './jobs.js';
@@ -191,10 +192,21 @@ export function fillPlaidNameHandler(db: Db, budgetId: () => Promise<string>): H
   };
 }
 
-/** Once (docs/payee-names.md 8.2, 8.3): every existing transaction filed again by the new payee rules. */
+/**
+ * Once (docs/payee-names.md 8.2, 8.3): every existing transaction filed again by the new payee rules. When it ends, it
+ * queues the deletion of the old cleaned-text aliases (sync/drop-text-aliases.ts).
+ */
 export function refilePayeesHandler(db: Db, budgetId: () => Promise<string>): Handler {
   return async (job, now): Promise<StepResult> => {
     const r = await refilePayeesStep(db, await budgetId(), job.id, job.state as RefileState, now);
-    return r.done ? { done: true } : { state: r.state, runAt: r.runAt };
+    if (!r.done) return { state: r.state, runAt: r.runAt };
+    await db.prepare(QUEUE_DROP_TEXT_ALIASES).bind(now).run();
+    return { done: true };
   };
+}
+
+/** Once, after the re-file: the old cleaned-text aliases deleted, a step at a time (sync/drop-text-aliases.ts). */
+export function dropTextAliasesHandler(db: Db): Handler {
+  return async (job, now): Promise<StepResult> =>
+    (await dropTextAliasesStep(db)).done ? { done: true } : { state: job.state, runAt: now };
 }

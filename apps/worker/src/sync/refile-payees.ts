@@ -11,8 +11,8 @@
 // next state into its own job row in the same batch, so a step killed after its batch committed resumes after it.
 //   wait     the fill job is gone and processing has caught up
 //   names    part 2: a payee is `user` only if an audit row shows a name you chose; every other one is `sync`
-//   release  sync payees give up their keys (the old cleaned-text aliases stay, for a code rollback); a user payee
-//            gets the key of its name if no payee has it
+//   release  sync payees give up their keys (the old cleaned-text aliases stay until this job is done, when
+//            drop-text-aliases.ts deletes them); a user payee gets the key of its name if no payee has it
 //   refile   part 3: the transactions of sync payees, REFILE_ROWS at a time in date order, filed again by 4–6
 //   finish   a sync payee left with no transactions joins the payee most of its rows went to; one audit row
 //   done     nothing left (a finish step killed after its batch committed ends here, without a second audit row)

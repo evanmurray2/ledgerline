@@ -32,6 +32,7 @@ import {
   fillPlaidNameHandler,
   maintenanceHandler,
   refilePayeesHandler,
+  dropTextAliasesHandler,
   startSyncJob,
   type Enqueue,
 } from './budget-jobs.js';
@@ -39,9 +40,12 @@ import { connectionToken, makeProvider, pageSize } from '../sync/provider.js';
 import { writeBudgetState } from '../sync/breaker.js';
 import { answering } from './body.js';
 import { QUEUE_REFILE } from '../sync/refile-payees.js';
+import { QUEUE_DROP_TEXT_ALIASES } from '../sync/drop-text-aliases.js';
 
 /** Storage key: the store has checked once whether its payees need the re-file job (sync/refile-payees.ts). */
 const REFILE_CHECKED = 'payee_refile_checked';
+/** Storage key: the store has checked once whether its old cleaned-text aliases need deleting (drop-text-aliases.ts). */
+const TEXT_ALIASES_CHECKED = 'payee_text_aliases_checked';
 
 export interface StoreHealth {
   ok: boolean;
@@ -69,7 +73,10 @@ export class BudgetStore extends DurableObject<Env> {
         const { applied } = migrate(ctx.storage, BUDGET_MIGRATIONS, Date.now());
         // Payees made by the old rules are filed again once (docs/payee-names.md 8), with no migration: checked
         // once per store, and queued only where old payees exist and the job hasn't run.
-        const queued = await this.queueRefileOnce().catch(() => false);
+        const refile = await this.queueOnce(REFILE_CHECKED, QUEUE_REFILE).catch(() => false);
+        // After a re-file that finished before this release, the old cleaned-text aliases go (once).
+        const drop = await this.queueOnce(TEXT_ALIASES_CHECKED, QUEUE_DROP_TEXT_ALIASES).catch(() => false);
+        const queued = refile || drop;
         // A migration may queue a job (0007 queues the plaid_name fill): point the alarm at it now, not at the next
         // job already waiting (up to 4 hours away). A failure here only delays it to that alarm.
         if (applied.length || queued) await this.runner.scheduleNext(Date.now()).catch(() => null);
@@ -80,11 +87,11 @@ export class BudgetStore extends DurableObject<Env> {
     });
   }
 
-  /** Queues the payee re-file job if this store needs it; true when it did. Runs its check once per store. */
-  private async queueRefileOnce(): Promise<boolean> {
-    if (await this.ctx.storage.get<boolean>(REFILE_CHECKED)) return false;
-    const n = this.ctx.storage.sql.exec(QUEUE_REFILE, Date.now()).rowsWritten;
-    await this.ctx.storage.put(REFILE_CHECKED, true);
+  /** Runs a one-time job's queueing SQL once per store (`flag` remembers it); true when it queued the job. */
+  private async queueOnce(flag: string, sql: string): Promise<boolean> {
+    if (await this.ctx.storage.get<boolean>(flag)) return false;
+    const n = this.ctx.storage.sql.exec(sql, Date.now()).rowsWritten;
+    await this.ctx.storage.put(flag, true);
     return n > 0;
   }
 
@@ -414,6 +421,7 @@ export class BudgetStore extends DurableObject<Env> {
       maintenance: (job, now) => maintenanceHandler(this.appEnv(), budgetId)(job, now),
       fill_plaid_name: (job, now) => fillPlaidNameHandler(this.adapter(), budgetId)(job, now),
       refile_payees: (job, now) => refilePayeesHandler(this.adapter(), budgetId)(job, now),
+      drop_text_aliases: (job, now) => dropTextAliasesHandler(this.adapter())(job, now),
       register_link: async (job) => {
         // Retried until the Directory answers; a duplicate Item is flagged on the connection (6.4).
         const { itemId, connectionId } = job.state as { itemId: string; connectionId: string };
