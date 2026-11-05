@@ -18,7 +18,7 @@ const NOW = Date.parse('2026-11-14T20:00:00Z');
 const provider = new PlaidProvider({ clientId: 'x', secret: 'y', env: 'sandbox' });
 const B = 'b_ec';
 const C = 'con_ec';
-const ACCOUNTS = 12;
+const ACCOUNTS = 13;
 const engine = new LocalEngine(db, { budgetId: B, userId: 'u_ec', email: 'owner@example.com' }, () => NOW);
 
 function plaidTxn(
@@ -297,12 +297,15 @@ describe('your entry and the bank’s rows', () => {
   it('a leftover entry never takes a posted row whose pending row still counts', async () => {
     // A second entry for the same charge, with nothing exact: it's asked about, not paired.
     await entry('m:left', 7, -2300, '2026-11-09', 'Bar tab');
-    await sync([pend('bar-p', 7, 23.5, '2026-11-08', 'CAFE DU MONDE')]);
+    await sync([pend('bar-p', 7, 23.5, '2026-11-08', 'CAFE DU MONDE', { merchant: 'Cafe du Monde' })]);
     expect((await mp('m:left'))!.covers_provider_txn_id).toBeNull();
     expect((await asks()).find((x) => x.ref_key === 'p:bar-p')).toBeTruthy();
     // The posted row tries the bank pending row first.
     await sync([
-      plaidTxn('bar', 7, 28.5, '2026-11-10', 'CAFE DU MONDE NEW ORLEANS', { authorized_date: '2026-11-08' }),
+      plaidTxn('bar', 7, 28.5, '2026-11-10', 'CAFE DU MONDE NEW ORLEANS', {
+        merchant: 'Cafe du Monde',
+        authorized_date: '2026-11-08',
+      }),
     ]);
     expect(await keyOf('bar')).toBe('p:bar-p');
     expect((await mp('m:left'))!.matched_txn_key).toBeNull();
@@ -399,5 +402,27 @@ describe('your entry and the bank’s rows', () => {
     await call('PATCH', '/api/transactions/m%3Aamt', { amount: -9000 });
     expect((await mp('m:amt'))!.covers_provider_txn_id).toBeNull();
     expect(await counted(12)).toEqual({ spent: -9000 - 1500, pending: -9000 - 1500 });
+  });
+  it('a posted row without exact evidence for the covered pending row: asked about your entry; Yes pairs, once', async () => {
+    await entry('m:sq', 13, -4000, '2026-11-10', 'Sushi');
+    await sync([pend('sq-p', 13, 40, '2026-11-10', 'Sushi')]);
+    expect((await mp('m:sq'))!.covers_provider_txn_id).toBe('sq-p');
+    // A tip, and another Plaid name on the posted row: nothing exact with the pending row or with your entry.
+    await sync([plaidTxn('sq', 13, 48, '2026-11-11', 'SQ *SUSHI BAR', { authorized_date: '2026-11-10' })]);
+    expect(await keyOf('sq')).toBe('p:sq');
+    expect(await counted(13)).toEqual({ spent: -4000 - 4800, pending: -4000 });
+    // The covered pending row is hidden, so the question names your entry instead.
+    const a = (await asks()).find((x) => x.ref_key === 'p:sq')!;
+    expect(JSON.parse(a.data)).toEqual({ candidates: ['m:sq'] });
+    const view = (await call('GET', '/api/activity?filter=attention')).json as ActivityView;
+    expect(view.samePurchase.find((x) => x.id === a.id)!.candidates.map((x) => x.key)).toEqual(['m:sq']);
+    expect((await call('POST', `/api/same-purchase/${a.id}`, { answer: 'yes', key: 'm:sq' })).status).toBe(
+      200,
+    );
+    await workOut(db, B, NOW);
+    expect(await keyOf('sq')).toBe('m:sq');
+    expect(await keyOf('sq-p')).toBe('m:sq');
+    expect(await listed(13)).toEqual([{ key: 'm:sq', source: 'bank', status: 'posted', amount: -4800 }]);
+    expect(await counted(13)).toEqual({ spent: -4800, pending: 0 });
   });
 });

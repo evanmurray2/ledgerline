@@ -1,19 +1,24 @@
-// Bank pending rows and their posted rows (D-47), through the real pipeline, in every order a bank sends them: with
-// and without the provider's link, the pending row removed before, with or after the posted row, or not for days.
+// Bank pending rows and their posted rows (D-47, docs/payee-names.md 9.3), through the real pipeline, in every order a
+// bank sends them: with and without the provider's link, the pending row removed before, with or after the posted row,
+// or not for days. Without the link they pair only on exact evidence: Plaid's merchant id or names, or the same amount
+// on the same day; the bank's own text (original_description) is never compared.
 import { env } from 'cloudflare:test';
 import { storeDb } from './store-db.js';
 import { phoneTables, workOut } from './work-out.js';
 import { beforeAll, describe, expect, it } from 'vitest';
+import type { ActivityView } from '@ledgerline/contracts';
 import { PlaidProvider } from '@ledgerline/bank-provider';
 import { acquire } from '../src/sync/lease.js';
 import { applyPage, beginRun, rawPageKey } from '../src/sync/steps.js';
 import { healPending, processPending } from '../src/sync/process.js';
+import { LocalEngine } from '../src/local/engine.js';
 
 const db = storeDb('pending-match');
 const NOW = Date.parse('2026-11-14T20:00:00Z');
 const provider = new PlaidProvider({ clientId: 'x', secret: 'y', env: 'sandbox' });
 const B = 'b_pm';
 const C = 'con_pm';
+const engine = new LocalEngine(db, { budgetId: B, userId: 'u_pm', email: 'owner@example.com' }, () => NOW);
 
 function plaidTxn(
   id: string,
@@ -108,13 +113,37 @@ const categorize = (key: string, cat: string) =>
     .prepare(`UPDATE txn_overlay SET category_id = ?2, categorized_by = 'user' WHERE txn_key = ?1`)
     .bind(key, cat)
     .run();
-const pend = (id: string, amount: number, date: string, name: string) =>
-  plaidTxn(id, 'pa_card', amount, date, name, { pending: true, authorized_date: date });
+const pend = (id: string, amount: number, date: string, name: string, o: Record<string, unknown> = {}) =>
+  plaidTxn(id, 'pa_card', amount, date, name, { pending: true, authorized_date: date, ...o });
 const removal = (id: string) => ({ transaction_id: id, account_id: 'pa_card' });
+const heal = async () => {
+  const r = await healPending({ ...env, DB: db } as never, B, C, NOW);
+  await workOut(db, B, NOW);
+  return r;
+};
+/** The open "Same purchase?" question about a row, if any. */
+const askOf = async (ref: string) =>
+  db
+    .prepare(`SELECT id, data FROM alert WHERE type = 'same_purchase' AND ref_key = ?1 AND acked_at IS NULL`)
+    .bind(ref)
+    .first<{ id: string; data: string }>();
+const call = async (method: string, path: string, body?: unknown) => {
+  const r = await engine.request(method, path, body);
+  return { status: r.status, json: (await r.json()) as unknown };
+};
+/** What these rows count together: their budget lines (Spent), whatever key each has now. */
+const together = async (ids: string[]) => {
+  let total = 0;
+  for (const k of new Set(await Promise.all(ids.map(keyOf)))) total += await spent(k);
+  return total;
+};
 
 describe('posted rows claim their pending rows', () => {
   beforeAll(async () => {
     await phoneTables(db);
+    await db
+      .prepare(`CREATE TABLE IF NOT EXISTS local_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
+      .run();
     await db.batch([
       db
         .prepare(
@@ -174,11 +203,14 @@ describe('posted rows claim their pending rows', () => {
     ]);
   });
 
-  it('no link, pending still listed (the bank keeps it for hours): the posted row claims it, tip and all', async () => {
-    await sync([pend('jb-p', 35.75, '2026-11-08', 'JUNEBUG')]);
+  it('no link, pending still listed (the bank keeps it for hours): the same merchant name pairs, tip and all', async () => {
+    // As Bank of America sends them: no link, bank texts that differ, and Plaid's names that agree.
+    await sync([pend('jb-p', 35.75, '2026-11-08', 'JUNEBUG', { original_description: 'JUNEBUG' })]);
     await categorize('p:jb-p', 'dining');
     await sync([
-      plaidTxn('jb', 'pa_card', 42.75, '2026-11-10', 'TST*JUNEBUG New Orleans LA', {
+      plaidTxn('jb', 'pa_card', 42.75, '2026-11-10', 'Junebug', {
+        original_description: 'TST*JUNEBUG New Orleans LA',
+        merchant: 'Junebug',
         authorized_date: '2026-11-08',
       }),
     ]);
@@ -195,7 +227,7 @@ describe('posted rows claim their pending rows', () => {
     expect((await overlay('p:jb-p'))?.orphaned_at).toBeNull();
   });
 
-  it('a pending row you marked won’t clear still lets its posted row count, and says so', async () => {
+  it('a pending row you marked won’t clear still lets its posted row count, and says so (same amount and day)', async () => {
     await sync([pend('hd-p', 25.3, '2026-11-08', 'PY HEARD DAT KITCHEN')]);
     await db.prepare(`UPDATE txn_overlay SET wont_clear = 1 WHERE txn_key = 'p:hd-p'`).run();
     await sync([
@@ -213,7 +245,7 @@ describe('posted rows claim their pending rows', () => {
 
   it('won’t clear set after the posted row arrived first, then the pending row removed: the charge still counts', async () => {
     await sync([pend('wc-p', 30, '2026-11-08', 'SHOP C')]);
-    // Not alike enough to pair on arrival (a different name, the bank's authorization date missing)...
+    // No exact evidence on arrival (another name, and the day differs: the bank's authorization date is missing)...
     await sync([plaidTxn('wc', 'pa_card', 30, '2026-11-09', 'XYZ', { authorized_date: null })]);
     expect(await keyOf('wc')).toBe('p:wc');
     await db
@@ -263,10 +295,12 @@ describe('posted rows claim their pending rows', () => {
       pend('clh-p', 5, '2026-11-08', 'CAFE LAFITTE'),
     ]);
     await sync([
-      plaidTxn('cl1', 'pa_card', 28.5, '2026-11-10', 'CAFE LAFITTE 504-5256724 LA', {
+      plaidTxn('cl1', 'pa_card', 28.5, '2026-11-10', 'Cafe Lafitte', {
+        original_description: 'CAFE LAFITTE 504-5256724 LA',
         authorized_date: '2026-11-08',
       }),
-      plaidTxn('cl2', 'pa_card', 28.25, '2026-11-10', 'CAFE LAFITTE 504-5256724 LA', {
+      plaidTxn('cl2', 'pa_card', 28.25, '2026-11-10', 'Cafe Lafitte', {
+        original_description: 'CAFE LAFITTE 504-5256724 LA',
         authorized_date: '2026-11-08',
       }),
     ]);
@@ -329,10 +363,14 @@ describe('posted rows claim their pending rows', () => {
     expect(await healPending({ ...env, DB: db } as never, B, C, NOW)).toEqual({ changed: false });
   });
 
-  it('a date or phone number in the pending description no longer blocks the pair; the next sync heals it', async () => {
-    await sync([pend('ride-p', 18.5, '2026-11-09', 'LYFT *RIDE 11/09 855-865-9553')]);
+  it('a date or phone number in the bank text never blocks the pair (the same merchant); the next sync heals it', async () => {
+    await sync([
+      pend('ride-p', 18.5, '2026-11-09', 'LYFT *RIDE 11/09 855-865-9553', { merchant_entity_id: 'ent_lyft' }),
+    ]);
     await sync([
       plaidTxn('ride', 'pa_card', 21.5, '2026-11-11', 'LYFT *RIDE SAN FRANCISCO CA', {
+        merchant: 'Lyft',
+        merchant_entity_id: 'ent_lyft',
         authorized_date: '2026-11-09',
       }),
     ]);
@@ -355,7 +393,7 @@ describe('posted rows claim their pending rows', () => {
     expect(await visible(['cof', 'cof-p'])).toHaveLength(2);
   });
 
-  it('the provider’s link wins over a look-alike: the look-alike gets its own key back', async () => {
+  it('the provider’s link wins over a pair made without it: that posted row gets its own key back', async () => {
     await sync([pend('lk-p', 12, '2026-11-08', 'TACO SHOP')]);
     await sync([
       plaidTxn('lk-a', 'pa_card', 12, '2026-11-10', 'TACO SHOP', { authorized_date: '2026-11-08' }),
@@ -366,5 +404,71 @@ describe('posted rows claim their pending rows', () => {
     ]);
     expect(await keyOf('lk-b')).toBe('p:lk-p');
     expect(await keyOf('lk-a')).toBe('p:lk-a');
+  });
+  it('a tip whose pending row has another Plaid name: "Same purchase?" asks; Yes pairs as an automatic pair would', async () => {
+    await sync([pend('sk-p', 150, '2026-11-11', 'SUSHI KO')]);
+    await categorize('p:sk-p', 'dining');
+    expect(await together(['sk-p'])).toBe(-15000);
+    await sync([
+      plaidTxn('sk', 'pa_card', 185, '2026-11-12', 'SUSHI KO RESTAURANT', { authorized_date: '2026-11-11' }),
+    ]);
+    // No exact evidence (another name, another amount): both stay and count until you answer.
+    expect(await keyOf('sk')).toBe('p:sk');
+    expect(await together(['sk', 'sk-p'])).toBe(-15000 - 18500);
+    const a = (await askOf('p:sk'))!;
+    expect(JSON.parse(a.data)).toEqual({ candidates: ['p:sk-p'] });
+    // The heal step asks the same question a live batch did, and writes nothing when it's already asked.
+    expect(await heal()).toEqual({ changed: false });
+    await db.prepare(`DELETE FROM alert WHERE id = ?1`).bind(a.id).run();
+    await heal();
+    const again = (await askOf('p:sk'))!;
+    expect(again.data).toBe(a.data);
+    const view = (await call('GET', '/api/activity?filter=attention')).json as ActivityView;
+    const card = view.samePurchase.find((x) => x.id === again.id)!;
+    expect(card.row.key).toBe('p:sk');
+    expect(card.candidates.map((x) => x.key)).toEqual(['p:sk-p']);
+    expect(
+      (await call('POST', `/api/same-purchase/${again.id}`, { answer: 'yes', key: 'p:sk-p' })).status,
+    ).toBe(200);
+    await workOut(db, B, NOW);
+    // As an automatic pair: the posted row takes the pending row's key, category and all; counted once.
+    expect(await keyOf('sk')).toBe('p:sk-p');
+    expect(await visible(['sk', 'sk-p'])).toEqual([{ id: 'sk', status: 'posted' }]);
+    expect(await overlay('p:sk-p')).toMatchObject({ category_id: 'dining' });
+    expect(await together(['sk', 'sk-p'])).toBe(-18500);
+    expect(await askOf('p:sk')).toBeNull();
+    // The bank removes its pending row later: still once.
+    await sync([], [removal('sk-p')]);
+    expect(await together(['sk', 'sk-p'])).toBe(-18500);
+  });
+
+  it('No to "Same purchase?" is remembered: never asked again, never paired, by a batch or the heal step', async () => {
+    await sync([pend('fu-p', 300, '2026-11-12', 'GAS STATION A')]);
+    await sync([
+      plaidTxn('fu', 'pa_card', 310, '2026-11-13', 'FUEL STOP B', { authorized_date: '2026-11-12' }),
+    ]);
+    const a = (await askOf('p:fu'))!;
+    expect(JSON.parse(a.data)).toEqual({ candidates: ['p:fu-p'] });
+    expect((await call('POST', `/api/same-purchase/${a.id}`, { answer: 'no', key: 'p:fu-p' })).status).toBe(
+      200,
+    );
+    expect(await askOf('p:fu')).toBeNull();
+    await heal();
+    await sync([pend('fu-other', 2, '2026-11-13', 'SOMETHING')]);
+    expect(await askOf('p:fu')).toBeNull();
+    expect(await keyOf('fu')).toBe('p:fu');
+    expect(await together(['fu', 'fu-p'])).toBe(-30000 - 31000);
+  });
+
+  it('different merchant ids with the same amount on the same day still pair (exact evidence)', async () => {
+    await sync([pend('br-p', 6.4, '2026-11-12', 'STARBUCKS 12345', { merchant_entity_id: 'ent_sb_1' })]);
+    await sync([
+      plaidTxn('br', 'pa_card', 6.4, '2026-11-13', 'STARBUCKS STORE 67890', {
+        merchant_entity_id: 'ent_sb_2',
+        authorized_date: '2026-11-12',
+      }),
+    ]);
+    expect(await keyOf('br')).toBe('p:br-p');
+    expect(await together(['br', 'br-p'])).toBe(-640);
   });
 });

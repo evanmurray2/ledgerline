@@ -62,7 +62,8 @@ export async function samePurchaseCards(
         `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND key IN (${ph}) AND ${uncovered('v_transaction')}`,
         ...k,
       ),
-      // Entries already covering a bank row: answering Yes for another one would leave the first uncovered.
+      // Entries already covering a bank row: answering Yes for another pending row would leave the first uncovered.
+      // (A posted row may take one: the row it covers is claimed with it.)
       s.q(
         `SELECT m.txn_key FROM manual_pending m WHERE m.budget_id = ?1 AND m.txn_key IN (${ph}) AND ${COVERING('m')}`,
         ...k,
@@ -76,9 +77,16 @@ export async function samePurchaseCards(
   for (const a of asks) {
     const ref = rows.get(a.ref_key);
     if (!ref || isHistory(ref)) continue;
+    // A candidate that has paired since (its key now a posted row's) drops out.
     const cands = candidatesOf(a)
       .map((k) => rows.get(k))
-      .filter((r): r is TxRow => !!r && !busy.has(r.key) && !notSame(a.ref_key, r.key));
+      .filter(
+        (r): r is TxRow =>
+          !!r &&
+          r.status !== 'posted' &&
+          !(ref.status === 'pending' && busy.has(r.key)) &&
+          !notSame(a.ref_key, r.key),
+      );
     if (!cands.length) continue;
     out.push({
       id: a.id,
@@ -180,8 +188,8 @@ samePurchaseRoutes.post('/same-purchase/:id', async (c) => {
   const entry = await s.first<EntryDb>(`${ENTRY_SQL} AND m.txn_key = ?2`, r.key);
   const stmts: Stmt[] = [];
   if (entry) {
-    if (entry.covering && entry.covers_provider_txn_id !== ref.provider_txn_id) throw changed();
     if (ref.pending === 1) {
+      if (entry.covering && entry.covers_provider_txn_id !== ref.provider_txn_id) throw changed();
       const covered = await s.first(
         `SELECT 1 FROM manual_pending WHERE budget_id = ?1 AND covers_provider_txn_id = ?2 AND deleted_at IS NULL AND matched_txn_key IS NULL`,
         ref.provider_txn_id,
@@ -271,7 +279,7 @@ samePurchaseRoutes.post('/transactions/:key/not-same', async (c) => {
   );
   if (!posted) throw new HttpError(422, 'not_paired', 'This isn’t paired with another row');
   // Every bank row holding the entry's key (the posted row, and a pending row claimed with it) gets its own back, as
-  // when the provider's link wins over a look-alike.
+  // when the provider's link wins over a pair made without it.
   const moved = await s.all<{ provider_txn_id: string }>(
     `SELECT provider_txn_id FROM bank_txn WHERE budget_id = ?1 AND txn_key = ?2`,
     key,
