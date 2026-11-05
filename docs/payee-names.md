@@ -1,6 +1,6 @@
 # Payee names from Plaid, and no cleanup of bank text
 
-Status: proposal, v7, Nov 5, 2026. Not built. Asked by the owner after a Hulu charge arrived as "Hlu Huluplus Hulu".
+Status: approved, v7, Nov 5, 2026. Being built (section 11). Asked by the owner after a Hulu charge arrived as "Hlu Huluplus Hulu".
 v5 followed an adversarial review of v4 and is simpler: two keys instead of five, no stop list, no name ranks, and
 a pending matcher with three plain rules. v6 added the owner's answers of Nov 5 and a fix for an entry and the bank's
 pending row counting twice. v7 follows a second review: the app pairs only on exact evidence and asks "Same
@@ -11,8 +11,8 @@ section 14. The owner's answers are in section 13. This changes section 4 of
 
 **Does this change how money is counted?** Payee names and keys (sections 3–8): no. The pending matcher (section
 9): yes. It changes which bank pending row a posted charge replaces when the bank sends no link, and it pairs a
-manual entry with the bank's pending row so the two stop counting twice. The owner OK'd both (13); v7's changes to
-them (no "only candidate" rule, "Same purchase?", covering) need the owner's OK again. Every posted
+manual entry with the bank's pending row so the two stop counting twice. The owner OK'd both, and v7's version of
+them, on Nov 5 (13). Every posted
 charge still counts exactly once.
 
 ## 1. What happened to Hulu
@@ -247,17 +247,16 @@ in the repo.
 
 ## 11. Plan
 
-Four PRs:
+Four PRs, in this order. Only the first has a migration, so the owner OKs one merge:
 
-1. **Store Plaid's name** (3, migration): `plaid_name`, `named_by`, `NormalizedTxn`, the import, and part 1 of the
-   job. No change on screen. The owner OKs the merge, since it adds a migration.
+1. **Storage and Plaid's name** (3, 9.2, migration): `bank_txn.plaid_name`, `payee.named_by`,
+   `manual_pending.covers_provider_txn_id`, the `not_same` table; `NormalizedTxn` and the import; part 1 of the job
+   (8.1). No change on screen.
 2. **Payees from Plaid** (4–8): keys, names, the new-payee rule, rename and join keys, the re-file job (parts 2 and
-   3). `cleanDescription` stays only inside the matcher until PR 3.
-3. **Pending matcher** (9.3): delete the cleanup code, the old `d:` aliases and their lookup. A decision changes
-   D-47 and D-50 in `docs/sync-spec.md`.
-4. **"Same purchase?" and covering** (9.1, 9.2): the card, Not the same, `covers_provider_txn_id` and `not_same` (migration; the
-   owner OKs the merge) and the batch order. Its own decision and Matching mechanics rows. It doesn't depend on PRs
-   1–3 and can go first; PR 3 then uses its card.
+   3). `cleanDescription` stays only inside the matcher until PR 4.
+3. **"Same purchase?" and covering** (9.1, 9.2): the card, Yes, No, Not the same, covering and the batch order.
+4. **Pending matcher** (9.3): exact evidence only, the card for the rest; delete the cleanup code, the old `d:`
+   aliases and their lookup.
 
 Docs: decisions (`D-?-payee-names-from-plaid.md`, `D-?-pending-match-without-text.md`,
 `D-?-manual-entry-meets-bank-pending.md`) and entries in
@@ -295,12 +294,10 @@ Tests:
 3. **Joining:** a row joins a payee when any of its Plaid names equals one of the payee's keys exactly; no fuzzy
    joins (4).
 4. **Plaid fields:** add none until checked against real data. Checked (10): only `name`.
-5. **Pending matcher:** no test week. v6's three rules: OK (Nov 5). v7 replaces them (9); waiting for the
-   owner's OK.
+5. **Pending matcher:** no test week. v6's three rules: OK (Nov 5). v7's rules (9): OK (Nov 5).
 6. **Renames from a transaction's sheet:** none in the data (8).
 7. **Payees with monthly names:** left as they are; no change to transfers (4).
-8. **A manual entry and the bank's pending row:** fix the double count: OK (Nov 5). v7 does it by covering (9.2);
-   waiting for the owner's OK.
+8. **A manual entry and the bank's pending row:** fix the double count: OK (Nov 5). Covering (9.2): OK (Nov 5).
 
 ## 14. Reviews
 
