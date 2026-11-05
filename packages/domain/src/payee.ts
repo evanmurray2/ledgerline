@@ -47,11 +47,6 @@ export function cleanDescription(raw: string): string {
   return s;
 }
 
-/** Key: the cleaned string, or the provider's merchant entity id when present (strongest signal). */
-export function payeeKey(raw: string, merchantEntityId: string | null): string {
-  return merchantEntityId ? `m:${merchantEntityId}` : `d:${cleanDescription(raw).replace(/\s/g, '')}`;
-}
-
 export function trigrams(s: string): Set<string> {
   const t = `  ${s.toLowerCase().replace(/[^a-z0-9 ]/g, '')} `;
   const out = new Set<string>();
@@ -72,55 +67,12 @@ export function jaccard(x: ReadonlySet<string>, y: ReadonlySet<string>): number 
   return inter / (x.size + y.size - inter);
 }
 
-export interface PayeeRaw {
-  raw: string;
-  merchantEntityId: string | null;
-  merchantName: string | null;
-  count: number;
-}
-
-export interface PayeeCluster {
-  name: string;
-  members: PayeeRaw[];
-  transactions: number;
-}
-
-/** Cluster raw names: exact merchant id first, then trigram similarity above a threshold. */
-export function clusterPayees(rows: readonly PayeeRaw[], threshold = 0.5): PayeeCluster[] {
-  const clusters: { key: string; name: string; members: PayeeRaw[] }[] = [];
-  const byMerchant = new Map<string, number>();
-  for (const r of rows) {
-    if (r.merchantEntityId && byMerchant.has(r.merchantEntityId)) {
-      clusters[byMerchant.get(r.merchantEntityId)!]!.members.push(r);
-      continue;
-    }
-    const cleaned = cleanDescription(r.raw);
-    let idx = clusters.findIndex((c) => similarity(c.key, cleaned) >= threshold);
-    if (idx < 0) {
-      idx = clusters.push({ key: cleaned, name: r.merchantName ?? titleCase(cleaned), members: [] }) - 1;
-    }
-    clusters[idx]!.members.push(r);
-    if (r.merchantEntityId) byMerchant.set(r.merchantEntityId, idx);
-  }
-  return clusters
-    .filter((c) => c.members.length > 1)
-    .map((c) => ({
-      name: c.name,
-      members: c.members,
-      transactions: c.members.reduce((a, m) => a + m.count, 0),
-    }));
-}
-
 /** Payee names compare without case, outer spaces or the curly/straight apostrophe difference. */
 export function samePayeeName(a: string, b: string): boolean {
   return payeeNameKey(a) === payeeNameKey(b);
 }
 export function payeeNameKey(s: string): string {
   return s.trim().replace(/[’‘]/g, "'").toLowerCase();
-}
-
-export function titleCase(s: string): string {
-  return s.toLowerCase().replace(/\b[a-z]/g, (m) => m.toUpperCase());
 }
 
 /** What a bank row says about who was paid, as Plaid sent it. */
