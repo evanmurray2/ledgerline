@@ -22,9 +22,12 @@ import {
   loadNotSame,
   matchEntryStmts,
   notSameStmt,
+  ownKeyStmt,
   type Entry,
 } from '../sync/pairing.js';
 import { channel } from '../sync/pending-match.js';
+import { loadBankRows } from '../sync/bank-rows.js';
+import { planFresh } from '../sync/file-fresh.js';
 
 export const samePurchaseRoutes = new Hono<AppEnv>();
 
@@ -224,7 +227,10 @@ samePurchaseRoutes.post('/same-purchase/:id', async (c) => {
   return c.json(ACK);
 });
 
-/** The other row of a pair made by your entry and a bank row, for the sheet; null when there's none. */
+/**
+ * The other row of a pair, for the sheet: your entry and a bank row, or a posted row and the bank pending row whose
+ * key it took. Null when there's none, or when the provider linked them.
+ */
 export async function pairedWith(s: Scoped, t: TxRow): Promise<TxnSheet['pairedWith']> {
   if (t.source === 'manual') {
     const b = await s.first<{ payee: string; date: string; status: string }>(
@@ -240,13 +246,102 @@ export async function pairedWith(s: Scoped, t: TxRow): Promise<TxnSheet['pairedW
     `SELECT payee_name, date FROM manual_pending WHERE budget_id = ?1 AND txn_key = ?2 AND matched_txn_key = ?2 AND deleted_at IS NULL`,
     t.key,
   );
-  return m ? { label: `Your entry: ${m.payee_name} · ${shortDate(m.date)}` } : null;
+  if (m) return { label: `Your entry: ${m.payee_name} · ${shortDate(m.date)}` };
+  // A pair the provider linked isn't offered: its link wins (D-47), and the next sync would pair them again.
+  const b = await bankPair(s, t.key);
+  if (!b || b.byProvider) return null;
+  return { label: `Bank pending: ${b.pending.payee} · ${shortDate(b.pending.date)}` };
 }
 
 /**
- * Not the same: undoes a pair made by your entry and a bank row, and remembers No. A cover ends (the bank row counts
- * again); a posted row that took your entry's key gets its own key back, and so does the pending row it claimed with
- * it, and the entry counts again on its own (its cover, if any, back in force).
+ * A posted row that took over a bank pending row's key (`key`), paired by the app (D-47, D-65) or by your Yes, or
+ * by the provider's link (`byProvider`). Null when the key holds anything else: the posted row's own key, your
+ * entry's (that pair is undone above), or a removed posted row's (a re-issue).
+ */
+async function bankPair(
+  s: Scoped,
+  key: string,
+): Promise<{
+  postedId: string;
+  pending: { provider_txn_id: string; payee: string; date: string };
+  byProvider: boolean;
+} | null> {
+  const q = await s.first<{ provider_txn_id: string; pending_provider_txn_id: string | null }>(
+    `SELECT provider_txn_id, pending_provider_txn_id FROM bank_txn
+     WHERE budget_id = ?1 AND txn_key = ?2 AND pending = 0 AND removed_at IS NULL`,
+    key,
+  );
+  if (!q || key === `p:${q.provider_txn_id}`) return null;
+  const [others, links, entries] = await s.batch([
+    s.q(
+      `SELECT provider_txn_id, pending, coalesce(merchant_name, plaid_name, raw_name) AS payee, date FROM bank_txn
+       WHERE budget_id = ?1 AND txn_key = ?2 AND provider_txn_id != ?3 ORDER BY date, provider_txn_id`,
+      key,
+      q.provider_txn_id,
+    ),
+    s.q(
+      `SELECT created_by FROM txn_link WHERE budget_id = ?1 AND kind = 'pending_match' AND from_key = ?2 AND to_key = ?3
+         AND undone_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1`,
+      `p:${q.provider_txn_id}`,
+      key,
+    ),
+    s.q(`SELECT 1 FROM manual_pending WHERE budget_id = ?1 AND txn_key = ?2`, key),
+  ]);
+  const rows = others!.results as { provider_txn_id: string; pending: number; payee: string; date: string }[];
+  const link = (links!.results as { created_by: string }[])[0];
+  if (!link || entries!.results.length || !rows.length || rows.some((r) => r.pending !== 1)) return null;
+  return {
+    postedId: q.provider_txn_id,
+    pending: rows[0]!,
+    byProvider:
+      link.created_by === 'provider' || rows.some((r) => r.provider_txn_id === q.pending_provider_txn_id),
+  };
+}
+
+/**
+ * Not the same on a posted row and the bank pending row whose key it took. The pending row keeps the key and its
+ * overlay (what you set on the pair is on it); the posted row gets its own key back and is filed again as a new
+ * posted row (sync/file-fresh.ts). The pair goes into not_same, so neither processing nor the heal step pairs them
+ * again. A still-listed pending row counts again as pending; one the bank removed stays gone.
+ */
+async function undoBankPair(s: Scoped, key: string, now: number): Promise<boolean> {
+  const b = await bankPair(s, key);
+  if (!b) return false;
+  if (b.byProvider)
+    throw new HttpError(409, 'provider_link', 'Your bank linked these two rows itself, so they stay paired.');
+  const own = `p:${b.postedId}`;
+  const fresh = await planFresh(
+    s,
+    (await loadBankRows(s, [b.postedId])).map((r) => ({ ...r, txn_key: own })),
+    now,
+  );
+  await fenced(s, [
+    ownKeyStmt(s, b.postedId, now),
+    s.db.prepare(`DELETE FROM txn_key_move WHERE old_key = ?1 AND new_key = ?2`).bind(own, key),
+    s.q(
+      `UPDATE txn_link SET undone_at = ?4 WHERE budget_id = ?1 AND kind = 'pending_match' AND from_key = ?2 AND to_key = ?3 AND undone_at IS NULL`,
+      own,
+      key,
+      now,
+    ),
+    // The posted amount's alert was about this pair.
+    s.q(
+      `UPDATE txn_overlay SET alert = NULL, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
+      key,
+      now,
+    ),
+    notSameStmt(s, own, key, now),
+    ackAsks(s, own, now),
+    ...fresh,
+    s.audit('txn.not_same', 'transaction', key, null, { posted: b.postedId }, now),
+  ]);
+  return true;
+}
+
+/**
+ * Not the same: undoes a pair, and remembers No. A cover ends (the bank row counts again); a posted row that took your
+ * entry's key gets its own key back, and so does the pending row it claimed with it, and the entry counts again on its
+ * own (its cover, if any, back in force). A posted row that took a bank pending row's key: undoBankPair.
  */
 samePurchaseRoutes.post('/transactions/:key/not-same', async (c) => {
   const s = scoped(c);
@@ -258,7 +353,10 @@ samePurchaseRoutes.post('/transactions/:key/not-same', async (c) => {
      FROM manual_pending m WHERE m.budget_id = ?1 AND m.txn_key = ?2 AND m.deleted_at IS NULL`,
     key,
   );
-  if (!m) throw new HttpError(422, 'not_paired', 'This isn’t paired with another row');
+  if (!m) {
+    if (await undoBankPair(s, key, now)) return c.json(ACK);
+    throw new HttpError(422, 'not_paired', 'This isn’t paired with another row');
+  }
   if (m.matched_txn_key === null) {
     if (!m.covering || !m.covers_provider_txn_id)
       throw new HttpError(422, 'not_paired', 'This isn’t paired with another row');

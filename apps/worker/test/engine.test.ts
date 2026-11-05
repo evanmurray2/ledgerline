@@ -269,6 +269,43 @@ describe('the phone works out the same screens as the server', () => {
     await sameScreens(engine, month, budgetId);
   });
 
+  it('a posted row paired with a bank pending row, and Not the same, show the same on the phone', async () => {
+    // A posted charge on the same card took the pending Shell row's key, paired by the app (D-65).
+    const posted = (await ownerDb()
+      .prepare(
+        `SELECT b.provider_txn_id FROM bank_txn b JOIN bank_txn s ON s.provider_txn_id = 'n-shell'
+         WHERE b.provider_account_id = s.provider_account_id AND b.pending = 0 AND b.removed_at IS NULL
+           AND b.txn_key = b.provider_txn_id AND NOT EXISTS (SELECT 1 FROM txn_split t WHERE t.txn_key = b.txn_key)
+         ORDER BY b.date DESC LIMIT 1`,
+      )
+      .first<{ provider_txn_id: string }>())!.provider_txn_id;
+    await ownerDb().batch([
+      ownerDb()
+        .prepare(`UPDATE bank_txn SET txn_key = 'n-shell' WHERE provider_txn_id = ?1`)
+        .bind(posted),
+      ownerDb()
+        .prepare(
+          `INSERT INTO txn_link (id, budget_id, kind, from_key, to_key, created_by, created_at)
+           VALUES ('lk-shell', ?1, 'pending_match', ?2, 'n-shell', 'auto', 0)`,
+        )
+        .bind(budgetId, `p:${posted}`),
+    ]);
+    await syncAll(engine);
+    await engine.derive();
+    const before = (await phoneJson(engine, '/api/activity?filter=pending')) as ActivityView;
+    expect(before.pending.map((r) => r.key)).not.toContain('n-shell');
+    const sheet = (await phoneJson(engine, '/api/transactions/n-shell')) as { pairedWith: { label: string } };
+    expect(sheet.pairedWith.label).toMatch(/^Bank pending: /);
+    await sameScreens(engine, month, budgetId);
+    await post('/api/transactions/n-shell/not-same', {});
+    await syncAll(engine);
+    await engine.derive();
+    const after = (await phoneJson(engine, '/api/activity')) as ActivityView;
+    expect(after.pending.map((r) => r.key)).toContain('n-shell');
+    expect(after.posted.map((r) => r.key)).toContain(`p:${posted}`);
+    await sameScreens(engine, month, budgetId);
+  });
+
   it('a new epoch throws the copy away', async () => {
     const st = await engine.state();
     const r = await engine.apply({
