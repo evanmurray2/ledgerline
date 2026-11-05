@@ -68,9 +68,28 @@ async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBReq
 
 export const recordKey = (email: string, budgetId: string) => `${email}:${budgetId}`;
 
-export async function loadRecord(key: string): Promise<CopyRecord | null> {
+/** IndexedDB couldn't be read (not "no copy"): the saved copy may well be there, so nothing may replace it. */
+export class StorageUnavailable extends Error {
+  constructor() {
+    super('storage_unavailable');
+  }
+}
+
+/**
+ * This person's saved copy, or null when there is none. iOS sometimes fails an IndexedDB open or read for a moment
+ * (after the app comes back from the background): that's tried again, and if it still fails it throws
+ * StorageUnavailable instead of answering "no copy", which would set up a new copy over the saved one.
+ */
+export async function loadRecord(key: string, waits = [100, 400]): Promise<CopyRecord | null> {
   if (typeof indexedDB === 'undefined') return null;
-  return ((await tx('readonly', (s) => s.get(key)).catch(() => null)) as CopyRecord | undefined) ?? null;
+  for (let i = 0; ; i++) {
+    try {
+      return ((await tx('readonly', (s) => s.get(key))) as CopyRecord | undefined) ?? null;
+    } catch {
+      if (i >= waits.length) throw new StorageUnavailable();
+      await new Promise((r) => setTimeout(r, waits[i]));
+    }
+  }
 }
 
 /** Every copy on this device. */

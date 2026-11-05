@@ -33,6 +33,7 @@ import {
   openKey,
   openKeyOffline,
   CopyUnreadable,
+  StorageUnavailable,
   sameBytes,
 } from './vault';
 
@@ -87,6 +88,7 @@ export type FullWhy =
   | 'unreadable_key'
   | 'unreadable_copy'
   | 'empty' // a saved copy with nothing in it
+  | 'storage' // the saved copy couldn't be read from this device's storage (it's kept for the next time)
   | 'reset'; // the server's copy was restored, or a change made offline was refused
 const listeners = new Set<() => void>();
 function set(patch: Partial<CopyState>) {
@@ -108,6 +110,9 @@ let host: EngineHost | null = null;
 let record: CopyRecord | null = null;
 let dataKey: CryptoKey | null = null;
 let who: EngineIdentity | null = null;
+/** Copies deleted because they were signed out from another device, so the download that follows says so. */
+const turnedOff = new Set<string>();
+
 /** A sign-in that just produced a PRF output, for start() to use without asking for Face ID again. */
 let pending: { credentialId: string; prf: ArrayBuffer | null; salt: ArrayBuffer } | null = null;
 
@@ -179,7 +184,18 @@ export async function start(session: Session): Promise<void> {
   let memoryOnly = false;
   try {
     const key = recordKey(who.email, who.budgetId);
-    let rec = keepsCopy() ? await loadRecord(key) : null;
+    let rec: CopyRecord | null = null;
+    // Storage that can't be read isn't "no copy": the budget opens in memory and the saved copy is left alone.
+    let unreadableStorage = false;
+    if (keepsCopy())
+      rec = await loadRecord(key).catch((e: unknown) => {
+        if (!(e instanceof StorageUnavailable)) throw e;
+        unreadableStorage = true;
+        return null;
+      });
+    // Deleted when the app opened, because it was signed out from another device (checkSignedOut).
+    if (!rec && turnedOff.delete(key)) why = 'turned_off';
+    if (unreadableStorage) memoryOnly = true;
     const p = pending;
     pending = null;
     // Reloaded while the copy was open and in use (within 10 minutes): it opens again without Face ID.
@@ -279,7 +295,7 @@ export async function start(session: Session): Promise<void> {
         dataKey = null;
         if (keepsCopy()) why = 'no_prf';
       }
-      if (memoryOnly) why = 'no_prf';
+      if (memoryOnly) why = unreadableStorage ? 'storage' : 'no_prf';
       await openHost(null);
     }
     await host!.put('session', JSON.stringify(session));
@@ -674,6 +690,7 @@ async function checkSignedOut(signInEnded: boolean): Promise<void> {
       () => null,
     );
     if (!r?.off) continue;
+    turnedOff.add(rec.key);
     if (record?.key === rec.key) await wipe();
     else {
       await dropHeld(rec.key);

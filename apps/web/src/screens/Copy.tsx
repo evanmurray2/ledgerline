@@ -16,6 +16,7 @@ const WHY: Record<FullWhy, string> = {
   unreadable_key: 'the saved copy couldn’t be opened (key).',
   unreadable_copy: 'the saved copy couldn’t be opened (copy).',
   empty: 'the saved copy was empty.',
+  storage: 'this device’s storage couldn’t be read just now. Your saved copy is kept for next time.',
   reset: 'your budget was restored on the server.',
 };
 
