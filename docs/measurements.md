@@ -2,6 +2,19 @@
 
 How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history.
 
+## Update: entries cover bank pending rows, "Same purchase?" (Nov 5, 2026)
+
+`measure/entry-covers.measure.ts`: after a 3,000-transaction history at 100 per page, one sync brings the card 25 bank pending rows and 25 posted rows (10 with the provider's link) while 40 entries you added wait on it (15 with the Plaid name of a pending row), processed in 25-event steps (`src/sync/pending-match.ts`, steps 1–4 of `docs/payee-names.md` 9.2), then the heal step. The same file run on `main` before this change is the baseline. Three runs each, ms:
+
+| Step                                            | Before (main)                | Now                          |
+| ----------------------------------------------- | ---------------------------- | ---------------------------- |
+| Processing, backfill (refile-payees.measure.ts) | 4.2–4.4 median / 5.5–6.2 p90 | 4.3–4.4 median / 5.7–7.6 p90 |
+| Processing, the 25 pending rows                 | 19–29                        | 21–28                        |
+| Processing, the 25 posted rows                  | 14–23                        | 17–27                        |
+| Heal step (after it)                            | 2.9–3.5                      | 4.6–5.4                      |
+
+The new steps add one indexed read of the batch's accounts' entries per step, and only with entries a read of the batch's pending rows (claimed or covered) and of `not_same`: about 1–3 ms with 40 entries waiting, nothing measurable on the backfill. Both stress steps were already over 10 ms on `main`: most of it is the batch's writes (136 and 200 statements, each logged for the phone) and the D-47 pairing against about 200 recent posted rows. A first sync of a busy card can bring that many pending rows at once; it's a gap in D-47, not in this change, and is in `docs/build-plan.md`.
+
 ## Update: payees from Plaid, and the one-time re-file (Nov 5, 2026)
 
 `measure/refile-payees.measure.ts`: a 3,000-transaction history at 100 per page (`tools/plaid-mock`), processed to the end, then every payee turned back into one the old rules made and the re-file job of `docs/payee-names.md` 8 (`src/sync/refile-payees.ts`) run to the end. Three runs, ms (median / p90 / max):
