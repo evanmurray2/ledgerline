@@ -77,9 +77,16 @@ export function inheritStmts(
 
 /**
  * What the overlay of `fromKeySql` (a SQL expression over ?3) has fills what the overlay of `toKey` leaves empty: a
- * category (unless you chose one there), the payee, the memo.
+ * category (unless you chose one there), the payee, the memo, and with `month` the budget month.
  */
-function fillFrom(s: Scoped, toKey: string, fromKeySql: string, arg: string, now: number): Stmt {
+function fillFrom(
+  s: Scoped,
+  toKey: string,
+  fromKeySql: string,
+  arg: string,
+  now: number,
+  month = false,
+): Stmt {
   const src = `(SELECT o.%c FROM txn_overlay o WHERE o.txn_key = ${fromKeySql})`;
   const col = (c: string) => src.replace('%c', c);
   return s.q(
@@ -88,7 +95,12 @@ function fillFrom(s: Scoped, toKey: string, fromKeySql: string, arg: string, now
        categorized_by = CASE WHEN categorized_by IS 'user' OR category_id IS NOT NULL THEN categorized_by ELSE ${col('categorized_by')} END,
        rule_id = CASE WHEN categorized_by IS 'user' OR category_id IS NOT NULL THEN rule_id ELSE ${col('rule_id')} END,
        payee_id = coalesce(${col('payee_id')}, payee_id),
-       memo = coalesce(memo, ${col('memo')}),
+       memo = coalesce(memo, ${col('memo')}),${
+         month
+           ? `
+       budget_month = coalesce(budget_month, ${col('budget_month')}),`
+           : ''
+       }
        updated_at = ?4
      WHERE budget_id = ?1 AND txn_key = ?2 AND ${fromKeySql} != ?2 AND EXISTS (SELECT 1 FROM txn_overlay o WHERE o.txn_key = ${fromKeySql})`,
     toKey,
@@ -128,7 +140,7 @@ export function matchEntryStmts(
         e.txn_key,
         now,
       ),
-      fillFrom(s, e.txn_key, keyOf, covered, now),
+      fillFrom(s, e.txn_key, keyOf, covered, now, true),
       s.q(
         `INSERT OR REPLACE INTO txn_key_move (old_key, new_key, at) SELECT ${keyOf}, ?2, ?4 WHERE ${free} AND ${keyOf} != ?2`,
         e.txn_key,
