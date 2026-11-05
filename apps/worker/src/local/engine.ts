@@ -76,6 +76,13 @@ export interface ApplyResult {
   caughtUp: boolean;
 }
 
+/**
+ * Bump when the rules that turn rows into budget lines or stored totals change, so every copy rebuilds them once
+ * (2: rows dated before the budget start move the starting balance, D-?).
+ */
+export const DERIVE_VERSION = 2;
+const derivedMark = (today: string) => `${today}#${DERIVE_VERSION}`;
+
 /** Server migrations the copy skips: they remove what only the phone keeps. */
 const SERVER_ONLY = new Set(['0006_drop_phone_tables_on_server.sql']);
 
@@ -350,8 +357,9 @@ export class LocalEngine {
     const last = await this.db
       .prepare(`SELECT value FROM local_state WHERE key = 'derived_today'`)
       .first<{ value: string }>();
-    // A new day can make upcoming rows count, so it rebuilds everything; otherwise only what the syncs changed.
-    if (!todo.full && last?.value === today) {
+    // A new day can make upcoming rows count, so it rebuilds everything; otherwise only what the syncs changed. So
+    // does a new DERIVE_VERSION: lines worked out by older code are rebuilt once.
+    if (!todo.full && last?.value === derivedMark(today)) {
       // Nothing that counts changed (payees, rules, alerts, balances, targets…): the numbers stand.
       if (!todo.keys.length && !todo.fromMonth && !todo.fromStart) return { rta: (await this.rta()).rta };
       const stmts: Stmt[] = [];
@@ -407,7 +415,7 @@ export class LocalEngine {
         .prepare(
           `INSERT INTO local_state (key, value) VALUES ('derived_today', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
         )
-        .bind(today),
+        .bind(derivedMark(today)),
     ]);
     await this.identity(now, today);
     return { rta: r.rta };

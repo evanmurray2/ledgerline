@@ -18,7 +18,7 @@ import {
 import type { AppEnv } from '../http/context.js';
 import { HttpError, scoped } from './api.js';
 import { fresh, monthResult, structure } from '../views/common.js';
-import { listRow } from '../views/rows.js';
+import { NOT_HISTORY, listRow } from '../views/rows.js';
 import { RECENT_TX, TX_COLUMNS, chunks, type TxRow } from '../ledger/ledger.js';
 import type { Scoped } from '../db/scoped.js';
 import { names } from './txn-common.js';
@@ -29,7 +29,7 @@ export const activityViewRoutes = new Hono<AppEnv>();
 
 /** Rows that need you: Waiting to match, transfers to sort out, alerts, and uncategorized rows in the budget. */
 const ATTENTION_SQL = `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1
-         AND (date >= budget_from OR pending_at_link = 1 OR status != 'posted') AND (
+         AND ${NOT_HISTORY} AND (
          wtm_state IN ('waiting', 'send_back') OR transfer_state = 'unsorted' OR (alert IS NOT NULL AND reviewed_at IS NULL)
          OR (category_id IS NULL AND coalesce(to_rta, 0) = 0 AND transfer_state IS NULL AND wtm_state IS NULL AND wont_clear = 0
              AND status != 'upcoming'
@@ -108,10 +108,10 @@ type PostedScope = string | 'all' | 'none' | { month: Month; start: Month };
 const ROW_MONTH = `max(coalesce(budget_month, substr(date, 1, 7)), ?5)`;
 
 /**
- * Posted rows the budget counts: dated from the account's budget start, or pending when it was linked. Activity
- * leaves out the rest ("Before your budget", D-61), searches included (D-62).
+ * Posted rows the budget counts: dated from the account's budget start. Activity leaves out the rest ("Before your
+ * budget", D-61, and the starting balance's own rows, D-?), searches included (D-62).
  */
-const IN_BUDGET = `(date >= budget_from OR pending_at_link = 1)`;
+const IN_BUDGET = `(date >= budget_from)`;
 
 /**
  * One page of posted rows, newest first. With a window start, only rows dated (and so posted) on or after it are

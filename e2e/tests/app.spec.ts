@@ -388,6 +388,15 @@ test('Categories: reorder a category with the keyboard on its handle', async ({ 
   await expect(rows.first()).toContainText('Electric');
 });
 
+test('An account’s starting balance opens a sheet with each step (D-?)', async ({ page }) => {
+  await page.goto('/accounts/sapphire');
+  await page.getByRole('button', { name: /^Starting debt/ }).click();
+  const sheet = page.getByRole('dialog', { name: 'Starting debt' });
+  await expect(sheet.getByText('Owed when you linked')).toBeVisible();
+  await expect(sheet.getByText('Final.')).toBeVisible();
+  await sheet.getByRole('button', { name: 'Done' }).click();
+  await expect(sheet).toHaveCount(0);
+});
 test('No screen is taller than the phone: the page itself never scrolls, only its lists', async ({
   page,
 }, info) => {

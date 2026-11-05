@@ -116,9 +116,12 @@ export async function planFresh(
   }
   stmts.push(...(await planNewNames(s, batchRows, created, userTaken, now)));
 
-  // History (dated before the account's budget start, and not pending at link) is shown but never budgeted, so it
-  // gets no transfer or Waiting-to-match state: nothing about it needs your attention.
-  const isHistory = (r: BankRow) => r.budget_from !== null && r.date < r.budget_from && r.pending !== 1;
+  // A row dated before the account's budget start (history, or part of the starting balance, D-?) is never budgeted,
+  // so it gets no transfer or Waiting-to-match state: nothing about it needs your attention. The date is the one
+  // the budget uses: the authorized date for a card purchase (v_txn_bank).
+  const budgetDate = (r: BankRow) =>
+    r.account_kind === 'credit' && r.amount < 0 && r.authorized_date ? r.authorized_date : r.date;
+  const isHistory = (r: BankRow) => r.budget_from !== null && budgetDate(r) < r.budget_from;
   const transfers = new Map<string, { other: string; state: 'paired' | 'unsorted' }>();
   for (const d of detectTransfers(
     fresh
@@ -147,7 +150,7 @@ export async function planFresh(
     const payee = payeeOf.get(r.txn_key)!;
     const tr = transfers.get(r.txn_key);
     const waiting = !tr && !isHistory(r) && r.amount > 0 && P2P.test(r.raw_name) ? 'waiting' : null;
-    const pendingAtLink = r.pending === 1 && r.budget_from !== null && r.date < r.budget_from ? 1 : 0;
+    const pendingAtLink = r.pending === 1 && isHistory(r) ? 1 : 0;
     stmts.push(
       s.q(
         `INSERT INTO txn_overlay (txn_key, budget_id, payee_id, category_id, memo, budget_month, transfer_state, transfer_account_id,

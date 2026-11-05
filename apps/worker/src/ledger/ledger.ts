@@ -10,6 +10,7 @@ import {
   type LogicalTxn,
   type Month,
   type OwedMark,
+  type StartRole,
   type TxnUse,
   cents,
   linesForTxn,
@@ -18,6 +19,7 @@ import {
 } from '@ledgerline/domain';
 import type { Scoped } from '../db/scoped.js';
 import { markDirty } from '../budget/recompute.js';
+import { linkInfo, roleOf } from './link.js';
 
 export interface TxRow {
   key: string;
@@ -172,6 +174,7 @@ export function toLogical(
   owed: OwedRow[],
   refundOf: string | undefined,
   matched = 0,
+  role: StartRole | null = null,
 ): LogicalTxn {
   const marks: OwedMark[] = owed.map((o) => ({
     itemId: o.id,
@@ -197,7 +200,7 @@ export function toLogical(
     wontClear: t.wont_clear === 1,
     seq: t.seq,
     ...(t.budget_month ? { budgetMonth: t.budget_month as Month } : {}),
-    ...(t.pending_at_link ? { pendingAtLink: true } : {}),
+    ...(role ? { startRole: role } : {}),
     use: useOf(t, splits, matched),
     ...(refundOf ? { refundOf } : {}),
     ...(marks.length ? { owed: marks } : {}),
@@ -258,6 +261,7 @@ export async function loadTxns(
     for (const r of ow!.results as OwedRow[]) owedBy.set(r.txn_key, [...(owedBy.get(r.txn_key) ?? []), r]);
     for (const r of ln!.results as { from_key: string; to_key: string }[]) refund.set(r.from_key, r.to_key);
   }
+  const links = rows.some((r) => r.source === 'bank') ? await linkInfo(s) : new Map();
   const logical = new Map<string, LogicalTxn>();
   for (const r of rows)
     logical.set(
@@ -268,6 +272,7 @@ export async function loadTxns(
         owedBy.get(r.key) ?? [],
         refund.get(r.key),
         matched.get(r.key) ?? 0,
+        roleOf(r, links),
       ),
     );
   return { rows, logical, splits: splitsBy, owed: owedBy };

@@ -18,14 +18,22 @@ export function HistoryTxn({ t, close }: { t: TxnSheet; close: () => void }) {
         </PrimaryButton>
       }
     >
-      <Banner tone="neutral" title="Not counted">
-        This posted before this account’s budget start. Your budget doesn’t count it, so it can’t be changed.
-      </Banner>
+      {t.inStartingBalance ? (
+        <Banner tone="neutral" title="Part of your starting balance">
+          This is from before this account’s budget start, but it wasn’t in the bank balance when you linked.
+          So it changes your starting balance instead of a category, and it can’t be changed.
+        </Banner>
+      ) : (
+        <Banner tone="neutral" title="Not counted">
+          This posted before this account’s budget start. Your budget doesn’t count it, so it can’t be
+          changed.
+        </Banner>
+      )}
       <div className="flex flex-col gap-1">
         <Label>Bank says</Label>
         <span className="text-md text-ink">{t.rawName}</span>
       </div>
-      {t.categoryId && t.categoryLabel && (
+      {!t.inStartingBalance && t.categoryId && t.categoryLabel && (
         <div className="flex flex-col gap-1">
           <Label>Category</Label>
           <span className="text-md text-ink">{t.categoryLabel}</span>

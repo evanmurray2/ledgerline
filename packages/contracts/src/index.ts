@@ -299,6 +299,8 @@ export const TxnSheet = z.object({
     'upcoming',
     'history',
   ]),
+  /** A 'history' row that is part of the account's starting balance (D-?), not just before it. */
+  inStartingBalance: z.boolean().optional(),
   payee: z.string(),
   /** The payee this transaction is under; null for a manual entry (it has only a name). */
   payeeId: id.nullable().optional(),
@@ -469,6 +471,11 @@ export const AccountRow = z.object({
   syncedAt: z.number().int().nullable(),
   connectionStatus: z.enum(['ok', 'login_required', 'error']),
   drift: cents.nullable(),
+  /**
+   * A row from before the budget start that came in after the link, in the last 7 days (D-?): "Starting debt
+   * updated: Hertz $187.53".
+   */
+  startNote: z.string().nullable().optional(),
   statement: z.object({ balance: cents, due: date.nullable(), covered: z.boolean() }).nullable(),
   meta: z.string(),
 });
@@ -512,10 +519,42 @@ export const AccountsView = z.object({
 });
 export type AccountsView = z.infer<typeof AccountsView>;
 
+/**
+ * How the bank's balance at link became the account's starting balance (D-?). Money terms: positive is money in a
+ * checking account; a card's debt is negative.
+ */
+export const StartBalance = z.object({
+  /** The account's budget start: rows dated before it are part of the starting balance or history. */
+  from: date,
+  /** The bank's balance when you linked (or saved it in Setup). */
+  atLink: cents,
+  rows: z.array(
+    z.object({
+      key: z.string(),
+      payee: z.string(),
+      date,
+      amount: cents,
+      pending: z.boolean(),
+      /** 'before': from before the start, not in the balance at link. 'linkDay': in it, counted in the budget. */
+      role: z.enum(['before', 'linkDay']),
+    }),
+  ),
+  /** The starting balance the budget uses. */
+  total: cents,
+  /** The day late rows stop joining, or null for an account without a bank link. */
+  settlesOn: date.nullable(),
+  settling: z.boolean(),
+  /** The latest row that came in after the link, in the last 7 days. */
+  recent: z.object({ payee: z.string(), date, amount: cents }).nullable(),
+});
+export type StartBalance = z.infer<typeof StartBalance>;
+
 export const RegisterView = z.object({
   account: AccountRow,
   days: z.array(z.object({ label: z.string(), balance: cents.nullable(), rows: z.array(TxnListRow) })),
   note: z.string().nullable(),
+  /** Linked accounts only. */
+  start: StartBalance.nullable().optional(),
 });
 export type RegisterView = z.infer<typeof RegisterView>;
 

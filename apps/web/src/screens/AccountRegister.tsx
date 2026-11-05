@@ -30,6 +30,7 @@ import { dayLabel, syncedLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
 import { TxnRow } from './Activity';
 import { useCanWrite } from '../state/connectivity';
+import { StartBalanceSheet, shownBalance } from './StartBalanceSheet';
 
 type Show = 'all' | 'pending' | 'needs' | 'transfers';
 
@@ -55,6 +56,7 @@ export function RegisterScreen() {
   const today = session.data?.budget.today ?? '';
   const base = `/accounts/${accountId}`;
   const [renaming, setRenaming] = useState(false);
+  const [showStart, setShowStart] = useState(false);
   const canWrite = useCanWrite();
   const chips: [Show, string, number?][] = [['all', 'All']];
   if (counts.pending) chips.push(['pending', 'Pending', counts.pending]);
@@ -98,6 +100,9 @@ export function RegisterScreen() {
         }
       />
       {renaming && a && <RenameAccountSheet id={a.id} name={a.name} close={() => setRenaming(false)} />}
+      {showStart && a && v?.start && (
+        <StartBalanceSheet start={v.start} credit={a.kind === 'credit'} close={() => setShowStart(false)} />
+      )}
       <ScreenBody>
         {!a || !v ? (
           all.error ? (
@@ -173,6 +178,35 @@ export function RegisterScreen() {
                     <span className="tnum font-bold">{formatCents(a.working)}</span>
                   </div>
                 </>
+              )}
+              {v.start && (
+                <button
+                  type="button"
+                  data-track="account.start"
+                  onClick={() => setShowStart(true)}
+                  className="flex min-h-10 items-center justify-between gap-3 rounded-lg bg-page px-3 py-2 text-md text-ink"
+                >
+                  <span className="font-semibold">
+                    {a.kind === 'credit' ? 'Starting debt' : 'Starting balance'}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="flex flex-col items-end leading-tight">
+                      <span className="tnum font-bold">
+                        {formatCents(shownBalance(v.start.total, a.kind === 'credit'))}
+                      </span>
+                      <span className="text-xs text-muted">{v.start.settling ? 'settling' : 'final'}</span>
+                    </span>
+                    <Icon name="chevR" size={18} className="shrink-0 text-faint" />
+                  </span>
+                </button>
+              )}
+              {v.start?.recent && (
+                <p className="m-0 text-xs leading-snug text-muted" data-testid="start-recent">
+                  {v.start.recent.payee}{' '}
+                  <span className="tnum">{formatCents(Math.abs(v.start.recent.amount))}</span> from{' '}
+                  {dayLabel(v.start.recent.date)} came in late. It is part of your{' '}
+                  {a.kind === 'credit' ? 'starting debt' : 'starting balance'}, not your budget.
+                </p>
               )}
               {a.drift !== null && (
                 <p className="m-0 text-xs leading-snug text-muted" data-testid="bank-drift">

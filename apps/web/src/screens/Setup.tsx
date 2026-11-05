@@ -192,6 +192,10 @@ export function LinkBanksScreen() {
       </span>
       <div className="flex flex-col gap-1 text-sm leading-snug text-muted">
         <span>Ledgerline never sees your bank password.</span>
+        <span>
+          Purchases from before your budget starts are part of each account’s starting balance. Some may come
+          in over the next 2 weeks.
+        </span>
         <Why>
           Linking opens Plaid’s secure window. We ask for 6 months of history, which can’t be changed later.
           Older history can be imported from a CSV file in Settings. Only bank accounts and cards are tracked.

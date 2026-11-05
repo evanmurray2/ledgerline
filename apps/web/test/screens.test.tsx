@@ -204,6 +204,37 @@ describe('Accounts and Reports', () => {
     );
   });
 
+  it('an account’s starting balance opens a sheet with each step, and a late row from before the start (D-?)', async () => {
+    renderAt('/accounts');
+    await screen.findByTestId('net-worth', undefined, { timeout: 4000 });
+    cleanup();
+    // Sep 30, sent on Oct 3 (after the first sync, while settling): part of the starting balance, not the budget.
+    const db = await server.db();
+    await db
+      .prepare(
+        `INSERT INTO bank_txn (provider_txn_id, budget_id, connection_id, provider_account_id, amount, date, pending, raw_name, txn_key, first_apply_seq, last_apply_seq, created_at, updated_at)
+         SELECT 'late-1', budget_id, 'con_chase', provider_account_id, -2500, '2026-09-30', 0, 'LATE SHOP', 'late-1', 0, 0, ?1, ?1
+         FROM account WHERE id = 'checking'`,
+      )
+      .bind(Date.parse('2026-10-03T12:00:00Z'))
+      .run();
+    await db
+      .prepare(
+        `UPDATE provider_account SET current_balance = current_balance - 2500
+         WHERE provider_account_id = (SELECT provider_account_id FROM account WHERE id = 'checking')`,
+      )
+      .run();
+    // The seed saves its balances today; here they were read at the link, as Setup does.
+    await db.prepare(`UPDATE account SET starting_balance_confirmed_at = NULL WHERE id = 'checking'`).run();
+    show('/accounts/checking');
+    fireEvent.click(await screen.findByRole('button', { name: /^Starting balance/ }, { timeout: 4000 }));
+    const sheet = await screen.findByTestId('start-sheet');
+    expect(within(sheet).getByText('From before Oct 1, came in later')).toBeTruthy();
+    expect(within(sheet).getByText('− $25.00')).toBeTruthy();
+    expect(screen.getByText('Final.')).toBeTruthy();
+    expect(screen.queryAllByTestId('bank-drift')).toHaveLength(0);
+  });
+
   it('card register shows what you owe and the payment category', async () => {
     renderAt('/accounts/sapphire');
     await text('You owe the bank');

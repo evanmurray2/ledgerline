@@ -138,6 +138,8 @@ Accounts are either **budget** accounts (cash you assign: checking, savings, cre
 
 **Budget start (decided: start fresh).** Budgeting begins at `budget_start_month`, your go-live month; nothing dated earlier ever enters category or RTA math.
 
+> **Now:** the row's date decides. A bank row dated before an account's budget start is never in a category, pending at link or not: a row that wasn't in the balance at link (pending then, or sent by the bank within 14 days) moves the starting balance instead, and a link-day row already in that balance comes out of it (D-?, `docs/decisions/D-?-start-date-rule.md`).
+
 - On the start date, each checking and savings account's bank-reported balance becomes a **Starting balance** inflow to RTA.
 - A credit card's balance never touches RTA. It becomes card debt held against the card's payment category, which starts at $0, so the debt shows as underfunded until you assign to it. Counting it as a negative RTA inflow as well would charge it twice.
 - Transactions dated before the start are history (never listed since D-61 and D-62; see `docs/whats-true-now.md`): counted in analytics, used for payee learning and drift checks, never placed in a budget month. Imported history rows are always history.

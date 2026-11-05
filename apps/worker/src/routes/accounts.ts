@@ -27,6 +27,7 @@ import { isHistory, listRow } from '../views/rows.js';
 import { RECENT_TX, TX_COLUMNS, uncovered, type TxRow } from '../ledger/ledger.js';
 import { inBudgetByAccount, monthTotals } from '../ledger/totals.js';
 import type { Scoped } from '../db/scoped.js';
+import { type Adjustments, adjustments, startSheet } from '../ledger/start-part.js';
 
 export const accountRoutes = new Hono<AppEnv>();
 
@@ -49,7 +50,8 @@ async function accountRows(
   s: Scoped,
   today: string,
   timeZone: string,
-): Promise<{ rows: AccountRow[]; raw: AcctDb[] }> {
+  now: number,
+): Promise<{ rows: AccountRow[]; raw: AcctDb[]; recent: Adjustments['recent'] }> {
   const [acc, pend] = await s.batch([
     s.q(
       `SELECT a.id, a.name, a.kind, a.budget_from, a.starting_balance, a.provider_account_id, pa.mask, pa.current_balance AS bank,
@@ -80,11 +82,14 @@ async function accountRows(
       Date.now(),
     ),
   );
+  // Late rows from before the start and link-day rows (ledger/start-part.ts, D-?): the stored sums leave them out.
+  const startAdjust = await adjustments(s, now);
   const cardInfo = new Map((await loadCards(s, today)).map((c) => [c.accountId, c]));
   const raw = acc!.results as AcctDb[];
   const rows = raw.map((a): AccountRow => {
     const credit = a.kind === 'credit';
-    const ledgerPosted = a.starting_balance + (postedSum.get(a.id) ?? 0);
+    const ledgerPosted = a.starting_balance + (startAdjust.sum.get(a.id) ?? 0) + (postedSum.get(a.id) ?? 0);
+    const late = startAdjust.recent.get(a.id);
     // Bank-reported balance; cards report the amount owed. Manual accounts use the ledger.
     const bank = a.bank ?? (credit ? -ledgerPosted : ledgerPosted);
     const p = pending.get(a.id) ?? 0;
@@ -110,11 +115,14 @@ async function accountRows(
       connectionStatus:
         a.status === 'login_required' ? 'login_required' : a.status === 'error' ? 'error' : 'ok',
       drift: drift === null || drift === 0 ? null : cents(drift),
+      startNote: late
+        ? `${credit ? 'Starting debt' : 'Starting balance'} updated: ${late.payee} ${formatCents(Math.abs(late.amount))}`
+        : null,
       statement,
       meta: `${a.institution ?? 'Manual'}${a.mask ? ` · ending ${a.mask}` : ''} · ${a.status === 'login_required' ? 'sign in again' : synced}`,
     };
   });
-  return { rows, raw };
+  return { rows, raw, recent: startAdjust.recent };
 }
 
 /** A sync time in the budget's time zone: "9:42 AM" today, "Nov 12" on an earlier day. */
@@ -127,7 +135,7 @@ accountRoutes.get('/accounts', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
   const f = await fresh(s, now);
-  const { rows } = await accountRows(s, f.today, f.budget.time_zone);
+  const { rows } = await accountRows(s, f.today, f.budget.time_zone, now);
   const start = (f.budget.budget_start_month ?? f.current) as Month;
   const mr = await monthResult(s, f.current, start);
   for (const r of rows) {
@@ -324,9 +332,10 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
   const f = await fresh(s, now);
   const id = c.req.param('id');
   const show = c.req.query('show') ?? 'all';
-  const { rows } = await accountRows(s, f.today, f.budget.time_zone);
+  const { rows, raw, recent } = await accountRows(s, f.today, f.budget.time_zone, now);
   const account = rows.find((r) => r.id === id);
-  if (!account) throw new HttpError(404, 'not_found', 'account');
+  const rawAccount = raw.find((r) => r.id === id);
+  if (!account || !rawAccount) throw new HttpError(404, 'not_found', 'account');
   const { categories } = await structure(s);
   const cats = new Map(categories.map((x) => [x.id, x.name]));
   const accts = new Map(rows.map((r) => [r.id, r.name]));
@@ -374,7 +383,8 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
       note = `${names} is ${formatCents(amt)} overspent on this card, so its payment category is ${formatCents(amt)} short. Cover ${names} on Budget to fix both.`;
     }
   }
-  return c.json({ account, days, note } satisfies RegisterView);
+  const start = await startSheet(s, rawAccount, recent.get(id) ?? null, now, f.budget.time_zone);
+  return c.json({ account, days, note, start } satisfies RegisterView);
 });
 
 accountRoutes.get('/reports', async (c) => {
@@ -396,7 +406,7 @@ accountRoutes.get('/reports', async (c) => {
   const [inc, rew, owedI, owedL] = await s.batch([
     s.q(
       `SELECT l.month, sum(l.amount) AS a FROM budget_line l LEFT JOIN txn_overlay o ON o.txn_key = l.txn_key
-       WHERE l.budget_id = ?1 AND l.kind = 'rta' AND l.card = 0 AND l.txn_key NOT LIKE 'start:%' AND coalesce(o.income_tag, '') != 'rewards'
+       WHERE l.budget_id = ?1 AND l.kind = 'rta' AND l.card = 0 AND l.txn_key NOT LIKE 'start:%' AND l.line != 'start' AND coalesce(o.income_tag, '') != 'rewards'
          AND l.txn_key NOT IN (SELECT from_key FROM txn_link WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND undone_at IS NULL)
          AND l.month >= ?2 AND l.month <= ?3 GROUP BY l.month`,
       months[0] ?? m,
@@ -428,7 +438,7 @@ accountRoutes.get('/reports', async (c) => {
     .map(([id, v]) => ({ categoryId: id, name: kinds.get(id)?.name ?? id, spent: v.spent }))
     .sort((a, b) => b.spent - a.spent);
   // Net worth at each month end: today's figure minus everything posted after that month.
-  const { rows } = await accountRows(s, f.today, f.budget.time_zone);
+  const { rows } = await accountRows(s, f.today, f.budget.time_zone, now);
   const nwNow = rows.reduce((a, r) => a + (r.kind === 'credit' ? -r.bank : r.bank), 0);
   // Posted totals per month over the last 13 months (ledger/totals.ts: stored for finished months).
   const totals = await monthTotals(s, addMonths(f.current, -12), f.current, Date.now());
