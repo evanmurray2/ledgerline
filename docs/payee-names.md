@@ -1,15 +1,18 @@
 # Payee names from Plaid, and no cleanup of bank text
 
-Status: proposal, v6, Nov 5, 2026. Not built. Asked by the owner after a Hulu charge arrived as "Hlu Huluplus Hulu".
+Status: proposal, v7, Nov 5, 2026. Not built. Asked by the owner after a Hulu charge arrived as "Hlu Huluplus Hulu".
 v5 followed an adversarial review of v4 and is simpler: two keys instead of five, no stop list, no name ranks, and
-a pending matcher with three plain rules. v6 adds the owner's answers of Nov 5 and one more fix: a manual entry now
-pairs with the bank's pending row (9.1). Reviews are in section 14. The owner's answers are in section 13. This changes section 4 of
+a pending matcher with three plain rules. v6 added the owner's answers of Nov 5 and a fix for an entry and the bank's
+pending row counting twice. v7 follows a second review: the app pairs only on exact evidence and asks "Same
+purchase?" otherwise, and an entry covers the bank's pending row instead of moving onto it (9). Reviews are in
+section 14. The owner's answers are in section 13. This changes section 4 of
 `docs/payees.md`, the Payee normalization steps in `docs/design.md`, and one row of Matching mechanics in
 `docs/sync-spec.md` (D-47, D-50).
 
 **Does this change how money is counted?** Payee names and keys (sections 3–8): no. The pending matcher (section
 9): yes. It changes which bank pending row a posted charge replaces when the bank sends no link, and it pairs a
-manual entry with the bank's pending row so the two stop counting twice. The owner OK'd both (13). Every posted
+manual entry with the bank's pending row so the two stop counting twice. The owner OK'd both (13); v7's changes to
+them (no "only candidate" rule, "Same purchase?", covering) need the owner's OK again. Every posted
 charge still counts exactly once.
 
 ## 1. What happened to Hulu
@@ -79,7 +82,8 @@ Both names share one `n:` space. A row with neither name (none in the backup) us
 **Rules that make it predictable:**
 
 - **A filed row never moves.** Sync files a row once, when it first arrives. A `modified` row, a posted row that
-  takes over its pending row, or a row you categorized keeps its payee, as today.
+  takes over its pending row, or a row you categorized keeps its payee, as today. A row that takes over an overlay
+  with no payee (an entry's, which has none today) is filed then.
 - **Sync never joins two payees.** If a row's keys belong to two payees, the first decides and the other key stays
   where it is. Only the owner joins payees (rename to an existing name, or **Join** on "Same as your …?",
   `docs/payees.md` 4.3, 5).
@@ -107,8 +111,8 @@ payee gets `named_by = 'sync'`.
 ## 6. While a payee is new, its name follows Plaid
 
 A payee is **new** while `named_by = 'sync'` and you haven't categorized any of its transactions (`docs/payees.md`
-4.2). While it's new, each sync sets its name to the name (5) of its latest row, including a row's `modified`
-version. This fixes the Hulu case: the `modified` rows of Nov 2 would have renamed "Hlu Huluplus Hulu" to "Hulu".
+4.2). While it's new, its name is the name (5) of the row that made it, as Plaid sends that row now: when the row
+comes again as `modified` with a better name, the payee takes it. Other rows don't change it. This fixes the Hulu case: the `modified` rows of Nov 2 would have renamed "Hlu Huluplus Hulu" to "Hulu".
 
 - Not when that name belongs to another payee (by `payeeNameKey`): the name stays, and Activity offers **Same as
   your …? Join** (`docs/payees.md` 4.3), so the owner decides.
@@ -133,7 +137,8 @@ job, run once after the migration.
    name of one of the payees joined. In the backup that's 1 rename; Hulu's merge kept the app's name, so Hulu is
    `sync`. Renames through the transaction `payeeName` edit leave no audit row; the backup has none (every other
    payee's name is one the old rules made from its own rows). From then on, that edit sets `named_by = 'user'`.
-3. **Re-file.** Under the connection's sync lock, so no sync runs at the same time:
+3. **Re-file.** Behind the `processed_through` fence of every connection, as `healPending` is, so no sync of any
+   connection runs at the same time:
    - A `user` payee keeps its name, its transactions and their keys.
    - Every other transaction is filed again by section 4, in date order, and each new payee is named by 5, then 6.
      Its category, memo, owed mark and every other part stay; a transaction's money never changes.
@@ -148,63 +153,77 @@ The phone downloads the changed payees, aliases and overlays once. In the backup
 
 ## 9. The pending matcher without text
 
-### 9.1 A manual entry and the bank's pending row
+One rule for every pairing below: **the app pairs two rows by itself only on exact evidence. Otherwise it asks you
+"Same purchase?"** and leaves both rows as they are until you answer. Nothing is paired from a look-alike text or
+from an amount that is only close.
 
-**Today:** a manual entry (Add pending, or an Upcoming row) pairs only with a **posted** charge (`process.ts` step 2).
-When the bank also sends a pending row for the same purchase, both count in the budget. When the charge posts, it
-pairs with the manual entry, and the bank's pending row still counts until the bank removes it, which takes hours or
-days at Bank of America. The design never paired the two: it expected you to edit the bank's pending row instead of
-adding one. In practice you add the entry first, before the bank shows anything.
+**Exact evidence** is one of:
 
-**New:** when a bank pending row arrives, it can pair with an unmatched manual entry, by the same rules as a posted
-charge today: same account and sign, amount within tolerance, the pending row dated 0–14 days on or after the entry,
-and a unique best score on both sides (amount 50%, day 20%, name 30%, where name is 1 when your typed name equals one
-of the pending row's Plaid names); several close candidates are asked (`ambiguous_match`).
+- **Plaid's link** (`pending_transaction_id`), as now.
+- **Same merchant:** the two rows share a key from section 4 (merchant id, or a Plaid name equal to a Plaid name).
+  For your entry, its typed name equal to one of the bank row's Plaid names.
+- **Same amount, same day:** equal amounts, and the same authorization day (else the same date).
 
-When they pair:
+**Candidates** (as now): same account and sign, amount within tolerance (exact for checks and ACH; for card
+purchases within $5 or 25% either way, for tips and fuel holds), and dates that fit (a bank pending row authorized
+the same day as the posted row or the day before, else dated 0–14 days before; an entry dated 0–14 days before, or
+1 day after, the bank row).
 
-- The bank's pending row takes the entry's `txn_key`, as a posted row does today, so it carries your category, memo,
-  splits and owed marks. The entry is marked matched and stops counting.
-- Your amount becomes the pending row's estimate, as if you had edited the bank's amount ("override a bank pending
-  amount", `docs/design.md` Pending), so a tip you entered keeps counting until the charge posts.
-- When the charge posts, it replaces the bank's pending row by Plaid's link or by 9.2, and with it your entry. Each
-  charge counts once at every step.
+### 9.1 "Same purchase?"
 
-The heal step at the end of each sync also looks at unmatched entries, so entries made before this change pair on
-the next sync.
+When a row has candidates but none with exact evidence, Activity's Needs attention shows one card per row: "Same
+purchase? _your entry or the pending row_ and _the bank row_", with **Yes** and **No** (and the other candidates, if
+there are several). Yes pairs them exactly as an automatic pair would; No remembers the answer for that pair, so it's
+never asked again. Until you answer, both rows count, as they do today when nothing pairs. The existing
+`ambiguous_match` alert (several rows with exact evidence and different edits) uses the same card.
 
-### 9.2 A posted charge and the bank's pending row
+Every pair, automatic or by Yes, has **Not the same** in the transaction's sheet, which undoes it and remembers No.
 
-Most banks send Plaid's link (`pending_transaction_id`) from a posted row to its pending row, and the link decides,
-as now. Bank of America almost never does (5 links in 181 posted rows), so it needs these rules.
+### 9.2 Your entry and the bank's pending row
 
-**Candidates (as now):** same account and sign, amount within tolerance (exact for checks and ACH; for card
-purchases up to $5 or 25% more, for tips and fuel holds), and dates that fit (authorized the same day or the day
-before; without an authorization date, 0–14 days before).
+**Today:** an entry (Add pending, or an Upcoming row) pairs only with a **posted** charge. When the bank also sends a
+pending row, both count until the charge posts, and the bank's row keeps counting after that until the bank removes
+it (hours or days at Bank of America).
 
-**A candidate pairs when one of these holds:**
+**New:** when a bank pending row has exact evidence with an unmatched entry (or you answer Yes), the bank row is
+**covered** by the entry:
 
-1. **Same merchant:** the rows share a key from section 4 (merchant id, or a Plaid name equal to a Plaid name).
-2. **Same amount, same day:** the amounts are equal and the authorization days (else the dates) are the same (as
-   now).
-3. **No doubt:** it's the only candidate for the posted row, and the posted row is the only candidate for it.
+- The bank row is hidden and stops counting. **Your entry keeps counting**, with your amount, category, memo,
+  splits and owed marks. Nothing moves between rows, so nothing is lost.
+- When the charge posts, the posted row pairs as today: with the bank row (by link or 9.3) or with the entry (step
+  2). Either way it takes the **entry's** key (`inherit()` from the entry, as step 2 does now), and the covered bank
+  row is claimed with it.
+- If the bank removes its row before the charge posts, the entry is still there and still counts. If the bank sends
+  a new pending row instead (an amount change), the entry can cover that one.
 
-Otherwise it doesn't pair; the pending row stays until the bank removes it, and the heal step tries again.
+So each charge counts once: the entry until it posts, then the posted row.
 
-**Several candidates** (as now): best score first, each row once (amount 50%, day 20%, same merchant 30%). Twins
-with nothing set pair without asking; when a close alternative carries different edits, you're asked
-(`ambiguous_match`).
+**Order within a batch:** (1) Plaid's link; (2) posted rows and bank pending rows (9.3), where a posted row that
+claims a covered row takes its entry's key; (3) posted rows and entries (step 2, today); (4) new bank pending rows
+and entries (cover). Each step skips rows an earlier step claimed in the same batch. A posted row tries bank pending
+rows before entries, so a leftover entry never takes a charge whose pending row is still counting.
 
-**Manual pending row:** as now, except the name part of the score: 1 when your typed name equals one of the posted
-row's Plaid names, else 0.
+Storage: `manual_pending.covers_provider_txn_id`, set on cover and cleared on Not the same, and a `not_same` table
+(two row keys) for No answers. The views hide a bank
+pending row that an unmatched entry covers. The heal step checks covers for the pending rows it already reads (one
+connection, last 44 days).
 
-**Gone:** text likeness and store numbers.
+### 9.3 A posted charge and the bank's pending row
 
-**Backup check:** Bank of America's 5 unlinked pairs all pair again: 3 by the same merchant name (two with a tip),
-2 by the same amount and day (one of them also by rule 3). The other day's rows had 3 or 4 candidates each, so rule 3
-alone wouldn't have paired them. Rule 3 is for a tipped charge whose pending row's Plaid name differs from the posted
-row's (6 of 11 pairs in the backup differ): without it, the charge counts twice until the bank removes the pending
-row. The backup has no such case.
+Plaid's link decides when there is one. Bank of America almost never sends it (5 links in 181 posted rows). Without
+the link, a candidate pairs on exact evidence (same merchant, or same amount and day); otherwise "Same purchase?"
+(9.1). When several candidates have exact evidence, today's pairing stays: best score first (amount 50%, day 20%,
+same merchant 30%), each row once, twins with nothing set paired without asking, and a close alternative with
+different edits asked.
+
+**Gone:** text likeness, store numbers, and the weighted score for entries (an entry pairs only on exact evidence or
+your Yes).
+
+**Backup check:** Bank of America's 5 unlinked pairs pair again by themselves: 3 by the same merchant name (two with a
+tip), 2 by the same amount and day. A tipped charge whose pending row's Plaid name differs from its posted row's
+(6 of 11 pairs in the backup have different names) would ask "Same purchase?"; the backup has no such case. No entry
+in the backup met a bank pending row (1 of 5 entries matched a posted row; 3 were deleted by hand), so 9.2 isn't
+checked against real data.
 
 ## 10. Backup check (Nov 4, 2026)
 
@@ -234,10 +253,11 @@ Four PRs:
    job. No change on screen. The owner OKs the merge, since it adds a migration.
 2. **Payees from Plaid** (4–8): keys, names, the new-payee rule, rename and join keys, the re-file job (parts 2 and
    3). `cleanDescription` stays only inside the matcher until PR 3.
-3. **Pending matcher** (9.2): delete the cleanup code, the old `d:` aliases and their lookup. A decision changes
+3. **Pending matcher** (9.3): delete the cleanup code, the old `d:` aliases and their lookup. A decision changes
    D-47 and D-50 in `docs/sync-spec.md`.
-4. **Manual entry and bank pending** (9.1): its own decision and a new Matching mechanics row in
-   `docs/sync-spec.md`. It doesn't depend on PRs 1–3 and can go first.
+4. **"Same purchase?" and covering** (9.1, 9.2): the card, Not the same, `covers_provider_txn_id` and `not_same` (migration; the
+   owner OKs the merge) and the batch order. Its own decision and Matching mechanics rows. It doesn't depend on PRs
+   1–3 and can go first; PR 3 then uses its card.
 
 Docs: decisions (`D-?-payee-names-from-plaid.md`, `D-?-pending-match-without-text.md`,
 `D-?-manual-entry-meets-bank-pending.md`) and entries in
@@ -247,14 +267,14 @@ line.
 Tests:
 
 - Domain: the keys of a row; the first key decides; the new-payee name follows the latest row and stops at the
-  first categorization or rename; no rename into another payee's name; the matcher's three rules, several candidates,
-  twins, manual pending.
+  first categorization or rename; no rename into another payee's name; exact evidence only; several candidates; twins; an entry's
+  typed name.
 - Sync (`sync.test.ts`, `pending-match.test.ts`): the Hulu story ends as one payee named "Hulu"; a filed row never
   moves; a rename adds `n:<name>`, so the next row with that Plaid name finds it; Venmo rows are one payee and Zelle
-  rows one per person; a tipped pending row with a different Plaid name pairs by rule 3 when it's the only candidate; the D-47 and D-50 cases
-  rewritten with Plaid fields; a manual entry pairs with the bank's pending row, which carries its edits and amount, and
-  then with the posted charge, counting once throughout; two close entries are asked; an old entry pairs on the heal
-  step.
+  rows one per person; a tipped pending row with a different Plaid name asks "Same purchase?"; the D-47 and D-50 cases
+  rewritten with Plaid fields; an entry covers the bank's pending row and the posted row takes the entry's key, in every
+  order (posted with or without link, bank row removed first, a new pending id); a leftover entry never takes a
+  posted row whose pending row still counts; Yes, No and Not the same.
 - Phone (`engine.test.ts`): rename, join and the `payeeName` edit set `named_by`.
 - The job: restart after a failed step; runs under the sync lock; a renamed payee keeps its rows and name; Hulu's
   merge counts as `sync`; categories, memos and owed marks unchanged on every moved row; old Undo refused; CPU per
@@ -275,10 +295,12 @@ Tests:
 3. **Joining:** a row joins a payee when any of its Plaid names equals one of the payee's keys exactly; no fuzzy
    joins (4).
 4. **Plaid fields:** add none until checked against real data. Checked (10): only `name`.
-5. **Pending matcher:** no test week. The three rules in 9.2: OK (Nov 5).
+5. **Pending matcher:** no test week. v6's three rules: OK (Nov 5). v7 replaces them (9); waiting for the
+   owner's OK.
 6. **Renames from a transaction's sheet:** none in the data (8).
 7. **Payees with monthly names:** left as they are; no change to transfers (4).
-8. **A manual entry pairs with the bank's pending row** (9.1): OK (Nov 5).
+8. **A manual entry and the bank's pending row:** fix the double count: OK (Nov 5). v7 does it by covering (9.2);
+   waiting for the owner's OK.
 
 ## 14. Reviews
 
@@ -302,3 +324,17 @@ Tests:
 | 14  | Minor    | The stop list matched 0 rows                                                                                              | Dropped                                                                                               |
 | 15  | Minor    | The job replayed pages with no tie-break                                                                                  | Reads each row's `raw_ref` (8)                                                                        |
 | —   | Simpler  | `counterparty_name` equals `merchant_name` wherever present; `t:` keys change nothing when Plaid's `name` is on every row | Both dropped (3, 4)                                                                                   |
+
+### 14.2 v6 → v7
+
+| #   | Severity | Finding                                                                                                                                                       | Change                                                                                  |
+| --- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1   | Blocker  | v6 didn't say where entry pairing runs among the steps; in one batch a linked posted row and the entry's new key on its pending row made both count, for good | Batch order stated; each step skips rows claimed earlier (9.2)                          |
+| 2   | Major    | A leftover entry (two entries, or an entry dated a day late) took the posted row while the bank's pending row kept counting                                   | Posted rows try bank pending rows first; entries may be 1 day after the bank row (9)    |
+| 3   | Major    | When the bank removed or re-issued its pending row before posting, the charge counted zero and edits could be lost                                            | The entry covers the bank row and keeps counting; nothing moves onto the bank row (9.2) |
+| 4   | Major    | `inherit()` clears the estimate and won't clear, raises alerts and writes links; editing or deleting a paired entry broke                                     | No `inherit()` until the charge posts; the entry stays the row you edit (9.2)           |
+| 5   | Major    | No way to undo a wrong pair; "you're asked" was only an alert; an entry could pair on a close amount alone                                                    | Exact evidence only; "Same purchase?" with Yes and No; Not the same (9.1)               |
+| 6   | Major    | Rule 3 ("only candidate") depended on what the batch loaded, and was a guess from a close amount                                                              | Dropped; asks instead (9.3)                                                             |
+| 7   | Minor    | Rows that take over an entry's overlay never got a payee                                                                                                      | Filed then (4)                                                                          |
+| 8   | Minor    | One connection's lock doesn't stop the other six syncs during the job                                                                                         | Behind every connection's fence (8)                                                     |
+| 9   | Minor    | Tolerance is both ways; "latest row" unclear; heal window is 44 days                                                                                          | Fixed (6, 9)                                                                            |
