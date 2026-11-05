@@ -1,5 +1,6 @@
 // Settings → Payees: the list, rename = merge (joining) with Undo, and the rename checks (docs/payees.md 5, 6).
-import { app } from './phone.js';
+import { app, phone } from './phone.js';
+import { ownerDb } from './store-db.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { MergeResult, PayeesView } from '@ledgerline/contracts';
 
@@ -72,5 +73,32 @@ describe('payees', () => {
       200,
     );
     expect((await post(`/api/settings/payees/merge/${undoId}/undo`, {})).status).toBe(409);
+  });
+
+  it('a name you choose is yours: rename and the transaction sheet set named_by to user, on the phone too', async () => {
+    const db = ownerDb();
+    const namedBy = async (id: string) => {
+      const q = `SELECT named_by FROM payee WHERE id = ?1`;
+      const server = await db.prepare(q).bind(id).first<{ named_by: string }>();
+      const copy = await (await phone()).db.prepare(q).bind(id).first<{ named_by: string }>();
+      return [server?.named_by, copy?.named_by];
+    };
+    const c = (await view()).payees.find((p) => p.id !== a!.id && p.id !== b!.id)!;
+    await db.prepare(`UPDATE payee SET named_by = 'sync' WHERE id IN (?1, ?2)`).bind(a!.id, c.id).run();
+    expect((await post(`/api/settings/payees/${a!.id}`, { name: 'Chosen name' })).status).toBe(200);
+    await view();
+    expect(await namedBy(a!.id)).toEqual(['user', 'user']);
+    const key = (await db
+      .prepare(`SELECT key AS txn_key FROM v_transaction WHERE payee_id = ?1 AND date >= budget_from LIMIT 1`)
+      .bind(c.id)
+      .first<{ txn_key: string }>())!.txn_key;
+    const r = await app(`/api/transactions/${encodeURIComponent(key)}`, {
+      method: 'PATCH',
+      headers: H,
+      body: JSON.stringify({ payeeName: 'Typed name' }),
+    });
+    expect(r.status, await r.clone().text()).toBe(200);
+    await view();
+    expect(await namedBy(c.id)).toEqual(['user', 'user']);
   });
 });

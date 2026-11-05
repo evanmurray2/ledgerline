@@ -271,9 +271,10 @@ payeesRoutes.post('/settings/payees/:id', async (c) => {
   const taken = all.find((p) => p.id !== id && !p.merged_into && samePayeeName(p.name, r.name));
   if (taken)
     throw new HttpError(409, 'name_taken', `You have a payee named ${taken.name}. Join them instead.`);
+  // A name you chose is yours: sync never renames it (docs/payee-names.md 6).
   await s.batch([
     s.q(
-      `UPDATE payee SET name = ?3, updated_at = ?4 WHERE budget_id = ?1 AND id = ?2`,
+      `UPDATE payee SET name = ?3, named_by = 'user', updated_at = ?4 WHERE budget_id = ?1 AND id = ?2`,
       id,
       r.name.trim(),
       now,

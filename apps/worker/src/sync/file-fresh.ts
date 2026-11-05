@@ -72,14 +72,15 @@ export async function planFresh(s: Scoped, fresh: BankRow[], now: number): Promi
     const pk = payeeKey(r.raw_name, r.merchant_entity_id);
     let payee = byKey.get(pk) ?? byKey.get(`d:${cleanDescription(r.raw_name).replace(/\s/g, '')}`);
     if (!payee) {
-      // First sight of this payee: create it and its alias, so later imports resolve through it.
+      // First sight of this payee: create it and its alias, so later imports resolve through it. Sync chose its name
+      // (named_by 'sync', docs/payee-names.md 5).
       const id = ulid(now);
       const name = r.merchant_name ?? titleCase(cleanDescription(r.raw_name) || r.raw_name);
       payee = { id, name };
       byKey.set(pk, payee);
       stmts.push(
         s.q(
-          `INSERT INTO payee (id, budget_id, name, created_at, updated_at) VALUES (?2, ?1, ?3, ?4, ?4)`,
+          `INSERT INTO payee (id, budget_id, name, named_by, created_at, updated_at) VALUES (?2, ?1, ?3, 'sync', ?4, ?4)`,
           id,
           name,
           now,
