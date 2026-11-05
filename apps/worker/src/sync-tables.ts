@@ -1,7 +1,8 @@
 // The tables the phone keeps a copy of (docs/phone-budget.md section 7, decisions.md D-45), with their primary keys.
-// The server logs every change to these in change_log (migration 0003's triggers), serves them from /api/sync, and
-// the phone's engine (src/local) writes them into its own SQLite. Everything else is either server-only (bank log,
-// sync runs, jobs, usage) or worked out on the phone (budget_line, month_snapshot, the month totals).
+// The server logs every change to these in change_log (triggers from migration 0003, or from the migration that adds
+// the table), serves them from /api/sync, and the phone's engine (src/local) writes them into its own SQLite.
+// Everything else is either server-only (bank log, sync runs, jobs, usage) or worked out on the phone (budget_line,
+// month_snapshot, the month totals).
 
 export interface SyncTable {
   name: string;
@@ -36,6 +37,8 @@ export const SYNC_TABLES: readonly SyncTable[] = [
   { name: 'alert', pk: ['id'] },
   { name: 'setting', pk: ['budget_id', 'key'] },
   { name: 'health_status', pk: ['budget_id', 'key'] },
+  // "Same purchase?" answered No (migration 0007, which writes its triggers).
+  { name: 'not_same', pk: ['budget_id', 'a_key', 'b_key'] },
 ];
 
 export const SYNC_TABLE_NAMES: ReadonlySet<string> = new Set(SYNC_TABLES.map((t) => t.name));
@@ -43,14 +46,14 @@ export const SYNC_TABLE_NAMES: ReadonlySet<string> = new Set(SYNC_TABLES.map((t)
 /** Format of /api/sync answers; a phone on another format downloads everything again. */
 export const SYNC_FORMAT = 1;
 
-/** The trigger names migration 0003 creates for a table (a test checks every one exists). */
+/** The trigger names a table gets from migration 0003, or a later one adding it (a test checks every one exists). */
 export function triggerNames(table: string): string[] {
   return [`${table}_sync_ins`, `${table}_sync_upd`, `${table}_sync_key`, `${table}_sync_del`];
 }
 
 /**
- * SQL for the change_log triggers of one table, as written into migration 0003. `seq` is one more than the highest
- * logged so far: change_log rows are never deleted, so numbers never go backwards or repeat.
+ * SQL for the change_log triggers of one table, as written into migration 0003 (and 0007 for not_same). `seq` is one
+ * more than the highest logged so far: change_log rows are never deleted, so numbers never go backwards or repeat.
  */
 export function triggerSql(t: SyncTable): string {
   const pk = (row: 'NEW' | 'OLD') => `json_array(${t.pk.map((c) => `${row}.${c}`).join(', ')})`;
