@@ -1,7 +1,11 @@
 // Payees from Plaid, live sync (docs/payee-names.md 4–7): keys, the name of a new payee, a filed row never moving,
 // names that follow Plaid only while the payee is new, keys that follow a rename, and payment apps.
 import { env } from 'cloudflare:test';
+import { Hono } from 'hono';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { CSRF_HEADER, type MergeResult } from '@ledgerline/contracts';
+import { budgetApi } from '../src/routes/api.js';
+import type { AppEnv } from '../src/http/context.js';
 import { PlaidProvider } from '@ledgerline/bank-provider';
 import { storeDb } from './store-db.js';
 import { acquire } from '../src/sync/lease.js';
@@ -61,6 +65,36 @@ async function sync(added: unknown[], modified: unknown[] = []): Promise<void> {
     db.prepare(`UPDATE connection SET sync_lock = NULL, lock_expires = NULL WHERE id = ?1`).bind(C),
     db.prepare(`UPDATE sync_run SET phase = 'done' WHERE id = ?1`).bind(run),
   ]);
+}
+
+/** The app's own routes on this test store, as the phone's engine runs them (local/engine.ts). */
+const routes = new Hono<AppEnv>();
+routes.use('*', async (c, next) => {
+  c.set('requestId', 'test');
+  c.set('userId', 'owner');
+  c.set('budgetId', B);
+  c.set('email', 'owner@example.com');
+  c.set('sessionId', '');
+  c.set('syncEpoch', 'test');
+  return next();
+});
+routes.route('/api', budgetApi);
+async function post(path: string, body: unknown): Promise<Response> {
+  const env = {
+    DB: db,
+    PLAID_ENV: 'engine',
+    USAGE: async () => ({ written: 0, read: 0, do: { requests: 0, gbs: 0 }, workers: 0, refreshedAt: null }),
+    JOBS: { sync: async () => undefined },
+  };
+  return routes.fetch(
+    new Request(`https://engine.local/api${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', [CSRF_HEADER]: '1', origin: 'https://engine.local' },
+      body: JSON.stringify(body),
+    }),
+    env as never,
+    { waitUntil: () => undefined, passThroughOnException() {} } as never,
+  );
 }
 
 const payeeOf = async (providerId: string) =>
@@ -248,6 +282,44 @@ describe('payees from Plaid, live sync', () => {
       .first<{ txn_key: string }>())!.txn_key;
     expect(key).toBe('m:entry_pnm');
     expect((await payeeOf('en1'))!.name).toBe('Corner Store');
+  });
+
+  it('a rename gives the payee the key of its new name, so the next row with that Plaid name finds it', async () => {
+    await sync([plaidTxn('gy1', 30, 'PLANET FIT 0042')]);
+    const p = (await payeeOf('gy1'))!;
+    const r = await post(`/settings/payees/${p.id}`, { name: 'Gym' });
+    expect(r.status, await r.clone().text()).toBe(200);
+    expect(await payeeOf('gy1')).toMatchObject({ name: 'Gym', named_by: 'user' });
+    expect(await keysOf(p.id)).toContain('n:gym');
+    await sync([plaidTxn('gy2', 30, 'GYM')]);
+    expect((await payeeOf('gy2'))!.id).toBe(p.id);
+  });
+
+  it('a join moves every key and adds the name’s key; Undo moves them back and re-files later rows by key', async () => {
+    await sync([
+      plaidTxn('ja1', 12, 'Blue Bottle', { merchant_entity_id: 'ent_bb' }),
+      plaidTxn('jb1', 13, 'BLUEBOTTLE COFFEE 9'),
+    ]);
+    const a = (await payeeOf('ja1'))!;
+    const b = (await payeeOf('jb1'))!;
+    const aKeys = await keysOf(a.id);
+    const bKeys = await keysOf(b.id);
+    const r = await post('/settings/payees/merge', { keep: a.id, ids: [a.id, b.id], name: 'Coffee' });
+    expect(r.status, await r.clone().text()).toBe(200);
+    const { undoId } = (await r.json()) as MergeResult;
+    expect(await payeeOf('jb1')).toMatchObject({ id: a.id, name: 'Coffee', named_by: 'user' });
+    expect(await keysOf(a.id)).toEqual([...aKeys, ...bKeys, 'n:coffee'].sort());
+    // Rows that sync in after the join, by a key that was b's, and by the join's own key.
+    await sync([plaidTxn('jb2', 14, 'BLUEBOTTLE COFFEE 9'), plaidTxn('jc1', 15, 'Coffee')]);
+    expect((await payeeOf('jb2'))!.id).toBe(a.id);
+    expect((await payeeOf('jc1'))!.id).toBe(a.id);
+    expect((await post(`/settings/payees/merge/${undoId}/undo`, {})).status).toBe(200);
+    expect(await payeeOf('ja1')).toMatchObject({ id: a.id, name: 'Blue Bottle', named_by: 'sync' });
+    expect(await payeeOf('jb1')).toMatchObject({ id: b.id, name: 'BLUEBOTTLE COFFEE 9', named_by: 'sync' });
+    expect((await payeeOf('jb2'))!.id).toBe(b.id);
+    expect((await payeeOf('jc1'))!.id).toBe(a.id);
+    expect(await keysOf(a.id)).toEqual(aKeys);
+    expect(await keysOf(b.id)).toEqual(bKeys);
   });
 
   it('writes no old cleaned-text aliases', async () => {

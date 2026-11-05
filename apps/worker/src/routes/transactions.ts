@@ -27,6 +27,7 @@ import { shortDate } from '../views/common.js';
 import { categoryLabel, isHistory } from '../views/rows.js';
 import { TX_COLUMNS, chunks, txnCol, type TxRow } from '../ledger/ledger.js';
 import { OVERLAY_UPSERT, commit, loadTx, names, refuseHistory } from './txn-common.js';
+import { claimName } from '../sync/payee-keys.js';
 
 export const transactionRoutes = new Hono<AppEnv>();
 
@@ -268,7 +269,8 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
   }
   if (p.budgetMonth !== undefined) set('budget_month', p.budgetMonth);
   if (p.payeeName !== undefined) {
-    // A name you typed is yours: sync never renames it (docs/payee-names.md 6).
+    // A name you typed is yours: sync never renames it, and the payee gets the key of that name
+    // (docs/payee-names.md 4, 6).
     if (t.payee_id)
       w.push(
         s.q(
@@ -277,6 +279,7 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
           p.payeeName,
           now,
         ),
+        claimName(s, t.payee_id, p.payeeName, now),
       );
     else if (t.source === 'manual')
       w.push(

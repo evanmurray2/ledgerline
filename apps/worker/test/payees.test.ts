@@ -100,5 +100,15 @@ describe('payees', () => {
     expect(r.status, await r.clone().text()).toBe(200);
     await view();
     expect(await namedBy(c.id)).toEqual(['user', 'user']);
+    // Both names you chose are now keys of their payees (docs/payee-names.md 4).
+    const keys = await db
+      .prepare(
+        `SELECT pattern, payee_id FROM payee_alias WHERE pattern IN ('n:chosen name', 'n:typed name') ORDER BY pattern`,
+      )
+      .all<{ pattern: string; payee_id: string }>();
+    expect(keys.results).toEqual([
+      { pattern: 'n:chosen name', payee_id: a!.id },
+      { pattern: 'n:typed name', payee_id: c.id },
+    ]);
   });
 });
