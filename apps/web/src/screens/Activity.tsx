@@ -1,5 +1,5 @@
 // Activity: search, All / Needs attention / Not posted yet. Needs attention groups: Money to match, Transfers
-// to sort out, Needs category (with Select several and the category picker), Check these. Under All the same
+// to sort out, Same purchase?, Needs category (with Select several and the category picker), Check these. Under All the same
 // groups sit on top, then Pending, Upcoming and Posted. A row can carry a suggested category with OK, and OK all
 // takes every strong suggestion (docs/payees.md 2.2). Categorizing shows an Undo toast.
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -34,6 +34,7 @@ import { usage } from '../usage/tracker';
 import { useQueryClient } from '@tanstack/react-query';
 import { sheetPath, Section, TxnRow, type Chosen, type NeedsRow, type Picking } from './ActivityRows';
 import { ActivityCategoryPicker, NeedsCategory } from './ActivityNeeds';
+import { SamePurchase } from './ActivitySame';
 
 export { TxnRow } from './ActivityRows';
 
@@ -102,6 +103,7 @@ export function ActivityScreen() {
     ? v.moneyToMatch.length +
       v.transfersToSort.length +
       v.checkThese.length +
+      v.samePurchase.length +
       (v.needsCategory?.length ?? 0) +
       (v.posted.length + v.pending.length + v.upcoming.length)
     : 0;
@@ -432,6 +434,7 @@ export function ActivityScreen() {
             ))}
           </Section>
         )}
+        {v && v.samePurchase.length > 0 && <SamePurchase cards={v.samePurchase} />}
         {v && showNeeds && (
           <NeedsCategory
             needs={needs}

@@ -10,6 +10,7 @@ export * from './budget/store.js';
 export * from './targets.js';
 export * from './status.js';
 export * from './matcher.js';
+export * from './same-purchase.js';
 export * from './payee.js';
 export * from './suggest.js';
 export * from './transfers.js';

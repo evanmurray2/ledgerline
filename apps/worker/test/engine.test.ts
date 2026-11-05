@@ -5,6 +5,7 @@ import { SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { LocalEngine, migrateLocal } from '../src/local/engine.js';
 import type { SyncPage } from '../src/routes/sync.js';
+import type { ActivityView } from '@ledgerline/contracts';
 import { ownerDb, storeDb } from './store-db.js';
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
@@ -217,6 +218,54 @@ describe('the phone works out the same screens as the server', () => {
       { id: 'n:joined name', payee_id: p1!.id, named_by: 'user' },
     ]);
     await engine.derive();
+    await sameScreens(engine, month, budgetId);
+  });
+
+  it('an entry covering a bank pending row, "Same purchase?" and Not the same show the same on the phone', async () => {
+    // Your entry for the card's pending Shell charge; the sync covers the bank row with it (docs/payee-names.md 9.2).
+    const shell = await ownerDb()
+      .prepare(`SELECT account_id FROM v_transaction WHERE key = 'n-shell'`)
+      .first<{ account_id: string }>();
+    await post('/api/transactions', {
+      kind: 'pending',
+      accountId: shell!.account_id,
+      date: '2026-11-14',
+      amount: -4500,
+      payee: 'Shell',
+      categoryId: null,
+      repeats: 'never',
+    });
+    const entry = (await ownerDb()
+      .prepare(`SELECT txn_key FROM manual_pending WHERE payee_name = 'Shell' AND deleted_at IS NULL`)
+      .first<{ txn_key: string }>())!.txn_key;
+    await ownerDb()
+      .prepare(`UPDATE manual_pending SET covers_provider_txn_id = 'n-shell' WHERE txn_key = ?1`)
+      .bind(entry)
+      .run();
+    // And a question about another pending row.
+    await ownerDb()
+      .prepare(
+        `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at)
+         VALUES ('al-same', ?1, 'same_purchase', 'n-uber', ?2, 0)`,
+      )
+      .bind(budgetId, JSON.stringify({ candidates: [entry] }))
+      .run();
+    await syncAll(engine);
+    await engine.derive();
+    const pending = (await phoneJson(engine, '/api/activity?filter=pending')) as ActivityView;
+    expect(pending.pending.map((r) => r.key)).toContain(entry);
+    expect(pending.pending.map((r) => r.key)).not.toContain('n-shell');
+    // The entry covers a row, so it's no candidate for another one.
+    expect(((await phoneJson(engine, '/api/activity')) as ActivityView).samePurchase).toEqual([]);
+    await sameScreens(engine, month, budgetId);
+    await post(`/api/transactions/${encodeURIComponent(entry)}/not-same`, {});
+    await syncAll(engine);
+    await engine.derive();
+    const after = (await phoneJson(engine, '/api/activity')) as ActivityView;
+    expect(after.pending.map((r) => r.key)).toContain('n-shell');
+    expect(after.samePurchase.map((c) => [c.row.key, c.candidates.map((x) => x.key)])).toEqual([
+      ['n-uber', [entry]],
+    ]);
     await sameScreens(engine, month, budgetId);
   });
 

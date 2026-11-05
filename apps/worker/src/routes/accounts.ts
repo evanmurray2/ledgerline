@@ -24,7 +24,7 @@ import type { AppEnv } from '../http/context.js';
 import { HttpError, parse, scoped } from './api.js';
 import { cards as loadCards, fresh, monthResult, shortDate, structure } from '../views/common.js';
 import { isHistory, listRow } from '../views/rows.js';
-import { RECENT_TX, TX_COLUMNS, type TxRow } from '../ledger/ledger.js';
+import { RECENT_TX, TX_COLUMNS, uncovered, type TxRow } from '../ledger/ledger.js';
 import { inBudgetByAccount, monthTotals } from '../ledger/totals.js';
 import type { Scoped } from '../db/scoped.js';
 
@@ -152,7 +152,7 @@ accountRoutes.get('/accounts', async (c) => {
     s.q(`SELECT key, value, at FROM health_status WHERE budget_id = ?1`),
     s.q(
       `SELECT id, type, ref_key, data FROM alert WHERE budget_id = ?1 AND acked_at IS NULL
-         AND type IN ('history_changed', 'ambiguous_match', 'vanished_pending', 'possible_reissue', 'identity')
+         AND type IN ('history_changed', 'vanished_pending', 'possible_reissue', 'identity')
        ORDER BY created_at`,
     ),
     s.q(
@@ -331,7 +331,8 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
   const cats = new Map(categories.map((x) => [x.id, x.name]));
   const accts = new Map(rows.map((r) => [r.id, r.name]));
   const txs = await s.all<TxRow>(
-    `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND account_id = ?2 ORDER BY date DESC, seq DESC LIMIT 300`,
+    `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND account_id = ?2 AND ${uncovered('v_transaction')}
+       ORDER BY date DESC, seq DESC LIMIT 300`,
     id,
   );
   // "Before your budget" rows are never listed (D-62), but the running balance still walks through them.

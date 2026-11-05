@@ -31,6 +31,7 @@ import { useCategoryOptions } from '../lib/common';
 import { usage } from '../usage/tracker';
 import { toast } from '../components/Toast';
 import { BankSays, TxnHeader, useParentPath } from './TxnCommon';
+import { PairedWith } from './TxnPair';
 
 type OwedMode = 'none' | 'half' | 'all' | 'custom';
 
@@ -161,6 +162,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           {a}
         </Banner>
       ))}
+      <PairedWith t={t} close={close} />
       {canSetAmount && (
         <label className="flex shrink-0 items-center justify-between gap-3 rounded-lg bg-page p-3 text-md font-semibold text-ink-2">
           {t.amount < 0 ? 'Amount out' : 'Amount in'}

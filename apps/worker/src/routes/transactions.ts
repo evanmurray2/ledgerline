@@ -28,6 +28,7 @@ import { categoryLabel, isHistory } from '../views/rows.js';
 import { TX_COLUMNS, chunks, txnCol, type TxRow } from '../ledger/ledger.js';
 import { OVERLAY_UPSERT, commit, loadTx, names, refuseHistory } from './txn-common.js';
 import { claimName } from '../sync/payee-keys.js';
+import { coverAfterAmount, pairedWith } from './same-purchase.js';
 
 export const transactionRoutes = new Hono<AppEnv>();
 
@@ -173,6 +174,7 @@ transactionRoutes.get('/transactions/:key', async (c) => {
       label: p.label,
     })),
     refundOf: refund ? { key: refund.to_key, label: `${refund.label} · ${shortDate(refund.date)}` } : null,
+    pairedWith: kind === 'history' ? null : await pairedWith(s, t),
     alerts,
   };
   return c.json(sheet);
@@ -258,6 +260,8 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
         p.amount,
         now,
       ),
+      // A new amount that no longer fits the bank row it covers ends the cover (docs/payee-names.md 9.2).
+      ...(await coverAfterAmount(s, key, p.amount, now)),
     );
     edits.amount = editAt;
   }
@@ -463,7 +467,7 @@ transactionRoutes.post('/transactions/:key/pending', async (c) => {
         ]
       : [
           s.q(
-            `UPDATE manual_pending SET deleted_at = ?3, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
+            `UPDATE manual_pending SET deleted_at = ?3, covers_provider_txn_id = NULL, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
             key,
             now,
           ),
@@ -485,7 +489,7 @@ transactionRoutes.delete('/transactions/:key', async (c) => {
   return c.json(
     await commit(c, [
       s.q(
-        `UPDATE manual_pending SET deleted_at = ?3, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
+        `UPDATE manual_pending SET deleted_at = ?3, covers_provider_txn_id = NULL, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
         key,
         now,
       ),

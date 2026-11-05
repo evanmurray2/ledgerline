@@ -35,12 +35,12 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('Accounts: stored alerts', () => {
-  it('lists an alert the sync saved, opens its transaction, and Dismiss marks it seen', async () => {
+  it('lists an alert the sync saved, and Dismiss marks it seen', async () => {
     const db = await server.db();
     await db
       .prepare(
         `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at)
-         SELECT 'al1', id, 'ambiguous_match', 'n-shell', '{}', 0 FROM budget`,
+         SELECT 'al1', id, 'possible_reissue', 'p:old', '{}', 0 FROM budget`,
       )
       .run();
     await db
@@ -52,11 +52,10 @@ describe('Accounts: stored alerts', () => {
     show('/accounts');
     // With Ally to repair, three problems fold into one line until opened.
     fireEvent.click(await screen.findByRole('button', { name: /3 things need you/ }, T));
-    await screen.findByText(/could match more than one pending row/, undefined, T);
+    await screen.findByText(/may have re-issued it/, undefined, T);
     expect(screen.getByText(/usually a released hold/)).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Open it' }).getAttribute('href')).toBe('/activity/txn/n-shell');
     fireEvent.click(screen.getAllByRole('button', { name: 'Dismiss' })[0]!);
-    await waitFor(() => expect(screen.queryByText(/could match more than one pending row/)).toBeNull(), T);
+    await waitFor(() => expect(screen.queryByText(/may have re-issued it/)).toBeNull(), T);
     expect(screen.getByText(/usually a released hold/)).toBeTruthy();
     expect(
       (await sql<{ acked_at: number | null }>(`SELECT acked_at FROM alert WHERE id = 'al1'`))!.acked_at,

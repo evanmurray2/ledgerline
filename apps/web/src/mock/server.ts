@@ -8,7 +8,8 @@ import type { z } from 'zod';
 type LocalEngine = MockCopy['engine'];
 type SqlJsDb = MockCopy['db'];
 
-export type Scenario = 'default' | 'firstrun' | 'empty' | 'readonly' | 'resting' | 'syncfail' | 'newmonth';
+export type Scenario =
+  'default' | 'firstrun' | 'empty' | 'readonly' | 'resting' | 'syncfail' | 'newmonth' | 'samepurchase';
 
 export interface MockResponse {
   status: number;
@@ -48,6 +49,10 @@ const EMPTY_KEEPS = ['rent', 'electric', 'internet', 'groceries', 'dining', 'gas
 /** Turns the November copy into a scenario's starting state, through the same tables the server keeps. */
 async function shape(db: SqlJsDb, scenario: Scenario, now: number): Promise<boolean> {
   const run = (sql: string) => db.prepare(sql).run();
+  if (scenario === 'samepurchase') {
+    await samePurchase(db, now);
+    return true;
+  }
   if (scenario === 'syncfail') {
     await run(
       `UPDATE connection SET status = 'error', last_attempt_at = ${now - 3_600_000} WHERE id = 'con_chase'`,
@@ -133,6 +138,50 @@ async function mockHistory(engine: LocalEngine, db: SqlJsDb, now: number): Promi
   });
   if (r.status !== 200) throw new Error(`mock history: ${await r.text()}`);
   await run(`UPDATE payee SET name = 'Old Bakery' WHERE name = 'OLD BAKERY SF'`);
+}
+
+/**
+ * "Same purchase?" (docs/payee-names.md 9.1, 9.2) on the Sapphire card: your entry "Dinner at Nopa" and the bank's
+ * pending "SQ *NOPA SF" at a different amount, asked about; and your entry "Tacos" covering the bank's pending
+ * "TACOS EL PASTOR", for Not the same.
+ */
+async function samePurchase(db: SqlJsDb, now: number): Promise<void> {
+  const run = (sql: string, ...args: unknown[]) =>
+    db
+      .prepare(sql)
+      .bind(...args)
+      .run();
+  const entry = (key: string, date: string, amount: number, name: string, covers: string | null) =>
+    run(
+      `INSERT INTO manual_pending (id, budget_id, txn_key, account_id, kind, date, amount, payee_name, covers_provider_txn_id, created_at, updated_at)
+       SELECT ?1, id, ?1, 'sapphire', 'pending', ?2, ?3, ?4, ?5, ?6, ?6 FROM budget`,
+      key,
+      date,
+      amount,
+      name,
+      covers,
+      now,
+    );
+  const bank = (id: string, date: string, amount: number, raw: string) =>
+    run(
+      `INSERT INTO bank_txn (provider_txn_id, budget_id, connection_id, provider_account_id, amount, date, authorized_date, pending, raw_name, plaid_name, payment_channel, txn_key, first_apply_seq, last_apply_seq, created_at, updated_at)
+       SELECT ?1, budget_id, connection_id, provider_account_id, ?2, ?3, ?3, 1, ?4, ?4, 'in store', 'p:' || ?1, 0, 0, ?5, ?5
+       FROM bank_txn WHERE provider_account_id = 'pa_sapphire' LIMIT 1`,
+      id,
+      amount,
+      date,
+      raw,
+      now,
+    );
+  await entry('m:sp-dinner', '2026-11-13', -4200, 'Dinner at Nopa', null);
+  await bank('sp-nopa', '2026-11-14', -4650, 'SQ *NOPA SF');
+  await run(
+    `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at) SELECT 'al-sp', id, 'same_purchase', 'p:sp-nopa', ?1, ?2 FROM budget`,
+    JSON.stringify({ candidates: ['m:sp-dinner'] }),
+    now,
+  );
+  await bank('sp-tacos', '2026-11-12', -1250, 'TACOS EL PASTOR');
+  await entry('m:sp-tacos', '2026-11-12', -1250, 'Tacos', 'sp-tacos');
 }
 
 /** Settings → Sign-in in the mock: this phone and a laptop, and an iPad that's signed out with the budget saved. */

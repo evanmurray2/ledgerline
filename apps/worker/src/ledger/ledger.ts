@@ -63,6 +63,17 @@ export const TX_COLUMNS = `key, source, account_id, account_kind, account_name, 
   seq, repeats, category_id, to_rta, income_tag, memo, budget_month, estimated_amount, wont_clear, transfer_state,
   transfer_account_id, wtm_state, categorized_by, rule_id, reviewed_at, pending_at_link, alert, payee_id`;
 
+/**
+ * A bank pending row that an unmatched entry covers (docs/payee-names.md 9.2) is hidden and not counted: the entry
+ * counts for it until the charge posts. The views (migration 0004) know nothing of covers, and changing them takes a
+ * migration, so every read that lists or counts transactions adds this condition. `v` names the view row (the view
+ * itself, or its alias). Reads of one transaction by key (a sheet) leave it out.
+ */
+export const uncovered = (v: string) =>
+  `NOT (${v}.status = 'pending' AND ${v}.source = 'bank' AND EXISTS (SELECT 1 FROM manual_pending cv
+     WHERE cv.budget_id = ${v}.budget_id AND cv.covers_provider_txn_id = ${v}.provider_txn_id
+       AND cv.deleted_at IS NULL AND cv.matched_txn_key IS NULL))`;
+
 /** The earliest account budget start: rows posted before it are history for every account. */
 const MIN_FROM = `(SELECT min(budget_from) FROM account WHERE budget_id = ?1)`;
 
@@ -70,10 +81,11 @@ const MIN_FROM = `(SELECT min(budget_from) FROM account WHERE budget_id = ?1)`;
  * v_transaction narrowed to the rows the budget can count, read through indexes so older history is never read:
  * bank rows posted on or after the earliest budget start (bank_txn_budget_date), bank rows still pending from before
  * it, which can be pending at link (bank_txn_pending; the unary + keeps the planner on that index), and all manual
- * rows. Callers still apply their own budget_from conditions. Binds ?1 (budget id).
+ * rows. Covered pending rows are left out (uncovered). Callers still apply their own budget_from conditions. Binds
+ * ?1 (budget id).
  */
-export const RECENT_TX = `(SELECT * FROM v_txn_bank WHERE budget_id = ?1 AND posted_date >= ${MIN_FROM}
-  UNION ALL SELECT * FROM v_txn_bank WHERE budget_id = ?1 AND bank_pending = 1 AND +posted_date < ${MIN_FROM}
+export const RECENT_TX = `(SELECT * FROM v_txn_bank WHERE budget_id = ?1 AND posted_date >= ${MIN_FROM} AND ${uncovered('v_txn_bank')}
+  UNION ALL SELECT * FROM v_txn_bank WHERE budget_id = ?1 AND bank_pending = 1 AND +posted_date < ${MIN_FROM} AND ${uncovered('v_txn_bank')}
   UNION ALL SELECT * FROM v_txn_manual WHERE budget_id = ?1)`;
 
 /**
@@ -224,7 +236,10 @@ export async function loadTxns(
     const chunk = keys.slice(i, i + 90);
     const ph = inList(chunk, 2);
     const [t, sp, ow, ln, mt] = await s.batch([
-      s.q(`SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND key IN (${ph})`, ...chunk),
+      s.q(
+        `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND key IN (${ph}) AND ${uncovered('v_transaction')}`,
+        ...chunk,
+      ),
       s.q(`SELECT * FROM txn_split WHERE budget_id = ?1 AND txn_key IN (${ph})`, ...chunk),
       s.q(`SELECT * FROM expected_reimbursement WHERE budget_id = ?1 AND txn_key IN (${ph})`, ...chunk),
       s.q(

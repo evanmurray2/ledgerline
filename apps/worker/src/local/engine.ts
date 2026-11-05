@@ -17,6 +17,7 @@ import {
   planLineRebuild,
   planStartLines,
   toLedgerAccount,
+  uncovered,
   type AccountRowDb,
 } from '../ledger/ledger.js';
 import { clearTotals } from '../ledger/totals.js';
@@ -269,13 +270,26 @@ export class LocalEngine {
       if (cols) {
         const where = t.pk.map((c, i) => `${c} = ?${i + 1}`).join(' AND ');
         const old = await this.db
-          .prepare(`SELECT ${cols.join(', ')} FROM ${r.t} WHERE ${where}`)
+          .prepare(
+            `SELECT ${[...cols, ...(r.t === 'manual_pending' ? ['covers_provider_txn_id'] : [])].join(', ')} FROM ${r.t} WHERE ${where}`,
+          )
           .bind(...r.k)
           .first<Record<string, unknown>>();
         for (const c of cols) {
           if (old?.[c]) todo.keys.push(String(old[c]));
           if (r.d?.[c]) todo.keys.push(String(r.d[c]));
         }
+        // An entry's cover hides the bank pending row it covers (docs/payee-names.md 9.2): any change to the entry
+        // (the cover, deleted, matched) can show or hide that row, before or after.
+        if (r.t === 'manual_pending')
+          for (const id of [old?.covers_provider_txn_id, r.d?.covers_provider_txn_id]) {
+            if (typeof id !== 'string') continue;
+            const b = await this.db
+              .prepare(`SELECT txn_key FROM bank_txn WHERE provider_txn_id = ?1`)
+              .bind(id)
+              .first<{ txn_key: string }>();
+            if (b) todo.keys.push(b.txn_key);
+          }
       } else if (r.t === 'assignment') month(r.k[1]);
       else if (r.t === 'category') todo.fromStart = true;
       else if (r.t === 'account') todo.full = true;
@@ -370,9 +384,11 @@ export class LocalEngine {
     const accounts = await s.all<AccountRowDb>(`SELECT * FROM account WHERE budget_id = ?1`);
     const start = accounts.flatMap((a) => planStartLines(s, toLedgerAccount(a), meta, now));
     if (start.length) await s.batch(start);
-    const keys = (await s.all<{ key: string }>(`SELECT key FROM v_transaction WHERE budget_id = ?1`)).map(
-      (r) => r.key,
-    );
+    const keys = (
+      await s.all<{ key: string }>(
+        `SELECT key FROM v_transaction WHERE budget_id = ?1 AND ${uncovered('v_transaction')}`,
+      )
+    ).map((r) => r.key);
     for (const part of chunks(keys, 450)) {
       const plan = await planLineRebuild(s, part, meta, today, now);
       if (plan.stmts.length) await s.batch(plan.stmts);
@@ -485,9 +501,11 @@ export class LocalEngine {
  * lines, or the months from an assignment on. A target changes nothing derived. Anything else rebuilds everything.
  */
 export function noteEdit(method: string, path: string, body: unknown, todo: PendingDerive): void {
-  const b = (body ?? {}) as { keys?: unknown; month?: unknown };
+  const b = (body ?? {}) as { keys?: unknown; month?: unknown; amount?: unknown };
   const txn = method === 'PATCH' ? /^\/api\/transactions\/([^/]+)$/.exec(path) : null;
-  if (txn) todo.keys.push(decodeURIComponent(txn[1]!));
+  // A new amount on your entry can end its cover, which shows the bank row it covered (docs/payee-names.md 9.2).
+  if (txn && b.amount !== undefined) todo.full = true;
+  else if (txn) todo.keys.push(decodeURIComponent(txn[1]!));
   else if (method === 'POST' && path === '/api/transactions/categorize' && Array.isArray(b.keys))
     todo.keys.push(...b.keys.map(String));
   else if (
