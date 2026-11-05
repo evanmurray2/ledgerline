@@ -1,5 +1,5 @@
 // "Same purchase?" and Not the same (docs/payee-names.md 9.1) in mock mode: the card's Yes and No on Activity's
-// Needs attention, and Not the same on your entry's sheet. The `samepurchase` scenario (apps/web/src/mock/server.ts).
+// Needs attention, and Not the same on your entry's sheet and on a posted row paired with the bank's pending row. The `samepurchase` scenario (apps/web/src/mock/server.ts).
 import { expect, test, type Page } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
@@ -52,6 +52,23 @@ test('Not the same on your entry’s sheet ends its cover: the bank’s row coun
   await page
     .getByRole('button', { name: 'Not the same: Tacos and Bank pending: TACOS EL PASTOR · Nov 12' })
     .click();
-  await expect(page.getByText('Not the same: both count now')).toBeVisible();
+  await expect(page.getByText('Not the same: kept as two purchases')).toBeVisible();
   await expect(page.getByText('TACOS EL PASTOR')).toBeVisible();
+});
+
+test('Not the same on a posted row paired with the bank’s pending row: the pending row counts again', async ({
+  page,
+}) => {
+  await page.goto('/activity?mock=samepurchase');
+  await page
+    .getByRole('link', { name: /^PHO 24 SAN FRANCISCO/ })
+    .first()
+    .click();
+  await expect(page.getByText('Same purchase as')).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Not the same: PHO 24 SAN FRANCISCO and Bank pending: PHO 24 · Nov 11' })
+    .click();
+  await expect(page.getByText('Not the same: kept as two purchases')).toBeVisible();
+  await notPosted(page);
+  await expect(page.getByText('PHO 24', { exact: true })).toBeVisible();
 });

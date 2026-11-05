@@ -142,8 +142,8 @@ async function mockHistory(engine: LocalEngine, db: SqlJsDb, now: number): Promi
 
 /**
  * "Same purchase?" (docs/payee-names.md 9.1, 9.2) on the Sapphire card: your entry "Dinner at Nopa" and the bank's
- * pending "SQ *NOPA SF" at a different amount, asked about; and your entry "Tacos" covering the bank's pending
- * "TACOS EL PASTOR", for Not the same.
+ * pending "SQ *NOPA SF" at a different amount, asked about; your entry "Tacos" covering the bank's pending
+ * "TACOS EL PASTOR", and a posted "PHO 24 SAN FRANCISCO" paired with the bank's pending "PHO 24", for Not the same.
  */
 async function samePurchase(db: SqlJsDb, now: number): Promise<void> {
   const run = (sql: string, ...args: unknown[]) =>
@@ -162,16 +162,18 @@ async function samePurchase(db: SqlJsDb, now: number): Promise<void> {
       covers,
       now,
     );
-  const bank = (id: string, date: string, amount: number, raw: string) =>
+  const bank = (id: string, date: string, amount: number, raw: string, pairedTo?: string) =>
     run(
       `INSERT INTO bank_txn (provider_txn_id, budget_id, connection_id, provider_account_id, amount, date, authorized_date, pending, raw_name, plaid_name, payment_channel, txn_key, first_apply_seq, last_apply_seq, created_at, updated_at)
-       SELECT ?1, budget_id, connection_id, provider_account_id, ?2, ?3, ?3, 1, ?4, ?4, 'in store', 'p:' || ?1, 0, 0, ?5, ?5
+       SELECT ?1, budget_id, connection_id, provider_account_id, ?2, ?3, ?3, ?6, ?4, ?4, 'in store', coalesce(?7, 'p:' || ?1), 0, 0, ?5, ?5
        FROM bank_txn WHERE provider_account_id = 'pa_sapphire' LIMIT 1`,
       id,
       amount,
       date,
       raw,
       now,
+      pairedTo ? 0 : 1,
+      pairedTo ?? null,
     );
   await entry('m:sp-dinner', '2026-11-13', -4200, 'Dinner at Nopa', null);
   await bank('sp-nopa', '2026-11-14', -4650, 'SQ *NOPA SF');
@@ -182,6 +184,14 @@ async function samePurchase(db: SqlJsDb, now: number): Promise<void> {
   );
   await bank('sp-tacos', '2026-11-12', -1250, 'TACOS EL PASTOR');
   await entry('m:sp-tacos', '2026-11-12', -1250, 'Tacos', 'sp-tacos');
+  // A posted "PHO 24 SAN FRANCISCO" (with a tip) that the app paired with the bank's pending "PHO 24" (D-65).
+  await bank('sp-pho-p', '2026-11-11', -1800, 'PHO 24');
+  await bank('sp-pho', '2026-11-12', -2100, 'PHO 24 SAN FRANCISCO', 'p:sp-pho-p');
+  await run(
+    `INSERT INTO txn_link (id, budget_id, kind, from_key, to_key, created_by, created_at)
+     SELECT 'lk-sp-pho', id, 'pending_match', 'p:sp-pho', 'p:sp-pho-p', 'auto', ?1 FROM budget`,
+    now,
+  );
 }
 
 /** Settings → Sign-in in the mock: this phone and a laptop, and an iPad that's signed out with the budget saved. */

@@ -24,7 +24,15 @@ import type { Scoped } from '../db/scoped.js';
 import { chunks } from '../ledger/ledger.js';
 import type { Inherited } from './file-fresh.js';
 import type { BankRow } from './process.js';
-import { askStmt, coverStmts, inheritStmts, loadNotSame, matchEntryStmts, type Entry } from './pairing.js';
+import {
+  askStmt,
+  coverStmts,
+  inheritStmts,
+  loadNotSame,
+  matchEntryStmts,
+  ownKeyStmt,
+  type Entry,
+} from './pairing.js';
 
 export function channel(r: { payment_channel: string | null; raw_name: string }): MatchRow['channel'] {
   if (/\bCHECK\b|\bCHK\b/i.test(r.raw_name)) return 'check';
@@ -234,13 +242,7 @@ export async function planMatches(
     }
     for (const other of holders.get(p.txn_key) ?? []) {
       if (other === r.provider_txn_id) continue;
-      stmts.push(
-        s.q(
-          `UPDATE bank_txn SET txn_key = 'p:' || provider_txn_id, updated_at = ?3 WHERE budget_id = ?1 AND provider_txn_id = ?2`,
-          other,
-          now,
-        ),
-      );
+      stmts.push(ownKeyStmt(s, other, now));
     }
     inherit(r.provider_txn_id, p.txn_key, 'provider', r.amount, p.estimated ?? p.amount);
   }

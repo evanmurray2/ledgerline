@@ -1,5 +1,6 @@
-// On a transaction's sheet: the other row of a pair made by your entry and a bank row (a cover, or the posted charge
-// that took your entry), with Not the same, which undoes the pair and remembers No (docs/payee-names.md 9.1).
+// On a transaction's sheet: the other row of a pair (your entry's cover of a bank row, the posted charge that took your
+// entry, or the posted charge that took the bank's pending row without the bank's link), with Not the same, which
+// undoes the pair and remembers No (docs/payee-names.md 9.1).
 import type { TxnSheet } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
 import { useMoneyMutation } from '../api/hooks';
@@ -23,7 +24,7 @@ export function PairedWith({ t, close }: { t: TxnSheet; close: () => void }) {
           disabled={undo.isPending}
           onClick={async () => {
             await undo.mutateAsync(t.key);
-            toast.show({ text: 'Not the same: both count now' });
+            toast.show({ text: 'Not the same: kept as two purchases' });
             close();
           }}
         >

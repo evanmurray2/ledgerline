@@ -181,6 +181,18 @@ export function coverStmts(s: Scoped, entryKey: string, pendingId: string, now: 
   ];
 }
 
+/**
+ * A bank row gets its own key back (`p:` and its provider id): when the provider's link wins over a pair made without
+ * it (D-47), and on Not the same for a posted row that took a bank pending row's key.
+ */
+export function ownKeyStmt(s: Scoped, providerId: string, now: number): Stmt {
+  return s.q(
+    `UPDATE bank_txn SET txn_key = 'p:' || provider_txn_id, updated_at = ?3 WHERE budget_id = ?1 AND provider_txn_id = ?2`,
+    providerId,
+    now,
+  );
+}
+
 /** Every open question about this row is answered. */
 export function ackAsks(s: Scoped, ref: string, now: number): Stmt {
   return s.q(
