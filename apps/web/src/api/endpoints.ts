@@ -33,6 +33,7 @@ import type {
   NoteRequest,
   OwedAction,
   PendingCheckAction,
+  SamePurchaseAnswer,
   SetAssignedRequest,
   SettingsPatch,
   StartingBalances,
@@ -111,6 +112,11 @@ export const api = {
   /** Clears a bank transaction's alert (e.g. it cleared at a different amount): the OK on Check these. */
   reviewTxn: (key: string) => post(`/api/transactions/${enc(key)}/review`, MutationResult),
   deleteTxn: (key: string) => del(`/api/transactions/${enc(key)}`, MutationResult),
+  /** "Same purchase?" (docs/payee-names.md 9.1): Yes or No for one candidate of a card. */
+  samePurchase: (v: { id: string } & In<typeof SamePurchaseAnswer>) =>
+    post(`/api/same-purchase/${enc(v.id)}`, MutationResult, { answer: v.answer, key: v.key }),
+  /** Not the same: undoes a pair of your entry and a bank row, and remembers No. */
+  notSame: (key: string) => post(`/api/transactions/${enc(key)}/not-same`, MutationResult),
 
   match: (inflowKey: string) => get(`/api/match/${enc(inflowKey)}`, MatchView),
   doMatch: (body: In<typeof MatchRequest>) => post('/api/match', MutationResult, body),

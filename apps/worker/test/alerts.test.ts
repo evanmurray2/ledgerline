@@ -33,12 +33,11 @@ describe('Stored alerts on Accounts', () => {
         .run();
   });
 
-  it('lists every kind with an id, and links the ambiguous match to its transaction', async () => {
+  it('lists every kind with an id; an ambiguous match asks "Same purchase?" on Activity instead', async () => {
     const a = (await accounts()).alerts.filter((x) => x.id);
     expect(a.map((x) => x.kind).sort()).toEqual(
-      ['ambiguous_match', 'history_changed', 'identity', 'possible_reissue', 'vanished_pending'].sort(),
+      ['history_changed', 'identity', 'possible_reissue', 'vanished_pending'].sort(),
     );
-    expect(a.find((x) => x.kind === 'ambiguous_match')!.txnKey).toBe('p:posted-1');
     expect(a.find((x) => x.kind === 'identity')!.text).toContain('$12.34');
     expect(a.find((x) => x.kind === 'history_changed')!.text).toContain('2026-10');
   });

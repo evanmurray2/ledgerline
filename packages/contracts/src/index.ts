@@ -265,6 +265,13 @@ export const ActivityView = z.object({
     }),
   ),
   checkThese: z.array(TxnListRow.extend({ action: z.enum(['dismiss', 'review']) })),
+  /**
+   * "Same purchase?" (docs/payee-names.md 9.1): one card per bank row that could be your entry or another bank row,
+   * with no exact evidence (or several rows with it). Answered with POST /api/same-purchase/:id.
+   */
+  samePurchase: z.array(
+    z.object({ id: z.string(), row: TxnListRow, candidates: z.array(TxnListRow).min(1) }),
+  ),
   pending: z.array(TxnListRow),
   pendingTotal: cents,
   upcoming: z.array(TxnListRow),
@@ -335,6 +342,11 @@ export const TxnSheet = z.object({
   ),
   paybacks: z.array(z.object({ inflowKey: z.string(), itemId: id, amount: cents, label: z.string() })),
   refundOf: z.object({ key: z.string(), label: z.string() }).nullable(),
+  /**
+   * The other row of a pair made by your entry and a bank row (a cover, or the posted charge that took your entry):
+   * "Not the same" (POST /api/transactions/:key/not-same) undoes it.
+   */
+  pairedWith: z.object({ label: z.string() }).nullable(),
   alerts: z.array(z.string()),
 });
 export type TxnSheet = z.infer<typeof TxnSheet>;
@@ -396,6 +408,8 @@ export const MatchRequest = z.object({
   rest: z.enum(['income', 'keep', 'send_back']),
 });
 export const TransferPick = z.object({ otherKey: z.string().nullable() });
+/** An answer to "Same purchase?" for one of the card's candidates (its key). */
+export const SamePurchaseAnswer = z.object({ answer: z.enum(['yes', 'no']), key: z.string() });
 export const PendingCheckAction = z.object({ action: z.enum(['keep_waiting', 'delete']) });
 
 export const MatchView = z.object({

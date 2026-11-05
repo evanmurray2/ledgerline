@@ -152,7 +152,7 @@ accountRoutes.get('/accounts', async (c) => {
     s.q(`SELECT key, value, at FROM health_status WHERE budget_id = ?1`),
     s.q(
       `SELECT id, type, ref_key, data FROM alert WHERE budget_id = ?1 AND acked_at IS NULL
-         AND type IN ('history_changed', 'ambiguous_match', 'vanished_pending', 'possible_reissue', 'identity')
+         AND type IN ('history_changed', 'vanished_pending', 'possible_reissue', 'identity')
        ORDER BY created_at`,
     ),
     s.q(

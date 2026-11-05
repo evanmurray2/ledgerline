@@ -22,6 +22,7 @@ import { listRow } from '../views/rows.js';
 import { RECENT_TX, TX_COLUMNS, chunks, type TxRow } from '../ledger/ledger.js';
 import type { Scoped } from '../db/scoped.js';
 import { names } from './txn-common.js';
+import { samePurchaseCards } from './same-purchase.js';
 export const activityViewRoutes = new Hono<AppEnv>();
 
 // ---------------------------------------------------------------- Activity
@@ -67,7 +68,9 @@ activityViewRoutes.get('/badges', async (c) => {
       (t) => !t.category_id && !t.to_rta && !t.transfer_state && !t.wtm_state && !(t.alert && !t.reviewed_at),
     ).length +
     rows.filter((t) => t.alert && !t.reviewed_at).length +
-    ((stale!.results[0] as { n: number } | undefined)?.n ?? 0);
+    ((stale!.results[0] as { n: number } | undefined)?.n ?? 0) +
+    // One query when nothing is asked (the usual case).
+    (await samePurchaseCards(s, new Map(), new Map())).length;
   return c.json({
     activity,
     accounts: (conns!.results[0] as { n: number } | undefined)?.n ?? 0,
@@ -287,6 +290,8 @@ activityViewRoutes.get('/activity', async (c) => {
     }
   }
   const { categories, groups } = await structure(s);
+  // "Same purchase?" asks only when nothing is searched for: its rows are the bank's and your entries.
+  const samePurchase = q ? [] : await samePurchaseCards(s, accts, cats);
   const usable = new Set(
     categories.filter((c) => !c.archived_at && c.kind !== 'cc_payment').map((c) => c.id),
   );
@@ -361,12 +366,18 @@ activityViewRoutes.get('/activity', async (c) => {
     }))
     .filter((g) => g.categories.length);
   const view: ActivityView = {
-    attentionCount: moneyToMatch.length + transfersToSort.length + needsCategory.length + checkThese.length,
+    attentionCount:
+      moneyToMatch.length +
+      transfersToSort.length +
+      needsCategory.length +
+      checkThese.length +
+      samePurchase.length,
     notPostedCount: pend!.results.length + upc!.results.length,
     moneyToMatch,
     transfersToSort,
     needsCategory,
     checkThese,
+    samePurchase,
     pending: filter === 'attention' || past ? [] : pending,
     pendingTotal: cents(pendingTotal),
     upcoming: filter === 'attention' || past ? [] : upcoming,
