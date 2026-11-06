@@ -286,6 +286,13 @@ test('Match money back returns it to Ready to Assign', async ({ page }) => {
   ).toBeVisible();
 });
 
+test('A card credit can pay back what is owed to you', async ({ page }) => {
+  await page.goto('/activity/txn/n-points');
+  await page.getByRole('link', { name: /money back for something you fronted/ }).click();
+  await expect(page).toHaveURL(/\/activity\/match\/n-points$/);
+  await expect(page.getByRole('button', { name: 'Match $24.10' })).toBeVisible();
+});
+
 test('Budget lists your groups first, then card payments, then Owed to you', async ({ page }) => {
   await page.goto('/budget');
   const y = async (text: string) => (await page.getByText(text, { exact: true }).first().boundingBox())!.y;

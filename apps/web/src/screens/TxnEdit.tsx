@@ -299,9 +299,10 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           lowers what you owe, so the card’s payment category needs {formatCents(t.amount)} less.
         </p>
       )}
-      {isIncome && (
+      {/* Any money in can pay back what's owed to you: a card credit too, unless it's linked as a refund. */}
+      {(isIncome || (isRefund && !t.refundOf)) && (
         <Link
-          to="/owed"
+          to={`${parent}/match/${encodeURIComponent(t.key)}`}
           data-track="txn.income.match"
           className="flex min-h-12 shrink-0 items-center justify-between gap-3 rounded-lg border border-line px-3 text-ink no-underline"
         >
