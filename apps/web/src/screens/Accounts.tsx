@@ -365,6 +365,11 @@ export function AccountsScreen() {
                                 {formatCents(Math.abs(a.drift))} off from bank
                               </span>
                             )}
+                            {a.pendingInBank > 0 && (
+                              <span className="tnum text-xs text-muted" data-testid="pending-in-bank">
+                                {formatCents(a.pendingInBank)} pending already in bank
+                              </span>
+                            )}
                             {a.startNote && (
                               <span className="text-xs text-muted" data-testid="start-note">
                                 {a.startNote}

@@ -212,7 +212,13 @@ export function RegisterScreen() {
                 <p className="m-0 text-xs leading-snug text-muted" data-testid="bank-drift">
                   Your transactions differ from the bank balance by{' '}
                   <span className="tnum">{formatCents(Math.abs(a.drift))}</span>. One may be missing or
-                  doubled. A small difference often clears after a day.
+                  doubled.
+                </p>
+              )}
+              {a.pendingInBank > 0 && (
+                <p className="m-0 text-xs leading-snug text-muted" data-testid="pending-in-bank">
+                  The bank balance already counts <span className="tnum">{formatCents(a.pendingInBank)}</span>{' '}
+                  of your pending. It is counted once here.
                 </p>
               )}
               {v.note && <Banner tone="danger">{v.note}</Banner>}

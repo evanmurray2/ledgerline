@@ -16,7 +16,10 @@ export const AccountRow = z.object({
   working: cents,
   syncedAt: z.number().int().nullable(),
   connectionStatus: z.enum(['ok', 'login_required', 'error']),
+  /** Bank balance minus what the app counts, once it has lasted a day (D-66, D-68); null when none or too new. */
   drift: cents.nullable(),
+  /** Pending the bank balance already counts, so working counts it once (D-68). Positive; 0 when none. */
+  pendingInBank: cents,
   /**
    * A row from before the budget start that came in after the link, in the last 7 days (D-67): "Starting debt
    * updated: Hertz $187.53".
