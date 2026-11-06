@@ -2,7 +2,7 @@
 // budget.processed_through, decides matches, categorization, transfers and Waiting to match with the pure domain
 // functions, and writes everything plus the new watermark in one batch behind a watermark fence. Reprocessing is
 // harmless: it never overwrites a user's categorization. Categories come only from you (docs/payees.md: no rules).
-import type { Stmt } from '@ledgerline/db/sql';
+import type { Db, Stmt } from '@ledgerline/db/sql';
 import {
   type IsoDate,
   type Month,
@@ -16,6 +16,7 @@ import {
 import { ulid } from '@ledgerline/platform';
 import type { Env } from '../env.js';
 import { Scoped } from '../db/scoped.js';
+import { accountLedger, bankDiff } from '../ledger/bank-diff.js';
 import { conditionFence, isFenceAbort } from './lease.js';
 import type { StepContext } from './steps.js';
 import { CHUNK } from './steps.js';
@@ -282,6 +283,11 @@ export async function finalizeConnection(env: Env, c: StepContext, runId: string
   } catch {
     // Balances refresh on the next sync; the transactions are already applied.
   }
+  try {
+    await markDrift(env.DB, c.budgetId, c.connectionId, now);
+  } catch {
+    // The next sync sets it; until then a difference waits a little longer to show.
+  }
   await env.DB.batch([
     env.DB.prepare(
       `UPDATE sync_run SET phase = 'done', finished_at = ?2, updated_at = ?2 WHERE id = ?1`,
@@ -291,6 +297,48 @@ export async function finalizeConnection(env: Env, c: StepContext, runId: string
       `UPDATE connection SET last_synced_at = ?2, last_attempt_at = ?2, error_code = NULL, status = 'ok' WHERE id = ?1`,
     ).bind(c.connectionId, now),
   ]);
+}
+
+/**
+ * When each account of the connection began to differ from the bank (D-68): set on the first sync that sees a
+ * difference pending can't explain, cleared on the first that sees none. Accounts shows it after DIFF_WAIT_MS.
+ */
+export async function markDrift(db: Db, budgetId: string, connectionId: string, now: number): Promise<void> {
+  const s = new Scoped(db, budgetId, 'system');
+  const zone = await s.first<{ time_zone: string }>(`SELECT time_zone FROM budget WHERE id = ?1`);
+  const today = localDate(now, zone?.time_zone ?? 'America/Los_Angeles');
+  const rows = await s.all<{
+    id: string;
+    kind: string;
+    budget_from: string;
+    starting_balance: number;
+    pa_id: string;
+    bank: number | null;
+    drift_since: number | null;
+  }>(
+    `SELECT a.id, a.kind, a.budget_from, a.starting_balance, pa.id AS pa_id, pa.current_balance AS bank, pa.drift_since
+     FROM account a JOIN provider_account pa ON pa.budget_id = a.budget_id AND pa.provider_account_id = a.provider_account_id
+     WHERE a.budget_id = ?1 AND pa.connection_id = ?2 AND a.closed_at IS NULL`,
+    connectionId,
+  );
+  if (!rows.length) return;
+  const ledger = await accountLedger(s, rows, today, now, true);
+  const stmts: Stmt[] = [];
+  for (const a of rows) {
+    if (a.bank === null) continue;
+    const bank = a.kind === 'credit' ? -a.bank : a.bank;
+    const { left } = bankDiff(
+      bank,
+      ledger.posted.get(a.id) ?? a.starting_balance,
+      ledger.pending.get(a.id) ?? 0,
+    );
+    const since = left === 0 ? null : (a.drift_since ?? now);
+    if (since !== a.drift_since)
+      stmts.push(
+        s.q(`UPDATE provider_account SET drift_since = ?3 WHERE budget_id = ?1 AND id = ?2`, a.pa_id, since),
+      );
+  }
+  if (stmts.length) await s.batch(stmts);
 }
 
 export type { Month };

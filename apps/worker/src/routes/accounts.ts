@@ -24,10 +24,11 @@ import type { AppEnv } from '../http/context.js';
 import { HttpError, parse, scoped } from './api.js';
 import { cards as loadCards, fresh, monthResult, shortDate, structure } from '../views/common.js';
 import { hiddenFromLists, listRow } from '../views/rows.js';
-import { RECENT_TX, TX_COLUMNS, uncovered, type TxRow } from '../ledger/ledger.js';
-import { inBudgetByAccount, monthTotals } from '../ledger/totals.js';
+import { TX_COLUMNS, uncovered, type TxRow } from '../ledger/ledger.js';
+import { monthTotals } from '../ledger/totals.js';
+import { DIFF_WAIT_MS, accountLedger, bankDiff } from '../ledger/bank-diff.js';
 import type { Scoped } from '../db/scoped.js';
-import { type Adjustments, adjustments, startSheet } from '../ledger/start-part.js';
+import { type Adjustments, startSheet } from '../ledger/start-part.js';
 
 export const accountRoutes = new Hono<AppEnv>();
 
@@ -44,6 +45,7 @@ interface AcctDb {
   status: string | null;
   last_synced_at: number | null;
   connection_id: string | null;
+  drift_since: number | null;
 }
 
 async function accountRows(
@@ -52,49 +54,32 @@ async function accountRows(
   timeZone: string,
   now: number,
 ): Promise<{ rows: AccountRow[]; raw: AcctDb[]; recent: Adjustments['recent'] }> {
-  const [acc, pend] = await s.batch([
-    s.q(
-      `SELECT a.id, a.name, a.kind, a.budget_from, a.starting_balance, a.provider_account_id, pa.mask, pa.current_balance AS bank,
-         c.institution_name AS institution, c.status, c.last_synced_at, c.id AS connection_id
-       FROM account a
-       LEFT JOIN provider_account pa ON pa.budget_id = a.budget_id AND pa.provider_account_id = a.provider_account_id
-       LEFT JOIN connection c ON c.id = pa.connection_id
-       WHERE a.budget_id = ?1 AND a.closed_at IS NULL ORDER BY a.kind = 'credit', a.sort, a.name`,
-    ),
-    s.q(
-      `SELECT account_id, sum(amount) AS p FROM ${RECENT_TX} WHERE budget_id = ?1 AND status IN ('pending', 'upcoming') AND wont_clear = 0
-         AND (status != 'upcoming' OR date <= ?2) GROUP BY account_id`,
-      today,
-    ),
-  ]);
-  const pending = new Map(
-    (pend!.results as { account_id: string; p: number }[]).map((r) => [r.account_id, r.p]),
+  const raw = await s.all<AcctDb>(
+    `SELECT a.id, a.name, a.kind, a.budget_from, a.starting_balance, a.provider_account_id, pa.mask, pa.current_balance AS bank,
+       pa.drift_since, c.institution_name AS institution, c.status, c.last_synced_at, c.id AS connection_id
+     FROM account a
+     LEFT JOIN provider_account pa ON pa.budget_id = a.budget_id AND pa.provider_account_id = a.provider_account_id
+     LEFT JOIN connection c ON c.id = pa.connection_id
+     WHERE a.budget_id = ?1 AND a.closed_at IS NULL ORDER BY a.kind = 'credit', a.sort, a.name`,
   );
-  // Posted rows the budget counts, per account: stored totals for finished months plus the current month live
-  // (ledger/totals.ts). From two months before the earliest budget start, for rows pending at link.
-  const raw0 = acc!.results as AcctDb[];
-  const earliest = raw0.reduce((m, a) => (a.budget_from < m ? a.budget_from : m), today);
-  const postedSum = inBudgetByAccount(
-    await monthTotals(
-      s,
-      addMonths(earliest.slice(0, 7) as Month, -2),
-      today.slice(0, 7) as Month,
-      Date.now(),
-    ),
-  );
-  // Late rows from before the start and link-day rows (ledger/start-part.ts, D-67): the stored sums leave them out.
-  const startAdjust = await adjustments(s, now);
+  const ledger = await accountLedger(s, raw, today, now);
+  const startAdjust = ledger.startAdjust;
   const cardInfo = new Map((await loadCards(s, today)).map((c) => [c.accountId, c]));
-  const raw = acc!.results as AcctDb[];
   const rows = raw.map((a): AccountRow => {
     const credit = a.kind === 'credit';
-    const ledgerPosted = a.starting_balance + (startAdjust.sum.get(a.id) ?? 0) + (postedSum.get(a.id) ?? 0);
+    const ledgerPosted = ledger.posted.get(a.id) ?? a.starting_balance;
     const late = startAdjust.recent.get(a.id);
     // Bank-reported balance; cards report the amount owed. Manual accounts use the ledger.
     const bank = a.bank ?? (credit ? -ledgerPosted : ledgerPosted);
-    const p = pending.get(a.id) ?? 0;
-    const working = credit ? bank - p : bank + p;
-    const drift = a.bank === null ? null : credit ? a.bank + ledgerPosted : a.bank - ledgerPosted;
+    const p = ledger.pending.get(a.id) ?? 0;
+    // Pending the bank balance already took in counts once (D-68); what pending can't explain is the difference.
+    const diff =
+      a.bank === null ? { inBank: 0, left: 0 } : bankDiff(credit ? -a.bank : a.bank, ledgerPosted, p);
+    const signedWorking = (credit ? -bank : bank) + p - diff.inBank;
+    const working = credit ? -signedWorking : signedWorking;
+    // Shown only once it has lasted a day (provider_account.drift_since, set by each sync): most are timing.
+    const lasted = a.drift_since !== null && now - a.drift_since >= DIFF_WAIT_MS;
+    const drift = diff.left !== 0 && lasted ? (credit ? -diff.left : diff.left) : null;
     const ci = cardInfo.get(a.id);
     const statement = ci?.statement
       ? { balance: ci.statement.balance, due: ci.statement.due, covered: true }
@@ -114,7 +99,8 @@ async function accountRows(
       syncedAt: a.last_synced_at,
       connectionStatus:
         a.status === 'login_required' ? 'login_required' : a.status === 'error' ? 'error' : 'ok',
-      drift: drift === null || drift === 0 ? null : cents(drift),
+      drift: drift === null ? null : cents(drift),
+      pendingInBank: cents(Math.abs(diff.inBank)),
       startNote: late
         ? `${credit ? 'Starting debt' : 'Starting balance'} updated: ${late.payee} ${formatCents(Math.abs(late.amount))}`
         : null,

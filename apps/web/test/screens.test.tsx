@@ -184,12 +184,13 @@ describe('Accounts and Reports', () => {
     await screen.findByTestId('net-worth', undefined, { timeout: 4000 });
     expect(screen.queryAllByTestId('bank-drift')).toHaveLength(0);
     cleanup();
-    // The bank reports $40 more than the starting balance plus the posted rows add up to.
+    // The bank reports $40 more than the starting balance plus the posted rows add up to, since long ago (D-68: a
+    // difference shows once it has lasted a day).
     await (
       await server.db()
     )
       .prepare(
-        `UPDATE provider_account SET current_balance = current_balance + 4000
+        `UPDATE provider_account SET current_balance = current_balance + 4000, drift_since = 0
          WHERE provider_account_id = (SELECT provider_account_id FROM account WHERE id = 'checking')`,
       )
       .run();

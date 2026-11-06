@@ -6,6 +6,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { AccountsView, RegisterView, TxnSheet } from '@ledgerline/contracts';
 import { bankSync, pend, plaidTxn, removal } from './bank-sync.js';
 import { checkIdentityDb } from '../src/maintenance.js';
+import { markDrift } from '../src/sync/process.js';
 
 const B = 'b_start';
 const C = 'c_start';
@@ -101,8 +102,15 @@ describe('rows before the budget start (D-67)', () => {
     await h.db.prepare(`UPDATE provider_account SET current_balance = 14700 WHERE id = 'pa_row_1'`).run();
     await h.sync([plaidTxn('sep27', 1, 10, '2026-09-27', 'VERY LATE')]);
     await h.engine.derive();
-    const r = await h.call('GET', '/api/accounts');
-    const a = (r.json as AccountsView).groups.flatMap((g) => g.accounts).find((x) => x.id === 'a_1')!;
+    // The sync marks when the difference began (D-68); it shows once it has lasted a day.
+    await markDrift(h.db, B, C, LINK + 20 * DAY);
+    const card = async () =>
+      ((await h.call('GET', '/api/accounts')).json as AccountsView).groups
+        .flatMap((g) => g.accounts)
+        .find((x) => x.id === 'a_1')!;
+    expect((await card()).drift).toBeNull();
+    h.setNow(LINK + 21 * DAY);
+    const a = await card();
     expect(a.drift).toBe(1000);
     expect(a.startNote ?? null).toBeNull();
   });
