@@ -239,25 +239,14 @@ describe('Accounts and Reports', () => {
     expect(screen.queryAllByTestId('bank-drift')).toHaveLength(0);
   });
 
-  it('card register shows what you owe and the payment category', async () => {
+  it('card register shows what you owe', async () => {
     renderAt('/accounts/sapphire');
     await text('You owe the bank');
     expect(screen.getByText('$842.17')).toBeTruthy();
     expect(screen.getByText('$611.40')).toBeTruthy();
     expect(screen.getByText('Owed $771.20')).toBeTruthy();
-    // The payment category opens its sheet over this page, and closing it comes back here.
-    fireEvent.click(screen.getByRole('link', { name: /^Payment category/ }));
-    const sheet = await screen.findByRole('dialog', undefined, { timeout: 4000 });
-    // A card's payment category has its own sheet, not the category sheet (which answered "changed or removed").
-    expect(
-      await within(sheet).findByTestId('card-payment-available', undefined, { timeout: 4000 }),
-    ).toBeTruthy();
-    expect(within(sheet).queryByRole('alert')).toBeNull();
-    expect(within(sheet).getByText('Covered')).toBeTruthy();
-    expect(within(sheet).getByText('$842.17')).toBeTruthy();
-    fireEvent.click(await within(sheet).findByRole('button', { name: 'Close' }, { timeout: 4000 }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(screen.getByText('You owe the bank')).toBeTruthy();
+    // No Payment category row: it only repeated what this page and Budget show (D-70).
+    expect(screen.queryByText('Payment category')).toBeNull();
   });
 
   it('reports show month-to-date spending by category', async () => {

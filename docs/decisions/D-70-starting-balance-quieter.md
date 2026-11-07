@@ -16,10 +16,8 @@ link.
   account page still says "{payee} {amount} from {day} came in late…" for 7 days after the row came in.
 - The account page shows the Starting balance (cards: Starting debt) row while it is settling or a late row is new.
   After that it is an item in the page's ⋯ menu, which opens the same sheet.
-- A card's Payment category row opens a Payment category sheet over the account page
-  (`/accounts/{id}/category/{categoryId}`); closing it goes back to the account page. It shows Available, You owe the
-  bank, Covered or Short and the card's statement line, with Fund {amount} when the card's Needs attention row has that
-  fix. (At first it opened the category sheet, which has no card payment categories and showed "This was changed or
-  removed"; fixed Nov 7, 2026.)
+- A card's page has no Payment category row. It linked to the Budget page, then to a sheet that only repeated the
+  page (owed, statement covered) and Budget's card row. The owner asked to remove it (Nov 7, 2026). Budget's card row
+  and Needs attention still show the payment category's available, Short and Fund.
 
 **Money effect.** None: only where things show.
