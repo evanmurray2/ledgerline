@@ -165,7 +165,7 @@ securityRoutes.post('/settings/security/devices/:id/share', async (c) => {
     .first<{ share: string | null; revoked_at: number | null }>();
   if (!d || d.revoked_at !== null || !d.share)
     return c.json(
-      { error: 'revoked', message: 'This phone was signed out, so its saved budget was deleted.' },
+      { error: 'revoked', message: 'This device was signed out, so its saved budget was deleted.' },
       410,
     );
   await c.env.DB.prepare(`UPDATE device SET last_seen_at = ?2, session_id = ?3 WHERE id = ?1`)
