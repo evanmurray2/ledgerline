@@ -57,7 +57,7 @@ The rules and terms are in `docs/copy.md`. A snapshot, not kept up to date: the 
 - Add a device: "Create a passkey to sign in on this device. The link works once, for 10 minutes." · "This link is
   missing its code. Make a new one in Settings → Sign-in." · "This device is set up"
 - "Confirm it's you" + "Use your passkey to continue."
-- Server: "That didn't work or has expired. Start again." · "This passkey is already set up. Sign in with it." · "The
+- Server: "That code or link isn't valid or has expired." · "This passkey is already set up. Sign in with it." · "The
   passkey couldn't be verified." · "This passkey isn't registered with Ledgerline." · "This account is turned off." ·
   "Too many tries. Wait a minute and try again." · "You don't have access to this budget."
 
