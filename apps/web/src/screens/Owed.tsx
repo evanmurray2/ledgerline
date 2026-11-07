@@ -1,6 +1,6 @@
 // Owed to you: a list of what others owe you. Close out what's owed (they won't pay / marked by mistake / more time).
 import { useState } from 'react';
-import { Link, Outlet, useNavigate, useParams } from '@tanstack/react-router';
+import { Link, Outlet, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import type { OwedView } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
 import { useActivity, useMoneyMutation, useOwed, useBudget, useSession } from '../api/hooks';
@@ -40,6 +40,7 @@ export function OwedScreen() {
   useScreen('owed');
   const q = useOwed();
   const navigate = useNavigate();
+  const { from } = useSearch({ from: '/owed' });
   const activity = useActivity('attention', '');
   const session = useSession();
   const budget = useBudget(session.data?.budget.currentMonth);
@@ -54,8 +55,8 @@ export function OwedScreen() {
     <PageFrame>
       <BackHeader
         title="Owed to you"
-        onBack={() => void navigate({ to: '/budget' })}
-        backLabel="Back to budget"
+        onBack={() => void navigate({ to: from === 'accounts' ? '/accounts' : '/budget' })}
+        backLabel={from === 'accounts' ? 'Back to accounts' : 'Back to budget'}
       />
       <ScreenBody>
         {!v ? (
@@ -94,6 +95,7 @@ export function OwedScreen() {
                   <Link
                     key="waiting"
                     to={`/owed/match/${waiting.key}`}
+                    search
                     data-track="owed.waiting.match"
                     className="flex min-h-11 shrink-0 items-center gap-2.5 rounded-lg bg-owed-bg px-3 py-2 text-owed-fg no-underline"
                   >
@@ -152,6 +154,7 @@ export function OwedScreen() {
                       {waiting && (
                         <Link
                           to={`/owed/match/${waiting.key}`}
+                          search
                           data-track="owed.match"
                           aria-label={`Match money back for ${o.label}`}
                           className={cx(softButtonClass(), pill)}
@@ -161,6 +164,7 @@ export function OwedScreen() {
                       )}
                       <Link
                         to={`/owed/close/${o.id}`}
+                        search
                         data-track="owed.close"
                         aria-label={`Close out ${o.label}`}
                         className={cx(softButtonClass('outline'), pill)}
@@ -216,7 +220,7 @@ export function CloseSheet() {
   const q = useOwed();
   const navigate = useNavigate();
   const session = useSession();
-  const back = () => void navigate({ to: '/owed' });
+  const back = () => void navigate({ to: '/owed', search: true });
   const act = useMoneyMutation((v: { id: string; body: Parameters<typeof api.owedAction>[1] }) =>
     api.owedAction(v.id, v.body),
   );
