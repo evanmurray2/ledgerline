@@ -153,9 +153,7 @@ export function SignInScreen() {
   }
   return (
     <Frame title="Sign in">
-      <p className="m-0 text-base leading-relaxed text-ink-2">
-        Use the passkey on this device.
-      </p>
+      <p className="m-0 text-base leading-relaxed text-ink-2">Use the passkey on this device.</p>
       {!supported && <NoPasskeys />}
       {status.data && !status.data.hasPasskey && (
         <Problem text="Sign-in isn’t set up yet. Add a setup code, then reload this page." />
@@ -262,9 +260,7 @@ export function ReauthDialog() {
         <h2 id="reauth-title" className="m-0 text-2xl font-bold">
           Confirm it’s you
         </h2>
-        <p className="m-0 text-base leading-relaxed text-ink-2">
-          Use your passkey to continue.
-        </p>
+        <p className="m-0 text-base leading-relaxed text-ink-2">Use your passkey to continue.</p>
         <Problem text={err} />
         <PrimaryButton
           busy={busy}

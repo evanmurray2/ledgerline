@@ -158,9 +158,7 @@ function Preferences() {
               Decides which day and month a transaction falls in
             </span>
           </span>
-          <span className="shrink-0 whitespace-nowrap text-md text-ink-2">
-            {zoneName(s.budget.timeZone)}
-          </span>
+          <span className="shrink-0 whitespace-nowrap text-md text-ink-2">{zoneName(s.budget.timeZone)}</span>
         </div>
         <div className="flex min-h-14 items-center justify-between gap-3 border-t border-divider px-3 py-2">
           <span className="flex flex-col gap-px text-base font-semibold">

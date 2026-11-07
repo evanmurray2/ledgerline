@@ -312,7 +312,7 @@ activityViewRoutes.get('/activity', async (c) => {
       sameAs: sameAs ? { id: sameAs.id, name: sameAs.name } : null,
       history: ranked.length
         ? {
-            title: `You’ve used for ${sameAs?.name ?? t.payee}`,
+            title: `Past categories for ${sameAs?.name ?? t.payee}`,
             categories: ranked.map((u) => ({
               id: u.categoryId!,
               name: cats.get(u.categoryId!) ?? '',

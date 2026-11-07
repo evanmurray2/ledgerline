@@ -222,8 +222,8 @@ export function MatchScreen() {
           <div className="flex flex-col gap-1 text-xs leading-snug text-muted">
             <span>The matched money goes to Ready to Assign.</span>
             <Why>
-              What it pays back leaves Owed to you. Income also goes to Ready to Assign. Money you’ll send back
-              stays out until it leaves.
+              What it pays back leaves Owed to you. Income also goes to Ready to Assign. Money you’ll send
+              back stays out until it leaves.
               {rta !== undefined ? ` Ready to Assign has ${formatCents(rta)} now.` : ''}
             </Why>
           </div>

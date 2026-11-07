@@ -3,14 +3,7 @@ import { useState } from 'react';
 import type { BudgetView } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
 import { useAssignView, useMoneyMutation } from '../api/hooks';
-import {
-  Banner,
-  Card,
-  PrimaryButton,
-  SecondaryButton,
-  SoftButton,
-  SoftLink,
-} from '../components/ui';
+import { Banner, Card, PrimaryButton, SecondaryButton, SoftButton, SoftLink } from '../components/ui';
 import { formatCents } from '../lib/money';
 import { addMonths, compareMonths, monthLabel, monthName } from '../lib/dates';
 import { usage } from '../usage/tracker';
@@ -65,30 +58,30 @@ export function OverAssigned({ b, month }: { b: BudgetView; month: string }) {
       </Banner>
       {candidates.length > 0 && (
         <Card>
-        {candidates.map((c) => (
-          <div
-            key={c.id}
-            className="flex items-center gap-3 border-t border-divider px-3 py-2.5 first:border-t-0"
-          >
-            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="text-base font-semibold">{c.name}</span>
-              <span className="text-xs text-muted">
-                {formatCents(c.available)} · {c.detail}
-              </span>
-            </span>
-            <SoftButton
-              mutates
-              track="budget.over.take"
-              aria-label={`Take ${formatCents(need)} from ${c.name}`}
-              onClick={async () => {
-                await move.mutateAsync({ month, from: c.id, to: 'rta', amount: need });
-                setTook({ id: c.id, name: c.name, amount: need });
-              }}
+          {candidates.map((c) => (
+            <div
+              key={c.id}
+              className="flex items-center gap-3 border-t border-divider px-3 py-2.5 first:border-t-0"
             >
-              Take {formatCents(need)}
-            </SoftButton>
-          </div>
-        ))}
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="text-base font-semibold">{c.name}</span>
+                <span className="text-xs text-muted">
+                  {formatCents(c.available)} · {c.detail}
+                </span>
+              </span>
+              <SoftButton
+                mutates
+                track="budget.over.take"
+                aria-label={`Take ${formatCents(need)} from ${c.name}`}
+                onClick={async () => {
+                  await move.mutateAsync({ month, from: c.id, to: 'rta', amount: need });
+                  setTook({ id: c.id, name: c.name, amount: need });
+                }}
+              >
+                Take {formatCents(need)}
+              </SoftButton>
+            </div>
+          ))}
         </Card>
       )}
     </>
@@ -125,7 +118,9 @@ export function NewMonth({ b, month }: { b: BudgetView; month: string }) {
     <>
       <Card className="flex flex-col gap-2 p-3.5">
         <h2 className="m-0 text-xl font-bold">{monthName(month)} has started</h2>
-        <span className="text-sm text-muted">Every category keeps what it had left in {monthName(prev)}.</span>
+        <span className="text-sm text-muted">
+          Every category keeps what it had left in {monthName(prev)}.
+        </span>
         <div className="flex items-center justify-between border-t border-divider pt-2 text-md">
           <span className="font-semibold">Ready to Assign</span>
           <span className="tnum font-bold">{formatCents(b.rta)}</span>

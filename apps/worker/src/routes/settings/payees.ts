@@ -192,7 +192,12 @@ payeesRoutes.post('/settings/payees/merge/:undoId/undo', async (c) => {
   if (done!.results.length) return c.json({ ok: true });
   // The first release recorded no `before` (the JSON text 'null'): there is nothing to put back.
   const before = (b.before ? (JSON.parse(b.before) as MergeBefore | null) : null) ?? null;
-  if (!before?.names) throw new HttpError(409, 'payee_changed', 'This payee changed, so it can’t be undone. Pull down to refresh.');
+  if (!before?.names)
+    throw new HttpError(
+      409,
+      'payee_changed',
+      'This payee changed, so it can’t be undone. Pull down to refresh.',
+    );
   const ids = Object.keys(before.names);
   const now_ = await s.all<{ id: string; updated_at: number; merged_into: string | null }>(
     `SELECT id, updated_at, merged_into FROM payee WHERE budget_id = ?1 AND id IN (${places(ids.length, 2)})`,
@@ -216,7 +221,12 @@ payeesRoutes.post('/settings/payees/merge/:undoId/undo', async (c) => {
         p.updated_at === before.at &&
         (p.id === before.keep ? p.merged_into === null : p.merged_into === before.keep),
     );
-  if (!unchanged) throw new HttpError(409, 'payee_changed', 'This payee changed, so it can’t be undone. Pull down to refresh.');
+  if (!unchanged)
+    throw new HttpError(
+      409,
+      'payee_changed',
+      'This payee changed, so it can’t be undone. Pull down to refresh.',
+    );
   const w: Stmt[] = [];
   for (const [id, name] of Object.entries(before.names))
     w.push(

@@ -130,9 +130,7 @@ export function RenamePayeeSheet({ onClose, loading, name, rawNames, others, onS
           </Card>
         </div>
       )}
-      <p className="m-0 text-xs leading-snug text-muted">
-        Applies to past and future transactions.
-      </p>
+      <p className="m-0 text-xs leading-snug text-muted">Applies to past and future transactions.</p>
     </Sheet>
   );
 }

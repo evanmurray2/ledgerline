@@ -287,10 +287,7 @@ function withRta(json: unknown, r: { rta: number; rtaUpdating: boolean } | null)
 }
 
 /** A screen answered by the copy, parsed like a server answer. */
-function answer<S extends z.ZodType>(
-  schema: S,
-  r: { status: number; body: string },
-): z.infer<S> {
+function answer<S extends z.ZodType>(schema: S, r: { status: number; body: string }): z.infer<S> {
   const json = r.body ? (JSON.parse(r.body) as unknown) : null;
   if (r.status >= 300) {
     const parsed = ApiErrorBody.safeParse(json);
@@ -301,8 +298,7 @@ function answer<S extends z.ZodType>(
     );
   }
   const parsed = schema.safeParse(json);
-  if (!parsed.success)
-    throw new ApiError('bad_response', TRY_AGAIN, r.status);
+  if (!parsed.success) throw new ApiError('bad_response', TRY_AGAIN, r.status);
   return parsed.data;
 }
 

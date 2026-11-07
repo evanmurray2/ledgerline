@@ -71,7 +71,12 @@ describe('November through the API', () => {
     );
     // Freedom is short only by Dining out's credit overspending: covering Dining out funds it, so no Fund button.
     expect(b.attention.filter((a) => a.section === 'Card payments')).toMatchObject([
-      { name: 'Freedom Unlimited', fix: null, link: 'card', detail: 'Cover Dining out to cover this card' },
+      {
+        name: 'Freedom Unlimited',
+        fix: null,
+        link: 'card',
+        detail: 'Covering Dining out covers this card too',
+      },
     ]);
     expect(fixes).toEqual({
       'Dining out': 'Cover 1825',
@@ -243,7 +248,7 @@ describe('Overfunded wording', () => {
       .find((c) => c.id === cat)!;
     expect(row.available).toBe(5_000);
     expect(row.status).toBe('overfunded');
-    expect(row.detail).toBe('$50.00 extra assigned is unspent · this month’s $100.00');
+    expect(row.detail).toBe('$50.00 more than the target needs');
     expect(row.fix).toEqual({ verb: 'Move', amount: -5_000 });
     // Spend the rest: the extra paid for spending, so nothing is left over and it isn't overfunded.
     await post('/api/transactions', {

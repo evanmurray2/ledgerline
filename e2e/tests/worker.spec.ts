@@ -76,7 +76,9 @@ test('With no passkey copy, nothing is kept on the device: with no signal it say
   expect(await page.evaluate(() => window.localStorage.getItem('ledgerline-saved-data'))).toBeNull();
   await context.setOffline(true);
   await page.reload();
-  await expect(page.getByText('Connect to the internet and try again', { exact: false }).first()).toBeVisible();
+  await expect(
+    page.getByText('Connect to the internet and try again', { exact: false }).first(),
+  ).toBeVisible();
   await context.setOffline(false);
 });
 
@@ -204,7 +206,7 @@ test('Categories: rename a group, reorder by dragging, and remove a category', a
   await page.goto('/categories');
   const groups = page.locator('section').getByRole('heading', { level: 2 });
   // Card payments are made by the app and can't be edited, so only your groups show.
-  await expect(groups.filter({ hasText: 'Credit card payments' })).toHaveCount(0);
+  await expect(groups.filter({ hasText: 'Card payments' })).toHaveCount(0);
   await expect(groups.nth(0)).toHaveText('Bills');
   await expect(groups.nth(1)).toHaveText('Everyday');
   // Drag Bills below Everyday by its handle: no Edit mode.

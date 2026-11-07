@@ -319,7 +319,8 @@ const UNREADABLE =
 /** Opening with no signal: the passkey opens the copy on its own for up to 7 days after the last sign-in. */
 export async function openWithoutSignal(onSession?: (s: Session) => void): Promise<Session> {
   const rec = await lastRecord();
-  if (!rec) throw new Error('Your budget isn’t saved on this device yet. Connect to the internet to open it.');
+  if (!rec)
+    throw new Error('Your budget isn’t saved on this device yet. Connect to the internet to open it.');
   const a = await assert(
     {
       challenge: btoa(String.fromCharCode(...new Uint8Array(randomBytes(32))))
@@ -330,17 +331,19 @@ export async function openWithoutSignal(onSession?: (s: Session) => void): Promi
     },
     { salt: rec.salt, credentialId: rec.credentialIdHint ?? null },
   );
-  if (!a.prf) throw new Error('This passkey can’t open the budget saved here. Connect to the internet to open it.');
+  if (!a.prf)
+    throw new Error('This passkey can’t open the budget saved here. Connect to the internet to open it.');
   set({ status: 'opening', error: null, offline: true });
   try {
     const unreadable = (e: unknown): never => {
-      if (e instanceof CopyUnreadable)
-        throw new Error(UNREADABLE);
+      if (e instanceof CopyUnreadable) throw new Error(UNREADABLE);
       throw e;
     };
     dataKey = await openKeyOffline(rec, a.credentialId, a.prf).catch((e: Error) => {
       if (e.message === 'offline_expired')
-        throw new Error('You’ve been offline for more than 7 days. Connect to the internet to open Ledgerline.');
+        throw new Error(
+          'You’ve been offline for more than 7 days. Connect to the internet to open Ledgerline.',
+        );
       if (e.message === 'other_passkey') throw new Error('Use the passkey you set up this device with.');
       return unreadable(e);
     });
@@ -500,10 +503,13 @@ export async function editOffline(method: string, path: string, body: unknown): 
   const r = await host!.request(method, path, body);
   const json = r.body ? (JSON.parse(r.body) as unknown) : null;
   if (r.status >= 300)
-    throw Object.assign(new Error((json as { message?: string })?.message ?? 'Couldn’t save that. Try again.'), {
-      code: (json as { error?: string })?.error,
-      status: r.status,
-    });
+    throw Object.assign(
+      new Error((json as { message?: string })?.message ?? 'Couldn’t save that. Try again.'),
+      {
+        code: (json as { error?: string })?.error,
+        status: r.status,
+      },
+    );
   const st = await host!.state();
   const q = await queued();
   q.push({

@@ -101,7 +101,10 @@ budgetApi.use('*', async (c, next) => {
   const u = c.env.USAGE ? await c.env.USAGE() : await usageToday(c.env);
   const st = classifyUsage(u.written, u.read, u.do, u.workers);
   if (st === 'readonly' || st === 'rest')
-    return c.json({ error: 'readonly', message: 'View only until the daily limit resets. Nothing is lost.' }, 503);
+    return c.json(
+      { error: 'readonly', message: 'View only until the daily limit resets. Nothing is lost.' },
+      503,
+    );
   return next();
 });
 

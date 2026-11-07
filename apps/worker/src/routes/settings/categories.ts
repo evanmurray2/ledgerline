@@ -48,7 +48,7 @@ categoriesRoutes.get('/settings/categories', async (c) => {
         ? [
             {
               id: 'cards',
-              name: 'Credit card payments',
+              name: 'Card payments',
               isBills: false,
               system: true,
               categories: cardCats.map((x) => ({

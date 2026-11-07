@@ -39,7 +39,7 @@ describe('Stored alerts on Accounts', () => {
       ['history_changed', 'identity', 'possible_reissue', 'vanished_pending'].sort(),
     );
     expect(a.find((x) => x.kind === 'identity')!.text).toContain('$12.34');
-    expect(a.find((x) => x.kind === 'history_changed')!.text).toContain('2026-10');
+    expect(a.find((x) => x.kind === 'history_changed')!.text).toContain('October 2026');
   });
 
   it('Dismiss takes one off the list and keeps the row, marked as seen', async () => {

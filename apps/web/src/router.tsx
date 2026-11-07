@@ -83,10 +83,10 @@ function Root() {
       qc.removeQueries({ predicate: (q) => q.queryKey[0] !== qk.session[0] });
       void qc.resetQueries({ queryKey: qk.session });
     };
-    const onRefused = (e: Event) =>
-      toast.show({
-        text: `${(e as CustomEvent<number>).detail} change(s) made offline couldn’t be saved. Your budget shows what the server has.`,
-      });
+    const onRefused = (e: Event) => {
+      const n = (e as CustomEvent<number>).detail;
+      toast.show({ text: `${n === 1 ? '1 offline change' : `${n} offline changes`} couldn’t be saved.` });
+    };
     window.addEventListener('ledgerline:signin-ended', onEnded);
     window.addEventListener('ledgerline:edits-refused', onRefused);
     return () => {

@@ -30,7 +30,7 @@ describe('suggested categories', () => {
     const other = after.needsCategory.find((r) => r.key === amazon[1]!.key)!;
     expect(other.suggestion).toEqual({ categoryId: cat.id, toRta: false, name: cat.name, strong: false });
     expect(other.history).toEqual({
-      title: 'You’ve used for Amazon',
+      title: 'Past categories for Amazon',
       categories: [{ id: cat.id, name: cat.name, count: 1 }],
     });
     // Another payee has no suggestion.

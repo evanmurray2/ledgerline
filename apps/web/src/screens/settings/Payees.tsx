@@ -56,9 +56,7 @@ export function PayeesScreen() {
           ))}
         </Card>
       )}
-      <p className="m-0 text-xs leading-snug text-muted">
-        To join two payees, give one the other’s name.
-      </p>
+      <p className="m-0 text-xs leading-snug text-muted">To join two payees, give one the other’s name.</p>
       <Outlet />
     </Page>
   );

@@ -134,8 +134,7 @@ const ENTRY_SQL = `SELECT m.txn_key, m.amount, m.covers_provider_txn_id, m.accou
   FROM manual_pending m WHERE m.budget_id = ?1 AND m.deleted_at IS NULL AND m.matched_txn_key IS NULL
     AND m.kind IN ('pending', 'upcoming')`;
 
-const changed = () =>
-  new HttpError(409, 'changed', CHANGED);
+const changed = () => new HttpError(409, 'changed', CHANGED);
 
 /** Runs writes that move bank rows' keys behind the processing watermark, as processing does. */
 async function fenced(s: Scoped, stmts: Stmt[]): Promise<void> {
@@ -308,7 +307,11 @@ async function undoBankPair(s: Scoped, key: string, now: number): Promise<boolea
   const b = await bankPair(s, key);
   if (!b) return false;
   if (b.byProvider)
-    throw new HttpError(409, 'provider_link', 'Your bank paired these two itself, so they stay one purchase.');
+    throw new HttpError(
+      409,
+      'provider_link',
+      'Your bank paired these two itself, so they stay one purchase.',
+    );
   const own = `p:${b.postedId}`;
   const fresh = await planFresh(
     s,

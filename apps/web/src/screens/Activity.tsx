@@ -199,9 +199,7 @@ export function ActivityScreen() {
     const one = parts.length === 1 ? parts[0]! : null;
     const left = one ? after(one) : null;
     const warn =
-      one && left !== null && left < 0
-        ? ` · Overspent by ${formatCents(-left)}. Cover it on Budget.`
-        : '';
+      one && left !== null && left < 0 ? ` · Overspent by ${formatCents(-left)}. Cover it on Budget.` : '';
     const overAll = over.length
       ? ` · ${over.length} ${over.length === 1 ? 'category' : 'categories'} now overspent`
       : '';
@@ -266,7 +264,9 @@ export function ActivityScreen() {
         },
       });
     } catch (e) {
-      toast.show({ text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t join those payees. Try again.' });
+      toast.show({
+        text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t join those payees. Try again.',
+      });
     }
   };
 
@@ -389,11 +389,16 @@ export function ActivityScreen() {
           // Same look as every other section heading (small capitals).
           <SectionTitle>Needs attention</SectionTitle>
         )}
-        {v && filter === 'attention' && !q && v.attentionCount === 0 && openNeeds.length === 0 && !showNeeds && (
-          <p className="m-0 rounded-lg bg-funded-bg p-4 text-center text-base font-semibold text-funded-fg">
-            Nothing needs attention.
-          </p>
-        )}
+        {v &&
+          filter === 'attention' &&
+          !q &&
+          v.attentionCount === 0 &&
+          openNeeds.length === 0 &&
+          !showNeeds && (
+            <p className="m-0 rounded-lg bg-funded-bg p-4 text-center text-base font-semibold text-funded-fg">
+              Nothing needs attention.
+            </p>
+          )}
         {v && v.moneyToMatch.length > 0 && (
           <Section title="Money to match">
             {v.moneyToMatch.map((r) => (

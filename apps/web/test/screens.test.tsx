@@ -161,7 +161,7 @@ describe('Activity', () => {
       (await screen.findAllByRole('button', { name: /^Choose category for Amazon/ }, { timeout: 4000 }))[0]!,
     );
     const dialog = await screen.findByRole('dialog', { name: 'Choose a category' });
-    expect(within(dialog).getByText('You’ve used for Amazon')).toBeTruthy();
+    expect(within(dialog).getByText('Past categories for Amazon')).toBeTruthy();
     fireEvent.click(within(dialog).getAllByRole('button', { name: /^Household/ })[0]!);
     await waitFor(async () => expect(await categoryOf('n-amazon-s')).toBe('household'));
   });

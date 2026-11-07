@@ -31,5 +31,6 @@ export const OVERLAY_UPSERT = `INSERT INTO txn_overlay (txn_key, budget_id, crea
 
 /** Rows before the account's budget start are read-only (D-61): the budget never counts them, so nothing on them changes. */
 export function refuseHistory(t: TxRow): void {
-  if (isHistory(t)) throw new HttpError(409, 'history', 'This is from before your budget, so it can’t be changed.');
+  if (isHistory(t))
+    throw new HttpError(409, 'history', 'This is from before your budget, so it can’t be changed.');
 }

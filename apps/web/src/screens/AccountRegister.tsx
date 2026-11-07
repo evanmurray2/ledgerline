@@ -194,7 +194,9 @@ export function RegisterScreen() {
                       <span className="tnum font-bold">
                         {formatCents(shownBalance(v.start.total, a.kind === 'credit'))}
                       </span>
-                      <span className="text-xs text-muted">{v.start.settling ? 'may still change' : 'final'}</span>
+                      <span className="text-xs text-muted">
+                        {v.start.settling ? 'may still change' : 'final'}
+                      </span>
                     </span>
                     <Icon name="chevR" size={18} className="shrink-0 text-faint" />
                   </span>
@@ -223,9 +225,7 @@ export function RegisterScreen() {
               )}
               {v.note && <Banner tone="danger">{v.note}</Banner>}
               {a.kind !== 'credit' && (
-                <p className="m-0 text-xs leading-snug text-muted">
-                  Upcoming bills aren’t subtracted here.
-                </p>
+                <p className="m-0 text-xs leading-snug text-muted">Upcoming bills aren’t subtracted here.</p>
               )}
             </section>
             {v.days.length === 0 && (

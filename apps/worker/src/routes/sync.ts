@@ -188,7 +188,8 @@ syncRoutes.post('/settings/restore', async (c) => {
   const body = z
     .object({ before: z.string().datetime(), confirm: z.string() })
     .safeParse(await c.req.json().catch(() => null));
-  if (!body.success) return c.json({ error: 'invalid', message: 'Pick a time and type the budget’s name.' }, 400);
+  if (!body.success)
+    return c.json({ error: 'invalid', message: 'Pick a time and type the budget’s name.' }, 400);
   const b = await c.env.DB.prepare(`SELECT name FROM budget WHERE id = ?1`)
     .bind(c.get('budgetId'))
     .first<{ name: string }>();
@@ -198,7 +199,8 @@ syncRoutes.post('/settings/restore', async (c) => {
   const now = clock(c.env);
   if (!(at < now && at > now - 30 * 86_400_000))
     return c.json({ error: 'invalid', message: 'Pick a time in the last 30 days.' }, 422);
-  if (!c.env.RESTORE_TO) return c.json({ error: 'unavailable', message: 'Restoring isn’t available here.' }, 503);
+  if (!c.env.RESTORE_TO)
+    return c.json({ error: 'unavailable', message: 'Restoring isn’t available here.' }, 503);
   return c.json({ ok: true, ...(await c.env.RESTORE_TO(at)) });
 });
 

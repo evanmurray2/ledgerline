@@ -16,6 +16,7 @@ import {
   isMonth,
   localDate,
   localTime,
+  monthName,
   owedList,
   owedOut,
   statementCovered,
@@ -201,10 +202,10 @@ accountRoutes.get('/accounts', async (c) => {
   // Only once the GitHub monitor has checked in at least once: it is optional (decisions.md D-29).
   const monitorAge = hours('last_monitor_check_at');
   if (h.has('watchdog_ran_at') && monitorAge !== null && monitorAge > 24)
-    alerts.push({ kind: 'monitor', text: 'Monitoring stopped: no health check in the last 24 hours' });
+    alerts.push({ kind: 'monitor', text: 'Ledgerline hasn’t checked your banks in over a day.' });
   for (const cn of connRows)
     if (cn.status === 'ok' && cn.last_synced_at && now - cn.last_synced_at > 24 * 3_600_000)
-      alerts.push({ kind: 'sync', text: `${cn.institution_name} hasn’t synced in over a day` });
+      alerts.push({ kind: 'sync', text: `${cn.institution_name} hasn’t synced in over a day.` });
   for (const a of hist!.results as StoredAlert[]) alerts.push(storedAlert(a));
   const view: AccountsView = {
     netWorth: cents(netWorth),
@@ -247,32 +248,32 @@ export function storedAlert(a: StoredAlert): AccountsView['alerts'][number] {
       return {
         ...base,
         kind: 'history_changed',
-        text: `History changed in ${String(d.month)}: a posted transaction of ${formatCents(Number(d.amount))} was removed or re-issued`,
+        text: `A posted ${formatCents(Number(d.amount))} transaction in ${isMonth(String(d.month)) ? monthName(String(d.month) as Month, true) : 'a past month'} was removed or re-issued. Check for a double.`,
       };
     case 'ambiguous_match':
       return {
         ...base,
         kind: 'ambiguous_match',
         txnKey: a.ref_key,
-        text: 'A posted charge could match more than one pending row. Check that it took the right one.',
+        text: 'A posted charge matched one of several pending charges. Check that it’s the right one.',
       };
     case 'vanished_pending':
       return {
         ...base,
         kind: 'vanished_pending',
-        text: 'A pending charge left the bank 5 days ago and nothing posted for it. This is usually a released hold.',
+        text: 'A pending charge left the bank 5 days ago and nothing posted. It was likely a released hold.',
       };
     case 'possible_reissue':
       return {
         ...base,
         kind: 'possible_reissue',
-        text: 'The bank removed a posted transaction and added new ones. It may have re-issued it; check for a double.',
+        text: 'The bank removed a posted transaction and added new ones. Check for a double.',
       };
     default:
       return {
         ...base,
         kind: 'identity',
-        text: `Ready to Assign didn’t add up on a phone for ${String(d.month)} (off by ${formatCents(Math.abs(Number(d.difference)))}). Sync again; if it stays, tell the developer.`,
+        text: `Ready to Assign for ${isMonth(String(d.month)) ? monthName(String(d.month) as Month, true) : 'a past month'} was off by ${formatCents(Math.abs(Number(d.difference)))} on a device. Pull down to sync again.`,
       };
   }
 }
@@ -366,7 +367,7 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
     if (over.length) {
       const amt = over.reduce((a, [, v]) => a + (v.creditOverspent[id] ?? 0), 0);
       const names = over.map(([k]) => cats.get(k) ?? k).join(', ');
-      note = `${names} is ${formatCents(amt)} overspent on this card, so its payment category is ${formatCents(amt)} short. Cover ${names} on Budget to fix both.`;
+      note = `${names} is overspent by ${formatCents(amt)} on this card. Cover it on Budget to fix the card payment too.`;
     }
   }
   const start = await startSheet(s, rawAccount, recent.get(id) ?? null, now, f.budget.time_zone);

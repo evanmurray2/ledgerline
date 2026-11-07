@@ -134,22 +134,18 @@ export async function categoryRows(
     }));
     const tAmount = target && 'amount' in target ? target.amount : null;
     let detail: string;
-    if (status === 'overspent')
-      detail = credit.length ? 'overspent on a card · its payment is short' : 'overspent';
+    if (status === 'overspent') detail = credit.length ? 'overspent on a card' : 'overspent';
     else if (status === 'invested') detail = `${fmt(spent)} invested this month`;
     else if (status === 'no_target') detail = 'No target';
     else if (target?.type === 'by_date')
       detail =
         status === 'underfunded'
           ? `needs ${fmt(need)} this month · ${describeTarget(target, fmt).replace(/\.00\b/g, '')}`
-          : `this month’s share is in · ${describeTarget(target, fmt).replace(/\.00\b/g, '')}`;
+          : `this month is funded · ${describeTarget(target, fmt).replace(/\.00\b/g, '')}`;
     else if (status === 'overfunded' && tAmount !== null)
       // The same amount the Move fix offers. A Set aside target is overfunded by the extra assigned this month that is
       // still unspent (D-69), which can leave less than the target available.
-      detail =
-        target?.type === 'set_aside'
-          ? `${fmt(-fixAmount)} extra assigned is unspent · this month’s ${fmt(tAmount)}`
-          : `${fmt(-fixAmount)} more than this month’s ${fmt(tAmount)}`;
+      detail = `${fmt(-fixAmount)} more than the target needs`;
     else if (status === 'underfunded') detail = `needs ${fmt(need)} this month`;
     else if (tAmount !== null && target?.type !== 'no_date') {
       // Matches the bar, which shows what's left of the month's money (spent + available).
@@ -230,10 +226,10 @@ export async function budgetView(s: Scoped, f: Fresh, month: Month): Promise<Bud
     const covered = c.statement ? statementCovered(available, c.statement.balance) : true;
     const detail =
       cs.short > 0
-        ? `${fmt(cs.short)} of card spending not covered`
+        ? `needs ${fmt(cs.short)} more`
         : (c.statement
             ? `statement ${fmt(c.statement.balance)}${c.statement.due ? ` due ${shortDate(c.statement.due)}` : ''}`
-            : 'covered') + (c.uncategorized ? ` · ${fmt(c.uncategorized)} waits for a category` : '');
+            : 'covered') + (c.uncategorized ? ` · ${fmt(c.uncategorized)} needs a category` : '');
     return {
       accountId: c.accountId,
       categoryId: catByCard.get(c.accountId) ?? '',
@@ -362,8 +358,8 @@ export async function budgetView(s: Scoped, f: Fresh, month: Month): Promise<Bud
       amount: c.available,
       detail:
         fund > 0
-          ? `${fmt(c.short)} of card spending not covered`
-          : `Cover ${over.map((r) => r.row.name).join(', ')} to cover this card`,
+          ? `Needs ${fmt(c.short)} more`
+          : `Covering ${over.map((r) => r.row.name).join(', ')} covers this card too`,
       categoryId: c.categoryId,
       fix: fund > 0 ? { verb: 'Fund', amount: cents(fund) } : null,
       link: 'card',
@@ -378,7 +374,7 @@ export async function budgetView(s: Scoped, f: Fresh, month: Month): Promise<Bud
         key: `late:${o.id}`,
         name: it.payee || 'Owed to you',
         amount: o.stillOwed,
-        detail: `Late: expected back by ${shortDate(o.expectBy)}`,
+        detail: `Late · expected by ${shortDate(o.expectBy)}`,
         categoryId: null,
         fix: { verb: 'Review', amount: o.stillOwed },
         link: 'owed',
@@ -394,7 +390,7 @@ export async function budgetView(s: Scoped, f: Fresh, month: Month): Promise<Bud
         key: `front:${p.key}`,
         name: `${lbl} on ${shortDate(p.date)}`,
         amount: cents(-p.shortfall),
-        detail: `Fronts ${fmt(p.owed)}. Ready to Assign has ${fmt(f.budget.rta)}, so it would go ${fmt(f.budget.rta - p.owed)}.`,
+        detail: `${fmt(p.owed)} owed to you. Ready to Assign would go to ${fmt(f.budget.rta - p.owed)}.`,
         categoryId: null,
         fix: { verb: 'Review', amount: p.shortfall },
         link: 'owed',
@@ -403,7 +399,7 @@ export async function budgetView(s: Scoped, f: Fresh, month: Month): Promise<Bud
   }
   const problems = (conns!.results as { institution_name: string; status: string }[]).map(
     (c) =>
-      `${c.institution_name} ${c.status === 'login_required' ? 'needs you to sign in again' : 'sync failed'}`,
+      `${c.institution_name} ${c.status === 'login_required' ? 'needs you to sign in again' : 'didn’t finish syncing'}`,
   );
   const maxMonth = ((maxRow!.results[0] as { m: string | null } | undefined)?.m ?? f.current) as Month;
   return {

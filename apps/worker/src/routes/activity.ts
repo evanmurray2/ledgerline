@@ -105,9 +105,9 @@ activityRoutes.post('/match', async (c) => {
   const { rows } = await openItems(s, today);
   for (const i of r.items) {
     const o = rows.find((x) => x.id === i.itemId);
-    if (!o || (o.status !== 'open' && o.status !== 'late'))
-      throw new HttpError(404, 'not_found', GONE);
-    if (i.amount > o.stillOwed) throw new HttpError(422, 'too_much', 'That’s more than is still owed. Lower the amount.');
+    if (!o || (o.status !== 'open' && o.status !== 'late')) throw new HttpError(404, 'not_found', GONE);
+    if (i.amount > o.stillOwed)
+      throw new HttpError(422, 'too_much', 'That’s more than is still owed. Lower the amount.');
   }
   const w: Stmt[] = [s.q(OVERLAY_UPSERT, r.inflowKey, now)];
   for (const i of r.items) {
@@ -181,8 +181,7 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
   const now = clock(c.env);
   const out = await loadTx(s, key);
   refuseHistory(out);
-  if (out.transfer_state !== 'unsorted' || out.amount >= 0)
-    throw new HttpError(422, 'not_unclear', CHANGED);
+  if (out.transfer_state !== 'unsorted' || out.amount >= 0) throw new HttpError(422, 'not_unclear', CHANGED);
   const cands = await s.all<TxRow>(
     `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1 AND transfer_state = 'unsorted' AND amount = ?2 AND account_id != ?3
        AND abs(julianday(date) - julianday(?4)) <= 5`,

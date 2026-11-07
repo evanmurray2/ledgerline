@@ -351,8 +351,8 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
                 </div>
                 <span className="flex flex-col gap-1 text-xs leading-snug text-muted">
                   <span>
-                    {catName ?? 'The category'} pays only your share. The rest comes out of Ready to Assign until
-                    it’s paid back.
+                    {catName ?? 'The category'} pays only your share. The rest comes out of Ready to Assign
+                    until it’s paid back.
                   </span>
                   {(onCard || owed !== 'custom') && (
                     <Why>

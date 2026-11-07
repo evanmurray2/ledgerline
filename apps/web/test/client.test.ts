@@ -179,7 +179,9 @@ describe('error text', () => {
       'Something went wrong. Try again.',
     );
     expect(errorText(undefined, 'Couldn’t save that. Try again.')).toBe('Couldn’t save that. Try again.');
-    expect(errorText({ message: 42 }, 'Couldn’t save that. Try again.')).toBe('Couldn’t save that. Try again.');
+    expect(errorText({ message: 42 }, 'Couldn’t save that. Try again.')).toBe(
+      'Couldn’t save that. Try again.',
+    );
     expect(errorMessage(new ApiError('unauthenticated', 'Sign in with your passkey'))).toBe(
       'Sign in again with your passkey.',
     );

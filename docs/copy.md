@@ -26,22 +26,22 @@ Check a new text against it, and keep the terms below the same everywhere: code,
 
 ## Terms
 
-| Say                              | Not                                              |
-| -------------------------------- | ------------------------------------------------ |
-| bank link (the 10 Plaid links)   | login, bank login                                |
-| {Bank} needs you to sign in again | asked you to sign in, needs repair              |
-| Card payments (the group)        | Credit card payments                             |
-| Low (status and filter)          | Running low                                      |
-| Owed to you                      | fronted, not a category                          |
-| Waiting to match                 | held                                             |
-| Needs a category                 | Choose later, Don't set a category               |
-| Memo                             | Note (on a transaction)                          |
-| join (payees)                    | merge                                            |
-| Up to date                       | Already up to date                               |
-| passkey                          | Face ID (except on the Face ID button itself)    |
-| View only until {time} (daily limit for changes) | paused, turned off, database limit |
-| Paused until {time} (daily limit for loading)    | resting, reading is paused         |
-| You're offline                   | No signal, Network request failed                |
-| Something went wrong. Try again. | any other wording of it                          |
-| Couldn't save that. Try again.   | Couldn't save that.                              |
-| This changed. Pull down to refresh. | Pull to refresh, Your budget changed          |
+| Say                                              | Not                                           |
+| ------------------------------------------------ | --------------------------------------------- |
+| bank link (the 10 Plaid links)                   | login, bank login                             |
+| {Bank} needs you to sign in again                | asked you to sign in, needs repair            |
+| Card payments (the group)                        | Credit card payments                          |
+| Low (status and filter)                          | Running low                                   |
+| Owed to you                                      | fronted, not a category                       |
+| Waiting to match                                 | held                                          |
+| Needs a category                                 | Choose later, Don't set a category            |
+| Memo                                             | Note (on a transaction)                       |
+| join (payees)                                    | merge                                         |
+| Up to date                                       | Already up to date                            |
+| passkey                                          | Face ID (except on the Face ID button itself) |
+| View only until {time} (daily limit for changes) | paused, turned off, database limit            |
+| Paused until {time} (daily limit for loading)    | resting, reading is paused                    |
+| You're offline                                   | No signal, Network request failed             |
+| Something went wrong. Try again.                 | any other wording of it                       |
+| Couldn't save that. Try again.                   | Couldn't save that.                           |
+| This changed. Pull down to refresh.              | Pull to refresh, Your budget changed          |

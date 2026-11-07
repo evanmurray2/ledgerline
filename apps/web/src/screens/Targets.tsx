@@ -168,17 +168,11 @@ export function TargetScreen() {
         ];
       }
       case 'set_aside':
-        return [
-          `Needs ${f(target.amount)} every month`,
-          'Spending doesn’t change it.',
-        ];
+        return [`Needs ${f(target.amount)} every month`, 'Spending doesn’t change it.'];
       case 'by_date': {
         const n = monthsBetween(month, target.targetMonth);
         const per = Math.floor(Math.max(0, target.amount - c.available) / n);
-        return [
-          `Needs ${f(per)} a month`,
-          `${f(target.amount)} by ${monthLabel(target.targetMonth)}.`,
-        ];
+        return [`Needs ${f(per)} a month`, `${f(target.amount)} by ${monthLabel(target.targetMonth)}.`];
       }
       case 'no_date':
         return [
@@ -208,7 +202,13 @@ export function TargetScreen() {
           mutates
           track="target.save"
           disabled={!target}
-          why={!target ? (cents !== null && cents > 0 ? 'Choose a month to save' : 'Enter an amount to save') : ''}
+          why={
+            !target
+              ? cents !== null && cents > 0
+                ? 'Choose a month to save'
+                : 'Enter an amount to save'
+              : ''
+          }
           onClick={() => target && void submit(target)}
         >
           Save target

@@ -73,7 +73,7 @@ export function listRow(
     sub = 'held';
     sheet = 'match';
   } else if (t.transfer_state === 'unsorted') {
-    badge = 'Pick the other side';
+    badge = 'Pick the account';
     badgeKind = 'alert';
     sub = 'which one?';
     sheet = 'transfer';
@@ -116,7 +116,7 @@ export function listRow(
       badgeKind = 'alert';
       sub = `you estimated ${formatCents(Math.abs(Number(before)))}`;
     } else if (a.includes('cleared_despite_wont_clear')) {
-      badge = 'Cleared despite won’t clear';
+      badge = 'Cleared after all';
       badgeKind = 'alert';
     }
   }

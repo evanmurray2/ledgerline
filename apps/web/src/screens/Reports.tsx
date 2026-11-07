@@ -117,9 +117,7 @@ function Trend({ r }: { r: ReportsView }) {
           );
         })}
       </div>
-      {r.monthToDate && (
-        <span className="text-xs text-muted">{monthName(r.month)} isn’t over yet.</span>
-      )}
+      {r.monthToDate && <span className="text-xs text-muted">{monthName(r.month)} isn’t over yet.</span>}
     </Card>
   );
 }

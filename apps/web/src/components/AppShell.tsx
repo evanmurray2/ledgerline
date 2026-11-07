@@ -41,7 +41,13 @@ const TABS: { id: Tab; name: string; to: string; icon: IconName; what: [string, 
   { id: 'budget', name: 'Budget', to: '/budget', icon: 'budget', what: null },
   { id: 'activity', name: 'Activity', to: '/activity', icon: 'activity', what: ['to do', 'to do'] },
   { id: 'reports', name: 'Reports', to: '/reports', icon: 'reports', what: null },
-  { id: 'accounts', name: 'Accounts', to: '/accounts', icon: 'accounts', what: ['bank needs you', 'banks need you'] },
+  {
+    id: 'accounts',
+    name: 'Accounts',
+    to: '/accounts',
+    icon: 'accounts',
+    what: ['bank needs you', 'banks need you'],
+  },
 ];
 
 /** The app's month goes with the tab links to Budget, Activity and Reports (docs/month-header.md). */
@@ -210,9 +216,7 @@ function RestingBanner({ until }: { until: string }) {
       className="flex shrink-0 flex-col gap-1 border-b border-warn-border bg-warn-bg px-4 py-2 text-warn-fg"
     >
       <span className="text-md font-bold">Paused until {until}</span>
-      <span className="text-sm leading-snug">
-        Screens show what’s saved on this device. Nothing is lost.
-      </span>
+      <span className="text-sm leading-snug">Screens show what’s saved on this device. Nothing is lost.</span>
     </div>
   );
 }

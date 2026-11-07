@@ -53,7 +53,7 @@ export async function categorySheet(
     r.row.spent + r.row.available > 0 ? Math.round((r.row.spent * 100) / (r.row.spent + r.row.available)) : 0;
   const gone = Math.round(elapsedShare(month, f.today) * 100);
   let statusText = STATUS_WORD[r.row.status]!;
-  if (r.row.status === 'low') statusText += ` · ${spentPct}% spent, ${gone}% of month gone`;
+  if (r.row.status === 'low') statusText += ` · ${spentPct}% spent, ${gone}% of the month gone`;
   if (r.row.status === 'underfunded') statusText += ` · needs ${fmt(r.row.need)}`;
   if (r.row.status === 'overspent') statusText += ` · ${fmt(-r.row.available)} over`;
   const others = rows.filter((x) => x.row.id !== id && !x.info.archived_at);
@@ -64,7 +64,7 @@ export async function categorySheet(
         id: x.row.id,
         label:
           x.row.status === 'overspent'
-            ? `${x.row.name} (${fmt(x.row.available)}, overspent)`
+            ? `${x.row.name} (overspent by ${fmt(-x.row.available)})`
             : `${x.row.name} (needs ${fmt(x.row.need)})`,
       })),
     { id: 'rta' as const, label: 'Ready to Assign' },
@@ -74,14 +74,14 @@ export async function categorySheet(
   ];
   const help =
     target?.type === 'refill'
-      ? 'Leftover rolls over and lowers next month’s need'
+      ? 'What’s left lowers next month’s need.'
       : target?.type === 'by_date'
-        ? `Funded by the start of ${monthLong(target.targetMonth)}`
+        ? `Fully funded by the start of ${monthLong(target.targetMonth)}.`
         : target?.type === 'set_aside'
-          ? 'Assign the same amount every month'
+          ? 'Assign the same amount every month.'
           : target?.type === 'no_date'
-            ? 'No date; contribute monthly if you like'
-            : 'Add a target to see what this category needs';
+            ? 'No date. Add a monthly amount if you like.'
+            : 'Add a target to see what this category needs.';
   const accts = await accountNames(s);
   return {
     id,
@@ -144,7 +144,7 @@ export async function assignView(s: Scoped, f: Fresh, month: Month): Promise<Ass
         categoryId: cat.id,
         name: `${c.name} payment`,
         reason: 'card',
-        detail: `Card debt not yet budgeted`,
+        detail: 'Card spending not covered yet',
         amount: cents(short),
         preselected: true,
       });

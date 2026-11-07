@@ -271,13 +271,7 @@ export function AllGroups({ b, month }: { b: BudgetView; month: string }) {
         </Group>
       )}
       {!empty && (
-        <Group
-          id="owed"
-          name="Owed to you"
-          total=""
-          collapsed={!!collapsed.owed}
-          toggle={toggle}
-        >
+        <Group id="owed" name="Owed to you" total="" collapsed={!!collapsed.owed} toggle={toggle}>
           <OwedRowPhone b={b} />
         </Group>
       )}
