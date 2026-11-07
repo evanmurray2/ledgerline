@@ -629,6 +629,28 @@ test('Desktop: Budget header pills for Edit categories and Set targets, like Syn
   }
 });
 
+test('Phone: Add floats at the bottom right, above the tabs; Select hides it', async ({ page }, info) => {
+  test.skip(info.project.name !== 'phone', 'on a computer Add is a header pill');
+  await page.goto('/activity');
+  const add = page.getByRole('link', { name: 'Add transaction' });
+  await expect(add).toBeVisible();
+  // In thumb reach: just above the tab bar, at the right edge.
+  const box = (await add.boundingBox())!;
+  const tabs = (await page
+    .getByRole('link', { name: /^Budget/ })
+    .last()
+    .boundingBox())!;
+  expect(box.y + box.height).toBeLessThanOrEqual(tabs.y);
+  expect(box.y + box.height).toBeGreaterThan(tabs.y - 40);
+  expect(box.x + box.width).toBeGreaterThan(390 - 30);
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await expect(add).toHaveCount(0);
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await add.click();
+  await expect(page.getByRole('dialog', { name: 'Add a transaction' })).toBeVisible();
+  await expect(page).toHaveURL(/\/activity\/add/);
+});
+
 test('Add a transaction: a future date shows Repeats, today hides it', async ({ page }) => {
   await page.goto('/activity/add');
   const add = page.getByRole('dialog', { name: 'Add a transaction' });

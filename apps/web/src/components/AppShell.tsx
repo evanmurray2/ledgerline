@@ -298,7 +298,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           data-track="app.note"
           aria-label="Write a note about this screen"
           onClick={() => setNoteOpen(true)}
-          className="fixed bottom-[calc(150px+env(safe-area-inset-bottom,0px))] right-4 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface text-ink-2 shadow-raised"
+          className="fixed bottom-[calc(164px+env(safe-area-inset-bottom,0px))] right-4 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface text-ink-2 shadow-raised"
         >
           <Icon name="note" size={18} />
         </button>
