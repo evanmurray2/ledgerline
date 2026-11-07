@@ -1,6 +1,6 @@
 // One transaction as a list row (Activity, registers, category sheet).
 import type { TxnListRow } from '@ledgerline/contracts';
-import { cents, formatCents } from '@ledgerline/domain';
+import { cents, formatCents, type OwedStatus } from '@ledgerline/domain';
 import type { TxRow } from '../ledger/ledger.js';
 
 export type ListSource = TxRow;
@@ -47,7 +47,7 @@ export function listRow(
   accountNames: ReadonlyMap<string, string>,
   categoryNames: ReadonlyMap<string, string>,
   extra: {
-    owed?: { amount: number; label: string } | null;
+    owed?: { still: number; status: OwedStatus } | null;
     paidBack?: boolean;
     stale?: boolean;
     split?: boolean;
@@ -94,9 +94,17 @@ export function listRow(
     badge = 'Paid back';
     badgeKind = 'match';
   } else if (extra.owed) {
-    badge = `Owed to you · ${extra.owed.label}`;
-    badgeKind = 'owed';
-    sub = `${formatCents(extra.owed.amount)} owed to you`;
+    // Just what is still owed ("$25 owed"); "Paid" once money back covers it.
+    if (extra.owed.status === 'paid_back') {
+      badge = 'Paid';
+      badgeKind = 'match';
+    } else if (extra.owed.status === 'closed') {
+      badge = 'Closed out';
+      badgeKind = 'hold';
+    } else {
+      badge = `${formatCents(extra.owed.still)} owed`;
+      badgeKind = 'owed';
+    }
   } else if (t.transfer_state === 'paired') {
     badge = 'Transfer';
     badgeKind = 'rule';
