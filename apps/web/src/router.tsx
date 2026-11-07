@@ -21,6 +21,7 @@ import { connectivity } from './state/connectivity';
 import { usage } from './usage/tracker';
 import { BudgetScreen } from './screens/Budget';
 import { AssignSheetScreen, CategorySheetScreen } from './screens/BudgetSheets';
+import { CardPaymentSheetScreen } from './screens/CardPaymentSheet';
 import { TargetScreen, TargetsScreen } from './screens/Targets';
 import { CloseSheet, OwedScreen } from './screens/Owed';
 import { ActivityScreen } from './screens/Activity';
@@ -379,7 +380,7 @@ const registerCheckRoute = createRoute({
 const registerCategoryRoute = createRoute({
   getParentRoute: () => registerRoute,
   path: 'category/$categoryId',
-  component: CategorySheetScreen,
+  component: CardPaymentSheetScreen,
 });
 
 // ------------------------------------------------------------------ reports
