@@ -248,6 +248,13 @@ describe('Accounts and Reports', () => {
     // The payment category opens its sheet over this page, and closing it comes back here.
     fireEvent.click(screen.getByRole('link', { name: /^Payment category/ }));
     const sheet = await screen.findByRole('dialog', undefined, { timeout: 4000 });
+    // A card's payment category has its own sheet, not the category sheet (which answered "changed or removed").
+    expect(
+      await within(sheet).findByTestId('card-payment-available', undefined, { timeout: 4000 }),
+    ).toBeTruthy();
+    expect(within(sheet).queryByRole('alert')).toBeNull();
+    expect(within(sheet).getByText('Covered')).toBeTruthy();
+    expect(within(sheet).getByText('$842.17')).toBeTruthy();
     fireEvent.click(await within(sheet).findByRole('button', { name: 'Close' }, { timeout: 4000 }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(screen.getByText('You owe the bank')).toBeTruthy();
