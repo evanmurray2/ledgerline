@@ -40,7 +40,7 @@ test('Needs attention fixes move money and Ready to Assign reads $643.65', async
   }
   // Low has its own filter.
   await expect(page.getByRole('button', { name: 'Add $20.00 for Personal care' })).toHaveCount(0);
-  await page.getByRole('button', { name: /^Running low \d/ }).click();
+  await page.getByRole('button', { name: /^Low \d/ }).click();
   await page.getByRole('button', { name: 'Add $20.00 for Personal care' }).click();
   await expect(rta(page)).toHaveText('$643.65');
   await expect(page.getByText('Done just now')).toBeVisible();
@@ -239,12 +239,12 @@ test('Resting at 95%: a banner, and nothing but the session is asked for', async
     if (u.pathname.startsWith('/api/')) asked.push(u.pathname);
   });
   await page.goto('/budget?mock=resting');
-  await expect(page.getByTestId('resting-banner')).toContainText('Resting until 4:00 PM');
-  await expect(page.getByRole('alert')).toContainText('daily limit resets');
+  await expect(page.getByTestId('resting-banner')).toContainText('Paused until 4:00 PM');
+  await expect(page.getByRole('alert')).toContainText('Paused until');
   // After the first resting answer, moving around asks the server for nothing.
   const before = asked.filter((p) => p !== '/api/session').length;
   await page.getByRole('link', { name: 'Activity' }).first().click();
-  await expect(page.getByRole('alert')).toContainText('daily limit resets');
+  await expect(page.getByRole('alert')).toContainText('Paused until');
   expect(asked.filter((p) => p !== '/api/session')).toHaveLength(before);
 });
 
@@ -282,13 +282,13 @@ test('Match money back returns it to Ready to Assign', async ({ page }) => {
   await page.goto('/activity/match/n-venmo');
   await page.getByRole('button', { name: 'Match $1,018.00' }).click();
   await expect(
-    page.getByText('Matched $1,018.00. 2 items are paid back, and Ready to Assign is now $1,999.90.'),
+    page.getByText('Matched $1,018.00. 2 items are paid back. Ready to Assign is now $1,999.90.'),
   ).toBeVisible();
 });
 
 test('A card credit can pay back what is owed to you', async ({ page }) => {
   await page.goto('/activity/txn/n-points');
-  await page.getByRole('link', { name: /money back for something you fronted/ }).click();
+  await page.getByRole('link', { name: /Money back for something owed to you/ }).click();
   await expect(page).toHaveURL(/\/activity\/match\/n-points$/);
   await expect(page.getByRole('button', { name: 'Match $24.10' })).toBeVisible();
 });
@@ -296,9 +296,8 @@ test('A card credit can pay back what is owed to you', async ({ page }) => {
 test('Budget lists your groups first, then card payments, then Owed to you', async ({ page }) => {
   await page.goto('/budget');
   const y = async (text: string) => (await page.getByText(text, { exact: true }).first().boundingBox())!.y;
-  await expect(page.getByText('Credit card payments', { exact: true }).first()).toBeVisible();
-  const owed = test.info().project.name === 'desktop' ? 'Owed to you · not a category' : 'Owed to you';
-  const [bills, cards, owedY] = [await y('Bills'), await y('Credit card payments'), await y(owed)];
+  await expect(page.getByText('Card payments', { exact: true }).first()).toBeVisible();
+  const [bills, cards, owedY] = [await y('Bills'), await y('Card payments'), await y('Owed to you')];
   expect(bills).toBeLessThan(cards);
   expect(cards).toBeLessThan(owedY);
 });
@@ -362,7 +361,7 @@ test('Assign: Clear all and Select all', async ({ page }) => {
   const sheet = page.getByRole('dialog', { name: 'Assign money' });
   await sheet.getByRole('button', { name: 'Clear all' }).click();
   await expect(sheet.getByRole('checkbox', { checked: true })).toHaveCount(0);
-  await expect(sheet.getByRole('button', { name: 'Nothing selected' })).toBeDisabled();
+  await expect(sheet.getByRole('button', { name: 'Assign', exact: true })).toBeDisabled();
   await sheet.getByRole('button', { name: 'Select all' }).click();
   await expect(sheet.getByRole('checkbox', { checked: false })).toHaveCount(0);
 });

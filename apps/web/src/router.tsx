@@ -28,7 +28,7 @@ import { RenamePayeeFromTxn, SplitScreen, TxnSheetScreen } from './screens/TxnSh
 import { AddTxnScreen, CheckPendingScreen, MatchScreen, TransferScreen } from './screens/ActivitySheets';
 import { AccountsScreen, RegisterScreen, RepairScreen } from './screens/Accounts';
 import { AddDeviceScreen, ReauthDialog, SignInScreen } from './screens/Auth';
-import { ApiError, errorMessage } from './api/client';
+import { ApiError } from './api/client';
 import { checkSaved, getCopy, onCopyChanged, start as startCopy, syncNow, flush, useCopy } from './copy/copy';
 import { CopyScreen } from './screens/Copy';
 import { toast } from './components/Toast';
@@ -150,17 +150,8 @@ function Root() {
     if (session.error)
       return (
         <div className="p-4">
-          {/* Cloudflare's daily limit ran out (decisions.md D-37): the reset time in the reader's own time zone. */}
-          <ErrorNote
-            error={
-              session.error instanceof ApiError &&
-              (session.error.code === 'daily_limit' ||
-                session.error.code === 'resting' ||
-                session.error.network)
-                ? new Error(errorMessage(session.error))
-                : session.error
-            }
-          />
+          {/* Cloudflare's daily limit ran out (decisions.md D-37), or no signal: errorMessage() says which. */}
+          <ErrorNote error={session.error} />
         </div>
       );
     return <Loading />;

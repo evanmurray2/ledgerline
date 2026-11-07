@@ -113,7 +113,7 @@ export function MonthBar({
         data-track="month.today"
         data-testid="month-label"
         aria-disabled={!away || undefined}
-        aria-label={away ? `${monthLabel(month)}, ${back.toLowerCase()}` : monthLabel(month)}
+        aria-label={away ? `${monthLabel(month)}. ${back}` : monthLabel(month)}
         onClick={() => away && onGo(current)}
         className={cx(
           'relative flex shrink-0 flex-col items-center justify-center font-bold text-ink',

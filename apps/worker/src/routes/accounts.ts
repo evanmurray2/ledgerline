@@ -21,7 +21,7 @@ import {
   statementCovered,
 } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
-import { HttpError, parse, scoped } from './api.js';
+import { HttpError, parse, scoped, GONE, BAD_MONTH } from './api.js';
 import { cards as loadCards, fresh, monthResult, shortDate, structure } from '../views/common.js';
 import { hiddenFromLists, listRow } from '../views/rows.js';
 import { TX_COLUMNS, uncovered, type TxRow } from '../ledger/ledger.js';
@@ -283,7 +283,7 @@ accountRoutes.post('/alerts/:id/dismiss', async (c) => {
   const now = clock(c.env);
   const id = c.req.param('id');
   const a = await s.first<{ id: string }>(`SELECT id FROM alert WHERE budget_id = ?1 AND id = ?2`, id);
-  if (!a) throw new HttpError(404, 'not_found', 'alert');
+  if (!a) throw new HttpError(404, 'not_found', GONE);
   await s.batch([
     s.q(`UPDATE alert SET acked_at = ?3 WHERE budget_id = ?1 AND id = ?2 AND acked_at IS NULL`, id, now),
     s.audit('alert.dismiss', 'alert', id, null, null, now),
@@ -298,7 +298,7 @@ accountRoutes.post('/accounts/:id/name', async (c) => {
   const now = clock(c.env);
   const id = c.req.param('id');
   const a = await s.first<{ name: string }>(`SELECT name FROM account WHERE budget_id = ?1 AND id = ?2`, id);
-  if (!a) throw new HttpError(404, 'not_found', 'account');
+  if (!a) throw new HttpError(404, 'not_found', GONE);
   await s.batch([
     s.q(`UPDATE account SET name = ?3, updated_at = ?4 WHERE budget_id = ?1 AND id = ?2`, id, r.name, now),
     s.q(
@@ -321,7 +321,7 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
   const { rows, raw, recent } = await accountRows(s, f.today, f.budget.time_zone, now);
   const account = rows.find((r) => r.id === id);
   const rawAccount = raw.find((r) => r.id === id);
-  if (!account || !rawAccount) throw new HttpError(404, 'not_found', 'account');
+  if (!account || !rawAccount) throw new HttpError(404, 'not_found', GONE);
   const { categories } = await structure(s);
   const cats = new Map(categories.map((x) => [x.id, x.name]));
   const accts = new Map(rows.map((r) => [r.id, r.name]));
@@ -378,7 +378,7 @@ accountRoutes.get('/reports', async (c) => {
   const now = clock(c.env);
   const f = await fresh(s, now);
   const m = (c.req.query('month') ?? f.current) as Month;
-  if (!isMonth(m)) throw new HttpError(400, 'invalid', 'month');
+  if (!isMonth(m)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const start = (f.budget.budget_start_month ?? f.current) as Month;
   const { categories } = await structure(s);
   const kinds = new Map(categories.map((x) => [x.id, x]));

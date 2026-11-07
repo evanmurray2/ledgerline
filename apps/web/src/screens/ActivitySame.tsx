@@ -2,6 +2,7 @@
 // as your entry (or as another bank row), with Yes and No for each candidate. Until you answer, both rows count.
 import type { ActivityView, TxnListRow } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
+import { ApiError, errorMessage } from '../api/client';
 import { useMoneyMutation } from '../api/hooks';
 import { toast } from '../components/Toast';
 import { SectionTitle, SoftButton } from '../components/ui';
@@ -19,7 +20,7 @@ export function SamePurchase({ cards }: { cards: Card[] }) {
       await answer.mutateAsync({ id: card.id, answer: yes ? 'yes' : 'no', key: c.key });
       toast.show({ text: yes ? 'Paired as one purchase' : 'Kept as two purchases' });
     } catch (e) {
-      toast.show({ text: e instanceof Error ? e.message : 'Couldn’t save that.' });
+      toast.show({ text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t save that. Try again.' });
     }
   };
   return (

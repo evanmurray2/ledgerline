@@ -58,7 +58,7 @@ export async function assert(
   // A passkey without user verification gives a different PRF output (CTAP hmac-secret), so require the UV flag.
   const flags = new Uint8Array(r.authenticatorData)[32] ?? 0;
   if ((flags & 0x04) === 0)
-    throw Object.assign(new Error('Face ID or your passcode is needed'), { name: 'NotAllowedError' });
+    throw Object.assign(new Error('Use your passkey to continue.'), { name: 'NotAllowedError' });
   const ext = cred.getClientExtensionResults() as { prf?: { results?: { first?: ArrayBuffer } } };
   const credentialId = toB64url(cred.rawId);
   return {

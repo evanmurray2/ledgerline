@@ -4,6 +4,7 @@ import { Link, Outlet, useNavigate, useParams, useSearch } from '@tanstack/react
 import { useQueryClient } from '@tanstack/react-query';
 import { type CategoriesView } from '@ledgerline/contracts';
 import { api } from '../../api/endpoints';
+import { errorMessage } from '../../api/client';
 import { qk, useCategoriesSettings, useMoneyMutation } from '../../api/hooks';
 import { Sheet, SheetTitle } from '../../components/Sheet';
 import { moved, useReorder } from '../../components/reorder';
@@ -52,7 +53,7 @@ export function CategoriesScreen() {
   };
   const fail = (e: unknown) => {
     refresh();
-    toast.show({ text: e instanceof Error ? e.message : 'Couldn’t save that. Try again.' });
+    toast.show({ text: errorMessage(e) });
   };
   const mine = (v?.groups ?? []).filter((g) => !g.system);
   /** Shows a new order at once; the save follows, and a failure reloads the list as it was. */
@@ -80,7 +81,7 @@ export function CategoriesScreen() {
     try {
       await archive.mutateAsync({ id, archived });
     } catch (e) {
-      toast.show({ text: e instanceof Error ? e.message : 'Couldn’t save that.' });
+      toast.show({ text: errorMessage(e) });
       return;
     }
     toast.show({
@@ -331,7 +332,7 @@ export function CategoryEditSheet() {
       if (r.outcome === 'deleted') toast.show({ text: `${existing.name} deleted` });
       else
         toast.show({
-          text: `${existing.name} archived: it has history, so reports keep it`,
+          text: `${existing.name} archived. Reports keep its history.`,
           undo: async () => {
             await api.archiveCategory(existing.id, false);
             usage.undo('archive');
@@ -406,7 +407,7 @@ export function CategoryEditSheet() {
         {isGroup ? (
           <Toggle
             label="Bills group"
-            help="Bills are never shown as Low"
+            help="Its categories never show as Low"
             checked={bills}
             onChange={setIsBills}
           />
@@ -434,8 +435,8 @@ export function CategoryEditSheet() {
               />
               <span className="text-xs leading-snug text-muted">
                 {k === 'saving'
-                  ? 'Use for money leaving your budget to grow somewhere else, like a brokerage or an IRA. Shown as Invested, not Spent.'
-                  : 'Most categories. Sinking funds like Vacation or Car insurance are Spending too: the money is spent when you use it.'}
+                  ? 'For money you move out to grow, like a brokerage or an IRA. Reports show it as Invested.'
+                  : 'Most categories. Money you save to spend later, like Vacation, is Spending too.'}
               </span>
             </div>
             {!isNew && existing && (
@@ -468,7 +469,7 @@ export function CategoryEditSheet() {
               onCancel={() => setAskingGroup(false)}
               className="mt-3"
             >
-              Remove the group {editingGroup.name}? It has no categories, so nothing else changes.
+              Remove the group {editingGroup.name}?
             </ConfirmInline>
           ) : (
             <DangerLink track="categories.remove_group" onClick={() => setAskingGroup(true)} className="mt-3">
@@ -490,7 +491,7 @@ export function CategoryEditSheet() {
               {existing.available > 0
                 ? ` Its ${formatCents(existing.available)} goes back to Ready to Assign.`
                 : ''}{' '}
-              If it has history it’s archived, so past transactions and reports keep it.
+              If it has history, it’s archived and reports keep it.
             </ConfirmInline>
           ) : (
             <DangerLink track="category_edit.remove" onClick={() => setAsking(true)} className="mt-3">

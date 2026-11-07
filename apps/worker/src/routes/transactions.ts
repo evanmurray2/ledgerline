@@ -21,7 +21,7 @@ import {
 } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
-import { HttpError, parse, scoped } from './api.js';
+import { HttpError, parse, scoped, GONE } from './api.js';
 import { editTime, liveKey } from './sync.js';
 import { shortDate } from '../views/common.js';
 import { categoryLabel, isHistory } from '../views/rows.js';
@@ -210,7 +210,7 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
         `SELECT id FROM category WHERE budget_id = ?1 AND id = ?2 AND kind != 'cc_payment'`,
         p.categoryId,
       );
-      if (!ok) throw new HttpError(404, 'not_found', 'category');
+      if (!ok) throw new HttpError(404, 'not_found', GONE);
     }
     set('category_id', p.categoryId ?? null);
     set('to_rta', p.toRta ? 1 : 0);
@@ -225,7 +225,7 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
     if (p.split) {
       const total = p.split.reduce((a, l) => a + l.amount, 0);
       if (total !== t.amount)
-        throw new HttpError(422, 'split_total', `Split lines must add up to ${formatCents(t.amount)}`);
+        throw new HttpError(422, 'split_total', `The lines must add up to ${formatCents(t.amount)}.`);
       p.split.forEach((l, i) =>
         w.push(
           s.q(
@@ -249,14 +249,14 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
   if (p.memo !== undefined) set('memo', p.memo);
   if (p.estimatedAmount !== undefined) {
     if (t.status !== 'pending' || t.source !== 'bank')
-      throw new HttpError(422, 'not_pending', 'Only a bank pending amount can be estimated');
+      throw new HttpError(422, 'not_pending', 'Only a pending bank charge can have an estimate.');
     set('estimated_amount', p.estimatedAmount);
     edits.estimated_amount = editAt;
   }
   if (p.amount !== undefined) {
     if (t.source !== 'manual')
-      throw new HttpError(422, 'not_manual', 'Only a transaction you added can change its amount');
-    if (p.amount === 0) throw new HttpError(422, 'zero_amount', 'Enter an amount');
+      throw new HttpError(422, 'not_manual', 'You can change the amount only on a transaction you added.');
+    if (p.amount === 0) throw new HttpError(422, 'zero_amount', 'Enter an amount.');
     w.push(
       s.q(
         `UPDATE manual_pending SET amount = ?3, updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
@@ -272,7 +272,7 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
   if (p.wontClear !== undefined) {
     // Only something not posted yet can fail to clear: a posted charge always counts.
     if (p.wontClear && t.status === 'posted')
-      throw new HttpError(422, 'posted', 'This has posted, so it counts; it can’t be marked won’t clear');
+      throw new HttpError(422, 'posted', 'This has posted, so it can’t be marked won’t clear.');
     set('wont_clear', p.wontClear ? 1 : 0);
   }
   if (p.budgetMonth !== undefined) set('budget_month', p.budgetMonth);
@@ -309,7 +309,7 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
         ),
       );
     } else {
-      if (t.amount >= 0) throw new HttpError(422, 'not_outflow', 'Only money going out can be owed to you');
+      if (t.amount >= 0) throw new HttpError(422, 'not_outflow', 'Only money going out can be owed to you.');
       const x = cents(-t.amount);
       const m = p.markOwed;
       const [num, den] =
@@ -323,7 +323,7 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
                 ? [m.num ?? 1, m.den ?? 2]
                 : [null, null];
       const amount = num !== null && den ? fractionOf(x, num, den) : cents(Math.min(m.amount ?? 0, x));
-      if (amount <= 0) throw new HttpError(422, 'invalid', 'Owed amount must be more than zero');
+      if (amount <= 0) throw new HttpError(422, 'invalid', 'Enter how much is owed to you.');
       w.push(
         s.q(
           `INSERT INTO expected_reimbursement (id, budget_id, txn_key, amount, fraction_num, fraction_den, expect_by, created_at, updated_at)
@@ -363,7 +363,7 @@ transactionRoutes.post('/transactions/categorize', async (c) => {
       `SELECT id FROM category WHERE budget_id = ?1 AND id = ?2 AND kind != 'cc_payment' AND archived_at IS NULL`,
       r.categoryId,
     );
-    if (!ok) throw new HttpError(404, 'not_found', 'category');
+    if (!ok) throw new HttpError(404, 'not_found', GONE);
   }
   if (r.toRta) {
     // Only money in can go to Ready to Assign.
@@ -374,7 +374,7 @@ transactionRoutes.post('/transactions/categorize', async (c) => {
          UNION ALL SELECT 1 FROM manual_pending WHERE budget_id = ?1 AND txn_key IN (${ph}) AND amount < 0 LIMIT 1`,
         ...k,
       );
-      if (out) throw new HttpError(422, 'not_inflow', 'Only money coming in can go to Ready to Assign');
+      if (out) throw new HttpError(422, 'not_inflow', 'Only money coming in can go to Ready to Assign.');
     }
   }
   for (const ids of chunks(r.keys)) {
@@ -410,13 +410,13 @@ transactionRoutes.post('/transactions', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
   const acct = await s.first(`SELECT id FROM account WHERE budget_id = ?1 AND id = ?2`, r.accountId);
-  if (!acct) throw new HttpError(404, 'not_found', 'account');
+  if (!acct) throw new HttpError(404, 'not_found', GONE);
   if (r.categoryId) {
     const ok = await s.first(
       `SELECT id FROM category WHERE budget_id = ?1 AND id = ?2 AND kind != 'cc_payment'`,
       r.categoryId,
     );
-    if (!ok) throw new HttpError(404, 'not_found', 'category');
+    if (!ok) throw new HttpError(404, 'not_found', GONE);
   }
   // Only money in can go to Ready to Assign.
   const toRta = r.toRta === true && r.amount > 0;
@@ -456,7 +456,7 @@ transactionRoutes.post('/transactions/:key/pending', async (c) => {
     `SELECT date FROM manual_pending WHERE budget_id = ?1 AND txn_key = ?2 AND deleted_at IS NULL`,
     key,
   );
-  if (!m) throw new HttpError(404, 'not_found', 'expected transaction');
+  if (!m) throw new HttpError(404, 'not_found', GONE);
   const b = await s.first<{ time_zone: string }>(`SELECT time_zone FROM budget WHERE id = ?1`);
   const today = localDate(now, b?.time_zone ?? 'America/Los_Angeles');
   const w =
@@ -489,7 +489,7 @@ transactionRoutes.delete('/transactions/:key', async (c) => {
     key,
   );
   if (!m)
-    throw new HttpError(422, 'bank_row', 'Bank transactions can’t be deleted; mark them won’t clear instead');
+    throw new HttpError(422, 'bank_row', 'Bank transactions can’t be deleted. Mark it won’t clear instead.');
   return c.json(
     await commit(c, [
       s.q(
@@ -507,7 +507,7 @@ transactionRoutes.post('/transactions/:key/review', async (c) => {
   const key = c.req.param('key');
   const now = clock(c.env);
   const o = await s.first(`SELECT 1 FROM txn_overlay WHERE budget_id = ?1 AND txn_key = ?2`, key);
-  if (!o) throw new HttpError(404, 'not_found', 'transaction');
+  if (!o) throw new HttpError(404, 'not_found', GONE);
   const w = [
     s.q(
       `UPDATE txn_overlay SET reviewed_at = ?3, alert = NULL, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,

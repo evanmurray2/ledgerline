@@ -81,7 +81,7 @@ export function MatchScreen() {
     setDone({
       text: asIncome
         ? `Counted as income. Ready to Assign is now ${formatCents(r.rta)}.`
-        : `Matched ${formatCents(matched)}. ${paidCount} ${paidCount === 1 ? 'item is' : 'items are'} paid back, and Ready to Assign is now ${formatCents(r.rta)}.`,
+        : `Matched ${formatCents(matched)}.${paidCount > 0 ? ` ${paidCount} ${paidCount === 1 ? 'item is' : 'items are'} paid back.` : ''} Ready to Assign is now ${formatCents(r.rta)}.`,
     });
   };
   return (
@@ -117,9 +117,10 @@ export function MatchScreen() {
                 track="match.apply"
                 className="flex-[2]"
                 disabled={matched === 0}
+                why={matched === 0 ? 'Pick what it pays back' : ''}
                 onClick={() => void submit(false)}
               >
-                {matched === 0 ? 'Pick what it pays back' : `Match ${formatCents(matched)}`}
+                {matched === 0 ? 'Match' : `Match ${formatCents(matched)}`}
               </PrimaryButton>
             </div>
           </div>
@@ -154,11 +155,9 @@ export function MatchScreen() {
         <>
           <div className="flex flex-col gap-0.5">
             <span className="text-base font-bold">What is this money?</span>
-            <span className="text-sm text-muted">
-              It’s held in Waiting to match, outside Ready to Assign, until you decide.
-            </span>
+            <span className="text-sm text-muted">It stays out of Ready to Assign until you decide.</span>
           </div>
-          <Label>Money back for what’s owed to you</Label>
+          <Label>What it pays back</Label>
           <div className="shrink-0 overflow-hidden rounded-lg border border-line">
             {applied.length === 0 && <EmptyNote inCard>Nothing is marked as owed to you.</EmptyNote>}
             {applied.map((a) => (
@@ -190,8 +189,7 @@ export function MatchScreen() {
           </div>
           {other ? (
             <Banner tone="neutral">
-              To match money back for something you didn’t mark, open that purchase in Activity and set Owed
-              to you first. It then shows up here.
+              Open that purchase in Activity and set Owed to you. It then shows up here.
             </Banner>
           ) : (
             <TextButton track="match.other" onClick={() => setOther(true)}>
@@ -204,8 +202,8 @@ export function MatchScreen() {
               {(
                 [
                   ['keep', 'Keep it waiting to match'],
-                  ['income', 'Income (goes to Ready to Assign)'],
-                  ['send_back', 'I’ll send it back (stays out of Ready to Assign until the money leaves)'],
+                  ['income', 'Count it as income'],
+                  ['send_back', 'I’ll send it back'],
                 ] as const
               ).map(([id, name]) => (
                 <label key={id} className="flex min-h-9 items-center gap-2 text-md">
@@ -222,10 +220,10 @@ export function MatchScreen() {
             </fieldset>
           )}
           <div className="flex flex-col gap-1 text-xs leading-snug text-muted">
-            <span>Either way the money goes to Ready to Assign.</span>
+            <span>The matched money goes to Ready to Assign.</span>
             <Why>
-              Matching also marks what it pays back as settled, so it leaves your Owed to you list. Pick “It’s
-              income” if it doesn’t pay anything back.
+              What it pays back leaves Owed to you. Income also goes to Ready to Assign. Money you’ll send back
+              stays out until it leaves.
               {rta !== undefined ? ` Ready to Assign has ${formatCents(rta)} now.` : ''}
             </Why>
           </div>

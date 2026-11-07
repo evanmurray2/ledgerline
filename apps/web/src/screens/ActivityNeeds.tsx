@@ -54,7 +54,7 @@ export function NeedsCategory({
   const strong = shown.filter((r) => open(r) && r.suggestion?.strong && !(r.sameAs && online));
   const note =
     openNeeds.length === 0
-      ? 'done'
+      ? undefined
       : `${openNeeds.length} · ${formatCents(openNeeds.reduce((s, r) => s + r.amount, 0))}`;
   return (
     <section className="flex shrink-0 flex-col gap-1.5">
@@ -136,7 +136,7 @@ export function NeedsCategory({
                   </span>
                 ) : !label && r.newPayee && r.rawName ? (
                   <span className="text-xs text-muted break-words">
-                    New · <span className="font-mono">{r.rawName}</span>
+                    New payee · <span className="font-mono">{r.rawName}</span>
                   </span>
                 ) : null}
                 {!selecting && sug && (
@@ -228,7 +228,7 @@ export function ActivityCategoryPicker({
       sub={
         row
           ? `${row.payee} · ${formatCents(row.amount)} · ${rowMeta(row, 'needs')}`
-          : `${picking.keys.length} transactions`
+          : `${picking.keys.length} ${picking.keys.length === 1 ? 'transaction' : 'transactions'}`
       }
     >
       {row && (

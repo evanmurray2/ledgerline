@@ -93,7 +93,7 @@ describe('Owed to you', () => {
   it('closing out what they won’t pay gives Ready to Assign the money back', async () => {
     const before = (await sql<{ rta: number }>(`SELECT rta FROM budget`))!.rta;
     show('/owed/close/nopa');
-    fireEvent.click(await screen.findByRole('button', { name: 'Close out $18' }, T));
+    fireEvent.click(await screen.findByRole('button', { name: 'Close out $18.00' }, T));
     await screen.findByText(/^Closed\. Dining out was charged \$18/, undefined, T);
     await waitFor(
       async () => expect((await sql<{ rta: number }>(`SELECT rta FROM budget`))!.rta).toBe(before + 1800),

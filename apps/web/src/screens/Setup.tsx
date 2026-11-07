@@ -52,7 +52,7 @@ export function WelcomeScreen() {
         <div className="flex flex-col gap-3">
           <h1 className="m-0 text-4xl font-bold">Ledgerline</h1>
           <p className="m-0 text-xl leading-snug text-ink-2">
-            Give every dollar a job. Your banks fill in the transactions; you decide where the money goes.
+            Give every dollar a job. Your banks fill in the transactions. You decide where the money goes.
           </p>
         </div>
         <ul className="m-0 flex list-none flex-col gap-2.5 p-0 text-base">
@@ -81,7 +81,6 @@ export function WelcomeScreen() {
         >
           Get started
         </Link>
-        <span className="text-center text-xs text-muted">Next, pick the month your budget starts.</span>
       </div>
     </div>
   );
@@ -128,11 +127,10 @@ export function StartMonthScreen() {
         Your budget starts {month ? `in ${monthLabel(month)}` : 'this month'}
       </h1>
       <p className="m-0 text-base leading-snug text-ink-2">
-        You start with what’s in your checking and savings today. Earlier bank history comes in for reports
-        and searches, but older months aren’t budgeted.
+        You start with what’s in your bank accounts today. Older months aren’t budgeted.
       </p>
       <Banner tone="neutral">
-        Card balances aren’t subtracted: each card gets a payment category you fund instead.
+        Card balances aren’t subtracted. Each card gets a payment category you fund.
       </Banner>
       {error ? <ErrorNote error={error} /> : null}
     </Step>
@@ -163,8 +161,7 @@ export function LinkBanksScreen() {
     >
       <h1 className="m-0 text-4xl font-bold">Link your banks and cards</h1>
       <p className="m-0 text-base leading-snug text-ink-2">
-        One login can bring in several accounts. You have {conns.data?.limit ?? 10} logins in total, and they
-        don’t come back if you remove one.
+        One bank link can bring in several accounts. Removing a link doesn’t give it back.
       </p>
       {linked.length > 0 && (
         <div className="flex flex-col gap-2">
@@ -188,18 +185,15 @@ export function LinkBanksScreen() {
       )}
       <LinkBankFlow label={linked.length === 0 ? 'Link a bank' : 'Link another bank'} />
       <span className="text-sm text-muted">
-        {conns.data?.used ?? 0} of {conns.data?.limit ?? 10} logins used
+        {conns.data?.used ?? 0} of {conns.data?.limit ?? 10} bank links used
       </span>
       <div className="flex flex-col gap-1 text-sm leading-snug text-muted">
         <span>Ledgerline never sees your bank password.</span>
-        <span>
-          Purchases from before your budget starts are part of each account’s starting balance. Some may come
-          in over the next 2 weeks.
-        </span>
+        <span>Purchases from before your budget starts go into the starting balance.</span>
         <Why>
-          Linking opens Plaid’s secure window. We ask for 6 months of history, which can’t be changed later.
-          Older history can be imported from a CSV file in Settings. Only bank accounts and cards are tracked.
-          Investment and retirement accounts stay outside the app; money you send to them counts as Invested.
+          Some of them can come in up to 2 weeks late. Ledgerline gets 6 months of history, and this can’t be
+          changed later. You can import older history from a CSV file in Settings. Investment and retirement
+          accounts aren’t tracked. Money you send to them counts as Invested.
         </Why>
       </div>
     </Step>
@@ -288,7 +282,8 @@ export function FirstSortScreen() {
       footer={
         <>
           <span className="text-center text-sm text-muted">
-            {count} categories · next, assign your {formatCents(cash)}
+            {count} {count === 1 ? 'category' : 'categories'}
+            {cash > 0 ? ` · next, assign your ${formatCents(cash)}` : ''}
           </span>
           <PrimaryButton
             mutates
@@ -362,8 +357,7 @@ export function FirstSortScreen() {
         </SoftButton>
       </form>
       <p className="m-0 text-sm leading-snug text-muted">
-        Also made for you: a payment category for each card. Money you front for others is tracked in an Owed
-        to you list, not a category.
+        Ledgerline also makes a payment category for each card. Money others owe you shows in Owed to you.
       </p>
     </Step>
   );

@@ -26,10 +26,10 @@ export const csrf: MiddlewareHandler = async (c, next) => {
   if (m === 'POST' && new URL(c.req.url).pathname === WEBHOOK_PATH) return next();
   const ct = c.req.header('content-type') ?? '';
   if (!ct.toLowerCase().startsWith('application/json'))
-    return c.json({ error: 'csrf', message: 'JSON required' }, 415);
-  if (c.req.header(CSRF_HEADER) !== '1') return c.json({ error: 'csrf', message: 'missing header' }, 403);
+    return c.json({ error: 'csrf', message: 'Something went wrong. Try again.' }, 415);
+  if (c.req.header(CSRF_HEADER) !== '1') return c.json({ error: 'csrf', message: 'Something went wrong. Try again.' }, 403);
   const origin = c.req.header('origin');
   if (origin && origin !== new URL(c.req.url).origin)
-    return c.json({ error: 'csrf', message: 'cross-origin' }, 403);
+    return c.json({ error: 'csrf', message: 'Something went wrong. Try again.' }, 403);
   return next();
 };

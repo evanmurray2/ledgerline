@@ -1,4 +1,4 @@
-// Owed to you: a list, not a category. Close out what's owed (they won't pay / marked by mistake / more time).
+// Owed to you: a list of what others owe you. Close out what's owed (they won't pay / marked by mistake / more time).
 import { useState } from 'react';
 import { Link, Outlet, useNavigate, useParams } from '@tanstack/react-router';
 import type { OwedView } from '@ledgerline/contracts';
@@ -22,7 +22,6 @@ import {
   ScreenBody,
   SectionTitle,
   Icon,
-  SoftButton,
   softButtonClass,
   useIsDesktop,
 } from '../components/ui';
@@ -71,7 +70,7 @@ export function OwedScreen() {
               <span className="text-xs text-muted">Out with others</span>
               <span className="tnum text-4xl font-bold">{formatCents(v.out)}</span>
               <span className="text-sm leading-normal text-ink-2">
-                Money you front leaves Ready to Assign and comes back when you’re paid.
+                It goes back to Ready to Assign when you’re paid back.
               </span>
             </Card>
             {/* One banner at a time: a shortfall first, then money waiting to match, then what's covered. */}
@@ -83,15 +82,11 @@ export function OwedScreen() {
                     <Banner
                       key={p.key}
                       tone="warn"
-                      title={`Keep ${formatCents(p.owed, { whole: true })} unassigned for ${p.label}`}
+                      title={`Leave ${formatCents(p.owed)} in Ready to Assign for ${p.label}`}
                     >
                       <Why track="owed.projected.why">
-                        It takes {formatCents(p.owed, { whole: true })} from Ready to Assign until it’s paid
-                        back. You have {formatCents(rta)} now
-                        {waiting
-                          ? `, or ${formatCents(rta + waiting.amount)} after you match ${waiting.payee.split(' ')[0]}`
-                          : ''}
-                        .
+                        This payment takes {formatCents(p.owed)} from Ready to Assign until you’re paid back.
+                        Ready to Assign has {formatCents(rta)} now.
                       </Why>
                     </Banner>
                   )),
@@ -139,23 +134,22 @@ export function OwedScreen() {
                         <span className="text-base font-semibold">{o.label}</span>
                         <span className="text-xs text-muted">{o.sub}</span>
                         <span className={cx('text-xs', late ? 'text-under-fg' : 'text-muted')}>
-                          {late ? 'Late · ' : ''}
                           {o.expectBy
-                            ? `${late ? 'expected' : 'Expected'} by ${dayLabel(o.expectBy)}`
-                            : 'No date'}
+                            ? `${late ? 'Late · expected' : 'Expected'} by ${dayLabel(o.expectBy)}`
+                            : late
+                              ? 'Late'
+                              : 'No date'}
                         </span>
                       </span>
                       <span className="flex shrink-0 flex-col items-end gap-0.5">
                         <span className="tnum text-base font-bold">{formatCents(o.still)}</span>
-                        <span className="text-xs text-muted">
-                          {o.still === o.amount
-                            ? 'all of it'
-                            : `of ${formatCents(o.amount, { whole: true })} owed`}
-                        </span>
+                        {o.still !== o.amount && (
+                          <span className="text-xs text-muted">of {formatCents(o.amount)} owed</span>
+                        )}
                       </span>
                     </Link>
                     <div className={cx('flex gap-2', desktop && 'shrink-0')}>
-                      {waiting ? (
+                      {waiting && (
                         <Link
                           to={`/owed/match/${waiting.key}`}
                           data-track="owed.match"
@@ -164,10 +158,6 @@ export function OwedScreen() {
                         >
                           Match money back
                         </Link>
-                      ) : (
-                        <SoftButton disabled className={pill}>
-                          Nothing to match yet
-                        </SoftButton>
                       )}
                       <Link
                         to={`/owed/close/${o.id}`}
@@ -244,29 +234,30 @@ export function CloseSheet() {
       </Sheet>
     );
   }
-  const amt = formatCents(it.still, { whole: true });
-  const cat = it.categoryName ?? 'The category';
+  const amt = formatCents(it.still);
+  const full = formatCents(it.amount);
+  const cat = it.categoryName ?? 'Its category';
   const opts: { id: Pick; name: string; desc: string; cta: string; result: string }[] = [
     {
       id: 'close',
       name: 'They won’t pay it',
-      desc: `${cat} is charged ${amt} in ${month}; Ready to Assign gets its ${amt} back.`,
+      desc: `${cat} is charged ${amt} in ${month}. Ready to Assign gets ${amt} back.`,
       cta: `Close out ${amt}`,
-      result: `Closed. ${cat} was charged ${amt} in ${month} and Ready to Assign got ${amt} back.`,
+      result: `Closed. ${cat} was charged ${amt} in ${month}.`,
     },
     {
       id: 'cancel',
       name: 'I marked it by mistake',
-      desc: `${cat} carries the full ${formatCents(it.amount + 0, { whole: true })} in the purchase’s month; Ready to Assign gets the fronted amount back${it.matched > 0 ? ` and keeps the ${formatCents(it.matched, { whole: true })} already paid back` : ''}.`,
+      desc: `${cat} is charged the ${full} too, in the purchase’s month. Ready to Assign gets ${full} back${it.matched > 0 ? ` and keeps the ${formatCents(it.matched)} paid back` : ''}.`,
       cta: 'Remove the mark',
-      result: `Mark removed. ${cat} now carries the full amount.`,
+      result: `Removed. ${cat} is charged the ${full} too.`,
     },
     {
       id: 'snooze',
       name: 'Give it more time',
-      desc: `Keep it open with a new date${it.expectBy ? ` (now ${dayLabel(it.expectBy)})` : ''}, so it doesn’t show as late.`,
+      desc: 'Set a new date, so it isn’t late.',
       cta: 'Save new date',
-      result: `Still open, now expected by ${date ? dayLabel(date) : 'the new date'}.`,
+      result: `Now expected by ${date ? dayLabel(date) : 'the new date'}.`,
     },
   ];
   const cur = opts.find((o) => o.id === pick)!;

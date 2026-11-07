@@ -14,7 +14,7 @@ import {
 import { cents, parseCents, parseImportDate } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
-import { HttpError, parse, scoped } from './api.js';
+import { HttpError, parse, scoped, GONE } from './api.js';
 import { classifyUsage, noteUsage, usageToday, utcDay, READ_LIMIT, WRITE_LIMIT } from '../sync/breaker.js';
 import { makeProvider } from '../sync/provider.js';
 import { startSync } from './settings/connections.js';
@@ -302,7 +302,7 @@ opsRoutes.post('/import/csv', async (c) => {
     `SELECT id, provider_account_id, budget_from, kind FROM account WHERE budget_id = ?1 AND id = ?2`,
     r.accountId,
   );
-  if (!acct) throw new HttpError(404, 'not_found', 'account');
+  if (!acct) throw new HttpError(404, 'not_found', GONE);
   const lines = r.csv.split(/\r?\n/).filter((l) => l.trim());
   const header = (lines.shift() ?? '')
     .toLowerCase()
@@ -313,7 +313,7 @@ opsRoutes.post('/import/csv', async (c) => {
   const ai = header.indexOf('amount');
   const mi = header.indexOf('memo');
   if (di < 0 || pi < 0 || ai < 0)
-    throw new HttpError(422, 'csv_header', 'CSV needs date, payee (or description) and amount columns');
+    throw new HttpError(422, 'csv_header', 'The CSV file needs date, payee and amount columns.');
   let conn = await s.first<{ id: string }>(
     `SELECT id FROM connection WHERE budget_id = ?1 AND provider = 'csv' AND institution_name = ?2`,
     `Import · ${r.accountId}`,

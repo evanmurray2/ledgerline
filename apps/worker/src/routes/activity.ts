@@ -7,7 +7,7 @@ import { MatchRequest, OwedAction, TransferPick, type MatchView, type OwedView }
 import { cents, daysBetween, formatCents, owedList, owedOut, projectedFronts } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
-import { HttpError, parse, scoped } from './api.js';
+import { CHANGED, GONE, HttpError, parse, scoped } from './api.js';
 import { fresh, shortDate } from '../views/common.js';
 import { listRow } from '../views/rows.js';
 import { RECENT_TX, TX_COLUMNS, txnCol, type TxRow } from '../ledger/ledger.js';
@@ -98,16 +98,16 @@ activityRoutes.post('/match', async (c) => {
   const now = clock(c.env);
   const t = await loadTx(s, r.inflowKey);
   refuseHistory(t);
-  if (t.amount <= 0) throw new HttpError(422, 'not_inflow', 'Only money coming in can be matched');
+  if (t.amount <= 0) throw new HttpError(422, 'not_inflow', 'Only money coming in can be matched.');
   const total = r.items.reduce((a, i) => a + i.amount, 0);
-  if (total > t.amount) throw new HttpError(422, 'too_much', 'More matched than came in');
+  if (total > t.amount) throw new HttpError(422, 'too_much', 'That’s more than came in. Lower an amount.');
   const today = new Date(now).toISOString().slice(0, 10);
   const { rows } = await openItems(s, today);
   for (const i of r.items) {
     const o = rows.find((x) => x.id === i.itemId);
     if (!o || (o.status !== 'open' && o.status !== 'late'))
-      throw new HttpError(404, 'not_found', 'owed item');
-    if (i.amount > o.stillOwed) throw new HttpError(422, 'too_much', 'More than is still owed');
+      throw new HttpError(404, 'not_found', GONE);
+    if (i.amount > o.stillOwed) throw new HttpError(422, 'too_much', 'That’s more than is still owed. Lower the amount.');
   }
   const w: Stmt[] = [s.q(OVERLAY_UPSERT, r.inflowKey, now)];
   for (const i of r.items) {
@@ -182,7 +182,7 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
   const out = await loadTx(s, key);
   refuseHistory(out);
   if (out.transfer_state !== 'unsorted' || out.amount >= 0)
-    throw new HttpError(422, 'not_unclear', 'Not a transfer to sort out');
+    throw new HttpError(422, 'not_unclear', CHANGED);
   const cands = await s.all<TxRow>(
     `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1 AND transfer_state = 'unsorted' AND amount = ?2 AND account_id != ?3
        AND abs(julianday(date) - julianday(?4)) <= 5`,
@@ -193,7 +193,7 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
   const w: Stmt[] = [];
   if (r.otherKey) {
     const other = cands.find((x) => x.key === r.otherKey);
-    if (!other) throw new HttpError(404, 'not_found', 'other side');
+    if (!other) throw new HttpError(404, 'not_found', GONE);
     refuseHistory(other);
     w.push(
       s.q(
@@ -332,7 +332,7 @@ activityRoutes.post('/owed/:id', async (c) => {
   const f = await fresh(s, now);
   const { rows } = await openItems(s, f.today);
   const o = rows.find((x) => x.id === id);
-  if (!o) throw new HttpError(404, 'not_found', 'owed item');
+  if (!o) throw new HttpError(404, 'not_found', GONE);
   let w: Stmt[];
   if (r.action === 'close') {
     // Rule 11: charge what's left to the original category this month; RTA gets it back.
@@ -354,7 +354,7 @@ activityRoutes.post('/owed/:id', async (c) => {
       ),
     ];
   } else {
-    if (!r.expectBy) throw new HttpError(400, 'invalid', 'expectBy');
+    if (!r.expectBy) throw new HttpError(400, 'invalid', 'Pick a date.');
     w = [
       s.q(
         `UPDATE expected_reimbursement SET expect_by = ?3, updated_at = ?4 WHERE budget_id = ?1 AND id = ?2`,

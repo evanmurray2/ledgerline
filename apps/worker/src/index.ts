@@ -12,12 +12,11 @@ export function storeUnavailable(error: string): { error: string; message: strin
   return /exceed|limit|quota|free tier/i.test(error)
     ? {
         error: 'daily_limit',
-        message:
-          'Cloudflare’s free daily limit is used up. Your data is safe. Ledgerline is back after midnight UTC.',
+        message: 'Paused until the daily limit resets. Nothing is lost.',
       }
     : {
         error: 'unavailable',
-        message: 'Ledgerline can’t reach your data right now. Your data is safe. Try again soon.',
+        message: 'Ledgerline can’t reach your budget right now. Try again soon.',
       };
 }
 

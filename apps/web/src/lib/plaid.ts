@@ -20,6 +20,7 @@ declare global {
   }
 }
 
+const LOAD_FAILED = 'The bank sign-in window didn’t open. Check your connection and try again.';
 let loading: Promise<PlaidGlobal> | null = null;
 
 export function loadPlaid(): Promise<PlaidGlobal> {
@@ -29,10 +30,10 @@ export function loadPlaid(): Promise<PlaidGlobal> {
     const s = document.createElement('script');
     s.src = PLAID_SRC;
     s.async = true;
-    s.onload = () => (window.Plaid ? resolve(window.Plaid) : reject(new Error('Plaid Link failed to load')));
+    s.onload = () => (window.Plaid ? resolve(window.Plaid) : reject(new Error(LOAD_FAILED)));
     s.onerror = () => {
       loading = null;
-      reject(new Error('Plaid Link failed to load'));
+      reject(new Error(LOAD_FAILED));
     };
     document.head.appendChild(s);
   });

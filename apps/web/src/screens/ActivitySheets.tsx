@@ -67,10 +67,11 @@ export function TransferScreen() {
       .map((row) => ({ row, account: others[i]! })),
   );
   const loadingCands = registers.some((r) => r.isLoading);
+  const n = candidates.length;
   const lines = (name: string | null) =>
     name === null
-      ? `Kept as spending: it now needs a category. ${candidates.length > 1 ? 'Both deposits are' : 'The deposit is'} income, so Ready to Assign goes up.`
-      : `Paired with ${name}. No category needed for the transfer.${candidates.length > 1 ? ' The other deposit is income, so Ready to Assign goes up.' : ''}`;
+      ? `Kept as spending. It needs a category.${n === 0 ? '' : n === 1 ? ' The deposit counts as income.' : ' The deposits count as income.'}`
+      : `Paired with ${name}. It needs no category.${n === 2 ? ' The other deposit counts as income.' : n > 2 ? ' The other deposits count as income.' : ''}`;
   return (
     <Sheet
       label="Which account got this money"
@@ -109,14 +110,14 @@ export function TransferScreen() {
           </>
         ) : (
           <>
-            <span className="text-base font-bold">Where did this go?</span>
-            <p className="m-0 text-sm leading-snug text-muted">
-              Transfers between your accounts pair up on their own. This one couldn’t:{' '}
-              {candidates.length > 1
-                ? `${candidates.length} accounts received ${formatCents(-t.amount)} within a few days.`
-                : 'no single account clearly matched.'}
-            </p>
-            {loadingCands && <Loading label="Looking for the other side" />}
+            <span className="text-base font-bold">Which account got this money?</span>
+            {!loadingCands && (
+              <p className="m-0 text-sm leading-snug text-muted">
+                {n === 0 ? 'No account' : n === 1 ? '1 account' : `${n} accounts`} got{' '}
+                {formatCents(-t.amount)} within a few days.
+              </p>
+            )}
+            {loadingCands && <Loading label="Looking for the other account" />}
             <div className="flex flex-col gap-2">
               {candidates.map(({ row, account }) => (
                 <Button
@@ -150,8 +151,8 @@ export function TransferScreen() {
                 }}
                 className="flex min-h-14 w-full flex-col items-start justify-center rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"
               >
-                <span className="text-base font-semibold">Neither, it was a payment</span>
-                <span className="text-xs text-muted">Categorize it like any other spending</span>
+                <span className="text-base font-semibold">It was a payment</span>
+                <span className="text-xs text-muted">Give it a category like other spending</span>
               </Button>
             </div>
             {pick.error && <ErrorNote error={pick.error} />}
@@ -164,13 +165,14 @@ export function TransferScreen() {
 
 // ------------------------------------------------------------------ check not cleared
 
-type CheckPick = 'wait' | 'edit' | 'match' | 'delete';
+type CheckPick = 'wait' | 'edit' | 'delete';
 
 export function CheckPendingScreen() {
   const { key } = useParams({ strict: false }) as { key: string };
   useScreen('check_pending');
   const q = useTxn(key);
   const close = useClose();
+  const today = useSession().data?.budget.today;
   const keep = useMoneyMutation((v: { action: 'keep_waiting' | 'delete' }) => api.pendingCheck(key, v));
   const patch = useMoneyMutation((v: Parameters<typeof api.patchTxn>[1]) => api.patchTxn(key, v));
   const [pick, setPick] = useState<CheckPick>('wait');
@@ -183,42 +185,37 @@ export function CheckPendingScreen() {
         {q.error ? <ErrorNote error={q.error} /> : <Loading />}
       </Sheet>
     );
-  const cat = t.categoryLabel ?? 'Its category';
+  const cat = t.categoryLabel;
+  const back = formatCents(Math.abs(t.amount));
   const amt = amount ?? centsToInput(Math.abs(t.amount));
-  const days = 9;
+  const utcDay = (d: string) =>
+    Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))) / 86_400_000;
+  const days = today ? Math.round(utcDay(today) - utcDay(t.date)) : 0;
   const opts: { id: CheckPick; name: string; desc: string; cta: string; result: string }[] = [
     {
       id: 'wait',
       name: 'Keep waiting',
-      desc: 'Leave it as is. You won’t be asked again for 14 days.',
+      desc: 'You won’t be asked again for 14 days.',
       cta: 'Keep waiting',
-      result: 'Still pending. You’ll be asked again in 14 days if it hasn’t cleared.',
+      result: 'Still waiting. You’ll be asked again in 14 days if it hasn’t cleared.',
     },
     {
       id: 'edit',
-      name: 'Fix the amount or date',
-      desc: 'If you wrote it for a different amount or day.',
-      cta: 'Save changes',
+      name: 'Fix the amount',
+      desc: 'If you wrote it for a different amount.',
+      cta: 'Save amount',
       result: 'Saved. It keeps waiting for the bank.',
-    },
-    {
-      id: 'match',
-      name: 'Match it by hand',
-      desc: 'Pick the bank transaction if the bank shows it under another name.',
-      cta: 'Nothing to match yet',
-      result: '',
     },
     {
       id: 'delete',
       name: 'Delete it',
-      desc: `The check was voided or never sent. ${cat} gets its ${formatCents(Math.abs(t.amount), { whole: true })} back.`,
+      desc: `The check was voided or never sent.${cat ? ` ${cat} gets ${back} back.` : ''}`,
       cta: 'Delete check',
-      result: `Deleted. ${cat} got ${formatCents(Math.abs(t.amount))} back.`,
+      result: `Deleted.${cat ? ` ${cat} got ${back} back.` : ''}`,
     },
   ];
   const cur = opts.find((o) => o.id === pick)!;
   const confirm = async () => {
-    if (pick === 'match') return;
     if (pick === 'edit') {
       const c = parseCents(amt);
       if (c === null) return;
@@ -234,10 +231,10 @@ export function CheckPendingScreen() {
       gap="auto"
       header={
         <SheetTitle
-          tag={`Not at the bank after ${days} days`}
+          tag={days > 1 ? `Not at the bank after ${days} days` : 'Not at the bank yet'}
           tagClass="text-under-fg"
           amount={formatCents(t.amount)}
-          sub={`${t.payee} · ${t.accountName} · added by you ${dayLabel(t.date)} · ${cat}`}
+          sub={`${t.payee} · ${t.accountName} · added by you ${dayLabel(t.date)}${cat ? ` · ${cat}` : ''}`}
         />
       }
       footer={
@@ -250,7 +247,6 @@ export function CheckPendingScreen() {
               mutates
               track={`check.confirm.${pick}`}
               danger={pick === 'delete'}
-              disabled={pick === 'match'}
               onClick={() => void confirm()}
             >
               {cur.cta}
@@ -265,7 +261,7 @@ export function CheckPendingScreen() {
         ) : (
           <>
             <p className="m-0 text-sm leading-snug text-muted">
-              It still counts in {cat} and your checking balance. Checks often take a few weeks to be cashed.
+              It still counts in your budget. Checks can take a few weeks to clear.
             </p>
             {opts.map((o) => (
               <OptionCard
@@ -288,12 +284,6 @@ export function CheckPendingScreen() {
                   />
                 </Field>
               </div>
-            )}
-            {pick === 'match' && (
-              <Banner tone="neutral">
-                No bank transaction near {formatCents(Math.abs(t.amount), { whole: true })} since{' '}
-                {dayLabel(t.date)} looks like this check yet. When one arrives, it will appear here to pick.
-              </Banner>
             )}
           </>
         )}
@@ -378,8 +368,8 @@ export function AddTxnScreen() {
       />
       <p className="m-0 text-sm leading-snug text-muted">
         {kind === 'pending'
-          ? 'Something you paid that the bank hasn’t shown yet, like a check. It counts in your budget now.'
-          : 'A bill or paycheck on a future date. It counts in your budget from that date.'}
+          ? 'Not at the bank yet, like a check. It counts now.'
+          : 'A bill or paycheck on a future date. It counts from that date.'}
       </p>
       <div className="flex items-end gap-2">
         <Field label="Amount" className="flex-1">
@@ -428,10 +418,10 @@ export function AddTxnScreen() {
           specials={
             dir === 'in'
               ? [
-                  { id: '', name: 'Choose later' },
+                  { id: '', name: 'Needs a category' },
                   { id: 'rta', name: 'Ready to Assign' },
                 ]
-              : [{ id: '', name: 'Choose later' }]
+              : [{ id: '', name: 'Needs a category' }]
           }
         />
       </Field>
@@ -459,8 +449,7 @@ export function AddTxnScreen() {
       <div className="flex flex-col gap-1 text-xs leading-snug text-muted">
         <span>When the bank shows it, the bank’s amount wins.</span>
         <Why>
-          When the bank shows a matching transaction, the two are merged. If nothing matches in{' '}
-          {kind === 'pending' ? 7 : 3} days, you’ll see an alert.
+          The two become one transaction. If the bank doesn’t show it after a few days, you’ll see an alert.
         </Why>
       </div>
       {add.error && <ErrorNote error={add.error} />}

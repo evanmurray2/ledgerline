@@ -230,9 +230,9 @@ describe('Accounts and Reports', () => {
     show('/accounts/checking');
     fireEvent.click(await screen.findByRole('button', { name: /^Starting balance/ }, { timeout: 4000 }));
     const sheet = await screen.findByTestId('start-sheet');
-    expect(within(sheet).getByText('From before Oct 1, came in later')).toBeTruthy();
+    expect(within(sheet).getByText('Dated before Oct 1, came in late')).toBeTruthy();
     expect(within(sheet).getByText('− $25.00')).toBeTruthy();
-    expect(screen.getByText('Final.')).toBeTruthy();
+    expect(screen.getByText('This won’t change now.')).toBeTruthy();
     expect(screen.queryAllByTestId('bank-drift')).toHaveLength(0);
   });
 

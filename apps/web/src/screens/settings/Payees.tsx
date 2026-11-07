@@ -35,7 +35,7 @@ export function PayeesScreen() {
         onChange={setFilter}
       />
       {!v && (q.error ? <ErrorNote error={q.error} /> : <Loading />)}
-      {v && list.length === 0 && <EmptyNote>{filter ? 'No payee matches.' : 'No payees yet.'}</EmptyNote>}
+      {v && list.length === 0 && <EmptyNote>{filter ? 'No payees match.' : 'No payees yet.'}</EmptyNote>}
       {v && list.length > 0 && (
         <Card>
           {list.map(({ p, bank }) => (
@@ -57,8 +57,7 @@ export function PayeesScreen() {
         </Card>
       )}
       <p className="m-0 text-xs leading-snug text-muted">
-        Rename a payee to another payee’s name to join them. The bank’s own text is always kept on each
-        transaction.
+        To join two payees, give one the other’s name.
       </p>
       <Outlet />
     </Page>
@@ -77,7 +76,7 @@ export function RenamePayeeSheet() {
     return (
       <RenamePayeeView
         onClose={close}
-        loading={{ error: q.data ? new Error('This payee was joined into another one.') : q.error }}
+        loading={{ error: q.data ? new Error('This payee was joined or removed.') : q.error }}
         name=""
         rawNames={[]}
         onSave={async () => {}}

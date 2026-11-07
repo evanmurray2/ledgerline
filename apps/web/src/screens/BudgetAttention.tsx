@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import type { AttentionItem, BudgetView } from '@ledgerline/contracts';
+import { errorMessage } from '../api/client';
 import { api } from '../api/endpoints';
 import { useMoneyMutation } from '../api/hooks';
 import { Card, cx, SoftButton, TONE, type IconName, type Tone } from '../components/ui';
@@ -70,8 +71,12 @@ function useFixes(month: string) {
 export function AttentionList({ b, month, low = false }: { b: BudgetView; month: string; low?: boolean }) {
   const fixes = useFixes(month);
   const navigate = useNavigate();
+  // Ready to Assign below zero shows once, in the banner above the list (OverAssigned).
   const open = b.attention.filter(
-    (a) => !fixes.done.some((d) => d.key === a.key) && (a.section === 'Low') === low,
+    (a) =>
+      !fixes.done.some((d) => d.key === a.key) &&
+      a.section !== 'Ready to Assign' &&
+      (a.section === 'Low') === low,
   );
   const sections = SECTION_ORDER.map((s) => ({
     title: s,
@@ -88,7 +93,7 @@ export function AttentionList({ b, month, low = false }: { b: BudgetView; month:
     try {
       await fixes.apply([{ key: a.key, categoryId: a.categoryId, name: a.name, amount: a.fix.amount }]);
     } catch (e) {
-      toast.show({ text: e instanceof Error ? e.message : 'Couldn’t save that.' });
+      toast.show({ text: errorMessage(e) });
     }
   };
   const underfunded = open.filter((a) => a.section === 'Underfunded' && a.fix && a.categoryId);
@@ -103,14 +108,14 @@ export function AttentionList({ b, month, low = false }: { b: BudgetView; month:
         })),
       );
     } catch (e) {
-      toast.show({ text: e instanceof Error ? e.message : 'Couldn’t save that.' });
+      toast.show({ text: errorMessage(e) });
     }
   };
   return (
     <>
       {open.length === 0 && (
         <p className="m-0 shrink-0 rounded-lg bg-funded-bg p-4 text-center text-base font-semibold text-funded-fg">
-          {low ? 'Nothing is running low.' : 'Nothing needs attention.'}
+          {low ? 'Nothing is low.' : 'Nothing needs attention.'}
         </p>
       )}
       {sections.map((sec) => {

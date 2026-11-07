@@ -24,6 +24,7 @@ import { usage } from '../../usage/tracker';
 import { useCanWrite } from '../../state/connectivity';
 import { Page } from './common';
 import { Why } from '../../components/Why';
+import { errorMessage } from '../../api/client';
 
 // ------------------------------------------------------------------ connections
 
@@ -33,9 +34,9 @@ export function LinkMeter({ used, limit }: { used: number; limit: number }) {
     <section className="flex shrink-0 flex-col gap-2 rounded-lg border border-line bg-surface p-3">
       <div className="flex items-baseline justify-between">
         <span className="text-base font-bold" data-testid="link-meter">
-          {used} of {limit} links used
+          {used} of {limit} bank links used
         </span>
-        <span className="text-sm text-muted">{left} left, for good</span>
+        <span className="text-sm text-muted">{left} left</span>
       </div>
       <div aria-hidden="true" className="flex gap-1">
         {Array.from({ length: limit }, (_, i) => (
@@ -45,7 +46,8 @@ export function LinkMeter({ used, limit }: { used: number; limit: number }) {
       <span className="flex flex-col gap-1 text-xs leading-snug text-muted">
         <span>Removing a link doesn’t give it back.</span>
         <Why>
-          The free Plaid plan allows {limit} bank logins ever. Repair a broken login instead of re-adding it.
+          The free Plaid plan allows {limit} bank links in total. If a bank stops syncing, sign in again from
+          Accounts.
         </Why>
       </span>
     </section>
@@ -62,6 +64,7 @@ export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label
   const v = conns.data;
   if (!v) return null;
   const left = v.limit - v.used;
+  const anyLinked = v.items.some((i) => i.status !== 'removed');
   const start = async () => {
     setStep('linking');
     setError(null);
@@ -82,21 +85,23 @@ export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label
   };
   if (left <= 0)
     return (
-      <Banner tone="warn">All {v.limit} links are used. Import a CSV from Import and export instead.</Banner>
+      <Banner tone="warn">
+        All {v.limit} bank links are used. You can import a CSV file in Import and export.
+      </Banner>
     );
   return (
     <div className="flex flex-col gap-2">
       {step === 'confirm' || step === 'linking' ? (
         <div
           role="alertdialog"
-          aria-label="Use a link"
+          aria-label="Use a bank link"
           className="flex flex-col gap-2.5 rounded-lg border border-accent bg-accent-soft p-3"
         >
-          <span className="text-base font-bold">Use 1 of your {left} remaining links?</span>
+          <span className="text-base font-bold">
+            {left === 1 ? 'Use your last bank link?' : `Use 1 of your ${left} bank links?`}
+          </span>
           <span className="text-sm leading-snug text-ink-2">
-            After this, {v.used + 1} of {v.limit} links are used, for good. If a bank you already linked
-            stopped syncing, repair it from Accounts instead. Linking opens Plaid’s secure window; Ledgerline
-            never sees your bank password.
+            If a bank stopped syncing, sign in again from Accounts instead.
           </span>
           <div className="flex gap-2">
             <SecondaryButton className="flex-1" onClick={() => setStep('idle')} disabled={step === 'linking'}>
@@ -115,12 +120,6 @@ export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label
         </div>
       ) : (
         <>
-          {left <= 3 && (
-            // Few links left for good: say so before the button, not only in the confirm step.
-            <Banner tone="warn" title={`Only ${left} ${left === 1 ? 'link' : 'links'} left, ever.`}>
-              Repair a broken login from Accounts instead of linking it again.
-            </Banner>
-          )}
           <Button
             mutates
             track="connections.link"
@@ -128,13 +127,13 @@ export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label
             className="flex h-12 w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-accent text-base font-bold text-accent disabled:border-line disabled:text-disabled"
           >
             <Icon name="plus" size={16} stroke={2.6} />
-            {label ?? `Link another bank (uses 1 of ${left})`}
+            {label ?? (anyLinked ? 'Link another bank' : 'Link a bank')}
           </Button>
         </>
       )}
       {step === 'done' && (
         <Banner tone="success" icon="check">
-          Linked. Transactions will show up in Activity after the first sync, usually within a few minutes.
+          Linked. Transactions show up in Activity in a few minutes.
         </Banner>
       )}
       {error ? <ErrorNote error={error} /> : null}
@@ -161,7 +160,7 @@ function FinishSetup({ id, institution }: { id: string; institution: string }) {
           },
           (e: unknown) => {
             setBusy(false);
-            toast.show({ text: e instanceof Error ? e.message : 'Couldn’t finish setup. Try again.' });
+            toast.show({ text: errorMessage(e) });
           },
         );
       }}
@@ -183,10 +182,10 @@ export function ConnectionsScreen() {
     s === 'ok'
       ? { text: 'Synced', cls: 'bg-funded-bg text-funded-fg' }
       : s === 'login_required'
-        ? { text: 'Sign in again', cls: 'bg-warn-bg text-warn-fg' }
+        ? { text: 'Not syncing', cls: 'bg-warn-bg text-warn-fg' }
         : s === 'error'
           ? { text: 'Sync failed', cls: 'bg-over-bg text-over-fg' }
-          : { text: 'Still counts', cls: 'bg-none-bg text-none-fg' };
+          : { text: 'Removed', cls: 'bg-none-bg text-none-fg' };
   return (
     <Page title="Bank connections" back="/settings">
       {!v && (q.error ? <ErrorNote error={q.error} /> : <Loading />)}
@@ -208,7 +207,6 @@ export function ConnectionsScreen() {
                         className={cx('text-base font-semibold', it.status === 'removed' && 'text-muted')}
                       >
                         {it.institution}
-                        {it.status === 'removed' ? ' (removed)' : ''}
                       </span>
                       <span className="text-xs text-muted">
                         {it.accounts} · linked {syncedLabel(it.linkedAt, '')}
@@ -231,7 +229,7 @@ export function ConnectionsScreen() {
                       track="connections.repair"
                       className="self-start"
                     >
-                      Repair on Accounts
+                      Sign in again
                     </SoftLink>
                   )}
                 </div>
@@ -240,7 +238,7 @@ export function ConnectionsScreen() {
           </Card>
           <LinkBankFlow />
           {v.environment === 'sandbox' && (
-            <p className="m-0 text-xs text-muted">Plaid Sandbox: test banks only.</p>
+            <p className="m-0 text-xs text-muted">Test mode: test banks only.</p>
           )}
         </>
       )}

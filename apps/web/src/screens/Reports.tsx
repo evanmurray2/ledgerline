@@ -19,7 +19,7 @@ import {
 import { MonthBar, TabHeader } from '../components/MonthBar';
 import { clampMonth } from '../state/month';
 import { formatCents, percentOf } from '../lib/money';
-import { monthLabel, monthShort } from '../lib/dates';
+import { monthLabel, monthName, monthShort } from '../lib/dates';
 import { useScreen } from '../lib/common';
 
 type View = 'spend' | 'trend' | 'worth';
@@ -56,7 +56,7 @@ function ByCategory({ r }: { r: ReportsView }) {
   const max = sorted[0]?.spent ?? 1;
   return (
     <Card className="flex flex-col">
-      {sorted.length === 0 && <EmptyNote inCard>No spending yet.</EmptyNote>}
+      {sorted.length === 0 && <EmptyNote inCard>No spending in {monthName(r.month)}.</EmptyNote>}
       {sorted.map((c) => (
         <button
           key={c.categoryId}
@@ -88,7 +88,7 @@ function ByCategory({ r }: { r: ReportsView }) {
   );
 }
 
-function Trend({ r, desktop }: { r: ReportsView; desktop: boolean }) {
+function Trend({ r }: { r: ReportsView }) {
   const top = Math.max(1, ...r.trend.map((t) => t.spent));
   const label = r.trend
     .map(
@@ -98,7 +98,7 @@ function Trend({ r, desktop }: { r: ReportsView; desktop: boolean }) {
     .join(', ');
   return (
     <Card className="flex flex-col gap-2 p-3">
-      <span className="text-md font-bold">Spent, last {r.trend.length} months</span>
+      <span className="text-md font-bold">Spent by month</span>
       <div role="img" aria-label={`Spending by month: ${label}`} className="flex h-[170px] items-end gap-2">
         {r.trend.map((t, i) => {
           const last = i === r.trend.length - 1;
@@ -117,12 +117,9 @@ function Trend({ r, desktop }: { r: ReportsView; desktop: boolean }) {
           );
         })}
       </div>
-      <span className="text-xs text-muted">
-        {r.monthToDate ? `${monthShort(r.month)} is month to date. ` : ''}
-        {desktop
-          ? 'Click a category under Spending by category to see its transactions.'
-          : 'Tap a category on the Spending view to see its transactions.'}
-      </span>
+      {r.monthToDate && (
+        <span className="text-xs text-muted">{monthName(r.month)} isn’t over yet.</span>
+      )}
     </Card>
   );
 }
@@ -236,8 +233,8 @@ export function ReportsScreen() {
   const min = useBudget(current).data?.minMonth;
   const note = r
     ? r.monthToDate
-      ? `Month to date. Your share only: amounts owed to you are left out.${r.stillOwed ? ` ${formatCents(r.stillOwed)} is still owed to you.` : ''}`
-      : 'Whole month. Your share only.'
+      ? 'So far this month. Money owed to you isn’t counted.'
+      : 'Money owed to you isn’t counted.'
     : '';
   const monthNav = month && current && (
     <MonthBar month={month} current={current} min={min} max={current} onGo={go} />
@@ -262,7 +259,7 @@ export function ReportsScreen() {
                 <ByCategory r={r} />
               </div>
               <div className="flex flex-col gap-3">
-                <Trend r={r} desktop />
+                <Trend r={r} />
                 <NetWorth r={r} />
               </div>
             </div>
@@ -289,7 +286,7 @@ export function ReportsScreen() {
             )}
             {view === 'trend' && (
               <>
-                <Trend r={r} desktop={false} />
+                <Trend r={r} />
                 <IncomeTable r={r} />
               </>
             )}
@@ -298,8 +295,9 @@ export function ReportsScreen() {
                 <NetWorth r={r} />
                 <WorthTable />
                 <p className="m-0 text-xs leading-snug text-muted">
-                  Bank and card accounts only. Owed to you ({formatCents(r.stillOwed)}) is not counted until
-                  it’s paid back.
+                  {r.stillOwed > 0
+                    ? 'Bank and card accounts only. Money owed to you isn’t counted.'
+                    : 'Bank and card accounts only.'}
                 </p>
               </>
             )}

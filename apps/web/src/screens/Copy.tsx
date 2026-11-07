@@ -7,17 +7,17 @@ import { PrimaryButton } from '../components/ui';
 import { type CopyState, type FullWhy, openWithoutSignal, start } from '../copy/copy';
 
 /** Why the whole budget is downloading instead of only what changed (also sent to the server's logs). */
-const WHY: Record<FullWhy, string> = {
-  memory: 'this browser can’t save your budget.',
-  first: 'there’s no saved copy on this device yet.',
-  no_prf: 'your passkey didn’t give Ledgerline a key, so nothing is saved on this device.',
-  turned_off: 'this device was signed out from another one.',
-  unreadable_share: 'the saved copy couldn’t be opened (share).',
-  unreadable_key: 'the saved copy couldn’t be opened (key).',
-  unreadable_copy: 'the saved copy couldn’t be opened (copy).',
-  empty: 'the saved copy was empty.',
-  storage: 'this device’s storage couldn’t be read just now. Your saved copy is kept for next time.',
-  reset: 'your budget was restored on the server.',
+const WHY: Record<FullWhy, string | null> = {
+  memory: 'This browser can’t save your budget, so it downloads each time.',
+  first: null,
+  no_prf: 'Your passkey can’t lock a saved budget, so it downloads each time.',
+  turned_off: 'This device was signed out from another one, so it downloads your budget again.',
+  unreadable_share: 'The budget saved on this device couldn’t be opened, so it downloads again.',
+  unreadable_key: 'The budget saved on this device couldn’t be opened, so it downloads again.',
+  unreadable_copy: 'The budget saved on this device couldn’t be opened, so it downloads again.',
+  empty: 'The budget saved on this device was empty, so it downloads again.',
+  storage: 'This device couldn’t read its saved budget just now, so it downloads this time.',
+  reset: 'Your budget was restored, so it downloads again.',
 };
 
 function cancelled(e: unknown): string {
@@ -52,34 +52,34 @@ export function CopyScreen({
     return (
       <Frame title="Getting your budget ready">
         <p className="m-0 text-base leading-relaxed text-ink-2" role="status">
-          {copy.progress > 0 ? `Downloaded ${copy.progress.toLocaleString()} rows…` : 'One moment…'}
+          {copy.progress > 0 ? 'Downloading your budget…' : 'One moment…'}
         </p>
-        {copy.why && (
-          <p className="m-0 text-sm leading-snug text-muted">Downloading everything: {WHY[copy.why]}</p>
-        )}
+        {copy.why && WHY[copy.why] && <p className="m-0 text-sm leading-snug text-muted">{WHY[copy.why]}</p>}
       </Frame>
     );
   if (copy.status === 'failed')
     return (
       <Frame title="Couldn’t open your budget">
         <Problem text={copy.error} />
-        {session && (
+        {session ? (
           <PrimaryButton busy={busy} disabled={busy} onClick={() => go(() => start(session))}>
             Try again
           </PrimaryButton>
+        ) : (
+          // Opened with no signal, so there's no session to start again with: a reload starts over.
+          <PrimaryButton onClick={() => window.location.reload()}>Try again</PrimaryButton>
         )}
       </Frame>
     );
-  // No signal: the saved copy opens with Face ID alone (online, Sign in opens it).
+  // No signal: the saved copy opens with the passkey alone (online, Sign in opens it).
   return (
-    <Frame title="No signal">
+    <Frame title="You’re offline">
       <p className="m-0 text-base leading-relaxed text-ink-2">
-        Your budget is saved on this phone, encrypted. Open it with Face ID to look and make small changes.
-        They’re sent when you’re back online.
+        Your budget is saved on this device. Open it with your passkey to view it and make small changes.
       </p>
       <Problem text={err} />
       <PrimaryButton busy={busy} disabled={busy} onClick={() => go(() => openWithoutSignal(onOffline))}>
-        {busy ? 'Waiting for Face ID…' : 'Open with Face ID'}
+        {busy ? 'Waiting for your passkey…' : 'Open with passkey'}
       </PrimaryButton>
     </Frame>
   );

@@ -44,11 +44,11 @@ export const identity: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (path === '/api/webhooks/plaid' || path.startsWith('/api/auth/')) return next();
   const now = clock(c.env);
   const who = await identify(c.req.raw, c.env, now);
-  if (!who) return c.json({ error: 'unauthenticated', message: 'Sign in with your passkey' }, 401);
+  if (!who) return c.json({ error: 'unauthenticated', message: 'Sign in again with your passkey.' }, 401);
   if (who.kind === 'ops') {
     // The ops token reaches only the health endpoint.
     if (!OPS_PATHS.has(`${c.req.method} ${path}`))
-      return c.json({ error: 'forbidden', message: 'ops token' }, 403);
+      return c.json({ error: 'forbidden', message: 'You can’t open this.' }, 403);
     c.set('userId', 'service');
     c.set('email', '');
     c.set('sessionId', '');
@@ -59,9 +59,9 @@ export const identity: MiddlewareHandler<AppEnv> = async (c, next) => {
     return next();
   }
   if (needsRecentPasskey(c.req.method, path) && now - who.verifiedAt > REAUTH_MS)
-    return c.json({ error: 'reauth', message: 'Confirm it’s you with your passkey' }, 401);
+    return c.json({ error: 'reauth', message: 'Confirm it’s you with your passkey, then try again.' }, 401);
   const m = await membership(c.env.DB, who.userId);
-  if (!m) return c.json({ error: 'forbidden', message: 'Not a member of this budget' }, 403);
+  if (!m) return c.json({ error: 'forbidden', message: 'You don’t have access to this budget.' }, 403);
   c.set('sessionId', who.sessionId ?? '');
   c.set('userId', m.userId);
   c.set('email', m.email);
@@ -86,7 +86,7 @@ export const serverReadsOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (c.req.method !== 'GET' && c.req.method !== 'HEAD') return next();
   const path = new URL(c.req.url).pathname;
   if (SERVER_READS.some((r) => r.test(path))) return next();
-  return c.json({ error: 'on_device', message: 'This screen is worked out on your phone' }, 404);
+  return c.json({ error: 'on_device', message: 'This screen is worked out on your device.' }, 404);
 };
 /** A change made offline and sent again after a dropped answer is applied once (routes/sync.ts). */
 budgetApi.use('*', editOnce);
@@ -101,7 +101,7 @@ budgetApi.use('*', async (c, next) => {
   const u = c.env.USAGE ? await c.env.USAGE() : await usageToday(c.env);
   const st = classifyUsage(u.written, u.read, u.do, u.workers);
   if (st === 'readonly' || st === 'rest')
-    return c.json({ error: 'readonly', message: 'Daily database limit reached' }, 503);
+    return c.json({ error: 'readonly', message: 'View only until the daily limit resets. Nothing is lost.' }, 503);
   return next();
 });
 
@@ -117,17 +117,21 @@ export const ACK: MutationAck = { ok: true };
 
 export async function parse<T extends z.ZodType>(schema: T, req: Request): Promise<z.infer<T>> {
   const body = await req.json().catch(() => {
-    throw new HttpError(400, 'bad_json', 'Body must be JSON');
+    throw new HttpError(400, 'bad_json', TRY_AGAIN);
   });
   const r = schema.safeParse(body);
   if (!r.success)
-    throw new HttpError(
-      400,
-      'invalid',
-      r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
-    );
+    // The field-by-field text is for logs, never the screen.
+    throw new HttpError(400, 'invalid', 'Check what you entered, then try again.');
   return r.data;
 }
+
+/** A missing thing, said so the reader can act (docs/copy.md rule 7). */
+export const GONE = 'This was changed or removed. Pull down to refresh.';
+/** A change made against an older copy of the data. */
+export const CHANGED = 'This changed. Pull down to refresh.';
+export const TRY_AGAIN = 'Something went wrong. Try again.';
+export const BAD_MONTH = 'That month isn’t in your budget. Pick another month.';
 
 export class HttpError extends Error {
   constructor(
@@ -149,7 +153,7 @@ const onError = (e: Error, c: Parameters<Parameters<typeof budgetApi.onError>[0]
       code: e instanceof Error ? e.name : 'unknown',
     }),
   );
-  return c.json({ error: 'internal', message: 'Something went wrong' }, 500);
+  return c.json({ error: 'internal', message: TRY_AGAIN }, 500);
 };
 budgetApi.onError(onError);
 
@@ -206,7 +210,7 @@ budgetApi.get('/session', async (c) => {
 
 budgetApi.get('/budget/:month', async (c) => {
   const m = c.req.param('month');
-  if (!isMonth(m)) throw new HttpError(400, 'invalid', 'month');
+  if (!isMonth(m)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const s = scoped(c);
   const f = await fresh(s, clock(c.env));
   return c.json(await budgetView(s, f, m));
@@ -214,7 +218,7 @@ budgetApi.get('/budget/:month', async (c) => {
 
 budgetApi.get('/budget/:month/assign', async (c) => {
   const m = c.req.param('month');
-  if (!isMonth(m)) throw new HttpError(400, 'invalid', 'month');
+  if (!isMonth(m)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const s = scoped(c);
   const f = await fresh(s, clock(c.env));
   return c.json(await assignView(s, f, m));
@@ -224,9 +228,9 @@ budgetApi.get('/categories/:id/sheet', async (c) => {
   const s = scoped(c);
   const f = await fresh(s, clock(c.env));
   const m = c.req.query('month') ?? f.current;
-  if (!isMonth(m)) throw new HttpError(400, 'invalid', 'month');
+  if (!isMonth(m)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const sheet = await categorySheet(s, f, c.req.param('id'), m);
-  if (!sheet) throw new HttpError(404, 'not_found', 'category');
+  if (!sheet) throw new HttpError(404, 'not_found', GONE);
   return c.json(sheet);
 });
 
@@ -242,12 +246,12 @@ async function addAssignments(
     `SELECT id FROM category WHERE budget_id = ?1 AND id IN (${ids.map((_, i) => `?${i + 2}`).join(',')})`,
     ...ids,
   );
-  if (known.length !== new Set(ids).size) throw new HttpError(404, 'not_found', 'category');
+  if (known.length !== new Set(ids).size) throw new HttpError(404, 'not_found', GONE);
   const b = await s.first<{ budget_start_month: string | null }>(
     `SELECT budget_start_month FROM budget WHERE id = ?1`,
   );
   if (!b?.budget_start_month || month < b.budget_start_month)
-    throw new HttpError(422, 'before_start', 'Months before the budget start can’t be assigned');
+    throw new HttpError(422, 'before_start', 'Months before your budget starts can’t be assigned.');
   const stmts = items.map((i) =>
     s.q(
       i.set
@@ -285,7 +289,7 @@ budgetApi.post('/budget/move', async (c) => {
   const items: { categoryId: string; amount: number }[] = [];
   if (r.from !== 'rta') items.push({ categoryId: r.from, amount: -r.amount });
   if (r.to !== 'rta') items.push({ categoryId: r.to, amount: r.amount });
-  if (!items.length) throw new HttpError(400, 'invalid', 'nothing to move');
+  if (!items.length) throw new HttpError(400, 'invalid', 'Enter an amount to move.');
   return c.json(await addAssignments(c, r.month as Month, items));
 });
 
@@ -296,7 +300,7 @@ budgetApi.put('/categories/:id/target', async (c) => {
   const id = c.req.param('id');
   const t = r.target;
   const exists = await s.first(`SELECT id FROM category WHERE budget_id = ?1 AND id = ?2`, id);
-  if (!exists) throw new HttpError(404, 'not_found', 'category');
+  if (!exists) throw new HttpError(404, 'not_found', GONE);
   // Versioned: a new version from this month on; past months keep the target they were budgeted against.
   await s.batch([
     s.q(

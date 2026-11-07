@@ -253,7 +253,7 @@ export async function start(session: Session): Promise<void> {
           why = bytes ? null : 'empty';
         } catch (e) {
           if (e instanceof Error && e.message === 'other_passkey')
-            throw new Error('Use the passkey you set this phone up with.');
+            throw new Error('Use the passkey you set up this device with.');
           if (!(e instanceof CopyUnreadable)) throw e;
           // The copy can't be opened. The server has everything, so start a new copy (the server turns the old one
           // off when the new one is set up).
@@ -312,10 +312,14 @@ export async function start(session: Session): Promise<void> {
   }
 }
 
+/** Shown when the budget saved on this device can't be opened offline. */
+const UNREADABLE =
+  'The budget saved on this device couldn’t be opened. Connect to the internet to download it again.';
+
 /** Opening with no signal: the passkey opens the copy on its own for up to 7 days after the last sign-in. */
 export async function openWithoutSignal(onSession?: (s: Session) => void): Promise<Session> {
   const rec = await lastRecord();
-  if (!rec) throw new Error('There’s no copy on this phone yet.');
+  if (!rec) throw new Error('Your budget isn’t saved on this device yet. Connect to the internet to open it.');
   const a = await assert(
     {
       challenge: btoa(String.fromCharCode(...new Uint8Array(randomBytes(32))))
@@ -326,27 +330,25 @@ export async function openWithoutSignal(onSession?: (s: Session) => void): Promi
     },
     { salt: rec.salt, credentialId: rec.credentialIdHint ?? null },
   );
-  if (!a.prf) throw new Error('This passkey can’t open the saved budget.');
+  if (!a.prf) throw new Error('This passkey can’t open the budget saved here. Connect to the internet to open it.');
   set({ status: 'opening', error: null, offline: true });
   try {
     const unreadable = (e: unknown): never => {
       if (e instanceof CopyUnreadable)
-        throw new Error(
-          `This phone’s saved copy couldn’t be opened (${e.step}). Turn Airplane Mode off and open Ledgerline: it downloads your budget again.`,
-        );
+        throw new Error(UNREADABLE);
       throw e;
     };
     dataKey = await openKeyOffline(rec, a.credentialId, a.prf).catch((e: Error) => {
       if (e.message === 'offline_expired')
-        throw new Error('Connect to the internet to open Ledgerline: it’s been more than 7 days.');
-      if (e.message === 'other_passkey') throw new Error('Use the passkey you set this phone up with.');
+        throw new Error('You’ve been offline for more than 7 days. Connect to the internet to open Ledgerline.');
+      if (e.message === 'other_passkey') throw new Error('Use the passkey you set up this device with.');
       return unreadable(e);
     });
     record = rec;
     who = rec.who;
     await openHost(await openCopy(rec, dataKey).catch(unreadable));
     const s = await host!.get('session');
-    if (!s) throw new Error('The copy has no session saved.');
+    if (!s) throw new Error(UNREADABLE);
     const session = JSON.parse(s) as Session;
     // The saved session goes to the app first (onSession), then the copy says it's ready, so the app never shows a
     // moment with an open copy and no session ("Couldn't reach Ledgerline").
@@ -498,7 +500,7 @@ export async function editOffline(method: string, path: string, body: unknown): 
   const r = await host!.request(method, path, body);
   const json = r.body ? (JSON.parse(r.body) as unknown) : null;
   if (r.status >= 300)
-    throw Object.assign(new Error((json as { message?: string })?.message ?? 'Couldn’t save'), {
+    throw Object.assign(new Error((json as { message?: string })?.message ?? 'Couldn’t save that. Try again.'), {
       code: (json as { error?: string })?.error,
       status: r.status,
     });

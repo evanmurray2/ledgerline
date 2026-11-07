@@ -6,7 +6,7 @@ import { MergePayees, RenamePayee, type MergeResult, type PayeesView } from '@le
 import { nameKey, rankPastUses, samePayeeName } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../../http/context.js';
-import { HttpError, parse, scoped } from '../api.js';
+import { CHANGED, GONE, HttpError, parse, scoped } from '../api.js';
 import { chunks } from '../../ledger/ledger.js';
 import { claimName, insertKey, rowKeys } from '../../sync/payee-keys.js';
 
@@ -108,7 +108,7 @@ payeesRoutes.post('/settings/payees/merge', async (c) => {
     ...ids,
   );
   if (found.length !== ids.length || found.some((p) => p.merged_into))
-    throw new HttpError(409, 'payee_changed', 'This payee changed. Pull to refresh.');
+    throw new HttpError(409, 'payee_changed', CHANGED);
   const rest = ids.filter((x) => x !== keep);
   const name = r.name ?? found.find((p) => p.id === keep)!.name;
   const [aliases, moved, named] = await s.batch([
@@ -188,11 +188,11 @@ payeesRoutes.post('/settings/payees/merge/:undoId/undo', async (c) => {
     ),
   ]);
   const b = row!.results[0] as { id: number; before: string } | undefined;
-  if (!b) throw new HttpError(404, 'not_found', 'merge');
+  if (!b) throw new HttpError(404, 'not_found', GONE);
   if (done!.results.length) return c.json({ ok: true });
   // The first release recorded no `before` (the JSON text 'null'): there is nothing to put back.
   const before = (b.before ? (JSON.parse(b.before) as MergeBefore | null) : null) ?? null;
-  if (!before?.names) throw new HttpError(409, 'payee_changed', 'Can’t undo now: this payee changed since.');
+  if (!before?.names) throw new HttpError(409, 'payee_changed', 'This payee changed, so it can’t be undone. Pull down to refresh.');
   const ids = Object.keys(before.names);
   const now_ = await s.all<{ id: string; updated_at: number; merged_into: string | null }>(
     `SELECT id, updated_at, merged_into FROM payee WHERE budget_id = ?1 AND id IN (${places(ids.length, 2)})`,
@@ -216,7 +216,7 @@ payeesRoutes.post('/settings/payees/merge/:undoId/undo', async (c) => {
         p.updated_at === before.at &&
         (p.id === before.keep ? p.merged_into === null : p.merged_into === before.keep),
     );
-  if (!unchanged) throw new HttpError(409, 'payee_changed', 'Can’t undo now: this payee changed since.');
+  if (!unchanged) throw new HttpError(409, 'payee_changed', 'This payee changed, so it can’t be undone. Pull down to refresh.');
   const w: Stmt[] = [];
   for (const [id, name] of Object.entries(before.names))
     w.push(
@@ -303,7 +303,7 @@ payeesRoutes.post('/settings/payees/:id', async (c) => {
     id,
   );
   const me = all.find((p) => p.id === id);
-  if (!me) throw new HttpError(404, 'not_found', 'payee');
+  if (!me) throw new HttpError(404, 'not_found', GONE);
   // A rename sent before this payee was joined into another (say, queued offline) mustn't rename the other one.
   if (me.merged_into) throw new HttpError(409, 'payee_changed', 'This payee was joined into another one.');
   const taken = all.find((p) => p.id !== id && !p.merged_into && samePayeeName(p.name, r.name));

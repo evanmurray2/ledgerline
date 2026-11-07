@@ -144,7 +144,7 @@ securityRoutes.post('/settings/security/devices', async (c) => {
   const m = await c.env.DB.prepare(`SELECT budget_id FROM budget_member WHERE user_id = ?1 LIMIT 1`)
     .bind(c.get('userId'))
     .first<{ budget_id: string }>();
-  if (!m) return c.json({ error: 'not_member', message: 'Not a member of this budget' }, 403);
+  if (!m) return c.json({ error: 'not_member', message: 'You don’t have access to this budget.' }, 403);
   const id = b64url(crypto.getRandomValues(new Uint8Array(16)));
   const share = b64url(crypto.getRandomValues(new Uint8Array(32)));
   await c.env.DB.batch([

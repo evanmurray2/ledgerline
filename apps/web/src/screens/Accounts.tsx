@@ -137,7 +137,9 @@ function SyncFailure({
       ? `Syncing ${f.institution}…`
       : step === 'ok'
         ? `${f.institution} is up to date`
-        : `${f.institution} didn’t finish syncing`;
+        : step === 'error'
+          ? `${f.institution} still didn’t sync`
+          : `${f.institution} didn’t finish syncing`;
   return (
     <Banner
       tone={step === 'ok' ? 'success' : 'warn'}
@@ -214,7 +216,7 @@ export function AccountsScreen() {
       toast.show({ text: errorMessage(e) });
       return undefined;
     }
-    if (started === 0) return finish('Already up to date');
+    if (started === 0) return finish('Up to date');
     const until = Date.now() + SYNC_WAIT_MS;
     while (alive.current && Date.now() < until) {
       await new Promise((r) => window.setTimeout(r, SYNC_CHECK_MS));
@@ -231,7 +233,7 @@ export function AccountsScreen() {
     }
     void qc.invalidateQueries();
     if (alive.current)
-      toast.show({ text: 'Your banks are still syncing. New transactions show up in a minute or two.' });
+      toast.show({ text: 'Your banks are still syncing. New transactions show up in a few minutes.' });
     return undefined;
   };
   const { armed, busy, note, run, body, indicator } = usePullToRefresh(scroller, sync, !desktop && canWrite);
@@ -362,12 +364,12 @@ export function AccountsScreen() {
                             )}
                             {a.drift !== null && (
                               <span className="tnum text-xs text-muted" data-testid="bank-drift">
-                                {formatCents(Math.abs(a.drift))} off from bank
+                                Differs from bank by {formatCents(Math.abs(a.drift))}
                               </span>
                             )}
                             {a.pendingInBank > 0 && (
                               <span className="tnum text-xs text-muted" data-testid="pending-in-bank">
-                                {formatCents(a.pendingInBank)} pending already in bank
+                                Bank balance includes {formatCents(a.pendingInBank)} pending
                               </span>
                             )}
                             {a.startNote && (

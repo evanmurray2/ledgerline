@@ -15,7 +15,8 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
   const parent = useParentPath();
   const unlink = useMoneyMutation(api.unlink);
   const match = useMoneyMutation(api.doMatch);
-  const [unlinked, setUnlinked] = useState(false);
+  /** After Unlink: who is owed again ('' when the label has no name). */
+  const [unlinked, setUnlinked] = useState<string | null>(null);
   const pb = t.paybacks[0];
   return (
     <Sheet
@@ -25,8 +26,8 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
       gap="auto"
       header={
         <SheetTitle
-          tag={unlinked ? 'Waiting to match' : 'Paid back'}
-          tagClass={unlinked ? 'text-funded-fg' : 'text-owed-fg'}
+          tag={unlinked !== null ? 'Waiting to match' : 'Paid back'}
+          tagClass={unlinked !== null ? 'text-funded-fg' : 'text-owed-fg'}
           amount={formatCents(t.amount, { plus: true })}
           amountClass="text-funded-fg"
           sub={`${t.payee} · ${t.accountName} · ${dayLabel(t.date)}`}
@@ -38,7 +39,7 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
         </PrimaryButton>
       }
     >
-      {!unlinked && pb ? (
+      {unlinked === null && pb ? (
         <div className="flex flex-col gap-2">
           <Label>Pays back</Label>
           <Link
@@ -47,7 +48,6 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
           >
             <span className="flex flex-col">
               <span className="text-md font-semibold">{pb.label}</span>
-              <span className="text-xs text-muted">{formatCents(pb.amount)} matched</span>
             </span>
             <span className="tnum font-bold">{formatCents(pb.amount)}</span>
           </Link>
@@ -58,22 +58,21 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
             onClick={async () => {
               await unlink.mutateAsync(pb.inflowKey);
               usage.suggestion('payback', 'unlinked');
-              setUnlinked(true);
+              setUnlinked(pb.label.split(' · ')[0] ?? '');
             }}
             className="self-start"
           >
             Unlink
           </SoftButton>
           <p className="m-0 text-sm leading-snug text-muted">
-            It went to Ready to Assign and settled {formatCents(pb.amount, { whole: true })} of what was owed
-            for {pb.label.split(' · ')[0]}.
+            It went to Ready to Assign and paid back {formatCents(pb.amount)}.
           </p>
         </div>
-      ) : (
+      ) : unlinked !== null ? (
         <div className="flex flex-col gap-2">
           <Banner tone="success" title="Unlinked">
-            {pb?.label.split(' · ')[0]} is owed again. This {formatCents(t.amount)} is back in Waiting to
-            match, outside Ready to Assign, until you match it again or call it income.
+            {unlinked ? `${unlinked} is owed again. ` : ''}This {formatCents(t.amount)} is back in Waiting to
+            match.
           </Banner>
           <div className="flex gap-2">
             {pb && (
@@ -88,7 +87,7 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
                     rest: 'income',
                   });
                   usage.undo('unlink');
-                  setUnlinked(false);
+                  setUnlinked(null);
                 }}
               >
                 Undo
@@ -99,14 +98,14 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
             </SoftLink>
           </div>
         </div>
-      )}
+      ) : null}
       {t.memo && (
         <div className="flex flex-col gap-1">
           <Label>Memo</Label>
           <span className="text-base">{t.memo}</span>
         </div>
       )}
-      <BankSays t={t} extra={`Matched by you on ${dayLabel(t.date)}`} />
+      <BankSays t={t} />
     </Sheet>
   );
 }
@@ -153,8 +152,7 @@ export function PairedTransfer({ t, close }: { t: TxnSheet; close: () => void })
               </div>
             </div>
             <p className="m-0 text-sm leading-snug text-muted">
-              Paired automatically: same amount, opposite sides, within 5 days, and no other account had a
-              match. Both accounts are in your budget, so this moves money without changing any category.
+              It moves money between your accounts. No category changes.
             </p>
             <SoftButton
               mutates
@@ -167,12 +165,12 @@ export function PairedTransfer({ t, close }: { t: TxnSheet; close: () => void })
               }}
               className="self-start"
             >
-              Not a transfer? Unpair
+              Unpair
             </SoftButton>
           </>
         ) : (
           <Banner tone="warn" title="Unpaired">
-            Both halves now need a category and show in Activity under Needs category.
+            Both halves now need a category.
           </Banner>
         )}
       </div>

@@ -54,18 +54,18 @@ export async function routeApi(req: Request, env: Env): Promise<Response> {
   const auth = req.headers.get('authorization');
   if (auth?.startsWith('Bearer ')) {
     if (!(await secretMatches(auth.slice(7), env.OPS_TOKEN)))
-      return json({ error: 'unauthenticated', message: 'Sign in with your passkey' }, 401);
+      return json({ error: 'unauthenticated', message: 'Sign in again with your passkey.' }, 401);
     if (!OPS_PATHS.has(`${req.method} ${path}`))
-      return json({ error: 'forbidden', message: 'ops token' }, 403);
+      return json({ error: 'forbidden', message: 'You can’t open this.' }, 403);
     const budgetId = await dir.firstBudget();
-    if (!budgetId) return json({ error: 'not_found', message: 'no budget' }, 404);
+    if (!budgetId) return json({ error: 'not_found', message: 'No budget was found. Sign in again.' }, 404);
     return store(budgetId).api(req, { userId: 'service', budgetId, email: '', sessionId: '', verifiedAt: 0 });
   }
 
   // Everything else: who is asking, then their own budget. A request with no session cookie can't be anyone,
   // so it is refused here without a Durable Object request: a loop of them can't use up the daily allowance.
   if (!readCookie(req, SESSION_COOKIE) && !devSignIn(env))
-    return json({ error: 'unauthenticated', message: 'Sign in with your passkey' }, 401);
+    return json({ error: 'unauthenticated', message: 'Sign in again with your passkey.' }, 401);
   const now = Date.now();
   if (now < restingUntil && restsDuring(req.method, path)) return json(RESTING, 503);
   const a = await dir.authenticate(req.headers.get('cookie'), req.method, path);
