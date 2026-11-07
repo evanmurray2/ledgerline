@@ -53,18 +53,21 @@ export function isLow(s: StatusInput): boolean {
   return s.spent / total - elapsedShare(s.month, s.today) > 0.3;
 }
 
-export function isOverfunded(s: StatusInput): boolean {
+/**
+ * How much more a category holds than its target asks for (0 when it isn't overfunded). A Set aside target counts
+ * only the extra assigned this month that is still unspent: money assigned on top to cover spending, then spent, is
+ * not extra (D-69).
+ */
+export function overfundedBy(s: StatusInput): Cents {
   const t = s.target;
-  if (!t) return false;
-  switch (t.type) {
-    case 'refill':
-      return s.available > t.amount;
-    case 'set_aside':
-      return s.assignedThisMonth > t.amount;
-    case 'by_date':
-    case 'no_date':
-      return s.available > t.amount;
-  }
+  if (!t) return cents(0);
+  const extra =
+    t.type === 'set_aside' ? Math.min(s.assignedThisMonth - t.amount, s.available) : s.available - t.amount;
+  return cents(Math.max(0, extra));
+}
+
+export function isOverfunded(s: StatusInput): boolean {
+  return overfundedBy(s) > 0;
 }
 
 export function categoryStatus(s: StatusInput): CategoryStatus {
@@ -85,10 +88,8 @@ export function suggestedFix(status: CategoryStatus, s: StatusInput): Cents {
       return cents(-s.available);
     case 'underfunded':
       return s.need;
-    case 'overfunded': {
-      const t = s.target!;
-      return cents(-(t.type === 'set_aside' ? s.assignedThisMonth - t.amount : s.available - t.amount));
-    }
+    case 'overfunded':
+      return cents(-overfundedBy(s));
     case 'low': {
       // Bring it back to about a third of the period amount, rounded up to whole dollars (the prototype's "Add $20").
       const period = s.target?.amount ?? s.lowThreshold ?? 0;

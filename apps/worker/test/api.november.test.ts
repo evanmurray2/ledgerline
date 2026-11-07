@@ -209,7 +209,7 @@ describe('Overfunded wording', () => {
     });
   });
 
-  it('a Set aside target says how much more was assigned, even when spending left less than the target', async () => {
+  it('a Set aside target is overfunded only by the extra assigned that is still unspent (D-69)', async () => {
     const put = (p: string, body: unknown) =>
       app(p, { method: 'PUT', headers: H, body: JSON.stringify(body) });
     const cat = 'shopping';
@@ -243,7 +243,23 @@ describe('Overfunded wording', () => {
       .find((c) => c.id === cat)!;
     expect(row.available).toBe(5_000);
     expect(row.status).toBe('overfunded');
-    expect(row.detail).toBe('$100.00 more assigned than this month’s $100.00');
+    expect(row.detail).toBe('$50.00 extra assigned is unspent · this month’s $100.00');
+    expect(row.fix).toEqual({ verb: 'Move', amount: -5_000 });
+    // Spend the rest: the extra paid for spending, so nothing is left over and it isn't overfunded.
+    await post('/api/transactions', {
+      kind: 'pending',
+      accountId: checking,
+      date: '2026-11-14',
+      amount: -5_000,
+      payee: 'Pharmacy',
+      categoryId: cat,
+      repeats: 'never',
+    });
+    row = (await get<BudgetView>('/api/budget/2026-11')).groups
+      .flatMap((g) => g.categories)
+      .find((c) => c.id === cat)!;
+    expect(row.available).toBe(0);
+    expect(row.status).not.toBe('overfunded');
   });
 
   it('Check these: OK on a bank row that cleared at a new amount clears it from Needs attention', async () => {
