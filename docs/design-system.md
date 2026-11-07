@@ -61,7 +61,7 @@ Tailwind's (`leading-tight`, `-snug`, `-normal`, `-relaxed`). Upper-case labels 
 | Class            | Use                                 |
 | ---------------- | ----------------------------------- |
 | `shadow-low`     | A selected segment, a switch's knob |
-| `shadow-raised`  | A toast, the floating Note button   |
+| `shadow-raised`  | A toast, a floating button          |
 | `shadow-overlay` | A menu, a sheet, a dialog           |
 
 ### Motion
@@ -83,6 +83,7 @@ Import them from `components/ui`, which re-exports `buttons`, `headers` and `fie
 | `TextButton`, `textLinkClass` | A quiet text action: "Show archived", "Add line".                            |
 | `DangerLink`                  | Red text that starts a removal ("Delete…"); `ConfirmInline` confirms it.     |
 | `HeaderAction`                | A screen header's action: a pill with an icon, or `iconOnly` on a phone tab. |
+| `FloatingAction`              | Activity's Add on a phone: a round accent button above the tab bar (D-71).   |
 
 All of them: `mutates` disables the button offline or read-only; hover shows only on a computer; pressed dims to
 70 %; disabled looks the same in every tone. `PrimaryButton busy` keeps its color, shows a spinner and can't be

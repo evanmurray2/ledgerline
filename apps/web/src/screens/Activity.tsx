@@ -16,6 +16,7 @@ import {
   Chip,
   CountBadge,
   EmptyNote,
+  FloatingAction,
   HeaderAction,
   ErrorNote,
   Loading,
@@ -310,16 +311,25 @@ export function ActivityScreen() {
     needs.filter((r) => !q || r.payee.toLowerCase().includes(q.toLowerCase())).length > 0;
   const empty = v && total === 0 && !showNeeds && !(filter === 'attention' && !q);
 
-  const addButton = (
+  // The sheet keeps the list's month, filter and search, so the list under it doesn't change.
+  const addSearch = { month: search.month, filter: search.filter, q: search.q };
+  // On a phone Add floats at the bottom right, in thumb reach (D-71); it steps aside while Select is on.
+  const addButton = desktop && (
     <HeaderAction
       to="/activity/add"
-      // The sheet keeps the list's month, filter and search, so the list under it doesn't change.
-      search={{ month: search.month, filter: search.filter, q: search.q }}
+      search={addSearch}
       track="activity.add"
       icon="plus"
-      label={desktop ? 'Add transaction' : 'Add'}
-      ariaLabel={desktop ? undefined : 'Add transaction'}
-      iconOnly={!desktop}
+      label="Add transaction"
+    />
+  );
+  const addFab = !desktop && !selecting && (
+    <FloatingAction
+      to="/activity/add"
+      search={addSearch}
+      track="activity.add"
+      icon="plus"
+      label="Add transaction"
     />
   );
   const searchBox = (
@@ -370,7 +380,7 @@ export function ActivityScreen() {
         right={addButton}
         below={[searchBox, chips]}
       />
-      <ScreenBody>
+      <ScreenBody className={addFab ? 'pb-20' : undefined}>
         {q && month && (
           <p className="m-0 px-0.5 text-sm text-muted" data-testid="all-months">
             Searching all months
@@ -533,6 +543,7 @@ export function ActivityScreen() {
           </div>
         </div>
       )}
+      {addFab}
       {picking && v && (
         <ActivityCategoryPicker
           picking={picking}

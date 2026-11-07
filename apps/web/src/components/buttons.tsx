@@ -3,6 +3,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useCanWrite } from '../state/connectivity';
 import { cx, Icon, type IconName } from './ui';
+import { useToastRoomForFab } from './Toast';
 
 // ------------------------------------------------------------------ buttons
 
@@ -244,6 +245,42 @@ const ICON_ACTION = cx(
   'hit flex h-11 w-11 items-center justify-center rounded-full text-ink-2 not-disabled:hover:bg-sunken disabled:text-line-strong',
   PRESS,
 );
+
+/**
+ * A phone screen's one "make a new one" action, in thumb reach: a 56 px round accent button at the bottom right,
+ * just above the tab bar (D-71). Put it last in a `relative` screen root; the list under it needs `pb-20` so its
+ * last row can scroll clear. On a computer the action stays a `HeaderAction`.
+ */
+export function FloatingAction({
+  icon,
+  label,
+  to,
+  search,
+  track,
+}: {
+  icon: IconName;
+  /** The button's accessible name ("Add transaction"). */
+  label: string;
+  to: string;
+  search?: Record<string, string | undefined>;
+  track: string;
+}) {
+  useToastRoomForFab(true);
+  return (
+    <Link
+      to={to}
+      search={search}
+      data-track={track}
+      aria-label={label}
+      className={cx(
+        'absolute bottom-4 right-4 z-20 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-on-accent shadow-raised',
+        PRESS,
+      )}
+    >
+      <Icon name={icon} size={24} stroke={2.4} />
+    </Link>
+  );
+}
 
 /**
  * The one style for a screen's own action in its header (Add, Refresh), the same on phone and desktop: the soft
