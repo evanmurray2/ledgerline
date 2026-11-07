@@ -12,6 +12,8 @@ import {
   localDate,
   matchReissues,
   type MatchRow,
+  ENTRY_DAYS_AFTER,
+  ENTRY_DAYS_BEFORE,
 } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { Env } from '../env.js';
@@ -129,6 +131,24 @@ export async function healPending(
     addDays(today, -44),
     CHUNK.process,
   );
+  // Posted rows that took no key yet, with an open entry on the same account dated so it could pair (D-72): you often
+  // add a bill after the bank's row has posted, and step 3 only meets posted rows as they arrive.
+  const posted = await s.all<{ provider_txn_id: string }>(
+    `SELECT b.provider_txn_id FROM bank_txn b
+       JOIN account a ON a.budget_id = b.budget_id AND a.provider_account_id = b.provider_account_id
+     WHERE b.budget_id = ?1 AND b.connection_id = ?2 AND b.pending = 0 AND b.removed_at IS NULL AND b.date >= ?3
+       AND b.txn_key = 'p:' || b.provider_txn_id
+       AND EXISTS (SELECT 1 FROM manual_pending m WHERE m.budget_id = b.budget_id AND m.account_id = a.id
+         AND m.deleted_at IS NULL AND m.matched_txn_key IS NULL AND m.kind IN ('pending', 'upcoming')
+         AND m.date BETWEEN date(b.date, ?5) AND date(b.date, ?6))
+     ORDER BY b.date DESC LIMIT ?4`,
+    connectionId,
+    addDays(today, -44),
+    CHUNK.process,
+    `-${ENTRY_DAYS_BEFORE} days`,
+    `+${ENTRY_DAYS_AFTER} days`,
+  );
+  open.push(...posted);
   if (!open.length) return { changed: false };
   const evs: EventRow[] = open.map((r, i) => ({
     id: i,

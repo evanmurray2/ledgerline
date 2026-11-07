@@ -12,7 +12,7 @@ const { db, setup, sync, heal, keyOf, overlay, listed, counted, asks, call } = b
   'entry-covers',
   B,
   'con_ec',
-  13,
+  14,
   NOW,
 );
 
@@ -82,6 +82,27 @@ describe('your entry and the bank’s rows', () => {
     await sync([plaidTxn('tj', 3, 64.22, '2026-11-13', 'TRADER JOE S #123', { merchant: "Trader Joe's" })]);
     expect(await keyOf('tj')).toBe('m:tj');
     expect(await counted(3)).toEqual({ spent: -6422, pending: 0 });
+  });
+
+  it('a bill you add after its posted row arrived, dated two days later: the heal step asks (D-72)', async () => {
+    await sync([
+      plaidTxn('cw', 14, 44.99, '2026-11-04', 'CALWATER SERVICE 866-734-0743 CA', {
+        merchant: 'Calwater Service',
+        payment_channel: 'other',
+      }),
+    ]);
+    await entry('m:cw', 14, -4499, '2026-11-06', 'Calwater');
+    // Nothing new from the bank: the heal step after the next sync meets the posted row with your entry.
+    expect((await heal()).changed).toBe(true);
+    const a = (await asks()).find((x) => x.ref_key === 'p:cw')!;
+    expect(JSON.parse(a.data)).toEqual({ candidates: ['m:cw'] });
+    expect((await call('POST', `/api/same-purchase/${a.id}`, { answer: 'yes', key: 'm:cw' })).status).toBe(
+      200,
+    );
+    expect(await keyOf('cw')).toBe('m:cw');
+    expect(await counted(14)).toEqual({ spent: -4499, pending: 0 });
+    // Asked once: healing again writes nothing.
+    expect((await heal()).changed).toBe(false);
   });
 
   it('a close amount alone no longer pairs an entry with a posted row: "Same purchase?" asks', async () => {

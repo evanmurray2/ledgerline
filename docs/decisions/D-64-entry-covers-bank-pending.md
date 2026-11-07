@@ -15,7 +15,7 @@ posted, and the bank's row kept counting after that until the bank removed it. A
    pending row still counts.
 2. **Entries pair only on exact evidence**: the name you typed equals one of the bank row's Plaid names
    (`payeeNameKey`), or the same amount on the same day. Candidates: same account and sign, amount within tolerance,
-   the entry dated 0–14 days before, or 1 day after, the bank row. The pair must be each row's one candidate with
+   the entry dated 0–14 days before, or 1 day after (7 days since D-72), the bank row. The pair must be each row's one candidate with
    evidence. The weighted score for entries is gone.
 3. **Cover** (step 4): an unmatched entry covers a bank pending row (`manual_pending.covers_provider_txn_id`). The bank
    row is hidden and stops counting; the entry keeps counting with your amount, category, memo, splits and owed
