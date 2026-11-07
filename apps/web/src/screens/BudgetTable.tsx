@@ -2,6 +2,7 @@
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import type { BudgetCategoryRow, BudgetView } from '@ledgerline/contracts';
+import { errorMessage } from '../api/client';
 import { api } from '../api/endpoints';
 import { useMoneyMutation } from '../api/hooks';
 import { Bar, Card, cx, STATUS, StatusWord, TONE, type Tone } from '../components/ui';
@@ -9,7 +10,7 @@ import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { monthLabel } from '../lib/dates';
 import { useCanWrite } from '../state/connectivity';
 import { toast } from '../components/Toast';
-import { catTone, isQuiet, owedTone } from './BudgetRows';
+import { catTone, isQuiet, OWED_DETAIL, owedTone } from './BudgetRows';
 
 /** Moves focus to the Assigned field `step` rows away. False when there is none (Tab then leaves the table). */
 function focusAssigned(from: HTMLElement, step: number): boolean {
@@ -52,7 +53,7 @@ function AssignedCell({
     try {
       await set.mutateAsync({ month, categoryId: id, assigned: v });
     } catch (e) {
-      toast.show({ text: e instanceof Error ? e.message : 'Couldn’t save that.' });
+      toast.show({ text: errorMessage(e) });
     }
   };
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -270,12 +271,19 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
             }),
           ),
         ])}
-        {b.cards.length > 0 && groupRow('Credit card payments')}
+        {b.cards.length > 0 && groupRow('Card payments')}
         {b.cards.map((c) =>
           row({
             key: c.accountId,
             name: c.name,
-            detail: c.detail,
+            detail:
+              c.status === 'short' ? (
+                <>
+                  <StatusWord word="Short" tone="over" icon="alert" /> · {c.detail}
+                </>
+              ) : (
+                c.detail
+              ),
             assigned: dash,
             spent: '—',
             avail: formatCents(c.available),
@@ -284,11 +292,17 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
             track: 'budget.card',
           }),
         )}
-        {groupRow('Owed to you · not a category')}
+        {groupRow('Owed to you')}
         {row({
           key: 'owed',
           name: 'Owed to you',
-          detail: `${t.word} · fronted money comes back to Ready to Assign`,
+          detail: t.word ? (
+            <>
+              <StatusWord word={t.word} tone={t.tone} icon={t.icon} /> · {OWED_DETAIL}
+            </>
+          ) : (
+            OWED_DETAIL
+          ),
           assigned: dash,
           spent: '—',
           avail: `${formatCents(b.owed.out)} out`,

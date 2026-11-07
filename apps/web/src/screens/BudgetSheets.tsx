@@ -171,7 +171,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
                 ? 'Change the amount to save'
                 : ''
               : !moveOk
-                ? 'Choose a category and an amount to move'
+                ? 'Enter an amount to move'
                 : ''
           }
         >
@@ -236,9 +236,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
               />
             )}
           </div>
-          <p className="m-0 text-xs text-muted">
-            The difference comes from or goes back to Ready to Assign ({formatCents(c.rta)}).
-          </p>
+          <p className="m-0 text-xs text-muted">Ready to Assign has {formatCents(c.rta)}.</p>
         </>
       ) : (
         <>
@@ -261,7 +259,9 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
             />
           </Field>
           <p className="m-0 text-xs text-muted">
-            {c.name} would have {formatCents(c.available - (moveCents ?? 0))} left.
+            {c.available - (moveCents ?? 0) < 0
+              ? `${c.name} would be overspent by ${formatCents(moveCents! - c.available)}.`
+              : `${c.name} would have ${formatCents(c.available - (moveCents ?? 0))} left.`}
           </p>
         </>
       )}
@@ -289,7 +289,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
             </TextButton>
           )}
         </div>
-        {c.recent.length === 0 && <EmptyNote>No transactions yet this month.</EmptyNote>}
+        {c.recent.length === 0 && <EmptyNote>No transactions in {monthName(month)}.</EmptyNote>}
         {c.recent.map((r) => (
           <Link
             key={r.key}
@@ -377,7 +377,10 @@ export function AssignSheetScreen() {
       onClose={close}
       gap="large"
       header={
-        <SheetTitle title={`Assign ${formatCents(v.rta)}`} sub={`Ready to Assign in ${monthName(month)}`} />
+        <SheetTitle
+          title={v.rta > 0 ? `Assign ${formatCents(v.rta)}` : 'Assign money'}
+          sub={`Ready to Assign in ${monthName(month)}`}
+        />
       }
       footer={
         <div className="flex flex-col gap-2">
@@ -392,8 +395,7 @@ export function AssignSheetScreen() {
           </div>
           {left < 0 && (
             <p role="alert" className="m-0 text-sm leading-snug text-over-fg">
-              That’s {formatCents(-left)} more than you have. Ready to Assign would go negative and show in
-              Needs attention until you take money back from a category.
+              That’s {formatCents(-left)} more than you have.
             </p>
           )}
           <PrimaryButton
@@ -401,10 +403,11 @@ export function AssignSheetScreen() {
             track={left < 0 ? 'assign.anyway' : 'assign.apply'}
             danger={left < 0}
             disabled={items.size === 0 || !canWrite}
+            why={items.size === 0 ? 'Pick a category to assign' : ''}
             onClick={() => void apply()}
           >
             {items.size === 0
-              ? 'Nothing selected'
+              ? 'Assign'
               : left < 0
                 ? 'Assign anyway'
                 : sum >= 0

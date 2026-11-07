@@ -7,16 +7,55 @@ import { Banner, ErrorNote, PrimaryButton } from '../components/ui';
 import { usage } from '../usage/tracker';
 
 const SCREEN_NAMES: Record<string, string> = {
+  app: 'Ledgerline',
+  welcome: 'Welcome',
+  setup: 'Setup',
+  'setup.start': 'Setup · Budget start',
+  'setup.link': 'Setup · Link a bank',
+  'setup.categories': 'Setup · Categories',
   budget: 'Budget',
   'budget.attention': 'Budget · Needs attention',
   'budget.low': 'Budget · Low',
+  category: 'Budget · Category',
+  assign: 'Budget · Assign',
+  target: 'Target',
+  targets: 'Set targets',
+  owed: 'Owed to you',
+  'owed.close': 'Owed to you · Close out',
   activity: 'Activity',
   'activity.attention': 'Activity · Needs attention',
   'activity.pending': 'Activity · Not posted yet',
+  add_txn: 'Add a transaction',
+  match: 'Match money back',
+  check_pending: 'Check not cleared',
+  'transfer.pick': 'Transfer to sort out',
+  txn: 'Transaction',
+  'txn.split': 'Split',
+  'payee.rename': 'Rename payee',
   accounts: 'Accounts',
+  register: 'Account',
+  repair: 'Repair a bank',
   reports: 'Reports',
+  'reports.spend': 'Reports · Spending',
+  'reports.trend': 'Reports · Trends',
+  'reports.worth': 'Reports · Net worth',
   settings: 'Settings',
+  'settings.appearance': 'Settings · Appearance',
+  'settings.categories': 'Settings · Categories',
+  'settings.category.new': 'Settings · New category',
+  'settings.category.edit': 'Settings · Edit category',
+  'settings.group.new': 'Settings · New group',
+  'settings.rules': 'Settings · Rules',
+  'settings.payees': 'Settings · Payees',
+  'settings.payee.rename': 'Settings · Rename payee',
+  'settings.connections': 'Settings · Bank connections',
+  'settings.data': 'Settings · Import and export',
 };
+
+/** A friendly name for a screen key: its own, else its first part's (txn.posted → Transaction), never the key. */
+function screenName(key: string): string {
+  return SCREEN_NAMES[key] ?? SCREEN_NAMES[key.split('.')[0] ?? ''] ?? 'Ledgerline';
+}
 
 export function NoteSheet({ onClose }: { onClose: () => void }) {
   const [screen] = useState(() => usage.currentScreen());
@@ -42,7 +81,7 @@ export function NoteSheet({ onClose }: { onClose: () => void }) {
       track="note"
       onClose={onClose}
       gap="auto"
-      header={<SheetTitle title="Note about this screen" sub={SCREEN_NAMES[screen] ?? screen} />}
+      header={<SheetTitle title="Note about this screen" sub={screenName(screen)} />}
       footer={
         saved ? (
           <PrimaryButton onClick={onClose}>Done</PrimaryButton>
@@ -61,7 +100,7 @@ export function NoteSheet({ onClose }: { onClose: () => void }) {
       }
     >
       {saved ? (
-        <Banner tone="success">Saved. Notes are included in Export usage (Import and export).</Banner>
+        <Banner tone="success">Saved.</Banner>
       ) : (
         <div className="flex flex-col gap-3">
           <textarea
@@ -74,8 +113,7 @@ export function NoteSheet({ onClose }: { onClose: () => void }) {
             className="w-full rounded-lg border border-line-strong bg-surface p-3 text-lg text-ink"
           />
           <span className="text-xs leading-snug text-muted">
-            Saved with the screen name and your last 20 taps, so it’s clear what you were doing. No amounts or
-            payee names are attached.
+            It’s saved with your last 20 taps, but no amounts or payee names.
           </span>
           {error ? <ErrorNote error={error} /> : null}
         </div>

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
+import { ApiError, errorMessage } from '../api/client';
 import { qk } from '../api/hooks';
 import { useCanWrite } from '../state/connectivity';
 import { usage } from '../usage/tracker';
@@ -73,17 +74,19 @@ export function RenamePayeeSheet({ onClose, loading, name, rawNames, others, onS
             mutates={match ? true : 'offline'}
             track={match ? 'payee.join' : 'payee.rename.save'}
             busy={busy}
-            disabled={busy || !value.trim() || (!match && value.trim() === name)}
+            disabled={busy || !value.trim() || (!match && value.trim() === name) || (!!match && !online)}
             why={
               !value.trim()
                 ? 'Enter a name to save'
                 : !match && value.trim() === name
                   ? 'Change the name to save'
-                  : ''
+                  : match && !online
+                    ? 'You’re offline'
+                    : ''
             }
             onClick={() => void save()}
           >
-            {match ? (online ? 'Join payees' : 'Joining needs a connection') : 'Save name'}
+            {match ? 'Join payees' : 'Save name'}
           </PrimaryButton>
         </div>
       }
@@ -127,9 +130,7 @@ export function RenamePayeeSheet({ onClose, loading, name, rawNames, others, onS
           </Card>
         </div>
       )}
-      <p className="m-0 text-xs leading-snug text-muted">
-        Applies to past and future transactions. The bank’s own text stays on each transaction.
-      </p>
+      <p className="m-0 text-xs leading-snug text-muted">Applies to past and future transactions.</p>
     </Sheet>
   );
 }
@@ -153,7 +154,7 @@ export function usePayeeSave() {
             await api.undoMergePayees(r.undoId);
             usage.undo('payee_join');
           } catch (e) {
-            toast.show({ text: e instanceof Error ? e.message : 'Couldn’t undo that.' });
+            toast.show({ text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t undo that. Try again.' });
           }
           refresh();
         },

@@ -377,7 +377,7 @@ describe('the payee re-file job', () => {
   it('refuses Undo of a join made before it', async () => {
     const r = await post(`/settings/payees/merge/${hluUndo}/undo`, {});
     expect(r.status).toBe(409);
-    expect(((await r.json()) as { message?: string }).message ?? '').toMatch(/changed since/);
+    expect(((await r.json()) as { message?: string }).message ?? '').toMatch(/can’t be undone/);
   });
 
   it('is restartable: a step run again, or the whole job run again, changes nothing', async () => {

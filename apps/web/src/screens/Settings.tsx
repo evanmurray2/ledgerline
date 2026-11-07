@@ -39,12 +39,18 @@ function useSectionMeta() {
   const conns = useConnections().data;
   const payees = usePayees().data;
   const needRepair = conns?.items.filter((i) => i.status === 'login_required' || i.status === 'error') ?? [];
+  const first = needRepair[0];
+  const problem =
+    needRepair.length > 1
+      ? ` · ${needRepair.length} banks need you`
+      : first
+        ? ` · ${first.institution} ${first.status === 'login_required' ? 'needs you to sign in again' : 'didn’t sync'}`
+        : '';
+  const n = payees?.payees.length ?? 0;
   const text: Record<string, string> = {
     appearance: 'Light, Dark or Match device',
-    payees: payees ? `Rename and join · ${payees.payees.length} payees` : 'Rename and join',
-    connections: conns
-      ? `${conns.used} of ${conns.limit} links used${needRepair[0] ? ` · ${needRepair[0].institution} needs repair` : ''}`
-      : '',
+    payees: payees ? `Rename and join · ${n} ${n === 1 ? 'payee' : 'payees'}` : 'Rename and join',
+    connections: conns ? `${conns.used} of ${conns.limit} bank links used${problem}` : '',
     data: 'History import · CSV and JSON export · recovery',
   };
   return { text, repair: needRepair.length > 0 };
@@ -108,8 +114,21 @@ export function SettingsLayout() {
 const THEMES: { id: ThemePref; name: string; desc: string }[] = [
   { id: 'light', name: 'Light', desc: 'Always light' },
   { id: 'dark', name: 'Dark', desc: 'Always dark' },
-  { id: 'device', name: 'Match device', desc: 'Follows your phone or computer' },
+  { id: 'device', name: 'Match device', desc: 'Follows your device' },
 ];
+
+/** A time zone as people say it ("Pacific Time"), not its IANA name ("America/Los_Angeles"). */
+function zoneName(tz: string): string {
+  if (tz === 'America/Los_Angeles') return 'US Pacific';
+  try {
+    const part = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'longGeneric' })
+      .formatToParts(new Date())
+      .find((p) => p.type === 'timeZoneName');
+    return part?.value ?? tz.replace(/_/g, ' ');
+  } catch {
+    return tz.replace(/_/g, ' ');
+  }
+}
 
 function setTheme(p: ThemePref) {
   writeThemePref(p);
@@ -125,9 +144,7 @@ function Preferences() {
     await api.patchSettings(body);
     await qc.invalidateQueries({ queryKey: qk.session });
     if (body.tracking === false)
-      setTrackNote(
-        'Collection stopped. Nothing new is recorded; stored events are deleted after 90 days, and you can export them first from Import and export.',
-      );
+      setTrackNote('Recording stopped. What was recorded is deleted after 90 days.');
     if (body.tracking === true) setTrackNote(null);
   };
   if (!s) return <Loading />;
@@ -141,9 +158,7 @@ function Preferences() {
               Decides which day and month a transaction falls in
             </span>
           </span>
-          <span className="shrink-0 whitespace-nowrap text-md text-ink-2">
-            {s.budget.timeZone === 'America/Los_Angeles' ? 'US Pacific' : s.budget.timeZone}
-          </span>
+          <span className="shrink-0 whitespace-nowrap text-md text-ink-2">{zoneName(s.budget.timeZone)}</span>
         </div>
         <div className="flex min-h-14 items-center justify-between gap-3 border-t border-divider px-3 py-2">
           <span className="flex flex-col gap-px text-base font-semibold">
@@ -265,9 +280,7 @@ export function AppearanceSection() {
   return (
     <Page title="Appearance" back="/settings">
       <ThemeChoice />
-      <p className="m-0 text-sm text-muted">
-        Saved on this device. Every screen follows it, on phone and desktop.
-      </p>
+      <p className="m-0 text-sm text-muted">Saved on this device.</p>
       <SectionTitle>Preferences</SectionTitle>
       <Preferences />
     </Page>

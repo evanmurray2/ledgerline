@@ -25,6 +25,8 @@ import { Why } from '../../components/Why';
 
 // ------------------------------------------------------------------ import and export
 
+const count = (n: number) => `${n.toLocaleString('en-US')} ${n === 1 ? 'transaction' : 'transactions'}`;
+
 export function DataScreen() {
   useScreen('settings.data');
   const accounts = useAccounts();
@@ -53,9 +55,8 @@ export function DataScreen() {
     setError(null);
     try {
       const r = await api.importCsv({ accountId: acct, csv: file.text });
-      setResult(
-        `Imported ${r.imported.toLocaleString('en-US')} transactions as history. ${r.skipped.toLocaleString('en-US')} overlap your linked accounts and were skipped. Payee names were added to Payees.`,
-      );
+      const skipped = r.skipped > 0 ? ` Skipped ${count(r.skipped)} already in your linked accounts.` : '';
+      setResult(`Imported ${count(r.imported)} as history.${skipped}`);
       setFile(null);
       void qc.invalidateQueries({ queryKey: ['reports'] });
       void qc.invalidateQueries({ queryKey: qk.payees });
@@ -72,7 +73,7 @@ export function DataScreen() {
       exportUrls.csv,
       'ledgerline-transactions.csv',
     ],
-    ['Everything (JSON)', 'Full export, including payee merges', exportUrls.json, 'ledgerline-export.json'],
+    ['Everything (JSON)', 'Full export, including joined payees', exportUrls.json, 'ledgerline-export.json'],
     [
       'Usage and notes (JSON)',
       'How you use the app, for reviewing what to change',
@@ -84,11 +85,16 @@ export function DataScreen() {
     <Page title="Import and export" back="/settings">
       <section className="flex shrink-0 flex-col gap-2.5 rounded-lg border border-line bg-surface p-3">
         <span className="text-base font-bold">Import past transactions</span>
-        {!file ? (
+        {accts.length === 0 && accounts.data ? (
+          // An import goes into one of your accounts: with none, there's nothing to pick.
+          <span className="text-sm leading-snug text-muted">
+            Link a bank first. Imports go into one of its accounts.
+          </span>
+        ) : !file ? (
           <>
             <span className="text-sm leading-snug text-muted">
-              Upload a CSV export from your old budgeting app or bank. Its transactions become history:
-              searchable and in reports, never in a budget month.
+              Upload a CSV file from your bank or another app. It becomes history for search and reports, not
+              your budget.
             </span>
             <label
               // The pill look on a label (the file input inside it is the control); the shared disabled look
@@ -113,7 +119,7 @@ export function DataScreen() {
           <>
             <span className="font-mono text-sm">{file.name}</span>
             <div className="flex justify-between text-md">
-              <span className="text-muted">Rows</span>
+              <span className="text-muted">Transactions</span>
               <span className="tnum font-bold">{file.rows.toLocaleString('en-US')}</span>
             </div>
             <Field label="Account it came from">
@@ -137,7 +143,7 @@ export function DataScreen() {
                 disabled={busy}
                 onClick={() => void doImport()}
               >
-                Import {file.rows.toLocaleString('en-US')}
+                Import {count(file.rows)}
               </PrimaryButton>
             </div>
           </>
@@ -161,7 +167,7 @@ export function DataScreen() {
         <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
           <span className="flex flex-col gap-0.5">
             <span className="text-base font-semibold">Undo window</span>
-            <span className="text-xs text-muted">The database can be rewound to any minute</span>
+            <span className="text-xs text-muted">Your budget can be rewound to any minute</span>
           </span>
           <span className="text-sm text-ink-2">Last 30 days</span>
         </div>
@@ -169,8 +175,8 @@ export function DataScreen() {
       <span className="flex flex-col gap-1 text-xs text-muted">
         <span>For a copy older than 30 days, download the full backup above.</span>
         <Why>
-          Rewinding is done in Cloudflare, not from this screen, so a stolen session can’t wipe your data.
-          Keep the backup somewhere safe.
+          Rewinding isn’t on this screen, so a stolen sign-in can’t wipe your data. The steps are in the
+          restore guide.
         </Why>
       </span>
     </Page>
@@ -266,7 +272,7 @@ function FullBackup() {
           <span className="text-xs text-muted">
             {state === 'done'
               ? 'Saved. Keep it somewhere safe.'
-              : 'Every row of your budget, in a file that can be restored'}
+              : 'Your whole budget, in a file that can be restored'}
           </span>
         </span>
         <SoftButton track="data.backup" disabled={state === 'working'} onClick={() => void run()}>

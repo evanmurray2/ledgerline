@@ -9,7 +9,7 @@ import { cents, entryCandidate } from '@ledgerline/domain';
 import { clock } from '../http/clock.js';
 import type { AppEnv } from '../http/context.js';
 import type { Scoped } from '../db/scoped.js';
-import { ACK, HttpError, parse, scoped } from './api.js';
+import { ACK, CHANGED, HttpError, parse, scoped } from './api.js';
 import { TX_COLUMNS, chunks, uncovered, type TxRow } from '../ledger/ledger.js';
 import { listRow, isHistory } from '../views/rows.js';
 import { shortDate } from '../views/common.js';
@@ -134,8 +134,7 @@ const ENTRY_SQL = `SELECT m.txn_key, m.amount, m.covers_provider_txn_id, m.accou
   FROM manual_pending m WHERE m.budget_id = ?1 AND m.deleted_at IS NULL AND m.matched_txn_key IS NULL
     AND m.kind IN ('pending', 'upcoming')`;
 
-const changed = () =>
-  new HttpError(409, 'changed', 'This changed since you opened it. Pull down to refresh.');
+const changed = () => new HttpError(409, 'changed', CHANGED);
 
 /** Runs writes that move bank rows' keys behind the processing watermark, as processing does. */
 async function fenced(s: Scoped, stmts: Stmt[]): Promise<void> {
@@ -169,7 +168,7 @@ samePurchaseRoutes.post('/same-purchase/:id', async (c) => {
   );
   if (!a) throw changed();
   const cands = candidatesOf(a);
-  if (!cands.includes(r.key)) throw new HttpError(422, 'invalid', 'Not one of the rows asked about');
+  if (!cands.includes(r.key)) throw new HttpError(422, 'invalid', CHANGED);
   if (r.answer === 'no') {
     const left = cands.filter((k) => k !== r.key);
     await s.batch([
@@ -308,7 +307,11 @@ async function undoBankPair(s: Scoped, key: string, now: number): Promise<boolea
   const b = await bankPair(s, key);
   if (!b) return false;
   if (b.byProvider)
-    throw new HttpError(409, 'provider_link', 'Your bank linked these two rows itself, so they stay paired.');
+    throw new HttpError(
+      409,
+      'provider_link',
+      'Your bank paired these two itself, so they stay one purchase.',
+    );
   const own = `p:${b.postedId}`;
   const fresh = await planFresh(
     s,
@@ -355,11 +358,11 @@ samePurchaseRoutes.post('/transactions/:key/not-same', async (c) => {
   );
   if (!m) {
     if (await undoBankPair(s, key, now)) return c.json(ACK);
-    throw new HttpError(422, 'not_paired', 'This isn’t paired with another row');
+    throw new HttpError(422, 'not_paired', 'This isn’t paired with another transaction.');
   }
   if (m.matched_txn_key === null) {
     if (!m.covering || !m.covers_provider_txn_id)
-      throw new HttpError(422, 'not_paired', 'This isn’t paired with another row');
+      throw new HttpError(422, 'not_paired', 'This isn’t paired with another transaction.');
     await s.batch([
       s.q(
         `UPDATE manual_pending SET covers_provider_txn_id = NULL, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
@@ -375,7 +378,7 @@ samePurchaseRoutes.post('/transactions/:key/not-same', async (c) => {
     `SELECT provider_txn_id FROM bank_txn WHERE budget_id = ?1 AND txn_key = ?2 AND pending = 0 AND removed_at IS NULL`,
     key,
   );
-  if (!posted) throw new HttpError(422, 'not_paired', 'This isn’t paired with another row');
+  if (!posted) throw new HttpError(422, 'not_paired', 'This isn’t paired with another transaction.');
   // Every bank row holding the entry's key (the posted row, and a pending row claimed with it) gets its own back, as
   // when the provider's link wins over a pair made without it.
   const moved = await s.all<{ provider_txn_id: string }>(

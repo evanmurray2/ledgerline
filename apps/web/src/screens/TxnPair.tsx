@@ -24,7 +24,7 @@ export function PairedWith({ t, close }: { t: TxnSheet; close: () => void }) {
           disabled={undo.isPending}
           onClick={async () => {
             await undo.mutateAsync(t.key);
-            toast.show({ text: 'Not the same: kept as two purchases' });
+            toast.show({ text: 'Kept as two purchases' });
             close();
           }}
         >

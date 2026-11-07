@@ -3,17 +3,9 @@ import { useState } from 'react';
 import type { BudgetView } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
 import { useAssignView, useMoneyMutation } from '../api/hooks';
-import {
-  Banner,
-  Card,
-  PrimaryButton,
-  SecondaryButton,
-  SectionTitle,
-  SoftButton,
-  SoftLink,
-} from '../components/ui';
+import { Banner, Card, PrimaryButton, SecondaryButton, SoftButton, SoftLink } from '../components/ui';
 import { formatCents } from '../lib/money';
-import { addMonths, compareMonths, monthName } from '../lib/dates';
+import { addMonths, compareMonths, monthLabel, monthName } from '../lib/dates';
 import { usage } from '../usage/tracker';
 
 // ------------------------------------------------------------------ special states
@@ -48,7 +40,7 @@ export function OverAssigned({ b, month }: { b: BudgetView; month: string }) {
           </SoftButton>
         }
       >
-        Took {formatCents(took.amount)} from {took.name}. Ready to Assign is back to {formatCents(b.rta)}.
+        Took {formatCents(took.amount)} from {took.name}.
       </Banner>
     );
   if (b.rta >= 0) return null;
@@ -60,38 +52,38 @@ export function OverAssigned({ b, month }: { b: BudgetView; month: string }) {
         icon="alert"
         title={`You assigned ${formatCents(need)} more than you have`}
       >
-        Take {formatCents(need)} back from a category below. Nothing else is blocked meanwhile.
+        {candidates.length > 0
+          ? 'Take it back from a category below.'
+          : 'Open a category and move money to Ready to Assign.'}
       </Banner>
-      <SectionTitle>Take it back from</SectionTitle>
-      <Card>
-        {candidates.map((c) => (
-          <div
-            key={c.id}
-            className="flex items-center gap-3 border-t border-divider px-3 py-2.5 first:border-t-0"
-          >
-            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="text-base font-semibold">{c.name}</span>
-              <span className="text-xs text-muted">
-                {formatCents(c.available)} · {c.detail}
-              </span>
-            </span>
-            <SoftButton
-              mutates
-              track="budget.over.take"
-              aria-label={`Take ${formatCents(need)} from ${c.name}`}
-              onClick={async () => {
-                await move.mutateAsync({ month, from: c.id, to: 'rta', amount: need });
-                setTook({ id: c.id, name: c.name, amount: need });
-              }}
+      {candidates.length > 0 && (
+        <Card>
+          {candidates.map((c) => (
+            <div
+              key={c.id}
+              className="flex items-center gap-3 border-t border-divider px-3 py-2.5 first:border-t-0"
             >
-              Take {formatCents(need)}
-            </SoftButton>
-          </div>
-        ))}
-      </Card>
-      <p className="m-0 text-xs leading-snug text-muted">
-        The app never takes money from your categories on its own.
-      </p>
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="text-base font-semibold">{c.name}</span>
+                <span className="text-xs text-muted">
+                  {formatCents(c.available)} · {c.detail}
+                </span>
+              </span>
+              <SoftButton
+                mutates
+                track="budget.over.take"
+                aria-label={`Take ${formatCents(need)} from ${c.name}`}
+                onClick={async () => {
+                  await move.mutateAsync({ month, from: c.id, to: 'rta', amount: need });
+                  setTook({ id: c.id, name: c.name, amount: need });
+                }}
+              >
+                Take {formatCents(need)}
+              </SoftButton>
+            </div>
+          ))}
+        </Card>
+      )}
     </>
   );
 }
@@ -100,10 +92,13 @@ export function FirstBudget({ b }: { b: BudgetView }) {
   const owed = b.cards.reduce((s, c) => s + c.owed, 0);
   return (
     <section className="flex shrink-0 flex-col gap-1.5 rounded-lg bg-accent-soft p-3.5 text-ink">
-      <span className="text-xl font-bold">Give your {formatCents(b.rta)} a job</span>
+      <span className="text-xl font-bold">
+        {b.rta > 0 ? `Give your ${formatCents(b.rta)} a job` : 'Start your budget'}
+      </span>
       <span className="text-sm leading-snug text-ink-2">
-        Fund your card payments first ({formatCents(owed)} owed), then bills, everyday spending and savings.
-        Targets tell each category what it needs.
+        {owed > 0
+          ? 'Fund card payments first, then bills, spending and savings.'
+          : 'Fund bills first, then spending and savings.'}
       </span>
       <SoftLink to="/targets" tone="filled" track="budget.first.targets" className="mt-1 self-start">
         Set targets
@@ -124,8 +119,7 @@ export function NewMonth({ b, month }: { b: BudgetView; month: string }) {
       <Card className="flex flex-col gap-2 p-3.5">
         <h2 className="m-0 text-xl font-bold">{monthName(month)} has started</h2>
         <span className="text-sm text-muted">
-          Nothing moved on its own. Every category keeps what it had left in {monthName(prev)}, and Ready to
-          Assign carried over.
+          Every category keeps what it had left in {monthName(prev)}.
         </span>
         <div className="flex items-center justify-between border-t border-divider pt-2 text-md">
           <span className="font-semibold">Ready to Assign</span>
@@ -138,11 +132,7 @@ export function NewMonth({ b, month }: { b: BudgetView; month: string }) {
             <h2 className="m-0 text-base font-bold">Targets for {monthName(month)}</h2>
             <span className="tnum text-base font-bold">{formatCents(total)}</span>
           </div>
-          <span className="text-sm text-muted">
-            {filled
-              ? 'Filled every refill target and this month’s share of each savings goal.'
-              : 'Refill targets plus this month’s share of each savings goal.'}
-          </span>
+          {filled && <span className="text-sm text-muted">Each target got what it needs this month.</span>}
           {filled ? (
             <SecondaryButton
               mutates
@@ -181,8 +171,7 @@ export function PastNote({ month, current }: { month: string; current: string })
   if (compareMonths(month, current) >= 0) return null;
   return (
     <Banner tone="info">
-      {monthName(month)}. You can still change what was assigned; the change carries into {monthName(current)}
-      .
+      {monthLabel(month)} is over. Changes here carry into {monthName(current)}.
     </Banner>
   );
 }

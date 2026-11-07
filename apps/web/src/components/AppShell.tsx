@@ -10,6 +10,7 @@ import { useBadgeCounts, useSession } from '../api/hooks';
 import { useCopy } from '../copy/copy';
 import { useCanWrite, useConnectivity } from '../state/connectivity';
 import { budgetTime } from '../lib/dates';
+import { dailyResetTime } from '../api/client';
 import { formatCents } from '../lib/money';
 import { useTabMonth } from '../state/month';
 
@@ -35,11 +36,18 @@ function useBadges() {
 }
 
 // The three month tabs side by side, then Accounts (today's balances, no month) with Settings behind it.
-const TABS: { id: Tab; name: string; to: string; icon: IconName; what: string }[] = [
-  { id: 'budget', name: 'Budget', to: '/budget', icon: 'budget', what: '' },
-  { id: 'activity', name: 'Activity', to: '/activity', icon: 'activity', what: 'need attention' },
-  { id: 'reports', name: 'Reports', to: '/reports', icon: 'reports', what: '' },
-  { id: 'accounts', name: 'Accounts', to: '/accounts', icon: 'accounts', what: 'connection problem' },
+// `what` names the badge's count, singular and plural.
+const TABS: { id: Tab; name: string; to: string; icon: IconName; what: [string, string] | null }[] = [
+  { id: 'budget', name: 'Budget', to: '/budget', icon: 'budget', what: null },
+  { id: 'activity', name: 'Activity', to: '/activity', icon: 'activity', what: ['to do', 'to do'] },
+  { id: 'reports', name: 'Reports', to: '/reports', icon: 'reports', what: null },
+  {
+    id: 'accounts',
+    name: 'Accounts',
+    to: '/accounts',
+    icon: 'accounts',
+    what: ['bank needs you', 'banks need you'],
+  },
 ];
 
 /** The app's month goes with the tab links to Budget, Activity and Reports (docs/month-header.md). */
@@ -68,7 +76,7 @@ function TabBar({ active }: { active: Tab }) {
             search={tabSearch(t.id, month)}
             data-track={`tabs.${t.id}`}
             aria-current={on ? 'page' : undefined}
-            aria-label={badge > 0 ? `${t.name}, ${badge} ${t.what}` : t.name}
+            aria-label={badge > 0 && t.what ? `${t.name}, ${badge} ${t.what[badge === 1 ? 0 : 1]}` : t.name}
             className={cx(
               'relative flex min-h-12 flex-col items-center justify-center gap-[3px] text-xs no-underline',
               on ? 'font-bold text-accent' : 'font-medium text-muted',
@@ -189,12 +197,12 @@ export function StatusBanner() {
         <span className="text-md font-bold">You’re offline</span>
         <span className="text-sm leading-snug">
           {copy.status === 'ready'
-            ? `Categorizing, editing a transaction and assigning still work${copy.queued ? ` (${copy.queued} waiting to send)` : ''}; they’re sent when you’re back online. Other changes are off.`
-            : `${loaded ? `Showing what was loaded at ${loaded}.` : 'Showing what was last loaded.'} Changes are off until you’re back online.`}
+            ? `Some changes still work and are sent when you’re back online.${copy.queued ? ` ${copy.queued} waiting to send.` : ''}`
+            : `${loaded ? `Showing what was loaded at ${loaded}.` : 'Showing what was last loaded.'} Changes are off.`}
         </span>
       </div>
     );
-  const until = c.readOnlyUntil ? budgetTime(c.readOnlyUntil) : 'midnight UTC';
+  const until = (c.readOnlyUntil && budgetTime(c.readOnlyUntil)) || dailyResetTime();
   if (c.readsPaused) return <RestingBanner until={until} />;
   return <ReadOnlyBanner until={until} />;
 }
@@ -207,11 +215,8 @@ function RestingBanner({ until }: { until: string }) {
       data-testid="resting-banner"
       className="flex shrink-0 flex-col gap-1 border-b border-warn-border bg-warn-bg px-4 py-2 text-warn-fg"
     >
-      <span className="text-md font-bold">Resting until {until}</span>
-      <span className="text-sm leading-snug">
-        The app has nearly used today’s free allowance, so it has stopped loading and saving to stay online.
-        Screens show what was last saved on this device. Nothing is lost.
-      </span>
+      <span className="text-md font-bold">Paused until {until}</span>
+      <span className="text-sm leading-snug">Screens show what’s saved on this device. Nothing is lost.</span>
     </div>
   );
 }
@@ -238,8 +243,8 @@ function ReadOnlyBanner({ until }: { until: string }) {
       </div>
       {why && (
         <span className="text-sm leading-snug">
-          The app has used today’s free allowance for saving changes. Changes start again at {until}, and bank
-          sync catches up then. Nothing is lost.
+          Today’s free limit for changes is used up. Changes and bank sync start again at {until}. Nothing is
+          lost.
         </span>
       )}
     </div>

@@ -16,12 +16,13 @@ import {
   isMonth,
   localDate,
   localTime,
+  monthName,
   owedList,
   owedOut,
   statementCovered,
 } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
-import { HttpError, parse, scoped } from './api.js';
+import { HttpError, parse, scoped, GONE, BAD_MONTH } from './api.js';
 import { cards as loadCards, fresh, monthResult, shortDate, structure } from '../views/common.js';
 import { hiddenFromLists, listRow } from '../views/rows.js';
 import { TX_COLUMNS, uncovered, type TxRow } from '../ledger/ledger.js';
@@ -201,10 +202,10 @@ accountRoutes.get('/accounts', async (c) => {
   // Only once the GitHub monitor has checked in at least once: it is optional (decisions.md D-29).
   const monitorAge = hours('last_monitor_check_at');
   if (h.has('watchdog_ran_at') && monitorAge !== null && monitorAge > 24)
-    alerts.push({ kind: 'monitor', text: 'Monitoring stopped: no health check in the last 24 hours' });
+    alerts.push({ kind: 'monitor', text: 'Ledgerline hasn’t checked your banks in over a day.' });
   for (const cn of connRows)
     if (cn.status === 'ok' && cn.last_synced_at && now - cn.last_synced_at > 24 * 3_600_000)
-      alerts.push({ kind: 'sync', text: `${cn.institution_name} hasn’t synced in over a day` });
+      alerts.push({ kind: 'sync', text: `${cn.institution_name} hasn’t synced in over a day.` });
   for (const a of hist!.results as StoredAlert[]) alerts.push(storedAlert(a));
   const view: AccountsView = {
     netWorth: cents(netWorth),
@@ -247,32 +248,32 @@ export function storedAlert(a: StoredAlert): AccountsView['alerts'][number] {
       return {
         ...base,
         kind: 'history_changed',
-        text: `History changed in ${String(d.month)}: a posted transaction of ${formatCents(Number(d.amount))} was removed or re-issued`,
+        text: `A posted ${formatCents(Number(d.amount))} transaction in ${isMonth(String(d.month)) ? monthName(String(d.month) as Month, true) : 'a past month'} was removed or re-issued. Check for a double.`,
       };
     case 'ambiguous_match':
       return {
         ...base,
         kind: 'ambiguous_match',
         txnKey: a.ref_key,
-        text: 'A posted charge could match more than one pending row. Check that it took the right one.',
+        text: 'A posted charge matched one of several pending charges. Check that it’s the right one.',
       };
     case 'vanished_pending':
       return {
         ...base,
         kind: 'vanished_pending',
-        text: 'A pending charge left the bank 5 days ago and nothing posted for it. This is usually a released hold.',
+        text: 'A pending charge left the bank 5 days ago and nothing posted. It was likely a released hold.',
       };
     case 'possible_reissue':
       return {
         ...base,
         kind: 'possible_reissue',
-        text: 'The bank removed a posted transaction and added new ones. It may have re-issued it; check for a double.',
+        text: 'The bank removed a posted transaction and added new ones. Check for a double.',
       };
     default:
       return {
         ...base,
         kind: 'identity',
-        text: `Ready to Assign didn’t add up on a phone for ${String(d.month)} (off by ${formatCents(Math.abs(Number(d.difference)))}). Sync again; if it stays, tell the developer.`,
+        text: `Ready to Assign for ${isMonth(String(d.month)) ? monthName(String(d.month) as Month, true) : 'a past month'} was off by ${formatCents(Math.abs(Number(d.difference)))} on a device. Pull down to sync again.`,
       };
   }
 }
@@ -283,7 +284,7 @@ accountRoutes.post('/alerts/:id/dismiss', async (c) => {
   const now = clock(c.env);
   const id = c.req.param('id');
   const a = await s.first<{ id: string }>(`SELECT id FROM alert WHERE budget_id = ?1 AND id = ?2`, id);
-  if (!a) throw new HttpError(404, 'not_found', 'alert');
+  if (!a) throw new HttpError(404, 'not_found', GONE);
   await s.batch([
     s.q(`UPDATE alert SET acked_at = ?3 WHERE budget_id = ?1 AND id = ?2 AND acked_at IS NULL`, id, now),
     s.audit('alert.dismiss', 'alert', id, null, null, now),
@@ -298,7 +299,7 @@ accountRoutes.post('/accounts/:id/name', async (c) => {
   const now = clock(c.env);
   const id = c.req.param('id');
   const a = await s.first<{ name: string }>(`SELECT name FROM account WHERE budget_id = ?1 AND id = ?2`, id);
-  if (!a) throw new HttpError(404, 'not_found', 'account');
+  if (!a) throw new HttpError(404, 'not_found', GONE);
   await s.batch([
     s.q(`UPDATE account SET name = ?3, updated_at = ?4 WHERE budget_id = ?1 AND id = ?2`, id, r.name, now),
     s.q(
@@ -321,7 +322,7 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
   const { rows, raw, recent } = await accountRows(s, f.today, f.budget.time_zone, now);
   const account = rows.find((r) => r.id === id);
   const rawAccount = raw.find((r) => r.id === id);
-  if (!account || !rawAccount) throw new HttpError(404, 'not_found', 'account');
+  if (!account || !rawAccount) throw new HttpError(404, 'not_found', GONE);
   const { categories } = await structure(s);
   const cats = new Map(categories.map((x) => [x.id, x.name]));
   const accts = new Map(rows.map((r) => [r.id, r.name]));
@@ -366,7 +367,7 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
     if (over.length) {
       const amt = over.reduce((a, [, v]) => a + (v.creditOverspent[id] ?? 0), 0);
       const names = over.map(([k]) => cats.get(k) ?? k).join(', ');
-      note = `${names} is ${formatCents(amt)} overspent on this card, so its payment category is ${formatCents(amt)} short. Cover ${names} on Budget to fix both.`;
+      note = `${names} is overspent by ${formatCents(amt)} on this card. Cover it on Budget to fix the card payment too.`;
     }
   }
   const start = await startSheet(s, rawAccount, recent.get(id) ?? null, now, f.budget.time_zone);
@@ -378,7 +379,7 @@ accountRoutes.get('/reports', async (c) => {
   const now = clock(c.env);
   const f = await fresh(s, now);
   const m = (c.req.query('month') ?? f.current) as Month;
-  if (!isMonth(m)) throw new HttpError(400, 'invalid', 'month');
+  if (!isMonth(m)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const start = (f.budget.budget_start_month ?? f.current) as Month;
   const { categories } = await structure(s);
   const kinds = new Map(categories.map((x) => [x.id, x]));

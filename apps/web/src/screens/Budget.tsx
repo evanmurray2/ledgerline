@@ -183,7 +183,7 @@ function ViewChips({
       )}
       {showLow && (
         <Chip pressed={view === 'low'} onClick={() => set('low')} track="budget.filter.low">
-          Running low <CountBadge n={lowCount} inverted={view === 'low'} />
+          Low <CountBadge n={lowCount} inverted={view === 'low'} />
         </Chip>
       )}
     </div>
@@ -232,7 +232,8 @@ export function BudgetScreen() {
     !empty &&
     b.groups.every((g) => g.categories.every((c) => c.assigned === 0));
   const lowCount = b.attention.filter((a) => a.section === 'Low').length;
-  const count = b.attention.length - lowCount;
+  // Ready to Assign below zero has its own banner (OverAssigned), so it isn't counted again here.
+  const count = b.attention.filter((a) => a.section !== 'Low' && a.section !== 'Ready to Assign').length;
   const content = (
     <>
       <PastNote month={month} current={b.currentMonth} />

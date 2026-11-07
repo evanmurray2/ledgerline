@@ -14,6 +14,8 @@
 
 const DB_NAME = 'ledgerline-copy';
 const STORE = 'copies';
+/** An IndexedDB read or write failed with no error of its own. */
+const STORAGE_FAILED = 'This device couldn’t read its saved budget. Try again.';
 export const OFFLINE_DAYS = 7;
 const enc = new TextEncoder();
 
@@ -47,7 +49,7 @@ function idb(): Promise<IDBDatabase> {
     const r = indexedDB.open(DB_NAME, 1);
     r.onupgradeneeded = () => r.result.createObjectStore(STORE, { keyPath: 'key' });
     r.onsuccess = () => resolve(r.result);
-    r.onerror = () => reject(r.error ?? new Error('storage'));
+    r.onerror = () => reject(r.error ?? new Error(STORAGE_FAILED));
   });
 }
 
@@ -58,8 +60,8 @@ async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBReq
       const t = db.transaction(STORE, mode);
       const r = fn(t.objectStore(STORE));
       t.oncomplete = () => resolve(r.result);
-      t.onerror = () => reject(t.error ?? new Error('storage'));
-      t.onabort = () => reject(t.error ?? new Error('storage'));
+      t.onerror = () => reject(t.error ?? new Error(STORAGE_FAILED));
+      t.onabort = () => reject(t.error ?? new Error(STORAGE_FAILED));
     });
   } finally {
     db.close();
@@ -144,15 +146,15 @@ async function held<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBR
     const r = indexedDB.open(HELD_DB, 1);
     r.onupgradeneeded = () => r.result.createObjectStore(HELD, { keyPath: 'key' });
     r.onsuccess = () => resolve(r.result);
-    r.onerror = () => reject(r.error ?? new Error('storage'));
+    r.onerror = () => reject(r.error ?? new Error(STORAGE_FAILED));
   });
   try {
     return await new Promise<T>((resolve, reject) => {
       const t = db.transaction(HELD, mode);
       const r = fn(t.objectStore(HELD));
       t.oncomplete = () => resolve(r.result);
-      t.onerror = () => reject(t.error ?? new Error('storage'));
-      t.onabort = () => reject(t.error ?? new Error('storage'));
+      t.onerror = () => reject(t.error ?? new Error(STORAGE_FAILED));
+      t.onabort = () => reject(t.error ?? new Error(STORAGE_FAILED));
     });
   } finally {
     db.close();

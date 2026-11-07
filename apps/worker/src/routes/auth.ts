@@ -174,11 +174,11 @@ authRoutes.post('/register/options', async (c) => {
     if (who?.kind === 'user' && who.sessionId && now - who.verifiedAt <= REAUTH_MS)
       grant = { kind: 'session', ref: who.sessionId };
   }
-  if (!grant) return c.json(fail('That code or link isn’t valid, or it has expired.'), 403);
+  if (!grant) return c.json(fail('That code or link isn’t valid or has expired.'), 403);
   // Only this user's passkeys are excluded, and only their handle is used (never another account's).
   const userId = await grantUser(env, grant);
   if (grant.kind !== 'setup' && !userId)
-    return c.json(fail('That code or link isn’t valid, or it has expired.'), 403);
+    return c.json(fail('That code or link isn’t valid or has expired.'), 403);
   const user = userId
     ? await env.DB.prepare(`SELECT webauthn_handle, display_name FROM user WHERE id = ?1`)
         .bind(userId)
@@ -259,10 +259,10 @@ authRoutes.post('/register/verify', async (c) => {
   if (ch.grant_kind === 'setup') {
     // The first passkey creates the first user (and their budget), who runs the instance.
     if ((await passkeyCount(env)) > 0)
-      return c.json(fail('That code or link isn’t valid, or it has expired.'), 403);
+      return c.json(fail('That code or link isn’t valid or has expired.'), 403);
     const email = ownerEmail(env);
     const m = await resolveMembership(env.DB, email, email, now, () => ulid(now));
-    if (!m) return c.json(fail('That code or link isn’t valid, or it has expired.'), 403);
+    if (!m) return c.json(fail('That code or link isn’t valid or has expired.'), 403);
     owner = m.userId;
     stmts = [
       env.DB.prepare(
@@ -293,9 +293,9 @@ authRoutes.post('/register/verify', async (c) => {
     if (/UNIQUE|PRIMARY KEY/i.test(String(e))) return null; // the same passkey again: a replay
     throw e;
   });
-  if (!res) return c.json(fail('That took too long. Try again.'), 400);
+  if (!res) return c.json(fail('This passkey is already set up. Sign in with it.'), 400);
   if ((res.at(-1)?.changes ?? 0) !== 1)
-    return c.json(fail('That code or link isn’t valid, or it has expired.'), 403);
+    return c.json(fail('That code or link isn’t valid or has expired.'), 403);
   if (ch.grant_kind !== 'session') {
     const userId =
       owner ??

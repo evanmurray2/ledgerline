@@ -54,7 +54,7 @@ export class EngineHost {
       if (!p) return;
       this.pending.delete(m.id!);
       if (m.ok) p.resolve(m.value);
-      else p.reject(new Error(m.error ?? 'engine error'));
+      else p.reject(new Error(m.error ?? 'Something went wrong. Try again.'));
     };
   }
 
@@ -102,7 +102,7 @@ export class EngineHost {
   async close(): Promise<void> {
     await this.call('close').catch(() => undefined);
     this.worker.terminate();
-    for (const p of this.pending.values()) p.reject(new Error('closed'));
+    for (const p of this.pending.values()) p.reject(new Error('Something went wrong. Try again.'));
     this.pending.clear();
   }
 }
@@ -122,5 +122,5 @@ export async function syncAll(
     rows += r.rows;
     if (r.caughtUp) return { pages, rows };
   }
-  throw new Error('The download didn’t finish');
+  throw new Error('Your budget didn’t finish downloading. Try again.');
 }

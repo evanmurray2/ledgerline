@@ -52,11 +52,11 @@ describe('Accounts: stored alerts', () => {
     show('/accounts');
     // With Ally to repair, three problems fold into one line until opened.
     fireEvent.click(await screen.findByRole('button', { name: /3 things need you/ }, T));
-    await screen.findByText(/may have re-issued it/, undefined, T);
-    expect(screen.getByText(/usually a released hold/)).toBeTruthy();
+    await screen.findByText(/added new ones. Check for a double/, undefined, T);
+    expect(screen.getByText(/likely a released hold/)).toBeTruthy();
     fireEvent.click(screen.getAllByRole('button', { name: 'Dismiss' })[0]!);
-    await waitFor(() => expect(screen.queryByText(/may have re-issued it/)).toBeNull(), T);
-    expect(screen.getByText(/usually a released hold/)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(/added new ones. Check for a double/)).toBeNull(), T);
+    expect(screen.getByText(/likely a released hold/)).toBeTruthy();
     expect(
       (await sql<{ acked_at: number | null }>(`SELECT acked_at FROM alert WHERE id = 'al1'`))!.acked_at,
     ).not.toBeNull();
@@ -93,7 +93,7 @@ describe('Owed to you', () => {
   it('closing out what they won’t pay gives Ready to Assign the money back', async () => {
     const before = (await sql<{ rta: number }>(`SELECT rta FROM budget`))!.rta;
     show('/owed/close/nopa');
-    fireEvent.click(await screen.findByRole('button', { name: 'Close out $18' }, T));
+    fireEvent.click(await screen.findByRole('button', { name: 'Close out $18.00' }, T));
     await screen.findByText(/^Closed\. Dining out was charged \$18/, undefined, T);
     await waitFor(
       async () => expect((await sql<{ rta: number }>(`SELECT rta FROM budget`))!.rta).toBe(before + 1800),

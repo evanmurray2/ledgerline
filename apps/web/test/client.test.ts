@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../src/api/endpoints';
-import { ApiError, download, errorMessage, resetRecentChanges, setPasskeyCheck } from '../src/api/client';
+import {
+  ApiError,
+  download,
+  errorMessage,
+  errorText,
+  resetRecentChanges,
+  setPasskeyCheck,
+} from '../src/api/client';
 import { connectivity } from '../src/state/connectivity';
 
 type Call = { url: string; init: RequestInit };
@@ -80,7 +87,7 @@ describe('API client', () => {
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err).toMatchObject({ code: 'read_only', status: 503 });
-    expect(errorMessage(err)).toMatch(/paused/);
+    expect(errorMessage(err)).toMatch(/View only until/);
   });
 
   it('flags network failures so the app goes view-only', async () => {
@@ -151,8 +158,33 @@ describe('API client', () => {
     expect(calls).toHaveLength(1);
     await api.session().catch(() => null);
     expect(calls).toHaveLength(2);
-    expect(errorMessage(new ApiError('resting', 'x'))).toMatch(/resting to stay inside/);
+    expect(errorMessage(new ApiError('resting', 'x'))).toMatch(/Paused until/);
     expect(connectivity.staleMs(120_000)).toBe(15 * 60_000);
+  });
+});
+
+describe('error text', () => {
+  it('keeps good sentences and hides raw and technical text', () => {
+    const good = 'You have a payee named Lyft. Join them instead.';
+    expect(errorMessage(new ApiError('name_taken', good))).toBe(good);
+    expect(errorMessage(new ApiError('invalid', 'amount: Expected number, received string'))).toBe(
+      'Something went wrong. Try again.',
+    );
+    expect(errorMessage(new ApiError('not_found', 'category'))).toBe(
+      'This was changed or removed. Pull down to refresh.',
+    );
+    expect(errorMessage(new ApiError('http_502', 'Bad Gateway'))).toBe('Something went wrong. Try again.');
+    expect(errorMessage(new Error('Response was not JSON.'))).toBe('Something went wrong. Try again.');
+    expect(errorMessage(new SyntaxError('Unexpected token < in JSON at position 0'))).toBe(
+      'Something went wrong. Try again.',
+    );
+    expect(errorText(undefined, 'Couldn’t save that. Try again.')).toBe('Couldn’t save that. Try again.');
+    expect(errorText({ message: 42 }, 'Couldn’t save that. Try again.')).toBe(
+      'Couldn’t save that. Try again.',
+    );
+    expect(errorMessage(new ApiError('unauthenticated', 'Sign in with your passkey'))).toBe(
+      'Sign in again with your passkey.',
+    );
   });
 });
 

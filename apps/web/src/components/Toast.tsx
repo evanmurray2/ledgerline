@@ -80,11 +80,11 @@ export function ToastHost({ aboveTabs }: { aboveTabs: boolean }) {
     >
       <div className="flex items-center justify-between gap-2 text-md">
         <span>{t.text}</span>
-        {t.undo && (
+        {/* Offline or view only, Undo and the offer can't work: hidden, not grayed out with no reason. */}
+        {t.undo && canWrite && (
           <button
             type="button"
             data-track="toast.undo"
-            disabled={!canWrite}
             className="hit h-9 shrink-0 px-2 text-md font-bold underline disabled:opacity-50"
             onClick={async () => {
               const u = t.undo!;
@@ -96,13 +96,12 @@ export function ToastHost({ aboveTabs }: { aboveTabs: boolean }) {
           </button>
         )}
       </div>
-      {t.offer && (
+      {t.offer && canWrite && (
         <div className="flex items-center justify-between gap-2 border-t border-inverse-line pt-1.5 text-sm text-inverse-muted">
           <span>{t.offer.text}</span>
           <button
             type="button"
             data-track="toast.always"
-            disabled={!canWrite}
             className="hit h-9 shrink-0 rounded-full bg-on-inverse px-3 text-sm font-bold text-inverse disabled:opacity-50"
             onClick={() => void t.offer!.onAccept()}
           >

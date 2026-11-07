@@ -11,7 +11,7 @@ test('An account’s starting balance opens a sheet with each step (D-67)', asyn
   await page.getByRole('button', { name: /^Starting debt/ }).click();
   const sheet = page.getByRole('dialog', { name: 'Starting debt' });
   await expect(sheet.getByText('Owed when you linked')).toBeVisible();
-  await expect(sheet.getByText('Final.')).toBeVisible();
+  await expect(sheet.getByText('This won’t change now.')).toBeVisible();
   await sheet.getByRole('button', { name: 'Done' }).click();
   await expect(sheet).toHaveCount(0);
 });
@@ -67,7 +67,7 @@ test('A row from before the budget is never listed, and its sheet is read-only',
   await expect(sheet.getByText('Before your budget')).toBeVisible();
   await expect(sheet.getByText('OLD BAKERY SF', { exact: true })).toBeVisible();
   // Nothing to change: no note box, no Rename payee.
-  await expect(sheet.getByPlaceholder('Add a note')).toHaveCount(0);
+  await expect(sheet.getByPlaceholder('Add a memo')).toHaveCount(0);
   await expect(sheet.getByText('Rename payee')).toHaveCount(0);
   await sheet.getByRole('button', { name: 'Done' }).click();
   await expect(page).toHaveURL(/\/accounts\/checking$/);

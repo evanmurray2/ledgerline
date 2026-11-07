@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { clock } from '../http/clock.js';
 import { SettingsPatch, SetupStart, StartingBalances } from '@ledgerline/contracts';
 import type { AppEnv } from '../http/context.js';
-import { ACK, HttpError, parse, scoped } from './api.js';
+import { ACK, HttpError, parse, scoped, GONE } from './api.js';
 import { budgetMeta, type AccountRowDb } from '../ledger/ledger.js';
 
 import { categoriesRoutes } from './settings/categories.js';
@@ -25,7 +25,7 @@ settingsRoutes.post('/setup/start', async (c) => {
   const b = await s.first<{ budget_start_month: string | null }>(
     `SELECT budget_start_month FROM budget WHERE id = ?1`,
   );
-  if (b?.budget_start_month) throw new HttpError(409, 'started', 'The budget start is already set');
+  if (b?.budget_start_month) throw new HttpError(409, 'started', 'Your budget start is already set.');
   await s.batch([
     s.q(
       `UPDATE budget SET budget_start_month = ?2, summary_dirty_from = ?2, summary_version = summary_version + 1, updated_at = ?3 WHERE id = ?1`,
@@ -42,14 +42,14 @@ settingsRoutes.post('/setup/starting-balances', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
   const meta = await budgetMeta(s);
-  if (!meta) throw new HttpError(409, 'not_started', 'Set the budget start first');
+  if (!meta) throw new HttpError(409, 'not_started', 'Pick the month your budget starts first.');
   const w: Stmt[] = [];
   for (const a of r.accounts) {
     const row = await s.first<AccountRowDb>(
       `SELECT * FROM account WHERE budget_id = ?1 AND id = ?2`,
       a.accountId,
     );
-    if (!row) throw new HttpError(404, 'not_found', 'account');
+    if (!row) throw new HttpError(404, 'not_found', GONE);
     w.push(
       s.q(
         // Confirmed at the time of the bank balance the app showed (its last sync), not of the save: rows that came

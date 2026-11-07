@@ -161,7 +161,7 @@ describe('Activity', () => {
       (await screen.findAllByRole('button', { name: /^Choose category for Amazon/ }, { timeout: 4000 }))[0]!,
     );
     const dialog = await screen.findByRole('dialog', { name: 'Choose a category' });
-    expect(within(dialog).getByText('You’ve used for Amazon')).toBeTruthy();
+    expect(within(dialog).getByText('Past categories for Amazon')).toBeTruthy();
     fireEvent.click(within(dialog).getAllByRole('button', { name: /^Household/ })[0]!);
     await waitFor(async () => expect(await categoryOf('n-amazon-s')).toBe('household'));
   });
@@ -196,7 +196,7 @@ describe('Accounts and Reports', () => {
       .run();
     show('/accounts');
     expect((await screen.findByTestId('bank-drift', undefined, { timeout: 4000 })).textContent).toBe(
-      '$40.00 off from bank',
+      'Differs from bank by $40.00',
     );
     cleanup();
     show('/accounts/checking');
@@ -230,9 +230,9 @@ describe('Accounts and Reports', () => {
     show('/accounts/checking');
     fireEvent.click(await screen.findByRole('button', { name: /^Starting balance/ }, { timeout: 4000 }));
     const sheet = await screen.findByTestId('start-sheet');
-    expect(within(sheet).getByText('From before Oct 1, came in later')).toBeTruthy();
+    expect(within(sheet).getByText('Dated before Oct 1, came in late')).toBeTruthy();
     expect(within(sheet).getByText('− $25.00')).toBeTruthy();
-    expect(screen.getByText('Final.')).toBeTruthy();
+    expect(screen.getByText('This won’t change now.')).toBeTruthy();
     expect(screen.queryAllByTestId('bank-drift')).toHaveLength(0);
   });
 
@@ -265,16 +265,16 @@ describe('Settings', () => {
     await text('Record how I use the app');
     expect(screen.getByRole('radio', { name: 'Match device' })).toBeTruthy();
     expect(screen.queryByText(/Email me/)).toBeNull();
-    await text(/4 of 10 links used/);
+    await text(/4 of 10 bank links used/);
   });
 
   it('bank connections show the link meter and confirm before linking', async () => {
     renderAt('/settings/connections');
     expect((await screen.findByTestId('link-meter', undefined, { timeout: 4000 })).textContent).toBe(
-      '4 of 10 links used',
+      '4 of 10 bank links used',
     );
     fireEvent.click(screen.getByRole('button', { name: /Link another bank/ }));
-    expect(await screen.findByText('Use 1 of your 6 remaining links?')).toBeTruthy();
+    expect(await screen.findByText('Use 1 of your 6 bank links?')).toBeTruthy();
   });
 });
 

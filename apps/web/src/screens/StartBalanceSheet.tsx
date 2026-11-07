@@ -57,8 +57,7 @@ export function StartBalanceSheet({
       }
     >
       <p className="m-0 text-md leading-snug text-ink-2">
-        Your budget for this account starts on {from}. Purchases from before {from} are part of the {word},
-        not a category.
+        Your budget for this account starts on {from}. Older purchases count in the {word}.
       </p>
       <div className="flex flex-col gap-2" data-testid="start-sheet">
         <div className="flex items-baseline justify-between gap-3 text-md">
@@ -69,7 +68,7 @@ export function StartBalanceSheet({
         </div>
         {before.length > 0 && (
           <>
-            <Label>From before {from}, came in later</Label>
+            <Label>Dated before {from}, came in late</Label>
             {before.map(row)}
           </>
         )}
@@ -86,8 +85,8 @@ export function StartBalanceSheet({
       </div>
       <p className="m-0 text-sm leading-snug text-muted">
         {start.settling && start.settlesOn
-          ? `Settling. Final on ${dayLabel(start.settlesOn)}. Until then, a purchase from before ${from} that comes in late is added here.`
-          : 'Final.'}
+          ? `Until ${dayLabel(start.settlesOn)}, late purchases from before ${from} are added here.`
+          : 'This won’t change now.'}
       </p>
     </Sheet>
   );

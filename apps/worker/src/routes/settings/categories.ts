@@ -13,7 +13,7 @@ import {
 import { type Month, cents, formatCents } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../../http/context.js';
-import { ACK, HttpError, parse, scoped } from '../api.js';
+import { ACK, CHANGED, GONE, HttpError, parse, scoped } from '../api.js';
 import { fresh, monthResult, structure } from '../../views/common.js';
 import type { Scoped } from '../../db/scoped.js';
 
@@ -48,7 +48,7 @@ categoriesRoutes.get('/settings/categories', async (c) => {
         ? [
             {
               id: 'cards',
-              name: 'Credit card payments',
+              name: 'Card payments',
               isBills: false,
               system: true,
               categories: cardCats.map((x) => ({
@@ -96,7 +96,7 @@ categoriesRoutes.post('/settings/categories', async (c) => {
   const now = clock(c.env);
   if (r.groupId) {
     const g = await s.first(`SELECT id FROM category_group WHERE budget_id = ?1 AND id = ?2`, r.groupId);
-    if (!g) throw new HttpError(404, 'not_found', 'group');
+    if (!g) throw new HttpError(404, 'not_found', GONE);
   }
   const id = r.id ?? ulid(now);
   if (r.id) {
@@ -104,9 +104,9 @@ categoriesRoutes.post('/settings/categories', async (c) => {
       `SELECT kind FROM category WHERE budget_id = ?1 AND id = ?2`,
       r.id,
     );
-    if (!ex) throw new HttpError(404, 'not_found', 'category');
+    if (!ex) throw new HttpError(404, 'not_found', GONE);
     if (ex.kind === 'cc_payment')
-      throw new HttpError(422, 'system', 'Card payment categories are made by the app');
+      throw new HttpError(422, 'system', 'Rename the card on Accounts to rename its payment category.');
     await s.batch([
       s.q(
         `UPDATE category SET name = ?3, group_id = ?4, kind = ?5, due_day = ?6, low_threshold = ?7, updated_at = ?8 WHERE budget_id = ?1 AND id = ?2`,
@@ -180,9 +180,9 @@ categoriesRoutes.post('/settings/categories/:id/archive', async (c) => {
     `SELECT kind FROM category WHERE budget_id = ?1 AND id = ?2`,
     id,
   );
-  if (!cat) throw new HttpError(404, 'not_found', 'category');
+  if (!cat) throw new HttpError(404, 'not_found', GONE);
   if (cat.kind === 'cc_payment')
-    throw new HttpError(422, 'system', 'Card payment categories can’t be archived');
+    throw new HttpError(422, 'system', 'Card payment categories can’t be archived.');
   await archiveCategory(s, id, r.archived, now, r);
   return c.json(ACK);
 });
@@ -214,7 +214,7 @@ async function archiveCategory(
         .prepare(`SELECT coalesce(max(seq), 0) AS n FROM change_log`)
         .first<{ n: number }>();
       if (sent.through === undefined || (latest?.n ?? 0) > sent.through)
-        throw new HttpError(409, 'changed', 'Your budget changed. Try again.');
+        throw new HttpError(409, 'changed', CHANGED);
     }
     if (avail > 0) {
       w.push(
@@ -241,9 +241,9 @@ categoriesRoutes.post('/settings/categories/:id/remove', async (c) => {
     `SELECT kind, name FROM category WHERE budget_id = ?1 AND id = ?2`,
     id,
   );
-  if (!cat) throw new HttpError(404, 'not_found', 'category');
+  if (!cat) throw new HttpError(404, 'not_found', GONE);
   if (cat.kind === 'cc_payment')
-    throw new HttpError(422, 'system', 'Card payment categories are made by the app');
+    throw new HttpError(422, 'system', 'Card payment categories can’t be removed.');
   const sent = await parse(RemoveCategoryRequest, c.req.raw).catch(() => ({}));
   const used = await s.first<{ n: number }>(
     `SELECT
@@ -274,7 +274,7 @@ categoriesRoutes.post('/settings/groups/:id/remove', async (c) => {
     `SELECT id FROM category_group WHERE budget_id = ?1 AND id = ?2`,
     id,
   );
-  if (!g) throw new HttpError(404, 'not_found', 'group');
+  if (!g) throw new HttpError(404, 'not_found', GONE);
   const left = await s.first<{ n: number }>(
     `SELECT count(*) AS n FROM category WHERE budget_id = ?1 AND group_id = ?2 AND archived_at IS NULL`,
     id,

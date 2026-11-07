@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import type { TxnSheet } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
-import { useMoneyMutation } from '../api/hooks';
+import { useAccounts, useMoneyMutation } from '../api/hooks';
 import { Sheet } from '../components/Sheet';
 import { CategoryField } from '../components/CategoryPicker';
 import {
@@ -22,7 +22,6 @@ import {
   PrimaryButton,
   Segmented,
   SoftButton,
-  TextButton,
   textLinkClass,
 } from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
@@ -30,6 +29,7 @@ import { addMonths, dayLabel, monthName, monthShort } from '../lib/dates';
 import { useCategoryOptions } from '../lib/common';
 import { usage } from '../usage/tracker';
 import { toast } from '../components/Toast';
+import { Why } from '../components/Why';
 import { BankSays, TxnHeader, useParentPath } from './TxnCommon';
 import { PairedWith } from './TxnPair';
 
@@ -68,7 +68,6 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const [month, setMonth] = useState(t.budgetMonth);
   const [wont, setWont] = useState(t.wontClear);
   const [memo, setMemo] = useState(t.memo ?? '');
-  const [linked, setLinked] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // Owed to you, budget month and Won't clear are rarely changed: folded into one row unless one is set.
 
@@ -98,7 +97,11 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const spendCents = Math.abs(estCents ?? t.amount);
   const owedCents =
     owed === 'half' ? Math.round(spendCents / 2) : owed === 'all' ? spendCents : (parseCents(owedAmt) ?? 0);
-  const catName = useCategoryOptions().byId.get(cat) ?? 'The category';
+  const catName = useCategoryOptions().byId.get(cat) ?? null;
+  const onCard =
+    useAccounts()
+      .data?.groups.flatMap((g) => g.accounts)
+      .find((a) => a.id === t.accountId)?.kind === 'credit';
   const months = [addMonths(t.date.slice(0, 7), -1), t.date.slice(0, 7), addMonths(t.date.slice(0, 7), 1)];
   const isIncome = t.kind === 'income';
   const isRefund = t.kind === 'refund';
@@ -208,33 +211,21 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
             ))}
           </div>
           <span className="text-xs text-muted">
-            When it posts, the bank amount replaces yours and you’ll see an alert if they differ.
+            When it posts, the bank’s amount wins. You’ll see an alert if they differ.
           </span>
         </div>
       )}
       {isRefund && t.refundOf && (
         <div className="flex flex-col gap-1.5">
           <Label>Refund of</Label>
-          {linked ? (
-            <div className="flex items-center justify-between gap-2 rounded-lg border border-line p-3">
-              <span className="flex flex-col">
-                <span className="text-md font-semibold">{t.refundOf.label}</span>
-                <span className="text-xs text-muted">
-                  {t.categoryLabel} · {t.accountName}
-                </span>
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-line p-3">
+            <span className="flex flex-col">
+              <span className="text-md font-semibold">{t.refundOf.label}</span>
+              <span className="text-xs text-muted">
+                {t.categoryLabel} · {t.accountName}
               </span>
-              <SoftButton tone="outline" track="txn.refund.unlink" onClick={() => setLinked(false)}>
-                Not this purchase
-              </SoftButton>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between gap-2 rounded-lg bg-page p-3 text-sm text-muted">
-              <span>Not linked. It still counts as {t.categoryLabel} money back.</span>
-              <TextButton onClick={() => setLinked(true)} className="self-center">
-                Link to {t.refundOf.label}
-              </TextButton>
-            </div>
-          )}
+            </span>
+          </div>
         </div>
       )}
       {isIncome ? (
@@ -253,7 +244,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           <span className="text-xs text-muted">
             {month === t.date.slice(0, 7)
               ? `Adds ${formatCents(t.amount)} to Ready to Assign in ${monthName(month)}.`
-              : `Holds it until ${monthName(month)} 1, so next month starts already funded.`}
+              : `Adds ${formatCents(t.amount)} to Ready to Assign on ${monthName(month)} 1.`}
           </span>
         </div>
       ) : (
@@ -293,10 +284,11 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           )}
         </div>
       )}
-      {isRefund && (
+      {isRefund && (catName || onCard) && (
         <p className="m-0 text-sm leading-snug text-muted">
-          The {formatCents(t.amount)} goes back to {catName}, the category that paid for it. On a card it also
-          lowers what you owe, so the card’s payment category needs {formatCents(t.amount)} less.
+          {catName ? `The ${formatCents(t.amount)} goes back to ${catName}.` : ''}
+          {catName && onCard ? ' ' : ''}
+          {onCard ? `The card payment needs ${formatCents(t.amount)} less.` : ''}
         </p>
       )}
       {/* Any money in can pay back what's owed to you: a card credit too, unless it's linked as a refund. */}
@@ -306,7 +298,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           data-track="txn.income.match"
           className="flex min-h-12 shrink-0 items-center justify-between gap-3 rounded-lg border border-line px-3 text-ink no-underline"
         >
-          <span className="text-md">Part of this is money back for something you fronted?</span>
+          <span className="text-md">Money back for something owed to you?</span>
           <span className="flex shrink-0 items-center text-md font-bold text-accent">
             Match
             <Icon name="chevR" size={18} />
@@ -357,13 +349,21 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
                     />
                   </Field>
                 </div>
-                <span className="text-xs leading-snug text-muted">
-                  {catName} is charged only your share. The rest comes out of Ready to Assign until it’s paid
-                  back
-                  {t.accountName.match(/Sapphire|Freedom|card/i)
-                    ? `, and still covers the ${t.accountName.split(' ')[0]} payment`
-                    : ''}
-                  . Half stays half if the amount changes when it posts.
+                <span className="flex flex-col gap-1 text-xs leading-snug text-muted">
+                  <span>
+                    {catName ?? 'The category'} pays only your share. The rest comes out of Ready to Assign
+                    until it’s paid back.
+                  </span>
+                  {(onCard || owed !== 'custom') && (
+                    <Why>
+                      {onCard ? 'The card payment still covers the full amount. ' : ''}
+                      {owed === 'half'
+                        ? 'It stays half if the amount changes when it posts.'
+                        : owed === 'all'
+                          ? 'It stays all of it if the amount changes when it posts.'
+                          : ''}
+                    </Why>
+                  )}
                 </span>
               </>
             )}
@@ -415,7 +415,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       <Field label="Memo">
         <input
           className={inputClass}
-          placeholder="Add a note"
+          placeholder="Add a memo"
           value={memo}
           onChange={(e) => setMemo(e.target.value)}
         />

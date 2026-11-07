@@ -7,7 +7,7 @@ import { LinkExchange, LinkTokenRequest, type ConnectionsView } from '@ledgerlin
 import { localDate } from '@ledgerline/domain';
 import { encryptToken, parseKeyring, ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../../http/context.js';
-import { HttpError, parse, scoped } from '../api.js';
+import { GONE, HttpError, TRY_AGAIN, parse, scoped } from '../api.js';
 import { acquire, isFenceAbort, requestSync } from '../../sync/lease.js';
 import { connectionToken, makeProvider } from '../../sync/provider.js';
 import type { Scoped } from '../../db/scoped.js';
@@ -59,7 +59,7 @@ connectionsRoutes.post('/settings/connections/link-token', async (c) => {
   const provider = makeProvider(c.env);
   if (r.mode === 'repair') {
     // Update mode reuses the Item; it never uses a new slot.
-    if (!r.connectionId) throw new HttpError(400, 'invalid', 'connectionId');
+    if (!r.connectionId) throw new HttpError(400, 'invalid', TRY_AGAIN);
     const token = await connectionToken(c.env, r.connectionId);
     const lt = await provider.createLinkSession({
       mode: 'repair',
@@ -71,9 +71,14 @@ connectionsRoutes.post('/settings/connections/link-token', async (c) => {
   const used = await s.first<{ n: number }>(
     `SELECT count(*) AS n FROM connection WHERE budget_id = ?1 AND provider = 'plaid'`,
   );
-  if ((used?.n ?? 0) >= ITEM_LIMIT) throw new HttpError(409, 'item_limit', 'All 10 bank links are used');
+  if ((used?.n ?? 0) >= ITEM_LIMIT)
+    throw new HttpError(
+      409,
+      'item_limit',
+      `All ${ITEM_LIMIT} bank links are used. Import a CSV file instead.`,
+    );
   if (c.env.PLAID_ENV === 'production' && !r.confirmSlot)
-    throw new HttpError(409, 'confirm_slot', 'Confirm using one of your remaining bank links');
+    throw new HttpError(409, 'confirm_slot', 'Confirm that you want to use one of your bank links.');
   const lt = await provider.createLinkSession({ mode: 'new', userId: c.get('userId') });
   return c.json({ linkToken: lt.linkToken });
 });
@@ -142,7 +147,7 @@ export async function setUpLinkedAccounts(
     `SELECT provider_item_id, setup_done FROM connection WHERE budget_id = ?1 AND id = ?2`,
     connectionId,
   );
-  if (!conn) throw new HttpError(404, 'not_found', 'connection');
+  if (!conn) throw new HttpError(404, 'not_found', GONE);
   if (conn.setup_done === 1) return { connectionId, accounts: [] };
   const itemId = conn.provider_item_id;
   const provider = makeProvider(env);
@@ -293,7 +298,7 @@ connectionsRoutes.post('/settings/connections/exchange', async (c) => {
     throw new HttpError(
       503,
       'setup_incomplete',
-      'Your bank is linked, but setting up its accounts didn’t finish. Open Bank connections and tap Finish setup. It won’t use another link.',
+      'Your bank is linked, but its accounts aren’t set up yet. Tap Finish setup in Bank connections. It doesn’t use another link.',
     );
   }
   await startSync(c.env, s.budgetId, connectionId, 'link');
@@ -327,7 +332,7 @@ connectionsRoutes.post('/settings/connections/:id/refresh', async (c) => {
     `SELECT id, setup_done FROM connection WHERE budget_id = ?1 AND id = ?2 AND removed_at IS NULL`,
     c.req.param('id'),
   );
-  if (!conn) throw new HttpError(404, 'not_found', 'connection');
+  if (!conn) throw new HttpError(404, 'not_found', GONE);
   if (conn.setup_done !== 1) {
     // Finish setup of a link saved before its accounts were set up.
     const token = await connectionToken(c.env, conn.id);

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate, useSearch } from '@tanstack/react-router';
 import type { ActivityView, TxnListRow } from '@ledgerline/contracts';
 import { api, type ActivityFilter } from '../api/endpoints';
+import { ApiError, errorMessage } from '../api/client';
 import { adjustAttention, qk, useActivity, useBudget, useMoneyMutation, useSession } from '../api/hooks';
 import { MonthBar, TabHeader } from '../components/MonthBar';
 import { monthName } from '../lib/dates';
@@ -170,7 +171,7 @@ export function ActivityScreen() {
         done.push(...p.keys);
       }
     } catch (e) {
-      toast.show({ text: e instanceof Error ? e.message : 'Couldn’t categorize that.' });
+      toast.show({ text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t categorize that. Try again.' });
       if (!done.length) return;
     }
     usage.endTask('categorize');
@@ -198,15 +199,14 @@ export function ActivityScreen() {
     const one = parts.length === 1 ? parts[0]! : null;
     const left = one ? after(one) : null;
     const warn =
-      one && left !== null && left < 0
-        ? ` · ${one.target.name} is now overspent by ${formatCents(-left)}. Cover it on Budget.`
-        : '';
+      one && left !== null && left < 0 ? ` · Overspent by ${formatCents(-left)}. Cover it on Budget.` : '';
     const overAll = over.length
       ? ` · ${over.length} ${over.length === 1 ? 'category' : 'categories'} now overspent`
       : '';
+    const count = (n: number) => `${n} ${n === 1 ? 'transaction' : 'transactions'}`;
     const text = okAll
-      ? `${done.length} transactions categorized${overAll}`
-      : `${keys.length === 1 && first ? first.payee : `${keys.length} transactions`} → ${one?.target.name ?? 'category'}${warn}`;
+      ? `${count(done.length)} categorized${overAll}`
+      : `${keys.length === 1 && first ? first.payee : count(keys.length)} → ${one?.target.name ?? 'category'}${warn}`;
     toast.show({
       text,
       undo: async () => {
@@ -258,13 +258,15 @@ export function ActivityScreen() {
             await api.undoMergePayees(res.undoId);
             usage.undo('payee_join');
           } catch (e) {
-            toast.show({ text: e instanceof Error ? e.message : 'Couldn’t undo that.' });
+            toast.show({ text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t undo that. Try again.' });
           }
           refresh();
         },
       });
     } catch (e) {
-      toast.show({ text: e instanceof Error ? e.message : 'Couldn’t join those payees.' });
+      toast.show({
+        text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t join those payees. Try again.',
+      });
     }
   };
 
@@ -290,9 +292,9 @@ export function ActivityScreen() {
     try {
       // OK is shown on bank rows with an alert; they have no expected entry, so the alert itself is marked reviewed.
       await review.mutateAsync(r.key);
-      toast.show({ text: `${r.payee} · new amount accepted` });
+      toast.show({ text: `${r.payee} · marked OK` });
     } catch (e) {
-      toast.show({ text: e instanceof Error ? e.message : 'Couldn’t save that.' });
+      toast.show({ text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t save that. Try again.' });
     }
   };
 
@@ -387,11 +389,16 @@ export function ActivityScreen() {
           // Same look as every other section heading (small capitals).
           <SectionTitle>Needs attention</SectionTitle>
         )}
-        {v && filter === 'attention' && !q && v.attentionCount === 0 && openNeeds.length === 0 && (
-          <p className="m-0 rounded-lg bg-funded-bg p-4 text-center text-base font-semibold text-funded-fg">
-            Nothing needs attention.
-          </p>
-        )}
+        {v &&
+          filter === 'attention' &&
+          !q &&
+          v.attentionCount === 0 &&
+          openNeeds.length === 0 &&
+          !showNeeds && (
+            <p className="m-0 rounded-lg bg-funded-bg p-4 text-center text-base font-semibold text-funded-fg">
+              Nothing needs attention.
+            </p>
+          )}
         {v && v.moneyToMatch.length > 0 && (
           <Section title="Money to match">
             {v.moneyToMatch.map((r) => (
@@ -571,7 +578,7 @@ function useMorePosted(v: ActivityView | undefined, filter: ActivityFilter, q: s
       const page = await api.activity(filter, q || undefined, cursor, month);
       setState({ key, rows: [...(mine ? state.rows : []), ...page.posted], cursor: page.nextCursor });
     } catch (e) {
-      toast.show({ text: e instanceof Error ? e.message : 'Couldn’t load more.' });
+      toast.show({ text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t load more. Try again.' });
     } finally {
       setLoading(false);
     }

@@ -76,7 +76,9 @@ test('With no passkey copy, nothing is kept on the device: with no signal it say
   expect(await page.evaluate(() => window.localStorage.getItem('ledgerline-saved-data'))).toBeNull();
   await context.setOffline(true);
   await page.reload();
-  await expect(page.getByText('Couldn’t reach Ledgerline', { exact: false }).first()).toBeVisible();
+  await expect(
+    page.getByText('Connect to the internet and try again', { exact: false }).first(),
+  ).toBeVisible();
   await context.setOffline(false);
 });
 
@@ -92,7 +94,7 @@ test('Needs attention fixes reach $643.65 through the API', async ({ page }) => 
     await page.getByRole('button', { name }).click();
     await expect(rta(page)).toHaveText(after);
   }
-  await page.getByRole('button', { name: /^Running low \d/ }).click();
+  await page.getByRole('button', { name: /^Low \d/ }).click();
   await page.getByRole('button', { name: 'Add $20.00 for Personal care' }).click();
   await expect(rta(page)).toHaveText('$643.65');
   await page.reload();
@@ -131,7 +133,7 @@ test('Activity: OK on a bank row that cleared at a new amount clears it', async 
   await expect(ok).toBeVisible();
   const before = Number((await chip.textContent())!.match(/\d+/)![0]);
   await ok.click();
-  await expect(page.getByText('Shake Shack · new amount accepted')).toBeVisible();
+  await expect(page.getByText('Shake Shack · marked OK')).toBeVisible();
   await expect(ok).toHaveCount(0);
   await expect(chip).toHaveText(`Needs attention ${before - 1}`);
   await page.reload();
@@ -204,7 +206,7 @@ test('Categories: rename a group, reorder by dragging, and remove a category', a
   await page.goto('/categories');
   const groups = page.locator('section').getByRole('heading', { level: 2 });
   // Card payments are made by the app and can't be edited, so only your groups show.
-  await expect(groups.filter({ hasText: 'Credit card payments' })).toHaveCount(0);
+  await expect(groups.filter({ hasText: 'Card payments' })).toHaveCount(0);
   await expect(groups.nth(0)).toHaveText('Bills');
   await expect(groups.nth(1)).toHaveText('Everyday');
   // Drag Bills below Everyday by its handle: no Edit mode.
@@ -230,7 +232,7 @@ test('Categories: rename a group, reorder by dragging, and remove a category', a
   const edit = page.getByRole('dialog', { name: 'Edit category' });
   await edit.getByRole('button', { name: 'Remove Dining out…' }).click();
   await edit.getByRole('button', { name: 'Remove', exact: true }).click();
-  await expect(page.getByText('Dining out archived: it has history, so reports keep it')).toBeVisible();
+  await expect(page.getByText('Dining out archived. Reports keep its history.')).toBeVisible();
   await expect(page.getByRole('link', { name: /^Dining out/ })).toHaveCount(0);
 });
 
@@ -240,7 +242,7 @@ test('Target: a yearly refill is met in its Due month, and the Due month is kept
   await page.getByRole('button', { name: 'Year', exact: true }).click();
   await page.getByLabel('Due').fill('2027-03');
   // November through March: five steps, the last one in March.
-  await expect(page.getByText(/by Mar(ch)? 2027 from what you have now, in 5 monthly steps/)).toBeVisible();
+  await expect(page.getByText(/by Mar(ch)? 2027, in 5 steps/)).toBeVisible();
   await page.getByRole('button', { name: 'Save target' }).click();
   await expect(page).not.toHaveURL(/\/target/);
   await page.goto('/budget/category/groceries/target');

@@ -34,15 +34,11 @@ const KINDS: { id: Kind; name: string; desc: string }[] = [
   {
     id: 'refill',
     name: 'Refill',
-    desc: 'Have an amount available each month, quarter or year; leftover rolls over',
+    desc: 'Have an amount ready each month, quarter or year',
   },
-  { id: 'set_aside', name: 'Set aside', desc: 'Put the same amount in every month, whatever the balance' },
-  { id: 'by_date', name: 'Balance by a date', desc: 'Reach a total by a month, in even steps' },
-  {
-    id: 'no_date',
-    name: 'Balance, no date',
-    desc: 'Grow toward a total, optionally a set amount each month',
-  },
+  { id: 'set_aside', name: 'Set aside', desc: 'Add the same amount every month' },
+  { id: 'by_date', name: 'Balance by a date', desc: 'Reach a total by a month' },
+  { id: 'no_date', name: 'Balance, no date', desc: 'Grow toward a total' },
 ];
 
 function monthsBetween(from: string, to: string) {
@@ -147,7 +143,8 @@ export function TargetScreen() {
     );
   }
   const summary = (() => {
-    if (!target) return ['Enter an amount', 'The target shows what this category needs each month.'];
+    if (!target)
+      return [kind === 'by_date' && cents !== null && cents > 0 ? 'Choose a month' : 'Enter an amount', ''];
     const f = (x: number) => formatCents(x, { whole: true });
     switch (target.type) {
       case 'refill': {
@@ -155,7 +152,9 @@ export function TargetScreen() {
           const nextNeed = Math.max(0, target.amount - c.available);
           return [
             `Needs ${f(target.amount)} this month`,
-            `You have ${formatCents(c.available)} left, so next month needs ${formatCents(nextNeed)} to refill.`,
+            nextNeed > 0
+              ? `You have ${formatCents(c.available)} left. Next month needs ${formatCents(nextNeed)}.`
+              : `You have ${formatCents(c.available)} left. Next month needs nothing more.`,
           ];
         }
         // Months left run through the Due month; months of the period before now aren't asked for.
@@ -165,26 +164,22 @@ export function TargetScreen() {
         const word = target.periodMonths === 12 ? 'year' : 'quarter';
         return [
           `Needs ${f(per)} a month`,
-          `${f(target.amount)} by ${monthLabel(end)} from what you have now, in ${left === 1 ? 'one step' : `${left} monthly steps`}. Then ${f(Math.floor(target.amount / target.periodMonths))} a month each ${word}; leftover lowers the next ${word}.`,
+          `${f(target.amount)} by ${monthLabel(end)}, in ${left === 1 ? '1 step' : `${left} steps`}. After that, ${f(Math.floor(target.amount / target.periodMonths))} a month each ${word}.`,
         ];
       }
       case 'set_aside':
-        return [
-          `Needs ${f(target.amount)} every month`,
-          'The balance keeps growing; spending doesn’t change what’s needed.',
-        ];
+        return [`Needs ${f(target.amount)} every month`, 'Spending doesn’t change it.'];
       case 'by_date': {
         const n = monthsBetween(month, target.targetMonth);
         const per = Math.floor(Math.max(0, target.amount - c.available) / n);
-        return [
-          `Needs ${f(per)} a month`,
-          `${f(target.amount)} by ${monthLabel(target.targetMonth)} from what you have now, in even steps.`,
-        ];
+        return [`Needs ${f(per)} a month`, `${f(target.amount)} by ${monthLabel(target.targetMonth)}.`];
       }
       case 'no_date':
         return [
-          target.monthly ? `Needs ${f(target.monthly)} a month` : 'No monthly amount',
-          `Shows progress toward ${f(target.amount)}; stops asking once reached.`,
+          target.monthly ? `Needs ${f(target.monthly)} a month` : `Toward ${f(target.amount)}`,
+          target.monthly
+            ? `Until it reaches ${f(target.amount)}.`
+            : 'Shows progress only. It asks for nothing each month.',
         ];
       default:
         return ['', ''];
@@ -207,7 +202,13 @@ export function TargetScreen() {
           mutates
           track="target.save"
           disabled={!target}
-          why={!target ? 'Enter an amount to save' : ''}
+          why={
+            !target
+              ? cents !== null && cents > 0
+                ? 'Choose a month to save'
+                : 'Enter an amount to save'
+              : ''
+          }
           onClick={() => target && void submit(target)}
         >
           Save target
@@ -293,8 +294,12 @@ export function TargetScreen() {
       )}
       <p className="m-0 rounded-lg bg-page p-3 text-md leading-normal">
         <strong>{summary[0]}</strong>
-        <br />
-        {summary[1]}
+        {summary[1] && (
+          <>
+            <br />
+            {summary[1]}
+          </>
+        )}
       </p>
       {save.error && <ErrorNote error={save.error} />}
       {c.target.type !== 'none' &&
@@ -307,8 +312,7 @@ export function TargetScreen() {
             onCancel={() => setAsking(false)}
             busy={save.isPending}
           >
-            Remove the target from {c.name}? The money stays in the category; it just stops showing as
-            underfunded or low.
+            Remove the target from {c.name}? The money stays in the category.
           </ConfirmInline>
         ) : (
           <DangerLink track="target.remove" onClick={() => setAsking(true)} className="mt-4">

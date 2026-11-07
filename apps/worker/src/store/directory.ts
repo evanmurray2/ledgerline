@@ -173,20 +173,20 @@ export class Directory extends DurableObject<Env> {
       return {
         ok: false,
         status: 401,
-        body: { error: 'unauthenticated', message: 'Sign in with your passkey' },
+        body: { error: 'unauthenticated', message: 'Sign in again with your passkey.' },
       };
     if (needsRecentPasskey(method, path) && now - who.verifiedAt > REAUTH_MS)
       return {
         ok: false,
         status: 401,
-        body: { error: 'reauth', message: 'Confirm it’s you with your passkey' },
+        body: { error: 'reauth', message: 'Confirm it’s you with your passkey, then try again.' },
       };
     const m = await membership(env.DB, who.userId);
     if (!m)
       return {
         ok: false,
         status: 403,
-        body: { error: 'not_member', message: 'Not a member of this budget' },
+        body: { error: 'not_member', message: 'You don’t have access to this budget.' },
       };
     // 95% of a daily limit: stop reading too, so the app never runs into Cloudflare's hard stop (sync/breaker.ts).
     if (restsDuring(method, path) && (await this.state(Date.now())) === 'rest')

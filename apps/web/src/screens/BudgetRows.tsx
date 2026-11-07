@@ -103,11 +103,14 @@ function CardRowPhone({ card }: { card: CardRow }) {
   );
 }
 
-export function owedTone(b: BudgetView): { tone: Tone; word: string; icon: IconName } {
+/** The Owed to you row: a status word only when something is late; otherwise just what happens to the money. */
+export function owedTone(b: BudgetView): { tone: Tone; word: string | null; icon: IconName } {
   return b.owed.status === 'late'
     ? { tone: 'under', word: `${b.owed.late} late`, icon: 'clock' }
-    : { tone: 'none', word: 'Tracking', icon: 'dash' };
+    : { tone: 'none', word: null, icon: 'dash' };
 }
+
+export const OWED_DETAIL = 'Goes back to Ready to Assign when paid back';
 
 function OwedRowPhone({ b }: { b: BudgetView }) {
   const t = owedTone(b);
@@ -121,8 +124,12 @@ function OwedRowPhone({ b }: { b: BudgetView }) {
         <div className="flex min-w-0 flex-col gap-[3px]">
           <span className="text-base font-semibold">Owed to you</span>
           <span className="text-xs leading-normal text-muted">
-            <StatusWord word={t.word} tone={t.tone} icon={t.icon} /> · {formatCents(b.owed.out)} out · comes
-            back to Ready to Assign
+            {t.word && (
+              <>
+                <StatusWord word={t.word} tone={t.tone} icon={t.icon} /> ·{' '}
+              </>
+            )}
+            {OWED_DETAIL}
           </span>
         </div>
         <Pill tone={t.tone}>{formatCents(b.owed.out)} out</Pill>
@@ -253,7 +260,7 @@ export function AllGroups({ b, month }: { b: BudgetView; month: string }) {
       {b.cards.length > 0 && (
         <Group
           id="cards"
-          name="Credit card payments"
+          name="Card payments"
           total={`${formatCents(b.cards.reduce((s, c) => s + c.available, 0))} available`}
           collapsed={!!collapsed.cards}
           toggle={toggle}
@@ -264,19 +271,13 @@ export function AllGroups({ b, month }: { b: BudgetView; month: string }) {
         </Group>
       )}
       {!empty && (
-        <Group
-          id="owed"
-          name="Owed to you"
-          total="not a category"
-          collapsed={!!collapsed.owed}
-          toggle={toggle}
-        >
+        <Group id="owed" name="Owed to you" total="" collapsed={!!collapsed.owed} toggle={toggle}>
           <OwedRowPhone b={b} />
         </Group>
       )}
       <p className="m-0 text-xs text-muted">
         {empty
-          ? 'Transactions will show up in Activity after the first sync, usually within a few minutes.'
+          ? 'Transactions show up in Activity after each bank sync.'
           : 'Bars show how much of this month’s money is left.'}
       </p>
     </>

@@ -16,7 +16,7 @@ import {
   type PastUse,
 } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
-import { HttpError, scoped } from './api.js';
+import { BAD_MONTH, HttpError, scoped } from './api.js';
 import { fresh, monthResult, structure } from '../views/common.js';
 import { IN_BUDGET_ROWS, listRow } from '../views/rows.js';
 import { RECENT_TX, TX_COLUMNS, chunks, type TxRow } from '../ledger/ledger.js';
@@ -160,7 +160,7 @@ activityViewRoutes.get('/activity', async (c) => {
   const cursor = c.req.query('cursor');
   // A month (Activity's month bar) shows that budget month's posted rows; a search looks through every month.
   const monthQ = c.req.query('month');
-  if (monthQ !== undefined && !isMonth(monthQ)) throw new HttpError(400, 'invalid', 'month');
+  if (monthQ !== undefined && !isMonth(monthQ)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const start = (f.budget.budget_start_month ?? f.current) as Month;
   const month = monthQ && !q ? (monthQ < start ? start : monthQ) : undefined;
   // Pending and upcoming rows are waiting now: they show on this month, whatever their date, and never on a past one.
@@ -312,7 +312,7 @@ activityViewRoutes.get('/activity', async (c) => {
       sameAs: sameAs ? { id: sameAs.id, name: sameAs.name } : null,
       history: ranked.length
         ? {
-            title: `You’ve used for ${sameAs?.name ?? t.payee}`,
+            title: `Past categories for ${sameAs?.name ?? t.payee}`,
             categories: ranked.map((u) => ({
               id: u.categoryId!,
               name: cats.get(u.categoryId!) ?? '',

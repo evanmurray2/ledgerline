@@ -3,6 +3,7 @@
 import { ApiError as ApiErrorBody, CSRF_HEADER } from '@ledgerline/contracts';
 import type { z } from 'zod';
 import { connectivity } from '../state/connectivity';
+import { budgetTime } from '../lib/dates';
 import { clearSavedData } from '../state/saved';
 import {
   afterChange,
@@ -35,32 +36,92 @@ export const MUTATION_HEADERS: Readonly<Record<string, string>> = {
   [CSRF_HEADER]: '1',
 };
 
-/** Error codes the UI maps to friendlier text. Anything else shows the server's message. */
-const FRIENDLY: Record<string, string> = {
-  offline: 'You’re offline. Changes are turned off until you’re back online.',
-  network: 'Couldn’t reach Ledgerline. Check your connection and try again.',
-  read_only: 'Changes are paused until the daily limit resets.',
-  readonly: 'Changes are paused until the daily limit resets.',
-  bad_response: 'Ledgerline sent something unexpected. Try again.',
-  unauthorized: 'Your session ended. Sign in again.',
-  unauthenticated: 'Your session ended. Sign in again.',
-  reauth: 'Confirm it’s you with your passkey, then try again.',
-};
+const TRY_AGAIN = 'Something went wrong. Try again.';
+const OFFLINE = 'You’re offline. Connect to the internet and try again.';
+const CHANGED = 'This was changed or removed. Pull down to refresh.';
 
-/** The next midnight UTC, in the reader's own time zone (when Cloudflare's daily limits reset). */
+/** The next reset of Cloudflare's daily limits (midnight UTC), as a clock time in the budget's time zone. */
 export function dailyResetTime(now = new Date()): string {
   const reset = new Date(now);
   reset.setUTCHours(24, 0, 0, 0);
-  return reset.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return budgetTime(reset.getTime());
 }
 
+/** When changes come back: the session's own time if it gave one, else the next daily reset. */
+function viewOnlyUntil(): string {
+  const until = connectivity.get().readOnlyUntil;
+  return (until && budgetTime(until)) || dailyResetTime();
+}
+
+/** Text for an error code, whatever the server said (docs/copy.md, Terms). */
+function codeText(code: string): string | null {
+  switch (code) {
+    case 'offline':
+    case 'network':
+      return OFFLINE;
+    case 'read_only':
+    case 'readonly':
+      return `View only until ${viewOnlyUntil()}. Try again then.`;
+    case 'resting':
+    case 'daily_limit':
+      return `Paused until ${dailyResetTime()}. Nothing is lost.`;
+    case 'unauthorized':
+    case 'unauthenticated':
+      return 'Sign in again with your passkey.';
+    case 'reauth':
+      return 'Confirm it’s you with your passkey, then try again.';
+    case 'bad_response':
+    case 'bad_json':
+    case 'csrf':
+    case 'internal':
+      return TRY_AGAIN;
+    default:
+      return null;
+  }
+}
+
+/** Texts written for logs or by the browser, never shown on screen (docs/copy.md rule 7). */
+const RAW =
+  /json|unexpected response|request failed|failed to fetch|load failed|network|expected .*received|\butc\b|session|database|worker|https?\b|undefined|null|\bapi\b/i;
+
+/** A message that is already a full sentence for the reader: kept as it is. */
+function readable(m: unknown): m is string {
+  return (
+    typeof m === 'string' &&
+    m.length <= 240 &&
+    /^[A-Z0-9‘“"]/.test(m) &&
+    m.includes(' ') &&
+    /[.!?]$/.test(m) &&
+    !RAW.test(m)
+  );
+}
+
+/**
+ * What to show for any failure: the glossary text for a known code, the server's message when it is a good
+ * sentence, else `fallback`. Safe for any value. Use it in toasts: `errorText(e, 'Couldn’t save that. Try again.')`.
+ */
+export function errorText(err: unknown, fallback: string): string {
+  try {
+    if (err instanceof ApiError) {
+      const byCode = codeText(err.code);
+      if (byCode) return byCode;
+      if (readable(err.message)) return err.message;
+      if (err.code === 'not_found' || err.code === 'changed' || err.code === 'payee_changed') return CHANGED;
+      return fallback;
+    }
+    // fetch() itself failing: the device lost its connection.
+    if (err instanceof TypeError && connectivity.isOffline()) return OFFLINE;
+    if (err instanceof Error && readable(err.message)) return err.message;
+    if (readable(err)) return err;
+  } catch {
+    // Anything odd (a getter that throws, a revoked proxy): the fallback.
+  }
+  return fallback;
+}
+
+/** errorText() with "Something went wrong. Try again." as the fallback. */
 export function errorMessage(err: unknown): string {
-  if (err instanceof ApiError && err.code === 'daily_limit')
-    return `Cloudflare’s free daily limit is used up. Your data is safe. Ledgerline is back at ${dailyResetTime()}.`;
-  if (err instanceof ApiError && err.code === 'resting')
-    return `Ledgerline is resting to stay inside Cloudflare’s free daily limit. Your data is safe. It’s back at ${dailyResetTime()}.`;
-  if (err instanceof ApiError) return FRIENDLY[err.code] ?? err.message;
-  return 'Something went wrong. Try again.';
+  return errorText(err, TRY_AGAIN);
 }
 
 // Any answer from the server, even a 401, means the network is back (state/connectivity.ts).
@@ -160,7 +221,7 @@ async function sendOnce<S extends z.ZodType>(
 ): Promise<z.infer<S>> {
   const mutation = method !== 'GET';
   // Screens are worked out from the copy on this device (D-45, src/copy).
-  if (readsLocally(method, path)) return answer(method, path, schema, await readCopy(path));
+  if (readsLocally(method, path)) return answer(schema, await readCopy(path));
   // Changes made with no signal go to the copy now and to the server later (a short list; copy.ts).
   if (mutation && connectivity.isOffline() && canEditOffline(method, path))
     return schema.parse(
@@ -174,12 +235,10 @@ async function sendOnce<S extends z.ZodType>(
   }
   // Resting (95% of a daily limit): only the session is asked, so the app knows when it's over.
   if (!mutation && connectivity.get().readsPaused && path !== '/api/session')
-    throw new ApiError('resting', 'Reading is paused until the daily limit resets.', 503);
+    throw new ApiError('resting', `Paused until ${dailyResetTime()}. Nothing is lost.`, 503);
   if (mutation && !connectivity.canWrite() && !canEditOffline(method, path)) {
-    throw new ApiError(
-      connectivity.isOffline() ? 'offline' : 'read_only',
-      'Changes are turned off right now.',
-    );
+    const code = connectivity.isOffline() ? 'offline' : 'read_only';
+    throw new ApiError(code, codeText(code)!);
   }
   let res: Response;
   try {
@@ -196,7 +255,7 @@ async function sendOnce<S extends z.ZodType>(
       return schema.parse(
         withRta(await editOffline(method, path, body), await afterChange().catch(() => null)),
       );
-    throw new ApiError('network', 'Network request failed', 0, true);
+    throw new ApiError('network', OFFLINE, 0, true);
   }
   connectivity.reportOk();
   if (res.status === 204) return schema.parse(undefined);
@@ -206,7 +265,7 @@ async function sendOnce<S extends z.ZodType>(
     try {
       json = JSON.parse(text);
     } catch {
-      throw new ApiError('bad_response', 'Response was not JSON', res.status);
+      throw new ApiError('bad_response', TRY_AGAIN, res.status);
     }
   }
   if (!res.ok) throw failure(res, json, path);
@@ -214,7 +273,7 @@ async function sendOnce<S extends z.ZodType>(
   if (mutation && isAck(json)) json = withRta(json, await afterChange().catch(() => null));
   const parsed = schema.safeParse(json);
   if (!parsed.success) {
-    throw new ApiError('bad_response', `Unexpected response from ${method} ${path}`, res.status);
+    throw new ApiError('bad_response', TRY_AGAIN, res.status);
   }
   return parsed.data;
 }
@@ -228,24 +287,18 @@ function withRta(json: unknown, r: { rta: number; rtaUpdating: boolean } | null)
 }
 
 /** A screen answered by the copy, parsed like a server answer. */
-function answer<S extends z.ZodType>(
-  method: string,
-  path: string,
-  schema: S,
-  r: { status: number; body: string },
-): z.infer<S> {
+function answer<S extends z.ZodType>(schema: S, r: { status: number; body: string }): z.infer<S> {
   const json = r.body ? (JSON.parse(r.body) as unknown) : null;
   if (r.status >= 300) {
     const parsed = ApiErrorBody.safeParse(json);
     throw new ApiError(
       parsed.success ? parsed.data.error : `http_${r.status}`,
-      parsed.success ? parsed.data.message : 'Request failed',
+      parsed.success ? parsed.data.message : TRY_AGAIN,
       r.status,
     );
   }
   const parsed = schema.safeParse(json);
-  if (!parsed.success)
-    throw new ApiError('bad_response', `Unexpected response from ${method} ${path}`, r.status);
+  if (!parsed.success) throw new ApiError('bad_response', TRY_AGAIN, r.status);
   return parsed.data;
 }
 
@@ -253,7 +306,7 @@ function answer<S extends z.ZodType>(
 function failure(res: Response, json: unknown, path: string): ApiError {
   const parsed = ApiErrorBody.safeParse(json);
   const code = parsed.success ? parsed.data.error : `http_${res.status}`;
-  const message = parsed.success ? parsed.data.message : res.statusText || 'Request failed';
+  const message = parsed.success ? parsed.data.message : TRY_AGAIN;
   if (code === 'read_only' || code === 'readonly') onReadOnly?.();
   if (code === 'resting') connectivity.setReadsPaused(true);
   // The session ended (24 hours, or 10 idle minutes): sign in again. The saved copy stays, encrypted (D-45), unless this
@@ -278,13 +331,13 @@ export function download(path: string, filename: string): Promise<void> {
 
 async function downloadOnce(path: string, filename: string): Promise<void> {
   if (connectivity.get().readsPaused)
-    throw new ApiError('resting', 'Reading is paused until the daily limit resets.', 503);
+    throw new ApiError('resting', `Paused until ${dailyResetTime()}. Nothing is lost.`, 503);
   let res: Response;
   try {
     res = await fetch(path, { credentials: 'same-origin' });
   } catch {
     connectivity.reportNetworkError();
-    throw new ApiError('network', 'Network request failed', 0, true);
+    throw new ApiError('network', OFFLINE, 0, true);
   }
   connectivity.reportOk();
   if (!res.ok) {

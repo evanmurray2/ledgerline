@@ -40,7 +40,7 @@ test('Needs attention fixes move money and Ready to Assign reads $643.65', async
   }
   // Low has its own filter.
   await expect(page.getByRole('button', { name: 'Add $20.00 for Personal care' })).toHaveCount(0);
-  await page.getByRole('button', { name: /^Running low \d/ }).click();
+  await page.getByRole('button', { name: /^Low \d/ }).click();
   await page.getByRole('button', { name: 'Add $20.00 for Personal care' }).click();
   await expect(rta(page)).toHaveText('$643.65');
   await expect(page.getByText('Done just now')).toBeVisible();
@@ -49,16 +49,16 @@ test('Needs attention fixes move money and Ready to Assign reads $643.65', async
   // Freedom's payment category is covered once Dining out is.
   await page.getByRole('button', { name: 'All' }).click();
   await expect(page.getByText('Freedom Unlimited').first()).toBeVisible();
-  await expect(page.getByText('$18.25 of card spending not covered')).toHaveCount(0);
+  await expect(page.getByText('needs $18.25 more')).toHaveCount(0);
 });
 
 test('Needs attention: a Short card shows under Card payments, and Fund covers it', async ({ page }) => {
   // Freedom is short only by Dining out's overspending: covering Dining out covers the card too.
   await page.goto('/budget?view=attention');
-  await expect(page.getByText('Cover Dining out to cover this card')).toBeVisible();
+  await expect(page.getByText('Covering Dining out covers this card too')).toBeVisible();
   await expect(page.getByRole('button', { name: /for Freedom Unlimited/ })).toHaveCount(0);
   await page.getByRole('button', { name: 'Cover $18.25 for Dining out' }).click();
-  await expect(page.getByText('Cover Dining out to cover this card')).toHaveCount(0);
+  await expect(page.getByText('Covering Dining out covers this card too')).toHaveCount(0);
 
   // A new budget: card debt from before the start has no money set aside yet.
   await page.goto('/budget?mock=empty&view=attention');
@@ -120,7 +120,7 @@ test('Activity: categorize from the picker, undo, and OK a suggestion', async ({
 
   await page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ }).click();
   const picker = page.getByRole('dialog', { name: 'Choose a category' });
-  await expect(picker.getByText('You’ve used for Amazon')).toBeVisible();
+  await expect(picker.getByText('Past categories for Amazon')).toBeVisible();
   await picker.getByRole('button', { name: 'Shopping' }).first().click();
   await expect(page.getByRole('status').filter({ hasText: 'Amazon → Shopping' })).toBeVisible();
   await expect(page.getByRole('button', { name: /Change category for Amazon −\$38\.10/ })).toHaveText(
@@ -239,12 +239,12 @@ test('Resting at 95%: a banner, and nothing but the session is asked for', async
     if (u.pathname.startsWith('/api/')) asked.push(u.pathname);
   });
   await page.goto('/budget?mock=resting');
-  await expect(page.getByTestId('resting-banner')).toContainText('Resting until 4:00 PM');
-  await expect(page.getByRole('alert')).toContainText('daily limit resets');
+  await expect(page.getByTestId('resting-banner')).toContainText('Paused until 4:00 PM');
+  await expect(page.getByRole('alert')).toContainText('Paused until');
   // After the first resting answer, moving around asks the server for nothing.
   const before = asked.filter((p) => p !== '/api/session').length;
   await page.getByRole('link', { name: 'Activity' }).first().click();
-  await expect(page.getByRole('alert')).toContainText('daily limit resets');
+  await expect(page.getByRole('alert')).toContainText('Paused until');
   expect(asked.filter((p) => p !== '/api/session')).toHaveLength(before);
 });
 
@@ -271,24 +271,24 @@ test('Assigned more than you have offers to take it back', async ({ page }) => {
 
 test('Bank connections confirm before linking and update the meter', async ({ page }) => {
   await page.goto('/settings/connections');
-  await expect(page.getByTestId('link-meter')).toHaveText('4 of 10 links used');
+  await expect(page.getByTestId('link-meter')).toHaveText('4 of 10 bank links used');
   await page.getByRole('button', { name: /Link another bank/ }).click();
-  await expect(page.getByText('Use 1 of your 6 remaining links?')).toBeVisible();
+  await expect(page.getByText('Use 1 of your 6 bank links?')).toBeVisible();
   await page.getByRole('button', { name: 'Link a bank' }).click();
-  await expect(page.getByTestId('link-meter')).toHaveText('5 of 10 links used');
+  await expect(page.getByTestId('link-meter')).toHaveText('5 of 10 bank links used');
 });
 
 test('Match money back returns it to Ready to Assign', async ({ page }) => {
   await page.goto('/activity/match/n-venmo');
   await page.getByRole('button', { name: 'Match $1,018.00' }).click();
   await expect(
-    page.getByText('Matched $1,018.00. 2 items are paid back, and Ready to Assign is now $1,999.90.'),
+    page.getByText('Matched $1,018.00. 2 items are paid back. Ready to Assign is now $1,999.90.'),
   ).toBeVisible();
 });
 
 test('A card credit can pay back what is owed to you', async ({ page }) => {
   await page.goto('/activity/txn/n-points');
-  await page.getByRole('link', { name: /money back for something you fronted/ }).click();
+  await page.getByRole('link', { name: /Money back for something owed to you/ }).click();
   await expect(page).toHaveURL(/\/activity\/match\/n-points$/);
   await expect(page.getByRole('button', { name: 'Match $24.10' })).toBeVisible();
 });
@@ -296,9 +296,8 @@ test('A card credit can pay back what is owed to you', async ({ page }) => {
 test('Budget lists your groups first, then card payments, then Owed to you', async ({ page }) => {
   await page.goto('/budget');
   const y = async (text: string) => (await page.getByText(text, { exact: true }).first().boundingBox())!.y;
-  await expect(page.getByText('Credit card payments', { exact: true }).first()).toBeVisible();
-  const owed = test.info().project.name === 'desktop' ? 'Owed to you · not a category' : 'Owed to you';
-  const [bills, cards, owedY] = [await y('Bills'), await y('Credit card payments'), await y(owed)];
+  await expect(page.getByText('Card payments', { exact: true }).first()).toBeVisible();
+  const [bills, cards, owedY] = [await y('Bills'), await y('Card payments'), await y('Owed to you')];
   expect(bills).toBeLessThan(cards);
   expect(cards).toBeLessThan(owedY);
 });
@@ -362,7 +361,7 @@ test('Assign: Clear all and Select all', async ({ page }) => {
   const sheet = page.getByRole('dialog', { name: 'Assign money' });
   await sheet.getByRole('button', { name: 'Clear all' }).click();
   await expect(sheet.getByRole('checkbox', { checked: true })).toHaveCount(0);
-  await expect(sheet.getByRole('button', { name: 'Nothing selected' })).toBeDisabled();
+  await expect(sheet.getByRole('button', { name: 'Assign', exact: true })).toBeDisabled();
   await sheet.getByRole('button', { name: 'Select all' }).click();
   await expect(sheet.getByRole('checkbox', { checked: false })).toHaveCount(0);
 });

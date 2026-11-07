@@ -31,7 +31,7 @@ async function ceremony(fn: () => Promise<unknown>): Promise<string | null> {
     const name = (e as { name?: string }).name;
     if (name === 'NotAllowedError' || name === 'AbortError') return 'Cancelled. Try again when you’re ready.';
     if (name === 'InvalidStateError') return 'This device already has a Ledgerline passkey.';
-    return 'Your browser couldn’t use a passkey. Try again.';
+    return 'Couldn’t use your passkey. Try again.';
   }
 }
 
@@ -118,9 +118,7 @@ export function SignInScreen() {
     return (
       <Frame title="Set up sign-in">
         <p className="m-0 text-base leading-relaxed text-ink-2">
-          Ledgerline signs you in with a passkey: Face ID, Touch ID, Windows Hello or your phone’s screen
-          lock. There’s no password. Enter the setup code you saved as the <code>SETUP_CODE</code> secret to
-          create your first passkey.
+          Ledgerline uses a passkey, not a password. Enter your setup code.
         </p>
         {!supported && <NoPasskeys />}
         <form
@@ -155,12 +153,10 @@ export function SignInScreen() {
   }
   return (
     <Frame title="Sign in">
-      <p className="m-0 text-base leading-relaxed text-ink-2">
-        Use the passkey on this device. You stay signed in until you leave Ledgerline unused for 10 minutes.
-      </p>
+      <p className="m-0 text-base leading-relaxed text-ink-2">Use the passkey on this device.</p>
       {!supported && <NoPasskeys />}
       {status.data && !status.data.hasPasskey && (
-        <Problem text="Sign-in isn’t set up yet. Set the SETUP_CODE secret on the Worker, then reload this page." />
+        <Problem text="Sign-in isn’t set up yet. Add a setup code, then reload this page." />
       )}
       <Problem text={err} />
       <PrimaryButton
@@ -171,7 +167,7 @@ export function SignInScreen() {
         {busy ? 'Waiting for your passkey…' : 'Sign in with passkey'}
       </PrimaryButton>
       <p className="m-0 text-sm leading-snug text-muted">
-        New phone or computer? On a device that’s signed in, go to Settings → Sign-in → Add a device.
+        New device? On a signed-in device, go to Settings → Sign-in → Add a device.
       </p>
     </Frame>
   );
@@ -199,7 +195,7 @@ export function AddDeviceScreen() {
   return (
     <Frame title="Add this device">
       <p className="m-0 text-base leading-relaxed text-ink-2">
-        Create a passkey on this device so you can sign in here. The link works once, for 10 minutes.
+        Create a passkey to sign in on this device. The link works once, for 10 minutes.
       </p>
       {!browserSupportsWebAuthn() && <NoPasskeys />}
       {!token && <Problem text="This link is missing its code. Make a new one in Settings → Sign-in." />}
@@ -264,10 +260,7 @@ export function ReauthDialog() {
         <h2 id="reauth-title" className="m-0 text-2xl font-bold">
           Confirm it’s you
         </h2>
-        <p className="m-0 text-base leading-relaxed text-ink-2">
-          Linking a bank, exporting your data and changing passkeys need a quick passkey check. Then it
-          carries on by itself.
-        </p>
+        <p className="m-0 text-base leading-relaxed text-ink-2">Use your passkey to continue.</p>
         <Problem text={err} />
         <PrimaryButton
           busy={busy}
@@ -291,10 +284,8 @@ export function ReauthDialog() {
   );
 }
 
-const when = (iso: string | null) =>
-  iso
-    ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-    : 'never';
+const when = (iso: string) =>
+  new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
 /** Settings → Sign-in. */
 export function SignInSection() {
@@ -325,9 +316,6 @@ export function SignInSection() {
       <Card>
         <div className="flex flex-col gap-1 px-3 py-3">
           <span className="text-base font-semibold">Passkeys</span>
-          <span className="text-sm leading-snug text-muted">
-            Sign-in uses a passkey on your device, with no password.
-          </span>
         </div>
         {keys.map((k) => (
           <div key={k.id} className="flex flex-col border-t border-divider">
@@ -335,7 +323,8 @@ export function SignInSection() {
               <span className="flex flex-col gap-0.5">
                 <span className="text-base font-semibold">{k.name}</span>
                 <span className="text-xs text-muted">
-                  Added {when(k.createdAt)} · last used {when(k.lastUsedAt)}
+                  Added {when(k.createdAt)} ·{' '}
+                  {k.lastUsedAt ? `last used ${when(k.lastUsedAt)}` : 'not used yet'}
                 </span>
               </span>
               {keys.length > 1 && asking !== `passkey:${k.id}` && (
@@ -377,7 +366,7 @@ export function SignInSection() {
           <span className="text-xs text-muted">
             It works once, until{' '}
             {new Date(link.expiresAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}.
-            Send it to yourself with AirDrop or a message to yourself, not to anyone else.
+            Send it only to yourself.
           </span>
           <SecondaryButton
             onClick={() =>
@@ -418,23 +407,16 @@ export function SignInSection() {
             }
             onCancel={() => setAsking(null)}
           >
-            Sign out your other devices? It deletes the budget saved on them, including devices that are
-            already signed out. This device stays signed in.
+            Sign out your other devices and delete the budget saved on them? This device stays signed in.
           </ConfirmInline>
         ) : (
-          <div className="flex flex-col gap-1.5">
-            <SecondaryButton
-              className="lg:self-start lg:px-6"
-              track="settings.sign_out_others"
-              onClick={() => setAsking('others')}
-            >
-              Sign out other devices…
-            </SecondaryButton>
-            <span className="px-0.5 text-xs leading-snug text-muted">
-              Signs out your other devices and deletes the budget saved on them, including devices that are
-              already signed out. This device stays signed in.
-            </span>
-          </div>
+          <SecondaryButton
+            className="lg:self-start lg:px-6"
+            track="settings.sign_out_others"
+            onClick={() => setAsking('others')}
+          >
+            Sign out other devices…
+          </SecondaryButton>
         ))}
       {asking === 'here' ? (
         <ConfirmInline
@@ -459,8 +441,7 @@ export function SignInSection() {
           }
           onCancel={() => setAsking(null)}
         >
-          Sign out of this device? It also deletes the budget saved on this device. Your budget stays on the
-          server: sign in again with your passkey to get it back.
+          Sign out and delete the budget saved on this device? Sign in with your passkey to get it back.
         </ConfirmInline>
       ) : (
         <SecondaryButton
@@ -508,8 +489,7 @@ function SignIns({
       <div className="flex flex-col gap-1 px-3 py-3">
         <span className="text-base font-semibold">Signed in</span>
         <span className="text-sm leading-snug text-muted">
-          Each sign-in ends after 10 idle minutes, or after 24 hours at most. Signing a device out deletes the
-          budget saved on it.
+          A sign-in ends after 10 idle minutes, or after 24 hours.
         </span>
       </div>
       {sorted.map((x) => (

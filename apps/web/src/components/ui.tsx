@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode, type
 import { Link } from '@tanstack/react-router';
 import type { CategoryStatus } from '@ledgerline/contracts';
 import { formatCents } from '../lib/money';
+import { errorMessage } from '../api/client';
 
 export * from './buttons';
 export * from './headers';
@@ -479,7 +480,7 @@ export function Loading({ label = 'Loading' }: { label?: string }) {
 export function ErrorNote({ error }: { error: unknown }) {
   return (
     <p role="alert" className="m-0 rounded-lg bg-over-bg p-3 text-md text-over-fg">
-      {error instanceof Error ? error.message : 'Something went wrong.'}
+      {errorMessage(error)}
     </p>
   );
 }

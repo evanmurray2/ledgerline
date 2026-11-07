@@ -111,7 +111,7 @@ export function SplitScreen() {
       closeLabel="Back to transaction"
       header={
         <SheetTitle
-          title={`Split ${formatCents(t.amount)}`}
+          title={`Split ${formatCents(Math.abs(t.amount))}`}
           sub={`${t.payee} · ${t.accountName} · ${dayLabel(t.date)}`}
         />
       }
@@ -120,16 +120,10 @@ export function SplitScreen() {
           mutates
           track="split.save"
           disabled={!ok}
-          why={
-            unchosen
-              ? 'Choose a category for each line'
-              : neg
-                ? 'The lines add up to more than the total'
-                : ''
-          }
+          why={unchosen ? 'Choose a category for every line' : neg ? 'Lines are over the total' : ''}
           onClick={() => void save()}
         >
-          {ok ? 'Save split' : neg ? 'Lines are over the total' : 'Choose a category for every line'}
+          Save split
         </PrimaryButton>
       }
     >
@@ -186,12 +180,6 @@ export function SplitScreen() {
               </DangerLink>
             )}
           </div>
-          {l.categoryId === 'owed' && <span className="text-xs text-owed-fg">This line is owed to you.</span>}
-          {rem === l.id && (
-            <span className="text-xs text-muted">
-              Fills in automatically with whatever the other lines leave.
-            </span>
-          )}
         </div>
       ))}
       <TextButton
@@ -207,7 +195,7 @@ export function SplitScreen() {
       </TextButton>
       <Banner
         tone={neg ? 'danger' : 'success'}
-        title={neg ? 'Lines are more than the total by' : 'Lines add up to the total'}
+        title={neg ? 'Lines are over the total by' : 'Lines add up to the total'}
         action={
           <span className="tnum text-md font-bold">{neg ? formatCents(-remCents) : formatCents(total)}</span>
         }

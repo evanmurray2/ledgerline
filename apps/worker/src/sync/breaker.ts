@@ -68,8 +68,7 @@ export function restsDuring(method: string, path: string): boolean {
 
 export const RESTING = {
   error: 'resting',
-  message:
-    'Ledgerline is resting to stay inside Cloudflare’s free daily limit. Your data is safe. It’s back after midnight UTC.',
+  message: 'Paused until the daily limit resets. Nothing is lost.',
 } as const;
 
 export function utcDay(now = Date.now()): string {
