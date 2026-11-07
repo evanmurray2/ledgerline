@@ -59,7 +59,6 @@ describe('rows before the budget start (D-67)', () => {
     const r = await h.call('GET', '/api/accounts');
     const a = (r.json as AccountsView).groups.flatMap((g) => g.accounts).find((x) => x.id === 'a_1')!;
     expect(a.drift).toBeNull();
-    expect(a.startNote).toBe('Starting debt updated: LATE PURCHASE $30.00');
     const id = await checkIdentityDb(
       { ...env, DB: h.db, FAKE_NOW: new Date(LINK + 3 * DAY).toISOString() } as never,
       B,
@@ -112,7 +111,6 @@ describe('rows before the budget start (D-67)', () => {
     h.setNow(LINK + 21 * DAY);
     const a = await card();
     expect(a.drift).toBe(1000);
-    expect(a.startNote ?? null).toBeNull();
   });
 });
 
@@ -155,10 +153,10 @@ describe('rows before the budget start: a reissue and a pending row that moves b
     const r = await h2.call('GET', '/api/accounts');
     const a = (r.json as AccountsView).groups.flatMap((g) => g.accounts).find((x) => x.id === 'a_1')!;
     expect(a.drift).toBeNull();
-    // The hold came with the first sync, so nothing came in late.
-    expect(a.startNote ?? null).toBeNull();
     const reg = (await h2.call('GET', '/api/accounts/a_1/register')).json as RegisterView;
     expect(reg.start!.rows.map((x) => [x.payee, x.role])).toEqual([['HOLD', 'before']]);
+    // The hold came with the first sync, so nothing came in late.
+    expect(reg.start!.recent).toBeNull();
     // The pending row is listed, as the pending total counts it.
     expect(reg.days.flatMap((d) => d.rows).map((x) => x.payee)).toEqual(['HOLD']);
   });

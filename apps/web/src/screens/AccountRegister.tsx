@@ -20,6 +20,7 @@ import {
   Icon,
   inputClass,
   Loading,
+  type MenuItem,
   OverflowMenu,
   PrimaryButton,
   ScreenBody,
@@ -58,6 +59,15 @@ export function RegisterScreen() {
   const [renaming, setRenaming] = useState(false);
   const [showStart, setShowStart] = useState(false);
   const canWrite = useCanWrite();
+  // The Starting balance row shows while it may change or a late row is new; after that it moves to the ⋯ menu.
+  const start = all.data?.start ?? null;
+  const startRow = !!start && (start.settling || !!start.recent);
+  const startName = a?.kind === 'credit' ? 'Starting debt' : 'Starting balance';
+  const menu: MenuItem[] = [];
+  if (canWrite)
+    menu.push({ name: 'Rename account', track: 'account.rename', onClick: () => setRenaming(true) });
+  if (start && !startRow)
+    menu.push({ name: startName, track: 'account.start', onClick: () => setShowStart(true) });
   const chips: [Show, string, number?][] = [['all', 'All']];
   if (counts.pending) chips.push(['pending', 'Pending', counts.pending]);
   if (a?.kind === 'credit' && counts.needs) chips.push(['needs', 'Needs category', counts.needs]);
@@ -73,12 +83,8 @@ export function RegisterScreen() {
         onBack={() => void navigate({ to: '/accounts' })}
         backLabel="Back to accounts"
         right={
-          a && canWrite ? (
-            <OverflowMenu
-              label="More for this account"
-              track="account.menu"
-              items={[{ name: 'Rename account', track: 'account.rename', onClick: () => setRenaming(true) }]}
-            />
+          a && menu.length > 0 ? (
+            <OverflowMenu label="More for this account" track="account.menu" items={menu} />
           ) : undefined
         }
         below={
@@ -100,8 +106,8 @@ export function RegisterScreen() {
         }
       />
       {renaming && a && <RenameAccountSheet id={a.id} name={a.name} close={() => setRenaming(false)} />}
-      {showStart && a && v?.start && (
-        <StartBalanceSheet start={v.start} credit={a.kind === 'credit'} close={() => setShowStart(false)} />
+      {showStart && a && start && (
+        <StartBalanceSheet start={start} credit={a.kind === 'credit'} close={() => setShowStart(false)} />
       )}
       <ScreenBody>
         {!a || !v ? (
@@ -141,7 +147,9 @@ export function RegisterScreen() {
                   </div>
                   {card && (
                     <Link
-                      to="/budget"
+                      to={`${base}/category/${card.categoryId}`}
+                      search={true}
+                      data-track="account.payment"
                       className="flex min-h-10 items-center justify-between gap-3 rounded-lg bg-page px-3 py-2 text-md text-ink no-underline"
                     >
                       <span className="font-semibold">Payment category</span>
@@ -179,7 +187,7 @@ export function RegisterScreen() {
                   </div>
                 </>
               )}
-              {v.start && (
+              {startRow && (
                 <button
                   type="button"
                   data-track="account.start"
@@ -192,21 +200,21 @@ export function RegisterScreen() {
                   <span className="flex items-center gap-1">
                     <span className="flex flex-col items-end leading-tight">
                       <span className="tnum font-bold">
-                        {formatCents(shownBalance(v.start.total, a.kind === 'credit'))}
+                        {formatCents(shownBalance(start.total, a.kind === 'credit'))}
                       </span>
                       <span className="text-xs text-muted">
-                        {v.start.settling ? 'may still change' : 'final'}
+                        {start.settling ? 'may still change' : 'final'}
                       </span>
                     </span>
                     <Icon name="chevR" size={18} className="shrink-0 text-faint" />
                   </span>
                 </button>
               )}
-              {v.start?.recent && (
+              {start?.recent && (
                 <p className="m-0 text-xs leading-snug text-muted" data-testid="start-recent">
-                  {v.start.recent.payee}{' '}
-                  <span className="tnum">{formatCents(Math.abs(v.start.recent.amount))}</span> from{' '}
-                  {dayLabel(v.start.recent.date)} came in late. It’s in your{' '}
+                  {start.recent.payee}{' '}
+                  <span className="tnum">{formatCents(Math.abs(start.recent.amount))}</span> from{' '}
+                  {dayLabel(start.recent.date)} came in late. It’s in your{' '}
                   {a.kind === 'credit' ? 'starting debt' : 'starting balance'}, not your budget.
                 </p>
               )}

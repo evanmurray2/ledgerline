@@ -372,11 +372,6 @@ export function AccountsScreen() {
                                 Bank balance includes {formatCents(a.pendingInBank)} pending
                               </span>
                             )}
-                            {a.startNote && (
-                              <span className="text-xs text-muted" data-testid="start-note">
-                                {a.startNote}
-                              </span>
-                            )}
                           </span>
                           <Icon name="chevR" size={18} className="-ml-1 shrink-0 text-faint" />
                         </Link>

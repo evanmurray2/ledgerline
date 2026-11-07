@@ -367,6 +367,12 @@ const registerCheckRoute = createRoute({
   path: 'check/$key',
   component: CheckPendingScreen,
 });
+// A card's payment category, opened from its page; closing goes back there.
+const registerCategoryRoute = createRoute({
+  getParentRoute: () => registerRoute,
+  path: 'category/$categoryId',
+  component: CategorySheetScreen,
+});
 
 // ------------------------------------------------------------------ reports
 const reportsRoute = createRoute({
@@ -472,6 +478,7 @@ const routeTree = rootRoute.addChildren([
     registerXferRoute,
     registerMatchRoute,
     registerCheckRoute,
+    registerCategoryRoute,
   ]),
   reportsRoute,
   categoriesRoute.addChildren([categoryEditRoute]),
