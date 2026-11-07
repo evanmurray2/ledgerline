@@ -1,6 +1,6 @@
 // Category sheet (Assign / Move money, target, recent) and the Assign sheet.
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams, useRouterState } from '@tanstack/react-router';
+import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { api } from '../api/endpoints';
 import { useAssignView, useBudget, useCategorySheet, useMoneyMutation } from '../api/hooks';
 import { CategoryField } from '../components/CategoryPicker';
@@ -37,16 +37,7 @@ import { useCanWrite } from '../state/connectivity';
 
 function useCloseToBudget(month: string | undefined, current: string | undefined) {
   const navigate = useNavigate();
-  const over = useOverAccount();
-  // Opened from an account's page (its payment category): back to that page, as it was.
-  if (over) return () => void navigate({ to: over, search: true });
   return () => void navigate({ to: '/budget', search: { month: month === current ? undefined : month } });
-}
-
-/** The account page under this category sheet ("/accounts/x"), or null when it is over the Budget. */
-function useOverAccount(): string | null {
-  const path = useRouterState({ select: (s) => s.location.pathname });
-  return /^\/accounts\/[^/]+(?=\/category\/)/.exec(path)?.[0] ?? null;
 }
 
 // ------------------------------------------------------------------ category sheet
@@ -61,7 +52,6 @@ export function CategorySheetScreen() {
 function useCategorySteps(categoryId: string, month: string | undefined, current: string | undefined) {
   const desktop = useIsDesktop();
   const navigate = useNavigate();
-  const over = useOverAccount();
   const b = useBudget(month).data;
   const ids = b ? b.groups.flatMap((g) => g.categories.map((c) => c.id)) : [];
   const i = ids.indexOf(categoryId);
@@ -73,9 +63,8 @@ function useCategorySteps(categoryId: string, month: string | undefined, current
     });
   const prev = i > 0 ? () => go(ids[i - 1]) : undefined;
   const next = i >= 0 && i < ids.length - 1 ? () => go(ids[i + 1]) : undefined;
-  useShortcuts({ ArrowUp: () => prev?.(), ArrowDown: () => next?.() }, desktop && i >= 0 && !over);
-  // Over an account's page there is no Budget order to step through.
-  if (!desktop || i < 0 || over) return null;
+  useShortcuts({ ArrowUp: () => prev?.(), ArrowDown: () => next?.() }, desktop && i >= 0);
+  if (!desktop || i < 0) return null;
   const btn = (label: string, key: string, icon: 'up' | 'down', fn: (() => void) | undefined) => (
     <button
       type="button"
