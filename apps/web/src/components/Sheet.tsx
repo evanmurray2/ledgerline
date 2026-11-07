@@ -171,7 +171,7 @@ export function Sheet({
       </div>
       <div
         className={cx(
-          'flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-4 pt-2',
+          'flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto overflow-x-hidden px-4 pt-2',
           footer || desktop ? 'pb-3' : 'safe-pad',
         )}
       >
