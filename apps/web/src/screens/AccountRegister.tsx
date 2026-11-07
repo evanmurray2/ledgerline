@@ -1,9 +1,9 @@
 // An account's register: balances, the filter chips and its transactions by day; Rename from the ⋯ menu.
 import { useState } from 'react';
-import { Link, Outlet, useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { Outlet, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
-import { useBudget, useRegister, useSession } from '../api/hooks';
+import { useRegister, useSession } from '../api/hooks';
 import { Sheet } from '../components/Sheet';
 import { SheetTitle } from '../components/Sheet';
 import {
@@ -44,7 +44,6 @@ export function RegisterScreen() {
   const all = useRegister(accountId, 'all');
   const filtered = useRegister(accountId, show);
   const session = useSession();
-  const budget = useBudget(session.data?.budget.currentMonth);
   const v = (show === 'all' ? all : filtered).data;
   const a = all.data?.account;
   const rows = (all.data?.days ?? []).flatMap((d) => d.rows);
@@ -53,7 +52,6 @@ export function RegisterScreen() {
     needs: rows.filter((r) => r.badge === 'Needs category').length,
     transfers: rows.filter((r) => r.badge === 'Transfer' || r.sheet === 'transfer').length,
   };
-  const card = budget.data?.cards.find((c) => c.accountId === accountId);
   const today = session.data?.budget.today ?? '';
   const base = `/accounts/${accountId}`;
   const [renaming, setRenaming] = useState(false);
@@ -145,35 +143,6 @@ export function RegisterScreen() {
                       </div>
                     )}
                   </div>
-                  {card && (
-                    <Link
-                      to={`${base}/category/${card.categoryId}`}
-                      search={true}
-                      data-track="account.payment"
-                      className="flex min-h-10 items-center justify-between gap-3 rounded-lg bg-page px-3 py-2 text-md text-ink no-underline"
-                    >
-                      <span className="font-semibold">Payment category</span>
-                      <span className="flex items-center gap-1">
-                        {/* The amount on one line, its status under it, so the two never wrap together. */}
-                        <span className="flex flex-col items-end leading-tight">
-                          <span
-                            className={cx('tnum font-bold', card.short > 0 ? 'text-over-fg' : 'text-ink')}
-                          >
-                            {formatCents(card.available)}
-                          </span>
-                          <span
-                            className={cx(
-                              'tnum text-xs',
-                              card.short > 0 ? 'font-semibold text-over-fg' : 'text-muted',
-                            )}
-                          >
-                            {card.short > 0 ? `${formatCents(card.short)} short` : 'available'}
-                          </span>
-                        </span>
-                        <Icon name="chevR" size={18} className="shrink-0 text-faint" />
-                      </span>
-                    </Link>
-                  )}
                 </>
               ) : (
                 <>

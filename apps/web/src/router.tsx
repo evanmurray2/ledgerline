@@ -21,7 +21,6 @@ import { connectivity } from './state/connectivity';
 import { usage } from './usage/tracker';
 import { BudgetScreen } from './screens/Budget';
 import { AssignSheetScreen, CategorySheetScreen } from './screens/BudgetSheets';
-import { CardPaymentSheetScreen } from './screens/CardPaymentSheet';
 import { TargetScreen, TargetsScreen } from './screens/Targets';
 import { CloseSheet, OwedScreen } from './screens/Owed';
 import { ActivityScreen } from './screens/Activity';
@@ -376,12 +375,6 @@ const registerCheckRoute = createRoute({
   path: 'check/$key',
   component: CheckPendingScreen,
 });
-// A card's payment category, opened from its page; closing goes back there.
-const registerCategoryRoute = createRoute({
-  getParentRoute: () => registerRoute,
-  path: 'category/$categoryId',
-  component: CardPaymentSheetScreen,
-});
 
 // ------------------------------------------------------------------ reports
 const reportsRoute = createRoute({
@@ -487,7 +480,6 @@ const routeTree = rootRoute.addChildren([
     registerXferRoute,
     registerMatchRoute,
     registerCheckRoute,
-    registerCategoryRoute,
   ]),
   reportsRoute,
   categoriesRoute.addChildren([categoryEditRoute]),
