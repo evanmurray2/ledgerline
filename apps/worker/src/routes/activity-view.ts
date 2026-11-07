@@ -10,6 +10,8 @@ import {
   formatCents,
   isMonth,
   localDate,
+  owedList,
+  type OwedStatus,
   payeeNameKey,
   rankPastUses,
   suggestCategory,
@@ -186,10 +188,10 @@ activityViewRoutes.get('/activity', async (c) => {
     ),
     s.q(`SELECT txn_key, category_id FROM txn_split WHERE budget_id = ?1`),
     s.q(
-      `SELECT txn_key, amount, fraction_num, fraction_den, canceled_at, closed_at FROM expected_reimbursement WHERE budget_id = ?1`,
+      `SELECT id, txn_key, amount, canceled_at, closed_at FROM expected_reimbursement WHERE budget_id = ?1`,
     ),
     s.q(
-      `SELECT from_key FROM txn_link WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND undone_at IS NULL`,
+      `SELECT from_key, to_key, amount FROM txn_link WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND undone_at IS NULL`,
     ),
     s.q(
       `SELECT m.txn_key FROM manual_pending m JOIN account a ON a.id = m.account_id WHERE m.budget_id = ?1 AND m.kind = 'pending' AND m.deleted_at IS NULL
@@ -204,25 +206,31 @@ activityViewRoutes.get('/activity', async (c) => {
   const qSplits = new Set(
     splitRows.filter((r) => r.category_id && qCats.has(r.category_id)).map((r) => r.txn_key),
   );
-  const owedBy = new Map<string, { amount: number; label: string }>();
-  for (const o of owed!.results as {
+  // What each owed purchase still has owed, so its row says "$25 owed", then "Paid" once money back matches it.
+  const linkRows = links!.results as { from_key: string; to_key: string; amount: number }[];
+  const owedRows = owed!.results as {
+    id: string;
     txn_key: string;
     amount: number;
-    fraction_num: number | null;
-    fraction_den: number | null;
     canceled_at: number | null;
     closed_at: number | null;
-  }[]) {
-    if (o.canceled_at) continue;
-    const label =
-      o.fraction_num === 1 && o.fraction_den === 2
-        ? 'Half'
-        : o.fraction_num && o.fraction_den
-          ? `${o.fraction_num}/${o.fraction_den}`
-          : 'Owed';
-    owedBy.set(o.txn_key, { amount: o.amount, label });
+  }[];
+  const owedBy = new Map<string, { still: number; status: OwedStatus }>();
+  for (const o of owedList(
+    owedRows.map((o) => ({
+      id: o.id,
+      txnKey: o.txn_key,
+      amount: cents(o.amount),
+      expectBy: null,
+      closedAt: o.closed_at ? 'x' : null,
+      canceledAt: o.canceled_at ? 'x' : null,
+    })),
+    linkRows.map((l) => ({ inflowKey: l.from_key, itemId: l.to_key, amount: cents(l.amount) })),
+    f.today,
+  )) {
+    if (o.status !== 'canceled') owedBy.set(o.txnKey, { still: o.stillOwed, status: o.status });
   }
-  const paid = new Set((links!.results as { from_key: string }[]).map((r) => r.from_key));
+  const paid = new Set(linkRows.map((r) => r.from_key));
   const staleKeys = new Set((stale!.results as { txn_key: string }[]).map((r) => r.txn_key));
   const row = (t: TxRow) =>
     listRow(t, accts, cats, {

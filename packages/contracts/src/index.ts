@@ -202,7 +202,7 @@ export const TxnListRow = z.object({
   status: z.enum(['pending', 'posted', 'upcoming']),
   wontClear: z.boolean(),
   categoryLabel: z.string().nullable(),
-  /** Short badge, e.g. "By rule", "Your estimate", "Card hold", "Owed to you · Half". */
+  /** Short badge, e.g. "By rule", "Your estimate", "Card hold", "$25 owed", "Paid". */
   badge: z.string().nullable(),
   badgeKind: z.enum(['alert', 'match', 'est', 'hold', 'mine', 'owed', 'rule']).nullable(),
   sub: z.string().nullable(),
