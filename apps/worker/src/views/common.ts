@@ -15,6 +15,7 @@ import {
 } from '@ledgerline/domain';
 import type { Scoped } from '../db/scoped.js';
 import { RECENT_TX } from '../ledger/ledger.js';
+import { type AcctLedger, accountLedger, bankDiff } from '../ledger/bank-diff.js';
 
 export interface BudgetRow {
   id: string;
@@ -168,15 +169,23 @@ export interface CardInfo {
   name: string;
   /** Bank-reported amount owed (positive). */
   bank: Cents;
-  /** Working debt: bank + budgeted pending (won't-clear excluded). */
+  /** Working debt: bank + budgeted pending (won't-clear excluded), less pending the bank already holds (D-68). */
   working: Cents;
   pending: Cents;
   uncategorized: Cents;
   statement: { balance: Cents; due: string | null } | null;
 }
 
-/** Card accounts with what rule 7 needs: working debt, budgeted pending, uncategorized card spending, statement. */
-export async function cards(s: Scoped, today: string): Promise<CardInfo[]> {
+/**
+ * Card accounts with what rule 7 needs: working debt, budgeted pending, uncategorized card spending, statement.
+ * `ledger` is what the app counts per account (ledger/bank-diff.ts), when the caller already has it.
+ */
+export async function cards(
+  s: Scoped,
+  today: string,
+  ledger?: AcctLedger,
+  now = Date.now(),
+): Promise<CardInfo[]> {
   const [acc, pend, uncat, stmt] = await s.batch([
     s.q(
       `SELECT a.id, a.name, coalesce(pa.current_balance, 0) AS bank, a.starting_balance, a.budget_from, a.provider_account_id
@@ -216,23 +225,30 @@ export async function cards(s: Scoped, today: string): Promise<CardInfo[]> {
       }[]
     ).map((r) => [r.provider_account_id, r]),
   );
-  return (
-    acc!.results as {
-      id: string;
-      name: string;
-      bank: number;
-      provider_account_id: string | null;
-      starting_balance: number;
-    }[]
-  ).map((a) => {
+  const rows = acc!.results as {
+    id: string;
+    name: string;
+    bank: number;
+    provider_account_id: string | null;
+    starting_balance: number;
+    budget_from: string;
+  }[];
+  const linked = rows.filter((a) => a.provider_account_id);
+  const counted = ledger ?? (linked.length ? await accountLedger(s, linked, today, now) : null);
+  return rows.map((a) => {
     const p = pending.get(a.id) ?? 0;
     const sb = a.provider_account_id ? st.get(a.provider_account_id) : undefined;
     const bank = a.provider_account_id ? a.bank : -a.starting_balance;
+    // Pending the bank's figure already holds counts once (D-68), as on Accounts. Signed balances: debt negative.
+    const inBank =
+      a.provider_account_id && counted
+        ? bankDiff(-bank, counted.posted.get(a.id) ?? a.starting_balance, -p).inBank
+        : 0;
     return {
       accountId: a.id,
       name: a.name,
       bank: cents(bank),
-      working: cents(bank + p),
+      working: cents(bank + p + inBank),
       pending: cents(p),
       uncategorized: cents(unc.get(a.id) ?? 0),
       statement:

@@ -64,7 +64,7 @@ async function accountRows(
   );
   const ledger = await accountLedger(s, raw, today, now);
   const startAdjust = ledger.startAdjust;
-  const cardInfo = new Map((await loadCards(s, today)).map((c) => [c.accountId, c]));
+  const cardInfo = new Map((await loadCards(s, today, ledger, now)).map((c) => [c.accountId, c]));
   const rows = raw.map((a): AccountRow => {
     const credit = a.kind === 'credit';
     const ledgerPosted = ledger.posted.get(a.id) ?? a.starting_balance;
