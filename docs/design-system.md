@@ -2,7 +2,8 @@
 
 The web app's tokens and shared parts, and when to use each. Everything visual comes from here: a screen uses a
 token or a shared part, never a typed-in color, size, corner or shadow. `docs/design-review.md` covers how screens
-look next to each other; this page covers the pieces they are built from.
+look next to each other; this page covers the pieces they are built from. `docs/copy.md` covers
+the words.
 
 ## Tokens (`apps/web/src/styles.css`)
 
