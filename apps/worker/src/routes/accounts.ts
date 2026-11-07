@@ -69,7 +69,6 @@ async function accountRows(
   const rows = raw.map((a): AccountRow => {
     const credit = a.kind === 'credit';
     const ledgerPosted = ledger.posted.get(a.id) ?? a.starting_balance;
-    const late = startAdjust.recent.get(a.id);
     // Bank-reported balance; cards report the amount owed. Manual accounts use the ledger.
     const bank = a.bank ?? (credit ? -ledgerPosted : ledgerPosted);
     const p = ledger.pending.get(a.id) ?? 0;
@@ -102,9 +101,6 @@ async function accountRows(
         a.status === 'login_required' ? 'login_required' : a.status === 'error' ? 'error' : 'ok',
       drift: drift === null ? null : cents(drift),
       pendingInBank: cents(Math.abs(diff.inBank)),
-      startNote: late
-        ? `${credit ? 'Starting debt' : 'Starting balance'} updated: ${late.payee} ${formatCents(Math.abs(late.amount))}`
-        : null,
       statement,
       meta: `${a.institution ?? 'Manual'}${a.mask ? ` · ending ${a.mask}` : ''} · ${a.status === 'login_required' ? 'sign in again' : synced}`,
     };

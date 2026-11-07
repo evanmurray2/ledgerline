@@ -42,6 +42,7 @@ owner can't see.
      It opens a sheet: the balance when you linked, the rows from before the start that came in later, the link-day
      rows counted in the budget instead, the total, and "Settling. Final on …" or "Final."
    - For 7 days after a late row comes in, Accounts shows "Starting debt updated: Hertz $187.53" under the account.
+     (Replaced by D-70: no note on Accounts; the row moves to the ⋯ menu once final.)
      The account page says "Hertz $187.53 from Oct 29 came in late. It is part of your starting debt, not your
      budget."
    - The read-only sheet of such a row says "Part of your starting balance" instead of "Not counted".

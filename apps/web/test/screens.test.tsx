@@ -228,7 +228,10 @@ describe('Accounts and Reports', () => {
     // The seed saves its balances today; here they were read at the link, as Setup does.
     await db.prepare(`UPDATE account SET starting_balance_confirmed_at = NULL WHERE id = 'checking'`).run();
     show('/accounts/checking');
-    fireEvent.click(await screen.findByRole('button', { name: /^Starting balance/ }, { timeout: 4000 }));
+    // Final, and the late row came in more than 7 days ago: no row of its own, it is in the ⋯ menu.
+    fireEvent.click(await screen.findByRole('button', { name: 'More for this account' }, { timeout: 4000 }));
+    expect(document.querySelector('[data-track="account.start"]')?.textContent).toBe('Starting balance');
+    fireEvent.click(screen.getByRole('button', { name: 'Starting balance' }));
     const sheet = await screen.findByTestId('start-sheet');
     expect(within(sheet).getByText('Dated before Oct 1, came in late')).toBeTruthy();
     expect(within(sheet).getByText('− $25.00')).toBeTruthy();
@@ -242,6 +245,12 @@ describe('Accounts and Reports', () => {
     expect(screen.getByText('$842.17')).toBeTruthy();
     expect(screen.getByText('$611.40')).toBeTruthy();
     expect(screen.getByText('Owed $771.20')).toBeTruthy();
+    // The payment category opens its sheet over this page, and closing it comes back here.
+    fireEvent.click(screen.getByRole('link', { name: /^Payment category/ }));
+    const sheet = await screen.findByRole('dialog', undefined, { timeout: 4000 });
+    fireEvent.click(await within(sheet).findByRole('button', { name: 'Close' }, { timeout: 4000 }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByText('You owe the bank')).toBeTruthy();
   });
 
   it('reports show month-to-date spending by category', async () => {

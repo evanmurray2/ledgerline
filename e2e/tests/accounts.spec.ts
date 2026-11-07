@@ -8,7 +8,9 @@ test.beforeEach(async ({ page }) => {
 
 test('An account’s starting balance opens a sheet with each step (D-67)', async ({ page }) => {
   await page.goto('/accounts/sapphire');
-  await page.getByRole('button', { name: /^Starting debt/ }).click();
+  // Final, with nothing new: it is in the ⋯ menu, not a row of its own.
+  await page.getByRole('button', { name: 'More for this account' }).click();
+  await page.getByRole('button', { name: 'Starting debt', exact: true }).click();
   const sheet = page.getByRole('dialog', { name: 'Starting debt' });
   await expect(sheet.getByText('Owed when you linked')).toBeVisible();
   await expect(sheet.getByText('This won’t change now.')).toBeVisible();
