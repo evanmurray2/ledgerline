@@ -276,7 +276,7 @@ export function CheckPendingScreen() {
             ))}
             {pick === 'edit' && (
               <div className="flex gap-2">
-                <Field label="Amount" className="flex-1">
+                <Field label="Amount" className="min-w-0 flex-1">
                   <input
                     className={amountInputClass}
                     inputMode="decimal"
@@ -360,7 +360,7 @@ export function AddTxnScreen() {
       }
     >
       <div className="flex items-end gap-2">
-        <Field label="Amount" className="flex-1">
+        <Field label="Amount" className="min-w-0 flex-1">
           <input
             className={amountInputClass}
             inputMode="decimal"
