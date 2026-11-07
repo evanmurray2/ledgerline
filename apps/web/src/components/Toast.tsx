@@ -40,6 +40,31 @@ export const toast = {
   get: () => current,
 };
 
+// How many floating buttons sit at the phone's bottom right (Activity's Add). A toast leaves room for them.
+let fabs = 0;
+const fabListeners = new Set<() => void>();
+
+/** A floating button at the bottom right calls this while it shows, so a toast ends to its left. */
+export function useToastRoomForFab(on: boolean) {
+  useEffect(() => {
+    if (!on) return;
+    fabs += 1;
+    fabListeners.forEach((l) => l());
+    return () => {
+      fabs -= 1;
+      fabListeners.forEach((l) => l());
+    };
+  }, [on]);
+}
+
+function subscribeFabs(cb: () => void) {
+  fabListeners.add(cb);
+  return () => {
+    fabListeners.delete(cb);
+  };
+}
+const getFabs = () => fabs;
+
 function subscribe(cb: () => void) {
   listeners.add(cb);
   return () => {
@@ -51,6 +76,7 @@ export function ToastHost({ aboveTabs }: { aboveTabs: boolean }) {
   const t = useSyncExternalStore(subscribe, toast.get, toast.get);
   const desktop = useIsDesktop();
   const canWrite = useCanWrite();
+  const fab = useSyncExternalStore(subscribeFabs, getFabs, getFabs) > 0;
 
   useEffect(() => {
     if (!t) return;
@@ -73,7 +99,8 @@ export function ToastHost({ aboveTabs }: { aboveTabs: boolean }) {
         desktop
           ? 'bottom-6 right-6 w-[380px]'
           : cx(
-              'left-4 right-4',
+              // Beside a floating button: 16 px gap + 56 px button + 16 px edge.
+              fab ? 'left-4 right-[88px]' : 'left-4 right-4',
               aboveTabs ? 'bottom-[calc(88px+env(safe-area-inset-bottom,0px))]' : 'bottom-6',
             ),
       )}
