@@ -218,8 +218,9 @@ export function CheckPendingScreen() {
   const confirm = async () => {
     if (pick === 'edit') {
       const c = parseCents(amt);
-      if (c === null) return;
-      await patch.mutateAsync({ estimatedAmount: c });
+      if (c === null || c === 0) return;
+      // A check is an entry you added: its own amount changes (an estimate is only for a bank pending row).
+      await patch.mutateAsync({ amount: t.amount < 0 ? -c : c });
     } else await keep.mutateAsync({ action: pick === 'delete' ? 'delete' : 'keep_waiting' });
     setDone(cur.result);
   };

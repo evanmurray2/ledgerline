@@ -33,7 +33,7 @@ let db: SqlJsDb | null = null;
 let engine: LocalEngine | null = null;
 
 function need(): { db: SqlJsDb; engine: LocalEngine } {
-  if (!db || !engine) throw new Error('The copy isn’t open');
+  if (!db || !engine) throw new Error('Your budget isn’t open on this device yet. Try again.');
   return { db, engine };
 }
 

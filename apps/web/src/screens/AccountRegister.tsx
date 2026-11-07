@@ -63,7 +63,7 @@ export function RegisterScreen() {
   if (a?.kind === 'credit' && counts.needs) chips.push(['needs', 'Needs category', counts.needs]);
   if (a?.kind !== 'credit' && counts.transfers) chips.push(['transfers', 'Transfers', counts.transfers]);
   const sub = a
-    ? `${a.institution}${a.mask ? ` · ending ${a.mask}` : ''} · ${a.connectionStatus === 'ok' ? 'synced' : 'last synced'} ${a.syncedAt ? syncedLabel(a.syncedAt, today) : 'never'}${a.connectionStatus !== 'ok' ? ' · repair on Accounts' : ''}`
+    ? `${a.institution}${a.mask ? ` · ending ${a.mask}` : ''} · ${a.syncedAt ? `${a.connectionStatus === 'ok' ? 'synced' : 'last synced'} ${syncedLabel(a.syncedAt, today)}` : 'not synced yet'}${a.connectionStatus === 'login_required' ? ' · sign in again on Accounts' : a.connectionStatus !== 'ok' ? ' · see Accounts' : ''}`
     : '';
   return (
     <PageFrame>
@@ -144,7 +144,7 @@ export function RegisterScreen() {
                       to="/budget"
                       className="flex min-h-10 items-center justify-between gap-3 rounded-lg bg-page px-3 py-2 text-md text-ink no-underline"
                     >
-                      <span className="font-semibold">{a.name.split(' ')[0]} payment category</span>
+                      <span className="font-semibold">Payment category</span>
                       <span className="flex items-center gap-1">
                         {/* The amount on one line, its status under it, so the two never wrap together. */}
                         <span className="flex flex-col items-end leading-tight">
@@ -174,7 +174,7 @@ export function RegisterScreen() {
                     <span className="tnum font-bold">{formatCents(a.bank)}</span>
                   </div>
                   <div className="flex justify-between text-md">
-                    <span className="text-muted">After pending and your checks</span>
+                    <span className="text-muted">After pending</span>
                     <span className="tnum font-bold">{formatCents(a.working)}</span>
                   </div>
                 </>
@@ -194,7 +194,7 @@ export function RegisterScreen() {
                       <span className="tnum font-bold">
                         {formatCents(shownBalance(v.start.total, a.kind === 'credit'))}
                       </span>
-                      <span className="text-xs text-muted">{v.start.settling ? 'settling' : 'final'}</span>
+                      <span className="text-xs text-muted">{v.start.settling ? 'may still change' : 'final'}</span>
                     </span>
                     <Icon name="chevR" size={18} className="shrink-0 text-faint" />
                   </span>
@@ -204,7 +204,7 @@ export function RegisterScreen() {
                 <p className="m-0 text-xs leading-snug text-muted" data-testid="start-recent">
                   {v.start.recent.payee}{' '}
                   <span className="tnum">{formatCents(Math.abs(v.start.recent.amount))}</span> from{' '}
-                  {dayLabel(v.start.recent.date)} came in late. It is part of your{' '}
+                  {dayLabel(v.start.recent.date)} came in late. It’s in your{' '}
                   {a.kind === 'credit' ? 'starting debt' : 'starting balance'}, not your budget.
                 </p>
               )}
@@ -218,17 +218,19 @@ export function RegisterScreen() {
               {a.pendingInBank > 0 && (
                 <p className="m-0 text-xs leading-snug text-muted" data-testid="pending-in-bank">
                   The bank balance already counts <span className="tnum">{formatCents(a.pendingInBank)}</span>{' '}
-                  of your pending. It is counted once here.
+                  of your pending. Ledgerline counts it once.
                 </p>
               )}
               {v.note && <Banner tone="danger">{v.note}</Banner>}
               {a.kind !== 'credit' && (
                 <p className="m-0 text-xs leading-snug text-muted">
-                  Upcoming bills aren’t subtracted here; they count in your budget on their dates.
+                  Upcoming bills aren’t subtracted here.
                 </p>
               )}
             </section>
-            {v.days.length === 0 && <EmptyNote>No transactions here.</EmptyNote>}
+            {v.days.length === 0 && (
+              <EmptyNote>{show === 'all' ? 'No transactions yet.' : 'No transactions match.'}</EmptyNote>
+            )}
             {v.days.map((d) => (
               <section key={d.label} className="flex shrink-0 flex-col gap-1.5">
                 <SectionTitle

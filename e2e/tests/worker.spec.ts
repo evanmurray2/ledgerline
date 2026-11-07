@@ -230,7 +230,7 @@ test('Categories: rename a group, reorder by dragging, and remove a category', a
   const edit = page.getByRole('dialog', { name: 'Edit category' });
   await edit.getByRole('button', { name: 'Remove Dining out…' }).click();
   await edit.getByRole('button', { name: 'Remove', exact: true }).click();
-  await expect(page.getByText('Dining out archived: it has history, so reports keep it')).toBeVisible();
+  await expect(page.getByText('Dining out archived. Reports keep its history.')).toBeVisible();
   await expect(page.getByRole('link', { name: /^Dining out/ })).toHaveCount(0);
 });
 

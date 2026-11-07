@@ -271,11 +271,11 @@ test('Assigned more than you have offers to take it back', async ({ page }) => {
 
 test('Bank connections confirm before linking and update the meter', async ({ page }) => {
   await page.goto('/settings/connections');
-  await expect(page.getByTestId('link-meter')).toHaveText('4 of 10 links used');
+  await expect(page.getByTestId('link-meter')).toHaveText('4 of 10 bank links used');
   await page.getByRole('button', { name: /Link another bank/ }).click();
-  await expect(page.getByText('Use 1 of your 6 remaining links?')).toBeVisible();
+  await expect(page.getByText('Use 1 of your 6 bank links?')).toBeVisible();
   await page.getByRole('button', { name: 'Link a bank' }).click();
-  await expect(page.getByTestId('link-meter')).toHaveText('5 of 10 links used');
+  await expect(page.getByTestId('link-meter')).toHaveText('5 of 10 bank links used');
 });
 
 test('Match money back returns it to Ready to Assign', async ({ page }) => {

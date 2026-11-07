@@ -196,7 +196,7 @@ describe('Accounts and Reports', () => {
       .run();
     show('/accounts');
     expect((await screen.findByTestId('bank-drift', undefined, { timeout: 4000 })).textContent).toBe(
-      '$40.00 off from bank',
+      'Differs from bank by $40.00',
     );
     cleanup();
     show('/accounts/checking');
@@ -265,16 +265,16 @@ describe('Settings', () => {
     await text('Record how I use the app');
     expect(screen.getByRole('radio', { name: 'Match device' })).toBeTruthy();
     expect(screen.queryByText(/Email me/)).toBeNull();
-    await text(/4 of 10 links used/);
+    await text(/4 of 10 bank links used/);
   });
 
   it('bank connections show the link meter and confirm before linking', async () => {
     renderAt('/settings/connections');
     expect((await screen.findByTestId('link-meter', undefined, { timeout: 4000 })).textContent).toBe(
-      '4 of 10 links used',
+      '4 of 10 bank links used',
     );
     fireEvent.click(screen.getByRole('button', { name: /Link another bank/ }));
-    expect(await screen.findByText('Use 1 of your 6 remaining links?')).toBeTruthy();
+    expect(await screen.findByText('Use 1 of your 6 bank links?')).toBeTruthy();
   });
 });
 

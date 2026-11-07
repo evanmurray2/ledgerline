@@ -120,9 +120,9 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   await page.waitForFunction(async () => !!(await navigator.serviceWorker.ready).active);
   await context.setOffline(true);
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'No signal' })).toBeVisible();
-  await page.getByRole('button', { name: 'Open with Face ID' }).click();
-  await expect(page.getByRole('heading', { name: 'No signal' })).toBeHidden();
+  await expect(page.getByRole('heading', { name: 'You’re offline' })).toBeVisible();
+  await page.getByRole('button', { name: 'Open with passkey' }).click();
+  await expect(page.getByRole('heading', { name: 'You’re offline' })).toBeHidden();
   // The budget opens from the copy (here, first-run setup), not "You're offline. Connect to the internet…".
   await expect(page).toHaveURL(/\/welcome/);
   await expect(page.getByRole('heading', { name: 'Ledgerline', exact: true })).toBeVisible();
