@@ -33,7 +33,7 @@ const SCREENS: { name: string; path: string; ready?: string; prepare?: (page: Pa
   { name: 'split', path: '/accounts/sapphire/txn/n-costco/split', ready: 'Takes any difference' },
   { name: 'match', path: '/activity/match/n-venmo', ready: 'What is this money?' },
   { name: 'check-pending', path: '/activity/check/n-check-1043', ready: 'Keep waiting' },
-  { name: 'add', path: '/activity/add', ready: 'Already happened' },
+  { name: 'add', path: '/activity/add', ready: 'Add a transaction' },
   { name: 'accounts', path: '/accounts', ready: 'Net worth' },
   { name: 'register-sapphire', path: '/accounts/sapphire', ready: 'You owe the bank' },
   { name: 'register-freedom', path: '/accounts/freedom', ready: 'You owe the bank' },

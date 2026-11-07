@@ -302,7 +302,6 @@ export function AddTxnScreen() {
   const accounts = useAccounts();
   const add = useMoneyMutation(api.newTxn);
   const today = session.data?.budget.today ?? '';
-  const [kind, setKind] = useState<'pending' | 'upcoming'>('pending');
   const [dir, setDir] = useState<'out' | 'in'>('out');
   const [amount, setAmount] = useState('');
   const [payee, setPayee] = useState('');
@@ -313,19 +312,22 @@ export function AddTxnScreen() {
   const accts = (accounts.data?.groups ?? []).flatMap((g) => g.accounts);
   const acct = accountId || accts[0]?.id || '';
   const cents = parseCents(amount);
-  const ok = cents !== null && cents > 0 && payee.trim() && acct && (date || today);
+  const on = date || today;
+  // The date picks the kind: a future date is upcoming (counts from that date), any other is pending (counts now).
+  const upcoming = !!today && on > today;
+  const ok = cents !== null && cents > 0 && payee.trim() && acct && on;
   const toRta = dir === 'in' && categoryId === 'rta';
   const submit = async () => {
     if (!ok || cents === null) return;
     await add.mutateAsync({
-      kind,
+      kind: upcoming ? 'upcoming' : 'pending',
       accountId: acct,
-      date: date || today,
+      date: on,
       amount: dir === 'out' ? -cents : cents,
       payee: payee.trim(),
       categoryId: toRta || categoryId === 'rta' ? null : categoryId || null,
       toRta,
-      repeats: kind === 'upcoming' ? repeats : 'never',
+      repeats: upcoming ? repeats : 'never',
     });
     close();
   };
@@ -357,21 +359,6 @@ export function AddTxnScreen() {
         </PrimaryButton>
       }
     >
-      <Segmented
-        label="When"
-        track="add_txn.kind"
-        value={kind}
-        onChange={setKind}
-        options={[
-          ['pending', 'Already happened'],
-          ['upcoming', 'Coming up'],
-        ]}
-      />
-      <p className="m-0 text-sm leading-snug text-muted">
-        {kind === 'pending'
-          ? 'Not at the bank yet, like a check. It counts now.'
-          : 'A bill or paycheck on a future date. It counts from that date.'}
-      </p>
       <div className="flex items-end gap-2">
         <Field label="Amount" className="flex-1">
           <input
@@ -426,15 +413,15 @@ export function AddTxnScreen() {
           }
         />
       </Field>
-      <Field label={kind === 'pending' ? 'Date' : 'On'}>
-        <input
-          type="date"
-          className={inputClass}
-          value={date || today}
-          onChange={(e) => setDate(e.target.value)}
-        />
+      <Field label="Date">
+        <input type="date" className={inputClass} value={on} onChange={(e) => setDate(e.target.value)} />
       </Field>
-      {kind === 'upcoming' && (
+      <p className="m-0 text-sm leading-snug text-muted">
+        {upcoming
+          ? 'A future date. It counts from that date.'
+          : 'Not at the bank yet, like a check. It counts now.'}
+      </p>
+      {upcoming && (
         <Field label="Repeats">
           <select
             className={inputClass}

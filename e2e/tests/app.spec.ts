@@ -628,3 +628,18 @@ test('Desktop: Budget header pills for Edit categories and Set targets, like Syn
     await expect(pill).toHaveClass(/rounded-full/);
   }
 });
+
+test('Add a transaction: a future date shows Repeats, today hides it', async ({ page }) => {
+  await page.goto('/activity/add');
+  const add = page.getByRole('dialog', { name: 'Add a transaction' });
+  const date = add.getByLabel('Date');
+  const today = await date.inputValue();
+  await expect(add.getByLabel('Repeats')).toHaveCount(0);
+  await expect(add.getByText('It counts now.')).toBeVisible();
+  const [y, m, d] = today.split('-').map(Number) as [number, number, number];
+  await date.fill(new Date(Date.UTC(y, m - 1, d + 10)).toISOString().slice(0, 10));
+  await expect(add.getByLabel('Repeats')).toBeVisible();
+  await expect(add.getByText('It counts from that date.')).toBeVisible();
+  await date.fill(today);
+  await expect(add.getByLabel('Repeats')).toHaveCount(0);
+});
