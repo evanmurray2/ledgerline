@@ -23,8 +23,7 @@ only posted rows.
 
 **Money effect.** The working balance on Accounts (and the Cash and Credit cards totals there) no longer counts a
 pending row twice when the bank balance already holds it. Budget lines, categories and Ready to Assign don't change.
-Card payment categories still use the bank balance plus pending (`cards()` in `views/common.ts`): a later change can
-apply the same rule there.
+Card payment categories (rule 7: "short" and the card's status, `cards()` in `views/common.ts`) use the same working debt, so a pending charge the card's balance already holds counts once there too (owner's yes, Nov 7, 2026).
 
 **Risk.** A missing posted row and an unrelated pending charge of the same sign look the same as a pending charge the
 bank took in: the working balance then shows the bank figure, and the line doesn't show. The bank's balance is still

@@ -4,6 +4,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { AccountRow, AccountsView } from '@ledgerline/contracts';
 import { bankDiff } from '../src/ledger/bank-diff.js';
 import { markDrift } from '../src/sync/process.js';
+import { cards } from '../src/views/common.js';
+import { Scoped } from '../src/db/scoped.js';
 import { workOut } from './work-out.js';
 import { bankSync, plaidTxn } from './bank-sync.js';
 
@@ -39,6 +41,9 @@ const card = async (): Promise<AccountRow> =>
   ((await h.call('GET', '/api/accounts')).json as AccountsView).groups
     .flatMap((g) => g.accounts)
     .find((x) => x.id === 'a_1')!;
+/** The card's working debt, as its payment category reads it (rule 7). */
+const cardDebt = async () =>
+  (await cards(new Scoped(h.db, B, 'system'), '2026-11-15', undefined, NOW + 25 * HOUR))[0]!.working;
 const since = async () =>
   (await h.db.prepare(`SELECT drift_since FROM provider_account WHERE id = 'pa_row_bd'`).first<{
     drift_since: number | null;
@@ -95,6 +100,8 @@ describe('the bank balance moves before the row arrives (D-68)', () => {
       drift: null,
       pendingInBank: 1500,
     });
+    // The payment category counts it once too.
+    expect(await cardDebt()).toBe(3500);
     await markDrift(h.db, B, C, NOW + 25 * HOUR);
     expect(await since()).toBeNull();
   });
@@ -109,5 +116,6 @@ describe('the bank balance moves before the row arrives (D-68)', () => {
       .run();
     await workOut(h.db, B, NOW + 25 * HOUR);
     expect(await card()).toMatchObject({ pending: 1900, working: 3900, drift: null, pendingInBank: 1500 });
+    expect(await cardDebt()).toBe(3900);
   });
 });
