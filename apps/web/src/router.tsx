@@ -267,7 +267,15 @@ const assignRoute = createRoute({
   component: AssignSheetScreen,
 });
 
-const owedRoute = createRoute({ getParentRoute: () => rootRoute, path: '/owed', component: OwedScreen });
+// `from`: where Owed to you was opened, so Back returns there (Budget unless it came from Accounts).
+const owedRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/owed',
+  validateSearch: (s: Record<string, unknown>) => ({
+    from: s.from === 'accounts' ? ('accounts' as const) : undefined,
+  }),
+  component: OwedScreen,
+});
 const owedCloseRoute = createRoute({
   getParentRoute: () => owedRoute,
   path: 'close/$itemId',

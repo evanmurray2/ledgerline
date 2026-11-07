@@ -643,3 +643,11 @@ test('Add a transaction: a future date shows Repeats, today hides it', async ({ 
   await date.fill(today);
   await expect(add.getByLabel('Repeats')).toHaveCount(0);
 });
+
+test('Owed to you opened from Accounts goes back to Accounts', async ({ page }) => {
+  await page.goto('/accounts');
+  await page.getByRole('link', { name: /Owed to you · not in this total/ }).click();
+  await expect(page).toHaveURL(/\/owed\?from=accounts/);
+  await page.getByRole('button', { name: 'Back to accounts' }).click();
+  await expect(page).toHaveURL(/\/accounts$/);
+});

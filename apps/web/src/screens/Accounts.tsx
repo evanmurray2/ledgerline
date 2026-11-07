@@ -293,6 +293,7 @@ export function AccountsScreen() {
                 </div>
                 <Link
                   to="/owed"
+                  search={{ from: 'accounts' }}
                   data-track="accounts.owed"
                   className="mt-1 flex min-h-10 items-center justify-between border-t border-divider pt-1 text-sm text-ink-2 no-underline"
                 >
