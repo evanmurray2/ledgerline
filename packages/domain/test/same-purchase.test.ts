@@ -40,11 +40,17 @@ describe('candidates', () => {
     expect(entryCandidate(entry(), bank({ amount: $('-40.01'), channel: 'check' }))).toBe(false);
   });
 
-  it('the entry dated 0–14 days before, or 1 day after, the bank row', () => {
+  it('the entry dated 0–14 days before, or up to 7 days after, the bank row (D-72)', () => {
     expect(entryCandidate(entry(), bank({ date: '2026-11-24' }))).toBe(true);
     expect(entryCandidate(entry(), bank({ date: '2026-11-25' }))).toBe(false);
-    expect(entryCandidate(entry(), bank({ date: '2026-11-09' }))).toBe(true);
-    expect(entryCandidate(entry(), bank({ date: '2026-11-08' }))).toBe(false);
+    expect(entryCandidate(entry(), bank({ date: '2026-11-03' }))).toBe(true);
+    expect(entryCandidate(entry(), bank({ date: '2026-11-02' }))).toBe(false);
+  });
+
+  it('a bill you add two days after the bank has it, same amount: asked about, not paired (D-72)', () => {
+    const e = entry({ name: 'Calwater', amount: $('-44.99'), date: '2026-11-06', channel: 'card' });
+    const b = bank({ names: ['Calwater Service'], amount: $('-44.99'), date: '2026-11-04', channel: 'ach' });
+    expect(pairEntries([b], [e])).toEqual([{ kind: 'ask', bankKey: 'p:b1', candidates: ['e1'] }]);
   });
 });
 

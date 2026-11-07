@@ -29,14 +29,19 @@ export interface BankSideRow {
   channel: MatchRow['channel'];
 }
 
+/** How many days before the bank row your entry can be dated, and how many after (D-72). */
+export const ENTRY_DAYS_BEFORE = 14;
+export const ENTRY_DAYS_AFTER = 7;
+
 /**
  * Candidates (9): same account and sign, amount within tolerance (exact for checks and ACH; card purchases within $5
- * or 25% either way), and the entry dated 0–14 days before, or 1 day after, the bank row.
+ * or 25% either way), and the entry dated 0–14 days before, or up to ENTRY_DAYS_AFTER days after, the bank row (you
+ * often add a bill after the bank already has it).
  */
 export function entryCandidate(e: EntryRow, b: BankSideRow): boolean {
   if (e.accountId !== b.accountId || Math.sign(e.amount) !== Math.sign(b.amount)) return false;
   const gap = daysBetween(e.date, b.date);
-  if (gap < -1 || gap > 14) return false;
+  if (gap < -ENTRY_DAYS_AFTER || gap > ENTRY_DAYS_BEFORE) return false;
   return withinTolerance(e.amount, b.amount, b.channel === 'other' ? e.channel : b.channel);
 }
 

@@ -167,7 +167,7 @@ from an amount that is only close.
 **Candidates** (as now): same account and sign, amount within tolerance (exact for checks and ACH; for card
 purchases within $5 or 25% either way, for tips and fuel holds), and dates that fit (a bank pending row authorized
 the same day as the posted row or the day before, else dated 0–14 days before; an entry dated 0–14 days before, or
-1 day after, the bank row).
+up to 7 days after, the bank row: D-72).
 
 ### 9.1 "Same purchase?"
 
