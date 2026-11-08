@@ -1,7 +1,7 @@
 // The one way to choose a category: a sheet with search, your usual picks first, then every group with what
 // each category has available. Activity uses the sheet directly (a tap categorizes at once); forms use
 // CategoryField, a field-shaped button that opens the same sheet.
-import { useMemo, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Sheet, SheetTitle } from './Sheet';
 import { cx, EmptyNote, Icon, inputClass, Label, SearchField } from './ui';
 import { formatCents } from '../lib/money';
@@ -21,6 +21,23 @@ export interface PickerGroup {
 export interface PickerSpecial {
   id: string;
   name: string;
+}
+
+/**
+ * Call from the tap that opens the picker. iOS opens the keyboard only for a field focused during the tap
+ * itself, and the picker's search field doesn't exist yet then. So this focuses a hidden stand-in field now;
+ * the search field takes focus from it a moment later and the keyboard stays up.
+ */
+export function primeKeyboard() {
+  if (!window.matchMedia?.('(pointer: coarse)').matches) return;
+  const el = document.createElement('input');
+  el.setAttribute('aria-hidden', 'true');
+  el.tabIndex = -1;
+  // Invisible; 16 px text so iOS doesn't zoom in on it.
+  el.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px;';
+  document.body.appendChild(el);
+  el.focus({ preventScroll: true });
+  window.setTimeout(() => el.remove(), 1000);
 }
 
 const listBox = 'shrink-0 overflow-hidden rounded-lg border border-line';
@@ -71,6 +88,11 @@ export function CategoryPickerSheet({
   children?: ReactNode;
 }) {
   const [q, setQ] = useState('');
+  const search = useRef<HTMLInputElement>(null);
+  // Start in the search field, so you can type at once.
+  useLayoutEffect(() => {
+    search.current?.focus({ preventScroll: true });
+  }, []);
   const all = useMemo(
     () => groups.flatMap((g) => g.categories.map((c) => ({ ...c, group: g.name }))),
     [groups],
@@ -104,7 +126,7 @@ export function CategoryPickerSheet({
       label={title}
       track={track}
       onClose={onClose}
-      gap="auto"
+      gap="small"
       modal={modal}
       closeLabel="Close category picker"
       header={<SheetTitle title={title} sub={sub} />}
@@ -112,7 +134,13 @@ export function CategoryPickerSheet({
       <div className="flex flex-col gap-2.5 pb-4">
         {/* SearchField takes no data-track; the tracker reads the nearest one, so the wrapper carries it. */}
         <div data-track={`${track}.search`} className="flex shrink-0 flex-col">
-          <SearchField value={q} onChange={setQ} label="Search categories" placeholder="Search categories" />
+          <SearchField
+            ref={search}
+            value={q}
+            onChange={setQ}
+            label="Search categories"
+            placeholder="Search categories"
+          />
         </div>
         {needle ? (
           matches.length > 0 ? (
@@ -212,7 +240,10 @@ export function CategoryField({
         aria-haspopup="dialog"
         aria-label={ariaLabel}
         data-track={`${track}.open`}
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          primeKeyboard();
+          setOpen(true);
+        }}
         className={cx(inputClass, 'flex items-center justify-between gap-2 text-left')}
       >
         <span className={cx('truncate', !chosen && 'text-faint')}>{chosen ? chosen.name : placeholder}</span>
