@@ -121,6 +121,8 @@ test('Activity: categorize from the picker, undo, and OK a suggestion', async ({
   await page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ }).click();
   const picker = page.getByRole('dialog', { name: 'Choose a category' });
   await expect(picker.getByText('Past categories for Amazon')).toBeVisible();
+  // The search field has focus at once, so the keyboard is up and you can type.
+  await expect(picker.getByRole('searchbox', { name: 'Search categories' })).toBeFocused();
   await picker.getByRole('button', { name: 'Shopping' }).first().click();
   await expect(page.getByRole('status').filter({ hasText: 'Amazon → Shopping' })).toBeVisible();
   await expect(page.getByRole('button', { name: /Change category for Amazon −\$38\.10/ })).toHaveText(

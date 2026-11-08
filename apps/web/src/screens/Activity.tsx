@@ -36,6 +36,7 @@ import { usage } from '../usage/tracker';
 import { useQueryClient } from '@tanstack/react-query';
 import { sheetPath, Section, TxnRow, type Chosen, type NeedsRow, type Picking } from './ActivityRows';
 import { ActivityCategoryPicker, NeedsCategory } from './ActivityNeeds';
+import { primeKeyboard } from '../components/CategoryPicker';
 import { SamePurchase } from './ActivitySame';
 
 export { TxnRow } from './ActivityRows';
@@ -135,6 +136,7 @@ export function ActivityScreen() {
     pickerGroups.flatMap((g) => g.categories).find((c) => c.id === id)?.name ?? 'category';
 
   const openPicker = (p: Picking) => {
+    primeKeyboard();
     usage.startTask('categorize');
     setPicking(p);
   };
