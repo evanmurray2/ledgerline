@@ -278,7 +278,8 @@ bank paired these two itself, so they stay one purchase." · "This isn't paired 
   {date}, late purchases from before {date} are added here." / "This won't change now."
 - Alerts: "Ledgerline hasn't checked your banks in over a day." · "{bank} hasn't synced in over a day." · "A posted
   {amount} transaction in {Month Year} was removed or re-issued. Check for a double." · "A posted charge matched one of
-  several pending charges. Check that it's the right one." · "…nothing posted. It was likely a released hold." · "The
+  several pending charges. Check that it's the right one." · "A pending {amount} charge from {payee} on
+  {date} ({account}) left the bank and nothing posted after 5 days. It was likely a released hold." · "The
   bank removed a posted transaction and added new ones. Check for a double." · "Ready to Assign for {Month Year} was
   off by {amount} on a device. Pull down to sync again."
 

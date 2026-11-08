@@ -142,9 +142,18 @@ accountRoutes.get('/accounts', async (c) => {
     ),
     s.q(`SELECT key, value, at FROM health_status WHERE budget_id = ?1`),
     s.q(
-      `SELECT id, type, ref_key, data FROM alert WHERE budget_id = ?1 AND acked_at IS NULL
-         AND type IN ('history_changed', 'vanished_pending', 'possible_reissue', 'identity')
-       ORDER BY created_at`,
+      // A vanished pending charge names itself from the bank's removed row, which stays in bank_txn.
+      `SELECT al.id, al.type, al.ref_key, al.data, b.amount AS b_amount, b.date AS b_date,
+              coalesce(p.name, b.merchant_name, b.raw_name) AS b_name, ac.name AS b_account
+         FROM alert al
+         LEFT JOIN bank_txn b ON al.type = 'vanished_pending' AND b.budget_id = al.budget_id AND b.txn_key = al.ref_key
+         LEFT JOIN txn_overlay o ON o.txn_key = b.txn_key
+         LEFT JOIN payee p ON p.id = o.payee_id
+         LEFT JOIN account ac ON ac.budget_id = b.budget_id AND ac.provider_account_id = b.provider_account_id
+        WHERE al.budget_id = ?1 AND al.acked_at IS NULL
+          AND al.type IN ('history_changed', 'vanished_pending', 'possible_reissue', 'identity')
+        GROUP BY al.id
+        ORDER BY al.created_at`,
     ),
     s.q(
       `SELECT id, txn_key, amount, expect_by, closed_at, canceled_at FROM expected_reimbursement e WHERE budget_id = ?1 AND NOT EXISTS (SELECT 1 FROM manual_pending mp WHERE mp.budget_id = e.budget_id AND mp.txn_key = e.txn_key AND mp.kind = 'upcoming' AND mp.matched_txn_key IS NULL)`,
@@ -233,6 +242,11 @@ interface StoredAlert {
   type: string;
   ref_key: string;
   data: string | null;
+  /** For `vanished_pending`: the bank's removed pending row, when it is still there. */
+  b_amount?: number | null;
+  b_date?: string | null;
+  b_name?: string | null;
+  b_account?: string | null;
 }
 
 /** An alert the sync, the daily scan or a phone saved (the `alert` table), as one line on Accounts. */
@@ -257,7 +271,10 @@ export function storedAlert(a: StoredAlert): AccountsView['alerts'][number] {
       return {
         ...base,
         kind: 'vanished_pending',
-        text: 'A pending charge left the bank 5 days ago and nothing posted. It was likely a released hold.',
+        text:
+          a.b_amount != null
+            ? `A pending ${formatCents(Math.abs(a.b_amount))} ${a.b_amount > 0 ? 'credit' : 'charge'}${a.b_name ? ` from ${a.b_name}` : ''}${a.b_date ? ` on ${shortDate(a.b_date)}` : ''}${a.b_account ? ` (${a.b_account})` : ''} left the bank and nothing posted after 5 days. It was likely a released hold.`
+            : 'A pending charge left the bank and nothing posted after 5 days. It was likely a released hold.',
       };
     case 'possible_reissue':
       return {
