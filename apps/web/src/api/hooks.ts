@@ -111,6 +111,9 @@ export function adjustAttention(qc: QueryClient, delta: number) {
     if (typeof old.activity === 'number') return { ...old, activity: Math.max(0, old.activity + delta) };
     return old;
   });
+  // Writing the cache marks it fresh again, which undid the mutation's "out of date" mark: coming back to Activity
+  // within staleTime showed the old list, with a row you had just categorized under Needs category. Mark it again.
+  void qc.invalidateQueries({ queryKey: ['activity'], refetchType: 'none' });
 }
 
 /** Tab badges. Keyed under 'activity' so every money change refreshes them too. */

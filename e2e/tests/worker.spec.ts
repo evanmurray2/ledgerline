@@ -118,6 +118,19 @@ test('Activity: categorizing an uncategorized purchase persists', async ({ page 
   );
   // The count drops at once, without reloading the list.
   await expect(chip).toHaveText(`Needs attention ${before - 1}`);
+  // Going to another tab and back, in the app, doesn't bring the row back (the list's cache was marked fresh by
+  // the count change, so it showed the old list for 2 minutes).
+  await page
+    .getByRole('link', { name: /Budget/ })
+    .first()
+    .click();
+  await expect(rta(page)).toBeVisible();
+  await page
+    .getByRole('link', { name: /Activity/ })
+    .first()
+    .click();
+  await expect(chip).toHaveText(`Needs attention ${before - 1}`);
+  await expect(page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ })).toHaveCount(0);
   // Leaving and coming back shows the server's state.
   await page.goto('/budget');
   await page.goto('/activity');
