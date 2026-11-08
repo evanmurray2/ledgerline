@@ -22,6 +22,7 @@ import {
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
 import { HttpError, parse, scoped, GONE } from './api.js';
+import { reopenStmts } from './account-close.js';
 import { editTime, liveKey } from './sync.js';
 import { shortDate } from '../views/common.js';
 import { categoryLabel, isHistory } from '../views/rows.js';
@@ -422,6 +423,8 @@ transactionRoutes.post('/transactions', async (c) => {
   const toRta = r.toRta === true && r.amount > 0;
   const key = `m:${ulid(now)}`;
   const w = [
+    // An entry for a closed account opens it again (D-73).
+    ...reopenStmts(s, r.accountId, now),
     s.q(
       `INSERT INTO manual_pending (id, budget_id, txn_key, account_id, kind, date, amount, payee_name, repeats, created_at, updated_at)
        VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)`,

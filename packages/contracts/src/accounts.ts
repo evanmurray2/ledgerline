@@ -22,6 +22,8 @@ export const AccountRow = z.object({
   pendingInBank: cents,
   statement: z.object({ balance: cents, due: date.nullable(), covered: z.boolean() }).nullable(),
   meta: z.string(),
+  /** Closed in Ledgerline: off Accounts and the Add list, its rows kept. A new bank row opens it again. */
+  closed: z.boolean(),
 });
 export type AccountRow = z.infer<typeof AccountRow>;
 
@@ -31,6 +33,8 @@ export const AccountsView = z.object({
   month,
   owedOut: cents,
   groups: z.array(z.object({ name: z.string(), total: cents, accounts: z.array(AccountRow) })),
+  /** Accounts closed in Ledgerline, listed apart; their balance is $0, so the totals leave them out. */
+  closed: z.array(AccountRow),
   repairs: z.array(
     z.object({ connectionId: id, institution: z.string(), lastSynced: z.number().int().nullable() }),
   ),

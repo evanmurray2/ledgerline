@@ -30,6 +30,7 @@ import { monthTotals } from '../ledger/totals.js';
 import { DIFF_WAIT_MS, accountLedger, bankDiff } from '../ledger/bank-diff.js';
 import type { Scoped } from '../db/scoped.js';
 import { type Adjustments, startSheet } from '../ledger/start-part.js';
+import { closeBlocked } from './account-close.js';
 
 export const accountRoutes = new Hono<AppEnv>();
 
@@ -47,21 +48,25 @@ interface AcctDb {
   last_synced_at: number | null;
   connection_id: string | null;
   drift_since: number | null;
+  closed_at: number | null;
 }
 
+/** Every account's row; closed ones too when `withClosed` (their own list on Accounts, and their register). */
 async function accountRows(
   s: Scoped,
   today: string,
   timeZone: string,
   now: number,
+  withClosed = false,
 ): Promise<{ rows: AccountRow[]; raw: AcctDb[]; recent: Adjustments['recent'] }> {
   const raw = await s.all<AcctDb>(
     `SELECT a.id, a.name, a.kind, a.budget_from, a.starting_balance, a.provider_account_id, pa.mask, pa.current_balance AS bank,
-       pa.drift_since, c.institution_name AS institution, c.status, c.last_synced_at, c.id AS connection_id
+       pa.drift_since, c.institution_name AS institution, c.status, c.last_synced_at, c.id AS connection_id, a.closed_at
      FROM account a
      LEFT JOIN provider_account pa ON pa.budget_id = a.budget_id AND pa.provider_account_id = a.provider_account_id
      LEFT JOIN connection c ON c.id = pa.connection_id
-     WHERE a.budget_id = ?1 AND a.closed_at IS NULL ORDER BY a.kind = 'credit', a.sort, a.name`,
+     WHERE a.budget_id = ?1 AND (?2 = 1 OR a.closed_at IS NULL) ORDER BY a.kind = 'credit', a.sort, a.name`,
+    withClosed ? 1 : 0,
   );
   const ledger = await accountLedger(s, raw, today, now);
   const startAdjust = ledger.startAdjust;
@@ -102,7 +107,14 @@ async function accountRows(
       drift: drift === null ? null : cents(drift),
       pendingInBank: cents(Math.abs(diff.inBank)),
       statement,
-      meta: `${a.institution ?? 'Manual'}${a.mask ? ` · ending ${a.mask}` : ''} · ${a.status === 'login_required' ? 'sign in again' : synced}`,
+      meta: `${a.institution ?? 'Manual'}${a.mask ? ` · ending ${a.mask}` : ''} · ${
+        a.closed_at !== null
+          ? `closed ${shortDate(localDate(a.closed_at, timeZone))}`
+          : a.status === 'login_required'
+            ? 'sign in again'
+            : synced
+      }`,
+      closed: a.closed_at !== null,
     };
   });
   return { rows, raw, recent: startAdjust.recent };
@@ -118,7 +130,8 @@ accountRoutes.get('/accounts', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
   const f = await fresh(s, now);
-  const { rows } = await accountRows(s, f.today, f.budget.time_zone, now);
+  const { rows: all } = await accountRows(s, f.today, f.budget.time_zone, now, true);
+  const rows = all.filter((r) => !r.closed);
   const start = (f.budget.budget_start_month ?? f.current) as Month;
   const mr = await monthResult(s, f.current, start);
   for (const r of rows) {
@@ -212,6 +225,7 @@ accountRoutes.get('/accounts', async (c) => {
       { name: 'Cash', total: cents(cash.reduce((a, r) => a + r.working, 0)), accounts: cash },
       { name: 'Credit cards', total: cents(credit.reduce((a, r) => a + r.working, 0)), accounts: credit },
     ].filter((g) => g.accounts.length),
+    closed: all.filter((r) => r.closed),
     repairs: connRows
       .filter((x) => x.status === 'login_required')
       .map((x) => ({ connectionId: x.id, institution: x.institution_name, lastSynced: x.last_synced_at })),
@@ -309,7 +323,7 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
   const f = await fresh(s, now);
   const id = c.req.param('id');
   const show = c.req.query('show') ?? 'all';
-  const { rows, raw, recent } = await accountRows(s, f.today, f.budget.time_zone, now);
+  const { rows, raw, recent } = await accountRows(s, f.today, f.budget.time_zone, now, true);
   const account = rows.find((r) => r.id === id);
   const rawAccount = raw.find((r) => r.id === id);
   if (!account || !rawAccount) throw new HttpError(404, 'not_found', GONE);
@@ -350,9 +364,11 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
       });
   }
   let note: string | null = null;
+  let cardAvailable: number | null = null;
   if (credit) {
     const start = (f.budget.budget_start_month ?? f.current) as Month;
     const mr = await monthResult(s, f.current, start);
+    cardAvailable = mr?.cards[id]?.available ?? 0;
     const over = Object.entries(mr?.categories ?? {}).filter(([, v]) => (v.creditOverspent[id] ?? 0) > 0);
     if (over.length) {
       const amt = over.reduce((a, [, v]) => a + (v.creditOverspent[id] ?? 0), 0);
@@ -361,7 +377,21 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
     }
   }
   const start = await startSheet(s, rawAccount, recent.get(id) ?? null, now, f.budget.time_zone);
-  return c.json({ account, days, note, start } satisfies RegisterView);
+  const closeBlock = account.closed
+    ? null
+    : closeBlocked(
+        account,
+        txs.some((t) => t.status !== 'posted'),
+        cardAvailable,
+      );
+  return c.json({
+    account,
+    days,
+    note,
+    start,
+    closeBlock,
+    cardAvailable: cardAvailable === null ? null : cents(cardAvailable),
+  } satisfies RegisterView);
 });
 
 accountRoutes.get('/reports', async (c) => {
