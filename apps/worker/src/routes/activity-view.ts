@@ -25,6 +25,7 @@ import { RECENT_TX, TX_COLUMNS, chunks, type TxRow } from '../ledger/ledger.js';
 import type { Scoped } from '../db/scoped.js';
 import { names } from './txn-common.js';
 import { samePurchaseCards } from './same-purchase.js';
+import { removedByBank } from './removed-by-bank.js';
 export const activityViewRoutes = new Hono<AppEnv>();
 
 // ---------------------------------------------------------------- Activity
@@ -51,7 +52,7 @@ activityViewRoutes.get('/badges', async (c) => {
     summary_dirty_from: string | null;
   }>(`SELECT time_zone, rta, summary_month, summary_dirty_from FROM budget WHERE id = ?1`);
   const today = localDate(clock(c.env), tz?.time_zone ?? 'America/Los_Angeles');
-  const [attn, stale, conns] = await s.batch([
+  const [attn, stale, conns, removed] = await s.batch([
     s.q(ATTENTION_SQL),
     s.q(
       `SELECT count(*) AS n FROM manual_pending m JOIN account a ON a.id = m.account_id WHERE m.budget_id = ?1 AND m.kind = 'pending' AND m.deleted_at IS NULL
@@ -60,6 +61,9 @@ activityViewRoutes.get('/badges', async (c) => {
     ),
     s.q(
       `SELECT count(*) AS n FROM connection WHERE budget_id = ?1 AND removed_at IS NULL AND status IN ('login_required', 'error')`,
+    ),
+    s.q(
+      `SELECT count(*) AS n FROM alert WHERE budget_id = ?1 AND type = 'vanished_pending' AND acked_at IS NULL`,
     ),
   ]);
   const rows = attn!.results as TxRow[];
@@ -71,6 +75,7 @@ activityViewRoutes.get('/badges', async (c) => {
     ).length +
     rows.filter((t) => t.alert && !t.reviewed_at).length +
     ((stale!.results[0] as { n: number } | undefined)?.n ?? 0) +
+    ((removed!.results[0] as { n: number } | undefined)?.n ?? 0) +
     // One query when nothing is asked (the usual case).
     (await samePurchaseCards(s, new Map(), new Map())).length;
   return c.json({
@@ -300,6 +305,7 @@ activityViewRoutes.get('/activity', async (c) => {
   const { categories, groups } = await structure(s);
   // "Same purchase?" asks only when nothing is searched for: its rows are the bank's and your entries.
   const samePurchase = q ? [] : await samePurchaseCards(s, accts, cats);
+  const removed = q ? [] : await removedByBank(s);
   const usable = new Set(
     categories.filter((c) => !c.archived_at && c.kind !== 'cc_payment').map((c) => c.id),
   );
@@ -379,13 +385,15 @@ activityViewRoutes.get('/activity', async (c) => {
       transfersToSort.length +
       needsCategory.length +
       checkThese.length +
-      samePurchase.length,
+      samePurchase.length +
+      removed.length,
     notPostedCount: pend!.results.length + upc!.results.length,
     moneyToMatch,
     transfersToSort,
     needsCategory,
     checkThese,
     samePurchase,
+    removedByBank: removed,
     pending: filter === 'attention' || past ? [] : pending,
     pendingTotal: cents(pendingTotal),
     upcoming: filter === 'attention' || past ? [] : upcoming,

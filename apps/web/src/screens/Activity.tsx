@@ -37,6 +37,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { sheetPath, Section, TxnRow, type Chosen, type NeedsRow, type Picking } from './ActivityRows';
 import { ActivityCategoryPicker, NeedsCategory } from './ActivityNeeds';
 import { SamePurchase } from './ActivitySame';
+import { RemovedByBank } from './ActivityRemoved';
 
 export { TxnRow } from './ActivityRows';
 
@@ -106,6 +107,7 @@ export function ActivityScreen() {
       v.transfersToSort.length +
       v.checkThese.length +
       v.samePurchase.length +
+      v.removedByBank.length +
       (v.needsCategory?.length ?? 0) +
       (v.posted.length + v.pending.length + v.upcoming.length)
     : 0;
@@ -500,6 +502,7 @@ export function ActivityScreen() {
             ))}
           </Section>
         )}
+        {v && v.removedByBank.length > 0 && <RemovedByBank rows={v.removedByBank} />}
         {v && v.pending.length > 0 && (
           <Section title="Pending" note={`counts now · ${formatCents(v.pendingTotal)}`}>
             {v.pending.map((r) => (

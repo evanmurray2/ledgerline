@@ -189,6 +189,9 @@ that. Try again." · "Couldn't load more. Try again."
 **Same purchase?:** "both count until you answer" · "Paired as one purchase" / "Kept as two purchases" · Server: "Your
 bank paired these two itself, so they stay one purchase." · "This isn't paired with another transaction."
 
+**Removed by the bank:** "likely released holds · not counted" · OK → "{payee} · marked OK" (a bank pending row removed
+with nothing posted after 5 days)
+
 **Transfer to sort out**
 
 - "Which account got this money?" + "No account / 1 account / {n} accounts got {amount} within a few days."
@@ -278,8 +281,7 @@ bank paired these two itself, so they stay one purchase." · "This isn't paired 
   {date}, late purchases from before {date} are added here." / "This won't change now."
 - Alerts: "Ledgerline hasn't checked your banks in over a day." · "{bank} hasn't synced in over a day." · "A posted
   {amount} transaction in {Month Year} was removed or re-issued. Check for a double." · "A posted charge matched one of
-  several pending charges. Check that it's the right one." · "A pending {amount} charge from {payee} on
-  {date} ({account}) left the bank and nothing posted after 5 days. It was likely a released hold." · "The
+  several pending charges. Check that it's the right one." · "The
   bank removed a posted transaction and added new ones. Check for a double." · "Ready to Assign for {Month Year} was
   off by {amount} on a device. Pull down to sync again."
 

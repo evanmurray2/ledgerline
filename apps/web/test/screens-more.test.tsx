@@ -43,22 +43,43 @@ describe('Accounts: stored alerts', () => {
          SELECT 'al1', id, 'possible_reissue', 'p:old', '{}', 0 FROM budget`,
       )
       .run();
+    show('/accounts');
+    // With Ally to repair, two problems fold into one line until opened.
+    fireEvent.click(await screen.findByRole('button', { name: /2 things need you/ }, T));
+    await screen.findByText(/added new ones. Check for a double/, undefined, T);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Dismiss' })[0]!);
+    await waitFor(() => expect(screen.queryByText(/added new ones. Check for a double/)).toBeNull(), T);
+    expect(
+      (await sql<{ acked_at: number | null }>(`SELECT acked_at FROM alert WHERE id = 'al1'`))!.acked_at,
+    ).not.toBeNull();
+  });
+});
+
+describe('Activity: removed by the bank', () => {
+  it('names a pending charge the bank removed, and OK clears it', async () => {
+    const db = await server.db();
+    await db
+      .prepare(
+        `INSERT INTO bank_txn (provider_txn_id, budget_id, connection_id, provider_account_id, amount, date, pending,
+           raw_name, merchant_name, removed_at, txn_key, first_apply_seq, last_apply_seq, created_at, updated_at)
+         SELECT 'gone-1', a.budget_id, 'conn', a.provider_account_id, -4217, '2026-11-02', 1, 'SQ *CORNER CAFE',
+           'Corner Cafe', 1, 'p:gone-1', 1, 1, 0, 0
+           FROM account a WHERE a.provider_account_id IS NOT NULL LIMIT 1`,
+      )
+      .run();
     await db
       .prepare(
         `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at)
-         SELECT 'al2', id, 'vanished_pending', 'p:gone', '{}', 0 FROM budget`,
+         SELECT 'al2', id, 'vanished_pending', 'p:gone-1', '{}', 0 FROM budget`,
       )
       .run();
-    show('/accounts');
-    // With Ally to repair, three problems fold into one line until opened.
-    fireEvent.click(await screen.findByRole('button', { name: /3 things need you/ }, T));
-    await screen.findByText(/added new ones. Check for a double/, undefined, T);
-    expect(screen.getByText(/likely a released hold/)).toBeTruthy();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Dismiss' })[0]!);
-    await waitFor(() => expect(screen.queryByText(/added new ones. Check for a double/)).toBeNull(), T);
-    expect(screen.getByText(/likely a released hold/)).toBeTruthy();
+    show('/activity');
+    await screen.findByText('Removed by the bank', undefined, T);
+    expect(screen.getByText('Corner Cafe')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /^OK, Corner Cafe \$42\.17/ }));
+    await waitFor(() => expect(screen.queryByText('Removed by the bank')).toBeNull(), T);
     expect(
-      (await sql<{ acked_at: number | null }>(`SELECT acked_at FROM alert WHERE id = 'al1'`))!.acked_at,
+      (await sql<{ acked_at: number | null }>(`SELECT acked_at FROM alert WHERE id = 'al2'`))!.acked_at,
     ).not.toBeNull();
   });
 });

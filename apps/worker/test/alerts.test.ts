@@ -1,7 +1,7 @@
 // Stored alerts (the `alert` table: sync, daily scan, a phone's identity check) show on Accounts and can be dismissed.
 import { app } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { AccountsView } from '@ledgerline/contracts';
+import type { AccountsView, ActivityView } from '@ledgerline/contracts';
 import { ownerDb } from './store-db.js';
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
@@ -49,25 +49,35 @@ describe('Stored alerts on Accounts', () => {
 
   it('lists every kind with an id; an ambiguous match asks "Same purchase?" on Activity instead', async () => {
     const a = (await accounts()).alerts.filter((x) => x.id);
-    expect(a.map((x) => x.kind).sort()).toEqual(
-      ['history_changed', 'identity', 'possible_reissue', 'vanished_pending'].sort(),
-    );
+    expect(a.map((x) => x.kind).sort()).toEqual(['history_changed', 'identity', 'possible_reissue'].sort());
     expect(a.find((x) => x.kind === 'identity')!.text).toContain('$12.34');
     expect(a.find((x) => x.kind === 'history_changed')!.text).toContain('October 2026');
   });
 
-  it('a vanished pending charge says which one it was', async () => {
-    const t = (await accounts()).alerts.find((x) => x.kind === 'vanished_pending')!.text;
-    expect(t).toContain('$42.17 charge from Corner Cafe on Nov 2');
-    expect(t).toContain(`(${vanishedAccount})`);
+  it('a pending charge the bank removed shows on Activity, named from the bank row, and counts on the badge', async () => {
+    const r = await app('/api/activity?filter=attention');
+    expect(r.status).toBe(200);
+    const v = (await r.json()) as ActivityView;
+    expect(v.removedByBank).toEqual([
+      { id: 'al-vp', payee: 'Corner Cafe', amount: -4217, date: '2026-11-02', accountName: vanishedAccount },
+    ]);
+    const before = v.attentionCount;
+    const badges = (await (await app('/api/badges')).json()) as { activity: number };
+    await app('/api/alerts/al-vp/dismiss', { method: 'POST', headers: H, body: '{}' });
+    const after = (await (await app('/api/activity?filter=attention')).json()) as ActivityView;
+    expect(after.removedByBank).toEqual([]);
+    expect(after.attentionCount).toBe(before - 1);
+    expect(((await (await app('/api/badges')).json()) as { activity: number }).activity).toBe(
+      badges.activity - 1,
+    );
   });
 
   it('Dismiss takes one off the list and keeps the row, marked as seen', async () => {
-    const r = await app('/api/alerts/al-vp/dismiss', { method: 'POST', headers: H, body: '{}' });
+    const r = await app('/api/alerts/al-re/dismiss', { method: 'POST', headers: H, body: '{}' });
     expect(r.status).toBe(200);
-    expect((await accounts()).alerts.map((x) => x.id)).not.toContain('al-vp');
+    expect((await accounts()).alerts.map((x) => x.id)).not.toContain('al-re');
     const row = await ownerDb()
-      .prepare(`SELECT acked_at FROM alert WHERE id = 'al-vp'`)
+      .prepare(`SELECT acked_at FROM alert WHERE id = 'al-re'`)
       .first<{ acked_at: number | null }>();
     expect(row!.acked_at).not.toBeNull();
   });
