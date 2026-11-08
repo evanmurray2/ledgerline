@@ -271,6 +271,19 @@ export const ActivityView = z.object({
   samePurchase: z.array(
     z.object({ id: z.string(), row: TxnListRow, candidates: z.array(TxnListRow).min(1) }),
   ),
+  /**
+   * A bank pending row removed with nothing posted after 5 days, usually a released hold (the `vanished_pending`
+   * alert). OK dismisses it with POST /api/alerts/:id/dismiss.
+   */
+  removedByBank: z.array(
+    z.object({
+      id: z.string(),
+      payee: z.string(),
+      amount: cents,
+      date: z.string().nullable(),
+      accountName: z.string().nullable(),
+    }),
+  ),
   pending: z.array(TxnListRow),
   pendingTotal: cents,
   upcoming: z.array(TxnListRow),

@@ -44,15 +44,7 @@ export const AccountsView = z.object({
   ),
   alerts: z.array(
     z.object({
-      kind: z.enum([
-        'monitor',
-        'sync',
-        'history_changed',
-        'ambiguous_match',
-        'vanished_pending',
-        'possible_reissue',
-        'identity',
-      ]),
+      kind: z.enum(['monitor', 'sync', 'history_changed', 'ambiguous_match', 'possible_reissue', 'identity']),
       text: z.string(),
       /** The stored alert's id when you can dismiss it (POST /api/alerts/:id/dismiss); absent for live checks. */
       id: z.string().optional(),

@@ -143,7 +143,7 @@ accountRoutes.get('/accounts', async (c) => {
     s.q(`SELECT key, value, at FROM health_status WHERE budget_id = ?1`),
     s.q(
       `SELECT id, type, ref_key, data FROM alert WHERE budget_id = ?1 AND acked_at IS NULL
-         AND type IN ('history_changed', 'vanished_pending', 'possible_reissue', 'identity')
+         AND type IN ('history_changed', 'possible_reissue', 'identity')
        ORDER BY created_at`,
     ),
     s.q(
@@ -252,12 +252,6 @@ export function storedAlert(a: StoredAlert): AccountsView['alerts'][number] {
         kind: 'ambiguous_match',
         txnKey: a.ref_key,
         text: 'A posted charge matched one of several pending charges. Check that it’s the right one.',
-      };
-    case 'vanished_pending':
-      return {
-        ...base,
-        kind: 'vanished_pending',
-        text: 'A pending charge left the bank 5 days ago and nothing posted. It was likely a released hold.',
       };
     case 'possible_reissue':
       return {
