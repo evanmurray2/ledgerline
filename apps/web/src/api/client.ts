@@ -9,6 +9,7 @@ import {
   afterChange,
   archiveFields,
   canEditOffline,
+  closeFields,
   dropSignedOut,
   editOffline,
   read as readCopy,
@@ -231,6 +232,12 @@ async function sendOnce<S extends z.ZodType>(
   const archive = mutation ? /^\/api\/settings\/categories\/([^/]+)\/(archive|remove)$/.exec(path) : null;
   if (archive && (archive[2] === 'remove' || (body as { archived?: boolean } | undefined)?.archived)) {
     const f = await archiveFields(decodeURIComponent(archive[1]!));
+    if (f) body = { ...(body as object | undefined), ...f };
+  }
+  // Closing an account sends the balances this phone shows, with the change number (D-73).
+  const close = mutation ? /^\/api\/accounts\/([^/]+)\/close$/.exec(path) : null;
+  if (close) {
+    const f = await closeFields(decodeURIComponent(close[1]!));
     if (f) body = { ...(body as object | undefined), ...f };
   }
   // Resting (95% of a daily limit): only the session is asked, so the app knows when it's over.

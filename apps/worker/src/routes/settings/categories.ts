@@ -79,8 +79,9 @@ categoriesRoutes.get('/settings/categories', async (c) => {
             })),
         })),
     ],
+    // A closed card's payment category comes back when the card opens again, not from here (D-73).
     archived: categories
-      .filter((x) => x.archived_at)
+      .filter((x) => x.archived_at && x.kind !== 'cc_payment')
       .map((x) => ({
         id: x.id,
         name: x.name,

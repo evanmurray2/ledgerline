@@ -473,6 +473,22 @@ export async function archiveFields(
   return { available, through: (await host.state()).through };
 }
 
+/** Close account (D-73): the working balance and card payment category available this phone shows, and `through`. */
+export async function closeFields(
+  accountId: string,
+): Promise<{ working: number; available: number; through: number } | null> {
+  if (!host || state.status !== 'ready') return null;
+  await syncNow();
+  const r = await host.request('GET', `/api/accounts/${encodeURIComponent(accountId)}/register`);
+  if (r.status !== 200) return null;
+  const v = JSON.parse(r.body) as { account: { working: number }; cardAvailable: number | null };
+  return {
+    working: v.account.working,
+    available: v.cardAvailable ?? 0,
+    through: (await host.state()).through,
+  };
+}
+
 // ---- offline edits (docs/phone-budget.md section 12)
 
 const OFFLINE_EDITS: [string, RegExp][] = [

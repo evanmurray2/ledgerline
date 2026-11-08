@@ -1,4 +1,5 @@
-// An account's register: balances, the filter chips and its transactions by day; Rename from the ⋯ menu.
+// An account's register: balances, the filter chips and its transactions by day; Rename, Close and Reopen from the ⋯
+// menu (Close and Reopen in AccountClose.tsx).
 import { useState } from 'react';
 import { Outlet, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -32,6 +33,9 @@ import { useScreen } from '../lib/common';
 import { TxnRow } from './Activity';
 import { useCanWrite } from '../state/connectivity';
 import { StartBalanceSheet, shownBalance } from './StartBalanceSheet';
+import { CloseAccountSheet } from './AccountClose';
+import { errorMessage } from '../api/client';
+import { toast } from '../components/Toast';
 
 type Show = 'all' | 'pending' | 'needs' | 'transfers';
 
@@ -56,6 +60,8 @@ export function RegisterScreen() {
   const base = `/accounts/${accountId}`;
   const [renaming, setRenaming] = useState(false);
   const [showStart, setShowStart] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const qc = useQueryClient();
   const canWrite = useCanWrite();
   // The Starting balance row shows while it may change or a late row is new; after that it moves to the ⋯ menu.
   const start = all.data?.start ?? null;
@@ -66,6 +72,20 @@ export function RegisterScreen() {
     menu.push({ name: 'Rename account', track: 'account.rename', onClick: () => setRenaming(true) });
   if (start && !startRow)
     menu.push({ name: startName, track: 'account.start', onClick: () => setShowStart(true) });
+  if (canWrite && a && !a.closed)
+    menu.push({ name: 'Close account', track: 'account.close', onClick: () => setClosing(true) });
+  const reopen = async () => {
+    if (!a) return;
+    try {
+      await api.reopenAccount(a.id);
+      await qc.invalidateQueries();
+      toast.show({ text: `${a.name} is open again.` });
+    } catch (e) {
+      toast.show({ text: errorMessage(e) });
+    }
+  };
+  if (canWrite && a?.closed)
+    menu.push({ name: 'Reopen account', track: 'account.reopen', onClick: () => void reopen() });
   const chips: [Show, string, number?][] = [['all', 'All']];
   if (counts.pending) chips.push(['pending', 'Pending', counts.pending]);
   if (a?.kind === 'credit' && counts.needs) chips.push(['needs', 'Needs category', counts.needs]);
@@ -104,6 +124,9 @@ export function RegisterScreen() {
         }
       />
       {renaming && a && <RenameAccountSheet id={a.id} name={a.name} close={() => setRenaming(false)} />}
+      {closing && a && (
+        <CloseAccountSheet account={a} block={all.data?.closeBlock ?? null} close={() => setClosing(false)} />
+      )}
       {showStart && a && start && (
         <StartBalanceSheet start={start} credit={a.kind === 'credit'} close={() => setShowStart(false)} />
       )}
@@ -116,6 +139,11 @@ export function RegisterScreen() {
           )
         ) : (
           <>
+            {a.closed && (
+              <Banner tone="info">
+                This account is closed. It’s off Accounts and the Add list. Reopen it from the ⋯ menu.
+              </Banner>
+            )}
             <section className="flex shrink-0 flex-col gap-2.5 rounded-lg border border-line bg-surface p-3">
               {a.kind === 'credit' ? (
                 <>

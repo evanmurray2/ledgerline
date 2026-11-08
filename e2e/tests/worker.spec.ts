@@ -312,6 +312,15 @@ test('Accounts: rename an account', async ({ page }) => {
   await expect(page.getByText('Travel card').first()).toBeVisible();
 });
 
+test('Accounts: Close account says why it can’t close a card with a balance', async ({ page }) => {
+  await page.goto('/accounts/sapphire');
+  await page.getByRole('button', { name: 'More for this account' }).click();
+  await page.getByRole('button', { name: 'Close account' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Close account' });
+  await expect(sheet.getByText(/You still owe \$[\d,.]+ on this card\. Pay it off first\./)).toBeVisible();
+  await expect(sheet.getByRole('button', { name: 'Close account' })).toBeDisabled();
+});
+
 test('Full backup: downloads every row of the budget as one file', async ({ page }) => {
   await page.goto('/settings/data');
   const download = page.waitForEvent('download');

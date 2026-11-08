@@ -381,6 +381,27 @@ export function AccountsScreen() {
                   </Card>
                 </section>
               ))}
+              {v.closed.length > 0 && (
+                <section className="flex shrink-0 flex-col gap-1.5">
+                  <SectionTitle>Closed</SectionTitle>
+                  <Card>
+                    {v.closed.map((a) => (
+                      <Link
+                        key={a.id}
+                        to={`/accounts/${a.id}`}
+                        data-track="accounts.closed"
+                        className="flex min-h-12 items-center gap-2.5 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
+                      >
+                        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="text-base text-muted">{a.name}</span>
+                          <span className="text-xs text-muted">{a.meta}</span>
+                        </span>
+                        <Icon name="chevR" size={18} className="-ml-1 shrink-0 text-faint" />
+                      </Link>
+                    ))}
+                  </Card>
+                </section>
+              )}
             </>
           )}
         </ScreenBody>

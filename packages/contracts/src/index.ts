@@ -475,6 +475,10 @@ export const RegisterView = z.object({
   note: z.string().nullable(),
   /** Linked accounts only. */
   start: StartBalance.nullable().optional(),
+  /** Why Close account can't run yet (the balance, pending rows or a card's payment category isn't $0); null when it can. */
+  closeBlock: z.string().nullable(),
+  /** A card's payment category available, sent with Close account; null for cash accounts. */
+  cardAvailable: cents.nullable(),
 });
 export type RegisterView = z.infer<typeof RegisterView>;
 
@@ -566,6 +570,15 @@ export const MergePayees = z.object({
 export const MergeResult = z.object({ ok: z.literal(true), undoId: z.string() });
 export type MergeResult = z.infer<typeof MergeResult>;
 export const RenameAccount = z.object({ name: z.string().trim().min(1).max(60) });
+/**
+ * Close an account (only at $0). The app adds what this phone shows: the working balance, a card's payment category
+ * available, and the change number it worked them out at; the server refuses if anything changed since.
+ */
+export const CloseAccount = z.object({
+  working: z.number().int().optional(),
+  available: z.number().int().optional(),
+  through: z.number().int().optional(),
+});
 export const RenamePayee = z.object({ name: z.string().min(1).max(120), remember: z.boolean().optional() });
 
 export const ConnectionsView = z.object({

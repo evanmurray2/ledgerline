@@ -154,6 +154,9 @@ export const api = {
   dismissAlert: (id: string) => post(`/api/alerts/${enc(id)}/dismiss`, Ok, {}),
   renameAccount: (id: string, body: In<typeof RenameAccount>) =>
     post(`/api/accounts/${enc(id)}/name`, Ok, body),
+  /** The app adds the balance and change number this phone shows (client.ts). */
+  closeAccount: (id: string) => post(`/api/accounts/${enc(id)}/close`, Ok, {}),
+  reopenAccount: (id: string) => post(`/api/accounts/${enc(id)}/reopen`, Ok, {}),
   renamePayee: (id: string, body: In<typeof RenamePayee>) =>
     post(`/api/settings/payees/${enc(id)}`, Ok, body),
 
