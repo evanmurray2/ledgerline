@@ -30,13 +30,19 @@ export const activityViewRoutes = new Hono<AppEnv>();
 
 // ---------------------------------------------------------------- Activity
 
-/** Rows that need you: Waiting to match, transfers to sort out, alerts, and uncategorized rows in the budget. */
+/**
+ * Rows that need you: Waiting to match, transfers to sort out, alerts, uncategorized rows in the budget, and splits
+ * whose lines no longer add up.
+ */
 const ATTENTION_SQL = `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1
          AND ${IN_BUDGET_ROWS} AND (
          wtm_state IN ('waiting', 'send_back') OR transfer_state = 'unsorted' OR (alert IS NOT NULL AND reviewed_at IS NULL)
          OR (category_id IS NULL AND coalesce(to_rta, 0) = 0 AND transfer_state IS NULL AND wtm_state IS NULL AND wont_clear = 0
              AND status != 'upcoming'
-             AND key NOT IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1)))
+             AND key NOT IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1))
+         -- A split whose lines no longer add up to the amount: you fix it (D-82).
+         OR (key IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1)
+             AND amount != (SELECT sum(sp.amount) FROM txn_split sp WHERE sp.budget_id = ?1 AND sp.txn_key = key)))
        ORDER BY date DESC, seq DESC LIMIT 200`;
 
 /**
@@ -231,7 +237,7 @@ activityViewRoutes.get('/activity', async (c) => {
       cursor ?? null,
       q,
     ),
-    s.q(`SELECT txn_key, category_id FROM txn_split WHERE budget_id = ?1`),
+    s.q(`SELECT txn_key, category_id, amount FROM txn_split WHERE budget_id = ?1`),
     s.q(
       `SELECT id, txn_key, amount, canceled_at, closed_at FROM expected_reimbursement WHERE budget_id = ?1`,
     ),
@@ -244,8 +250,12 @@ activityViewRoutes.get('/activity', async (c) => {
       f.today,
     ),
   ]);
-  const splitRows = splits!.results as { txn_key: string; category_id: string | null }[];
+  const splitRows = splits!.results as { txn_key: string; category_id: string | null; amount: number }[];
   const splitKeys = new Set(splitRows.map((r) => r.txn_key));
+  const splitTotals = new Map<string, number>();
+  for (const r of splitRows) splitTotals.set(r.txn_key, (splitTotals.get(r.txn_key) ?? 0) + r.amount);
+  /** What a split's lines leave out of its amount (D-82): 0 when they add up, or for a row with no split. */
+  const splitOff = (t: TxRow) => (splitTotals.has(t.key) ? t.amount - splitTotals.get(t.key)! : 0);
   // Categories whose name matches the search, and the split transactions with a line in one of them.
   const qCats = new Set(q ? [...cats].filter(([, n]) => n.toLowerCase().includes(q)).map(([id]) => id) : []);
   const qSplits = new Set(
@@ -283,6 +293,7 @@ activityViewRoutes.get('/activity', async (c) => {
       paidBack: paid.has(t.key),
       stale: staleKeys.has(t.key),
       split: splitKeys.has(t.key),
+      splitOff: splitOff(t),
     });
   const qAmount = searchAmount(q);
   const match = (t: TxRow) =>
@@ -297,7 +308,13 @@ activityViewRoutes.get('/activity', async (c) => {
     .map(row);
   const transfersToSort = attnRows.filter((t) => t.transfer_state === 'unsorted' && t.amount < 0).map(row);
   const uncats = attnRows.filter(
-    (t) => !t.category_id && !t.to_rta && !t.transfer_state && !t.wtm_state && !(t.alert && !t.reviewed_at),
+    (t) =>
+      !t.category_id &&
+      !t.to_rta &&
+      !t.transfer_state &&
+      !t.wtm_state &&
+      !(t.alert && !t.reviewed_at) &&
+      !splitKeys.has(t.key),
   );
   // Payees you've categorized, by name: a payee you haven't is new, and one with the same name as yours gets
   // "Same as your …?" (docs/payees.md 4.2, 4.3).
@@ -387,6 +404,10 @@ activityViewRoutes.get('/activity', async (c) => {
     ...attnRows
       .filter((t) => t.alert && !t.reviewed_at)
       .map((t) => ({ ...row(t), action: 'dismiss' as const })),
+    // A split that no longer adds up opens its sheet, where you fix the lines (D-82).
+    ...attnRows
+      .filter((t) => splitOff(t) !== 0 && !(t.alert && !t.reviewed_at))
+      .map((t) => ({ ...row(t), action: 'review' as const })),
     ...(pend!.results as TxRow[])
       .filter((t) => staleKeys.has(t.key))
       .filter(match)

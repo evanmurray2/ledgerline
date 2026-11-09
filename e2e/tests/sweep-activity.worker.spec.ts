@@ -377,3 +377,63 @@ test('Owed to you: a custom amount over the purchase keeps Save off and says the
   const e = (await rows(request, 'expected_reimbursement')).find((x) => x.txn_key === 'n-dining')!;
   expect(e.amount).toBe(13_615);
 });
+
+test('A split whose amount changed: Check these lists it, and saving the split again fixes it (D-82)', async ({
+  page,
+  request,
+}) => {
+  const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
+  const checking = 'checking';
+  expect(
+    (
+      await request.post('/api/transactions', {
+        headers: H,
+        data: {
+          kind: 'pending',
+          accountId: checking,
+          date: '2026-11-14',
+          amount: -12_000,
+          payee: 'Check 1043',
+          categoryId: null,
+          repeats: 'never',
+        },
+      })
+    ).ok(),
+  ).toBe(true);
+  const m = (await rows(request, 'manual_pending')).find((r) => r.payee_name === 'Check 1043')!;
+  const key = String(m.txn_key);
+  const patch = (data: unknown) =>
+    request.patch(`/api/transactions/${encodeURIComponent(key)}`, { headers: H, data });
+  expect(
+    (
+      await patch({
+        split: [
+          { categoryId: 'gifts', amount: -6_000, memo: null, absorbsRemainder: false },
+          { categoryId: 'dining', amount: -6_000, memo: null, absorbsRemainder: true },
+        ],
+      })
+    ).ok(),
+  ).toBe(true);
+  expect((await patch({ amount: -50_000 })).ok()).toBe(true);
+
+  await page.goto('/activity?filter=attention');
+  await expect(page.getByText('Check these')).toBeVisible();
+  await expect(page.getByText('Split $380.00 off')).toBeVisible();
+  await page.getByRole('link', { name: 'Review Check 1043' }).click();
+  await expect(
+    page.getByText('The split adds up to $120.00, not $500.00. Edit the split to fix it.'),
+  ).toBeVisible();
+  await page
+    .getByRole('link', { name: /^Split/ })
+    .first()
+    .click();
+  // The line that takes the rest already shows the new remainder; Save split puts it right.
+  const split = page.getByRole('dialog', { name: 'Split' });
+  await expect(split.getByText('Split $500.00')).toBeVisible();
+  await split.getByRole('button', { name: 'Save split' }).click();
+  await expect(split).toHaveCount(0);
+  await page.goto('/activity?filter=attention');
+  await expect(page.getByText('Split $380.00 off')).toHaveCount(0);
+  const lines = (await rows(request, 'txn_split')).filter((r) => r.txn_key === key);
+  expect(lines.map((r) => r.amount).sort()).toEqual([-44_000, -6_000]);
+});

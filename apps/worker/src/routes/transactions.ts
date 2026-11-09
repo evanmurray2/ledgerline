@@ -134,6 +134,12 @@ transactionRoutes.get('/transactions/:key', async (c) => {
             ? 'Cleared despite won’t clear'
             : a,
       );
+  // The lines no longer add up to the amount (it changed after the split): the gap counts as uncategorized (D-82).
+  const splitTotal = splits.reduce((a, x) => a + x.amount, 0);
+  if (splits.length && splitTotal !== t.amount)
+    alerts.push(
+      `The split adds up to ${formatCents(Math.abs(splitTotal))}, not ${formatCents(Math.abs(t.amount))}. Edit the split to fix it.`,
+    );
   const ruleName = (rule!.results[0] as { name: string } | undefined)?.name;
   // A row before the budget start may be part of the starting balance rather than plain history (D-67).
   const inStart = kind === 'history' && roleOf(t, await linkInfo(s)) === 'before';
