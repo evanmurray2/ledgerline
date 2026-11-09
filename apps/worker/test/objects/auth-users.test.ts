@@ -124,6 +124,11 @@ describe('more than one user', () => {
     expect(
       await dir.prepare(`SELECT count(*) AS n FROM passkey WHERE id = ?1`).bind(ownerKey.id).first('n'),
     ).toBe(1);
+    // Nor rename it.
+    expect(
+      (await other.call('POST', `/api/settings/security/passkeys/${ownerKey.id}/rename`, { name: 'Mine' }))
+        .status,
+    ).toBe(404);
     // Signing out everywhere else ends only the second user's other sessions.
     await other.call('POST', '/api/settings/security/sign-out-others');
     expect((await owner.call('GET', '/api/session')).status).toBe(200);

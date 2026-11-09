@@ -310,15 +310,14 @@ with nothing posted after 5 days)
 
 **Sign-in and devices**
 
-- Settings list: "{n} devices signed in · {n} passkeys" · "Sign out…" is the last thing in Settings.
-- Sections: "This device" · "Other devices" · "Passkeys" · "Account" (recovery code and delete, users who aren't
-  admins). "No other devices. Add one to use Ledgerline on a computer or iPad." · "Sign out all other devices…" ·
-  "A passkey saved in iCloud Keychain works on all your Apple devices."
-- "Added {date} · not used yet" · "Remove the passkey {name}? That device can't sign in with it any more."
+- Settings list: "{n} devices signed in · {n} passkeys"
+- Sections: "This device" (and its "Sign out…") · "Other devices" · "Passkeys" · "Account" (recovery code and
+  delete, users who aren't admins). "No other devices. Add one to use Ledgerline on a computer or iPad." · Passkeys:
+  "Rename" · "Name each passkey after where it's saved, like Apple Passwords." · Server: "Give the passkey a name of
+  up to 60 characters."
+- "Added {date} · not used yet" · "Remove the passkey {name}? You can't sign in with it any more."
 - "Open this link on the new device" + "It works once, until {time}. Send it only to yourself." · "Link copied"
-- "Sign out your other devices and delete the budget saved on them? This device stays signed in."
 - "Sign out and delete the budget saved on this device? Sign in with your passkey to get it back."
-- "A sign-in ends after 10 idle minutes, or after 24 hours."
 - Server: "You can't remove your only passkey." · "That device is already signed out."
 
 **Bank connections**

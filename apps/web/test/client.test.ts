@@ -214,7 +214,7 @@ describe('passkey check', () => {
   it('gives up with the refusal when the person says Not now', async () => {
     respond = () => json({ error: 'reauth', message: 'Confirm it’s you with your passkey' }, 401);
     setPasskeyCheck(async () => false);
-    await expect(api.signOutOthers()).rejects.toMatchObject({ code: 'reauth' });
+    await expect(api.renamePasskey('pk', 'Mine')).rejects.toMatchObject({ code: 'reauth' });
     setPasskeyCheck(null);
     expect(calls).toHaveLength(1);
   });
