@@ -25,6 +25,13 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] CSV import: one request takes the whole file (up to 5 MB), so a file of thousands of rows likely passes 10 ms of CPU; measure it, and send it in parts if so (keep the duplicate check right across parts).
 - [ ] CSV import into a linked account: history rows that Plaid also sent (before the budget start) count twice in Reports and net worth. Needs the owner's answer on how to tell them apart (dates differ by a day, names differ).
 - [ ] CSV import into a card: some banks export purchases as positive amounts, which then read as credits. Needs the owner's answer on the sign for card files.
+- [ ] Split amount changes: the "absorbs remainder" line never takes the difference when a split row's amount changes (an edit, a pending row posting at another amount), so the difference is in no category. Needs the owner's Money-rules answer.
+- [ ] Your own entries dated before the budget start are accepted and counted; bank rows there are read-only history (D-61, D-67). Needs the owner's answer: refuse them, or keep them as uncleared checks.
+- [ ] Payee names: the server takes a name of only spaces (min length is checked before trim) and NUL or right-to-left override characters.
+- [ ] CSV export: cells that start with `=`, `+` or `@` can run as spreadsheet formulas; quote or prefix them.
+- [ ] Activity search: "café" doesn't find "CAFÉ" on posted rows (SQLite `lower()` folds only ASCII).
+- [ ] Signing in with a different user's passkey on the same browser leaves the earlier user's session row until it expires (24 h); it lists as another device.
+- [ ] Desktop: the Assigned cell cuts off $99,999,999.99; group rows are keyed by name, so two groups with one name share a key.
 
 ## Contract gaps (not blocking)
 
