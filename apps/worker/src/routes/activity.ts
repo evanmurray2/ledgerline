@@ -227,6 +227,56 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
         now,
       ),
     );
+  } else if (r.accountId) {
+    // The other side hasn't arrived yet (D-83): a pending entry of the opposite amount in that account, paired with
+    // this row. It counts like any entry of yours until the bank's row takes it over (sync, same-purchase.ts).
+    const acct = await s.first<{ name: string; budget_from: string }>(
+      `SELECT name, budget_from FROM account WHERE budget_id = ?1 AND id = ?2 AND role = 'budget' AND closed_at IS NULL`,
+      r.accountId,
+    );
+    if (!acct || r.accountId === me.account_id) throw new HttpError(404, 'not_found', GONE);
+    if (me.date < acct.budget_from)
+      throw new HttpError(
+        422,
+        'before_start',
+        `${acct.name}’s budget starts after this date. Pick another answer.`,
+      );
+    const entry = `m:${ulid(now)}`;
+    w.push(
+      s.q(
+        `INSERT INTO manual_pending (id, budget_id, txn_key, account_id, kind, date, amount, payee_name, repeats, created_at, updated_at)
+         VALUES (?2, ?1, ?3, ?4, 'pending', ?5, ?6, ?7, 'never', ?8, ?8)`,
+        ulid(now),
+        entry,
+        r.accountId,
+        me.date,
+        -me.amount,
+        `Transfer ${me.amount < 0 ? 'from' : 'to'} ${me.account_name}`,
+        now,
+      ),
+      s.q(
+        `INSERT INTO txn_overlay (txn_key, budget_id, transfer_state, transfer_account_id, categorized_by, created_at, updated_at)
+         VALUES (?2, ?1, 'paired', ?3, 'user', ?4, ?4)`,
+        entry,
+        me.account_id,
+        now,
+      ),
+      s.q(OVERLAY_UPSERT, me.key, now),
+      s.q(
+        `UPDATE txn_overlay SET transfer_state = 'paired', transfer_account_id = ?3, wtm_state = NULL, categorized_by = 'user', updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
+        me.key,
+        r.accountId,
+        now,
+      ),
+      // The link and the entry share created_at: Undo (unpair) removes an entry made this way while it is still yours.
+      s.q(
+        `INSERT INTO txn_link (id, budget_id, kind, from_key, to_key, created_by, created_at) VALUES (?2, ?1, 'transfer', ?3, ?4, 'user', ?5)`,
+        ulid(now),
+        me.amount < 0 ? me.key : entry,
+        me.amount < 0 ? entry : me.key,
+        now,
+      ),
+    );
   } else if (r.unlinked) {
     // An account that isn't linked (Venmo, say): the money leaves (or enters) the budget accounts with no category,
     // so it comes out of (or goes into) Ready to Assign (D-20).
@@ -267,8 +317,8 @@ activityRoutes.post('/transfers/:key/unpair', async (c) => {
   const s = scoped(c);
   const key = c.req.param('key');
   const now = clock(c.env);
-  const link = await s.first<{ from_key: string; to_key: string }>(
-    `SELECT from_key, to_key FROM txn_link WHERE budget_id = ?1 AND kind = 'transfer' AND undone_at IS NULL AND (from_key = ?2 OR to_key = ?2)`,
+  const link = await s.first<{ from_key: string; to_key: string; created_at: number }>(
+    `SELECT from_key, to_key, created_at FROM txn_link WHERE budget_id = ?1 AND kind = 'transfer' AND undone_at IS NULL AND (from_key = ?2 OR to_key = ?2)`,
     key,
   );
   const t = await loadTx(s, key);
@@ -300,6 +350,19 @@ activityRoutes.post('/transfers/:key/unpair', async (c) => {
         now,
       ),
     );
+  // The pending entry the pick added for an other side that hadn't arrived (D-83) goes with the pair, while the bank
+  // hasn't taken it over.
+  for (const k of keys)
+    if (link && k.startsWith('m:'))
+      w.push(
+        s.q(
+          `UPDATE manual_pending SET deleted_at = ?4, updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2 AND created_at = ?3
+             AND matched_txn_key IS NULL AND deleted_at IS NULL`,
+          k,
+          link.created_at,
+          now,
+        ),
+      );
   w.push(s.audit('transfer.unpair', 'transaction', key, null, null, now));
   return c.json(await commit(c, w));
 });

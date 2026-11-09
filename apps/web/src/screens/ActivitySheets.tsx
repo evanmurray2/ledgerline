@@ -37,7 +37,7 @@ export function TransferScreen() {
   const q = useTxn(key);
   const close = useClose();
   const accounts = useAccounts();
-  const pick = useMoneyMutation((v: { otherKey: string | null; unlinked?: boolean }) =>
+  const pick = useMoneyMutation((v: { otherKey: string | null; unlinked?: boolean; accountId?: string }) =>
     api.pickTransfer(key, v),
   );
   const unpair = useMoneyMutation(api.unpairTransfer);
@@ -92,6 +92,9 @@ export function TransferScreen() {
         : `Kept as spending. It needs a category.${income(waiting)}`
       : `Paired with ${name}. It needs no category.${income(waiting - (picked?.sheet === 'transfer' ? 1 : 0))}`;
   const question = sent ? 'Which account sent this money?' : 'Which account got this money?';
+  // Accounts whose side hasn't arrived yet (D-83): picking one adds a pending entry there, paired with this row.
+  const listed = new Set(candidates.map((c) => c.account.id));
+  const notYet = others.filter((a) => !listed.has(a.id));
   return (
     <Sheet
       label={question}
@@ -162,6 +165,30 @@ export function TransferScreen() {
                   </span>
                 </Button>
               ))}
+              {notYet.length > 0 && !loadingCands && (
+                <span className="pt-2 text-sm font-semibold text-muted">
+                  {n === 0 ? 'Pick the account' : 'Or another account'}
+                </span>
+              )}
+              {!loadingCands &&
+                notYet.map((a) => (
+                  <Button
+                    key={a.id}
+                    mutates
+                    track="transfer.pick_pending"
+                    onClick={async () => {
+                      await pick.mutateAsync({ otherKey: null, accountId: a.id });
+                      usage.suggestion('transfer_pick', 'pending');
+                      setResult(
+                        `Paired with ${a.name}. It’s pending there until the bank sends it.${income(waiting)}`,
+                      );
+                    }}
+                    className="flex min-h-14 w-full flex-col items-start justify-center rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"
+                  >
+                    <span className="text-base font-semibold">{a.name}</span>
+                    <span className="text-xs text-muted">Pending until the bank sends it</span>
+                  </Button>
+                ))}
               <Button
                 mutates
                 track="transfer.unlinked"

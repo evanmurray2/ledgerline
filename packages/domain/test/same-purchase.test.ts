@@ -118,3 +118,13 @@ describe('pairing', () => {
     expect(notSameKeys('m:a', 'p:b')).toEqual(['m:a', 'p:b']);
   });
 });
+
+describe('a transfer’s other side (D-83)', () => {
+  it('pairs on the exact amount on a later day', () => {
+    const e = entry({ amount: $('250'), name: 'Transfer from Checking', transfer: true });
+    const b = bank({ amount: $('250'), date: '2026-11-12', names: ['DEPOSIT'] });
+    expect(entryEvidence(e, b)).toBe(true);
+    expect(entryEvidence({ ...e, transfer: false }, b)).toBe(false);
+    expect(entryEvidence(e, bank({ amount: $('249'), date: '2026-11-12', names: ['DEPOSIT'] }))).toBe(false);
+  });
+});
