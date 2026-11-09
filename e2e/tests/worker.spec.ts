@@ -82,7 +82,7 @@ test('With no passkey copy, nothing is kept on the device: with no signal it say
   await context.setOffline(false);
 });
 
-test('Needs attention fixes reach $643.65 through the API', async ({ page }) => {
+test('Needs attention fixes reach $663.65 through the API', async ({ page }) => {
   await page.goto('/budget?view=attention');
   await expect(rta(page)).toHaveText('$981.90');
   for (const [name, after] of [
@@ -94,11 +94,8 @@ test('Needs attention fixes reach $643.65 through the API', async ({ page }) => 
     await page.getByRole('button', { name }).click();
     await expect(rta(page)).toHaveText(after);
   }
-  await page.getByRole('button', { name: /^Low \d/ }).click();
-  await page.getByRole('button', { name: 'Add $20.00 for Personal care' }).click();
-  await expect(rta(page)).toHaveText('$643.65');
   await page.reload();
-  await expect(rta(page)).toHaveText('$643.65');
+  await expect(rta(page)).toHaveText('$663.65');
 });
 
 test('Activity: categorizing an uncategorized purchase persists', async ({ page }) => {

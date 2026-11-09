@@ -34,6 +34,8 @@ import { useCategoryOptions, useScreen } from '../lib/common';
 import { useBudgetMonth } from './Budget';
 import { usage } from '../usage/tracker';
 import { useCanWrite } from '../state/connectivity';
+import { togglePinned, usePinned } from '../state/pinned';
+import { toast } from '../components/Toast';
 
 function useCloseToBudget(month: string | undefined, current: string | undefined) {
   const navigate = useNavigate();
@@ -156,7 +158,10 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
               }
             />
           </div>
-          {steps}
+          <span className="flex shrink-0">
+            <PinButton id={c.id} name={c.name} />
+            {steps}
+          </span>
         </div>
       }
       footer={
@@ -313,6 +318,27 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
         ))}
       </div>
     </Sheet>
+  );
+}
+
+/** Pins the category to the top of Budget, or unpins it. Saved on this device, so it works offline too. */
+function PinButton({ id, name }: { id: string; name: string }) {
+  const pinned = usePinned().includes(id);
+  return (
+    <button
+      type="button"
+      aria-label={`Pin ${name} to the top`}
+      aria-pressed={pinned}
+      title={pinned ? 'Pinned to the top of Budget' : 'Pin to the top of Budget'}
+      onClick={() => {
+        togglePinned(id);
+        toast.show({ text: pinned ? `${name} unpinned` : `${name} pinned to the top` });
+      }}
+      data-track={pinned ? 'category.unpin' : 'category.pin'}
+      className={cx('flex h-11 w-11 items-center justify-center', pinned ? 'text-accent' : 'text-muted')}
+    >
+      <Icon name="pin" size={22} stroke={pinned ? 2.6 : 2} />
+    </button>
   );
 }
 

@@ -25,7 +25,7 @@ test('Budget shows Ready to Assign and the November groups', async ({ page }) =>
   await expect(page.getByText('$1,430.60 out').first()).toBeVisible();
 });
 
-test('Needs attention fixes move money and Ready to Assign reads $643.65', async ({ page }) => {
+test('Needs attention fixes move money and Ready to Assign reads $663.65', async ({ page }) => {
   await page.goto('/budget?view=attention');
   await expect(rta(page)).toHaveText('$981.90');
   const fixes: [string, string][] = [
@@ -38,11 +38,9 @@ test('Needs attention fixes move money and Ready to Assign reads $643.65', async
     await page.getByRole('button', { name }).click();
     await expect(rta(page)).toHaveText(after);
   }
-  // Low has its own filter.
+  // Low isn't in Needs attention, and has no filter of its own: its row says Low.
   await expect(page.getByRole('button', { name: 'Add $20.00 for Personal care' })).toHaveCount(0);
-  await page.getByRole('button', { name: /^Low \d/ }).click();
-  await page.getByRole('button', { name: 'Add $20.00 for Personal care' }).click();
-  await expect(rta(page)).toHaveText('$643.65');
+  await expect(page.getByRole('button', { name: /^Low/ })).toHaveCount(0);
   await expect(page.getByText('Done just now')).toBeVisible();
   await expect(page.getByText('Added $18.25 from Ready to Assign')).toBeVisible();
   await expect(page.getByText('Moved $40.00 back to Ready to Assign')).toBeVisible();
@@ -50,6 +48,30 @@ test('Needs attention fixes move money and Ready to Assign reads $643.65', async
   await page.getByRole('button', { name: 'All' }).click();
   await expect(page.getByText('Freedom Unlimited').first()).toBeVisible();
   await expect(page.getByText('needs $18.25 more')).toHaveCount(0);
+});
+
+test('Pin a category: it shows first under Pinned, and Unpin takes it off', async ({ page }) => {
+  await page.goto('/budget');
+  const rows = page.locator('[data-track="budget.category"]', { hasText: 'Personal care' });
+  await expect(page.getByText('Pinned', { exact: true })).toHaveCount(0);
+  await rows.first().click();
+  const pin = page.getByRole('button', { name: 'Pin Personal care to the top' });
+  await expect(pin).toHaveAttribute('aria-pressed', 'false');
+  await pin.click();
+  await expect(pin).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/\/budget$/);
+  // The first group is Pinned, and it lists the category; its own group still has it too.
+  await expect(page.getByText('Pinned', { exact: true })).toBeVisible();
+  await expect(rows).toHaveCount(2);
+  // Kept on this device after a reload.
+  await page.reload();
+  await expect(page.getByText('Pinned', { exact: true })).toBeVisible();
+  await rows.first().click();
+  await page.getByRole('button', { name: 'Pin Personal care to the top' }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByText('Pinned', { exact: true })).toHaveCount(0);
+  await expect(rows).toHaveCount(1);
 });
 
 test('Needs attention: a Short card shows under Card payments, and Fund covers it', async ({ page }) => {

@@ -1,4 +1,5 @@
-// Budget on a computer: the month as a table with Assigned (typed in place), Spent and Available columns.
+// Budget on a computer: the month as a table with Assigned (typed in place), Spent and Available columns,
+// pinned categories first.
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import type { BudgetCategoryRow, BudgetView } from '@ledgerline/contracts';
@@ -10,7 +11,8 @@ import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { monthLabel } from '../lib/dates';
 import { useCanWrite } from '../state/connectivity';
 import { toast } from '../components/Toast';
-import { catTone, isQuiet, OWED_DETAIL, owedTone } from './BudgetRows';
+import { usePinned } from '../state/pinned';
+import { catTone, isQuiet, OWED_DETAIL, owedTone, pinnedRows } from './BudgetRows';
 
 /** Moves focus to the Assigned field `step` rows away. False when there is none (Tab then leaves the table). */
 function focusAssigned(from: HTMLElement, step: number): boolean {
@@ -159,6 +161,7 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
   );
   const row = (r: {
     key: string;
+    id?: string;
     name: string;
     detail: ReactNode;
     assigned: ReactNode;
@@ -179,7 +182,7 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
       className={cx(
         head,
         'cursor-pointer border-t border-divider',
-        selected === r.key ? 'bg-accent-soft' : 'hover:bg-surface-2',
+        selected === (r.id ?? r.key) ? 'bg-accent-soft' : 'hover:bg-surface-2',
       )}
     >
       <span role="rowheader" className="px-3.5 py-1">
@@ -218,6 +221,30 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
       </span>
     </div>
   );
+  const categoryRow = (c: BudgetCategoryRow, key = c.id) =>
+    row({
+      key,
+      id: c.id,
+      name: c.name,
+      detail: isQuiet(c.status) ? (
+        <>
+          <span className="sr-only">{STATUS[c.status].word} · </span>
+          {c.detail}
+        </>
+      ) : (
+        <>
+          <StatusWord {...STATUS[c.status]} /> · {c.detail}
+        </>
+      ),
+      assigned: <AssignedCell id={c.id} name={c.name} cents={c.assigned} month={month} />,
+      spent: <SpentCell row={c} />,
+      avail: formatCents(c.available),
+      tone: isQuiet(c.status) ? null : STATUS[c.status].tone,
+      bar: c.leftPercent === null ? null : { percent: c.leftPercent, tone: catTone(c) },
+      open: () => void navigate({ to: `/budget/category/${c.id}`, search: { month } }),
+      track: 'budget.category',
+    });
+  const pinned = pinnedRows(b, usePinned());
   const dash = <span className="px-[9px]">—</span>;
   const t = owedTone(b);
   return (
@@ -240,6 +267,14 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
             Available
           </span>
         </div>
+        {pinned.length > 0 && [
+          groupRow('Pinned', {
+            assigned: pinned.reduce((s, c) => s + c.assigned, 0),
+            spent: pinned.reduce((s, c) => s + (c.status === 'invested' ? 0 : c.spent), 0),
+            available: pinned.reduce((s, c) => s + c.available, 0),
+          }),
+          ...pinned.map((c) => categoryRow(c, `pin-${c.id}`)),
+        ]}
         {b.groups.flatMap((g) => [
           groupRow(g.name, {
             assigned: g.categories.reduce((s, c) => s + c.assigned, 0),
@@ -247,29 +282,7 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
             spent: g.categories.reduce((s, c) => s + (c.status === 'invested' ? 0 : c.spent), 0),
             available: g.total,
           }),
-          ...g.categories.map((c) =>
-            row({
-              key: c.id,
-              name: c.name,
-              detail: isQuiet(c.status) ? (
-                <>
-                  <span className="sr-only">{STATUS[c.status].word} · </span>
-                  {c.detail}
-                </>
-              ) : (
-                <>
-                  <StatusWord {...STATUS[c.status]} /> · {c.detail}
-                </>
-              ),
-              assigned: <AssignedCell id={c.id} name={c.name} cents={c.assigned} month={month} />,
-              spent: <SpentCell row={c} />,
-              avail: formatCents(c.available),
-              tone: isQuiet(c.status) ? null : STATUS[c.status].tone,
-              bar: c.leftPercent === null ? null : { percent: c.leftPercent, tone: catTone(c) },
-              open: () => void navigate({ to: `/budget/category/${c.id}`, search: { month } }),
-              track: 'budget.category',
-            }),
-          ),
+          ...g.categories.map((c) => categoryRow(c)),
         ])}
         {b.cards.length > 0 && groupRow('Card payments')}
         {b.cards.map((c) =>

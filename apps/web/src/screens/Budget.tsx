@@ -1,4 +1,4 @@
-// Budget (home): month switcher, All / Needs attention, card payment rows pinned first, the Owed to you row,
+// Budget (home): month switcher, All / Needs attention, the categories you pinned first, the Owed to you row,
 // collapsible groups with totals, status words and bars. Desktop shows the same data, bars and status words as
 // a table with Assigned, Spent and Available columns (BudgetTable). Needs attention offers one-tap fixes with
 // amounts (BudgetAttention); the phone list is BudgetRows, the notes above it BudgetStates.
@@ -27,7 +27,7 @@ import { AttentionList } from './BudgetAttention';
 import { FirstBudget, NewMonth, OverAssigned, PastNote } from './BudgetStates';
 import { DesktopTable } from './BudgetTable';
 
-type View = 'all' | 'attention' | 'low';
+type View = 'all' | 'attention';
 
 export interface BudgetSearch {
   month?: string;
@@ -151,13 +151,11 @@ function MonthNav({ b, month, view }: { b: BudgetView; month: string; view: View
 function ViewChips({
   view,
   count,
-  lowCount,
   month,
   current,
 }: {
   view: View;
   count: number;
-  lowCount: number;
   month: string;
   current: string;
 }) {
@@ -167,25 +165,14 @@ function ViewChips({
       to: '/budget',
       search: { month: month === current ? undefined : month, view: v === 'all' ? undefined : v },
     });
-  // A filter with nothing in it is hidden, unless it's the one showing.
-  const showAttention = count > 0 || view === 'attention';
-  const showLow = lowCount > 0 || view === 'low';
-  if (!showAttention && !showLow) return null;
   return (
     <div role="group" aria-label="Show" className="flex gap-2">
       <Chip pressed={view === 'all'} onClick={() => set('all')} track="budget.filter.all">
         All
       </Chip>
-      {showAttention && (
-        <Chip pressed={view === 'attention'} onClick={() => set('attention')} track="budget.filter.attention">
-          Needs attention <CountBadge n={count} inverted={view === 'attention'} />
-        </Chip>
-      )}
-      {showLow && (
-        <Chip pressed={view === 'low'} onClick={() => set('low')} track="budget.filter.low">
-          Low <CountBadge n={lowCount} inverted={view === 'low'} />
-        </Chip>
-      )}
+      <Chip pressed={view === 'attention'} onClick={() => set('attention')} track="budget.filter.attention">
+        Needs attention <CountBadge n={count} inverted={view === 'attention'} />
+      </Chip>
     </div>
   );
 }
@@ -205,9 +192,9 @@ function SyncProblem({ text }: { text: string }) {
 export function BudgetScreen() {
   const desktop = useIsDesktop();
   const search = useSearch({ strict: false }) as BudgetSearch;
-  const view: View = search.view === 'attention' || search.view === 'low' ? search.view : 'all';
+  const view: View = search.view === 'attention' ? 'attention' : 'all';
   const { month, current } = useBudgetMonth();
-  useScreen(view === 'attention' ? 'budget.attention' : view === 'low' ? 'budget.low' : 'budget');
+  useScreen(view === 'attention' ? 'budget.attention' : 'budget');
   const q = useBudget(month);
   const session = useSession();
   const b = q.data;
@@ -231,7 +218,6 @@ export function BudgetScreen() {
     today.endsWith('-01') &&
     !empty &&
     b.groups.every((g) => g.categories.every((c) => c.assigned === 0));
-  const lowCount = b.attention.filter((a) => a.section === 'Low').length;
   // Ready to Assign below zero has its own banner (OverAssigned), so it isn't counted again here.
   const count = b.attention.filter((a) => a.section !== 'Low' && a.section !== 'Ready to Assign').length;
   const content = (
@@ -241,7 +227,7 @@ export function BudgetScreen() {
       {empty && <FirstBudget b={b} />}
       {newMonth && <NewMonth b={b} month={month} />}
       {view !== 'all' ? (
-        <AttentionList b={b} month={month} low={view === 'low'} />
+        <AttentionList b={b} month={month} />
       ) : desktop ? (
         <DesktopTable b={b} month={month} />
       ) : (
@@ -285,14 +271,8 @@ export function BudgetScreen() {
             </>
           }
           below={
-            count > 0 || lowCount > 0 || view !== 'all' ? (
-              <ViewChips
-                view={view}
-                count={count}
-                lowCount={lowCount}
-                month={month}
-                current={b.currentMonth}
-              />
+            count > 0 || view !== 'all' ? (
+              <ViewChips view={view} count={count} month={month} current={b.currentMonth} />
             ) : undefined
           }
         />
@@ -319,8 +299,8 @@ export function BudgetScreen() {
           />
         }
         below={
-          count > 0 || lowCount > 0 || view !== 'all' ? (
-            <ViewChips view={view} count={count} lowCount={lowCount} month={month} current={b.currentMonth} />
+          count > 0 || view !== 'all' ? (
+            <ViewChips view={view} count={count} month={month} current={b.currentMonth} />
           ) : undefined
         }
       />
