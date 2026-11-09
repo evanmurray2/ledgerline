@@ -158,7 +158,7 @@ test('Setup: Back to a finished setup goes to the budget, so it can’t run twic
 /** No part of the screen is wider than the window (a long word would push the page sideways on a phone). */
 async function noSideScroll(page: Page) {
   const wide = await page.evaluate(() =>
-    [...document.querySelectorAll('body *')]
+    Array.from(document.querySelectorAll('body *'))
       .filter((el) => {
         const r = el.getBoundingClientRect();
         return r.width > 0 && r.right > window.innerWidth + 1;
