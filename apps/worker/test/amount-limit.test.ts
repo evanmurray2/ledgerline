@@ -82,7 +82,11 @@ describe('Amount limit on assignments, moves and targets', () => {
           repeats: 'never',
         },
       ],
-      ['POST', '/api/setup/starting-balances', { accounts: [{ accountId: checking, startingBalance: huge }] }],
+      [
+        'POST',
+        '/api/setup/starting-balances',
+        { accounts: [{ accountId: checking, startingBalance: huge }] },
+      ],
     ] as const) {
       const r = await call(method, p, body);
       expect(r.status, p).toBe(422);
