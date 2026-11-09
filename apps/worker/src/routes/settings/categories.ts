@@ -222,9 +222,8 @@ async function archiveCategory(
       if (sent.through === undefined || (latest?.n ?? 0) > sent.through)
         throw new HttpError(409, 'changed', CHANGED);
     }
-    // Archived, its overspending would drop out of Budget's attention while still counting (owner, Nov 9, 2026).
-    if (avail < 0)
-      throw new HttpError(422, 'overspent', 'Cover this category’s overspending first.');
+    // Archived, its overspending would drop out of Budget's attention while still counting (D-79).
+    if (avail < 0) throw new HttpError(422, 'overspent', 'Cover this category’s overspending first.');
     if (avail > 0) {
       w.push(
         s.q(

@@ -21,7 +21,7 @@ import {
   Segmented,
 } from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
-import { dayLabel } from '../lib/dates';
+import { dayLabel, monthName } from '../lib/dates';
 import { useScreen } from '../lib/common';
 import { useClose } from './TxnCommon';
 import { usage } from '../usage/tracker';
@@ -315,7 +315,11 @@ export function AddTxnScreen() {
   const on = date || today;
   // The date picks the kind: a future date is upcoming (counts from that date), any other is pending (counts now).
   const upcoming = !!today && on > today;
-  const ok = cents !== null && cents > 0 && payee.trim() && acct && on;
+  // Before the budget start is history, which never counts: entries there are refused (D-79).
+  const start = session.data?.budget.startMonth;
+  const first = start ? `${start}-01` : '';
+  const early = !!first && !!on && on < first;
+  const ok = cents !== null && cents > 0 && payee.trim() && acct && on && !early;
   const toRta = dir === 'in' && categoryId === 'rta';
   const submit = async () => {
     if (!ok || cents === null) return;
@@ -351,7 +355,9 @@ export function AddTxnScreen() {
                 ? 'Enter a payee'
                 : !acct
                   ? 'Choose an account'
-                  : ''
+                  : early && start
+                    ? `Pick a date from ${monthName(start)} 1, ${start.slice(0, 4)} on`
+                    : ''
           }
           onClick={() => void submit()}
         >
@@ -419,7 +425,13 @@ export function AddTxnScreen() {
         />
       </Field>
       <Field label="Date">
-        <input type="date" className={inputClass} value={on} onChange={(e) => setDate(e.target.value)} />
+        <input
+          type="date"
+          className={inputClass}
+          value={on}
+          min={first || undefined}
+          onChange={(e) => setDate(e.target.value)}
+        />
       </Field>
       <p className="m-0 text-sm leading-snug text-muted">
         {upcoming
