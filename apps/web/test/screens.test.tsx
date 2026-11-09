@@ -308,6 +308,15 @@ describe('States', () => {
     expect(screen.getByTestId('rta').textContent).toBe('$981.90');
   });
 
+  it('offline, OK all still leaves out the "Same as your…" row, whose question hides', async () => {
+    renderAt('/activity?filter=attention');
+    await screen.findByText('Same as your Amazon?', undefined, { timeout: 4000 });
+    expect(screen.getByRole('button', { name: 'Use 2 suggestions' })).toBeTruthy();
+    connectivity.setOnline(false);
+    await waitFor(() => expect(screen.queryByText('Same as your Amazon?')).toBeNull());
+    expect(screen.getByRole('button', { name: 'Use 2 suggestions' })).toBeTruthy();
+  });
+
   it('first run starts at Welcome', async () => {
     renderAt('/budget', 'firstrun');
     await text('Get started');
