@@ -47,6 +47,7 @@ const DataScreen = lazyRouteComponent(settings, 'DataScreen');
 const PayeesScreen = lazyRouteComponent(settings, 'PayeesScreen');
 const RenamePayeeSheet = lazyRouteComponent(settings, 'RenamePayeeSheet');
 const SettingsLayout = lazyRouteComponent(settings, 'SettingsLayout');
+const SignInSettingsScreen = lazyRouteComponent(settings, 'SignInSettingsScreen');
 const UsersScreen = lazyRouteComponent(settings, 'UsersScreen');
 const FirstSortScreen = lazyRouteComponent(setup, 'FirstSortScreen');
 const LinkBanksScreen = lazyRouteComponent(setup, 'LinkBanksScreen');
@@ -466,6 +467,11 @@ const connectionsRoute = createRoute({
   component: ConnectionsScreen,
 });
 const dataRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'data', component: DataScreen });
+const signInRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'sign-in',
+  component: SignInSettingsScreen,
+});
 
 const routeTree = rootRoute.addChildren([
   addDeviceRoute,
@@ -505,6 +511,7 @@ const routeTree = rootRoute.addChildren([
     payeesRoute.addChildren([payeeRenameRoute]),
     connectionsRoute,
     dataRoute,
+    signInRoute,
     usersRoute,
   ]),
 ]);

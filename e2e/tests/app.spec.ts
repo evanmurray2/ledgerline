@@ -223,6 +223,33 @@ test('Match device follows the system color scheme', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 });
 
+test('Sign-in and devices: sign out another device, add one, and Sign out is last in Settings', async ({
+  page,
+}, info) => {
+  await page.goto('/settings');
+  // Sign out of this device is apart from the other devices: the last thing in Settings.
+  await expect(page.getByRole('button', { name: 'Sign out…', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: /^Sign-in and devices/ }).click();
+  await expect(page).toHaveURL(/\/settings\/sign-in$/);
+  await expect(page.getByText('iPhone · Home Screen app')).toBeVisible();
+  await expect(page.getByText('Added Oct 31, 2026', { exact: false })).toBeVisible();
+  // Its own Sign out button is not on this page (on a computer it stays in the Settings list beside it).
+  if (info.project.name === 'phone')
+    await expect(page.getByRole('button', { name: 'Sign out…', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Sign out Mac · Safari…' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Sign out' }).click();
+  await expect(page.getByText('Mac · Safari is signed out')).toBeVisible();
+  await expect(page.getByText('Mac · Safari', { exact: true })).toHaveCount(0);
+  // The iPad is signed out but still has the budget saved, so "all" stays offered.
+  await page.getByRole('button', { name: 'Sign out all other devices…' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Sign out' }).click();
+  await expect(
+    page.getByText('No other devices. Add one to use Ledgerline on a computer or iPad.'),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Add a device' }).click();
+  await expect(page.getByLabel('Device link')).toHaveValue(/\/add-device#/);
+});
+
 test('Offline: last data stays visible and every change is disabled', async ({ page, context }) => {
   await page.goto('/budget?view=attention');
   const cover = page.getByRole('button', { name: 'Cover $18.25 for Dining out' });

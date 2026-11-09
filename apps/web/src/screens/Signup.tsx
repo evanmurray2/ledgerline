@@ -1,5 +1,5 @@
 // Open sign-up and recovery codes (D-75, docs/open-signup.md 3–4): Create account and Use a recovery code from the
-// Sign in screen, the recovery code shown once, a new code in Settings → Sign-in, and the notice after a recovery.
+// Sign in screen, the recovery code shown once, a new code in Settings → Sign-in and devices, and the notice after a recovery.
 // The server shows none of this until the SIGNUPS switch is on.
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -274,7 +274,7 @@ export function RecoverScreen({ siteKey, onBack }: { siteKey: string; onBack: ()
   );
 }
 
-/** Settings → Sign-in: a new recovery code (users who aren't admins). */
+/** Settings → Sign-in and devices: a new recovery code (users who aren't admins). */
 export function RecoveryCodeCard() {
   const [code, setCode] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -332,7 +332,7 @@ export function RecoveryNotice() {
         </SoftButton>
       }
     >
-      If this wasn’t you, remove the passkeys you don’t know in Settings → Sign-in.
+      If this wasn’t you, remove the passkeys you don’t know in Settings → Sign-in and devices.
     </Banner>
   );
 }

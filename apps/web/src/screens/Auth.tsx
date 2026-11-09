@@ -164,7 +164,7 @@ export function SignInScreen() {
         {busy ? 'Waiting for your passkey…' : 'Sign in with passkey'}
       </PrimaryButton>
       <p className="m-0 text-sm leading-snug text-muted">
-        New device? On a signed-in device, go to Settings → Sign-in → Add a device.
+        New device? On a signed-in device, go to Settings → Sign-in and devices → Add a device.
       </p>
       {siteKey && (
         <>
@@ -205,7 +205,9 @@ export function AddDeviceScreen() {
         Create a passkey to sign in on this device. The link works once, for 10 minutes.
       </p>
       {!browserSupportsWebAuthn() && <NoPasskeys />}
-      {!token && <Problem text="This link is missing its code. Make a new one in Settings → Sign-in." />}
+      {!token && (
+        <Problem text="This link is missing its code. Make a new one in Settings → Sign-in and devices." />
+      )}
       <Problem text={err} />
       <PrimaryButton
         busy={busy}

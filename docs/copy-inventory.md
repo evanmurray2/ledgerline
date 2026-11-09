@@ -53,9 +53,9 @@ The rules and terms are in `docs/copy.md`. A snapshot, not kept up to date: the 
 - "This browser can't use passkeys. Open Ledgerline in Safari, Chrome, Edge or Firefox."
 - Set up: "Ledgerline uses a passkey, not a password. Enter your setup code."
 - "Sign-in isn't set up yet. Add a setup code, then reload this page."
-- "New device? On a signed-in device, go to Settings → Sign-in → Add a device."
+- "New device? On a signed-in device, go to Settings → Sign-in and devices → Add a device."
 - Add a device: "Create a passkey to sign in on this device. The link works once, for 10 minutes." · "This link is
-  missing its code. Make a new one in Settings → Sign-in." · "This device is set up"
+  missing its code. Make a new one in Settings → Sign-in and devices." · "This device is set up"
 - "Confirm it's you" + "Use your passkey to continue."
 - Server: "That code or link isn't valid or has expired." · "This passkey is already set up. Sign in with it." · "The
   passkey couldn't be verified." · "This passkey isn't registered with Ledgerline." · "This account is turned off." ·
@@ -308,8 +308,12 @@ with nothing posted after 5 days)
 - "Recording stopped. What was recorded is deleted after 90 days."
 - Note sheet: "It's saved with your last 20 taps, but no amounts or payee names." → "Saved."
 
-**Sign-in devices**
+**Sign-in and devices**
 
+- Settings list: "{n} devices signed in · {n} passkeys" · "Sign out…" is the last thing in Settings.
+- Sections: "This device" · "Other devices" · "Passkeys" · "Account" (recovery code and delete, users who aren't
+  admins). "No other devices. Add one to use Ledgerline on a computer or iPad." · "Sign out all other devices…" ·
+  "A passkey saved in iCloud Keychain works on all your Apple devices."
 - "Added {date} · not used yet" · "Remove the passkey {name}? That device can't sign in with it any more."
 - "Open this link on the new device" + "It works once, until {time}. Send it only to yourself." · "Link copied"
 - "Sign out your other devices and delete the budget saved on them? This device stays signed in."
