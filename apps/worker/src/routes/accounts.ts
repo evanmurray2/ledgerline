@@ -143,7 +143,9 @@ accountRoutes.get('/accounts', async (c) => {
   }
   const cash = rows.filter((r) => r.kind !== 'credit');
   const credit = rows.filter((r) => r.kind === 'credit');
-  const netWorth = cash.reduce((a, r) => a + r.bank, 0) - credit.reduce((a, r) => a + r.bank, 0);
+  // Net worth counts pending, like the Cash and Credit cards totals below (D-76), so the three numbers add up.
+  const netWorth = cash.reduce((a, r) => a + r.working, 0) - credit.reduce((a, r) => a + r.working, 0);
+  const netWorthAtBank = cash.reduce((a, r) => a + r.bank, 0) - credit.reduce((a, r) => a + r.bank, 0);
   const [monthPosted, conns, health, hist, owedI, owedL] = await s.batch([
     s.q(
       `SELECT sum(amount) AS p FROM v_txn_bank WHERE budget_id = ?1 AND status = 'posted'
@@ -218,7 +220,11 @@ accountRoutes.get('/accounts', async (c) => {
   for (const a of hist!.results as StoredAlert[]) alerts.push(storedAlert(a));
   const view: AccountsView = {
     netWorth: cents(netWorth),
-    netWorthChange: cents((monthPosted!.results[0] as { p: number | null }).p ?? 0),
+    // Posted this month, plus pending (the gap between net worth and the bank's balances): the same step as the
+    // Reports chart from last month's end to now.
+    netWorthChange: cents(
+      ((monthPosted!.results[0] as { p: number | null }).p ?? 0) + netWorth - netWorthAtBank,
+    ),
     month: f.current,
     owedOut: owed,
     groups: [
@@ -444,9 +450,11 @@ accountRoutes.get('/reports', async (c) => {
     .filter(([id, v]) => (kinds.get(id)?.kind ?? 'spending') === 'spending' && v.spent > 0)
     .map(([id, v]) => ({ categoryId: id, name: kinds.get(id)?.name ?? id, spent: v.spent }))
     .sort((a, b) => b.spent - a.spent);
-  // Net worth at each month end: today's figure minus everything posted after that month.
+  // Net worth at each month end: the bank's balances today minus everything posted after that month. This month's
+  // point counts pending, as Accounts does (D-76); a finished month's pending has posted since, so it's in the bank.
   const { rows } = await accountRows(s, f.today, f.budget.time_zone, now);
   const nwNow = rows.reduce((a, r) => a + (r.kind === 'credit' ? -r.bank : r.bank), 0);
+  const nwWorking = rows.reduce((a, r) => a + (r.kind === 'credit' ? -r.working : r.working), 0);
   // Posted totals per month over the last 13 months (ledger/totals.ts: stored for finished months).
   const totals = await monthTotals(s, addMonths(f.current, -12), f.current, Date.now());
   const posted = [...totals].map(([mm, accts]) => ({
@@ -457,7 +465,7 @@ accountRoutes.get('/reports', async (c) => {
   let after = 0;
   for (let i = 0; i < 12; i++) {
     const mm = addMonths(f.current, -i);
-    netWorth.unshift({ month: mm, value: cents(nwNow - after) });
+    netWorth.unshift({ month: mm, value: cents(i === 0 ? nwWorking : nwNow - after) });
     after += posted.find((p) => p.m === mm)?.a ?? 0;
   }
   const stillOwed = owedOut(

@@ -294,8 +294,8 @@ export function ReportsScreen() {
                 <WorthTable />
                 <p className="m-0 text-xs leading-snug text-muted">
                   {r.stillOwed > 0
-                    ? 'Bank and card accounts only. Money owed to you isn’t counted.'
-                    : 'Bank and card accounts only.'}
+                    ? 'Bank and card accounts, counting pending. Money owed to you isn’t counted.'
+                    : 'Bank and card accounts, counting pending.'}
                 </p>
               </>
             )}

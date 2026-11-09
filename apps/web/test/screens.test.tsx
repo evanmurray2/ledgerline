@@ -171,7 +171,7 @@ describe('Accounts and Reports', () => {
   it('accounts show net worth, owed to you and the repair banner', async () => {
     renderAt('/accounts');
     expect((await screen.findByTestId('net-worth', undefined, { timeout: 4000 })).textContent).toBe(
-      '$22,555.35',
+      '$22,354.35',
     );
     expect(screen.getByText('$1,430.60')).toBeTruthy();
     expect(screen.getByText('Ally needs you to sign in again')).toBeTruthy();

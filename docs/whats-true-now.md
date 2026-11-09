@@ -22,6 +22,7 @@ One line per entry; add yours at the end of its list. This file merges with `mer
 - **Payee normalization:** the design said payees come from cleaned bank text (prefixes, store numbers, city stripped; title case) and look-alikes join. Now Plaid's values as sent: merchant id, merchant name and Plaid's name are the keys, compared only by case, outer spaces and apostrophes; a new payee's name follows Plaid only while it's new; existing transactions were filed again once (`docs/payee-names.md` 4–8). D-63 (`docs/decisions/D-63-payee-names-from-plaid.md`).
 - **Closing an account:** the design had `account.closed_at` but nothing set it. Now Close account runs only at $0 (bank, pending, working balance and a card's payment category); it hides the account and archives a card's payment category; a new bank row or an entry opens it again. D-73 (`docs/decisions/D-73-close-account.md`).
 - **Accounts and sign-up:** `docs/multi-user.md` 7.3 and 7.4 said invites made by an admin, a People screen and a reset link. Now open sign-up with a passkey, built and switched off (`SIGNUPS`), recovery codes, bank links for admins only (`docs/open-signup.md`). D-75 (`docs/decisions/D-75-open-signup.md`).
+- **Net worth:** the design said the sum of every linked account balance. Now it counts pending, like the Cash and Credit cards totals on Accounts, so the three add up; Reports' current month and "in November" follow. D-76 (`docs/decisions/D-76-net-worth-counts-pending.md`).
 
 ## Sync spec (`docs/sync-spec.md`)
 

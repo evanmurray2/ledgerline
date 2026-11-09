@@ -419,7 +419,7 @@ export function AddTxnScreen() {
       <p className="m-0 text-sm leading-snug text-muted">
         {upcoming
           ? 'A future date. It counts from that date.'
-          : 'Not at the bank yet, like a check. It counts now.'}
+          : 'For money the bank doesn’t show yet, like a check. It counts now.'}
       </p>
       {upcoming && (
         <Field label="Repeats">
