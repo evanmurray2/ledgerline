@@ -168,7 +168,8 @@ export function GroupHeader({
     right && !toggle ? 'pr-2' : 'pr-3',
     divider && 'border-b border-line',
   );
-  const label = 'm-0 flex min-w-0 items-center gap-1.5 text-left text-xs font-bold uppercase tracking-caps wrap-anywhere';
+  const label =
+    'm-0 flex min-w-0 items-center gap-1.5 text-left text-xs font-bold uppercase tracking-caps wrap-anywhere';
   if (toggle)
     return (
       <button
