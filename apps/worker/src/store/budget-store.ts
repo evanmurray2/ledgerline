@@ -7,7 +7,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../http/context.js';
 import type { Caller } from './directory.js';
 import { DIRECTORY_NAME } from './directory.js';
-import { budgetApi, serverReadsOnly } from '../routes/api.js';
+import { TRY_AGAIN, budgetApi, serverReadsOnly } from '../routes/api.js';
 import { dev } from '../dev-seed.js';
 import {
   BUDGET_TABLES,
@@ -567,6 +567,8 @@ function withCaller(mount: (app: Hono<AppEnv>) => void): Hono<AppEnv> {
     return next();
   });
   mount(app);
+  // A path or method the API doesn't have answers JSON too, so the app can read it.
+  app.notFound((c) => c.json({ error: 'not_found', message: TRY_AGAIN }, 404));
   return app;
 }
 

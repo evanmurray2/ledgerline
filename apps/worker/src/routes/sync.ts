@@ -40,7 +40,7 @@ export interface SyncPage {
 
 const Cursor = z.object({
   t: z.number().int().min(0),
-  after: z.array(z.unknown()).nullable(),
+  after: z.array(z.union([z.string(), z.number()])).nullable(),
   through: z.number().int(),
 });
 
@@ -61,7 +61,9 @@ syncRoutes.get('/sync', async (c) => {
   const db = c.env.DB;
   const since = Number(c.req.query('since') ?? '0');
   if (!Number.isSafeInteger(since) || since < 0) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
-  const limit = Math.min(Number(c.req.query('limit') ?? SYNC_PAGE_ROWS) || SYNC_PAGE_ROWS, 500);
+  // A whole number of rows, 1 to 500: a negative LIMIT means no limit in SQLite, and a fraction is an SQL error.
+  const asked = Number(c.req.query('limit') ?? SYNC_PAGE_ROWS);
+  const limit = Number.isFinite(asked) && asked >= 1 ? Math.min(Math.floor(asked), 500) : SYNC_PAGE_ROWS;
   const base = { format: SYNC_FORMAT, epoch: c.get('syncEpoch') ?? 'e0', serverTime: clock(c.env) };
 
   if (since === 0) {
@@ -73,6 +75,10 @@ syncRoutes.get('/sync', async (c) => {
     } catch {
       return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
     }
+    // A cursor this server didn't write (or one from an older table list): its key must fit the table's key.
+    const at = SYNC_TABLES[cur.t];
+    if (cur.after && (!at || cur.after.length !== at.pk.length))
+      return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
     // Why the phone is downloading everything (its saved copy was missing, unreadable, turned off…), for the logs.
     if (!raw)
       console.log(
@@ -83,7 +89,7 @@ syncRoutes.get('/sync', async (c) => {
       );
     const rows: SyncRow[] = [];
     let t = cur.t;
-    let after = cur.after;
+    let after: unknown[] | null = cur.after;
     while (t < SYNC_TABLES.length && rows.length < limit) {
       const tbl = SYNC_TABLES[t]!;
       const cols = tbl.pk.join(', ');

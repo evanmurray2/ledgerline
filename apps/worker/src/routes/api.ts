@@ -10,7 +10,7 @@ import {
   type MutationAck,
   type Session,
 } from '@ledgerline/contracts';
-import { type Month, addMonths, isMonth } from '@ledgerline/domain';
+import { type Month, addMonths, currentMonth, isMonth, monthsBetween } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
 import { OPS_PATHS, REAUTH_MS, identify, needsRecentPasskey } from '../http/auth.js';
@@ -152,7 +152,7 @@ export const CHANGED = 'This changed. Pull down to refresh.';
 export const TRY_AGAIN = 'Something went wrong. Try again.';
 export const BAD_MONTH = 'That month isn’t in your budget. Pick another month.';
 /**
- * The largest amount one assignment, move or target may hold: $99,999,999.99. Larger ones would let sums pass
+ * The largest amount any money field in a request may hold: $99,999,999.99. Larger ones would let sums pass
  * JavaScript's safe integers, and the phone could no longer work the budget out.
  */
 export const MAX_AMOUNT = 9_999_999_999;
@@ -160,6 +160,24 @@ export const TOO_LARGE = 'Enter an amount up to $99,999,999.99.';
 function checkAmounts(...amounts: (number | null | undefined)[]): void {
   if (amounts.some((a) => a != null && Math.abs(a) > MAX_AMOUNT))
     throw new HttpError(422, 'too_large', TOO_LARGE);
+}
+
+export const FAR_DATE = 'Pick a date within 10 years of today.';
+export const FAR_MONTH = 'Pick a month within 10 years of this one.';
+
+/**
+ * How far from this month a budget month may be. The phone works out every month from the budget start to the last
+ * month anything is in, so a month thousands of years away (`9999-12`) would never finish and the app would stop.
+ */
+export const MONTHS_IN_REACH = 120;
+export function inReach(m: string, current: Month): boolean {
+  return isMonth(m) && Math.abs(monthsBetween(current, m as Month)) <= MONTHS_IN_REACH;
+}
+
+/** This month in the budget's time zone. */
+export async function thisMonth(s: Scoped, now: number): Promise<Month> {
+  const b = await s.first<{ time_zone: string }>(`SELECT time_zone FROM budget WHERE id = ?1`);
+  return currentMonth(now, b?.time_zone ?? 'America/Los_Angeles');
 }
 
 export class HttpError extends Error {
@@ -244,6 +262,7 @@ budgetApi.get('/budget/:month', async (c) => {
   if (!isMonth(m)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const s = scoped(c);
   const f = await fresh(s, clock(c.env));
+  if (!inReach(m, f.current)) throw new HttpError(400, 'invalid', BAD_MONTH);
   return c.json(await budgetView(s, f, m));
 });
 
@@ -252,6 +271,7 @@ budgetApi.get('/budget/:month/assign', async (c) => {
   if (!isMonth(m)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const s = scoped(c);
   const f = await fresh(s, clock(c.env));
+  if (!inReach(m, f.current)) throw new HttpError(400, 'invalid', BAD_MONTH);
   return c.json(await assignView(s, f, m));
 });
 
@@ -259,7 +279,7 @@ budgetApi.get('/categories/:id/sheet', async (c) => {
   const s = scoped(c);
   const f = await fresh(s, clock(c.env));
   const m = c.req.query('month') ?? f.current;
-  if (!isMonth(m)) throw new HttpError(400, 'invalid', BAD_MONTH);
+  if (!isMonth(m) || !inReach(m, f.current)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const sheet = await categorySheet(s, f, c.req.param('id'), m);
   if (!sheet) throw new HttpError(404, 'not_found', GONE);
   return c.json(sheet);
@@ -279,11 +299,12 @@ async function addAssignments(
     ...ids,
   );
   if (known.length !== new Set(ids).size) throw new HttpError(404, 'not_found', GONE);
-  const b = await s.first<{ budget_start_month: string | null }>(
-    `SELECT budget_start_month FROM budget WHERE id = ?1`,
+  const b = await s.first<{ budget_start_month: string | null; time_zone: string }>(
+    `SELECT budget_start_month, time_zone FROM budget WHERE id = ?1`,
   );
   if (!b?.budget_start_month || month < b.budget_start_month)
     throw new HttpError(422, 'before_start', 'Months before your budget starts can’t be assigned.');
+  if (!inReach(month, currentMonth(now, b.time_zone))) throw new HttpError(422, 'too_far', FAR_MONTH);
   const stmts = items.map((i) =>
     s.q(
       i.set

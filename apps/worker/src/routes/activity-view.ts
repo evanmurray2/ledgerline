@@ -7,6 +7,8 @@ import {
   type Month,
   addMonths,
   cents,
+  formatCents,
+  isIsoDate,
   isMonth,
   localDate,
   owedList,
@@ -17,7 +19,7 @@ import {
   type PastUse,
 } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
-import { BAD_MONTH, HttpError, scoped } from './api.js';
+import { BAD_MONTH, HttpError, TRY_AGAIN, scoped } from './api.js';
 import { fresh, monthResult, structure } from '../views/common.js';
 import { IN_BUDGET_ROWS, listRow } from '../views/rows.js';
 import { RECENT_TX, TX_COLUMNS, chunks, type TxRow } from '../ledger/ledger.js';
@@ -184,12 +186,26 @@ function postedQuery(s: Scoped, from: PostedScope, cursor: string | null, q: str
   );
 }
 
+/**
+ * What a search looks for: at most 48 bytes, since a Durable Object's SQLite refuses a LIKE pattern over 50 bytes
+ * (the search goes between two `%`). A longer search looks for its start.
+ */
+function searchText(raw: string): string {
+  const chars = [...raw.trim().toLowerCase()];
+  const enc = new TextEncoder();
+  while (enc.encode(chars.join('')).length > 48) chars.pop();
+  return chars.join('').trim();
+}
+
 activityViewRoutes.get('/activity', async (c) => {
   const s = scoped(c);
   const f = await fresh(s, clock(c.env));
   const filter = c.req.query('filter') ?? 'all';
-  const q = (c.req.query('q') ?? '').trim().toLowerCase();
+  const q = searchText(c.req.query('q') ?? '');
   const cursor = c.req.query('cursor');
+  // The cursor is the `nextCursor` of an earlier page: a date and a sequence number.
+  if (cursor !== undefined && !(/^.{10}\|\d{15}$/.test(cursor) && isIsoDate(cursor.slice(0, 10))))
+    throw new HttpError(400, 'invalid', TRY_AGAIN);
   // A month (Activity's month bar) shows that budget month's posted rows; a search looks through every month.
   const monthQ = c.req.query('month');
   if (monthQ !== undefined && !isMonth(monthQ)) throw new HttpError(400, 'invalid', BAD_MONTH);
