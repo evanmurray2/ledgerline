@@ -400,15 +400,21 @@ let lastSync = 0;
  * Brings the copy up to date with the server, works out the budget again and saves it. Screens are told to read it
  * again, except after the app's own change (`quiet`): its mutation refreshes what it changed itself.
  */
-export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
+export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}): Promise<void> {
   if (!host) return Promise.resolve();
   if (syncing) return syncing.then(() => syncNow(opts));
   syncing = (async () => {
     try {
       lastSync = Date.now();
+      // An edit's answer carries the changes since the copy's change number: use them as the first page, but only if
+      // the copy is still there (another sync may have moved it on meanwhile).
+      let first = opts.first;
       const r = await syncAll(
         host!,
         async (since, cursor) => {
+          const given = first && !cursor && since === first.since ? first.page : null;
+          first = undefined;
+          if (given) return given;
           const p = await fetchPage(since, cursor);
           set({ progress: state.progress + p.rows.length });
           return p;
@@ -468,10 +474,28 @@ export async function read(path: string): Promise<{ status: number; body: string
   return host!.request('GET', path);
 }
 
-/** After a change on the server: sync it into the copy, then the new Ready to Assign. */
-export async function afterChange(): Promise<{ rta: number; rtaUpdating: boolean } | null> {
+/** The changes an edit's answer carried (`sync`), and the change number they start after. */
+export interface EditAnswerSync {
+  since: number;
+  page: SyncPage;
+}
+
+/**
+ * The change number to send with an online edit (`x-sync-since`), so its answer carries what changed: null while
+ * the copy isn't open or is still downloading.
+ */
+export async function syncSince(): Promise<number | null> {
   if (!host || state.status !== 'ready') return null;
-  await syncNow({ quiet: true });
+  const st = await host.state();
+  return st.cursor || !st.through ? null : st.through;
+}
+
+/** After a change on the server: sync it into the copy (from the answer when it carried the changes), then RTA. */
+export async function afterChange(
+  answer?: EditAnswerSync | null,
+): Promise<{ rta: number; rtaUpdating: boolean } | null> {
+  if (!host || state.status !== 'ready') return null;
+  await syncNow({ quiet: true, first: answer ?? undefined });
   const r = await host.rta();
   return { rta: r.rta, rtaUpdating: r.updating };
 }

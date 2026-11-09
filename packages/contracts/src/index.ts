@@ -8,6 +8,8 @@ import { AccountRow, StartBalance } from './accounts.js';
 export * from './accounts.js';
 
 export const CSRF_HEADER = 'x-ledgerline';
+/** On an online edit: the change number the phone's copy holds; the answer then carries the changes since it. */
+export const SYNC_SINCE_HEADER = 'x-sync-since';
 
 // ---------------------------------------------------------------- session
 
