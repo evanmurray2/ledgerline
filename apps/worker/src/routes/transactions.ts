@@ -21,6 +21,7 @@ import {
 } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
+import type { Scoped } from '../db/scoped.js';
 import { HttpError, parse, scoped, GONE } from './api.js';
 import { reopenStmts } from './account-close.js';
 import { editTime, liveKey } from './sync.js';
@@ -478,6 +479,7 @@ transactionRoutes.post('/transactions/:key/pending', async (c) => {
             key,
             now,
           ),
+          cancelOwed(s, key, now),
         ];
   w.push(s.audit(`pending.${r.action}`, 'transaction', key, null, null, now));
   return c.json(await commit(c, w));
@@ -500,6 +502,7 @@ transactionRoutes.delete('/transactions/:key', async (c) => {
         key,
         now,
       ),
+      cancelOwed(s, key, now),
       s.audit('txn.delete', 'transaction', key, null, null, now),
     ]),
   );
@@ -521,6 +524,18 @@ transactionRoutes.post('/transactions/:key/review', async (c) => {
   ];
   return c.json(await commit(c, w));
 });
+
+/**
+ * A deleted entry takes what was owed to you on it along: the purchase is gone, so nothing is out with others
+ * (Owed to you, net worth). What was already closed stays as it was.
+ */
+function cancelOwed(s: Scoped, key: string, now: number): Stmt {
+  return s.q(
+    `UPDATE expected_reimbursement SET canceled_at = ?3, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2 AND canceled_at IS NULL AND closed_at IS NULL`,
+    key,
+    now,
+  );
+}
 
 /** Which share the sheet shows as picked: a fraction of the amount (half, all) or a fixed amount. */
 function owedShare(
