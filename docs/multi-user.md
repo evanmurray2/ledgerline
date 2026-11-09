@@ -386,7 +386,7 @@ D1 is deleted only when the owner says so, after all of these:
 
 **After phase 5, the way back is the full dump,** not D1. If an object is damaged or a restore is needed, the runbook loads the latest dump, or the object's own point-in-time backup, into fresh objects.
 
-Point-in-time restore is a runbook step, never an in-app button:
+Point-in-time restore is a runbook step, never an in-app button (**Now** D-77: Rewind and Undo last rewind are on Settings → Import and export; the steps below still apply to a full dump):
 
 1. Download a full dump.
 2. Take the undo bookmark that Cloudflare returns.
