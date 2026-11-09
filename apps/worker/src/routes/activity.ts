@@ -20,7 +20,7 @@ export const activityRoutes = new Hono<AppEnv>();
 async function openItems(s: Scoped, today: string) {
   const [items, links] = await s.batch([
     s.q(
-      `SELECT e.id, e.txn_key, e.amount, e.expect_by, e.closed_at, e.canceled_at, coalesce(${txnCol('e.txn_key', 'payee')}, '') AS payee,
+      `SELECT e.id, e.txn_key, e.amount, e.expect_by, e.closed_at, e.closed_month, e.closed_amount, e.canceled_at, coalesce(${txnCol('e.txn_key', 'payee')}, '') AS payee,
          ${txnCol('e.txn_key', 'date')} AS date, ${txnCol('e.txn_key', 'category_id')} AS category_id, ${txnCol('e.txn_key', 'amount')} AS txn_amount
        FROM expected_reimbursement e WHERE e.budget_id = ?1
          AND NOT EXISTS (SELECT 1 FROM manual_pending mp WHERE mp.budget_id = e.budget_id AND mp.txn_key = e.txn_key AND mp.kind = 'upcoming' AND mp.matched_txn_key IS NULL)
@@ -36,6 +36,8 @@ async function openItems(s: Scoped, today: string) {
     amount: number;
     expect_by: string | null;
     closed_at: number | null;
+    closed_month: string | null;
+    closed_amount: number | null;
     canceled_at: number | null;
     payee: string;
     date: string | null;
@@ -309,6 +311,12 @@ activityRoutes.get('/owed', async (c) => {
           still: o.stillOwed,
           expectBy: o.expectBy,
           status: o.status,
+          ...(o.status === 'closed'
+            ? {
+                closedMonth: r.closed_month,
+                closedAmount: r.closed_amount === null ? null : cents(r.closed_amount),
+              }
+            : {}),
         };
       }),
     projected: projectedFronts(
@@ -333,7 +341,8 @@ activityRoutes.post('/owed/:id', async (c) => {
   const o = rows.find((x) => x.id === id);
   if (!o) throw new HttpError(404, 'not_found', GONE);
   let w: Stmt[];
-  if (r.action === 'close') {
+  if (r.action === 'reopen') w = await reopen(s, id, f.current, now);
+  else if (r.action === 'close') {
     // Rule 11: charge what's left to the original category this month; RTA gets it back.
     w = [
       s.q(
@@ -366,3 +375,55 @@ activityRoutes.post('/owed/:id', async (c) => {
   w.push(s.audit(`owed.${r.action}`, 'owed', id, null, r, now));
   return c.json(await commit(c, w));
 });
+
+/**
+ * Undoes Close out or Remove the mark (D-79). Remove the mark is undone as if it never happened (rule 11 counts it in
+ * the transaction's own month either way). A close undone in the month it was made goes as if it never happened; one
+ * made in an earlier month stays there as a close line (owed_close), and the undo is a line of the opposite amount
+ * this month, so the earlier month stays as it was.
+ */
+async function reopen(s: Scoped, id: string, current: string, now: number): Promise<Stmt[]> {
+  const e = await s.first<{
+    txn_key: string;
+    closed_at: number | null;
+    closed_month: string | null;
+    closed_amount: number | null;
+    canceled_at: number | null;
+  }>(
+    `SELECT txn_key, closed_at, closed_month, closed_amount, canceled_at FROM expected_reimbursement WHERE budget_id = ?1 AND id = ?2`,
+    id,
+  );
+  if (!e) throw new HttpError(404, 'not_found', GONE);
+  if (e.canceled_at)
+    return [
+      s.q(
+        `UPDATE expected_reimbursement SET canceled_at = NULL, updated_at = ?3 WHERE budget_id = ?1 AND id = ?2`,
+        id,
+        now,
+      ),
+    ];
+  if (!e.closed_at) throw new HttpError(409, 'changed', CHANGED);
+  const w: Stmt[] = [];
+  if (e.closed_month && e.closed_amount && e.closed_month < current) {
+    const add = (month: string, amount: number) =>
+      s.q(
+        `INSERT INTO owed_close (id, budget_id, item_id, txn_key, month, amount, created_at) VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7)`,
+        ulid(now),
+        id,
+        e.txn_key,
+        month,
+        amount,
+        now,
+      );
+    w.push(add(e.closed_month, e.closed_amount), add(current, -e.closed_amount));
+  }
+  w.push(
+    s.q(
+      `UPDATE expected_reimbursement SET closed_at = NULL, closed_month = NULL, closed_amount = NULL, updated_at = ?3
+       WHERE budget_id = ?1 AND id = ?2`,
+      id,
+      now,
+    ),
+  );
+  return w;
+}

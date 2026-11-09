@@ -332,7 +332,8 @@ export function computeBudget(input: ComputeInput): ComputeResult {
           break;
         }
         case 'close': {
-          // Rule 11: charge the original category in this month and give RTA the same amount back.
+          // Rule 11: charge the original category in this month and give RTA the same amount back. An undo in a later
+          // month (D-79) is the same line with a negative amount: the category gets it back and RTA gives it up.
           A.set(l.categoryId, (A.get(l.categoryId) ?? carry.get(l.categoryId) ?? 0) - l.amount);
           act.set(l.categoryId, (act.get(l.categoryId) ?? 0) - l.amount);
           spent.set(l.categoryId, (spent.get(l.categoryId) ?? 0) + l.amount);

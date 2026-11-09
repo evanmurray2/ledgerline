@@ -39,6 +39,8 @@ export const SYNC_TABLES: readonly SyncTable[] = [
   { name: 'health_status', pk: ['budget_id', 'key'] },
   // "Same purchase?" answered No (migration 0007, which writes its triggers).
   { name: 'not_same', pk: ['budget_id', 'a_key', 'b_key'] },
+  // Past closes and undos of owed items (migration 0010, which writes its triggers; D-79).
+  { name: 'owed_close', pk: ['id'] },
 ];
 
 export const SYNC_TABLE_NAMES: ReadonlySet<string> = new Set(SYNC_TABLES.map((t) => t.name));
