@@ -11,7 +11,11 @@ const prodEnv = () => ({ ...env, DEV_AUTH_EMAIL: undefined, DEV_ROUTES: undefine
 
 let jar = '';
 async function call(method: string, path: string, body: string | undefined, cookie = jar) {
-  const h: Record<string, string> = { origin: ORIGIN, 'content-type': 'application/json', 'x-ledgerline': '1' };
+  const h: Record<string, string> = {
+    origin: ORIGIN,
+    'content-type': 'application/json',
+    'x-ledgerline': '1',
+  };
   if (cookie) h.cookie = cookie;
   const res = await worker.fetch(
     new Request(ORIGIN + path, { method, headers: h, body: method === 'GET' ? undefined : body }),

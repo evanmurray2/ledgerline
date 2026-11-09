@@ -52,7 +52,8 @@ describe('input the app never sends', () => {
       }),
     ).toMatchObject({ status: 422, json: { error: 'too_far' } });
     expect(
-      (await send('POST', '/api/budget/set', { month: '2036-12', categoryId: 'dining', assigned: 100 })).status,
+      (await send('POST', '/api/budget/set', { month: '2036-12', categoryId: 'dining', assigned: 100 }))
+        .status,
     ).toBe(422);
     expect(await send('POST', '/api/transactions', entry('9999-12-31'))).toMatchObject({
       status: 422,
@@ -114,8 +115,9 @@ describe('input the app never sends', () => {
     for (const q of ['a'.repeat(5000), 'é'.repeat(60), '🍕'.repeat(30), 'Whole Foods Market'.repeat(4)])
       expect((await read(`/api/activity?q=${encodeURIComponent(q)}`)).status, q.slice(0, 8)).toBe(200);
     // The start of a long search still finds what it starts with.
-    const hit = (await read(`/api/activity?q=${encodeURIComponent('Whole Foods' + ' '.repeat(10) + 'x'.repeat(80))}`))
-      .json as { needsCategory: unknown[] };
+    const hit = (
+      await read(`/api/activity?q=${encodeURIComponent('Whole Foods' + ' '.repeat(10) + 'x'.repeat(80))}`)
+    ).json as { needsCategory: unknown[] };
     expect(hit).toBeDefined();
   });
 

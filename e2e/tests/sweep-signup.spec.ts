@@ -61,7 +61,10 @@ async function newAccount(page: Page, name: string) {
   await expect(page).toHaveURL(/\/budget/);
 }
 
-test('Signed out in one tab: the other tab shows Sign in at once, not the budget', async ({ page, context }) => {
+test('Signed out in one tab: the other tab shows Sign in at once, not the budget', async ({
+  page,
+  context,
+}) => {
   await newAccount(page, 'Sam');
   const other = await context.newPage();
   await other.goto('/activity');
@@ -90,7 +93,10 @@ test('Signed out in one tab: the other tab shows Sign in at once, not the budget
   expect(copies).toBe(0);
 });
 
-test('Using one tab keeps the other from ending the sign-in after 10 idle minutes', async ({ page, context }) => {
+test('Using one tab keeps the other from ending the sign-in after 10 idle minutes', async ({
+  page,
+  context,
+}) => {
   await newAccount(page, 'Kim');
   await context.clock.install();
   await page.goto('/activity');

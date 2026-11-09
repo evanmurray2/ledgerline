@@ -22,7 +22,8 @@ test.beforeEach(async ({ page, request }) => {
   const r = await request.post('/__dev/seed-november', { headers: H, data: {} });
   expect(r.ok()).toBe(true);
   await page.addInitScript(() => {
-    if (!window.localStorage.getItem('ledgerline-theme')) window.localStorage.setItem('ledgerline-theme', 'light');
+    if (!window.localStorage.getItem('ledgerline-theme'))
+      window.localStorage.setItem('ledgerline-theme', 'light');
   });
 });
 
@@ -54,7 +55,9 @@ test('A change made between the pages of a full download arrives with the next s
   expect(pages).toBeGreaterThan(1);
   // The changes after it bring the new assignment.
   const next = await syncPage(request, `since=${through}`);
-  const row = next.rows.find((r) => r.t === 'assignment' && r.d?.category_id === 'dining' && r.d.month === '2026-11');
+  const row = next.rows.find(
+    (r) => r.t === 'assignment' && r.d?.category_id === 'dining' && r.d.month === '2026-11',
+  );
   expect(row?.d).toBeTruthy();
   expect(next.through).toBeGreaterThan(through);
   // And nothing is left after that.
@@ -79,8 +82,12 @@ test('Two tabs assigning at once both count', async ({ page, context }) => {
 });
 
 test('The API answers bad input plainly, never with a server error', async ({ request }) => {
-  const send = (method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, data: string, headers = H) =>
-    request.fetch(path, { method, headers, data });
+  const send = (
+    method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+    path: string,
+    data: string,
+    headers: Record<string, string> = H,
+  ) => request.fetch(path, { method, headers, data });
   for (const [method, path] of [
     ['POST', '/api/budget/assign'],
     ['POST', '/api/budget/set'],
@@ -96,7 +103,13 @@ test('The API answers bad input plainly, never with a server error', async ({ re
     ['POST', '/api/settings/security/sign-out-session'],
     ['POST', '/api/auth/copy-status'],
   ] as const)
-    for (const body of ['null', '[]', '"x"', '{', '{"month":"2026-11","items":[{"categoryId":"dining","amount":0.5}]}']) {
+    for (const body of [
+      'null',
+      '[]',
+      '"x"',
+      '{',
+      '{"month":"2026-11","items":[{"categoryId":"dining","amount":0.5}]}',
+    ]) {
       const r = await send(method, path, body);
       expect(r.status(), `${method} ${path} ${body}`).toBeLessThan(500);
       expect(r.headers()['content-type'], `${method} ${path} ${body}`).toContain('application/json');
@@ -115,9 +128,13 @@ test('The API answers bad input plainly, never with a server error', async ({ re
     ).toBe(400);
   // A change without the app's header, or as a form, is refused.
   const ok = JSON.stringify({ month: '2026-11', items: [{ categoryId: 'dining', amount: 100 }] });
-  expect((await send('POST', '/api/budget/assign', ok, { 'content-type': 'application/json' })).status()).toBe(403);
   expect(
-    (await send('POST', '/api/budget/assign', ok, { 'content-type': 'text/plain', 'x-ledgerline': '1' })).status(),
+    (await send('POST', '/api/budget/assign', ok, { 'content-type': 'application/json' })).status(),
+  ).toBe(403);
+  expect(
+    (
+      await send('POST', '/api/budget/assign', ok, { 'content-type': 'text/plain', 'x-ledgerline': '1' })
+    ).status(),
   ).toBe(415);
   expect(
     (await send('POST', '/api/budget/assign', ok, { ...H, origin: 'https://evil.example' })).status(),
@@ -137,8 +154,15 @@ test('Sync paging: odd limits and cursors get a bounded page or a plain refusal'
     const q = await syncPage(request, `since=1&limit=${limit}`);
     expect(q.rows.length, limit).toBeLessThanOrEqual(500);
   }
-  for (const cursor of ['garbage', '{"t":0,"after":[],"through":0}', '{"t":0,"after":[1,2,3,4,5],"through":0}'])
-    expect((await request.get(`/api/sync?since=0&cursor=${encodeURIComponent(cursor)}`)).status(), cursor).toBe(400);
+  for (const cursor of [
+    'garbage',
+    '{"t":0,"after":[],"through":0}',
+    '{"t":0,"after":[1,2,3,4,5],"through":0}',
+  ])
+    expect(
+      (await request.get(`/api/sync?since=0&cursor=${encodeURIComponent(cursor)}`)).status(),
+      cursor,
+    ).toBe(400);
   for (const since of ['-1', 'abc', '1.5'])
     expect((await request.get(`/api/sync?since=${since}`)).status(), since).toBe(400);
 });
