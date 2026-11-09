@@ -54,6 +54,9 @@ const StartMonthScreen = lazyRouteComponent(setup, 'StartMonthScreen');
 const WelcomeScreen = lazyRouteComponent(setup, 'WelcomeScreen');
 
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+/** A `?month=` as 'YYYY-MM'; a malformed one is dropped, so the screen shows this month instead of an error. */
+const monthParam = (v: unknown) =>
+  typeof v === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(v) ? v : undefined;
 
 function Root() {
   const session = useSession();
@@ -226,7 +229,7 @@ const budgetRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/budget',
   validateSearch: (s: Record<string, unknown>) => ({
-    month: str(s.month),
+    month: monthParam(s.month),
     view: s.view === 'attention' ? ('attention' as const) : undefined,
     from: s.from === 'categories' ? ('categories' as const) : undefined,
   }),
@@ -246,7 +249,7 @@ const targetRoute = createRoute({
 const targetsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/targets',
-  validateSearch: (s: Record<string, unknown>) => ({ month: str(s.month) }),
+  validateSearch: (s: Record<string, unknown>) => ({ month: monthParam(s.month) }),
   component: TargetsScreen,
 });
 const targetsTargetRoute = createRoute({
@@ -296,7 +299,7 @@ const activityRoute = createRoute({
     filter: s.filter === 'attention' || s.filter === 'pending' ? s.filter : undefined,
     q: str(s.q),
     // The app's month; a malformed one is dropped rather than refused by the server.
-    month: typeof s.month === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(s.month) ? s.month : undefined,
+    month: monthParam(s.month),
   }),
   component: ActivityScreen,
 });

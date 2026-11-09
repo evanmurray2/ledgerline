@@ -22,6 +22,7 @@ import { MonthBar, TabHeader } from '../components/MonthBar';
 import { formatCents } from '../lib/money';
 import { useScreen } from '../lib/common';
 import { useCanWrite } from '../state/connectivity';
+import { clampMonth } from '../state/month';
 import { AllGroups, allAssignedZero } from './BudgetRows';
 import { AttentionList } from './BudgetAttention';
 import { FirstBudget, NewMonth, OverAssigned, PastNote } from './BudgetStates';
@@ -34,11 +35,16 @@ export interface BudgetSearch {
   view?: View;
 }
 
+/**
+ * The month Budget and its sheets show: `?month=`, or this month. One before the budget starts shows the first month
+ * instead (as Activity does), so nothing is shown or assigned in a month the budget doesn't have.
+ */
 export function useBudgetMonth(): { month: string | undefined; current: string | undefined } {
   const search = useSearch({ strict: false }) as BudgetSearch;
   const session = useSession();
   const current = session.data?.budget.currentMonth;
-  return { month: search.month ?? current, current };
+  const start = session.data?.budget.startMonth ?? undefined;
+  return { month: clampMonth(search.month ?? current, start), current };
 }
 
 // ------------------------------------------------------------------ screen
