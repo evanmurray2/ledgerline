@@ -22,6 +22,7 @@ import { MonthBar, TabHeader } from '../components/MonthBar';
 import { formatCents } from '../lib/money';
 import { useScreen } from '../lib/common';
 import { useCanWrite } from '../state/connectivity';
+import { clampMonth } from '../state/month';
 import { AllGroups, allAssignedZero } from './BudgetRows';
 import { AttentionList } from './BudgetAttention';
 import { FirstBudget, NewMonth, OverAssigned, PastNote } from './BudgetStates';
@@ -34,11 +35,16 @@ export interface BudgetSearch {
   view?: View;
 }
 
+/**
+ * The month Budget and its sheets show: `?month=`, or this month. One before the budget starts shows the first month
+ * instead (as Activity does), so nothing is shown or assigned in a month the budget doesn't have.
+ */
 export function useBudgetMonth(): { month: string | undefined; current: string | undefined } {
   const search = useSearch({ strict: false }) as BudgetSearch;
   const session = useSession();
   const current = session.data?.budget.currentMonth;
-  return { month: search.month ?? current, current };
+  const start = session.data?.budget.startMonth ?? undefined;
+  return { month: clampMonth(search.month ?? current, start), current };
 }
 
 // ------------------------------------------------------------------ screen
@@ -101,7 +107,14 @@ function RtaBar({ b, onFix, thin }: { b: BudgetView; onFix: () => void; thin: bo
     >
       <div className={cx('flex', fold ? 'items-baseline gap-2' : 'flex-col gap-px')}>
         <span className="text-xs font-semibold">Ready to Assign</span>
-        <span className={cx('tnum font-bold', fold ? 'text-lg' : 'text-3xl')} data-testid="rta">
+        {/* On one line: a long amount steps down a size rather than leave its minus sign on a line of its own. */}
+        <span
+          className={cx(
+            'tnum whitespace-nowrap font-bold',
+            fold ? 'text-lg' : formatCents(b.rta).length > 12 ? 'text-2xl' : 'text-3xl',
+          )}
+          data-testid="rta"
+        >
           {b.rtaUpdating ? 'Updating' : formatCents(b.rta)}
         </span>
       </div>
