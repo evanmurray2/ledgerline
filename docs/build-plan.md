@@ -38,7 +38,6 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 The UI works around these (details in `apps/web/CONTRACT_NOTES.md`):
 
 - [ ] Candidate deposits for an unclear transfer in the API (the UI searches other registers today).
-- [ ] Endpoints: reopen an owed item, accept a changed amount, edit a manual entry's amount or date, unlink a refund, mark any transaction (not only an unclear transfer) as a transfer to an unlinked account by hand.
-- [ ] Endpoints: accept a changed amount, edit a manual entry's amount or date, mark a transfer to an unlinked account by hand.
+- [ ] Endpoints: accept a changed amount, edit a manual entry's amount or date, mark any transaction (not only an unclear transfer) as a transfer to an unlinked account by hand.
 - [ ] Extra fields: the new-month carry-over summary, recent paybacks, the repeat interval on upcoming rows, per-filter register counts, amounts on Move money options.
 - [ ] Desktop: account registers in the side panel, and a per-row category dropdown in Activity.
