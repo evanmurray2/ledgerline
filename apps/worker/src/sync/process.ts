@@ -225,7 +225,7 @@ async function planProcessing(
     const held = new Set<string>();
     for (const k of chunks(removedPending.map((r) => r.txn_key)))
       for (const h of await s.all<{ txn_key: string }>(
-        `SELECT txn_key FROM bank_txn WHERE budget_id = ?1 AND pending = 0 AND removed_at IS NULL
+        `SELECT txn_key FROM bank_txn WHERE +budget_id = ?1 AND pending = 0 AND removed_at IS NULL
            AND txn_key IN (${k.map((_, i) => `?${i + 2}`).join(',')})`,
         ...k,
       ))
