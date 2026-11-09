@@ -21,7 +21,6 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] Offline, "Same as your {payee}?" hides, and "Use {n} suggestions" then includes those rows.
 - [ ] Desktop Assign button (sidebar and Ready to Assign bar): grayed out offline or in view only with no reason shown.
 - [ ] Full backup: the Why points to the restore guide, but restoring needs the browser console (`docs/runbooks/restore.md`); add a real restore path or a link.
-- [ ] Two texts that never show: the passkey's "Use your passkey to continue" (NotAllowedError is read as Cancelled) and the "Your budget was restored" download reason (`copy.ts` never sets it).
 
 ## Contract gaps (not blocking)
 
