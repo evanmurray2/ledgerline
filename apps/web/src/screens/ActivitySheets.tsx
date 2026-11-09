@@ -55,36 +55,53 @@ export function TransferScreen() {
   });
   if (!t)
     return (
-      <Sheet label="Which account got this money" track="transfer" onClose={close} gap="auto">
+      <Sheet label="Transfer" track="transfer" onClose={close} gap="auto">
         {q.error ? <ErrorNote error={q.error} /> : <Loading />}
       </Sheet>
     );
-  // The contract has no candidate list: find deposits of the same amount within 5 days in the other accounts.
+  // The contract has no candidate list: find rows of the opposite amount within 5 days in the other accounts that
+  // aren't a transfer already (the route accepts the same ones). From a deposit, the other side is an outflow.
+  const sent = t.amount > 0;
   const day = (d: string) =>
     Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))) / 86_400_000;
   const candidates = registers.flatMap((r, i) =>
     (r.data?.days ?? [])
       .flatMap((d) => d.rows)
-      .filter((row) => row.amount === -t.amount && Math.abs(day(row.date) - day(t.date)) <= 5)
+      .filter(
+        (row) =>
+          row.amount === -t.amount &&
+          Math.abs(day(row.date) - day(t.date)) <= 5 &&
+          row.categoryLabel !== 'Transfer',
+      )
       .map((row) => ({ row, account: others[i]! })),
   );
   const loadingCands = registers.some((r) => r.isLoading);
   const n = candidates.length;
-  const income = n === 0 ? '' : n === 1 ? ' The deposit counts as income.' : ' The deposits count as income.';
-  const lines = (name: string | null) =>
+  // Deposits still waiting for this answer ("Pick the account"): the ones not picked count as income.
+  const waiting = sent ? 0 : candidates.filter((c) => c.row.sheet === 'transfer').length;
+  const income = (left: number) =>
+    left <= 0
+      ? ''
+      : left === 1
+        ? ' The other deposit counts as income.'
+        : ' The other deposits count as income.';
+  const lines = (name: string | null, picked?: { sheet: string }) =>
     name === null
-      ? `Kept as spending. It needs a category.${income}`
-      : `Paired with ${name}. It needs no category.${n === 2 ? ' The other deposit counts as income.' : n > 2 ? ' The other deposits count as income.' : ''}`;
+      ? sent
+        ? 'Kept as income. It needs a category.'
+        : `Kept as spending. It needs a category.${income(waiting)}`
+      : `Paired with ${name}. It needs no category.${income(waiting - (picked?.sheet === 'transfer' ? 1 : 0))}`;
+  const question = sent ? 'Which account sent this money?' : 'Which account got this money?';
   return (
     <Sheet
-      label="Which account got this money"
+      label={question}
       track="transfer"
       onClose={close}
       gap="auto"
       header={
         <SheetTitle
           tag="Transfer to sort out"
-          amount={formatCents(t.amount)}
+          amount={formatCents(Math.abs(t.amount))}
           sub={`${t.accountName} · ${dayLabel(t.date)} · “${t.rawName}”`}
         />
       }
@@ -113,11 +130,11 @@ export function TransferScreen() {
           </>
         ) : (
           <>
-            <span className="text-base font-bold">Which account got this money?</span>
+            <span className="text-base font-bold">{question}</span>
             {!loadingCands && (
               <p className="m-0 text-sm leading-snug text-muted">
-                {n === 0 ? 'No account' : n === 1 ? '1 account' : `${n} accounts`} got{' '}
-                {formatCents(-t.amount)} within a few days.
+                {n === 0 ? 'No account' : n === 1 ? '1 account' : `${n} accounts`} {sent ? 'sent' : 'got'}{' '}
+                {formatCents(Math.abs(t.amount))} within a few days.
               </p>
             )}
             {loadingCands && <Loading label="Looking for the other account" />}
@@ -130,7 +147,7 @@ export function TransferScreen() {
                   onClick={async () => {
                     await pick.mutateAsync({ otherKey: row.key });
                     usage.suggestion('transfer_pick', 'paired');
-                    setResult(lines(account.name));
+                    setResult(lines(account.name, row));
                   }}
                   className="flex min-h-14 w-full items-center justify-between gap-2 rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"
                 >
@@ -140,7 +157,7 @@ export function TransferScreen() {
                       {dayLabel(row.date)} · “{row.payee}”
                     </span>
                   </span>
-                  <span className="tnum font-bold text-funded-fg">
+                  <span className={sent ? 'tnum font-bold' : 'tnum font-bold text-funded-fg'}>
                     {formatCents(row.amount, { plus: true })}
                   </span>
                 </Button>
@@ -151,12 +168,18 @@ export function TransferScreen() {
                 onClick={async () => {
                   await pick.mutateAsync({ otherKey: null, unlinked: true });
                   usage.suggestion('transfer_pick', 'unlinked');
-                  setResult(`Marked as a transfer out. It comes out of Ready to Assign.${income}`);
+                  setResult(
+                    sent
+                      ? 'Marked as a transfer in. It goes into Ready to Assign.'
+                      : `Marked as a transfer out. It comes out of Ready to Assign.${income(waiting)}`,
+                  );
                 }}
                 className="flex min-h-14 w-full flex-col items-start justify-center rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"
               >
                 <span className="text-base font-semibold">An account that isn’t linked</span>
-                <span className="text-xs text-muted">Like Venmo. It comes out of Ready to Assign.</span>
+                <span className="text-xs text-muted">
+                  Like Venmo. It {sent ? 'goes into' : 'comes out of'} Ready to Assign.
+                </span>
               </Button>
               <Button
                 mutates
@@ -167,8 +190,10 @@ export function TransferScreen() {
                 }}
                 className="flex min-h-14 w-full flex-col items-start justify-center rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"
               >
-                <span className="text-base font-semibold">It was a payment</span>
-                <span className="text-xs text-muted">Give it a category like other spending</span>
+                <span className="text-base font-semibold">{sent ? 'It was income' : 'It was a payment'}</span>
+                <span className="text-xs text-muted">
+                  Give it a category like other {sent ? 'income' : 'spending'}
+                </span>
               </Button>
             </div>
             {pick.error && <ErrorNote error={pick.error} />}
