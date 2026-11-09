@@ -84,6 +84,8 @@ interface EntryDb extends Entry {
   payee_name: string;
   /** Its cover is still in force: the bank row it covers is listed and no posted row has claimed it. */
   covering: number;
+  /** The other side of a transfer, paired before the bank sent it (D-83). */
+  transfer: number;
 }
 
 /** A bank row's Plaid names as sent (docs/payee-names.md 9): `merchant_name` and `name`, else the bank text. */
@@ -103,6 +105,7 @@ const entryRow = (m: EntryDb): EntryRow => ({
   date: m.date,
   name: m.payee_name,
   channel: /check/i.test(m.payee_name) ? 'check' : 'card',
+  ...(m.transfer ? { transfer: true } : {}),
 });
 
 /** Steps 1–4: appends the writes to `stmts`; returns what later steps need to know. */
@@ -402,7 +405,8 @@ export async function planMatches(
     `SELECT m.txn_key, m.account_id, m.amount, m.date, m.payee_name, m.covers_provider_txn_id,
        EXISTS (SELECT 1 FROM bank_txn b WHERE b.budget_id = m.budget_id AND b.provider_txn_id = m.covers_provider_txn_id
          AND b.pending = 1 AND b.removed_at IS NULL
-         AND NOT EXISTS (SELECT 1 FROM bank_txn x WHERE x.txn_key = b.txn_key AND x.pending = 0 AND x.removed_at IS NULL)) AS covering
+         AND NOT EXISTS (SELECT 1 FROM bank_txn x WHERE x.txn_key = b.txn_key AND x.pending = 0 AND x.removed_at IS NULL)) AS covering,
+       EXISTS (SELECT 1 FROM txn_overlay o WHERE o.txn_key = m.txn_key AND o.transfer_state = 'paired') AS transfer
      FROM manual_pending m
      WHERE m.budget_id = ?1 AND m.deleted_at IS NULL AND m.matched_txn_key IS NULL AND m.kind IN ('pending', 'upcoming')
        AND m.account_id IN (${entryAccts.map((_, i) => `?${i + 2}`).join(',')})`,

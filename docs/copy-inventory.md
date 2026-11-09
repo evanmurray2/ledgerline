@@ -201,6 +201,8 @@ with nothing posted after 5 days)
 - "Looking for the other account" · "It was a payment" + "Give it a category like other spending"
 - "Kept as spending. It needs a category. The deposit counts as income." · "Paired with {account}. It needs no category."
   (+ "The other deposit counts as income." when there was more than one)
+- Accounts with no matching row yet, under "Pick the account" (or "Or another account"): "{account}" + "Pending
+  until the bank sends it" → "Paired with {account}. It's pending there until the bank sends it." (D-83)
 
 **Check not cleared**
 

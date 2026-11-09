@@ -433,9 +433,15 @@ export const MatchRequest = z.object({
 });
 /**
  * The answer to "Which account got this money?": a deposit's key, `null` for a payment, or `unlinked: true` (with
- * `otherKey: null`) for an account that isn't linked, which takes the money out of Ready to Assign (D-20).
+ * `otherKey: null`) for an account that isn't linked, which takes the money out of Ready to Assign (D-20). With
+ * `otherKey: null` and `accountId`, the other side hasn't arrived yet: a pending entry of the opposite amount is
+ * added in that account, paired with this row, and the bank's row takes it over when it comes (D-83).
  */
-export const TransferPick = z.object({ otherKey: z.string().nullable(), unlinked: z.boolean().optional() });
+export const TransferPick = z.object({
+  otherKey: z.string().nullable(),
+  unlinked: z.boolean().optional(),
+  accountId: id.optional(),
+});
 /** An answer to "Same purchase?" for one of the card's candidates (its key). */
 export const SamePurchaseAnswer = z.object({ answer: z.enum(['yes', 'no']), key: z.string() });
 export const PendingCheckAction = z.object({ action: z.enum(['keep_waiting', 'delete']) });
