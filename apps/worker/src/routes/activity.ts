@@ -217,6 +217,16 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
         now,
       ),
     );
+  } else if (r.unlinked) {
+    // An account that isn't linked (Venmo, say): the money leaves the budget accounts with no category, so it comes
+    // out of Ready to Assign (D-20).
+    w.push(
+      s.q(
+        `UPDATE txn_overlay SET transfer_state = 'manual', transfer_account_id = NULL, categorized_by = 'user', updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
+        key,
+        now,
+      ),
+    );
   } else {
     // Neither: it was a payment and needs a category.
     w.push(

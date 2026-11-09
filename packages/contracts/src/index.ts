@@ -431,7 +431,11 @@ export const MatchRequest = z.object({
   /** The rest of the inflow: Income goes to RTA; Keep waiting and I'll send it back stay in Waiting to match. */
   rest: z.enum(['income', 'keep', 'send_back']),
 });
-export const TransferPick = z.object({ otherKey: z.string().nullable() });
+/**
+ * The answer to "Which account got this money?": a deposit's key, `null` for a payment, or `unlinked: true` (with
+ * `otherKey: null`) for an account that isn't linked, which takes the money out of Ready to Assign (D-20).
+ */
+export const TransferPick = z.object({ otherKey: z.string().nullable(), unlinked: z.boolean().optional() });
 /** An answer to "Same purchase?" for one of the card's candidates (its key). */
 export const SamePurchaseAnswer = z.object({ answer: z.enum(['yes', 'no']), key: z.string() });
 export const PendingCheckAction = z.object({ action: z.enum(['keep_waiting', 'delete']) });
