@@ -154,3 +154,90 @@ test('Setup: Back to a finished setup goes to the budget, so it can’t run twic
   }
   await expect(page.getByRole('button', { name: 'Go to my budget' })).toHaveCount(0);
 });
+
+/** No part of the screen is wider than the window (a long word would push the page sideways on a phone). */
+async function noSideScroll(page: Page) {
+  const wide = await page.evaluate(() =>
+    [...document.querySelectorAll('body *')]
+      .filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.right > window.innerWidth + 1;
+      })
+      .map((el) => `${el.tagName}.${el.className}`.slice(0, 80)),
+  );
+  expect(wide).toEqual([]);
+}
+
+test('Accounts: a long name with no spaces, and emoji, fit on the screen', async ({ page, request }) => {
+  const name = 'Ünïcödé🏦Savings' + 'X'.repeat(44);
+  const r = await request.post('/api/accounts/marcus/name', {
+    headers: { 'content-type': 'application/json', 'x-ledgerline': '1' },
+    data: { name },
+  });
+  expect(r.ok()).toBe(true);
+  await page.goto('/accounts');
+  await expect(page.getByText(name).first()).toBeVisible();
+  await noSideScroll(page);
+  await page.goto('/accounts/marcus');
+  await expect(page.getByRole('heading', { name })).toBeVisible();
+  await noSideScroll(page);
+  await page.goto('/settings/data');
+  await page
+    .locator('input[type=file]')
+    .setInputFiles({
+      name: 'a.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from('date,payee,amount\n2026-09-01,x,-1\n'),
+    });
+  await page.getByLabel('Account it came from').selectOption({ label: name });
+  await noSideScroll(page);
+});
+
+test('Accounts: a name of only spaces is refused, and the old name stays', async ({ page }) => {
+  await page.goto('/accounts/marcus');
+  await page.getByRole('button', { name: 'More for this account' }).click();
+  await page.getByRole('button', { name: 'Rename account' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Rename account' });
+  await sheet.getByLabel('Name').fill('   ');
+  await expect(sheet.getByRole('button', { name: 'Save' })).toBeDisabled();
+  await sheet.getByLabel('Name').fill('  Rainy day  ');
+  await sheet.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('heading', { name: 'Rainy day', exact: true })).toBeVisible();
+});
+
+test('Import: a file too big for one import says to split it', async ({ page }) => {
+  const line = '2026-09-01,Shop with a long name for size,-1.00\n';
+  const body = 'date,payee,amount\n' + line.repeat(Math.ceil(5_000_001 / line.length));
+  await page.goto('/settings/data');
+  await page
+    .locator('input[type=file]')
+    .setInputFiles({ name: 'big.csv', mimeType: 'text/csv', buffer: Buffer.from(body) });
+  await expect(page.getByText('This file is too big. Import one year at a time.')).toBeVisible();
+});
+
+test('Full backup: the file ends with its end line, and Download works twice', async ({ page }) => {
+  await page.goto('/settings/data');
+  for (let i = 0; i < 2; i++) {
+    const download = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Download' }).last().click();
+    const d = await download;
+    const text = await (await import('node:fs/promises')).readFile((await d.path())!, 'utf8');
+    const lines = text.trim().split('\n');
+    expect(JSON.parse(lines.at(-1)!)).toMatchObject({ end: true });
+  }
+});
+
+test('Exports: the transactions CSV reads back with its quotes and commas', async ({ page, request }) => {
+  // A payee with a comma and a quote, and a memo with a line break.
+  await request.post('/api/accounts/marcus/name', {
+    headers: { 'content-type': 'application/json', 'x-ledgerline': '1' },
+    data: { name: 'Savings, "rainy"' },
+  });
+  await page.goto('/settings/data');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download Transactions (CSV)' }).click();
+  const d = await download;
+  const text = await (await import('node:fs/promises')).readFile((await d.path())!, 'utf8');
+  expect(text.split('\n')[0]).toBe('date,account,payee,amount,status,category,memo,raw_name');
+  expect(text).toContain('"Savings, ' + '""rainy""' + '"');
+});
