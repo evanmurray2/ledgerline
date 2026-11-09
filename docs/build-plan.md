@@ -17,7 +17,6 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] On the owner's iPhone after deploy: PRF in the Home Screen app with the existing passkey, first download time, Face ID unlock with no signal.
 - [ ] Owed to you: each row's "Match money back" opens the first waiting deposit; open the match sheet with that row's item picked.
 - [ ] Removing a category: the confirm says nothing when the category is overspent; needs the owner's Money-rules answer on what happens to the negative amount.
-- [ ] Transaction sheet, income "Goes to": the toggle and its help line use different tests and can disagree for income already moved to next month.
 - [ ] Offline, "Same as your {payee}?" hides, and "Use {n} suggestions" then includes those rows.
 - [ ] Full backup: the Why points to the restore guide, but restoring needs the browser console (`docs/runbooks/restore.md`); add a real restore path or a link.
 
