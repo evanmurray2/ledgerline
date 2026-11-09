@@ -47,6 +47,7 @@ const DataScreen = lazyRouteComponent(settings, 'DataScreen');
 const PayeesScreen = lazyRouteComponent(settings, 'PayeesScreen');
 const RenamePayeeSheet = lazyRouteComponent(settings, 'RenamePayeeSheet');
 const SettingsLayout = lazyRouteComponent(settings, 'SettingsLayout');
+const UsersScreen = lazyRouteComponent(settings, 'UsersScreen');
 const FirstSortScreen = lazyRouteComponent(setup, 'FirstSortScreen');
 const LinkBanksScreen = lazyRouteComponent(setup, 'LinkBanksScreen');
 const StartMonthScreen = lazyRouteComponent(setup, 'StartMonthScreen');
@@ -390,6 +391,12 @@ const settingsRoute = createRoute({
   path: '/settings',
   component: SettingsLayout,
 });
+// Admins only (D-75); the server answers 404 to anyone else.
+const usersRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'users',
+  component: UsersScreen,
+});
 const appearanceRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'appearance',
@@ -492,6 +499,7 @@ const routeTree = rootRoute.addChildren([
     payeesRoute.addChildren([payeeRenameRoute]),
     connectionsRoute,
     dataRoute,
+    usersRoute,
   ]),
 ]);
 

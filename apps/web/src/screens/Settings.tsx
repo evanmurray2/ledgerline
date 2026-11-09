@@ -4,7 +4,7 @@
 import { SignInSection } from './Auth';
 import { useId, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
 import { qk, useConnections, usePayees, useSession } from '../api/hooks';
 import {
@@ -34,9 +34,15 @@ const SECTIONS: { id: string; name: string; to: string }[] = [
   { id: 'connections', name: 'Bank connections', to: '/settings/connections' },
   { id: 'data', name: 'Import and export', to: '/settings/data' },
 ];
+/** Admins, once there is anyone else or sign-up is on (D-75). */
+const USERS = { id: 'users', name: 'Users', to: '/settings/users' };
 
 function useSectionMeta() {
   const conns = useConnections().data;
+  const session = useSession().data;
+  const security = useQuery({ queryKey: ['security'], queryFn: api.security });
+  // Users who can't link banks never see a link count (D-75).
+  const canLink = session?.canLinkBanks !== false;
   const payees = usePayees().data;
   const needRepair = conns?.items.filter((i) => i.status === 'login_required' || i.status === 'error') ?? [];
   const first = needRepair[0];
@@ -50,10 +56,15 @@ function useSectionMeta() {
   const text: Record<string, string> = {
     appearance: 'Light, Dark or Match device',
     payees: payees ? `Rename and join · ${n} ${n === 1 ? 'payee' : 'payees'}` : 'Rename and join',
-    connections: conns ? `${conns.used} of ${conns.limit} bank links used${problem}` : '',
+    connections: conns
+      ? canLink
+        ? `${conns.used} of ${conns.limit} bank links used${problem}`
+        : problem.slice(3)
+      : '',
     data: 'History import · CSV and JSON export · recovery',
+    users: 'Accounts · turn one off',
   };
-  return { text, repair: needRepair.length > 0 };
+  return { text, repair: needRepair.length > 0, users: security.data?.usersScreen === true };
 }
 
 export function SettingsLayout() {
@@ -76,7 +87,7 @@ export function SettingsLayout() {
           aria-label="Settings sections"
           className="flex w-[260px] shrink-0 flex-col gap-1 overflow-y-auto border-r border-line bg-surface p-3"
         >
-          {SECTIONS.map((s) => {
+          {[...SECTIONS, ...(meta.users ? [USERS] : [])].map((s) => {
             const on = s.id === active;
             return (
               <Link
@@ -228,6 +239,19 @@ function SettingsHome() {
             track="settings.data"
           />
         </Card>
+        {meta.users && (
+          <>
+            <SectionTitle>People</SectionTitle>
+            <Card>
+              <RowLink
+                to="/settings/users"
+                name="Users"
+                meta={meta.text.users ?? ''}
+                track="settings.users"
+              />
+            </Card>
+          </>
+        )}
         <SectionTitle note="Saved on this device">Appearance</SectionTitle>
         <ThemeChoice />
         <SectionTitle>Preferences</SectionTitle>
@@ -290,4 +314,5 @@ export function AppearanceSection() {
 export { CategoriesScreen, CategoryEditSheet } from './settings/Categories';
 export { PayeesScreen, RenamePayeeSheet } from './settings/Payees';
 export { ConnectionsScreen, LinkBankFlow, LinkMeter } from './settings/Connections';
+export { UsersScreen } from './settings/People';
 export { DataScreen } from './settings/Data';

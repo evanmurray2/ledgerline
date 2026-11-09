@@ -21,6 +21,7 @@ import { toast } from '../components/Toast';
 import { clearSavedData } from '../state/saved';
 import { signIn as copySignIn, signOutHere } from '../copy/copy';
 import { CreateAccountScreen, RecoverScreen, RecoveryCodeCard } from './Signup';
+import { DeleteAccountCard } from './settings/People';
 
 /** Runs a WebAuthn ceremony and turns the browser's errors into plain sentences. */
 async function ceremony(fn: () => Promise<unknown>): Promise<string | null> {
@@ -378,6 +379,7 @@ export function SignInSection() {
         ))}
       </Card>
       {sec.data?.recoveryCode && <RecoveryCodeCard />}
+      {sec.data?.recoveryCode && <DeleteAccountCard />}
       {link ? (
         <Card className="flex flex-col gap-2 p-3">
           <span className="text-base font-semibold">Open this link on the new device</span>

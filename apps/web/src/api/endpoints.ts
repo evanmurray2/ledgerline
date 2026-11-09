@@ -53,6 +53,26 @@ type In<T extends z.ZodType> = z.input<T>;
 
 const Ok = z.object({ ok: z.literal(true) });
 /** A new account or a recovery also returns the recovery code, shown once (D-75). */
+const UsersView = z.object({
+  users: z.number().int(),
+  maxUsers: z.number().int(),
+  signupsToday: z.number().int(),
+  signupsPerDay: z.number().int(),
+  signupsOpen: z.boolean(),
+  list: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      admin: z.boolean(),
+      status: z.string(),
+      joinedAt: z.string(),
+      lastSeenAt: z.string().nullable(),
+      stuck: z.boolean(),
+    }),
+  ),
+  next: z.string().nullable(),
+});
+export type UsersView = z.infer<typeof UsersView>;
 const RegisterResult = z.object({ ok: z.literal(true), recoveryCode: z.string().optional() });
 const OkId = z.object({ ok: z.literal(true), id: z.string() });
 const LinkToken = z.object({ linkToken: z.string() });
@@ -90,6 +110,15 @@ export const api = {
     post('/api/auth/recover/options', z.unknown(), body),
   newRecoveryCode: () => post('/api/settings/security/recovery-code', z.object({ code: z.string() })),
   dismissRecoveryNotice: () => post('/api/settings/security/recovery-notice/dismiss', Ok),
+  // Deleting your own account, and Settings → Users for admins (D-75).
+  deleteAccount: (budgetName: string) => post('/api/settings/security/delete-account', Ok, { budgetName }),
+  users: (q: { before?: string; status?: string } = {}) =>
+    get(
+      `/api/settings/security/users?${new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][])}`,
+      UsersView,
+    ),
+  userAction: (id: string, action: 'turn-off' | 'turn-on' | 'retry-delete') =>
+    post(`/api/settings/security/users/${enc(id)}/${action}`, Ok),
   loginOptions: () => post('/api/auth/login/options', z.unknown()),
   loginVerify: (body: { response: unknown }) => post('/api/auth/login/verify', Ok, body),
   security: () => get('/api/settings/security', SecurityView),
