@@ -12,6 +12,7 @@ import { useSyncExternalStore } from 'react';
 import { CSRF_HEADER, type Session } from '@ledgerline/contracts';
 import { connectivity } from '../state/connectivity';
 import { EngineHost, syncAll, type EngineIdentity, type SyncPage } from './host';
+import { usage } from '../usage/tracker';
 import { assert, canUsePasskeys, keepsCopy, type RequestOptionsJSON } from './passkey';
 import {
   type CopyRecord,
@@ -39,6 +40,8 @@ import {
 
 export const IDLE_MS = 10 * 60_000;
 const SYNC_EVERY_MS = 2 * 60_000;
+/** A sync that brings nothing still saves the copy this often, to keep the offline limit's server time fresh. */
+const KEEP_ALIVE_MS = 60 * 60_000;
 
 export type CopyStatus =
   | 'off' // the mock API (development and tests)
@@ -413,8 +416,11 @@ export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
         () => set({ why: 'reset', progress: 0 }),
       );
       if (state.why) set({ why: null });
-      if (r.rows > 0 || !(await host!.state()).through) await host!.derive();
-      if (record) {
+      const derived = r.rows > 0 || !(await host!.state()).through;
+      if (derived) await host!.derive();
+      // The saved copy is the whole database, encrypted: write it again only when it changed, or once an hour to
+      // move the 7-day offline limit along (lastServerTime). A sync that brings nothing costs no save.
+      if (record && (derived || Date.now() - record.lastServerTime >= KEEP_ALIVE_MS)) {
         record = { ...record, lastServerTime: Date.now() };
         await save();
       }
@@ -428,10 +434,15 @@ export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
 
 async function save(): Promise<void> {
   if (!record || !dataKey || !host) return;
+  const started = performance.now();
   const bytes = await host.export();
+  const kb = bytes.byteLength / 1024;
   const blob = await sealCopy(record, dataKey, bytes);
   record = { ...record, blob, savedAt: Date.now() };
   await saveRecord(record);
+  // How long a whole-copy save takes, and its size, so the save can be split up only if it proves slow.
+  usage.record('measure', 'copy.save.ms', performance.now() - started);
+  usage.record('measure', 'copy.save.kb', kb);
 }
 
 // ---------------------------------------------------------------- reads and changes from the app
