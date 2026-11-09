@@ -130,15 +130,22 @@ export const PHONE_TABLES = [
   ) WITHOUT ROWID`,
 ];
 
-/** Applies migrations to the local copy (idempotent: the same _migrations table the server objects use). */
-export async function migrateLocal(db: Db, now: number): Promise<void> {
+/**
+ * Applies migrations to the local copy (idempotent: the same _migrations table the server objects use). `migrations`
+ * is for tests that build a copy as an older app version left it (test/engine-upgrade.test.ts).
+ */
+export async function migrateLocal(
+  db: Db,
+  now: number,
+  migrations: readonly { name: string; sql: string }[] = BUDGET_MIGRATIONS,
+): Promise<void> {
   await db
     .prepare(`CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`)
     .run();
   const done = new Set(
     (await db.prepare(`SELECT name FROM _migrations`).all<{ name: string }>()).results.map((r) => r.name),
   );
-  for (const m of BUDGET_MIGRATIONS) {
+  for (const m of migrations) {
     if (done.has(m.name) || SERVER_ONLY.has(m.name)) continue;
     await db.batch([
       ...splitStatements(m.sql).map((s) => db.prepare(s)),
