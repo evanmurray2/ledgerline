@@ -221,3 +221,53 @@ test('Add: Ready to Assign picked for money in goes back to Needs a category whe
   const o = (await rows(request, 'txn_overlay')).find((r) => r.txn_key === m.txn_key)!;
   expect(o).toMatchObject({ to_rta: 0, category_id: null });
 });
+
+test('Transaction sheet: a category archived since still shows by name, and Save keeps it', async ({
+  page,
+  request,
+}) => {
+  const r = await request.post('/api/settings/categories/dining/archive', {
+    headers: H,
+    data: { archived: true },
+  });
+  expect(r.ok()).toBe(true);
+  await page.goto('/activity/txn/n-dining');
+  const sheet = page.getByRole('dialog', { name: 'Burma Superstar transaction' });
+  await expect(sheet.locator('#txn-cat')).toHaveText(/Dining out/);
+  await sheet.getByLabel('Memo').fill('Birthday');
+  await sheet.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(sheet).toHaveCount(0);
+  const o = (await rows(request, 'txn_overlay')).find((x) => x.txn_key === 'n-dining')!;
+  expect(o).toMatchObject({ category_id: 'dining', memo: 'Birthday' });
+});
+
+test('Transaction sheet: your own category says “Set by you.”, and nothing about changing it back', async ({
+  page,
+}) => {
+  await page.goto('/activity/txn/n-dining');
+  const sheet = page.getByRole('dialog', { name: 'Burma Superstar transaction' });
+  await expect(sheet.getByText('Set by you.', { exact: true })).toBeVisible();
+  await sheet.locator('#txn-cat').click();
+  await page
+    .getByRole('dialog', { name: 'Choose a category' })
+    .getByRole('button', { name: 'Groceries' })
+    .first()
+    .click();
+  await expect(sheet.locator('#txn-cat')).toHaveText(/Groceries/);
+  await expect(sheet.getByText(/Set by|won’t change it back/)).toHaveCount(0);
+});
+
+test('Category picker: a search finds Ready to Assign, and a search that finds nothing says so', async ({
+  page,
+}) => {
+  await page.goto('/activity/add');
+  const add = page.getByRole('dialog', { name: 'Add a transaction' });
+  await add.getByRole('button', { name: 'In', exact: true }).click();
+  await add.getByLabel('Category').click();
+  const picker = page.getByRole('dialog', { name: 'Choose a category' });
+  await picker.getByRole('searchbox', { name: 'Search categories' }).fill('zzz');
+  await expect(picker.getByText('No category called “zzz”.')).toBeVisible();
+  await picker.getByRole('searchbox', { name: 'Search categories' }).fill('ready');
+  await picker.getByRole('button', { name: 'Ready to Assign' }).click();
+  await expect(add.getByLabel('Category')).toHaveText(/Ready to Assign/);
+});
