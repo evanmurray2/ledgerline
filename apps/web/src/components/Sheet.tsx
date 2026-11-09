@@ -289,7 +289,7 @@ export function SheetTitle({
       {amount !== undefined ? (
         <h1 className={cx('tnum m-0 text-4xl font-bold leading-tight', amountClass)}>{amount}</h1>
       ) : (
-        <h1 className="m-0 text-2xl font-bold leading-tight">{title}</h1>
+        <h1 className="m-0 text-2xl font-bold leading-tight wrap-anywhere">{title}</h1>
       )}
       {sub && <span className={cx('text-muted', amount !== undefined ? 'text-md' : 'text-sm')}>{sub}</span>}
     </div>
