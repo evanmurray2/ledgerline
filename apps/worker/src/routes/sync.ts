@@ -181,27 +181,47 @@ syncRoutes.post('/identity-alert', async (c) => {
 });
 
 /**
- * Point-in-time recovery from the app (runbooks/restore.md): rolls the budget's database back to a time in the last 30
- * days. Needs a passkey check within 15 minutes and the budget's name typed. Phones download their copies again.
+ * Point-in-time recovery from the app (Settings → Import and export, runbooks/restore.md): rewinds the budget's
+ * database to a time in the last 30 days, or undoes the last rewind (`undo`). Needs a passkey check within 15 minutes
+ * and the budget's name typed. A rewind is never final: the Directory keeps the bookmark that undoes it, and the
+ * 30 days of recovery cover the minute before it as well. Phones download their copies again.
  */
 syncRoutes.post('/settings/restore', async (c) => {
   const body = z
-    .object({ before: z.string().datetime(), confirm: z.string() })
+    .union([
+      z.object({ before: z.string().datetime(), confirm: z.string() }),
+      z.object({ undo: z.literal(true), confirm: z.string() }),
+    ])
     .safeParse(await c.req.json().catch(() => null));
   if (!body.success)
     return c.json({ error: 'invalid', message: 'Pick a time and type the budget’s name.' }, 400);
   const b = await c.env.DB.prepare(`SELECT name FROM budget WHERE id = ?1`)
     .bind(c.get('budgetId'))
     .first<{ name: string }>();
-  if (!b || body.data.confirm !== b.name)
+  if (!b || body.data.confirm.trim() !== b.name.trim())
     return c.json({ error: 'confirm', message: 'Type the budget’s name to confirm.' }, 422);
+  if (!c.env.RESTORE_TO || !c.env.RESTORE_UNDO)
+    return c.json({ error: 'unavailable', message: 'Rewinding isn’t available here.' }, 503);
+  if ('undo' in body.data) {
+    const r = await c.env.RESTORE_UNDO();
+    if (!r) return c.json({ error: 'invalid', message: 'There’s no rewind to undo.' }, 422);
+    return c.json({ ok: true, ...r });
+  }
   const at = Date.parse(body.data.before);
   const now = clock(c.env);
   if (!(at < now && at > now - 30 * 86_400_000))
     return c.json({ error: 'invalid', message: 'Pick a time in the last 30 days.' }, 422);
-  if (!c.env.RESTORE_TO)
-    return c.json({ error: 'unavailable', message: 'Restoring isn’t available here.' }, 503);
   return c.json({ ok: true, ...(await c.env.RESTORE_TO(at)) });
+});
+
+/** The last rewind, for Settings → Import and export (no bookmark: undoing goes through the route above). */
+syncRoutes.get('/settings/restore/last', async (c) => {
+  const last = c.env.LAST_RESTORE ? await c.env.LAST_RESTORE() : null;
+  return c.json({
+    last: last
+      ? { at: new Date(last.at).toISOString(), to: last.to === null ? null : new Date(last.to).toISOString() }
+      : null,
+  });
 });
 
 /** Edit ids from the phone's offline queue: kept 30 days (pruned by the daily maintenance job). */

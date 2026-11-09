@@ -392,6 +392,13 @@ function deviceName(): string {
 
 let syncing: Promise<void> | null = null;
 let lastSync = 0;
+/** How far this device's clock is from the server's (ms), from the last sync answer. */
+let clockOffset = 0;
+
+/** The server's clock as this device sees it: for times the server checks, never for money (the engine has its own). */
+export function serverNow(): number {
+  return Date.now() + clockOffset;
+}
 
 /**
  * Brings the copy up to date with the server, works out the budget again and saves it. Screens are told to read it
@@ -409,6 +416,7 @@ export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
         return p;
       });
       if (state.why) set({ why: null });
+      clockOffset = (await host!.state()).offset;
       if (r.rows > 0 || !(await host!.state()).through) await host!.derive();
       if (record) {
         record = { ...record, lastServerTime: Date.now() };
@@ -440,6 +448,7 @@ const SERVER_READS = [
   /^\/api\/settings\/connections$/,
   /^\/api\/settings\/security/,
   /^\/api\/export\//,
+  /^\/api\/settings\/restore\/last$/,
 ];
 
 export function readsLocally(method: string, path: string): boolean {

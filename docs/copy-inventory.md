@@ -353,7 +353,12 @@ with nothing posted after 5 days)
 - "Transactions {n}" · "Import {n} transactions" → "Imported {n} transactions as history." (+ "Skipped {m} already in
   your linked accounts." only when some were skipped)
 - "Your whole budget, in a file that can be restored" → "Saved. Keep it somewhere safe."
-- "Your budget can be rewound to any minute" · "Last 30 days" + Why: "Rewinding isn't on this screen, so a stolen
-  sign-in can't wipe your data. The steps are in the restore guide."
+- Rewind: "Put your budget back as it was, up to 30 days ago" (or "Last rewind {time}, to {time}" / "…, undone") ·
+  "Rewind" · "Undo last rewind"; open: "Your budget goes back to how it was at this time. Changes you made after it are
+  lost. Bank transactions after it come back on the next sync." · "Rewind to" · "Type "{name}" to confirm" · "Pick a
+  time in the last 30 days." · confirm "Rewind your budget to {time}?" → "Rewound to {time}. Your budget is downloading
+  again."; undo: "Your budget goes back to how it was just before the last rewind." · "Undo the last rewind?" →
+  "Rewind undone. Your budget is downloading again."
+- "For a copy older than 30 days, download the full backup above."
 - Server: "The CSV file needs date, payee and amount columns." · "Type the budget's name to confirm." · "Pick a time in
-  the last 30 days." · "Restoring isn't available here."
+  the last 30 days." · "Rewinding isn't available here." · "There's no rewind to undo."

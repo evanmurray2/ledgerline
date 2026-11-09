@@ -20,7 +20,7 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] Transaction sheet, income "Goes to": the toggle and its help line use different tests and can disagree for income already moved to next month.
 - [ ] Offline, "Same as your {payee}?" hides, and "Use {n} suggestions" then includes those rows.
 - [ ] Desktop Assign button (sidebar and Ready to Assign bar): grayed out offline or in view only with no reason shown.
-- [ ] Full backup: the Why points to the restore guide, but restoring needs the browser console (`docs/runbooks/restore.md`); add a real restore path or a link.
+- [ ] Full backup: no route restores the file (`restoreDump` and `restoreVerify` are reached only from tests), so "a file that can be restored" isn't true yet; add a restore path (into an empty store) and its steps in `docs/runbooks/restore.md`.
 - [ ] Two texts that never show: the passkey's "Use your passkey to continue" (NotAllowedError is read as Cancelled) and the "Your budget was restored" download reason (`copy.ts` never sets it).
 
 ## Contract gaps (not blocking)

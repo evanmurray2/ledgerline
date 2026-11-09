@@ -1,22 +1,21 @@
 # Recovery
 
-There is no off-site backup (decisions.md D-29). Recovery uses what Cloudflare keeps for D1 on the free plan.
+There is no off-site backup (decisions.md D-29). Recovery uses Cloudflare's 30-day point-in-time recovery of each budget's Durable Object.
 
 ## Undo recent damage (last 30 days)
 
-Each budget lives in its own Durable Object, with Cloudflare's 30-day point-in-time recovery. Restoring goes through the app, so every phone's copy is downloaded again (D-45): the restore changes the budget's sync epoch in the Directory first.
+On your phone or a computer:
 
-From a computer, signed in to Ledgerline in a browser (sign in again first: it needs a passkey check in the last 15 minutes), open the browser's console on the Ledgerline tab and run, with a time just before the damage and your budget's name:
+1. Open Settings → Import and export.
+2. Under Recovery, tap **Rewind**.
+3. Pick a time just before the damage. The time is in your device's time zone.
+4. Type your budget's name, then tap **Rewind** and confirm. Face ID asks for your passkey if you haven't used it in the last 15 minutes.
 
-```js
-await fetch('/api/settings/restore', {
-  method: 'POST',
-  headers: { 'content-type': 'application/json', 'x-ledgerline': '1' },
-  body: JSON.stringify({ before: '2026-11-03T15:00:00Z', confirm: 'Your budget name' }),
-}).then((r) => r.json());
-```
+Everything after that time is replaced. Bank transactions after it come back on the next sync; your own edits after it are lost. Every device downloads its copy again, because the rewind changes the budget's sync epoch in the Directory first (D-45).
 
-The answer has an `undo` bookmark; keep it. Everything after that time is replaced. Bank transactions after it come back on the next sync; your own edits after it are lost.
+**A rewind can be undone.** The Directory keeps the bookmark that puts the budget back as it was just before the last rewind, and Recovery shows **Undo last rewind**. The undo is a rewind too, so it can be undone in turn. Even without the bookmark, a rewind to the minute before a bad rewind works, for 30 days.
+
+The route behind the screen is `POST /api/settings/restore` with `{ before, confirm }` or `{ undo: true, confirm }`; `GET /api/settings/restore/last` says when the last rewind ran.
 
 ## Your own copy
 
