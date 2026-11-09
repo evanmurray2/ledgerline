@@ -57,15 +57,21 @@ for (const dir of ['packages/db/directory-migrations', 'packages/db/budget-migra
   const dir = 'packages/db/budget-migrations';
   const db = new SQL.Database();
   let n = 0;
-  for (const f of readdirSync(dir).filter((x) => x.endsWith('.sql')).sort()) {
+  for (const f of readdirSync(dir)
+    .filter((x) => x.endsWith('.sql'))
+    .sort()) {
     if (skip.has(f)) continue;
     try {
       db.exec(readFileSync(`${dir}/${f}`, 'utf8'));
     } catch (e) {
-      throw new Error(`${dir}/${f} fails in sql.js, the phone's SQLite: ${e instanceof Error ? e.message : e}`);
+      throw new Error(
+        `${dir}/${f} fails in sql.js, the phone's SQLite: ${e instanceof Error ? e.message : e}`,
+      );
     }
     n++;
   }
   db.close();
-  console.log(`${dir}: ${n} migration(s) applied in sql.js (the phone's copy; skipped ${[...skip].join(', ')})`);
+  console.log(
+    `${dir}: ${n} migration(s) applied in sql.js (the phone's copy; skipped ${[...skip].join(', ')})`,
+  );
 }
