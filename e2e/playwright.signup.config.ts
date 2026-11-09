@@ -6,7 +6,8 @@ import { failureReport } from './report';
 // authenticator stands in for Face ID / Touch ID. WebAuthn needs a host name, not an IP, so this uses localhost.
 // Build apps/web first.
 const report = failureReport('signup');
-const PORT = 8799;
+// E2E_PORT: run several copies side by side (each its own wrangler dev).
+const PORT = Number(process.env.E2E_PORT ?? 8799);
 
 export default defineConfig({
   testDir: './tests',
