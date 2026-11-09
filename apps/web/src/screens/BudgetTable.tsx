@@ -11,7 +11,6 @@ import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { monthLabel } from '../lib/dates';
 import { useCanWrite } from '../state/connectivity';
 import { toast } from '../components/Toast';
-import { usePinned } from '../state/pinned';
 import { catTone, isQuiet, OWED_DETAIL, owedTone, pinnedRows } from './BudgetRows';
 
 /** Moves focus to the Assigned field `step` rows away. False when there is none (Tab then leaves the table). */
@@ -244,7 +243,7 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
       open: () => void navigate({ to: `/budget/category/${c.id}`, search: { month } }),
       track: 'budget.category',
     });
-  const pinned = pinnedRows(b, usePinned());
+  const pinned = pinnedRows(b);
   const dash = <span className="px-[9px]">—</span>;
   const t = owedTone(b);
   return (

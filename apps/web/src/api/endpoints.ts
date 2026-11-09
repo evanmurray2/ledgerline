@@ -136,6 +136,8 @@ export const api = {
   categories: () => get('/api/settings/categories', CategoriesView),
   upsertCategory: (body: In<typeof CategoryUpsert>) => post('/api/settings/categories', OkId, body),
   upsertGroup: (body: In<typeof GroupUpsert>) => post('/api/settings/groups', OkId, body),
+  pinCategory: ({ id, pinned }: { id: string; pinned: boolean }) =>
+    post(`/api/settings/categories/${enc(id)}/pin`, MutationResult, { pinned }),
   archiveCategory: (id: string, archived: boolean) =>
     post(`/api/settings/categories/${enc(id)}/archive`, MutationResult, { archived }),
   reorderCategories: (ids: string[]) => post('/api/settings/categories/reorder', Ok, { ids }),

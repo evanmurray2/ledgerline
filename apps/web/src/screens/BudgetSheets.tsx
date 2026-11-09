@@ -1,6 +1,7 @@
 // Category sheet (Assign / Move money, target, recent) and the Assign sheet.
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import { errorMessage } from '../api/client';
 import { api } from '../api/endpoints';
 import { useAssignView, useBudget, useCategorySheet, useMoneyMutation } from '../api/hooks';
 import { CategoryField } from '../components/CategoryPicker';
@@ -34,7 +35,6 @@ import { useCategoryOptions, useScreen } from '../lib/common';
 import { useBudgetMonth } from './Budget';
 import { usage } from '../usage/tracker';
 import { useCanWrite } from '../state/connectivity';
-import { togglePinned, usePinned } from '../state/pinned';
 import { toast } from '../components/Toast';
 
 function useCloseToBudget(month: string | undefined, current: string | undefined) {
@@ -159,7 +159,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
             />
           </div>
           <span className="flex shrink-0">
-            <PinButton id={c.id} name={c.name} />
+            <PinButton id={c.id} name={c.name} month={month} />
             {steps}
           </span>
         </div>
@@ -321,21 +321,38 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
   );
 }
 
-/** Pins the category to the top of Budget, or unpins it. Saved on this device, so it works offline too. */
-function PinButton({ id, name }: { id: string; name: string }) {
-  const pinned = usePinned().includes(id);
+/**
+ * Pins the category to the top of Budget, or unpins it. Saved with the budget, so every device shows the same pins;
+ * with no signal it's kept on the phone and sent later, like an assignment (D-74).
+ */
+function PinButton({ id, name, month }: { id: string; name: string; month: string }) {
+  const saved = !!useBudget(month).data?.pinned.includes(id);
+  const canWrite = useCanWrite({ offline: true });
+  const pin = useMoneyMutation(api.pinCategory, { money: false, invalidate: [['budget']] });
+  // Shows the new state at once, while the change is on its way.
+  const pinned = pin.isPending && pin.variables ? pin.variables.pinned : saved;
+  const toggle = async () => {
+    if (pin.isPending) return;
+    try {
+      await pin.mutateAsync({ id, pinned: !pinned });
+      toast.show({ text: pinned ? `${name} unpinned` : `${name} pinned to the top` });
+    } catch (e) {
+      toast.show({ text: errorMessage(e) });
+    }
+  };
   return (
     <button
       type="button"
       aria-label={`Pin ${name} to the top`}
       aria-pressed={pinned}
       title={pinned ? 'Pinned to the top of Budget' : 'Pin to the top of Budget'}
-      onClick={() => {
-        togglePinned(id);
-        toast.show({ text: pinned ? `${name} unpinned` : `${name} pinned to the top` });
-      }}
+      disabled={!canWrite}
+      onClick={() => void toggle()}
       data-track={pinned ? 'category.unpin' : 'category.pin'}
-      className={cx('flex h-11 w-11 items-center justify-center', pinned ? 'text-accent' : 'text-muted')}
+      className={cx(
+        'flex h-11 w-11 items-center justify-center disabled:text-line-strong',
+        pinned ? 'text-accent' : 'text-muted',
+      )}
     >
       <Icon name="pin" size={22} stroke={pinned ? 2.6 : 2} />
     </button>

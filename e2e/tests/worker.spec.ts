@@ -98,6 +98,25 @@ test('Needs attention fixes reach $663.65 through the API', async ({ page }) => 
   await expect(rta(page)).toHaveText('$663.65');
 });
 
+test('A pinned category is saved with the budget', async ({ page }) => {
+  await page.goto('/budget');
+  const rows = page.locator('[data-track="budget.category"]', { hasText: 'Personal care' });
+  await rows.first().click();
+  await page.getByRole('button', { name: 'Pin Personal care to the top' }).click();
+  await expect(page.getByText('Personal care pinned to the top')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.reload();
+  await expect(page.getByText('Pinned', { exact: true })).toBeVisible();
+  await expect(rows).toHaveCount(2);
+  await rows.first().click();
+  await page.getByRole('button', { name: 'Pin Personal care to the top' }).click();
+  await expect(page.getByText('Personal care unpinned')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.reload();
+  await expect(rows.first()).toBeVisible();
+  await expect(page.getByText('Pinned', { exact: true })).toHaveCount(0);
+});
+
 test('Activity: categorizing an uncategorized purchase persists', async ({ page }) => {
   await page.goto('/activity');
   const chip = page.getByRole('button', { name: /^Needs attention \d+$/ });

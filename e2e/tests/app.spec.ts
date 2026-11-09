@@ -64,9 +64,7 @@ test('Pin a category: it shows first under Pinned, and Unpin takes it off', asyn
   // The first group is Pinned, and it lists the category; its own group still has it too.
   await expect(page.getByText('Pinned', { exact: true })).toBeVisible();
   await expect(rows).toHaveCount(2);
-  // Kept on this device after a reload.
-  await page.reload();
-  await expect(page.getByText('Pinned', { exact: true })).toBeVisible();
+  // Unpin from the sheet (the Worker suite checks a reload keeps the pin).
   await rows.first().click();
   await page.getByRole('button', { name: 'Pin Personal care to the top' }).click();
   await page.keyboard.press('Escape');
