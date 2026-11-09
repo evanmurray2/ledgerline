@@ -1,5 +1,5 @@
 // Category sheet (Assign / Move money, target, recent) and the Assign sheet.
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { errorMessage } from '../api/client';
 import { api } from '../api/endpoints';
@@ -140,6 +140,13 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
     close();
   };
   const err = set.error ?? move.error;
+  // Enter (or the keyboard's Go) saves, as the button does when it can.
+  const busy = set.isPending || move.isPending;
+  const onEnter = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (!busy && (mode === 'assign' ? changed : moveOk)) void save().catch(() => undefined);
+  };
   return (
     <Sheet
       label={c.name}
@@ -169,12 +176,15 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
           mutates
           track={mode === 'assign' ? 'category.save' : 'category.move'}
           onClick={save}
+          busy={busy}
           disabled={mode === 'assign' ? !changed : !moveOk}
           why={
             mode === 'assign'
-              ? !changed
-                ? 'Change the amount to save'
-                : ''
+              ? newAssigned === null
+                ? 'Enter an amount to save'
+                : !changed
+                  ? 'Change the amount to save'
+                  : ''
               : !moveOk
                 ? 'Enter an amount to move'
                 : ''
@@ -220,6 +230,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
               inputMode="decimal"
               value={assigned ?? ''}
               onChange={(e) => setAssigned(e.target.value)}
+              onKeyDown={onEnter}
               aria-invalid={newAssigned === null}
             />
           </Field>
@@ -261,6 +272,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
               placeholder="0.00"
               value={moveAmt}
               onChange={(e) => setMoveAmt(e.target.value)}
+              onKeyDown={onEnter}
             />
           </Field>
           <p className="m-0 text-xs text-muted">
