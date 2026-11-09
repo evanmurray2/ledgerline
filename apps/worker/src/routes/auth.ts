@@ -19,7 +19,7 @@ import { resolveMembership } from '../db/scoped.js';
 import { isFence, recoveryStmts, signupStmts, signupSwitchOn } from './signup.js';
 import { clock } from '../http/clock.js';
 import { openChallenge, sealChallenge } from '../http/challenge.js';
-import { csrf } from '../http/security.js';
+import { bodyObject, csrf } from '../http/security.js';
 import {
   CHALLENGE_COOKIE,
   CHALLENGE_MS,
@@ -187,7 +187,7 @@ authRoutes.get('/status', async (c) => {
 authRoutes.post('/register/options', async (c) => {
   const env = c.env;
   const now = clock(env);
-  const b = await c.req.json<{ setupCode?: string; deviceToken?: string }>().catch(() => ({}) as never);
+  const b = (await bodyObject(c.req)) as { setupCode?: unknown; deviceToken?: unknown };
   let grant: { kind: string; ref: string | null } | null = null;
   if (typeof b.setupCode === 'string') {
     if ((await setupOpen(env)) && (await secretMatches(b.setupCode, env.SETUP_CODE)))
@@ -499,7 +499,7 @@ authRoutes.post('/login/verify', async (c) => {
  * 128 random bits and the answer says nothing else.
  */
 authRoutes.post('/copy-status', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { device?: unknown };
+  const body = (await bodyObject(c.req)) as { device?: unknown };
   if (typeof body.device !== 'string' || body.device.length > 64) return c.json({ off: true });
   const d = await c.env.DB.prepare(`SELECT revoked_at, share FROM device WHERE id = ?1`)
     .bind(body.device)

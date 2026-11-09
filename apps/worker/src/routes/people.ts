@@ -5,6 +5,7 @@ import { Hono } from 'hono';
 import type { AppEnv, Ctx } from '../http/context.js';
 import { cookie, SESSION_COOKIE } from '../http/auth.js';
 import { clock } from '../http/clock.js';
+import { bodyObject } from '../http/security.js';
 import { maxUsers, signupsPerDay, signupSwitchOn } from './signup-switch.js';
 
 export const peopleRoutes = new Hono<AppEnv>();
@@ -33,7 +34,7 @@ const log = (action: string, target: string) =>
 peopleRoutes.post('/settings/security/delete-account', async (c) => {
   const env = c.env;
   const now = clock(env);
-  const b = (await c.req.json().catch(() => ({}))) as { budgetName?: unknown };
+  const b = (await bodyObject(c.req)) as { budgetName?: unknown };
   const u = await me(c);
   if (!u?.budget_id) return c.json(notFound, 404);
   if (u.is_admin === 1)
