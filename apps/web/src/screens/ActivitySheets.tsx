@@ -373,7 +373,11 @@ export function AddTxnScreen() {
           <Segmented
             label="Direction"
             value={dir}
-            onChange={setDir}
+            onChange={(d) => {
+              setDir(d);
+              // Only money in can go to Ready to Assign: going back to Out asks for a category again.
+              if (d === 'out' && categoryId === 'rta') setCategoryId('');
+            }}
             options={[
               ['out', 'Out'],
               ['in', 'In'],
