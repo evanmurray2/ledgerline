@@ -95,6 +95,24 @@ describe('Transaction sheet', () => {
     await screen.findByText('Bank amount', undefined, T);
     expect(screen.getAllByText(/\$31\.40/).length).toBeGreaterThan(0);
   });
+
+  it('income moved to next month: the Goes to toggle and its help line agree', async () => {
+    const r = await server.handle(
+      'PATCH',
+      '/api/transactions/n-payroll',
+      { 'content-type': 'application/json', 'x-ledgerline': '1' },
+      { budgetMonth: '2026-12' },
+    );
+    expect(r.status).toBe(200);
+    show('/activity/txn/n-payroll');
+    const now = await screen.findByRole('button', { name: 'Ready to Assign now' }, T);
+    const next = screen.getByRole('button', { name: 'Save for December' });
+    expect(next.getAttribute('aria-pressed')).toBe('true');
+    await screen.findByText(/to Ready to Assign on December 1\./);
+    fireEvent.click(now);
+    expect(now.getAttribute('aria-pressed')).toBe('true');
+    await screen.findByText(/to Ready to Assign in November\./);
+  });
 });
 
 describe('Targets', () => {

@@ -288,9 +288,11 @@ describe('States', () => {
     renderAt('/budget', 'readonly');
     const banner = await screen.findByTestId('readonly-banner', undefined, { timeout: 4000 });
     expect(banner.textContent).toContain('View only until 4:00 PM');
-    expect(
-      (await screen.findByText('Assign', undefined, { timeout: 4000 })).getAttribute('aria-disabled'),
-    ).toBe('true');
+    const assign = await screen.findByText('Assign', undefined, { timeout: 4000 });
+    expect(assign.getAttribute('aria-disabled')).toBe('true');
+    // Grayed out, but a tap says why.
+    fireEvent.click(assign);
+    expect(await screen.findByText('View only until 4:00 PM. Nothing is lost.')).toBeTruthy();
   });
 
   it('offline shows the last loaded data and disables fixes', async () => {
@@ -304,6 +306,15 @@ describe('States', () => {
     await waitFor(() => expect((cover as HTMLButtonElement).disabled).toBe(true));
     expect(screen.getByTestId('offline-banner')).toBeTruthy();
     expect(screen.getByTestId('rta').textContent).toBe('$981.90');
+  });
+
+  it('offline, OK all still leaves out the "Same as your…" row, whose question hides', async () => {
+    renderAt('/activity?filter=attention');
+    await screen.findByText('Same as your Amazon?', undefined, { timeout: 4000 });
+    expect(screen.getByRole('button', { name: 'Use 2 suggestions' })).toBeTruthy();
+    connectivity.setOnline(false);
+    await waitFor(() => expect(screen.queryByText('Same as your Amazon?')).toBeNull());
+    expect(screen.getByRole('button', { name: 'Use 2 suggestions' })).toBeTruthy();
   });
 
   it('first run starts at Welcome', async () => {

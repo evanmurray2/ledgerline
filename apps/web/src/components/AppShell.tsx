@@ -5,6 +5,7 @@ import { useState, type ReactNode } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { PanelSlotContext, useModalOpen } from './Sheet';
 import { ToastHost } from './Toast';
+import { BlockedAction } from './BlockedAction';
 import { CountBadge, cx, Icon, useIsDesktop, type IconName } from './ui';
 import { NoteSheet } from '../screens/Note';
 import { useBadgeCounts, useSession } from '../api/hooks';
@@ -97,7 +98,8 @@ function TabBar({ active }: { active: Tab }) {
 
 function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void; noteButton: boolean }) {
   const badges = useBadges();
-  const canWrite = useCanWrite();
+  // Assigning works offline with the copy on this device (D-45), like the Assign sheet itself.
+  const canWrite = useCanWrite({ offline: true });
   const month = useTabMonth();
   const rta = badges.rta;
   const items: { id: Tab; name: string; to: string; badge: number }[] = [
@@ -169,12 +171,12 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
               Assign
             </Link>
           ) : (
-            <span
-              aria-disabled="true"
+            <BlockedAction
+              track="nav.assign.blocked"
               className="mt-1.5 flex h-9 items-center justify-center rounded-full bg-rta-fg/50 text-md font-bold text-rta-btn-fg"
             >
               Assign
-            </span>
+            </BlockedAction>
           ))}
       </div>
     </nav>

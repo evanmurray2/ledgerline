@@ -43,6 +43,7 @@ import { UsageCounter } from './shares.js';
 import { DISABLED_KEY, budgetInfo, setDisabled, wipeStore } from './account-life.js';
 import { QUEUE_REFILE } from '../sync/refile-payees.js';
 import { QUEUE_DROP_TEXT_ALIASES } from '../sync/drop-text-aliases.js';
+import { markReads, noteHeavyRead, routeName } from './heavy-reads.js';
 
 /** Storage key: the store has checked once whether its payees need the re-file job (sync/refile-payees.ts). */
 /** Set while the budget rests (idle, no banks): its daily jobs come back on its next request (ensureJobs). */
@@ -160,9 +161,11 @@ export class BudgetStore extends DurableObject<Env> {
         await this.ctx.storage.put(COUNT_KEY, caller.countUsage);
       }
     }
+    const mark = markReads(this.db.stats);
     try {
       return await this.serve(this.app, request, caller);
     } finally {
+      noteHeavyRead(this.db.stats, mark, routeName(request), caller.budgetId);
       this.reportUsage(caller.budgetId);
     }
   }
@@ -381,10 +384,14 @@ export class BudgetStore extends DurableObject<Env> {
     this.ready();
     this.usage.request();
     this.counting ??= (await this.ctx.storage.get<boolean>(COUNT_KEY)) ?? false;
+    const mark = markReads(this.db.stats);
+    let what = 'job';
     try {
-      await this.runner.runNext(Date.now());
+      const r = await this.runner.runNext(Date.now());
+      if (r.ran) what = `job:${r.kind}`;
     } finally {
       const id = this.cachedBudgetId ?? (await this.budgetId().catch(() => null));
+      noteHeavyRead(this.db.stats, mark, what, id);
       if (id) this.reportUsage(id);
     }
   }
