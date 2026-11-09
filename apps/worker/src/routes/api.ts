@@ -20,7 +20,7 @@ import { bumpOnChange } from '../http/version.js';
 import { Scoped, membership } from '../db/scoped.js';
 import { budgetView } from '../views/budget.js';
 import { fresh } from '../views/common.js';
-import { usageToday, classifyUsage } from '../sync/breaker.js';
+import { usageToday, classifyUsage, dailyLimits } from '../sync/breaker.js';
 import { activityRoutes } from './activity.js';
 import { activityViewRoutes } from './activity-view.js';
 import { samePurchaseRoutes } from './same-purchase.js';
@@ -100,7 +100,7 @@ budgetApi.use('*', async (c, next) => {
   if (m === 'GET' || m === 'HEAD') return next();
   // Inside a budget's Durable Object, account usage comes from the Directory (USAGE); elsewhere, from usage_day.
   const u = c.env.USAGE ? await c.env.USAGE() : await usageToday(c.env);
-  const st = classifyUsage(u.written, u.read, u.do, u.workers);
+  const st = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(c.env));
   if (st === 'readonly' || st === 'rest')
     return c.json(
       { error: 'readonly', message: 'View only until the daily limit resets. Nothing is lost.' },
@@ -187,7 +187,7 @@ budgetApi.get('/session', async (c) => {
         ? 'categories'
         : 'done';
   const u = await usageToday(c.env, now);
-  const ws = classifyUsage(u.written, u.read, u.do, u.workers);
+  const ws = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(c.env));
   const tomorrow = new Date(now);
   tomorrow.setUTCHours(24, 0, 0, 0);
   const body: Session = {

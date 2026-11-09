@@ -203,3 +203,53 @@ describe('more than one user', () => {
     expect((await owner.call('GET', '/api/session')).status).toBe(200);
   });
 });
+
+describe('sign-in fixes for other users (docs/open-signup.md 3.3, 3.4, 6)', () => {
+  it('a passkey answer without its user handle is refused', async () => {
+    expect((await new Browser().signIn(ownerKey, { noUserHandle: true })).status).toBe(403);
+    expect((await new Browser().signIn(ownerKey)).status).toBe(200);
+  });
+
+  it('a challenge works once, even after a fresh passkey check changes the session', async () => {
+    const b = new Browser();
+    const o = await b.call('POST', '/api/auth/login/options');
+    const first = await ownerKey.get(o.json as never);
+    const second = await ownerKey.get(o.json as never); // a second answer to the same challenge
+    const jar = new Map(b.jar);
+    expect((await b.call('POST', '/api/auth/login/verify', { response: first })).status).toBe(200);
+    // A fresh passkey check on the same browser moves the session's challenge_id to the new challenge.
+    expect((await b.signIn(ownerKey)).status).toBe(200);
+    const thief = new Browser();
+    thief.jar = jar;
+    expect((await thief.call('POST', '/api/auth/login/verify', { response: second })).status).toBe(400);
+  });
+
+  it('setup opens again only when no admin has a passkey, and never touches other users', async () => {
+    const status = async () => (await new Browser().call('GET', '/api/auth/status')).json;
+    expect((await status()).setupOpen).toBe(false);
+    expect(
+      (await new Browser().register(new SoftAuthenticator(ORIGIN, 'ledgerline.test'), { setupCode: SETUP }))
+        .status,
+    ).toBe(403);
+    // The runbook's recovery (docs/runbooks/setup.md): only the admin's sessions and passkeys go.
+    await dir.batch([
+      dir.prepare(`DELETE FROM auth_session WHERE user_id IN (SELECT id FROM user WHERE is_admin = 1)`),
+      dir.prepare(`DELETE FROM passkey WHERE user_id IN (SELECT id FROM user WHERE is_admin = 1)`),
+    ]);
+    expect(await dir.prepare(`SELECT count(*) AS n FROM passkey WHERE user_id = 'u_b'`).first('n')).toBe(1);
+    expect((await status()).setupOpen).toBe(true);
+    const newKey = new SoftAuthenticator(ORIGIN, 'ledgerline.test');
+    const b = new Browser();
+    expect((await b.register(newKey, { setupCode: SETUP })).status).toBe(200);
+    // The new passkey is the admin's, with the admin's handle; no new user or budget was made.
+    const admin = await dir.prepare(`SELECT id FROM user WHERE is_admin = 1`).first<string>('id');
+    expect(
+      await dir.prepare(`SELECT user_id FROM passkey WHERE id = ?1`).bind(newKey.id).first('user_id'),
+    ).toBe(admin);
+    expect(newKey.userHandle).toBe(b64u(new TextEncoder().encode('ledgerline-owner')));
+    expect(await dir.prepare(`SELECT count(*) AS n FROM user`).first('n')).toBe(2);
+    expect(await dir.prepare(`SELECT count(*) AS n FROM budget`).first('n')).toBe(2);
+    expect((await b.call('GET', '/api/session')).status).toBe(200);
+    expect((await status()).setupOpen).toBe(false);
+  });
+});

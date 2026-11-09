@@ -66,8 +66,9 @@ describe('object migrations', () => {
         '0005_worker_requests.sql',
         '0006_devices.sql',
         '0007_device_session.sql',
+        '0008_signup.sql',
       ],
-      tables: 16,
+      tables: 19,
     });
   });
 
