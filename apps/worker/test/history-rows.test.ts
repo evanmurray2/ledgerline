@@ -4,6 +4,7 @@ import { app } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ActivityView, CategorySheet, PayeesView, RegisterView, TxnSheet } from '@ledgerline/contracts';
 import { ownerDb } from './store-db.js';
+import { historyRow } from './history.js';
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 const get = async <T>(p: string): Promise<T> => {
@@ -21,11 +22,7 @@ const sheetPath = `/api/transactions/${encodeURIComponent(KEY)}`;
 describe('Before your budget', () => {
   beforeAll(async () => {
     expect((await send('POST', '/__dev/seed-november', {})).status).toBe(200);
-    const r = await send('POST', '/api/import/csv', {
-      accountId: 'marcus',
-      csv: 'date,payee,amount\n2026-10-02,Old Bakery,-12.34\n',
-    });
-    expect(r.status, await r.clone().text()).toBe(200);
+    await historyRow('marcus', '2026-10-02', -1234, 'Old Bakery');
     // A payee seen only on this row.
     const db = ownerDb();
     const now = Date.now();
@@ -114,11 +111,7 @@ describe('Before your budget, on a payee with budget transactions', () => {
   it('leaves the history row’s bank name out of the payee’s bank names', async () => {
     const before = await get<PayeesView>('/api/settings/payees');
     const p = before.payees.find((x) => x.bankNames.length < 10)!;
-    const r = await send('POST', '/api/import/csv', {
-      accountId: 'marcus',
-      csv: 'date,payee,amount\n2026-10-01,OLD HISTORY TEXT,-5.00\n',
-    });
-    expect(r.status, await r.clone().text()).toBe(200);
+    await historyRow('marcus', '2026-10-01', -500, 'OLD HISTORY TEXT');
     const db = ownerDb();
     const now = Date.now();
     const budget = (await db.prepare(`SELECT id FROM budget`).first<{ id: string }>())!.id;

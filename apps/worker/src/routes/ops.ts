@@ -1,25 +1,16 @@
-// Usage tracking, notes, health, webhooks, import and export.
+// Usage tracking, notes, health, webhooks, the full backup and the usage export.
 import type { Stmt } from '@ledgerline/db/sql';
 import { clock } from '../http/clock.js';
 import { Hono } from 'hono';
 import type { DumpChunk } from '@ledgerline/contracts';
 import { BUDGET_TABLES, budgetFilter, chain, readChunk, tableMeta } from '../store/dump.js';
-import {
-  ImportCsvRequest,
-  NoteRequest,
-  UsageBatch,
-  type HealthView,
-  type ImportResult,
-} from '@ledgerline/contracts';
-import { cents } from '@ledgerline/domain';
+import { NoteRequest, UsageBatch, type HealthView } from '@ledgerline/contracts';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
-import { HttpError, parse, scoped, GONE } from './api.js';
+import { parse, scoped } from './api.js';
 import { classifyUsage, dailyLimits, noteUsage, usageToday, utcDay } from '../sync/breaker.js';
 import { makeProvider } from '../sync/provider.js';
 import { startSync } from './settings/connections.js';
-import { TX_COLUMNS, uncovered, type TxRow } from '../ledger/ledger.js';
-import { csvDate, csvHeader, csvRecords, recordAmount } from '../ledger/csv.js';
 
 export const opsRoutes = new Hono<AppEnv>();
 
@@ -154,25 +145,7 @@ opsRoutes.post('/webhooks/plaid', async (c) => {
   return c.json({ ok: true });
 });
 
-// ---------------------------------------------------------------- export and import
-
-const EXPORT_TABLES = [
-  'budget',
-  'account',
-  'category_group',
-  'category',
-  'assignment',
-  'target',
-  'payee',
-  'payee_alias',
-  'rule',
-  'txn_overlay',
-  'manual_pending',
-  'txn_split',
-  'txn_link',
-  'expected_reimbursement',
-  'setting',
-] as const;
+// ---------------------------------------------------------------- full backup and usage export
 
 /**
  * The full backup (docs/multi-user.md 8.7): every row of every table of this budget, rowids kept, in pieces of
@@ -213,62 +186,6 @@ opsRoutes.get('/export/dump', async (c) => {
   return c.json({ data: lines.join('\n'), cursor: btoa(JSON.stringify(next)) } satisfies DumpChunk);
 });
 
-opsRoutes.get('/export/json', async (c) => {
-  const s = scoped(c);
-  const out: Record<string, unknown> = {
-    exportedAt: new Date().toISOString(),
-    format: 'ledgerline-export-1',
-  };
-  for (const t of EXPORT_TABLES)
-    out[t] = await s.all(
-      t === 'budget' ? `SELECT * FROM budget WHERE id = ?1` : `SELECT * FROM ${t} WHERE budget_id = ?1`,
-    );
-  // Bank data: the projection (raw provider pages stay in raw_page; the access token is never exported).
-  out.transactions = await s.all(
-    `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 ORDER BY date`,
-  );
-  return new Response(JSON.stringify(out), {
-    headers: {
-      'content-type': 'application/json',
-      'content-disposition': 'attachment; filename="ledgerline-export.json"',
-    },
-  });
-});
-
-function csvCell(v: unknown): string {
-  const s = v === null || v === undefined ? '' : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-opsRoutes.get('/export/csv', async (c) => {
-  const s = scoped(c);
-  const rows = await s.all<TxRow & { category_name: string | null }>(
-    `SELECT v.*, c.name AS category_name FROM v_transaction v LEFT JOIN category c ON c.id = v.category_id WHERE v.budget_id = ?1 AND ${uncovered('v')}
-     ORDER BY v.date`,
-  );
-  const head = ['date', 'account', 'payee', 'amount', 'status', 'category', 'memo', 'raw_name'];
-  const body = rows.map((r) =>
-    [
-      r.date,
-      r.account_name,
-      r.payee,
-      (r.amount / 100).toFixed(2),
-      r.status,
-      r.category_name,
-      r.memo,
-      r.raw_name,
-    ]
-      .map(csvCell)
-      .join(','),
-  );
-  return new Response([head.join(','), ...body].join('\n'), {
-    headers: {
-      'content-type': 'text/csv',
-      'content-disposition': 'attachment; filename="ledgerline-transactions.csv"',
-    },
-  });
-});
-
 opsRoutes.get('/export/usage', async (c) => {
   const s = scoped(c);
   const [raw, daily, notes] = await s.batch([
@@ -289,141 +206,4 @@ opsRoutes.get('/export/usage', async (c) => {
       },
     },
   );
-});
-
-/**
- * CSV history import (date, payee, amount or Debit and Credit[, memo]; ledger/csv.ts reads the formats): rows are history only (they never enter the budget), used for
- * analytics and drift checks (read-only, D-61). Stored as a 'csv' connection's bank rows so the projection treats them
- * like any provider's.
- */
-opsRoutes.post('/import/csv', async (c) => {
-  const r = await parse(ImportCsvRequest, c.req.raw);
-  const s = scoped(c);
-  const now = clock(c.env);
-  const acct = await s.first<{
-    id: string;
-    provider_account_id: string | null;
-    budget_from: string;
-    kind: string;
-  }>(
-    `SELECT id, provider_account_id, budget_from, kind FROM account WHERE budget_id = ?1 AND id = ?2`,
-    r.accountId,
-  );
-  if (!acct) throw new HttpError(404, 'not_found', GONE);
-  const { records, delimiter } = csvRecords(r.csv);
-  const head = csvHeader(records);
-  if (!head)
-    throw new HttpError(
-      422,
-      'csv_header',
-      'The CSV file needs date, payee and amount columns (or Debit and Credit).',
-    );
-  const col = head.columns;
-  const body = records.slice(head.at + 1);
-  let conn = await s.first<{ id: string }>(
-    `SELECT id FROM connection WHERE budget_id = ?1 AND provider = 'csv' AND institution_name = ?2`,
-    `Import · ${r.accountId}`,
-  );
-  const providerAccountId = acct.provider_account_id ?? `csv:${acct.id}`;
-  const stmts: Stmt[] = [];
-  if (!conn) {
-    conn = { id: `con_${ulid(now)}` };
-    stmts.push(
-      s.q(
-        `INSERT INTO connection (id, budget_id, provider, institution_name, linked_at, created_at, updated_at) VALUES (?2, ?1, 'csv', ?3, ?4, ?4, ?4)`,
-        conn.id,
-        `Import · ${r.accountId}`,
-        now,
-      ),
-    );
-    if (!acct.provider_account_id)
-      stmts.push(
-        s.q(
-          `UPDATE account SET provider_account_id = ?3 WHERE budget_id = ?1 AND id = ?2`,
-          acct.id,
-          providerAccountId,
-        ),
-      );
-  }
-  let imported = 0;
-  let skipped = 0;
-  let duplicates = 0;
-  let unreadable = 0;
-  // Each record read: a real calendar date only ("25/12/2025", day first, or "2026-13-01" is never stored as month 25).
-  const read = body.map((cols) => ({
-    cols,
-    iso: csvDate(cols[col.date] ?? ''),
-    amount: recordAmount(cols, col, delimiter),
-    payee: (cols[col.payee] ?? '').trim().slice(0, 200),
-  }));
-  const dates = read.flatMap((x) => (x.iso ? [x.iso] : []));
-  // History already imported into this account over the file's dates: the same row again (date, amount and payee,
-  // as many times as it was there) is skipped, so importing a file twice, or two files that overlap, adds no double.
-  const existing = dates.length
-    ? await s.all<{ provider_txn_id: string; date: string; amount: number; raw_name: string }>(
-        `SELECT provider_txn_id, date, amount, raw_name FROM bank_txn
-         WHERE budget_id = ?1 AND provider_account_id = ?2 AND substr(provider_txn_id, 1, 4) = 'csv_'
-           AND date BETWEEN ?3 AND ?4`,
-        providerAccountId,
-        dates.reduce((a, b) => (a < b ? a : b)),
-        dates.reduce((a, b) => (a > b ? a : b)),
-      )
-    : [];
-  const seen = new Map<string, number>();
-  for (const e of existing) {
-    const k = `${e.date}|${e.amount}|${e.raw_name}`;
-    seen.set(k, (seen.get(k) ?? 0) + 1);
-  }
-  const used = new Set(existing.map((e) => e.provider_txn_id));
-  for (const x of read) {
-    if (!x.iso || x.amount === null) {
-      unreadable++;
-      continue;
-    }
-    // Imported history rows are always history (Budget start): only rows dated before budget_from are kept.
-    if (x.iso >= acct.budget_from) {
-      skipped++;
-      continue;
-    }
-    const k = `${x.iso}|${x.amount}|${x.payee}`;
-    const left = seen.get(k) ?? 0;
-    if (left > 0) {
-      seen.set(k, left - 1);
-      duplicates++;
-      continue;
-    }
-    imported++;
-    let n = 0;
-    while (used.has(`csv_${acct.id}_${x.iso}_${n}`)) n++;
-    const id = `csv_${acct.id}_${x.iso}_${n}`;
-    used.add(id);
-    stmts.push(
-      s.q(
-        `INSERT OR IGNORE INTO bank_txn (provider_txn_id, budget_id, connection_id, provider_account_id, amount, date, pending, raw_name, txn_key, first_apply_seq, last_apply_seq, created_at, updated_at)
-         VALUES (?2, ?1, ?3, ?4, ?5, ?6, 0, ?7, ?8, 0, 0, ?9, ?9)`,
-        id,
-        conn.id,
-        providerAccountId,
-        cents(x.amount),
-        x.iso,
-        x.payee,
-        `p:${id}`,
-        now,
-      ),
-    );
-    const memo = col.memo >= 0 ? (x.cols[col.memo] ?? '').trim() : '';
-    if (memo)
-      stmts.push(
-        s.q(
-          `INSERT OR IGNORE INTO txn_overlay (txn_key, budget_id, memo, created_at, updated_at) VALUES (?2, ?1, ?3, ?4, ?4)`,
-          `p:${id}`,
-          memo.slice(0, 500),
-          now,
-        ),
-      );
-  }
-  // Month totals live on the phone (D-45): its copy starts them over when these rows arrive (local/engine.ts).
-  for (let i = 0; i < stmts.length; i += 100) await s.batch(stmts.slice(i, i + 100));
-  const res: ImportResult = { imported, skipped, history: imported, duplicates, unreadable };
-  return c.json(res);
 });

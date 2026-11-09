@@ -134,8 +134,12 @@ describe('input the app never sends', () => {
       ['DELETE', '/api/session'],
       ['PUT', '/api/budget/assign'],
       ['POST', '/api/nope'],
+      // Removed (D-81): CSV history import and the CSV and JSON data exports.
+      ['POST', '/api/import/csv'],
+      ['GET', '/api/export/csv'],
+      ['GET', '/api/export/json'],
     ] as const) {
-      const r = await server(path, { method, headers: H, body: '{}' });
+      const r = await server(path, { method, headers: H, body: method === 'GET' ? undefined : '{}' });
       expect(r.status, `${method} ${path}`).toBe(404);
       expect(await r.json()).toMatchObject({ error: 'not_found' });
     }

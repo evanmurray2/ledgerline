@@ -40,7 +40,6 @@ Answers that refuse: `confirm` (the name doesn't match), `invalid` (the time isn
 
 ## Your own copies
 
-Settings → Import and export has two downloads. Save them to Files or iCloud now and then: they are the only copies that survive losing the Cloudflare account or damage found after 30 days.
+Settings → Backup and export has the full backup. Save it to Files or iCloud now and then: it is the only copy that survives losing the Cloudflare account or damage found after 30 days.
 
 - **Full backup** (`.ndjson`): every row of the budget, with a fingerprint of each table (`docs/multi-user.md` 8.7). The store can load one into an empty budget and prove nothing changed (`BudgetStore.restoreDump`, then `restoreVerify`; `apps/worker/test/backup.test.ts`), but **no route or tool reaches that yet** (`docs/build-plan.md`). Keep the file: it is the copy a future restore path will read. Bank tokens in it stay encrypted with the Worker's `TOKEN_KEYS`, so it restores only where those keys are the same.
-- **JSON export**: a readable copy of categories, assignments, transactions and payees. It can't be loaded back.

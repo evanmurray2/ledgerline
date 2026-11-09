@@ -195,8 +195,8 @@ export function LinkBanksScreen() {
         <span>Purchases from before your budget starts go into the starting balance.</span>
         <Why>
           Some of them can come in up to 2 weeks late. Ledgerline gets 6 months of history, and this can’t be
-          changed later. You can import older history from a CSV file in Settings. Investment and retirement
-          accounts aren’t tracked. Money you send to them counts as Invested.
+          changed later. Investment and retirement accounts aren’t tracked. Money you send to them counts as
+          Invested.
         </Why>
       </div>
     </Step>

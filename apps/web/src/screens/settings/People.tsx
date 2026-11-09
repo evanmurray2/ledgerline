@@ -44,7 +44,7 @@ export function DeleteAccountCard() {
           Your budget and everything in it is deleted, and can’t be brought back. Download the full backup
           first if you want a copy.
         </span>
-        <RowLink to="/settings/data" name="Import and export" meta="Full backup" track="delete.backup" />
+        <RowLink to="/settings/data" name="Backup and export" meta="Full backup" track="delete.backup" />
         <Field label={`Type “${name}” to confirm`}>
           <input
             className={inputClass}

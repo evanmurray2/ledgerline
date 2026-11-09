@@ -10,7 +10,6 @@ import {
   CategoriesView,
   CategorySheet,
   ConnectionsView,
-  ImportResult,
   MatchView,
   MutationResult,
   OwedView,
@@ -40,7 +39,6 @@ import type {
   TargetRequest,
   TransferPick,
   TxnPatch,
-  ImportCsvRequest,
   MergePayees,
   RenameAccount,
   RenamePayee,
@@ -213,13 +211,10 @@ export const api = {
   startingBalances: (body: In<typeof StartingBalances>) =>
     post('/api/setup/starting-balances', MutationResult, body),
   patchSettings: (body: In<typeof SettingsPatch>) => patch('/api/settings', Ok, body),
-  importCsv: (body: In<typeof ImportCsvRequest>) => post('/api/import/csv', ImportResult, body),
   note: (body: In<typeof NoteRequest>) => post('/api/notes', Ok, body),
 };
 
 /** File downloads go straight to the Worker (same origin, Access cookie). */
 export const exportUrls = {
-  json: '/api/export/json',
-  csv: '/api/export/csv',
   usage: '/api/export/usage',
 } as const;

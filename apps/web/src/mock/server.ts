@@ -99,9 +99,9 @@ async function shape(db: SqlJsDb, scenario: Scenario, now: number): Promise<bool
  * What the mock tests use that the November fixture doesn't have, with no change to any amount, category or date:
  * payee history (Blue Bottle Coffee twice Dining out, Amazon twice Household and once Shopping, so both come suggested), a second
  * "Amazon" payee offered as "Same as your Amazon?", a "Bluebottle Coffee" spelling to join, a bank text on CVS,
- * and a row from before the budget on checking (imported through the real CSV route).
+ * and a row from before the budget on checking.
  */
-async function mockHistory(engine: LocalEngine, db: SqlJsDb, now: number): Promise<void> {
+async function mockHistory(db: SqlJsDb, now: number): Promise<void> {
   const run = (sql: string, ...args: unknown[]) =>
     db
       .prepare(sql)
@@ -132,12 +132,20 @@ async function mockHistory(engine: LocalEngine, db: SqlJsDb, now: number): Promi
   await newPayee('py_bluebottle_sf', 'Bluebottle Coffee');
   await point(['o-personal'], 'py_bluebottle_sf', 'BLUEBOTTLECOFFEE SF');
   await run(`UPDATE bank_txn SET raw_name = 'CVS/PHARMACY #0812' WHERE txn_key = 'n-cvs'`);
-  const r = await engine.request('POST', '/api/import/csv', {
-    accountId: 'checking',
-    csv: 'date,payee,amount\n2026-09-28,OLD BAKERY SF,-12.34\n',
-  });
-  if (r.status !== 200) throw new Error(`mock history: ${await r.text()}`);
-  await run(`UPDATE payee SET name = 'Old Bakery' WHERE name = 'OLD BAKERY SF'`);
+  // A history row, stored as CSV history import stored one (budgets may still hold such rows).
+  await run(
+    `INSERT INTO bank_txn (provider_txn_id, budget_id, connection_id, provider_account_id, amount, date, pending, raw_name, txn_key, first_apply_seq, last_apply_seq, created_at, updated_at)
+     SELECT 'csv_checking_2026-09-28_0', a.budget_id, pa.connection_id, a.provider_account_id, -1234, '2026-09-28', 0,
+       'OLD BAKERY SF', 'p:csv_checking_2026-09-28_0', 0, 0, ?1, ?1
+     FROM account a JOIN provider_account pa ON pa.provider_account_id = a.provider_account_id WHERE a.id = 'checking'`,
+    now,
+  );
+  await newPayee('py_old_bakery', 'Old Bakery');
+  await run(
+    `INSERT INTO txn_overlay (txn_key, budget_id, payee_id, created_at, updated_at)
+     SELECT 'p:csv_checking_2026-09-28_0', id, 'py_old_bakery', ?1, ?1 FROM budget`,
+    now,
+  );
 }
 
 /**
@@ -233,8 +241,7 @@ export class MockServer {
 
   private async start() {
     const copy = await this.open(() => this.now);
-    if (this.scenario !== 'empty' && this.scenario !== 'firstrun')
-      await mockHistory(copy.engine, copy.db, this.now);
+    if (this.scenario !== 'empty' && this.scenario !== 'firstrun') await mockHistory(copy.db, this.now);
     if (await shape(copy.db, this.scenario, this.now)) {
       await copy.db
         .prepare(`UPDATE local_state SET value = ?1 WHERE key = 'derive'`)

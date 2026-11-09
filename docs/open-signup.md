@@ -108,7 +108,7 @@ Invites came with a reset link the owner sent by hand. That doesn't work for str
 
 **What a link is:** one person's login at one bank (a Plaid Item). Two users at the same bank are two links: one user's link never reads another user's accounts.
 
-**Rule (owner, Nov 9, 2026):** users who aren't admins can't link banks. They add accounts by hand and import CSV files. Allowances are not a concept users see.
+**Rule (owner, Nov 9, 2026):** users who aren't admins can't link banks. They add accounts by hand. Allowances are not a concept users see.
 
 - `link-token` in new mode refuses with 403 unless the caller is an admin or `OTHER_USERS_BANKS` is `on`. The Directory passes `isAdmin` to the store with the caller.
 - For users who aren't admins, the app hides **Link a bank** and the link count. Bank connections isn't shown to them at all while they have no connections.
