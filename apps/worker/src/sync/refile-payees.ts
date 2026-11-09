@@ -305,7 +305,8 @@ async function refileChunk(
     banks.push(
       ...(await s.all<RefileRow>(
         `SELECT txn_key, raw_name, plaid_name, merchant_name, merchant_entity_id, pending, removed_at, first_apply_seq
-         FROM bank_txn WHERE budget_id = ?1 AND txn_key IN (${k.map((_, i) => `?${i + 2}`).join(',')})`,
+         FROM bank_txn WHERE +budget_id = ?1 AND txn_key IN (${k.map((_, i) => `?${i + 2}`).join(',')})
+         ORDER BY connection_id, created_at, provider_txn_id`,
         ...k,
       )),
     );
