@@ -15,7 +15,6 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] Find what read 327,000 and 413,000 BudgetStore rows in the hours of Nov 4 21:00 and Nov 5 14:00 UTC. It wasn't a phone full download: Workers Logs has no `sync_full` (or any line) in those hours, and a full download is about 2,300 rows. Since this line: a call that reads 20,000 rows or more logs `heavy_read` with its route or job kind (`apps/worker/src/store/heavy-reads.ts`); search Workers Logs for it after the next spike. A likely part of it: until Nov 9 the hot key lookups in processing read every bank row (`test/key-lookups.test.ts`).
 - [ ] On the owner's iPhone after deploy: PRF in the Home Screen app with the existing passkey, first download time, Face ID unlock with no signal.
 - [ ] Owed to you: each row's "Match money back" opens the first waiting deposit; open the match sheet with that row's item picked.
-- [ ] Removing a category: the confirm says nothing when the category is overspent; needs the owner's Money-rules answer on what happens to the negative amount.
 - [ ] Transaction sheet, income "Goes to": the toggle and its help line use different tests and can disagree for income already moved to next month.
 - [ ] Offline, "Same as your {payee}?" hides, and "Use {n} suggestions" then includes those rows.
 - [ ] Desktop Assign button (sidebar and Ready to Assign bar): grayed out offline or in view only with no reason shown.
@@ -25,7 +24,6 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] CSV import into a linked account: history rows that Plaid also sent (before the budget start) count twice in Reports and net worth. Needs the owner's answer on how to tell them apart (dates differ by a day, names differ).
 - [ ] CSV import into a card: some banks export purchases as positive amounts, which then read as credits. Needs the owner's answer on the sign for card files.
 - [ ] Split amount changes: the "absorbs remainder" line never takes the difference when a split row's amount changes (an edit, a pending row posting at another amount), so the difference is in no category. Needs the owner's Money-rules answer.
-- [ ] Your own entries dated before the budget start are accepted and counted; bank rows there are read-only history (D-61, D-67). Needs the owner's answer: refuse them, or keep them as uncleared checks.
 - [ ] Payee names: the server takes a name of only spaces (min length is checked before trim) and NUL or right-to-left override characters.
 - [ ] CSV export: cells that start with `=`, `+` or `@` can run as spreadsheet formulas; quote or prefix them.
 - [ ] Activity search: "café" doesn't find "CAFÉ" on posted rows (SQLite `lower()` folds only ASCII).

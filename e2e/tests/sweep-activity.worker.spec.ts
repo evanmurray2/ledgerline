@@ -92,6 +92,27 @@ test('Add: amounts that are not money keep Add off; 1,234.5 adds $1,234.50 out',
   expect(m.amount).toBe(-123_450);
 });
 
+test('Add: a date before the budget start keeps Add off and says why; the start day itself adds', async ({
+  page,
+  request,
+}) => {
+  await page.goto('/activity/add');
+  const add = page.getByRole('dialog', { name: 'Add a transaction' });
+  await add.getByPlaceholder('0.00').fill('10');
+  await add.getByLabel('Payee').fill('Old check');
+  const date = add.getByLabel('Date');
+  await expect(date).toHaveAttribute('min', '2026-10-01');
+  await date.fill('2026-09-30');
+  const button = add.getByRole('button', { name: 'Add', exact: true });
+  await expect(button).toBeDisabled();
+  await expect(add.getByText('Pick a date from October 1, 2026 on')).toBeVisible();
+  await date.fill('2026-10-01');
+  await button.click();
+  await expect(add).toHaveCount(0);
+  const m = (await rows(request, 'manual_pending')).find((r) => r.payee_name === 'Old check')!;
+  expect(m.date).toBe('2026-10-01');
+});
+
 test('Add: a quick double tap on Add adds one transaction', async ({ page, request }) => {
   await page.goto('/activity/add');
   const add = page.getByRole('dialog', { name: 'Add a transaction' });

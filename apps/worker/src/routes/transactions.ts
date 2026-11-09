@@ -25,7 +25,7 @@ import type { Scoped } from '../db/scoped.js';
 import { HttpError, parse, scoped, GONE, FAR_DATE, FAR_MONTH, inReach, thisMonth } from './api.js';
 import { reopenStmts } from './account-close.js';
 import { editTime, liveKey } from './sync.js';
-import { shortDate } from '../views/common.js';
+import { monthLong, shortDate } from '../views/common.js';
 import { categoryLabel, isHistory } from '../views/rows.js';
 import { TX_COLUMNS, chunks, txnCol, type TxRow } from '../ledger/ledger.js';
 import { linkInfo, roleOf } from '../ledger/link.js';
@@ -431,6 +431,17 @@ transactionRoutes.post('/transactions', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
   if (!inReach(monthOfDate(r.date), await thisMonth(s, now))) throw new HttpError(422, 'too_far', FAR_DATE);
+  // Before the budget start is history, which never counts (D-61, D-67); your own entries there are refused too
+  // (D-79).
+  const start = (
+    await s.first<{ m: string | null }>(`SELECT budget_start_month AS m FROM budget WHERE id = ?1`)
+  )?.m;
+  if (start && monthOfDate(r.date) < start)
+    throw new HttpError(
+      422,
+      'before_start',
+      `Pick a date from ${monthLong(start as Month)} 1, ${start.slice(0, 4)} on.`,
+    );
   const acct = await s.first(`SELECT id FROM account WHERE budget_id = ?1 AND id = ?2`, r.accountId);
   if (!acct) throw new HttpError(404, 'not_found', GONE);
   if (r.categoryId) {

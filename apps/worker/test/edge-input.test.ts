@@ -44,6 +44,14 @@ describe('input the app never sends', () => {
     expect((await send('POST', '/api/transactions', entry('2028-02-29'))).status).toBe(200);
   });
 
+  it('your own entry dated before the budget start is refused (D-79)', async () => {
+    expect(await send('POST', '/api/transactions', entry('2026-09-30'))).toMatchObject({
+      status: 422,
+      json: { error: 'before_start', message: 'Pick a date from October 1, 2026 on.' },
+    });
+    expect((await send('POST', '/api/transactions', entry('2026-10-01'))).status).toBe(200);
+  });
+
   it('a month or date more than 10 years away is refused, and Budget still opens', async () => {
     expect(
       await send('POST', '/api/budget/assign', {

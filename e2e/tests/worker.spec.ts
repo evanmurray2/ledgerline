@@ -281,13 +281,19 @@ test('Categories: rename a group, reorder by dragging, and remove a category', a
   await sheet.getByRole('button', { name: 'Save' }).click();
   await expect(groups.nth(0)).toHaveText('Day to day');
 
-  // Removing happens on the category's own sheet, with a confirm step.
+  // An overspent category can't be removed: archived, its overspending would drop out of Budget's attention.
   await page.getByRole('link', { name: /^Dining out/ }).click();
   const edit = page.getByRole('dialog', { name: 'Edit category' });
-  await edit.getByRole('button', { name: 'Remove Dining out…' }).click();
+  await expect(edit.getByText('To remove Dining out, cover its $18.25 overspending first.')).toBeVisible();
+  await expect(edit.getByRole('button', { name: 'Remove Dining out…' })).toHaveCount(0);
+  await edit.getByRole('button', { name: 'Close' }).click();
+
+  // Removing happens on the category's own sheet, with a confirm step.
+  await page.getByRole('link', { name: /^Groceries/ }).click();
+  await edit.getByRole('button', { name: 'Remove Groceries…' }).click();
   await edit.getByRole('button', { name: 'Remove', exact: true }).click();
-  await expect(page.getByText('Dining out archived. Reports keep its history.')).toBeVisible();
-  await expect(page.getByRole('link', { name: /^Dining out/ })).toHaveCount(0);
+  await expect(page.getByText('Groceries archived. Reports keep its history.')).toBeVisible();
+  await expect(page.getByRole('link', { name: /^Groceries/ })).toHaveCount(0);
 });
 
 test('Target: a yearly refill is met in its Due month, and the Due month is kept', async ({ page }) => {
