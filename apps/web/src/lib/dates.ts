@@ -37,10 +37,18 @@ export function monthShort(month: string): string {
   return monthName(month).slice(0, 3);
 }
 
-/** '2026-11-14' → 'Nov 14' */
+// The budget's year today (the session sets it, api/hooks.ts useSession): a day in another year shows its year.
+let budgetYear: number | null = null;
+
+export function setBudgetYear(today: string): void {
+  budgetYear = parts(today)[0];
+}
+
+/** '2026-11-14' → 'Nov 14'; a day in another year than today's: '2027-01-01' → 'Jan 1, 2027'. */
 export function dayLabel(date: string): string {
-  const [, m, d] = parts(date);
-  return `${(MONTHS[m - 1] ?? '').slice(0, 3)} ${d}`;
+  const [y, m, d] = parts(date);
+  const day = `${(MONTHS[m - 1] ?? '').slice(0, 3)} ${d}`;
+  return budgetYear !== null && y !== budgetYear ? `${day}, ${y}` : day;
 }
 
 export function addMonths(month: string, n: number): string {
