@@ -40,13 +40,11 @@ test.beforeEach(async ({ page, request }) => {
 /** Settings → Import and export, with a file chosen. */
 async function chooseFile(page: Page, name: string, body: string | Buffer) {
   await page.goto('/settings/data');
-  await page
-    .locator('input[type=file]')
-    .setInputFiles({
-      name,
-      mimeType: 'text/csv',
-      buffer: typeof body === 'string' ? Buffer.from(body) : body,
-    });
+  await page.locator('input[type=file]').setInputFiles({
+    name,
+    mimeType: 'text/csv',
+    buffer: typeof body === 'string' ? Buffer.from(body) : body,
+  });
 }
 
 test('Import: a file is imported once; importing it again adds nothing and says so', async ({
@@ -147,4 +145,12 @@ test('Reports: a month before the budget starts shows the first month', async ({
   await expect(page.getByTestId('month-label')).toContainText('October 2026');
   await expect(page.getByRole('button', { name: 'Previous month' })).toBeDisabled();
   await expect(page.getByText('January 2026')).toHaveCount(0);
+});
+
+test('Setup: Back to a finished setup goes to the budget, so it can’t run twice', async ({ page }) => {
+  for (const path of ['/setup/categories', '/setup/link', '/setup/start', '/welcome']) {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/budget$/);
+  }
+  await expect(page.getByRole('button', { name: 'Go to my budget' })).toHaveCount(0);
 });

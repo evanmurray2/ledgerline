@@ -166,6 +166,9 @@ function Root() {
           : '/setup/categories';
     return <Navigate to={to} replace />;
   }
+  // A finished setup isn't run again (Back after Go to my budget): it would add every category again and set the
+  // starting balances over.
+  if (s.budget.setupStep === 'done' && setupPath) return <Navigate to="/budget" replace />;
   if (setupPath)
     return (
       <>
