@@ -8,9 +8,8 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 
 ## Open
 
-- [ ] Activity screen: check CPU on the real app's analytics; build a stored recent-rows list only if p95 is 8 ms or more.
-- [ ] Accounts without a bank link: users who can't link banks (D-75) can't make an account at all, since CSV import needs an existing one. Needs the owner's Money-rules answers on starting balances first.
-- [ ] Before `OTHER_USERS_BANKS` is on (Plaid Production): remove a deleted account's banks at Plaid. Today deleting an account with linked banks is refused, and only admins link banks (`docs/open-signup.md` 12).
+- [ ] (waits for D-78) Accounts without a bank link: users who can't link banks (D-75) can't make an account at all, since CSV import needs an existing one. Needs the owner's Money-rules answers on starting balances first.
+- [ ] (waits for D-78) Before `OTHER_USERS_BANKS` is on (Plaid Production): remove a deleted account's banks at Plaid. Today deleting an account with linked banks is refused, and only admins link banks (`docs/open-signup.md` 12).
 - [ ] A way to match any pending row to a posted row by hand ("Same purchase?" on Activity covers only the rows the matcher asks about).
 - [ ] Processing CPU when one sync brings many pending rows to a busy card: 12–37 ms per step in `measure/entry-covers.measure.ts` (mostly the batch's writes; `docs/measurements.md`). Smaller steps don't help (Nov 9): at 10, 8 and 5 events a step the worst step stays 15–29 ms, so the cost is per step (reads of recent posted rows and entries), and the number of "Same purchase?" questions changes (22, not 24), so step size isn't a free knob.
 - [ ] Find what read 327,000 and 413,000 BudgetStore rows in the hours of Nov 4 21:00 and Nov 5 14:00 UTC. It wasn't a phone full download: Workers Logs has no `sync_full` (or any line) in those hours, and a full download is about 2,300 rows. Since this line: a call that reads 20,000 rows or more logs `heavy_read` with its route or job kind (`apps/worker/src/store/heavy-reads.ts`); search Workers Logs for it after the next spike.

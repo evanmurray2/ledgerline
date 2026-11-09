@@ -2,6 +2,17 @@
 
 How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history.
 
+## Update: changes in an edit's answer (Nov 9, 2026)
+
+`measure/phone.measure.ts` (`editAnswer`): the change page an online edit's answer carries (`routes/sync.ts` `syncInAnswer`, at most 50 changes), on the same 3,000-transaction budget, 20 edits each.
+
+| Answer                    | ms median / p90 / max |
+| ------------------------- | --------------------- |
+| 3 changed rows (usual)    | 0.04 / 0.10 / 0.16    |
+| 50 changed rows (the cap) | 0.30 / 0.38 / 0.38    |
+
+It adds well under 1 ms to the edit, and saves the phone's separate sync request (a Worker request and two Durable Object calls).
+
 ## Update: the pending matcher without text (Nov 5, 2026)
 
 `docs/payee-names.md` 9.3, PR 4: a posted row and a bank pending row pair only on exact evidence (merchant keys compared as sets, worked out once per row), and the rest is asked about. Same files as below, five runs each of `measure/entry-covers.measure.ts` and three of `measure/refile-payees.measure.ts`, against `main` before this change. ms:

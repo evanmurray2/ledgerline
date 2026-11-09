@@ -9,7 +9,13 @@ import { encryptToken, parseKeyring } from '@ledgerline/platform';
 import { generate, syncBody } from '../../../tools/plaid-mock/data.mjs';
 import { acquire } from '../src/sync/lease.js';
 import { applyPage, beginRun, fetchPage } from '../src/sync/steps.js';
-import { syncRoutes, SYNC_PAGE_ROWS, type SyncPage } from '../src/routes/sync.js';
+import {
+  ANSWER_SYNC_ROWS,
+  changePage,
+  syncRoutes,
+  SYNC_PAGE_ROWS,
+  type SyncPage,
+} from '../src/routes/sync.js';
 import type { AppEnv } from '../src/http/context.js';
 import { cpu, freshDb, stats } from './harness.js';
 
@@ -111,6 +117,28 @@ test('sync pages CPU', async () => {
   const idle: number[] = [];
   for (let i = 0; i < 20; i++) idle.push((await cpu(db, () => get(`since=${since}`))).ms);
   out.nothingNew = { ms: stats(idle) };
+  // An edit's answer (syncInAnswer): the changes since the phone's number, at most ANSWER_SYNC_ROWS. A usual edit
+  // changes a few rows; a large one fills the answer and leaves the rest to a sync.
+  const answer = async (n: number) => {
+    const ms: number[] = [];
+    for (let i = 0; i < 20; i++) {
+      const from = since;
+      await db
+        .prepare(
+          `UPDATE bank_txn SET updated_at = updated_at + 1 WHERE provider_txn_id IN (SELECT provider_txn_id FROM bank_txn LIMIT ?1 OFFSET ?2)`,
+        )
+        .bind(n, i * n)
+        .run();
+      const r = await cpu(db, () =>
+        changePage(db, from, ANSWER_SYNC_ROWS, { format: 1, epoch: 'e0', serverTime: Date.now() }),
+      );
+      ms.push(r.ms);
+      since = r.result.through;
+      if (r.result.more) since = (await get(`since=${since}`)).through;
+    }
+    return stats(ms);
+  };
+  out.editAnswer = { rows3: await answer(3), rows50: await answer(50) };
   mkdirSync('.measure', { recursive: true });
   writeFileSync('.measure/phone.json', JSON.stringify(out, null, 2));
   console.log(JSON.stringify(out, null, 2));

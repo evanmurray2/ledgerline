@@ -23,6 +23,8 @@ One line per entry; add yours at the end of its list. This file merges with `mer
 - **Closing an account:** the design had `account.closed_at` but nothing set it. Now Close account runs only at $0 (bank, pending, working balance and a card's payment category); it hides the account and archives a card's payment category; a new bank row or an entry opens it again. D-73 (`docs/decisions/D-73-close-account.md`).
 - **Accounts and sign-up:** `docs/multi-user.md` 7.3 and 7.4 said invites made by an admin, a People screen and a reset link. Now open sign-up with a passkey, built and switched off (`SIGNUPS`), recovery codes, bank links for admins only (`docs/open-signup.md`). D-75 (`docs/decisions/D-75-open-signup.md`).
 - **Recovery:** a point-in-time restore is still a runbook step, and now it can be undone: the Directory keeps the undo bookmark and `POST /api/settings/restore` takes `{ undo: true }`. D-77 (`docs/decisions/D-77-undo-restore.md`).
+- **Multi-user:** what D-75 built stays, switched off; nothing new is built for other users until Plaid Production. D-78 (`docs/decisions/D-78-multi-user-frozen.md`).
+- **Overview:** `docs/architecture.md` describes the system as built, on one page.
 - **Net worth:** the design said the sum of every linked account balance. Now it counts pending, like the Cash and Credit cards totals on Accounts, so the three add up; Reports' current month and "in November" follow. D-76 (`docs/decisions/D-76-net-worth-counts-pending.md`).
 
 ## Sync spec (`docs/sync-spec.md`)
