@@ -478,7 +478,12 @@ export function CategoryEditSheet() {
           ))}
         {!isNew &&
           existing &&
-          (asking ? (
+          (existing.available < 0 ? (
+            // Archived, its overspending would drop out of Budget's attention while still counting.
+            <span className="mt-3 text-xs leading-snug text-muted">
+              To remove {existing.name}, cover its {formatCents(-existing.available)} overspending first.
+            </span>
+          ) : asking ? (
             <ConfirmInline
               label={`Remove ${existing.name}`}
               confirmLabel="Remove"

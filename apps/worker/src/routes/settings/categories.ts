@@ -190,7 +190,10 @@ categoriesRoutes.post('/settings/categories/:id/archive', async (c) => {
   return c.json(ACK);
 });
 
-/** Archive (or restore) a category. Archiving one that still has money moves the money to Ready to Assign first. */
+/**
+ * Archive (or restore) a category. Archiving one that still has money moves the money to Ready to Assign first; one
+ * that is overspent is refused until the overspending is covered.
+ */
 async function archiveCategory(
   s: Scoped,
   id: string,
@@ -219,6 +222,9 @@ async function archiveCategory(
       if (sent.through === undefined || (latest?.n ?? 0) > sent.through)
         throw new HttpError(409, 'changed', CHANGED);
     }
+    // Archived, its overspending would drop out of Budget's attention while still counting (owner, Nov 9, 2026).
+    if (avail < 0)
+      throw new HttpError(422, 'overspent', 'Cover this category’s overspending first.');
     if (avail > 0) {
       w.push(
         s.q(
