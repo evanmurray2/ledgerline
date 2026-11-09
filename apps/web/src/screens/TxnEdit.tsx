@@ -85,6 +85,8 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const canEstimate = t.status === 'pending' && bank !== null;
   /** A transaction you added: its amount is yours to change. */
   const canSetAmount = t.kind === 'manual' || t.kind === 'upcoming';
+  /** What's typed in the amount box isn't an amount: Save would drop it without a word. */
+  const amountBad = canSetAmount && amtCents === null;
   const tips =
     canEstimate && bank < 0
       ? [15, 18, 20]
@@ -154,7 +156,13 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       footer={
         <div className="flex flex-col gap-2">
           {patch.error && <ErrorNote error={patch.error} />}
-          <PrimaryButton mutates="offline" track="txn.save" onClick={() => void save()}>
+          <PrimaryButton
+            mutates="offline"
+            track="txn.save"
+            disabled={amountBad}
+            why={amountBad ? 'Enter an amount' : ''}
+            onClick={() => void save()}
+          >
             Save
           </PrimaryButton>
         </div>
@@ -416,6 +424,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
         <input
           className={inputClass}
           placeholder="Add a memo"
+          maxLength={500}
           value={memo}
           onChange={(e) => setMemo(e.target.value)}
         />
