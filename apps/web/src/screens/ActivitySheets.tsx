@@ -385,6 +385,7 @@ export function AddTxnScreen() {
         <input
           className={inputClass}
           placeholder="e.g. Check #1044"
+          maxLength={120}
           value={payee}
           onChange={(e) => setPayee(e.target.value)}
         />
