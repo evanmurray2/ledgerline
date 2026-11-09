@@ -1,7 +1,6 @@
 // Edge cases on Activity and the transaction sheets, through the real stack (seeded November fixture, today Nov 14, 2026).
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
-const rta = (page: Page) => page.getByTestId(test.info().project.name === 'desktop' ? 'nav-rta' : 'rta');
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 
 /** Every row of one table, from the server's sync (a full download). */
@@ -182,4 +181,43 @@ test('Delete: an entry you added that was owed to you leaves nothing on Owed to 
   await page.goto('/owed');
   await expect(page.getByText('Out with others')).toBeVisible();
   expect(await page.locator('main').innerText()).toBe(before);
+});
+
+test('Add: an upcoming row next year shows its year', async ({ page }) => {
+  await page.goto('/activity/add');
+  const add = page.getByRole('dialog', { name: 'Add a transaction' });
+  await add.getByPlaceholder('0.00').fill('10');
+  await add.getByLabel('Payee').fill('New year party');
+  await add.getByLabel('Date').fill('2027-01-01');
+  await add.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(add).toHaveCount(0);
+  const row = page.locator('[data-track]', { hasText: 'New year party' }).first();
+  await expect(row).toContainText('Jan 1, 2027');
+  // This year's days keep the short form.
+  await expect(page.locator('[data-track]', { hasText: 'Comcast' }).first()).toContainText(/Nov 16(?!,)/);
+});
+
+test('Add: Ready to Assign picked for money in goes back to Needs a category when you switch to Out', async ({
+  page,
+  request,
+}) => {
+  await page.goto('/activity/add');
+  const add = page.getByRole('dialog', { name: 'Add a transaction' });
+  await add.getByPlaceholder('0.00').fill('10');
+  await add.getByRole('button', { name: 'In', exact: true }).click();
+  await add.getByLabel('Payee').fill('Flip back');
+  await add.getByLabel('Category').click();
+  await page
+    .getByRole('dialog', { name: 'Choose a category' })
+    .getByRole('button', { name: 'Ready to Assign' })
+    .click();
+  await expect(add.getByLabel('Category')).toHaveText(/Ready to Assign/);
+  await add.getByRole('button', { name: 'Out', exact: true }).click();
+  await expect(add.getByLabel('Category')).toHaveText(/Needs a category/);
+  await add.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(add).toHaveCount(0);
+  const m = (await rows(request, 'manual_pending')).find((r) => r.payee_name === 'Flip back')!;
+  expect(m.amount).toBe(-1000);
+  const o = (await rows(request, 'txn_overlay')).find((r) => r.txn_key === m.txn_key)!;
+  expect(o).toMatchObject({ to_rta: 0, category_id: null });
 });
