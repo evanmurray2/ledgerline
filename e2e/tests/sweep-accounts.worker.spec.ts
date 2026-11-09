@@ -182,13 +182,11 @@ test('Accounts: a long name with no spaces, and emoji, fit on the screen', async
   await expect(page.getByRole('heading', { name })).toBeVisible();
   await noSideScroll(page);
   await page.goto('/settings/data');
-  await page
-    .locator('input[type=file]')
-    .setInputFiles({
-      name: 'a.csv',
-      mimeType: 'text/csv',
-      buffer: Buffer.from('date,payee,amount\n2026-09-01,x,-1\n'),
-    });
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'a.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from('date,payee,amount\n2026-09-01,x,-1\n'),
+  });
   await page.getByLabel('Account it came from').selectOption({ label: name });
   await noSideScroll(page);
 });
@@ -240,4 +238,45 @@ test('Exports: the transactions CSV reads back with its quotes and commas', asyn
   const text = await (await import('node:fs/promises')).readFile((await d.path())!, 'utf8');
   expect(text.split('\n')[0]).toBe('date,account,payee,amount,status,category,memo,raw_name');
   expect(text).toContain('"Savings, ' + '""rainy""' + '"');
+});
+
+test('Register: each filter chip’s count is the number of rows it shows', async ({ page }) => {
+  for (const id of ['sapphire', 'freedom', 'checking', 'ally', 'marcus']) {
+    await page.goto(`/accounts/${id}`);
+    await expect(page.getByRole('heading', { level: 1 })).not.toHaveText('Account');
+    const chips = page.getByRole('group', { name: 'Show' }).getByRole('button');
+    const names = (await chips.allTextContents()).filter((t) => !/^All/.test(t));
+    for (const name of names) {
+      const n = Number(/\d+$/.exec(name)![0]);
+      const label = name.replace(/\d+$/, '');
+      await page.getByRole('group', { name: 'Show' }).getByRole('button', { name: label }).click();
+      await expect(page.getByRole('button', { name: label })).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.locator('main a[href*="/txn/"]'), `${id} ${label}`).toHaveCount(n);
+      await page
+        .getByRole('group', { name: 'Show' })
+        .getByRole('button', { name: 'All', exact: true })
+        .click();
+    }
+  }
+});
+
+test('Reports: a month with more refunds than spending reads as a negative amount', async ({ page }) => {
+  await page.goto('/activity/add');
+  const add = page.getByRole('dialog', { name: 'Add a transaction' });
+  await add.getByPlaceholder('0.00').fill('20000');
+  await add.getByRole('button', { name: 'In', exact: true }).click();
+  await add.getByLabel('Payee').fill('Big refund');
+  await add.getByLabel('Category').click();
+  await page
+    .getByRole('dialog', { name: 'Choose a category' })
+    .getByRole('button', { name: 'Groceries' })
+    .first()
+    .click();
+  await add.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(add).toHaveCount(0);
+  await page.goto('/reports');
+  if (test.info().project.name === 'phone') await page.getByRole('button', { name: 'Trends' }).click();
+  const chart = page.getByRole('img', { name: /^Spending by month/ });
+  await expect(chart).toHaveAttribute('aria-label', /Nov −\$[\d.,]+k? so far/);
+  await expect(chart).not.toHaveAttribute('aria-label', /\$-/);
 });
