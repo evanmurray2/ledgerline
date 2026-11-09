@@ -49,6 +49,8 @@ export interface Env {
   APP_VERSION?: string;
   /** 'on' lets users who aren't admins link banks: only on a Plaid plan with no lifetime link limit (D-75). */
   OTHER_USERS_BANKS?: string;
+  /** Fair use (store/shares.ts): the part of each daily limit other users share, 0–1 (default 0.5), or 'off'. */
+  OTHER_USERS_SHARE?: string;
   /**
    * The account's daily limits for the breaker (docs/open-signup.md 7), as whole numbers. Unset: Cloudflare's Free
    * plan (sync/breaker.ts FREE_LIMITS).
@@ -64,6 +66,8 @@ export interface Env {
     read: number;
     do?: { requests: number; gbs: number };
     workers?: number;
+    /** This budget's fair-use share (store/shares.ts), when the Directory knows the budget. */
+    share?: 'normal' | 'pause' | 'readonly';
   }>;
   /** Inside a budget's Durable Object: add this app's own row counts to the Directory's usage_day. */
   NOTE_USAGE?: (written: number, read: number) => Promise<void>;

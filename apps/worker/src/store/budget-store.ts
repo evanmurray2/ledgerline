@@ -39,10 +39,15 @@ import {
 import { connectionToken, makeProvider, pageSize } from '../sync/provider.js';
 import { writeBudgetState } from '../sync/breaker.js';
 import { answering } from './body.js';
+import { UsageCounter } from './shares.js';
 import { QUEUE_REFILE } from '../sync/refile-payees.js';
 import { QUEUE_DROP_TEXT_ALIASES } from '../sync/drop-text-aliases.js';
 
 /** Storage key: the store has checked once whether its payees need the re-file job (sync/refile-payees.ts). */
+/** Set while the budget rests (idle, no banks): its daily jobs come back on its next request (ensureJobs). */
+const RESTING_KEY = 'resting';
+/** Whether this store reports its usage for fair use (store/shares.ts), as the Directory last said. */
+const COUNT_KEY = 'count_usage';
 const REFILE_CHECKED = 'payee_refile_checked';
 /** Storage key: the store has checked once whether its old cleaned-text aliases need deleting (drop-text-aliases.ts). */
 const TEXT_ALIASES_CHECKED = 'payee_text_aliases_checked';
@@ -63,10 +68,14 @@ export class BudgetStore extends DurableObject<Env> {
   private cachedBudgetId: string | null = null;
   private app: Hono<AppEnv> | null = null;
   private devApp: Hono<AppEnv> | null = null;
+  private readonly usage: UsageCounter;
+  /** Fair use: whether to report usage; null until read from storage or set by a request. */
+  private counting: boolean | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.db = new DurableDb(ctx.storage);
+    this.usage = new UsageCounter(this.db.stats);
     this.runner = new JobRunner(ctx.storage, this.handlers(), (job, err) => this.onFailed(job, err));
     void ctx.blockConcurrencyWhile(async () => {
       try {
@@ -111,7 +120,19 @@ export class BudgetStore extends DurableObject<Env> {
     await this.ensureBudget(caller.budgetId);
     await this.rearm();
     this.app ??= withCaller((app) => app.use('/api/*', serverReadsOnly).route('/api', budgetApi));
-    return this.serve(this.app, request, caller);
+    this.usage.request();
+    if (caller.countUsage !== undefined) {
+      this.counting ??= (await this.ctx.storage.get<boolean>(COUNT_KEY)) ?? false;
+      if (caller.countUsage !== this.counting) {
+        this.counting = caller.countUsage;
+        await this.ctx.storage.put(COUNT_KEY, caller.countUsage);
+      }
+    }
+    try {
+      return await this.serve(this.app, request, caller);
+    } finally {
+      this.reportUsage(caller.budgetId);
+    }
   }
 
   /** Local development and e2e only: /__dev (index.ts refuses it in production). */
@@ -268,12 +289,32 @@ export class BudgetStore extends DurableObject<Env> {
     return typeof r?.time_zone === 'string' ? r.time_zone : 'America/Los_Angeles';
   }
 
-  /** Daily safety net (6.2): recreate missing recurring jobs and make sure an alarm is set. */
-  async ensureJobs(): Promise<{ ok: boolean; jobs: ReturnType<JobRunner['list']> }> {
+  /**
+   * Daily safety net (6.2): recreate missing recurring jobs and make sure an alarm is set. A budget whose users
+   * haven't signed in for 30 days (`idle`) and that has no banks stops its daily jobs instead, until its next request
+   * (docs/open-signup.md 9); `resting` says it did.
+   */
+  async ensureJobs(o: { idle?: boolean } = {}): Promise<{
+    ok: boolean;
+    jobs: ReturnType<JobRunner['list']>;
+    resting?: boolean;
+  }> {
     this.ready();
     const now = Date.now();
     const budgetId = await this.budgetId().catch(() => null);
     if (!budgetId) return { ok: false, jobs: [] };
+    if (o.idle) {
+      const banks = this.ctx.storage.sql
+        .exec(`SELECT count(*) AS n FROM connection WHERE removed_at IS NULL`)
+        .one() as { n: number };
+      if (Number(banks.n) === 0) {
+        this.ctx.storage.sql.exec(`DELETE FROM job WHERE recurring = 1`);
+        await this.ctx.storage.put(RESTING_KEY, true);
+        this.armed = false;
+        await this.runner.scheduleNext(now);
+        return { ok: true, jobs: this.runner.list(), resting: true };
+      }
+    }
     await ensureRecurring(this.enqueue, now, this.timeZone());
     // Every Plaid Item this budget holds is routed to it in the Directory (6.4); missing routes are re-registered.
     const items = this.ctx.storage.sql
@@ -305,7 +346,22 @@ export class BudgetStore extends DurableObject<Env> {
 
   override async alarm(): Promise<void> {
     this.ready();
-    await this.runner.runNext(Date.now());
+    this.usage.request();
+    this.counting ??= (await this.ctx.storage.get<boolean>(COUNT_KEY)) ?? false;
+    try {
+      await this.runner.runNext(Date.now());
+    } finally {
+      const id = this.cachedBudgetId ?? (await this.budgetId().catch(() => null));
+      if (id) this.reportUsage(id);
+    }
+  }
+
+  /** Fair use: this store's rows and requests to the Directory, at most once a minute (store/shares.ts). */
+  private reportUsage(budgetId: string): void {
+    const u = this.usage.take(this.counting === true, Date.now());
+    const dir = this.env.DIRECTORY?.get(this.env.DIRECTORY.idFromName(DIRECTORY_NAME));
+    if (!u || !dir) return;
+    this.ctx.waitUntil(dir.noteBudgetUsage(budgetId, u.written, u.read, u.requests).catch(() => undefined));
   }
 
   // ---- internals
@@ -318,6 +374,11 @@ export class BudgetStore extends DurableObject<Env> {
   private async rearm(): Promise<void> {
     if (this.armed) return;
     this.armed = true;
+    // A resting budget (ensureJobs) gets its daily jobs back on its first request.
+    if (await this.ctx.storage.get<boolean>(RESTING_KEY)) {
+      await ensureRecurring(this.enqueue, Date.now(), this.timeZone());
+      await this.ctx.storage.delete(RESTING_KEY);
+    }
     if ((await this.ctx.storage.getAlarm()) === null) await this.runner.scheduleNext(Date.now());
   }
 
@@ -350,7 +411,10 @@ export class BudgetStore extends DurableObject<Env> {
       ...this.env,
       DB: this.adapter(),
       ...(dir
-        ? { USAGE: () => dir.usageToday(), NOTE_USAGE: (w: number, r: number) => dir.noteUsage(w, r) }
+        ? {
+            USAGE: () => dir.usageToday(this.cachedBudgetId ?? undefined),
+            NOTE_USAGE: (w: number, r: number) => dir.noteUsage(w, r),
+          }
         : {}),
       ROUTE_LINK: async (itemId: string, connectionId: string) => {
         await this.enqueue('register_link', {

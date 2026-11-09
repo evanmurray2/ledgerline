@@ -114,7 +114,14 @@ export function utcDay(now = Date.now()): string {
 export async function usageToday(
   env: Env,
   now = Date.now(),
-): Promise<{ written: number; read: number; do: DoUsage; workers: number; refreshedAt: number | null }> {
+): Promise<{
+  written: number;
+  read: number;
+  do: DoUsage;
+  workers: number;
+  refreshedAt: number | null;
+  share?: 'normal' | 'pause' | 'readonly';
+}> {
   // Inside a budget's Durable Object, account usage lives in the Directory (docs/multi-user.md 9.2).
   if (env.USAGE) {
     const u = await env.USAGE();
@@ -124,6 +131,7 @@ export async function usageToday(
       do: u.do ?? { requests: 0, gbs: 0 },
       workers: u.workers ?? 0,
       refreshedAt: null,
+      ...(u.share ? { share: u.share } : {}),
     };
   }
   const r = await env.DB.prepare(
@@ -153,6 +161,8 @@ export async function usageToday(
 export async function writeBudgetState(env: Env): Promise<BudgetState> {
   const u = await usageToday(env);
   const s = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(env));
+  // Past this budget's fair-use share, its background work waits too (store/shares.ts).
+  if (s === 'normal' && u.share && u.share !== 'normal') return 'pause';
   return s === 'readonly' || s === 'rest' ? 'pause' : s;
 }
 
