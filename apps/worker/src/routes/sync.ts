@@ -9,6 +9,7 @@ import type { AppEnv } from '../http/context.js';
 import { clock } from '../http/clock.js';
 import { SYNC_FORMAT, SYNC_TABLES, type SyncTable } from '../sync-tables.js';
 import type { Scoped } from '../db/scoped.js';
+import { SYNC_SINCE_HEADER } from '@ledgerline/contracts';
 
 const TRY_AGAIN = 'Something went wrong. Try again.';
 
@@ -56,6 +57,82 @@ async function head(db: Db): Promise<number> {
   const r = await db.prepare(`SELECT coalesce(max(seq), 0) AS n FROM change_log`).first<{ n: number }>();
   return r?.n ?? 0;
 }
+
+/** The changes after `since`, in change order: at most `limit` change-log entries (`more` says if there are others). */
+export async function changePage(
+  db: Db,
+  since: number,
+  limit: number,
+  base: Pick<SyncPage, 'format' | 'epoch' | 'serverTime'>,
+): Promise<SyncPage> {
+  const log = (
+    await db
+      .prepare(`SELECT tbl, pk, seq, deleted FROM change_log WHERE seq > ?1 ORDER BY seq LIMIT ?2`)
+      .bind(since, limit)
+      .all<{ tbl: string; pk: string; seq: number; deleted: number }>()
+  ).results;
+  const rows: SyncRow[] = [];
+  const live = new Map<string, string[]>();
+  for (const e of log) {
+    if (e.deleted) rows.push({ t: e.tbl, k: JSON.parse(e.pk) as unknown[], d: null });
+    else live.set(e.tbl, [...(live.get(e.tbl) ?? []), e.pk]);
+  }
+  for (const [name, pks] of live) {
+    const tbl = SYNC_TABLES.find((x) => x.name === name);
+    if (!tbl) continue;
+    const sql =
+      tbl.pk.length === 1
+        ? `SELECT * FROM ${name} WHERE ${tbl.pk[0]} IN (SELECT json_extract(value, '$[0]') FROM json_each(?1))`
+        : `SELECT * FROM ${name} WHERE json_array(${tbl.pk.join(', ')}) IN (SELECT value FROM json_each(?1))`;
+    const got = (await db.prepare(sql).bind(JSON.stringify(pks)).all<Record<string, unknown>>()).results;
+    const found = new Set<string>();
+    for (const r of got) {
+      const k = pkOf(tbl, r);
+      found.add(JSON.stringify(k));
+      rows.push({ t: name, k, d: strip(tbl, r) });
+    }
+    // Logged as present but gone by now (deleted after this page was read): send as deleted; the delete's own log
+    // entry comes in a later page too.
+    for (const pk of pks)
+      if (!found.has(JSON.stringify(JSON.parse(pk))))
+        rows.push({ t: name, k: JSON.parse(pk) as unknown[], d: null });
+  }
+  const page: SyncPage = {
+    ...base,
+    through: log.length ? log[log.length - 1]!.seq : since,
+    more: log.length === limit,
+    cursor: null,
+    rows,
+  };
+  return page;
+}
+
+/** At most this many changes ride along in an edit's answer; an edit that changed more leaves the rest to a sync. */
+export const ANSWER_SYNC_ROWS = 50;
+
+/**
+ * An online edit's answer carries the changes since the change number the phone sends (`x-sync-since`), so the phone
+ * brings its copy up to date without a second request (a sync costs a Worker request and two Durable Object calls).
+ * Only on success, only for a JSON object answer, and never for an edit the phone queued offline: those resend.
+ */
+export const syncInAnswer: MiddlewareHandler<AppEnv> = async (c, next) => {
+  await next();
+  const m = c.req.method;
+  if (m === 'GET' || m === 'HEAD' || c.res.status >= 300) return;
+  const raw = c.req.header(SYNC_SINCE_HEADER);
+  if (raw === undefined || c.req.header('x-edit-id')) return;
+  const since = Number(raw);
+  if (!Number.isSafeInteger(since) || since <= 0) return;
+  if (!(c.res.headers.get('content-type') ?? '').includes('application/json')) return;
+  const json = (await c.res
+    .clone()
+    .json()
+    .catch(() => null)) as Record<string, unknown> | null;
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return;
+  const base = { format: SYNC_FORMAT, epoch: c.get('syncEpoch') ?? 'e0', serverTime: clock(c.env) };
+  const sync = await changePage(c.env.DB, since, ANSWER_SYNC_ROWS, base);
+  c.res = new Response(JSON.stringify({ ...json, sync }), { status: c.res.status, headers: c.res.headers });
+};
 
 syncRoutes.get('/sync', async (c) => {
   const db = c.env.DB;
@@ -112,47 +189,7 @@ syncRoutes.get('/sync', async (c) => {
     return c.json(page);
   }
 
-  // Changes since `since`, in change order.
-  const log = (
-    await db
-      .prepare(`SELECT tbl, pk, seq, deleted FROM change_log WHERE seq > ?1 ORDER BY seq LIMIT ?2`)
-      .bind(since, limit)
-      .all<{ tbl: string; pk: string; seq: number; deleted: number }>()
-  ).results;
-  const rows: SyncRow[] = [];
-  const live = new Map<string, string[]>();
-  for (const e of log) {
-    if (e.deleted) rows.push({ t: e.tbl, k: JSON.parse(e.pk) as unknown[], d: null });
-    else live.set(e.tbl, [...(live.get(e.tbl) ?? []), e.pk]);
-  }
-  for (const [name, pks] of live) {
-    const tbl = SYNC_TABLES.find((x) => x.name === name);
-    if (!tbl) continue;
-    const sql =
-      tbl.pk.length === 1
-        ? `SELECT * FROM ${name} WHERE ${tbl.pk[0]} IN (SELECT json_extract(value, '$[0]') FROM json_each(?1))`
-        : `SELECT * FROM ${name} WHERE json_array(${tbl.pk.join(', ')}) IN (SELECT value FROM json_each(?1))`;
-    const got = (await db.prepare(sql).bind(JSON.stringify(pks)).all<Record<string, unknown>>()).results;
-    const found = new Set<string>();
-    for (const r of got) {
-      const k = pkOf(tbl, r);
-      found.add(JSON.stringify(k));
-      rows.push({ t: name, k, d: strip(tbl, r) });
-    }
-    // Logged as present but gone by now (deleted after this page was read): send as deleted; the delete's own log
-    // entry comes in a later page too.
-    for (const pk of pks)
-      if (!found.has(JSON.stringify(JSON.parse(pk))))
-        rows.push({ t: name, k: JSON.parse(pk) as unknown[], d: null });
-  }
-  const page: SyncPage = {
-    ...base,
-    through: log.length ? log[log.length - 1]!.seq : since,
-    more: log.length === limit,
-    cursor: null,
-    rows,
-  };
-  return c.json(page);
+  return c.json(await changePage(db, since, limit, base));
 });
 
 /**

@@ -30,7 +30,7 @@ import { accountCloseRoutes } from './account-close.js';
 import { settingsRoutes } from './settings.js';
 import { opsRoutes } from './ops.js';
 import { categorySheet, assignView } from '../views/category.js';
-import { syncRoutes, editOnce } from './sync.js';
+import { syncRoutes, editOnce, syncInAnswer } from './sync.js';
 import { canLinkBanks } from '../http/context.js';
 
 /**
@@ -92,6 +92,9 @@ export const serverReadsOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (SERVER_READS.some((r) => r.test(path))) return next();
   return c.json({ error: 'on_device', message: 'This screen is worked out on your device.' }, 404);
 };
+/** An online edit's answer carries the changes since the phone's copy (routes/sync.ts). Outside bumpOnChange, so the
+ * changes include the budget row it bumps. */
+budgetApi.use('*', syncInAnswer);
 /** A change made offline and sent again after a dropped answer is applied once (routes/sync.ts). */
 budgetApi.use('*', editOnce);
 /** Every change bumps the budget's data version (http/version.ts). */
@@ -102,7 +105,8 @@ budgetApi.use('*', async (c, next) => {
   const m = c.req.method;
   if (m === 'GET' || m === 'HEAD') return next();
   // Inside a budget's Durable Object, account usage comes from the Directory (USAGE); elsewhere, from usage_day.
-  const u = c.env.USAGE ? await c.env.USAGE() : await usageToday(c.env);
+  const ask = c.env.USAGE_FOR_WRITE ?? c.env.USAGE;
+  const u = ask ? await ask() : await usageToday(c.env);
   const st = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(c.env));
   if (st === 'readonly' || st === 'rest')
     return c.json(

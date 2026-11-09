@@ -1,5 +1,7 @@
 # Multi-user design: Durable Objects for everything
 
+> **Now:** this is the design and its build phases, kept for their reasoning. `docs/architecture.md` says what runs today; no new multi-user work until Plaid Production (D-78).
+
 Status: v3.1, Nov 2, 2026. This replaces v1 (one shared D1 database) and v2 (a database per budget plus a D1 directory). v3 got an adversarial review, and this revision includes its fixes. Section 14 keeps the history.
 
 What the owner asked for:

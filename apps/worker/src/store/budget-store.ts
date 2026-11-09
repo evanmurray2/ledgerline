@@ -62,6 +62,9 @@ export interface StoreHealth {
   error?: string;
 }
 
+/** How long a store keeps the Directory's usage answer (usage30). */
+const USAGE_CACHE_MS = 30_000;
+
 export class BudgetStore extends DurableObject<Env> {
   protected readonly db: DurableDb;
   private startError: string | null = null;
@@ -467,6 +470,22 @@ export class BudgetStore extends DurableObject<Env> {
     }
   }
 
+  /** The Directory's answer on today's usage, kept a short while for the write check (routes/api.ts). */
+  private usageCache: { at: number; value: Awaited<ReturnType<NonNullable<Env['USAGE']>>> } | null = null;
+
+  /**
+   * Today's usage for the check before each write, asked of the Directory at most every USAGE_CACHE_MS: each ask is
+   * a Durable Object request of its own. The session and background work still ask every time. The Directory works its own state out at most once a minute too (STATE_MS),
+   * so this adds at most that much to how late a limit is noticed.
+   */
+  private async usage30(ask: () => ReturnType<NonNullable<Env['USAGE']>>) {
+    const now = Date.now();
+    if (this.usageCache && now - this.usageCache.at < USAGE_CACHE_MS) return this.usageCache.value;
+    const value = await ask();
+    this.usageCache = { at: now, value };
+    return value;
+  }
+
   private adapter(): Db {
     return this.db;
   }
@@ -485,6 +504,7 @@ export class BudgetStore extends DurableObject<Env> {
       ...(dir
         ? {
             USAGE: () => dir.usageToday(this.cachedBudgetId ?? undefined),
+            USAGE_FOR_WRITE: () => this.usage30(() => dir.usageToday(this.cachedBudgetId ?? undefined)),
             NOTE_USAGE: (w: number, r: number) => dir.noteUsage(w, r),
           }
         : {}),
