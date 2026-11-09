@@ -310,7 +310,7 @@ export class BudgetStore extends DurableObject<Env> {
   }
 
   /**
-   * Undoes the last rewind with the bookmark the Directory kept (null: there's nothing to undo). The undo is a rewind
+   * Undoes the last restore with the bookmark the Directory kept (null: there's nothing to undo). The undo is a restore
    * too, so it can be undone in turn.
    */
   async restoreUndo(): Promise<{ undo: string } | null> {
@@ -320,7 +320,7 @@ export class BudgetStore extends DurableObject<Env> {
     return last ? this.restoreBookmark(last.undo, null) : null;
   }
 
-  /** The last rewind, without its bookmark. */
+  /** The last restore, without its bookmark. */
   async lastRestore(): Promise<{ at: number; to: number | null } | null> {
     this.ready();
     const last = await this.directory().lastRestore(await this.budgetId());
@@ -332,8 +332,8 @@ export class BudgetStore extends DurableObject<Env> {
   }
 
   /**
-   * Rewinds to `bookmark` on the next start. The sync epoch changes first and the undo bookmark is kept in the
-   * Directory, which the rewind can't reach, so every copy downloads again and the rewind can always be undone.
+   * Restores to `bookmark` on the next start. The sync epoch changes first and the undo bookmark is kept in the
+   * Directory, which the restore can't reach, so every copy downloads again and the restore can always be undone.
    */
   private async restoreBookmark(bookmark: string, to: number | null): Promise<{ undo: string }> {
     const id = await this.budgetId();

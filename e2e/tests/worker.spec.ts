@@ -354,29 +354,6 @@ test('Full backup: downloads every row of the budget as one file', async ({ page
   await expect(page.getByText('Saved. Keep it somewhere safe.')).toBeVisible();
 });
 
-test('Rewind: needs a time in the last 30 days and the budget’s name, then asks once more', async ({
-  page,
-}) => {
-  await page.goto('/settings/data');
-  await expect(page.getByText('Put your budget back as it was, up to 30 days ago')).toBeVisible();
-  await page.getByRole('button', { name: 'Rewind', exact: true }).click();
-  const label = await page.getByText(/^Type “.+” to confirm$/).textContent();
-  const name = /“(.+)”/.exec(label ?? '')![1]!;
-  const go = page.getByRole('button', { name: 'Rewind', exact: true });
-  await expect(go).toBeDisabled();
-  await page.getByLabel(/^Type “/).fill(name);
-  await expect(go).toBeEnabled();
-  await page.getByLabel('Rewind to').fill('2026-09-01T09:00');
-  await expect(page.getByText('Pick a time in the last 30 days.')).toBeVisible();
-  await expect(go).toBeDisabled();
-  await page.getByLabel('Rewind to').fill('2026-11-14T09:00');
-  await go.click();
-  await expect(page.getByText(/^Rewind your budget to Nov 14, 9:00/)).toBeVisible();
-  // Point-in-time recovery doesn't run in local dev: stop at the last question.
-  await page.getByRole('button', { name: 'Keep it' }).click();
-  await expect(page.getByText(/^Rewind your budget to/)).toBeHidden();
-});
-
 test('Exports: Usage and notes downloads as a JSON file', async ({ page }) => {
   await page.goto('/settings/data');
   const download = page.waitForEvent('download');

@@ -1,6 +1,6 @@
-// Rewinding a budget from Settings → Import and export (runbooks/restore.md): the route checks the typed name and the
-// 30 days, keeps no bookmark in the budget itself, and can always undo the last rewind; the Directory keeps that
-// rewind, since the rewind can't reach it. Cloudflare's point-in-time recovery doesn't run in tests, so the route is
+// Undoing a point-in-time restore (runbooks/restore.md, D-77): the route checks the typed name and the
+// 30 days, keeps no bookmark in the budget itself, and can always undo the last restore; the Directory keeps that
+// restore, since the restore can't reach it. Cloudflare's point-in-time recovery doesn't run in tests, so the route is
 // called with stand-ins for the store's hooks and the Directory's record is checked on its own.
 import { env } from 'cloudflare:test';
 import { Hono } from 'hono';
@@ -11,9 +11,9 @@ import { DIRECTORY_NAME, type Directory, type RestoreRecord } from '../src/store
 import { storeDb } from './store-db.js';
 
 const e = env as unknown as { DIRECTORY: DurableObjectNamespace<Directory> };
-const B = 'b_rewind';
+const B = 'b_restore_undo';
 const NOW = Date.UTC(2026, 10, 9, 18, 0);
-const db = storeDb('rewind');
+const db = storeDb('restore');
 let last: RestoreRecord | null = null;
 const calls: string[] = [];
 
@@ -50,7 +50,7 @@ const call = async (method: string, path: string, body?: unknown) => {
   return { status: r.status, json: (await r.json()) as Record<string, unknown> };
 };
 
-describe('rewinding a budget', () => {
+describe('undoing a restore', () => {
   beforeAll(async () => {
     await db
       .prepare(`INSERT INTO budget (id, name, created_at, updated_at) VALUES (?1, 'Home', 0, 0)`)
@@ -71,13 +71,13 @@ describe('rewinding a budget', () => {
     expect(calls).toEqual([]);
   });
 
-  it('has nothing to undo before the first rewind', async () => {
+  it('has nothing to undo before the first restore', async () => {
     expect((await call('GET', '/api/settings/restore/last')).json).toEqual({ last: null });
     const r = await call('POST', '/api/settings/restore', { undo: true, confirm: 'Home' });
     expect(r).toMatchObject({ status: 422, json: { error: 'invalid' } });
   });
 
-  it('rewinds, shows the last rewind, and undoes it', async () => {
+  it('restores, shows the last restore, and undoes it', async () => {
     const t = new Date(NOW - 3600_000).toISOString();
     const r = await call('POST', '/api/settings/restore', { before: t, confirm: ' Home ' });
     expect(r.status).toBe(200);
@@ -87,13 +87,13 @@ describe('rewinding a budget', () => {
     });
     expect((await call('POST', '/api/settings/restore', { undo: true, confirm: 'Home' })).status).toBe(200);
     expect(calls[1]).toBe(`undo undo-${Date.parse(t)}`);
-    // The undo is a rewind too, and can be undone in turn.
+    // The undo is a restore too, and can be undone in turn.
     expect((await call('GET', '/api/settings/restore/last')).json).toEqual({
       last: { at: new Date(NOW).toISOString(), to: null },
     });
   });
 
-  it('the Directory keeps the last rewind of each budget', async () => {
+  it('the Directory keeps the last restore of each budget', async () => {
     const d = e.DIRECTORY.get(e.DIRECTORY.idFromName(DIRECTORY_NAME));
     expect(await d.lastRestore('b_none')).toBeNull();
     await d.noteRestore('b_one', { at: 1, to: 0, undo: 'u1' });

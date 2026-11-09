@@ -1,21 +1,42 @@
 # Recovery
 
-There is no off-site backup (decisions.md D-29). Recovery uses Cloudflare's 30-day point-in-time recovery for each budget's Durable Object. Rewinding is on Settings → Import and export since D-77; it was a runbook step before (`docs/multi-user.md` 8.8).
+There is no off-site backup (decisions.md D-29). Recovery uses Cloudflare's 30-day point-in-time recovery for each budget's Durable Object. Restoring is a runbook step, never a button in the app (`docs/multi-user.md` 8.8), so a stolen sign-in can't wipe a budget.
 
 ## Undo recent damage (last 30 days)
 
-On your phone or a computer:
+Each budget lives in its own Durable Object (`BudgetStore`). Restoring goes through the app, so every device's copy is downloaded again (D-45): the restore changes the budget's sync epoch first, and each device then shows "Your budget was restored, so it downloads again."
 
-1. Open Settings → Import and export.
-2. Under Recovery, tap **Rewind**.
-3. Pick a time just before the damage. The time is in your device's time zone.
-4. Type your budget's name, then tap **Rewind** and confirm. Face ID asks for your passkey if you haven't used it in the last 15 minutes.
+You need a computer: the steps use the browser's console, which an iPhone doesn't have.
 
-Everything after that time is replaced. Bank transactions after it come back on the next sync; your own edits after it are lost. Every device downloads its copy again, because the rewind changes the budget's sync epoch in the Directory first (D-45).
+1. On a computer, open https://ledgerline.ledger-line.workers.dev and sign in again with your passkey. The restore needs a passkey check in the last 15 minutes.
+2. Open the browser's console on the Ledgerline tab (Chrome or Edge: Ctrl+Shift+J, or Cmd+Option+J on a Mac; Safari: turn on Settings → Advanced → Show features for web developers, then Cmd+Option+C).
+3. Run this, with a time just before the damage (UTC, in the last 30 days) and your budget's name exactly as it shows in Settings:
 
-**A rewind can be undone.** The Directory keeps the bookmark that puts the budget back as it was just before the last rewind, and Recovery shows **Undo last rewind**. The undo is a rewind too, so it can be undone in turn. Even without the bookmark, a rewind to the minute before a bad rewind works, for 30 days.
+```js
+await fetch('/api/settings/restore', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-ledgerline': '1' },
+  body: JSON.stringify({ before: '2026-11-03T15:00:00Z', confirm: 'Your budget name' }),
+}).then((r) => r.json());
+```
 
-The route behind the screen is `POST /api/settings/restore` with `{ before, confirm }` or `{ undo: true, confirm }`; `GET /api/settings/restore/last` says when the last rewind ran.
+4. The answer is `{ ok: true, undo: "…" }`. You don't need to keep the bookmark: the Directory keeps the last one (D-77).
+
+**To undo the last restore** (a restore by mistake, or by someone else), repeat steps 1 and 2, then run:
+
+```js
+await fetch('/api/settings/restore', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-ledgerline': '1' },
+  body: JSON.stringify({ undo: true, confirm: 'Your budget name' }),
+}).then((r) => r.json());
+```
+
+The budget goes back to how it was just before the last restore. The undo is a restore too, so running it again undoes the undo. To see when the last restore ran: `await fetch('/api/settings/restore/last').then((r) => r.json())` (`to` is null when it was an undo).
+
+Everything after that time is replaced. Bank transactions after it come back on the next sync; your own edits after it are lost.
+
+Answers that refuse: `confirm` (the name doesn't match), `invalid` (the time isn't in the last 30 days, or isn't an ISO time, or there's no restore to undo), and a passkey prompt when the last check is older than 15 minutes (sign in again, then repeat step 3).
 
 ## Your own copies
 

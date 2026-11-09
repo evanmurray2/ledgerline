@@ -111,14 +111,6 @@ export const api = {
   newRecoveryCode: () => post('/api/settings/security/recovery-code', z.object({ code: z.string() })),
   dismissRecoveryNotice: () => post('/api/settings/security/recovery-notice/dismiss', Ok),
   // Deleting your own account, and Settings → Users for admins (D-75).
-  /** Rewind the budget to a time in the last 30 days, or undo the last rewind (runbooks/restore.md). */
-  rewind: (body: { before: string; confirm: string } | { undo: true; confirm: string }) =>
-    post('/api/settings/restore', z.object({ ok: z.literal(true), undo: z.string() }), body),
-  lastRewind: () =>
-    get(
-      '/api/settings/restore/last',
-      z.object({ last: z.object({ at: z.string(), to: z.string().nullable() }).nullable() }),
-    ),
   deleteAccount: (budgetName: string) => post('/api/settings/security/delete-account', Ok, { budgetName }),
   users: (q: { before?: string; status?: string } = {}) =>
     get(

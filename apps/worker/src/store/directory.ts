@@ -44,13 +44,13 @@ export const IDLE_MS = 30 * 86_400_000;
 /** The Directory is a single object; this is its name. */
 export const DIRECTORY_NAME = 'directory';
 
-/** A budget's last rewind (noteRestore). */
+/** A budget's last restore (noteRestore). */
 export interface RestoreRecord {
-  /** When the rewind ran (epoch ms). */
+  /** When the restore ran (epoch ms). */
   at: number;
-  /** The time it went back to (epoch ms), or null when it undid the rewind before it. */
+  /** The time it went back to (epoch ms), or null when it undid the restore before it. */
   to: number | null;
-  /** The bookmark that puts the budget back as it was just before this rewind. */
+  /** The bookmark that puts the budget back as it was just before this restore. */
   undo: string;
 }
 const restoreKey = (budgetId: string) => `restore:${budgetId}`;
@@ -362,8 +362,8 @@ export class Directory extends DurableObject<Env> {
   }
 
   /**
-   * The last rewind of a budget (Settings → Import and export), kept here because the rewind can't reach the
-   * Directory: when it ran, the time it went back to (null: it undid the rewind before it), and the bookmark that
+   * The last restore of a budget (runbooks/restore.md), kept here because the restore can't reach the
+   * Directory: when it ran, the time it went back to (null: it undid the restore before it), and the bookmark that
    * undoes it.
    */
   async noteRestore(budgetId: string, rec: RestoreRecord): Promise<void> {

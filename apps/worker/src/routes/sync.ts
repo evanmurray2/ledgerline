@@ -181,9 +181,9 @@ syncRoutes.post('/identity-alert', async (c) => {
 });
 
 /**
- * Point-in-time recovery from the app (Settings → Import and export, runbooks/restore.md): rewinds the budget's
- * database to a time in the last 30 days, or undoes the last rewind (`undo`). Needs a passkey check within 15 minutes
- * and the budget's name typed. A rewind is never final: the Directory keeps the bookmark that undoes it, and the
+ * Point-in-time recovery (runbooks/restore.md, a console step, never a button: D-77): rolls the budget's
+ * database to a time in the last 30 days, or undoes the last restore (`undo`). Needs a passkey check within 15 minutes
+ * and the budget's name typed. A restore is never final: the Directory keeps the bookmark that undoes it, and the
  * 30 days of recovery cover the minute before it as well. Phones download their copies again.
  */
 syncRoutes.post('/settings/restore', async (c) => {
@@ -201,10 +201,10 @@ syncRoutes.post('/settings/restore', async (c) => {
   if (!b || body.data.confirm.trim() !== b.name.trim())
     return c.json({ error: 'confirm', message: 'Type the budget’s name to confirm.' }, 422);
   if (!c.env.RESTORE_TO || !c.env.RESTORE_UNDO)
-    return c.json({ error: 'unavailable', message: 'Rewinding isn’t available here.' }, 503);
+    return c.json({ error: 'unavailable', message: 'Restoring isn’t available here.' }, 503);
   if ('undo' in body.data) {
     const r = await c.env.RESTORE_UNDO();
-    if (!r) return c.json({ error: 'invalid', message: 'There’s no rewind to undo.' }, 422);
+    if (!r) return c.json({ error: 'invalid', message: 'There’s no restore to undo.' }, 422);
     return c.json({ ok: true, ...r });
   }
   const at = Date.parse(body.data.before);
@@ -214,7 +214,7 @@ syncRoutes.post('/settings/restore', async (c) => {
   return c.json({ ok: true, ...(await c.env.RESTORE_TO(at)) });
 });
 
-/** The last rewind, for Settings → Import and export (no bookmark: undoing goes through the route above). */
+/** The last restore, for the runbook (no bookmark: undoing goes through the route above). */
 syncRoutes.get('/settings/restore/last', async (c) => {
   const last = c.env.LAST_RESTORE ? await c.env.LAST_RESTORE() : null;
   return c.json({

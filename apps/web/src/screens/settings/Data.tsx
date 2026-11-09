@@ -21,7 +21,7 @@ import {
 import { useScreen } from '../../lib/common';
 import { useCanWrite } from '../../state/connectivity';
 import { Page } from './common';
-import { RewindCard } from './Rewind';
+import { Why } from '../../components/Why';
 
 // ------------------------------------------------------------------ import and export
 
@@ -163,9 +163,21 @@ export function DataScreen() {
       </Card>
       <FullBackup />
       <SectionTitle>Recovery</SectionTitle>
-      <RewindCard />
-      <span className="text-xs text-muted">
-        For a copy older than 30 days, download the full backup above.
+      <Card>
+        <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
+          <span className="flex flex-col gap-0.5">
+            <span className="text-base font-semibold">Undo window</span>
+            <span className="text-xs text-muted">Your budget can be rewound to any minute</span>
+          </span>
+          <span className="text-sm text-ink-2">Last 30 days</span>
+        </div>
+      </Card>
+      <span className="flex flex-col gap-1 text-xs text-muted">
+        <span>For a copy older than 30 days, download the full backup above.</span>
+        <Why>
+          Rewinding isn’t on this screen, so a stolen sign-in can’t wipe your data. The steps are in the
+          restore guide.
+        </Why>
       </span>
     </Page>
   );
