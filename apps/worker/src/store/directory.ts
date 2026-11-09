@@ -20,6 +20,7 @@ import { clock } from '../http/clock.js';
 import {
   RESTING,
   classifyUsage,
+  dailyLimits,
   noteUsage,
   restsDuring,
   usageToday,
@@ -248,7 +249,7 @@ export class Directory extends DurableObject<Env> {
   private async state(now: number): Promise<BudgetState> {
     if (this.usageState && now - this.usageState.at < STATE_MS) return this.usageState.state;
     const u = await usageToday(this.appEnv(), now);
-    const state = classifyUsage(u.written, u.read, u.do, u.workers);
+    const state = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(this.env));
     this.usageState = { state, at: now };
     return state;
   }

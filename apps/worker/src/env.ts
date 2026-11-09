@@ -47,6 +47,15 @@ export interface Env {
   /** Plaid page size: 500 by default, 250 if Phase 1 shows the apply step over budget. */
   SYNC_PAGE_SIZE?: string;
   APP_VERSION?: string;
+  /**
+   * The account's daily limits for the breaker (docs/open-signup.md 7), as whole numbers. Unset: Cloudflare's Free
+   * plan (sync/breaker.ts FREE_LIMITS).
+   */
+  LIMIT_ROWS_WRITTEN?: string;
+  LIMIT_ROWS_READ?: string;
+  LIMIT_DO_REQUESTS?: string;
+  LIMIT_DO_GBS?: string;
+  LIMIT_WORKER_REQUESTS?: string;
   /** Inside a budget's Durable Object: today's account usage, from the Directory (docs/multi-user.md 9.2). */
   USAGE?: () => Promise<{
     written: number;

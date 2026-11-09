@@ -15,7 +15,7 @@ import { cents, parseCents, parseImportDate } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
 import { HttpError, parse, scoped, GONE } from './api.js';
-import { classifyUsage, noteUsage, usageToday, utcDay, READ_LIMIT, WRITE_LIMIT } from '../sync/breaker.js';
+import { classifyUsage, dailyLimits, noteUsage, usageToday, utcDay } from '../sync/breaker.js';
 import { makeProvider } from '../sync/provider.js';
 import { startSync } from './settings/connections.js';
 import { TX_COLUMNS, uncovered, type TxRow } from '../ledger/ledger.js';
@@ -33,7 +33,8 @@ opsRoutes.post('/usage', async (c) => {
   );
   if (setting && JSON.parse(setting.value) === false) return c.body(null, 204);
   const u = await usageToday(c.env);
-  if (classifyUsage(u.written, u.read, u.do, u.workers) !== 'normal') return c.body(null, 204);
+  if (classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(c.env)) !== 'normal')
+    return c.body(null, 204);
   const dayStart = Date.parse(`${utcDay()}T00:00:00Z`);
   const today = await s.first<{ n: number }>(
     `SELECT count(*) AS n FROM usage_event WHERE budget_id = ?1 AND at >= ?2`,
@@ -98,21 +99,24 @@ opsRoutes.get('/health', async (c) => {
     ),
   ]);
   const u = await usageToday(c.env, now);
+  const limits = dailyLimits(c.env);
   const connections = (conns!.results as { id: string; last_synced_at: number | null }[]).map((x) => ({
     id: x.id,
     lastSyncedAt: x.last_synced_at,
     stale: !x.last_synced_at || now - x.last_synced_at > 24 * 3_600_000,
   }));
   const view: HealthView = {
-    ok: connections.every((x) => !x.stale) && classifyUsage(u.written, u.read, u.do, u.workers) === 'normal',
+    ok:
+      connections.every((x) => !x.stale) &&
+      classifyUsage(u.written, u.read, u.do, u.workers, limits) === 'normal',
     connections,
     watermarkLag: Math.max(0, (lag!.results[0] as { lag: number } | undefined)?.lag ?? 0),
     usage: {
       day: utcDay(now),
       rowsRead: u.read,
       rowsWritten: u.written,
-      readPct: Math.round((u.read * 1000) / READ_LIMIT) / 10,
-      writePct: Math.round((u.written * 1000) / WRITE_LIMIT) / 10,
+      readPct: Math.round((u.read * 1000) / limits.rowsRead) / 10,
+      writePct: Math.round((u.written * 1000) / limits.rowsWritten) / 10,
     },
   };
   // The GitHub monitor's checks are recorded (it sends this header), so the app can tell when monitoring stops.

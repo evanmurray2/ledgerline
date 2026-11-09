@@ -56,6 +56,32 @@ async function passkeyCount(env: Env): Promise<number> {
   return (await env.DB.prepare(`SELECT count(*) AS n FROM passkey`).first<{ n: number }>())?.n ?? 0;
 }
 
+/**
+ * Setup is open while no admin has a passkey (docs/open-signup.md 3.4): with one user, the same as no passkey at all;
+ * with other users, the owner can still set up again after the runbook removes only the admin's passkeys.
+ */
+const NO_ADMIN_PASSKEY = `NOT EXISTS (SELECT 1 FROM passkey p JOIN user u ON u.id = p.user_id WHERE u.is_admin = 1)`;
+
+async function setupOpen(env: Env): Promise<boolean> {
+  return !!(await env.DB.prepare(`SELECT ${NO_ADMIN_PASSKEY} AS open`).first<number>('open'));
+}
+
+/** The first admin, if one exists (setup adds the passkey to them). */
+async function firstAdmin(env: Env): Promise<string | null> {
+  return (
+    (await env.DB.prepare(
+      `SELECT id FROM user WHERE is_admin = 1 ORDER BY created_at, id LIMIT 1`,
+    ).first<string>('id')) ?? null
+  );
+}
+
+/** Marks a ceremony's challenge used, in the same batch as what it allows (docs/open-signup.md 3.3). */
+function useChallenge(env: Env, id: string, now: number): Stmt {
+  return env.DB.prepare(`INSERT INTO used_challenge (id, used_at) VALUES (?1, ?2)`).bind(id, now);
+}
+
+const isReplay = (e: unknown) => /UNIQUE|PRIMARY KEY/i.test(String(e)) && /used_challenge/i.test(String(e));
+
 /** A new session; null if this challenge already made one (a replay). */
 async function newSession(
   env: Env,
@@ -95,8 +121,9 @@ async function newSession(
   return token;
 }
 
-/** The user a new passkey will belong to, from what allowed the ceremony; null for setup (the first user, not yet created). */
+/** The user a new passkey will belong to, from what allowed the ceremony; null for setup before the first user exists. */
 async function grantUser(env: Env, grant: { kind: string; ref: string | null }): Promise<string | null> {
+  if (grant.kind === 'setup') return firstAdmin(env);
   if (grant.kind === 'device')
     return (
       (await env.DB.prepare(`SELECT user_id FROM device_link WHERE token_hash = ?1`)
@@ -120,10 +147,9 @@ async function takeChallenge(
 ): Promise<{ id: string; challenge: string; grant_kind: string | null; grant_ref: string | null } | null> {
   const c = await openChallenge(env, readCookie(req, CHALLENGE_COOKIE), purpose, now);
   if (!c) return null;
-  // Single use: a finished ceremony records its challenge id on a session (unique index).
-  const used = await env.DB.prepare(`SELECT 1 AS u FROM auth_session WHERE challenge_id = ?1`)
-    .bind(c.id)
-    .first();
+  // Single use: a finished ceremony records its challenge id in used_challenge, in the same batch as what it allowed.
+  // (A session's challenge_id changes on every fresh passkey check, so it can't be the test.)
+  const used = await env.DB.prepare(`SELECT 1 AS u FROM used_challenge WHERE id = ?1`).bind(c.id).first();
   return used ? null : c;
 }
 
@@ -145,7 +171,7 @@ authRoutes.get('/status', async (c) => {
   return c.json({
     signedIn: who?.kind === 'user',
     hasPasskey: n > 0,
-    setupOpen: n === 0 && (c.env.SETUP_CODE?.length ?? 0) >= 32,
+    setupOpen: (c.env.SETUP_CODE?.length ?? 0) >= 32 && (await setupOpen(c.env)),
   });
 });
 
@@ -159,7 +185,7 @@ authRoutes.post('/register/options', async (c) => {
   const b = await c.req.json<{ setupCode?: string; deviceToken?: string }>().catch(() => ({}) as never);
   let grant: { kind: string; ref: string | null } | null = null;
   if (typeof b.setupCode === 'string') {
-    if ((await passkeyCount(env)) === 0 && (await secretMatches(b.setupCode, env.SETUP_CODE)))
+    if ((await setupOpen(env)) && (await secretMatches(b.setupCode, env.SETUP_CODE)))
       grant = { kind: 'setup', ref: null };
   } else if (typeof b.deviceToken === 'string') {
     const h = await tokenHash(b.deviceToken);
@@ -257,17 +283,21 @@ authRoutes.post('/register/verify', async (c) => {
   let stmts: Stmt[];
   let owner: string | null = null;
   if (ch.grant_kind === 'setup') {
-    // The first passkey creates the first user (and their budget), who runs the instance.
-    if ((await passkeyCount(env)) > 0)
-      return c.json(fail('That code or link isn’t valid or has expired.'), 403);
-    const email = ownerEmail(env);
-    const m = await resolveMembership(env.DB, email, email, now, () => ulid(now));
-    if (!m) return c.json(fail('That code or link isn’t valid or has expired.'), 403);
-    owner = m.userId;
+    // The first passkey creates the first user (and their budget), who runs the instance. Later, while no admin has
+    // a passkey (after the runbook's recovery), it goes to the first admin.
+    if (!(await setupOpen(env))) return c.json(fail('That code or link isn’t valid or has expired.'), 403);
+    owner = await firstAdmin(env);
+    if (!owner) {
+      const email = ownerEmail(env);
+      const m = await resolveMembership(env.DB, email, email, now, () => ulid(now));
+      if (!m) return c.json(fail('That code or link isn’t valid or has expired.'), 403);
+      owner = m.userId;
+    }
     stmts = [
-      env.DB.prepare(
-        `${insert} SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE NOT EXISTS (SELECT 1 FROM passkey)`,
-      ).bind(...vals, owner),
+      env.DB.prepare(`${insert} SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE ${NO_ADMIN_PASSKEY}`).bind(
+        ...vals,
+        owner,
+      ),
     ];
   } else if (ch.grant_kind === 'device') {
     stmts = [
@@ -289,10 +319,16 @@ authRoutes.post('/register/verify', async (c) => {
   } else {
     return c.json(fail('That took too long. Try again.'), 400);
   }
-  const res = await env.DB.batch(stmts).catch((e: unknown) => {
-    if (/UNIQUE|PRIMARY KEY/i.test(String(e))) return null; // the same passkey again: a replay
+  let replay = false;
+  const res = await env.DB.batch([useChallenge(env, ch.id, now), ...stmts]).catch((e: unknown) => {
+    if (isReplay(e)) {
+      replay = true;
+      return null;
+    }
+    if (/UNIQUE|PRIMARY KEY/i.test(String(e))) return null; // the same passkey again
     throw e;
   });
+  if (replay) return c.json(fail('That took too long. Try again.'), 400);
   if (!res) return c.json(fail('This passkey is already set up. Sign in with it.'), 400);
   if ((res.at(-1)?.changes ?? 0) !== 1)
     return c.json(fail('That code or link isn’t valid or has expired.'), 403);
@@ -331,6 +367,15 @@ authRoutes.post('/login/options', async (c) => {
 
 authRoutes.post('/login/verify', async (c) => {
   const env = c.env;
+  /** False when the challenge was used meanwhile (a replay racing the first use). */
+  const finish = (stmts: Stmt[]) =>
+    env.DB.batch(stmts).then(
+      () => true,
+      (e: unknown) => {
+        if (isReplay(e)) return false;
+        throw e;
+      },
+    );
   const now = clock(env);
   const b = await c.req.json<{ response: AuthenticationResponseJSON }>().catch(() => null);
   if (!b || typeof b !== 'object') return c.json(fail('Something went wrong. Try again.'), 400);
@@ -352,9 +397,10 @@ authRoutes.post('/login/verify', async (c) => {
     }>();
   if (!pk || !pk.user_id) return c.json(fail('This passkey isn’t registered with Ledgerline.'), 403);
   if (pk.status !== 'active') return c.json(fail('This account is turned off.'), 403);
-  // The passkey must answer for its own user (docs/multi-user.md 7.2).
+  // The passkey must answer for its own user (docs/multi-user.md 7.2). Every Ledgerline passkey is discoverable, so
+  // its answer always carries the user handle; one without it is refused (docs/open-signup.md 6).
   const sent = b.response?.response?.userHandle;
-  if (sent && pk.webauthn_handle && sent !== isoBase64URL.fromBuffer(handleBytes(pk.webauthn_handle)))
+  if (pk.webauthn_handle && sent !== isoBase64URL.fromBuffer(handleBytes(pk.webauthn_handle)))
     return c.json(fail('The passkey couldn’t be verified.'), 403);
   const { rpID, origin } = rp(c.req.raw, env);
   let newCounter: number;
@@ -378,6 +424,7 @@ authRoutes.post('/login/verify', async (c) => {
     return c.json(fail('The passkey couldn’t be verified.'), 403);
   }
   const stmts = [
+    useChallenge(env, ch.id, now),
     env.DB.prepare(`UPDATE passkey SET counter = ?2, last_used_at = ?3 WHERE id = ?1`).bind(
       pk.id,
       newCounter,
@@ -394,10 +441,10 @@ authRoutes.post('/login/verify', async (c) => {
         ch.id,
       ),
     );
-    await env.DB.batch(stmts);
+    if (!(await finish(stmts))) return c.json(fail('That took too long. Try again.'), 400);
     return c.json({ ok: true });
   }
-  await env.DB.batch(stmts);
+  if (!(await finish(stmts))) return c.json(fail('That took too long. Try again.'), 400);
   const token = await newSession(
     env,
     now,

@@ -1,7 +1,7 @@
 // The write breaker (Sync spec F8, decisions.md D-37, D-40): 70% of any daily limit pauses background work, 90% makes
 // the app read-only and 95% stops reading too, counting Durable Object and Worker requests and active time as well as rows.
 import { describe, expect, it } from 'vitest';
-import { classifyUsage } from '../src/sync/breaker.js';
+import { FREE_LIMITS, classifyUsage, dailyLimits } from '../src/sync/breaker.js';
 
 describe('classifyUsage', () => {
   it('is normal well under every limit', () => {
@@ -28,5 +28,28 @@ describe('classifyUsage', () => {
     expect(classifyUsage(90_000, 0)).toBe('readonly');
     expect(classifyUsage(0, 0, { requests: 90_000, gbs: 0 })).toBe('readonly');
     expect(classifyUsage(0, 0, { requests: 0, gbs: 11_700 })).toBe('readonly');
+  });
+});
+
+describe('dailyLimits', () => {
+  it('is the Free plan unless a variable sets a limit', () => {
+    expect(dailyLimits({})).toEqual(FREE_LIMITS);
+    expect(dailyLimits({ LIMIT_ROWS_WRITTEN: '50000000', LIMIT_DO_REQUESTS: '1000000' })).toEqual({
+      ...FREE_LIMITS,
+      rowsWritten: 50_000_000,
+      doRequests: 1_000_000,
+    });
+  });
+
+  it('ignores missing, empty, negative, zero and non-number values', () => {
+    for (const v of ['', ' ', '0', '-5', '1.5', 'lots', '1e400'])
+      expect(dailyLimits({ LIMIT_ROWS_READ: v }).rowsRead).toBe(FREE_LIMITS.rowsRead);
+  });
+
+  it('a larger plan moves the same 70%, 90% and 95% points', () => {
+    const paid = dailyLimits({ LIMIT_ROWS_WRITTEN: '1000000' });
+    expect(classifyUsage(90_000, 0, undefined, 0, paid)).toBe('normal');
+    expect(classifyUsage(700_000, 0, undefined, 0, paid)).toBe('pause');
+    expect(classifyUsage(950_000, 0, undefined, 0, paid)).toBe('rest');
   });
 });
