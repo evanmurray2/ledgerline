@@ -2,7 +2,7 @@
 // ("Couldn't open your budget") on every device, since the server kept them.
 import { app } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { BudgetView } from '@ledgerline/contracts';
+import type { AccountsView, BudgetView } from '@ledgerline/contracts';
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 const call = (method: string, p: string, body: unknown) =>
@@ -52,5 +52,57 @@ describe('Amount limit on assignments, moves and targets', () => {
     expect(r.status).toBe(200);
     const b = (await (await app('/api/budget/2026-11')).json()) as BudgetView;
     expect(b.rta).toBe(98190 + 60000 - 9_999_999_999);
+  });
+
+  it('refuses the same on transactions, splits, owed amounts and starting balances', async () => {
+    const accounts = (await (await app('/api/accounts')).json()) as AccountsView;
+    const checking = accounts.groups.find((g) => g.name === 'Cash')!.accounts[0]!.id;
+    const add = await call('POST', '/api/transactions', {
+      kind: 'pending',
+      accountId: checking,
+      date: '2026-11-14',
+      amount: 10_000,
+      payee: 'Test',
+      categoryId: null,
+      repeats: 'never',
+    });
+    expect(add.status).toBe(200);
+    const huge = -9_000_000_000_000_000;
+    for (const [method, p, body] of [
+      [
+        'POST',
+        '/api/transactions',
+        {
+          kind: 'pending',
+          accountId: checking,
+          date: '2026-11-14',
+          amount: huge,
+          payee: 'Huge',
+          categoryId: null,
+          repeats: 'never',
+        },
+      ],
+      ['POST', '/api/setup/starting-balances', { accounts: [{ accountId: checking, startingBalance: huge }] }],
+    ] as const) {
+      const r = await call(method, p, body);
+      expect(r.status, p).toBe(422);
+      expect(((await r.json()) as { message: string }).message).toBe('Enter an amount up to $99,999,999.99.');
+    }
+    for (const body of [
+      { amount: huge },
+      { estimatedAmount: huge },
+      {
+        split: [
+          { categoryId: 'dining', amount: huge, memo: null, absorbsRemainder: false },
+          { categoryId: 'gifts', amount: -huge, memo: null, absorbsRemainder: true },
+        ],
+      },
+      { markOwed: { mode: 'fixed', amount: -huge, expectBy: null } },
+    ]) {
+      const r = await call('PATCH', '/api/transactions/any-key', body);
+      expect(r.status, JSON.stringify(body)).toBe(422);
+    }
+    const b = (await (await app('/api/budget/2026-11')).json()) as BudgetView;
+    expect(Number.isSafeInteger(b.rta)).toBe(true);
   });
 });

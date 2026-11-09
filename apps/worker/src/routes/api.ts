@@ -129,7 +129,20 @@ export async function parse<T extends z.ZodType>(schema: T, req: Request): Promi
   if (!r.success)
     // The field-by-field text is for logs, never the screen.
     throw new HttpError(400, 'invalid', 'Check what you entered, then try again.');
+  checkBodyAmounts(r.data);
   return r.data;
+}
+
+/** The fields of a request body that hold money, wherever they sit (a split line, an owed share, a balance). */
+const AMOUNT_KEYS = new Set(['amount', 'assigned', 'monthly', 'estimatedAmount', 'startingBalance']);
+/** Every money field in a request body is held to MAX_AMOUNT, so no route can store a sum the phone can't add up. */
+function checkBodyAmounts(v: unknown): void {
+  if (Array.isArray(v)) for (const x of v) checkBodyAmounts(x);
+  else if (v && typeof v === 'object')
+    for (const [k, x] of Object.entries(v)) {
+      if (typeof x === 'number' && AMOUNT_KEYS.has(k)) checkAmounts(x);
+      else checkBodyAmounts(x);
+    }
 }
 
 /** A missing thing, said so the reader can act (docs/copy.md rule 7). */
