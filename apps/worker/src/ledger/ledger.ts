@@ -120,7 +120,7 @@ export interface OwedRow {
   closed_month: string | null;
   closed_amount: number | null;
   canceled_at: number | null;
-  /** Its past closes and their undos (owed_close, D-79), in the order they were made. */
+  /** Its past closes and their undos (owed_close, D-80), in the order they were made. */
   past?: { id: string; month: string; amount: number }[];
 }
 

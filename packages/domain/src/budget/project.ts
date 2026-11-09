@@ -46,7 +46,7 @@ export interface OwedMark {
   /** Rule 11: Close charges the open amount to the original category in the closing month. */
   closed?: { month: Month; date: IsoDate; amount: Cents };
   /**
-   * Closes undone in a later month (D-79), and their undos: each a close line in its own month, the undo with the
+   * Closes undone in a later month (D-80), and their undos: each a close line in its own month, the undo with the
    * opposite (negative) amount, so the month it was closed in stays as it was. They count even if the mark is
    * removed later.
    */

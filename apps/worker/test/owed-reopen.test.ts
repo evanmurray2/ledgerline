@@ -1,4 +1,4 @@
-// Undoing Close out (D-79, Money rule 11). A close undone in the month it was made goes as if it never happened. One
+// Undoing Close out (D-80, Money rule 11). A close undone in the month it was made goes as if it never happened. One
 // made in an earlier month stays there: that month keeps its numbers, and the undo gives the amount back to the
 // category this month and takes it from Ready to Assign. Through the phone's engine, as the app counts it.
 import { beforeAll, describe, expect, it } from 'vitest';

@@ -377,7 +377,7 @@ activityRoutes.post('/owed/:id', async (c) => {
 });
 
 /**
- * Undoes Close out or Remove the mark (D-79). Remove the mark is undone as if it never happened (rule 11 counts it in
+ * Undoes Close out or Remove the mark (D-80). Remove the mark is undone as if it never happened (rule 11 counts it in
  * the transaction's own month either way). A close undone in the month it was made goes as if it never happened; one
  * made in an earlier month stays there as a close line (owed_close), and the undo is a line of the opposite amount
  * this month, so the earlier month stays as it was.

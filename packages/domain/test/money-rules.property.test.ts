@@ -698,7 +698,7 @@ describe('rule 11: Close and Cancel', () => {
     );
   });
 
-  it('Reopen in a later month (D-79): the closing month stays as closed; the reopening month gives it back', () => {
+  it('Reopen in a later month (D-80): the closing month stays as closed; the reopening month gives it back', () => {
     fc.assert(
       fc.property(amt(1, 100_000), amt(0, 100_000), (o, paid) => {
         const p = Math.min(paid, o);
