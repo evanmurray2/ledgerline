@@ -107,7 +107,14 @@ function RtaBar({ b, onFix, thin }: { b: BudgetView; onFix: () => void; thin: bo
     >
       <div className={cx('flex', fold ? 'items-baseline gap-2' : 'flex-col gap-px')}>
         <span className="text-xs font-semibold">Ready to Assign</span>
-        <span className={cx('tnum font-bold', fold ? 'text-lg' : 'text-3xl')} data-testid="rta">
+        {/* On one line: a long amount steps down a size rather than leave its minus sign on a line of its own. */}
+        <span
+          className={cx(
+            'tnum whitespace-nowrap font-bold',
+            fold ? 'text-lg' : formatCents(b.rta).length > 12 ? 'text-2xl' : 'text-3xl',
+          )}
+          data-testid="rta"
+        >
           {b.rtaUpdating ? 'Updating' : formatCents(b.rta)}
         </span>
       </div>

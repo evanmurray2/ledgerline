@@ -155,7 +155,14 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
         )}
       >
         <span className="text-xs font-semibold">{done ? 'All money assigned' : 'Ready to Assign'}</span>
-        <span className="tnum text-3xl font-bold" data-testid="nav-rta">
+        {/* On one line: a long amount steps down a size rather than leave its minus sign on a line of its own. */}
+        <span
+          className={cx(
+            'tnum whitespace-nowrap font-bold',
+            rta !== undefined && formatCents(rta).length > 12 ? 'text-2xl' : 'text-3xl',
+          )}
+          data-testid="nav-rta"
+        >
           {badges.rtaUpdating ? 'Updating' : rta === undefined ? '—' : formatCents(rta)}
         </span>
         {/* The one Assign button on desktop, on every screen, so the amount isn't repeated in a header. */}
