@@ -19,7 +19,7 @@ import { csrf } from '../http/security.js';
 import { bumpOnChange } from '../http/version.js';
 import { Scoped, membership } from '../db/scoped.js';
 import { budgetView } from '../views/budget.js';
-import { fresh } from '../views/common.js';
+import { fresh, monthLong } from '../views/common.js';
 import { usageToday, classifyUsage, dailyLimits } from '../sync/breaker.js';
 import { activityRoutes } from './activity.js';
 import { activityViewRoutes } from './activity-view.js';
@@ -319,6 +319,9 @@ budgetApi.put('/categories/:id/target', async (c) => {
   const id = c.req.param('id');
   const t = r.target;
   if (t.type !== 'none') checkAmounts(t.amount, t.type === 'no_date' ? t.monthly : null);
+  // A balance by a date that has already gone by asks for nothing and reads as funded.
+  if (t.type === 'by_date' && t.targetMonth < r.month)
+    throw new HttpError(422, 'past_month', `Choose a month from ${monthLong(r.month)} ${r.month.slice(0, 4)} on.`);
   const exists = await s.first(`SELECT id FROM category WHERE budget_id = ?1 AND id = ?2`, id);
   if (!exists) throw new HttpError(404, 'not_found', GONE);
   // Versioned: a new version from this month on; past months keep the target they were budgeted against.
