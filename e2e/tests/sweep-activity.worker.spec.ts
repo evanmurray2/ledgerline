@@ -283,3 +283,59 @@ test('Category picker: a search finds Ready to Assign, and a search that finds n
   await picker.getByRole('button', { name: 'Ready to Assign' }).click();
   await expect(add.getByLabel('Category')).toHaveText(/Ready to Assign/);
 });
+
+test('Transfer: both sides name the two accounts the right way round', async ({ page }) => {
+  for (const key of ['n-to-marcus', 'n-from-checking-m']) {
+    await page.goto(`/activity/txn/${key}`);
+    const sheet = page.getByRole('dialog', { name: 'Transfer' });
+    await expect(sheet.getByText('From Everyday Checking', { exact: true })).toBeVisible();
+    await expect(sheet.getByText('To Marcus Savings · Nov 12', { exact: true })).toBeVisible();
+  }
+  await page.goto('/activity/txn/n-sapphire-pay');
+  await expect(
+    page
+      .getByRole('dialog', { name: 'Transfer' })
+      .getByText('To Sapphire Preferred · Nov 4', { exact: true }),
+  ).toBeVisible();
+});
+
+test('Transfer: Unpair says what happened, and both halves then need a category', async ({ page }) => {
+  await page.goto('/activity/txn/n-to-marcus');
+  const sheet = page.getByRole('dialog', { name: 'Transfer' });
+  await sheet.getByRole('button', { name: 'Unpair' }).click();
+  await expect(sheet.getByText('Both halves now need a category.')).toBeVisible();
+  await sheet.getByRole('button', { name: 'Done' }).click();
+  await expect(
+    page.getByRole('button', { name: /Choose category for Transfer to Marcus Savings/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: /Choose category for Transfer from Everyday Checking/ }),
+  ).toBeVisible();
+});
+
+test('Paid back: money in that paid back two purchases lists both; Unlink, then Undo, puts both back', async ({
+  page,
+}) => {
+  await page.goto('/owed');
+  const out = page.getByText('Out with others').locator('..');
+  await expect(out).toContainText('$1,430.60');
+  await page.goto('/activity/match/n-venmo');
+  await page.getByRole('button', { name: 'Match $1,018.00' }).click();
+  await expect(page.getByText(/Matched \$1,018\.00\. 2 items are paid back\./)).toBeVisible();
+  await page.goto('/activity/txn/n-venmo');
+  const sheet = page.getByRole('dialog', { name: 'Venmo cashout paid back' });
+  await expect(sheet.getByText('Nopa · Nov 8')).toBeVisible();
+  await expect(sheet.getByText('Rent · Oct 31')).toBeVisible();
+  await expect(sheet.getByText('It went to Ready to Assign and paid back $1,018.00.')).toBeVisible();
+  await sheet.getByRole('button', { name: 'Unlink' }).click();
+  await expect(sheet.getByText('This $1,018.00 is back in Waiting to match.')).toBeVisible();
+  await sheet.getByRole('button', { name: 'Undo' }).click();
+  await expect(sheet.getByText('Nopa · Nov 8')).toBeVisible();
+  await page.goto('/owed');
+  await expect(out).toContainText('$412.60');
+  // The purchase's own sheet names the money that paid it.
+  await page.goto('/activity/txn/n-nopa');
+  await expect(
+    page.getByRole('dialog', { name: 'Nopa paid back' }).getByText('Venmo cashout · Nov 14'),
+  ).toBeVisible();
+});

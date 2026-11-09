@@ -49,8 +49,13 @@ transactionRoutes.get('/transactions/:key', async (c) => {
       `SELECT id, amount, fraction_num, fraction_den, expect_by, closed_at, canceled_at FROM expected_reimbursement WHERE budget_id = ?1 AND txn_key = ?2`,
       key,
     ),
+    // Each payback is labelled by the other side: on the money in, the purchase it paid back; on the purchase,
+    // the money in that paid it.
     s.q(
-      `SELECT l.from_key, l.to_key, l.amount, coalesce(${txnCol('l.from_key', 'payee')}, '') AS label FROM txn_link l
+      `SELECT l.from_key, l.to_key, l.amount,
+         coalesce(CASE WHEN l.from_key = ?2 THEN ${txnCol('e.txn_key', 'payee')} ELSE ${txnCol('l.from_key', 'payee')} END, '') AS label,
+         CASE WHEN l.from_key = ?2 THEN ${txnCol('e.txn_key', 'date')} ELSE ${txnCol('l.from_key', 'date')} END AS date
+       FROM txn_link l LEFT JOIN expected_reimbursement e ON e.budget_id = l.budget_id AND e.id = l.to_key
        WHERE l.budget_id = ?1 AND l.kind = 'reimbursement_of' AND l.undone_at IS NULL AND (l.from_key = ?2 OR l.to_key IN (SELECT id FROM expected_reimbursement WHERE budget_id = ?1 AND txn_key = ?2))`,
       key,
     ),
@@ -69,7 +74,13 @@ transactionRoutes.get('/transactions/:key', async (c) => {
     memo: string | null;
     absorbs_remainder: number;
   }[];
-  const pbs = pb!.results as { from_key: string; to_key: string; amount: number; label: string }[];
+  const pbs = pb!.results as {
+    from_key: string;
+    to_key: string;
+    amount: number;
+    label: string;
+    date: string | null;
+  }[];
   const owedRows = ow!.results as {
     id: string;
     amount: number;
@@ -135,6 +146,10 @@ transactionRoutes.get('/transactions/:key', async (c) => {
     rawName: t.raw_name,
     accountId: t.account_id,
     accountName: accts.get(t.account_id) ?? t.account_name,
+    otherAccountName:
+      t.transfer_state === 'paired' && t.transfer_account_id
+        ? (accts.get(t.transfer_account_id) ?? null)
+        : null,
     date: t.date,
     postedDate: t.posted_date,
     amount: cents(t.amount),
@@ -177,7 +192,7 @@ transactionRoutes.get('/transactions/:key', async (c) => {
       inflowKey: p.from_key,
       itemId: p.to_key,
       amount: cents(p.amount),
-      label: p.label,
+      label: p.date ? `${p.label} · ${shortDate(p.date)}` : p.label,
     })),
     refundOf: refund ? { key: refund.to_key, label: `${refund.label} · ${shortDate(refund.date)}` } : null,
     pairedWith: kind === 'history' ? null : await pairedWith(s, t),

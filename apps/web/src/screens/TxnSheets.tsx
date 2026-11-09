@@ -1,5 +1,6 @@
 // Transaction sheet: picks the variant (edit, paid back, paired transfer, before your budget; TxnEdit.tsx,
 // TxnLinked.tsx, TxnHistory.tsx). Also Rename payee. Split lives in TxnSplit.tsx.
+import { useRef } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { api } from '../api/endpoints';
 import { useMoneyMutation, useTxn, usePayees, qk } from '../api/hooks';
@@ -21,6 +22,12 @@ export function TxnSheetScreen() {
   const close = useClose();
   const t = q.data;
   useScreen(t ? `txn.${t.kind}` : 'txn');
+  // Unpair and Unlink change the transaction's kind; the sheet stays the one they were tapped on, so its
+  // "Unpaired" or "Unlinked" note (and Undo) shows instead of the sheet switching under your finger.
+  const linked = useRef<{ key: string; kind: 'transfer' | 'paidBack' } | null>(null);
+  if (t && (t.kind === 'transfer' || t.kind === 'paidBack') && linked.current?.key !== key)
+    linked.current = { key, kind: t.kind };
+  const stuck = linked.current?.key === key ? linked.current.kind : null;
   if (!t)
     return (
       <Sheet label="Transaction" track="txn" onClose={close} gap="small">
@@ -28,8 +35,8 @@ export function TxnSheetScreen() {
       </Sheet>
     );
   if (t.kind === 'history') return <HistoryTxn t={t} close={close} />;
-  if (t.kind === 'transfer') return <PairedTransfer t={t} close={close} />;
-  if (t.kind === 'paidBack') return <PaidBack t={t} close={close} />;
+  if (stuck === 'transfer') return <PairedTransfer t={t} close={close} />;
+  if (stuck === 'paidBack') return <PaidBack t={t} close={close} />;
   return <EditTxn t={t} close={close} />;
 }
 
