@@ -111,6 +111,8 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const spendCents = Math.abs(estCents ?? t.amount);
   const owedCents =
     owed === 'half' ? Math.round(spendCents / 2) : owed === 'all' ? spendCents : (parseCents(owedAmt) ?? 0);
+  /** More owed than the purchase: the server would save the purchase's amount instead, without a word. */
+  const owedOver = t.amount < 0 && owed === 'custom' && owedCents > spendCents;
   const catName = useCategoryOptions().byId.get(cat) ?? null;
   const onCard =
     useAccounts()
@@ -170,8 +172,10 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           <PrimaryButton
             mutates="offline"
             track="txn.save"
-            disabled={amountBad}
-            why={amountBad ? 'Enter an amount' : ''}
+            disabled={amountBad || owedOver}
+            why={
+              amountBad ? 'Enter an amount' : owedOver ? `Enter at most ${formatCents(spendCents)} owed` : ''
+            }
             onClick={() => void save()}
           >
             Save

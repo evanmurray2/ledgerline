@@ -339,3 +339,20 @@ test('Paid back: money in that paid back two purchases lists both; Unlink, then 
     page.getByRole('dialog', { name: 'Nopa paid back' }).getByText('Venmo cashout · Nov 14'),
   ).toBeVisible();
 });
+
+test('Owed to you: a custom amount over the purchase keeps Save off and says the most', async ({
+  page,
+  request,
+}) => {
+  await page.goto('/activity/txn/n-dining');
+  const sheet = page.getByRole('dialog', { name: 'Burma Superstar transaction' });
+  await sheet.getByRole('button', { name: 'Custom', exact: true }).click();
+  await sheet.getByLabel('Amount owed').fill('200');
+  await expect(sheet.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await expect(sheet.getByTestId('disabled-why')).toHaveText('Enter at most $136.15 owed');
+  await sheet.getByLabel('Amount owed').fill('136.15');
+  await sheet.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(sheet).toHaveCount(0);
+  const e = (await rows(request, 'expected_reimbursement')).find((x) => x.txn_key === 'n-dining')!;
+  expect(e.amount).toBe(13_615);
+});
