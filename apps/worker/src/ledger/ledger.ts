@@ -120,6 +120,8 @@ export interface OwedRow {
   closed_month: string | null;
   closed_amount: number | null;
   canceled_at: number | null;
+  /** Its past closes and their undos (owed_close, D-80), in the order they were made. */
+  past?: { id: string; month: string; amount: number }[];
 }
 
 export interface LinkRow {
@@ -181,6 +183,9 @@ export function toLogical(
     amount: cents(o.amount),
     ...(o.split_id ? { splitLineId: o.split_id } : {}),
     ...(o.canceled_at ? { canceled: true } : {}),
+    ...(o.past?.length
+      ? { pastCloses: o.past.map((p) => ({ id: p.id, month: p.month as Month, amount: cents(p.amount) })) }
+      : {}),
     ...(o.closed_at && o.closed_month && o.closed_amount !== null
       ? {
           closed: {
@@ -238,7 +243,7 @@ export async function loadTxns(
   for (let i = 0; i < keys.length; i += 90) {
     const chunk = keys.slice(i, i + 90);
     const ph = inList(chunk, 2);
-    const [t, sp, ow, ln, mt] = await s.batch([
+    const [t, sp, ow, ln, mt, pc] = await s.batch([
       s.q(
         `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND key IN (${ph}) AND ${uncovered('v_transaction')}`,
         ...chunk,
@@ -253,12 +258,22 @@ export async function loadTxns(
         `SELECT from_key, sum(amount) AS m FROM txn_link WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND undone_at IS NULL AND from_key IN (${ph}) GROUP BY from_key`,
         ...chunk,
       ),
+      s.q(
+        `SELECT id, item_id, month, amount FROM owed_close WHERE budget_id = ?1 AND txn_key IN (${ph}) ORDER BY created_at, id`,
+        ...chunk,
+      ),
     ]);
     for (const r of mt!.results as { from_key: string; m: number }[]) matched.set(r.from_key, r.m);
     rows.push(...(t!.results as TxRow[]));
     for (const r of sp!.results as SplitRow[])
       splitsBy.set(r.txn_key, [...(splitsBy.get(r.txn_key) ?? []), r]);
-    for (const r of ow!.results as OwedRow[]) owedBy.set(r.txn_key, [...(owedBy.get(r.txn_key) ?? []), r]);
+    const past = new Map<string, NonNullable<OwedRow['past']>>();
+    for (const r of pc!.results as { id: string; item_id: string; month: string; amount: number }[])
+      past.set(r.item_id, [...(past.get(r.item_id) ?? []), { id: r.id, month: r.month, amount: r.amount }]);
+    for (const r of ow!.results as OwedRow[]) {
+      const p = past.get(r.id);
+      owedBy.set(r.txn_key, [...(owedBy.get(r.txn_key) ?? []), p ? { ...r, past: p } : r]);
+    }
     for (const r of ln!.results as { from_key: string; to_key: string }[]) refund.set(r.from_key, r.to_key);
   }
   const links = rows.some((r) => r.source === 'bank') ? await linkInfo(s) : NO_LINKS;
