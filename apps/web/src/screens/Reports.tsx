@@ -24,9 +24,11 @@ import { useScreen } from '../lib/common';
 
 type View = 'spend' | 'trend' | 'worth';
 
+/** "$840", "$2.7k"; a month with more refunds than spending reads "−$18.7k" (a true minus, as formatCents). */
 function kShort(cents: number) {
-  const dollars = Math.round(cents / 100);
-  return dollars >= 1000 ? `$${(dollars / 1000).toFixed(1)}k` : `$${dollars}`;
+  const sign = cents < 0 ? '−' : '';
+  const dollars = Math.round(Math.abs(cents) / 100);
+  return dollars >= 1000 ? `${sign}$${(dollars / 1000).toFixed(1)}k` : `${sign}$${dollars}`;
 }
 
 function Tiles({ r, desktop }: { r: ReportsView; desktop: boolean }) {
@@ -110,7 +112,7 @@ function Trend({ r }: { r: ReportsView }) {
                   'w-full max-w-9 rounded-t-sm',
                   last && r.monthToDate ? 'bg-disabled' : 'bg-accent',
                 )}
-                style={{ height: `${Math.round((t.spent * 120) / top)}px` }}
+                style={{ height: `${Math.max(0, Math.round((t.spent * 120) / top))}px` }}
               />
               <span className="text-xs text-muted">{monthShort(t.month)}</span>
             </div>
@@ -217,8 +219,10 @@ export function ReportsScreen() {
   const search = useSearch({ strict: false }) as { month?: string };
   const session = useSession();
   const current = session.data?.budget.currentMonth;
-  // A later month (Budget looks ahead) shows this month: there's nothing to report yet.
-  const month = clampMonth(search.month, undefined, current) ?? current;
+  // The budget's first month: there is nothing to report before it.
+  const min = useBudget(current).data?.minMonth;
+  // A later month (Budget looks ahead) shows this month: there's nothing to report yet. An earlier one shows the first.
+  const month = clampMonth(search.month, min, current) ?? current;
   const [view, setView] = useState<View>('spend');
   useScreen(`reports.${view}`);
   const q = useReports(month);
@@ -227,8 +231,6 @@ export function ReportsScreen() {
   const r = q.data;
   const go = (m: string) =>
     void navigate({ to: '/reports', search: { month: m === current ? undefined : m } });
-  // The budget's first month: there is nothing to report before it.
-  const min = useBudget(current).data?.minMonth;
   const note = r
     ? r.monthToDate
       ? 'So far this month. Money owed to you isn’t counted.'

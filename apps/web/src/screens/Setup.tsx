@@ -254,16 +254,21 @@ export function FirstSortScreen() {
     setBusy(true);
     setError(null);
     try {
+      // A try again after a failure part way keeps what the first try made, instead of making it twice.
+      const have = await api.categories();
       for (const g of IDEAS) {
         const names = g.items.filter((i) => on[i]).concat(g.name === 'Everyday' ? custom : []);
         if (!names.length) continue;
-        const { id } = await api.upsertGroup({ name: g.name, isBills: g.bills });
+        const made = have.groups.find((x) => !x.system && x.name === g.name);
+        const id = made?.id ?? (await api.upsertGroup({ name: g.name, isBills: g.bills })).id;
+        const taken = new Set(made?.categories.map((c) => c.name.toLowerCase()));
         for (const n of names)
-          await api.upsertCategory({
-            name: n,
-            groupId: id,
-            kind: n === 'Investments' ? 'saving' : 'spending',
-          });
+          if (!taken.has(n.toLowerCase()))
+            await api.upsertCategory({
+              name: n,
+              groupId: id,
+              kind: n === 'Investments' ? 'saving' : 'spending',
+            });
       }
       await api.startingBalances({
         accounts: accts.map((a) => ({
@@ -344,7 +349,11 @@ export function FirstSortScreen() {
         onSubmit={(e) => {
           e.preventDefault();
           const n = draft.trim();
-          if (n && !custom.includes(n)) setCustom([...custom, n]);
+          const same = (x: string) => x.toLowerCase() === n.toLowerCase();
+          // One of the ideas, typed: keep that idea instead of adding it twice.
+          const idea = IDEAS.flatMap((g) => g.items).find(same);
+          if (idea) setOn({ ...on, [idea]: true });
+          else if (n && !custom.some(same)) setCustom([...custom, n]);
           setDraft('');
         }}
       >

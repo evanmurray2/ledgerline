@@ -358,7 +358,8 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
     const shown = ts.filter(keep);
     if (shown.length)
       days.push({
-        label: shortDate(d),
+        // The year too when it isn't this year: two days a year apart would read (and key) the same.
+        label: d.slice(0, 4) === f.today.slice(0, 4) ? shortDate(d) : `${shortDate(d)}, ${d.slice(0, 4)}`,
         balance: cents(dayBal),
         rows: shown.map((t) => listRow(t, accts, cats)),
       });

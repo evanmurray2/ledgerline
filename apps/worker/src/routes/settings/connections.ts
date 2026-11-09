@@ -248,10 +248,11 @@ export async function startSync(
   const now = clock(env);
   // A link whose accounts aren't set up yet would sync transactions no account can take (and the watermark would pass
   // them by), so it waits until "Finish setup".
-  const ready = await env.DB.prepare(`SELECT setup_done FROM connection WHERE id = ?1`)
+  // A CSV import (routes/ops.ts) is stored as a connection too, but has no bank to sync.
+  const ready = await env.DB.prepare(`SELECT setup_done, provider FROM connection WHERE id = ?1`)
     .bind(connectionId)
-    .first<{ setup_done: number }>();
-  if (!ready || ready.setup_done !== 1) return false;
+    .first<{ setup_done: number; provider: string }>();
+  if (!ready || ready.setup_done !== 1 || ready.provider === 'csv') return false;
   await requestSync(env.DB, connectionId, now);
   const runId = `run_${ulid(now)}`;
   if (!(await acquire(env.DB, connectionId, runId, now))) return false;
@@ -320,7 +321,7 @@ connectionsRoutes.post('/settings/connections/refresh', async (c) => {
   const now = clock(c.env);
   const conns = await s.all<{ id: string }>(
     `SELECT id FROM connection WHERE budget_id = ?1 AND removed_at IS NULL AND setup_done = 1
-       AND status != 'login_required'
+       AND provider != 'csv' AND status != 'login_required'
        AND max(coalesce(last_synced_at, 0), coalesce(last_attempt_at, 0)) < ?2`,
     now - REFRESH_COOLDOWN_MS,
   );

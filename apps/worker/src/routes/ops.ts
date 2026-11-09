@@ -11,7 +11,7 @@ import {
   type HealthView,
   type ImportResult,
 } from '@ledgerline/contracts';
-import { cents, parseCents, parseImportDate } from '@ledgerline/domain';
+import { cents } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
 import { HttpError, parse, scoped, GONE } from './api.js';
@@ -19,6 +19,7 @@ import { classifyUsage, dailyLimits, noteUsage, usageToday, utcDay } from '../sy
 import { makeProvider } from '../sync/provider.js';
 import { startSync } from './settings/connections.js';
 import { TX_COLUMNS, uncovered, type TxRow } from '../ledger/ledger.js';
+import { csvDate, csvHeader, csvRecords, recordAmount } from '../ledger/csv.js';
 
 export const opsRoutes = new Hono<AppEnv>();
 
@@ -93,7 +94,9 @@ opsRoutes.get('/health', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
   const [conns, lag] = await s.batch([
-    s.q(`SELECT id, last_synced_at FROM connection WHERE budget_id = ?1 AND removed_at IS NULL`),
+    s.q(
+      `SELECT id, last_synced_at FROM connection WHERE budget_id = ?1 AND removed_at IS NULL AND provider != 'csv'`,
+    ),
     s.q(
       `SELECT (SELECT coalesce(max(id), 0) FROM bank_event WHERE budget_id = ?1) - processed_through AS lag FROM budget WHERE id = ?1`,
     ),
@@ -289,7 +292,7 @@ opsRoutes.get('/export/usage', async (c) => {
 });
 
 /**
- * CSV history import (date, payee, amount[, memo]): rows are history only (they never enter the budget), used for
+ * CSV history import (date, payee, amount or Debit and Credit[, memo]; ledger/csv.ts reads the formats): rows are history only (they never enter the budget), used for
  * analytics and drift checks (read-only, D-61). Stored as a 'csv' connection's bank rows so the projection treats them
  * like any provider's.
  */
@@ -307,17 +310,16 @@ opsRoutes.post('/import/csv', async (c) => {
     r.accountId,
   );
   if (!acct) throw new HttpError(404, 'not_found', GONE);
-  const lines = r.csv.split(/\r?\n/).filter((l) => l.trim());
-  const header = (lines.shift() ?? '')
-    .toLowerCase()
-    .split(',')
-    .map((h) => h.trim().replace(/"/g, ''));
-  const di = header.indexOf('date');
-  const pi = header.findIndex((h) => h === 'payee' || h === 'description');
-  const ai = header.indexOf('amount');
-  const mi = header.indexOf('memo');
-  if (di < 0 || pi < 0 || ai < 0)
-    throw new HttpError(422, 'csv_header', 'The CSV file needs date, payee and amount columns.');
+  const { records, delimiter } = csvRecords(r.csv);
+  const head = csvHeader(records);
+  if (!head)
+    throw new HttpError(
+      422,
+      'csv_header',
+      'The CSV file needs date, payee and amount columns (or Debit and Credit).',
+    );
+  const col = head.columns;
+  const body = records.slice(head.at + 1);
   let conn = await s.first<{ id: string }>(
     `SELECT id FROM connection WHERE budget_id = ?1 AND provider = 'csv' AND institution_name = ?2`,
     `Import · ${r.accountId}`,
@@ -345,34 +347,56 @@ opsRoutes.post('/import/csv', async (c) => {
   }
   let imported = 0;
   let skipped = 0;
-  let history = 0;
-  const parseRow = (l: string) =>
-    l
-      .match(/("([^"]|"")*"|[^,]*)(,|$)/g)
-      ?.map((x) => x.replace(/,$/, '').replace(/^"|"$/g, '').replace(/""/g, '"')) ?? [];
-  for (const [i, l] of lines.entries()) {
-    const cols = parseRow(l);
-    // A real calendar date only: "25/12/2025" (day first) or "2026-13-01" is skipped, never stored as month 25.
-    const iso = parseImportDate(cols[di] ?? '');
-    let amount: number;
-    try {
-      amount = parseCents(cols[ai] ?? '');
-    } catch {
-      skipped++;
-      continue;
-    }
-    if (!iso) {
-      skipped++;
+  let duplicates = 0;
+  let unreadable = 0;
+  // Each record read: a real calendar date only ("25/12/2025", day first, or "2026-13-01" is never stored as month 25).
+  const read = body.map((cols) => ({
+    cols,
+    iso: csvDate(cols[col.date] ?? ''),
+    amount: recordAmount(cols, col, delimiter),
+    payee: (cols[col.payee] ?? '').trim().slice(0, 200),
+  }));
+  const dates = read.flatMap((x) => (x.iso ? [x.iso] : []));
+  // History already imported into this account over the file's dates: the same row again (date, amount and payee,
+  // as many times as it was there) is skipped, so importing a file twice, or two files that overlap, adds no double.
+  const existing = dates.length
+    ? await s.all<{ provider_txn_id: string; date: string; amount: number; raw_name: string }>(
+        `SELECT provider_txn_id, date, amount, raw_name FROM bank_txn
+         WHERE budget_id = ?1 AND provider_account_id = ?2 AND substr(provider_txn_id, 1, 4) = 'csv_'
+           AND date BETWEEN ?3 AND ?4`,
+        providerAccountId,
+        dates.reduce((a, b) => (a < b ? a : b)),
+        dates.reduce((a, b) => (a > b ? a : b)),
+      )
+    : [];
+  const seen = new Map<string, number>();
+  for (const e of existing) {
+    const k = `${e.date}|${e.amount}|${e.raw_name}`;
+    seen.set(k, (seen.get(k) ?? 0) + 1);
+  }
+  const used = new Set(existing.map((e) => e.provider_txn_id));
+  for (const x of read) {
+    if (!x.iso || x.amount === null) {
+      unreadable++;
       continue;
     }
     // Imported history rows are always history (Budget start): only rows dated before budget_from are kept.
-    if (iso >= acct.budget_from) {
+    if (x.iso >= acct.budget_from) {
       skipped++;
       continue;
     }
-    history++;
+    const k = `${x.iso}|${x.amount}|${x.payee}`;
+    const left = seen.get(k) ?? 0;
+    if (left > 0) {
+      seen.set(k, left - 1);
+      duplicates++;
+      continue;
+    }
     imported++;
-    const id = `csv_${acct.id}_${iso}_${i}`;
+    let n = 0;
+    while (used.has(`csv_${acct.id}_${x.iso}_${n}`)) n++;
+    const id = `csv_${acct.id}_${x.iso}_${n}`;
+    used.add(id);
     stmts.push(
       s.q(
         `INSERT OR IGNORE INTO bank_txn (provider_txn_id, budget_id, connection_id, provider_account_id, amount, date, pending, raw_name, txn_key, first_apply_seq, last_apply_seq, created_at, updated_at)
@@ -380,25 +404,26 @@ opsRoutes.post('/import/csv', async (c) => {
         id,
         conn.id,
         providerAccountId,
-        cents(amount),
-        iso,
-        (cols[pi] ?? '').trim().slice(0, 200),
+        cents(x.amount),
+        x.iso,
+        x.payee,
         `p:${id}`,
         now,
       ),
     );
-    if (mi >= 0 && cols[mi])
+    const memo = col.memo >= 0 ? (x.cols[col.memo] ?? '').trim() : '';
+    if (memo)
       stmts.push(
         s.q(
           `INSERT OR IGNORE INTO txn_overlay (txn_key, budget_id, memo, created_at, updated_at) VALUES (?2, ?1, ?3, ?4, ?4)`,
           `p:${id}`,
-          cols[mi]!.slice(0, 500),
+          memo.slice(0, 500),
           now,
         ),
       );
   }
   // Month totals live on the phone (D-45): its copy starts them over when these rows arrive (local/engine.ts).
   for (let i = 0; i < stmts.length; i += 100) await s.batch(stmts.slice(i, i + 100));
-  const res: ImportResult = { imported, skipped, history };
+  const res: ImportResult = { imported, skipped, history: imported, duplicates, unreadable };
   return c.json(res);
 });

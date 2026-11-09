@@ -656,8 +656,13 @@ export const SettingsPatch = z.object({
 export const ImportCsvRequest = z.object({ accountId: id, csv: z.string().max(5_000_000) });
 export const ImportResult = z.object({
   imported: z.number().int(),
+  /** Rows dated on or after the account's budget start: the bank link brings those. */
   skipped: z.number().int(),
   history: z.number().int(),
+  /** Rows already imported into this account (the same date, amount and payee). */
+  duplicates: z.number().int().default(0),
+  /** Lines whose date or amount couldn't be read. */
+  unreadable: z.number().int().default(0),
 });
 
 export const HealthView = z.object({
