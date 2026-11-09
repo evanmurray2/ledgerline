@@ -1,12 +1,12 @@
-// Budget on a computer: the month as a table with Assigned (typed in place), Spent and Available columns,
-// pinned categories first.
+// Budget on a computer: the month as a table with Assigned (typed in place), Spent and Available columns, and
+// the pinned categories in a card of their own above it.
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import type { BudgetCategoryRow, BudgetView } from '@ledgerline/contracts';
 import { errorMessage } from '../api/client';
 import { api } from '../api/endpoints';
 import { useMoneyMutation } from '../api/hooks';
-import { Bar, Card, cx, STATUS, StatusWord, TONE, type Tone } from '../components/ui';
+import { Bar, Card, cx, Icon, STATUS, StatusWord, TONE, type Tone } from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { monthLabel } from '../lib/dates';
 import { useCanWrite } from '../state/connectivity';
@@ -244,85 +244,95 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
       track: 'budget.category',
     });
   const pinned = pinnedRows(b);
+  /** The column names; the first names the card (Category, or Pinned with its icon). */
+  const columns = (first: ReactNode) => (
+    <div role="row" className={cx(head, 'border-b border-line bg-surface-2 text-xs font-bold text-ink-2')}>
+      <span role="columnheader" className="flex items-center gap-1.5 px-3.5 py-2.5">
+        {first}
+      </span>
+      <span role="columnheader" className="py-2.5 pl-3.5 pr-[15px] text-right">
+        Assigned
+      </span>
+      <span role="columnheader" className={cx('px-3.5 py-2.5 text-right', spentCls)}>
+        Spent
+      </span>
+      <span role="columnheader" className="px-6 py-2.5 text-right">
+        Available
+      </span>
+    </div>
+  );
   const dash = <span className="px-[9px]">—</span>;
   const t = owedTone(b);
   return (
-    <Card className="@container min-w-0 overflow-x-auto">
-      <div role="table" aria-label={`Budget for ${monthLabel(month)}`} className="text-md">
-        <div
-          role="row"
-          className={cx(head, 'border-b border-line bg-surface-2 text-xs font-bold text-ink-2')}
-        >
-          <span role="columnheader" className="px-3.5 py-2.5">
-            Category
-          </span>
-          <span role="columnheader" className="py-2.5 pl-3.5 pr-[15px] text-right">
-            Assigned
-          </span>
-          <span role="columnheader" className={cx('px-3.5 py-2.5 text-right', spentCls)}>
-            Spent
-          </span>
-          <span role="columnheader" className="px-6 py-2.5 text-right">
-            Available
-          </span>
-        </div>
-        {pinned.length > 0 && [
-          groupRow('Pinned', {
-            assigned: pinned.reduce((s, c) => s + c.assigned, 0),
-            spent: pinned.reduce((s, c) => s + (c.status === 'invested' ? 0 : c.spent), 0),
-            available: pinned.reduce((s, c) => s + c.available, 0),
-          }),
-          ...pinned.map((c) => categoryRow(c, `pin-${c.id}`)),
-        ]}
-        {b.groups.flatMap((g) => [
-          groupRow(g.name, {
-            assigned: g.categories.reduce((s, c) => s + c.assigned, 0),
-            // Matches the column: invested money shows as "Invested", not as spending.
-            spent: g.categories.reduce((s, c) => s + (c.status === 'invested' ? 0 : c.spent), 0),
-            available: g.total,
-          }),
-          ...g.categories.map((c) => categoryRow(c)),
-        ])}
-        {b.cards.length > 0 && groupRow('Card payments')}
-        {b.cards.map((c) =>
-          row({
-            key: c.accountId,
-            name: c.name,
-            detail:
-              c.status === 'short' ? (
-                <>
-                  <StatusWord word="Short" tone="over" icon="alert" /> · {c.detail}
-                </>
-              ) : (
-                c.detail
-              ),
+    <>
+      {/* Pinned categories in a card of their own, above the budget: they're counted in their groups below, so
+          this card has no totals. */}
+      {pinned.length > 0 && (
+        <Card className="@container min-w-0 overflow-x-auto">
+          <div role="table" aria-label="Pinned categories" className="text-md">
+            {columns(
+              <>
+                <Icon name="pin" size={14} stroke={2.4} />
+                Pinned
+              </>,
+            )}
+            {pinned.map((c) => categoryRow(c, `pin-${c.id}`))}
+          </div>
+        </Card>
+      )}
+      <Card className="@container min-w-0 overflow-x-auto">
+        <div role="table" aria-label={`Budget for ${monthLabel(month)}`} className="text-md">
+          {columns(<>Category</>)}
+          {b.groups.flatMap((g) => [
+            groupRow(g.name, {
+              assigned: g.categories.reduce((s, c) => s + c.assigned, 0),
+              // Matches the column: invested money shows as "Invested", not as spending.
+              spent: g.categories.reduce((s, c) => s + (c.status === 'invested' ? 0 : c.spent), 0),
+              available: g.total,
+            }),
+            ...g.categories.map((c) => categoryRow(c)),
+          ])}
+          {b.cards.length > 0 && groupRow('Card payments')}
+          {b.cards.map((c) =>
+            row({
+              key: c.accountId,
+              name: c.name,
+              detail:
+                c.status === 'short' ? (
+                  <>
+                    <StatusWord word="Short" tone="over" icon="alert" /> · {c.detail}
+                  </>
+                ) : (
+                  c.detail
+                ),
+              assigned: dash,
+              spent: '—',
+              avail: formatCents(c.available),
+              tone: c.status === 'short' ? 'over' : null,
+              open: () => void navigate({ to: `/accounts/${c.accountId}` }),
+              track: 'budget.card',
+            }),
+          )}
+          {groupRow('Owed to you')}
+          {row({
+            key: 'owed',
+            name: 'Owed to you',
+            detail: t.word ? (
+              <>
+                <StatusWord word={t.word} tone={t.tone} icon={t.icon} /> · {OWED_DETAIL}
+              </>
+            ) : (
+              OWED_DETAIL
+            ),
             assigned: dash,
             spent: '—',
-            avail: formatCents(c.available),
-            tone: c.status === 'short' ? 'over' : null,
-            open: () => void navigate({ to: `/accounts/${c.accountId}` }),
-            track: 'budget.card',
-          }),
-        )}
-        {groupRow('Owed to you')}
-        {row({
-          key: 'owed',
-          name: 'Owed to you',
-          detail: t.word ? (
-            <>
-              <StatusWord word={t.word} tone={t.tone} icon={t.icon} /> · {OWED_DETAIL}
-            </>
-          ) : (
-            OWED_DETAIL
-          ),
-          assigned: dash,
-          spent: '—',
-          avail: `${formatCents(b.owed.out)} out`,
-          tone: b.owed.status === 'late' ? t.tone : null,
-          open: () => void navigate({ to: '/owed' }),
-          track: 'budget.owed',
-        })}
-      </div>
-    </Card>
+            avail: `${formatCents(b.owed.out)} out`,
+            tone: b.owed.status === 'late' ? t.tone : null,
+            open: () => void navigate({ to: '/owed' }),
+            track: 'budget.owed',
+          })}
+        </div>
+      </Card>
+    </>
   );
 }

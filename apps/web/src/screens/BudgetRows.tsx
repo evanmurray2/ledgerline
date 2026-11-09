@@ -205,7 +205,7 @@ function Group({
   toggle,
 }: {
   id: string;
-  name: string;
+  name: ReactNode;
   total: string;
   children: ReactNode;
   collapsed: boolean;
@@ -240,8 +240,14 @@ export function AllGroups({ b, month }: { b: BudgetView; month: string }) {
       {pinned.length > 0 && (
         <Group
           id="pinned"
-          name="Pinned"
-          total={`${formatCents(pinned.reduce((s, c) => s + c.available, 0))} available`}
+          // A pin, not a total: these categories are counted in their own groups below.
+          name={
+            <>
+              <Icon name="pin" size={14} stroke={2.4} />
+              Pinned
+            </>
+          }
+          total=""
           collapsed={!!collapsed.pinned}
           toggle={toggle}
         >
