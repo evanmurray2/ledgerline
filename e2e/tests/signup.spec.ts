@@ -86,7 +86,7 @@ test('create an account, save the recovery code, and recover on another device',
   await expect(phone.getByText(/Your recovery code was used on/)).toBeVisible();
 
   // Alex deletes the account: the budget's name, then a confirm.
-  await phone.goto('/settings');
+  await phone.goto('/settings/sign-in');
   await expect(phone.getByText('Recovery code', { exact: true })).toBeVisible();
   await phone.getByRole('button', { name: 'Delete account' }).click();
   await phone.getByLabel(/to confirm/).fill('My budget');

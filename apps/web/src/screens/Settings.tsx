@@ -1,10 +1,10 @@
 // Settings: the layout, the home page, appearance and preferences. Each section has its own file in settings/:
 // categories and groups, payees, bank connections (Item meter, confirm before Link), and
 // import and export. There is no email setting: the app sends no email (decisions.md D-24).
-import { SignInSection } from './Auth';
+import { SignOutHere, signInMeta, useSecurity } from './settings/SignIn';
 import { useId, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
 import { qk, useConnections, usePayees, useSession } from '../api/hooks';
 import {
@@ -33,6 +33,7 @@ const SECTIONS: { id: string; name: string; to: string }[] = [
   { id: 'payees', name: 'Payees', to: '/settings/payees' },
   { id: 'connections', name: 'Bank connections', to: '/settings/connections' },
   { id: 'data', name: 'Backup and export', to: '/settings/data' },
+  { id: 'sign-in', name: 'Sign-in and devices', to: '/settings/sign-in' },
 ];
 /** Admins, once there is anyone else or sign-up is on (D-75). */
 const USERS = { id: 'users', name: 'Users', to: '/settings/users' };
@@ -40,7 +41,7 @@ const USERS = { id: 'users', name: 'Users', to: '/settings/users' };
 function useSectionMeta() {
   const conns = useConnections().data;
   const session = useSession().data;
-  const security = useQuery({ queryKey: ['security'], queryFn: api.security });
+  const security = useSecurity();
   // Users who can't link banks never see a link count (D-75).
   const canLink = session?.canLinkBanks !== false;
   const payees = usePayees().data;
@@ -63,6 +64,7 @@ function useSectionMeta() {
       : '',
     data: 'Full backup · usage export · recovery',
     users: 'Accounts · turn one off',
+    'sign-in': signInMeta(security.data),
   };
   return { text, repair: needRepair.length > 0, users: security.data?.usersScreen === true };
 }
@@ -112,6 +114,9 @@ export function SettingsLayout() {
               </Link>
             );
           })}
+          <div className="mt-auto border-t border-line pt-2">
+            <SignOutHere compact />
+          </div>
         </nav>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
           {sub ? <Outlet /> : <AppearanceSection />}
@@ -198,7 +203,6 @@ function Preferences() {
         />
       </Card>
       {trackNote && <Banner tone="neutral">{trackNote}</Banner>}
-      <SignInSection />
     </>
   );
 }
@@ -239,6 +243,15 @@ function SettingsHome() {
             track="settings.data"
           />
         </Card>
+        <SectionTitle>Sign-in</SectionTitle>
+        <Card>
+          <RowLink
+            to="/settings/sign-in"
+            name="Sign-in and devices"
+            meta={meta.text['sign-in'] ?? ''}
+            track="settings.sign_in"
+          />
+        </Card>
         {meta.users && (
           <>
             <SectionTitle>People</SectionTitle>
@@ -256,6 +269,7 @@ function SettingsHome() {
         <ThemeChoice />
         <SectionTitle>Preferences</SectionTitle>
         <Preferences />
+        <SignOutHere />
       </ScreenBody>
     </PageFrame>
   );
@@ -316,3 +330,4 @@ export { PayeesScreen, RenamePayeeSheet } from './settings/Payees';
 export { ConnectionsScreen, LinkBankFlow, LinkMeter } from './settings/Connections';
 export { UsersScreen } from './settings/People';
 export { DataScreen } from './settings/Data';
+export { SignInSettingsScreen } from './settings/SignIn';
