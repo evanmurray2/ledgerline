@@ -72,6 +72,7 @@ jobs:
           SETUP_CODE: ${{ secrets.SETUP_CODE }}
           OPS_TOKEN: ${{ secrets.OPS_TOKEN }}
           CF_ANALYTICS_TOKEN: ${{ secrets.CF_ANALYTICS_TOKEN }}
+          TURNSTILE_SECRET: ${{ secrets.TURNSTILE_SECRET }}
       - name: Deploy production Worker
         working-directory: apps/worker
         # The commit is the app version: part of every screen's ETag, so a new release never reuses old responses.

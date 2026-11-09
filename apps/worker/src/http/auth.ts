@@ -111,6 +111,7 @@ const SYNC_NOW = /^\/api\/settings\/connections\/(?:[^/]+\/)?refresh$/;
 export function needsRecentPasskey(method: string, path: string): boolean {
   if (path.startsWith('/api/export/') || path === '/api/settings/restore') return true;
   if (method === 'GET' || path === '/api/settings/security/sign-out') return false;
+  if (path === '/api/settings/security/recovery-notice/dismiss') return false;
   if (SYNC_NOW.test(path)) return false;
   return path.startsWith('/api/settings/connections') || path.startsWith('/api/settings/security/');
 }

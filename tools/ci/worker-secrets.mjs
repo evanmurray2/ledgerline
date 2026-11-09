@@ -26,6 +26,8 @@ for (const n of [
   'SETUP_CODE',
   'OPS_TOKEN',
   'CF_ANALYTICS_TOKEN',
+  // Open sign-up's bot check (D-75): unused until SIGNUPS is open.
+  'TURNSTILE_SECRET',
 ])
   if (env[n]) s[n] = env[n];
 for (const n of ['TOKEN_KEYS', 'TOKEN_KEY_CURRENT'])

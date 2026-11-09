@@ -104,7 +104,12 @@ securityRoutes.get('/settings/security', async (c) => {
     .bind(c.get('userId'))
     .all<{ id: string; name: string; created_at: number; last_used_at: number | null }>();
   const list = await entries(c.env.DB, c.get('userId'), c.get('sessionId'), now);
+  const admin = await c.env.DB.prepare(`SELECT is_admin FROM user WHERE id = ?1`)
+    .bind(c.get('userId'))
+    .first<number>('is_admin');
   return c.json({
+    // Users who aren't admins have a recovery code (D-75); admins recover with a device link or the runbook.
+    recoveryCode: admin === 0,
     passkeys: pk.results.map((p) => ({
       id: p.id,
       name: p.name,

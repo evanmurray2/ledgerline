@@ -39,6 +39,7 @@ Check a new text against it, and keep the terms below the same everywhere: code,
 | join (payees)                                    | merge                                         |
 | Up to date                                       | Already up to date                            |
 | passkey                                          | Face ID (except on the Face ID button itself) |
+| recovery code                                    | backup code, reset code                       |
 | View only until {time} (daily limit for changes) | paused, turned off, database limit            |
 | Paused until {time} (daily limit for loading)    | resting, reading is paused                    |
 | You're offline                                   | No signal, Network request failed             |

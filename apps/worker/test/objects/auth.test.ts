@@ -93,6 +93,7 @@ describe('passkey sign-in', () => {
       signedIn: false,
       hasPasskey: false,
       setupOpen: true,
+      signupOpen: false,
     });
     expect((await b.register(phone, { setupCode: 'wrong'.repeat(10) })).status).toBe(403);
     expect((await b.register(phone, { setupCode: SETUP })).status).toBe(200);
@@ -174,6 +175,14 @@ describe('passkey sign-in', () => {
     expect(devSignIn({ ...base, SETUP_CODE: SETUP })).toBe(false);
     expect(devSignIn({ ...base, PLAID_ENV: 'production' })).toBe(false);
     expect(devSignIn({ ...base, DEV_AUTH_EMAIL: undefined })).toBe(false);
+  });
+
+  it('sign-up and recovery codes answer 404 while the switch is off (D-75)', async () => {
+    for (const path of ['/api/auth/signup/options', '/api/auth/recover/options'])
+      expect(
+        (await new Browser().call('POST', path, { name: 'X', code: 'X', turnstileToken: 'X' })).status,
+      ).toBe(404);
+    expect((await new Browser().call('GET', '/api/auth/status')).json.signupOpen).toBe(false);
   });
 
   it('a challenge is single-use', async () => {

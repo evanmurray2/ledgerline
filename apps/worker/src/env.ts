@@ -51,6 +51,18 @@ export interface Env {
   OTHER_USERS_BANKS?: string;
   /** Fair use (store/shares.ts): the part of each daily limit other users share, 0–1 (default 0.5), or 'off'. */
   OTHER_USERS_SHARE?: string;
+  /** Open sign-up (D-75, docs/open-signup.md 2): 'open' lets anyone make an account; anything else is off. */
+  SIGNUPS?: string;
+  /** Accounts allowed in all (default 1), and new accounts per UTC day (default 50). */
+  MAX_USERS?: string;
+  SIGNUPS_PER_DAY?: string;
+  /** Cloudflare Turnstile for sign-up and recovery: the public site key and the secret (a Worker secret). */
+  TURNSTILE_SITE_KEY?: string;
+  TURNSTILE_SECRET?: string;
+  /** Inside the Directory: whether the breaker is at normal (sign-up and recovery need it, D-75). */
+  BREAKER_NORMAL?: () => Promise<boolean>;
+  /** Inside the Directory: create a new budget's store and run its migrations (sign-up). */
+  NEW_STORE?: (budgetId: string) => Promise<void>;
   /**
    * The account's daily limits for the breaker (docs/open-signup.md 7), as whole numbers. Unset: Cloudflare's Free
    * plan (sync/breaker.ts FREE_LIMITS).

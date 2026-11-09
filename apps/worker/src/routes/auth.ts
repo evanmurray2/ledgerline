@@ -16,6 +16,7 @@ import type { AppEnv } from '../http/context.js';
 import type { Env } from '../env.js';
 import { ulid } from '@ledgerline/platform';
 import { resolveMembership } from '../db/scoped.js';
+import { isFence, recoveryStmts, signupStmts, signupSwitchOn } from './signup.js';
 import { clock } from '../http/clock.js';
 import { openChallenge, sealChallenge } from '../http/challenge.js';
 import { csrf } from '../http/security.js';
@@ -172,6 +173,10 @@ authRoutes.get('/status', async (c) => {
     signedIn: who?.kind === 'user',
     hasPasskey: n > 0,
     setupOpen: (c.env.SETUP_CODE?.length ?? 0) >= 32 && (await setupOpen(c.env)),
+    // Open sign-up (D-75): only once the switch is on and the instance has its admin.
+    ...(signupSwitchOn(c.env) && (await firstAdmin(c.env))
+      ? { signupOpen: true, turnstileSiteKey: c.env.TURNSTILE_SITE_KEY }
+      : { signupOpen: false }),
   });
 });
 
@@ -282,7 +287,23 @@ authRoutes.post('/register/verify', async (c) => {
   // can't add a passkey.
   let stmts: Stmt[];
   let owner: string | null = null;
-  if (ch.grant_kind === 'setup') {
+  /** Sign-up's new budget, and the recovery code shown once after sign-up or a recovery (routes/signup.ts). */
+  let newBudget: string | null = null;
+  let recoveryCode: string | null = null;
+  if (ch.grant_kind === 'signup' || ch.grant_kind === 'recovery') {
+    if (!signupSwitchOn(env) || !ch.grant_ref) return c.json(fail('That took too long. Try again.'), 400);
+    if (env.BREAKER_NORMAL && !(await env.BREAKER_NORMAL()))
+      return c.json({ error: 'full', message: 'Sign-up is full right now. Try again tomorrow.' }, 403);
+    if (ch.grant_kind === 'signup') {
+      const r = await signupStmts(env, ch.grant_ref, vals, now);
+      if (!r) return c.json(fail('That took too long. Try again.'), 400);
+      ({ stmts, code: recoveryCode, budgetId: newBudget } = r);
+      owner = r.userId;
+    } else {
+      const r = await recoveryStmts(env, ch.grant_ref, vals, now);
+      ({ stmts, code: recoveryCode } = r);
+    }
+  } else if (ch.grant_kind === 'setup') {
     // The first passkey creates the first user (and their budget), who runs the instance. Later, while no admin has
     // a passkey (after the runbook's recovery), it goes to the first admin.
     if (!(await setupOpen(env))) return c.json(fail('That code or link isn’t valid or has expired.'), 403);
@@ -320,15 +341,25 @@ authRoutes.post('/register/verify', async (c) => {
     return c.json(fail('That took too long. Try again.'), 400);
   }
   let replay = false;
+  let fenced = false;
   const res = await env.DB.batch([useChallenge(env, ch.id, now), ...stmts]).catch((e: unknown) => {
     if (isReplay(e)) {
       replay = true;
+      return null;
+    }
+    // Sign-up was full by the time the passkey came back, or the recovery code no longer matches.
+    if (isFence(e)) {
+      fenced = true;
       return null;
     }
     if (/UNIQUE|PRIMARY KEY/i.test(String(e))) return null; // the same passkey again
     throw e;
   });
   if (replay) return c.json(fail('That took too long. Try again.'), 400);
+  if (fenced)
+    return ch.grant_kind === 'signup'
+      ? c.json({ error: 'full', message: 'Sign-up is full right now. Try again tomorrow.' }, 403)
+      : c.json(fail('That recovery code isn’t valid.'), 403);
   if (!res) return c.json(fail('This passkey is already set up. Sign in with it.'), 400);
   if ((res.at(-1)?.changes ?? 0) !== 1)
     return c.json(fail('That code or link isn’t valid or has expired.'), 403);
@@ -351,7 +382,10 @@ authRoutes.post('/register/verify', async (c) => {
     if (!token) return c.json(fail('That took too long. Try again.'), 400);
     c.header('set-cookie', cookie(SESSION_COOKIE, token, SESSION_MS));
   }
-  return c.json({ ok: true });
+  // A new account's store is made now, so its migrations run before the first screen (docs/open-signup.md 3.2).
+  // If this fails, the store makes itself on the first request instead.
+  if (newBudget) await env.NEW_STORE?.(newBudget).catch(() => undefined);
+  return c.json(recoveryCode ? { ok: true, recoveryCode } : { ok: true });
 });
 
 /** Starts a sign-in, or a fresh passkey check for an existing session. Discoverable credentials: no user name. */

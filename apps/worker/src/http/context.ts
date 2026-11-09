@@ -15,6 +15,8 @@ export interface Vars {
    * screens it answers treat the user as able to link banks and the server decides.
    */
   isAdmin?: boolean;
+  /** When this user's recovery code was used, while its notice shows (routes/signup.ts). */
+  recoveryNoticeAt?: number | null;
 }
 
 export type AppEnv = { Bindings: Env; Variables: Vars };
