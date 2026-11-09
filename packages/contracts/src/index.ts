@@ -29,6 +29,8 @@ export const Session = z.object({
   /** 95% of a daily limit: reading stops too, and the app shows what it saved (optional: older Workers omit it). */
   readsPaused: z.boolean().optional(),
   settings: z.object({ tracking: z.boolean(), noteButton: z.boolean() }),
+  /** Whether this user may link a new bank (D-75: admins only on Plaid Trial). Older Workers omit it: true. */
+  canLinkBanks: z.boolean().optional(),
 });
 export type Session = z.infer<typeof Session>;
 

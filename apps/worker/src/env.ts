@@ -47,6 +47,8 @@ export interface Env {
   /** Plaid page size: 500 by default, 250 if Phase 1 shows the apply step over budget. */
   SYNC_PAGE_SIZE?: string;
   APP_VERSION?: string;
+  /** 'on' lets users who aren't admins link banks: only on a Plaid plan with no lifetime link limit (D-75). */
+  OTHER_USERS_BANKS?: string;
   /**
    * The account's daily limits for the breaker (docs/open-signup.md 7), as whole numbers. Unset: Cloudflare's Free
    * plan (sync/breaker.ts FREE_LIMITS).

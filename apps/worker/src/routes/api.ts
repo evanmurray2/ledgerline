@@ -31,6 +31,7 @@ import { settingsRoutes } from './settings.js';
 import { opsRoutes } from './ops.js';
 import { categorySheet, assignView } from '../views/category.js';
 import { syncRoutes, editOnce } from './sync.js';
+import { canLinkBanks } from '../http/context.js';
 
 /**
  * One budget's API (docs/multi-user.md 5.1). It runs inside the budget's own Durable Object, which trusts the caller
@@ -67,6 +68,7 @@ export const identity: MiddlewareHandler<AppEnv> = async (c, next) => {
   c.set('userId', m.userId);
   c.set('email', m.email);
   c.set('budgetId', m.budgetId);
+  c.set('isAdmin', m.isAdmin);
   return next();
 };
 budgetApi.use('*', csrf);
@@ -181,7 +183,7 @@ budgetApi.get('/session', async (c) => {
   );
   const setupStep: Session['budget']['setupStep'] = !f.budget.budget_start_month
     ? 'start'
-    : n(accounts) === 0 && !setting.get('setup.skipLink')
+    : n(accounts) === 0 && !setting.get('setup.skipLink') && canLinkBanks(c)
       ? 'link'
       : n(cats) === 0
         ? 'categories'
@@ -208,6 +210,7 @@ budgetApi.get('/session', async (c) => {
     readOnlyUntil: ws === 'readonly' || ws === 'rest' ? tomorrow.toISOString() : null,
     readsPaused: ws === 'rest',
     settings: { tracking: setting.get('tracking') !== false, noteButton: setting.get('noteButton') === true },
+    canLinkBanks: canLinkBanks(c),
   };
   return c.json(body);
 });

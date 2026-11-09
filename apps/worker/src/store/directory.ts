@@ -44,6 +44,8 @@ export interface Caller {
   email: string;
   sessionId: string;
   verifiedAt: number;
+  /** An admin (the first user): links banks, sees Settings → Users (docs/open-signup.md 5, 10). False when not given. */
+  isAdmin?: boolean;
   /** The budget's sync epoch (migration 0006): changes when its database is restored. */
   syncEpoch?: string;
 }
@@ -200,6 +202,7 @@ export class Directory extends DurableObject<Env> {
         email: m.email,
         sessionId: who.sessionId ?? '',
         verifiedAt: who.verifiedAt,
+        isAdmin: m.isAdmin,
         syncEpoch: this.syncEpoch(m.budgetId),
       },
     };

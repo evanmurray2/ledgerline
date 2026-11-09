@@ -178,6 +178,8 @@ export function ConnectionsScreen() {
   const accounts = useAccounts();
   const v = q.data;
   const today = session.data?.budget.today ?? '';
+  // Only admins link new banks while Plaid Trial applies (D-75); others never see the link count.
+  const canLink = session.data?.canLinkBanks !== false;
   const status = (s: string) =>
     s === 'ok'
       ? { text: 'Synced', cls: 'bg-funded-bg text-funded-fg' }
@@ -191,52 +193,58 @@ export function ConnectionsScreen() {
       {!v && (q.error ? <ErrorNote error={q.error} /> : <Loading />)}
       {v && (
         <>
-          <LinkMeter used={v.used} limit={v.limit} />
-          <Card>
-            {v.items.map((it) => {
-              const st = status(it.status);
-              const repair = accounts.data?.repairs.find((r) => r.connectionId === it.id);
-              return (
-                <div
-                  key={it.id}
-                  className="flex flex-col gap-2 border-t border-divider px-3 py-2.5 first:border-t-0"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="flex flex-col gap-0.5">
-                      <span
-                        className={cx('text-base font-semibold', it.status === 'removed' && 'text-muted')}
+          {canLink && <LinkMeter used={v.used} limit={v.limit} />}
+          {v.items.length > 0 && (
+            <Card>
+              {v.items.map((it) => {
+                const st = status(it.status);
+                const repair = accounts.data?.repairs.find((r) => r.connectionId === it.id);
+                return (
+                  <div
+                    key={it.id}
+                    className="flex flex-col gap-2 border-t border-divider px-3 py-2.5 first:border-t-0"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="flex flex-col gap-0.5">
+                        <span
+                          className={cx('text-base font-semibold', it.status === 'removed' && 'text-muted')}
+                        >
+                          {it.institution}
+                        </span>
+                        <span className="text-xs text-muted">
+                          {it.accounts} · linked {syncedLabel(it.linkedAt, '')}
+                        </span>
+                      </span>
+                      <span className={cx('shrink-0 rounded-sm px-2 py-0.5 text-xs font-bold', st.cls)}>
+                        {!it.setupDone
+                          ? 'Setup unfinished'
+                          : it.status === 'ok' && it.lastSynced
+                            ? `Synced ${syncedLabel(it.lastSynced, today)}`
+                            : st.text}
+                      </span>
+                    </div>
+                    {!it.setupDone && it.status !== 'removed' && (
+                      <FinishSetup id={it.id} institution={it.institution} />
+                    )}
+                    {repair && (
+                      <SoftLink
+                        to={`/accounts/repair/${it.id}`}
+                        track="connections.repair"
+                        className="self-start"
                       >
-                        {it.institution}
-                      </span>
-                      <span className="text-xs text-muted">
-                        {it.accounts} · linked {syncedLabel(it.linkedAt, '')}
-                      </span>
-                    </span>
-                    <span className={cx('shrink-0 rounded-sm px-2 py-0.5 text-xs font-bold', st.cls)}>
-                      {!it.setupDone
-                        ? 'Setup unfinished'
-                        : it.status === 'ok' && it.lastSynced
-                          ? `Synced ${syncedLabel(it.lastSynced, today)}`
-                          : st.text}
-                    </span>
+                        Sign in again
+                      </SoftLink>
+                    )}
                   </div>
-                  {!it.setupDone && it.status !== 'removed' && (
-                    <FinishSetup id={it.id} institution={it.institution} />
-                  )}
-                  {repair && (
-                    <SoftLink
-                      to={`/accounts/repair/${it.id}`}
-                      track="connections.repair"
-                      className="self-start"
-                    >
-                      Sign in again
-                    </SoftLink>
-                  )}
-                </div>
-              );
-            })}
-          </Card>
-          <LinkBankFlow />
+                );
+              })}
+            </Card>
+          )}
+          {canLink ? (
+            <LinkBankFlow />
+          ) : (
+            <p className="m-0 text-sm text-muted">Linking banks isn’t available on your account yet.</p>
+          )}
           {v.environment === 'sandbox' && (
             <p className="m-0 text-xs text-muted">Test mode: test banks only.</p>
           )}

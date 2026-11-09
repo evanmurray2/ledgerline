@@ -196,6 +196,13 @@ describe('more than one user', () => {
     expect((await thief.signIn(otherKey)).status).toBe(200);
   });
 
+  it('only the admin may link a new bank, and the session says so (docs/open-signup.md 5)', async () => {
+    const b = await other.call('POST', '/api/settings/connections/link-token', { mode: 'new' });
+    expect(b).toMatchObject({ status: 403, json: { error: 'banks_off' } });
+    expect((await other.call('GET', '/api/session')).json.canLinkBanks).toBe(false);
+    expect((await owner.call('GET', '/api/session')).json.canLinkBanks).toBe(true);
+  });
+
   it('a disabled user’s sessions stop working and they can’t sign in', async () => {
     await dir.prepare(`UPDATE user SET status = 'disabled' WHERE id = 'u_b'`).run();
     expect((await other.call('GET', '/api/session')).status).toBe(401);
