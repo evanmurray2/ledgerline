@@ -93,6 +93,10 @@ export interface Env {
   ROUTE_LINK?: (providerItemId: string, connectionId: string) => Promise<void>;
   /** Inside a budget's Durable Object: point-in-time recovery of its database (runbooks/restore.md). */
   RESTORE_TO?: (at: number) => Promise<{ undo: string }>;
+  /** Inside a budget's Durable Object: undo the last restore, with the bookmark the Directory kept. */
+  RESTORE_UNDO?: () => Promise<{ undo: string } | null>;
+  /** Inside a budget's Durable Object: the last restore, from the Directory. */
+  LAST_RESTORE?: () => Promise<{ at: number; to: number | null } | null>;
 }
 
 export interface Jobs {

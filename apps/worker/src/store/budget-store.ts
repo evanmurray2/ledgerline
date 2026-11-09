@@ -305,9 +305,41 @@ export class BudgetStore extends DurableObject<Env> {
    */
   async restoreTo(at: number): Promise<{ undo: string }> {
     this.ready();
-    await this.newSyncEpoch();
     const bookmark = await this.ctx.storage.getBookmarkForTime(at);
+    return this.restoreBookmark(bookmark, at);
+  }
+
+  /**
+   * Undoes the last restore with the bookmark the Directory kept (null: there's nothing to undo). The undo is a restore
+   * too, so it can be undone in turn.
+   */
+  async restoreUndo(): Promise<{ undo: string } | null> {
+    this.ready();
+    const id = await this.budgetId();
+    const last = await this.directory().lastRestore(id);
+    return last ? this.restoreBookmark(last.undo, null) : null;
+  }
+
+  /** The last restore, without its bookmark. */
+  async lastRestore(): Promise<{ at: number; to: number | null } | null> {
+    this.ready();
+    const last = await this.directory().lastRestore(await this.budgetId());
+    return last ? { at: last.at, to: last.to } : null;
+  }
+
+  private directory() {
+    return this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName(DIRECTORY_NAME));
+  }
+
+  /**
+   * Restores to `bookmark` on the next start. The sync epoch changes first and the undo bookmark is kept in the
+   * Directory, which the restore can't reach, so every copy downloads again and the restore can always be undone.
+   */
+  private async restoreBookmark(bookmark: string, to: number | null): Promise<{ undo: string }> {
+    const id = await this.budgetId();
+    await this.newSyncEpoch();
     const undo = await this.ctx.storage.onNextSessionRestoreBookmark(bookmark);
+    await this.directory().noteRestore(id, { at: Date.now(), to, undo });
     // Restart after answering, so the caller gets the undo bookmark.
     this.ctx.waitUntil(
       (async () => {
@@ -464,6 +496,8 @@ export class BudgetStore extends DurableObject<Env> {
         });
       },
       RESTORE_TO: (at: number) => this.restoreTo(at),
+      RESTORE_UNDO: () => this.restoreUndo(),
+      LAST_RESTORE: () => this.lastRestore(),
       JOBS: {
         // routes/settings.ts startSync() has already taken the lease with this run id.
         sync: async (runId, connectionId, trigger) => {

@@ -83,6 +83,7 @@ export const SERVER_READS = [
   /^\/api\/health$/,
   /^\/api\/settings\/connections$/,
   /^\/api\/export\//,
+  /^\/api\/settings\/restore\/last$/,
 ];
 /** Mounted in front of budgetApi by the store (not by the phone's engine, which answers every screen). */
 export const serverReadsOnly: MiddlewareHandler<AppEnv> = async (c, next) => {

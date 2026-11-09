@@ -44,6 +44,17 @@ export const IDLE_MS = 30 * 86_400_000;
 /** The Directory is a single object; this is its name. */
 export const DIRECTORY_NAME = 'directory';
 
+/** A budget's last restore (noteRestore). */
+export interface RestoreRecord {
+  /** When the restore ran (epoch ms). */
+  at: number;
+  /** The time it went back to (epoch ms), or null when it undid the restore before it. */
+  to: number | null;
+  /** The bookmark that puts the budget back as it was just before this restore. */
+  undo: string;
+}
+const restoreKey = (budgetId: string) => `restore:${budgetId}`;
+
 /** Who is asking, as the Worker hands it to a budget's store. */
 export interface Caller {
   userId: string;
@@ -348,6 +359,30 @@ export class Directory extends DurableObject<Env> {
       budgetId,
     );
     return epoch;
+  }
+
+  /**
+   * The last restore of a budget (runbooks/restore.md), kept here because the restore can't reach the
+   * Directory: when it ran, the time it went back to (null: it undid the restore before it), and the bookmark that
+   * undoes it.
+   */
+  async noteRestore(budgetId: string, rec: RestoreRecord): Promise<void> {
+    this.ready();
+    this.ctx.storage.sql.exec(
+      `INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      restoreKey(budgetId),
+      JSON.stringify(rec),
+      Date.now(),
+    );
+  }
+
+  async lastRestore(budgetId: string): Promise<RestoreRecord | null> {
+    this.ready();
+    const r = this.ctx.storage.sql
+      .exec(`SELECT value FROM app_state WHERE key = ?`, restoreKey(budgetId))
+      .toArray()[0];
+    return typeof r?.value === 'string' ? (JSON.parse(r.value) as RestoreRecord) : null;
   }
 
   /** The budget the ops token's health check reports on: the first one (the owner's). */

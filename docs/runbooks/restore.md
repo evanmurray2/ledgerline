@@ -20,11 +20,23 @@ await fetch('/api/settings/restore', {
 }).then((r) => r.json());
 ```
 
-4. The answer is `{ ok: true, undo: "…" }`. Save the `undo` bookmark in a note. It is Cloudflare's bookmark for the moment just before this restore; no route takes it yet, so using it needs a code change (`BudgetStore.restoreTo`).
+4. The answer is `{ ok: true, undo: "…" }`. You don't need to keep the bookmark: the Directory keeps the last one (D-77).
+
+**To undo the last restore** (a restore by mistake, or by someone else), repeat steps 1 and 2, then run:
+
+```js
+await fetch('/api/settings/restore', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-ledgerline': '1' },
+  body: JSON.stringify({ undo: true, confirm: 'Your budget name' }),
+}).then((r) => r.json());
+```
+
+The budget goes back to how it was just before the last restore. The undo is a restore too, so running it again undoes the undo. To see when the last restore ran: `await fetch('/api/settings/restore/last').then((r) => r.json())` (`to` is null when it was an undo).
 
 Everything after that time is replaced. Bank transactions after it come back on the next sync; your own edits after it are lost.
 
-Answers that refuse: `confirm` (the name doesn't match), `invalid` (the time isn't in the last 30 days, or isn't an ISO time), and a passkey prompt when the last check is older than 15 minutes (sign in again, then repeat step 3).
+Answers that refuse: `confirm` (the name doesn't match), `invalid` (the time isn't in the last 30 days, or isn't an ISO time, or there's no restore to undo), and a passkey prompt when the last check is older than 15 minutes (sign in again, then repeat step 3).
 
 ## Your own copies
 
