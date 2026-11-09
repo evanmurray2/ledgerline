@@ -100,6 +100,8 @@ export function CategoryPickerSheet({
   const byId = useMemo(() => new Map(all.map((c) => [c.id, c])), [all]);
   const needle = q.trim().toLowerCase();
   const matches = needle ? all.filter((c) => c.name.toLowerCase().includes(needle)) : [];
+  // "Ready to Assign" or "Owed to you" are found by a search too.
+  const specialMatches = needle ? specials.filter((sp) => sp.name.toLowerCase().includes(needle)) : [];
   const usual = suggested.map((id) => byId.get(id)).filter((c): c is NonNullable<typeof c> => !!c);
   const pick = (id: string) => () => onPick(id);
   const row = (c: PickerCategory & { group?: string }, how: string, showGroup = false) => (
@@ -143,8 +145,11 @@ export function CategoryPickerSheet({
           />
         </div>
         {needle ? (
-          matches.length > 0 ? (
-            <div className={listBox}>{matches.map((c) => row(c, 'search_result', true))}</div>
+          matches.length + specialMatches.length > 0 ? (
+            <div className={listBox}>
+              {specialMatches.map((sp) => row(sp, 'special'))}
+              {matches.map((c) => row(c, 'search_result', true))}
+            </div>
           ) : (
             <EmptyNote>No category called “{q.trim()}”.</EmptyNote>
           )
@@ -207,9 +212,12 @@ export function CategoryField({
   sub,
   track,
   ariaLabel,
+  valueName,
 }: {
   id?: string;
   value: string;
+  /** The name to show for a value the list doesn't hold (a category archived since it was picked). */
+  valueName?: string | null;
   onChange: (id: string) => void;
   specials?: PickerSpecial[];
   /** Defaults to every category you can pick. */
@@ -246,7 +254,9 @@ export function CategoryField({
         }}
         className={cx(inputClass, 'flex items-center justify-between gap-2 text-left')}
       >
-        <span className={cx('truncate', !chosen && 'text-faint')}>{chosen ? chosen.name : placeholder}</span>
+        <span className={cx('truncate', !chosen && !valueName && 'text-faint')}>
+          {chosen ? chosen.name : value && valueName ? valueName : placeholder}
+        </span>
         <span className="flex shrink-0 items-center gap-1.5 text-muted">
           <Avail cents={avail} />
           <Icon name="chevR" size={18} />
