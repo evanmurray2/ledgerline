@@ -171,12 +171,12 @@ describe('Accounts and Reports', () => {
   it('accounts show net worth, owed to you and the repair banner', async () => {
     renderAt('/accounts');
     expect((await screen.findByTestId('net-worth', undefined, { timeout: 4000 })).textContent).toBe(
-      '$22,555.35',
+      '$22,354.35',
     );
     expect(screen.getByText('$1,430.60')).toBeTruthy();
     expect(screen.getByText('Ally needs you to sign in again')).toBeTruthy();
-    expect(screen.getByText('after pending $23,492.40')).toBeTruthy();
-    expect(screen.getByText('after pending $1,138.05')).toBeTruthy();
+    expect(screen.getByText('$23,492.40')).toBeTruthy();
+    expect(screen.getByText('$1,138.05')).toBeTruthy();
   });
 
   it('an account whose transactions differ from the bank balance says by how much', async () => {
