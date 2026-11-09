@@ -456,6 +456,7 @@ function withCaller(mount: (app: Hono<AppEnv>) => void): Hono<AppEnv> {
     c.set('email', who.email);
     c.set('sessionId', who.sessionId);
     c.set('syncEpoch', who.syncEpoch ?? 'e0');
+    c.set('isAdmin', who.isAdmin === true);
     return next();
   });
   mount(app);

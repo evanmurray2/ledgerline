@@ -1,6 +1,6 @@
 // First run: Welcome, 1 · Budget start, 2 · Link banks, 3 · Make your categories.
 import { useState, type ReactNode } from 'react';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link, Navigate, useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
 import { qk, useAccounts, useConnections, useSession } from '../api/hooks';
@@ -100,7 +100,7 @@ export function StartMonthScreen() {
     try {
       if (session.data?.budget.setupStep === 'start') await api.setupStart({ startMonth: month });
       await qc.invalidateQueries({ queryKey: qk.session });
-      void navigate({ to: '/setup/link' });
+      void navigate({ to: session.data?.canLinkBanks === false ? '/setup/categories' : '/setup/link' });
     } catch (e) {
       setError(e);
     } finally {
@@ -139,11 +139,14 @@ export function StartMonthScreen() {
 
 export function LinkBanksScreen() {
   useScreen('setup.link');
+  const session = useSession();
   const conns = useConnections();
   const accounts = useAccounts();
   const linked = (conns.data?.items ?? []).filter((i) => i.status !== 'removed');
   const accts = (accounts.data?.groups ?? []).flatMap((g) => g.accounts);
   const navigate = useNavigate();
+  // Users who can't link banks skip this step (D-75).
+  if (session.data?.canLinkBanks === false) return <Navigate to="/setup/categories" />;
   return (
     <Step
       n={2}
@@ -236,6 +239,7 @@ export function FirstSortScreen() {
   const accounts = useAccounts();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const session = useSession();
   const [on, setOn] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(IDEAS.flatMap((g) => g.items.map((i) => [i, !g.off.includes(i)]))),
   );
@@ -278,7 +282,7 @@ export function FirstSortScreen() {
   return (
     <Step
       n={3}
-      back="/setup/link"
+      back={session.data?.canLinkBanks === false ? '/setup/start' : '/setup/link'}
       footer={
         <>
           <span className="text-center text-sm text-muted">

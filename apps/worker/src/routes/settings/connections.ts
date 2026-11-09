@@ -6,7 +6,7 @@ import { clock } from '../../http/clock.js';
 import { LinkExchange, LinkTokenRequest, type ConnectionsView } from '@ledgerline/contracts';
 import { localDate } from '@ledgerline/domain';
 import { encryptToken, parseKeyring, ulid } from '@ledgerline/platform';
-import type { AppEnv } from '../../http/context.js';
+import { canLinkBanks, type AppEnv } from '../../http/context.js';
 import { GONE, HttpError, TRY_AGAIN, parse, scoped } from '../api.js';
 import { acquire, isFenceAbort, requestSync } from '../../sync/lease.js';
 import { connectionToken, makeProvider } from '../../sync/provider.js';
@@ -68,6 +68,9 @@ connectionsRoutes.post('/settings/connections/link-token', async (c) => {
     });
     return c.json({ linkToken: lt.linkToken });
   }
+  // Plaid Trial's links are for the whole Plaid account, so only admins link new banks (docs/open-signup.md 5).
+  if (!canLinkBanks(c))
+    throw new HttpError(403, 'banks_off', 'Linking banks isn’t available on your account yet.');
   const used = await s.first<{ n: number }>(
     `SELECT count(*) AS n FROM connection WHERE budget_id = ?1 AND provider = 'plaid'`,
   );
