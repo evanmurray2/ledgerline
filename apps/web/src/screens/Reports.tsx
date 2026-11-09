@@ -195,7 +195,8 @@ function WorthTable() {
   const a = useAccounts().data;
   if (!a) return null;
   const rows: [string, number][] = [
-    ...a.groups.map((g) => [g.name, g.total] as [string, number]),
+    // The group totals count pending; net worth uses the bank's balances (as on Accounts), so the label says so.
+    ...a.groups.map((g) => [`${g.name}, after pending`, g.total] as [string, number]),
     ['Net worth', a.netWorth],
   ];
   return (
@@ -295,7 +296,8 @@ export function ReportsScreen() {
                 <p className="m-0 text-xs leading-snug text-muted">
                   {r.stillOwed > 0
                     ? 'Bank and card accounts only. Money owed to you isn’t counted.'
-                    : 'Bank and card accounts only.'}
+                    : 'Bank and card accounts only.'}{' '}
+                  Net worth uses the bank’s balances, before pending.
                 </p>
               </>
             )}

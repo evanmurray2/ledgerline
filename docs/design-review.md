@@ -6,7 +6,8 @@ A review of `apps/web/src` for the same kind of thing looking or behaving differ
 
 **Status:** fixed (D-54, D-55; `docs/build-history.md` section 19). Left as they are, on purpose: Unpair transfer has
 no Undo (it needs a server change), Owed's "waiting to match" card keeps its own color, Budget's sync-problem strip
-stays a full-width strip under the header, and the Ready to Assign bar keeps its own buttons.
+stays a full-width strip under the header, and the Ready to Assign bar keeps its own buttons. The Register's header is taller than other sub-pages (a subtitle line and its chips): that is on purpose, as
+the account's bank and sync time and its filters belong there.
 
 Money rules: nothing below changes how money is counted. All of it is markup, copy or color. Two items (11b
 and 13a) touch how an amount or a "late" state is shown, but not how it is computed.

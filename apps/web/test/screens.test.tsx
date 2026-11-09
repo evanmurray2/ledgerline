@@ -175,8 +175,8 @@ describe('Accounts and Reports', () => {
     );
     expect(screen.getByText('$1,430.60')).toBeTruthy();
     expect(screen.getByText('Ally needs you to sign in again')).toBeTruthy();
-    expect(screen.getByText('$23,492.40')).toBeTruthy();
-    expect(screen.getByText('$1,138.05')).toBeTruthy();
+    expect(screen.getByText('after pending $23,492.40')).toBeTruthy();
+    expect(screen.getByText('after pending $1,138.05')).toBeTruthy();
   });
 
   it('an account whose transactions differ from the bank balance says by how much', async () => {

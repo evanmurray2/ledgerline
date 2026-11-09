@@ -17,7 +17,9 @@ import { useTabMonth } from '../state/month';
 
 type Tab = 'budget' | 'activity' | 'accounts' | 'reports' | 'settings';
 
-export function tabFor(path: string): Tab {
+export function tabFor(path: string, search?: Record<string, unknown>): Tab {
+  // Owed to you opens from Budget and from Accounts' net worth card; it lights the tab it came from.
+  if (path.startsWith('/owed') && search?.from === 'accounts') return 'accounts';
   if (path.startsWith('/activity')) return 'activity';
   if (path.startsWith('/settings')) return 'settings';
   if (path.startsWith('/accounts')) return 'accounts';
@@ -255,7 +257,8 @@ function ReadOnlyBanner({ until }: { until: string }) {
 export function AppShell({ children }: { children: ReactNode }) {
   const desktop = useIsDesktop();
   const path = useRouterState({ select: (s) => s.location.pathname });
-  const active = tabFor(path);
+  const from = useRouterState({ select: (s) => (s.location.search as { from?: unknown }).from });
+  const active = tabFor(path, { from });
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const [noteOpen, setNoteOpen] = useState(false);
   const session = useSession();

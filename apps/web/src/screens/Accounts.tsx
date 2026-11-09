@@ -323,7 +323,7 @@ export function AccountsScreen() {
               />
               {v.groups.map((g) => (
                 <section key={g.name} className="flex shrink-0 flex-col gap-1.5">
-                  <SectionTitle note={<span className="tnum">{formatCents(g.total)}</span>}>
+                  <SectionTitle note={<span className="tnum">after pending {formatCents(g.total)}</span>}>
                     {g.name}
                   </SectionTitle>
                   <Card>

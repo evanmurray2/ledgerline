@@ -52,7 +52,8 @@ export function RegisterScreen() {
   const a = all.data?.account;
   const rows = (all.data?.days ?? []).flatMap((d) => d.rows);
   const counts = {
-    pending: rows.filter((r) => r.status === 'pending').length,
+    // The same rows as the Pending section and the server's pending filter: anything not posted yet (upcoming too).
+    pending: rows.filter((r) => r.status !== 'posted').length,
     needs: rows.filter((r) => r.badge === 'Needs category').length,
     transfers: rows.filter((r) => r.badge === 'Transfer' || r.sheet === 'transfer').length,
   };
