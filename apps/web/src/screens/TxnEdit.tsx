@@ -40,15 +40,26 @@ function CategorySelect({
   onChange,
   id,
   allowRta,
+  valueName,
 }: {
   value: string;
   onChange: (v: string) => void;
   id: string;
   allowRta?: boolean;
+  valueName?: string | null;
 }) {
   const specials = [{ id: '', name: 'Needs a category' }];
   if (allowRta) specials.push({ id: 'rta', name: 'Ready to Assign' });
-  return <CategoryField id={id} track="txn.category" value={value} onChange={onChange} specials={specials} />;
+  return (
+    <CategoryField
+      id={id}
+      track="txn.category"
+      value={value}
+      onChange={onChange}
+      specials={specials}
+      valueName={valueName}
+    />
+  );
 }
 
 export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
@@ -57,7 +68,8 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
     api.patchTxn(v.key, v.body),
   );
   const del = useMoneyMutation(api.deleteTxn);
-  const [cat, setCat] = useState(t.categoryId ?? (t.categoryLabel === 'Ready to Assign' ? 'rta' : ''));
+  const origCat = t.categoryId ?? (t.categoryLabel === 'Ready to Assign' ? 'rta' : '');
+  const [cat, setCat] = useState(origCat);
   // Amounts are typed without a sign; the transaction's direction keeps it.
   const sign = (t.bankAmount ?? t.amount) < 0 ? -1 : 1;
   const [est, setEst] = useState(t.estimatedAmount !== null ? centsToInput(Math.abs(t.estimatedAmount)) : '');
@@ -111,7 +123,6 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
 
   const save = async () => {
     const body: Parameters<typeof api.patchTxn>[1] = {};
-    const origCat = t.categoryId ?? (t.categoryLabel === 'Ready to Assign' ? 'rta' : '');
     if (cat !== origCat) {
       if (cat === 'rta') body.toRta = true;
       else body.categoryId = cat || null;
@@ -281,13 +292,20 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
               <Icon name="chevR" size={18} className="shrink-0 text-muted" />
             </Link>
           ) : (
-            <CategorySelect id="txn-cat" value={cat} onChange={setCat} allowRta={isRefund || t.amount > 0} />
+            <CategorySelect
+              id="txn-cat"
+              value={cat}
+              onChange={setCat}
+              allowRta={isRefund || t.amount > 0}
+              // A category archived since: the list no longer holds it, but this transaction still has it.
+              valueName={cat === origCat ? t.categoryLabel : null}
+            />
           )}
-          {t.categorizedBy && (
+          {t.categorizedBy && (cat === origCat || t.categorizedBy !== 'You') && (
             <span className="text-xs text-muted">
-              {cat === (t.categoryId ?? '')
-                ? `Set by ${t.categorizedBy}.`
-                : `Set by you. ${t.categorizedBy.replace(/^r/, 'R')} won’t change it back.`}
+              {cat === origCat
+                ? `Set by ${t.categorizedBy === 'You' ? 'you' : t.categorizedBy}.`
+                : `Set by you. ${t.categorizedBy} won’t change it back.`}
             </span>
           )}
         </div>
@@ -435,7 +453,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           t.status === 'posted' && t.kind === 'posted' && t.postedDate
             ? `Posted ${dayLabel(t.postedDate)}`
             : t.categorizedBy && isIncome
-              ? `Set by ${t.categorizedBy}`
+              ? `Set by ${t.categorizedBy === 'You' ? 'you' : t.categorizedBy}`
               : undefined
         }
       />
