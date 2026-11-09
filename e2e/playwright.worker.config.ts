@@ -4,7 +4,7 @@ import { failureReport } from './report';
 // The SPA served by the real Worker on local `wrangler dev`, with a local store seeded with the canonical November
 // fixture before each test (DEV_ROUTES) and "today" pinned to Nov 14, 2026 (FAKE_NOW). Build apps/web first.
 const report = failureReport('worker');
-const PORT = 8799;
+const PORT = Number(process.env.E2E_PORT ?? 8799);
 
 export default defineConfig({
   testDir: './tests',
