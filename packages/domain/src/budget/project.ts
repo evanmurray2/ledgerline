@@ -266,6 +266,9 @@ export function linesForTxn(
       break;
     }
     case 'split': {
+      // Lines that no longer add up (the amount changed after the split, or a pending row posted at another amount):
+      // the gap counts as uncategorized until you fix the split, so it is never lost (D-82).
+      uncategorized += t.amount - u.lines.reduce((a, sl) => a + sl.amount, 0);
       u.lines.forEach((sl, n) => {
         const amt =
           sl.amount < 0 ? sl.amount + (owedBySplit.get(sl.id) ?? 0) + (n === 0 ? owedWhole : 0) : sl.amount;

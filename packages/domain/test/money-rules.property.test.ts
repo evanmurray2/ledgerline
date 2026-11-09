@@ -419,6 +419,37 @@ describe('rule 3: card refund', () => {
     expect(checkIdentity(proj, r, START).ok).toBe(true);
   });
 
+  it('a split whose lines no longer add up: the gap is uncategorized until you fix it (D-82)', () => {
+    // A $120 check split $60 Gifts (c0) and $60 Dining out (c1), whose amount then becomes $500. The lines stay as
+    // they are; the $380 they don't cover counts as uncategorized spending, so the identity (rule 10) still holds and
+    // neither category nor Ready to Assign moves.
+    const split = (amount: number) =>
+      tx('chk', '2026-01-05', amount, {
+        type: 'split',
+        lines: [
+          { id: 's0', categoryId: 'c0', amount: cents(-6_000) },
+          { id: 's1', categoryId: 'c1', amount: cents(-6_000) },
+        ],
+      });
+    const input = (amount: number) => ({
+      accounts: [{ ...CHK, startingBalance: cents(100_000) }],
+      categories: cats(2, []),
+      assignments: [
+        { categoryId: 'c0', month: START, amount: cents(6_000) },
+        { categoryId: 'c1', month: START, amount: cents(6_000) },
+      ],
+      txns: [split(amount)],
+      current: START,
+    });
+    const even = run(input(-12_000));
+    const off = run(input(-50_000));
+    expect(off.p.uncategorizedNet).toBe(-38_000);
+    expect(cell(off.r, START, 'c0').available).toBe(0);
+    expect(cell(off.r, START, 'c1').available).toBe(0);
+    expect(off.r.rta).toBe(even.r.rta);
+    expect(checkIdentity(off.p, off.r, START).ok).toBe(true);
+  });
+
   it('a split refund keeps its link to the purchase', () => {
     const p = tx('card', '2026-01-05', -5_000, cat('c0'));
     const { r } = run({

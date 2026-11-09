@@ -51,6 +51,8 @@ export function listRow(
     paidBack?: boolean;
     stale?: boolean;
     split?: boolean;
+    /** What the split's lines leave out of the amount (D-82). */
+    splitOff?: number;
   } = {},
 ): TxnListRow {
   let badge: string | null = null;
@@ -127,6 +129,11 @@ export function listRow(
       badge = 'Cleared after all';
       badgeKind = 'alert';
     }
+  }
+  if (extra.splitOff && !history) {
+    badge = `Split ${formatCents(Math.abs(extra.splitOff))} off`;
+    badgeKind = 'alert';
+    sub = 'fix the split';
   }
   return {
     key: t.key,
