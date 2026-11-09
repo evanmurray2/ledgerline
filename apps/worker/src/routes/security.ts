@@ -5,7 +5,7 @@ import type { AppEnv } from '../http/context.js';
 import { clock } from '../http/clock.js';
 import { DEVICE_LINK_MS, SESSION_COOKIE, cookie, randomToken, tokenHash } from '../http/auth.js';
 import { describeAgent } from '../http/agent.js';
-import { signupSwitchOn } from './signup.js';
+import { signupSwitchOn } from './signup-switch.js';
 
 export const securityRoutes = new Hono<AppEnv>();
 

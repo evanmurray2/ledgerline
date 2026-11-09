@@ -9,14 +9,7 @@ import { CSRF_HEADER } from '@ledgerline/contracts';
 import { ulid } from '@ledgerline/platform';
 import type { Env } from '../env.js';
 import type { AppEnv } from '../http/context.js';
-import {
-  CHALLENGE_COOKIE,
-  CHALLENGE_MS,
-  cookie,
-  devSignIn,
-  randomToken,
-  tokenHash as sha256Hex,
-} from '../http/auth.js';
+import { CHALLENGE_COOKIE, CHALLENGE_MS, cookie, randomToken, tokenHash as sha256Hex } from '../http/auth.js';
 import { sealChallenge } from '../http/challenge.js';
 import { clock } from '../http/clock.js';
 
@@ -31,23 +24,8 @@ const json = (body: unknown, status: number, headers: Record<string, string> = {
 
 const fail = (message: string) => ({ error: 'auth', message });
 
-/** The switch (docs/open-signup.md 2): sign-up, and recovery codes with it, are open only when all of this holds. */
-export function signupSwitchOn(env: Env): boolean {
-  return (
-    env.SIGNUPS === 'open' &&
-    (env.TURNSTILE_SECRET?.length ?? 0) > 0 &&
-    (env.TURNSTILE_SITE_KEY?.length ?? 0) > 0 &&
-    !devSignIn(env)
-  );
-}
-
-/** A whole number from a Worker variable, or the default. */
-function count(v: string | undefined, fallback: number): number {
-  const n = Number(v);
-  return v !== undefined && v.trim() !== '' && Number.isSafeInteger(n) && n >= 0 ? n : fallback;
-}
-export const maxUsers = (env: Env) => count(env.MAX_USERS, 1);
-export const signupsPerDay = (env: Env) => count(env.SIGNUPS_PER_DAY, 50);
+export { maxUsers, signupSwitchOn, signupsPerDay } from './signup-switch.js';
+import { maxUsers, signupSwitchOn, signupsPerDay } from './signup-switch.js';
 
 // ---- Turnstile
 

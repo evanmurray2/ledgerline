@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import type { AppEnv, Ctx } from '../http/context.js';
 import { cookie, SESSION_COOKIE } from '../http/auth.js';
 import { clock } from '../http/clock.js';
-import { maxUsers, signupsPerDay, signupSwitchOn } from './signup.js';
+import { maxUsers, signupsPerDay, signupSwitchOn } from './signup-switch.js';
 
 export const peopleRoutes = new Hono<AppEnv>();
 
