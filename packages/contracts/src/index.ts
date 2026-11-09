@@ -692,6 +692,8 @@ export type AuthStatus = z.infer<typeof AuthStatus>;
 export const SecurityView = z.object({
   /** This user has a recovery code and can make a new one (users who aren't admins, D-75). */
   recoveryCode: z.boolean().optional(),
+  /** Show Settings → Users (admins, once there is anyone else or sign-up is on). */
+  usersScreen: z.boolean().optional(),
   passkeys: z.array(
     z.object({ id: z.string(), name: z.string(), createdAt: z.string(), lastUsedAt: z.string().nullable() }),
   ),

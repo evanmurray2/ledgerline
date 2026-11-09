@@ -5,6 +5,7 @@ import type { AppEnv } from '../http/context.js';
 import { clock } from '../http/clock.js';
 import { DEVICE_LINK_MS, SESSION_COOKIE, cookie, randomToken, tokenHash } from '../http/auth.js';
 import { describeAgent } from '../http/agent.js';
+import { signupSwitchOn } from './signup-switch.js';
 
 export const securityRoutes = new Hono<AppEnv>();
 
@@ -110,6 +111,11 @@ securityRoutes.get('/settings/security', async (c) => {
   return c.json({
     // Users who aren't admins have a recovery code (D-75); admins recover with a device link or the runbook.
     recoveryCode: admin === 0,
+    // Settings → Users, for admins once there is anyone else or sign-up is on (routes/people.ts).
+    usersScreen:
+      admin === 1 &&
+      (signupSwitchOn(c.env) ||
+        ((await c.env.DB.prepare(`SELECT count(*) AS n FROM user`).first<number>('n')) ?? 0) > 1),
     passkeys: pk.results.map((p) => ({
       id: p.id,
       name: p.name,

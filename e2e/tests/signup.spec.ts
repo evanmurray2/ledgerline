@@ -76,4 +76,23 @@ test('create an account, save the recovery code, and recover on another device',
   // The recovery shows a notice; Alex's first device still works.
   expect((await session(phone)).json.recoveryNoticeAt).toEqual(expect.any(String));
   expect((await session(alex)).status).toBe(200);
+
+  // First-run setup without banks: the link step is skipped.
+  await phone.getByRole('link', { name: 'Get started' }).click();
+  await phone.getByRole('button', { name: 'Continue' }).click();
+  await expect(phone.getByRole('heading', { name: 'Make your categories' })).toBeVisible();
+  await phone.getByRole('button', { name: 'Go to my budget' }).click();
+  await expect(phone).toHaveURL(/\/budget/);
+  await expect(phone.getByText(/Your recovery code was used on/)).toBeVisible();
+
+  // Alex deletes the account: the budget's name, then a confirm.
+  await phone.goto('/settings');
+  await expect(phone.getByText('Recovery code', { exact: true })).toBeVisible();
+  await phone.getByRole('button', { name: 'Delete account' }).click();
+  await phone.getByLabel(/to confirm/).fill('My budget');
+  await phone.getByRole('button', { name: 'Delete account' }).last().click();
+  await phone.getByRole('alertdialog').getByRole('button', { name: 'Delete account' }).click();
+  await expect(phone.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  // Signed out everywhere.
+  expect((await session(alex)).status).toBe(401);
 });

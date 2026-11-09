@@ -178,7 +178,7 @@ For admins, shown only while more than one user exists or `SIGNUPS` is `open`:
 
 ## 12. Deleting an account
 
-`docs/multi-user.md` 10, with a safer order. `wipe` doesn't exist yet and is built here.
+`docs/multi-user.md` 10, with a safer order. As built (Nov 9, 2026): an account with linked banks can't be deleted yet ("An account with linked banks can't be deleted yet."), because removing a bank at Plaid isn't built. Only admins link banks on Trial, and an admin can't be deleted, so this blocks nobody today; step 3.1 is built before `OTHER_USERS_BANKS` is turned on (`docs/build-plan.md`).
 
 1. Settings → Sign-in → **Delete account**: a recent passkey check and typing the budget name. The screen offers the full backup first and says the data will be gone.
 2. One Directory batch: `status = 'deleting'`; delete the user's sessions, devices and device links; delete the budget's routes in `connection_route` and its membership. From here, no request or webhook reaches the store.

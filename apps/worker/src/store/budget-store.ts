@@ -40,6 +40,7 @@ import { connectionToken, makeProvider, pageSize } from '../sync/provider.js';
 import { writeBudgetState } from '../sync/breaker.js';
 import { answering } from './body.js';
 import { UsageCounter } from './shares.js';
+import { DISABLED_KEY, budgetInfo, setDisabled, wipeStore } from './account-life.js';
 import { QUEUE_REFILE } from '../sync/refile-payees.js';
 import { QUEUE_DROP_TEXT_ALIASES } from '../sync/drop-text-aliases.js';
 
@@ -106,6 +107,32 @@ export class BudgetStore extends DurableObject<Env> {
 
   // ---- RPC
 
+  /** The budget's name and linked banks, for deleting an account (routes/people.ts). */
+  async info(): Promise<{ name: string; banks: number }> {
+    this.ready();
+    return budgetInfo(this.ctx.storage);
+  }
+
+  /** An admin turned the account off (`true`) or on (store/account-life.ts). */
+  async setDisabled(disabled: boolean): Promise<void> {
+    this.ready();
+    await setDisabled(this.ctx.storage, disabled, this.enqueue, () => this.timeZone());
+    await this.runner.scheduleNext(Date.now());
+  }
+
+  /** Deletes everything in this store, for its user's own explicit delete (store/account-life.ts). */
+  async wipe(budgetId: string): Promise<{ ok: boolean; why?: 'refused' | 'banks' }> {
+    this.ready();
+    const dir = this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName(DIRECTORY_NAME));
+    const r = await wipeStore(this.ctx.storage, () => dir.isDeleting(budgetId));
+    if (r.ok) {
+      this.cachedBudgetId = null;
+      this.armed = false;
+      this.counting = null;
+    }
+    return r;
+  }
+
   /** Called by the deploy smoke test and the daily check; running it applies pending migrations. */
   async health(): Promise<StoreHealth> {
     return storeHealth(this.ctx.storage, 'budget', this.startError);
@@ -117,7 +144,12 @@ export class BudgetStore extends DurableObject<Env> {
    */
   async api(request: Request, caller: Caller): Promise<Response> {
     this.ready();
-    await this.ensureBudget(caller.budgetId);
+    // A budget the Directory no longer knows (deleted) is never made again.
+    if (!(await this.ensureBudget(caller.budgetId)))
+      return new Response(
+        JSON.stringify({ error: 'not_member', message: 'You don’t have access to this budget.' }),
+        { status: 403, headers: { 'content-type': 'application/json' } },
+      );
     await this.rearm();
     this.app ??= withCaller((app) => app.use('/api/*', serverReadsOnly).route('/api', budgetApi));
     this.usage.request();
@@ -140,7 +172,7 @@ export class BudgetStore extends DurableObject<Env> {
     this.ready();
     if (this.env.PLAID_ENV === 'production' || this.env.SETUP_CODE)
       return new Response('Not found', { status: 404 });
-    await this.ensureBudget(caller.budgetId);
+    if (!(await this.ensureBudget(caller.budgetId))) return new Response('Not found', { status: 404 });
     this.devApp ??= withCaller((app) => {
       app.route('/__dev', dev);
     });
@@ -303,6 +335,7 @@ export class BudgetStore extends DurableObject<Env> {
     const now = Date.now();
     const budgetId = await this.budgetId().catch(() => null);
     if (!budgetId) return { ok: false, jobs: [] };
+    if (await this.ctx.storage.get<boolean>(DISABLED_KEY)) return { ok: true, jobs: this.runner.list() };
     if (o.idle) {
       const banks = this.ctx.storage.sql
         .exec(`SELECT count(*) AS n FROM connection WHERE removed_at IS NULL`)
@@ -435,9 +468,17 @@ export class BudgetStore extends DurableObject<Env> {
   }
 
   /** The store fills in its own budget row on first use (sign-up and setup create it in the Directory). */
-  private async ensureBudget(budgetId: string): Promise<void> {
-    if (this.cachedBudgetId === budgetId) return;
+  private async ensureBudget(budgetId: string): Promise<boolean> {
+    if (this.cachedBudgetId === budgetId) return true;
     const now = Date.now();
+    // A new store makes its budget row only for a budget the Directory knows and isn't deleting, so a late call
+    // after a wipe can't bring a deleted budget back (docs/open-signup.md 12).
+    const dir = this.env.DIRECTORY?.get(this.env.DIRECTORY.idFromName(DIRECTORY_NAME));
+    if (
+      dir &&
+      this.ctx.storage.sql.exec(`SELECT 1 FROM budget WHERE id = ?`, budgetId).toArray().length === 0
+    )
+      if (!(await dir.budgetExists(budgetId))) return false;
     const created = this.ctx.storage.sql.exec(
       `INSERT OR IGNORE INTO budget (id, name, created_at, updated_at) VALUES (?, 'My budget', ?, ?)`,
       budgetId,
@@ -447,6 +488,7 @@ export class BudgetStore extends DurableObject<Env> {
     // A new budget gets its sync backstop, daily scan and maintenance now, not at the next daily check.
     if (created > 0) await ensureRecurring(this.enqueue, now, this.timeZone());
     this.cachedBudgetId = budgetId;
+    return true;
   }
 
   /** The store's budget: the one row in its budget table. */
