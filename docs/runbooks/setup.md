@@ -67,7 +67,7 @@ The setup code stops working once a passkey exists. For a non-Apple device, use 
 1. Link your first bank: **Settings → Bank connections**. Each link uses 1 of your 10, for good. Confirm the starting balance it shows.
 2. In Cloudflare: **Workers & Pages → ledgerline → Logs**. After that first sync, check CPU time per step: fetch about 3.5 ms, apply about 5.5 ms (`docs/measurements.md`).
 3. Run it beside your current budgeting tool for a month and reconcile.
-4. Now and then, download Settings → Import and export → JSON export and keep it in Files or iCloud (`docs/runbooks/restore.md`).
+4. Now and then, download Settings → Backup and export → Full backup and keep it in Files or iCloud (`docs/runbooks/restore.md`).
 
 ## Optional extras
 

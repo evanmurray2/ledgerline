@@ -54,7 +54,7 @@ const SCREENS: { name: string; path: string; ready?: string; prepare?: (page: Pa
     },
   },
   { name: 'connections', path: '/settings/connections', ready: '4 of 10 bank links used' },
-  { name: 'data', path: '/settings/data', ready: 'Import past transactions' },
+  { name: 'data', path: '/settings/data', ready: 'Full backup' },
   { name: 'state-empty', path: '/budget?mock=empty', ready: 'a job' },
   { name: 'state-readonly', path: '/budget?mock=readonly', ready: 'View only until' },
   {

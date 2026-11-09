@@ -83,12 +83,7 @@ export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label
       setStep('confirm');
     }
   };
-  if (left <= 0)
-    return (
-      <Banner tone="warn">
-        All {v.limit} bank links are used. You can import a CSV file in Import and export.
-      </Banner>
-    );
+  if (left <= 0) return <Banner tone="warn">All {v.limit} bank links are used.</Banner>;
   return (
     <div className="flex flex-col gap-2">
       {step === 'confirm' || step === 'linking' ? (

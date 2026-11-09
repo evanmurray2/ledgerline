@@ -198,7 +198,7 @@ describe('passkey sign-in', () => {
     await later(16 * 60 * 1000);
     const r = await b.call('POST', '/api/settings/connections/link-token', {});
     expect(r).toMatchObject({ status: 401, json: { error: 'reauth' } });
-    expect((await b.call('GET', '/api/export/json')).json).toMatchObject({ error: 'reauth' });
+    expect((await b.call('GET', '/api/export/dump')).json).toMatchObject({ error: 'reauth' });
     expect((await b.call('GET', '/api/session')).status).toBe(200); // everything else still works
     // Syncing banks now isn't sensitive: pull to sync and Try again work without the check.
     expect((await b.call('POST', '/api/settings/connections/refresh')).json).not.toMatchObject({
@@ -211,7 +211,7 @@ describe('passkey sign-in', () => {
       error: 'reauth',
     });
     expect((await b.signIn(phone)).status).toBe(200); // same session, fresh check
-    expect((await b.call('GET', '/api/export/json')).status).toBe(200);
+    expect((await b.call('GET', '/api/export/dump')).status).toBe(200);
   });
 
   it('a device link adds a passkey once, then stops working', async () => {

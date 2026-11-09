@@ -32,7 +32,7 @@ const SECTIONS: { id: string; name: string; to: string }[] = [
   { id: 'appearance', name: 'Appearance and preferences', to: '/settings/appearance' },
   { id: 'payees', name: 'Payees', to: '/settings/payees' },
   { id: 'connections', name: 'Bank connections', to: '/settings/connections' },
-  { id: 'data', name: 'Import and export', to: '/settings/data' },
+  { id: 'data', name: 'Backup and export', to: '/settings/data' },
 ];
 /** Admins, once there is anyone else or sign-up is on (D-75). */
 const USERS = { id: 'users', name: 'Users', to: '/settings/users' };
@@ -61,7 +61,7 @@ function useSectionMeta() {
         ? `${conns.used} of ${conns.limit} bank links used${problem}`
         : problem.slice(3)
       : '',
-    data: 'History import · CSV and JSON export · recovery',
+    data: 'Full backup · usage export · recovery',
     users: 'Accounts · turn one off',
   };
   return { text, repair: needRepair.length > 0, users: security.data?.usersScreen === true };
@@ -184,7 +184,7 @@ function Preferences() {
           mutates
           track="settings.tracking"
           label="Record how I use the app"
-          help="Taps and timings only, no amounts or names. Export it from Import and export."
+          help="Taps and timings only, no amounts or names. Export it from Backup and export."
           checked={s.settings.tracking}
           onChange={(v) => void patch({ tracking: v })}
         />
@@ -234,7 +234,7 @@ function SettingsHome() {
           />
           <RowLink
             to="/settings/data"
-            name="Import and export"
+            name="Backup and export"
             meta={meta.text.data ?? ''}
             track="settings.data"
           />

@@ -91,7 +91,7 @@ The rules and terms are in `docs/copy.md`. A snapshot, not kept up to date: the 
   "{used} of {limit} bank links used"
 - "Purchases from before your budget starts go into the starting balance." + Why: "Some of them can come in up to 2
   weeks late. Ledgerline gets 6 months of history, and this can't be changed later. You can import older history from
-  a CSV file in Settings. Investment and retirement accounts aren't tracked. Money you send to them counts as Invested."
+  Investment and retirement accounts aren't tracked. Money you send to them counts as Invested."
 - "Ledgerline also makes a payment category for each card. Money others owe you shows in Owed to you."
 - "{n} categories · next, assign your {cash}" (correct plural; the second part only when there is cash) · "Keep or add
   at least one category"
@@ -321,14 +321,14 @@ with nothing posted after 5 days)
 
 - "{used} of {limit} bank links used" · "{left} left" · "Removing a link doesn't give it back." + Why: "The free Plaid
   plan allows {limit} bank links in total. If a bank stops syncing, sign in again from Accounts."
-- "All {limit} bank links are used. You can import a CSV file in Import and export."
+- "All {limit} bank links are used."
 - "Use 1 of your {left} bank links?" / "Use your last bank link?" + "If a bank stopped syncing, sign in again from
   Accounts instead."
 - "Link a bank" / "Link another bank" · "Linked. Transactions show up in Activity in a few minutes."
 - "{bank} is set up. Its transactions are on the way."
 - Chips: "Setup unfinished" · "Synced {when}" · "Not syncing" · "Sync failed" · "Removed" · "Sign in again" · "Test
   mode: test banks only."
-- Server: "All 10 bank links are used. Import a CSV file instead." · "Confirm that you want to use one of your bank
+- Server: "All 10 bank links are used." · "Confirm that you want to use one of your bank
   links." · "Your bank is linked, but its accounts aren't set up yet. Tap Finish setup in Bank connections. It doesn't
   use another link."
 
@@ -346,14 +346,10 @@ with nothing posted after 5 days)
 
 **Payees:** "No payees match." · "No payees yet." · "To join two payees, give one the other's name."
 
-**Import and export**
+**Backup and export**
 
-- "Upload a CSV file from your bank or another app. It becomes history for search and reports, not your budget."
-- "Link a bank first. Imports go into one of its accounts."
-- "Transactions {n}" · "Import {n} transactions" → "Imported {n} transactions as history." (+ "Skipped {m} already in
-  your linked accounts." only when some were skipped)
 - "Your whole budget, in a file that can be restored" → "Saved. Keep it somewhere safe."
 - "Your budget can be rewound to any minute" · "Last 30 days" + Why: "Rewinding isn't on this screen, so a stolen
   sign-in can't wipe your data. The steps are in the restore guide."
-- Server: "The CSV file needs date, payee and amount columns." · "Type the budget's name to confirm." · "Pick a time in
+- Server: "Type the budget's name to confirm." · "Pick a time in
   the last 30 days." · "Restoring isn't available here."

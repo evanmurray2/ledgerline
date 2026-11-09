@@ -657,18 +657,6 @@ export const SettingsPatch = z.object({
   noteButton: z.boolean().optional(),
 });
 
-export const ImportCsvRequest = z.object({ accountId: id, csv: z.string().max(5_000_000) });
-export const ImportResult = z.object({
-  imported: z.number().int(),
-  /** Rows dated on or after the account's budget start: the bank link brings those. */
-  skipped: z.number().int(),
-  history: z.number().int(),
-  /** Rows already imported into this account (the same date, amount and payee). */
-  duplicates: z.number().int().default(0),
-  /** Lines whose date or amount couldn't be read. */
-  unreadable: z.number().int().default(0),
-});
-
 export const HealthView = z.object({
   ok: z.boolean(),
   connections: z.array(z.object({ id, lastSyncedAt: z.number().int().nullable(), stale: z.boolean() })),
@@ -737,8 +725,6 @@ export const DeviceLink = z.object({ url: z.string(), expiresAt: z.string() });
 export const DeviceShare = z.object({ id: z.string(), share: z.string() });
 export type DeviceShare = z.infer<typeof DeviceShare>;
 export type DeviceLink = z.infer<typeof DeviceLink>;
-
-export type ImportResult = z.infer<typeof ImportResult>;
 
 // ---------------------------------------------------------------- full backup (docs/multi-user.md 8.7)
 

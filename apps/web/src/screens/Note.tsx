@@ -48,7 +48,7 @@ const SCREEN_NAMES: Record<string, string> = {
   'settings.payees': 'Settings · Payees',
   'settings.payee.rename': 'Settings · Rename payee',
   'settings.connections': 'Settings · Bank connections',
-  'settings.data': 'Settings · Import and export',
+  'settings.data': 'Settings · Backup and export',
 };
 
 /** A friendly name for a screen key: its own, else its first part's (txn.posted → Transaction), never the key. */

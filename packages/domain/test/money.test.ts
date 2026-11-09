@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { ceilDiv, cents, formatCents, fractionOf, parseCents, splitEvenly } from '../src/money.js';
-import { currentMonth, localDate, localTime, month, nextLocalTime, parseImportDate } from '../src/month.js';
+import { currentMonth, localDate, localTime, month, nextLocalTime } from '../src/month.js';
 
 describe('parseCents', () => {
   it('reads the usual ways an amount is written', () => {
@@ -102,15 +102,5 @@ describe('the month boundary in Los Angeles', () => {
     // Mar 31, 2026 23:59 PDT is Apr 1, 06:59 UTC.
     expect(currentMonth(Date.parse('2026-04-01T06:59:00Z'), LA)).toBe(month('2026-03'));
     expect(currentMonth(Date.parse('2026-04-01T07:01:00Z'), LA)).toBe(month('2026-04'));
-  });
-});
-
-describe('dates in imported files', () => {
-  it('reads ISO and US dates, and refuses anything that is not a real day', () => {
-    expect(parseImportDate('2026-11-02')).toBe('2026-11-02');
-    expect(parseImportDate('11/2/2026')).toBe('2026-11-02');
-    expect(parseImportDate('2/29/2028')).toBe('2028-02-29');
-    for (const bad of ['25/12/2025', '2/30/2026', '2026-13-01', '2/29/2026', '11-02-2026', ''])
-      expect(parseImportDate(bad), bad).toBeNull();
   });
 });

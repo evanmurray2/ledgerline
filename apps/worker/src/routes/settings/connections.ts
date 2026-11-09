@@ -75,11 +75,7 @@ connectionsRoutes.post('/settings/connections/link-token', async (c) => {
     `SELECT count(*) AS n FROM connection WHERE budget_id = ?1 AND provider = 'plaid'`,
   );
   if ((used?.n ?? 0) >= ITEM_LIMIT)
-    throw new HttpError(
-      409,
-      'item_limit',
-      `All ${ITEM_LIMIT} bank links are used. Import a CSV file instead.`,
-    );
+    throw new HttpError(409, 'item_limit', `All ${ITEM_LIMIT} bank links are used.`);
   if (c.env.PLAID_ENV === 'production' && !r.confirmSlot)
     throw new HttpError(409, 'confirm_slot', 'Confirm that you want to use one of your bank links.');
   const lt = await provider.createLinkSession({ mode: 'new', userId: c.get('userId') });
