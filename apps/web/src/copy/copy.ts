@@ -496,6 +496,8 @@ const OFFLINE_EDITS: [string, RegExp][] = [
   ['POST', /^\/api\/transactions\/categorize$/],
   ['POST', /^\/api\/budget\/(assign|set|move)$/],
   ['PUT', /^\/api\/categories\/[^/]+\/target$/],
+  // Pinning a category to the top of Budget (D-74): one category and its new state, so a late one undoes nothing else.
+  ['POST', /^\/api\/settings\/categories\/[^/]+\/pin$/],
   // Renaming a payee (not joining: that needs a connection). Its id is in the path, so a rename that arrives after
   // the payee was joined into another is refused instead of renaming the other one (docs/payees.md 5.3).
   ['POST', /^\/api\/settings\/payees\/(?!merge(?:\/|$))[^/]+$/],

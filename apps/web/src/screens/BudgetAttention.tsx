@@ -1,4 +1,5 @@
-// Budget's Needs attention and Low views: sections by status with one-tap fixes, and Undo for what was just done.
+// Budget's Needs attention view: sections by status with one-tap fixes, and Undo for what was just done. Low isn't
+// here: the Low status word on its row says it.
 import { useState } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import type { AttentionItem, BudgetView } from '@ledgerline/contracts';
@@ -67,16 +68,13 @@ function useFixes(month: string) {
 
 // ------------------------------------------------------------------ needs attention
 
-/** Needs attention (everything but Low), or Low on its own filter. */
-export function AttentionList({ b, month, low = false }: { b: BudgetView; month: string; low?: boolean }) {
+/** Needs attention: everything but Low. */
+export function AttentionList({ b, month }: { b: BudgetView; month: string }) {
   const fixes = useFixes(month);
   const navigate = useNavigate();
   // Ready to Assign below zero shows once, in the banner above the list (OverAssigned).
   const open = b.attention.filter(
-    (a) =>
-      !fixes.done.some((d) => d.key === a.key) &&
-      a.section !== 'Ready to Assign' &&
-      (a.section === 'Low') === low,
+    (a) => !fixes.done.some((d) => d.key === a.key) && a.section !== 'Ready to Assign' && a.section !== 'Low',
   );
   const sections = SECTION_ORDER.map((s) => ({
     title: s,
@@ -115,7 +113,7 @@ export function AttentionList({ b, month, low = false }: { b: BudgetView; month:
     <>
       {open.length === 0 && (
         <p className="m-0 shrink-0 rounded-lg bg-funded-bg p-4 text-center text-base font-semibold text-funded-fg">
-          {low ? 'Nothing is low.' : 'Nothing needs attention.'}
+          Nothing needs attention.
         </p>
       )}
       {sections.map((sec) => {

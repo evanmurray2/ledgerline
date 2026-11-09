@@ -135,6 +135,8 @@ export const BudgetView = z.object({
   /** Fund-all total for the Underfunded section. */
   underfundedTotal: cents,
   syncProblem: z.string().nullable(),
+  /** Categories pinned to the top of Budget, oldest pin first (D-74). May name archived or removed ones. */
+  pinned: z.array(id).default([]),
 });
 export type BudgetView = z.infer<typeof BudgetView>;
 
@@ -535,6 +537,7 @@ export const GroupUpsert = z.object({
  * Archiving a category moves what it still has to Ready to Assign. The phone works that amount out (D-45) and sends
  * it with the change number it worked it out at; the server refuses with 409 `changed` if anything changed since.
  */
+export const PinRequest = z.object({ pinned: z.boolean() });
 export const ArchiveRequest = z.object({
   archived: z.boolean(),
   available: cents.optional(),
