@@ -259,6 +259,8 @@ The Worker verifies the signature, asks `routeFor` which budget owns the item, t
 
 ### 7.3 The switch and invites
 
+**Now:** replaced by open sign-up, built and switched off (D-74, `docs/open-signup.md`). Invites, the People screen and the reset link are dropped.
+
 **Later, not built (owner, Nov 2, 2026):** 7.3 and 7.4 are deferred. Only the per-user databases are built now; the identity columns, per-user passkey handles and the `invite` table are in place for when invites are wanted.
 
 - `SIGNUPS` (`off` / `invite`, default `off`) and `MAX_USERS` (default 1) are Worker variables, so turning invites on takes a deploy. While `off`, the invite and People routes return 404 and the web app hides them. Any other value counts as `off`.
