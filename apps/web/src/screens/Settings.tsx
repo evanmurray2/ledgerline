@@ -1,7 +1,7 @@
 // Settings: the layout, the home page, appearance and preferences. Each section has its own file in settings/:
 // categories and groups, payees, bank connections (Item meter, confirm before Link), and
 // import and export. There is no email setting: the app sends no email (decisions.md D-24).
-import { SignInSection } from './Auth';
+import { SignInSection } from './settings/SignIn';
 import { useId, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
