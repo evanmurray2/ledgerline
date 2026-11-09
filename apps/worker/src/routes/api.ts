@@ -138,6 +138,16 @@ export const GONE = 'This was changed or removed. Pull down to refresh.';
 export const CHANGED = 'This changed. Pull down to refresh.';
 export const TRY_AGAIN = 'Something went wrong. Try again.';
 export const BAD_MONTH = 'That month isn’t in your budget. Pick another month.';
+/**
+ * The largest amount one assignment, move or target may hold: $99,999,999.99. Larger ones would let sums pass
+ * JavaScript's safe integers, and the phone could no longer work the budget out.
+ */
+export const MAX_AMOUNT = 9_999_999_999;
+export const TOO_LARGE = 'Enter an amount up to $99,999,999.99.';
+function checkAmounts(...amounts: (number | null | undefined)[]): void {
+  if (amounts.some((a) => a != null && Math.abs(a) > MAX_AMOUNT))
+    throw new HttpError(422, 'too_large', TOO_LARGE);
+}
 
 export class HttpError extends Error {
   constructor(
@@ -247,6 +257,7 @@ async function addAssignments(
   month: Month,
   items: { categoryId: string; amount: number; set?: boolean }[],
 ): Promise<MutationAck> {
+  checkAmounts(...items.map((i) => i.amount));
   const s = scoped(c);
   const now = clock(c.env);
   const ids = items.map((i) => i.categoryId);
@@ -307,6 +318,7 @@ budgetApi.put('/categories/:id/target', async (c) => {
   const now = clock(c.env);
   const id = c.req.param('id');
   const t = r.target;
+  if (t.type !== 'none') checkAmounts(t.amount, t.type === 'no_date' ? t.monthly : null);
   const exists = await s.first(`SELECT id FROM category WHERE budget_id = ?1 AND id = ?2`, id);
   if (!exists) throw new HttpError(404, 'not_found', GONE);
   // Versioned: a new version from this month on; past months keep the target they were budgeted against.
