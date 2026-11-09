@@ -9,7 +9,7 @@ import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
 import { CHANGED, GONE, HttpError, parse, scoped } from './api.js';
 import { fresh, shortDate } from '../views/common.js';
-import { listRow } from '../views/rows.js';
+import { isHistory, listRow } from '../views/rows.js';
 import { RECENT_TX, TX_COLUMNS, txnCol, type TxRow } from '../ledger/ledger.js';
 import type { Scoped } from '../db/scoped.js';
 import { OVERLAY_UPSERT, commit, loadTx, names, refuseHistory } from './txn-common.js';
@@ -181,45 +181,55 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
   const s = scoped(c);
   const key = c.req.param('key');
   const now = clock(c.env);
-  const out = await loadTx(s, key);
-  refuseHistory(out);
-  if (out.transfer_state !== 'unsorted' || out.amount >= 0) throw new HttpError(422, 'not_unclear', CHANGED);
-  const cands = await s.all<TxRow>(
-    `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1 AND transfer_state = 'unsorted' AND amount = ?2 AND account_id != ?3
-       AND abs(julianday(date) - julianday(?4)) <= 5`,
-    -out.amount,
-    out.account_id,
-    out.date,
-  );
+  const me = await loadTx(s, key);
+  refuseHistory(me);
+  if (me.transfer_state !== 'unsorted' || me.amount === 0) throw new HttpError(422, 'not_unclear', CHANGED);
+  // The other side: a row of the opposite amount in another account within 5 days that isn't already a transfer
+  // and isn't matched to what you're owed. A deposit from another bank comes in its own sync, so it is often not
+  // marked unsorted itself; the sheet offers it all the same (it reads the other registers), so it is accepted.
+  const sides = (amount: number, accountId: string, date: string) =>
+    s.all<TxRow>(
+      `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1 AND amount = ?2 AND account_id != ?3
+         AND abs(julianday(date) - julianday(?4)) <= 5
+         AND (transfer_state IS NULL OR transfer_state = 'unsorted') AND (wtm_state IS NULL OR wtm_state IN ('waiting', 'income'))`,
+      amount,
+      accountId,
+      date,
+    );
+  const cands = (await sides(-me.amount, me.account_id, me.date)).filter((x) => !isHistory(x));
   const w: Stmt[] = [];
+  // The outflow of the pair: its unsorted deposits that weren't the other side become income below.
+  let out: TxRow | null = me.amount < 0 ? me : null;
   if (r.otherKey) {
     const other = cands.find((x) => x.key === r.otherKey);
     if (!other) throw new HttpError(404, 'not_found', GONE);
-    refuseHistory(other);
+    const [from, to] = me.amount < 0 ? [me, other] : [other, me];
+    out = from;
+    for (const [t, o] of [
+      [me, other],
+      [other, me],
+    ] as const)
+      w.push(
+        s.q(OVERLAY_UPSERT, t.key, now),
+        s.q(
+          `UPDATE txn_overlay SET transfer_state = 'paired', transfer_account_id = ?3, wtm_state = NULL, categorized_by = 'user', updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
+          t.key,
+          o.account_id,
+          now,
+        ),
+      );
     w.push(
-      s.q(
-        `UPDATE txn_overlay SET transfer_state = 'paired', transfer_account_id = ?3, categorized_by = 'user', updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
-        key,
-        other.account_id,
-        now,
-      ),
-      s.q(
-        `UPDATE txn_overlay SET transfer_state = 'paired', transfer_account_id = ?3, categorized_by = 'user', updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
-        other.key,
-        out.account_id,
-        now,
-      ),
       s.q(
         `INSERT INTO txn_link (id, budget_id, kind, from_key, to_key, created_by, created_at) VALUES (?2, ?1, 'transfer', ?3, ?4, 'user', ?5)`,
         ulid(now),
-        key,
-        other.key,
+        from.key,
+        to.key,
         now,
       ),
     );
   } else if (r.unlinked) {
-    // An account that isn't linked (Venmo, say): the money leaves the budget accounts with no category, so it comes
-    // out of Ready to Assign (D-20).
+    // An account that isn't linked (Venmo, say): the money leaves (or enters) the budget accounts with no category,
+    // so it comes out of (or goes into) Ready to Assign (D-20).
     w.push(
       s.q(
         `UPDATE txn_overlay SET transfer_state = 'manual', transfer_account_id = NULL, categorized_by = 'user', updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
@@ -228,7 +238,7 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
       ),
     );
   } else {
-    // Neither: it was a payment and needs a category.
+    // Neither: it was a payment (or, for a deposit, income) and needs a category.
     w.push(
       s.q(
         `UPDATE txn_overlay SET transfer_state = NULL, transfer_account_id = NULL, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
@@ -237,9 +247,10 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
       ),
     );
   }
-  // The deposits that weren't the other side are income (Ready to Assign).
-  for (const x of cands) {
-    if (x.key === r.otherKey) continue;
+  // The outflow's unsorted deposits that weren't the other side are income (Ready to Assign).
+  const deposits = out === me ? cands : out ? await sides(-out.amount, out.account_id, out.date) : [];
+  for (const x of deposits) {
+    if (x.key === me.key || x.key === r.otherKey || x.transfer_state !== 'unsorted' || isHistory(x)) continue;
     w.push(
       s.q(
         `UPDATE txn_overlay SET transfer_state = NULL, to_rta = 1, categorized_by = 'user', updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
