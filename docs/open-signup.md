@@ -1,6 +1,6 @@
 # Open sign-up: built, switched off
 
-Status: v3, Nov 9, 2026: one adversarial review (section 15), then the owner's answers (section 15). Decision D-74 (`docs/decisions/D-74-open-signup.md`). It replaces the invite design in `docs/multi-user.md` 7.3 and 7.4. The rest of `docs/multi-user.md` stands.
+Status: v3, Nov 9, 2026: one adversarial review (section 15), then the owner's answers (section 15). Decision D-75 (`docs/decisions/D-75-open-signup.md`). It replaces the invite design in `docs/multi-user.md` 7.3 and 7.4. The rest of `docs/multi-user.md` stands.
 
 ## 0. What the owner asked
 
@@ -243,7 +243,7 @@ Owner's answers, Nov 9, 2026 (v3):
 
 Each step is one PR, with `pnpm check` and every CI job green. Section 14 says what each one changes for the owner.
 
-1. This doc, D-74 and the doc updates.
+1. This doc, D-75 and the doc updates.
 2. Directory migration 0008, used challenges (3.3), the setup and runbook fix (3.4), `userHandle` required (6), breaker limits as settings (7). Owner approval before merge (migration).
 3. Bank links for admins only (5).
 4. Usage per budget, the pool and shares (8), idle budgets (9).

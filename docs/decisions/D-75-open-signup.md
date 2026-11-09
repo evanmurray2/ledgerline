@@ -1,4 +1,4 @@
-# D-74: Open sign-up replaces invites, built and switched off (Nov 9, 2026)
+# D-75: Open sign-up replaces invites, built and switched off (Nov 9, 2026)
 
 **Decided by the owner** (chat, Nov 9, 2026): "I don't want an invite only design, get rid of that. I want to be ready to turn it on for thousands of users, when I do decide to upgrade the Cloudflare and Plaid plans", and "I don't want to change any of my existing decisions yet (except invite only sign up)."
 
