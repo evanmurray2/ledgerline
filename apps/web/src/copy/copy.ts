@@ -598,6 +598,11 @@ function watch(): void {
   if (timer) return;
   const active = () => {
     lastActive = Date.now();
+    // The other tabs share this sign-in: using any tab keeps them all from ending it after 10 idle minutes.
+    if (lastActive - lastTold >= TELL_ACTIVE_MS) {
+      lastTold = lastActive;
+      tellOtherTabs('active');
+    }
   };
   for (const ev of ['pointerdown', 'keydown', 'touchstart', 'scroll'])
     window.addEventListener(ev, active, { passive: true });
@@ -608,7 +613,8 @@ function watch(): void {
       if (record && dataKey) void holdKey(record.key, dataKey, lastActive);
       document.documentElement.dataset.covered = '1';
     } else {
-      const away = hiddenAt ? Date.now() - hiddenAt : 0;
+      // Away since it was hidden, or since another tab was last used if that was later.
+      const away = hiddenAt ? Date.now() - Math.max(hiddenAt, lastActive) : 0;
       hiddenAt = null;
       // Timers don't run while iOS has the app in the background: check before anything is drawn.
       if (away >= IDLE_MS) void signOutIdle();
@@ -642,19 +648,69 @@ function watch(): void {
  * Ends the server session, then tells the app, which shows Sign in (or, with no signal, the screen that opens the
  * saved copy with Face ID). In this order so the app's next session check can't find the session that's ending.
  */
-async function endSignIn(saved = true): Promise<void> {
+async function endSignIn(saved = true, here = true): Promise<void> {
   set({
     status: saved ? 'signed_out' : 'idle',
     hasSaved: saved || state.hasSaved,
     offline: false,
     progress: 0,
   });
-  await server('POST', '/api/settings/security/sign-out').catch(() => undefined);
+  if (here) {
+    await server('POST', '/api/settings/security/sign-out').catch(() => undefined);
+    tellOtherTabs('locked');
+  }
   window.dispatchEvent(new Event('ledgerline:signin-ended'));
 }
 
-/** 10 idle minutes: drops the keys, the copy in memory and the server session. The saved copy stays, encrypted. */
-export async function signOutIdle(): Promise<void> {
+// ---------------------------------------------------------------- other tabs
+
+// The app's other tabs on this device share its sign-in. When one tab ends it (Sign out, or 10 idle minutes), the
+// others are told at once, so none keeps showing the budget from its copy in memory until it next asks the server.
+const SIGN_IN_CHANNEL = 'ledgerline-sign-in';
+let channel: BroadcastChannel | null | undefined;
+function otherTabs(): BroadcastChannel | null {
+  if (channel === undefined) {
+    try {
+      channel = new BroadcastChannel(SIGN_IN_CHANNEL);
+      // Node (unit tests) would otherwise wait on it forever.
+      (channel as BroadcastChannel & { unref?: () => void }).unref?.();
+    } catch {
+      channel = null;
+    }
+  }
+  return channel;
+}
+
+/**
+ * `locked`: the sign-in ended and the saved copies stay. `deleted`: Sign out of this device deleted them. `active`:
+ * someone is using that tab (at most once every TELL_ACTIVE_MS).
+ */
+type TabNotice = 'locked' | 'deleted' | 'active';
+const TELL_ACTIVE_MS = 30_000;
+let lastTold = 0;
+
+function tellOtherTabs(notice: TabNotice): void {
+  try {
+    otherTabs()?.postMessage(notice);
+  } catch {
+    // A closed channel: the other tabs find out at their next request.
+  }
+}
+
+// When another tab ends the sign-in, this one drops its keys and its copy in memory the same way, then shows Sign in.
+// After Sign out of this device it deletes its copy instead of saving it, since that tab deleted every saved copy.
+if (!MOCK)
+  otherTabs()?.addEventListener('message', (e: MessageEvent) => {
+    if (e.data === 'deleted') void wipe().then(() => endSignIn(false, false));
+    else if (e.data === 'locked') void signOutIdle(false);
+    else if (e.data === 'active') lastActive = Math.max(lastActive, Date.now());
+  });
+
+/**
+ * 10 idle minutes: drops the keys, the copy in memory and the server session. The saved copy stays, encrypted.
+ * `here` false: another tab already ended the session, so only this tab's part is done.
+ */
+export async function signOutIdle(here = true): Promise<void> {
   if (state.status !== 'ready' && state.status !== 'opening') return;
   if (record && dataKey && host && !state.offline) await save().catch(() => undefined);
   if (record) await dropHeld(record.key);
@@ -664,7 +720,7 @@ export async function signOutIdle(): Promise<void> {
   record = null;
   pending = null;
   delete document.documentElement.dataset.covered;
-  return endSignIn(state.saved);
+  return endSignIn(state.saved, here);
 }
 
 /** Deletes this person's copy (sign-out, signed out from another device, no longer a member); `all`: every copy. */
@@ -693,6 +749,7 @@ export async function signOutHere(): Promise<void> {
   const devices = MOCK ? [] : (await allRecords()).map((r) => r.deviceId);
   await wipe(true);
   await server('POST', '/api/settings/security/sign-out', { forget: true, devices });
+  tellOtherTabs('deleted');
 }
 
 let dropping: Promise<void> | null = null;
