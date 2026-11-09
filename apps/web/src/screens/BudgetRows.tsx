@@ -1,4 +1,4 @@
-// Budget's phone list: category, card payment and Owed to you rows in collapsible group cards.
+// Budget's phone list: pinned, category, card payment and Owed to you rows in collapsible group cards.
 import { useState, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import type { BudgetCategoryRow, BudgetView, CardRow } from '@ledgerline/contracts';
@@ -19,6 +19,12 @@ function writeCollapsed(v: Record<string, boolean>) {
   } catch {
     // per-device convenience only
   }
+}
+
+/** The pinned categories that are in this month's groups (archived and removed ones drop out), in pin order. */
+export function pinnedRows(b: BudgetView): BudgetCategoryRow[] {
+  const all = new Map(b.groups.flatMap((g) => g.categories.map((c) => [c.id, c] as const)));
+  return b.pinned.flatMap((id) => all.get(id) ?? []);
 }
 
 export function allAssignedZero(b: BudgetView) {
@@ -228,8 +234,22 @@ export function AllGroups({ b, month }: { b: BudgetView; month: string }) {
       return n;
     });
   const empty = allAssignedZero(b);
+  const pinned = pinnedRows(b);
   return (
     <>
+      {pinned.length > 0 && (
+        <Group
+          id="pinned"
+          name="Pinned"
+          total={`${formatCents(pinned.reduce((s, c) => s + c.available, 0))} available`}
+          collapsed={!!collapsed.pinned}
+          toggle={toggle}
+        >
+          {pinned.map((c) => (
+            <CategoryRowPhone key={c.id} row={c} month={month} />
+          ))}
+        </Group>
+      )}
       {b.groups.map((g) => (
         <Group
           key={g.id}

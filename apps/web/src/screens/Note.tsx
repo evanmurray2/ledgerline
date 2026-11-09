@@ -15,7 +15,6 @@ const SCREEN_NAMES: Record<string, string> = {
   'setup.categories': 'Setup · Categories',
   budget: 'Budget',
   'budget.attention': 'Budget · Needs attention',
-  'budget.low': 'Budget · Low',
   category: 'Budget · Category',
   assign: 'Budget · Assign',
   target: 'Target',

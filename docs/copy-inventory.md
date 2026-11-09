@@ -113,6 +113,9 @@ The rules and terms are in `docs/copy.md`. A snapshot, not kept up to date: the 
 - "Targets for {Month} · {total}" + "Fill targets · {total}" → "Each target got what it needs this month." + Undo
 - Sync problem strip: "{bank} didn't finish syncing · see Accounts"
 
+**Pinned:** group "Pinned" · sheet button "Pin {category} to the top" · "{category} pinned to the top" / "{category}
+unpinned"
+
 **Rows:** "Low" / "Overspent" / "Underfunded" / "Overfunded" · "Short" (phone and desktop) · "{n} late" (only when
 late) · "Goes back to Ready to Assign when paid back" (Owed to you) · "Invested {amount}" · "{n}% used"
 
@@ -120,7 +123,7 @@ late) · "Goes back to Ready to Assign when paid back" (Owed to you) · "Investe
   {amount} more" · "· {amount} needs a category" · "…% of the month gone"
 - Footer: "Transactions show up in Activity after each bank sync." / "Bars show how much of this month's money is left."
 
-**Needs attention / Low:** "Nothing needs attention." · "Nothing is low." · "Fund all · {total}" · "Done just now" ·
+**Needs attention:** "Nothing needs attention." · "Fund all · {total}" · "Done just now" ·
 "Moved {amount} back to Ready to Assign" / "Added {amount} from Ready to Assign" · "Needs {amount} more" · "Covering
 {a} covers this card too"
 

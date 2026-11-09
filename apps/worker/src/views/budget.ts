@@ -29,6 +29,7 @@ import {
   type CategoryInfo,
   type Fresh,
 } from './common.js';
+import { PINNED_KEY, readPinned } from './pinned.js';
 import { txnCol } from '../ledger/ledger.js';
 
 const fmt = (c: number) => formatCents(c);
@@ -191,7 +192,7 @@ export async function budgetView(s: Scoped, f: Fresh, month: Month): Promise<Bud
   const start = (f.budget.budget_start_month ?? f.current) as Month;
   const { rows, cards: cardCells, groups } = await categoryRows(s, month, start, f.today);
   const cardInfo = await loadCards(s, f.today);
-  const [cardCats, owedRows, links, fronts, conns, maxRow] = await s.batch([
+  const [cardCats, owedRows, links, fronts, conns, maxRow, pinRow] = await s.batch([
     s.q(`SELECT id, card_account_id FROM category WHERE budget_id = ?1 AND kind = 'cc_payment'`),
     s.q(
       `SELECT e.id, e.txn_key, e.amount, e.expect_by, e.closed_at, e.canceled_at, coalesce(${txnCol('e.txn_key', 'payee')}, '') AS payee
@@ -209,6 +210,7 @@ export async function budgetView(s: Scoped, f: Fresh, month: Month): Promise<Bud
       `SELECT institution_name, status FROM connection WHERE budget_id = ?1 AND removed_at IS NULL AND status != 'ok'`,
     ),
     s.q(`SELECT max(month) AS m FROM month_snapshot WHERE budget_id = ?1`),
+    s.q(`SELECT value FROM setting WHERE budget_id = ?1 AND key = ?2`, PINNED_KEY),
   ]);
   const catByCard = new Map(
     (cardCats!.results as { id: string; card_account_id: string }[]).map((r) => [r.card_account_id, r.id]),
@@ -416,5 +418,6 @@ export async function budgetView(s: Scoped, f: Fresh, month: Month): Promise<Bud
     attention,
     underfundedTotal: cents(underfundedTotal),
     syncProblem: problems[0] ?? null,
+    pinned: readPinned((pinRow!.results[0] as { value: string } | undefined)?.value),
   };
 }

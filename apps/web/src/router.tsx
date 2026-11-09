@@ -226,7 +226,7 @@ const budgetRoute = createRoute({
   path: '/budget',
   validateSearch: (s: Record<string, unknown>) => ({
     month: str(s.month),
-    view: s.view === 'attention' || s.view === 'low' ? (s.view as 'attention' | 'low') : undefined,
+    view: s.view === 'attention' ? ('attention' as const) : undefined,
     from: s.from === 'categories' ? ('categories' as const) : undefined,
   }),
   component: BudgetScreen,
