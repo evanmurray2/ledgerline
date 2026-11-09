@@ -99,7 +99,7 @@ describe('November through the API', () => {
     });
   });
 
-  it('Accounts: cash $23,612.40 at the bank, $23,492.40 working; net worth $22,555.35; Ally needs repair', async () => {
+  it('Accounts: cash $23,612.40 at the bank, $23,492.40 working; net worth $22,354.35 (counting pending); Ally needs repair', async () => {
     const a = await get<AccountsView>('/api/accounts');
     const cash = a.groups.find((g) => g.name === 'Cash')!;
     expect(cash.accounts.reduce((s, x) => s + x.bank, 0)).toBe(2361240);
@@ -110,7 +110,8 @@ describe('November through the API', () => {
       working: 409240,
       drift: null,
     });
-    expect(a.netWorth).toBe(2255535);
+    expect(a.netWorth).toBe(2235435);
+    expect(a.netWorth).toBe(a.groups.reduce((s, g) => s + (g.name === 'Cash' ? g.total : -g.total), 0));
     expect(a.owedOut).toBe(143060);
     expect(a.repairs.map((r) => r.institution)).toEqual(['Ally']);
   });
@@ -148,6 +149,15 @@ describe('November through the API', () => {
     expect(r.tiles.invested).toBe(150000);
     expect(r.tiles.rewards).toBe(2410);
     expect(r.stillOwed).toBe(143060);
+  });
+
+  it('Reports: net worth this month equals Accounts, and the month’s step equals “in November” (D-76)', async () => {
+    const r = await get<ReportsView>('/api/reports?month=2026-11');
+    const a = await get<AccountsView>('/api/accounts');
+    const last = r.netWorth[r.netWorth.length - 1]!;
+    const before = r.netWorth[r.netWorth.length - 2]!;
+    expect(last).toEqual({ month: '2026-11', value: a.netWorth });
+    expect(last.value - before.value).toBe(a.netWorthChange);
   });
 
   it('Reports → Activity: searching a category name finds that category’s transactions', async () => {

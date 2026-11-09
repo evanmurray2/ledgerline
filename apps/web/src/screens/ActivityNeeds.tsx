@@ -48,8 +48,9 @@ export function NeedsCategory({
   const online = useCanWrite();
   const open = (r: NeedsRow) =>
     !chosen[r.key] || (chosen[r.key]!.categoryId === null && !chosen[r.key]!.toRta);
-  // OK all leaves out "Same as" rows: those wait for you to Join or not (docs/payees.md 4.3).
-  const strong = needs.filter((r) => open(r) && r.suggestion?.strong && !(r.sameAs && online));
+  // OK all leaves out "Same as" rows: those wait for you to Join or not (docs/payees.md 4.3), offline too, where
+  // the question hides until Join can be sent.
+  const strong = needs.filter((r) => open(r) && r.suggestion?.strong && !r.sameAs);
   const note =
     openNeeds.length === 0
       ? undefined

@@ -2,6 +2,35 @@
 
 How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history.
 
+## Update: key lookups that read every bank row, and what the harness counts (Nov 9, 2026)
+
+**What the harness counts.** `measure/harness.ts` used `process.cpuUsage()`, which also counts Node's compiler and garbage-collector threads: about twice the step's own time (51 against 23 ms, 22 against 14). `process.threadCpuUsage()` is counted in 4 ms ticks on Linux (many readings exactly 0, 4 or 8), too coarse for these steps. The harness now uses wall time on the test's thread: a step is synchronous SQLite and JavaScript with no I/O, and wall time matched thread CPU within 0.5 ms. Run measures alone. Numbers above this section are `process.cpuUsage()`: read them as roughly half.
+
+**Key lookups scanned the table.** Every row of a store has the same `budget_id`, but with no table statistics SQLite takes `budget_id = ?1` on an index such as `bank_txn_connection_created` for a selective one and, for `budget_id = ?1 AND provider_txn_id IN (…)` or `txn_key IN (…)`, reads every row instead of looking up the keys: 1,751 rows for 25 keys in `test/key-lookups.test.ts`, about 3,000 in the measure, several times a processing step. The hot lookups now write `+budget_id`, so the key's index is used: `loadBankRows`, four in `sync/pending-match.ts`, one each in `sync/process.ts`, `sync/refile-payees.ts` and `routes/transactions.ts` (PR #108), and the overlay and payee lookups in `sync/file-fresh.ts`. Those whose row order is used keep the old order with `ORDER BY connection_id, created_at, provider_txn_id`. Same results: 12 covered, 12 matched, 24 asked, every run. `ANALYZE` works in workerd but would change the plan, and so the row order, of every other query too, so it wasn't used.
+
+A plan audit over every measure (each distinct SELECT's `EXPLAIN QUERY PLAN`, flagging an index used on `budget_id` alone) leaves whole-table reads of small tables (payees, aliases, entries) and the finished `plaid_name` fill job.
+
+`measure/entry-covers.measure.ts`, five runs each, wall time, ms:
+
+| Step                            | Before #108    | Now            |
+| ------------------------------- | -------------- | -------------- |
+| Processing, the 25 pending rows | 14–19, med. 16 | 11–17, med. 12 |
+| Processing, the 25 posted rows  | 10–15, med. 10 | 6–10, med. 7   |
+| Heal step                       | med. 7         | med. 4         |
+
+SQL time in the two steps (timed per statement): 10 and 17 ms before, 7 and 5 now. The pending step is still over 10 ms in most runs; what is left is JavaScript run for the first time in that step (the matching code, cold) and its 148 writes, about 3 ms.
+
+## Update: changes in an edit's answer (Nov 9, 2026)
+
+`measure/phone.measure.ts` (`editAnswer`): the change page an online edit's answer carries (`routes/sync.ts` `syncInAnswer`, at most 50 changes), on the same 3,000-transaction budget, 20 edits each.
+
+| Answer                    | ms median / p90 / max |
+| ------------------------- | --------------------- |
+| 3 changed rows (usual)    | 0.04 / 0.10 / 0.16    |
+| 50 changed rows (the cap) | 0.30 / 0.38 / 0.82    |
+
+It adds well under 1 ms to the edit, and saves the phone's separate sync request (a Worker request and two Durable Object calls).
+
 ## Update: the pending matcher without text (Nov 5, 2026)
 
 `docs/payee-names.md` 9.3, PR 4: a posted row and a bank pending row pair only on exact evidence (merchant keys compared as sets, worked out once per row), and the rest is asked about. Same files as below, five runs each of `measure/entry-covers.measure.ts` and three of `measure/refile-payees.measure.ts`, against `main` before this change. ms:

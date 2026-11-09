@@ -55,7 +55,7 @@ function CategoryRowPhone({ row, month }: { row: BudgetCategoryRow; month: strin
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
           <span className="text-base font-semibold wrap-anywhere">{row.name}</span>
-          <span className="truncate text-xs leading-normal text-muted">
+          <span className="text-xs leading-snug text-muted">
             {quiet ? (
               <span className="sr-only">{st.word} · </span>
             ) : (
@@ -88,7 +88,7 @@ function CardRowPhone({ card }: { card: CardRow }) {
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
           <span className="text-base font-semibold wrap-anywhere">{card.name}</span>
-          <span className="truncate text-xs leading-normal text-muted">
+          <span className="text-xs leading-snug text-muted">
             {card.status === 'short' ? (
               <>
                 <StatusWord word="Short" tone={tone} icon="alert" /> ·{' '}

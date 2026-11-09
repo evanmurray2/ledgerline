@@ -149,8 +149,9 @@ export async function categoryRows(
       detail = `${fmt(-fixAmount)} more than the target needs`;
     else if (status === 'underfunded') detail = `needs ${fmt(need)} this month`;
     else if (tAmount !== null && target?.type !== 'no_date') {
-      // Matches the bar, which shows what's left of the month's money (spent + available).
-      detail = `${fmt(available)} left of ${fmt(spent + available > 0 ? spent + available : tAmount)}`;
+      // The amount on the right is what's left, so the note says what's spent; the bar shows what's left of the month's
+      // money (spent + available).
+      detail = `${fmt(spent)} spent of ${fmt(spent + available > 0 ? spent + available : tAmount)}`;
       if (X > 0 && status !== 'low' && target?.type === 'refill' && month > start)
         detail += ` · ${fmt(X)} carried from ${monthLong(addMonths(month, -1))}`;
     } else if (target?.type === 'no_date')
@@ -161,7 +162,9 @@ export async function categoryRows(
     else detail = '';
     const total = spent + available;
     const leftPercent =
-      tAmount !== null && status !== 'overfunded' && total > 0
+      // One meaning for every bar: what's left of this month's money. Underfunded and overfunded rows have no bar: their
+      // pill and note say what to do, and a full bar on an underfunded row would read as "all good".
+      tAmount !== null && status !== 'overfunded' && status !== 'underfunded' && total > 0
         ? Math.max(0, Math.min(100, Math.round((available * 100) / total)))
         : null;
     rows.push({

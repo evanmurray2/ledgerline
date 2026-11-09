@@ -12,6 +12,7 @@ import { useSyncExternalStore } from 'react';
 import { CSRF_HEADER, type Session } from '@ledgerline/contracts';
 import { connectivity } from '../state/connectivity';
 import { EngineHost, syncAll, type EngineIdentity, type SyncPage } from './host';
+import { usage } from '../usage/tracker';
 import { assert, canUsePasskeys, keepsCopy, type RequestOptionsJSON } from './passkey';
 import {
   type CopyRecord,
@@ -39,6 +40,8 @@ import {
 
 export const IDLE_MS = 10 * 60_000;
 const SYNC_EVERY_MS = 2 * 60_000;
+/** A sync that brings nothing still saves the copy this often, to keep the offline limit's server time fresh. */
+const KEEP_ALIVE_MS = 60 * 60_000;
 
 export type CopyStatus =
   | 'off' // the mock API (development and tests)
@@ -397,20 +400,33 @@ let lastSync = 0;
  * Brings the copy up to date with the server, works out the budget again and saves it. Screens are told to read it
  * again, except after the app's own change (`quiet`): its mutation refreshes what it changed itself.
  */
-export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
+export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}): Promise<void> {
   if (!host) return Promise.resolve();
   if (syncing) return syncing.then(() => syncNow(opts));
   syncing = (async () => {
     try {
       lastSync = Date.now();
-      const r = await syncAll(host!, async (since, cursor) => {
-        const p = await fetchPage(since, cursor);
-        set({ progress: state.progress + p.rows.length });
-        return p;
-      });
+      // An edit's answer carries the changes since the copy's change number: use them as the first page, but only if
+      // the copy is still there (another sync may have moved it on meanwhile).
+      let first = opts.first;
+      const r = await syncAll(
+        host!,
+        async (since, cursor) => {
+          const given = first && !cursor && since === first.since ? first.page : null;
+          first = undefined;
+          if (given) return given;
+          const p = await fetchPage(since, cursor);
+          set({ progress: state.progress + p.rows.length });
+          return p;
+        },
+        () => set({ why: 'reset', progress: 0 }),
+      );
       if (state.why) set({ why: null });
-      if (r.rows > 0 || !(await host!.state()).through) await host!.derive();
-      if (record) {
+      const derived = r.rows > 0 || !(await host!.state()).through;
+      if (derived) await host!.derive();
+      // The saved copy is the whole database, encrypted: write it again only when it changed, or once an hour to
+      // move the 7-day offline limit along (lastServerTime). A sync that brings nothing costs no save.
+      if (record && (derived || Date.now() - record.lastServerTime >= KEEP_ALIVE_MS)) {
         record = { ...record, lastServerTime: Date.now() };
         await save();
       }
@@ -424,10 +440,15 @@ export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
 
 async function save(): Promise<void> {
   if (!record || !dataKey || !host) return;
+  const started = performance.now();
   const bytes = await host.export();
+  const kb = bytes.byteLength / 1024;
   const blob = await sealCopy(record, dataKey, bytes);
   record = { ...record, blob, savedAt: Date.now() };
   await saveRecord(record);
+  // How long a whole-copy save takes, and its size, so the save can be split up only if it proves slow.
+  usage.record('measure', 'copy.save.ms', performance.now() - started);
+  usage.record('measure', 'copy.save.kb', kb);
 }
 
 // ---------------------------------------------------------------- reads and changes from the app
@@ -453,10 +474,28 @@ export async function read(path: string): Promise<{ status: number; body: string
   return host!.request('GET', path);
 }
 
-/** After a change on the server: sync it into the copy, then the new Ready to Assign. */
-export async function afterChange(): Promise<{ rta: number; rtaUpdating: boolean } | null> {
+/** The changes an edit's answer carried (`sync`), and the change number they start after. */
+export interface EditAnswerSync {
+  since: number;
+  page: SyncPage;
+}
+
+/**
+ * The change number to send with an online edit (`x-sync-since`), so its answer carries what changed: null while
+ * the copy isn't open or is still downloading.
+ */
+export async function syncSince(): Promise<number | null> {
   if (!host || state.status !== 'ready') return null;
-  await syncNow({ quiet: true });
+  const st = await host.state();
+  return st.cursor || !st.through ? null : st.through;
+}
+
+/** After a change on the server: sync it into the copy (from the answer when it carried the changes), then RTA. */
+export async function afterChange(
+  answer?: EditAnswerSync | null,
+): Promise<{ rta: number; rtaUpdating: boolean } | null> {
+  if (!host || state.status !== 'ready') return null;
+  await syncNow({ quiet: true, first: answer ?? undefined });
   const r = await host.rta();
   return { rta: r.rta, rtaUpdating: r.updating };
 }

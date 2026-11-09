@@ -257,7 +257,8 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           <Segmented
             label="Goes to"
             track="txn.income.month"
-            value={month === t.budgetMonth && !t.budgetMonthOverridden ? 'now' : 'next'}
+            // The same test as the help line below: the month the income is dated in, or a later one.
+            value={month === t.date.slice(0, 7) ? 'now' : 'next'}
             onChange={(v) => setMonth(v === 'now' ? t.date.slice(0, 7) : addMonths(t.date.slice(0, 7), 1))}
             options={[
               ['now', 'Ready to Assign now'],

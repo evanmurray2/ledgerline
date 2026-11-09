@@ -23,6 +23,7 @@ import {
   SectionTitle,
   Icon,
   softButtonClass,
+  textLinkClass,
   useIsDesktop,
 } from '../components/ui';
 import { formatCents } from '../lib/money';
@@ -48,8 +49,8 @@ export function OwedScreen() {
   const waiting = activity.data?.moneyToMatch[0];
   const rta = budget.data?.rta ?? 0;
   const desktop = useIsDesktop();
-  // The row's two pills: side by side, half each, on the phone.
-  const pill = desktop ? 'px-4' : 'flex-1';
+  // Match is the row's main action (a pill); Close out is a quiet text link next to it.
+  const pill = desktop ? 'px-4' : '';
 
   return (
     <PageFrame>
@@ -150,7 +151,7 @@ export function OwedScreen() {
                         )}
                       </span>
                     </Link>
-                    <div className={cx('flex gap-2', desktop && 'shrink-0')}>
+                    <div className={cx('flex items-center gap-4', desktop && 'shrink-0')}>
                       {waiting && (
                         <Link
                           to={`/owed/match/${waiting.key}`}
@@ -167,7 +168,7 @@ export function OwedScreen() {
                         search
                         data-track="owed.close"
                         aria-label={`Close out ${o.label}`}
-                        className={cx(softButtonClass('outline'), pill)}
+                        className={cx(textLinkClass, 'self-center px-1')}
                       >
                         Close out
                       </Link>

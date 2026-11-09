@@ -117,6 +117,31 @@ test('A pinned category is saved with the budget', async ({ page }) => {
   await expect(page.getByText('Pinned', { exact: true })).toHaveCount(0);
 });
 
+test('An edit’s answer brings what it changed: no second sync request', async ({ page }) => {
+  await page.goto('/budget');
+  const rows = page.locator('[data-track="budget.category"]', { hasText: 'Personal care' });
+  await rows.first().click();
+  const syncs: string[] = [];
+  page.on('request', (r) => {
+    if (new URL(r.url()).pathname === '/api/sync') syncs.push(r.url());
+  });
+  const answer = page.waitForResponse((r) => /\/api\/settings\/categories\/[^/]+\/pin$/.test(r.url()));
+  await page.getByRole('button', { name: 'Pin Personal care to the top' }).click();
+  const r = await answer;
+  expect(Number(r.request().headers()['x-sync-since'])).toBeGreaterThan(0);
+  const body = (await r.json()) as { ok: boolean; sync?: { rows: unknown[]; more: boolean } };
+  expect(body.sync?.rows.length).toBeGreaterThan(0);
+  expect(body.sync?.more).toBe(false);
+  await expect(page.getByText('Personal care pinned to the top')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByText('Pinned', { exact: true })).toBeVisible();
+  expect(syncs).toEqual([]);
+  // Put it back.
+  await rows.first().click();
+  await page.getByRole('button', { name: 'Pin Personal care to the top' }).click();
+  await expect(page.getByText('Personal care unpinned')).toBeVisible();
+});
+
 test('Activity: categorizing an uncategorized purchase persists', async ({ page }) => {
   await page.goto('/activity');
   const chip = page.getByRole('button', { name: /^Needs attention \d+$/ });
@@ -227,7 +252,7 @@ test('A change made with no signal is kept on the device and sent when the conne
 
 test('Accounts: net worth and the Ally repair prompt', async ({ page }) => {
   await page.goto('/accounts');
-  await expect(page.getByText('$22,555.35').first()).toBeVisible();
+  await expect(page.getByText('$22,354.35').first()).toBeVisible();
   await expect(page.getByText(/Ally/).first()).toBeVisible();
 });
 

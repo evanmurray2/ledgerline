@@ -1,5 +1,4 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { cpuUsage } from 'node:process';
 import { NodeDb, applyMigrations } from '../../../packages/db/src/node-db.js';
 
 /** The BudgetStore's own schema: production runs these in each budget's Durable Object. */
@@ -16,12 +15,17 @@ export function freshDb(): NodeDb {
   return d;
 }
 
+/**
+ * Time on this thread, in microseconds. The step is synchronous SQLite and JavaScript with no I/O, so wall time is its
+ * CPU (they agreed within 0.5 ms, Nov 9, 2026). process.cpuUsage() also counts Node's compiler and garbage-collector
+ * threads, which about doubled the numbers; process.threadCpuUsage() is counted in 4 ms ticks on Linux. Run measures
+ * alone, not beside other work.
+ */
 function micros(): number {
-  const u = cpuUsage();
-  return u.user + u.system;
+  return performance.now() * 1000;
 }
 
-/** CPU of fn() in ms. In a Durable Object SQLite runs on the same thread as the app, so it is included. */
+/** CPU of fn() in ms, on this thread. In a Durable Object SQLite runs on the same thread as the app, so it is included. */
 export async function cpu<T>(
   db: NodeDb,
   fn: () => Promise<T>,

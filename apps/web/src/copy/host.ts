@@ -111,6 +111,8 @@ export class EngineHost {
 export async function syncAll(
   host: EngineHost,
   fetchPage: (since: number, cursor: string | null) => Promise<SyncPage>,
+  /** Called when the server's copy changed (a new epoch or format) and the whole budget downloads again. */
+  onReset?: () => void,
 ): Promise<{ pages: number; rows: number }> {
   let pages = 0;
   let rows = 0;
@@ -119,6 +121,7 @@ export async function syncAll(
     const page = await fetchPage(since, cursor);
     const r = await host.apply(page, Date.now());
     pages++;
+    if (r.reset) onReset?.();
     rows += r.rows;
     if (r.caughtUp) return { pages, rows };
   }

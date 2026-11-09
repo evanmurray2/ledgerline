@@ -1,5 +1,7 @@
 # Working out the budget on the phone
 
+> **Now:** sections 1–15 are the design and its reviews, kept for their reasoning. Section 16 and `docs/architecture.md` say what was built.
+
 Status: built, v1.4, Nov 3, 2026 (decisions.md D-45, D-46). The owner asked for everything at once, including stage 5; section 16 says what was built and how it differs from this design. v1 got an adversarial review (1 blocker, 8 major, 9 minor); v1.1 includes its fixes, listed in section 15. v1.2 added the security design in section 13; v1.3 includes the fixes from its security review (1 blocker, 7 major, 7 minor). Nothing here changes how money is counted: the same `computeBudget()` runs, in a different place, and section 9 shows how its inputs stay the same.
 
 ## 1. The question

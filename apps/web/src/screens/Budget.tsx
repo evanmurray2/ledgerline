@@ -23,6 +23,7 @@ import { formatCents } from '../lib/money';
 import { useScreen } from '../lib/common';
 import { useCanWrite } from '../state/connectivity';
 import { clampMonth } from '../state/month';
+import { BlockedAction } from '../components/BlockedAction';
 import { AllGroups, allAssignedZero } from './BudgetRows';
 import { AttentionList } from './BudgetAttention';
 import { FirstBudget, NewMonth, OverAssigned, PastNote } from './BudgetStates';
@@ -81,7 +82,8 @@ function useScrolledDown(ref: RefObject<HTMLDivElement | null>, ready: boolean):
 }
 
 function RtaBar({ b, onFix, thin }: { b: BudgetView; onFix: () => void; thin: boolean }) {
-  const canWrite = useCanWrite();
+  // Assigning and taking back work offline with the copy on this device (D-45), like the Assign sheet itself.
+  const canWrite = useCanWrite({ offline: true });
   const neg = b.rta < 0;
   // Every dollar assigned: a quiet line, nothing to do.
   if (b.rta === 0 && !b.rtaUpdating)
@@ -140,12 +142,12 @@ function RtaBar({ b, onFix, thin }: { b: BudgetView; onFix: () => void; thin: bo
           Assign
         </Link>
       ) : (
-        <span
-          aria-disabled="true"
+        <BlockedAction
+          track="budget.assign.blocked"
           className={cx('flex items-center rounded-full bg-on-accent/50 font-bold text-muted', btn)}
         >
           Assign
-        </span>
+        </BlockedAction>
       )}
     </div>
   );

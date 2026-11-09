@@ -170,7 +170,9 @@ export function CategoryPickerSheet({
                     >
                       {c.name}
                       {suggestedCounts?.[c.id] !== undefined && (
-                        <span className="tnum font-semibold text-ink-2">{suggestedCounts[c.id]}</span>
+                        <span className="tnum font-normal text-muted">
+                          {suggestedCounts[c.id]}×<span className="sr-only"> before</span>
+                        </span>
                       )}
                       {c.available !== undefined && c.available < 0 && (
                         <span className="tnum font-semibold text-over-fg">{formatCents(c.available)}</span>

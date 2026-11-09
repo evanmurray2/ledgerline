@@ -17,7 +17,8 @@ export async function loadBankRows(s: Scoped, ids: readonly string[]): Promise<B
          FROM bank_txn b
          LEFT JOIN account a ON a.budget_id = b.budget_id AND a.provider_account_id = b.provider_account_id
          LEFT JOIN connection c ON c.id = b.connection_id
-         WHERE b.budget_id = ?1 AND b.provider_txn_id IN (${chunk.map((_, j) => `?${j + 2}`).join(',')})`,
+         WHERE +b.budget_id = ?1 AND b.provider_txn_id IN (${chunk.map((_, j) => `?${j + 2}`).join(',')})
+         ORDER BY b.connection_id, b.created_at, b.provider_txn_id`,
         ...chunk,
       )),
     );

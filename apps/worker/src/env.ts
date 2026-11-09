@@ -87,12 +87,18 @@ export interface Env {
     /** This budget's fair-use share (store/shares.ts), when the Directory knows the budget. */
     share?: 'normal' | 'pause' | 'readonly';
   }>;
+  /** Inside a budget's Durable Object: USAGE for the check before each write, kept up to 30 seconds. */
+  USAGE_FOR_WRITE?: Env['USAGE'];
   /** Inside a budget's Durable Object: add this app's own row counts to the Directory's usage_day. */
   NOTE_USAGE?: (written: number, read: number) => Promise<void>;
   /** Inside a budget's Durable Object: queue registering a new Plaid Item's route in the Directory. */
   ROUTE_LINK?: (providerItemId: string, connectionId: string) => Promise<void>;
   /** Inside a budget's Durable Object: point-in-time recovery of its database (runbooks/restore.md). */
   RESTORE_TO?: (at: number) => Promise<{ undo: string }>;
+  /** Inside a budget's Durable Object: undo the last restore, with the bookmark the Directory kept. */
+  RESTORE_UNDO?: () => Promise<{ undo: string } | null>;
+  /** Inside a budget's Durable Object: the last restore, from the Directory. */
+  LAST_RESTORE?: () => Promise<{ at: number; to: number | null } | null>;
 }
 
 export interface Jobs {

@@ -43,7 +43,7 @@ export async function planFresh(
   const overlayChunks = await s.batch(
     chunks(overlayKeys).map((k) =>
       s.q(
-        `SELECT txn_key, categorized_by, payee_id FROM txn_overlay WHERE budget_id = ?1 AND txn_key IN (${inList(k.length)})`,
+        `SELECT txn_key, categorized_by, payee_id FROM txn_overlay WHERE +budget_id = ?1 AND txn_key IN (${inList(k.length)})`,
         ...k,
       ),
     ),
@@ -219,7 +219,7 @@ async function planNewNames(
   const isSync = new Set(created.keys());
   for (const k of chunks(existing))
     for (const p of await s.all<{ id: string; name: string; named_by: string; merged_into: string | null }>(
-      `SELECT id, name, named_by, merged_into FROM payee WHERE budget_id = ?1 AND id IN (${inList(k.length)})`,
+      `SELECT id, name, named_by, merged_into FROM payee WHERE +budget_id = ?1 AND id IN (${inList(k.length)})`,
       ...k,
     )) {
       names.set(p.id, p.name);

@@ -43,6 +43,7 @@ import { UsageCounter } from './shares.js';
 import { DISABLED_KEY, budgetInfo, setDisabled, wipeStore } from './account-life.js';
 import { QUEUE_REFILE } from '../sync/refile-payees.js';
 import { QUEUE_DROP_TEXT_ALIASES } from '../sync/drop-text-aliases.js';
+import { markReads, noteHeavyRead, routeName } from './heavy-reads.js';
 
 /** Storage key: the store has checked once whether its payees need the re-file job (sync/refile-payees.ts). */
 /** Set while the budget rests (idle, no banks): its daily jobs come back on its next request (ensureJobs). */
@@ -60,6 +61,9 @@ export interface StoreHealth {
   tables: number;
   error?: string;
 }
+
+/** How long a store keeps the Directory's usage answer (usage30). */
+const USAGE_CACHE_MS = 30_000;
 
 export class BudgetStore extends DurableObject<Env> {
   protected readonly db: DurableDb;
@@ -160,9 +164,11 @@ export class BudgetStore extends DurableObject<Env> {
         await this.ctx.storage.put(COUNT_KEY, caller.countUsage);
       }
     }
+    const mark = markReads(this.db.stats);
     try {
       return await this.serve(this.app, request, caller);
     } finally {
+      noteHeavyRead(this.db.stats, mark, routeName(request), caller.budgetId);
       this.reportUsage(caller.budgetId);
     }
   }
@@ -302,9 +308,41 @@ export class BudgetStore extends DurableObject<Env> {
    */
   async restoreTo(at: number): Promise<{ undo: string }> {
     this.ready();
-    await this.newSyncEpoch();
     const bookmark = await this.ctx.storage.getBookmarkForTime(at);
+    return this.restoreBookmark(bookmark, at);
+  }
+
+  /**
+   * Undoes the last restore with the bookmark the Directory kept (null: there's nothing to undo). The undo is a restore
+   * too, so it can be undone in turn.
+   */
+  async restoreUndo(): Promise<{ undo: string } | null> {
+    this.ready();
+    const id = await this.budgetId();
+    const last = await this.directory().lastRestore(id);
+    return last ? this.restoreBookmark(last.undo, null) : null;
+  }
+
+  /** The last restore, without its bookmark. */
+  async lastRestore(): Promise<{ at: number; to: number | null } | null> {
+    this.ready();
+    const last = await this.directory().lastRestore(await this.budgetId());
+    return last ? { at: last.at, to: last.to } : null;
+  }
+
+  private directory() {
+    return this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName(DIRECTORY_NAME));
+  }
+
+  /**
+   * Restores to `bookmark` on the next start. The sync epoch changes first and the undo bookmark is kept in the
+   * Directory, which the restore can't reach, so every copy downloads again and the restore can always be undone.
+   */
+  private async restoreBookmark(bookmark: string, to: number | null): Promise<{ undo: string }> {
+    const id = await this.budgetId();
+    await this.newSyncEpoch();
     const undo = await this.ctx.storage.onNextSessionRestoreBookmark(bookmark);
+    await this.directory().noteRestore(id, { at: Date.now(), to, undo });
     // Restart after answering, so the caller gets the undo bookmark.
     this.ctx.waitUntil(
       (async () => {
@@ -381,10 +419,14 @@ export class BudgetStore extends DurableObject<Env> {
     this.ready();
     this.usage.request();
     this.counting ??= (await this.ctx.storage.get<boolean>(COUNT_KEY)) ?? false;
+    const mark = markReads(this.db.stats);
+    let what = 'job';
     try {
-      await this.runner.runNext(Date.now());
+      const r = await this.runner.runNext(Date.now());
+      if (r.ran) what = `job:${r.kind}`;
     } finally {
       const id = this.cachedBudgetId ?? (await this.budgetId().catch(() => null));
+      noteHeavyRead(this.db.stats, mark, what, id);
       if (id) this.reportUsage(id);
     }
   }
@@ -428,6 +470,22 @@ export class BudgetStore extends DurableObject<Env> {
     }
   }
 
+  /** The Directory's answer on today's usage, kept a short while for the write check (routes/api.ts). */
+  private usageCache: { at: number; value: Awaited<ReturnType<NonNullable<Env['USAGE']>>> } | null = null;
+
+  /**
+   * Today's usage for the check before each write, asked of the Directory at most every USAGE_CACHE_MS: each ask is
+   * a Durable Object request of its own. The session and background work still ask every time. The Directory works its own state out at most once a minute too (STATE_MS),
+   * so this adds at most that much to how late a limit is noticed.
+   */
+  private async usage30(ask: () => ReturnType<NonNullable<Env['USAGE']>>) {
+    const now = Date.now();
+    if (this.usageCache && now - this.usageCache.at < USAGE_CACHE_MS) return this.usageCache.value;
+    const value = await ask();
+    this.usageCache = { at: now, value };
+    return value;
+  }
+
   private adapter(): Db {
     return this.db;
   }
@@ -446,6 +504,7 @@ export class BudgetStore extends DurableObject<Env> {
       ...(dir
         ? {
             USAGE: () => dir.usageToday(this.cachedBudgetId ?? undefined),
+            USAGE_FOR_WRITE: () => this.usage30(() => dir.usageToday(this.cachedBudgetId ?? undefined)),
             NOTE_USAGE: (w: number, r: number) => dir.noteUsage(w, r),
           }
         : {}),
@@ -457,6 +516,8 @@ export class BudgetStore extends DurableObject<Env> {
         });
       },
       RESTORE_TO: (at: number) => this.restoreTo(at),
+      RESTORE_UNDO: () => this.restoreUndo(),
+      LAST_RESTORE: () => this.lastRestore(),
       JOBS: {
         // routes/settings.ts startSync() has already taken the lease with this run id.
         sync: async (runId, connectionId, trigger) => {

@@ -13,6 +13,7 @@ import {
   DangerLink,
   ErrorNote,
   Field,
+  Icon,
   inputBoxClass,
   inputClass,
   Loading,
@@ -344,7 +345,9 @@ export function TargetsScreen() {
         <p className="m-0 text-sm text-muted">
           {none.length === 0
             ? 'Every category has a target.'
-            : `${none.length} ${none.length === 1 ? 'category has' : 'categories have'} no target yet.`}
+            : none.length <= 3
+              ? `No target yet: ${none.map((c) => c.name).join(', ')}.`
+              : `${none.length} categories have no target yet.`}
         </p>
       )}
       {groups.map((g) => (
@@ -359,14 +362,17 @@ export function TargetsScreen() {
                   to={`/targets/${c.id}`}
                   search={{ month: m }}
                   data-track="targets.category"
-                  className="flex min-h-14 items-center gap-3 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
+                  className="flex min-h-14 items-center justify-between gap-3 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
                 >
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="text-base font-semibold">{c.name}</span>
-                    <span className={cx('truncate text-xs', missing ? 'text-accent' : 'text-muted')}>
+                    <span
+                      className={cx('truncate text-xs', missing ? 'font-semibold text-accent' : 'text-muted')}
+                    >
                       {missing ? 'Add a target' : c.meta}
                     </span>
                   </span>
+                  <Icon name="chevR" size={18} className="shrink-0 text-faint" />
                 </Link>
               );
             })}

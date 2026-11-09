@@ -391,7 +391,7 @@ transactionRoutes.post('/transactions/categorize', async (c) => {
     for (const k of chunks(r.keys)) {
       const ph = k.map((_, i) => `?${i + 2}`).join(',');
       const out = await s.first(
-        `SELECT 1 FROM bank_txn WHERE budget_id = ?1 AND txn_key IN (${ph}) AND amount < 0 AND removed_at IS NULL
+        `SELECT 1 FROM bank_txn WHERE +budget_id = ?1 AND txn_key IN (${ph}) AND amount < 0 AND removed_at IS NULL
          UNION ALL SELECT 1 FROM manual_pending WHERE budget_id = ?1 AND txn_key IN (${ph}) AND amount < 0 LIMIT 1`,
         ...k,
       );
