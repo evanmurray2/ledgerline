@@ -2,7 +2,7 @@
 // the Worker; the SPA uses the inferred types. Money is integer cents everywhere; months are 'YYYY-MM', dates
 // 'YYYY-MM-DD'. Mutations require `content-type: application/json` and the `x-ledgerline: 1` header.
 import { z } from 'zod';
-import { cents, date, id, month } from './scalars.js';
+import { calendarDate, cents, date, id, month } from './scalars.js';
 import { AccountRow, StartBalance } from './accounts.js';
 
 export * from './accounts.js';
@@ -399,7 +399,7 @@ export const TxnPatch = z.object({
       num: z.number().int().optional(),
       den: z.number().int().optional(),
       amount: cents.optional(),
-      expectBy: date.nullable(),
+      expectBy: calendarDate.nullable(),
     })
     .nullable()
     .optional(),
@@ -412,7 +412,7 @@ export const CategorizeRequest = z.object({
 export const NewTxnRequest = z.object({
   kind: z.enum(['pending', 'upcoming']),
   accountId: id,
-  date,
+  date: calendarDate,
   /** Outflow negative. */
   amount: cents,
   payee: z.string().min(1).max(120),
@@ -470,7 +470,7 @@ export const OwedView = z.object({
 export type OwedView = z.infer<typeof OwedView>;
 export const OwedAction = z.object({
   action: z.enum(['close', 'cancel', 'snooze']),
-  expectBy: date.optional(),
+  expectBy: calendarDate.optional(),
 });
 
 // ---------------------------------------------------------------- accounts

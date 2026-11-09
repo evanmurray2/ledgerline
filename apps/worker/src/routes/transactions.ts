@@ -21,7 +21,7 @@ import {
 } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
-import { HttpError, parse, scoped, GONE } from './api.js';
+import { HttpError, parse, scoped, GONE, FAR_DATE, FAR_MONTH, inReach, thisMonth } from './api.js';
 import { reopenStmts } from './account-close.js';
 import { editTime, liveKey } from './sync.js';
 import { shortDate } from '../views/common.js';
@@ -276,7 +276,11 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
       throw new HttpError(422, 'posted', 'This has posted, so it can’t be marked won’t clear.');
     set('wont_clear', p.wontClear ? 1 : 0);
   }
-  if (p.budgetMonth !== undefined) set('budget_month', p.budgetMonth);
+  if (p.budgetMonth !== undefined) {
+    if (p.budgetMonth !== null && !inReach(p.budgetMonth, await thisMonth(s, now)))
+      throw new HttpError(422, 'too_far', FAR_MONTH);
+    set('budget_month', p.budgetMonth);
+  }
   if (p.payeeName !== undefined) {
     // A name you typed is yours: sync never renames it, and the payee gets the key of that name
     // (docs/payee-names.md 4, 6).
@@ -410,6 +414,7 @@ transactionRoutes.post('/transactions', async (c) => {
   const r = await parse(NewTxnRequest, c.req.raw);
   const s = scoped(c);
   const now = clock(c.env);
+  if (!inReach(monthOfDate(r.date), await thisMonth(s, now))) throw new HttpError(422, 'too_far', FAR_DATE);
   const acct = await s.first(`SELECT id FROM account WHERE budget_id = ?1 AND id = ?2`, r.accountId);
   if (!acct) throw new HttpError(404, 'not_found', GONE);
   if (r.categoryId) {

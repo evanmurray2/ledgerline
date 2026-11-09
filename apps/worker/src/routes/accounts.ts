@@ -22,7 +22,7 @@ import {
   statementCovered,
 } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
-import { HttpError, parse, scoped, GONE, BAD_MONTH } from './api.js';
+import { HttpError, parse, scoped, GONE, BAD_MONTH, inReach } from './api.js';
 import { cards as loadCards, fresh, monthResult, shortDate, structure } from '../views/common.js';
 import { hiddenFromLists, listRow } from '../views/rows.js';
 import { TX_COLUMNS, uncovered, type TxRow } from '../ledger/ledger.js';
@@ -399,7 +399,7 @@ accountRoutes.get('/reports', async (c) => {
   const now = clock(c.env);
   const f = await fresh(s, now);
   const m = (c.req.query('month') ?? f.current) as Month;
-  if (!isMonth(m)) throw new HttpError(400, 'invalid', BAD_MONTH);
+  if (!isMonth(m) || !inReach(m, f.current)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const start = (f.budget.budget_start_month ?? f.current) as Month;
   const { categories } = await structure(s);
   const kinds = new Map(categories.map((x) => [x.id, x]));
