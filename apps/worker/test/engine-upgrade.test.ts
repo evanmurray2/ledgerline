@@ -108,7 +108,9 @@ describe('a copy left by an older app version upgrades to the screens a new phon
       for (const r of p.rows) {
         const cols = await has(r.t);
         if (cols.size === 0) continue; // a table the older copy didn't have
-        rows.push(r.d ? { ...r, d: Object.fromEntries(Object.entries(r.d).filter(([k]) => cols.has(k))) } : r);
+        rows.push(
+          r.d ? { ...r, d: Object.fromEntries(Object.entries(r.d).filter(([k]) => cols.has(k))) } : r,
+        );
       }
       await old.apply({ ...p, rows });
     }
