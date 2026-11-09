@@ -9,7 +9,7 @@ How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.
 | Answer                    | ms median / p90 / max |
 | ------------------------- | --------------------- |
 | 3 changed rows (usual)    | 0.04 / 0.10 / 0.16    |
-| 50 changed rows (the cap) | 0.30 / 0.38 / 0.38    |
+| 50 changed rows (the cap) | 0.30 / 0.38 / 0.82    |
 
 It adds well under 1 ms to the edit, and saves the phone's separate sync request (a Worker request and two Durable Object calls).
 
