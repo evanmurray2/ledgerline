@@ -698,6 +698,44 @@ describe('rule 11: Close and Cancel', () => {
     );
   });
 
+  it('Reopen in a later month (D-80): the closing month stays as closed; the reopening month gives it back', () => {
+    fc.assert(
+      fc.property(amt(1, 100_000), amt(0, 100_000), (o, paid) => {
+        const p = Math.min(paid, o);
+        const shut = addMonths(START, 1);
+        const cur = addMonths(START, 2);
+        const x = cents(o - p);
+        const mk = (mark: Partial<{ closed: object; pastCloses: object[] }>) =>
+          run({
+            accounts: [{ ...CHK, startingBalance: cents(1_000_000) }],
+            categories: cats(1, []),
+            assignments: [],
+            txns: [
+              tx('chk', '2026-01-10', -o, cat('c0'), {
+                owed: [{ itemId: 'i', amount: o, ...mark }] as never,
+              }),
+              tx('chk', '2026-01-20', p, { type: 'rta' }),
+            ],
+            current: cur,
+          });
+        const closed = mk({ closed: { month: shut, date: `${shut}-05`, amount: x } });
+        const reopened = mk({
+          pastCloses: [
+            { id: 'a', month: shut, amount: x },
+            { id: 'b', month: cur, amount: cents(-x) },
+          ],
+        });
+        // The month it was closed in is exactly as if it had stayed closed.
+        expect(cell(reopened.r, shut, 'c0')).toEqual(cell(closed.r, shut, 'c0'));
+        expect(cell(reopened.r, START, 'c0')).toEqual(cell(closed.r, START, 'c0'));
+        // The reopening month gives the category the amount back, and RTA gives it up.
+        expect(cell(reopened.r, cur, 'c0').available - cell(closed.r, cur, 'c0').available).toBe(x);
+        expect(reopened.r.rta - closed.r.rta + x).toBe(0);
+      }),
+      { numRuns: RUNS },
+    );
+  });
+
   it('Cancel charges the full amount in the transaction’s own month and gives RTA the owed amount back', () => {
     fc.assert(
       fc.property(amt(1, 100_000), amt(1, 100_000), (x, oo) => {

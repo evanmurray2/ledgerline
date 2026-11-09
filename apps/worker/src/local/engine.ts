@@ -271,6 +271,7 @@ export class LocalEngine {
       manual_pending: ['txn_key'],
       txn_split: ['txn_key'],
       expected_reimbursement: ['txn_key'],
+      owed_close: ['txn_key'],
       txn_link: ['from_key', 'to_key'],
       txn_overlay: ['txn_key'],
     };

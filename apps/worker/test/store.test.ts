@@ -51,9 +51,11 @@ describe('object migrations', () => {
         '0007_payee_names_storage.sql',
         '0008_start_part_rows.sql',
         '0009_drift_since.sql',
+        '0010_owed_close.sql',
       ],
     });
-    expect(h.tables).toBe(38); // the four the phone keeps were dropped (migration 0006); not_same added (0007)
+    // The four the phone keeps were dropped (migration 0006); not_same added (0007), owed_close (0010).
+    expect(h.tables).toBe(39);
     const d = await e.DIRECTORY.get(e.DIRECTORY.idFromName('directory-test')).health();
     expect(d).toMatchObject({
       ok: true,
