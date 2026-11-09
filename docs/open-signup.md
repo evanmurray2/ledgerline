@@ -1,193 +1,248 @@
 # Open sign-up: built, switched off
 
-Status: v1 draft, Nov 9, 2026. Decision D-74 (`docs/decisions/D-74-open-signup.md`). It replaces the invite design in `docs/multi-user.md` 7.3 and 7.4. The rest of `docs/multi-user.md` stands.
+Status: v2, Nov 9, 2026, after one adversarial review (section 15). Decision D-74 (`docs/decisions/D-74-open-signup.md`). It replaces the invite design in `docs/multi-user.md` 7.3 and 7.4. The rest of `docs/multi-user.md` stands.
 
 ## 0. What the owner asked
 
 - Drop the invite-only design. Anyone may make an account once sign-up is on.
-- Build everything needed for thousands of users, but **keep sign-up off**.
-- **Change no other decision.** The $0 free plan (D-26, D-27), no off-site backups (D-29), no staging (D-36), no monitor (D-49), the 10 ms CPU rule and the D-40 breaker all stay. Where scale needs one of them changed, this doc only lists it for the day sign-up is turned on (section 12).
+- Build what thousands of users need, but **keep sign-up off**.
+- **Change no other decision.** The $0 free plan (D-26, D-27), no off-site backups (D-29), no staging (D-36), no monitor (D-49), the 10 ms CPU rule and the D-40 breaker stay. Where scale needs one of them changed, this doc lists it for the day sign-up is turned on (section 13).
 
-Non-goals: turning sign-up on, paid plans, Plaid Production, email, billing, sharing one budget between people, backups, monitoring.
+Non-goals: turning sign-up on, paid plans, Plaid Production, email, billing, sharing one budget, backups, monitoring, a session cache.
 
 ## 1. Rules that hold everywhere
 
-1. **While the switch is off, nothing anyone can see changes.** The new routes return 404 and the app shows nothing new. The owner's budget works as today.
-2. **One user's data is only reachable through that user's session** (`docs/multi-user.md` 11). A test proves it for every route (section 10).
-3. **The Plaid link count is account-wide and never undercounts.** Plaid's 10 Trial links are for the whole Plaid account, not per budget.
-4. **No user can use up the free plan for everyone** (section 7).
+1. **While the switch is off, the owner sees no change.** Section 14 lists every change that reaches the owner anyway, and why it is safe.
+2. **A user's data is reachable only through that user's session** (`docs/multi-user.md` 11). A test proves it for every route and every store method (section 11).
+3. **The Plaid link count is account-wide and never undercounts.** Plaid's 10 Trial links are for the whole Plaid account. When in doubt, a link counts as used.
+4. **Other users together can't use up the free plan.** They share a pool that leaves the owner room (section 8).
 5. **No change to how money is counted.** Nothing here touches `packages/domain`.
+6. **No data is lost by accident.** Only a user's own explicit delete removes data (section 12).
 
 ## 2. The switch
 
 Worker variables in `apps/worker/wrangler.jsonc` (`vars`). Changing one is a merge to `main` (D-49), so turning sign-up on is a reviewed PR.
 
-| Variable             | Default | Meaning                                                                                |
-| -------------------- | ------- | -------------------------------------------------------------------------------------- |
-| `SIGNUPS`            | `off`   | `open` lets anyone make an account. Any other value is `off`.                          |
-| `MAX_USERS`          | `1`     | Accounts allowed, counting active, turned-off and deleting users.                      |
-| `SIGNUPS_PER_DAY`    | `50`    | New accounts allowed per UTC day, account-wide.                                        |
-| `NEW_USER_LINKS`     | `0`     | Bank links a new user may use.                                                         |
-| `PLAID_LINK_CAP`     | `10`    | Bank links for the whole Plaid account, for life. `0` means no cap (Plaid Production). |
-| `TURNSTILE_SITE_KEY` | none    | Cloudflare Turnstile site key (public).                                                |
+| Variable                | Default | Meaning                                                                                                            |
+| ----------------------- | ------- | ------------------------------------------------------------------------------------------------------------------ |
+| `SIGNUPS`               | `off`   | `open` lets anyone make an account. Any other value is `off`.                                                      |
+| `MAX_USERS`             | `1`     | Accounts allowed, counting active, turned-off and deleting users.                                                  |
+| `SIGNUPS_PER_DAY`       | `50`    | New accounts per UTC day, account-wide.                                                                            |
+| `NEW_USER_LINKS`        | `0`     | Bank links a new user may use.                                                                                     |
+| `PLAID_LINK_CAP`        | `10`    | Bank links for the whole Plaid account, for life. A number, or `none` for no cap. `0` means no links, not no cap.  |
+| `PLAID_LINKS_UNTRACKED` | none    | Links Plaid counts that no connection row records. Required while a cap is set: without it no new link starts (5). |
+| `OTHER_USERS_SHARE`     | `0.5`   | The part of each daily limit that users who aren't admins may use together (8).                                    |
+| `TURNSTILE_SITE_KEY`    | none    | Cloudflare Turnstile site key (public).                                                                            |
 
-New secret, added only when turning on: `TURNSTILE_SECRET`.
+New secret, used only once sign-up is on: `TURNSTILE_SECRET`. It is added to `tools/ci/worker-secrets.mjs` and the `deploy.yml` env now, so adding it to the GitHub `production` environment later is enough. Until then it is absent, and sign-up stays closed.
 
-Sign-up is open only when **all** of these hold: `SIGNUPS` is `open`, `TURNSTILE_SECRET` and `TURNSTILE_SITE_KEY` are set, `devSignIn()` is false, and the first user exists. Otherwise every sign-up route answers 404, the same as an unknown route, and `GET /api/auth/status` returns `signupOpen: false`.
+Sign-up is open only when **all** of these hold: `SIGNUPS` is `open`, both Turnstile values are set, `devSignIn()` is false, an admin exists, and the breaker state (D-40) is `normal`. The **Worker** checks the variables before it calls the Directory, so a closed or bad request costs no Durable Object request. Closed → 404, the same as an unknown route. `GET /api/auth/status` gains `signupOpen`, which is `false` while closed.
 
 ## 3. Making an account
 
 ### 3.1 Screens
 
-- Sign-in screen: **Create account** appears under **Sign in** only when `signupOpen` is true.
-- Create account: a **Name** field (1–60 characters, shown on the passkey and in Settings), the Turnstile check, then **Create passkey**.
-- After the passkey: the recovery code screen (3.4). The user must tick "I saved my recovery code" to go on.
+- Sign-in screen: **Create account** under **Sign in**, only when `signupOpen` is true.
+- Create account: **Name** (1–60 characters, shown on the passkey and to admins), the Turnstile check, then **Create passkey**.
+- Then the recovery code screen (4). The user ticks "I saved my recovery code" to go on.
 - Then the existing first-run Setup (`apps/web/src/screens/Setup.tsx`) on an empty budget.
 - UI text goes into `docs/copy.md` first.
 
 ### 3.2 Server
 
-`POST /api/auth/signup/options` with `{ name, turnstileToken }`:
+`POST /api/auth/signup/options` with `{ name, turnstileToken }`, in the Worker:
 
-1. The switch check (section 2). Off → 404.
-2. The rate limit: the existing `AUTH_LIMITER` (20 a minute per IP), under its own key `signup:<ip>`.
-3. Turnstile: the Worker posts the token to Cloudflare's `siteverify` with the secret and the client IP. It checks `success`, the `hostname` (the RP id) and the `action` (`signup`). A token is single use at Cloudflare, so a replayed token fails there.
-4. Cheap checks against the Directory, read only: users < `MAX_USERS`, sign-ups today < `SIGNUPS_PER_DAY`. These give a clear "Sign-up is full" message early; step 5 is the real guard.
-5. No database write. A new random WebAuthn handle (32 bytes) and the name go into the signed challenge cookie as the grant `{ kind: 'signup', handle, name }`. The registration options use that handle, with `excludeCredentials` empty.
+1. The switch check (2). Closed → 404.
+2. The rate limit: `AUTH_LIMITER` (20 a minute per IP), under its own key `signup:<ip>`.
+3. Turnstile: the Worker posts the token to Cloudflare's `siteverify` with the secret and the client IP. It checks `success`, `hostname` (the RP id) and `action` (`signup`). Cloudflare accepts a token once.
+4. Then the Worker calls the Directory RPC `signupOptions(name)`. It reads (no write) users < `MAX_USERS`, sign-ups today < `SIGNUPS_PER_DAY` and the breaker state, so a full sign-up fails early with "Sign-up is full right now. Try again tomorrow." Step 6 is the real guard.
+5. A new random WebAuthn handle (32 bytes) and the name go into the signed challenge cookie as the grant `{ kind: 'signup', ref: handle, name }`. The registration options use that handle, with `excludeCredentials` empty.
 
-`POST /api/auth/register/verify` with a `signup` grant runs one Directory batch (one SQLite transaction):
+`POST /api/auth/register/verify` with a `signup` grant:
 
-- `INSERT INTO user … SELECT … WHERE (SELECT count(*) FROM user) < MAX_USERS AND (SELECT count(*) FROM user WHERE created_at >= today_utc) < SIGNUPS_PER_DAY`. Columns: a new id, `email = 'u:' || id` (the column is `NOT NULL UNIQUE`; email is not identity, 7.1), `display_name`, `is_admin = 0`, `status = 'active'`, `link_allowance = NEW_USER_LINKS`, `webauthn_handle` from the grant.
-- `INSERT INTO budget`, `INSERT INTO budget_member` and `INSERT INTO passkey`, each `SELECT … WHERE` the user row from the first statement exists.
-- `INSERT INTO recovery_code` (3.4).
+6. One Directory batch (one SQLite transaction), in order:
+   - Record the challenge id in `used_challenge` (primary key). A second use of the same challenge throws, so the whole batch rolls back.
+   - `INSERT INTO user … SELECT … WHERE (SELECT count(*) FROM user) < MAX_USERS AND (SELECT count(*) FROM user WHERE created_at >= today) < SIGNUPS_PER_DAY`. Columns: a new id, `email = 'u:' || id` (the column is `NOT NULL UNIQUE`; email isn't identity, `docs/multi-user.md` 7.1), `display_name`, `is_admin = 0`, `status = 'active'`, `link_allowance = NEW_USER_LINKS`, `webauthn_handle` from the grant.
+   - A fence: `INSERT INTO fence (ok) SELECT count(*) = 1 FROM user WHERE id = ?`. The `fence` table has `CHECK (ok = 1)`, so a full sign-up throws here and nothing is written. This is the `lease_guard` pattern; the Directory gets its own table.
+   - `budget`, `budget_member`, `passkey`, `recovery_code` (4).
+   - The session, with `challenge_id`.
+7. A refused batch answers 403 "Sign-up is full right now. Try again tomorrow."
+8. The Worker calls the new store's `health()`, which creates it and runs its migrations. The store makes its budget row only after the Directory confirms the budget exists (12.3). An interrupted sign-up leaves an empty budget that works.
 
-If the user insert changed no row, the response is 403 "Sign-up is full right now." Then the session is made as today (`newSession`, with the challenge id under its unique index, so a replay fails). Then the Worker calls the new store's `health()`, which creates it and runs its migrations. A new store fills its first-run rows on its first request, as in `docs/multi-user.md` 6.4; an interrupted sign-up leaves an empty budget that works.
+A sign-up grant can't make an admin: `is_admin` is a constant 0 in the statement. The owner's setup with `SETUP_CODE` stays, with one fix (3.4).
 
-The owner's first-user setup with `SETUP_CODE` stays as it is. A sign-up grant can never make an admin.
+### 3.3 Used challenges
 
-### 3.3 Abuse
+Today a finished ceremony is single use because its challenge id sits on a session (`auth_session.challenge_id`). A fresh passkey check overwrites that column (`apps/worker/src/routes/auth.ts:391`), so an older challenge looks unused again for the rest of its five minutes. `used_challenge (id PRIMARY KEY, used_at)` replaces that test for every ceremony. `auth_prune` deletes rows older than a day. This also closes the gap for the owner's own ceremonies.
 
-- Turnstile stops scripted sign-ups. The per-IP rate limit and `SIGNUPS_PER_DAY` cap what gets through.
-- A new account can do nothing costly: no bank links (`NEW_USER_LINKS = 0`), and a daily share of the free plan (section 7).
-- An admin can turn an account off (section 9).
+### 3.4 The owner's setup and recovery, with other users
 
-### 3.4 Recovery codes
+`passkeyCount()` counts every user's passkeys (`apps/worker/src/routes/auth.ts:55`), and setup works only at 0. The runbook's recovery (`docs/runbooks/setup.md`, Recovery) runs `DELETE FROM passkey; DELETE FROM auth_session;`, which would sign everyone out and delete their passkeys.
 
-Invites came with a reset link the owner sent by hand. That doesn't work for strangers, and email needs a domain. So each non-admin user gets a recovery code. Passkeys synced by iCloud Keychain or Google Password Manager make losing every passkey rare; the code covers the rest.
+- The setup grant checks "no admin has a passkey" instead of "no passkey exists". With one user this is the same test.
+- If no user exists, setup makes the first user (as today). If an admin exists with no passkey, setup adds the passkey to that admin.
+- The runbook's SQL is limited to the admin: `DELETE FROM passkey WHERE user_id = (SELECT id FROM user WHERE is_admin = 1 ORDER BY created_at LIMIT 1)`, and the same for `auth_session`.
 
-- The code: 20 random bytes as 32 base32 characters in groups of 4. Only its SHA-256 is stored (`recovery_code.code_hash`); the code has 160 bits, so a slow hash adds nothing.
-- Shown once, at sign-up, with Copy. Settings → Sign-in → **New recovery code** (recent passkey check) replaces it and shows the new one once.
-- **Use:** Sign-in → **Use a recovery code** → code + Turnstile → `POST /api/auth/recover/options`. A match gives the grant `{ kind: 'recovery', ref: userId }` in the challenge cookie, and nothing is written yet. `register/verify` with that grant runs one batch: delete the code row (`WHERE code_hash = ?` and `changes = 1`, so a code works once), delete the user's passkeys, sessions and device links, revoke their devices (clear `share`, set `revoked_at`, so saved copies are deleted, D-52), insert the new passkey and a new recovery code. Then a session and the new-code screen.
-- Not for admins. The owner keeps D-27's device link and the runbook.
-- A turned-off account can't recover (the user row must be `active`).
-- Wrong codes go through the same rate limit as sign-in.
+### 3.5 Abuse
 
-## 4. Each user's own passkey handle
+- Turnstile stops scripted sign-ups. The rate limit and `SIGNUPS_PER_DAY` cap what gets through.
+- A new account can do little that costs: no bank links (`NEW_USER_LINKS = 0`) and a share of a pool (8).
+- An admin can turn an account off (10).
 
-Today a passkey made with no stored handle falls back to `ledgerline-owner` (`apps/worker/src/routes/auth.ts:204`). That fallback stays only for the setup grant. Every other grant uses the user's own handle (made on first use, as today). Sign-in already checks that the passkey's `userHandle` matches its user.
+## 4. Recovery codes
+
+Invites came with a reset link the owner sent by hand. That doesn't work for strangers, and email needs a domain. Synced passkeys (iCloud Keychain, Google Password Manager) make losing every passkey rare. A recovery code covers the rest.
+
+- **The code:** 20 random bytes, 32 base32 characters in groups of 4. Only its SHA-256 is stored (`recovery_code.code_hash`, already in migration 0003). With 160 bits, a slow hash adds nothing.
+- **Shown once**, at sign-up, with Copy. Settings → Sign-in → **New recovery code** (recent passkey check) replaces it and shows the new one once.
+- **Use:** Sign-in → **Use a recovery code** → code and Turnstile → `POST /api/auth/recover/options` (Worker checks Turnstile, then the Directory). A match puts `{ kind: 'recovery', ref: code_hash }` in the challenge cookie. Nothing is written yet.
+- `register/verify` with that grant runs one batch: `used_challenge`; the new passkey, `INSERT … SELECT user_id FROM recovery_code r JOIN user u … WHERE r.code_hash = ? AND u.status = 'active' AND u.is_admin = 0`; a fence that throws unless that insert made one row; delete that code row; a new code row; a `recovery_notice` row (`user_id`, `used_at`). Then a session and the new-code screen. A code rotated after the grant was issued no longer matches, so the grant fails.
+- **Recovery adds a passkey. It removes nothing.** A leaked code must not silently lock the real user out. The old passkeys, sessions and devices stay.
+- **The notice:** for 14 days after a recovery, every sign-in of that user shows "Your recovery code was used on {date}. If this wasn't you, remove the passkeys you don't know." with a link to Settings → Sign-in, where passkeys can already be removed (recent check). Removing a passkey there signs out its sessions. **This is it** dismisses the notice.
+- **Not for admins.** The owner keeps D-27's device link and the runbook.
+- A turned-off account can't recover.
+- Wrong codes count against the same rate limit as sign-in.
+- `docs/threat-model.md` gains rows for sign-up, recovery codes and other users.
 
 ## 5. Bank links, account-wide
 
-**Problem today:** `link-token` counts connections in the asking budget (`ITEM_LIMIT = 10` in `apps/worker/src/routes/settings/connections.ts`). With two users, each could link 10, and the Plaid account would pass its 10 for life.
+**Problem today:** `link-token` counts connections in the asking budget only (`ITEM_LIMIT = 10`, `apps/worker/src/routes/settings/connections.ts`). Two users could link 10 each.
 
-**Change:** the Directory owns the count, in `plaid_link_slot` (already in migration 0003, unused).
+**The count lives in the Directory**, in `plaid_link_slot` (migration 0003, unused so far), with a unique index on `connection_id` (migration 0008). Each connection row a store has ever made, removed ones included, is one `used` slot.
 
-- Directory migration 0008 backfills one `used` slot for every row in `connection_route`, so the owner's links are counted. The owner's `link_allowance` is already 10.
-- `PLAID_LINKS_USED_BEFORE` (default `0`): links Plaid counts that no route records (for example a bank removed before routes existed). Before merging 0008, the count is checked against Plaid's dashboard (7 used on Nov 2); if the routes show fewer, this variable makes up the difference.
-- Links used, account-wide = `PLAID_LINKS_USED_BEFORE` + slots that are `used` + slots that are `reserved` and not expired.
+**Links used** = `PLAID_LINKS_UNTRACKED` + slots `used` + slots `reserved` (expired or not, until settled; see step 6).
 
-**Flow** (`docs/multi-user.md` 6.4):
+**`useSlot(userId, budgetId, connectionId)`** is an upsert on `connection_id`: it marks this user's oldest `reserved` slot as used for this connection, or inserts a `used` slot. It never refuses and is idempotent. A second call for the same connection changes nothing.
 
-1. `link-token` (new mode) calls `Directory.reserveSlot(userId, budgetId)`. In one transaction it checks the account-wide count against `PLAID_LINK_CAP` and the user's own used and reserved slots against their `link_allowance`, then inserts a `reserved` slot that expires with the link token (4 hours). It returns the slot id, or why not ("All bank links are used" / "Bank links aren't available on your account. Import a CSV file instead.").
-2. The store asks Plaid for the link token and stores `slot_id` with it (hashed link token → slot id, in the Directory slot row: `link_token_hash`).
-3. The app gets `{ linkToken, slotId }` and sends `slotId` back with `exchange`.
-4. `exchange` **always** saves the Item first, as today: once Link finishes, Plaid has counted it. Then it queues `register_link` with the slot id.
-5. `register_link` (already a store job) calls `registerRoute` and then `Directory.useSlot(slotId, userId, budgetId, connectionId)`. `useSlot` never refuses: it marks the slot `used`, or, if the slot is missing, expired or someone else's, inserts a new `used` slot for this user. A link is never lost and never left uncounted.
-6. Closing Link without finishing calls `releaseSlot(slotId)`. A slot not released expires on its own.
-7. Repair (update mode) never reserves a slot, as today.
+**Flow:**
+
+1. **Before** asking for a new link token, the store calls `useSlot` for every connection row it holds, removed ones included (at most a few). So the Directory's count for this budget is always current at the moment it matters.
+2. `Directory.reserveSlot(userId, budgetId)`, in one transaction: refuse if `PLAID_LINKS_UNTRACKED` is missing while a cap is set; refuse if links used ≥ `PLAID_LINK_CAP`; refuse if this user's used and reserved slots ≥ their `link_allowance`; else insert a `reserved` slot with a 4-hour expiry. Refusals say "All bank links are used." or "Bank links aren't available on your account. Import a CSV file instead."
+3. The store asks Plaid for the link token. If that fails, it calls `releaseSlot` (no Link opened, so no Item).
+4. `exchange` **always** saves the Item first, as today: once Link finishes, Plaid has counted it. It then calls `useSlot` (and queues `register_link`, which calls it again; both are harmless).
+5. Closing Link with Plaid's `onExit` and no public token calls `releaseSlot`, which frees only a `reserved` slot of this user younger than 4 hours. An OAuth redirect that reloads the page doesn't fire `onExit`, so its slot stays reserved.
+6. **Expired reservations stay counted** while a cap is set: a Link that finished but never reached `exchange` (a lost network, a closed page) still used a Trial link. The next `link-token` for that user settles them: `useSlot` from step 1 claims a reservation for any connection that did arrive; what is left stays `reserved` and counted. The runbook says how an admin frees one after checking Plaid's dashboard.
+7. Repair (update mode) never reserves a slot.
 8. Slots are never deleted, so removed banks still count, as Plaid counts them.
+9. `ensureJobs` (daily) also calls `useSlot` for every connection row, so other budgets' counts catch up within a day. With `NEW_USER_LINKS = 0` they hold none anyway.
 
-The confirm step on Plaid Production (`confirmSlot`) stays. The Bank connections screen shows "used of allowance" from the Directory.
+**No backfill in the migration.** Step 1 and the daily check fill the table from the stores themselves, every time, so a code rollback can't leave a gap.
 
-The per-budget `ITEM_LIMIT` check stays as a second guard for the owner.
+**`PLAID_LINKS_UNTRACKED`:** the owner's store holds connection rows for the banks linked since the move, removed ones included. Before the PR that adds slots is merged, its value is worked out from Plaid's dashboard (links used) minus the owner's connection rows, and set in `wrangler.jsonc`. If the two match, it is `0`, set explicitly.
 
-## 6. The breaker's limits become settings
+The confirm step on Plaid Production (`confirmSlot`) stays. The per-budget `ITEM_LIMIT` check stays as a second guard. Bank connections shows links used of the user's allowance and of the account cap, from the Directory.
 
-`sync/breaker.ts` has the free plan's daily limits as constants. Each becomes a Worker variable with today's value as its default: `LIMIT_ROWS_WRITTEN` (100,000), `LIMIT_ROWS_READ` (5,000,000), `LIMIT_DO_REQUESTS` (100,000), `LIMIT_DO_GBS` (13,000), `LIMIT_WORKER_REQUESTS` (100,000). The 70% / 90% / 95% rules (D-40) don't change. On a paid plan the owner sets these to the plan's limits in the same PR that upgrades.
+## 6. Each user's own passkey handle
 
-Invalid or missing values fall back to the defaults.
+Already built: non-setup grants make and store a per-user handle (`apps/worker/src/routes/auth.ts:187`), and the owner's row holds `ledgerline-owner`. One gap: sign-in skips the `userHandle` check when the response has none (`apps/worker/src/routes/auth.ts:357`). Every Ledgerline passkey is discoverable, so the response always has one. The check becomes required.
 
-## 7. Each user's share of the free plan
+## 7. The breaker's limits become settings
 
-The breaker is account-wide, so one busy user could pause everyone, the owner included. `docs/multi-user.md` 9.2 cut per-user shares "until there are many users". They are built now, active only while more than one user is active.
+`sync/breaker.ts` has the free plan's daily limits as constants. Each becomes a Worker variable with today's value as its default: `LIMIT_ROWS_WRITTEN` (100,000), `LIMIT_ROWS_READ` (5,000,000), `LIMIT_DO_REQUESTS` (100,000), `LIMIT_DO_GBS` (13,000), `LIMIT_WORKER_REQUESTS` (100,000). A missing or invalid value uses the default. The 70%, 90% and 95% rules (D-40) don't change. On a paid plan, the PR that upgrades sets the plan's limits.
 
-- Each store already counts its own rows read and written and sends them to the Directory (`NOTE_USAGE`). It also counts its own Durable Object requests (each `api` call and each alarm). `noteUsage` gains the budget id and adds to `budget_usage_day` (already in migration 0003) as well as `usage_day`.
-- A budget's share, per UTC day: `USER_DAILY_WRITES` (default 10,000), `USER_DAILY_DO_REQUESTS` (default 3,000). A user past a share gets the D-40 states for their own budget only: background work waits until 00:00 UTC; past 1.5 × the share, changes are refused with "Paused until tomorrow. Nothing is lost."
-- Admins have no share. The account-wide breaker still covers everyone.
-- The Directory checks the share in `authenticate` (it already reads the breaker state there), from a per-budget cache refreshed at most once a minute.
-- A new bank's first sync writes about 20,000 rows (`docs/multi-user.md` 9.3). It runs as background work, so it waits a day at a time past the share rather than failing. With `NEW_USER_LINKS = 0` no new user can link a bank on Trial anyway.
+## 8. Sharing the free plan
 
-## 8. Scale
+The breaker is account-wide, so busy users could pause everyone, the owner included. These rules apply only while more than one user is active.
 
-What already scales: one SQLite database per budget, the phone does the budget math (D-45, D-46), incremental sync, and the daily `ensure_all` walks budgets 25 at a time.
+- **A pool.** Users who aren't admins may use together at most `OTHER_USERS_SHARE` (default half) of each daily limit. Admins aren't limited by the pool; the account-wide breaker still covers everyone.
+- **A share each.** The pool is split evenly among users active in the last 7 days. One user's share = pool ÷ active users.
+- **Past the share,** that user's budget gets the D-40 states on its own: background work waits until 00:00 UTC; past 1.5 × the share, changes are refused with "Paused until tomorrow. Nothing is lost." Past the pool, all non-admin budgets wait.
+- **Counting.** Phase 0 found `durableObjectsPeriodicGroups` (rows) and `durableObjectsInvocationsAdaptiveGroups` (requests, CPU). The first build step checks whether they group by object id. If they do, `usage_refresh` reads each budget's rows and requests from them, with no new calls. If not, each store adds up its own `rowsWritten`, `rowsRead` and requests from the adapter's cursor and sends one `noteUsage(budgetId, …)` a minute at most. `budget_usage_day` (migration 0003) holds the numbers. The Directory's own requests are counted to the user who made them in `authenticate`.
+- **Checked** in `authenticate`, which already reads the breaker state, from a per-budget cache refreshed at most once a minute.
+- A new bank's first sync writes about 20,000 rows. It runs as background work, so past the share it waits a day at a time instead of failing. With `NEW_USER_LINKS = 0`, no one else can link on Trial.
 
-The single Directory is the shared point. Today every API request calls `Directory.authenticate`, which reads the session, the membership and the sync epoch.
+**Capacity on Free stays as `docs/multi-user.md` 9.3 says: about 10 to 15 active users,** set by rows written. Thousands need a paid plan (13).
 
-- **Session cache, built, off by default.** `SESSION_CACHE_S` (default `0`). When set, the Worker keeps a GET request's authentication answer in the isolate for that many seconds (`docs/multi-user.md` 5.1). Writes and routes that need a recent passkey always ask the Directory. The cache key is the session token's hash. On sign-out the app clears its own entry in that isolate. `threat-model.md` records the read window. At `0` nothing changes.
-- **`last_seen_at`** is written at most once an hour per user, in `authenticate`.
-- **Not built:** splitting sessions out of the Directory (`docs/multi-user.md` 5.2). The Directory's request count is in GraphQL Analytics already; section 12 lists it.
-- **Free plan storage** is 5 GB for the account. At about 9 MB a year per active budget, that is a few hundred users. Section 12 lists it.
+## 9. Idle budgets
 
-## 9. Admin: Settings → Users
+Each store runs three recurring alarms a day, and `ensure_all` calls every budget daily. Abandoned accounts would cost Durable Object requests forever.
 
-For admins, shown only while `SIGNUPS` is `open` or more than one user exists:
+- A store whose user hasn't signed in for 30 days and that has no connections stops its recurring jobs. `ensure_all` skips budgets whose user hasn't been seen for 30 days (from `user.last_seen_at`). The next request re-arms the jobs (`ensureRecurring` already runs on first use).
+- `user.last_seen_at` is written at most once an hour per user, in `authenticate`.
+- Nothing is deleted for being idle (rule 6). Whether to expire unused accounts is listed in 13.
 
-- Counts: users of `MAX_USERS`, sign-ups today of `SIGNUPS_PER_DAY`, bank links used of `PLAID_LINK_CAP`.
-- A list, 50 at a time, newest first, with search by name: name, joined, last seen, links used of allowance, status.
-- Per user: **Turn off** / **Turn on** (off deletes their sessions and pauses their bank syncs, `docs/multi-user.md` 7.1) and **Bank links** (set the allowance, 0 to 10, never below links already used).
-- No reset link (recovery codes replace it) and no deleting other people's accounts (users delete their own, section 11). Admin actions need a recent passkey check and go into the Directory's audit rows.
+## 10. Admin: Settings → Users
 
-## 10. Keeping users apart
+For admins, shown only while more than one user exists or `SIGNUPS` is `open`:
 
-- An integration test signs up users A and B through the real sign-up route, gives both data, then calls **every route** in the API as A with B's ids in the path, the query and the body. The route list comes from the Hono apps themselves, so a new route can't be left out. Every answer must be 404 or 403, or A's own data.
-- The same test checks the webhook: an Item routed to B starts a sync only in B's store.
-- `wipe` and `dumpChunk` refuse without a matching Directory record (`docs/multi-user.md` 10).
+- Counts: users of `MAX_USERS`, sign-ups today of `SIGNUPS_PER_DAY`, bank links used of `PLAID_LINK_CAP`, the pool used today.
+- A list, 50 a page, newest first, filter by status: name, joined, last seen, links used of allowance, status.
+- Per user: **Turn off** / **Turn on** (off deletes their sessions and pauses their bank syncs, `docs/multi-user.md` 7.1), **Bank links** (allowance 0 to 10, never below links used).
+- A deletion stuck on Plaid (12) shows here with **Try again**.
+- Admin actions need a recent passkey check and write one log line each (`admin_action`, Workers Logs). No search and no audit table.
 
-## 11. Deleting an account
+## 11. Keeping users apart
 
-`docs/multi-user.md` 10, built as written:
+- An integration test signs up users A and B through the real sign-up route, gives both data, then calls **every route** as A with B's ids in the path, the query and the body. The list of routes is read from the Hono apps, so a new route can't be missed. Every answer must be 403, 404 or A's own data.
+- The same test checks every `BudgetStore` and `Directory` RPC method the Worker can reach: the store is still picked only from the session.
+- The webhook: an Item routed to B starts a sync only in B's store.
+- `wipe` (12) refuses unless the Directory holds a `deleting` record for that budget.
+
+## 12. Deleting an account
+
+`docs/multi-user.md` 10, with a safer order. `wipe` doesn't exist yet and is built here.
 
 1. Settings → Sign-in → **Delete account**: a recent passkey check and typing the budget name. The screen offers the full backup first and says the data will be gone.
-2. One Directory batch: `status = 'deleting'`, delete the user's sessions, devices and device links. A `delete_account` Directory job takes over.
-3. Job steps, each idempotent and retried: the store removes each Plaid Item at Plaid (its slot stays used); the store wipes itself (`ctx.storage.deleteAll()` and its alarm); the Directory deletes the user's passkeys, recovery code, membership, budget and routes. `plaid_link_slot` rows stay.
-4. The last admin can't be deleted.
+2. One Directory batch: `status = 'deleting'`; delete the user's sessions, devices and device links; delete the budget's routes in `connection_route` and its membership. From here, no request or webhook reaches the store.
+3. A `delete_account` Directory job, each step idempotent and retried:
+   1. The store removes each Plaid Item at Plaid. "Item not found" counts as done. After 6 failed tries the job stops, keeps the store as it is (the access tokens stay, so it can try again), and shows the account in Settings → Users with **Try again**. The slots stay used.
+   2. The store wipes itself: `ctx.storage.deleteAll()` and its alarm.
+   3. The Directory deletes the user's passkeys, recovery code, notices, the budget row and then the user row, so the account no longer counts toward `MAX_USERS`. `plaid_link_slot` rows stay (no foreign key).
+4. **The store makes its budget row only when the Directory confirms the budget** (`budgetExists(budgetId)`, checked once, when its database is empty). A late call after a wipe can't bring the budget back to life.
+5. The last admin can't be deleted.
 
-After a wipe, Cloudflare's point-in-time recovery can't bring the data back. That is the point.
+After a wipe, point-in-time recovery can't bring the data back. That is the point.
 
-## 12. Before turning sign-up on (not now)
+## 13. Before turning sign-up on (not now)
 
-Turning on is a PR that sets `SIGNUPS` to `open`. Before it, the owner decides each of these. **None of them is done or changed by this work.**
+Turning on is a PR that sets `SIGNUPS` to `open`. Before it, the owner decides each of these. **This work does none of them.**
 
 - **Plaid:** whether Trial terms allow other people's banks; Plaid Production and its costs; `NEW_USER_LINKS` and `PLAID_LINK_CAP`.
-- **Cloudflare plan:** Free or Paid; the `LIMIT_*` values; `MAX_USERS`, `SIGNUPS_PER_DAY` and the per-user shares for that plan. On Free, storage (5 GB) and rows written limit it to a few hundred users at most.
-- **Turnstile:** make the widget in the Cloudflare dashboard (free, no card); add `TURNSTILE_SECRET` to the GitHub `production` environment; set `TURNSTILE_SITE_KEY`. The same PR adds `https://challenges.cloudflare.com` to `script-src` and `frame-src` in `apps/web/public/_headers`. The live CSP doesn't change before then.
-- **Decisions to look at again:** no off-site backups (D-29), no monitor (D-49), no staging (D-36), the 10 ms rule on a paid plan, `SESSION_CACHE_S`, splitting sessions out of the Directory.
-- **Not code:** terms of service and a privacy policy, a support contact, billing if users pay.
+- **Cloudflare plan:** Free (about 10–15 active users) or Paid; the `LIMIT_*` values; `MAX_USERS`, `SIGNUPS_PER_DAY`, `OTHER_USERS_SHARE`.
+- **Turnstile:** make the widget in the Cloudflare dashboard (free, no card), add `TURNSTILE_SECRET` to the GitHub `production` environment, set `TURNSTILE_SITE_KEY`. The same PR adds `https://challenges.cloudflare.com` to `script-src` and `frame-src` in `apps/web/public/_headers` and updates `apps/web/test/headers.test.ts`. The live CSP doesn't change before then.
+- **Decisions to look at again:** no off-site backups (D-29), no monitor (D-49), no staging (D-36), the 10 ms rule on a paid plan, a session cache and splitting sessions out of the Directory (`docs/multi-user.md` 5.1, 5.2), expiring unused accounts.
+- **Not code:** terms of service, a privacy policy, a support contact, billing if users pay.
 
-## 13. What it changes in the database
+## 14. What reaches the owner while the switch is off
 
-- **Directory migration 0008** (forward-only, owner approval before merge): an index `user_created ON user (created_at)` for the daily count; the slot backfill from `connection_route` (5); a `budget_id`-keyed `requests` column on `budget_usage_day` for section 7; an `admin_audit` table (`id`, `admin_id`, `user_id`, `action`, `before`, `after`, `created_at`).
+| Change                                                  | Why it's safe                                                                                     |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `used_challenge` replaces the session column test (3.3) | Same rule, stricter. Covered by the sign-in tests.                                                |
+| Setup checks "no admin passkey" (3.4)                   | Same result with one user.                                                                        |
+| `userHandle` required at sign-in (6)                    | The owner's passkeys are discoverable and send it. A test signs in with the owner's handle first. |
+| Linking a bank calls `useSlot` and `reserveSlot` (5)    | With the owner's allowance of 10 and the cap of 10, the result is the same as today.              |
+| Breaker limits read from settings (7)                   | Defaults are today's numbers.                                                                     |
+| Per-budget usage counting (8)                           | Only counting; the pool and shares apply with more than one active user.                          |
+| `last_seen_at` once an hour (9)                         | One row written an hour while the app is used.                                                    |
+| `signupOpen: false` in `/api/auth/status`               | The app ignores it while false.                                                                   |
+
+## 15. Review
+
+The v1 draft was reviewed adversarially on Nov 9, 2026. Fixes taken into v2:
+
+- The daily `register_link` would have added a slot per bank per day and locked the owner out on day one: slots are now an upsert on `connection_id`.
+- Links could be undercounted (a lost `exchange`, removed banks missing from routes, a migration backfill and a rollback): slots now come from the stores' own connection rows, expired reservations stay counted, and the untracked count has no default.
+- Recovery grants could be replayed, and `changes = 1` can't stop a batch: the code hash is in the grant, a fence throws, and used challenges have their own table.
+- A leaked recovery code would have been a silent takeover: recovery now adds a passkey, removes nothing, and shows a notice.
+- The owner's runbook recovery would have deleted every user's passkeys: it is limited to the admin.
+- Sign-up bypassed the breaker: it now needs the `normal` state.
+- The claims about usage counting and capacity were wrong: corrected, and shares come from a pool.
+- Idle and deleted budgets kept costing requests, and a late call could recreate a wiped store: idle stores stop their jobs, routes go before the wipe, and stores need the Directory's confirmation.
+- Smaller: the switch and Turnstile run in the Worker; the secret plumbing is listed; the session cache is cut; the passkey handle was already built; `PLAID_LINK_CAP = 0` no longer means no cap; the user row is deleted at the end; the audit table and search are cut.
+
+## 16. Database changes
+
+- **Directory migration 0008** (forward-only; the owner approves before merge; the number is checked against `main` first): `used_challenge`; `fence` (`ok INTEGER CHECK (ok = 1)`); `recovery_notice`; a unique index on `plaid_link_slot (connection_id)` where it isn't null; an index on `user (created_at)`; a `requests` column on `budget_usage_day`. No rows are copied or changed.
 - **No budget migration.**
 
-## 14. Build order
+## 17. Build order
 
-Each step is its own PR, with `pnpm check` and CI green. With the switch off and one user, each one changes nothing the owner sees, except where noted.
+Each step is one PR, with `pnpm check` and every CI job green. Section 14 says what each one changes for the owner.
 
 1. This doc, D-74 and the doc updates.
-2. Each user's own passkey handle (4) and the isolation test (10).
-3. Breaker limits as settings (6).
-4. Account-wide bank-link slots (5), with Directory migration 0008. The owner's link flow gains the slot step; with allowance 10 and cap 10 the result is the same. Owner approval before merge.
-5. Per-user shares (7).
-6. Sign-up and recovery codes behind the switch (2, 3), with e2e tests that turn the switch on in the test Worker only.
-7. Account deletion (11) and Settings → Users (9).
-8. The session cache, off (8).
+2. Directory migration 0008, used challenges (3.3), the setup and runbook fix (3.4), `userHandle` required (6), breaker limits as settings (7). Owner approval before merge (migration).
+3. Account-wide bank-link slots (5). Needs `PLAID_LINKS_UNTRACKED` from Plaid's dashboard first.
+4. Usage per budget, the pool and shares (8), idle budgets (9).
+5. Sign-up and recovery codes behind the switch (2, 3, 4), with e2e tests that open the switch in the test Worker only, Turnstile's test keys and a mocked `siteverify`.
+6. The isolation test (11).
+7. Account deletion (12) and Settings → Users (10).
