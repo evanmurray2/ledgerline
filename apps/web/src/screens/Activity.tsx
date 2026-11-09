@@ -310,9 +310,13 @@ export function ActivityScreen() {
   // A filter with nothing in it is hidden, unless it's the one showing; with neither, the chip row goes too.
   const showAttentionChip = attentionCount > 0 || filter === 'attention';
   const showPendingChip = !past && (notPostedCount > 0 || filter === 'pending');
-  const showNeeds =
-    filter !== 'pending' &&
-    needs.filter((r) => !q || r.payee.toLowerCase().includes(q.toLowerCase())).length > 0;
+  // The server matched its rows to the search (payee, amount or category); rows kept here after you categorized
+  // them are matched by payee.
+  const liveNeeds = new Set((v?.needsCategory ?? []).map((r) => r.key));
+  const shownNeeds = needs.filter(
+    (r) => !q || liveNeeds.has(r.key) || r.payee.toLowerCase().includes(q.toLowerCase()),
+  );
+  const showNeeds = filter !== 'pending' && shownNeeds.length > 0;
   const empty = v && total === 0 && !showNeeds && !(filter === 'attention' && !q);
 
   // The sheet keeps the list's month, filter and search, so the list under it doesn't change.
@@ -458,9 +462,8 @@ export function ActivityScreen() {
         {v && v.samePurchase.length > 0 && <SamePurchase cards={v.samePurchase} />}
         {v && showNeeds && (
           <NeedsCategory
-            needs={needs}
+            needs={shownNeeds}
             openNeeds={openNeeds}
-            q={q}
             chosen={chosen}
             selecting={selecting}
             setSelecting={setSelecting}

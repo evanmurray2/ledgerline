@@ -51,6 +51,18 @@ test('Search: an amount typed with a dollar sign or a comma finds posted and wai
   }
 });
 
+test('Search: under Needs attention, an amount or a category finds rows that need a category', async ({
+  page,
+}) => {
+  await page.goto('/activity?filter=attention');
+  await expect(page.getByText('Spotify')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Choose category for CVS Pharmacy/ })).toBeVisible();
+  await search(page, '38.10');
+  await expect(page.getByRole('button', { name: /Choose category for CVS Pharmacy/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ })).toBeVisible();
+  await expect(page.getByText('No transactions match.')).toHaveCount(0);
+});
+
 test('Search: _ and % are plain letters, not wildcards', async ({ page }) => {
   await page.goto('/activity');
   await expect(page.getByText('Uniqlo').first()).toBeVisible();
