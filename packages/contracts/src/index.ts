@@ -325,6 +325,8 @@ export const TxnSheet = z.object({
   rawName: z.string(),
   accountId: id,
   accountName: z.string(),
+  /** A paired transfer: the account on the other side. */
+  otherAccountName: z.string().nullable().optional(),
   date,
   postedDate: date.nullable(),
   amount: cents,

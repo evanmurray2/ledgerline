@@ -373,7 +373,11 @@ export function AddTxnScreen() {
           <Segmented
             label="Direction"
             value={dir}
-            onChange={setDir}
+            onChange={(d) => {
+              setDir(d);
+              // Only money in can go to Ready to Assign: going back to Out asks for a category again.
+              if (d === 'out' && categoryId === 'rta') setCategoryId('');
+            }}
             options={[
               ['out', 'Out'],
               ['in', 'In'],
@@ -385,6 +389,7 @@ export function AddTxnScreen() {
         <input
           className={inputClass}
           placeholder="e.g. Check #1044"
+          maxLength={120}
           value={payee}
           onChange={(e) => setPayee(e.target.value)}
         />

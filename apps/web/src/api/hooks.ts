@@ -7,7 +7,7 @@ import { usage } from '../usage/tracker';
 import { ApiError } from './client';
 import { connectivity, useConnectivity } from '../state/connectivity';
 import { useEffect } from 'react';
-import { setBudgetTimeZone } from '../lib/dates';
+import { setBudgetTimeZone, setBudgetYear } from '../lib/dates';
 
 export const qk = {
   session: ['session'] as const,
@@ -58,6 +58,8 @@ export function useSession() {
   // Set during render, before any screen formats a clock time with it.
   const zone = (q.data ?? savedQ.data)?.budget.timeZone;
   if (zone) setBudgetTimeZone(zone);
+  const today = (q.data ?? savedQ.data)?.budget.today;
+  if (today) setBudgetYear(today);
   if (q.data) return q;
   const unreachable =
     (q.error instanceof ApiError && q.error.network) ||

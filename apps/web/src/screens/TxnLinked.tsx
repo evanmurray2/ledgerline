@@ -17,7 +17,14 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
   const match = useMoneyMutation(api.doMatch);
   /** After Unlink: who is owed again ('' when the label has no name). */
   const [unlinked, setUnlinked] = useState<string | null>(null);
-  const pb = t.paybacks[0];
+  // As the sheet opened: Unlink empties t.paybacks, and Undo puts these back.
+  const [paybacks] = useState(t.paybacks);
+  const moneyIn = t.amount > 0;
+  const pb = paybacks[0];
+  /** Unlink undoes every payback of one money in: this one, or (on a purchase) the one that paid it. */
+  const inflowKey = moneyIn ? t.key : pb?.inflowKey;
+  const undone = paybacks.filter((p) => p.inflowKey === inflowKey);
+  const total = undone.reduce((a, p) => a + p.amount, 0);
   return (
     <Sheet
       label={`${t.payee} paid back`}
@@ -26,10 +33,10 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
       gap="auto"
       header={
         <SheetTitle
-          tag={unlinked !== null ? 'Waiting to match' : 'Paid back'}
+          tag={unlinked !== null ? (moneyIn ? 'Waiting to match' : 'Owed to you') : 'Paid back'}
           tagClass={unlinked !== null ? 'text-funded-fg' : 'text-owed-fg'}
           amount={formatCents(t.amount, { plus: true })}
-          amountClass="text-funded-fg"
+          amountClass={moneyIn ? 'text-funded-fg' : undefined}
           sub={`${t.payee} · ${t.accountName} · ${dayLabel(t.date)}`}
         />
       }
@@ -39,51 +46,59 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
         </PrimaryButton>
       }
     >
-      {unlinked === null && pb ? (
+      {unlinked === null && pb && inflowKey ? (
         <div className="flex flex-col gap-2">
-          <Label>Pays back</Label>
-          <Link
-            to="/owed"
-            className="flex items-center justify-between gap-2 rounded-lg border border-line p-3 text-ink no-underline"
-          >
-            <span className="flex flex-col">
-              <span className="text-md font-semibold">{pb.label}</span>
-            </span>
-            <span className="tnum font-bold">{formatCents(pb.amount)}</span>
-          </Link>
+          <Label>{moneyIn ? 'Pays back' : 'Paid back by'}</Label>
+          {undone.map((p) => (
+            <Link
+              key={`${p.inflowKey}:${p.itemId}`}
+              to="/owed"
+              className="flex items-center justify-between gap-2 rounded-lg border border-line p-3 text-ink no-underline"
+            >
+              <span className="flex flex-col">
+                <span className="text-md font-semibold">{p.label}</span>
+              </span>
+              <span className="tnum font-bold">{formatCents(p.amount)}</span>
+            </Link>
+          ))}
           <SoftButton
             mutates
             tone="outline"
             track="txn.paid.unlink"
+            disabled={unlink.isPending}
             onClick={async () => {
-              await unlink.mutateAsync(pb.inflowKey);
+              await unlink.mutateAsync(inflowKey);
               usage.suggestion('payback', 'unlinked');
-              setUnlinked(pb.label.split(' · ')[0] ?? '');
+              setUnlinked(moneyIn && undone.length === 1 ? (pb.label.split(' · ')[0] ?? '') : '');
             }}
             className="self-start"
           >
             Unlink
           </SoftButton>
-          <p className="m-0 text-sm leading-snug text-muted">
-            It went to Ready to Assign and paid back {formatCents(pb.amount)}.
-          </p>
+          {moneyIn && (
+            <p className="m-0 text-sm leading-snug text-muted">
+              It went to Ready to Assign and paid back {formatCents(total)}.
+            </p>
+          )}
         </div>
       ) : unlinked !== null ? (
         <div className="flex flex-col gap-2">
           <Banner tone="success" title="Unlinked">
-            {unlinked ? `${unlinked} is owed again. ` : ''}This {formatCents(t.amount)} is back in Waiting to
-            match.
+            {moneyIn
+              ? `${unlinked ? `${unlinked} is owed again. ` : ''}This ${formatCents(t.amount)} is back in Waiting to match.`
+              : `${formatCents(total)} is owed to you again.`}
           </Banner>
           <div className="flex gap-2">
-            {pb && (
+            {inflowKey && undone.length > 0 && (
               <SoftButton
                 mutates
                 tone="outline"
                 track="txn.paid.undo"
+                disabled={match.isPending}
                 onClick={async () => {
                   await match.mutateAsync({
-                    inflowKey: pb.inflowKey,
-                    items: [{ itemId: pb.itemId, amount: pb.amount }],
+                    inflowKey,
+                    items: undone.map((p) => ({ itemId: p.itemId, amount: p.amount })),
                     rest: 'income',
                   });
                   usage.undo('unlink');
@@ -93,9 +108,11 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
                 Undo
               </SoftButton>
             )}
-            <SoftLink to={`${parent}/match/${encodeURIComponent(t.key)}`} tone="filled">
-              Match to something else
-            </SoftLink>
+            {moneyIn && (
+              <SoftLink to={`${parent}/match/${encodeURIComponent(t.key)}`} tone="filled">
+                Match to something else
+              </SoftLink>
+            )}
           </div>
         </div>
       ) : null}
@@ -113,8 +130,12 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
 export function PairedTransfer({ t, close }: { t: TxnSheet; close: () => void }) {
   const unpair = useMoneyMutation(api.unpairTransfer);
   const [unpaired, setUnpaired] = useState(false);
-  const other = t.payee.includes('→') ? t.payee.split('→')[1]!.trim() : 'the other account';
+  const other = t.otherAccountName ?? 'the other account';
   const amt = Math.abs(t.amount);
+  // This row is the money leaving its account, or (on the other side) the deposit arriving in it.
+  const out = t.amount < 0;
+  const from = out ? t.accountName : other;
+  const to = out ? other : t.accountName;
 
   return (
     <Sheet
@@ -136,17 +157,17 @@ export function PairedTransfer({ t, close }: { t: TxnSheet; close: () => void })
             <div className="shrink-0 overflow-hidden rounded-lg border border-line">
               <div className="flex items-center justify-between gap-2 px-3 py-2.5">
                 <span className="flex flex-col">
-                  <span className="text-md font-semibold">From {t.accountName}</span>
-                  <span className="text-xs text-muted">{t.rawName}</span>
+                  <span className="text-md font-semibold">From {from}</span>
+                  {out && <span className="text-xs text-muted">{t.rawName}</span>}
                 </span>
                 <span className="tnum font-bold">{formatCents(-amt)}</span>
               </div>
               <div className="flex items-center justify-between gap-2 border-t border-divider px-3 py-2.5">
                 <span className="flex flex-col">
                   <span className="text-md font-semibold">
-                    To {other} · {dayLabel(t.date)}
+                    To {to} · {dayLabel(t.date)}
                   </span>
-                  <span className="text-xs text-muted">Deposit</span>
+                  <span className="text-xs text-muted">{out ? 'Deposit' : t.rawName}</span>
                 </span>
                 <span className="tnum font-bold text-funded-fg">{formatCents(amt, { plus: true })}</span>
               </div>
