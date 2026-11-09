@@ -458,7 +458,7 @@ export function AssignSheetScreen() {
             track={left < 0 ? 'assign.anyway' : 'assign.apply'}
             danger={left < 0}
             disabled={items.size === 0 || !canWrite}
-            why={items.size === 0 ? 'Pick a category to assign' : ''}
+            why={items.size === 0 ? (catId ? 'Enter an amount to assign' : 'Pick a category to assign') : ''}
             onClick={() => void apply()}
           >
             {items.size === 0
