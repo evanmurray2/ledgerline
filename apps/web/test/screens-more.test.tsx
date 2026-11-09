@@ -145,3 +145,50 @@ describe('Owed to you', () => {
     ).not.toBeNull();
   });
 });
+
+describe('Owed to you: Reopen (D-80)', () => {
+  it('lists an item closed out this month, and Reopen puts it back in Still owed', async () => {
+    const it0 = (await sql<{ id: string }>(
+      `SELECT id FROM expected_reimbursement WHERE txn_key = 'o-united'`,
+    ))!;
+    const r = await server.handle(
+      'POST',
+      `/api/owed/${it0.id}`,
+      { 'content-type': 'application/json', 'x-ledgerline': '1' },
+      { action: 'close' },
+    );
+    expect(r.status).toBe(200);
+    show('/owed');
+    await screen.findByText('Closed out', undefined, T);
+    fireEvent.click(screen.getByRole('button', { name: /^Reopen / }));
+    await screen.findByText(/^Reopened\./, undefined, T);
+    await waitFor(() => expect(screen.queryByText('Closed out')).toBeNull(), T);
+    expect(
+      (await sql<{ closed_at: number | null }>(
+        `SELECT closed_at FROM expected_reimbursement WHERE id = ?1`,
+        it0.id,
+      ))!.closed_at,
+    ).toBeNull();
+  });
+
+  it('Undo after Remove the mark puts the mark back', async () => {
+    const it0 = (await sql<{ id: string }>(
+      `SELECT id FROM expected_reimbursement WHERE txn_key = 'o-united'`,
+    ))!;
+    show(`/owed/close/${it0.id}`);
+    fireEvent.click(await screen.findByText('I marked it by mistake', undefined, T));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove the mark' }));
+    await screen.findByText(/^Removed\./, undefined, T);
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(
+      async () =>
+        expect(
+          (await sql<{ canceled_at: number | null }>(
+            `SELECT canceled_at FROM expected_reimbursement WHERE id = ?1`,
+            it0.id,
+          ))!.canceled_at,
+        ).toBeNull(),
+      T,
+    );
+  });
+});

@@ -471,13 +471,17 @@ export const OwedView = z.object({
       still: cents,
       expectBy: date.nullable(),
       status: z.enum(['open', 'late', 'paid_back', 'closed', 'canceled']),
+      /** Closed items: the month Close out counted in, and the amount it moved (Reopen, D-80). */
+      closedMonth: month.nullable().optional(),
+      closedAmount: cents.nullable().optional(),
     }),
   ),
   projected: z.array(z.object({ key: z.string(), date, owed: cents, shortfall: cents, label: z.string() })),
 });
 export type OwedView = z.infer<typeof OwedView>;
 export const OwedAction = z.object({
-  action: z.enum(['close', 'cancel', 'snooze']),
+  /** reopen: undoes Close out or Remove the mark (D-80). */
+  action: z.enum(['close', 'cancel', 'snooze', 'reopen']),
   expectBy: calendarDate.optional(),
 });
 
