@@ -37,7 +37,9 @@ export function TransferScreen() {
   const q = useTxn(key);
   const close = useClose();
   const accounts = useAccounts();
-  const pick = useMoneyMutation((v: { otherKey: string | null }) => api.pickTransfer(key, v));
+  const pick = useMoneyMutation((v: { otherKey: string | null; unlinked?: boolean }) =>
+    api.pickTransfer(key, v),
+  );
   const unpair = useMoneyMutation(api.unpairTransfer);
   const [result, setResult] = useState<string | null>(null);
   const t = q.data;
@@ -68,9 +70,10 @@ export function TransferScreen() {
   );
   const loadingCands = registers.some((r) => r.isLoading);
   const n = candidates.length;
+  const income = n === 0 ? '' : n === 1 ? ' The deposit counts as income.' : ' The deposits count as income.';
   const lines = (name: string | null) =>
     name === null
-      ? `Kept as spending. It needs a category.${n === 0 ? '' : n === 1 ? ' The deposit counts as income.' : ' The deposits count as income.'}`
+      ? `Kept as spending. It needs a category.${income}`
       : `Paired with ${name}. It needs no category.${n === 2 ? ' The other deposit counts as income.' : n > 2 ? ' The other deposits count as income.' : ''}`;
   return (
     <Sheet
@@ -142,6 +145,19 @@ export function TransferScreen() {
                   </span>
                 </Button>
               ))}
+              <Button
+                mutates
+                track="transfer.unlinked"
+                onClick={async () => {
+                  await pick.mutateAsync({ otherKey: null, unlinked: true });
+                  usage.suggestion('transfer_pick', 'unlinked');
+                  setResult(`Marked as a transfer out. It comes out of Ready to Assign.${income}`);
+                }}
+                className="flex min-h-14 w-full flex-col items-start justify-center rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"
+              >
+                <span className="text-base font-semibold">An account that isn’t linked</span>
+                <span className="text-xs text-muted">Like Venmo. It comes out of Ready to Assign.</span>
+              </Button>
               <Button
                 mutates
                 track="transfer.none"
