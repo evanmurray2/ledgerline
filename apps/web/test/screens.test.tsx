@@ -288,9 +288,11 @@ describe('States', () => {
     renderAt('/budget', 'readonly');
     const banner = await screen.findByTestId('readonly-banner', undefined, { timeout: 4000 });
     expect(banner.textContent).toContain('View only until 4:00 PM');
-    expect(
-      (await screen.findByText('Assign', undefined, { timeout: 4000 })).getAttribute('aria-disabled'),
-    ).toBe('true');
+    const assign = await screen.findByText('Assign', undefined, { timeout: 4000 });
+    expect(assign.getAttribute('aria-disabled')).toBe('true');
+    // Grayed out, but a tap says why.
+    fireEvent.click(assign);
+    expect(await screen.findByText('View only until 4:00 PM. Nothing is lost.')).toBeTruthy();
   });
 
   it('offline shows the last loaded data and disables fixes', async () => {
