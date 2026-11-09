@@ -1,6 +1,6 @@
 # Recovery
 
-There is no off-site backup (decisions.md D-29). Recovery uses Cloudflare's 30-day point-in-time recovery of each budget's Durable Object.
+There is no off-site backup (decisions.md D-29). Recovery uses Cloudflare's 30-day point-in-time recovery for each budget's Durable Object. Rewinding is on Settings → Import and export since D-77; it was a runbook step before (`docs/multi-user.md` 8.8).
 
 ## Undo recent damage (last 30 days)
 
@@ -17,6 +17,9 @@ Everything after that time is replaced. Bank transactions after it come back on 
 
 The route behind the screen is `POST /api/settings/restore` with `{ before, confirm }` or `{ undo: true, confirm }`; `GET /api/settings/restore/last` says when the last rewind ran.
 
-## Your own copy
+## Your own copies
 
-Settings → Import and export → **JSON export** downloads your budget (categories, assignments, transactions, rules, payees). Save it to Files or iCloud now and then: it is the only copy that survives losing the Cloudflare account or damage noticed after 7 days. Ledgerline can't yet re-import a JSON export into a new database; the file keeps your data readable until it can.
+Settings → Import and export has two downloads. Save them to Files or iCloud now and then: they are the only copies that survive losing the Cloudflare account or damage found after 30 days.
+
+- **Full backup** (`.ndjson`): every row of the budget, with a fingerprint of each table (`docs/multi-user.md` 8.7). The store can load one into an empty budget and prove nothing changed (`BudgetStore.restoreDump`, then `restoreVerify`; `apps/worker/test/backup.test.ts`), but **no route or tool reaches that yet** (`docs/build-plan.md`). Keep the file: it is the copy a future restore path will read. Bank tokens in it stay encrypted with the Worker's `TOKEN_KEYS`, so it restores only where those keys are the same.
+- **JSON export**: a readable copy of categories, assignments, transactions and payees. It can't be loaded back.

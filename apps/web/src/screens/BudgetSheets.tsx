@@ -350,11 +350,14 @@ function PinButton({ id, name, month }: { id: string; name: string; month: strin
       onClick={() => void toggle()}
       data-track={pinned ? 'category.unpin' : 'category.pin'}
       className={cx(
-        'flex h-11 w-11 items-center justify-center disabled:text-line-strong',
+        'flex h-11 items-center justify-center gap-1 px-2 text-sm font-semibold disabled:text-line-strong',
         pinned ? 'text-accent' : 'text-muted',
       )}
     >
-      <Icon name="pin" size={22} stroke={pinned ? 2.6 : 2} />
+      <Icon name="pin" size={20} stroke={pinned ? 2.6 : 2} />
+      {/* A word as well as the icon (a phone has no hover title). It stays "Pin" so it is part of the button's name;
+          the accent color and aria-pressed show that it's on. */}
+      Pin
     </button>
   );
 }

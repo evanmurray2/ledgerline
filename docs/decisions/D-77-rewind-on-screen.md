@@ -1,8 +1,10 @@
-# D-76: Rewind and undo on Settings → Import and export (Nov 9, 2026)
+# D-77: Rewind and undo on Settings → Import and export (Nov 9, 2026)
 
 **Decided by the owner** (chat, Nov 9, 2026): "fix everything", after an architecture review that listed a real
-restore path first. Changes the Recovery card on Settings → Import and export, whose note said rewinding was left off
-the screen "so a stolen sign-in can't wipe your data", and `docs/runbooks/restore.md`, which needed the browser console.
+restore path first. Changes `docs/multi-user.md` 8.8 ("Point-in-time restore is a runbook step, never an in-app button"), the Recovery
+card on Settings → Import and export, whose note said rewinding was left off the screen "so a stolen sign-in can't wipe
+your data", and `docs/runbooks/restore.md`, which needed a computer and the browser console. The full backup's restore
+stays a runbook step (owner, Nov 9, in another session).
 
 **Decision.**
 

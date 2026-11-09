@@ -410,11 +410,15 @@ export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
   syncing = (async () => {
     try {
       lastSync = Date.now();
-      const r = await syncAll(host!, async (since, cursor) => {
-        const p = await fetchPage(since, cursor);
-        set({ progress: state.progress + p.rows.length });
-        return p;
-      });
+      const r = await syncAll(
+        host!,
+        async (since, cursor) => {
+          const p = await fetchPage(since, cursor);
+          set({ progress: state.progress + p.rows.length });
+          return p;
+        },
+        () => set({ why: 'reset', progress: 0 }),
+      );
       if (state.why) set({ why: null });
       clockOffset = (await host!.state()).offset;
       if (r.rows > 0 || !(await host!.state()).through) await host!.derive();

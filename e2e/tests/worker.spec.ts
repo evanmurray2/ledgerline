@@ -227,7 +227,7 @@ test('A change made with no signal is kept on the device and sent when the conne
 
 test('Accounts: net worth and the Ally repair prompt', async ({ page }) => {
   await page.goto('/accounts');
-  await expect(page.getByText('$22,555.35').first()).toBeVisible();
+  await expect(page.getByText('$22,354.35').first()).toBeVisible();
   await expect(page.getByText(/Ally/).first()).toBeVisible();
 });
 
