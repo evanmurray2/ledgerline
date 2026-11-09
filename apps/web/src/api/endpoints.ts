@@ -122,7 +122,8 @@ export const api = {
   security: () => get('/api/settings/security', SecurityView),
   deviceLink: () => post('/api/settings/security/device-link', DeviceLink),
   removePasskey: (id: string) => post(`/api/settings/security/passkeys/${enc(id)}/remove`, Ok),
-  signOutOthers: () => post('/api/settings/security/sign-out-others', Ok),
+  renamePasskey: (id: string, name: string) =>
+    post(`/api/settings/security/passkeys/${enc(id)}/rename`, Ok, { name }),
   signOutSession: (id: string) => post('/api/settings/security/sign-out-session', Ok, { id }),
   signOut: () => post('/api/settings/security/sign-out', Ok),
 

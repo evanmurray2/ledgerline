@@ -1,7 +1,7 @@
 // Settings: the layout, the home page, appearance and preferences. Each section has its own file in settings/:
 // categories and groups, payees, bank connections (Item meter, confirm before Link), and
 // import and export. There is no email setting: the app sends no email (decisions.md D-24).
-import { SignOutHere, signInMeta, useSecurity } from './settings/SignIn';
+import { signInMeta, useSecurity } from './settings/SignIn';
 import { useId, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -114,9 +114,6 @@ export function SettingsLayout() {
               </Link>
             );
           })}
-          <div className="mt-auto border-t border-line pt-2">
-            <SignOutHere compact />
-          </div>
         </nav>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
           {sub ? <Outlet /> : <AppearanceSection />}
@@ -269,7 +266,6 @@ function SettingsHome() {
         <ThemeChoice />
         <SectionTitle>Preferences</SectionTitle>
         <Preferences />
-        <SignOutHere />
       </ScreenBody>
     </PageFrame>
   );

@@ -70,7 +70,7 @@ test('Signed out in one tab: the other tab shows Sign in at once, not the budget
   await other.goto('/activity');
   await expect(other.getByText('No transactions in November.')).toBeVisible();
   // Sign out of this device, in the first tab.
-  await page.goto('/settings');
+  await page.goto('/settings/sign-in');
   await page.getByRole('button', { name: 'Sign out…', exact: true }).click();
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();

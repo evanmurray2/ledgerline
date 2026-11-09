@@ -228,6 +228,9 @@ export class MockServer {
   usageEvents: unknown[] = [];
   notes: unknown[] = [];
   private signIns = SIGN_INS();
+  private passkeys = [
+    { id: 'pk_mock', name: 'iPhone', createdAt: '2026-10-31T18:00:00Z', lastUsedAt: '2026-11-14T08:00:00Z' },
+  ];
   private ready: Promise<{ engine: LocalEngine; db: SqlJsDb }>;
   readonly now: number;
 
@@ -354,14 +357,7 @@ export class MockServer {
         return { signedIn: true, hasPasskey: true, setupOpen: false };
       case 'GET /api/settings/security':
         return {
-          passkeys: [
-            {
-              id: 'pk_mock',
-              name: 'iPhone',
-              createdAt: '2026-10-31T18:00:00Z',
-              lastUsedAt: '2026-11-14T08:00:00Z',
-            },
-          ],
+          passkeys: this.passkeys,
           sessions: this.signIns.filter((x) => x.live).length,
           otherSessions: this.signIns.filter((x) => !x.current).length,
           signIns: this.signIns.filter((x) => x.live).map(({ live: _live, ...x }) => x),
@@ -375,6 +371,9 @@ export class MockServer {
         return { ok: true };
       case 'POST /api/settings/security/sign-out-session':
         this.signIns = this.signIns.filter((x) => x.current || x.id !== (body as { id?: string }).id);
+        return { ok: true };
+      case 'POST /api/settings/security/passkeys/pk_mock/rename':
+        this.passkeys = this.passkeys.map((k) => ({ ...k, name: String((body as { name?: string }).name) }));
         return { ok: true };
       case 'POST /api/settings/connections/link-token':
         return { linkToken: `link-sandbox-mock-${parse(LinkTokenRequest, body).mode}` };

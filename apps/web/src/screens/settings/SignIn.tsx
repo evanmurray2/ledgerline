@@ -1,6 +1,5 @@
-// Settings → Sign-in and devices (decisions.md D-27): this device, your other devices (sign out one or all, add one)
-// and your passkeys. Sign out of this device is the last row of Settings (the phone's Settings home, the computer's
-// Settings list), apart from the other devices so the two can't be mixed up.
+// Settings → Sign-in and devices (decisions.md D-27): this device and its Sign out, your other devices (sign out
+// each one, add one) and your passkeys (rename each one after where it's saved, remove one).
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, errorMessage } from '../../api/client';
@@ -12,8 +11,10 @@ import {
   ConfirmInline,
   DangerLink,
   Icon,
+  PrimaryButton,
   SecondaryButton,
   SectionTitle,
+  TextButton,
   inputClass,
 } from '../../components/ui';
 import { toast } from '../../components/Toast';
@@ -26,6 +27,10 @@ import { DeleteAccountCard } from './People';
 import { Page } from './common';
 
 type SignIn = { id: string; name: string; signedInAt: string; current: boolean; saved: boolean };
+type Passkey = { id: string; name: string; createdAt: string; lastUsedAt: string | null };
+type Run = (fn: () => Promise<unknown>, done?: (r: unknown) => void) => void;
+/** The one row being confirmed or edited: 'session:<id>', 'passkey:<id>' or 'rename:<id>'. */
+type Asking = { asking: string | null; setAsking: (v: string | null) => void };
 
 const day = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
@@ -51,9 +56,8 @@ export function SignInSettingsScreen() {
   const qc = useQueryClient();
   const sec = useSecurity();
   const [err, setErr] = useState<string | null>(null);
-  /** The removal being confirmed: 'passkey:<id>', 'session:<id>' or 'others'. */
   const [asking, setAsking] = useState<string | null>(null);
-  const run = (fn: () => Promise<unknown>, done?: (r: unknown) => void) => {
+  const run: Run = (fn, done) => {
     setErr(null);
     fn().then(
       (r) => {
@@ -70,32 +74,27 @@ export function SignInSettingsScreen() {
   return (
     <Page title="Sign-in and devices" back="/settings">
       <Problem text={err} />
+      <SectionTitle>This device</SectionTitle>
       {here && (
-        <>
-          <SectionTitle>This device</SectionTitle>
-          <Card>
-            <div className="flex min-h-14 flex-col justify-center gap-0.5 px-3 py-2">
-              <span className="text-base font-semibold">{here.name}</span>
-              <span className="text-xs text-muted">Signed in {at(here.signedInAt)}</span>
-            </div>
-          </Card>
-        </>
+        <Card>
+          <div className="flex min-h-14 flex-col justify-center gap-0.5 px-3 py-2">
+            <span className="text-base font-semibold">{here.name}</span>
+            <span className="text-xs text-muted">Signed in {at(here.signedInAt)}</span>
+          </div>
+        </Card>
       )}
+      <SignOutHere />
       <SectionTitle>Other devices</SectionTitle>
       <OtherDevices
         others={signIns.filter((x) => !x.current)}
-        hidden={sec.data?.otherSessions ?? 0}
         run={run}
         asking={asking}
         setAsking={setAsking}
       />
-      <p className="m-0 px-0.5 text-sm leading-snug text-muted">
-        A sign-in ends after 10 idle minutes, or after 24 hours.
-      </p>
       <SectionTitle>Passkeys</SectionTitle>
       <Passkeys keys={sec.data?.passkeys ?? []} run={run} asking={asking} setAsking={setAsking} />
       <p className="m-0 px-0.5 text-sm leading-snug text-muted">
-        A passkey saved in iCloud Keychain works on all your Apple devices.
+        Name each passkey after where it’s saved, like Apple Passwords.
       </p>
       {sec.data?.recoveryCode && (
         <>
@@ -108,20 +107,53 @@ export function SignInSettingsScreen() {
   );
 }
 
-type Run = (fn: () => Promise<unknown>, done?: (r: unknown) => void) => void;
-type Asking = { asking: string | null; setAsking: (v: string | null) => void };
+/** Sign out of this device, right under it. The budget saved here is deleted first (D-45), then the sign-in ends. */
+function SignOutHere() {
+  const [asking, setAsking] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  if (!asking)
+    return (
+      <SecondaryButton
+        danger
+        track="settings.sign_out"
+        onClick={() => setAsking(true)}
+        className="lg:self-start lg:px-6"
+      >
+        Sign out…
+      </SecondaryButton>
+    );
+  return (
+    <>
+      <ConfirmInline
+        label="Sign out of this device"
+        confirmLabel="Sign out"
+        track="settings.sign_out.confirm"
+        mutates={false}
+        onConfirm={() => {
+          setErr(null);
+          clearSavedData();
+          try {
+            sessionStorage.setItem(SIGNED_OUT_HERE, '1');
+          } catch {
+            // Without it, the Sign in screen just asks for Face ID by itself.
+          }
+          (import.meta.env.VITE_MOCK === '1' ? api.signOut() : signOutHere()).then(
+            () => window.location.assign('/'),
+            (e: unknown) => setErr(errorMessage(e)),
+          );
+        }}
+        onCancel={() => setAsking(false)}
+      >
+        Sign out and delete the budget saved on this device? Sign in with your passkey to get it back.
+      </ConfirmInline>
+      <Problem text={err} />
+    </>
+  );
+}
 
-/** Each other device with its own Sign out, one Sign out for all of them, and Add a device. */
-function OtherDevices({
-  others,
-  hidden,
-  run,
-  asking,
-  setAsking,
-}: { others: SignIn[]; hidden: number; run: Run } & Asking) {
+/** Each other device with its own Sign out, then Add a device. */
+function OtherDevices({ others, run, asking, setAsking }: { others: SignIn[]; run: Run } & Asking) {
   const [link, setLink] = useState<{ url: string; expiresAt: string } | null>(null);
-  // "All" is for several at once, and for devices that are signed out but still have the budget saved (not listed).
-  const showAll = hidden > Math.min(1, others.length);
   return (
     <Card>
       {others.length === 0 && (
@@ -134,10 +166,7 @@ function OtherDevices({
           <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
             <span className="flex flex-col gap-0.5">
               <span className="text-base font-semibold">{x.name}</span>
-              <span className="text-xs text-muted">
-                {`Signed in ${at(x.signedInAt)}`}
-                {x.saved ? ' · budget saved' : ''}
-              </span>
+              <span className="text-xs text-muted">Signed in {at(x.signedInAt)}</span>
             </span>
             {asking !== `session:${x.id}` && (
               <DangerLink
@@ -173,31 +202,6 @@ function OtherDevices({
           )}
         </div>
       ))}
-      {showAll &&
-        (asking === 'others' ? (
-          <ConfirmInline
-            label="Sign out all other devices"
-            confirmLabel="Sign out"
-            track="settings.sign_out_others.confirm"
-            mutates={false}
-            onConfirm={() =>
-              run(api.signOutOthers, () => {
-                setAsking(null);
-                toast.show({ text: 'Your other devices are signed out' });
-              })
-            }
-            onCancel={() => setAsking(null)}
-            className="m-3"
-          >
-            Sign out your other devices and delete the budget saved on them? This device stays signed in.
-          </ConfirmInline>
-        ) : (
-          <div className="flex min-h-12 items-center border-t border-divider px-3 first:border-t-0">
-            <DangerLink track="settings.sign_out_others" onClick={() => setAsking('others')}>
-              Sign out all other devices…
-            </DangerLink>
-          </div>
-        ))}
       {link ? (
         <div className="flex flex-col gap-2 border-t border-divider p-3 first:border-t-0">
           <span className="text-base font-semibold">Open this link on the new device</span>
@@ -232,37 +236,47 @@ function OtherDevices({
   );
 }
 
-function Passkeys({
-  keys,
-  run,
-  asking,
-  setAsking,
-}: {
-  keys: { id: string; name: string; createdAt: string; lastUsedAt: string | null }[];
-  run: Run;
-} & Asking) {
+/** Each passkey with Rename, and Remove when there is more than one (never the last: you'd be locked out). */
+function Passkeys({ keys, run, asking, setAsking }: { keys: Passkey[]; run: Run } & Asking) {
   return (
     <Card>
       {keys.map((k) => (
         <div key={k.id} className="flex flex-col border-t border-divider first:border-t-0">
-          <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
-            <span className="flex flex-col gap-0.5">
-              <span className="text-base font-semibold">{k.name}</span>
-              <span className="text-xs text-muted">
-                Added {day(k.createdAt)} · {k.lastUsedAt ? `last used ${day(k.lastUsedAt)}` : 'not used yet'}
+          {asking === `rename:${k.id}` ? (
+            <RenamePasskey k={k} run={run} done={() => setAsking(null)} />
+          ) : (
+            <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="truncate text-base font-semibold">{k.name}</span>
+                <span className="text-xs text-muted">
+                  Added {day(k.createdAt)} ·{' '}
+                  {k.lastUsedAt ? `last used ${day(k.lastUsedAt)}` : 'not used yet'}
+                </span>
               </span>
-            </span>
-            {keys.length > 1 && asking !== `passkey:${k.id}` && (
-              <DangerLink
-                track="settings.passkey.remove"
-                onClick={() => setAsking(`passkey:${k.id}`)}
-                aria-label={`Remove passkey ${k.name}…`}
-                className="shrink-0 self-center"
-              >
-                Remove…
-              </DangerLink>
-            )}
-          </div>
+              {asking !== `passkey:${k.id}` && (
+                <span className="flex shrink-0 items-center gap-4">
+                  <TextButton
+                    track="settings.passkey.rename"
+                    onClick={() => setAsking(`rename:${k.id}`)}
+                    aria-label={`Rename passkey ${k.name}`}
+                    className="self-center"
+                  >
+                    Rename
+                  </TextButton>
+                  {keys.length > 1 && (
+                    <DangerLink
+                      track="settings.passkey.remove"
+                      onClick={() => setAsking(`passkey:${k.id}`)}
+                      aria-label={`Remove passkey ${k.name}…`}
+                      className="self-center"
+                    >
+                      Remove…
+                    </DangerLink>
+                  )}
+                </span>
+              )}
+            </div>
+          )}
           {asking === `passkey:${k.id}` && (
             <ConfirmInline
               label={`Remove passkey ${k.name}`}
@@ -278,7 +292,7 @@ function Passkeys({
               onCancel={() => setAsking(null)}
               className="mx-3 mb-3"
             >
-              Remove the passkey {k.name}? That device can’t sign in with it any more.
+              Remove the passkey {k.name}? You can’t sign in with it any more.
             </ConfirmInline>
           )}
         </div>
@@ -287,49 +301,36 @@ function Passkeys({
   );
 }
 
-/**
- * Sign out of this device: the last thing in Settings. `compact` fits the computer's Settings list (a red text
- * button); on the phone it is a full-width button under Preferences.
- */
-export function SignOutHere({ compact }: { compact?: boolean }) {
-  const [asking, setAsking] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  if (asking)
-    return (
-      <div className="flex flex-col gap-2">
-        <ConfirmInline
-          label="Sign out of this device"
-          confirmLabel="Sign out"
-          track="settings.sign_out.confirm"
-          mutates={false}
-          onConfirm={() => {
-            setErr(null);
-            // The budget saved on this device is deleted first (D-45), then the sign-in ends.
-            clearSavedData();
-            try {
-              sessionStorage.setItem(SIGNED_OUT_HERE, '1');
-            } catch {
-              // Without it, the Sign in screen just asks for Face ID by itself.
-            }
-            (import.meta.env.VITE_MOCK === '1' ? api.signOut() : signOutHere()).then(
-              () => window.location.assign('/'),
-              (e: unknown) => setErr(errorMessage(e)),
-            );
-          }}
-          onCancel={() => setAsking(false)}
-        >
-          Sign out and delete the budget saved on this device? Sign in with your passkey to get it back.
-        </ConfirmInline>
-        <Problem text={err} />
+function RenamePasskey({ k, run, done }: { k: Passkey; run: Run; done: () => void }) {
+  const [name, setName] = useState(k.name);
+  const trimmed = name.trim();
+  return (
+    <form
+      className="flex flex-col gap-2 p-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!trimmed) return;
+        run(() => api.renamePasskey(k.id, trimmed), done);
+      }}
+    >
+      <input
+        className={inputClass}
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        maxLength={60}
+        aria-label="Passkey name"
+        placeholder="Apple Passwords"
+        autoFocus
+        autoComplete="off"
+      />
+      <div className="flex gap-2">
+        <SecondaryButton type="button" className="flex-1" onClick={done}>
+          Cancel
+        </SecondaryButton>
+        <PrimaryButton type="submit" className="flex-1" mutates={false} disabled={!trimmed}>
+          Save
+        </PrimaryButton>
       </div>
-    );
-  return compact ? (
-    <DangerLink track="settings.sign_out" onClick={() => setAsking(true)} className="px-3">
-      Sign out…
-    </DangerLink>
-  ) : (
-    <SecondaryButton danger track="settings.sign_out" onClick={() => setAsking(true)} className="mt-2">
-      Sign out…
-    </SecondaryButton>
+    </form>
   );
 }

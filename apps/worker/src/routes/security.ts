@@ -203,6 +203,19 @@ securityRoutes.post('/settings/security/device-link', async (c) => {
   });
 });
 
+/** Renames a passkey, so you can tell where it is saved ("Apple Passwords"). 1 to 60 characters. */
+securityRoutes.post('/settings/security/passkeys/:id/rename', async (c) => {
+  const body = (await bodyObject(c.req)) as { name?: unknown };
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name || name.length > 60)
+    return c.json({ error: 'invalid', message: 'Give the passkey a name of up to 60 characters.' }, 400);
+  const r = await c.env.DB.prepare(`UPDATE passkey SET name = ?3 WHERE id = ?1 AND user_id = ?2`)
+    .bind(c.req.param('id'), c.get('userId'), name)
+    .run();
+  if (r.changes !== 1) return c.json({ error: 'not_found', message: 'That passkey was removed.' }, 404);
+  return c.json({ ok: true });
+});
+
 securityRoutes.post('/settings/security/passkeys/:id/remove', async (c) => {
   const id = c.req.param('id');
   // Never the last one: you'd be locked out.

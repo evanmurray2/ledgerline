@@ -234,6 +234,19 @@ describe('passkey sign-in', () => {
     expect((await b.signIn(phone)).status).toBe(200);
   });
 
+  it('you can rename a passkey, but only your own and only to 1 to 60 characters', async () => {
+    const rename = (id: string, name: unknown) =>
+      b.call('POST', `/api/settings/security/passkeys/${id}/rename`, { name });
+    expect((await rename(phone.id, '  Apple Passwords ')).status).toBe(200);
+    const sec = await b.call('GET', '/api/settings/security');
+    const names = (sec.json.passkeys as { id: string; name: string }[]).map((k) => [k.id, k.name]);
+    expect(names).toContainEqual([phone.id, 'Apple Passwords']);
+    expect((await rename(phone.id, '   ')).status).toBe(400);
+    expect((await rename(phone.id, 'x'.repeat(61))).status).toBe(400);
+    expect((await rename(phone.id, 5)).status).toBe(400);
+    expect((await rename('nope', 'Mine')).status).toBe(404);
+  });
+
   it('you can remove a passkey but never the last one', async () => {
     expect((await b.call('POST', `/api/settings/security/passkeys/${laptop.id}/remove`)).status).toBe(200);
     expect((await b.call('POST', `/api/settings/security/passkeys/${phone.id}/remove`)).status).toBe(409);
