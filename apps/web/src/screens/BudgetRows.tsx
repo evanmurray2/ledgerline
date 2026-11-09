@@ -54,7 +54,7 @@ function CategoryRowPhone({ row, month }: { row: BudgetCategoryRow; month: strin
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
-          <span className="text-base font-semibold">{row.name}</span>
+          <span className="text-base font-semibold wrap-anywhere">{row.name}</span>
           <span className="text-xs leading-snug text-muted">
             {quiet ? (
               <span className="sr-only">{st.word} · </span>
@@ -87,7 +87,7 @@ function CardRowPhone({ card }: { card: CardRow }) {
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
-          <span className="text-base font-semibold">{card.name}</span>
+          <span className="text-base font-semibold wrap-anywhere">{card.name}</span>
           <span className="text-xs leading-snug text-muted">
             {card.status === 'short' ? (
               <>
@@ -168,7 +168,8 @@ export function GroupHeader({
     right && !toggle ? 'pr-2' : 'pr-3',
     divider && 'border-b border-line',
   );
-  const label = 'm-0 flex items-center gap-1.5 text-xs font-bold uppercase tracking-caps';
+  const label =
+    'm-0 flex min-w-0 items-center gap-1.5 text-left text-xs font-bold uppercase tracking-caps wrap-anywhere';
   if (toggle)
     return (
       <button

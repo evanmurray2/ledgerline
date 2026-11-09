@@ -34,3 +34,9 @@ export const csrf: MiddlewareHandler = async (c, next) => {
     return c.json({ error: 'csrf', message: 'Something went wrong. Try again.' }, 403);
   return next();
 };
+
+/** A request's JSON body as an object: {} when it is missing, broken or not an object (`null`, a number, a list). */
+export async function bodyObject(req: { json(): Promise<unknown> }): Promise<Record<string, unknown>> {
+  const b: unknown = await req.json().catch(() => null);
+  return b && typeof b === 'object' && !Array.isArray(b) ? (b as Record<string, unknown>) : {};
+}

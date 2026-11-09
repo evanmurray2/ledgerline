@@ -23,7 +23,7 @@ import {
   Segmented,
 } from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
-import { addMonths, monthLabel } from '../lib/dates';
+import { addMonths, compareMonths, monthLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
 import { useBudgetMonth } from './Budget';
 import { Page } from './settings/common';
@@ -131,7 +131,11 @@ export function TargetScreen() {
           period === '1' ? month : addMonths(due || addMonths(month, Number(period) - 1), 1 - Number(period)),
       };
     if (kind === 'set_aside') return { type: 'set_aside', amount: cents };
-    if (kind === 'by_date') return byMonth ? { type: 'by_date', amount: cents, targetMonth: byMonth } : null;
+    // A month already gone by would ask for nothing and read as funded.
+    if (kind === 'by_date')
+      return byMonth && compareMonths(byMonth, month) >= 0
+        ? { type: 'by_date', amount: cents, targetMonth: byMonth }
+        : null;
     const m = parseCents(monthly);
     return { type: 'no_date', amount: cents, monthly: m && m > 0 ? m : null };
   }, [cents, kind, period, due, byMonth, monthly, month]);
@@ -205,9 +209,11 @@ export function TargetScreen() {
           disabled={!target}
           why={
             !target
-              ? cents !== null && cents > 0
-                ? 'Choose a month to save'
-                : 'Enter an amount to save'
+              ? cents === null || cents <= 0
+                ? 'Enter an amount to save'
+                : kind === 'by_date' && byMonth
+                  ? `Choose a month from ${monthLabel(month)} on`
+                  : 'Choose a month to save'
               : ''
           }
           onClick={() => target && void submit(target)}

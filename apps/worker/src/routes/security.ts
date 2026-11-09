@@ -5,6 +5,7 @@ import type { AppEnv } from '../http/context.js';
 import { clock } from '../http/clock.js';
 import { DEVICE_LINK_MS, SESSION_COOKIE, cookie, randomToken, tokenHash } from '../http/auth.js';
 import { describeAgent } from '../http/agent.js';
+import { bodyObject } from '../http/security.js';
 import { signupSwitchOn } from './signup-switch.js';
 
 export const securityRoutes = new Hono<AppEnv>();
@@ -149,7 +150,7 @@ const b64url = (b: Uint8Array) =>
     .replace(/=+$/, '');
 
 securityRoutes.post('/settings/security/devices', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { name?: unknown };
+  const body = (await bodyObject(c.req)) as { name?: unknown };
   const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 60) : 'Phone';
   const now = clock(c.env);
   const m = await c.env.DB.prepare(`SELECT budget_id FROM budget_member WHERE user_id = ?1 LIMIT 1`)
@@ -235,7 +236,7 @@ securityRoutes.post('/settings/security/sign-out-others', async (c) => {
 
 /** Signs out one other device, by the id Settings shows: its sign-in ends and its saved copy is turned off. */
 securityRoutes.post('/settings/security/sign-out-session', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { id?: unknown };
+  const body = (await bodyObject(c.req)) as { id?: unknown };
   const db = c.env.DB;
   const userId = c.get('userId');
   const now = clock(c.env);
@@ -259,7 +260,7 @@ securityRoutes.post('/settings/security/sign-out-session', async (c) => {
  * as well.
  */
 securityRoutes.post('/settings/security/sign-out', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { forget?: unknown; devices?: unknown };
+  const body = (await bodyObject(c.req)) as { forget?: unknown; devices?: unknown };
   const db = c.env.DB;
   const userId = c.get('userId');
   const now = clock(c.env);

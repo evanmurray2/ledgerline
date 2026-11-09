@@ -184,12 +184,12 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
         selected === (r.id ?? r.key) ? 'bg-accent-soft' : 'hover:bg-surface-2',
       )}
     >
-      <span role="rowheader" className="px-3.5 py-1">
+      <span role="rowheader" className="min-w-0 px-3.5 py-1">
         <button
           type="button"
           data-track={r.track}
           onClick={r.open}
-          className="flex min-h-11 w-full flex-col items-start justify-center gap-0.5 text-left text-md font-semibold text-ink"
+          className="flex min-h-11 w-full flex-col items-start justify-center gap-0.5 text-left text-md font-semibold text-ink wrap-anywhere"
         >
           {r.name}
           <span className="text-sm font-normal text-muted">{r.detail}</span>

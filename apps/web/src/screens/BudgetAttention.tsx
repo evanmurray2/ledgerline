@@ -157,7 +157,7 @@ export function AttentionList({ b, month }: { b: BudgetView; month: string }) {
                   className="flex min-h-11 min-w-0 flex-1 flex-col justify-center gap-[3px] text-ink no-underline"
                 >
                   <span className="flex justify-between gap-2">
-                    <span className="text-base font-semibold">{a.name}</span>
+                    <span className="min-w-0 text-base font-semibold wrap-anywhere">{a.name}</span>
                     {/* Overspent, Short card and Owed amounts are the problem itself; for the rest the balance is
                         just context, and the button says what it needs. */}
                     <span

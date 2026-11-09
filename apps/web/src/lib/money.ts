@@ -37,11 +37,12 @@ export function centsToInput(cents: number): string {
 const MONEY_RE = /^([−-])?\s*\$?\s*(\d{1,3}(?:,\d{3})+|\d+)?(?:\.(\d{0,2}))?$/;
 
 /**
- * Parses what a person types into a money box: "18.25", "$1,018", "-5", "−5.5", ".75".
+ * Parses what a person types into a money box: "18.25", "$1,018", "-5", "−5.5", ".75", "$-3".
  * Returns integer cents, or null when it isn't a valid amount (more than two decimals, letters, empty).
  */
 export function parseCents(input: string): number | null {
-  const t = input.trim();
+  // "$-3" (a pasted amount with the sign after the dollar sign) reads as "-$3".
+  const t = input.trim().replace(/^\$\s*([−-])/, '$1');
   if (t === '') return null;
   const m = MONEY_RE.exec(t);
   if (!m) return null;

@@ -12,7 +12,7 @@ import { DIRECTORY_MIGRATIONS } from './migrations.gen.js';
 import { storeHealth, type StoreHealth } from './budget-store.js';
 import { authRoutes } from '../routes/auth.js';
 import { securityRoutes } from '../routes/security.js';
-import { identity } from '../routes/api.js';
+import { TRY_AGAIN, identity } from '../routes/api.js';
 import { csrf } from '../http/security.js';
 import { REAUTH_MS, identify, needsRecentPasskey } from '../http/auth.js';
 import { membership } from '../db/scoped.js';
@@ -234,6 +234,12 @@ export class Directory extends DurableObject<Env> {
       app.route('/api', securityRoutes);
       app.route('/api', recoveryRoutes);
       app.route('/api', peopleRoutes);
+      // Every answer is JSON, so the app can read it: a route that doesn't exist, and anything unexpected.
+      app.notFound((c) => c.json({ error: 'not_found', message: TRY_AGAIN }, 404));
+      app.onError((e, c) => {
+        console.log(JSON.stringify({ event: 'error', route: c.req.path, code: e.name }));
+        return c.json({ error: 'internal', message: TRY_AGAIN }, 500);
+      });
       this.app = app;
     }
     const app = this.app;

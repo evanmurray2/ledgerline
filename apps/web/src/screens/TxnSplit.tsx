@@ -74,8 +74,10 @@ export function SplitScreen() {
   const remCents = total - others;
   const amountOf = (l: Line) => (l.id === rem ? remCents : (parseCents(l.input) ?? 0));
   const unchosen = (lines ?? []).some((l) => !l.categoryId);
+  // A line typed as something that isn't an amount (or below zero) would be saved as $0.00 without a word.
+  const badAmount = (lines ?? []).some((l) => l.id !== rem && (parseCents(l.input) ?? -1) < 0);
   const neg = remCents < 0;
-  const ok = !!lines && !neg && !unchosen;
+  const ok = !!lines && !neg && !unchosen && !badAmount;
   const opts = useMemo(() => groups, [groups]);
 
   if (!t || !lines)
@@ -120,7 +122,15 @@ export function SplitScreen() {
           mutates
           track="split.save"
           disabled={!ok}
-          why={unchosen ? 'Choose a category for every line' : neg ? 'Lines are over the total' : ''}
+          why={
+            unchosen
+              ? 'Choose a category for every line'
+              : badAmount
+                ? 'Enter an amount for every line'
+                : neg
+                  ? 'Lines are over the total'
+                  : ''
+          }
           onClick={() => void save()}
         >
           Save split

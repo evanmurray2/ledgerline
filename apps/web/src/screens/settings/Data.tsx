@@ -1,7 +1,7 @@
 // Settings → Import and export: CSV import, exports and the full backup.
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { DumpChunk } from '@ledgerline/contracts';
+import { DumpChunk, type ImportResult } from '@ledgerline/contracts';
 import { download, get, qs, saveFile } from '../../api/client';
 import { api, exportUrls } from '../../api/endpoints';
 import { qk, useAccounts } from '../../api/hooks';
@@ -27,6 +27,47 @@ import { Why } from '../../components/Why';
 
 const count = (n: number) => `${n.toLocaleString('en-US')} ${n === 1 ? 'transaction' : 'transactions'}`;
 
+/** The server's limit on a file (contracts ImportCsvRequest). */
+const MAX_CHARS = 5_000_000;
+
+/** A file's text: UTF-8, or the Windows encoding many banks still export in when it isn't valid UTF-8. */
+async function fileText(f: File): Promise<string> {
+  const bytes = await f.arrayBuffer();
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder('windows-1252').decode(bytes);
+  }
+}
+
+/** Lines with something on them after the header, not counting line breaks inside quotes. */
+function csvRows(text: string): number {
+  let rows = 0;
+  let filled = false;
+  let quoted = false;
+  for (const ch of text.replace(/^\ufeff/, '')) {
+    if (ch === '"') quoted = !quoted;
+    if (!quoted && (ch === '\n' || ch === '\r')) {
+      if (filled) rows++;
+      filled = false;
+    } else if (!/[\s,;"]/.test(ch)) filled = true;
+  }
+  if (filled) rows++;
+  return Math.max(0, rows - 1);
+}
+
+/** What an import did, in one or two short sentences. */
+function importMessage(r: ImportResult): string {
+  const parts = [r.imported > 0 ? `Imported ${count(r.imported)} as history.` : 'Nothing new to import.'];
+  if (r.duplicates > 0) parts.push(`Skipped ${count(r.duplicates)} already imported.`);
+  if (r.skipped > 0) parts.push(`Skipped ${count(r.skipped)} already in your linked accounts.`);
+  if (r.unreadable > 0)
+    parts.push(
+      `Couldn’t read the date or amount on ${r.unreadable.toLocaleString('en-US')} ${r.unreadable === 1 ? 'line' : 'lines'}.`,
+    );
+  return parts.join(' ');
+}
+
 export function DataScreen() {
   useScreen('settings.data');
   const accounts = useAccounts();
@@ -34,20 +75,25 @@ export function DataScreen() {
   const [file, setFile] = useState<{ name: string; text: string; rows: number } | null>(null);
   const [accountId, setAccountId] = useState('');
   const [result, setResult] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const canWrite = useCanWrite();
   const accts = (accounts.data?.groups ?? []).flatMap((g) => g.accounts);
   const acct = accountId || accts[0]?.id || '';
-  const pick = async (f: File | undefined) => {
+  const pick = async (input: HTMLInputElement) => {
+    const f = input.files?.[0];
+    // Cleared, so choosing the same file again (after fixing it) is a change too.
+    input.value = '';
     if (!f) return;
-    const text = await f.text();
-    setFile({
-      name: f.name,
-      text,
-      rows: Math.max(0, text.split(/\r?\n/).filter((l) => l.trim()).length - 1),
-    });
     setResult(null);
+    setError(null);
+    setNotice(null);
+    const text = await fileText(f);
+    if (text.length > MAX_CHARS) return setNotice('This file is too big. Import one year at a time.');
+    const rows = csvRows(text);
+    if (rows === 0) return setNotice('This file has no transactions. Choose another file.');
+    setFile({ name: f.name, text, rows });
   };
   const doImport = async () => {
     if (!file || !acct) return;
@@ -55,8 +101,7 @@ export function DataScreen() {
     setError(null);
     try {
       const r = await api.importCsv({ accountId: acct, csv: file.text });
-      const skipped = r.skipped > 0 ? ` Skipped ${count(r.skipped)} already in your linked accounts.` : '';
-      setResult(`Imported ${count(r.imported)} as history.${skipped}`);
+      setResult(importMessage(r));
       setFile(null);
       void qc.invalidateQueries({ queryKey: ['reports'] });
       void qc.invalidateQueries({ queryKey: qk.payees });
@@ -111,7 +156,7 @@ export function DataScreen() {
                 className="sr-only"
                 disabled={!canWrite}
                 data-track="data.import.choose"
-                onChange={(e) => void pick(e.target.files?.[0])}
+                onChange={(e) => void pick(e.target)}
               />
             </label>
           </>
@@ -151,6 +196,11 @@ export function DataScreen() {
         {result && (
           <Banner tone="success" icon="check">
             {result}
+          </Banner>
+        )}
+        {notice && (
+          <Banner tone="warn" icon="alert">
+            {notice}
           </Banner>
         )}
         {error ? <ErrorNote error={error} /> : null}

@@ -2,7 +2,7 @@
 // the Worker; the SPA uses the inferred types. Money is integer cents everywhere; months are 'YYYY-MM', dates
 // 'YYYY-MM-DD'. Mutations require `content-type: application/json` and the `x-ledgerline: 1` header.
 import { z } from 'zod';
-import { cents, date, id, month } from './scalars.js';
+import { calendarDate, cents, date, id, month } from './scalars.js';
 import { AccountRow, StartBalance } from './accounts.js';
 
 export * from './accounts.js';
@@ -327,6 +327,8 @@ export const TxnSheet = z.object({
   rawName: z.string(),
   accountId: id,
   accountName: z.string(),
+  /** A paired transfer: the account on the other side. */
+  otherAccountName: z.string().nullable().optional(),
   date,
   postedDate: date.nullable(),
   amount: cents,
@@ -401,7 +403,7 @@ export const TxnPatch = z.object({
       num: z.number().int().optional(),
       den: z.number().int().optional(),
       amount: cents.optional(),
-      expectBy: date.nullable(),
+      expectBy: calendarDate.nullable(),
     })
     .nullable()
     .optional(),
@@ -414,7 +416,7 @@ export const CategorizeRequest = z.object({
 export const NewTxnRequest = z.object({
   kind: z.enum(['pending', 'upcoming']),
   accountId: id,
-  date,
+  date: calendarDate,
   /** Outflow negative. */
   amount: cents,
   payee: z.string().min(1).max(120),
@@ -472,7 +474,7 @@ export const OwedView = z.object({
 export type OwedView = z.infer<typeof OwedView>;
 export const OwedAction = z.object({
   action: z.enum(['close', 'cancel', 'snooze']),
-  expectBy: date.optional(),
+  expectBy: calendarDate.optional(),
 });
 
 // ---------------------------------------------------------------- accounts
@@ -658,8 +660,13 @@ export const SettingsPatch = z.object({
 export const ImportCsvRequest = z.object({ accountId: id, csv: z.string().max(5_000_000) });
 export const ImportResult = z.object({
   imported: z.number().int(),
+  /** Rows dated on or after the account's budget start: the bank link brings those. */
   skipped: z.number().int(),
   history: z.number().int(),
+  /** Rows already imported into this account (the same date, amount and payee). */
+  duplicates: z.number().int().default(0),
+  /** Lines whose date or amount couldn't be read. */
+  unreadable: z.number().int().default(0),
 });
 
 export const HealthView = z.object({

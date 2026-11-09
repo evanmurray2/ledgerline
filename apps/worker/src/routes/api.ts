@@ -10,7 +10,7 @@ import {
   type MutationAck,
   type Session,
 } from '@ledgerline/contracts';
-import { type Month, addMonths, isMonth } from '@ledgerline/domain';
+import { type Month, addMonths, currentMonth, isMonth, monthsBetween } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
 import { OPS_PATHS, REAUTH_MS, identify, needsRecentPasskey } from '../http/auth.js';
@@ -19,7 +19,7 @@ import { csrf } from '../http/security.js';
 import { bumpOnChange } from '../http/version.js';
 import { Scoped, membership } from '../db/scoped.js';
 import { budgetView } from '../views/budget.js';
-import { fresh } from '../views/common.js';
+import { fresh, monthLong } from '../views/common.js';
 import { usageToday, classifyUsage, dailyLimits } from '../sync/breaker.js';
 import { activityRoutes } from './activity.js';
 import { activityViewRoutes } from './activity-view.js';
@@ -134,7 +134,20 @@ export async function parse<T extends z.ZodType>(schema: T, req: Request): Promi
   if (!r.success)
     // The field-by-field text is for logs, never the screen.
     throw new HttpError(400, 'invalid', 'Check what you entered, then try again.');
+  checkBodyAmounts(r.data);
   return r.data;
+}
+
+/** The fields of a request body that hold money, wherever they sit (a split line, an owed share, a balance). */
+const AMOUNT_KEYS = new Set(['amount', 'assigned', 'monthly', 'estimatedAmount', 'startingBalance']);
+/** Every money field in a request body is held to MAX_AMOUNT, so no route can store a sum the phone can't add up. */
+function checkBodyAmounts(v: unknown): void {
+  if (Array.isArray(v)) for (const x of v) checkBodyAmounts(x);
+  else if (v && typeof v === 'object')
+    for (const [k, x] of Object.entries(v)) {
+      if (typeof x === 'number' && AMOUNT_KEYS.has(k)) checkAmounts(x);
+      else checkBodyAmounts(x);
+    }
 }
 
 /** A missing thing, said so the reader can act (docs/copy.md rule 7). */
@@ -143,6 +156,34 @@ export const GONE = 'This was changed or removed. Pull down to refresh.';
 export const CHANGED = 'This changed. Pull down to refresh.';
 export const TRY_AGAIN = 'Something went wrong. Try again.';
 export const BAD_MONTH = 'That month isn’t in your budget. Pick another month.';
+/**
+ * The largest amount any money field in a request may hold: $99,999,999.99. Larger ones would let sums pass
+ * JavaScript's safe integers, and the phone could no longer work the budget out.
+ */
+export const MAX_AMOUNT = 9_999_999_999;
+export const TOO_LARGE = 'Enter an amount up to $99,999,999.99.';
+function checkAmounts(...amounts: (number | null | undefined)[]): void {
+  if (amounts.some((a) => a != null && Math.abs(a) > MAX_AMOUNT))
+    throw new HttpError(422, 'too_large', TOO_LARGE);
+}
+
+export const FAR_DATE = 'Pick a date within 10 years of today.';
+export const FAR_MONTH = 'Pick a month within 10 years of this one.';
+
+/**
+ * How far from this month a budget month may be. The phone works out every month from the budget start to the last
+ * month anything is in, so a month thousands of years away (`9999-12`) would never finish and the app would stop.
+ */
+export const MONTHS_IN_REACH = 120;
+export function inReach(m: string, current: Month): boolean {
+  return isMonth(m) && Math.abs(monthsBetween(current, m as Month)) <= MONTHS_IN_REACH;
+}
+
+/** This month in the budget's time zone. */
+export async function thisMonth(s: Scoped, now: number): Promise<Month> {
+  const b = await s.first<{ time_zone: string }>(`SELECT time_zone FROM budget WHERE id = ?1`);
+  return currentMonth(now, b?.time_zone ?? 'America/Los_Angeles');
+}
 
 export class HttpError extends Error {
   constructor(
@@ -226,6 +267,7 @@ budgetApi.get('/budget/:month', async (c) => {
   if (!isMonth(m)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const s = scoped(c);
   const f = await fresh(s, clock(c.env));
+  if (!inReach(m, f.current)) throw new HttpError(400, 'invalid', BAD_MONTH);
   return c.json(await budgetView(s, f, m));
 });
 
@@ -234,6 +276,7 @@ budgetApi.get('/budget/:month/assign', async (c) => {
   if (!isMonth(m)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const s = scoped(c);
   const f = await fresh(s, clock(c.env));
+  if (!inReach(m, f.current)) throw new HttpError(400, 'invalid', BAD_MONTH);
   return c.json(await assignView(s, f, m));
 });
 
@@ -241,7 +284,7 @@ budgetApi.get('/categories/:id/sheet', async (c) => {
   const s = scoped(c);
   const f = await fresh(s, clock(c.env));
   const m = c.req.query('month') ?? f.current;
-  if (!isMonth(m)) throw new HttpError(400, 'invalid', BAD_MONTH);
+  if (!isMonth(m) || !inReach(m, f.current)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const sheet = await categorySheet(s, f, c.req.param('id'), m);
   if (!sheet) throw new HttpError(404, 'not_found', GONE);
   return c.json(sheet);
@@ -252,6 +295,7 @@ async function addAssignments(
   month: Month,
   items: { categoryId: string; amount: number; set?: boolean }[],
 ): Promise<MutationAck> {
+  checkAmounts(...items.map((i) => i.amount));
   const s = scoped(c);
   const now = clock(c.env);
   const ids = items.map((i) => i.categoryId);
@@ -260,11 +304,12 @@ async function addAssignments(
     ...ids,
   );
   if (known.length !== new Set(ids).size) throw new HttpError(404, 'not_found', GONE);
-  const b = await s.first<{ budget_start_month: string | null }>(
-    `SELECT budget_start_month FROM budget WHERE id = ?1`,
+  const b = await s.first<{ budget_start_month: string | null; time_zone: string }>(
+    `SELECT budget_start_month, time_zone FROM budget WHERE id = ?1`,
   );
   if (!b?.budget_start_month || month < b.budget_start_month)
     throw new HttpError(422, 'before_start', 'Months before your budget starts can’t be assigned.');
+  if (!inReach(month, currentMonth(now, b.time_zone))) throw new HttpError(422, 'too_far', FAR_MONTH);
   const stmts = items.map((i) =>
     s.q(
       i.set
@@ -312,6 +357,14 @@ budgetApi.put('/categories/:id/target', async (c) => {
   const now = clock(c.env);
   const id = c.req.param('id');
   const t = r.target;
+  if (t.type !== 'none') checkAmounts(t.amount, t.type === 'no_date' ? t.monthly : null);
+  // A balance by a date that has already gone by asks for nothing and reads as funded.
+  if (t.type === 'by_date' && t.targetMonth < r.month)
+    throw new HttpError(
+      422,
+      'past_month',
+      `Choose a month from ${monthLong(r.month)} ${r.month.slice(0, 4)} on.`,
+    );
   const exists = await s.first(`SELECT id FROM category WHERE budget_id = ?1 AND id = ?2`, id);
   if (!exists) throw new HttpError(404, 'not_found', GONE);
   // Versioned: a new version from this month on; past months keep the target they were budgeted against.

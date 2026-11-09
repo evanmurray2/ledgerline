@@ -16,6 +16,21 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] On the owner's iPhone after deploy: PRF in the Home Screen app with the existing passkey, first download time, Face ID unlock with no signal.
 - [ ] Owed to you: each row's "Match money back" opens the first waiting deposit; open the match sheet with that row's item picked.
 - [ ] Removing a category: the confirm says nothing when the category is overspent; needs the owner's Money-rules answer on what happens to the negative amount.
+- [ ] Transaction sheet, income "Goes to": the toggle and its help line use different tests and can disagree for income already moved to next month.
+- [ ] Offline, "Same as your {payee}?" hides, and "Use {n} suggestions" then includes those rows.
+- [ ] Desktop Assign button (sidebar and Ready to Assign bar): grayed out offline or in view only with no reason shown.
+- [ ] Full backup: the Why points to the restore guide, but restoring needs the browser console (`docs/runbooks/restore.md`); add a real restore path or a link.
+- [ ] Two texts that never show: the passkey's "Use your passkey to continue" (NotAllowedError is read as Cancelled) and the "Your budget was restored" download reason (`copy.ts` never sets it).
+- [ ] CSV import: one request takes the whole file (up to 5 MB), so a file of thousands of rows likely passes 10 ms of CPU; measure it, and send it in parts if so (keep the duplicate check right across parts).
+- [ ] CSV import into a linked account: history rows that Plaid also sent (before the budget start) count twice in Reports and net worth. Needs the owner's answer on how to tell them apart (dates differ by a day, names differ).
+- [ ] CSV import into a card: some banks export purchases as positive amounts, which then read as credits. Needs the owner's answer on the sign for card files.
+- [ ] Split amount changes: the "absorbs remainder" line never takes the difference when a split row's amount changes (an edit, a pending row posting at another amount), so the difference is in no category. Needs the owner's Money-rules answer.
+- [ ] Your own entries dated before the budget start are accepted and counted; bank rows there are read-only history (D-61, D-67). Needs the owner's answer: refuse them, or keep them as uncleared checks.
+- [ ] Payee names: the server takes a name of only spaces (min length is checked before trim) and NUL or right-to-left override characters.
+- [ ] CSV export: cells that start with `=`, `+` or `@` can run as spreadsheet formulas; quote or prefix them.
+- [ ] Activity search: "café" doesn't find "CAFÉ" on posted rows (SQLite `lower()` folds only ASCII).
+- [ ] Signing in with a different user's passkey on the same browser leaves the earlier user's session row until it expires (24 h); it lists as another device.
+- [ ] Desktop: the Assigned cell cuts off $99,999,999.99; group rows are keyed by name, so two groups with one name share a key.
 - [ ] Full backup can't be restored: `BudgetStore.restoreDump` and `restoreVerify` work (tests only), but no route or tool reaches them, and a restore needs an empty budget. Design a runbook path (owner, Nov 9: a runbook step, not a button); `docs/runbooks/restore.md` says so today.
 - [ ] Only if two devices ever show different numbers for the same data: a check where each device posts a hash of its month and Needs attention says when two differ (owner, Nov 9: skipped for now; `engine.test.ts` and `engine-upgrade.test.ts` cover the known causes).
 

@@ -1,7 +1,7 @@
 // The sheet says which share of a transaction is owed to you (half, all or a typed amount), so it shows that one picked.
 import { app } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { TxnSheet } from '@ledgerline/contracts';
+import type { OwedView, TxnSheet } from '@ledgerline/contracts';
 import { ownerDb } from './store-db.js';
 
 const db = ownerDb();
@@ -39,5 +39,35 @@ describe('owed share on the transaction sheet', () => {
     expect(await owed()).toMatchObject({ share: 'half', amount: Math.round(amount / 2) });
     expect((await call('PATCH', url, { markOwed: { mode: 'all', expectBy: null } })).status).toBe(200);
     expect(await owed()).toMatchObject({ share: 'all', amount });
+  });
+});
+
+describe('deleting an entry you added', () => {
+  it('cancels what was owed to you on it, so Owed to you no longer lists it', async () => {
+    expect((await call('POST', '/__dev/seed-november')).status).toBe(200);
+    const before = (await call('GET', '/api/owed')).json as OwedView;
+    expect(
+      (
+        await call('POST', '/api/transactions', {
+          kind: 'pending',
+          accountId: 'checking',
+          date: '2026-11-14',
+          amount: -8000,
+          payee: 'Dinner with Sam',
+          categoryId: null,
+          repeats: 'never',
+        })
+      ).status,
+    ).toBe(200);
+    const { key } = (await db
+      .prepare(`SELECT txn_key AS key FROM manual_pending WHERE payee_name = 'Dinner with Sam'`)
+      .first<{ key: string }>())!;
+    const url = `/api/transactions/${encodeURIComponent(key)}`;
+    expect((await call('PATCH', url, { markOwed: { mode: 'half', expectBy: null } })).status).toBe(200);
+    expect(((await call('GET', '/api/owed')).json as OwedView).out).toBe(before.out + 4000);
+    expect((await call('DELETE', url)).status).toBe(200);
+    const after = (await call('GET', '/api/owed')).json as OwedView;
+    expect(after.out).toBe(before.out);
+    expect(after.items.map((i) => i.txnKey)).not.toContain(key);
   });
 });

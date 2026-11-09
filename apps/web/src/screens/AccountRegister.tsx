@@ -88,9 +88,12 @@ export function RegisterScreen() {
   if (canWrite && a?.closed)
     menu.push({ name: 'Reopen account', track: 'account.reopen', onClick: () => void reopen() });
   const chips: [Show, string, number?][] = [['all', 'All']];
-  if (counts.pending) chips.push(['pending', 'Pending', counts.pending]);
-  if (a?.kind === 'credit' && counts.needs) chips.push(['needs', 'Needs category', counts.needs]);
-  if (a?.kind !== 'credit' && counts.transfers) chips.push(['transfers', 'Transfers', counts.transfers]);
+  // The filter on screen keeps its chip after its last row is gone (or from a saved link), so All can clear it.
+  if (counts.pending || show === 'pending') chips.push(['pending', 'Pending', counts.pending]);
+  if ((a?.kind === 'credit' && counts.needs) || show === 'needs')
+    chips.push(['needs', 'Needs category', counts.needs]);
+  if ((a?.kind !== 'credit' && counts.transfers) || show === 'transfers')
+    chips.push(['transfers', 'Transfers', counts.transfers]);
   const sub = a
     ? `${a.institution}${a.mask ? ` · ending ${a.mask}` : ''} · ${a.syncedAt ? `${a.connectionStatus === 'ok' ? 'synced' : 'last synced'} ${syncedLabel(a.syncedAt, today)}` : 'not synced yet'}${a.connectionStatus === 'login_required' ? ' · sign in again on Accounts' : a.connectionStatus !== 'ok' ? ' · see Accounts' : ''}`
     : '';

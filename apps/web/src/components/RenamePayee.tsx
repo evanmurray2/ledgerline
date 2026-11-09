@@ -92,7 +92,12 @@ export function RenamePayeeSheet({ onClose, loading, name, rawNames, others, onS
       }
     >
       <Field label="Show as">
-        <input className={inputClass} value={value} onChange={(e) => setTyped(e.target.value)} />
+        <input
+          className={inputClass}
+          maxLength={120}
+          value={value}
+          onChange={(e) => setTyped(e.target.value)}
+        />
       </Field>
       {match && (
         <p className="m-0 text-sm leading-snug text-ink-2">
