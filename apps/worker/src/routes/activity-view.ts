@@ -7,7 +7,6 @@ import {
   type Month,
   addMonths,
   cents,
-  formatCents,
   isMonth,
   localDate,
   owedList,
@@ -101,9 +100,33 @@ function shiftDate(d: string, n: number): string {
 }
 
 /** A search matches a row's category name too (Reports opens Activity searching for a category), split lines included. */
-const CATEGORY_MATCH = `category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND lower(name) LIKE ?3)
+const CATEGORY_MATCH = `category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND lower(name) LIKE ?3 ESCAPE '\\')
          OR key IN (SELECT sp.txn_key FROM txn_split sp JOIN category c ON c.id = sp.category_id
-                    WHERE sp.budget_id = ?1 AND lower(c.name) LIKE ?3)`;
+                    WHERE sp.budget_id = ?1 AND lower(c.name) LIKE ?3 ESCAPE '\\')`;
+
+/**
+ * A search's posted-row filter: ?3 is the text as a LIKE pattern (its % and _ are letters, not wildcards), `amt`
+ * the parameter holding the amount pattern (`amountPattern`), NULL when the search isn't an amount.
+ */
+const searchMatch = (amt: string) =>
+  `AND (lower(payee) LIKE ?3 ESCAPE '\\' OR (${amt} IS NOT NULL AND printf('%.2f', abs(amount) / 100.0) LIKE ${amt}) OR ${CATEGORY_MATCH})`;
+
+/** The search as a LIKE pattern for the text: % and _ match only themselves. */
+function textPattern(q: string): string {
+  return `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+}
+
+/** The search as a plain amount ("$1,018" → "1018", "−38.10" → "38.10"), or null when it isn't one. */
+function searchAmount(q: string): string | null {
+  const a = q.replace(/[\s$,−-]/g, '');
+  return /\d/.test(a) && /^\d*\.?\d*$/.test(a) ? a : null;
+}
+
+/** An amount as the search compares it: 101800 → "1018.00", sign dropped. */
+function plainAmount(c: number): string {
+  const a = Math.abs(c);
+  return `${Math.floor(a / 100)}.${String(a % 100).padStart(2, '0')}`;
+}
 
 /** Which posted rows a page reads: a recent window from a date, 'all' (searches), 'none' (the attention view), or one budget month. */
 type PostedScope = string | 'all' | 'none' | { month: Month; start: Month };
@@ -135,26 +158,28 @@ function postedQuery(s: Scoped, from: PostedScope, cursor: string | null, q: str
          ${first ? 'AND ?4 IS NOT NULL' : 'AND posted_date >= ?4'}
          AND posted_date < date(?6, '+4 months') AND ${IN_BUDGET} AND ${ROW_MONTH} = ?7
          AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
-         ${q ? `AND (lower(payee) LIKE ?3 OR printf('%.2f', abs(amount) / 100.0) LIKE ?3 OR ${CATEGORY_MATCH})` : 'AND ?3 IS NULL'}
+         ${q ? searchMatch('?8') : 'AND ?3 IS NULL AND ?8 IS NULL'}
        ORDER BY date DESC, seq DESC LIMIT 50`,
       cursor,
-      q ? `%${q}%` : null,
+      q ? textPattern(q) : null,
       `${addMonths(from.month, -1)}-01`,
       from.start,
       `${addMonths(from.month, 2)}-01`,
       from.month,
+      q && searchAmount(q) !== null ? `%${searchAmount(q)}%` : null,
     );
   }
   const window = from !== 'all' && from !== 'none';
   return s.q(
     `SELECT ${TX_COLUMNS} FROM v_txn_bank WHERE budget_id = ?1 AND ${from === 'none' ? '0 AND ' : ''}status = 'posted'
-       ${window ? 'AND posted_date >= ?4 AND date >= ?4' : ''}
+       ${window ? 'AND posted_date >= ?5 AND date >= ?5' : ''}
        AND ${IN_BUDGET}
        AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
-       ${q ? `AND (lower(payee) LIKE ?3 OR printf('%.2f', abs(amount) / 100.0) LIKE ?3 OR ${CATEGORY_MATCH})` : 'AND ?3 IS NULL'}
+       ${q ? searchMatch('?4') : 'AND ?3 IS NULL AND ?4 IS NULL'}
      ORDER BY date DESC, seq DESC LIMIT 50`,
     cursor,
-    q ? `%${q}%` : null,
+    q ? textPattern(q) : null,
+    q && searchAmount(q) !== null ? `%${searchAmount(q)}%` : null,
     ...(window ? [from] : []),
   );
 }
@@ -244,10 +269,11 @@ activityViewRoutes.get('/activity', async (c) => {
       stale: staleKeys.has(t.key),
       split: splitKeys.has(t.key),
     });
+  const qAmount = searchAmount(q);
   const match = (t: TxRow) =>
     !q ||
     t.payee.toLowerCase().includes(q) ||
-    formatCents(Math.abs(t.amount)).includes(q) ||
+    (qAmount !== null && plainAmount(t.amount).includes(qAmount)) ||
     (!!t.category_id && qCats.has(t.category_id)) ||
     qSplits.has(t.key);
   const attnRows = (attn!.results as TxRow[]).filter(match);

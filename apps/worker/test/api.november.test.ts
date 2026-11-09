@@ -160,6 +160,17 @@ describe('November through the API', () => {
     }
   });
 
+  it('Activity search: an amount matches with or without $ and commas; % and _ are only letters', async () => {
+    const payees = async (q: string) => {
+      const v = await get<ActivityView>(`/api/activity?q=${encodeURIComponent(q)}`);
+      return [...v.posted, ...v.pending, ...v.upcoming, ...v.moneyToMatch].map((r) => r.payee);
+    };
+    for (const q of ['200.80', '$200.80', '−$200.80']) expect(await payees(q), q).toContain('Uniqlo');
+    for (const q of ['1500', '1,500', '$1,500.00']) expect(await payees(q), q).toContain('Vanguard');
+    for (const q of ['1018', '$1,018']) expect(await payees(q), q).toContain('Venmo cashout');
+    for (const q of ['%', '_', '$']) expect(await payees(q), q).toEqual([]);
+  });
+
   it('Assign: cover, then underfunded targets, all ticked when the sheet opens', async () => {
     const v = await get<AssignView>('/api/budget/2026-11/assign');
     expect(v.suggestions.map((x) => [x.categoryId, x.reason, x.amount, x.preselected])).toEqual([
