@@ -31,6 +31,8 @@ export const Session = z.object({
   settings: z.object({ tracking: z.boolean(), noteButton: z.boolean() }),
   /** Whether this user may link a new bank (D-75: admins only on Plaid Trial). Older Workers omit it: true. */
   canLinkBanks: z.boolean().optional(),
+  /** When this user's recovery code was used, while the notice shows (14 days, D-75); null otherwise. */
+  recoveryNoticeAt: z.string().nullable().optional(),
 });
 export type Session = z.infer<typeof Session>;
 
@@ -681,10 +683,15 @@ export const AuthStatus = z.object({
   hasPasskey: z.boolean(),
   /** No passkey yet and a setup code is configured: show first-time setup. */
   setupOpen: z.boolean(),
+  /** Open sign-up and recovery codes are on (D-75); the Turnstile site key the check uses. */
+  signupOpen: z.boolean().optional(),
+  turnstileSiteKey: z.string().optional(),
 });
 export type AuthStatus = z.infer<typeof AuthStatus>;
 
 export const SecurityView = z.object({
+  /** This user has a recovery code and can make a new one (users who aren't admins, D-75). */
+  recoveryCode: z.boolean().optional(),
   passkeys: z.array(
     z.object({ id: z.string(), name: z.string(), createdAt: z.string(), lastUsedAt: z.string().nullable() }),
   ),

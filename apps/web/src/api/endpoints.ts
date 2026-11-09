@@ -52,6 +52,8 @@ import { del, get, patch, post, put, qs } from './client';
 type In<T extends z.ZodType> = z.input<T>;
 
 const Ok = z.object({ ok: z.literal(true) });
+/** A new account or a recovery also returns the recovery code, shown once (D-75). */
+const RegisterResult = z.object({ ok: z.literal(true), recoveryCode: z.string().optional() });
 const OkId = z.object({ ok: z.literal(true), id: z.string() });
 const LinkToken = z.object({ linkToken: z.string() });
 const Exchange = z.object({ ok: z.literal(true), connectionId: z.string(), accounts: z.unknown() });
@@ -79,7 +81,15 @@ export const api = {
   authStatus: () => get('/api/auth/status', AuthStatus),
   registerOptions: (body: { setupCode?: string; deviceToken?: string }) =>
     post('/api/auth/register/options', z.unknown(), body),
-  registerVerify: (body: { response: unknown; name: string }) => post('/api/auth/register/verify', Ok, body),
+  registerVerify: (body: { response: unknown; name: string }) =>
+    post('/api/auth/register/verify', RegisterResult, body),
+  // Open sign-up and recovery codes (D-75): only while the switch is on.
+  signupOptions: (body: { name: string; turnstileToken: string }) =>
+    post('/api/auth/signup/options', z.unknown(), body),
+  recoverOptions: (body: { code: string; turnstileToken: string }) =>
+    post('/api/auth/recover/options', z.unknown(), body),
+  newRecoveryCode: () => post('/api/settings/security/recovery-code', z.object({ code: z.string() })),
+  dismissRecoveryNotice: () => post('/api/settings/security/recovery-notice/dismiss', Ok),
   loginOptions: () => post('/api/auth/login/options', z.unknown()),
   loginVerify: (body: { response: unknown }) => post('/api/auth/login/verify', Ok, body),
   security: () => get('/api/settings/security', SecurityView),

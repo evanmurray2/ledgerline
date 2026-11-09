@@ -32,6 +32,7 @@ import { pruneAuthStmts } from '../maintenance.js';
 import { JobRunner, type Handler } from './jobs.js';
 import { nextUtc } from './budget-jobs.js';
 import { SHARE_PAUSED, Shares, type ShareState } from './shares.js';
+import { recoverOptions, recoveryNotice, recoveryRoutes, signupOptions } from '../routes/signup.js';
 
 /** Budgets checked per ensure_all step (docs/multi-user.md 6.2). */
 export const ENSURE_BATCH = 25;
@@ -54,6 +55,8 @@ export interface Caller {
   /** Fair use (store/shares.ts): whether the store reports its usage, and the budget's share. */
   countUsage?: boolean;
   share?: ShareState;
+  /** When a recovery code was last used for this user, while its notice shows (docs/open-signup.md 4). */
+  recoveryNoticeAt?: number | null;
   /** The budget's sync epoch (migration 0006): changes when its database is restored. */
   syncEpoch?: string;
 }
@@ -190,6 +193,7 @@ export class Directory extends DurableObject<Env> {
       app.use('/api/settings/security/*', csrf);
       app.use('/api/settings/security', identity);
       app.route('/api', securityRoutes);
+      app.route('/api', recoveryRoutes);
       this.app = app;
     }
     const app = this.app;
@@ -245,9 +249,28 @@ export class Directory extends DurableObject<Env> {
         isAdmin: m.isAdmin,
         countUsage: share.count,
         share: share.state,
+        recoveryNoticeAt: m.isAdmin ? null : await recoveryNotice(env, m.userId, now),
         syncEpoch: this.syncEpoch(m.budgetId),
       },
     };
+  }
+
+  /** Sign-up's passkey options (routes/signup.ts); the Worker has checked the switch and Turnstile. */
+  async signupOptions(
+    url: string,
+    name: string,
+  ): Promise<{ status: number; body: unknown; cookie?: string }> {
+    this.ready();
+    return signupOptions(this.appEnv(), url, name, (await this.state(Date.now())) === 'normal');
+  }
+
+  /** A recovery code's passkey options (routes/signup.ts); the Worker has checked the switch and Turnstile. */
+  async recoverOptions(
+    url: string,
+    code: string,
+  ): Promise<{ status: number; body: unknown; cookie?: string }> {
+    this.ready();
+    return recoverOptions(this.appEnv(), url, code, (await this.state(Date.now())) === 'normal');
   }
 
   /** The budget's sync epoch (D-45, migration 0006). */
@@ -382,6 +405,13 @@ export class Directory extends DurableObject<Env> {
   }
 
   private appEnv(): Env {
-    return { ...this.env, DB: this.db };
+    return {
+      ...this.env,
+      DB: this.db,
+      BREAKER_NORMAL: async () => (await this.state(Date.now())) === 'normal',
+      NEW_STORE: async (budgetId: string) => {
+        await this.env.BUDGET.get(this.env.BUDGET.idFromName(budgetId)).health();
+      },
+    };
   }
 }

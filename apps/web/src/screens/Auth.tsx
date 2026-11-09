@@ -20,6 +20,7 @@ import {
 import { toast } from '../components/Toast';
 import { clearSavedData } from '../state/saved';
 import { signIn as copySignIn, signOutHere } from '../copy/copy';
+import { CreateAccountScreen, RecoverScreen, RecoveryCodeCard } from './Signup';
 
 /** Runs a WebAuthn ceremony and turns the browser's errors into plain sentences. */
 async function ceremony(fn: () => Promise<unknown>): Promise<string | null> {
@@ -87,8 +88,11 @@ export function SignInScreen() {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /** Open sign-up (D-75): Create account and Use a recovery code, only once the server turns them on. */
+  const [mode, setMode] = useState<'signin' | 'create' | 'recover'>('signin');
   const done = () => void qc.invalidateQueries({ queryKey: qk.session });
   const supported = browserSupportsWebAuthn();
+  const siteKey = status.data?.signupOpen ? (status.data.turnstileSiteKey ?? null) : null;
   const signIn = (auto: boolean) => {
     setBusy(true);
     void ceremony(signInWithPasskey).then((m) => {
@@ -151,6 +155,10 @@ export function SignInScreen() {
       </Frame>
     );
   }
+  if (siteKey && mode === 'create')
+    return <CreateAccountScreen siteKey={siteKey} onBack={() => setMode('signin')} />;
+  if (siteKey && mode === 'recover')
+    return <RecoverScreen siteKey={siteKey} onBack={() => setMode('signin')} />;
   return (
     <Frame title="Sign in">
       <p className="m-0 text-base leading-relaxed text-ink-2">Use the passkey on this device.</p>
@@ -169,6 +177,16 @@ export function SignInScreen() {
       <p className="m-0 text-sm leading-snug text-muted">
         New device? On a signed-in device, go to Settings → Sign-in → Add a device.
       </p>
+      {siteKey && (
+        <>
+          <SecondaryButton disabled={!supported} onClick={() => setMode('create')}>
+            Create account
+          </SecondaryButton>
+          <SecondaryButton disabled={!supported} onClick={() => setMode('recover')}>
+            Use a recovery code
+          </SecondaryButton>
+        </>
+      )}
     </Frame>
   );
 }
@@ -359,6 +377,7 @@ export function SignInSection() {
           </div>
         ))}
       </Card>
+      {sec.data?.recoveryCode && <RecoveryCodeCard />}
       {link ? (
         <Card className="flex flex-col gap-2 p-3">
           <span className="text-base font-semibold">Open this link on the new device</span>

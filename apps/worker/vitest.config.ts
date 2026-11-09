@@ -24,7 +24,7 @@ export default defineConfig(() => ({
   ],
   test: {
     include: ['test/**/*.test.ts'],
-    exclude: ['test/objects/**'],
+    exclude: ['test/objects/**', 'test/signup/**'],
     setupFiles: ['./test/setup.ts'],
   },
 }));
