@@ -24,15 +24,20 @@ import {
   noteUsage,
   restsDuring,
   usageToday,
+  utcDay,
   type BudgetState,
 } from '../sync/breaker.js';
 import { refreshUsage } from '../ops/usage.js';
 import { pruneAuthStmts } from '../maintenance.js';
 import { JobRunner, type Handler } from './jobs.js';
 import { nextUtc } from './budget-jobs.js';
+import { SHARE_PAUSED, Shares, type ShareState } from './shares.js';
 
 /** Budgets checked per ensure_all step (docs/multi-user.md 6.2). */
 export const ENSURE_BATCH = 25;
+
+/** A budget whose users haven't signed in for this long, and that has no banks, stops its daily jobs. */
+export const IDLE_MS = 30 * 86_400_000;
 
 /** The Directory is a single object; this is its name. */
 export const DIRECTORY_NAME = 'directory';
@@ -46,6 +51,9 @@ export interface Caller {
   verifiedAt: number;
   /** An admin (the first user): links banks, sees Settings → Users (docs/open-signup.md 5, 10). False when not given. */
   isAdmin?: boolean;
+  /** Fair use (store/shares.ts): whether the store reports its usage, and the budget's share. */
+  countUsage?: boolean;
+  share?: ShareState;
   /** The budget's sync epoch (migration 0006): changes when its database is restored. */
   syncEpoch?: string;
 }
@@ -63,6 +71,9 @@ export class Directory extends DurableObject<Env> {
   private app: Hono<AppEnv> | null = null;
   private readonly runner: JobRunner;
   private usageState: { state: BudgetState; at: number } | null = null;
+  private shares: Shares | null = null;
+  /** When each user's last_seen_at was last written by this instance (at most once an hour). */
+  private readonly seen = new Map<string, number>();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -128,16 +139,41 @@ export class Directory extends DurableObject<Env> {
       // Every budget's ensureJobs, ENSURE_BATCH per step.
       ensure_all: async (job, now) => {
         const cursor = (job.state as { cursor: string }).cursor ?? '';
-        const ids = this.ctx.storage.sql
-          .exec(`SELECT id FROM budget WHERE id > ? ORDER BY id LIMIT ?`, cursor, ENSURE_BATCH)
-          .toArray()
-          .map((r) => String(r.id));
-        for (const id of ids)
-          await this.env.BUDGET.get(this.env.BUDGET.idFromName(id))
-            .ensureJobs()
-            .catch((e: unknown) =>
-              console.log(JSON.stringify({ event: 'ensure_failed', budget: id, error: String(e) })),
+        const rows = this.ctx.storage.sql
+          .exec(
+            `SELECT b.id, (SELECT max(u.last_seen_at) FROM budget_member m JOIN user u ON u.id = m.user_id
+               WHERE m.budget_id = b.id) AS seen,
+               (SELECT value FROM app_state WHERE key = 'idle:' || b.id) AS idle_at
+             FROM budget b WHERE b.id > ? ORDER BY b.id LIMIT ?`,
+            cursor,
+            ENSURE_BATCH,
+          )
+          .toArray();
+        const ids = rows.map((r) => String(r.id));
+        for (const r of rows) {
+          const id = String(r.id);
+          // A budget nobody has opened for 30 days rests (docs/open-signup.md 9): once its store has stopped its
+          // daily jobs, it isn't called again until its user comes back.
+          const seen = r.seen === null ? null : Number(r.seen);
+          const idle = seen !== null && now - seen > IDLE_MS;
+          if (idle && r.idle_at !== null && seen! <= Number(r.idle_at)) continue;
+          const res = await this.env.BUDGET.get(this.env.BUDGET.idFromName(id))
+            .ensureJobs({ idle })
+            .catch((e: unknown) => {
+              console.log(JSON.stringify({ event: 'ensure_failed', budget: id, error: String(e) }));
+              return null;
+            });
+          if (res?.resting)
+            this.ctx.storage.sql.exec(
+              `INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)
+               ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+              `idle:${id}`,
+              String(now),
+              now,
             );
+          else if (res && r.idle_at !== null)
+            this.ctx.storage.sql.exec(`DELETE FROM app_state WHERE key = ?`, `idle:${id}`);
+        }
         if (ids.length < ENSURE_BATCH) return { done: true };
         return { state: { cursor: ids[ids.length - 1] }, runAt: now };
       },
@@ -194,6 +230,10 @@ export class Directory extends DurableObject<Env> {
     // 95% of a daily limit: stop reading too, so the app never runs into Cloudflare's hard stop (sync/breaker.ts).
     if (restsDuring(method, path) && (await this.state(Date.now())) === 'rest')
       return { ok: false, status: 503, body: { ...RESTING } };
+    this.touch(m.userId, now);
+    const share = await this.shareTracker().shareFor(m.budgetId, m.isAdmin, now);
+    if (share.state === 'readonly' && method !== 'GET' && method !== 'HEAD')
+      return { ok: false, status: 503, body: { ...SHARE_PAUSED } };
     return {
       ok: true,
       caller: {
@@ -203,6 +243,8 @@ export class Directory extends DurableObject<Env> {
         sessionId: who.sessionId ?? '',
         verifiedAt: who.verifiedAt,
         isAdmin: m.isAdmin,
+        countUsage: share.count,
+        share: share.state,
         syncEpoch: this.syncEpoch(m.budgetId),
       },
     };
@@ -237,15 +279,52 @@ export class Directory extends DurableObject<Env> {
     return r ? String(r.id) : null;
   }
 
-  /** Today's account usage, for the write breaker in every store (docs/multi-user.md 9.2). */
-  async usageToday(): Promise<{
+  /**
+   * Today's account usage, for the write breaker in every store (docs/multi-user.md 9.2), and, given the store's
+   * budget, its fair-use share (store/shares.ts).
+   */
+  async usageToday(budgetId?: string): Promise<{
     written: number;
     read: number;
     do: { requests: number; gbs: number };
     workers: number;
+    share?: ShareState;
   }> {
     const u = await usageToday(this.appEnv());
-    return { written: u.written, read: u.read, do: u.do, workers: u.workers };
+    const out = { written: u.written, read: u.read, do: u.do, workers: u.workers };
+    if (!budgetId) return out;
+    const admin = this.ctx.storage.sql
+      .exec(
+        `SELECT u.is_admin FROM budget_member m JOIN user u ON u.id = m.user_id WHERE m.budget_id = ? LIMIT 1`,
+        budgetId,
+      )
+      .toArray()[0];
+    const share = await this.shareTracker().shareFor(budgetId, admin?.is_admin !== 0, clock(this.appEnv()));
+    return { ...out, share: share.state };
+  }
+
+  /** A store's own rows and requests since its last report (store/shares.ts UsageCounter). */
+  async noteBudgetUsage(budgetId: string, written: number, read: number, requests: number): Promise<void> {
+    this.ready();
+    await this.shareTracker().record(budgetId, utcDay(clock(this.appEnv())), written, read, requests);
+  }
+
+  private shareTracker(): Shares {
+    this.shares ??= new Shares(this.db, this.appEnv());
+    return this.shares;
+  }
+
+  /** last_seen_at, at most once an hour per user (fair use counts active users; idle budgets rest). */
+  private touch(userId: string, now: number): void {
+    const last = this.seen.get(userId) ?? 0;
+    if (now - last < 3_600_000) return;
+    this.seen.set(userId, now);
+    this.ctx.storage.sql.exec(
+      `UPDATE user SET last_seen_at = ? WHERE id = ? AND (last_seen_at IS NULL OR last_seen_at < ?)`,
+      now,
+      userId,
+      now - 3_600_000,
+    );
   }
 
   /** The breaker's state, from usage_day at most once a minute (one row read). */
