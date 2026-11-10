@@ -47,7 +47,6 @@ export default class RetryLog implements Reporter {
 
 /** The first line of an error, without terminal colors. */
 function oneLine(message: string): string {
-  // eslint-disable-next-line no-control-regex
   const plain = message.replace(/\u001b\[[0-9;]*m/g, '');
   return (plain.split('\n').find((l) => l.trim()) ?? '').trim().slice(0, 200);
 }
