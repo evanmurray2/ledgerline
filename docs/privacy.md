@@ -192,7 +192,7 @@ Bodies are padded to size steps (256 bytes, 1 KB, 4 KB, 16 KB, 64 KB). A change 
 
 **What the row changes cover.** Every table an edit or a bank run writes, not only today's `SYNC_TABLES`: also `audit_log`, `txn_key_move`, the bank log (`bank_event`, `bank_page`) and its counter. Section 6.2 lists every table.
 
-**What the server checks on every append**, without reading anything sealed:
+**What the server checks on every append**, without reading anything sealed. The rules of the log itself are one piece of code that the server and every device both run (`docs/privacy-keys.md` 7.1), so an entry a device would refuse is a refused write and never a stored entry that stops every device:
 
 1. The signature, against the current signing key, and the key version.
 2. **Compare-and-swap:** the device sends `{ base: N, entries }`, and the server appends all of them or none, and only if the log's last number is `N`; otherwise it answers with the entries after `N`.

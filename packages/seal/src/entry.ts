@@ -20,7 +20,8 @@ import { aeadOpen, aeadSeal } from './aead.js';
 import type { BudgetKeys } from './budget-key.js';
 import { sign, verify } from './curve.js';
 import { sha256 } from './hash.js';
-import { MAX_PLAIN, pad, unpad } from './pad.js';
+import { NONCE_LEN, TAG_LEN } from './aead.js';
+import { MAX_PLAIN, pad, PAD_STEPS, unpad } from './pad.js';
 import {
   encodeSlotRecords,
   isSlotId,
@@ -62,8 +63,8 @@ export const MAX_RECEIPTS = 256;
 export const MAX_INBOXES = 16;
 export const WRAPPED_LEN = 60;
 export const SIGNATURE_LEN = 64;
-/** The largest body as stored: a key change with 64 slots is well under this. */
-const MAX_BODY = 1 << 20;
+/** The largest public body: a key change with 64 slots and 16 inbox keys is about 100 KB. */
+const MAX_BODY = 131072;
 const MAX_HEADER = 16384;
 const ZERO32 = new Uint8Array(32);
 
@@ -244,7 +245,7 @@ export async function openEntryBody(e: Entry, keys: BudgetKeys): Promise<Bytes> 
 }
 
 /** Whether the entry's signature is good for a signing public key. */
-export function verifyEntry(e: Entry, signPub: Uint8Array): Promise<boolean> {
+export function verifyEntry(e: Entry, signPub: Uint8Array | CryptoKey): Promise<boolean> {
   return verify(signPub, signedMessage(e.hash), e.signature);
 }
 
@@ -262,6 +263,12 @@ export async function readEntry(bytes: Uint8Array): Promise<Entry> {
   const signature = r.take(SIGNATURE_LEN);
   r.end();
   const header = readHeader(headerBytes);
+  // A sealed body is exactly a padding step, its nonce and its tag.
+  if (
+    !isPublicKind(header.kind) &&
+    !(PAD_STEPS as readonly number[]).includes(body.length - NONCE_LEN - TAG_LEN)
+  )
+    throw new FormatError('sealed body length');
   if (!equal(await sha256(body), header.bodyHash)) throw new FormatError('body hash');
   return { header, body, signature, hash: await sha256(headerBytes) };
 }
