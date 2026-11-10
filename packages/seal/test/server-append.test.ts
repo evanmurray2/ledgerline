@@ -6,11 +6,17 @@ import {
   type ChainState,
   checkGenesisWrite,
   checkWrite,
+  encodeCancel,
+  encodeKeyChange,
   encodeSlotChange,
+  encodeSnapshotHeader,
   type Entry,
   type EntryFields,
   INTENT_WAIT_MS,
   KIND,
+  type Kind,
+  MAX_KEY_ENTRIES_PER_WRITE,
+  MAX_WRITE_ENTRIES,
   newSlotRecord,
   passkeySlot,
   publicEntry,
@@ -18,6 +24,8 @@ import {
   type RefusedWhy,
   sealedEntry,
   sha256,
+  snapshotStandsAt,
+  SIGN_OUT_BODY_LEN,
   toHex,
   utf8,
 } from '../src/index.js';
@@ -30,7 +38,10 @@ function ctx(b: Budget, over: Partial<AppendContext> = {}): AppendContext {
   return {
     now: b.time,
     freshWay: false,
-    holds: () => Promise.resolve(false),
+    schemaVersion: 1,
+    processingVersion: 1,
+    stored: () => Promise.resolve(null),
+    keyEntriesLeft: 20,
     lastCompleteRun: b.state.filedThrough,
     receiptHashes: () => Promise.resolve(null),
     resting: false,
@@ -58,15 +69,16 @@ function drop(b: Budget, entries: Entry[]): void {
 const edit = (b: Budget, over: Partial<EntryFields> = {}, device = PHONE) =>
   sealedEntry(b.fields(KIND.edit, device, over), utf8('an edit'), b.keys);
 
-async function refused(p: Promise<unknown>): Promise<RefusedWhy> {
+async function refusedAs(p: Promise<unknown>): Promise<AppendRefused> {
   try {
     await p;
   } catch (e) {
-    if (e instanceof AppendRefused) return e.why;
+    if (e instanceof AppendRefused) return e;
     throw e;
   }
   throw new Error('not refused');
 }
+const refused = async (p: Promise<unknown>): Promise<RefusedWhy> => (await refusedAs(p)).why;
 
 async function store(b: Budget, entries: Entry[], c: AppendContext): Promise<ChainState> {
   const s = await checkWrite(b.state, entries, c);
@@ -95,6 +107,8 @@ describe("the server's rules for a write", () => {
       'clock',
     );
     expect(await refused(checkGenesisWrite(g, '01BX5ZZKBKACTAV9WEVGEMMVRZ', ctx(b)))).toBe('rules');
+    // A genesis entry is never part of a later write.
+    expect(await refused(checkWrite(b.state, [g], ctx(b)))).toBe('rules');
   });
 
   it('takes a write of several entries, all or none', async () => {
@@ -121,15 +135,35 @@ describe("the server's rules for a write", () => {
     await store(b, w, ctx(b, { now: b.time - 5 * MIN }));
   });
 
-  it('answers "already stored" for a write sent again, and refuses a half-stored one', async () => {
+  it('answers "already stored" only for a write that is in the log byte for byte', async () => {
     const b = await Budget.create();
-    const w = await build(b, [() => edit(b), () => edit(b)]);
-    const first = toHex(w[0]!.header.entryId);
-    expect(await checkWrite(b.state, w, ctx(b, { holds: () => Promise.resolve(true) }))).toBe(
-      'already stored',
-    );
-    const half = ctx(b, { holds: (id) => Promise.resolve(toHex(id) === first) });
-    expect(await refused(checkWrite(b.state, w, half))).toBe('partly stored');
+    const id = randomBytes(16);
+    const time = b.time + 1000;
+    const w = await build(b, [
+      () => edit(b),
+      () => edit(b, { entryId: id, part: 1, parts: 2, time }),
+      () => edit(b, { entryId: id, part: 2, parts: 2, time }),
+    ]);
+    const log = new Map<string, Uint8Array[]>();
+    const stored = (x: Uint8Array) => Promise.resolve(log.get(toHex(x)) ?? null);
+    log.set(toHex(w[0]!.header.entryId), [w[0]!.hash]);
+    log.set(toHex(id), [w[1]!.hash, w[2]!.hash]);
+    expect(await checkWrite(b.state, w, ctx(b, { stored }))).toBe('already stored');
+
+    // Some of it stored and some not.
+    log.delete(toHex(id));
+    const half = await refusedAs(checkWrite(b.state, w, ctx(b, { stored })));
+    expect(half.why).toBe('partly stored');
+    expect(half.retry).toBe(true);
+
+    // The id is in the log with other content, or with another number of parts: not the same change.
+    log.set(toHex(id), [w[1]!.hash, randomBytes(32)]);
+    expect(await refused(checkWrite(b.state, w, ctx(b, { stored })))).toBe('entry id');
+    log.set(toHex(id), [w[1]!.hash]);
+    expect(await refused(checkWrite(b.state, w, ctx(b, { stored })))).toBe('entry id');
+    // An entry that is nothing like the stored one, under a stored id.
+    const junk = { ...w[0]!, signature: new Uint8Array(64) as never, hash: randomBytes(32) };
+    expect(await refused(checkWrite(b.state, [junk], ctx(b, { stored })))).toBe('entry id');
   });
 
   it('refuses one entry id for two changes in a write', async () => {
@@ -158,7 +192,8 @@ describe("the server's rules for a write", () => {
     const waiting = (over: Partial<AppendContext> = {}) =>
       ctx(b, {
         lastCompleteRun: 3,
-        receiptHashes: (from, to) => Promise.resolve(from === 1 && to <= 3 ? hashes.slice(0, to) : null),
+        receiptHashes: (from, to) =>
+          Promise.resolve(from >= 1 && from <= to && to <= 3 ? hashes.slice(from - 1, to) : null),
         ...over,
       });
     const file = (through: number, shown: Uint8Array[]) =>
@@ -183,8 +218,16 @@ describe("the server's rules for a write", () => {
     expect(
       await refused(checkWrite(b.state, w, waiting({ receiptHashes: () => Promise.resolve(null) }))),
     ).toBe('receipts');
-    const s = await store(b, w, waiting());
-    expect(s.filedThrough).toBe(3);
+    drop(b, w);
+
+    // Two filings, one after the other: the second starts at run 2.
+    w = await build(b, [() => file(1, [receipts[0]!])]);
+    expect((await store(b, w, waiting())).filedThrough).toBe(1);
+    w = await build(b, [() => file(3, [receipts[0]!, receipts[1]!])]);
+    expect(await refused(checkWrite(b.state, w, waiting()))).toBe('receipts');
+    drop(b, w);
+    w = await build(b, [() => file(3, [receipts[1]!, receipts[2]!])]);
+    expect((await store(b, w, waiting())).filedThrough).toBe(3);
   });
 
   it('holds an edit back while a complete bank run waits, unless the write files it first', async () => {
@@ -239,26 +282,140 @@ describe("the server's rules for a write", () => {
     await store(b, w, held());
     w = await build(b, [() => b.intent(b.time + INTENT_WAIT_MS + 1000, [laptop.slotId])]);
     await store(b, w, held());
-    const k = await b.keyChangeEntry([b.passkey.slotId, b.recovery.slotId, laptop.slotId]);
+    const k = await b.keyChangeEntry([b.passkey.slotId, b.recovery.slotId, laptop.slotId], { lastOldRun: 5 });
     b.entries.push(k.entry);
     const s = await store(b, [k.entry], held());
     expect(s.public.keyVersion).toBe(2);
   });
 
-  it('asks a fresh way in for an intent that has waited before it removes a way in', async () => {
+  it('rests scans, data migrations and every part of a part set at the limit', async () => {
+    const b = await Budget.create();
+    const sealed = (kind: Kind, over: Partial<EntryFields> = {}) =>
+      sealedEntry(b.fields(kind, PHONE, over), utf8('x'), b.keys);
+    for (const kind of [KIND.scan, KIND.dataMigration]) {
+      const w = await build(b, [() => sealed(kind)]);
+      expect(await refused(checkWrite(b.state, w, ctx(b, { resting: true })))).toBe('limit');
+      await store(b, w, ctx(b));
+    }
+    const id = randomBytes(16);
+    const time = b.time + 1000;
+    const w = await build(b, [
+      () => sealed(KIND.edit, { entryId: id, part: 1, parts: 2, time }),
+      () => sealed(KIND.edit, { entryId: id, part: 2, parts: 2, time }),
+    ]);
+    expect(await refused(checkWrite(b.state, w, ctx(b, { resting: true })))).toBe('limit');
+    expect(await refused(checkWrite(b.state, w, ctx(b, { lastCompleteRun: 1 })))).toBe('bank runs first');
+  });
+
+  it('gives the kinds no limit holds back a small limit of their own', async () => {
+    const b = await Budget.create();
+    const signOut =
+      (text = 'out') =>
+      () =>
+        sealedEntry(b.fields(KIND.signOut, PHONE), utf8(text), b.keys);
+    // At most 4 in a write.
+    let w = await build(
+      b,
+      Array.from({ length: MAX_KEY_ENTRIES_PER_WRITE + 1 }, () => signOut()),
+    );
+    const over = await refusedAs(checkWrite(b.state, w, ctx(b)));
+    expect(over.why).toBe('limit');
+    expect(over.retry).toBe(true);
+    // And only as many as the budget has left today, resting or not.
+    expect(await refused(checkWrite(b.state, w.slice(0, 2), ctx(b, { keyEntriesLeft: 1 })))).toBe('limit');
+    await store(b, w.slice(0, 2), ctx(b, { keyEntriesLeft: 2, resting: true }));
+    b.entries.length -= 3;
+    b.undo();
+    // A sign-out carries nothing: a body past the smallest step is refused.
+    w = await build(b, [signOut('x'.repeat(300))]);
+    expect(w[0]!.body.length).toBeGreaterThan(SIGN_OUT_BODY_LEN);
+    expect(await refused(checkWrite(b.state, w, ctx(b)))).toBe('too large');
+  });
+
+  it('takes at most 32 entries in a write', async () => {
+    const b = await Budget.create();
+    const w = await build(
+      b,
+      Array.from({ length: MAX_WRITE_ENTRIES + 1 }, () => () => edit(b)),
+    );
+    expect(await refused(checkWrite(b.state, w, ctx(b)))).toBe('too many entries');
+    expect((await store(b, w.slice(0, MAX_WRITE_ENTRIES), ctx(b))).number).toBe(MAX_WRITE_ENTRIES + 1);
+  });
+
+  it('refuses a schema or processing version newer than the released app, which would stop every device', async () => {
+    const b = await Budget.create();
+    for (const over of [{ schemaVersion: 2 }, { schemaVersion: 0xffffffff }, { processingVersion: 2 }]) {
+      const w = await build(b, [() => edit(b, over)]);
+      expect(await refused(checkWrite(b.state, w, ctx(b)))).toBe('version');
+      drop(b, w);
+    }
+    const w = await build(b, [() => edit(b, { schemaVersion: 2, processingVersion: 3 })]);
+    await store(b, w, ctx(b, { schemaVersion: 2, processingVersion: 3 }));
+  });
+
+  it('keeps the scan date to tomorrow by its own clock', async () => {
+    const b = await Budget.create();
+    const scan = (day: number) => () =>
+      sealedEntry(b.fields(KIND.scan, PHONE, { scanThrough: day }), utf8('x'), b.keys);
+    const tomorrow = Math.floor(b.time / 86_400_000) + 1;
+    let w = await build(b, [scan(tomorrow + 1)]);
+    expect(await refused(checkWrite(b.state, w, ctx(b)))).toBe('clock');
+    drop(b, w);
+    w = await build(b, [scan(tomorrow)]);
+    await store(b, w, ctx(b));
+  });
+
+  it('a key change names the last complete run exactly', async () => {
+    const b = await Budget.create();
+    const keep = [b.passkey.slotId, b.recovery.slotId];
+    // A run is complete and not filed. Leaving it out would end bank filing, and with it every edit, for good.
+    let k = await b.keyChangeEntry(keep);
+    const low = await refusedAs(checkWrite(b.state, [k.entry], ctx(b, { lastCompleteRun: 1 })));
+    expect(low.why).toBe('last old run');
+    expect(low.retry).toBe(true);
+    b.undo();
+    // A number no run has: the replaced inbox key would never retire, and 15 of those end key changes.
+    k = await b.keyChangeEntry(keep, { lastOldRun: Number.MAX_SAFE_INTEGER });
+    expect(await refused(checkWrite(b.state, [k.entry], ctx(b, { lastCompleteRun: 1 })))).toBe(
+      'last old run',
+    );
+    b.undo();
+    k = await b.keyChangeEntry(keep, { lastOldRun: 1 });
+    const s = await checkWrite(b.state, [k.entry], ctx(b, { lastCompleteRun: 1 }));
+    expect(s).not.toBe('already stored');
+    expect([...(s as ChainState).public.retiredAt]).toEqual([[1, 1]]);
+  });
+
+  it('asks a fresh way in for an intent that has waited before any key change', async () => {
     const b = await Budget.create();
     const fresh = (over: Partial<AppendContext> = {}) => ctx(b, { freshWay: true, ...over });
     const keep = [b.recovery.slotId];
 
-    // No intent: refused for a fresh way in, taken for an old one.
+    // No intent: refused for a fresh way in.
     let k = await b.keyChangeEntry(keep);
     expect(await refused(checkWrite(b.state, [k.entry], fresh()))).toBe('intent needed');
     b.undo();
 
-    // A fresh way in that removes nothing needs no intent.
-    k = await b.keyChangeEntry([b.passkey.slotId, b.recovery.slotId]);
-    expect(await checkWrite(b.state, [k.entry], fresh())).not.toBe('already stored');
+    // Also when it seems to remove nothing. It keeps both slot ids and anchors, but the passkey's sealed record is
+    // noise: the passkey is locked out at once, and the server can't see that.
+    const body = await b.keyChangeBody([b.passkey.slotId, b.recovery.slotId]);
+    const slots = body.change.slots.map((r) =>
+      r.slotId === b.passkey.slotId ? { ...r, sealedKey: randomBytes(80), wrappedPub: randomBytes(60) } : r,
+    );
+    const lockOut = await publicEntry(
+      b.fields(KIND.keyChange, PHONE),
+      encodeKeyChange({ ...body.change, slots }),
+      b.keys,
+    );
+    expect(await refused(checkWrite(b.state, [lockOut], fresh()))).toBe('intent needed');
     b.undo();
+
+    // An intent and its use in one write: the wait is judged by the rules of the log.
+    let w = await build(b, [() => b.intent(b.time + 1000, [b.passkey.slotId])]);
+    const early = { number: w[0]!.header.number, hash: w[0]!.hash };
+    k = await b.keyChangeEntry(keep, { intent: early });
+    expect(await refused(checkWrite(b.state, [w[0]!, k.entry], fresh()))).toBe('rules');
+    drop(b, w);
 
     // With an intent, 7 days later.
     const wait = INTENT_WAIT_MS;
@@ -266,12 +423,32 @@ describe("the server's rules for a write", () => {
     b.entries.push(intent);
     await store(b, [intent], fresh());
     const named = { number: intent.header.number, hash: intent.hash };
-    b.time += wait;
+    const later = b.time + wait;
+    b.time = later;
     k = await b.keyChangeEntry(keep, { intent: named });
     // The server's clock has not reached the intent's date, though the entry's own time has.
-    expect(await refused(checkWrite(b.state, [k.entry], fresh({ now: b.time - 2000 })))).toBe(
-      'intent not due',
-    );
+    const notDue = await refusedAs(checkWrite(b.state, [k.entry], fresh({ now: b.time - 2000 })));
+    expect(notDue.why).toBe('intent not due');
+    expect(notDue.retry).toBe(true);
+    b.undo();
+    b.time = later;
+
+    // A cancel, then the use: the intent is gone.
+    w = await build(b, [
+      () =>
+        publicEntry(
+          b.fields(KIND.cancel, LAPTOP),
+          encodeCancel({ prevPublic: b.lastPublic, intent: named }),
+          b.keys,
+        ),
+    ]);
+    const prevPublic = { number: w[0]!.header.number, hash: w[0]!.hash };
+    k = await b.keyChangeEntry(keep, { intent: named, prevPublic });
+    expect(await refused(checkWrite(b.state, [w[0]!, k.entry], fresh()))).toBe('rules');
+    drop(b, w);
+    b.time = later;
+
+    k = await b.keyChangeEntry(keep, { intent: named });
     b.entries.push(k.entry);
     const s = await store(b, [k.entry], fresh());
     expect(s.public.keyVersion).toBe(2);
@@ -284,5 +461,39 @@ describe("the server's rules for a write", () => {
     b.entries.push(k.entry);
     const s = await store(b, [k.entry], ctx(b));
     expect(s.public.keyVersion).toBe(2);
+  });
+});
+
+describe('where a snapshot may stand', () => {
+  it('is at an entry of the log that ends a change, and nowhere else', async () => {
+    const b = await Budget.create();
+    const id = randomBytes(16);
+    const time = b.time + 1000;
+    const w = await build(b, [
+      () => edit(b),
+      () => edit(b, { entryId: id, part: 1, parts: 2, time }),
+      () => edit(b, { entryId: id, part: 2, parts: 2, time }),
+    ]);
+    const header = (
+      e: Entry,
+      over: Partial<{ number: number; entryHash: Uint8Array; budgetId: string }> = {},
+    ) =>
+      encodeSnapshotHeader({
+        budgetId: BUDGET,
+        snapshotId: '01CX5ZZKBKACTAV9WEVGEMMVRZ',
+        version: 1,
+        number: e.header.number,
+        entryHash: e.hash,
+        lastPublic: { number: 1, hash: b.entries[0]!.hash },
+        manifestHash: randomBytes(32),
+        ...over,
+      } as never);
+    expect(snapshotStandsAt(header(w[0]!), w[0]!)).toBe(true);
+    expect(snapshotStandsAt(header(w[2]!), w[2]!)).toBe(true);
+    expect(snapshotStandsAt(header(w[1]!), w[1]!)).toBe(false);
+    expect(snapshotStandsAt(header(w[0]!), w[2]!)).toBe(false);
+    expect(snapshotStandsAt(header(w[0]!, { entryHash: randomBytes(32) }), w[0]!)).toBe(false);
+    expect(snapshotStandsAt(header(w[0]!, { budgetId: '01BX5ZZKBKACTAV9WEVGEMMVRZ' }), w[0]!)).toBe(false);
+    expect(snapshotStandsAt(randomBytes(40), w[0]!)).toBe(false);
   });
 });

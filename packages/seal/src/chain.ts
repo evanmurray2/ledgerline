@@ -32,13 +32,22 @@ import { unwrapPrevKey } from './wrap.js';
 export const INTENT_WAIT_MS = 7 * 24 * 60 * 60 * 1000;
 /** How far ahead of the checker's clock an entry's time, or a scan date, may be. */
 export const CLOCK_SLACK_MS = 10 * 60 * 1000;
+/** The most devices that ever write to one budget. */
+export const MAX_DEVICES = 4096;
 /** Intents that are neither cancelled nor carried out, at one time. */
 export const MAX_OPEN_INTENTS = 16;
 const DAY_MS = 86_400_000;
 
 /** An entry that breaks the log's rules. From the server, it means the server sent what a real log could not hold. */
 export class ChainError extends Error {
-  constructor(readonly why: string) {
+  constructor(
+    readonly why: string,
+    /**
+     * True when the cause may be the checker's own clock and not the entry: the entry is dated ahead of it. A device
+     * tries such an entry again later; it is not proof that the server lied.
+     */
+    readonly retry = false,
+  ) {
     super(`chain: ${why}`);
   }
 }
@@ -50,9 +59,18 @@ export class UpdateNeededError extends Error {
   }
 }
 
-const fail = (why: string): never => {
-  throw new ChainError(why);
+const fail = (why: string, retry = false): never => {
+  throw new ChainError(why, retry);
 };
+
+/** A signing key as the engine holds it. Bytes that are no usable key break the rules like anything else. */
+async function importSignKey(pub: Uint8Array): Promise<CryptoKey> {
+  try {
+    return await signPublicKey(pub);
+  } catch {
+    return fail('signing key');
+  }
+}
 
 /** Parses a public body; one that doesn't parse breaks the rules like any other. */
 function parse<T>(read: (body: Uint8Array) => T, body: Uint8Array): T {
@@ -131,7 +149,7 @@ async function startPublic(e: Entry, budgetId?: string): Promise<PublicState> {
     genesisSignPub: g.signPub,
     keyVersion: 1,
     signPub: g.signPub,
-    signKey: await signPublicKey(g.signPub),
+    signKey: await importSignKey(g.signPub),
     signPubs: new Map([[1, g.signPub]]),
     inboxVersion: 1,
     inboxPub: g.inboxPub,
@@ -191,7 +209,7 @@ async function applyKeyChange(p: PublicState, e: Entry, k: KeyChange): Promise<P
     ...p,
     keyVersion: k.version,
     signPub: k.signPub,
-    signKey: await signPublicKey(k.signPub),
+    signKey: await importSignKey(k.signPub),
     signPubs: new Map(p.signPubs).set(k.version, k.signPub),
     inboxVersion: k.inboxVersion,
     inboxPub: k.inboxPub,
@@ -296,7 +314,7 @@ export async function startChain(genesis: Entry, c: Checker, budgetId?: string):
   const h = genesis.header;
   if (c.schemaVersion !== undefined && h.schemaVersion > c.schemaVersion) throw new UpdateNeededError();
   const p = await startPublic(genesis, budgetId);
-  if (h.time > c.now + CLOCK_SLACK_MS) fail('dated in the future');
+  if (h.time > c.now + CLOCK_SLACK_MS) fail('dated in the future', true);
   if (h.deviceCounter !== 1) fail('device counter');
   return {
     public: p,
@@ -330,8 +348,10 @@ export async function advance(s: ChainState, e: Entry, c: Checker): Promise<Chai
   if (h.keyVersion !== p.keyVersion) fail('key version not in force');
   if (!(await verifyEntry(e, p.signKey))) fail('signature');
   if (c.schemaVersion !== undefined && h.schemaVersion > c.schemaVersion) throw new UpdateNeededError();
-  if (h.time > c.now + CLOCK_SLACK_MS) fail('dated in the future');
+  if (h.time > c.now + CLOCK_SLACK_MS) fail('dated in the future', true);
   const last = s.counters.get(h.deviceId) ?? 0;
+  // A snapshot names every device, and has room for this many.
+  if (last === 0 && s.counters.size >= MAX_DEVICES) fail('too many devices');
   if (h.deviceCounter !== last + 1) fail('device counter');
 
   // Parts: a set is consecutive entries that agree on everything but their part number and counter.
@@ -367,7 +387,7 @@ export async function advance(s: ChainState, e: Entry, c: Checker): Promise<Chai
     if (h.kind === KIND.scan ? h.scanThrough < s.scanThrough : h.scanThrough !== s.scanThrough)
       fail('scan date');
     if (h.scanThrough > Math.floor((c.now + DAY_MS + CLOCK_SLACK_MS) / DAY_MS))
-      fail('scan date in the future');
+      fail('scan date in the future', true);
     if (h.parts > 1)
       pending = {
         entryId: h.entryId,
@@ -492,7 +512,11 @@ export async function olderKeys(
 /** A chain state as a device or the server keeps it between runs: everything but the imported key. */
 export type StoredChain = Omit<ChainState, 'public'> & { public: Omit<PublicState, 'signKey'> };
 
-/** The state to store. It holds only numbers, text, bytes, lists and maps, so structured storage keeps it whole. */
+/**
+ * The state to store. It holds only numbers, text, bytes, lists and maps, so structured storage keeps it whole. It
+ * grows with the devices and the public entries of the budget, so a keeper with a small limit per stored value keeps
+ * `counters` and `public.publics` as rows of their own.
+ */
 export function toStored(s: ChainState): StoredChain {
   const { signKey: _, ...p } = s.public;
   return { ...s, public: p };
@@ -503,51 +527,57 @@ export async function fromStored(s: StoredChain): Promise<ChainState> {
   return { ...s, public: { ...s.public, signKey: await signPublicKey(s.public.signPub) } };
 }
 
-/** Where a snapshot stands in the log, beyond its number and hash: what the next entry is checked against (section 8). */
-export interface ChainPosition {
-  number: number;
-  hash: Bytes;
-  /** Of the entry the snapshot stands at. */
-  time: number;
-  entryId: Bytes;
-  filedThrough: number;
-  scanThrough: number;
-  /** Each device's last counter. */
-  counters: Map<string, number>;
-}
-
 /**
- * A chain that starts at a snapshot and not at the genesis entry. `p` is the public state after the snapshot's last
- * public entry: the public chain walked up to that entry (`walkPublic` with `mustEndAt`). `at` comes from the
- * snapshot's manifest, which the budget key sealed. A snapshot never stands inside a part set.
+ * A chain that starts at a snapshot and not at the genesis entry (section 8).
+ *
+ * - `p` is the public state after the snapshot's last public entry: the public chain walked up to that entry
+ *   (`walkPublic` with `mustEndAt`).
+ * - `last` is the entry the snapshot stands at, which the server keeps. It must be the entry the snapshot's signed
+ *   header names (`at`), so its time, entry id, filed runs and scan date are the log's own and not a writer's copy.
+ * - `counters` are each device's last counter, from the snapshot's manifest, which the budget key sealed.
+ *
+ * A snapshot never stands inside a part set.
  */
-export function resumeChain(p: PublicState, at: ChainPosition): ChainState {
-  const last = p.lastPublic;
-  if (!Number.isSafeInteger(at.number) || at.number < last.number)
-    fail('the snapshot stands before its public entry');
-  if (at.hash.length !== 32 || at.entryId.length !== 16) fail('snapshot position');
-  if (at.number === last.number && !equal(at.hash, last.hash))
-    fail('the snapshot stands before its public entry');
-  if (at.time < p.time || at.filedThrough < p.filedThrough)
-    fail('the snapshot stands before its public entry');
-  if (at.number === last.number && (at.time !== p.time || at.filedThrough !== p.filedThrough))
-    fail('snapshot position');
+export async function resumeChain(
+  p: PublicState,
+  at: PublicRef,
+  last: Entry,
+  counters: Map<string, number>,
+): Promise<ChainState> {
+  await checkBound(last);
+  const h = last.header;
+  if (h.budgetId !== p.budgetId) fail('another budget');
+  if (h.number !== at.number || !equal(last.hash, at.hash)) fail('not the entry the snapshot stands at');
+  if (h.part !== h.parts) fail('a snapshot never stands inside a part set');
+  const pub = p.lastPublic;
+  if (h.number < pub.number) fail('the snapshot stands before its public entry');
+  if (h.number === pub.number) {
+    if (!equal(last.hash, pub.hash)) fail('the snapshot stands before its public entry');
+  } else {
+    // An entry after the last public one: sealed, and signed by the key in force.
+    if (isPublicKind(h.kind)) fail('a public entry the walk does not hold');
+    if (h.keyVersion !== p.keyVersion) fail('key version not in force');
+    if (!(await verifyEntry(last, p.signKey))) fail('signature');
+    if (h.time < p.time || h.filedThrough < p.filedThrough)
+      fail('the snapshot stands before its public entry');
+  }
+  if (counters.size > MAX_DEVICES) fail('too many devices');
   let total = 0;
-  for (const c of at.counters.values()) {
+  for (const c of counters.values()) {
     if (!Number.isSafeInteger(c) || c < 1) fail('device counter');
     total += c;
   }
-  // Every entry raised one device's counter by 1.
-  if (total !== at.number) fail('device counter');
+  // Every entry raised one device's counter by 1, and the last entry raised its writer's.
+  if (total !== h.number || counters.get(h.deviceId) !== h.deviceCounter) fail('device counter');
   return {
     public: p,
-    number: at.number,
-    hash: at.hash,
-    time: at.time,
-    entryId: at.entryId,
-    filedThrough: at.filedThrough,
-    scanThrough: at.scanThrough,
-    counters: new Map(at.counters),
+    number: h.number,
+    hash: last.hash,
+    time: h.time,
+    entryId: h.entryId,
+    filedThrough: h.filedThrough,
+    scanThrough: h.scanThrough,
+    counters: new Map(counters),
     pending: null,
   };
 }

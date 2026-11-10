@@ -685,3 +685,42 @@ describe('a device that holds nothing yet', () => {
     await expect(openBudget(forged, real.passkey)).rejects.toMatchObject({ why: 'anchor' });
   });
 });
+
+describe('rules the review of the server side added', () => {
+  it('marks an entry dated ahead of the checker as one to try again, not as a lie', async () => {
+    const b = await Budget.create();
+    const e = await sealedEntry(b.fields(KIND.edit, PHONE), utf8('x'), b.keys);
+    const slow = advance(b.state, e, { now: e.header.time - 11 * 60 * 1000 });
+    await expect(slow).rejects.toMatchObject({ why: 'dated in the future', retry: true });
+    const other = advance(b.state, { ...e, signature: randomBytes(64) }, b.checker);
+    await expect(other).rejects.toMatchObject({ why: 'signature', retry: false });
+  });
+
+  it('takes no more devices than a snapshot can name', async () => {
+    const b = await Budget.create();
+    const counters = new Map(b.state.counters);
+    for (let i = 0; counters.size < 4096; i++)
+      counters.set('01DX5ZZKBKACTAV9WEVG' + i.toString(32).toUpperCase().padStart(6, '0'), 1);
+    const full = { ...b.state, counters };
+    const fromNew = await sealedEntry(b.fields(KIND.edit, LAPTOP), utf8('x'), b.keys);
+    await expect(advance(full, fromNew, b.checker)).rejects.toThrow('too many devices');
+    b.undo();
+    const fromKnown = await sealedEntry(b.fields(KIND.edit, PHONE), utf8('x'), b.keys);
+    expect((await advance(full, fromKnown, b.checker)).number).toBe(2);
+  });
+
+  it('refuses a key change to a signing key that is no usable key', async () => {
+    const b = await Budget.create();
+    const keep = [b.passkey.slotId, b.recovery.slotId];
+    for (const signPub of [new Uint8Array(32), fromHex('01' + '00'.repeat(31))]) {
+      const { change } = await b.keyChangeBody(keep);
+      expect(() => encodeKeyChange({ ...change, signPub: signPub as never })).not.toThrow();
+      const e = await publicEntry(
+        b.fields(KIND.keyChange, PHONE),
+        encodeKeyChange({ ...change, signPub: signPub as never }),
+        b.keys,
+      );
+      await b.refuses(e, 'signing key');
+    }
+  });
+});

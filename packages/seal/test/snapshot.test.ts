@@ -54,16 +54,10 @@ async function make(version = 1, number = 2500, keys?: BudgetKeys) {
       })),
       { number, hash: entryHash },
     ],
-    position: {
-      time: 1_800_000_000_000,
-      entryId: randomBytes(16),
-      filedThrough: 7,
-      scanThrough: 20000,
-      counters: [
-        { deviceId: DEVICE, counter: number - 1 },
-        { deviceId: LATER, counter: 1 },
-      ],
-    },
+    counters: [
+      { deviceId: DEVICE, counter: number - 1 },
+      { deviceId: LATER, counter: 1 },
+    ],
   };
   const plain = [randomBytes(5000), randomBytes(5000), randomBytes(123)];
   const snap = await sealSnapshot(k, at, plain);
@@ -276,24 +270,14 @@ describe('a snapshot', () => {
       chunkHashes: [fromHex('01'.repeat(32))],
       tables: [{ name: 'payee', hash: fromHex('02'.repeat(32)) }],
       checkpoints: [{ number: 10, hash: fromHex('ab'.repeat(32)) }],
-      position: {
-        time: 0x0102030405,
-        entryId: fromHex('ee'.repeat(16)),
-        filedThrough: 3,
-        scanThrough: 20000,
-        counters: [
-          { deviceId: DEVICE, counter: 6 },
-          { deviceId: LATER, counter: 4 },
-        ],
-      },
+      counters: [
+        { deviceId: DEVICE, counter: 6 },
+        { deviceId: LATER, counter: 4 },
+      ],
     };
     const bytes = encodeManifest(m);
     expect(readManifest(bytes)).toEqual(m);
     const position =
-      '0000000102030405' +
-      'ee'.repeat(16) +
-      '0000000000000003' +
-      '00004e20' +
       '0002' +
       '0000001a' +
       toHex(utf8(DEVICE)) +
@@ -341,12 +325,12 @@ describe('a snapshot', () => {
     expect(() => readManifest(withTail('0001' + '0000000000000009' + 'ab'.repeat(32)))).toThrow(FormatError);
     expect(() => readManifest(withTail('0001' + '000000000000000a' + 'cd'.repeat(32)))).toThrow(FormatError);
     expect(() => readManifest(withTail('0000'))).toThrow(FormatError);
-    // A position whose counters don't add up to the number, whose devices are out of order, or that names none.
+    // Device counters that don't add up to the number, whose devices are out of order, or that names none.
     const checkpoint = '0001' + '000000000000000a' + 'ab'.repeat(32);
-    expect(readManifest(withTail(checkpoint)).position.counters[1]!.counter).toBe(4);
+    expect(readManifest(withTail(checkpoint)).counters[1]!.counter).toBe(4);
     expect(() => readManifest(withTail(checkpoint, position.slice(0, -1) + '5'))).toThrow('add up');
     const d = (id: string, n: string) => '0000001a' + toHex(utf8(id)) + n;
-    const head = position.slice(0, 16 + 32 + 16 + 8);
+    const head = '';
     const six = '0000000000000006';
     const four = '0000000000000004';
     expect(() => readManifest(withTail(checkpoint, head + '0002' + d(LATER, six) + d(DEVICE, four)))).toThrow(
@@ -356,14 +340,15 @@ describe('a snapshot', () => {
       readManifest(withTail(checkpoint, head + '0002' + d(DEVICE, six) + d(DEVICE, four))),
     ).toThrow('device order');
     expect(() => readManifest(withTail(checkpoint, head + '0000'))).toThrow('device count');
-    for (const position of [
-      { ...m.position, counters: [] },
-      { ...m.position, counters: [{ deviceId: DEVICE, counter: 9 }] },
-      { ...m.position, counters: [{ deviceId: 'phone', counter: 10 }] },
-      { ...m.position, entryId: randomBytes(15) },
-      { ...m.position, counters: [m.position.counters[1]!, m.position.counters[0]!] },
+    for (const counters of [
+      [],
+      [{ deviceId: DEVICE, counter: 9 }],
+      [{ deviceId: 'phone', counter: 10 }],
+      [{ deviceId: DEVICE, counter: 10.5 }],
+      [m.counters[1]!, m.counters[0]!],
+      [m.counters[0]!, { deviceId: DEVICE, counter: 4 }],
     ])
-      expect(() => encodeManifest({ ...m, position })).toThrow(RangeError);
+      expect(() => encodeManifest({ ...m, counters })).toThrow(RangeError);
     // A snapshot at entry 2,500 carries the checkpoints 1,000 and 2,000 and its own, in that order.
     const big = (await make()).at;
     const good = {
@@ -371,7 +356,7 @@ describe('a snapshot', () => {
       number: 2500,
       entryHash: big.entryHash,
       checkpoints: big.checkpoints,
-      position: big.position,
+      counters: big.counters,
     };
     expect(readManifest(encodeManifest(good)).checkpoints.map((c) => c.number)).toEqual([1000, 2000, 2500]);
     type Point = { number: number; hash: Bytes };
