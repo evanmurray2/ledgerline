@@ -1,1 +1,21 @@
-* @evanmurray2
+# The owner's paths (docs/privacy.md 5.10, D-85, D-88): a pull request that changes any of these is merged by the
+# owner, never by a Claude session. `node tools/ci/owner-paths.mjs` lists the files of a branch that match.
+# A line is a file, or a folder ending in "/". Paths that don't exist yet are where that code will live.
+
+# Keys and sealing, on the device and in the Worker
+/packages/seal/ @evanmurray2
+/apps/web/src/keys/ @evanmurray2
+/apps/web/src/copy/vault.ts @evanmurray2
+/apps/web/src/copy/passkey.ts @evanmurray2
+/apps/worker/src/seal/ @evanmurray2
+
+# What decides which code runs in the browser
+/apps/web/public/_headers @evanmurray2
+/apps/web/public/sw.js @evanmurray2
+/apps/web/index.html @evanmurray2
+/apps/web/vite.config.ts @evanmurray2
+
+# What ships the code
+/.github/ @evanmurray2
+/apps/worker/wrangler.jsonc @evanmurray2
+/tools/ci/owner-paths.mjs @evanmurray2
