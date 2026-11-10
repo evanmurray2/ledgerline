@@ -16,6 +16,7 @@ export default defineConfig({
   timeout: 45_000,
   expect: { timeout: 10_000 },
   reporter: report.reporter,
+  retries: report.retries,
   outputDir: report.outputDir,
   use: { baseURL: `http://localhost:${PORT}`, colorScheme: 'light', ...report.use },
   projects: [{ name: 'desktop', use: { browserName: 'chromium', viewport: { width: 1280, height: 800 } } }],

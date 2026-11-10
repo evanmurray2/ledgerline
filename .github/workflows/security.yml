@@ -56,7 +56,7 @@ jobs:
           persist-credentials: false
       - name: actionlint 1.7.12 (checksum-verified)
         run: |
-          curl -sSLo actionlint.tgz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          curl -fsSL --retry 3 --retry-all-errors -o actionlint.tgz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint.tgz" | sha256sum -c -
           tar xzf actionlint.tgz actionlint
           ./actionlint -color
