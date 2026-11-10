@@ -27,7 +27,7 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] Full backup can't be restored: `BudgetStore.restoreDump` and `restoreVerify` work (tests only), but no route or tool reaches them, and a restore needs an empty budget. Design a runbook path (owner, Nov 9: a runbook step, not a button); `docs/runbooks/restore.md` says so today.
 - [ ] Only if two devices ever show different numbers for the same data: a check where each device posts a hash of its month and Needs attention says when two differ (owner, Nov 9: skipped for now; `engine.test.ts` and `engine-upgrade.test.ts` cover the known causes).
 - [ ] Card refunds can't be linked to their purchase: nothing makes a `refund_of` link outside the test data, so the payment category always gives back what it holds (Money rule 3, unlinked), and "Not this purchase" has nothing to unlink (D-80).
-- [ ] Privacy design (`docs/privacy.md`, v6, three review rounds; owner's decisions in D-85): nothing built. Open: four questions for the owner in its section 14.2 on how bank rows are filed (times, order and transfers, no fetching after 90 idle days, edits and runs). Then its phase 0.
+- [ ] Privacy design (`docs/privacy.md`, v6, three review rounds; owner's decisions in D-85 and D-86): nothing built. Next is its phase 0 (measurements and checks, section 10). The exact transfer look-back rule (D-86 item 2) needs the owner's yes when built.
 
 ## Contract gaps (not blocking)
 
