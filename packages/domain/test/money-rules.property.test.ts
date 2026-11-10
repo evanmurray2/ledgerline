@@ -419,6 +419,37 @@ describe('rule 3: card refund', () => {
     expect(checkIdentity(proj, r, START).ok).toBe(true);
   });
 
+  it('a split whose lines no longer add up: the gap is uncategorized until you fix it (D-82)', () => {
+    // A $120 check split $60 Gifts (c0) and $60 Dining out (c1), whose amount then becomes $500. The lines stay as
+    // they are; the $380 they don't cover counts as uncategorized spending, so the identity (rule 10) still holds and
+    // neither category nor Ready to Assign moves.
+    const split = (amount: number) =>
+      tx('chk', '2026-01-05', amount, {
+        type: 'split',
+        lines: [
+          { id: 's0', categoryId: 'c0', amount: cents(-6_000) },
+          { id: 's1', categoryId: 'c1', amount: cents(-6_000) },
+        ],
+      });
+    const input = (amount: number) => ({
+      accounts: [{ ...CHK, startingBalance: cents(100_000) }],
+      categories: cats(2, []),
+      assignments: [
+        { categoryId: 'c0', month: START, amount: cents(6_000) },
+        { categoryId: 'c1', month: START, amount: cents(6_000) },
+      ],
+      txns: [split(amount)],
+      current: START,
+    });
+    const even = run(input(-12_000));
+    const off = run(input(-50_000));
+    expect(off.p.uncategorizedNet).toBe(-38_000);
+    expect(cell(off.r, START, 'c0').available).toBe(0);
+    expect(cell(off.r, START, 'c1').available).toBe(0);
+    expect(off.r.rta).toBe(even.r.rta);
+    expect(checkIdentity(off.p, off.r, START).ok).toBe(true);
+  });
+
   it('a split refund keeps its link to the purchase', () => {
     const p = tx('card', '2026-01-05', -5_000, cat('c0'));
     const { r } = run({
@@ -693,6 +724,44 @@ describe('rule 11: Close and Cancel', () => {
         expect(closed.r.rta - open.r.rta).toBe(o - p);
         expect(cell(closed.r, cur, 'c0').available - cell(open.r, cur, 'c0').available).toBe(p - o);
         expect(cell(closed.r, START, 'c0').available).toBe(cell(open.r, START, 'c0').available);
+      }),
+      { numRuns: RUNS },
+    );
+  });
+
+  it('Reopen in a later month (D-80): the closing month stays as closed; the reopening month gives it back', () => {
+    fc.assert(
+      fc.property(amt(1, 100_000), amt(0, 100_000), (o, paid) => {
+        const p = Math.min(paid, o);
+        const shut = addMonths(START, 1);
+        const cur = addMonths(START, 2);
+        const x = cents(o - p);
+        const mk = (mark: Partial<{ closed: object; pastCloses: object[] }>) =>
+          run({
+            accounts: [{ ...CHK, startingBalance: cents(1_000_000) }],
+            categories: cats(1, []),
+            assignments: [],
+            txns: [
+              tx('chk', '2026-01-10', -o, cat('c0'), {
+                owed: [{ itemId: 'i', amount: o, ...mark }] as never,
+              }),
+              tx('chk', '2026-01-20', p, { type: 'rta' }),
+            ],
+            current: cur,
+          });
+        const closed = mk({ closed: { month: shut, date: `${shut}-05`, amount: x } });
+        const reopened = mk({
+          pastCloses: [
+            { id: 'a', month: shut, amount: x },
+            { id: 'b', month: cur, amount: cents(-x) },
+          ],
+        });
+        // The month it was closed in is exactly as if it had stayed closed.
+        expect(cell(reopened.r, shut, 'c0')).toEqual(cell(closed.r, shut, 'c0'));
+        expect(cell(reopened.r, START, 'c0')).toEqual(cell(closed.r, START, 'c0'));
+        // The reopening month gives the category the amount back, and RTA gives it up.
+        expect(cell(reopened.r, cur, 'c0').available - cell(closed.r, cur, 'c0').available).toBe(x);
+        expect(reopened.r.rta - closed.r.rta + x).toBe(0);
       }),
       { numRuns: RUNS },
     );

@@ -2,12 +2,14 @@
 // the Worker; the SPA uses the inferred types. Money is integer cents everywhere; months are 'YYYY-MM', dates
 // 'YYYY-MM-DD'. Mutations require `content-type: application/json` and the `x-ledgerline: 1` header.
 import { z } from 'zod';
-import { cents, date, id, month } from './scalars.js';
+import { calendarDate, cents, date, id, month } from './scalars.js';
 import { AccountRow, StartBalance } from './accounts.js';
 
 export * from './accounts.js';
 
 export const CSRF_HEADER = 'x-ledgerline';
+/** On an online edit: the change number the phone's copy holds; the answer then carries the changes since it. */
+export const SYNC_SINCE_HEADER = 'x-sync-since';
 
 // ---------------------------------------------------------------- session
 
@@ -29,6 +31,10 @@ export const Session = z.object({
   /** 95% of a daily limit: reading stops too, and the app shows what it saved (optional: older Workers omit it). */
   readsPaused: z.boolean().optional(),
   settings: z.object({ tracking: z.boolean(), noteButton: z.boolean() }),
+  /** Whether this user may link a new bank (D-75: admins only on Plaid Trial). Older Workers omit it: true. */
+  canLinkBanks: z.boolean().optional(),
+  /** When this user's recovery code was used, while the notice shows (14 days, D-75); null otherwise. */
+  recoveryNoticeAt: z.string().nullable().optional(),
 });
 export type Session = z.infer<typeof Session>;
 
@@ -135,6 +141,8 @@ export const BudgetView = z.object({
   /** Fund-all total for the Underfunded section. */
   underfundedTotal: cents,
   syncProblem: z.string().nullable(),
+  /** Categories pinned to the top of Budget, oldest pin first (D-74). May name archived or removed ones. */
+  pinned: z.array(id).default([]),
 });
 export type BudgetView = z.infer<typeof BudgetView>;
 
@@ -271,6 +279,19 @@ export const ActivityView = z.object({
   samePurchase: z.array(
     z.object({ id: z.string(), row: TxnListRow, candidates: z.array(TxnListRow).min(1) }),
   ),
+  /**
+   * A bank pending row removed with nothing posted after 5 days, usually a released hold (the `vanished_pending`
+   * alert). OK dismisses it with POST /api/alerts/:id/dismiss.
+   */
+  removedByBank: z.array(
+    z.object({
+      id: z.string(),
+      payee: z.string(),
+      amount: cents,
+      date: z.string().nullable(),
+      accountName: z.string().nullable(),
+    }),
+  ),
   pending: z.array(TxnListRow),
   pendingTotal: cents,
   upcoming: z.array(TxnListRow),
@@ -306,6 +327,8 @@ export const TxnSheet = z.object({
   rawName: z.string(),
   accountId: id,
   accountName: z.string(),
+  /** A paired transfer: the account on the other side. */
+  otherAccountName: z.string().nullable().optional(),
   date,
   postedDate: date.nullable(),
   amount: cents,
@@ -380,7 +403,7 @@ export const TxnPatch = z.object({
       num: z.number().int().optional(),
       den: z.number().int().optional(),
       amount: cents.optional(),
-      expectBy: date.nullable(),
+      expectBy: calendarDate.nullable(),
     })
     .nullable()
     .optional(),
@@ -393,7 +416,7 @@ export const CategorizeRequest = z.object({
 export const NewTxnRequest = z.object({
   kind: z.enum(['pending', 'upcoming']),
   accountId: id,
-  date,
+  date: calendarDate,
   /** Outflow negative. */
   amount: cents,
   payee: z.string().min(1).max(120),
@@ -408,7 +431,17 @@ export const MatchRequest = z.object({
   /** The rest of the inflow: Income goes to RTA; Keep waiting and I'll send it back stay in Waiting to match. */
   rest: z.enum(['income', 'keep', 'send_back']),
 });
-export const TransferPick = z.object({ otherKey: z.string().nullable() });
+/**
+ * The answer to "Which account got this money?": a deposit's key, `null` for a payment, or `unlinked: true` (with
+ * `otherKey: null`) for an account that isn't linked, which takes the money out of Ready to Assign (D-20). With
+ * `otherKey: null` and `accountId`, the other side hasn't arrived yet: a pending entry of the opposite amount is
+ * added in that account, paired with this row, and the bank's row takes it over when it comes (D-83).
+ */
+export const TransferPick = z.object({
+  otherKey: z.string().nullable(),
+  unlinked: z.boolean().optional(),
+  accountId: id.optional(),
+});
 /** An answer to "Same purchase?" for one of the card's candidates (its key). */
 export const SamePurchaseAnswer = z.object({ answer: z.enum(['yes', 'no']), key: z.string() });
 export const PendingCheckAction = z.object({ action: z.enum(['keep_waiting', 'delete']) });
@@ -444,14 +477,18 @@ export const OwedView = z.object({
       still: cents,
       expectBy: date.nullable(),
       status: z.enum(['open', 'late', 'paid_back', 'closed', 'canceled']),
+      /** Closed items: the month Close out counted in, and the amount it moved (Reopen, D-80). */
+      closedMonth: month.nullable().optional(),
+      closedAmount: cents.nullable().optional(),
     }),
   ),
   projected: z.array(z.object({ key: z.string(), date, owed: cents, shortfall: cents, label: z.string() })),
 });
 export type OwedView = z.infer<typeof OwedView>;
 export const OwedAction = z.object({
-  action: z.enum(['close', 'cancel', 'snooze']),
-  expectBy: date.optional(),
+  /** reopen: undoes Close out or Remove the mark (D-80). */
+  action: z.enum(['close', 'cancel', 'snooze', 'reopen']),
+  expectBy: calendarDate.optional(),
 });
 
 // ---------------------------------------------------------------- accounts
@@ -462,6 +499,10 @@ export const RegisterView = z.object({
   note: z.string().nullable(),
   /** Linked accounts only. */
   start: StartBalance.nullable().optional(),
+  /** Why Close account can't run yet (the balance, pending rows or a card's payment category isn't $0); null when it can. */
+  closeBlock: z.string().nullable(),
+  /** A card's payment category available, sent with Close account; null for cash accounts. */
+  cardAvailable: cents.nullable(),
 });
 export type RegisterView = z.infer<typeof RegisterView>;
 
@@ -518,6 +559,7 @@ export const GroupUpsert = z.object({
  * Archiving a category moves what it still has to Ready to Assign. The phone works that amount out (D-45) and sends
  * it with the change number it worked it out at; the server refuses with 409 `changed` if anything changed since.
  */
+export const PinRequest = z.object({ pinned: z.boolean() });
 export const ArchiveRequest = z.object({
   archived: z.boolean(),
   available: cents.optional(),
@@ -536,6 +578,8 @@ export const PayeesView = z.object({
       transactions: z.number().int(),
       /** The category you've used most for money out to this payee. */
       usual: z.string().nullable(),
+      /** That category's id, to offer it first when you add a transaction for this payee. */
+      usualId: id.nullable(),
       /** The bank's own texts behind this payee, most used first (at most 10). */
       bankNames: z.array(z.object({ name: z.string(), count: z.number().int() })),
     }),
@@ -553,6 +597,15 @@ export const MergePayees = z.object({
 export const MergeResult = z.object({ ok: z.literal(true), undoId: z.string() });
 export type MergeResult = z.infer<typeof MergeResult>;
 export const RenameAccount = z.object({ name: z.string().trim().min(1).max(60) });
+/**
+ * Close an account (only at $0). The app adds what this phone shows: the working balance, a card's payment category
+ * available, and the change number it worked them out at; the server refuses if anything changed since.
+ */
+export const CloseAccount = z.object({
+  working: z.number().int().optional(),
+  available: z.number().int().optional(),
+  through: z.number().int().optional(),
+});
 export const RenamePayee = z.object({ name: z.string().min(1).max(120), remember: z.boolean().optional() });
 
 export const ConnectionsView = z.object({
@@ -620,13 +673,6 @@ export const SettingsPatch = z.object({
   noteButton: z.boolean().optional(),
 });
 
-export const ImportCsvRequest = z.object({ accountId: id, csv: z.string().max(5_000_000) });
-export const ImportResult = z.object({
-  imported: z.number().int(),
-  skipped: z.number().int(),
-  history: z.number().int(),
-});
-
 export const HealthView = z.object({
   ok: z.boolean(),
   connections: z.array(z.object({ id, lastSyncedAt: z.number().int().nullable(), stale: z.boolean() })),
@@ -650,10 +696,17 @@ export const AuthStatus = z.object({
   hasPasskey: z.boolean(),
   /** No passkey yet and a setup code is configured: show first-time setup. */
   setupOpen: z.boolean(),
+  /** Open sign-up and recovery codes are on (D-75); the Turnstile site key the check uses. */
+  signupOpen: z.boolean().optional(),
+  turnstileSiteKey: z.string().optional(),
 });
 export type AuthStatus = z.infer<typeof AuthStatus>;
 
 export const SecurityView = z.object({
+  /** This user has a recovery code and can make a new one (users who aren't admins, D-75). */
+  recoveryCode: z.boolean().optional(),
+  /** Show Settings → Users (admins, once there is anyone else or sign-up is on). */
+  usersScreen: z.boolean().optional(),
   passkeys: z.array(
     z.object({ id: z.string(), name: z.string(), createdAt: z.string(), lastUsedAt: z.string().nullable() }),
   ),
@@ -688,8 +741,6 @@ export const DeviceLink = z.object({ url: z.string(), expiresAt: z.string() });
 export const DeviceShare = z.object({ id: z.string(), share: z.string() });
 export type DeviceShare = z.infer<typeof DeviceShare>;
 export type DeviceLink = z.infer<typeof DeviceLink>;
-
-export type ImportResult = z.infer<typeof ImportResult>;
 
 // ---------------------------------------------------------------- full backup (docs/multi-user.md 8.7)
 

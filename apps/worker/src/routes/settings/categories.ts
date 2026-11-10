@@ -1,4 +1,4 @@
-// Settings → Categories and groups: list, add, rename, archive, remove and reorder.
+// Settings → Categories and groups: list, add, rename, archive, remove, reorder and pin.
 import type { Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
 import { clock } from '../../http/clock.js';
@@ -7,6 +7,7 @@ import {
   RemoveCategoryRequest,
   CategoryUpsert,
   GroupUpsert,
+  PinRequest,
   ReorderRequest,
   type CategoriesView,
 } from '@ledgerline/contracts';
@@ -15,6 +16,7 @@ import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../../http/context.js';
 import { ACK, CHANGED, GONE, HttpError, parse, scoped } from '../api.js';
 import { fresh, monthResult, structure } from '../../views/common.js';
+import { PINNED_KEY, readPinned } from '../../views/pinned.js';
 import type { Scoped } from '../../db/scoped.js';
 
 export const categoriesRoutes = new Hono<AppEnv>();
@@ -79,8 +81,9 @@ categoriesRoutes.get('/settings/categories', async (c) => {
             })),
         })),
     ],
+    // A closed card's payment category comes back when the card opens again, not from here (D-73).
     archived: categories
-      .filter((x) => x.archived_at)
+      .filter((x) => x.archived_at && x.kind !== 'cc_payment')
       .map((x) => ({
         id: x.id,
         name: x.name,
@@ -187,7 +190,10 @@ categoriesRoutes.post('/settings/categories/:id/archive', async (c) => {
   return c.json(ACK);
 });
 
-/** Archive (or restore) a category. Archiving one that still has money moves the money to Ready to Assign first. */
+/**
+ * Archive (or restore) a category. Archiving one that still has money moves the money to Ready to Assign first; one
+ * that is overspent is refused until the overspending is covered.
+ */
 async function archiveCategory(
   s: Scoped,
   id: string,
@@ -216,6 +222,8 @@ async function archiveCategory(
       if (sent.through === undefined || (latest?.n ?? 0) > sent.through)
         throw new HttpError(409, 'changed', CHANGED);
     }
+    // Archived, its overspending would drop out of Budget's attention while still counting (D-79).
+    if (avail < 0) throw new HttpError(422, 'overspent', 'Cover this category’s overspending first.');
     if (avail > 0) {
       w.push(
         s.q(
@@ -232,6 +240,32 @@ async function archiveCategory(
   w.push(s.audit(archived ? 'category.archive' : 'category.restore', 'category', id, null, null, now));
   await s.batch(w);
 }
+
+/**
+ * Pin a category to the top of Budget, or unpin it. One category at a time, so a change sent later from a phone that
+ * was offline doesn't undo pins made on another device meanwhile. Pinning changes no money.
+ */
+categoriesRoutes.post('/settings/categories/:id/pin', async (c) => {
+  const r = await parse(PinRequest, c.req.raw);
+  const s = scoped(c);
+  const now = clock(c.env);
+  const id = c.req.param('id');
+  const row = await s.first<{ value: string }>(
+    `SELECT value FROM setting WHERE budget_id = ?1 AND key = ?2`,
+    PINNED_KEY,
+  );
+  const was = readPinned(row?.value);
+  const ids = r.pinned ? (was.includes(id) ? was : [...was, id]) : was.filter((x) => x !== id);
+  if (ids.length > 200) throw new HttpError(422, 'invalid', 'Unpin a category first.');
+  if (ids.length !== was.length)
+    await s.run(
+      `INSERT INTO setting (budget_id, key, value, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (budget_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      PINNED_KEY,
+      JSON.stringify(ids),
+      now,
+    );
+  return c.json(ACK);
+});
 
 categoriesRoutes.post('/settings/categories/:id/remove', async (c) => {
   const s = scoped(c);

@@ -67,7 +67,7 @@ The setup code stops working once a passkey exists. For a non-Apple device, use 
 1. Link your first bank: **Settings → Bank connections**. Each link uses 1 of your 10, for good. Confirm the starting balance it shows.
 2. In Cloudflare: **Workers & Pages → ledgerline → Logs**. After that first sync, check CPU time per step: fetch about 3.5 ms, apply about 5.5 ms (`docs/measurements.md`).
 3. Run it beside your current budgeting tool for a month and reconcile.
-4. Now and then, download Settings → Import and export → JSON export and keep it in Files or iCloud (`docs/runbooks/restore.md`).
+4. Now and then, download Settings → Backup and export → Full backup and keep it in Files or iCloud (`docs/runbooks/restore.md`).
 
 ## Optional extras
 
@@ -75,7 +75,7 @@ The setup code stops working once a passkey exists. For a non-Apple device, use 
 
 ## Recovery
 
-- **Lost every passkey?** In the Cloudflare dashboard, open [Durable Objects](https://dash.cloudflare.com/?to=/:account/workers/durable-objects), then the `Directory` object of the `ledgerline` Worker, and run `DELETE FROM passkey; DELETE FROM auth_session;` in its data browser (not tried yet from a phone; if it isn't there, ask a Claude session for a one-off fix). Then use the setup code again. If the old code may be known, change `SETUP_CODE` in the `production` environment and merge a change to redeploy first.
+- **Lost every passkey?** In the Cloudflare dashboard, open [Durable Objects](https://dash.cloudflare.com/?to=/:account/workers/durable-objects), then the `Directory` object of the `ledgerline` Worker, and run `DELETE FROM auth_session WHERE user_id IN (SELECT id FROM user WHERE is_admin = 1); DELETE FROM passkey WHERE user_id IN (SELECT id FROM user WHERE is_admin = 1);` in its data browser. This removes only the admin's passkeys and sessions, never another user's (not tried yet from a phone; if it isn't there, ask a Claude session for a one-off fix). Then use the setup code again. If the old code may be known, change `SETUP_CODE` in the `production` environment and merge a change to redeploy first.
 - **Rotating `TOKEN_KEYS`**: set it to `1:<old>,2:<new>` and add the secret `TOKEN_KEY_CURRENT` = `2` in the `production` environment, set the repository variable `ROTATE_TOKEN_KEYS` to `true`, then merge a change to deploy. Old rows keep decrypting with key 1. Set `ROTATE_TOKEN_KEYS` back to `false` afterwards: without it, a deploy never replaces the Worker's `TOKEN_KEYS`, so a wrong value in GitHub can't make the saved bank logins unreadable.
 
 ## Local development (computer)

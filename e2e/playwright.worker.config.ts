@@ -4,7 +4,8 @@ import { failureReport } from './report';
 // The SPA served by the real Worker on local `wrangler dev`, with a local store seeded with the canonical November
 // fixture before each test (DEV_ROUTES) and "today" pinned to Nov 14, 2026 (FAKE_NOW). Build apps/web first.
 const report = failureReport('worker');
-const PORT = 8799;
+// E2E_PORT: run several copies side by side (each its own wrangler dev).
+const PORT = Number(process.env.E2E_PORT ?? 8799);
 
 export default defineConfig({
   testDir: './tests',
@@ -13,6 +14,7 @@ export default defineConfig({
   timeout: 45_000,
   expect: { timeout: 10_000 },
   reporter: report.reporter,
+  retries: report.retries,
   outputDir: report.outputDir,
   use: { baseURL: `http://127.0.0.1:${PORT}`, colorScheme: 'light', ...report.use },
   projects: [

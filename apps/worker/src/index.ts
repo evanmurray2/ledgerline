@@ -54,7 +54,7 @@ app.all('/__dev/*', async (c) => {
   return routeDev(c.req.raw, c.env);
 });
 // Everything else is the SPA (static assets with SPA fallback).
-app.all('*', (c) => (c.env.ASSETS ? c.env.ASSETS.fetch(c.req.raw) : c.text('Not found', 404)));
+app.all('*', async (c) => (c.env.ASSETS ? c.env.ASSETS.fetch(c.req.raw) : c.text('Not found', 404)));
 
 // Only plain functions, classes and the default handler may be exported here: workerd refuses any other export.
 export default {

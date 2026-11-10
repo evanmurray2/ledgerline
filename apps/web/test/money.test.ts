@@ -66,6 +66,12 @@ describe('parseCents', () => {
     expect(parseCents('12.')).toBe(1200);
   });
 
+  it('reads a pasted amount with the sign after the dollar sign', () => {
+    expect(parseCents('$-3')).toBe(-300);
+    expect(parseCents('$ −1,234.5')).toBe(-123450);
+    expect(parseCents('$--3')).toBeNull();
+  });
+
   it('rejects anything that is not an amount', () => {
     for (const s of ['', ' ', 'abc', '12a', '1,00', '1.2.3', '$', '.', '--5', '1e3', 'NaN', '12,34.00'])
       expect(parseCents(s)).toBeNull();

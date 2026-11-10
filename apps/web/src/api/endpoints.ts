@@ -10,7 +10,6 @@ import {
   CategoriesView,
   CategorySheet,
   ConnectionsView,
-  ImportResult,
   MatchView,
   MutationResult,
   OwedView,
@@ -40,7 +39,6 @@ import type {
   TargetRequest,
   TransferPick,
   TxnPatch,
-  ImportCsvRequest,
   MergePayees,
   RenameAccount,
   RenamePayee,
@@ -52,6 +50,28 @@ import { del, get, patch, post, put, qs } from './client';
 type In<T extends z.ZodType> = z.input<T>;
 
 const Ok = z.object({ ok: z.literal(true) });
+/** A new account or a recovery also returns the recovery code, shown once (D-75). */
+const UsersView = z.object({
+  users: z.number().int(),
+  maxUsers: z.number().int(),
+  signupsToday: z.number().int(),
+  signupsPerDay: z.number().int(),
+  signupsOpen: z.boolean(),
+  list: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      admin: z.boolean(),
+      status: z.string(),
+      joinedAt: z.string(),
+      lastSeenAt: z.string().nullable(),
+      stuck: z.boolean(),
+    }),
+  ),
+  next: z.string().nullable(),
+});
+export type UsersView = z.infer<typeof UsersView>;
+const RegisterResult = z.object({ ok: z.literal(true), recoveryCode: z.string().optional() });
 const OkId = z.object({ ok: z.literal(true), id: z.string() });
 const LinkToken = z.object({ linkToken: z.string() });
 const Exchange = z.object({ ok: z.literal(true), connectionId: z.string(), accounts: z.unknown() });
@@ -79,13 +99,31 @@ export const api = {
   authStatus: () => get('/api/auth/status', AuthStatus),
   registerOptions: (body: { setupCode?: string; deviceToken?: string }) =>
     post('/api/auth/register/options', z.unknown(), body),
-  registerVerify: (body: { response: unknown; name: string }) => post('/api/auth/register/verify', Ok, body),
+  registerVerify: (body: { response: unknown; name: string }) =>
+    post('/api/auth/register/verify', RegisterResult, body),
+  // Open sign-up and recovery codes (D-75): only while the switch is on.
+  signupOptions: (body: { name: string; turnstileToken: string }) =>
+    post('/api/auth/signup/options', z.unknown(), body),
+  recoverOptions: (body: { code: string; turnstileToken: string }) =>
+    post('/api/auth/recover/options', z.unknown(), body),
+  newRecoveryCode: () => post('/api/settings/security/recovery-code', z.object({ code: z.string() })),
+  dismissRecoveryNotice: () => post('/api/settings/security/recovery-notice/dismiss', Ok),
+  // Deleting your own account, and Settings → Users for admins (D-75).
+  deleteAccount: (budgetName: string) => post('/api/settings/security/delete-account', Ok, { budgetName }),
+  users: (q: { before?: string; status?: string } = {}) =>
+    get(
+      `/api/settings/security/users?${new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][])}`,
+      UsersView,
+    ),
+  userAction: (id: string, action: 'turn-off' | 'turn-on' | 'retry-delete') =>
+    post(`/api/settings/security/users/${enc(id)}/${action}`, Ok),
   loginOptions: () => post('/api/auth/login/options', z.unknown()),
   loginVerify: (body: { response: unknown }) => post('/api/auth/login/verify', Ok, body),
   security: () => get('/api/settings/security', SecurityView),
   deviceLink: () => post('/api/settings/security/device-link', DeviceLink),
   removePasskey: (id: string) => post(`/api/settings/security/passkeys/${enc(id)}/remove`, Ok),
-  signOutOthers: () => post('/api/settings/security/sign-out-others', Ok),
+  renamePasskey: (id: string, name: string) =>
+    post(`/api/settings/security/passkeys/${enc(id)}/rename`, Ok, { name }),
   signOutSession: (id: string) => post('/api/settings/security/sign-out-session', Ok, { id }),
   signOut: () => post('/api/settings/security/sign-out', Ok),
 
@@ -136,6 +174,8 @@ export const api = {
   categories: () => get('/api/settings/categories', CategoriesView),
   upsertCategory: (body: In<typeof CategoryUpsert>) => post('/api/settings/categories', OkId, body),
   upsertGroup: (body: In<typeof GroupUpsert>) => post('/api/settings/groups', OkId, body),
+  pinCategory: ({ id, pinned }: { id: string; pinned: boolean }) =>
+    post(`/api/settings/categories/${enc(id)}/pin`, MutationResult, { pinned }),
   archiveCategory: (id: string, archived: boolean) =>
     post(`/api/settings/categories/${enc(id)}/archive`, MutationResult, { archived }),
   reorderCategories: (ids: string[]) => post('/api/settings/categories/reorder', Ok, { ids }),
@@ -154,6 +194,9 @@ export const api = {
   dismissAlert: (id: string) => post(`/api/alerts/${enc(id)}/dismiss`, Ok, {}),
   renameAccount: (id: string, body: In<typeof RenameAccount>) =>
     post(`/api/accounts/${enc(id)}/name`, Ok, body),
+  /** The app adds the balance and change number this phone shows (client.ts). */
+  closeAccount: (id: string) => post(`/api/accounts/${enc(id)}/close`, Ok, {}),
+  reopenAccount: (id: string) => post(`/api/accounts/${enc(id)}/reopen`, Ok, {}),
   renamePayee: (id: string, body: In<typeof RenamePayee>) =>
     post(`/api/settings/payees/${enc(id)}`, Ok, body),
 
@@ -169,13 +212,10 @@ export const api = {
   startingBalances: (body: In<typeof StartingBalances>) =>
     post('/api/setup/starting-balances', MutationResult, body),
   patchSettings: (body: In<typeof SettingsPatch>) => patch('/api/settings', Ok, body),
-  importCsv: (body: In<typeof ImportCsvRequest>) => post('/api/import/csv', ImportResult, body),
   note: (body: In<typeof NoteRequest>) => post('/api/notes', Ok, body),
 };
 
 /** File downloads go straight to the Worker (same origin, Access cookie). */
 export const exportUrls = {
-  json: '/api/export/json',
-  csv: '/api/export/csv',
   usage: '/api/export/usage',
 } as const;

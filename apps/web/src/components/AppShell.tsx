@@ -1,9 +1,11 @@
 // Phone: screen content above a bottom tab bar (Budget, Activity, Accounts, Reports). Desktop: a left sidebar
 // replaces the tab bar and a right-hand panel holds sheets. The offline / read-only banner sits on top.
+import { RecoveryNotice } from '../screens/Signup';
 import { useState, type ReactNode } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { PanelSlotContext, useModalOpen } from './Sheet';
 import { ToastHost } from './Toast';
+import { BlockedAction } from './BlockedAction';
 import { CountBadge, cx, Icon, useIsDesktop, type IconName } from './ui';
 import { NoteSheet } from '../screens/Note';
 import { useBadgeCounts, useSession } from '../api/hooks';
@@ -16,7 +18,9 @@ import { useTabMonth } from '../state/month';
 
 type Tab = 'budget' | 'activity' | 'accounts' | 'reports' | 'settings';
 
-export function tabFor(path: string): Tab {
+export function tabFor(path: string, search?: Record<string, unknown>): Tab {
+  // Owed to you opens from Budget and from Accounts' net worth card; it lights the tab it came from.
+  if (path.startsWith('/owed') && search?.from === 'accounts') return 'accounts';
   if (path.startsWith('/activity')) return 'activity';
   if (path.startsWith('/settings')) return 'settings';
   if (path.startsWith('/accounts')) return 'accounts';
@@ -96,7 +100,8 @@ function TabBar({ active }: { active: Tab }) {
 
 function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void; noteButton: boolean }) {
   const badges = useBadges();
-  const canWrite = useCanWrite();
+  // Assigning works offline with the copy on this device (D-45), like the Assign sheet itself.
+  const canWrite = useCanWrite({ offline: true });
   const month = useTabMonth();
   const rta = badges.rta;
   const items: { id: Tab; name: string; to: string; badge: number }[] = [
@@ -154,7 +159,14 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
         )}
       >
         <span className="text-xs font-semibold">{done ? 'All money assigned' : 'Ready to Assign'}</span>
-        <span className="tnum text-3xl font-bold" data-testid="nav-rta">
+        {/* On one line: a long amount steps down a size rather than leave its minus sign on a line of its own. */}
+        <span
+          className={cx(
+            'tnum whitespace-nowrap font-bold',
+            rta !== undefined && formatCents(rta).length > 12 ? 'text-2xl' : 'text-3xl',
+          )}
+          data-testid="nav-rta"
+        >
           {badges.rtaUpdating ? 'Updating' : rta === undefined ? '—' : formatCents(rta)}
         </span>
         {/* The one Assign button on desktop, on every screen, so the amount isn't repeated in a header. */}
@@ -168,12 +180,12 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
               Assign
             </Link>
           ) : (
-            <span
-              aria-disabled="true"
+            <BlockedAction
+              track="nav.assign.blocked"
               className="mt-1.5 flex h-9 items-center justify-center rounded-full bg-rta-fg/50 text-md font-bold text-rta-btn-fg"
             >
               Assign
-            </span>
+            </BlockedAction>
           ))}
       </div>
     </nav>
@@ -254,7 +266,8 @@ function ReadOnlyBanner({ until }: { until: string }) {
 export function AppShell({ children }: { children: ReactNode }) {
   const desktop = useIsDesktop();
   const path = useRouterState({ select: (s) => s.location.pathname });
-  const active = tabFor(path);
+  const from = useRouterState({ select: (s) => (s.location.search as { from?: unknown }).from });
+  const active = tabFor(path, { from });
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const [noteOpen, setNoteOpen] = useState(false);
   const session = useSession();
@@ -269,6 +282,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <DNav active={active} onNote={() => setNoteOpen(true)} noteButton={noteButton} />
           <div className="flex min-w-0 flex-1 flex-col">
             <StatusBanner />
+            <RecoveryNotice />
             <main className="flex min-h-0 flex-1 flex-col">{children}</main>
           </div>
           <div
@@ -289,6 +303,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         inert={modal || undefined}
       >
         <StatusBanner />
+        <RecoveryNotice />
         <main className="flex min-h-0 flex-1 flex-col">{children}</main>
         <TabBar active={active} />
       </div>

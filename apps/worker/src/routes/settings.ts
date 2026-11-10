@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { clock } from '../http/clock.js';
 import { SettingsPatch, SetupStart, StartingBalances } from '@ledgerline/contracts';
 import type { AppEnv } from '../http/context.js';
-import { ACK, HttpError, parse, scoped, GONE } from './api.js';
+import { ACK, HttpError, parse, scoped, GONE, FAR_MONTH, inReach, thisMonth } from './api.js';
 import { budgetMeta, type AccountRowDb } from '../ledger/ledger.js';
 
 import { categoriesRoutes } from './settings/categories.js';
@@ -26,6 +26,7 @@ settingsRoutes.post('/setup/start', async (c) => {
     `SELECT budget_start_month FROM budget WHERE id = ?1`,
   );
   if (b?.budget_start_month) throw new HttpError(409, 'started', 'Your budget start is already set.');
+  if (!inReach(r.startMonth, await thisMonth(s, now))) throw new HttpError(422, 'too_far', FAR_MONTH);
   await s.batch([
     s.q(
       `UPDATE budget SET budget_start_month = ?2, summary_dirty_from = ?2, summary_version = summary_version + 1, updated_at = ?3 WHERE id = ?1`,

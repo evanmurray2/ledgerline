@@ -4,15 +4,49 @@ import type { Db, Stmt } from '@ledgerline/db/sql';
 import type { Env } from '../env.js';
 import { extendForSleep } from './lease.js';
 
-export const WRITE_LIMIT = 100_000;
-export const READ_LIMIT = 5_000_000;
+/**
+ * The account's daily limits. Today's figures are Cloudflare's Free plan (docs/multi-user.md 9.3); each can be set
+ * with a Worker variable for another plan (docs/open-signup.md 7). The 70%, 90% and 95% rules don't change (D-40).
+ */
+export interface DailyLimits {
+  rowsWritten: number;
+  rowsRead: number;
+  /** Durable Object requests and active time (GB-s). */
+  doRequests: number;
+  doGbs: number;
+  /** Worker requests, account-wide (static assets don't count). */
+  workerRequests: number;
+}
 
-/** Durable Objects on Free: 100,000 requests and 13,000 GB-s of active time a day (docs/multi-user.md 9.3). */
-export const DO_REQUEST_LIMIT = 100_000;
-export const DO_GBS_LIMIT = 13_000;
+export const FREE_LIMITS: DailyLimits = {
+  rowsWritten: 100_000,
+  rowsRead: 5_000_000,
+  doRequests: 100_000,
+  doGbs: 13_000,
+  workerRequests: 100_000,
+};
 
-/** Workers on Free: 100,000 requests a day, account-wide (static assets don't count). */
-export const WORKER_REQUEST_LIMIT = 100_000;
+/** A positive whole number, or the default when the variable is missing or invalid. */
+function limit(v: string | undefined, fallback: number): number {
+  const n = Number(v);
+  return v !== undefined && v.trim() !== '' && Number.isSafeInteger(n) && n > 0 ? n : fallback;
+}
+
+/** The limits this deploy runs under: the Worker variables `LIMIT_*`, else the Free plan's. */
+export function dailyLimits(
+  env: Pick<
+    Env,
+    'LIMIT_ROWS_WRITTEN' | 'LIMIT_ROWS_READ' | 'LIMIT_DO_REQUESTS' | 'LIMIT_DO_GBS' | 'LIMIT_WORKER_REQUESTS'
+  >,
+): DailyLimits {
+  return {
+    rowsWritten: limit(env.LIMIT_ROWS_WRITTEN, FREE_LIMITS.rowsWritten),
+    rowsRead: limit(env.LIMIT_ROWS_READ, FREE_LIMITS.rowsRead),
+    doRequests: limit(env.LIMIT_DO_REQUESTS, FREE_LIMITS.doRequests),
+    doGbs: limit(env.LIMIT_DO_GBS, FREE_LIMITS.doGbs),
+    workerRequests: limit(env.LIMIT_WORKER_REQUESTS, FREE_LIMITS.workerRequests),
+  };
+}
 
 /**
  * 'normal'; 'pause' (70%: background work waits); 'readonly' (90%: changes refused, the app reads less often);
@@ -36,8 +70,9 @@ export function classifyUsage(
   rowsRead: number,
   d: DoUsage = { requests: 0, gbs: 0 },
   workerRequests = 0,
+  limits: DailyLimits = FREE_LIMITS,
 ): BudgetState {
-  const share = usageShare(rowsWritten, rowsRead, d, workerRequests);
+  const share = usageShare(rowsWritten, rowsRead, d, workerRequests, limits);
   if (share >= 0.95) return 'rest';
   if (share >= 0.9) return 'readonly';
   if (share >= 0.7) return 'pause';
@@ -50,13 +85,14 @@ export function usageShare(
   rowsRead: number,
   d: DoUsage = { requests: 0, gbs: 0 },
   workerRequests = 0,
+  limits: DailyLimits = FREE_LIMITS,
 ): number {
   return Math.max(
-    rowsWritten / WRITE_LIMIT,
-    rowsRead / READ_LIMIT,
-    d.requests / DO_REQUEST_LIMIT,
-    d.gbs / DO_GBS_LIMIT,
-    workerRequests / WORKER_REQUEST_LIMIT,
+    rowsWritten / limits.rowsWritten,
+    rowsRead / limits.rowsRead,
+    d.requests / limits.doRequests,
+    d.gbs / limits.doGbs,
+    workerRequests / limits.workerRequests,
   );
 }
 
@@ -78,7 +114,14 @@ export function utcDay(now = Date.now()): string {
 export async function usageToday(
   env: Env,
   now = Date.now(),
-): Promise<{ written: number; read: number; do: DoUsage; workers: number; refreshedAt: number | null }> {
+): Promise<{
+  written: number;
+  read: number;
+  do: DoUsage;
+  workers: number;
+  refreshedAt: number | null;
+  share?: 'normal' | 'pause' | 'readonly';
+}> {
   // Inside a budget's Durable Object, account usage lives in the Directory (docs/multi-user.md 9.2).
   if (env.USAGE) {
     const u = await env.USAGE();
@@ -88,6 +131,7 @@ export async function usageToday(
       do: u.do ?? { requests: 0, gbs: 0 },
       workers: u.workers ?? 0,
       refreshedAt: null,
+      ...(u.share ? { share: u.share } : {}),
     };
   }
   const r = await env.DB.prepare(
@@ -116,7 +160,9 @@ export async function usageToday(
 /** Background paths call this before each unit of work. Usage events are dropped from the 70% tier. */
 export async function writeBudgetState(env: Env): Promise<BudgetState> {
   const u = await usageToday(env);
-  const s = classifyUsage(u.written, u.read, u.do, u.workers);
+  const s = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(env));
+  // Past this budget's fair-use share, its background work waits too (store/shares.ts).
+  if (s === 'normal' && u.share && u.share !== 'normal') return 'pause';
   return s === 'readonly' || s === 'rest' ? 'pause' : s;
 }
 

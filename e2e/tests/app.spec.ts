@@ -25,7 +25,7 @@ test('Budget shows Ready to Assign and the November groups', async ({ page }) =>
   await expect(page.getByText('$1,430.60 out').first()).toBeVisible();
 });
 
-test('Needs attention fixes move money and Ready to Assign reads $643.65', async ({ page }) => {
+test('Needs attention fixes move money and Ready to Assign reads $663.65', async ({ page }) => {
   await page.goto('/budget?view=attention');
   await expect(rta(page)).toHaveText('$981.90');
   const fixes: [string, string][] = [
@@ -38,11 +38,9 @@ test('Needs attention fixes move money and Ready to Assign reads $643.65', async
     await page.getByRole('button', { name }).click();
     await expect(rta(page)).toHaveText(after);
   }
-  // Low has its own filter.
+  // Low isn't in Needs attention, and has no filter of its own: its row says Low.
   await expect(page.getByRole('button', { name: 'Add $20.00 for Personal care' })).toHaveCount(0);
-  await page.getByRole('button', { name: /^Low \d/ }).click();
-  await page.getByRole('button', { name: 'Add $20.00 for Personal care' }).click();
-  await expect(rta(page)).toHaveText('$643.65');
+  await expect(page.getByRole('button', { name: /^Low/ })).toHaveCount(0);
   await expect(page.getByText('Done just now')).toBeVisible();
   await expect(page.getByText('Added $18.25 from Ready to Assign')).toBeVisible();
   await expect(page.getByText('Moved $40.00 back to Ready to Assign')).toBeVisible();
@@ -50,6 +48,28 @@ test('Needs attention fixes move money and Ready to Assign reads $643.65', async
   await page.getByRole('button', { name: 'All' }).click();
   await expect(page.getByText('Freedom Unlimited').first()).toBeVisible();
   await expect(page.getByText('needs $18.25 more')).toHaveCount(0);
+});
+
+test('Pin a category: it shows first under Pinned, and Unpin takes it off', async ({ page }) => {
+  await page.goto('/budget');
+  const rows = page.locator('[data-track="budget.category"]', { hasText: 'Personal care' });
+  await expect(page.getByText('Pinned', { exact: true })).toHaveCount(0);
+  await rows.first().click();
+  const pin = page.getByRole('button', { name: 'Pin Personal care to the top' });
+  await expect(pin).toHaveAttribute('aria-pressed', 'false');
+  await pin.click();
+  await expect(pin).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/\/budget$/);
+  // The first group is Pinned, and it lists the category; its own group still has it too.
+  await expect(page.getByText('Pinned', { exact: true })).toBeVisible();
+  await expect(rows).toHaveCount(2);
+  // Unpin from the sheet (the Worker suite checks a reload keeps the pin).
+  await rows.first().click();
+  await page.getByRole('button', { name: 'Pin Personal care to the top' }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByText('Pinned', { exact: true })).toHaveCount(0);
+  await expect(rows).toHaveCount(1);
 });
 
 test('Needs attention: a Short card shows under Card payments, and Fund covers it', async ({ page }) => {
@@ -121,6 +141,8 @@ test('Activity: categorize from the picker, undo, and OK a suggestion', async ({
   await page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ }).click();
   const picker = page.getByRole('dialog', { name: 'Choose a category' });
   await expect(picker.getByText('Past categories for Amazon')).toBeVisible();
+  // The search field has focus at once, so the keyboard is up and you can type.
+  await expect(picker.getByRole('searchbox', { name: 'Search categories' })).toBeFocused();
   await picker.getByRole('button', { name: 'Shopping' }).first().click();
   await expect(page.getByRole('status').filter({ hasText: 'Amazon → Shopping' })).toBeVisible();
   await expect(page.getByRole('button', { name: /Change category for Amazon −\$38\.10/ })).toHaveText(
@@ -199,6 +221,38 @@ test('Match device follows the system color scheme', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.emulateMedia({ colorScheme: 'light' });
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+});
+
+test('Sign-in and devices: Sign out under this device, sign out another, add one, rename a passkey', async ({
+  page,
+}) => {
+  await page.goto('/settings');
+  await page.getByRole('link', { name: /^Sign-in and devices/ }).click();
+  await expect(page).toHaveURL(/\/settings\/sign-in$/);
+  await expect(page.getByText('iPhone · Home Screen app')).toBeVisible();
+  // This device's Sign out sits right under it; it asks first, and says the budget saved here is deleted.
+  await page.getByRole('button', { name: 'Sign out…', exact: true }).click();
+  await expect(page.getByRole('alertdialog', { name: 'Sign out of this device' })).toContainText(
+    'delete the budget saved on this device',
+  );
+  await page.getByRole('button', { name: 'Keep it' }).click();
+  // Another device: its own Sign out, which also deletes the budget saved on it. No "all other devices".
+  await expect(page.getByRole('button', { name: /all other devices/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Sign out Mac · Safari…' }).click();
+  await expect(page.getByRole('alertdialog')).toContainText('It also deletes the budget saved on it.');
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Sign out' }).click();
+  await expect(page.getByText('Mac · Safari is signed out')).toBeVisible();
+  await expect(
+    page.getByText('No other devices. Add one to use Ledgerline on a computer or iPad.'),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Add a device' }).click();
+  await expect(page.getByLabel('Device link')).toHaveValue(/\/add-device#/);
+  // Rename the passkey after where it's saved.
+  await page.getByRole('button', { name: 'Rename passkey iPhone' }).click();
+  await page.getByLabel('Passkey name').fill('Apple Passwords');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('Apple Passwords', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Passkey name')).toHaveCount(0);
 });
 
 test('Offline: last data stays visible and every change is disabled', async ({ page, context }) => {
@@ -664,6 +718,42 @@ test('Add a transaction: a future date shows Repeats, today hides it', async ({ 
   await expect(add.getByText('It counts from that date.')).toBeVisible();
   await date.fill(today);
   await expect(add.getByLabel('Repeats')).toHaveCount(0);
+});
+
+test('Add a transaction: typing finds a payee, an account and a category', async ({ page }) => {
+  await page.goto('/activity/add');
+  const add = page.getByRole('dialog', { name: 'Add a transaction' });
+  // Payee: your payees that match are listed as you type; a tap fills the name in.
+  const payee = add.getByLabel('Payee');
+  await payee.fill('blu');
+  const names = add.getByRole('listbox', { name: 'Matching names' });
+  await expect(names.getByRole('option').first()).toHaveText('Blue Bottle Coffee');
+  await names.getByRole('option', { name: 'Blue Bottle Coffee' }).click();
+  await expect(payee).toHaveValue('Blue Bottle Coffee');
+  await expect(names).toBeHidden();
+  // A name you don't have yet is fine: nothing is listed.
+  await payee.fill('Check #1044');
+  await expect(names).toBeHidden();
+  // Account: the same search sheet as the category.
+  await expect(add.getByLabel('Account')).toHaveText('Everyday Checking');
+  await add.getByLabel('Account').click();
+  const accounts = page.getByRole('dialog', { name: 'Choose an account' });
+  await accounts.getByLabel('Search accounts').fill('zzz');
+  await expect(accounts.getByText('No account called “zzz”.')).toBeVisible();
+  await accounts.getByLabel('Search accounts').fill('sapph');
+  await accounts.getByRole('button', { name: /Sapphire Preferred/ }).click();
+  await expect(add.getByLabel('Account')).toHaveText('Sapphire Preferred');
+  // Category: the one you use most for the payee comes first.
+  await payee.fill('blue bottle coffee');
+  await add.getByLabel('Category').click();
+  const cats = page.getByRole('dialog', { name: 'Choose a category' });
+  await expect(cats.getByText('Usually for Blue Bottle Coffee')).toBeVisible();
+  await cats.getByRole('button', { name: 'Dining out' }).first().click();
+  await expect(add.getByLabel('Category')).toContainText('Dining out');
+  await add.getByLabel('Category').click();
+  await cats.getByLabel('Search categories').fill('groc');
+  await cats.getByRole('button', { name: /Groceries/ }).click();
+  await expect(add.getByLabel('Category')).toContainText('Groceries');
 });
 
 test('Owed to you opened from Accounts goes back to Accounts', async ({ page }) => {

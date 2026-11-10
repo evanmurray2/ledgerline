@@ -47,12 +47,17 @@ const DataScreen = lazyRouteComponent(settings, 'DataScreen');
 const PayeesScreen = lazyRouteComponent(settings, 'PayeesScreen');
 const RenamePayeeSheet = lazyRouteComponent(settings, 'RenamePayeeSheet');
 const SettingsLayout = lazyRouteComponent(settings, 'SettingsLayout');
+const SignInSettingsScreen = lazyRouteComponent(settings, 'SignInSettingsScreen');
+const UsersScreen = lazyRouteComponent(settings, 'UsersScreen');
 const FirstSortScreen = lazyRouteComponent(setup, 'FirstSortScreen');
 const LinkBanksScreen = lazyRouteComponent(setup, 'LinkBanksScreen');
 const StartMonthScreen = lazyRouteComponent(setup, 'StartMonthScreen');
 const WelcomeScreen = lazyRouteComponent(setup, 'WelcomeScreen');
 
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+/** A `?month=` as 'YYYY-MM'; a malformed one is dropped, so the screen shows this month instead of an error. */
+const monthParam = (v: unknown) =>
+  typeof v === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(v) ? v : undefined;
 
 function Root() {
   const session = useSession();
@@ -165,6 +170,9 @@ function Root() {
           : '/setup/categories';
     return <Navigate to={to} replace />;
   }
+  // A finished setup isn't run again (Back after Go to my budget): it would add every category again and set the
+  // starting balances over.
+  if (s.budget.setupStep === 'done' && setupPath) return <Navigate to="/budget" replace />;
   if (setupPath)
     return (
       <>
@@ -225,8 +233,8 @@ const budgetRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/budget',
   validateSearch: (s: Record<string, unknown>) => ({
-    month: str(s.month),
-    view: s.view === 'attention' || s.view === 'low' ? (s.view as 'attention' | 'low') : undefined,
+    month: monthParam(s.month),
+    view: s.view === 'attention' ? ('attention' as const) : undefined,
     from: s.from === 'categories' ? ('categories' as const) : undefined,
   }),
   component: BudgetScreen,
@@ -245,7 +253,7 @@ const targetRoute = createRoute({
 const targetsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/targets',
-  validateSearch: (s: Record<string, unknown>) => ({ month: str(s.month) }),
+  validateSearch: (s: Record<string, unknown>) => ({ month: monthParam(s.month) }),
   component: TargetsScreen,
 });
 const targetsTargetRoute = createRoute({
@@ -295,7 +303,7 @@ const activityRoute = createRoute({
     filter: s.filter === 'attention' || s.filter === 'pending' ? s.filter : undefined,
     q: str(s.q),
     // The app's month; a malformed one is dropped rather than refused by the server.
-    month: typeof s.month === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(s.month) ? s.month : undefined,
+    month: monthParam(s.month),
   }),
   component: ActivityScreen,
 });
@@ -390,6 +398,12 @@ const settingsRoute = createRoute({
   path: '/settings',
   component: SettingsLayout,
 });
+// Admins only (D-75); the server answers 404 to anyone else.
+const usersRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'users',
+  component: UsersScreen,
+});
 const appearanceRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'appearance',
@@ -453,6 +467,11 @@ const connectionsRoute = createRoute({
   component: ConnectionsScreen,
 });
 const dataRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'data', component: DataScreen });
+const signInRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'sign-in',
+  component: SignInSettingsScreen,
+});
 
 const routeTree = rootRoute.addChildren([
   addDeviceRoute,
@@ -492,6 +511,8 @@ const routeTree = rootRoute.addChildren([
     payeesRoute.addChildren([payeeRenameRoute]),
     connectionsRoute,
     dataRoute,
+    signInRoute,
+    usersRoute,
   ]),
 ]);
 

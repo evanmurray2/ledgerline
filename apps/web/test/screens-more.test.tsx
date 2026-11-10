@@ -43,22 +43,43 @@ describe('Accounts: stored alerts', () => {
          SELECT 'al1', id, 'possible_reissue', 'p:old', '{}', 0 FROM budget`,
       )
       .run();
+    show('/accounts');
+    // With Ally to repair, two problems fold into one line until opened.
+    fireEvent.click(await screen.findByRole('button', { name: /2 things need you/ }, T));
+    await screen.findByText(/added new ones. Check for a double/, undefined, T);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Dismiss' })[0]!);
+    await waitFor(() => expect(screen.queryByText(/added new ones. Check for a double/)).toBeNull(), T);
+    expect(
+      (await sql<{ acked_at: number | null }>(`SELECT acked_at FROM alert WHERE id = 'al1'`))!.acked_at,
+    ).not.toBeNull();
+  });
+});
+
+describe('Activity: removed by the bank', () => {
+  it('names a pending charge the bank removed, and OK clears it', async () => {
+    const db = await server.db();
+    await db
+      .prepare(
+        `INSERT INTO bank_txn (provider_txn_id, budget_id, connection_id, provider_account_id, amount, date, pending,
+           raw_name, merchant_name, removed_at, txn_key, first_apply_seq, last_apply_seq, created_at, updated_at)
+         SELECT 'gone-1', a.budget_id, 'conn', a.provider_account_id, -4217, '2026-11-02', 1, 'SQ *CORNER CAFE',
+           'Corner Cafe', 1, 'p:gone-1', 1, 1, 0, 0
+           FROM account a WHERE a.provider_account_id IS NOT NULL LIMIT 1`,
+      )
+      .run();
     await db
       .prepare(
         `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at)
-         SELECT 'al2', id, 'vanished_pending', 'p:gone', '{}', 0 FROM budget`,
+         SELECT 'al2', id, 'vanished_pending', 'p:gone-1', '{}', 0 FROM budget`,
       )
       .run();
-    show('/accounts');
-    // With Ally to repair, three problems fold into one line until opened.
-    fireEvent.click(await screen.findByRole('button', { name: /3 things need you/ }, T));
-    await screen.findByText(/added new ones. Check for a double/, undefined, T);
-    expect(screen.getByText(/likely a released hold/)).toBeTruthy();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Dismiss' })[0]!);
-    await waitFor(() => expect(screen.queryByText(/added new ones. Check for a double/)).toBeNull(), T);
-    expect(screen.getByText(/likely a released hold/)).toBeTruthy();
+    show('/activity');
+    await screen.findByText('Removed by the bank', undefined, T);
+    expect(screen.getByText('Corner Cafe')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /^OK, Corner Cafe \$42\.17/ }));
+    await waitFor(() => expect(screen.queryByText('Removed by the bank')).toBeNull(), T);
     expect(
-      (await sql<{ acked_at: number | null }>(`SELECT acked_at FROM alert WHERE id = 'al1'`))!.acked_at,
+      (await sql<{ acked_at: number | null }>(`SELECT acked_at FROM alert WHERE id = 'al2'`))!.acked_at,
     ).not.toBeNull();
   });
 });
@@ -73,6 +94,24 @@ describe('Transaction sheet', () => {
     show('/activity/txn/n-uber');
     await screen.findByText('Bank amount', undefined, T);
     expect(screen.getAllByText(/\$31\.40/).length).toBeGreaterThan(0);
+  });
+
+  it('income moved to next month: the Goes to toggle and its help line agree', async () => {
+    const r = await server.handle(
+      'PATCH',
+      '/api/transactions/n-payroll',
+      { 'content-type': 'application/json', 'x-ledgerline': '1' },
+      { budgetMonth: '2026-12' },
+    );
+    expect(r.status).toBe(200);
+    show('/activity/txn/n-payroll');
+    const now = await screen.findByRole('button', { name: 'Ready to Assign now' }, T);
+    const next = screen.getByRole('button', { name: 'Save for December' });
+    expect(next.getAttribute('aria-pressed')).toBe('true');
+    await screen.findByText(/to Ready to Assign on December 1\./);
+    fireEvent.click(now);
+    expect(now.getAttribute('aria-pressed')).toBe('true');
+    await screen.findByText(/to Ready to Assign in November\./);
   });
 });
 
@@ -104,5 +143,52 @@ describe('Owed to you', () => {
         `SELECT closed_at FROM expected_reimbursement WHERE id = 'nopa'`,
       ))!.closed_at,
     ).not.toBeNull();
+  });
+});
+
+describe('Owed to you: Reopen (D-80)', () => {
+  it('lists an item closed out this month, and Reopen puts it back in Still owed', async () => {
+    const it0 = (await sql<{ id: string }>(
+      `SELECT id FROM expected_reimbursement WHERE txn_key = 'o-united'`,
+    ))!;
+    const r = await server.handle(
+      'POST',
+      `/api/owed/${it0.id}`,
+      { 'content-type': 'application/json', 'x-ledgerline': '1' },
+      { action: 'close' },
+    );
+    expect(r.status).toBe(200);
+    show('/owed');
+    await screen.findByText('Closed out', undefined, T);
+    fireEvent.click(screen.getByRole('button', { name: /^Reopen / }));
+    await screen.findByText(/^Reopened\./, undefined, T);
+    await waitFor(() => expect(screen.queryByText('Closed out')).toBeNull(), T);
+    expect(
+      (await sql<{ closed_at: number | null }>(
+        `SELECT closed_at FROM expected_reimbursement WHERE id = ?1`,
+        it0.id,
+      ))!.closed_at,
+    ).toBeNull();
+  });
+
+  it('Undo after Remove the mark puts the mark back', async () => {
+    const it0 = (await sql<{ id: string }>(
+      `SELECT id FROM expected_reimbursement WHERE txn_key = 'o-united'`,
+    ))!;
+    show(`/owed/close/${it0.id}`);
+    fireEvent.click(await screen.findByText('I marked it by mistake', undefined, T));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove the mark' }));
+    await screen.findByText(/^Removed\./, undefined, T);
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(
+      async () =>
+        expect(
+          (await sql<{ canceled_at: number | null }>(
+            `SELECT canceled_at FROM expected_reimbursement WHERE id = ?1`,
+            it0.id,
+          ))!.canceled_at,
+        ).toBeNull(),
+      T,
+    );
   });
 });

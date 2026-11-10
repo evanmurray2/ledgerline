@@ -22,7 +22,6 @@ import { sheetPath, type Chosen, type NeedsRow, type Picking } from './ActivityR
 export function NeedsCategory({
   needs,
   openNeeds,
-  q,
   chosen,
   selecting,
   setSelecting,
@@ -33,9 +32,9 @@ export function NeedsCategory({
   onAcceptAll,
   onJoin,
 }: {
+  /** The rows to show: under a search, only those it matches. */
   needs: NeedsRow[];
   openNeeds: NeedsRow[];
-  q: string;
   chosen: Record<string, Chosen>;
   selecting: boolean;
   setSelecting: (f: (x: boolean) => boolean) => void;
@@ -47,11 +46,11 @@ export function NeedsCategory({
   onJoin: (r: NeedsRow) => void;
 }) {
   const online = useCanWrite();
-  const shown = needs.filter((r) => !q || r.payee.toLowerCase().includes(q.toLowerCase()));
   const open = (r: NeedsRow) =>
     !chosen[r.key] || (chosen[r.key]!.categoryId === null && !chosen[r.key]!.toRta);
-  // OK all leaves out "Same as" rows: those wait for you to Join or not (docs/payees.md 4.3).
-  const strong = shown.filter((r) => open(r) && r.suggestion?.strong && !(r.sameAs && online));
+  // OK all leaves out "Same as" rows: those wait for you to Join or not (docs/payees.md 4.3), offline too, where
+  // the question hides until Join can be sent.
+  const strong = needs.filter((r) => open(r) && r.suggestion?.strong && !r.sameAs);
   const note =
     openNeeds.length === 0
       ? undefined
@@ -84,7 +83,7 @@ export function NeedsCategory({
         {openNeeds.length === 0 && (
           <p className="m-0 px-3 py-3.5 text-md font-semibold text-funded-fg">Everything has a category.</p>
         )}
-        {shown.map((r) => {
+        {needs.map((r) => {
           const c = chosen[r.key];
           const label = c && (c.categoryId || c.toRta) ? c.name : null;
           const sug = !label && !selecting ? r.suggestion : null;

@@ -13,6 +13,7 @@ import {
   DangerLink,
   ErrorNote,
   Field,
+  Icon,
   inputBoxClass,
   inputClass,
   Loading,
@@ -22,7 +23,7 @@ import {
   Segmented,
 } from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
-import { addMonths, monthLabel } from '../lib/dates';
+import { addMonths, compareMonths, monthLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
 import { useBudgetMonth } from './Budget';
 import { Page } from './settings/common';
@@ -130,7 +131,11 @@ export function TargetScreen() {
           period === '1' ? month : addMonths(due || addMonths(month, Number(period) - 1), 1 - Number(period)),
       };
     if (kind === 'set_aside') return { type: 'set_aside', amount: cents };
-    if (kind === 'by_date') return byMonth ? { type: 'by_date', amount: cents, targetMonth: byMonth } : null;
+    // A month already gone by would ask for nothing and read as funded.
+    if (kind === 'by_date')
+      return byMonth && compareMonths(byMonth, month) >= 0
+        ? { type: 'by_date', amount: cents, targetMonth: byMonth }
+        : null;
     const m = parseCents(monthly);
     return { type: 'no_date', amount: cents, monthly: m && m > 0 ? m : null };
   }, [cents, kind, period, due, byMonth, monthly, month]);
@@ -204,9 +209,11 @@ export function TargetScreen() {
           disabled={!target}
           why={
             !target
-              ? cents !== null && cents > 0
-                ? 'Choose a month to save'
-                : 'Enter an amount to save'
+              ? cents === null || cents <= 0
+                ? 'Enter an amount to save'
+                : kind === 'by_date' && byMonth
+                  ? `Choose a month from ${monthLabel(month)} on`
+                  : 'Choose a month to save'
               : ''
           }
           onClick={() => target && void submit(target)}
@@ -338,7 +345,9 @@ export function TargetsScreen() {
         <p className="m-0 text-sm text-muted">
           {none.length === 0
             ? 'Every category has a target.'
-            : `${none.length} ${none.length === 1 ? 'category has' : 'categories have'} no target yet.`}
+            : none.length <= 3
+              ? `No target yet: ${none.map((c) => c.name).join(', ')}.`
+              : `${none.length} categories have no target yet.`}
         </p>
       )}
       {groups.map((g) => (
@@ -353,14 +362,17 @@ export function TargetsScreen() {
                   to={`/targets/${c.id}`}
                   search={{ month: m }}
                   data-track="targets.category"
-                  className="flex min-h-14 items-center gap-3 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
+                  className="flex min-h-14 items-center justify-between gap-3 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
                 >
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="text-base font-semibold">{c.name}</span>
-                    <span className={cx('truncate text-xs', missing ? 'text-accent' : 'text-muted')}>
+                    <span
+                      className={cx('truncate text-xs', missing ? 'font-semibold text-accent' : 'text-muted')}
+                    >
                       {missing ? 'Add a target' : c.meta}
                     </span>
                   </span>
+                  <Icon name="chevR" size={18} className="shrink-0 text-faint" />
                 </Link>
               );
             })}

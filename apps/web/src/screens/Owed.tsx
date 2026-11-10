@@ -20,13 +20,16 @@ import {
   PrimaryButton,
   SecondaryButton,
   ScreenBody,
+  SoftButton,
   SectionTitle,
   Icon,
   softButtonClass,
+  textLinkClass,
   useIsDesktop,
 } from '../components/ui';
 import { formatCents } from '../lib/money';
-import { dayLabel, monthName } from '../lib/dates';
+import { addMonths, dayLabel, monthName } from '../lib/dates';
+import { toast } from '../components/Toast';
 import { useScreen } from '../lib/common';
 import { usage } from '../usage/tracker';
 
@@ -48,8 +51,8 @@ export function OwedScreen() {
   const waiting = activity.data?.moneyToMatch[0];
   const rta = budget.data?.rta ?? 0;
   const desktop = useIsDesktop();
-  // The row's two pills: side by side, half each, on the phone.
-  const pill = desktop ? 'px-4' : 'flex-1';
+  // Match is the row's main action (a pill); Close out is a quiet text link next to it.
+  const pill = desktop ? 'px-4' : '';
 
   return (
     <PageFrame>
@@ -150,7 +153,7 @@ export function OwedScreen() {
                         )}
                       </span>
                     </Link>
-                    <div className={cx('flex gap-2', desktop && 'shrink-0')}>
+                    <div className={cx('flex items-center gap-4', desktop && 'shrink-0')}>
                       {waiting && (
                         <Link
                           to={`/owed/match/${waiting.key}`}
@@ -167,7 +170,7 @@ export function OwedScreen() {
                         search
                         data-track="owed.close"
                         aria-label={`Close out ${o.label}`}
-                        className={cx(softButtonClass('outline'), pill)}
+                        className={cx(textLinkClass, 'self-center px-1')}
                       >
                         Close out
                       </Link>
@@ -176,6 +179,7 @@ export function OwedScreen() {
                 );
               })}
             </Card>
+            <ClosedOut items={v.items} current={session.data?.budget.currentMonth ?? null} />
             {v.items.some((o) => o.matched > 0) && (
               <>
                 <SectionTitle>Paid back recently</SectionTitle>
@@ -227,9 +231,15 @@ export function CloseSheet() {
   const [sel, setSel] = useState(itemId);
   const [pick, setPick] = useState<Pick>('close');
   const [date, setDate] = useState('');
-  const [done, setDone] = useState<{ pick: Pick; text: string; prevDate: string | null } | null>(null);
+  const [done, setDone] = useState<{
+    pick: Pick;
+    text: string;
+    prevDate: string | null;
+    item: OwedView['items'][number];
+  } | null>(null);
   const items = (q.data?.items ?? []).filter(isOpen);
-  const it = q.data?.items.find((x) => x.id === sel);
+  // After Remove the mark the list no longer has the item, so the done step keeps the one it acted on.
+  const it = q.data?.items.find((x) => x.id === sel) ?? (done?.item.id === sel ? done.item : undefined);
   const month = monthName(session.data?.budget.currentMonth ?? '2026-11');
   if (!it) {
     return (
@@ -270,7 +280,7 @@ export function CloseSheet() {
       id: it.id,
       body: pick === 'snooze' ? { action: 'snooze', expectBy: date || undefined } : { action: pick },
     });
-    setDone({ pick, text: cur.result, prevDate: it.expectBy });
+    setDone({ pick, text: cur.result, prevDate: it.expectBy, item: it });
   };
   const label = it.still > 0 ? `${it.label.split(' · ')[0]} · ${amt} still owed` : it.label;
   return (
@@ -300,14 +310,22 @@ export function CloseSheet() {
             {done.text}
           </Banner>
           <div className="flex gap-2">
-            {done.pick === 'snooze' && done.prevDate && (
+            {(done.pick !== 'snooze' || done.prevDate) && (
               <SecondaryButton
                 mutates
                 track="owed.close.undo"
                 className="flex-1"
                 onClick={async () => {
-                  await act.mutateAsync({ id: it.id, body: { action: 'snooze', expectBy: done.prevDate! } });
-                  usage.undo('snooze');
+                  // Close out and Remove the mark are undone by reopening the item (D-80): in the same month, as
+                  // if neither happened.
+                  await act.mutateAsync({
+                    id: it.id,
+                    body:
+                      done.pick === 'snooze'
+                        ? { action: 'snooze', expectBy: done.prevDate! }
+                        : { action: 'reopen' },
+                  });
+                  usage.undo(done.pick);
                   setDone(null);
                 }}
               >
@@ -394,5 +412,59 @@ function ItemStepper({
       </span>
       {arrow(i + 1, 'chevR', 'Next')}
     </div>
+  );
+}
+
+/**
+ * Items closed out in the last three months, with Reopen (D-80). One closed this month reopens as if it was never
+ * closed; one closed earlier leaves that month as it was, and the category gets the amount back this month.
+ */
+function ClosedOut({ items, current }: { items: Item[]; current: string | null }) {
+  const act = useMoneyMutation((id: string) => api.owedAction(id, { action: 'reopen' }));
+  if (!current) return null;
+  const since = addMonths(current, -2);
+  const closed = items.filter((o) => o.status === 'closed' && o.closedMonth && o.closedMonth >= since);
+  if (!closed.length) return null;
+  return (
+    <>
+      <SectionTitle>Closed out</SectionTitle>
+      <Card>
+        {closed.map((o) => {
+          const amt = formatCents(o.closedAmount ?? 0);
+          const cat = o.categoryName ?? 'Its category';
+          return (
+            <div
+              key={o.id}
+              className="flex min-h-14 items-center justify-between gap-3 border-t border-divider px-3 py-1.5 first:border-t-0"
+            >
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-base font-semibold">{o.label}</span>
+                <span className="text-xs text-muted">
+                  {amt} closed out in {monthName(o.closedMonth!)}
+                </span>
+              </span>
+              <SoftButton
+                mutates
+                track="owed.reopen"
+                aria-label={`Reopen ${o.label}`}
+                disabled={act.isPending}
+                onClick={async () => {
+                  await act.mutateAsync(o.id);
+                  usage.undo('close');
+                  toast.show({
+                    text:
+                      o.closedMonth === current
+                        ? `Reopened. ${cat} isn’t charged the ${amt}.`
+                        : `Reopened. ${cat} gets ${amt} back in ${monthName(current)}.`,
+                  });
+                }}
+              >
+                Reopen
+              </SoftButton>
+            </div>
+          );
+        })}
+      </Card>
+    </>
   );
 }

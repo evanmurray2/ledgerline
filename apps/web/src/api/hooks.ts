@@ -7,7 +7,7 @@ import { usage } from '../usage/tracker';
 import { ApiError } from './client';
 import { connectivity, useConnectivity } from '../state/connectivity';
 import { useEffect } from 'react';
-import { setBudgetTimeZone } from '../lib/dates';
+import { setBudgetTimeZone, setBudgetYear } from '../lib/dates';
 
 export const qk = {
   session: ['session'] as const,
@@ -58,6 +58,8 @@ export function useSession() {
   // Set during render, before any screen formats a clock time with it.
   const zone = (q.data ?? savedQ.data)?.budget.timeZone;
   if (zone) setBudgetTimeZone(zone);
+  const today = (q.data ?? savedQ.data)?.budget.today;
+  if (today) setBudgetYear(today);
   if (q.data) return q;
   const unreachable =
     (q.error instanceof ApiError && q.error.network) ||
@@ -111,6 +113,9 @@ export function adjustAttention(qc: QueryClient, delta: number) {
     if (typeof old.activity === 'number') return { ...old, activity: Math.max(0, old.activity + delta) };
     return old;
   });
+  // Writing the cache marks it fresh again, which undid the mutation's "out of date" mark: coming back to Activity
+  // within staleTime showed the old list, with a row you had just categorized under Needs category. Mark it again.
+  void qc.invalidateQueries({ queryKey: ['activity'], refetchType: 'none' });
 }
 
 /** Tab badges. Keyed under 'activity' so every money change refreshes them too. */

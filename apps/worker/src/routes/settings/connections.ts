@@ -6,7 +6,7 @@ import { clock } from '../../http/clock.js';
 import { LinkExchange, LinkTokenRequest, type ConnectionsView } from '@ledgerline/contracts';
 import { localDate } from '@ledgerline/domain';
 import { encryptToken, parseKeyring, ulid } from '@ledgerline/platform';
-import type { AppEnv } from '../../http/context.js';
+import { canLinkBanks, type AppEnv } from '../../http/context.js';
 import { GONE, HttpError, TRY_AGAIN, parse, scoped } from '../api.js';
 import { acquire, isFenceAbort, requestSync } from '../../sync/lease.js';
 import { connectionToken, makeProvider } from '../../sync/provider.js';
@@ -68,15 +68,14 @@ connectionsRoutes.post('/settings/connections/link-token', async (c) => {
     });
     return c.json({ linkToken: lt.linkToken });
   }
+  // Plaid Trial's links are for the whole Plaid account, so only admins link new banks (docs/open-signup.md 5).
+  if (!canLinkBanks(c))
+    throw new HttpError(403, 'banks_off', 'Linking banks isn’t available on your account yet.');
   const used = await s.first<{ n: number }>(
     `SELECT count(*) AS n FROM connection WHERE budget_id = ?1 AND provider = 'plaid'`,
   );
   if ((used?.n ?? 0) >= ITEM_LIMIT)
-    throw new HttpError(
-      409,
-      'item_limit',
-      `All ${ITEM_LIMIT} bank links are used. Import a CSV file instead.`,
-    );
+    throw new HttpError(409, 'item_limit', `All ${ITEM_LIMIT} bank links are used.`);
   if (c.env.PLAID_ENV === 'production' && !r.confirmSlot)
     throw new HttpError(409, 'confirm_slot', 'Confirm that you want to use one of your bank links.');
   const lt = await provider.createLinkSession({ mode: 'new', userId: c.get('userId') });
@@ -245,10 +244,11 @@ export async function startSync(
   const now = clock(env);
   // A link whose accounts aren't set up yet would sync transactions no account can take (and the watermark would pass
   // them by), so it waits until "Finish setup".
-  const ready = await env.DB.prepare(`SELECT setup_done FROM connection WHERE id = ?1`)
+  // A CSV import (routes/ops.ts) is stored as a connection too, but has no bank to sync.
+  const ready = await env.DB.prepare(`SELECT setup_done, provider FROM connection WHERE id = ?1`)
     .bind(connectionId)
-    .first<{ setup_done: number }>();
-  if (!ready || ready.setup_done !== 1) return false;
+    .first<{ setup_done: number; provider: string }>();
+  if (!ready || ready.setup_done !== 1 || ready.provider === 'csv') return false;
   await requestSync(env.DB, connectionId, now);
   const runId = `run_${ulid(now)}`;
   if (!(await acquire(env.DB, connectionId, runId, now))) return false;
@@ -317,7 +317,7 @@ connectionsRoutes.post('/settings/connections/refresh', async (c) => {
   const now = clock(c.env);
   const conns = await s.all<{ id: string }>(
     `SELECT id FROM connection WHERE budget_id = ?1 AND removed_at IS NULL AND setup_done = 1
-       AND status != 'login_required'
+       AND provider != 'csv' AND status != 'login_required'
        AND max(coalesce(last_synced_at, 0), coalesce(last_attempt_at, 0)) < ?2`,
     now - REFRESH_COOLDOWN_MS,
   );

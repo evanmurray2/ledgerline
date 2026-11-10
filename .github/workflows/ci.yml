@@ -75,7 +75,8 @@ jobs:
       - name: Playwright against local wrangler dev with the November fixture, then passkey sign-in
         if: matrix.suite == 'worker'
         run: pnpm --filter @ledgerline/e2e test:worker
-      - if: failure()
+      # Also when a test only passed on its retry (e2e/retry-log.ts writes flaky-<suite>.md): the failed try's trace.
+      - if: ${{ !cancelled() && (failure() || hashFiles('e2e/test-results/flaky-*.md') != '') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report-${{ matrix.suite }}

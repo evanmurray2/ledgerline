@@ -53,9 +53,9 @@ The rules and terms are in `docs/copy.md`. A snapshot, not kept up to date: the 
 - "This browser can't use passkeys. Open Ledgerline in Safari, Chrome, Edge or Firefox."
 - Set up: "Ledgerline uses a passkey, not a password. Enter your setup code."
 - "Sign-in isn't set up yet. Add a setup code, then reload this page."
-- "New device? On a signed-in device, go to Settings → Sign-in → Add a device."
+- "New device? On a signed-in device, go to Settings → Sign-in and devices → Add a device."
 - Add a device: "Create a passkey to sign in on this device. The link works once, for 10 minutes." · "This link is
-  missing its code. Make a new one in Settings → Sign-in." · "This device is set up"
+  missing its code. Make a new one in Settings → Sign-in and devices." · "This device is set up"
 - "Confirm it's you" + "Use your passkey to continue."
 - Server: "That code or link isn't valid or has expired." · "This passkey is already set up. Sign in with it." · "The
   passkey couldn't be verified." · "This passkey isn't registered with Ledgerline." · "This account is turned off." ·
@@ -91,7 +91,7 @@ The rules and terms are in `docs/copy.md`. A snapshot, not kept up to date: the 
   "{used} of {limit} bank links used"
 - "Purchases from before your budget starts go into the starting balance." + Why: "Some of them can come in up to 2
   weeks late. Ledgerline gets 6 months of history, and this can't be changed later. You can import older history from
-  a CSV file in Settings. Investment and retirement accounts aren't tracked. Money you send to them counts as Invested."
+  Investment and retirement accounts aren't tracked. Money you send to them counts as Invested."
 - "Ledgerline also makes a payment category for each card. Money others owe you shows in Owed to you."
 - "{n} categories · next, assign your {cash}" (correct plural; the second part only when there is cash) · "Keep or add
   at least one category"
@@ -113,6 +113,9 @@ The rules and terms are in `docs/copy.md`. A snapshot, not kept up to date: the 
 - "Targets for {Month} · {total}" + "Fill targets · {total}" → "Each target got what it needs this month." + Undo
 - Sync problem strip: "{bank} didn't finish syncing · see Accounts"
 
+**Pinned:** group "Pinned" · sheet button "Pin {category} to the top" · "{category} pinned to the top" / "{category}
+unpinned"
+
 **Rows:** "Low" / "Overspent" / "Underfunded" / "Overfunded" · "Short" (phone and desktop) · "{n} late" (only when
 late) · "Goes back to Ready to Assign when paid back" (Owed to you) · "Invested {amount}" · "{n}% used"
 
@@ -120,7 +123,7 @@ late) · "Goes back to Ready to Assign when paid back" (Owed to you) · "Investe
   {amount} more" · "· {amount} needs a category" · "…% of the month gone"
 - Footer: "Transactions show up in Activity after each bank sync." / "Bars show how much of this month's money is left."
 
-**Needs attention / Low:** "Nothing needs attention." · "Nothing is low." · "Fund all · {total}" · "Done just now" ·
+**Needs attention:** "Nothing needs attention." · "Fund all · {total}" · "Done just now" ·
 "Moved {amount} back to Ready to Assign" / "Added {amount} from Ready to Assign" · "Needs {amount} more" · "Covering
 {a} covers this card too"
 
@@ -189,12 +192,17 @@ that. Try again." · "Couldn't load more. Try again."
 **Same purchase?:** "both count until you answer" · "Paired as one purchase" / "Kept as two purchases" · Server: "Your
 bank paired these two itself, so they stay one purchase." · "This isn't paired with another transaction."
 
+**Removed by the bank:** "likely released holds · not counted" · OK → "{payee} · marked OK" (a bank pending row removed
+with nothing posted after 5 days)
+
 **Transfer to sort out**
 
 - "Which account got this money?" + "No account / 1 account / {n} accounts got {amount} within a few days."
 - "Looking for the other account" · "It was a payment" + "Give it a category like other spending"
 - "Kept as spending. It needs a category. The deposit counts as income." · "Paired with {account}. It needs no category."
   (+ "The other deposit counts as income." when there was more than one)
+- Accounts with no matching row yet, under "Pick the account" (or "Or another account"): "{account}" + "Pending
+  until the bank sends it" → "Paired with {account}. It's pending there until the bank sends it." (D-83)
 
 **Check not cleared**
 
@@ -278,7 +286,7 @@ bank paired these two itself, so they stay one purchase." · "This isn't paired 
   {date}, late purchases from before {date} are added here." / "This won't change now."
 - Alerts: "Ledgerline hasn't checked your banks in over a day." · "{bank} hasn't synced in over a day." · "A posted
   {amount} transaction in {Month Year} was removed or re-issued. Check for a double." · "A posted charge matched one of
-  several pending charges. Check that it's the right one." · "…nothing posted. It was likely a released hold." · "The
+  several pending charges. Check that it's the right one." · "The
   bank removed a posted transaction and added new ones. Check for a double." · "Ready to Assign for {Month Year} was
   off by {amount} on a device. Pull down to sync again."
 
@@ -302,27 +310,30 @@ bank paired these two itself, so they stay one purchase." · "This isn't paired 
 - "Recording stopped. What was recorded is deleted after 90 days."
 - Note sheet: "It's saved with your last 20 taps, but no amounts or payee names." → "Saved."
 
-**Sign-in devices**
+**Sign-in and devices**
 
-- "Added {date} · not used yet" · "Remove the passkey {name}? That device can't sign in with it any more."
+- Settings list: "{n} devices signed in · {n} passkeys"
+- Sections: "This device" (and its "Sign out…") · "Other devices" · "Passkeys" · "Account" (recovery code and
+  delete, users who aren't admins). "No other devices. Add one to use Ledgerline on a computer or iPad." · Passkeys:
+  "Rename" · "Name each passkey after where it's saved, like Apple Passwords." · Server: "Give the passkey a name of
+  up to 60 characters."
+- "Added {date} · not used yet" · "Remove the passkey {name}? You can't sign in with it any more."
 - "Open this link on the new device" + "It works once, until {time}. Send it only to yourself." · "Link copied"
-- "Sign out your other devices and delete the budget saved on them? This device stays signed in."
 - "Sign out and delete the budget saved on this device? Sign in with your passkey to get it back."
-- "A sign-in ends after 10 idle minutes, or after 24 hours."
 - Server: "You can't remove your only passkey." · "That device is already signed out."
 
 **Bank connections**
 
 - "{used} of {limit} bank links used" · "{left} left" · "Removing a link doesn't give it back." + Why: "The free Plaid
   plan allows {limit} bank links in total. If a bank stops syncing, sign in again from Accounts."
-- "All {limit} bank links are used. You can import a CSV file in Import and export."
+- "All {limit} bank links are used."
 - "Use 1 of your {left} bank links?" / "Use your last bank link?" + "If a bank stopped syncing, sign in again from
   Accounts instead."
 - "Link a bank" / "Link another bank" · "Linked. Transactions show up in Activity in a few minutes."
 - "{bank} is set up. Its transactions are on the way."
 - Chips: "Setup unfinished" · "Synced {when}" · "Not syncing" · "Sync failed" · "Removed" · "Sign in again" · "Test
   mode: test banks only."
-- Server: "All 10 bank links are used. Import a CSV file instead." · "Confirm that you want to use one of your bank
+- Server: "All 10 bank links are used." · "Confirm that you want to use one of your bank
   links." · "Your bank is linked, but its accounts aren't set up yet. Tap Finish setup in Bank connections. It doesn't
   use another link."
 
@@ -340,14 +351,10 @@ bank paired these two itself, so they stay one purchase." · "This isn't paired 
 
 **Payees:** "No payees match." · "No payees yet." · "To join two payees, give one the other's name."
 
-**Import and export**
+**Backup and export**
 
-- "Upload a CSV file from your bank or another app. It becomes history for search and reports, not your budget."
-- "Link a bank first. Imports go into one of its accounts."
-- "Transactions {n}" · "Import {n} transactions" → "Imported {n} transactions as history." (+ "Skipped {m} already in
-  your linked accounts." only when some were skipped)
 - "Your whole budget, in a file that can be restored" → "Saved. Keep it somewhere safe."
 - "Your budget can be rewound to any minute" · "Last 30 days" + Why: "Rewinding isn't on this screen, so a stolen
   sign-in can't wipe your data. The steps are in the restore guide."
-- Server: "The CSV file needs date, payee and amount columns." · "Type the budget's name to confirm." · "Pick a time in
+- Server: "Type the budget's name to confirm." · "Pick a time in
   the last 30 days." · "Restoring isn't available here."

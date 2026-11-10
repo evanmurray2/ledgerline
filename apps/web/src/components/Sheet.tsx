@@ -42,6 +42,36 @@ export function useModalOpen(): boolean {
   );
 }
 
+/**
+ * The part of the screen the keyboard leaves visible, while the keyboard is up (null otherwise). iOS puts the
+ * keyboard over the page without making it shorter, so a sheet fixed to the bottom would sit behind it.
+ */
+function useVisibleArea(active: boolean): { top: number; height: number } | null {
+  const [area, setArea] = useState<{ top: number; height: number } | null>(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!active || !vv) return;
+    const update = () => {
+      // A few px of difference is the browser's toolbar, not a keyboard.
+      const covered = window.innerHeight - vv.height > 80;
+      setArea((old) => {
+        if (!covered) return null;
+        if (old && old.top === vv.offsetTop && old.height === vv.height) return old;
+        return { top: vv.offsetTop, height: vv.height };
+      });
+    };
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+      setArea(null);
+    };
+  }, [active]);
+  return area;
+}
+
 /** Drag distance (px) past which letting go closes the sheet. */
 const SWIPE_CLOSE = 90;
 
@@ -128,9 +158,13 @@ export function Sheet({
     else setDrag(0);
   };
 
+  // Focus the sheet so Escape and screen readers start here, unless a field in it took focus first (the
+  // category search does, to open the keyboard).
   useEffect(() => {
-    ref.current?.focus();
+    const el = ref.current;
+    if (el && !el.contains(document.activeElement)) el.focus();
   }, []);
+  const visible = useVisibleArea(covers && !isDesktop);
 
   const body = (
     <section
@@ -197,7 +231,10 @@ export function Sheet({
     auto: 'min-h-14 flex-1',
   }[gap];
   return createPortal(
-    <div className={cx('safe-top fixed inset-0 z-40 flex flex-col', isDesktop && 'items-end')}>
+    <div
+      className={cx('safe-top fixed inset-0 z-40 flex flex-col', isDesktop && 'items-end')}
+      style={visible ? { top: visible.top, height: visible.height, bottom: 'auto' } : undefined}
+    >
       <div
         className="ll-scrim absolute inset-0 bg-scrim-a"
         aria-hidden="true"
@@ -252,7 +289,7 @@ export function SheetTitle({
       {amount !== undefined ? (
         <h1 className={cx('tnum m-0 text-4xl font-bold leading-tight', amountClass)}>{amount}</h1>
       ) : (
-        <h1 className="m-0 text-2xl font-bold leading-tight">{title}</h1>
+        <h1 className="m-0 text-2xl font-bold leading-tight wrap-anywhere">{title}</h1>
       )}
       {sub && <span className={cx('text-muted', amount !== undefined ? 'text-md' : 'text-sm')}>{sub}</span>}
     </div>

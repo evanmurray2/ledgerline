@@ -7,7 +7,7 @@ import {
   type Month,
   addMonths,
   cents,
-  formatCents,
+  isIsoDate,
   isMonth,
   localDate,
   owedList,
@@ -18,24 +18,31 @@ import {
   type PastUse,
 } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
-import { BAD_MONTH, HttpError, scoped } from './api.js';
+import { BAD_MONTH, HttpError, TRY_AGAIN, scoped } from './api.js';
 import { fresh, monthResult, structure } from '../views/common.js';
 import { IN_BUDGET_ROWS, listRow } from '../views/rows.js';
 import { RECENT_TX, TX_COLUMNS, chunks, type TxRow } from '../ledger/ledger.js';
 import type { Scoped } from '../db/scoped.js';
 import { names } from './txn-common.js';
 import { samePurchaseCards } from './same-purchase.js';
+import { removedByBank } from './removed-by-bank.js';
 export const activityViewRoutes = new Hono<AppEnv>();
 
 // ---------------------------------------------------------------- Activity
 
-/** Rows that need you: Waiting to match, transfers to sort out, alerts, and uncategorized rows in the budget. */
+/**
+ * Rows that need you: Waiting to match, transfers to sort out, alerts, uncategorized rows in the budget, and splits
+ * whose lines no longer add up.
+ */
 const ATTENTION_SQL = `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1
          AND ${IN_BUDGET_ROWS} AND (
          wtm_state IN ('waiting', 'send_back') OR transfer_state = 'unsorted' OR (alert IS NOT NULL AND reviewed_at IS NULL)
          OR (category_id IS NULL AND coalesce(to_rta, 0) = 0 AND transfer_state IS NULL AND wtm_state IS NULL AND wont_clear = 0
              AND status != 'upcoming'
-             AND key NOT IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1)))
+             AND key NOT IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1))
+         -- A split whose lines no longer add up to the amount: you fix it (D-82).
+         OR (key IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1)
+             AND amount != (SELECT sum(sp.amount) FROM txn_split sp WHERE sp.budget_id = ?1 AND sp.txn_key = key)))
        ORDER BY date DESC, seq DESC LIMIT 200`;
 
 /**
@@ -51,7 +58,7 @@ activityViewRoutes.get('/badges', async (c) => {
     summary_dirty_from: string | null;
   }>(`SELECT time_zone, rta, summary_month, summary_dirty_from FROM budget WHERE id = ?1`);
   const today = localDate(clock(c.env), tz?.time_zone ?? 'America/Los_Angeles');
-  const [attn, stale, conns] = await s.batch([
+  const [attn, stale, conns, removed] = await s.batch([
     s.q(ATTENTION_SQL),
     s.q(
       `SELECT count(*) AS n FROM manual_pending m JOIN account a ON a.id = m.account_id WHERE m.budget_id = ?1 AND m.kind = 'pending' AND m.deleted_at IS NULL
@@ -60,6 +67,9 @@ activityViewRoutes.get('/badges', async (c) => {
     ),
     s.q(
       `SELECT count(*) AS n FROM connection WHERE budget_id = ?1 AND removed_at IS NULL AND status IN ('login_required', 'error')`,
+    ),
+    s.q(
+      `SELECT count(*) AS n FROM alert WHERE budget_id = ?1 AND type = 'vanished_pending' AND acked_at IS NULL`,
     ),
   ]);
   const rows = attn!.results as TxRow[];
@@ -71,6 +81,7 @@ activityViewRoutes.get('/badges', async (c) => {
     ).length +
     rows.filter((t) => t.alert && !t.reviewed_at).length +
     ((stale!.results[0] as { n: number } | undefined)?.n ?? 0) +
+    ((removed!.results[0] as { n: number } | undefined)?.n ?? 0) +
     // One query when nothing is asked (the usual case).
     (await samePurchaseCards(s, new Map(), new Map())).length;
   return c.json({
@@ -96,9 +107,33 @@ function shiftDate(d: string, n: number): string {
 }
 
 /** A search matches a row's category name too (Reports opens Activity searching for a category), split lines included. */
-const CATEGORY_MATCH = `category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND lower(name) LIKE ?3)
+const CATEGORY_MATCH = `category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND lower(name) LIKE ?3 ESCAPE '\\')
          OR key IN (SELECT sp.txn_key FROM txn_split sp JOIN category c ON c.id = sp.category_id
-                    WHERE sp.budget_id = ?1 AND lower(c.name) LIKE ?3)`;
+                    WHERE sp.budget_id = ?1 AND lower(c.name) LIKE ?3 ESCAPE '\\')`;
+
+/**
+ * A search's posted-row filter: ?3 is the text as a LIKE pattern (its % and _ are letters, not wildcards), `amt`
+ * the parameter holding the amount pattern (`amountPattern`), NULL when the search isn't an amount.
+ */
+const searchMatch = (amt: string) =>
+  `AND (lower(payee) LIKE ?3 ESCAPE '\\' OR (${amt} IS NOT NULL AND printf('%.2f', abs(amount) / 100.0) LIKE ${amt}) OR ${CATEGORY_MATCH})`;
+
+/** The search as a LIKE pattern for the text: % and _ match only themselves. */
+function textPattern(q: string): string {
+  return `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+}
+
+/** The search as a plain amount ("$1,018" → "1018", "−38.10" → "38.10"), or null when it isn't one. */
+function searchAmount(q: string): string | null {
+  const a = q.replace(/[\s$,−-]/g, '');
+  return /\d/.test(a) && /^\d*\.?\d*$/.test(a) ? a : null;
+}
+
+/** An amount as the search compares it: 101800 → "1018.00", sign dropped. */
+function plainAmount(c: number): string {
+  const a = Math.abs(c);
+  return `${Math.floor(a / 100)}.${String(a % 100).padStart(2, '0')}`;
+}
 
 /** Which posted rows a page reads: a recent window from a date, 'all' (searches), 'none' (the attention view), or one budget month. */
 type PostedScope = string | 'all' | 'none' | { month: Month; start: Month };
@@ -130,36 +165,52 @@ function postedQuery(s: Scoped, from: PostedScope, cursor: string | null, q: str
          ${first ? 'AND ?4 IS NOT NULL' : 'AND posted_date >= ?4'}
          AND posted_date < date(?6, '+4 months') AND ${IN_BUDGET} AND ${ROW_MONTH} = ?7
          AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
-         ${q ? `AND (lower(payee) LIKE ?3 OR printf('%.2f', abs(amount) / 100.0) LIKE ?3 OR ${CATEGORY_MATCH})` : 'AND ?3 IS NULL'}
+         ${q ? searchMatch('?8') : 'AND ?3 IS NULL AND ?8 IS NULL'}
        ORDER BY date DESC, seq DESC LIMIT 50`,
       cursor,
-      q ? `%${q}%` : null,
+      q ? textPattern(q) : null,
       `${addMonths(from.month, -1)}-01`,
       from.start,
       `${addMonths(from.month, 2)}-01`,
       from.month,
+      q && searchAmount(q) !== null ? `%${searchAmount(q)}%` : null,
     );
   }
   const window = from !== 'all' && from !== 'none';
   return s.q(
     `SELECT ${TX_COLUMNS} FROM v_txn_bank WHERE budget_id = ?1 AND ${from === 'none' ? '0 AND ' : ''}status = 'posted'
-       ${window ? 'AND posted_date >= ?4 AND date >= ?4' : ''}
+       ${window ? 'AND posted_date >= ?5 AND date >= ?5' : ''}
        AND ${IN_BUDGET}
        AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
-       ${q ? `AND (lower(payee) LIKE ?3 OR printf('%.2f', abs(amount) / 100.0) LIKE ?3 OR ${CATEGORY_MATCH})` : 'AND ?3 IS NULL'}
+       ${q ? searchMatch('?4') : 'AND ?3 IS NULL AND ?4 IS NULL'}
      ORDER BY date DESC, seq DESC LIMIT 50`,
     cursor,
-    q ? `%${q}%` : null,
+    q ? textPattern(q) : null,
+    q && searchAmount(q) !== null ? `%${searchAmount(q)}%` : null,
     ...(window ? [from] : []),
   );
+}
+
+/**
+ * What a search looks for: at most 48 bytes, since a Durable Object's SQLite refuses a LIKE pattern over 50 bytes
+ * (the search goes between two `%`). A longer search looks for its start.
+ */
+function searchText(raw: string): string {
+  const chars = [...raw.trim().toLowerCase()];
+  const enc = new TextEncoder();
+  while (enc.encode(chars.join('')).length > 48) chars.pop();
+  return chars.join('').trim();
 }
 
 activityViewRoutes.get('/activity', async (c) => {
   const s = scoped(c);
   const f = await fresh(s, clock(c.env));
   const filter = c.req.query('filter') ?? 'all';
-  const q = (c.req.query('q') ?? '').trim().toLowerCase();
+  const q = searchText(c.req.query('q') ?? '');
   const cursor = c.req.query('cursor');
+  // The cursor is the `nextCursor` of an earlier page: a date and a sequence number.
+  if (cursor !== undefined && !(/^.{10}\|\d{15}$/.test(cursor) && isIsoDate(cursor.slice(0, 10))))
+    throw new HttpError(400, 'invalid', TRY_AGAIN);
   // A month (Activity's month bar) shows that budget month's posted rows; a search looks through every month.
   const monthQ = c.req.query('month');
   if (monthQ !== undefined && !isMonth(monthQ)) throw new HttpError(400, 'invalid', BAD_MONTH);
@@ -186,7 +237,7 @@ activityViewRoutes.get('/activity', async (c) => {
       cursor ?? null,
       q,
     ),
-    s.q(`SELECT txn_key, category_id FROM txn_split WHERE budget_id = ?1`),
+    s.q(`SELECT txn_key, category_id, amount FROM txn_split WHERE budget_id = ?1`),
     s.q(
       `SELECT id, txn_key, amount, canceled_at, closed_at FROM expected_reimbursement WHERE budget_id = ?1`,
     ),
@@ -199,8 +250,12 @@ activityViewRoutes.get('/activity', async (c) => {
       f.today,
     ),
   ]);
-  const splitRows = splits!.results as { txn_key: string; category_id: string | null }[];
+  const splitRows = splits!.results as { txn_key: string; category_id: string | null; amount: number }[];
   const splitKeys = new Set(splitRows.map((r) => r.txn_key));
+  const splitTotals = new Map<string, number>();
+  for (const r of splitRows) splitTotals.set(r.txn_key, (splitTotals.get(r.txn_key) ?? 0) + r.amount);
+  /** What a split's lines leave out of its amount (D-82): 0 when they add up, or for a row with no split. */
+  const splitOff = (t: TxRow) => (splitTotals.has(t.key) ? t.amount - splitTotals.get(t.key)! : 0);
   // Categories whose name matches the search, and the split transactions with a line in one of them.
   const qCats = new Set(q ? [...cats].filter(([, n]) => n.toLowerCase().includes(q)).map(([id]) => id) : []);
   const qSplits = new Set(
@@ -238,11 +293,13 @@ activityViewRoutes.get('/activity', async (c) => {
       paidBack: paid.has(t.key),
       stale: staleKeys.has(t.key),
       split: splitKeys.has(t.key),
+      splitOff: splitOff(t),
     });
+  const qAmount = searchAmount(q);
   const match = (t: TxRow) =>
     !q ||
     t.payee.toLowerCase().includes(q) ||
-    formatCents(Math.abs(t.amount)).includes(q) ||
+    (qAmount !== null && plainAmount(t.amount).includes(qAmount)) ||
     (!!t.category_id && qCats.has(t.category_id)) ||
     qSplits.has(t.key);
   const attnRows = (attn!.results as TxRow[]).filter(match);
@@ -251,7 +308,13 @@ activityViewRoutes.get('/activity', async (c) => {
     .map(row);
   const transfersToSort = attnRows.filter((t) => t.transfer_state === 'unsorted' && t.amount < 0).map(row);
   const uncats = attnRows.filter(
-    (t) => !t.category_id && !t.to_rta && !t.transfer_state && !t.wtm_state && !(t.alert && !t.reviewed_at),
+    (t) =>
+      !t.category_id &&
+      !t.to_rta &&
+      !t.transfer_state &&
+      !t.wtm_state &&
+      !(t.alert && !t.reviewed_at) &&
+      !splitKeys.has(t.key),
   );
   // Payees you've categorized, by name: a payee you haven't is new, and one with the same name as yours gets
   // "Same as your …?" (docs/payees.md 4.2, 4.3).
@@ -300,6 +363,7 @@ activityViewRoutes.get('/activity', async (c) => {
   const { categories, groups } = await structure(s);
   // "Same purchase?" asks only when nothing is searched for: its rows are the bank's and your entries.
   const samePurchase = q ? [] : await samePurchaseCards(s, accts, cats);
+  const removed = q ? [] : await removedByBank(s);
   const usable = new Set(
     categories.filter((c) => !c.archived_at && c.kind !== 'cc_payment').map((c) => c.id),
   );
@@ -340,6 +404,10 @@ activityViewRoutes.get('/activity', async (c) => {
     ...attnRows
       .filter((t) => t.alert && !t.reviewed_at)
       .map((t) => ({ ...row(t), action: 'dismiss' as const })),
+    // A split that no longer adds up opens its sheet, where you fix the lines (D-82).
+    ...attnRows
+      .filter((t) => splitOff(t) !== 0 && !(t.alert && !t.reviewed_at))
+      .map((t) => ({ ...row(t), action: 'review' as const })),
     ...(pend!.results as TxRow[])
       .filter((t) => staleKeys.has(t.key))
       .filter(match)
@@ -379,13 +447,15 @@ activityViewRoutes.get('/activity', async (c) => {
       transfersToSort.length +
       needsCategory.length +
       checkThese.length +
-      samePurchase.length,
+      samePurchase.length +
+      removed.length,
     notPostedCount: pend!.results.length + upc!.results.length,
     moneyToMatch,
     transfersToSort,
     needsCategory,
     checkThese,
     samePurchase,
+    removedByBank: removed,
     pending: filter === 'attention' || past ? [] : pending,
     pendingTotal: cents(pendingTotal),
     upcoming: filter === 'attention' || past ? [] : upcoming,

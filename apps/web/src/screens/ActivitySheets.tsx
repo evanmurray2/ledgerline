@@ -1,11 +1,14 @@
 // Transfer: pick the other side, Check not cleared, Add pending or upcoming.
 // Match money back is in ActivityMatch.tsx.
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams } from '@tanstack/react-router';
 import { useQueries } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
-import { useAccounts, useMoneyMutation, useTxn, useSession, qk } from '../api/hooks';
+import { useAccounts, useMoneyMutation, usePayees, useTxn, useSession, qk } from '../api/hooks';
+import { AccountField } from '../components/AccountField';
 import { CategoryField } from '../components/CategoryPicker';
+import { PayeeField } from '../components/PayeeField';
+import { sameName } from '../components/RenamePayee';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import {
   amountInputClass,
@@ -21,7 +24,7 @@ import {
   Segmented,
 } from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
-import { dayLabel } from '../lib/dates';
+import { dayLabel, monthName } from '../lib/dates';
 import { useScreen } from '../lib/common';
 import { useClose } from './TxnCommon';
 import { usage } from '../usage/tracker';
@@ -37,7 +40,9 @@ export function TransferScreen() {
   const q = useTxn(key);
   const close = useClose();
   const accounts = useAccounts();
-  const pick = useMoneyMutation((v: { otherKey: string | null }) => api.pickTransfer(key, v));
+  const pick = useMoneyMutation((v: { otherKey: string | null; unlinked?: boolean; accountId?: string }) =>
+    api.pickTransfer(key, v),
+  );
   const unpair = useMoneyMutation(api.unpairTransfer);
   const [result, setResult] = useState<string | null>(null);
   const t = q.data;
@@ -53,35 +58,56 @@ export function TransferScreen() {
   });
   if (!t)
     return (
-      <Sheet label="Which account got this money" track="transfer" onClose={close} gap="auto">
+      <Sheet label="Transfer" track="transfer" onClose={close} gap="auto">
         {q.error ? <ErrorNote error={q.error} /> : <Loading />}
       </Sheet>
     );
-  // The contract has no candidate list: find deposits of the same amount within 5 days in the other accounts.
+  // The contract has no candidate list: find rows of the opposite amount within 5 days in the other accounts that
+  // aren't a transfer already (the route accepts the same ones). From a deposit, the other side is an outflow.
+  const sent = t.amount > 0;
   const day = (d: string) =>
     Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))) / 86_400_000;
   const candidates = registers.flatMap((r, i) =>
     (r.data?.days ?? [])
       .flatMap((d) => d.rows)
-      .filter((row) => row.amount === -t.amount && Math.abs(day(row.date) - day(t.date)) <= 5)
+      .filter(
+        (row) =>
+          row.amount === -t.amount &&
+          Math.abs(day(row.date) - day(t.date)) <= 5 &&
+          row.categoryLabel !== 'Transfer',
+      )
       .map((row) => ({ row, account: others[i]! })),
   );
   const loadingCands = registers.some((r) => r.isLoading);
   const n = candidates.length;
-  const lines = (name: string | null) =>
+  // Deposits still waiting for this answer ("Pick the account"): the ones not picked count as income.
+  const waiting = sent ? 0 : candidates.filter((c) => c.row.sheet === 'transfer').length;
+  const income = (left: number) =>
+    left <= 0
+      ? ''
+      : left === 1
+        ? ' The other deposit counts as income.'
+        : ' The other deposits count as income.';
+  const lines = (name: string | null, picked?: { sheet: string }) =>
     name === null
-      ? `Kept as spending. It needs a category.${n === 0 ? '' : n === 1 ? ' The deposit counts as income.' : ' The deposits count as income.'}`
-      : `Paired with ${name}. It needs no category.${n === 2 ? ' The other deposit counts as income.' : n > 2 ? ' The other deposits count as income.' : ''}`;
+      ? sent
+        ? 'Kept as income. It needs a category.'
+        : `Kept as spending. It needs a category.${income(waiting)}`
+      : `Paired with ${name}. It needs no category.${income(waiting - (picked?.sheet === 'transfer' ? 1 : 0))}`;
+  const question = sent ? 'Which account sent this money?' : 'Which account got this money?';
+  // Accounts whose side hasn't arrived yet (D-83): picking one adds a pending entry there, paired with this row.
+  const listed = new Set(candidates.map((c) => c.account.id));
+  const notYet = others.filter((a) => !listed.has(a.id));
   return (
     <Sheet
-      label="Which account got this money"
+      label={question}
       track="transfer"
       onClose={close}
       gap="auto"
       header={
         <SheetTitle
           tag="Transfer to sort out"
-          amount={formatCents(t.amount)}
+          amount={formatCents(Math.abs(t.amount))}
           sub={`${t.accountName} · ${dayLabel(t.date)} · “${t.rawName}”`}
         />
       }
@@ -110,11 +136,11 @@ export function TransferScreen() {
           </>
         ) : (
           <>
-            <span className="text-base font-bold">Which account got this money?</span>
+            <span className="text-base font-bold">{question}</span>
             {!loadingCands && (
               <p className="m-0 text-sm leading-snug text-muted">
-                {n === 0 ? 'No account' : n === 1 ? '1 account' : `${n} accounts`} got{' '}
-                {formatCents(-t.amount)} within a few days.
+                {n === 0 ? 'No account' : n === 1 ? '1 account' : `${n} accounts`} {sent ? 'sent' : 'got'}{' '}
+                {formatCents(Math.abs(t.amount))} within a few days.
               </p>
             )}
             {loadingCands && <Loading label="Looking for the other account" />}
@@ -127,7 +153,7 @@ export function TransferScreen() {
                   onClick={async () => {
                     await pick.mutateAsync({ otherKey: row.key });
                     usage.suggestion('transfer_pick', 'paired');
-                    setResult(lines(account.name));
+                    setResult(lines(account.name, row));
                   }}
                   className="flex min-h-14 w-full items-center justify-between gap-2 rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"
                 >
@@ -137,11 +163,54 @@ export function TransferScreen() {
                       {dayLabel(row.date)} · “{row.payee}”
                     </span>
                   </span>
-                  <span className="tnum font-bold text-funded-fg">
+                  <span className={sent ? 'tnum font-bold' : 'tnum font-bold text-funded-fg'}>
                     {formatCents(row.amount, { plus: true })}
                   </span>
                 </Button>
               ))}
+              {notYet.length > 0 && !loadingCands && (
+                <span className="pt-2 text-sm font-semibold text-muted">
+                  {n === 0 ? 'Pick the account' : 'Or another account'}
+                </span>
+              )}
+              {!loadingCands &&
+                notYet.map((a) => (
+                  <Button
+                    key={a.id}
+                    mutates
+                    track="transfer.pick_pending"
+                    onClick={async () => {
+                      await pick.mutateAsync({ otherKey: null, accountId: a.id });
+                      usage.suggestion('transfer_pick', 'pending');
+                      setResult(
+                        `Paired with ${a.name}. It’s pending there until the bank sends it.${income(waiting)}`,
+                      );
+                    }}
+                    className="flex min-h-14 w-full flex-col items-start justify-center rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"
+                  >
+                    <span className="text-base font-semibold">{a.name}</span>
+                    <span className="text-xs text-muted">Pending until the bank sends it</span>
+                  </Button>
+                ))}
+              <Button
+                mutates
+                track="transfer.unlinked"
+                onClick={async () => {
+                  await pick.mutateAsync({ otherKey: null, unlinked: true });
+                  usage.suggestion('transfer_pick', 'unlinked');
+                  setResult(
+                    sent
+                      ? 'Marked as a transfer in. It goes into Ready to Assign.'
+                      : `Marked as a transfer out. It comes out of Ready to Assign.${income(waiting)}`,
+                  );
+                }}
+                className="flex min-h-14 w-full flex-col items-start justify-center rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"
+              >
+                <span className="text-base font-semibold">An account that isn’t linked</span>
+                <span className="text-xs text-muted">
+                  Like Venmo. It {sent ? 'goes into' : 'comes out of'} Ready to Assign.
+                </span>
+              </Button>
               <Button
                 mutates
                 track="transfer.none"
@@ -151,8 +220,10 @@ export function TransferScreen() {
                 }}
                 className="flex min-h-14 w-full flex-col items-start justify-center rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"
               >
-                <span className="text-base font-semibold">It was a payment</span>
-                <span className="text-xs text-muted">Give it a category like other spending</span>
+                <span className="text-base font-semibold">{sent ? 'It was income' : 'It was a payment'}</span>
+                <span className="text-xs text-muted">
+                  Give it a category like other {sent ? 'income' : 'spending'}
+                </span>
               </Button>
             </div>
             {pick.error && <ErrorNote error={pick.error} />}
@@ -310,12 +381,27 @@ export function AddTxnScreen() {
   const [date, setDate] = useState('');
   const [repeats, setRepeats] = useState<'never' | 'monthly' | 'yearly'>('never');
   const accts = (accounts.data?.groups ?? []).flatMap((g) => g.accounts);
+  // Payees the bank's transactions already have, most used first, to offer as you type.
+  const known = usePayees().data;
+  const payeeNames = useMemo(
+    () => [...(known?.payees ?? []), ...(known?.others ?? [])].map((p) => p.name),
+    [known],
+  );
+  // The category you've used most for money out to the payee typed: the picker offers it first, and you pick.
+  const usualFor =
+    dir === 'out' && payee.trim()
+      ? known?.payees.find((p) => p.usualId && sameName(p.name, payee))
+      : undefined;
   const acct = accountId || accts[0]?.id || '';
   const cents = parseCents(amount);
   const on = date || today;
   // The date picks the kind: a future date is upcoming (counts from that date), any other is pending (counts now).
   const upcoming = !!today && on > today;
-  const ok = cents !== null && cents > 0 && payee.trim() && acct && on;
+  // Before the budget start is history, which never counts: entries there are refused (D-79).
+  const start = session.data?.budget.startMonth;
+  const first = start ? `${start}-01` : '';
+  const early = !!first && !!on && on < first;
+  const ok = cents !== null && cents > 0 && payee.trim() && acct && on && !early;
   const toRta = dir === 'in' && categoryId === 'rta';
   const submit = async () => {
     if (!ok || cents === null) return;
@@ -351,7 +437,9 @@ export function AddTxnScreen() {
                 ? 'Enter a payee'
                 : !acct
                   ? 'Choose an account'
-                  : ''
+                  : early && start
+                    ? `Pick a date from ${monthName(start)} 1, ${start.slice(0, 4)} on`
+                    : ''
           }
           onClick={() => void submit()}
         >
@@ -373,7 +461,13 @@ export function AddTxnScreen() {
           <Segmented
             label="Direction"
             value={dir}
-            onChange={setDir}
+            onChange={(d) => {
+              setDir(d);
+              // Money in starts in Ready to Assign. Only money in can go there: going back to Out asks for a
+              // category again.
+              if (d === 'in' && !categoryId) setCategoryId('rta');
+              if (d === 'out' && categoryId === 'rta') setCategoryId('');
+            }}
             options={[
               ['out', 'Out'],
               ['in', 'In'],
@@ -381,28 +475,34 @@ export function AddTxnScreen() {
           />
         </div>
       </div>
-      <Field label="Payee">
-        <input
-          className={inputClass}
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="add-payee" className="text-sm font-semibold text-ink-2">
+          Payee
+        </label>
+        <PayeeField
+          id="add-payee"
+          track="add_txn.payee"
           placeholder="e.g. Check #1044"
+          names={payeeNames}
           value={payee}
-          onChange={(e) => setPayee(e.target.value)}
+          onChange={setPayee}
         />
-      </Field>
+      </div>
       <Field label="Account">
-        <select className={inputClass} value={acct} onChange={(e) => setAccountId(e.target.value)}>
-          {accts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
+        <AccountField
+          track="add_txn.account"
+          groups={accounts.data?.groups ?? []}
+          value={acct}
+          onChange={setAccountId}
+        />
       </Field>
       <Field label="Category">
         <CategoryField
           track="add.category"
           value={categoryId}
           onChange={setCategoryId}
+          suggested={usualFor?.usualId ? [usualFor.usualId] : undefined}
+          suggestedTitle={usualFor ? `Usually for ${usualFor.name}` : undefined}
           specials={
             dir === 'in'
               ? [
@@ -414,12 +514,18 @@ export function AddTxnScreen() {
         />
       </Field>
       <Field label="Date">
-        <input type="date" className={inputClass} value={on} onChange={(e) => setDate(e.target.value)} />
+        <input
+          type="date"
+          className={inputClass}
+          value={on}
+          min={first || undefined}
+          onChange={(e) => setDate(e.target.value)}
+        />
       </Field>
       <p className="m-0 text-sm leading-snug text-muted">
         {upcoming
           ? 'A future date. It counts from that date.'
-          : 'Not at the bank yet, like a check. It counts now.'}
+          : 'For money the bank doesn’t show yet, like a check. It counts now.'}
       </p>
       {upcoming && (
         <Field label="Repeats">

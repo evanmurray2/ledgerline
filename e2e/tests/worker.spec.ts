@@ -82,7 +82,7 @@ test('With no passkey copy, nothing is kept on the device: with no signal it say
   await context.setOffline(false);
 });
 
-test('Needs attention fixes reach $643.65 through the API', async ({ page }) => {
+test('Needs attention fixes reach $663.65 through the API', async ({ page }) => {
   await page.goto('/budget?view=attention');
   await expect(rta(page)).toHaveText('$981.90');
   for (const [name, after] of [
@@ -94,11 +94,52 @@ test('Needs attention fixes reach $643.65 through the API', async ({ page }) => 
     await page.getByRole('button', { name }).click();
     await expect(rta(page)).toHaveText(after);
   }
-  await page.getByRole('button', { name: /^Low \d/ }).click();
-  await page.getByRole('button', { name: 'Add $20.00 for Personal care' }).click();
-  await expect(rta(page)).toHaveText('$643.65');
   await page.reload();
-  await expect(rta(page)).toHaveText('$643.65');
+  await expect(rta(page)).toHaveText('$663.65');
+});
+
+test('A pinned category is saved with the budget', async ({ page }) => {
+  await page.goto('/budget');
+  const rows = page.locator('[data-track="budget.category"]', { hasText: 'Personal care' });
+  await rows.first().click();
+  await page.getByRole('button', { name: 'Pin Personal care to the top' }).click();
+  await expect(page.getByText('Personal care pinned to the top')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.reload();
+  await expect(page.getByText('Pinned', { exact: true })).toBeVisible();
+  await expect(rows).toHaveCount(2);
+  await rows.first().click();
+  await page.getByRole('button', { name: 'Pin Personal care to the top' }).click();
+  await expect(page.getByText('Personal care unpinned')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.reload();
+  await expect(rows.first()).toBeVisible();
+  await expect(page.getByText('Pinned', { exact: true })).toHaveCount(0);
+});
+
+test('An edit’s answer brings what it changed: no second sync request', async ({ page }) => {
+  await page.goto('/budget');
+  const rows = page.locator('[data-track="budget.category"]', { hasText: 'Personal care' });
+  await rows.first().click();
+  const syncs: string[] = [];
+  page.on('request', (r) => {
+    if (new URL(r.url()).pathname === '/api/sync') syncs.push(r.url());
+  });
+  const answer = page.waitForResponse((r) => /\/api\/settings\/categories\/[^/]+\/pin$/.test(r.url()));
+  await page.getByRole('button', { name: 'Pin Personal care to the top' }).click();
+  const r = await answer;
+  expect(Number(r.request().headers()['x-sync-since'])).toBeGreaterThan(0);
+  const body = (await r.json()) as { ok: boolean; sync?: { rows: unknown[]; more: boolean } };
+  expect(body.sync?.rows.length).toBeGreaterThan(0);
+  expect(body.sync?.more).toBe(false);
+  await expect(page.getByText('Personal care pinned to the top')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByText('Pinned', { exact: true })).toBeVisible();
+  expect(syncs).toEqual([]);
+  // Put it back.
+  await rows.first().click();
+  await page.getByRole('button', { name: 'Pin Personal care to the top' }).click();
+  await expect(page.getByText('Personal care unpinned')).toBeVisible();
 });
 
 test('Activity: categorizing an uncategorized purchase persists', async ({ page }) => {
@@ -118,6 +159,19 @@ test('Activity: categorizing an uncategorized purchase persists', async ({ page 
   );
   // The count drops at once, without reloading the list.
   await expect(chip).toHaveText(`Needs attention ${before - 1}`);
+  // Going to another tab and back, in the app, doesn't bring the row back (the list's cache was marked fresh by
+  // the count change, so it showed the old list for 2 minutes).
+  await page
+    .getByRole('link', { name: /Budget/ })
+    .first()
+    .click();
+  await expect(rta(page)).toBeVisible();
+  await page
+    .getByRole('link', { name: /Activity/ })
+    .first()
+    .click();
+  await expect(chip).toHaveText(`Needs attention ${before - 1}`);
+  await expect(page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ })).toHaveCount(0);
   // Leaving and coming back shows the server's state.
   await page.goto('/budget');
   await page.goto('/activity');
@@ -198,7 +252,7 @@ test('A change made with no signal is kept on the device and sent when the conne
 
 test('Accounts: net worth and the Ally repair prompt', async ({ page }) => {
   await page.goto('/accounts');
-  await expect(page.getByText('$22,555.35').first()).toBeVisible();
+  await expect(page.getByText('$22,354.35').first()).toBeVisible();
   await expect(page.getByText(/Ally/).first()).toBeVisible();
 });
 
@@ -227,13 +281,19 @@ test('Categories: rename a group, reorder by dragging, and remove a category', a
   await sheet.getByRole('button', { name: 'Save' }).click();
   await expect(groups.nth(0)).toHaveText('Day to day');
 
-  // Removing happens on the category's own sheet, with a confirm step.
+  // An overspent category can't be removed: archived, its overspending would drop out of Budget's attention.
   await page.getByRole('link', { name: /^Dining out/ }).click();
   const edit = page.getByRole('dialog', { name: 'Edit category' });
-  await edit.getByRole('button', { name: 'Remove Dining out…' }).click();
+  await expect(edit.getByText('To remove Dining out, cover its $18.25 overspending first.')).toBeVisible();
+  await expect(edit.getByRole('button', { name: 'Remove Dining out…' })).toHaveCount(0);
+  await edit.getByRole('button', { name: 'Close' }).click();
+
+  // Removing happens on the category's own sheet, with a confirm step.
+  await page.getByRole('link', { name: /^Groceries/ }).click();
+  await edit.getByRole('button', { name: 'Remove Groceries…' }).click();
   await edit.getByRole('button', { name: 'Remove', exact: true }).click();
-  await expect(page.getByText('Dining out archived. Reports keep its history.')).toBeVisible();
-  await expect(page.getByRole('link', { name: /^Dining out/ })).toHaveCount(0);
+  await expect(page.getByText('Groceries archived. Reports keep its history.')).toBeVisible();
+  await expect(page.getByRole('link', { name: /^Groceries/ })).toHaveCount(0);
 });
 
 test('Target: a yearly refill is met in its Due month, and the Due month is kept', async ({ page }) => {
@@ -264,6 +324,8 @@ test('Pending: money you add goes to Ready to Assign, and a bank pending charge 
     .getByRole('button', { name: 'Ready to Assign' })
     .click();
   await add.getByRole('button', { name: 'Add', exact: true }).click();
+  // The sheet closes when the add is saved: leaving the page sooner can drop it.
+  await expect(add).toHaveCount(0);
   await page.goto('/budget');
   await expect(rta(page)).toHaveText('$1,481.90');
 
@@ -297,6 +359,15 @@ test('Accounts: rename an account', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Travel card' })).toBeVisible();
   await page.goto('/accounts');
   await expect(page.getByText('Travel card').first()).toBeVisible();
+});
+
+test('Accounts: Close account says why it can’t close a card with a balance', async ({ page }) => {
+  await page.goto('/accounts/sapphire');
+  await page.getByRole('button', { name: 'More for this account' }).click();
+  await page.getByRole('button', { name: 'Close account' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Close account' });
+  await expect(sheet.getByText(/You still owe \$[\d,.]+ on this card\. Pay it off first\./)).toBeVisible();
+  await expect(sheet.getByRole('button', { name: 'Close account' })).toBeDisabled();
 });
 
 test('Full backup: downloads every row of the budget as one file', async ({ page }) => {

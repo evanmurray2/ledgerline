@@ -15,6 +15,8 @@ export interface EntryRow {
   /** The name you typed. */
   name: string;
   channel: MatchRow['channel'];
+  /** The other side of a transfer you paired before the bank sent it (D-83): the exact amount is evidence enough. */
+  transfer?: boolean;
 }
 
 /** A bank row an entry could pair with: a posted row (step 3 of 9.2) or a pending row (step 4, a cover). */
@@ -47,9 +49,11 @@ export function entryCandidate(e: EntryRow, b: BankSideRow): boolean {
 
 /**
  * Exact evidence (9) between an entry and a bank row: the name you typed equals one of the row's Plaid names (case,
- * outer spaces and apostrophes aside), or the same amount on the same day (the authorization day, else the date).
+ * outer spaces and apostrophes aside), or the same amount on the same day (the authorization day, else the date), or
+ * for a transfer's other side (D-83) the same amount on any day the candidate window allows.
  */
 export function entryEvidence(e: EntryRow, b: BankSideRow): boolean {
+  if (e.transfer && e.amount === b.amount) return true;
   const typed = payeeNameKey(e.name);
   if (typed && b.names.some((n) => payeeNameKey(n) === typed)) return true;
   return e.amount === b.amount && e.date === (b.authorizedDate ?? b.date);

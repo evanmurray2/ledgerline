@@ -29,6 +29,7 @@ import {
   type CategoryInfo,
   type Fresh,
 } from './common.js';
+import { PINNED_KEY, readPinned } from './pinned.js';
 import { txnCol } from '../ledger/ledger.js';
 
 const fmt = (c: number) => formatCents(c);
@@ -148,8 +149,9 @@ export async function categoryRows(
       detail = `${fmt(-fixAmount)} more than the target needs`;
     else if (status === 'underfunded') detail = `needs ${fmt(need)} this month`;
     else if (tAmount !== null && target?.type !== 'no_date') {
-      // Matches the bar, which shows what's left of the month's money (spent + available).
-      detail = `${fmt(available)} left of ${fmt(spent + available > 0 ? spent + available : tAmount)}`;
+      // The amount on the right is what's left, so the note says what's spent; the bar shows what's left of the month's
+      // money (spent + available).
+      detail = `${fmt(spent)} spent of ${fmt(spent + available > 0 ? spent + available : tAmount)}`;
       if (X > 0 && status !== 'low' && target?.type === 'refill' && month > start)
         detail += ` · ${fmt(X)} carried from ${monthLong(addMonths(month, -1))}`;
     } else if (target?.type === 'no_date')
@@ -160,7 +162,9 @@ export async function categoryRows(
     else detail = '';
     const total = spent + available;
     const leftPercent =
-      tAmount !== null && status !== 'overfunded' && total > 0
+      // One meaning for every bar: what's left of this month's money. Underfunded and overfunded rows have no bar: their
+      // pill and note say what to do, and a full bar on an underfunded row would read as "all good".
+      tAmount !== null && status !== 'overfunded' && status !== 'underfunded' && total > 0
         ? Math.max(0, Math.min(100, Math.round((available * 100) / total)))
         : null;
     rows.push({
@@ -191,7 +195,7 @@ export async function budgetView(s: Scoped, f: Fresh, month: Month): Promise<Bud
   const start = (f.budget.budget_start_month ?? f.current) as Month;
   const { rows, cards: cardCells, groups } = await categoryRows(s, month, start, f.today);
   const cardInfo = await loadCards(s, f.today);
-  const [cardCats, owedRows, links, fronts, conns, maxRow] = await s.batch([
+  const [cardCats, owedRows, links, fronts, conns, maxRow, pinRow] = await s.batch([
     s.q(`SELECT id, card_account_id FROM category WHERE budget_id = ?1 AND kind = 'cc_payment'`),
     s.q(
       `SELECT e.id, e.txn_key, e.amount, e.expect_by, e.closed_at, e.canceled_at, coalesce(${txnCol('e.txn_key', 'payee')}, '') AS payee
@@ -209,6 +213,7 @@ export async function budgetView(s: Scoped, f: Fresh, month: Month): Promise<Bud
       `SELECT institution_name, status FROM connection WHERE budget_id = ?1 AND removed_at IS NULL AND status != 'ok'`,
     ),
     s.q(`SELECT max(month) AS m FROM month_snapshot WHERE budget_id = ?1`),
+    s.q(`SELECT value FROM setting WHERE budget_id = ?1 AND key = ?2`, PINNED_KEY),
   ]);
   const catByCard = new Map(
     (cardCats!.results as { id: string; card_account_id: string }[]).map((r) => [r.card_account_id, r.id]),
@@ -416,5 +421,6 @@ export async function budgetView(s: Scoped, f: Fresh, month: Month): Promise<Bud
     attention,
     underfundedTotal: cents(underfundedTotal),
     syncProblem: problems[0] ?? null,
+    pinned: readPinned((pinRow!.results[0] as { value: string } | undefined)?.value),
   };
 }

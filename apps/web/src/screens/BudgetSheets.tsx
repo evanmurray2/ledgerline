@@ -1,6 +1,7 @@
 // Category sheet (Assign / Move money, target, recent) and the Assign sheet.
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import { errorMessage } from '../api/client';
 import { api } from '../api/endpoints';
 import { useAssignView, useBudget, useCategorySheet, useMoneyMutation } from '../api/hooks';
 import { CategoryField } from '../components/CategoryPicker';
@@ -34,6 +35,7 @@ import { useCategoryOptions, useScreen } from '../lib/common';
 import { useBudgetMonth } from './Budget';
 import { usage } from '../usage/tracker';
 import { useCanWrite } from '../state/connectivity';
+import { toast } from '../components/Toast';
 
 function useCloseToBudget(month: string | undefined, current: string | undefined) {
   const navigate = useNavigate();
@@ -138,6 +140,13 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
     close();
   };
   const err = set.error ?? move.error;
+  // Enter (or the keyboard's Go) saves, as the button does when it can.
+  const busy = set.isPending || move.isPending;
+  const onEnter = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (!busy && (mode === 'assign' ? changed : moveOk)) void save().catch(() => undefined);
+  };
   return (
     <Sheet
       label={c.name}
@@ -156,7 +165,10 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
               }
             />
           </div>
-          {steps}
+          <span className="flex shrink-0">
+            <PinButton id={c.id} name={c.name} month={month} />
+            {steps}
+          </span>
         </div>
       }
       footer={
@@ -164,12 +176,15 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
           mutates
           track={mode === 'assign' ? 'category.save' : 'category.move'}
           onClick={save}
+          busy={busy}
           disabled={mode === 'assign' ? !changed : !moveOk}
           why={
             mode === 'assign'
-              ? !changed
-                ? 'Change the amount to save'
-                : ''
+              ? newAssigned === null
+                ? 'Enter an amount to save'
+                : !changed
+                  ? 'Change the amount to save'
+                  : ''
               : !moveOk
                 ? 'Enter an amount to move'
                 : ''
@@ -215,6 +230,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
               inputMode="decimal"
               value={assigned ?? ''}
               onChange={(e) => setAssigned(e.target.value)}
+              onKeyDown={onEnter}
               aria-invalid={newAssigned === null}
             />
           </Field>
@@ -256,6 +272,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
               placeholder="0.00"
               value={moveAmt}
               onChange={(e) => setMoveAmt(e.target.value)}
+              onKeyDown={onEnter}
             />
           </Field>
           <p className="m-0 text-xs text-muted">
@@ -313,6 +330,47 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
         ))}
       </div>
     </Sheet>
+  );
+}
+
+/**
+ * Pins the category to the top of Budget, or unpins it. Saved with the budget, so every device shows the same pins;
+ * with no signal it's kept on the phone and sent later, like an assignment (D-74).
+ */
+function PinButton({ id, name, month }: { id: string; name: string; month: string }) {
+  const saved = !!useBudget(month).data?.pinned.includes(id);
+  const canWrite = useCanWrite({ offline: true });
+  const pin = useMoneyMutation(api.pinCategory, { money: false, invalidate: [['budget']] });
+  // Shows the new state at once, while the change is on its way.
+  const pinned = pin.isPending && pin.variables ? pin.variables.pinned : saved;
+  const toggle = async () => {
+    if (pin.isPending) return;
+    try {
+      await pin.mutateAsync({ id, pinned: !pinned });
+      toast.show({ text: pinned ? `${name} unpinned` : `${name} pinned to the top` });
+    } catch (e) {
+      toast.show({ text: errorMessage(e) });
+    }
+  };
+  return (
+    <button
+      type="button"
+      aria-label={`Pin ${name} to the top`}
+      aria-pressed={pinned}
+      title={pinned ? 'Pinned to the top of Budget' : 'Pin to the top of Budget'}
+      disabled={!canWrite}
+      onClick={() => void toggle()}
+      data-track={pinned ? 'category.unpin' : 'category.pin'}
+      className={cx(
+        'flex h-11 items-center justify-center gap-1 px-2 text-sm font-semibold disabled:text-line-strong',
+        pinned ? 'text-accent' : 'text-muted',
+      )}
+    >
+      <Icon name="pin" size={20} stroke={pinned ? 2.6 : 2} />
+      {/* A word as well as the icon (a phone has no hover title). It stays "Pin" so it is part of the button's name;
+          the accent color and aria-pressed show that it's on. */}
+      Pin
+    </button>
   );
 }
 
@@ -403,7 +461,7 @@ export function AssignSheetScreen() {
             track={left < 0 ? 'assign.anyway' : 'assign.apply'}
             danger={left < 0}
             disabled={items.size === 0 || !canWrite}
-            why={items.size === 0 ? 'Pick a category to assign' : ''}
+            why={items.size === 0 ? (catId ? 'Enter an amount to assign' : 'Pick a category to assign') : ''}
             onClick={() => void apply()}
           >
             {items.size === 0

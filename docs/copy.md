@@ -31,7 +31,7 @@ Check a new text against it, and keep the terms below the same everywhere: code,
 | bank link (the 10 Plaid links)                   | login, bank login                             |
 | {Bank} needs you to sign in again                | asked you to sign in, needs repair            |
 | Card payments (the group)                        | Credit card payments                          |
-| Low (status and filter)                          | Running low                                   |
+| Low (status)                                     | Running low                                   |
 | Owed to you                                      | fronted, not a category                       |
 | Waiting to match                                 | held                                          |
 | Needs a category                                 | Choose later, Don't set a category            |
@@ -39,6 +39,7 @@ Check a new text against it, and keep the terms below the same everywhere: code,
 | join (payees)                                    | merge                                         |
 | Up to date                                       | Already up to date                            |
 | passkey                                          | Face ID (except on the Face ID button itself) |
+| recovery code                                    | backup code, reset code                       |
 | View only until {time} (daily limit for changes) | paused, turned off, database limit            |
 | Paused until {time} (daily limit for loading)    | resting, reading is paused                    |
 | You're offline                                   | No signal, Network request failed             |

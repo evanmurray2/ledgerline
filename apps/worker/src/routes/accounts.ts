@@ -22,7 +22,7 @@ import {
   statementCovered,
 } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
-import { HttpError, parse, scoped, GONE, BAD_MONTH } from './api.js';
+import { HttpError, parse, scoped, GONE, BAD_MONTH, inReach } from './api.js';
 import { cards as loadCards, fresh, monthResult, shortDate, structure } from '../views/common.js';
 import { hiddenFromLists, listRow } from '../views/rows.js';
 import { TX_COLUMNS, uncovered, type TxRow } from '../ledger/ledger.js';
@@ -30,6 +30,7 @@ import { monthTotals } from '../ledger/totals.js';
 import { DIFF_WAIT_MS, accountLedger, bankDiff } from '../ledger/bank-diff.js';
 import type { Scoped } from '../db/scoped.js';
 import { type Adjustments, startSheet } from '../ledger/start-part.js';
+import { closeBlocked } from './account-close.js';
 
 export const accountRoutes = new Hono<AppEnv>();
 
@@ -47,21 +48,25 @@ interface AcctDb {
   last_synced_at: number | null;
   connection_id: string | null;
   drift_since: number | null;
+  closed_at: number | null;
 }
 
+/** Every account's row; closed ones too when `withClosed` (their own list on Accounts, and their register). */
 async function accountRows(
   s: Scoped,
   today: string,
   timeZone: string,
   now: number,
+  withClosed = false,
 ): Promise<{ rows: AccountRow[]; raw: AcctDb[]; recent: Adjustments['recent'] }> {
   const raw = await s.all<AcctDb>(
     `SELECT a.id, a.name, a.kind, a.budget_from, a.starting_balance, a.provider_account_id, pa.mask, pa.current_balance AS bank,
-       pa.drift_since, c.institution_name AS institution, c.status, c.last_synced_at, c.id AS connection_id
+       pa.drift_since, c.institution_name AS institution, c.status, c.last_synced_at, c.id AS connection_id, a.closed_at
      FROM account a
      LEFT JOIN provider_account pa ON pa.budget_id = a.budget_id AND pa.provider_account_id = a.provider_account_id
      LEFT JOIN connection c ON c.id = pa.connection_id
-     WHERE a.budget_id = ?1 AND a.closed_at IS NULL ORDER BY a.kind = 'credit', a.sort, a.name`,
+     WHERE a.budget_id = ?1 AND (?2 = 1 OR a.closed_at IS NULL) ORDER BY a.kind = 'credit', a.sort, a.name`,
+    withClosed ? 1 : 0,
   );
   const ledger = await accountLedger(s, raw, today, now);
   const startAdjust = ledger.startAdjust;
@@ -102,7 +107,14 @@ async function accountRows(
       drift: drift === null ? null : cents(drift),
       pendingInBank: cents(Math.abs(diff.inBank)),
       statement,
-      meta: `${a.institution ?? 'Manual'}${a.mask ? ` · ending ${a.mask}` : ''} · ${a.status === 'login_required' ? 'sign in again' : synced}`,
+      meta: `${a.institution ?? 'Manual'}${a.mask ? ` · ending ${a.mask}` : ''} · ${
+        a.closed_at !== null
+          ? `closed ${shortDate(localDate(a.closed_at, timeZone))}`
+          : a.status === 'login_required'
+            ? 'sign in again'
+            : synced
+      }`,
+      closed: a.closed_at !== null,
     };
   });
   return { rows, raw, recent: startAdjust.recent };
@@ -118,7 +130,8 @@ accountRoutes.get('/accounts', async (c) => {
   const s = scoped(c);
   const now = clock(c.env);
   const f = await fresh(s, now);
-  const { rows } = await accountRows(s, f.today, f.budget.time_zone, now);
+  const { rows: all } = await accountRows(s, f.today, f.budget.time_zone, now, true);
+  const rows = all.filter((r) => !r.closed);
   const start = (f.budget.budget_start_month ?? f.current) as Month;
   const mr = await monthResult(s, f.current, start);
   for (const r of rows) {
@@ -130,7 +143,9 @@ accountRoutes.get('/accounts', async (c) => {
   }
   const cash = rows.filter((r) => r.kind !== 'credit');
   const credit = rows.filter((r) => r.kind === 'credit');
-  const netWorth = cash.reduce((a, r) => a + r.bank, 0) - credit.reduce((a, r) => a + r.bank, 0);
+  // Net worth counts pending, like the Cash and Credit cards totals below (D-76), so the three numbers add up.
+  const netWorth = cash.reduce((a, r) => a + r.working, 0) - credit.reduce((a, r) => a + r.working, 0);
+  const netWorthAtBank = cash.reduce((a, r) => a + r.bank, 0) - credit.reduce((a, r) => a + r.bank, 0);
   const [monthPosted, conns, health, hist, owedI, owedL] = await s.batch([
     s.q(
       `SELECT sum(amount) AS p FROM v_txn_bank WHERE budget_id = ?1 AND status = 'posted'
@@ -143,7 +158,7 @@ accountRoutes.get('/accounts', async (c) => {
     s.q(`SELECT key, value, at FROM health_status WHERE budget_id = ?1`),
     s.q(
       `SELECT id, type, ref_key, data FROM alert WHERE budget_id = ?1 AND acked_at IS NULL
-         AND type IN ('history_changed', 'vanished_pending', 'possible_reissue', 'identity')
+         AND type IN ('history_changed', 'possible_reissue', 'identity')
        ORDER BY created_at`,
     ),
     s.q(
@@ -205,13 +220,18 @@ accountRoutes.get('/accounts', async (c) => {
   for (const a of hist!.results as StoredAlert[]) alerts.push(storedAlert(a));
   const view: AccountsView = {
     netWorth: cents(netWorth),
-    netWorthChange: cents((monthPosted!.results[0] as { p: number | null }).p ?? 0),
+    // Posted this month, plus pending (the gap between net worth and the bank's balances): the same step as the
+    // Reports chart from last month's end to now.
+    netWorthChange: cents(
+      ((monthPosted!.results[0] as { p: number | null }).p ?? 0) + netWorth - netWorthAtBank,
+    ),
     month: f.current,
     owedOut: owed,
     groups: [
       { name: 'Cash', total: cents(cash.reduce((a, r) => a + r.working, 0)), accounts: cash },
       { name: 'Credit cards', total: cents(credit.reduce((a, r) => a + r.working, 0)), accounts: credit },
     ].filter((g) => g.accounts.length),
+    closed: all.filter((r) => r.closed),
     repairs: connRows
       .filter((x) => x.status === 'login_required')
       .map((x) => ({ connectionId: x.id, institution: x.institution_name, lastSynced: x.last_synced_at })),
@@ -252,12 +272,6 @@ export function storedAlert(a: StoredAlert): AccountsView['alerts'][number] {
         kind: 'ambiguous_match',
         txnKey: a.ref_key,
         text: 'A posted charge matched one of several pending charges. Check that it’s the right one.',
-      };
-    case 'vanished_pending':
-      return {
-        ...base,
-        kind: 'vanished_pending',
-        text: 'A pending charge left the bank 5 days ago and nothing posted. It was likely a released hold.',
       };
     case 'possible_reissue':
       return {
@@ -315,7 +329,7 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
   const f = await fresh(s, now);
   const id = c.req.param('id');
   const show = c.req.query('show') ?? 'all';
-  const { rows, raw, recent } = await accountRows(s, f.today, f.budget.time_zone, now);
+  const { rows, raw, recent } = await accountRows(s, f.today, f.budget.time_zone, now, true);
   const account = rows.find((r) => r.id === id);
   const rawAccount = raw.find((r) => r.id === id);
   if (!account || !rawAccount) throw new HttpError(404, 'not_found', GONE);
@@ -350,15 +364,18 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
     const shown = ts.filter(keep);
     if (shown.length)
       days.push({
-        label: shortDate(d),
+        // The year too when it isn't this year: two days a year apart would read (and key) the same.
+        label: d.slice(0, 4) === f.today.slice(0, 4) ? shortDate(d) : `${shortDate(d)}, ${d.slice(0, 4)}`,
         balance: cents(dayBal),
         rows: shown.map((t) => listRow(t, accts, cats)),
       });
   }
   let note: string | null = null;
+  let cardAvailable: number | null = null;
   if (credit) {
     const start = (f.budget.budget_start_month ?? f.current) as Month;
     const mr = await monthResult(s, f.current, start);
+    cardAvailable = mr?.cards[id]?.available ?? 0;
     const over = Object.entries(mr?.categories ?? {}).filter(([, v]) => (v.creditOverspent[id] ?? 0) > 0);
     if (over.length) {
       const amt = over.reduce((a, [, v]) => a + (v.creditOverspent[id] ?? 0), 0);
@@ -367,7 +384,21 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
     }
   }
   const start = await startSheet(s, rawAccount, recent.get(id) ?? null, now, f.budget.time_zone);
-  return c.json({ account, days, note, start } satisfies RegisterView);
+  const closeBlock = account.closed
+    ? null
+    : closeBlocked(
+        account,
+        txs.some((t) => t.status !== 'posted'),
+        cardAvailable,
+      );
+  return c.json({
+    account,
+    days,
+    note,
+    start,
+    closeBlock,
+    cardAvailable: cardAvailable === null ? null : cents(cardAvailable),
+  } satisfies RegisterView);
 });
 
 accountRoutes.get('/reports', async (c) => {
@@ -375,7 +406,7 @@ accountRoutes.get('/reports', async (c) => {
   const now = clock(c.env);
   const f = await fresh(s, now);
   const m = (c.req.query('month') ?? f.current) as Month;
-  if (!isMonth(m)) throw new HttpError(400, 'invalid', BAD_MONTH);
+  if (!isMonth(m) || !inReach(m, f.current)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const start = (f.budget.budget_start_month ?? f.current) as Month;
   const { categories } = await structure(s);
   const kinds = new Map(categories.map((x) => [x.id, x]));
@@ -420,9 +451,11 @@ accountRoutes.get('/reports', async (c) => {
     .filter(([id, v]) => (kinds.get(id)?.kind ?? 'spending') === 'spending' && v.spent > 0)
     .map(([id, v]) => ({ categoryId: id, name: kinds.get(id)?.name ?? id, spent: v.spent }))
     .sort((a, b) => b.spent - a.spent);
-  // Net worth at each month end: today's figure minus everything posted after that month.
+  // Net worth at each month end: the bank's balances today minus everything posted after that month. This month's
+  // point counts pending, as Accounts does (D-76); a finished month's pending has posted since, so it's in the bank.
   const { rows } = await accountRows(s, f.today, f.budget.time_zone, now);
   const nwNow = rows.reduce((a, r) => a + (r.kind === 'credit' ? -r.bank : r.bank), 0);
+  const nwWorking = rows.reduce((a, r) => a + (r.kind === 'credit' ? -r.working : r.working), 0);
   // Posted totals per month over the last 13 months (ledger/totals.ts: stored for finished months).
   const totals = await monthTotals(s, addMonths(f.current, -12), f.current, Date.now());
   const posted = [...totals].map(([mm, accts]) => ({
@@ -433,7 +466,7 @@ accountRoutes.get('/reports', async (c) => {
   let after = 0;
   for (let i = 0; i < 12; i++) {
     const mm = addMonths(f.current, -i);
-    netWorth.unshift({ month: mm, value: cents(nwNow - after) });
+    netWorth.unshift({ month: mm, value: cents(i === 0 ? nwWorking : nwNow - after) });
     after += posted.find((p) => p.m === mm)?.a ?? 0;
   }
   const stillOwed = owedOut(

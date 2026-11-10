@@ -1,7 +1,7 @@
 // Settings: the layout, the home page, appearance and preferences. Each section has its own file in settings/:
 // categories and groups, payees, bank connections (Item meter, confirm before Link), and
 // import and export. There is no email setting: the app sends no email (decisions.md D-24).
-import { SignInSection } from './Auth';
+import { signInMeta, useSecurity } from './settings/SignIn';
 import { useId, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -32,11 +32,18 @@ const SECTIONS: { id: string; name: string; to: string }[] = [
   { id: 'appearance', name: 'Appearance and preferences', to: '/settings/appearance' },
   { id: 'payees', name: 'Payees', to: '/settings/payees' },
   { id: 'connections', name: 'Bank connections', to: '/settings/connections' },
-  { id: 'data', name: 'Import and export', to: '/settings/data' },
+  { id: 'data', name: 'Backup and export', to: '/settings/data' },
+  { id: 'sign-in', name: 'Sign-in and devices', to: '/settings/sign-in' },
 ];
+/** Admins, once there is anyone else or sign-up is on (D-75). */
+const USERS = { id: 'users', name: 'Users', to: '/settings/users' };
 
 function useSectionMeta() {
   const conns = useConnections().data;
+  const session = useSession().data;
+  const security = useSecurity();
+  // Users who can't link banks never see a link count (D-75).
+  const canLink = session?.canLinkBanks !== false;
   const payees = usePayees().data;
   const needRepair = conns?.items.filter((i) => i.status === 'login_required' || i.status === 'error') ?? [];
   const first = needRepair[0];
@@ -50,10 +57,16 @@ function useSectionMeta() {
   const text: Record<string, string> = {
     appearance: 'Light, Dark or Match device',
     payees: payees ? `Rename and join · ${n} ${n === 1 ? 'payee' : 'payees'}` : 'Rename and join',
-    connections: conns ? `${conns.used} of ${conns.limit} bank links used${problem}` : '',
-    data: 'History import · CSV and JSON export · recovery',
+    connections: conns
+      ? canLink
+        ? `${conns.used} of ${conns.limit} bank links used${problem}`
+        : problem.slice(3)
+      : '',
+    data: 'Full backup · usage export · recovery',
+    users: 'Accounts · turn one off',
+    'sign-in': signInMeta(security.data),
   };
-  return { text, repair: needRepair.length > 0 };
+  return { text, repair: needRepair.length > 0, users: security.data?.usersScreen === true };
 }
 
 export function SettingsLayout() {
@@ -76,7 +89,7 @@ export function SettingsLayout() {
           aria-label="Settings sections"
           className="flex w-[260px] shrink-0 flex-col gap-1 overflow-y-auto border-r border-line bg-surface p-3"
         >
-          {SECTIONS.map((s) => {
+          {[...SECTIONS, ...(meta.users ? [USERS] : [])].map((s) => {
             const on = s.id === active;
             return (
               <Link
@@ -173,7 +186,7 @@ function Preferences() {
           mutates
           track="settings.tracking"
           label="Record how I use the app"
-          help="Taps and timings only, no amounts or names. Export it from Import and export."
+          help="Taps and timings only, no amounts or names. Export it from Backup and export."
           checked={s.settings.tracking}
           onChange={(v) => void patch({ tracking: v })}
         />
@@ -187,7 +200,6 @@ function Preferences() {
         />
       </Card>
       {trackNote && <Banner tone="neutral">{trackNote}</Banner>}
-      <SignInSection />
     </>
   );
 }
@@ -223,11 +235,33 @@ function SettingsHome() {
           />
           <RowLink
             to="/settings/data"
-            name="Import and export"
+            name="Backup and export"
             meta={meta.text.data ?? ''}
             track="settings.data"
           />
         </Card>
+        <SectionTitle>Sign-in</SectionTitle>
+        <Card>
+          <RowLink
+            to="/settings/sign-in"
+            name="Sign-in and devices"
+            meta={meta.text['sign-in'] ?? ''}
+            track="settings.sign_in"
+          />
+        </Card>
+        {meta.users && (
+          <>
+            <SectionTitle>People</SectionTitle>
+            <Card>
+              <RowLink
+                to="/settings/users"
+                name="Users"
+                meta={meta.text.users ?? ''}
+                track="settings.users"
+              />
+            </Card>
+          </>
+        )}
         <SectionTitle note="Saved on this device">Appearance</SectionTitle>
         <ThemeChoice />
         <SectionTitle>Preferences</SectionTitle>
@@ -290,4 +324,6 @@ export function AppearanceSection() {
 export { CategoriesScreen, CategoryEditSheet } from './settings/Categories';
 export { PayeesScreen, RenamePayeeSheet } from './settings/Payees';
 export { ConnectionsScreen, LinkBankFlow, LinkMeter } from './settings/Connections';
+export { UsersScreen } from './settings/People';
 export { DataScreen } from './settings/Data';
+export { SignInSettingsScreen } from './settings/SignIn';

@@ -134,7 +134,7 @@ export class SoftAuthenticator {
 
   async get(
     options: { challenge: string },
-    o: { origin?: string; signWith?: SoftAuthenticator; userHandle?: string } = {},
+    o: { origin?: string; signWith?: SoftAuthenticator; userHandle?: string; noUserHandle?: boolean } = {},
   ) {
     this.counter++;
     const clientData = new TextEncoder().encode(
@@ -161,7 +161,9 @@ export class SoftAuthenticator {
         clientDataJSON: b64u(clientData),
         authenticatorData: b64u(authData),
         signature: b64u(der(sig)),
-        userHandle: o.userHandle ?? this.userHandle ?? b64u(new TextEncoder().encode('ledgerline-owner')),
+        userHandle: o.noUserHandle
+          ? undefined
+          : (o.userHandle ?? this.userHandle ?? b64u(new TextEncoder().encode('ledgerline-owner'))),
       },
       clientExtensionResults: {},
     };

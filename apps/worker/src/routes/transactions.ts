@@ -21,9 +21,11 @@ import {
 } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { AppEnv } from '../http/context.js';
-import { HttpError, parse, scoped, GONE } from './api.js';
+import type { Scoped } from '../db/scoped.js';
+import { HttpError, parse, scoped, GONE, FAR_DATE, FAR_MONTH, inReach, thisMonth } from './api.js';
+import { reopenStmts } from './account-close.js';
 import { editTime, liveKey } from './sync.js';
-import { shortDate } from '../views/common.js';
+import { monthLong, shortDate } from '../views/common.js';
 import { categoryLabel, isHistory } from '../views/rows.js';
 import { TX_COLUMNS, chunks, txnCol, type TxRow } from '../ledger/ledger.js';
 import { linkInfo, roleOf } from '../ledger/link.js';
@@ -47,8 +49,13 @@ transactionRoutes.get('/transactions/:key', async (c) => {
       `SELECT id, amount, fraction_num, fraction_den, expect_by, closed_at, canceled_at FROM expected_reimbursement WHERE budget_id = ?1 AND txn_key = ?2`,
       key,
     ),
+    // Each payback is labelled by the other side: on the money in, the purchase it paid back; on the purchase,
+    // the money in that paid it.
     s.q(
-      `SELECT l.from_key, l.to_key, l.amount, coalesce(${txnCol('l.from_key', 'payee')}, '') AS label FROM txn_link l
+      `SELECT l.from_key, l.to_key, l.amount,
+         coalesce(CASE WHEN l.from_key = ?2 THEN ${txnCol('e.txn_key', 'payee')} ELSE ${txnCol('l.from_key', 'payee')} END, '') AS label,
+         CASE WHEN l.from_key = ?2 THEN ${txnCol('e.txn_key', 'date')} ELSE ${txnCol('l.from_key', 'date')} END AS date
+       FROM txn_link l LEFT JOIN expected_reimbursement e ON e.budget_id = l.budget_id AND e.id = l.to_key
        WHERE l.budget_id = ?1 AND l.kind = 'reimbursement_of' AND l.undone_at IS NULL AND (l.from_key = ?2 OR l.to_key IN (SELECT id FROM expected_reimbursement WHERE budget_id = ?1 AND txn_key = ?2))`,
       key,
     ),
@@ -67,7 +74,13 @@ transactionRoutes.get('/transactions/:key', async (c) => {
     memo: string | null;
     absorbs_remainder: number;
   }[];
-  const pbs = pb!.results as { from_key: string; to_key: string; amount: number; label: string }[];
+  const pbs = pb!.results as {
+    from_key: string;
+    to_key: string;
+    amount: number;
+    label: string;
+    date: string | null;
+  }[];
   const owedRows = ow!.results as {
     id: string;
     amount: number;
@@ -121,6 +134,12 @@ transactionRoutes.get('/transactions/:key', async (c) => {
             ? 'Cleared despite won’t clear'
             : a,
       );
+  // The lines no longer add up to the amount (it changed after the split): the gap counts as uncategorized (D-82).
+  const splitTotal = splits.reduce((a, x) => a + x.amount, 0);
+  if (splits.length && splitTotal !== t.amount)
+    alerts.push(
+      `The split adds up to ${formatCents(Math.abs(splitTotal))}, not ${formatCents(Math.abs(t.amount))}. Edit the split to fix it.`,
+    );
   const ruleName = (rule!.results[0] as { name: string } | undefined)?.name;
   // A row before the budget start may be part of the starting balance rather than plain history (D-67).
   const inStart = kind === 'history' && roleOf(t, await linkInfo(s)) === 'before';
@@ -133,6 +152,10 @@ transactionRoutes.get('/transactions/:key', async (c) => {
     rawName: t.raw_name,
     accountId: t.account_id,
     accountName: accts.get(t.account_id) ?? t.account_name,
+    otherAccountName:
+      t.transfer_state === 'paired' && t.transfer_account_id
+        ? (accts.get(t.transfer_account_id) ?? null)
+        : null,
     date: t.date,
     postedDate: t.posted_date,
     amount: cents(t.amount),
@@ -175,7 +198,7 @@ transactionRoutes.get('/transactions/:key', async (c) => {
       inflowKey: p.from_key,
       itemId: p.to_key,
       amount: cents(p.amount),
-      label: p.label,
+      label: p.date ? `${p.label} · ${shortDate(p.date)}` : p.label,
     })),
     refundOf: refund ? { key: refund.to_key, label: `${refund.label} · ${shortDate(refund.date)}` } : null,
     pairedWith: kind === 'history' ? null : await pairedWith(s, t),
@@ -224,8 +247,12 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
     w.push(s.q(`DELETE FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`, key));
     if (p.split) {
       const total = p.split.reduce((a, l) => a + l.amount, 0);
-      if (total !== t.amount)
-        throw new HttpError(422, 'split_total', `The lines must add up to ${formatCents(t.amount)}.`);
+      if (total !== (p.amount ?? t.amount))
+        throw new HttpError(
+          422,
+          'split_total',
+          `The lines must add up to ${formatCents(p.amount ?? t.amount)}.`,
+        );
       p.split.forEach((l, i) =>
         w.push(
           s.q(
@@ -257,6 +284,8 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
     if (t.source !== 'manual')
       throw new HttpError(422, 'not_manual', 'You can change the amount only on a transaction you added.');
     if (p.amount === 0) throw new HttpError(422, 'zero_amount', 'Enter an amount.');
+    // Out to In or back: what only fits the old direction goes with it.
+    if (p.amount < 0 !== t.amount < 0) w.push(...(await flipStmts(s, t, p, now)));
     w.push(
       s.q(
         `UPDATE manual_pending SET amount = ?3, updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
@@ -275,7 +304,11 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
       throw new HttpError(422, 'posted', 'This has posted, so it can’t be marked won’t clear.');
     set('wont_clear', p.wontClear ? 1 : 0);
   }
-  if (p.budgetMonth !== undefined) set('budget_month', p.budgetMonth);
+  if (p.budgetMonth !== undefined) {
+    if (p.budgetMonth !== null && !inReach(p.budgetMonth, await thisMonth(s, now)))
+      throw new HttpError(422, 'too_far', FAR_MONTH);
+    set('budget_month', p.budgetMonth);
+  }
   if (p.payeeName !== undefined) {
     // A name you typed is yours: sync never renames it, and the payee gets the key of that name
     // (docs/payee-names.md 4, 6).
@@ -309,8 +342,9 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
         ),
       );
     } else {
-      if (t.amount >= 0) throw new HttpError(422, 'not_outflow', 'Only money going out can be owed to you.');
-      const x = cents(-t.amount);
+      const out = p.amount ?? t.amount;
+      if (out >= 0) throw new HttpError(422, 'not_outflow', 'Only money going out can be owed to you.');
+      const x = cents(-out);
       const m = p.markOwed;
       const [num, den] =
         m.mode === 'half'
@@ -370,7 +404,7 @@ transactionRoutes.post('/transactions/categorize', async (c) => {
     for (const k of chunks(r.keys)) {
       const ph = k.map((_, i) => `?${i + 2}`).join(',');
       const out = await s.first(
-        `SELECT 1 FROM bank_txn WHERE budget_id = ?1 AND txn_key IN (${ph}) AND amount < 0 AND removed_at IS NULL
+        `SELECT 1 FROM bank_txn WHERE +budget_id = ?1 AND txn_key IN (${ph}) AND amount < 0 AND removed_at IS NULL
          UNION ALL SELECT 1 FROM manual_pending WHERE budget_id = ?1 AND txn_key IN (${ph}) AND amount < 0 LIMIT 1`,
         ...k,
       );
@@ -409,6 +443,18 @@ transactionRoutes.post('/transactions', async (c) => {
   const r = await parse(NewTxnRequest, c.req.raw);
   const s = scoped(c);
   const now = clock(c.env);
+  if (!inReach(monthOfDate(r.date), await thisMonth(s, now))) throw new HttpError(422, 'too_far', FAR_DATE);
+  // Before the budget start is history, which never counts (D-61, D-67); your own entries there are refused too
+  // (D-79).
+  const start = (
+    await s.first<{ m: string | null }>(`SELECT budget_start_month AS m FROM budget WHERE id = ?1`)
+  )?.m;
+  if (start && monthOfDate(r.date) < start)
+    throw new HttpError(
+      422,
+      'before_start',
+      `Pick a date from ${monthLong(start as Month)} 1, ${start.slice(0, 4)} on.`,
+    );
   const acct = await s.first(`SELECT id FROM account WHERE budget_id = ?1 AND id = ?2`, r.accountId);
   if (!acct) throw new HttpError(404, 'not_found', GONE);
   if (r.categoryId) {
@@ -422,6 +468,8 @@ transactionRoutes.post('/transactions', async (c) => {
   const toRta = r.toRta === true && r.amount > 0;
   const key = `m:${ulid(now)}`;
   const w = [
+    // An entry for a closed account opens it again (D-73).
+    ...reopenStmts(s, r.accountId, now),
     s.q(
       `INSERT INTO manual_pending (id, budget_id, txn_key, account_id, kind, date, amount, payee_name, repeats, created_at, updated_at)
        VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)`,
@@ -475,6 +523,7 @@ transactionRoutes.post('/transactions/:key/pending', async (c) => {
             key,
             now,
           ),
+          cancelOwed(s, key, now),
         ];
   w.push(s.audit(`pending.${r.action}`, 'transaction', key, null, null, now));
   return c.json(await commit(c, w));
@@ -497,6 +546,7 @@ transactionRoutes.delete('/transactions/:key', async (c) => {
         key,
         now,
       ),
+      cancelOwed(s, key, now),
       s.audit('txn.delete', 'transaction', key, null, null, now),
     ]),
   );
@@ -518,6 +568,57 @@ transactionRoutes.post('/transactions/:key/review', async (c) => {
   ];
   return c.json(await commit(c, w));
 });
+
+/**
+ * Your entry changes direction (Out to In, or In to Out). A split and what's owed to you were made for the old
+ * direction, so they go; money out can't stay in Ready to Assign. A transfer or a match is undone first, by you.
+ */
+async function flipStmts(
+  s: Scoped,
+  t: TxRow,
+  p: { amount?: number | undefined; split?: unknown },
+  now: number,
+): Promise<Stmt[]> {
+  const linked = await s.first(
+    `SELECT 1 FROM txn_link WHERE budget_id = ?1 AND undone_at IS NULL AND kind IN ('reimbursement_of', 'refund_of')
+       AND (from_key = ?2 OR to_key = ?2 OR to_key IN (SELECT id FROM expected_reimbursement WHERE budget_id = ?1 AND txn_key = ?2))
+     LIMIT 1`,
+    t.key,
+  );
+  if (t.transfer_state === 'paired' || linked)
+    throw new HttpError(
+      422,
+      'linked',
+      t.transfer_state === 'paired'
+        ? 'This is a transfer. Undo the transfer first, then change Out or In.'
+        : 'This is matched to another transaction. Undo the match first, then change Out or In.',
+    );
+  const w: Stmt[] = [cancelOwed(s, t.key, now)];
+  // A split sent with the flip is for the new amount: it stays.
+  if (!p.split) w.push(s.q(`DELETE FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`, t.key));
+  w.push(
+    s.q(
+      `UPDATE txn_overlay SET wtm_state = NULL, to_rta = CASE WHEN ?3 < 0 THEN 0 ELSE to_rta END, updated_at = ?4
+       WHERE budget_id = ?1 AND txn_key = ?2`,
+      t.key,
+      p.amount ?? 0,
+      now,
+    ),
+  );
+  return w;
+}
+
+/**
+ * A deleted entry takes what was owed to you on it along: the purchase is gone, so nothing is out with others
+ * (Owed to you, net worth). What was already closed stays as it was.
+ */
+function cancelOwed(s: Scoped, key: string, now: number): Stmt {
+  return s.q(
+    `UPDATE expected_reimbursement SET canceled_at = ?3, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2 AND canceled_at IS NULL AND closed_at IS NULL`,
+    key,
+    now,
+  );
+}
 
 /** Which share the sheet shows as picked: a fraction of the amount (half, all) or a fixed amount. */
 function owedShare(

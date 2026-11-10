@@ -45,6 +45,12 @@ export interface OwedMark {
   splitLineId?: string;
   /** Rule 11: Close charges the open amount to the original category in the closing month. */
   closed?: { month: Month; date: IsoDate; amount: Cents };
+  /**
+   * Closes undone in a later month (D-80), and their undos: each a close line in its own month, the undo with the
+   * opposite (negative) amount, so the month it was closed in stays as it was. They count even if the mark is
+   * removed later.
+   */
+  pastCloses?: { id: string; month: Month; amount: Cents }[];
   canceled?: boolean;
 }
 
@@ -200,7 +206,20 @@ export function linesForTxn(
   const owedBySplit = new Map<string, number>();
   let owedWhole = 0;
   for (const ow of t.owed ?? []) {
-    if (ow.canceled || t.amount >= 0) continue;
+    if (t.amount >= 0) continue;
+    const pastCat = ow.pastCloses?.length ? owedCategory(u, ow.splitLineId) : null;
+    for (const pc of pastCat ? ow.pastCloses! : [])
+      lines.push({
+        kind: 'close',
+        id: `${t.key}:close:${ow.itemId}:${pc.id}`,
+        month: pc.month,
+        date: `${pc.month}-01`,
+        seq: t.seq,
+        categoryId: pastCat!,
+        amount: pc.amount,
+        itemId: ow.itemId,
+      });
+    if (ow.canceled) continue;
     lines.push({
       kind: 'owed',
       id: `${t.key}:owed:${ow.itemId}`,
@@ -247,6 +266,9 @@ export function linesForTxn(
       break;
     }
     case 'split': {
+      // Lines that no longer add up (the amount changed after the split, or a pending row posted at another amount):
+      // the gap counts as uncategorized until you fix the split, so it is never lost (D-82).
+      uncategorized += t.amount - u.lines.reduce((a, sl) => a + sl.amount, 0);
       u.lines.forEach((sl, n) => {
         const amt =
           sl.amount < 0 ? sl.amount + (owedBySplit.get(sl.id) ?? 0) + (n === 0 ? owedWhole : 0) : sl.amount;

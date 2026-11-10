@@ -1,6 +1,6 @@
 // First run: Welcome, 1 · Budget start, 2 · Link banks, 3 · Make your categories.
 import { useState, type ReactNode } from 'react';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link, Navigate, useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
 import { qk, useAccounts, useConnections, useSession } from '../api/hooks';
@@ -100,7 +100,7 @@ export function StartMonthScreen() {
     try {
       if (session.data?.budget.setupStep === 'start') await api.setupStart({ startMonth: month });
       await qc.invalidateQueries({ queryKey: qk.session });
-      void navigate({ to: '/setup/link' });
+      void navigate({ to: session.data?.canLinkBanks === false ? '/setup/categories' : '/setup/link' });
     } catch (e) {
       setError(e);
     } finally {
@@ -139,11 +139,14 @@ export function StartMonthScreen() {
 
 export function LinkBanksScreen() {
   useScreen('setup.link');
+  const session = useSession();
   const conns = useConnections();
   const accounts = useAccounts();
   const linked = (conns.data?.items ?? []).filter((i) => i.status !== 'removed');
   const accts = (accounts.data?.groups ?? []).flatMap((g) => g.accounts);
   const navigate = useNavigate();
+  // Users who can't link banks skip this step (D-75).
+  if (session.data?.canLinkBanks === false) return <Navigate to="/setup/categories" />;
   return (
     <Step
       n={2}
@@ -192,8 +195,8 @@ export function LinkBanksScreen() {
         <span>Purchases from before your budget starts go into the starting balance.</span>
         <Why>
           Some of them can come in up to 2 weeks late. Ledgerline gets 6 months of history, and this can’t be
-          changed later. You can import older history from a CSV file in Settings. Investment and retirement
-          accounts aren’t tracked. Money you send to them counts as Invested.
+          changed later. Investment and retirement accounts aren’t tracked. Money you send to them counts as
+          Invested.
         </Why>
       </div>
     </Step>
@@ -236,6 +239,7 @@ export function FirstSortScreen() {
   const accounts = useAccounts();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const session = useSession();
   const [on, setOn] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(IDEAS.flatMap((g) => g.items.map((i) => [i, !g.off.includes(i)]))),
   );
@@ -250,16 +254,21 @@ export function FirstSortScreen() {
     setBusy(true);
     setError(null);
     try {
+      // A try again after a failure part way keeps what the first try made, instead of making it twice.
+      const have = await api.categories();
       for (const g of IDEAS) {
         const names = g.items.filter((i) => on[i]).concat(g.name === 'Everyday' ? custom : []);
         if (!names.length) continue;
-        const { id } = await api.upsertGroup({ name: g.name, isBills: g.bills });
+        const made = have.groups.find((x) => !x.system && x.name === g.name);
+        const id = made?.id ?? (await api.upsertGroup({ name: g.name, isBills: g.bills })).id;
+        const taken = new Set(made?.categories.map((c) => c.name.toLowerCase()));
         for (const n of names)
-          await api.upsertCategory({
-            name: n,
-            groupId: id,
-            kind: n === 'Investments' ? 'saving' : 'spending',
-          });
+          if (!taken.has(n.toLowerCase()))
+            await api.upsertCategory({
+              name: n,
+              groupId: id,
+              kind: n === 'Investments' ? 'saving' : 'spending',
+            });
       }
       await api.startingBalances({
         accounts: accts.map((a) => ({
@@ -278,7 +287,7 @@ export function FirstSortScreen() {
   return (
     <Step
       n={3}
-      back="/setup/link"
+      back={session.data?.canLinkBanks === false ? '/setup/start' : '/setup/link'}
       footer={
         <>
           <span className="text-center text-sm text-muted">
@@ -340,7 +349,11 @@ export function FirstSortScreen() {
         onSubmit={(e) => {
           e.preventDefault();
           const n = draft.trim();
-          if (n && !custom.includes(n)) setCustom([...custom, n]);
+          const same = (x: string) => x.toLowerCase() === n.toLowerCase();
+          // One of the ideas, typed: keep that idea instead of adding it twice.
+          const idea = IDEAS.flatMap((g) => g.items).find(same);
+          if (idea) setOn({ ...on, [idea]: true });
+          else if (n && !custom.some(same)) setCustom([...custom, n]);
           setDraft('');
         }}
       >

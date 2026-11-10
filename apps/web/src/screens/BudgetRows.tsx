@@ -1,4 +1,4 @@
-// Budget's phone list: category, card payment and Owed to you rows in collapsible group cards.
+// Budget's phone list: pinned, category, card payment and Owed to you rows in collapsible group cards.
 import { useState, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import type { BudgetCategoryRow, BudgetView, CardRow } from '@ledgerline/contracts';
@@ -19,6 +19,12 @@ function writeCollapsed(v: Record<string, boolean>) {
   } catch {
     // per-device convenience only
   }
+}
+
+/** The pinned categories that are in this month's groups (archived and removed ones drop out), in pin order. */
+export function pinnedRows(b: BudgetView): BudgetCategoryRow[] {
+  const all = new Map(b.groups.flatMap((g) => g.categories.map((c) => [c.id, c] as const)));
+  return b.pinned.flatMap((id) => all.get(id) ?? []);
 }
 
 export function allAssignedZero(b: BudgetView) {
@@ -48,8 +54,8 @@ function CategoryRowPhone({ row, month }: { row: BudgetCategoryRow; month: strin
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
-          <span className="text-base font-semibold">{row.name}</span>
-          <span className="truncate text-xs leading-normal text-muted">
+          <span className="text-base font-semibold wrap-anywhere">{row.name}</span>
+          <span className="text-xs leading-snug text-muted">
             {quiet ? (
               <span className="sr-only">{st.word} · </span>
             ) : (
@@ -81,8 +87,8 @@ function CardRowPhone({ card }: { card: CardRow }) {
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
-          <span className="text-base font-semibold">{card.name}</span>
-          <span className="truncate text-xs leading-normal text-muted">
+          <span className="text-base font-semibold wrap-anywhere">{card.name}</span>
+          <span className="text-xs leading-snug text-muted">
             {card.status === 'short' ? (
               <>
                 <StatusWord word="Short" tone={tone} icon="alert" /> ·{' '}
@@ -162,7 +168,8 @@ export function GroupHeader({
     right && !toggle ? 'pr-2' : 'pr-3',
     divider && 'border-b border-line',
   );
-  const label = 'm-0 flex items-center gap-1.5 text-xs font-bold uppercase tracking-caps';
+  const label =
+    'm-0 flex min-w-0 items-center gap-1.5 text-left text-xs font-bold uppercase tracking-caps wrap-anywhere';
   if (toggle)
     return (
       <button
@@ -199,7 +206,7 @@ function Group({
   toggle,
 }: {
   id: string;
-  name: string;
+  name: ReactNode;
   total: string;
   children: ReactNode;
   collapsed: boolean;
@@ -228,8 +235,28 @@ export function AllGroups({ b, month }: { b: BudgetView; month: string }) {
       return n;
     });
   const empty = allAssignedZero(b);
+  const pinned = pinnedRows(b);
   return (
     <>
+      {pinned.length > 0 && (
+        <Group
+          id="pinned"
+          // A pin, not a total: these categories are counted in their own groups below.
+          name={
+            <>
+              <Icon name="pin" size={14} stroke={2.4} />
+              Pinned
+            </>
+          }
+          total=""
+          collapsed={!!collapsed.pinned}
+          toggle={toggle}
+        >
+          {pinned.map((c) => (
+            <CategoryRowPhone key={c.id} row={c} month={month} />
+          ))}
+        </Group>
+      )}
       {b.groups.map((g) => (
         <Group
           key={g.id}

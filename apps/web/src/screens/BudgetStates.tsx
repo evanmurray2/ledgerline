@@ -64,7 +64,7 @@ export function OverAssigned({ b, month }: { b: BudgetView; month: string }) {
               className="flex items-center gap-3 border-t border-divider px-3 py-2.5 first:border-t-0"
             >
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="text-base font-semibold">{c.name}</span>
+                <span className="text-base font-semibold wrap-anywhere">{c.name}</span>
                 <span className="text-xs text-muted">
                   {formatCents(c.available)} · {c.detail}
                 </span>

@@ -12,6 +12,7 @@ import { useSyncExternalStore } from 'react';
 import { CSRF_HEADER, type Session } from '@ledgerline/contracts';
 import { connectivity } from '../state/connectivity';
 import { EngineHost, syncAll, type EngineIdentity, type SyncPage } from './host';
+import { usage } from '../usage/tracker';
 import { assert, canUsePasskeys, keepsCopy, type RequestOptionsJSON } from './passkey';
 import {
   type CopyRecord,
@@ -39,6 +40,8 @@ import {
 
 export const IDLE_MS = 10 * 60_000;
 const SYNC_EVERY_MS = 2 * 60_000;
+/** A sync that brings nothing still saves the copy this often, to keep the offline limit's server time fresh. */
+const KEEP_ALIVE_MS = 60 * 60_000;
 
 export type CopyStatus =
   | 'off' // the mock API (development and tests)
@@ -397,20 +400,33 @@ let lastSync = 0;
  * Brings the copy up to date with the server, works out the budget again and saves it. Screens are told to read it
  * again, except after the app's own change (`quiet`): its mutation refreshes what it changed itself.
  */
-export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
+export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}): Promise<void> {
   if (!host) return Promise.resolve();
   if (syncing) return syncing.then(() => syncNow(opts));
   syncing = (async () => {
     try {
       lastSync = Date.now();
-      const r = await syncAll(host!, async (since, cursor) => {
-        const p = await fetchPage(since, cursor);
-        set({ progress: state.progress + p.rows.length });
-        return p;
-      });
+      // An edit's answer carries the changes since the copy's change number: use them as the first page, but only if
+      // the copy is still there (another sync may have moved it on meanwhile).
+      let first = opts.first;
+      const r = await syncAll(
+        host!,
+        async (since, cursor) => {
+          const given = first && !cursor && since === first.since ? first.page : null;
+          first = undefined;
+          if (given) return given;
+          const p = await fetchPage(since, cursor);
+          set({ progress: state.progress + p.rows.length });
+          return p;
+        },
+        () => set({ why: 'reset', progress: 0 }),
+      );
       if (state.why) set({ why: null });
-      if (r.rows > 0 || !(await host!.state()).through) await host!.derive();
-      if (record) {
+      const derived = r.rows > 0 || !(await host!.state()).through;
+      if (derived) await host!.derive();
+      // The saved copy is the whole database, encrypted: write it again only when it changed, or once an hour to
+      // move the 7-day offline limit along (lastServerTime). A sync that brings nothing costs no save.
+      if (record && (derived || Date.now() - record.lastServerTime >= KEEP_ALIVE_MS)) {
         record = { ...record, lastServerTime: Date.now() };
         await save();
       }
@@ -424,10 +440,15 @@ export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
 
 async function save(): Promise<void> {
   if (!record || !dataKey || !host) return;
+  const started = performance.now();
   const bytes = await host.export();
+  const kb = bytes.byteLength / 1024;
   const blob = await sealCopy(record, dataKey, bytes);
   record = { ...record, blob, savedAt: Date.now() };
   await saveRecord(record);
+  // How long a whole-copy save takes, and its size, so the save can be split up only if it proves slow.
+  usage.record('measure', 'copy.save.ms', performance.now() - started);
+  usage.record('measure', 'copy.save.kb', kb);
 }
 
 // ---------------------------------------------------------------- reads and changes from the app
@@ -453,10 +474,28 @@ export async function read(path: string): Promise<{ status: number; body: string
   return host!.request('GET', path);
 }
 
-/** After a change on the server: sync it into the copy, then the new Ready to Assign. */
-export async function afterChange(): Promise<{ rta: number; rtaUpdating: boolean } | null> {
+/** The changes an edit's answer carried (`sync`), and the change number they start after. */
+export interface EditAnswerSync {
+  since: number;
+  page: SyncPage;
+}
+
+/**
+ * The change number to send with an online edit (`x-sync-since`), so its answer carries what changed: null while
+ * the copy isn't open or is still downloading.
+ */
+export async function syncSince(): Promise<number | null> {
   if (!host || state.status !== 'ready') return null;
-  await syncNow({ quiet: true });
+  const st = await host.state();
+  return st.cursor || !st.through ? null : st.through;
+}
+
+/** After a change on the server: sync it into the copy (from the answer when it carried the changes), then RTA. */
+export async function afterChange(
+  answer?: EditAnswerSync | null,
+): Promise<{ rta: number; rtaUpdating: boolean } | null> {
+  if (!host || state.status !== 'ready') return null;
+  await syncNow({ quiet: true, first: answer ?? undefined });
   const r = await host.rta();
   return { rta: r.rta, rtaUpdating: r.updating };
 }
@@ -473,6 +512,22 @@ export async function archiveFields(
   return { available, through: (await host.state()).through };
 }
 
+/** Close account (D-73): the working balance and card payment category available this phone shows, and `through`. */
+export async function closeFields(
+  accountId: string,
+): Promise<{ working: number; available: number; through: number } | null> {
+  if (!host || state.status !== 'ready') return null;
+  await syncNow();
+  const r = await host.request('GET', `/api/accounts/${encodeURIComponent(accountId)}/register`);
+  if (r.status !== 200) return null;
+  const v = JSON.parse(r.body) as { account: { working: number }; cardAvailable: number | null };
+  return {
+    working: v.account.working,
+    available: v.cardAvailable ?? 0,
+    through: (await host.state()).through,
+  };
+}
+
 // ---- offline edits (docs/phone-budget.md section 12)
 
 const OFFLINE_EDITS: [string, RegExp][] = [
@@ -480,6 +535,8 @@ const OFFLINE_EDITS: [string, RegExp][] = [
   ['POST', /^\/api\/transactions\/categorize$/],
   ['POST', /^\/api\/budget\/(assign|set|move)$/],
   ['PUT', /^\/api\/categories\/[^/]+\/target$/],
+  // Pinning a category to the top of Budget (D-74): one category and its new state, so a late one undoes nothing else.
+  ['POST', /^\/api\/settings\/categories\/[^/]+\/pin$/],
   // Renaming a payee (not joining: that needs a connection). Its id is in the path, so a rename that arrives after
   // the payee was joined into another is refused instead of renaming the other one (docs/payees.md 5.3).
   ['POST', /^\/api\/settings\/payees\/(?!merge(?:\/|$))[^/]+$/],
@@ -580,6 +637,11 @@ function watch(): void {
   if (timer) return;
   const active = () => {
     lastActive = Date.now();
+    // The other tabs share this sign-in: using any tab keeps them all from ending it after 10 idle minutes.
+    if (lastActive - lastTold >= TELL_ACTIVE_MS) {
+      lastTold = lastActive;
+      tellOtherTabs('active');
+    }
   };
   for (const ev of ['pointerdown', 'keydown', 'touchstart', 'scroll'])
     window.addEventListener(ev, active, { passive: true });
@@ -590,7 +652,8 @@ function watch(): void {
       if (record && dataKey) void holdKey(record.key, dataKey, lastActive);
       document.documentElement.dataset.covered = '1';
     } else {
-      const away = hiddenAt ? Date.now() - hiddenAt : 0;
+      // Away since it was hidden, or since another tab was last used if that was later.
+      const away = hiddenAt ? Date.now() - Math.max(hiddenAt, lastActive) : 0;
       hiddenAt = null;
       // Timers don't run while iOS has the app in the background: check before anything is drawn.
       if (away >= IDLE_MS) void signOutIdle();
@@ -624,19 +687,69 @@ function watch(): void {
  * Ends the server session, then tells the app, which shows Sign in (or, with no signal, the screen that opens the
  * saved copy with Face ID). In this order so the app's next session check can't find the session that's ending.
  */
-async function endSignIn(saved = true): Promise<void> {
+async function endSignIn(saved = true, here = true): Promise<void> {
   set({
     status: saved ? 'signed_out' : 'idle',
     hasSaved: saved || state.hasSaved,
     offline: false,
     progress: 0,
   });
-  await server('POST', '/api/settings/security/sign-out').catch(() => undefined);
+  if (here) {
+    await server('POST', '/api/settings/security/sign-out').catch(() => undefined);
+    tellOtherTabs('locked');
+  }
   window.dispatchEvent(new Event('ledgerline:signin-ended'));
 }
 
-/** 10 idle minutes: drops the keys, the copy in memory and the server session. The saved copy stays, encrypted. */
-export async function signOutIdle(): Promise<void> {
+// ---------------------------------------------------------------- other tabs
+
+// The app's other tabs on this device share its sign-in. When one tab ends it (Sign out, or 10 idle minutes), the
+// others are told at once, so none keeps showing the budget from its copy in memory until it next asks the server.
+const SIGN_IN_CHANNEL = 'ledgerline-sign-in';
+let channel: BroadcastChannel | null | undefined;
+function otherTabs(): BroadcastChannel | null {
+  if (channel === undefined) {
+    try {
+      channel = new BroadcastChannel(SIGN_IN_CHANNEL);
+      // Node (unit tests) would otherwise wait on it forever.
+      (channel as BroadcastChannel & { unref?: () => void }).unref?.();
+    } catch {
+      channel = null;
+    }
+  }
+  return channel;
+}
+
+/**
+ * `locked`: the sign-in ended and the saved copies stay. `deleted`: Sign out of this device deleted them. `active`:
+ * someone is using that tab (at most once every TELL_ACTIVE_MS).
+ */
+type TabNotice = 'locked' | 'deleted' | 'active';
+const TELL_ACTIVE_MS = 30_000;
+let lastTold = 0;
+
+function tellOtherTabs(notice: TabNotice): void {
+  try {
+    otherTabs()?.postMessage(notice);
+  } catch {
+    // A closed channel: the other tabs find out at their next request.
+  }
+}
+
+// When another tab ends the sign-in, this one drops its keys and its copy in memory the same way, then shows Sign in.
+// After Sign out of this device it deletes its copy instead of saving it, since that tab deleted every saved copy.
+if (!MOCK)
+  otherTabs()?.addEventListener('message', (e: MessageEvent) => {
+    if (e.data === 'deleted') void wipe().then(() => endSignIn(false, false));
+    else if (e.data === 'locked') void signOutIdle(false);
+    else if (e.data === 'active') lastActive = Math.max(lastActive, Date.now());
+  });
+
+/**
+ * 10 idle minutes: drops the keys, the copy in memory and the server session. The saved copy stays, encrypted.
+ * `here` false: another tab already ended the session, so only this tab's part is done.
+ */
+export async function signOutIdle(here = true): Promise<void> {
   if (state.status !== 'ready' && state.status !== 'opening') return;
   if (record && dataKey && host && !state.offline) await save().catch(() => undefined);
   if (record) await dropHeld(record.key);
@@ -646,7 +759,7 @@ export async function signOutIdle(): Promise<void> {
   record = null;
   pending = null;
   delete document.documentElement.dataset.covered;
-  return endSignIn(state.saved);
+  return endSignIn(state.saved, here);
 }
 
 /** Deletes this person's copy (sign-out, signed out from another device, no longer a member); `all`: every copy. */
@@ -675,6 +788,7 @@ export async function signOutHere(): Promise<void> {
   const devices = MOCK ? [] : (await allRecords()).map((r) => r.deviceId);
   await wipe(true);
   await server('POST', '/api/settings/security/sign-out', { forget: true, devices });
+  tellOtherTabs('deleted');
 }
 
 let dropping: Promise<void> | null = null;

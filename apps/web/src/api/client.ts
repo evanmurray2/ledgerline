@@ -1,6 +1,6 @@
 // Thin fetch wrapper for the Worker API. Same-origin session cookie (passkey sign-in), JSON in and out, every
 // response parsed with the shared Zod schema. Mutations carry the CSRF header; the Worker also checks Origin.
-import { ApiError as ApiErrorBody, CSRF_HEADER } from '@ledgerline/contracts';
+import { ApiError as ApiErrorBody, CSRF_HEADER, SYNC_SINCE_HEADER } from '@ledgerline/contracts';
 import type { z } from 'zod';
 import { connectivity } from '../state/connectivity';
 import { budgetTime } from '../lib/dates';
@@ -9,12 +9,15 @@ import {
   afterChange,
   archiveFields,
   canEditOffline,
+  closeFields,
   dropSignedOut,
   editOffline,
   read as readCopy,
   readsLocally,
+  syncSince,
   wipe,
 } from '../copy/copy';
+import type { SyncPage } from '../copy/host';
 
 export class ApiError extends Error {
   readonly code: string;
@@ -233,6 +236,12 @@ async function sendOnce<S extends z.ZodType>(
     const f = await archiveFields(decodeURIComponent(archive[1]!));
     if (f) body = { ...(body as object | undefined), ...f };
   }
+  // Closing an account sends the balances this phone shows, with the change number (D-73).
+  const close = mutation ? /^\/api\/accounts\/([^/]+)\/close$/.exec(path) : null;
+  if (close) {
+    const f = await closeFields(decodeURIComponent(close[1]!));
+    if (f) body = { ...(body as object | undefined), ...f };
+  }
   // Resting (95% of a daily limit): only the session is asked, so the app knows when it's over.
   if (!mutation && connectivity.get().readsPaused && path !== '/api/session')
     throw new ApiError('resting', `Paused until ${dailyResetTime()}. Nothing is lost.`, 503);
@@ -240,12 +249,18 @@ async function sendOnce<S extends z.ZodType>(
     const code = connectivity.isOffline() ? 'offline' : 'read_only';
     throw new ApiError(code, codeText(code)!);
   }
+  // An edit's answer carries the changes since the copy's change number, so no second request syncs them.
+  const since = mutation ? await syncSince().catch(() => null) : null;
   let res: Response;
   try {
     res = await fetch(path, {
       method,
       credentials: 'same-origin',
-      headers: mutation ? MUTATION_HEADERS : { accept: 'application/json' },
+      headers: mutation
+        ? since === null
+          ? MUTATION_HEADERS
+          : { ...MUTATION_HEADERS, [SYNC_SINCE_HEADER]: String(since) }
+        : { accept: 'application/json' },
       body: mutation && body !== undefined ? JSON.stringify(body) : mutation ? '{}' : undefined,
     });
   } catch {
@@ -270,7 +285,16 @@ async function sendOnce<S extends z.ZodType>(
   }
   if (!res.ok) throw failure(res, json, path);
   // The server no longer works out Ready to Assign: fill it from the copy once this change is synced into it.
-  if (mutation && isAck(json)) json = withRta(json, await afterChange().catch(() => null));
+  // The changes the answer carried (routes/sync.ts syncInAnswer) go into the copy, not to the screen.
+  let sync: SyncPage | null = null;
+  if (mutation && json && typeof json === 'object' && 'sync' in json) {
+    ({ sync, ...json } = json as { sync: SyncPage });
+  }
+  if (mutation && isAck(json))
+    json = withRta(
+      json,
+      await afterChange(sync && since !== null ? { since, page: sync } : null).catch(() => null),
+    );
   const parsed = schema.safeParse(json);
   if (!parsed.success) {
     throw new ApiError('bad_response', TRY_AGAIN, res.status);

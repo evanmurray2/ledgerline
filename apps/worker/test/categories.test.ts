@@ -1,5 +1,5 @@
 // Settings → Categories: rename, reorder and remove categories and groups, on the seeded November budget.
-import { app } from './phone.js';
+import { app, syncPhone } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { BudgetView, CategoriesView } from '@ledgerline/contracts';
 import { ownerDb } from './store-db.js';
@@ -63,6 +63,24 @@ describe('categories and groups', () => {
     expect(now.slice(0, 2)).toEqual([c2, a]);
   });
 
+  it('an overspent category can’t be removed or archived until the overspending is covered', async () => {
+    const e = await syncPhone();
+    const sheet = (await (await e.request('GET', '/api/categories/dining/sheet')).json()) as {
+      available: number;
+    };
+    expect(sheet.available).toBeLessThan(0);
+    const sent = { available: sheet.available, through: (await e.state()).through };
+    for (const [p, body] of [
+      ['/api/settings/categories/dining/remove', sent],
+      ['/api/settings/categories/dining/archive', { ...sent, archived: true }],
+    ] as const) {
+      const r = await call('POST', p, body);
+      expect(r.status, p).toBe(422);
+      expect(r.json.error).toBe('overspent');
+    }
+    expect((await cats()).archived.some((c) => c.id === 'dining')).toBe(false);
+  });
+
   it('removing a never-used category deletes it; one with history is archived', async () => {
     const g = (await mine())[0]!;
     const add = await call('POST', '/api/settings/categories', {
@@ -92,6 +110,22 @@ describe('categories and groups', () => {
     for (const c of g.categories) await call('POST', `/api/settings/categories/${c.id}/remove`);
     expect((await call('POST', `/api/settings/groups/${g.id}/remove`)).status).toBe(200);
     expect((await mine()).some((x) => x.id === g.id)).toBe(false);
+  });
+
+  it('pins and unpins categories, kept in pin order on the budget', async () => {
+    const budget = async () => (await call('GET', '/api/budget/2026-11')).json as unknown as BudgetView;
+    const [a, b] = (await mine()).flatMap((g) => g.categories.map((c) => c.id));
+    expect((await budget()).pinned).toEqual([]);
+    expect((await call('POST', `/api/settings/categories/${b}/pin`, { pinned: true })).status).toBe(200);
+    expect((await call('POST', `/api/settings/categories/${a}/pin`, { pinned: true })).status).toBe(200);
+    // Pinning again changes nothing (a change sent twice from an offline phone).
+    expect((await call('POST', `/api/settings/categories/${b}/pin`, { pinned: true })).status).toBe(200);
+    expect((await budget()).pinned).toEqual([b, a]);
+    expect((await call('POST', `/api/settings/categories/${b}/pin`, { pinned: false })).status).toBe(200);
+    expect((await budget()).pinned).toEqual([a]);
+    expect((await call('POST', `/api/settings/categories/${a}/pin`, {})).status).toBe(400);
+    expect((await call('POST', `/api/settings/categories/${a}/pin`, { pinned: false })).status).toBe(200);
+    expect((await budget()).pinned).toEqual([]);
   });
 
   it('card payment categories can’t be removed', async () => {

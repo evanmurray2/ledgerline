@@ -36,7 +36,9 @@ import { usage } from '../usage/tracker';
 import { useQueryClient } from '@tanstack/react-query';
 import { sheetPath, Section, TxnRow, type Chosen, type NeedsRow, type Picking } from './ActivityRows';
 import { ActivityCategoryPicker, NeedsCategory } from './ActivityNeeds';
+import { primeKeyboard } from '../components/CategoryPicker';
 import { SamePurchase } from './ActivitySame';
+import { RemovedByBank } from './ActivityRemoved';
 
 export { TxnRow } from './ActivityRows';
 
@@ -106,6 +108,7 @@ export function ActivityScreen() {
       v.transfersToSort.length +
       v.checkThese.length +
       v.samePurchase.length +
+      v.removedByBank.length +
       (v.needsCategory?.length ?? 0) +
       (v.posted.length + v.pending.length + v.upcoming.length)
     : 0;
@@ -135,6 +138,7 @@ export function ActivityScreen() {
     pickerGroups.flatMap((g) => g.categories).find((c) => c.id === id)?.name ?? 'category';
 
   const openPicker = (p: Picking) => {
+    primeKeyboard();
     usage.startTask('categorize');
     setPicking(p);
   };
@@ -306,9 +310,13 @@ export function ActivityScreen() {
   // A filter with nothing in it is hidden, unless it's the one showing; with neither, the chip row goes too.
   const showAttentionChip = attentionCount > 0 || filter === 'attention';
   const showPendingChip = !past && (notPostedCount > 0 || filter === 'pending');
-  const showNeeds =
-    filter !== 'pending' &&
-    needs.filter((r) => !q || r.payee.toLowerCase().includes(q.toLowerCase())).length > 0;
+  // The server matched its rows to the search (payee, amount or category); rows kept here after you categorized
+  // them are matched by payee.
+  const liveNeeds = new Set((v?.needsCategory ?? []).map((r) => r.key));
+  const shownNeeds = needs.filter(
+    (r) => !q || liveNeeds.has(r.key) || r.payee.toLowerCase().includes(q.toLowerCase()),
+  );
+  const showNeeds = filter !== 'pending' && shownNeeds.length > 0;
   const empty = v && total === 0 && !showNeeds && !(filter === 'attention' && !q);
 
   // The sheet keeps the list's month, filter and search, so the list under it doesn't change.
@@ -454,9 +462,8 @@ export function ActivityScreen() {
         {v && v.samePurchase.length > 0 && <SamePurchase cards={v.samePurchase} />}
         {v && showNeeds && (
           <NeedsCategory
-            needs={needs}
+            needs={shownNeeds}
             openNeeds={openNeeds}
-            q={q}
             chosen={chosen}
             selecting={selecting}
             setSelecting={setSelecting}
@@ -500,6 +507,7 @@ export function ActivityScreen() {
             ))}
           </Section>
         )}
+        {v && v.removedByBank.length > 0 && <RemovedByBank rows={v.removedByBank} />}
         {v && v.pending.length > 0 && (
           <Section title="Pending" note={`counts now · ${formatCents(v.pendingTotal)}`}>
             {v.pending.map((r) => (

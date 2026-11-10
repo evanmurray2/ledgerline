@@ -51,7 +51,7 @@ export interface OwedLine extends Base {
 export interface CloseLine extends Base {
   kind: 'close';
   categoryId: string;
-  /** Positive closed amount. */
+  /** Closed amount, positive; negative for the undo of a close in a later month (D-80). */
   amount: Cents;
   itemId: string;
 }

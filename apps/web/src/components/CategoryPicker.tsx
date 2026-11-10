@@ -1,7 +1,7 @@
 // The one way to choose a category: a sheet with search, your usual picks first, then every group with what
 // each category has available. Activity uses the sheet directly (a tap categorizes at once); forms use
 // CategoryField, a field-shaped button that opens the same sheet.
-import { useMemo, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Sheet, SheetTitle } from './Sheet';
 import { cx, EmptyNote, Icon, inputClass, Label, SearchField } from './ui';
 import { formatCents } from '../lib/money';
@@ -21,6 +21,23 @@ export interface PickerGroup {
 export interface PickerSpecial {
   id: string;
   name: string;
+}
+
+/**
+ * Call from the tap that opens the picker. iOS opens the keyboard only for a field focused during the tap
+ * itself, and the picker's search field doesn't exist yet then. So this focuses a hidden stand-in field now;
+ * the search field takes focus from it a moment later and the keyboard stays up.
+ */
+export function primeKeyboard() {
+  if (!window.matchMedia?.('(pointer: coarse)').matches) return;
+  const el = document.createElement('input');
+  el.setAttribute('aria-hidden', 'true');
+  el.tabIndex = -1;
+  // Invisible; 16 px text so iOS doesn't zoom in on it.
+  el.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px;';
+  document.body.appendChild(el);
+  el.focus({ preventScroll: true });
+  window.setTimeout(() => el.remove(), 1000);
 }
 
 const listBox = 'shrink-0 overflow-hidden rounded-lg border border-line';
@@ -50,10 +67,15 @@ export function CategoryPickerSheet({
   disabled,
   modal,
   track,
+  noun = 'category',
+  nounPlural = 'categories',
   children,
 }: {
   title?: string;
   sub?: ReactNode;
+  /** What the list holds, for the search box and the nothing-found note: "account" in the account picker. */
+  noun?: string;
+  nounPlural?: string;
   groups: PickerGroup[];
   specials?: PickerSpecial[];
   suggestedTitle?: string;
@@ -71,6 +93,11 @@ export function CategoryPickerSheet({
   children?: ReactNode;
 }) {
   const [q, setQ] = useState('');
+  const search = useRef<HTMLInputElement>(null);
+  // Start in the search field, so you can type at once.
+  useLayoutEffect(() => {
+    search.current?.focus({ preventScroll: true });
+  }, []);
   const all = useMemo(
     () => groups.flatMap((g) => g.categories.map((c) => ({ ...c, group: g.name }))),
     [groups],
@@ -78,6 +105,8 @@ export function CategoryPickerSheet({
   const byId = useMemo(() => new Map(all.map((c) => [c.id, c])), [all]);
   const needle = q.trim().toLowerCase();
   const matches = needle ? all.filter((c) => c.name.toLowerCase().includes(needle)) : [];
+  // "Ready to Assign" or "Owed to you" are found by a search too.
+  const specialMatches = needle ? specials.filter((sp) => sp.name.toLowerCase().includes(needle)) : [];
   const usual = suggested.map((id) => byId.get(id)).filter((c): c is NonNullable<typeof c> => !!c);
   const pick = (id: string) => () => onPick(id);
   const row = (c: PickerCategory & { group?: string }, how: string, showGroup = false) => (
@@ -104,21 +133,32 @@ export function CategoryPickerSheet({
       label={title}
       track={track}
       onClose={onClose}
-      gap="auto"
+      gap="small"
       modal={modal}
-      closeLabel="Close category picker"
+      closeLabel={`Close ${noun} picker`}
       header={<SheetTitle title={title} sub={sub} />}
     >
       <div className="flex flex-col gap-2.5 pb-4">
         {/* SearchField takes no data-track; the tracker reads the nearest one, so the wrapper carries it. */}
         <div data-track={`${track}.search`} className="flex shrink-0 flex-col">
-          <SearchField value={q} onChange={setQ} label="Search categories" placeholder="Search categories" />
+          <SearchField
+            ref={search}
+            value={q}
+            onChange={setQ}
+            label={`Search ${nounPlural}`}
+            placeholder={`Search ${nounPlural}`}
+          />
         </div>
         {needle ? (
-          matches.length > 0 ? (
-            <div className={listBox}>{matches.map((c) => row(c, 'search_result', true))}</div>
+          matches.length + specialMatches.length > 0 ? (
+            <div className={listBox}>
+              {specialMatches.map((sp) => row(sp, 'special'))}
+              {matches.map((c) => row(c, 'search_result', true))}
+            </div>
           ) : (
-            <EmptyNote>No category called “{q.trim()}”.</EmptyNote>
+            <EmptyNote>
+              No {noun} called “{q.trim()}”.
+            </EmptyNote>
           )
         ) : (
           <>
@@ -137,7 +177,9 @@ export function CategoryPickerSheet({
                     >
                       {c.name}
                       {suggestedCounts?.[c.id] !== undefined && (
-                        <span className="tnum font-semibold text-ink-2">{suggestedCounts[c.id]}</span>
+                        <span className="tnum font-normal text-muted">
+                          {suggestedCounts[c.id]}×<span className="sr-only"> before</span>
+                        </span>
                       )}
                       {c.available !== undefined && c.available < 0 && (
                         <span className="tnum font-semibold text-over-fg">{formatCents(c.available)}</span>
@@ -174,18 +216,26 @@ export function CategoryField({
   onChange,
   specials = [],
   groups: given,
+  suggested,
+  suggestedTitle,
   placeholder = 'Choose…',
   title,
   sub,
   track,
   ariaLabel,
+  valueName,
 }: {
   id?: string;
   value: string;
+  /** The name to show for a value the list doesn't hold (a category archived since it was picked). */
+  valueName?: string | null;
   onChange: (id: string) => void;
   specials?: PickerSpecial[];
   /** Defaults to every category you can pick. */
   groups?: PickerGroup[];
+  /** Category ids the picker offers first, under `suggestedTitle`. */
+  suggested?: string[];
+  suggestedTitle?: string;
   placeholder?: string;
   title?: string;
   sub?: ReactNode;
@@ -212,10 +262,15 @@ export function CategoryField({
         aria-haspopup="dialog"
         aria-label={ariaLabel}
         data-track={`${track}.open`}
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          primeKeyboard();
+          setOpen(true);
+        }}
         className={cx(inputClass, 'flex items-center justify-between gap-2 text-left')}
       >
-        <span className={cx('truncate', !chosen && 'text-faint')}>{chosen ? chosen.name : placeholder}</span>
+        <span className={cx('truncate', !chosen && !valueName && 'text-faint')}>
+          {chosen ? chosen.name : value && valueName ? valueName : placeholder}
+        </span>
         <span className="flex shrink-0 items-center gap-1.5 text-muted">
           <Avail cents={avail} />
           <Icon name="chevR" size={18} />
@@ -228,6 +283,8 @@ export function CategoryField({
           sub={sub}
           groups={groups}
           specials={specials}
+          suggested={suggested}
+          suggestedTitle={suggestedTitle}
           value={value}
           track={track}
           onPick={(v) => {

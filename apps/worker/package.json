@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run && vitest run -c vitest.objects.config.ts"
+    "test": "vitest run && vitest run -c vitest.objects.config.ts && vitest run -c vitest.signup.config.ts"
   },
   "dependencies": {
     "@ledgerline/bank-provider": "workspace:*",

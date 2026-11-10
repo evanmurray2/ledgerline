@@ -6,6 +6,7 @@ import { DIRECTORY_NAME } from './directory.js';
 import { OPS_PATHS, SESSION_COOKIE, devSignIn, readCookie, secretMatches } from '../http/auth.js';
 import { makeProvider } from '../sync/provider.js';
 import { RESTING, restsDuring } from '../sync/breaker.js';
+import { RECOVER_PATH, SIGNUP_PATH, gatedOptions } from '../routes/signup.js';
 
 /**
  * After the Directory says the app is resting (95% of a daily limit), this isolate refuses the same requests itself
@@ -27,6 +28,9 @@ export async function routeApi(req: Request, env: Env): Promise<Response> {
   const path = url.pathname;
   const dir = env.DIRECTORY.get(env.DIRECTORY.idFromName(DIRECTORY_NAME));
   const store = (budgetId: string) => env.BUDGET.get(env.BUDGET.idFromName(budgetId));
+
+  // Sign-up and recovery: the switch and Turnstile are checked here, before any Durable Object request (D-75).
+  if (path === SIGNUP_PATH || path === RECOVER_PATH) return gatedOptions(req, env, dir);
 
   // Sign-in and Settings → Sign-in live in the Directory.
   if (

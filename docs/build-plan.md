@@ -8,25 +8,31 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 
 ## Open
 
-- [ ] Activity screen: check CPU on the real app's analytics; build a stored recent-rows list only if p95 is 8 ms or more.
-- [ ] Later, only if wanted: invites, People with a reset link, Plaid link slots per user, account deletion, an isolation test (`docs/multi-user.md` 7.3, 7.4, 9.1, 10, 11).
+- [ ] (waits for D-78) Accounts without a bank link: users who can't link banks (D-75) can't make an account at all. Needs the owner's Money-rules answers on starting balances first.
+- [ ] (waits for D-78) Before `OTHER_USERS_BANKS` is on (Plaid Production): remove a deleted account's banks at Plaid. Today deleting an account with linked banks is refused, and only admins link banks (`docs/open-signup.md` 12).
 - [ ] A way to match any pending row to a posted row by hand ("Same purchase?" on Activity covers only the rows the matcher asks about).
-- [ ] Processing CPU when one sync brings many pending rows to a busy card: 12–37 ms per step in `measure/entry-covers.measure.ts` (mostly the batch's writes; `docs/measurements.md`).
-- [ ] Find what read 327,000 and 413,000 BudgetStore rows in the hours of Nov 4 21:00 and Nov 5 14:00 UTC. It wasn't a phone full download: Workers Logs has no `sync_full` (or any line) in those hours, and a full download is about 2,300 rows.
+- [ ] Processing CPU when one sync brings many pending rows to a busy card: the 25-pending-row step is 11–17 ms (median 12) after the Nov 9 key-lookup fixes (`docs/measurements.md`); the posted step and the heal step are under 10 ms. What is left is cold JavaScript in the matching code and about 3 ms of writes. Smaller steps don't help: the cost is per step, and the number of "Same purchase?" questions changes (22, not 24).
+- [ ] Find what read 327,000 and 413,000 BudgetStore rows in the hours of Nov 4 21:00 and Nov 5 14:00 UTC. It wasn't a phone full download: Workers Logs has no `sync_full` (or any line) in those hours, and a full download is about 2,300 rows. Since this line: a call that reads 20,000 rows or more logs `heavy_read` with its route or job kind (`apps/worker/src/store/heavy-reads.ts`); search Workers Logs for it after the next spike. A likely part of it: until Nov 9 the hot key lookups in processing read every bank row (`test/key-lookups.test.ts`).
 - [ ] On the owner's iPhone after deploy: PRF in the Home Screen app with the existing passkey, first download time, Face ID unlock with no signal.
 - [ ] Owed to you: each row's "Match money back" opens the first waiting deposit; open the match sheet with that row's item picked.
-- [ ] Removing a category: the confirm says nothing when the category is overspent; needs the owner's Money-rules answer on what happens to the negative amount.
 - [ ] Transaction sheet, income "Goes to": the toggle and its help line use different tests and can disagree for income already moved to next month.
 - [ ] Offline, "Same as your {payee}?" hides, and "Use {n} suggestions" then includes those rows.
 - [ ] Desktop Assign button (sidebar and Ready to Assign bar): grayed out offline or in view only with no reason shown.
 - [ ] Full backup: the Why points to the restore guide, but restoring needs the browser console (`docs/runbooks/restore.md`); add a real restore path or a link.
 - [ ] Two texts that never show: the passkey's "Use your passkey to continue" (NotAllowedError is read as Cancelled) and the "Your budget was restored" download reason (`copy.ts` never sets it).
+- [ ] Payee names: the server takes a name of only spaces (min length is checked before trim) and NUL or right-to-left override characters.
+- [ ] Activity search: "café" doesn't find "CAFÉ" on posted rows (SQLite `lower()` folds only ASCII).
+- [ ] Signing in with a different user's passkey on the same browser leaves the earlier user's session row until it expires (24 h); it lists as another device.
+- [ ] Desktop: the Assigned cell cuts off $99,999,999.99; group rows are keyed by name, so two groups with one name share a key.
+- [ ] Full backup can't be restored: `BudgetStore.restoreDump` and `restoreVerify` work (tests only), but no route or tool reaches them, and a restore needs an empty budget. Design a runbook path (owner, Nov 9: a runbook step, not a button); `docs/runbooks/restore.md` says so today.
+- [ ] Only if two devices ever show different numbers for the same data: a check where each device posts a hash of its month and Needs attention says when two differ (owner, Nov 9: skipped for now; `engine.test.ts` and `engine-upgrade.test.ts` cover the known causes).
+- [ ] Card refunds can't be linked to their purchase: nothing makes a `refund_of` link outside the test data, so the payment category always gives back what it holds (Money rule 3, unlinked), and "Not this purchase" has nothing to unlink (D-80).
 
 ## Contract gaps (not blocking)
 
 The UI works around these (details in `apps/web/CONTRACT_NOTES.md`):
 
 - [ ] Candidate deposits for an unclear transfer in the API (the UI searches other registers today).
-- [ ] Endpoints: reopen an owed item, accept a changed amount, edit a manual entry's amount or date, unlink a refund, mark a transfer to an unlinked account by hand.
+- [ ] Endpoints: accept a changed amount, edit a manual entry's amount or date, mark any transaction (not only an unclear transfer) as a transfer to an unlinked account by hand.
 - [ ] Extra fields: the new-month carry-over summary, recent paybacks, the repeat interval on upcoming rows, per-filter register counts, amounts on Move money options.
 - [ ] Desktop: account registers in the side panel, and a per-row category dropdown in Activity.

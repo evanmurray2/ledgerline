@@ -7,7 +7,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../http/context.js';
 import type { Caller } from './directory.js';
 import { DIRECTORY_NAME } from './directory.js';
-import { budgetApi, serverReadsOnly } from '../routes/api.js';
+import { TRY_AGAIN, budgetApi, serverReadsOnly } from '../routes/api.js';
 import { dev } from '../dev-seed.js';
 import {
   BUDGET_TABLES,
@@ -39,10 +39,17 @@ import {
 import { connectionToken, makeProvider, pageSize } from '../sync/provider.js';
 import { writeBudgetState } from '../sync/breaker.js';
 import { answering } from './body.js';
+import { UsageCounter } from './shares.js';
+import { DISABLED_KEY, budgetInfo, setDisabled, wipeStore } from './account-life.js';
 import { QUEUE_REFILE } from '../sync/refile-payees.js';
 import { QUEUE_DROP_TEXT_ALIASES } from '../sync/drop-text-aliases.js';
+import { markReads, noteHeavyRead, routeName } from './heavy-reads.js';
 
 /** Storage key: the store has checked once whether its payees need the re-file job (sync/refile-payees.ts). */
+/** Set while the budget rests (idle, no banks): its daily jobs come back on its next request (ensureJobs). */
+const RESTING_KEY = 'resting';
+/** Whether this store reports its usage for fair use (store/shares.ts), as the Directory last said. */
+const COUNT_KEY = 'count_usage';
 const REFILE_CHECKED = 'payee_refile_checked';
 /** Storage key: the store has checked once whether its old cleaned-text aliases need deleting (drop-text-aliases.ts). */
 const TEXT_ALIASES_CHECKED = 'payee_text_aliases_checked';
@@ -55,6 +62,9 @@ export interface StoreHealth {
   error?: string;
 }
 
+/** How long a store keeps the Directory's usage answer (usage30). */
+const USAGE_CACHE_MS = 30_000;
+
 export class BudgetStore extends DurableObject<Env> {
   protected readonly db: DurableDb;
   private startError: string | null = null;
@@ -63,10 +73,14 @@ export class BudgetStore extends DurableObject<Env> {
   private cachedBudgetId: string | null = null;
   private app: Hono<AppEnv> | null = null;
   private devApp: Hono<AppEnv> | null = null;
+  private readonly usage: UsageCounter;
+  /** Fair use: whether to report usage; null until read from storage or set by a request. */
+  private counting: boolean | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.db = new DurableDb(ctx.storage);
+    this.usage = new UsageCounter(this.db.stats);
     this.runner = new JobRunner(ctx.storage, this.handlers(), (job, err) => this.onFailed(job, err));
     void ctx.blockConcurrencyWhile(async () => {
       try {
@@ -97,6 +111,32 @@ export class BudgetStore extends DurableObject<Env> {
 
   // ---- RPC
 
+  /** The budget's name and linked banks, for deleting an account (routes/people.ts). */
+  async info(): Promise<{ name: string; banks: number }> {
+    this.ready();
+    return budgetInfo(this.ctx.storage);
+  }
+
+  /** An admin turned the account off (`true`) or on (store/account-life.ts). */
+  async setDisabled(disabled: boolean): Promise<void> {
+    this.ready();
+    await setDisabled(this.ctx.storage, disabled, this.enqueue, () => this.timeZone());
+    await this.runner.scheduleNext(Date.now());
+  }
+
+  /** Deletes everything in this store, for its user's own explicit delete (store/account-life.ts). */
+  async wipe(budgetId: string): Promise<{ ok: boolean; why?: 'refused' | 'banks' }> {
+    this.ready();
+    const dir = this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName(DIRECTORY_NAME));
+    const r = await wipeStore(this.ctx.storage, () => dir.isDeleting(budgetId));
+    if (r.ok) {
+      this.cachedBudgetId = null;
+      this.armed = false;
+      this.counting = null;
+    }
+    return r;
+  }
+
   /** Called by the deploy smoke test and the daily check; running it applies pending migrations. */
   async health(): Promise<StoreHealth> {
     return storeHealth(this.ctx.storage, 'budget', this.startError);
@@ -108,10 +148,29 @@ export class BudgetStore extends DurableObject<Env> {
    */
   async api(request: Request, caller: Caller): Promise<Response> {
     this.ready();
-    await this.ensureBudget(caller.budgetId);
+    // A budget the Directory no longer knows (deleted) is never made again.
+    if (!(await this.ensureBudget(caller.budgetId)))
+      return new Response(
+        JSON.stringify({ error: 'not_member', message: 'You don’t have access to this budget.' }),
+        { status: 403, headers: { 'content-type': 'application/json' } },
+      );
     await this.rearm();
     this.app ??= withCaller((app) => app.use('/api/*', serverReadsOnly).route('/api', budgetApi));
-    return this.serve(this.app, request, caller);
+    this.usage.request();
+    if (caller.countUsage !== undefined) {
+      this.counting ??= (await this.ctx.storage.get<boolean>(COUNT_KEY)) ?? false;
+      if (caller.countUsage !== this.counting) {
+        this.counting = caller.countUsage;
+        await this.ctx.storage.put(COUNT_KEY, caller.countUsage);
+      }
+    }
+    const mark = markReads(this.db.stats);
+    try {
+      return await this.serve(this.app, request, caller);
+    } finally {
+      noteHeavyRead(this.db.stats, mark, routeName(request), caller.budgetId);
+      this.reportUsage(caller.budgetId);
+    }
   }
 
   /** Local development and e2e only: /__dev (index.ts refuses it in production). */
@@ -119,7 +178,7 @@ export class BudgetStore extends DurableObject<Env> {
     this.ready();
     if (this.env.PLAID_ENV === 'production' || this.env.SETUP_CODE)
       return new Response('Not found', { status: 404 });
-    await this.ensureBudget(caller.budgetId);
+    if (!(await this.ensureBudget(caller.budgetId))) return new Response('Not found', { status: 404 });
     this.devApp ??= withCaller((app) => {
       app.route('/__dev', dev);
     });
@@ -249,9 +308,41 @@ export class BudgetStore extends DurableObject<Env> {
    */
   async restoreTo(at: number): Promise<{ undo: string }> {
     this.ready();
-    await this.newSyncEpoch();
     const bookmark = await this.ctx.storage.getBookmarkForTime(at);
+    return this.restoreBookmark(bookmark, at);
+  }
+
+  /**
+   * Undoes the last restore with the bookmark the Directory kept (null: there's nothing to undo). The undo is a restore
+   * too, so it can be undone in turn.
+   */
+  async restoreUndo(): Promise<{ undo: string } | null> {
+    this.ready();
+    const id = await this.budgetId();
+    const last = await this.directory().lastRestore(id);
+    return last ? this.restoreBookmark(last.undo, null) : null;
+  }
+
+  /** The last restore, without its bookmark. */
+  async lastRestore(): Promise<{ at: number; to: number | null } | null> {
+    this.ready();
+    const last = await this.directory().lastRestore(await this.budgetId());
+    return last ? { at: last.at, to: last.to } : null;
+  }
+
+  private directory() {
+    return this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName(DIRECTORY_NAME));
+  }
+
+  /**
+   * Restores to `bookmark` on the next start. The sync epoch changes first and the undo bookmark is kept in the
+   * Directory, which the restore can't reach, so every copy downloads again and the restore can always be undone.
+   */
+  private async restoreBookmark(bookmark: string, to: number | null): Promise<{ undo: string }> {
+    const id = await this.budgetId();
+    await this.newSyncEpoch();
     const undo = await this.ctx.storage.onNextSessionRestoreBookmark(bookmark);
+    await this.directory().noteRestore(id, { at: Date.now(), to, undo });
     // Restart after answering, so the caller gets the undo bookmark.
     this.ctx.waitUntil(
       (async () => {
@@ -268,12 +359,33 @@ export class BudgetStore extends DurableObject<Env> {
     return typeof r?.time_zone === 'string' ? r.time_zone : 'America/Los_Angeles';
   }
 
-  /** Daily safety net (6.2): recreate missing recurring jobs and make sure an alarm is set. */
-  async ensureJobs(): Promise<{ ok: boolean; jobs: ReturnType<JobRunner['list']> }> {
+  /**
+   * Daily safety net (6.2): recreate missing recurring jobs and make sure an alarm is set. A budget whose users
+   * haven't signed in for 30 days (`idle`) and that has no banks stops its daily jobs instead, until its next request
+   * (docs/open-signup.md 9); `resting` says it did.
+   */
+  async ensureJobs(o: { idle?: boolean } = {}): Promise<{
+    ok: boolean;
+    jobs: ReturnType<JobRunner['list']>;
+    resting?: boolean;
+  }> {
     this.ready();
     const now = Date.now();
     const budgetId = await this.budgetId().catch(() => null);
     if (!budgetId) return { ok: false, jobs: [] };
+    if (await this.ctx.storage.get<boolean>(DISABLED_KEY)) return { ok: true, jobs: this.runner.list() };
+    if (o.idle) {
+      const banks = this.ctx.storage.sql
+        .exec(`SELECT count(*) AS n FROM connection WHERE removed_at IS NULL`)
+        .one() as { n: number };
+      if (Number(banks.n) === 0) {
+        this.ctx.storage.sql.exec(`DELETE FROM job WHERE recurring = 1`);
+        await this.ctx.storage.put(RESTING_KEY, true);
+        this.armed = false;
+        await this.runner.scheduleNext(now);
+        return { ok: true, jobs: this.runner.list(), resting: true };
+      }
+    }
     await ensureRecurring(this.enqueue, now, this.timeZone());
     // Every Plaid Item this budget holds is routed to it in the Directory (6.4); missing routes are re-registered.
     const items = this.ctx.storage.sql
@@ -305,7 +417,26 @@ export class BudgetStore extends DurableObject<Env> {
 
   override async alarm(): Promise<void> {
     this.ready();
-    await this.runner.runNext(Date.now());
+    this.usage.request();
+    this.counting ??= (await this.ctx.storage.get<boolean>(COUNT_KEY)) ?? false;
+    const mark = markReads(this.db.stats);
+    let what = 'job';
+    try {
+      const r = await this.runner.runNext(Date.now());
+      if (r.ran) what = `job:${r.kind}`;
+    } finally {
+      const id = this.cachedBudgetId ?? (await this.budgetId().catch(() => null));
+      noteHeavyRead(this.db.stats, mark, what, id);
+      if (id) this.reportUsage(id);
+    }
+  }
+
+  /** Fair use: this store's rows and requests to the Directory, at most once a minute (store/shares.ts). */
+  private reportUsage(budgetId: string): void {
+    const u = this.usage.take(this.counting === true, Date.now());
+    const dir = this.env.DIRECTORY?.get(this.env.DIRECTORY.idFromName(DIRECTORY_NAME));
+    if (!u || !dir) return;
+    this.ctx.waitUntil(dir.noteBudgetUsage(budgetId, u.written, u.read, u.requests).catch(() => undefined));
   }
 
   // ---- internals
@@ -318,6 +449,11 @@ export class BudgetStore extends DurableObject<Env> {
   private async rearm(): Promise<void> {
     if (this.armed) return;
     this.armed = true;
+    // A resting budget (ensureJobs) gets its daily jobs back on its first request.
+    if (await this.ctx.storage.get<boolean>(RESTING_KEY)) {
+      await ensureRecurring(this.enqueue, Date.now(), this.timeZone());
+      await this.ctx.storage.delete(RESTING_KEY);
+    }
     if ((await this.ctx.storage.getAlarm()) === null) await this.runner.scheduleNext(Date.now());
   }
 
@@ -332,6 +468,22 @@ export class BudgetStore extends DurableObject<Env> {
       this.startError = e instanceof Error ? e.message : String(e);
       throw new Error(`store_unavailable: ${this.startError}`);
     }
+  }
+
+  /** The Directory's answer on today's usage, kept a short while for the write check (routes/api.ts). */
+  private usageCache: { at: number; value: Awaited<ReturnType<NonNullable<Env['USAGE']>>> } | null = null;
+
+  /**
+   * Today's usage for the check before each write, asked of the Directory at most every USAGE_CACHE_MS: each ask is
+   * a Durable Object request of its own. The session and background work still ask every time. The Directory works its own state out at most once a minute too (STATE_MS),
+   * so this adds at most that much to how late a limit is noticed.
+   */
+  private async usage30(ask: () => ReturnType<NonNullable<Env['USAGE']>>) {
+    const now = Date.now();
+    if (this.usageCache && now - this.usageCache.at < USAGE_CACHE_MS) return this.usageCache.value;
+    const value = await ask();
+    this.usageCache = { at: now, value };
+    return value;
   }
 
   private adapter(): Db {
@@ -350,7 +502,11 @@ export class BudgetStore extends DurableObject<Env> {
       ...this.env,
       DB: this.adapter(),
       ...(dir
-        ? { USAGE: () => dir.usageToday(), NOTE_USAGE: (w: number, r: number) => dir.noteUsage(w, r) }
+        ? {
+            USAGE: () => dir.usageToday(this.cachedBudgetId ?? undefined),
+            USAGE_FOR_WRITE: () => this.usage30(() => dir.usageToday(this.cachedBudgetId ?? undefined)),
+            NOTE_USAGE: (w: number, r: number) => dir.noteUsage(w, r),
+          }
         : {}),
       ROUTE_LINK: async (itemId: string, connectionId: string) => {
         await this.enqueue('register_link', {
@@ -360,6 +516,8 @@ export class BudgetStore extends DurableObject<Env> {
         });
       },
       RESTORE_TO: (at: number) => this.restoreTo(at),
+      RESTORE_UNDO: () => this.restoreUndo(),
+      LAST_RESTORE: () => this.lastRestore(),
       JOBS: {
         // routes/settings.ts startSync() has already taken the lease with this run id.
         sync: async (runId, connectionId, trigger) => {
@@ -371,9 +529,17 @@ export class BudgetStore extends DurableObject<Env> {
   }
 
   /** The store fills in its own budget row on first use (sign-up and setup create it in the Directory). */
-  private async ensureBudget(budgetId: string): Promise<void> {
-    if (this.cachedBudgetId === budgetId) return;
+  private async ensureBudget(budgetId: string): Promise<boolean> {
+    if (this.cachedBudgetId === budgetId) return true;
     const now = Date.now();
+    // A new store makes its budget row only for a budget the Directory knows and isn't deleting, so a late call
+    // after a wipe can't bring a deleted budget back (docs/open-signup.md 12).
+    const dir = this.env.DIRECTORY?.get(this.env.DIRECTORY.idFromName(DIRECTORY_NAME));
+    if (
+      dir &&
+      this.ctx.storage.sql.exec(`SELECT 1 FROM budget WHERE id = ?`, budgetId).toArray().length === 0
+    )
+      if (!(await dir.budgetExists(budgetId))) return false;
     const created = this.ctx.storage.sql.exec(
       `INSERT OR IGNORE INTO budget (id, name, created_at, updated_at) VALUES (?, 'My budget', ?, ?)`,
       budgetId,
@@ -383,6 +549,7 @@ export class BudgetStore extends DurableObject<Env> {
     // A new budget gets its sync backstop, daily scan and maintenance now, not at the next daily check.
     if (created > 0) await ensureRecurring(this.enqueue, now, this.timeZone());
     this.cachedBudgetId = budgetId;
+    return true;
   }
 
   /** The store's budget: the one row in its budget table. */
@@ -456,9 +623,13 @@ function withCaller(mount: (app: Hono<AppEnv>) => void): Hono<AppEnv> {
     c.set('email', who.email);
     c.set('sessionId', who.sessionId);
     c.set('syncEpoch', who.syncEpoch ?? 'e0');
+    c.set('isAdmin', who.isAdmin === true);
+    c.set('recoveryNoticeAt', who.recoveryNoticeAt ?? null);
     return next();
   });
   mount(app);
+  // A path or method the API doesn't have answers JSON too, so the app can read it.
+  app.notFound((c) => c.json({ error: 'not_found', message: TRY_AGAIN }, 404));
   return app;
 }
 

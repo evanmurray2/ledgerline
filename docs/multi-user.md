@@ -1,5 +1,7 @@
 # Multi-user design: Durable Objects for everything
 
+> **Now:** this is the design and its build phases, kept for their reasoning. `docs/architecture.md` says what runs today; no new multi-user work until Plaid Production (D-78).
+
 Status: v3.1, Nov 2, 2026. This replaces v1 (one shared D1 database) and v2 (a database per budget plus a D1 directory). v3 got an adversarial review, and this revision includes its fixes. Section 14 keeps the history.
 
 What the owner asked for:
@@ -258,6 +260,8 @@ The Worker verifies the signature, asks `routeFor` which budget owns the item, t
 - **Rate limits.** The rate-limiting binding allows about 20 a minute per IP on every sign-in and invite route.
 
 ### 7.3 The switch and invites
+
+**Now:** replaced by open sign-up, built and switched off (D-75, `docs/open-signup.md`). Invites, the People screen and the reset link are dropped.
 
 **Later, not built (owner, Nov 2, 2026):** 7.3 and 7.4 are deferred. Only the per-user databases are built now; the identity columns, per-user passkey handles and the `invite` table are in place for when invites are wanted.
 

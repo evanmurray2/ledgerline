@@ -12,7 +12,7 @@ import { DIRECTORY_MIGRATIONS } from './migrations.gen.js';
 import { storeHealth, type StoreHealth } from './budget-store.js';
 import { authRoutes } from '../routes/auth.js';
 import { securityRoutes } from '../routes/security.js';
-import { identity } from '../routes/api.js';
+import { TRY_AGAIN, identity } from '../routes/api.js';
 import { csrf } from '../http/security.js';
 import { REAUTH_MS, identify, needsRecentPasskey } from '../http/auth.js';
 import { membership } from '../db/scoped.js';
@@ -20,21 +20,40 @@ import { clock } from '../http/clock.js';
 import {
   RESTING,
   classifyUsage,
+  dailyLimits,
   noteUsage,
   restsDuring,
   usageToday,
+  utcDay,
   type BudgetState,
 } from '../sync/breaker.js';
 import { refreshUsage } from '../ops/usage.js';
 import { pruneAuthStmts } from '../maintenance.js';
 import { JobRunner, type Handler } from './jobs.js';
 import { nextUtc } from './budget-jobs.js';
+import { SHARE_PAUSED, Shares, type ShareState } from './shares.js';
+import { recoverOptions, recoveryNotice, recoveryRoutes, signupOptions } from '../routes/signup.js';
+import { deletingKey, peopleRoutes } from '../routes/people.js';
 
 /** Budgets checked per ensure_all step (docs/multi-user.md 6.2). */
 export const ENSURE_BATCH = 25;
 
+/** A budget whose users haven't signed in for this long, and that has no banks, stops its daily jobs. */
+export const IDLE_MS = 30 * 86_400_000;
+
 /** The Directory is a single object; this is its name. */
 export const DIRECTORY_NAME = 'directory';
+
+/** A budget's last restore (noteRestore). */
+export interface RestoreRecord {
+  /** When the restore ran (epoch ms). */
+  at: number;
+  /** The time it went back to (epoch ms), or null when it undid the restore before it. */
+  to: number | null;
+  /** The bookmark that puts the budget back as it was just before this restore. */
+  undo: string;
+}
+const restoreKey = (budgetId: string) => `restore:${budgetId}`;
 
 /** Who is asking, as the Worker hands it to a budget's store. */
 export interface Caller {
@@ -43,6 +62,13 @@ export interface Caller {
   email: string;
   sessionId: string;
   verifiedAt: number;
+  /** An admin (the first user): links banks, sees Settings → Users (docs/open-signup.md 5, 10). False when not given. */
+  isAdmin?: boolean;
+  /** Fair use (store/shares.ts): whether the store reports its usage, and the budget's share. */
+  countUsage?: boolean;
+  share?: ShareState;
+  /** When a recovery code was last used for this user, while its notice shows (docs/open-signup.md 4). */
+  recoveryNoticeAt?: number | null;
   /** The budget's sync epoch (migration 0006): changes when its database is restored. */
   syncEpoch?: string;
 }
@@ -60,6 +86,9 @@ export class Directory extends DurableObject<Env> {
   private app: Hono<AppEnv> | null = null;
   private readonly runner: JobRunner;
   private usageState: { state: BudgetState; at: number } | null = null;
+  private shares: Shares | null = null;
+  /** When each user's last_seen_at was last written by this instance (at most once an hour). */
+  private readonly seen = new Map<string, number>();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -122,19 +151,71 @@ export class Directory extends DurableObject<Env> {
         const busy = (await this.state(now)) !== 'normal';
         return { state: {}, runAt: now + (busy ? 10 : 30) * 60_000 };
       },
+      // Deleting an account (routes/people.ts): the store wipes itself, then the user's last rows go. Each step is
+      // idempotent; after 6 failed tries the job stops and Settings → Users offers Try again.
+      delete_account: async (job) => {
+        const { userId, budgetId } = job.state as { userId: string; budgetId: string };
+        const w = await this.env.BUDGET.get(this.env.BUDGET.idFromName(budgetId)).wipe(budgetId);
+        if (!w.ok) throw new Error(`wipe_${w.why}`);
+        await this.db.batch([
+          this.db.prepare(`DELETE FROM passkey WHERE user_id = ?1`).bind(userId),
+          this.db.prepare(`DELETE FROM recovery_code WHERE user_id = ?1`).bind(userId),
+          this.db.prepare(`DELETE FROM recovery_notice WHERE user_id = ?1`).bind(userId),
+          this.db.prepare(`DELETE FROM device WHERE user_id = ?1`).bind(userId),
+          this.db.prepare(`DELETE FROM device_link WHERE user_id = ?1`).bind(userId),
+          this.db.prepare(`DELETE FROM auth_session WHERE user_id = ?1`).bind(userId),
+          this.db.prepare(`DELETE FROM budget_member WHERE user_id = ?1`).bind(userId),
+          this.db.prepare(`DELETE FROM budget_usage_day WHERE budget_id = ?1`).bind(budgetId),
+          this.db.prepare(`DELETE FROM connection_route WHERE budget_id = ?1`).bind(budgetId),
+          this.db.prepare(`DELETE FROM budget WHERE id = ?1`).bind(budgetId),
+          this.db
+            .prepare(`DELETE FROM user WHERE id = ?1 AND status = 'deleting' AND is_admin = 0`)
+            .bind(userId),
+          this.db
+            .prepare(`DELETE FROM app_state WHERE key IN (?1, ?2)`)
+            .bind(deletingKey(budgetId), `idle:${budgetId}`),
+        ]);
+        return { done: true };
+      },
       // Every budget's ensureJobs, ENSURE_BATCH per step.
       ensure_all: async (job, now) => {
         const cursor = (job.state as { cursor: string }).cursor ?? '';
-        const ids = this.ctx.storage.sql
-          .exec(`SELECT id FROM budget WHERE id > ? ORDER BY id LIMIT ?`, cursor, ENSURE_BATCH)
-          .toArray()
-          .map((r) => String(r.id));
-        for (const id of ids)
-          await this.env.BUDGET.get(this.env.BUDGET.idFromName(id))
-            .ensureJobs()
-            .catch((e: unknown) =>
-              console.log(JSON.stringify({ event: 'ensure_failed', budget: id, error: String(e) })),
+        const rows = this.ctx.storage.sql
+          .exec(
+            `SELECT b.id, (SELECT max(u.last_seen_at) FROM budget_member m JOIN user u ON u.id = m.user_id
+               WHERE m.budget_id = b.id) AS seen,
+               (SELECT value FROM app_state WHERE key = 'idle:' || b.id) AS idle_at
+             FROM budget b WHERE b.id > ?
+               AND NOT EXISTS (SELECT 1 FROM app_state WHERE key = 'deleting:' || b.id) ORDER BY b.id LIMIT ?`,
+            cursor,
+            ENSURE_BATCH,
+          )
+          .toArray();
+        const ids = rows.map((r) => String(r.id));
+        for (const r of rows) {
+          const id = String(r.id);
+          // A budget nobody has opened for 30 days rests (docs/open-signup.md 9): once its store has stopped its
+          // daily jobs, it isn't called again until its user comes back.
+          const seen = r.seen === null ? null : Number(r.seen);
+          const idle = seen !== null && now - seen > IDLE_MS;
+          if (idle && r.idle_at !== null && seen! <= Number(r.idle_at)) continue;
+          const res = await this.env.BUDGET.get(this.env.BUDGET.idFromName(id))
+            .ensureJobs({ idle })
+            .catch((e: unknown) => {
+              console.log(JSON.stringify({ event: 'ensure_failed', budget: id, error: String(e) }));
+              return null;
+            });
+          if (res?.resting)
+            this.ctx.storage.sql.exec(
+              `INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)
+               ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+              `idle:${id}`,
+              String(now),
+              now,
             );
+          else if (res && r.idle_at !== null)
+            this.ctx.storage.sql.exec(`DELETE FROM app_state WHERE key = ?`, `idle:${id}`);
+        }
         if (ids.length < ENSURE_BATCH) return { done: true };
         return { state: { cursor: ids[ids.length - 1] }, runAt: now };
       },
@@ -151,6 +232,14 @@ export class Directory extends DurableObject<Env> {
       app.use('/api/settings/security/*', csrf);
       app.use('/api/settings/security', identity);
       app.route('/api', securityRoutes);
+      app.route('/api', recoveryRoutes);
+      app.route('/api', peopleRoutes);
+      // Every answer is JSON, so the app can read it: a route that doesn't exist, and anything unexpected.
+      app.notFound((c) => c.json({ error: 'not_found', message: TRY_AGAIN }, 404));
+      app.onError((e, c) => {
+        console.log(JSON.stringify({ event: 'error', route: c.req.path, code: e.name }));
+        return c.json({ error: 'internal', message: TRY_AGAIN }, 500);
+      });
       this.app = app;
     }
     const app = this.app;
@@ -191,6 +280,10 @@ export class Directory extends DurableObject<Env> {
     // 95% of a daily limit: stop reading too, so the app never runs into Cloudflare's hard stop (sync/breaker.ts).
     if (restsDuring(method, path) && (await this.state(Date.now())) === 'rest')
       return { ok: false, status: 503, body: { ...RESTING } };
+    this.touch(m.userId, now);
+    const share = await this.shareTracker().shareFor(m.budgetId, m.isAdmin, now);
+    if (share.state === 'readonly' && method !== 'GET' && method !== 'HEAD')
+      return { ok: false, status: 503, body: { ...SHARE_PAUSED } };
     return {
       ok: true,
       caller: {
@@ -199,9 +292,56 @@ export class Directory extends DurableObject<Env> {
         email: m.email,
         sessionId: who.sessionId ?? '',
         verifiedAt: who.verifiedAt,
+        isAdmin: m.isAdmin,
+        countUsage: share.count,
+        share: share.state,
+        recoveryNoticeAt: m.isAdmin ? null : await recoveryNotice(env, m.userId, now),
         syncEpoch: this.syncEpoch(m.budgetId),
       },
     };
+  }
+
+  /** Sign-up's passkey options (routes/signup.ts); the Worker has checked the switch and Turnstile. */
+  async signupOptions(
+    url: string,
+    name: string,
+  ): Promise<{ status: number; body: unknown; cookie?: string }> {
+    this.ready();
+    return signupOptions(this.appEnv(), url, name, (await this.state(Date.now())) === 'normal');
+  }
+
+  /** A recovery code's passkey options (routes/signup.ts); the Worker has checked the switch and Turnstile. */
+  async recoverOptions(
+    url: string,
+    code: string,
+  ): Promise<{ status: number; body: unknown; cookie?: string }> {
+    this.ready();
+    return recoverOptions(this.appEnv(), url, code, (await this.state(Date.now())) === 'normal');
+  }
+
+  /**
+   * Whether a store may make its budget row: the budget exists and isn't being deleted (docs/open-signup.md 12),
+   * so a late call after a wipe can't bring a deleted budget back.
+   */
+  async budgetExists(budgetId: string): Promise<boolean> {
+    this.ready();
+    const r = this.ctx.storage.sql
+      .exec(
+        `SELECT EXISTS (SELECT 1 FROM budget WHERE id = ?) AND NOT EXISTS (SELECT 1 FROM app_state WHERE key = ?) AS ok`,
+        budgetId,
+        deletingKey(budgetId),
+      )
+      .one();
+    return Number(r.ok) === 1;
+  }
+
+  /** Whether this budget's account is being deleted: only then may its store wipe itself. */
+  async isDeleting(budgetId: string): Promise<boolean> {
+    this.ready();
+    return (
+      this.ctx.storage.sql.exec(`SELECT 1 FROM app_state WHERE key = ?`, deletingKey(budgetId)).toArray()
+        .length > 0
+    );
   }
 
   /** The budget's sync epoch (D-45, migration 0006). */
@@ -227,28 +367,89 @@ export class Directory extends DurableObject<Env> {
     return epoch;
   }
 
+  /**
+   * The last restore of a budget (runbooks/restore.md), kept here because the restore can't reach the
+   * Directory: when it ran, the time it went back to (null: it undid the restore before it), and the bookmark that
+   * undoes it.
+   */
+  async noteRestore(budgetId: string, rec: RestoreRecord): Promise<void> {
+    this.ready();
+    this.ctx.storage.sql.exec(
+      `INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      restoreKey(budgetId),
+      JSON.stringify(rec),
+      Date.now(),
+    );
+  }
+
+  async lastRestore(budgetId: string): Promise<RestoreRecord | null> {
+    this.ready();
+    const r = this.ctx.storage.sql
+      .exec(`SELECT value FROM app_state WHERE key = ?`, restoreKey(budgetId))
+      .toArray()[0];
+    return typeof r?.value === 'string' ? (JSON.parse(r.value) as RestoreRecord) : null;
+  }
+
   /** The budget the ops token's health check reports on: the first one (the owner's). */
   async firstBudget(): Promise<string | null> {
     const r = this.ctx.storage.sql.exec(`SELECT id FROM budget ORDER BY created_at, id LIMIT 1`).toArray()[0];
     return r ? String(r.id) : null;
   }
 
-  /** Today's account usage, for the write breaker in every store (docs/multi-user.md 9.2). */
-  async usageToday(): Promise<{
+  /**
+   * Today's account usage, for the write breaker in every store (docs/multi-user.md 9.2), and, given the store's
+   * budget, its fair-use share (store/shares.ts).
+   */
+  async usageToday(budgetId?: string): Promise<{
     written: number;
     read: number;
     do: { requests: number; gbs: number };
     workers: number;
+    share?: ShareState;
   }> {
     const u = await usageToday(this.appEnv());
-    return { written: u.written, read: u.read, do: u.do, workers: u.workers };
+    const out = { written: u.written, read: u.read, do: u.do, workers: u.workers };
+    if (!budgetId) return out;
+    const admin = this.ctx.storage.sql
+      .exec(
+        `SELECT u.is_admin FROM budget_member m JOIN user u ON u.id = m.user_id WHERE m.budget_id = ? LIMIT 1`,
+        budgetId,
+      )
+      .toArray()[0];
+    const share = await this.shareTracker().shareFor(budgetId, admin?.is_admin !== 0, clock(this.appEnv()));
+    return { ...out, share: share.state };
+  }
+
+  /** A store's own rows and requests since its last report (store/shares.ts UsageCounter). */
+  async noteBudgetUsage(budgetId: string, written: number, read: number, requests: number): Promise<void> {
+    this.ready();
+    await this.shareTracker().record(budgetId, utcDay(clock(this.appEnv())), written, read, requests);
+  }
+
+  private shareTracker(): Shares {
+    this.shares ??= new Shares(this.db, this.appEnv());
+    return this.shares;
+  }
+
+  /** last_seen_at, at most once an hour per user (fair use counts active users; idle budgets rest). */
+  private touch(userId: string, now: number): void {
+    const last = this.seen.get(userId) ?? 0;
+    if (now - last < 3_600_000) return;
+    this.seen.set(userId, now);
+    this.ctx.storage.sql.exec(
+      `UPDATE user SET last_seen_at = ? WHERE id = ? AND (last_seen_at IS NULL OR last_seen_at < ?)`,
+      now,
+      userId,
+      now - 3_600_000,
+    );
   }
 
   /** The breaker's state, from usage_day at most once a minute (one row read). */
   private async state(now: number): Promise<BudgetState> {
     if (this.usageState && now - this.usageState.at < STATE_MS) return this.usageState.state;
     const u = await usageToday(this.appEnv(), now);
-    const state = classifyUsage(u.written, u.read, u.do, u.workers);
+    const state = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(this.env));
     this.usageState = { state, at: now };
     return state;
   }
@@ -299,6 +500,24 @@ export class Directory extends DurableObject<Env> {
   }
 
   private appEnv(): Env {
-    return { ...this.env, DB: this.db };
+    return {
+      ...this.env,
+      DB: this.db,
+      BREAKER_NORMAL: async () => (await this.state(Date.now())) === 'normal',
+      NEW_STORE: async (budgetId: string) => {
+        await this.env.BUDGET.get(this.env.BUDGET.idFromName(budgetId)).health();
+      },
+      BUDGET_INFO: (budgetId: string) => this.env.BUDGET.get(this.env.BUDGET.idFromName(budgetId)).info(),
+      SET_DISABLED: async (budgetId: string, disabled: boolean) => {
+        await this.env.BUDGET.get(this.env.BUDGET.idFromName(budgetId)).setDisabled(disabled);
+      },
+      DELETE_ACCOUNT: async (userId: string, budgetId: string) => {
+        await this.runner.enqueue(
+          'delete_account',
+          { id: `delete_account:${userId}`, state: { userId, budgetId }, runAt: Date.now() },
+          Date.now(),
+        );
+      },
+    };
   }
 }

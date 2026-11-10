@@ -41,3 +41,37 @@ for (const dir of ['packages/db/directory-migrations', 'packages/db/budget-migra
   }
   console.log(`${dir}: ${mine.length} migration(s) applied (${released.length} released)`);
 }
+
+// The phone's copy runs the budget migrations too (apps/worker/src/local/engine.ts migrateLocal), in sql.js, whose
+// SQLite isn't the one in Durable Objects. Each migration must apply there as well, in order, skipping the ones the
+// copy skips (SERVER_ONLY), with the change-log triggers in place as the copy has them until migrateLocal drops them.
+{
+  const { createRequire } = await import('node:module');
+  const require = createRequire(new URL('../../apps/worker/package.json', import.meta.url));
+  const initSqlJs = require('sql.js');
+  const SQL = await initSqlJs();
+  const engine = readFileSync('apps/worker/src/local/engine.ts', 'utf8');
+  const only = /const SERVER_ONLY = new Set\(\[([^\]]*)\]\)/.exec(engine);
+  if (!only) throw new Error('migration-check: SERVER_ONLY not found in apps/worker/src/local/engine.ts');
+  const skip = new Set([...only[1].matchAll(/'([^']+)'/g)].map((m) => m[1]));
+  const dir = 'packages/db/budget-migrations';
+  const db = new SQL.Database();
+  let n = 0;
+  for (const f of readdirSync(dir)
+    .filter((x) => x.endsWith('.sql'))
+    .sort()) {
+    if (skip.has(f)) continue;
+    try {
+      db.exec(readFileSync(`${dir}/${f}`, 'utf8'));
+    } catch (e) {
+      throw new Error(
+        `${dir}/${f} fails in sql.js, the phone's SQLite: ${e instanceof Error ? e.message : e}`,
+      );
+    }
+    n++;
+  }
+  db.close();
+  console.log(
+    `${dir}: ${n} migration(s) applied in sql.js (the phone's copy; skipped ${[...skip].join(', ')})`,
+  );
+}

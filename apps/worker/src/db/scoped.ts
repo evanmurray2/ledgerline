@@ -56,15 +56,15 @@ export class Scoped {
 export async function membership(
   db: Db,
   userId: string,
-): Promise<{ userId: string; budgetId: string; email: string } | null> {
+): Promise<{ userId: string; budgetId: string; email: string; isAdmin: boolean } | null> {
   const r = await db
     .prepare(
-      `SELECT m.budget_id, u.email FROM budget_member m JOIN user u ON u.id = m.user_id
+      `SELECT m.budget_id, u.email, u.is_admin FROM budget_member m JOIN user u ON u.id = m.user_id
        WHERE m.user_id = ?1 AND u.status = 'active' ORDER BY m.created_at LIMIT 1`,
     )
     .bind(userId)
-    .first<{ budget_id: string; email: string }>();
-  return r ? { userId, budgetId: r.budget_id, email: r.email } : null;
+    .first<{ budget_id: string; email: string; is_admin: number }>();
+  return r ? { userId, budgetId: r.budget_id, email: r.email, isAdmin: r.is_admin === 1 } : null;
 }
 
 /** Bootstraps the first user and their budget (setup and local development), or finds them by email. */

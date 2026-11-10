@@ -93,6 +93,7 @@ describe('passkey sign-in', () => {
       signedIn: false,
       hasPasskey: false,
       setupOpen: true,
+      signupOpen: false,
     });
     expect((await b.register(phone, { setupCode: 'wrong'.repeat(10) })).status).toBe(403);
     expect((await b.register(phone, { setupCode: SETUP })).status).toBe(200);
@@ -176,6 +177,14 @@ describe('passkey sign-in', () => {
     expect(devSignIn({ ...base, DEV_AUTH_EMAIL: undefined })).toBe(false);
   });
 
+  it('sign-up and recovery codes answer 404 while the switch is off (D-75)', async () => {
+    for (const path of ['/api/auth/signup/options', '/api/auth/recover/options'])
+      expect(
+        (await new Browser().call('POST', path, { name: 'X', code: 'X', turnstileToken: 'X' })).status,
+      ).toBe(404);
+    expect((await new Browser().call('GET', '/api/auth/status')).json.signupOpen).toBe(false);
+  });
+
   it('a challenge is single-use', async () => {
     const o = await b.call('POST', '/api/auth/login/options');
     const resp = await phone.get(o.json as never);
@@ -189,7 +198,7 @@ describe('passkey sign-in', () => {
     await later(16 * 60 * 1000);
     const r = await b.call('POST', '/api/settings/connections/link-token', {});
     expect(r).toMatchObject({ status: 401, json: { error: 'reauth' } });
-    expect((await b.call('GET', '/api/export/json')).json).toMatchObject({ error: 'reauth' });
+    expect((await b.call('GET', '/api/export/dump')).json).toMatchObject({ error: 'reauth' });
     expect((await b.call('GET', '/api/session')).status).toBe(200); // everything else still works
     // Syncing banks now isn't sensitive: pull to sync and Try again work without the check.
     expect((await b.call('POST', '/api/settings/connections/refresh')).json).not.toMatchObject({
@@ -202,7 +211,7 @@ describe('passkey sign-in', () => {
       error: 'reauth',
     });
     expect((await b.signIn(phone)).status).toBe(200); // same session, fresh check
-    expect((await b.call('GET', '/api/export/json')).status).toBe(200);
+    expect((await b.call('GET', '/api/export/dump')).status).toBe(200);
   });
 
   it('a device link adds a passkey once, then stops working', async () => {
@@ -223,6 +232,19 @@ describe('passkey sign-in', () => {
     await later(24 * 60 * 60 * 1000);
     expect((await b.call('GET', '/api/session')).status).toBe(401);
     expect((await b.signIn(phone)).status).toBe(200);
+  });
+
+  it('you can rename a passkey, but only your own and only to 1 to 60 characters', async () => {
+    const rename = (id: string, name: unknown) =>
+      b.call('POST', `/api/settings/security/passkeys/${id}/rename`, { name });
+    expect((await rename(phone.id, '  Apple Passwords ')).status).toBe(200);
+    const sec = await b.call('GET', '/api/settings/security');
+    const names = (sec.json.passkeys as { id: string; name: string }[]).map((k) => [k.id, k.name]);
+    expect(names).toContainEqual([phone.id, 'Apple Passwords']);
+    expect((await rename(phone.id, '   ')).status).toBe(400);
+    expect((await rename(phone.id, 'x'.repeat(61))).status).toBe(400);
+    expect((await rename(phone.id, 5)).status).toBe(400);
+    expect((await rename('nope', 'Mine')).status).toBe(404);
   });
 
   it('you can remove a passkey but never the last one', async () => {

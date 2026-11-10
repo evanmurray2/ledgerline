@@ -40,15 +40,26 @@ function CategorySelect({
   onChange,
   id,
   allowRta,
+  valueName,
 }: {
   value: string;
   onChange: (v: string) => void;
   id: string;
   allowRta?: boolean;
+  valueName?: string | null;
 }) {
   const specials = [{ id: '', name: 'Needs a category' }];
   if (allowRta) specials.push({ id: 'rta', name: 'Ready to Assign' });
-  return <CategoryField id={id} track="txn.category" value={value} onChange={onChange} specials={specials} />;
+  return (
+    <CategoryField
+      id={id}
+      track="txn.category"
+      value={value}
+      onChange={onChange}
+      specials={specials}
+      valueName={valueName}
+    />
+  );
 }
 
 export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
@@ -57,9 +68,11 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
     api.patchTxn(v.key, v.body),
   );
   const del = useMoneyMutation(api.deleteTxn);
-  const [cat, setCat] = useState(t.categoryId ?? (t.categoryLabel === 'Ready to Assign' ? 'rta' : ''));
-  // Amounts are typed without a sign; the transaction's direction keeps it.
-  const sign = (t.bankAmount ?? t.amount) < 0 ? -1 : 1;
+  const origCat = t.categoryId ?? (t.categoryLabel === 'Ready to Assign' ? 'rta' : '');
+  const [cat, setCat] = useState(origCat);
+  // Amounts are typed without a sign; the direction keeps it. Only a transaction you added can change direction.
+  const [dir, setDir] = useState<'out' | 'in'>((t.bankAmount ?? t.amount) < 0 ? 'out' : 'in');
+  const sign = dir === 'out' ? -1 : 1;
   const [est, setEst] = useState(t.estimatedAmount !== null ? centsToInput(Math.abs(t.estimatedAmount)) : '');
   const [amt, setAmt] = useState(centsToInput(Math.abs(t.amount)));
   const [owed, setOwed] = useState<OwedMode>(t.owed[0]?.share ?? 'none');
@@ -85,6 +98,8 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const canEstimate = t.status === 'pending' && bank !== null;
   /** A transaction you added: its amount is yours to change. */
   const canSetAmount = t.kind === 'manual' || t.kind === 'upcoming';
+  /** What's typed in the amount box isn't an amount: Save would drop it without a word. */
+  const amountBad = canSetAmount && amtCents === null;
   const tips =
     canEstimate && bank < 0
       ? [15, 18, 20]
@@ -97,6 +112,8 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const spendCents = Math.abs(estCents ?? t.amount);
   const owedCents =
     owed === 'half' ? Math.round(spendCents / 2) : owed === 'all' ? spendCents : (parseCents(owedAmt) ?? 0);
+  /** More owed than the purchase: the server would save the purchase's amount instead, without a word. */
+  const owedOver = sign < 0 && owed === 'custom' && owedCents > spendCents;
   const catName = useCategoryOptions().byId.get(cat) ?? null;
   const onCard =
     useAccounts()
@@ -105,11 +122,18 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const months = [addMonths(t.date.slice(0, 7), -1), t.date.slice(0, 7), addMonths(t.date.slice(0, 7), 1)];
   const isIncome = t.kind === 'income';
   const isRefund = t.kind === 'refund';
-  const outflow = t.amount < 0;
+  const outflow = sign < 0;
+  /** Out to In or back. Money in starts in Ready to Assign; money out can't be there, or be owed to you. */
+  const turn = (d: 'out' | 'in') => {
+    setDir(d);
+    if (d === 'in') {
+      if (!cat) setCat('rta');
+      setOwed('none');
+    } else if (cat === 'rta') setCat('');
+  };
 
   const save = async () => {
     const body: Parameters<typeof api.patchTxn>[1] = {};
-    const origCat = t.categoryId ?? (t.categoryLabel === 'Ready to Assign' ? 'rta' : '');
     if (cat !== origCat) {
       if (cat === 'rta') body.toRta = true;
       else body.categoryId = cat || null;
@@ -124,12 +148,14 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
     if (wont !== t.wontClear) body.wontClear = wont;
     if (month !== t.budgetMonth) body.budgetMonth = month;
     const hadOwed = t.owed.length > 0;
+    // Turned to In: the server takes what's owed off with the direction.
     if (
-      (outflow && (owed !== 'none') !== hadOwed) ||
-      (owed !== 'none' &&
-        (owed !== (t.owed[0]?.share ?? 'none') ||
-          (owed === 'custom' && owedCents !== t.owed[0]?.amount) ||
-          expectBy !== (t.owed[0]?.expectBy ?? '')))
+      outflow &&
+      ((owed !== 'none') !== hadOwed ||
+        (owed !== 'none' &&
+          (owed !== (t.owed[0]?.share ?? 'none') ||
+            (owed === 'custom' && owedCents !== t.owed[0]?.amount) ||
+            expectBy !== (t.owed[0]?.expectBy ?? ''))))
     ) {
       body.markOwed =
         owed === 'none'
@@ -150,11 +176,20 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       track="txn"
       onClose={close}
       gap="auto"
-      header={<TxnHeader t={t} />}
+      // Your own entry: the header follows the amount and Out / In as you change them.
+      header={<TxnHeader t={t} amount={canSetAmount ? (amtCents ?? sign * Math.abs(t.amount)) : t.amount} />}
       footer={
         <div className="flex flex-col gap-2">
           {patch.error && <ErrorNote error={patch.error} />}
-          <PrimaryButton mutates="offline" track="txn.save" onClick={() => void save()}>
+          <PrimaryButton
+            mutates="offline"
+            track="txn.save"
+            disabled={amountBad || owedOver}
+            why={
+              amountBad ? 'Enter an amount' : owedOver ? `Enter at most ${formatCents(spendCents)} owed` : ''
+            }
+            onClick={() => void save()}
+          >
             Save
           </PrimaryButton>
         </div>
@@ -167,18 +202,28 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       ))}
       <PairedWith t={t} close={close} />
       {canSetAmount && (
-        <label className="flex shrink-0 items-center justify-between gap-3 rounded-lg bg-page p-3 text-md font-semibold text-ink-2">
-          {t.amount < 0 ? 'Amount out' : 'Amount in'}
-          <span className="w-[120px] shrink-0">
+        <div className="flex shrink-0 items-end gap-2">
+          <Field label="Amount" className="min-w-0 flex-1">
             <input
               inputMode="decimal"
-              aria-label="Amount"
               value={amt}
               onChange={(e) => setAmt(e.target.value)}
-              className={cx(amountInputClass, 'text-right')}
+              className={amountInputClass}
             />
-          </span>
-        </label>
+          </Field>
+          <div className="w-[140px]">
+            <Segmented
+              label="Direction"
+              track="txn.direction"
+              value={dir}
+              onChange={turn}
+              options={[
+                ['out', 'Out'],
+                ['in', 'In'],
+              ]}
+            />
+          </div>
+        </div>
       )}
       {canEstimate && (
         <div className="flex shrink-0 flex-col gap-2 rounded-lg bg-page p-3">
@@ -234,7 +279,8 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           <Segmented
             label="Goes to"
             track="txn.income.month"
-            value={month === t.budgetMonth && !t.budgetMonthOverridden ? 'now' : 'next'}
+            // The same test as the help line below: the month the income is dated in, or a later one.
+            value={month === t.date.slice(0, 7) ? 'now' : 'next'}
             onChange={(v) => setMonth(v === 'now' ? t.date.slice(0, 7) : addMonths(t.date.slice(0, 7), 1))}
             options={[
               ['now', 'Ready to Assign now'],
@@ -253,7 +299,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
             <label htmlFor="txn-cat" className="text-sm font-semibold text-ink-2">
               Category
             </label>
-            {outflow && (
+            {outflow && t.amount < 0 && (
               <Link
                 to={`${parent}/txn/${encodeURIComponent(t.key)}/split`}
                 data-track="txn.split"
@@ -263,7 +309,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
               </Link>
             )}
           </div>
-          {t.split ? (
+          {t.split && t.amount < 0 === outflow ? (
             <Link
               to={`${parent}/txn/${encodeURIComponent(t.key)}/split`}
               data-track="txn.split.open"
@@ -273,13 +319,20 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
               <Icon name="chevR" size={18} className="shrink-0 text-muted" />
             </Link>
           ) : (
-            <CategorySelect id="txn-cat" value={cat} onChange={setCat} allowRta={isRefund || t.amount > 0} />
+            <CategorySelect
+              id="txn-cat"
+              value={cat}
+              onChange={setCat}
+              allowRta={isRefund || !outflow}
+              // A category archived since: the list no longer holds it, but this transaction still has it.
+              valueName={cat === origCat && !t.split ? t.categoryLabel : null}
+            />
           )}
-          {t.categorizedBy && (
+          {t.categorizedBy && (cat === origCat || t.categorizedBy !== 'You') && (
             <span className="text-xs text-muted">
-              {cat === (t.categoryId ?? '')
-                ? `Set by ${t.categorizedBy}.`
-                : `Set by you. ${t.categorizedBy.replace(/^r/, 'R')} won’t change it back.`}
+              {cat === origCat
+                ? `Set by ${t.categorizedBy === 'You' ? 'you' : t.categorizedBy}.`
+                : `Set by you. ${t.categorizedBy} won’t change it back.`}
             </span>
           )}
         </div>
@@ -416,6 +469,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
         <input
           className={inputClass}
           placeholder="Add a memo"
+          maxLength={500}
           value={memo}
           onChange={(e) => setMemo(e.target.value)}
         />
@@ -426,7 +480,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           t.status === 'posted' && t.kind === 'posted' && t.postedDate
             ? `Posted ${dayLabel(t.postedDate)}`
             : t.categorizedBy && isIncome
-              ? `Set by ${t.categorizedBy}`
+              ? `Set by ${t.categorizedBy === 'You' ? 'you' : t.categorizedBy}`
               : undefined
         }
       />

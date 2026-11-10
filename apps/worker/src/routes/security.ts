@@ -5,6 +5,8 @@ import type { AppEnv } from '../http/context.js';
 import { clock } from '../http/clock.js';
 import { DEVICE_LINK_MS, SESSION_COOKIE, cookie, randomToken, tokenHash } from '../http/auth.js';
 import { describeAgent } from '../http/agent.js';
+import { bodyObject } from '../http/security.js';
+import { signupSwitchOn } from './signup-switch.js';
 
 export const securityRoutes = new Hono<AppEnv>();
 
@@ -104,7 +106,17 @@ securityRoutes.get('/settings/security', async (c) => {
     .bind(c.get('userId'))
     .all<{ id: string; name: string; created_at: number; last_used_at: number | null }>();
   const list = await entries(c.env.DB, c.get('userId'), c.get('sessionId'), now);
+  const admin = await c.env.DB.prepare(`SELECT is_admin FROM user WHERE id = ?1`)
+    .bind(c.get('userId'))
+    .first<number>('is_admin');
   return c.json({
+    // Users who aren't admins have a recovery code (D-75); admins recover with a device link or the runbook.
+    recoveryCode: admin === 0,
+    // Settings → Users, for admins once there is anyone else or sign-up is on (routes/people.ts).
+    usersScreen:
+      admin === 1 &&
+      (signupSwitchOn(c.env) ||
+        ((await c.env.DB.prepare(`SELECT count(*) AS n FROM user`).first<number>('n')) ?? 0) > 1),
     passkeys: pk.results.map((p) => ({
       id: p.id,
       name: p.name,
@@ -138,7 +150,7 @@ const b64url = (b: Uint8Array) =>
     .replace(/=+$/, '');
 
 securityRoutes.post('/settings/security/devices', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { name?: unknown };
+  const body = (await bodyObject(c.req)) as { name?: unknown };
   const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 60) : 'Phone';
   const now = clock(c.env);
   const m = await c.env.DB.prepare(`SELECT budget_id FROM budget_member WHERE user_id = ?1 LIMIT 1`)
@@ -191,6 +203,19 @@ securityRoutes.post('/settings/security/device-link', async (c) => {
   });
 });
 
+/** Renames a passkey, so you can tell where it is saved ("Apple Passwords"). 1 to 60 characters. */
+securityRoutes.post('/settings/security/passkeys/:id/rename', async (c) => {
+  const body = (await bodyObject(c.req)) as { name?: unknown };
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name || name.length > 60)
+    return c.json({ error: 'invalid', message: 'Give the passkey a name of up to 60 characters.' }, 400);
+  const r = await c.env.DB.prepare(`UPDATE passkey SET name = ?3 WHERE id = ?1 AND user_id = ?2`)
+    .bind(c.req.param('id'), c.get('userId'), name)
+    .run();
+  if (r.changes !== 1) return c.json({ error: 'not_found', message: 'That passkey was removed.' }, 404);
+  return c.json({ ok: true });
+});
+
 securityRoutes.post('/settings/security/passkeys/:id/remove', async (c) => {
   const id = c.req.param('id');
   // Never the last one: you'd be locked out.
@@ -224,7 +249,7 @@ securityRoutes.post('/settings/security/sign-out-others', async (c) => {
 
 /** Signs out one other device, by the id Settings shows: its sign-in ends and its saved copy is turned off. */
 securityRoutes.post('/settings/security/sign-out-session', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { id?: unknown };
+  const body = (await bodyObject(c.req)) as { id?: unknown };
   const db = c.env.DB;
   const userId = c.get('userId');
   const now = clock(c.env);
@@ -248,7 +273,7 @@ securityRoutes.post('/settings/security/sign-out-session', async (c) => {
  * as well.
  */
 securityRoutes.post('/settings/security/sign-out', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { forget?: unknown; devices?: unknown };
+  const body = (await bodyObject(c.req)) as { forget?: unknown; devices?: unknown };
   const db = c.env.DB;
   const userId = c.get('userId');
   const now = clock(c.env);

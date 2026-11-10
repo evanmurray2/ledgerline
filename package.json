@@ -19,11 +19,12 @@
     "test:e2e": "pnpm --filter @ledgerline/e2e test && pnpm --filter @ledgerline/e2e test:worker"
   },
   "devDependencies": {
+    "@typescript/native": "npm:typescript@7.0.2",
     "@types/node": "^22.20.5",
     "eslint": "^9.39.5",
     "fast-check": "4.3.0",
     "prettier": "^3.9.10",
-    "typescript": "5.9.3",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
     "typescript-eslint": "8.72.1",
     "vitest": "4.1.12",
     "ws": "^8.21.0"

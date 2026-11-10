@@ -8,12 +8,13 @@ const PORT = Number(process.env.E2E_PORT ?? 5179);
 
 export default defineConfig({
   testDir: './tests',
-  testIgnore: /(worker|passkey)\.spec\.ts/,
+  testIgnore: /(worker|passkey|signup)\.spec\.ts/,
   fullyParallel: true,
   workers: 4,
   timeout: 30_000,
   expect: { timeout: 7_000 },
   reporter: report.reporter,
+  retries: report.retries,
   outputDir: report.outputDir,
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
