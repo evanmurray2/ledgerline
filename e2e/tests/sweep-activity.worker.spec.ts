@@ -166,6 +166,48 @@ test('Edit: an amount that is not money keeps Save off and says why', async ({ p
   expect(m.amount).toBe(-112_550);
 });
 
+test('Edit: an entry you added turns from Out to In, and goes to Ready to Assign', async ({
+  page,
+  request,
+}) => {
+  await page.goto('/activity/txn/n-check-1043');
+  const sheet = page.getByRole('dialog', { name: 'Check #1043 transaction' });
+  await expect(sheet.getByRole('button', { name: 'Out', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await sheet.getByLabel('Category').click();
+  await page
+    .getByRole('dialog', { name: 'Choose a category' })
+    .getByRole('button', { name: 'Needs a category' })
+    .click();
+  await sheet.getByRole('button', { name: 'In', exact: true }).click();
+  await expect(sheet.getByLabel('Category')).toHaveText(/Ready to Assign/);
+  await expect(sheet.getByText('Owed to you')).toHaveCount(0);
+  await sheet.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(sheet).toHaveCount(0);
+  const m = (await rows(request, 'manual_pending')).find((r) => r.txn_key === 'n-check-1043')!;
+  expect(m.amount as number).toBeGreaterThan(0);
+  const o = (await rows(request, 'txn_overlay')).find((r) => r.txn_key === 'n-check-1043')!;
+  expect(o).toMatchObject({ to_rta: 1, category_id: null });
+});
+
+test('Add: money in starts in Ready to Assign', async ({ page, request }) => {
+  await page.goto('/activity/add');
+  const add = page.getByRole('dialog', { name: 'Add a transaction' });
+  await add.getByPlaceholder('0.00').fill('10');
+  await add.getByLabel('Payee').fill('Money in');
+  await expect(add.getByLabel('Category')).toHaveText(/Needs a category/);
+  await add.getByRole('button', { name: 'In', exact: true }).click();
+  await expect(add.getByLabel('Category')).toHaveText(/Ready to Assign/);
+  await add.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(add).toHaveCount(0);
+  const m = (await rows(request, 'manual_pending')).find((r) => r.payee_name === 'Money in')!;
+  expect(m.amount).toBe(1000);
+  const o = (await rows(request, 'txn_overlay')).find((r) => r.txn_key === m.txn_key)!;
+  expect(o).toMatchObject({ to_rta: 1, category_id: null });
+});
+
 test('Split: a line amount that is not money keeps Save split off', async ({ page }) => {
   await page.goto('/activity');
   await page.getByText('Target', { exact: true }).first().click();

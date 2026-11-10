@@ -247,8 +247,12 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
     w.push(s.q(`DELETE FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`, key));
     if (p.split) {
       const total = p.split.reduce((a, l) => a + l.amount, 0);
-      if (total !== t.amount)
-        throw new HttpError(422, 'split_total', `The lines must add up to ${formatCents(t.amount)}.`);
+      if (total !== (p.amount ?? t.amount))
+        throw new HttpError(
+          422,
+          'split_total',
+          `The lines must add up to ${formatCents(p.amount ?? t.amount)}.`,
+        );
       p.split.forEach((l, i) =>
         w.push(
           s.q(
@@ -280,6 +284,8 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
     if (t.source !== 'manual')
       throw new HttpError(422, 'not_manual', 'You can change the amount only on a transaction you added.');
     if (p.amount === 0) throw new HttpError(422, 'zero_amount', 'Enter an amount.');
+    // Out to In or back: what only fits the old direction goes with it.
+    if (p.amount < 0 !== t.amount < 0) w.push(...(await flipStmts(s, t, p, now)));
     w.push(
       s.q(
         `UPDATE manual_pending SET amount = ?3, updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
@@ -336,8 +342,9 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
         ),
       );
     } else {
-      if (t.amount >= 0) throw new HttpError(422, 'not_outflow', 'Only money going out can be owed to you.');
-      const x = cents(-t.amount);
+      const out = p.amount ?? t.amount;
+      if (out >= 0) throw new HttpError(422, 'not_outflow', 'Only money going out can be owed to you.');
+      const x = cents(-out);
       const m = p.markOwed;
       const [num, den] =
         m.mode === 'half'
@@ -561,6 +568,45 @@ transactionRoutes.post('/transactions/:key/review', async (c) => {
   ];
   return c.json(await commit(c, w));
 });
+
+/**
+ * Your entry changes direction (Out to In, or In to Out). A split and what's owed to you were made for the old
+ * direction, so they go; money out can't stay in Ready to Assign. A transfer or a match is undone first, by you.
+ */
+async function flipStmts(
+  s: Scoped,
+  t: TxRow,
+  p: { amount?: number | undefined; split?: unknown },
+  now: number,
+): Promise<Stmt[]> {
+  const linked = await s.first(
+    `SELECT 1 FROM txn_link WHERE budget_id = ?1 AND undone_at IS NULL AND kind IN ('reimbursement_of', 'refund_of')
+       AND (from_key = ?2 OR to_key = ?2 OR to_key IN (SELECT id FROM expected_reimbursement WHERE budget_id = ?1 AND txn_key = ?2))
+     LIMIT 1`,
+    t.key,
+  );
+  if (t.transfer_state === 'paired' || linked)
+    throw new HttpError(
+      422,
+      'linked',
+      t.transfer_state === 'paired'
+        ? 'This is a transfer. Undo the transfer first, then change Out or In.'
+        : 'This is matched to another transaction. Undo the match first, then change Out or In.',
+    );
+  const w: Stmt[] = [cancelOwed(s, t.key, now)];
+  // A split sent with the flip is for the new amount: it stays.
+  if (!p.split) w.push(s.q(`DELETE FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`, t.key));
+  w.push(
+    s.q(
+      `UPDATE txn_overlay SET wtm_state = NULL, to_rta = CASE WHEN ?3 < 0 THEN 0 ELSE to_rta END, updated_at = ?4
+       WHERE budget_id = ?1 AND txn_key = ?2`,
+      t.key,
+      p.amount ?? 0,
+      now,
+    ),
+  );
+  return w;
+}
 
 /**
  * A deleted entry takes what was owed to you on it along: the purchase is gone, so nothing is out with others

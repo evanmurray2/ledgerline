@@ -76,6 +76,45 @@ describe('pending transactions', () => {
     expect(await rta()).toBe(before);
   });
 
+  it('an entry you added can turn from Out to In and back', async () => {
+    await call('POST', '/api/transactions', {
+      kind: 'pending',
+      accountId: checking,
+      date: '2026-11-14',
+      amount: -3_000,
+      payee: 'Wrong way',
+      categoryId: null,
+      repeats: 'never',
+    });
+    const key = (await db
+      .prepare(`SELECT txn_key FROM manual_pending WHERE payee_name = 'Wrong way'`)
+      .first<{ txn_key: string }>())!.txn_key;
+    const url = `/api/transactions/${encodeURIComponent(key)}`;
+    const out = await rta();
+    expect((await call('PATCH', url, { markOwed: { mode: 'half', expectBy: null } })).status).toBe(200);
+    const open = async () =>
+      (await db
+        .prepare(
+          `SELECT count(*) AS n FROM expected_reimbursement WHERE txn_key = ?1 AND canceled_at IS NULL`,
+        )
+        .bind(key)
+        .first<{ n: number }>())!.n;
+    expect(await open()).toBe(1);
+
+    // Out to In, into Ready to Assign: what was owed goes with the old direction.
+    expect((await call('PATCH', url, { amount: 3_000, toRta: true })).status).toBe(200);
+    const s = await sheet(key);
+    expect(s.amount).toBe(3_000);
+    expect(s.categoryLabel).toBe('Ready to Assign');
+    expect(await open()).toBe(0);
+    expect(await rta()).toBe(out + 3_000);
+
+    // Back to Out: money out can't stay in Ready to Assign.
+    expect((await call('PATCH', url, { amount: -3_000 })).status).toBe(200);
+    expect((await sheet(key)).categoryLabel).not.toBe('Ready to Assign');
+    expect(await rta()).toBe(out);
+  });
+
   it('a bank pending row takes a first estimate; its bank amount can’t be changed', async () => {
     const t = (await db
       .prepare(

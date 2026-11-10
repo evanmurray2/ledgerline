@@ -457,7 +457,9 @@ export function AddTxnScreen() {
             value={dir}
             onChange={(d) => {
               setDir(d);
-              // Only money in can go to Ready to Assign: going back to Out asks for a category again.
+              // Money in starts in Ready to Assign. Only money in can go there: going back to Out asks for a
+              // category again.
+              if (d === 'in' && !categoryId) setCategoryId('rta');
               if (d === 'out' && categoryId === 'rta') setCategoryId('');
             }}
             options={[
