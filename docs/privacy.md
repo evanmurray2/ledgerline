@@ -643,7 +643,7 @@ A third pair of reviewers, same briefs. 40 findings, 7 critical; v6 fixes them. 
 
 ### 15.4 Still unverified, to settle in phase 0
 
-PRF behaviour with the owner's existing passkey, with other passkey apps and with security keys in Safari, and two PRF inputs with an iCloud passkey; the lowest browser versions; hosted Link for our Plaid team, its "link finished" webhook and its return path on an iPhone (Sandbox or repair mode only); whether Plaid accepts an old cursor again, days later, in Production; what Cloudflare's invocation logs hold; whether a wiped store stays in point-in-time recovery, and whether deleted rows stay in freed pages; each fetch step, signature and HMAC inside 10 ms; peak memory on the iPhone; "related origins" for a later change of address.
+PRF behaviour with the owner's existing passkey, with other passkey apps and with security keys in Safari, and two PRF inputs with an iCloud passkey; the lowest browser versions; hosted Link for our Plaid team, its "link finished" webhook and its return path on an iPhone (Sandbox or repair mode only); whether Plaid accepts an old cursor again, days later, in Production; what Cloudflare's invocation logs hold; whether a wiped store stays in point-in-time recovery, and whether deleted rows stay in freed pages; each fetch step, signature and HMAC inside 10 ms on Cloudflare (measured locally on Nov 10: checking, sealing and hashing a 200 KB page is about 1.3 ms, and the checks on an append about 0.3 ms; `docs/measurements.md`); peak memory on the iPhone; "related origins" for a later change of address.
 
 **Open for good:** code sent to one person once can't be detected by any web-only means (4.2). The design says so and offers no fix inside the $0 rule.
 
