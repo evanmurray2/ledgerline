@@ -291,7 +291,7 @@ An intent is judged when it is used, not when it is written, so an intent from a
 
 - `time` is within 5 minutes of the server's clock, either way. This is what makes the 7-day wait real: an intent can't be back-dated, and a key change can't be dated ahead.
 - `entryId` is new in the whole log. A write whose every entry the log holds, **with the same entry hashes**, gets "already stored". An id the log holds with other content is refused; so is a write with some entries held and some new, and one id used for two changes in a write.
-- A write is stored whole or not at all. One that ends inside a part set is refused. A write holds at most 32 entries, so a change set has at most 32 parts. The server checks and stores a write under one lock.
+- A write is stored whole or not at all. One that ends inside a part set is refused. A write holds at most 16 entries, so a change set has at most 16 parts (about 1 MB): a larger write would not fit the server's 10 ms of CPU for a request. The server checks and stores a write under one lock.
 - `schemaVersion` and `processingVersion` are not above those of the released app. A newer one would be stored and then stop every device.
 - `scanThrough` is at most tomorrow by the server's clock.
 - When an intent is required (6.3): the key change must name one, and the intent's `notBefore` is not later than the server's clock.
@@ -533,7 +533,7 @@ signature = Ed25519(signPriv_v, "ledgerline/v1/request" || str(budgetId) || u32(
 - AES-GCM with random nonces: well under 2^32 seals per key. A budget makes a few thousand entries a year; a key change starts fresh keys.
 - An entry's plain body is at most 65,535 bytes; larger change sets use parts (6.4).
 - A filing entry names at most 256 runs. A device with more waiting files them in several writes.
-- A write holds at most 32 entries. At most 4,096 devices ever write to one budget; an entry from one more is refused by both sides.
+- A write holds at most 16 entries. At most 4,096 devices ever write to one budget; an entry from one more is refused by both sides.
 - At most 64 slots, at most 16 inbox keys carried in a key change, and at most 16 open intents.
 - A public body is at most 128 KB. A sealed body is exactly a padding step plus 28 bytes.
 - X25519 and Ed25519 are not safe against a large quantum computer. `docs/privacy.md` 5.2 says what that exposes and that no claim is made.
