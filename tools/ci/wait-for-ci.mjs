@@ -3,13 +3,15 @@
 // never ran. Needs GITHUB_TOKEN (actions: read), GITHUB_REPOSITORY and GITHUB_SHA.
 // A newer merge cancels this commit's ci run (ci.yml cancel-in-progress). If main has moved on, this commit is
 // skipped, not failed: the newer commit's deploy ships it, and a red deploy then always means a real problem (D-51).
-// It writes `deploy=true|false` to GITHUB_OUTPUT; deploy.yml runs the production job only on true.
+// When everything since the commit production runs is documentation, it also skips: a deploy would change nothing
+// (D-84). It writes `deploy=true|false` to GITHUB_OUTPUT; deploy.yml runs the production job only on true.
 import { appendFileSync } from 'node:fs';
+import { changedBetween, docsOnly, github, liveSha } from './scope.mjs';
 const { GITHUB_TOKEN, GITHUB_REPOSITORY, GITHUB_SHA } = process.env;
 if (!GITHUB_TOKEN || !GITHUB_REPOSITORY || !GITHUB_SHA)
   throw new Error('GITHUB_TOKEN, GITHUB_REPOSITORY, GITHUB_SHA');
 const WAIT_MS = Number(process.env.CI_WAIT_MS ?? 25 * 60_000);
-const POLL_MS = 20_000;
+const POLL_MS = 5_000;
 const url = `https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&per_page=20`;
 const deadline = Date.now() + WAIT_MS;
 const headers = { authorization: `Bearer ${GITHUB_TOKEN}`, accept: 'application/vnd.github+json' };
@@ -23,6 +25,22 @@ async function mainHead() {
   return (await r.json()).sha;
 }
 
+/** False only when production's commit is known and nothing but documentation changed since. */
+async function changesProduction() {
+  try {
+    const api = github(GITHUB_REPOSITORY, GITHUB_TOKEN);
+    const live = await liveSha(api);
+    const files = live && (await changedBetween(api, live, GITHUB_SHA));
+    if (files && docsOnly(files)) {
+      console.log(`only docs changed since production's ${live.slice(0, 7)}: nothing to deploy`);
+      return false;
+    }
+  } catch (e) {
+    console.log(`couldn't compare with production (${e.message}): deploying`);
+  }
+  return true;
+}
+
 for (;;) {
   const r = await fetch(url, { headers });
   if (!r.ok) throw new Error(`GitHub API ${r.status}`);
@@ -31,7 +49,7 @@ for (;;) {
   const done = runs.filter((x) => x.status === 'completed');
   if (done.some((x) => x.conclusion === 'success')) {
     console.log(`ci passed for ${GITHUB_SHA.slice(0, 7)}`);
-    output(true);
+    output(await changesProduction());
     break;
   }
   const pending = runs.some((x) => x.status !== 'completed');

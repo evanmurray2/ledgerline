@@ -10,6 +10,8 @@ const PORT = Number(process.env.E2E_PORT ?? 8799);
 export default defineConfig({
   testDir: './tests',
   testMatch: /worker\.spec\.ts/,
+  // One at a time (one Worker, one store). fullyParallel only lets CI's --shard split by test, not by file.
+  fullyParallel: true,
   workers: 1,
   timeout: 45_000,
   expect: { timeout: 10_000 },
