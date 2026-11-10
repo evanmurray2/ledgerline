@@ -47,7 +47,7 @@ function CategorySelect({
   onChange: (v: string) => void;
   id: string;
   allowRta?: boolean;
-  /** Money into checking or savings: with no category it is in Ready to Assign, so "Needs a category" isn't a choice. */
+  /** Money into checking or savings that is in Ready to Assign with no category: "Needs a category" isn't a choice. */
   noNeeds?: boolean;
   valueName?: string | null;
 }) {
@@ -306,7 +306,8 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
             value={cat}
             onChange={setCat}
             allowRta={isRefund || !outflow}
-            noNeeds={!outflow && !onCard}
+            // A deposit that looks like a transfer still waits for a category (D-85): it keeps the choice.
+            noNeeds={!outflow && !onCard && origCat !== ''}
             // A category archived since: the list no longer holds it, but this transaction still has it.
             valueName={cat === origCat && !t.split ? t.categoryLabel : null}
           />

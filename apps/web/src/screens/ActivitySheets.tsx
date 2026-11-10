@@ -65,6 +65,10 @@ export function TransferScreen() {
   // The contract has no candidate list: find rows of the opposite amount within 5 days in the other accounts that
   // aren't a transfer already (the route accepts the same ones). From a deposit, the other side is an outflow.
   const sent = t.amount > 0;
+  // Money into checking or savings you call income goes to Ready to Assign (D-85); a credit on a card needs a category.
+  const onCard =
+    (accounts.data?.groups ?? []).flatMap((g) => g.accounts).find((a) => a.id === t.accountId)?.kind ===
+    'credit';
   const day = (d: string) =>
     Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))) / 86_400_000;
   const candidates = registers.flatMap((r, i) =>
@@ -91,7 +95,9 @@ export function TransferScreen() {
   const lines = (name: string | null, picked?: { sheet: string }) =>
     name === null
       ? sent
-        ? 'Kept as income. It’s in Ready to Assign.'
+        ? onCard
+          ? 'Kept as income. It needs a category.'
+          : 'Kept as income. It’s in Ready to Assign.'
         : `Kept as spending. It needs a category.${income(waiting)}`
       : `Paired with ${name}. It needs no category.${income(waiting - (picked?.sheet === 'transfer' ? 1 : 0))}`;
   const question = sent ? 'Which account sent this money?' : 'Which account got this money?';
@@ -222,7 +228,9 @@ export function TransferScreen() {
               >
                 <span className="text-base font-semibold">{sent ? 'It was income' : 'It was a payment'}</span>
                 <span className="text-xs text-muted">
-                  {sent ? 'It goes to Ready to Assign' : 'Give it a category like other spending'}
+                  {sent && !onCard
+                    ? 'It goes to Ready to Assign'
+                    : `Give it a category like other ${sent ? 'income' : 'spending'}`}
                 </span>
               </Button>
             </div>

@@ -12,7 +12,9 @@ import {
   type OwedMark,
   type StartRole,
   type TxnUse,
+  TRANSFER_WORD_LIST,
   cents,
+  isTransferLike,
   linesForTxn,
   monthOfDate,
   startLines,
@@ -151,15 +153,31 @@ export function toLedgerAccount(a: AccountRowDb): LedgerAccount {
 }
 
 /**
- * Money into checking or savings that you haven't given a category goes to Ready to Assign (D-85). A card credit
- * doesn't: it is a refund or rewards, and stays with "needs a category" until you say which.
+ * Money into checking or savings that you haven't given a category goes to Ready to Assign (D-85). Two kinds of
+ * money in don't, and stay with "needs a category" until you say which:
+ * - a credit on a card: it is a refund or rewards;
+ * - a deposit that looks like a transfer (the bank marks it as one, or its name says so) with no other side yet:
+ *   the outflow may still be on its way, and Ready to Assign would be too high until it came.
  */
-export function rtaByDefault(t: Pick<TxRow, 'amount' | 'account_kind' | 'category_id'>): boolean {
-  return t.amount > 0 && t.account_kind !== 'credit' && !t.category_id;
+export function rtaByDefault(
+  t: Pick<TxRow, 'amount' | 'account_kind' | 'category_id' | 'raw_name' | 'provider_category'>,
+): boolean {
+  return (
+    t.amount > 0 &&
+    t.account_kind !== 'credit' &&
+    !t.category_id &&
+    !isTransferLike({ description: t.raw_name ?? '', providerCategory: t.provider_category })
+  );
 }
 
-/** rtaByDefault as SQL, negated, for a v_transaction row: a row that can need a category. */
-export const NOT_RTA_BY_DEFAULT = `NOT (amount > 0 AND account_kind != 'credit')`;
+/**
+ * rtaByDefault as SQL, negated, for a v_transaction row: a row that can need a category. SQLite has no word
+ * boundaries, so the name test is looser than isTransferLike (LIKE ignores case): it lets a few more rows through,
+ * and the caller's needsCategory() drops them.
+ */
+export const NOT_RTA_BY_DEFAULT = `NOT (amount > 0 AND account_kind != 'credit' AND NOT (
+  substr(coalesce(provider_category, ''), 1, 9) = 'TRANSFER_' OR provider_category = 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT'
+  OR ${TRANSFER_WORD_LIST.map((w) => `raw_name LIKE '%${w}%'`).join(' OR ')}))`;
 
 /** Not a transfer, Waiting to match or split (the caller checks those first): the money is in Ready to Assign. */
 export function inRta(t: TxRow): boolean {

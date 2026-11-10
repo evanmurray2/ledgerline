@@ -1,5 +1,6 @@
 // Money into checking or savings goes to Ready to Assign with nothing chosen (D-85): it never waits in Needs category.
-// A credit on a card still does. Through the real pipeline and the routes the phone runs.
+// A credit on a card still does, and so does a deposit that looks like a transfer with no other side yet. Through
+// the real pipeline and the routes the phone runs.
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ActivityView, BudgetView, TxnSheet } from '@ledgerline/contracts';
 import { bankSync, plaidTxn } from './bank-sync.js';
@@ -15,6 +16,7 @@ const sheet = async (key: string) =>
 describe('A deposit with no category', () => {
   let pay = '';
   let credit = '';
+  let xfer = '';
   let before = 0;
 
   beforeAll(async () => {
@@ -24,7 +26,9 @@ describe('A deposit with no category', () => {
     await sync([
       plaidTxn('pay', 1, -500, '2026-11-02', 'ACME PAYROLL'),
       plaidTxn('cr', 2, -40, '2026-11-03', 'STATEMENT CREDIT'),
+      plaidTxn('xf', 1, -300, '2026-11-04', 'ONLINE TRANSFER FROM SAVINGS'),
     ]);
+    xfer = await keyOf('xf');
     pay = await keyOf('pay');
     credit = await keyOf('cr');
   });
@@ -45,6 +49,14 @@ describe('A deposit with no category', () => {
   it('a credit on a card still needs a category', async () => {
     expect(await needs()).toContain(credit);
     expect((await sheet(credit)).categoryLabel).toBeNull();
+  });
+
+  it('a deposit that looks like a transfer, with no other side yet, waits in Needs category', async () => {
+    expect((await overlay(xfer))?.transfer_state ?? null).toBeNull();
+    expect(await needs()).toContain(xfer);
+    expect((await sheet(xfer)).categoryLabel).toBeNull();
+    // Not in Ready to Assign: only the payroll is.
+    expect(await rta()).toBe(before + 50000);
   });
 
   it('takes a category you choose, and goes back to Ready to Assign when you clear it', async () => {

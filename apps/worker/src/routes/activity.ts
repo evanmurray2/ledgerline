@@ -288,10 +288,14 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
       ),
     );
   } else {
-    // Neither: a payment needs a category; a deposit is income and goes to Ready to Assign (D-85).
+    // Neither: a payment (or a credit on a card) needs a category. A deposit into checking or savings is income: you
+    // said so, so it goes to Ready to Assign even when its name looks like a transfer (D-85).
+    const income = me.amount > 0 && me.account_kind !== 'credit';
     w.push(
       s.q(
-        `UPDATE txn_overlay SET transfer_state = NULL, transfer_account_id = NULL, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
+        income
+          ? `UPDATE txn_overlay SET transfer_state = NULL, transfer_account_id = NULL, to_rta = 1, categorized_by = 'user', updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`
+          : `UPDATE txn_overlay SET transfer_state = NULL, transfer_account_id = NULL, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
         key,
         now,
       ),
