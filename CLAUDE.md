@@ -47,8 +47,9 @@ The owner runs several Claude sessions side by side, each with its own container
 - Merge your own PR, without asking, once all of these hold (no rebase onto the latest `main` needed, D-51):
   1. GitHub shows no merge conflict with `main`,
   2. `pnpm check` passes locally,
-  3. every `ci` job (`checks`, the `integration` parts, the `e2e` parts) passed on the PR's latest commit, and
-  4. it doesn't need an answer from the owner (Money rules, Plaid links, secrets).
+  3. every `ci` job (`checks`, the `integration` parts, the `e2e` parts) passed on the PR's latest commit,
+  4. it doesn't need an answer from the owner (Money rules, Plaid links, secrets), and
+  5. it changes none of the owner's paths: `node tools/ci/owner-paths.mjs` says so. The paths are the lines of `.github/CODEOWNERS` (keys and sealing code, the CSP and service worker, the build, `.github/`; `docs/privacy.md` 5.10, D-88). **A PR that changes one is merged by the owner, never by a session:** get it green, give the owner its link and say in two lines what it changes, then stop. GitHub can't enforce this (every PR is opened under the owner's account, and an account can't approve its own PR), so this rule is the only guard.
      Then squash-merge with GitHub MCP `merge_pull_request` (`merge_method: squash`, `sha` set to the commit CI passed on). After the merge, start any further work fresh from `origin/main` on the same branch name.
 - The safety check is the `ci` run on `main` after each merge: `deploy.yml` only deploys a commit whose `ci` passed. After merging, check `ci` and `deploy` for your merge commit. If `ci` on `main` failed, fix it first, even if your PR alone was green. A deploy shown as skipped is fine: a newer merge cancelled its `ci` and the newer deploy ships it, or the merge changed only docs.
 - To catch up with `main` (a conflict, a PR that adds a migration, or a fix that needs the other side), use GitHub MCP `update_pull_request_branch`: it merges `main` into the PR, no force-push. If GitHub refuses because of a conflict, `git fetch origin main && git merge origin/main`, resolve, test and push. Never rebase or force-push another session's branch.

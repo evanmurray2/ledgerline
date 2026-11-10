@@ -332,7 +332,7 @@ Also: drop `'unsafe-inline'` from `style-src`, add Trusted Types where the brows
 
 After this design, the code path is the attack surface. Today every Claude session merges its own PRs and each merge deploys (`CLAUDE.md`, D-51). The owner agreed (D-85) that:
 
-- A change to the key and sealing code, the fetch-and-seal step, the CSP (`apps/web/public/_headers`), `sw.js`, the build, or `.github/workflows` needs the owner's review before merging. `.github/CODEOWNERS` is `*` today; it is narrowed to those paths, so other work still merges as now, and branch protection enforces it. **This is the first PR of phase 2**, before any key code exists, with the change to `CLAUDE.md` in the same PR.
+- A change to the key and sealing code, the fetch-and-seal step, the CSP (`apps/web/public/_headers`), `sw.js`, the build, or `.github/` is merged by the owner, never by a session. `.github/CODEOWNERS` lists those paths, `node tools/ci/owner-paths.mjs` finds them in a branch, and `CLAUDE.md` makes it a condition of a session's own merge (built Nov 10, 2026; D-88). GitHub can't enforce it: every PR is opened under the owner's account, and an account can't approve its own PR, so a required review would block everything.
 - No new runtime dependency in the key and sealing code without the owner's review.
 - Hardware-key or passkey two-step sign-in on Cloudflare, GitHub and Plaid (`docs/threat-model.md` says so already), and a Cloudflare API token that can deploy the Worker and nothing else.
 
