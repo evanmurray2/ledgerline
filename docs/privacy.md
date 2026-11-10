@@ -1,6 +1,6 @@
 # Privacy design: a server that holds no key to a budget
 
-Status: v2, Nov 10, 2026. A proposal: nothing here is built, and nothing is decided. It needs the owner's answers (section 14) before any work starts. v1 got two adversarial reviews (the key design and the claims; the fit with the code); this version includes their fixes, and section 15 lists them. `docs/architecture.md` says what runs today.
+Status: v3, Nov 10, 2026. A proposal: nothing here is built. The owner answered most of its questions on Nov 10 (section 14, D-85); three are still open. v1 got two adversarial reviews (the key design and the claims; the fit with the code); v2 included their fixes, and section 15 lists them. v3 adds the owner's answers. `docs/architecture.md` says what runs today.
 
 What the owner asked: to offer Ledgerline to other people as a privacy-focused budget app, with the strongest privacy and security claims that can be made honestly, and to know what has to change and what users would see.
 
@@ -18,8 +18,8 @@ Four limits stay whatever is built (section 4): Plaid sees bank data; a web app 
 
 Two prices:
 
-- **Nobody can reset an account.** A person who loses every passkey and the recovery key loses the budget.
-- **One Money-rules question** (section 14, question 1): two rules count by when a bank row arrived, and "arrived" changes meaning when rows are fetched only while the app is open.
+- **Nobody can reset an account, and nothing can be restored.** A person who loses every passkey and the recovery key loses the budget (accepted by the owner, D-85).
+- **Two Money rules count by when a bank row arrived** (D-67, D-68). They keep working unchanged only if the server keeps fetching in the background (5.5, shape B, recommended while the bank source is Plaid).
 
 ## 1. The claims
 
@@ -27,16 +27,16 @@ Two prices:
 
 "Checkable" means a stranger can confirm it. "Our word" means it rests on the public code being what runs, plus an outside audit: nobody outside can inspect a running Worker.
 
-| Claim (plain words)                                                                                                                                       | True from                                   | Backed by                                                 |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------- |
-| "Your budget is encrypted on your devices with a key we never hold. What we store can't be read by us, or by anyone who copies it."                       | 30 days after phase 6 clears the old tables | Public code for the app (checkable, 5.9); audit           |
-| "We keep no readable copy of your bank data. It passes through our server on its way from Plaid to your device."                                          | The same                                    | Our word; audit                                           |
-| "We don't store the key to your bank link. Your device keeps it and sends it only to fetch your transactions."                                            | Phase 5, after the old tokens are replaced  | Our word; audit                                           |
-| "No ads, no trackers, no analytics. No outside script runs on any page that holds your budget or your keys."                                              | Phase 1                                     | Checkable: the Content Security Policy header             |
-| "No email address and no phone number."                                                                                                                   | Phase 1                                     | Checkable: the sign-up screen                             |
-| "When you delete your account we delete everything we hold. Sealed remains last up to 30 days in Cloudflare's recovery and open only with your own keys." | Phase 5                                     | Our word; audit                                           |
-| "The app's code is public, and every release is built from it in public."                                                                                 | Phase 7                                     | Checkable: the repository, the build log, the attestation |
-| "A budget entered by hand involves no bank and no Plaid: only your devices hold anything readable."                                                       | Phase 5, plus accounts without a bank link  | Public code; audit                                        |
+| Claim (plain words)                                                                                                                                                            | True from                                   | Backed by                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- | --------------------------------------------------------- |
+| "Your budget is encrypted on your devices with a key we never hold. What we store can't be read by us, or by anyone who copies it."                                            | 30 days after phase 6 clears the old tables | Public code for the app (checkable, 5.9); audit           |
+| "We keep no readable copy of your bank data. It passes through our server on its way from Plaid to your device."                                                               | The same                                    | Our word; audit                                           |
+| "We use the key to your bank link only to fetch your data, seal it for you at once, and remove the link." (Shape B. With shape A: "We don't store the key to your bank link.") | Phase 5                                     | Our word; audit                                           |
+| "No ads, no trackers, no analytics. No outside script runs on any page that holds your budget or your keys."                                                                   | Phase 1                                     | Checkable: the Content Security Policy header             |
+| "No email address and no phone number."                                                                                                                                        | Phase 1                                     | Checkable: the sign-up screen                             |
+| "When you delete your account we delete everything we hold. Sealed remains last up to 30 days in Cloudflare's recovery and open only with your own keys."                      | Phase 5                                     | Our word; audit                                           |
+| "The app's code is public, and every release is built from it in public."                                                                                                      | Phase 7                                     | Checkable: the repository, the build log, the attestation |
+| "A budget entered by hand involves no bank and no Plaid: only your devices hold anything readable."                                                                            | Phase 5, plus accounts without a bank link  | Public code; audit                                        |
 
 Each claim is published next to the limit that goes with it: "Like every web app, this depends on the code we send your browser. That code is public (4.2)."
 
@@ -102,7 +102,7 @@ The keys live in the browser, and the browser runs the JavaScript the Worker ser
 
 - make every release public and comparable (5.9), so an untargeted bad release leaves evidence. Code sent once to one person leaves none;
 - make it hard to ship code without the owner seeing it (5.10);
-- or ship an app from an app store, where the code is signed and can't change per visit. That has a yearly fee and breaks the $0 rule (question 8).
+- or ship an app from an app store, where the code is signed and can't change per visit. That has a yearly fee and breaks the $0 rule.
 
 ### 4.3 What the server and the operator still learn
 
@@ -190,7 +190,7 @@ Bodies are padded to size steps (256 bytes, 1 KB, 4 KB, 16 KB, 64 KB). A change 
 
 So the claim is "a device notices if the server rolls back what it has seen", not "the server can't hide changes".
 
-**Restores.** Today a restore is the operator rolling a store back (`docs/runbooks/restore.md`, D-77). After this design the operator can roll back sealed bytes but can't check or repair a budget, and devices treat the rollback as above. Recovery becomes a device sending its copy, or a backup file, as a fresh snapshot under a new key version. The owner decided on Nov 9 that restore is a runbook step, not a button; this needs that decision changed (question 6).
+**No restore (owner, Nov 10, D-85).** Today a restore is the operator rolling a store back (`docs/runbooks/restore.md`, D-77). A sealed budget can't be checked or repaired by the operator, and the owner doesn't want a restore in the app either. So this design has no restore of any kind: the runbook and the undo (D-77) are retired at the cutover, and Cloudflare's point-in-time recovery is no longer used for budgets. A device that sees the server behind it shows the warning above and stops; it doesn't offer to overwrite either side. The full backup stays as a way to take your data out (5.8), not to put it back.
 
 ### 5.4 All budget work moves to the device
 
@@ -199,36 +199,62 @@ What the engine runs today: every screen, and six kinds of edit while offline (`
 | Work                                            | Today                                      | After                                                                                                                                                                      |
 | ----------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Every edit (`routes/*.ts`)                      | Checked and stored by the server           | Run in the engine; the result is a log entry. Each route is first proved to give the same rows in the engine as on the server (a mutation twin of `engine-routes.test.ts`) |
-| Bank sync: fetch, apply, process                | `BudgetStore` alarm jobs, 25 events a step | The engine, while the app is open, on pages relayed by the Worker (5.5)                                                                                                    |
+| Bank sync: fetch, apply, process                | `BudgetStore` alarm jobs, 25 events a step | Fetch stays on the server and seals each page (5.5, shape B); apply and process run in the engine while the app is open                                                    |
 | Daily scan, maintenance                         | Alarms at 5:00 and 2:20                    | The engine, on the first open of the day                                                                                                                                   |
 | Handlers that mix Plaid calls and budget writes | One function                               | Split: a relay call on the Worker, a budget write in the engine                                                                                                            |
 | The bank log (`bank_event`, `bank_page`)        | Server only, append-only by trigger        | On the device, with the same triggers, stored beside the main copy and appended in chunks, so each save doesn't re-encrypt it all                                          |
-| Raw Plaid pages (`raw_page`)                    | Server only, kept for ever                 | Question 5                                                                                                                                                                 |
+| Raw Plaid pages (`raw_page`)                    | Server only, kept for ever                 | Section 14: recommended not kept                                                                                                                                           |
 | Health and alerts                               | Server writes them                         | The engine writes them                                                                                                                                                     |
 
 **One bank run is one unit.** v1 said two devices processing the same pages are safe because the second finds the cursor moved. That is wrong for today's code: the cursor moves only on a run's last page, events are unique per run id, and the lease lives in columns the copy doesn't hold (`sync/steps.ts`, `sync/lease.ts`), so a second device starting from the old cursor would write the same Plaid rows again as new events. Instead: a device fetches a run's pages into memory, applies and processes them on a scratch copy of the base, and sends **one** compare-and-swap write that holds the bank rows, the results and the cursor move. If another device got there first, the write is refused and the whole run is thrown away; on the redo the cursor has moved and there is nothing to do. No lease is needed between devices, and a phone put in the background mid-run loses nothing. A test with two engines covers exactly this.
 
 **Step sizes stay as they are.** Matching results depend on the step size: `docs/build-plan.md` records a case where it changed the number of "Same purchase?" questions. The device has no 10 ms limit, but the steps stay at 25 events until the owner accepts a change. Small steps also keep the app answering, because the engine handles one message at a time (`local/web-entry.ts`).
 
-**What does change in how money is counted (question 1).** D-67 gives a bank row its role by when it first arrived (`bank_txn.created_at`, read in `ledger/link.ts`): "within an hour of the connection's first row", "within 14 days of the link". D-68 shows a bank difference once it "has lasted a day". Today the server fetches within minutes of Plaid's webhook, so arrival means "when the bank had it". With fetching only while the app is open, arrival would mean "when the app was next opened": a person who links a bank and opens the app three weeks later would have settling rows counted as history. This is a Money-rules change and needs the owner's answer before phase 4.
+**Arrival time and the Money rules.** D-67 gives a bank row its role by when it first arrived (`bank_txn.created_at`, read in `ledger/link.ts`): "within an hour of the connection's first row", "within 14 days of the link". D-68 shows a bank difference once it "has lasted a day". Today the server fetches within minutes of Plaid's webhook, so arrival means "when the bank had it". With fetching only while the app is open, arrival would mean "when the app was next opened": a person who links a bank and opens the app three weeks later would have settling rows counted as history. That would be a Money-rules change. Shape B in 5.5 avoids it: the server keeps fetching in the background and stamps each page's arrival, so both rules count as today.
 
 **Proving the rest is unchanged.** Row ids and times come from the clock (`ulid(now)`), and some results depend on when a step ran, so the device's rows can't be compared with the server's byte for byte. Phase 4 defines a canonical comparison: the same event stream, the same `now`, the same step size, compared without ids and timestamps. It runs on the owner's real budget, the device beside the server, before the server's processing is switched off. It also fixes a time zone written into `sync/process.ts` that must come from the budget.
 
-### 5.5 Bank data: relayed, not stored
+### 5.5 Bank data: never stored readable
 
-- **The device keeps the access token**, sealed in the budget. The server's `connection.access_token_enc` goes away.
-- **Fetching.** The device sends `{ token, cursor }` to `POST /api/bank/fetch`. The Worker adds the Plaid client id and secret, calls Plaid, and passes the answer back. Today `fetchSyncPage` reads the whole body into memory; the relay must stream it and never parse or log it, which is new code to write and to measure against the 10 ms rule.
-- **Only your own Items.** The Directory keeps, for each Item, its budget and a SHA-256 of its access token. The relay refuses a token that doesn't match the caller's budget, so the endpoint can't be used as a general door to Plaid, and "only admins link banks" (D-75) still holds.
-- **Webhooks.** Plaid's webhook still reaches the Worker and is verified. The Directory records per Item only "has news" or "needs repair" (today `login_required` is written into the store, `routes/ops.ts`); the device reads the flags on open and on its 2-minute check.
-- **Linking.** After Link finishes (5.7), the Worker exchanges the public token at once, as today, so a link is never lost (`routes/settings/connections.ts`). It keeps the access token encrypted under a Worker key only until the person's device collects it, normally seconds later, then deletes it. It never removes an uncollected Item by itself: on Plaid Trial a removed Item still counts toward the 10 for life. The count of links ever made, removed ones included, moves from the store's `connection` table to the Directory before the tables are sealed, because the server can no longer count rows there.
-- **Repair and removal.** The device sends the token with the request; the Worker calls Plaid and forgets it.
-- **Replacing a token.** Plaid can swap an Item's access token for a new one without touching the Item (`/item/access_token/invalidate`; to confirm in phase 0 that this uses no link). The device does this after the move (section 8), on a schedule, and after any incident, since a token doesn't expire by itself.
+There are two shapes. Which one fits depends on the bank source, which the owner has left open (question B in section 14).
 
-What this buys: someone who copies the database and every Worker secret can pull no bank data, because nothing stored can ask Plaid for any. Only people who use the app while an attacker controls the running Worker are exposed, and replacing tokens ends that exposure.
+**Shape B: the server keeps the bank key, fetches in the background, and seals each page at once. Recommended while the bank source is Plaid.**
 
-What it costs: nothing is fetched while the app is closed (section 7, and question 1), and an account whose owner disappears leaves a live Item at Plaid that the server can't remove (question 4).
+- The server keeps each access token as today (`connection.access_token_enc`, under `TOKEN_KEYS`). No token moves, and no Item is touched.
+- The fetch step runs on alarms as today. It already takes a page from Plaid without parsing it (`packages/bank-provider/src/plaid.ts`). Instead of storing the page in `raw_page`, it seals it to the budget's **inbox public key** (HPKE) and stores the sealed page with its arrival time in clear. The server's apply and processing steps are gone.
+- The inbox key pair is made on the device; the private half is sealed under the budget key. The public half is signed with the budget's signing key. Someone who can write to the database could swap both public keys and read pages fetched after that; devices would then fail to open their inbox and say so.
+- The device opens the inbox pages in order and processes them as one unit (5.4). Its entry records how far into the inbox it got; the server then deletes those sealed pages.
+- **The Money rules are untouched:** arrival times are the server's, as today (D-67's "within an hour" and "within 14 days", D-68's "lasted a day"). The shadow run checks this.
+- The server can remove an abandoned account's banks at Plaid, which the owner asked for (5.8).
+- The claim is: "We keep no readable copy of your bank data. We use the key to your bank link only to fetch your data, seal it for you at once, and remove the link." It is **not** "we don't store the key".
+- The weakness: someone who steals the database **and** the Worker's secrets can pull each link's history from Plaid (180 days at link, and whatever is new).
 
-**Considered:** the server keeps the token, fetches in the background, and seals each page to a public key of the budget. Opening the app would be faster and arrival times would stay as today, which answers question 1 without changing a rule. But the server keeps standing access to every person's bank history, and the claim "we don't store the key to your bank link" is lost. It is the fallback if question 1 can't be settled another way.
+**Shape A: the device keeps the bank key, and the server only relays.**
+
+- The device sends `{ token, cursor }` to `POST /api/bank/fetch`; the Worker adds the Plaid secret, streams Plaid's answer back, and stores nothing. The Directory keeps a SHA-256 of each token with its budget and refuses any other token, so the endpoint isn't a general door to Plaid.
+- Stronger: nothing stored on the server can ask Plaid for anything.
+- But: rows arrive only while the app is open, which changes what "arrived" means for D-67 and D-68 (a Money-rules change); the server can't remove an abandoned account's banks; and the owner's 7 tokens would have to move to a device, with 3 lifetime links left as the margin for error.
+
+**Both shapes:**
+
+- **Webhooks.** Plaid's webhook still reaches the Worker and is verified. The Directory records per Item only "has news" or "needs repair" (today `login_required` is written into the store, `routes/ops.ts`).
+- **Linking.** After Link finishes (5.7) the Worker exchanges the public token at once, as today, so a link is never lost. It never removes an Item by itself except for a deleted or expired account (5.8): on Plaid Trial a removed Item still counts toward the 10 for life. The count of links ever made moves from the store's `connection` table to the Directory before the tables are sealed.
+- **Replacing tokens** (`/item/access_token/invalidate`) is tabled by the owner until the bank source is settled (D-85).
+
+#### Bank sources other than Plaid
+
+The owner asked whether a more private source exists. Checked on Nov 10, 2026 from public pages only; nothing was tried.
+
+| Source                                    | Privacy                                                                                                                                                                                                                                                                                                      | Cost and limits                                                                                   | Fit                                                                                                                                                                                  |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| No bank link (typed entries)              | Best: nothing leaves the device unsealed                                                                                                                                                                                                                                                                     | Free                                                                                              | Needs "accounts without a bank link" (`docs/build-plan.md`) and the owner's starting-balance answers                                                                                 |
+| A bank file read on the device (OFX, CSV) | Best: the file never reaches the server                                                                                                                                                                                                                                                                      | Free; the person downloads a file from the bank by hand                                           | D-81 removed CSV import over two Money-rules problems; those would need answers first                                                                                                |
+| SimpleFIN Bridge                          | Good: the person has their own account with the bridge and gives the app a read-only link they can switch off. The device could keep that link, so shape A works without the abandoned-account problem. The bridge itself still sees the data and reportedly uses a large aggregator behind it (unconfirmed) | The **person** pays the bridge about $15 a year; nothing for the operator; no lifetime link limit | Sends less than Plaid (no merchant ids), so payee names and matching (D-63, D-65) would need rework. To check: whether a browser can call it directly, so bank data skips our server |
+| Akoya                                     | Says it passes data through and stores none; the person signs in at the bank itself                                                                                                                                                                                                                          | A business contract; not for a $0 project                                                         | No                                                                                                                                                                                   |
+| Teller                                    | Like Plaid: it holds the connection                                                                                                                                                                                                                                                                          | Free up to 100 live connections                                                                   | No privacy gain                                                                                                                                                                      |
+| Direct from the bank (US "1033" rule)     | Would be best: no middleman                                                                                                                                                                                                                                                                                  | The rule is blocked in court and being rewritten                                                  | Not available                                                                                                                                                                        |
+
+Recommendation: keep Plaid for the owner's budget; build the device's bank code against a small "bank source" interface so a second source can be added; in phase 0, try SimpleFIN Bridge with one account to see what it sends. For other people it removes both the Plaid Production cost and the lifetime link limit, at a yearly price they pay themselves.
 
 ### 5.6 Identity and metadata
 
@@ -251,15 +277,15 @@ Also: drop `'unsafe-inline'` from `style-src`, add Trusted Types where the brows
 ### 5.8 Recovery, backup, deleting
 
 - **Recovery key.** 256 random bits, shown once at sign-up as words or letter groups. HKDF splits it in two: one half proves to the server that the person may add a passkey (the server stores only its hash, as with today's recovery code, `docs/open-signup.md` 4); the other half opens the recovery slot. It replaces the recovery code. Making a new one changes the key version (5.2).
-- **No reset, by anyone.** The owner's runbook recovery (`docs/runbooks/setup.md`) can give back a sign-in but not a budget, so the owner needs a recovery key too. Today recovery codes are "not for admins" (`docs/open-signup.md` 4); that rule changes (question 2).
-- **Full backup.** Made on the device, after a fresh passkey prompt, which stands in for today's 15-minute rule on the server export. Sealed with the recovery key by default, so no password and no password-stretching code are needed; or plain, with a warning. `GET /api/export/dump` goes away. Restoring is 5.3.
-- **Deleting an account.** Order matters: while the session is still live, the device sends each bank token and the Worker removes each Item at Plaid; only when every removal has succeeded does the Directory delete sessions, slots and the route, and the store wipe itself. (`docs/open-signup.md` 12 deletes sessions first and retries removal from stored tokens, which can't work once tokens live on the device.) What protects the remains is that the server never had the key, not that the slots are deleted: slots are wrapped under the person's own secrets. Whether Cloudflare's recovery keeps a wiped store's bytes is stated two ways in the docs (`docs/open-signup.md` 12 says it can't bring them back); phase 0 tests it, and the claim says "up to 30 days" until then.
-- **Idle accounts.** Today nothing is deleted for being idle. A privacy claim is stronger with a limit (question 7).
+- **No reset, by anyone.** The owner's runbook recovery (`docs/runbooks/setup.md`) can give back a sign-in but not a budget, so the owner needs a recovery key too. Today recovery codes are "not for admins" (`docs/open-signup.md` 4); that rule changes (owner's yes, D-85).
+- **Full backup.** Made on the device, after a fresh passkey prompt, which stands in for today's 15-minute rule on the server export. Sealed with the recovery key by default, so no password and no password-stretching code are needed; or plain, with a warning. `GET /api/export/dump` goes away. It is a way to take your data out; there is no way to load it back (5.3).
+- **Deleting an account.** With shape B (5.5) the order in `docs/open-signup.md` 12 holds: the server removes each Item at Plaid from its stored token, with retries, then wipes. With shape A the device must send each token while the session is still live, before anything is deleted. What protects the remains is that the server never had the key, not that the slots are deleted: slots are wrapped under the person's own secrets. Whether Cloudflare's recovery keeps a wiped store's bytes is stated two ways in the docs (`docs/open-signup.md` 12 says it can't bring them back); phase 0 tests it, and the claim says "up to 30 days" until then.
+- **Idle accounts are deleted (owner, Nov 10, D-85).** An account not opened for 24 months is deleted like any deleted account, banks at Plaid included (shape B). With no email there is no way to warn someone who never opens the app, so sign-up and the policy say it plainly, and the app shows the date under Settings → Privacy. The owner's own account is exempt. This replaces "nothing is deleted for being idle" (`docs/open-signup.md` 1 and 9).
 - **Telling people about an incident.** With no email, notices show in the app at sign-in. A notice can require action before the budget opens: "replace your bank tokens", "make a new recovery key". The policy says this is the only channel.
 
 ### 5.9 Public, comparable releases
 
-- **A fresh public repository without history**, not this one made public. This repository's docs hold the owner's own purchases, banks and account ids (for example `docs/decisions/D-67-start-date-rule.md`, `CLAUDE.md`). Before publishing: remove owner data, and read every file for the rule that no other budgeting app is named.
+- **The repository is already public** (checked Nov 10, 2026). So the code is open today, and branch protection is available. Its docs and history hold the owner's own purchases, bank names and the Cloudflare account id (for example `docs/decisions/D-67-start-date-rule.md`, `CLAUDE.md`); none is a secret, but the owner may want them out before pointing strangers at it (question C).
 - The web build is made reproducible: the same commit gives the same files, byte for byte.
 - The deploy workflow publishes the list of file hashes for each release with a build attestation (free for public repositories), and Settings → About shows the release's commit and hash.
 - Anyone can then compare what the site serves with what the public build made. This covers the app's code. It says nothing about what the Worker runs, and it can't catch code sent to one person once (4.2). The policy says both.
@@ -268,7 +294,7 @@ Also: drop `'unsafe-inline'` from `style-src`, add Trusted Types where the brows
 
 After this design, the code path is the attack surface. Today every Claude session merges its own PRs and each merge deploys (`CLAUDE.md`, D-51). For a product that holds other people's budgets:
 
-- A change to the key and sealing code, the relay, the CSP (`apps/web/public/_headers`), `sw.js`, the build, or `.github/workflows` needs the owner's review before merging. `.github/CODEOWNERS` is `*` today; it is narrowed to those paths, so other work still merges as now. Enforcing it needs branch protection, which GitHub's free plan offers on public repositories only: it arrives with 5.9.
+- A change to the key and sealing code, the relay, the CSP (`apps/web/public/_headers`), `sw.js`, the build, or `.github/workflows` needs the owner's review before merging. `.github/CODEOWNERS` is `*` today; it is narrowed to those paths, so other work still merges as now. Enforcing it needs branch protection, which is available because the repository is public. The owner said yes to this rule (D-85); it starts when the key code exists, with a change to `CLAUDE.md` then.
 - No new runtime dependency in the key and sealing code without the owner's review.
 - Hardware-key or passkey two-step sign-in on Cloudflare, GitHub and Plaid (`docs/threat-model.md` says so already), and a Cloudflare API token that can deploy the Worker and nothing else.
 
@@ -302,7 +328,7 @@ This is the largest change since the budget moved to the phone.
 | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | Synced tables (`sync-tables.ts`)                                         | In log entries                                                                   |
 | `bank_event`, `bank_page`, connection cursor                             | In log entries; kept beside the copy                                             |
-| `raw_page`                                                               | Question 5                                                                       |
+| `raw_page`                                                               | Not kept (section 14, still open)                                                |
 | `audit_log`, `txn_key_move`                                              | In log entries                                                                   |
 | `change_log`, `edit_seen`                                                | Replaced by the log's numbers and entry ids                                      |
 | `sync_run`, `sync_page`, `apply_counter`, `lease_guard`, connection lock | Device only, inside one run; not shared                                          |
@@ -313,7 +339,7 @@ This is the largest change since the budget moved to the phone.
 | `GET /api/health` (reads connections and the bank log)                   | Server health only: the log's size and age, relay errors, limits                 |
 | Webhook writing `login_required` into the store                          | A flag per Item in the Directory                                                 |
 | Sync epoch                                                               | Kept, but it can no longer make a device forget its remembered position          |
-| Restore and its undo (D-77)                                              | 5.3, question 6                                                                  |
+| Restore and its undo (D-77)                                              | Retired: no restore (5.3)                                                        |
 | Idle budgets stopping their jobs                                         | Nothing to stop: a sealed store has no jobs                                      |
 | Breaker and fair-use shares                                              | Unchanged; they count requests, entries and bytes                                |
 | Admin Settings → Users                                                   | Unchanged; it never showed budget content                                        |
@@ -324,21 +350,21 @@ This is the largest change since the budget moved to the phone.
 | Where                                      | Today                                 | After                                                                                                                                                                                                                       |
 | ------------------------------------------ | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Sign-up                                    | Name, passkey, then a recovery code   | An optional label, passkey, a second passkey prompt to prove the key works, then a **recovery key**: "If you lose your passkeys and this key, your budget is gone. We can't reset it." A step asks for part of the key back |
-| Opening the app                            | Bank rows are already in              | "Getting your bank's latest" on open; rows arrive only while the app is open. Screens answer between steps, a little slower while a bank run is going                                                                       |
+| Opening the app                            | Bank rows are already in              | Shape B: bank pages are waiting, sealed; the device opens and files them on open ("Getting your bank's latest"). Screens answer between steps, a little slower meanwhile                                                    |
 | After weeks away                           | Up to date at once                    | A longer catch-up. Repeating upcoming rows catch up one step per scan (`daily-scan.ts`), so the first open runs several scans before numbers settle                                                                         |
 | Linking a bank                             | Plaid Link opens inside the app       | The app hands off to Plaid's page and comes back                                                                                                                                                                            |
 | A new device                               | Sign in; the budget downloads         | The same with an iCloud passkey. With a separate passkey: compare a short code on both devices, or type the recovery key                                                                                                    |
 | An old browser or system                   | Works, with the copy in memory        | "This device can't open an encrypted budget"                                                                                                                                                                                |
 | Two devices at once                        | Both edit; the server orders them     | The same. A refused write is redone unseen; if the redo can't apply, the person is told which edit was dropped                                                                                                              |
 | Removing a passkey or signing a device out | Immediate                             | A moment longer: the budget gets a new key and is sealed again                                                                                                                                                              |
-| Settings → Backup                          | Full backup downloads from the server | Made on the device after a passkey prompt; sealed with the recovery key by default; "Restore from a backup" exists (question 6)                                                                                             |
+| Settings → Backup                          | Full backup downloads from the server | Made on the device after a passkey prompt; sealed with the recovery key by default. It takes data out; nothing loads it back                                                                                                |
 | Settings → Sign-in                         | Passkeys, devices, recovery code      | Adds "Recovery key: make a new one" and a short code to compare between devices                                                                                                                                             |
 | Settings → About                           | Version                               | Version, release commit and hash, a link to the public build                                                                                                                                                                |
 | Settings → Privacy (new)                   | Nothing                               | What is sealed, what the server knows (4.3), who else handles data (Cloudflare, Plaid), delete account                                                                                                                      |
-| Delete account                             | Refused with linked banks             | Works; removes the banks at Plaid first; says what remains for 30 days                                                                                                                                                      |
-| A restore                                  | The operator restores for you         | A device sends its copy, or a backup file is loaded; the operator can't see or fix a budget                                                                                                                                 |
+| Delete account                             | Refused with linked banks             | Works; removes the banks at Plaid first; says what remains for 30 days. An account not opened for 24 months is deleted the same way                                                                                         |
+| A restore                                  | The operator restores for you         | There is no restore                                                                                                                                                                                                         |
 | Support                                    | The operator can look                 | The operator can't look. Help is by description, or a backup the person chooses to send                                                                                                                                     |
-| A server that rolls back                   | Not shown                             | "The server's copy is older than this device's", with no default choice                                                                                                                                                     |
+| A server that rolls back                   | Not shown                             | "The server's copy is older than this device's." The app stops there                                                                                                                                                        |
 | A security notice                          | None                                  | Shown at sign-in; some must be acted on before the budget opens                                                                                                                                                             |
 
 All new text follows `docs/copy.md`.
@@ -357,13 +383,15 @@ The owner's budget is real, migrations are forward-only, and 7 of 10 lifetime ba
 
 The first claim in 1.1 starts after step 7.
 
+**With shape B (5.5), the recommended one for Plaid, this is simpler and safer:** tokens never move, so step 5 and the token parts of step 7 drop out, `TOKEN_KEYS` stays, and the 7 Items are never at risk. The cutover adds the inbox key pair, and from then on the fetch step seals pages.
+
 ## 9. The free plan
 
 - Server CPU per request falls: storing a sealed row, checking a signature and relaying a stream are small. Measure all three (`docs/measurements.md`).
 - Durable Object rows fall: one row per edit or bank run, not one per changed row plus `change_log`.
 - Worker requests rise a little: each Plaid page is a relayed request while the app is open, where today it is an alarm.
 - Device work rises: a bank run, sealing, snapshots. Measure on the owner's iPhone in phase 0: opening a sealed snapshot of today's budget; a 100-row bank run; the size of the bank log; the cost of a save with the bank log kept beside the copy.
-- Costs that are not $0 are in question 8.
+- Nothing in the design costs money to build or run.
 
 ## 10. Phases
 
@@ -376,20 +404,20 @@ Each phase ships alone and leaves the app working. A decision file records each 
 | 2     | Keys: budget key, slots, recovery key, device-add, key versions, signing. Keys exist; nothing is sealed yet. The appendix of exact labels is written first                                                                                                            | None                                                                 | Low                            |
 | 3     | Every edit runs in the engine and is proved to match the server; the bank log syncs to the device; the Worker gains the relay, still using the server's stored tokens                                                                                                 | None                                                                 | Low (the server still decides) |
 | 4     | Shadow run: the device does bank runs, scans and maintenance beside the server's, with the canonical comparison, on the owner's budget, for two weeks. The "knows sealed" release                                                                                     | None                                                                 | None                           |
-| 5     | Cutover: the sealed, signed log; tokens move to the device; server processing off (section 8, steps 4–5)                                                                                                                                                              | "We don't store the key to your bank link", once tokens are replaced | **High: forward-only**         |
+| 5     | Cutover: the sealed, signed log; server processing off; shape B: the fetch step seals pages (shape A: tokens move to the device) (section 8, steps 4–5)                                                                                                               | "We don't store the key to your bank link", once tokens are replaced | **High: forward-only**         |
 | 6     | Empty the old tables; 30 days later remove `TOKEN_KEYS`, replace tokens (section 8, steps 6–7)                                                                                                                                                                        | "A key we never hold"; "no readable copy"; delete                    | Medium                         |
 | 7     | A fresh public repository, reproducible build, attestation, About screen, review rule for the key code                                                                                                                                                                | Public, comparable code                                              | None                           |
 | 8     | An outside review of the key design and code; fix what it finds; then publish the claims                                                                                                                                                                              | Section 1.1, in public                                               | None                           |
 
 Phases 1 and 7 need no other phase. Sealing (5) and the token move must be one cutover: once the server holds only sealed data it can't process bank pages, and a server that still stored bank tokens could still pull history, so "a key we never hold" would mean little.
 
-Work for other people (open sign-up, delete account with banks, accounts without a bank link) is frozen by D-78 until Plaid Production. This design is mostly about the owner's own budget's path, which D-78 doesn't freeze, but the parts that exist only for other people wait on question 3.
+The owner lifted D-78's freeze for the work in this design (D-85). Open sign-up itself still needs a bank source other people can use (5.5).
 
 ## 11. Outside the code
 
 - **A privacy policy and terms** written from sections 2 and 4: what is stored, what is sealed, who else handles data (Cloudflare, Plaid), how long, how to delete, the "no reset" rule, and that in-app notices are the only way we can reach a person.
 - **A lawyer**, before sign-up opens. Questions to bring: whether US rules for companies that handle consumer financial data apply; state privacy laws; GDPR if anyone in Europe can sign up; breach notice duties with no email on file.
-- **Plaid Production** has its own security and privacy review, requires a privacy policy and a consent screen, and charges per linked Item: find the price, and whether an Item nobody uses keeps costing (question 4).
+- **Plaid Production** has its own security and privacy review, requires a privacy policy and a consent screen, and charges per linked Item: find the price before choosing it (section 14, B).
 - **An outside audit** of the key design and its code. Without one, half of section 1.1 is our word.
 - **A security contact**: a `security.txt` and a short disclosure policy.
 - **A page that says what we can hand over** if a court asks: section 4.3, and nothing else.
@@ -402,38 +430,49 @@ Work for other people (open sign-up, delete account with banks, accounts without
 - It doesn't hide IP addresses, times of use, counts, sizes or which banks from Cloudflare and the operator (4.3).
 - It doesn't let two people share one budget. That needs each person's public key and a way to check it, which is its own design.
 - It doesn't protect a budget on an unlocked or compromised device.
-- It doesn't let anyone recover a budget whose keys are lost.
+- It doesn't let anyone recover a budget whose keys are lost, and it has no restore (5.3).
 
 ## 13. Risks
 
-| Risk                                                                                                                 | What limits it                                                                                                                                  |
-| -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Money is counted differently after the move                                                                          | Question 1 is answered first; the mutation twin test (phase 3); the shadow run (phase 4); step sizes unchanged                                  |
-| A bank link is lost during the move, with 3 lifetime links left                                                      | Tokens are moved, never re-made; `TOKEN_KEYS` and stored tokens stay until each token has worked from the device and is in a backup (section 8) |
-| A deploy rolls code back onto sealed data                                                                            | The "knows sealed" release ships first (section 8, step 2); the smoke test changes with health                                                  |
-| A person loses the passkeys and the recovery key                                                                     | iCloud passkeys sync; the key is proved at sign-up; a reminder until a backup or second passkey exists                                          |
-| A bug in sealing loses data                                                                                          | The device holds a whole copy; the server deletes no entry a checked snapshot doesn't cover; full backup first                                  |
-| Two devices, lost answers                                                                                            | Entry ids; one bank run as one write; tests with two engines                                                                                    |
-| The copy grows with the bank log and saves slowly                                                                    | Measured in phase 0; the bank log is kept beside the copy; question 5                                                                           |
-| An Item is left at Plaid when an account is abandoned                                                                | Question 4                                                                                                                                      |
-| The app's address changes later. Passkeys are tied to the address, so every slot would stop working under "no reset" | Question 9, before any slot exists                                                                                                              |
-| A sealed format or key mistake found after launch                                                                    | Every sealed value carries a format and key version; an outside review before the claims are published                                          |
+| Risk                                                                                             | What limits it                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Money is counted differently after the move                                                      | Shape B keeps arrival times as today; the mutation twin test (phase 3); the shadow run (phase 4); step sizes unchanged                                                                                                                                                                             |
+| A bank link is lost during the move, with 3 lifetime links left                                  | Tokens are moved, never re-made; `TOKEN_KEYS` and stored tokens stay until each token has worked from the device and is in a backup (section 8)                                                                                                                                                    |
+| A deploy rolls code back onto sealed data                                                        | The "knows sealed" release ships first (section 8, step 2); the smoke test changes with health                                                                                                                                                                                                     |
+| A person loses the passkeys and the recovery key                                                 | iCloud passkeys sync; the key is proved at sign-up; a reminder until a backup or second passkey exists                                                                                                                                                                                             |
+| A bug in sealing loses data                                                                      | The device holds a whole copy; the server deletes no entry a checked snapshot doesn't cover; full backup first                                                                                                                                                                                     |
+| Two devices, lost answers                                                                        | Entry ids; one bank run as one write; tests with two engines                                                                                                                                                                                                                                       |
+| The copy grows with the bank log and saves slowly                                                | Measured in phase 0; the bank log is kept beside the copy; question 5                                                                                                                                                                                                                              |
+| An Item is left at Plaid when an account is abandoned                                            | Shape B: the server removes it when the account is deleted or expires (5.8)                                                                                                                                                                                                                        |
+| The app's address changes later (the owner plans to, not soon). Passkeys are tied to the address | WebAuthn lets a new address use the old one's passkeys while the old address still answers ("related origins"; Safari 18 has it; to confirm in phase 0). The `workers.dev` address must then stay alive for good. Failing that, each person signs in once at the new address with the recovery key |
+| A sealed format or key mistake found after launch                                                | Every sealed value carries a format and key version; an outside review before the claims are published                                                                                                                                                                                             |
 
-## 14. Questions for the owner
+## 14. The owner's answers (Nov 10, 2026) and what is still open
 
-1. **Money rules: what "arrived" means (D-67, D-68).** With rows fetched only while the app is open, pick one: (a) the server notes the time of each Plaid webhook, and the device uses that as the arrival time; (b) arrival is worked out from Plaid's own dates on the row; (c) keep the server fetching in the background (the fallback in 5.5), with the weaker bank claim. Each of (a) and (b) changes how a few rows near a link date are counted, so each needs your yes and its own decision file.
-2. **No reset.** Is "lose the passkeys and the recovery key, lose the budget" acceptable for the product, and for your own budget? It also means you, as admin, get a recovery key, which changes "not for admins".
-3. **D-78.** Parts of this exist only for other people: delete account with banks, the optional name, Turnstile on its own page. Do they wait for Plaid Production, or does this design lift the freeze for them?
-4. **Abandoned accounts with bank links.** The server can't remove an Item without the device's token. Options: (a) accept it; (b) the server keeps each token under its own key, used only for removal, and the claim becomes "we use the key to your bank link only to remove it". The right answer depends on what an unused Item costs on Plaid Production, which is not yet known.
-5. **Raw Plaid pages.** Keep them on the device (bigger, slower saves), or stop keeping them and keep only the bank log? This touches `docs/sync-spec.md`, not how money is counted. One past job read them to fill a column.
-6. **Restore from the app.** On Nov 9 you chose a runbook step, not a button (D-77, `docs/build-plan.md`). A sealed budget can only be restored from a device or a backup file, so the app needs those two actions. Change that decision?
-7. **Idle accounts.** Delete an account not opened for a long time (for example 24 months) after in-app warnings, or keep everything as today?
-8. **The $0 rule.** Things that cost money: an outside audit (once), a lawyer (once), a custom address (yearly), an app-store app (yearly), and Plaid Production itself. All stay out unless you say otherwise; without the audit, the claims marked "our word" stay our word.
-9. **The address.** Stay on `ledgerline.ledger-line.workers.dev` for good, or move to an address of your own before any key slot exists?
-10. **Review before merge** for the key code and the shipping path (5.10). This changes the "merge your own PR" rule in `CLAUDE.md` for those paths.
-11. **A public repository**, as a fresh one without history. Yes or no, and when.
-12. **Replacing the 7 bank tokens** after the move (section 8, step 7), if Plaid confirms it uses no link.
-13. **Order.** Phases 1 and 7 first (small, visible), or straight to 2–6?
+Recorded in `docs/decisions/D-85-privacy-design-answers.md`.
+
+| #   | Question                           | Answer                                                                                                                      |
+| --- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 1   | What "arrived" means (D-67, D-68)  | **Open (A below).** The owner asked what the rules are and whether they can change                                          |
+| 2   | No reset                           | Yes                                                                                                                         |
+| 3   | D-78                               | Start now: the freeze is lifted for the work in this design. The owner also asked about bank sources other than Plaid (5.5) |
+| 4   | Abandoned accounts with bank links | Find a way to remove them. That needs the server to hold the bank key: shape B (5.5)                                        |
+| 5   | Raw Plaid pages                    | **Open (below).** The owner asked what they are                                                                             |
+| 6   | Restore                            | No restore at all: not in the app, and the runbook goes (5.3)                                                               |
+| 7   | Idle accounts                      | Yes, delete them (5.8: 24 months)                                                                                           |
+| 8   | Costs outside $0                   | Not agreed; the owner asked why any would be needed. Nothing here is needed to build the design. The $0 rule stands         |
+| 9   | The address                        | It will change, but not soon (section 13)                                                                                   |
+| 10  | Owner's review for the key code    | Yes (5.10)                                                                                                                  |
+| 11  | Public repository                  | It is already public (5.9)                                                                                                  |
+| 12  | Replacing the 7 bank tokens        | Tabled until the bank source is settled                                                                                     |
+| 13  | Order of phases                    | No preference                                                                                                               |
+
+**Still open:**
+
+- **A. Background fetch (shape B).** With Plaid, shape B is the only way to both remove abandoned accounts' banks (answer 4) and leave D-67 and D-68 as they are. Confirm it, and question 1 goes away. The cost is the weaker bank claim in 5.5.
+- **B. The bank source.** Stay with Plaid for other people (which needs Plaid Production, and that costs money), or try SimpleFIN Bridge, where each person pays about $15 a year themselves (5.5)?
+- **C. The public repository** holds your own purchases and bank names in its docs and history. Leave them, or take them out?
+- **Raw Plaid pages** are the exact answers Plaid sent, kept word for word and never deleted, beside the cleaned-up bank log made from them. They exist so a bug in reading Plaid's data could be traced or redone. With shape B the server stops keeping them (it keeps sealed pages only until a device files them). Recommended: the device keeps the bank log and not the raw pages.
 
 ## 15. Review
 
