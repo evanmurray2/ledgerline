@@ -324,6 +324,8 @@ test('Pending: money you add goes to Ready to Assign, and a bank pending charge 
     .getByRole('button', { name: 'Ready to Assign' })
     .click();
   await add.getByRole('button', { name: 'Add', exact: true }).click();
+  // The sheet closes when the add is saved: leaving the page sooner can drop it.
+  await expect(add).toHaveCount(0);
   await page.goto('/budget');
   await expect(rta(page)).toHaveText('$1,481.90');
 
