@@ -12,3 +12,6 @@ export * from './wrap.js';
 export * from './recovery.js';
 export * from './entry.js';
 export * from './chain.js';
+export * from './snapshot.js';
+export * from './server-keys.js';
+export * from './run.js';

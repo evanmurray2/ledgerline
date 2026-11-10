@@ -297,7 +297,7 @@ An intent is judged when it is used, not when it is written, so an intent from a
 **A device only:**
 
 - for a bank entry, that the runs it names are the next ones and open (9.3);
-- its remembered position: apart from its copy it keeps the highest `number` it has applied, that entry's `entryHash`, the last public entry's number and hash, and the last checkpoint (section 8). A device that walks the public chain (4.4) requires the walk to pass the public entry it remembers and to end at the one the newest snapshot's header names.
+- its remembered position: apart from its copy it keeps the highest `number` it has applied, that entry's `entryHash`, the last public entry's number and hash, and the last checkpoint (section 8). A device that walks the public chain (4.4) requires the walk to pass the public entry it remembers, and opens a snapshot only by the rules in section 8.
 
 A device can't check the 5-minute rule on entries from the past. It trusts the server for the real length of the 7-day wait, as `docs/privacy.md` 5.2 says: a thief who also controls the server isn't stopped.
 
@@ -323,7 +323,7 @@ LLM1 || str(snapshotId) || u32(v) || u64(number) || entryHash(32)
      || u16(checkpoints) || [ u64(number) || entryHash(32) ] ...
 ```
 
-A checkpoint is the `entryHash` of every entry whose number is a multiple of 1,000, plus the snapshot's own.
+The checkpoints are exactly these, in order: the `entryHash` of every entry before the snapshot's whose number is a multiple of 1,000, then the snapshot's own entry. A manifest with any other list is refused.
 
 **The header**, in clear, is what the server acts on:
 
@@ -339,6 +339,19 @@ signature = Ed25519(signPriv_v, "ledgerline/v1/snap" || H(header))
 ```
 check     = Ed25519(signPriv_v, "ledgerline/v1/snap-checked" || H(header) || str(deviceId))
 ```
+
+A device signs a check record only for a header whose own signature it has verified.
+
+**A device opens a snapshot only if all of this holds:**
+
+1. The header is for this budget, and its signature is good under the key version it names.
+2. The public entry the header names is on the public chain the device walked (4.4), with that number and hash, and the key version in force after it is the header's.
+3. The next public entry on that chain, if there is one, has a number above the snapshot's. So a snapshot can't hide a later key change or slot change.
+4. The snapshot is not older than the entry the device has already applied.
+5. The manifest as stored hashes to the header's value, opens, and names the same snapshot, version, number and entry hash.
+6. The manifest holds the checkpoint the device remembers (7.2).
+
+Each chunk must then hash to the manifest's value and open as that chunk.
 
 The server deletes older entries and filed bank runs only by the one rule in `docs/privacy.md` 5.3, and only for a snapshot whose header and check record both verify.
 
@@ -377,6 +390,10 @@ runsMac = HMAC(K_mac_n, "ledgerline/v1/mac/runs" || str(budgetId) || u64(run) ||
           run: the budget's last completed run number. The links are in ascending order of linkId.
 ```
 
+- `itemId` is 1 to 255 printable ASCII characters (`0x21` to `0x7e`). `token ciphertext` is the bytes of the stored text, as the database holds it.
+- In `runsMac`, a `run` of 0 goes with a zero hash and a zero time, and no other run does.
+- A check of a stamp never fails with an error: a stored value that could not have been stamped is a bad stamp.
+
 - `keyMac` and `linkMac` stop a database writer from inventing a key or a link, or moving a link to another budget.
 - `runsMac` covers the whole of a budget's run state at once: the counter, the last manifest, the last run time and every link's cursor. It is written in the transaction that completes a run, and the Worker checks it before it fetches or signs. So a database writer can't move one part back without the rest. Putting back an **earlier whole state** still verifies; the run made from it fails a device's cursor and chain checks (9.3), which is how a rewind is caught.
 
@@ -390,12 +407,12 @@ sealed_p = Seal(inboxPub_i,
                 u64(run) || u32(restart) || u16(p) || u8(what),
                 r_p || payload_p)
 what: 0 a transactions page, 1 balances, 2 liabilities, 3 the link's description (its first run)
-r_p:  32 random bytes
+r_p:  HMAC(K_mac_n, "ledgerline/v1/receipt-part" || str(budgetId) || str(linkId) || u64(run) || u32(restart) || u16(p))
 
 receipt  = H("ledgerline/v1/receipt" || r_0 || ... || r_{pages-1})
 ```
 
-A device can only work out `receipt` by opening every page.
+A device can only work out `receipt` by opening every page. The Worker works `r_p` out again when it signs the run, so it keeps nothing secret between sealing a page and signing. A run that starts again has a new `restart`, so new `r_p`.
 
 The manifest:
 
@@ -408,7 +425,7 @@ LLR1 || str(budgetId) || str(linkId)
      || H(cursor before) || H(cursor after)     this link's cursor; "before" is H of the empty string for a link's first run
      || u8(flags)           bit 0 has balances, bit 1 has liabilities, bit 2 is a link description
      || u32(added) || u32(modified) || u32(removed)
-     || u16(pages) || H(sealed_0) ... H(sealed_{pages-1})
+     || u16(pages) || [ u8(what_p) || H(sealed_p) ] ...     each page in order; the flags are those the page list gives
      || H(receipt)
      || prevManifestHash(32)                    H(manifest) of run - 1; zeros for run 1
      || u32(n)
@@ -417,12 +434,19 @@ signature = Ed25519(runSignPriv_n, "ledgerline/v1/run" || H(manifest))
 
 **A device files run `r` only if all of this holds:**
 
-1. The signature is good for a key number in its list (9.1).
+1. The manifest reads strictly, and the signature is good for a key number in its list (9.1). The manifest is for this budget.
 2. `run` is `filedThrough + 1`, and `prevManifestHash` is the hash of the manifest it filed before.
-3. The inbox version `i` is not lower than that of the run before. If `run` is above the `lastOldRun` of the newest key change, `i` is that key change's new inbox version; otherwise the device holds the wrapped private key for `i`. `H(inboxPub_i)` matches the key the log names for `i`.
-4. `H(cursor before)` equals the `H(cursor after)` of the last run it filed for that link.
+3. The inbox version `i` is not lower than that of the run before, and not higher than the version the log has brought this device. If `i` is not the version in force, a key change replaced it, and `run` is not above that key change's `lastOldRun`. The device holds the private key for `i`, and `H(inboxPub_i)` matches the key the log names for `i`.
+4. `H(cursor before)` equals the `H(cursor after)` of the last run it filed for that link. A link's first run, and no other, holds the link's description.
 5. Every `H(sealed_p)` matches, every page opens, and the receipt worked out from the pages hashes to `H(receipt)`.
-6. `runTime` is later than `prevRunTime`, equals what the run before said, and is not later than the device's clock plus 10 minutes.
+6. `runTime` is later than `prevRunTime`, `prevRunTime` equals the `runTime` of the run before, and `runTime` is not later than the device's clock plus 10 minutes.
+
+Three failures may be the device's own state and not a bad run, so the device tries the run again later: a run dated in the future, an inbox version the device's log has not reached, and an inbox key the device does not hold yet. Any other failure means the server sent what the Worker could not have made, or out of order.
+
+**The Worker**, when it signs a run:
+
+- sets `runTime` to its clock, or to 1 ms after the run before if its clock is not later. A manifest whose `runTime` is not later than its `prevRunTime` can't be written or read.
+- reads the inbox version in force in the transaction that completes the run. If the run's pages are sealed to a replaced version and `run` is above that key change's `lastOldRun`, it does not sign: it starts the run again with the next `restart`, sealed to the key in force.
 
 An inbox key is **retired** once `filedThrough` has reached the `lastOldRun` of the key change that replaced it; the device then deletes its private half.
 
@@ -523,7 +547,10 @@ In `packages/seal`, each part with its tests. Nothing in the app or the Worker u
 | The recovery key as shown and typed, and its sign-in by signature                               | 4.2           | A separate implementation of the spelling; every one-character slip is caught                                                                 |
 | Log entries: the header, sealed and public bodies, the signature                                | 6             | Written and read back exactly; every broken header refused; a body opens only under its own header                                            |
 | The rules of the log, and the walk of a device with no key                                      | 4.4, 7.1, 7.3 | A small budget written entry by entry, then changed, cut, reordered and forged                                                                |
+| Snapshots: chunks, the manifest, the signed header, the check record                            | 8             | Each rule for opening one broken in turn; a snapshot that hides a later public entry is refused                                               |
+| The Worker's keys and its three stamps                                                          | 9.1, 9.2      | Both forms of the Worker secret pinned against the token code; the run-signing public key pinned; stored values that can't be stamped         |
+| Bank runs: sealing a page, signing a run, a device's checks, the server's receipt check         | 9.3           | Runs across one and two key changes, a rewound link, a restarted run, changed, missing and reordered pages                                    |
 
-Not built yet: the server's own rules (7.2), a chain that starts from a snapshot and not from the genesis entry, snapshots (8), the Worker's keys, HMACs and bank runs (9), adding a device (10), signed requests (11).
+Not built yet: the server's own rules (7.2), a chain that starts from a snapshot and not from the genesis entry, adding a device (10), signed requests (11).
 
-Each part's code got an adversarial review of its own before it merged. The review of the entries and the chain found no wrong byte and 8 major faults in the rules, all fixed: an entry's hashes are worked out again and not trusted; the rules are one piece of code for the server and the device, so no honest entry can stop the log; an intent is judged when it is used; an inbox key with unfiled runs can't be dropped; an entry can't be dated in the checker's future; only a scan moves the scan date. The review of the first two parts found no wrong byte (it recomputed every label, layout and pinned value with a separate program) and 19 faults in checks and care with secrets, all fixed: a budget key sealed or wrapped is first checked to be the key its keys came from; a one-time key pair seals once; a slot id and base64url have one spelling; a byte-order mark is not dropped from a text field.
+Each part's code got an adversarial review of its own before it merged. The review of snapshots, the Worker's keys and bank runs found 1 critical and 5 major faults, all fixed: after two key changes a run could be accepted under the first inbox key, so each replaced inbox version now has its own last run; a run that a key change overtook is started again and not signed; a snapshot must sit on the public chain the device walked, before the next public entry; a run's time must be later than the run before; a stamp check on a bad stored value answers "bad" and does not fail; a page's receipt bytes come from the Worker's key and the page's place, so the Worker holds no state between steps. The review of the entries and the chain found no wrong byte and 8 major faults in the rules, all fixed: an entry's hashes are worked out again and not trusted; the rules are one piece of code for the server and the device, so no honest entry can stop the log; an intent is judged when it is used; an inbox key with unfiled runs can't be dropped; an entry can't be dated in the checker's future; only a scan moves the scan date. The review of the first two parts found no wrong byte (it recomputed every label, layout and pinned value with a separate program) and 19 faults in checks and care with secrets, all fixed: a budget key sealed or wrapped is first checked to be the key its keys came from; a one-time key pair seals once; a slot id and base64url have one spelling; a byte-order mark is not dropped from a text field.

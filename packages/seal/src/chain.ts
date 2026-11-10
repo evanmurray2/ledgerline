@@ -110,6 +110,8 @@ export interface PublicState {
   /** Intents neither cancelled nor carried out, by entry number. */
   intents: Map<number, IntentState>;
   lastPublic: PublicRef;
+  /** Every public entry so far, in order, with the key version in force after it. */
+  publics: { number: number; hash: Bytes; keyVersion: number }[];
   /** Of the last public entry. */
   time: number;
   filedThrough: number;
@@ -140,6 +142,7 @@ async function startPublic(e: Entry, budgetId?: string): Promise<PublicState> {
     prevKeys: new Map(),
     intents: new Map(),
     lastPublic: { number: 1, hash: e.hash },
+    publics: [{ number: 1, hash: e.hash, keyVersion: 1 }],
     time: h.time,
     filedThrough: 0,
   };
@@ -243,6 +246,7 @@ async function applyPublic(p: PublicState, e: Entry): Promise<PublicState> {
   return {
     ...next,
     lastPublic: { number: h.number, hash: e.hash },
+    publics: [...p.publics, { number: h.number, hash: e.hash, keyVersion: next.keyVersion }],
     time: h.time,
     filedThrough: h.filedThrough,
   };
