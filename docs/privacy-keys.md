@@ -1,6 +1,6 @@
 # Privacy design, appendix: key formats (version 1)
 
-Status: v2, Nov 10, 2026. Nothing here is built. This is the appendix `docs/privacy.md` 5.2 asks for before any key code: every derivation label, associated-data string, nonce rule and byte layout. An adversarial review of v1 made 20 findings; this version includes their fixes (section 14). The code in `packages/seal` will follow this file exactly, and its tests will pin each derivation with fixed test vectors, so a change here without a format version bump breaks a test. `docs/privacy.md` says why each thing exists; this file says only what the bytes are and what each side checks.
+Status: v2, Nov 10, 2026. Section 15 lists which parts are built in `packages/seal`; nothing uses them yet. This is the appendix `docs/privacy.md` 5.2 asks for before any key code: every derivation label, associated-data string, nonce rule and byte layout. An adversarial review of v1 made 20 findings; this version includes their fixes (section 14). The code in `packages/seal` will follow this file exactly, and its tests will pin each derivation with fixed test vectors, so a change here without a format version bump breaks a test. `docs/privacy.md` says why each thing exists; this file says only what the bytes are and what each side checks.
 
 Not covered here, on purpose: how row changes are written inside an entry's sealed body and inside a snapshot, and how a table is hashed. Those belong to the phases that move edits and bank filing to the device (`docs/privacy.md` section 10, phases 3 and 4).
 
@@ -461,3 +461,16 @@ v1 was reviewed on Nov 10, 2026 by an independent reviewer told to break it. 20 
 | 20  | Canonical forms missing: ids, times, counts, strict parsing; who appends the new device's slot                                           | Minor    | 1, 4, 10      |
 
 Still to confirm in phase 0: that Safari and Workers accept both PKCS#8 imports, extractable and not; the lowest browser versions with X25519 and Ed25519; two PRF inputs with an iCloud passkey; the published HPKE test-vector file for this suite.
+
+## 15. What is built
+
+In `packages/seal`, each part with its tests. Nothing in the app or the Worker uses the package yet.
+
+| Part                                                                                            | Sections | Checked against                                                                                           |
+| ----------------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------- |
+| Byte layouts, labels, the strict reader; SHA-256, HMAC, HKDF; AES-256-GCM; key pairs from seeds | 1, 2     | RFC 5869 test cases 1 and 3, and WebCrypto's own HKDF; RFC 8032 test 1; RFC 7748 section 6.1              |
+| HPKE base mode, single-shot                                                                     | 3        | The CFRG's published test vector for this exact suite (mode 0, KEM `0x0020`, KDF `0x0001`, AEAD `0x0002`) |
+| Padding                                                                                         | 6.2      | Every step boundary                                                                                       |
+| The keys derived from a budget key                                                              | 2        | The same derivation done with WebCrypto's HKDF; the signing public key is pinned                          |
+
+Not built yet: slots (4), wrapped values (5), entries (6, 7), snapshots (8), the Worker's keys, HMACs and bank runs (9), adding a device (10), signed requests (11).

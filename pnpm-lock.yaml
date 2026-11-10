@@ -169,6 +169,8 @@ importers:
 
   packages/platform: {}
 
+  packages/seal: {}
+
 packages:
 
   '@asamuzakjp/css-color@7.1.9':
