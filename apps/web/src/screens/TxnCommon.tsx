@@ -32,14 +32,15 @@ const TAG: Record<TxnSheet['kind'], string> = {
   history: 'Before your budget',
 };
 
-export function TxnHeader({ t }: { t: TxnSheet }) {
+/** `amount`: what the sheet holds before Save (your own entry's amount and direction), instead of the saved one. */
+export function TxnHeader({ t, amount = t.amount }: { t: TxnSheet; amount?: number }) {
   const est = t.kind === 'pending' && t.estimatedAmount !== null;
   return (
     <SheetTitle
       tag={est ? 'Pending · your estimate' : t.wontClear ? 'Pending · won’t clear' : TAG[t.kind]}
       tagClass={est ? 'text-info-fg' : t.kind === 'paidBack' ? 'text-owed-fg' : undefined}
-      amount={t.kind === 'transfer' ? formatCents(Math.abs(t.amount)) : formatCents(t.amount, { plus: true })}
-      amountClass={t.amount > 0 ? 'text-funded-fg' : undefined}
+      amount={t.kind === 'transfer' ? formatCents(Math.abs(amount)) : formatCents(amount, { plus: true })}
+      amountClass={amount > 0 ? 'text-funded-fg' : undefined}
       sub={`${t.payee} · ${t.accountName} · ${dayLabel(t.date)}`}
     />
   );
