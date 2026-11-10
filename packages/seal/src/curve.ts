@@ -1,7 +1,7 @@
 // Ed25519 and X25519 key pairs from 32-byte seeds (docs/privacy-keys.md section 2). WebCrypto can't derive these key
 // types and can't give the public half of a private key it won't export, so a seed is wrapped as PKCS#8 by a fixed
 // prefix and the public half is worked out here.
-import { type Bytes, bytes, concat, equal, fromB64url, fromHex, zeroize } from './bytes.js';
+import { type Bytes, bytes, concat, equal, fromB64url, fromHex, toHex, zeroize } from './bytes.js';
 
 const PKCS8_ED25519 = fromHex('302e020100300506032b657004220420');
 const PKCS8_X25519 = fromHex('302e020100300506032b656e04220420');
@@ -44,8 +44,32 @@ export async function signPairFromSeed(seed: Uint8Array): Promise<SignPair> {
   }
 }
 
+/**
+ * The encodings of the Ed25519 points of small order, canonical and not. A signature of zeros verifies under some of
+ * them for any message on some engines, so they are never a signing key.
+ */
+const WEAK_SIGN_KEYS = new Set([
+  '01' + '00'.repeat(31),
+  '01' + '00'.repeat(30) + '80',
+  '00'.repeat(32),
+  '00'.repeat(31) + '80',
+  'ec' + 'ff'.repeat(30) + '7f',
+  'ec' + 'ff'.repeat(31),
+  'ed' + 'ff'.repeat(30) + '7f',
+  'ed' + 'ff'.repeat(31),
+  'ee' + 'ff'.repeat(30) + '7f',
+  'ee' + 'ff'.repeat(31),
+  '26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05',
+  '26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85',
+  'c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a',
+  'c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa',
+]);
+
+/** Whether 32 bytes are a small-order point, which is never a signing key. */
+export const isWeakSignKey = (pub: Uint8Array): boolean => WEAK_SIGN_KEYS.has(toHex(pub));
+
 export function signPublicKey(pub: Uint8Array): Promise<CryptoKey> {
-  if (pub.length !== 32) throw new RangeError('public key');
+  if (pub.length !== 32 || isWeakSignKey(pub)) throw new RangeError('public key');
   return crypto.subtle.importKey('raw', pub as Bytes, { name: 'Ed25519' }, true, ['verify']);
 }
 

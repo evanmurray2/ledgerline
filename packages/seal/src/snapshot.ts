@@ -16,6 +16,7 @@ import {
 } from './bytes.js';
 import { aeadOpen, aeadSeal, OpenError } from './aead.js';
 import type { BudgetKeys } from './budget-key.js';
+import { MAX_DEVICES } from './chain.js';
 import { sign, verify } from './curve.js';
 import type { PublicRef } from './entry.js';
 import { sha256 } from './hash.js';
@@ -25,6 +26,11 @@ export const MAX_TABLE_NAME = 255;
 export const MAX_CHECKPOINTS = 65535;
 /** Every entry whose number is a multiple of this is a checkpoint. */
 export const CHECKPOINT_EVERY = 1000;
+/** A device's last counter, as a snapshot's manifest names it. */
+export interface DeviceCounter {
+  deviceId: string;
+  counter: number;
+}
 
 export interface Manifest {
   snapshotId: string;
@@ -38,6 +44,12 @@ export interface Manifest {
   tables: { name: string; hash: Bytes }[];
   /** The hash of every entry whose number is a multiple of 1,000, in order, then the snapshot's own entry. */
   checkpoints: PublicRef[];
+  /**
+   * Each device's last counter, in ascending order of device id. Every entry raised one of them by 1, so they add up
+   * to the snapshot's number. With the entry the snapshot stands at, this is what a device needs to check the entry
+   * after it (chain.ts `resumeChain`).
+   */
+  counters: DeviceCounter[];
 }
 
 const ulid = (id: string, what: string): string => {
@@ -104,6 +116,19 @@ function manifestFault(m: Manifest): string | null {
   const last = c[c.length - 1]!;
   if (last.number !== m.number || !equal(last.hash, m.entryHash))
     return 'the last checkpoint is the snapshot itself';
+  return countersFault(m.counters, m.number);
+}
+
+function countersFault(counters: DeviceCounter[], number: number): string | null {
+  if (counters.length < 1 || counters.length > MAX_DEVICES) return 'device count';
+  let total = 0;
+  for (let i = 0; i < counters.length; i++) {
+    const c = counters[i]!;
+    if (!isUlid(c.deviceId) || !Number.isSafeInteger(c.counter) || c.counter < 1) return 'device counter';
+    if (i > 0 && !(counters[i - 1]!.deviceId < c.deviceId)) return 'device order';
+    total += c.counter;
+  }
+  if (total !== number) return 'device counters do not add up to the number';
   return null;
 }
 
@@ -130,6 +155,8 @@ export function encodeManifest(m: Manifest): Bytes {
     ...m.tables.map((t) => concat(str(t.name), hash32(t.hash))),
     u16(m.checkpoints.length),
     ...m.checkpoints.map((c) => concat(u64(c.number), hash32(c.hash))),
+    u16(m.counters.length),
+    ...m.counters.map((c) => concat(str(c.deviceId), u64(c.counter))),
   );
 }
 
@@ -158,8 +185,12 @@ export function readManifest(bytes: Uint8Array): Manifest {
   const nc = r.u16();
   const checkpoints: PublicRef[] = [];
   for (let i = 0; i < nc; i++) checkpoints.push({ number: r.u64(), hash: r.take(32) });
+  const nd = r.u16();
+  if (nd < 1 || nd > MAX_DEVICES) throw new FormatError('device count');
+  const counters: DeviceCounter[] = [];
+  for (let i = 0; i < nd; i++) counters.push({ deviceId: r.text(26), counter: r.u64() });
   r.end();
-  const m = { snapshotId, version, number, entryHash, chunkHashes, tables, checkpoints };
+  const m = { snapshotId, version, number, entryHash, chunkHashes, tables, checkpoints, counters };
   const fault = manifestFault(m);
   if (fault) throw new FormatError(fault);
   return m;
@@ -298,6 +329,7 @@ export async function sealSnapshot(
     lastPublic: PublicRef;
     tables: Manifest['tables'];
     checkpoints: PublicRef[];
+    counters: DeviceCounter[];
   },
   plainChunks: Uint8Array[],
 ): Promise<SealedSnapshot> {
@@ -311,6 +343,7 @@ export async function sealSnapshot(
     chunkHashes: plainChunks.map(() => new Uint8Array(32) as Bytes),
     tables: at.tables,
     checkpoints: at.checkpoints,
+    counters: at.counters,
   };
   encodeManifest(shape);
   encodeSnapshotHeader({ ...at, version: keys.version, manifestHash: new Uint8Array(32) as Bytes });

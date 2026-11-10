@@ -31,6 +31,7 @@ const BUDGET = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
 const OTHER = '01BX5ZZKBKACTAV9WEVGEMMVRZ';
 const SNAP = '01CX5ZZKBKACTAV9WEVGEMMVRZ';
 const DEVICE = '01DX5ZZKBKACTAV9WEVGEMMVRZ';
+const LATER = '01EX5ZZKBKACTAV9WEVGEMMVRZ';
 const sha = async (b: Uint8Array) => new Uint8Array(await crypto.subtle.digest('SHA-256', b as Bytes));
 
 async function make(version = 1, number = 2500, keys?: BudgetKeys) {
@@ -52,6 +53,10 @@ async function make(version = 1, number = 2500, keys?: BudgetKeys) {
         hash: randomBytes(32),
       })),
       { number, hash: entryHash },
+    ],
+    counters: [
+      { deviceId: DEVICE, counter: number - 1 },
+      { deviceId: LATER, counter: 1 },
     ],
   };
   const plain = [randomBytes(5000), randomBytes(5000), randomBytes(123)];
@@ -265,9 +270,21 @@ describe('a snapshot', () => {
       chunkHashes: [fromHex('01'.repeat(32))],
       tables: [{ name: 'payee', hash: fromHex('02'.repeat(32)) }],
       checkpoints: [{ number: 10, hash: fromHex('ab'.repeat(32)) }],
+      counters: [
+        { deviceId: DEVICE, counter: 6 },
+        { deviceId: LATER, counter: 4 },
+      ],
     };
     const bytes = encodeManifest(m);
     expect(readManifest(bytes)).toEqual(m);
+    const position =
+      '0002' +
+      '0000001a' +
+      toHex(utf8(DEVICE)) +
+      '0000000000000006' +
+      '0000001a' +
+      toHex(utf8(LATER)) +
+      '0000000000000004';
     const hex =
       toHex(utf8('LLM1')) +
       '0000001a' +
@@ -283,7 +300,8 @@ describe('a snapshot', () => {
       '02'.repeat(32) +
       '0001' +
       '000000000000000a' +
-      'ab'.repeat(32);
+      'ab'.repeat(32) +
+      position;
     expect(toHex(bytes)).toBe(hex);
     for (const change of [
       { chunkHashes: [] },
@@ -302,14 +320,44 @@ describe('a snapshot', () => {
     // Readers, on bytes built by hand: a byte too many or too few, and checkpoints that don't follow the rule.
     expect(() => readManifest(concat(bytes, u8(0)))).toThrow(FormatError);
     expect(() => readManifest(bytes.subarray(0, bytes.length - 1))).toThrow(FormatError);
-    const tail = '0001' + '000000000000000a' + 'ab'.repeat(32);
-    const withTail = (t: string) => fromHex(hex.slice(0, hex.length - tail.length) + t);
+    const tail = '0001' + '000000000000000a' + 'ab'.repeat(32) + position;
+    const withTail = (t: string, pos = position) => fromHex(hex.slice(0, hex.length - tail.length) + t + pos);
     expect(() => readManifest(withTail('0001' + '0000000000000009' + 'ab'.repeat(32)))).toThrow(FormatError);
     expect(() => readManifest(withTail('0001' + '000000000000000a' + 'cd'.repeat(32)))).toThrow(FormatError);
     expect(() => readManifest(withTail('0000'))).toThrow(FormatError);
+    // Device counters that don't add up to the number, whose devices are out of order, or that names none.
+    const checkpoint = '0001' + '000000000000000a' + 'ab'.repeat(32);
+    expect(readManifest(withTail(checkpoint)).counters[1]!.counter).toBe(4);
+    expect(() => readManifest(withTail(checkpoint, position.slice(0, -1) + '5'))).toThrow('add up');
+    const d = (id: string, n: string) => '0000001a' + toHex(utf8(id)) + n;
+    const head = '';
+    const six = '0000000000000006';
+    const four = '0000000000000004';
+    expect(() => readManifest(withTail(checkpoint, head + '0002' + d(LATER, six) + d(DEVICE, four)))).toThrow(
+      'device order',
+    );
+    expect(() =>
+      readManifest(withTail(checkpoint, head + '0002' + d(DEVICE, six) + d(DEVICE, four))),
+    ).toThrow('device order');
+    expect(() => readManifest(withTail(checkpoint, head + '0000'))).toThrow('device count');
+    for (const counters of [
+      [],
+      [{ deviceId: DEVICE, counter: 9 }],
+      [{ deviceId: 'phone', counter: 10 }],
+      [{ deviceId: DEVICE, counter: 10.5 }],
+      [m.counters[1]!, m.counters[0]!],
+      [m.counters[0]!, { deviceId: DEVICE, counter: 4 }],
+    ])
+      expect(() => encodeManifest({ ...m, counters })).toThrow(RangeError);
     // A snapshot at entry 2,500 carries the checkpoints 1,000 and 2,000 and its own, in that order.
     const big = (await make()).at;
-    const good = { ...m, number: 2500, entryHash: big.entryHash, checkpoints: big.checkpoints };
+    const good = {
+      ...m,
+      number: 2500,
+      entryHash: big.entryHash,
+      checkpoints: big.checkpoints,
+      counters: big.counters,
+    };
     expect(readManifest(encodeManifest(good)).checkpoints.map((c) => c.number)).toEqual([1000, 2000, 2500]);
     type Point = { number: number; hash: Bytes };
     const [c1, c2, c3] = big.checkpoints as [Point, Point, Point];
