@@ -47,6 +47,9 @@ importers:
       '@ledgerline/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@ledgerline/seal':
+        specifier: workspace:*
+        version: link:../../packages/seal
       '@simplewebauthn/browser':
         specifier: 14.0.0
         version: 14.0.0
