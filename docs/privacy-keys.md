@@ -105,12 +105,19 @@ Making a new recovery key gives the next generation number and removes the old s
 
 Written in a genesis, slot-change or key-change entry (section 6.3), for key version `v`:
 
-| Field        | Bytes                                     | Length   | Who can read it |
-| ------------ | ----------------------------------------- | -------- | --------------- |
-| `slotId`     | `str`                                     | variable | Anyone          |
-| `anchor`     | `HMAC(anchorKey, "ledgerline/v1/anchor"   |          | str(budgetId)   |     | str(slotId)            |     | genesisSignPub)`          | 32  | Anyone; only the slot's owner can check it |
-| `sealedKey`  | `Seal(slotPub, "ledgerline/v1/hpke/slot"  |          | str(budgetId)   |     | str(slotId)            |     | u32(v), signPub_v, BK_v)` | 80  | The slot's owner                           |
-| `wrappedPub` | `AEAD(K_wrap_v, "ledgerline/v1/wrap/slot" |          | str(budgetId)   |     | str(slotId), slotPub)` | 60  | Holders of `BK_v`         |
+```
+slotId      str
+anchor      HMAC(anchorKey, "ledgerline/v1/anchor" || str(budgetId) || str(slotId) || genesisSignPub)          32 bytes
+sealedKey   Seal(slotPub, "ledgerline/v1/hpke/slot" || str(budgetId) || str(slotId) || u32(v), signPub_v, BK_v) 80 bytes
+wrappedPub  AEAD(K_wrap_v, "ledgerline/v1/wrap/slot" || str(budgetId) || str(slotId), slotPub)                 60 bytes
+```
+
+| Field        | Who can read it                            |
+| ------------ | ------------------------------------------ |
+| `slotId`     | Anyone                                     |
+| `anchor`     | Anyone; only the slot's owner can check it |
+| `sealedKey`  | The slot's owner                           |
+| `wrappedPub` | Holders of `BK_v`                          |
 
 - `anchor` is made once, by the device that holds the slot's secret, when the slot is created. It is copied unchanged into every later key-change entry.
 - `wrappedPub` is how a device doing a key change learns the other slots' public halves without the server ever seeing them.
@@ -134,11 +141,11 @@ What this can't catch is in `docs/privacy.md` 5.2: a removed way in and a dishon
 
 All are `AEAD(K_wrap_v, aad, plain)`:
 
-| Value                                      | `aad`                          |
-| ------------------------------------------ | ------------------------------ |
-| A slot's public half                       | `"ledgerline/v1/wrap/slot"     |     | str(budgetId) |     | str(slotId)` |
-| The inbox private key, version `i`         | `"ledgerline/v1/wrap/inbox"    |     | str(budgetId) |     | u32(i)`      |
-| The budget key before this one, `BK_{v-1}` | `"ledgerline/v1/wrap/prev-key" |     | str(budgetId) |     | u32(v - 1)`  |
+```
+a slot's public half                    aad = "ledgerline/v1/wrap/slot"     || str(budgetId) || str(slotId)
+the inbox private key, version i        aad = "ledgerline/v1/wrap/inbox"    || str(budgetId) || u32(i)
+the budget key before this one, BK_v-1  aad = "ledgerline/v1/wrap/prev-key" || str(budgetId) || u32(v - 1)
+```
 
 - The inbox key pair is a random X25519 pair. Its private half, wrapped, travels in the genesis entry and in each key change.
 - **Each key change carries the budget key it replaces**, wrapped under the new one. Without it, a device that joins after a key change (a recovery sign-in is always one) could not read the snapshot and entries sealed before the change, and if the device that made the change were lost first, the budget would be gone. It gives a removed way in nothing: that way in already held the older key.
@@ -149,25 +156,25 @@ An entry is a header, a body and a signature.
 
 ### 6.1 Header
 
-| #   | Field             | Bytes       | Notes                                                                                                                               |
-| --- | ----------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | magic             | 4           | `LLE1`                                                                                                                              |
-| 2   | kind              | `u8`        | 0 genesis, 1 edit, 2 bank, 3 scan, 4 slot change, 5 key change, 6 sign-out, 8 data migration, 9 key-change intent, 10 intent cancel |
-| 3   | budgetId          | `str`       |                                                                                                                                     |
-| 4   | number            | `u64`       | 1 for the genesis entry, then up by 1                                                                                               |
-| 5   | prevHash          | 32          | `entryHash` of entry `number - 1`; zeros for the genesis entry                                                                      |
-| 6   | entryId           | 16          | Random. The server answers "already stored" for one it holds                                                                        |
-| 7   | time              | `u64`       | For ordering only: the later of the writer's clock and 1 ms after the entry before                                                  |
-| 8   | deviceId          | `str`       |                                                                                                                                     |
-| 9   | deviceCounter     | `u64`       | This device's count of entries: its last value + 1, starting at 1                                                                   |
-| 10  | keyVersion        | `u32`       | The version whose signing key signs this entry                                                                                      |
-| 11  | schemaVersion     | `u32`       |                                                                                                                                     |
-| 12  | processingVersion | `u32`       |                                                                                                                                     |
-| 13  | part, parts       | `u16` each  | `1, 1` for a whole entry (6.4)                                                                                                      |
-| 14  | filedThrough      | `u64`       | The last bank run this budget has filed, after this entry                                                                           |
-| 15  | receipts          | `u16(count) |                                                                                                                                     | 32 × count` | For a bank entry, the receipt of each run it files, in order (9.3): `count` = `filedThrough` minus the one before. Otherwise count 0. At most 256 |
-| 16  | scanThrough       | `u32`       | The last day scanned, in the budget's time zone; never goes down                                                                    |
-| 17  | bodyHash          | 32          | `H(body)`, the bytes as stored                                                                                                      |
+| #   | Field             | Bytes                                | Notes                                                                                                                                             |
+| --- | ----------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | magic             | 4                                    | `LLE1`                                                                                                                                            |
+| 2   | kind              | `u8`                                 | 0 genesis, 1 edit, 2 bank, 3 scan, 4 slot change, 5 key change, 6 sign-out, 8 data migration, 9 key-change intent, 10 intent cancel               |
+| 3   | budgetId          | `str`                                |                                                                                                                                                   |
+| 4   | number            | `u64`                                | 1 for the genesis entry, then up by 1                                                                                                             |
+| 5   | prevHash          | 32                                   | `entryHash` of entry `number - 1`; zeros for the genesis entry                                                                                    |
+| 6   | entryId           | 16                                   | Random. The server answers "already stored" for one it holds                                                                                      |
+| 7   | time              | `u64`                                | For ordering only: the later of the writer's clock and 1 ms after the entry before                                                                |
+| 8   | deviceId          | `str`                                |                                                                                                                                                   |
+| 9   | deviceCounter     | `u64`                                | This device's count of entries: its last value + 1, starting at 1                                                                                 |
+| 10  | keyVersion        | `u32`                                | The version whose signing key signs this entry                                                                                                    |
+| 11  | schemaVersion     | `u32`                                |                                                                                                                                                   |
+| 12  | processingVersion | `u32`                                |                                                                                                                                                   |
+| 13  | part, parts       | `u16` each                           | `1, 1` for a whole entry (6.4)                                                                                                                    |
+| 14  | filedThrough      | `u64`                                | The last bank run this budget has filed, after this entry                                                                                         |
+| 15  | receipts          | `u16(count)`, then 32 bytes for each | For a bank entry, the receipt of each run it files, in order (9.3): `count` = `filedThrough` minus the one before. Otherwise count 0. At most 256 |
+| 16  | scanThrough       | `u32`                                | The last day scanned, in the budget's time zone; never goes down                                                                                  |
+| 17  | bodyHash          | 32                                   | `H(body)`, the bytes as stored                                                                                                                    |
 
 ```
 entryHash = H(header)
