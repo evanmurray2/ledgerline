@@ -101,7 +101,7 @@ slotId     = "r:" then the generation number in decimal, no leading zeros, start
 
 **Proving it to the server.** The server stores `authPub`, never a secret. To add a passkey, the device sends `authPub`; the server finds the account, and answers with the budget id and 32 random bytes; the device returns `Ed25519(authPriv, "ledgerline/v1/recovery/login" || str(budgetId) || challenge)`. Nothing that could be replayed later passes through the server. This gives a sign-in and no part of the budget key.
 
-Making a new recovery key gives the next generation number and removes the old slot in the same key change.
+Making a new recovery key takes two entries: a slot change adds the slot of the next generation number, then a key change leaves the old one out. A key change never adds a slot.
 
 ### 4.3 The slot record
 
@@ -175,7 +175,7 @@ An entry is a header, a body and a signature.
 | 13  | part, parts       | `u16` each                           | `1, 1` for a whole entry (6.4)                                                                                                                    |
 | 14  | filedThrough      | `u64`                                | The last bank run this budget has filed, after this entry                                                                                         |
 | 15  | receipts          | `u16(count)`, then 32 bytes for each | For a bank entry, the receipt of each run it files, in order (9.3): `count` = `filedThrough` minus the one before. Otherwise count 0. At most 256 |
-| 16  | scanThrough       | `u32`                                | The last day scanned, in the budget's time zone; never goes down                                                                                  |
+| 16  | scanThrough       | `u32`                                | The last day scanned, in the budget's time zone; only a scan entry raises it                                                                      |
 | 17  | bodyHash          | 32                                   | `H(body)`, the bytes as stored                                                                                                                    |
 
 ```
@@ -184,6 +184,8 @@ signature = Ed25519(signPriv_keyVersion, "ledgerline/v1/entry" || entryHash)    
 ```
 
 The header holds the budget id, the kind and the number, so an entry can't be replayed in another budget, as another kind, or at another place.
+
+**As sent and stored**, an entry is `str(header) || str(body) || signature`. A reader checks that `H(body)` is the header's `bodyHash` before anything else.
 
 ### 6.2 Body of kinds 1, 2, 3, 6, 8: sealed
 
@@ -255,15 +257,49 @@ A change set over 65,535 bytes is written as `parts` entries (kinds 1, 2, 3 or 8
 
 ## 7. What each side checks
 
-### 7.1 The server, on every append
+### 7.1 One set of rules, run by both sides
 
-Without reading anything sealed: the signature against the signing key in force; `keyVersion` is the version in force; `number` and `prevHash` continue the log; `entryId` is new (else "already stored", for the whole part set); `bodyHash`; `time` is not more than 5 minutes ahead of its clock; the part rules (6.4); `filedThrough`, `receipts` and `scanThrough` (9.3, and never down); for a public body, that it parses, that `prevPublic` is the last public entry, that a key change steps the version by 1 and the inbox version by 1, the slot rules (4.3), and the intent rule (6.3); and the rules of `docs/privacy.md` 5.3 (bank runs first, the breaker).
+The rules of the log are one piece of code (`packages/seal/src/chain.ts`). **The server runs it on every append before it stores an entry, and a device runs it on every entry it takes**, because the server may lie. Since both run the same code, an entry a device would refuse is a refused write, never an entry that sits in the log and stops every device for good.
 
-### 7.2 A device, on every entry it takes
+The shared rules, on each entry:
 
-The same, for itself, because the server may lie: the signature; `keyVersion` in force, stepping by exactly 1 and only at a key change whose body says `v + 1`; `number` and `prevHash` against the entry before; `deviceCounter` against what it last saw from that device; `time` not earlier than the entry before; the part rules; for a public entry, `prevPublic`; for a bank entry, that the runs it names are the next ones (9.3). It then opens the body, unpads it and applies it.
+- its `entryHash` and `bodyHash` are its own, worked out again;
+- the budget; `number` and `prevHash` continue the log;
+- `keyVersion` is the version in force, and the signature is good for that version's signing key;
+- `time` is later than the entry before (equal only inside a part set), and not more than 10 minutes after the checker's own clock;
+- `deviceCounter` is that device's last value + 1; a device not seen before starts at 1;
+- `entryId` is not the one of the entry before;
+- the part rules (6.4);
+- only a bank entry raises `filedThrough`, by at least 1, with one receipt for each run; no other kind carries receipts;
+- only a scan entry raises `scanThrough`, and not past tomorrow by the checker's clock;
+- a public body parses, names the public entry before it, and obeys the rules below;
+- a schema version newer than the reader's stops it with "Update Ledgerline to continue", which is not an error in the log.
 
-A device keeps, apart from its copy: the highest `number` it has applied, that entry's `entryHash`, the last public entry's number and hash, and the last checkpoint (section 8).
+For the public entries:
+
+- **Slot change:** no slot that is already there; at most 64 slots in all.
+- **Key change:** the key version and the inbox version each step by exactly 1; `lastOldRun` is not below `filedThrough` or below the last key change's; every slot it keeps is in force today with its anchor unchanged, and it adds none; it carries the new inbox key, no inbox key twice, none the log doesn't hold, and **every inbox key that still has unfiled runs** (without it those runs could never be opened).
+- **Intent:** only recorded. At most 16 are open at once.
+- **Cancel:** names an open intent, which is then closed.
+- **A key change that names an intent:** the intent is open; its `notBefore` is at least 7 days after the intent's own `time`; the key change's `time` is not before `notBefore`; and the slots the key change leaves out are exactly the ones the intent lists. The intent is then closed.
+
+An intent is judged when it is used, not when it is written, so an intent from an honest device with an odd clock can't stop the log. A writer sets `notBefore` to the intent's own `time` plus 7 days, and writes the key change once its clock has reached `notBefore`.
+
+### 7.2 What only one side checks
+
+**The server only**, because it needs its clock and its session:
+
+- `time` is within 5 minutes of the server's clock, either way. This is what makes the 7-day wait real: an intent can't be back-dated, and a key change can't be dated ahead.
+- `entryId` is new in the whole log; one it already holds gets "already stored", for the whole part set.
+- when an intent is required (6.3), "bank runs first" and the breaker (`docs/privacy.md` 5.3).
+- a bank entry's receipts match the runs it files (9.3).
+
+**A device only:**
+
+- for a bank entry, that the runs it names are the next ones and open (9.3);
+- its remembered position: apart from its copy it keeps the highest `number` it has applied, that entry's `entryHash`, the last public entry's number and hash, and the last checkpoint (section 8). A device that walks the public chain (4.4) requires the walk to pass the public entry it remembers and to end at the one the newest snapshot's header names.
+
+A device can't check the 5-minute rule on entries from the past. It trusts the server for the real length of the 7-day wait, as `docs/privacy.md` 5.2 says: a thief who also controls the server isn't stopped.
 
 ### 7.3 The public chain
 
@@ -435,7 +471,8 @@ signature = Ed25519(signPriv_v, "ledgerline/v1/request" || str(budgetId) || u32(
 - AES-GCM with random nonces: well under 2^32 seals per key. A budget makes a few thousand entries a year; a key change starts fresh keys.
 - An entry's plain body is at most 65,535 bytes; larger change sets use parts (6.4).
 - A filing entry names at most 256 runs. A device with more waiting files them in several writes.
-- At most 64 slots, and at most 16 inbox keys carried in a key change.
+- At most 64 slots, at most 16 inbox keys carried in a key change, and at most 16 open intents.
+- A public body is at most 128 KB. A sealed body is exactly a padding step plus 28 bytes.
 - X25519 and Ed25519 are not safe against a large quantum computer. `docs/privacy.md` 5.2 says what that exposes and that no claim is made.
 
 ## 13. Changes to this file
@@ -475,16 +512,18 @@ Still to confirm in phase 0: that Safari and Workers accept both PKCS#8 imports,
 
 In `packages/seal`, each part with its tests. Nothing in the app or the Worker uses the package yet.
 
-| Part                                                                                            | Sections | Checked against                                                                                                                               |
-| ----------------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Byte layouts, labels, the strict reader; SHA-256, HMAC, HKDF; AES-256-GCM; key pairs from seeds | 1, 2     | RFC 5869 test cases 1 and 3, and WebCrypto's own HKDF; RFC 8032 test 1; RFC 7748 section 6.1                                                  |
-| HPKE base mode, single-shot                                                                     | 3        | The CFRG's published test vector for this exact suite (mode 0, KEM `0x0020`, KDF `0x0001`, AEAD `0x0002`)                                     |
-| Padding                                                                                         | 6.2      | Every step boundary                                                                                                                           |
-| The keys derived from a budget key                                                              | 2        | The same derivation done with WebCrypto's HKDF; the signing public key is pinned                                                              |
-| Ways in: a passkey's and the recovery key's secrets, the slot record and its anchor, slot ids   | 4        | The anchor, its key and the sealing inputs written out by hand with WebCrypto's HKDF and HMAC; pinned public keys; a forged budget is refused |
-| Small wrapped values: an inbox private key, the budget key before this one                      | 5        | The associated data written out by hand; a walk back over two key changes                                                                     |
-| The recovery key as shown and typed, and its sign-in by signature                               | 4.2      | A separate implementation of the spelling; every one-character slip is caught                                                                 |
+| Part                                                                                            | Sections      | Checked against                                                                                                                               |
+| ----------------------------------------------------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Byte layouts, labels, the strict reader; SHA-256, HMAC, HKDF; AES-256-GCM; key pairs from seeds | 1, 2          | RFC 5869 test cases 1 and 3, and WebCrypto's own HKDF; RFC 8032 test 1; RFC 7748 section 6.1                                                  |
+| HPKE base mode, single-shot                                                                     | 3             | The CFRG's published test vector for this exact suite (mode 0, KEM `0x0020`, KDF `0x0001`, AEAD `0x0002`)                                     |
+| Padding                                                                                         | 6.2           | Every step boundary                                                                                                                           |
+| The keys derived from a budget key                                                              | 2             | The same derivation done with WebCrypto's HKDF; the signing public key is pinned                                                              |
+| Ways in: a passkey's and the recovery key's secrets, the slot record and its anchor, slot ids   | 4             | The anchor, its key and the sealing inputs written out by hand with WebCrypto's HKDF and HMAC; pinned public keys; a forged budget is refused |
+| Small wrapped values: an inbox private key, the budget key before this one                      | 5             | The associated data written out by hand; a walk back over two key changes                                                                     |
+| The recovery key as shown and typed, and its sign-in by signature                               | 4.2           | A separate implementation of the spelling; every one-character slip is caught                                                                 |
+| Log entries: the header, sealed and public bodies, the signature                                | 6             | Written and read back exactly; every broken header refused; a body opens only under its own header                                            |
+| The rules of the log, and the walk of a device with no key                                      | 4.4, 7.1, 7.3 | A small budget written entry by entry, then changed, cut, reordered and forged                                                                |
 
-Not built yet: entries (6, 7), snapshots (8), the Worker's keys, HMACs and bank runs (9), adding a device (10), signed requests (11).
+Not built yet: the server's own rules (7.2), a chain that starts from a snapshot and not from the genesis entry, snapshots (8), the Worker's keys, HMACs and bank runs (9), adding a device (10), signed requests (11).
 
-Each part's code got an adversarial review of its own before it merged. The review of the first two parts found no wrong byte (it recomputed every label, layout and pinned value with a separate program) and 19 faults in checks and care with secrets, all fixed: a budget key sealed or wrapped is first checked to be the key its keys came from; a one-time key pair seals once; a slot id and base64url have one spelling; a byte-order mark is not dropped from a text field.
+Each part's code got an adversarial review of its own before it merged. The review of the entries and the chain found no wrong byte and 8 major faults in the rules, all fixed: an entry's hashes are worked out again and not trusted; the rules are one piece of code for the server and the device, so no honest entry can stop the log; an intent is judged when it is used; an inbox key with unfiled runs can't be dropped; an entry can't be dated in the checker's future; only a scan moves the scan date. The review of the first two parts found no wrong byte (it recomputed every label, layout and pinned value with a separate program) and 19 faults in checks and care with secrets, all fixed: a budget key sealed or wrapped is first checked to be the key its keys came from; a one-time key pair seals once; a slot id and base64url have one spelling; a byte-order mark is not dropped from a text field.
