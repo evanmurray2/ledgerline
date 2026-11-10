@@ -9,7 +9,41 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  scope:
+    # How much of this run is needed (tools/ci/scope.mjs, D-84): everything, only `checks` for a docs-only change,
+    # or nothing on `main` when these exact files already passed as a pull request.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: tools/ci
+      - id: scope
+        run: node tools/ci/scope.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      # The record that this run tested these files; it counts once the run has passed.
+      - if: steps.scope.outputs.marker != ''
+        run: echo "$MARKER" > "$RUNNER_TEMP/ci-passed.txt"
+        env:
+          MARKER: ${{ steps.scope.outputs.marker }}
+      - if: steps.scope.outputs.marker != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.scope.outputs.marker }}
+          path: ${{ runner.temp }}/ci-passed.txt
+          retention-days: 30
+          overwrite: true
   checks:
+    needs: scope
+    if: needs.scope.outputs.run != 'none'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -36,6 +70,8 @@ jobs:
   integration:
     # The slowest part of the checks, so it runs beside them, in three parts.
     name: integration (${{ matrix.part }}/3)
+    needs: scope
+    if: needs.scope.outputs.run == 'all'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -67,6 +103,8 @@ jobs:
     # Runs beside the checks, in parts that each take about the same time: the mock-API suite and the real-Worker
     # suite in three parts each (Playwright --shard), and the two sign-in suites together.
     name: e2e (${{ matrix.suite }}${{ matrix.shard && format(' {0}', matrix.shard) || '' }})
+    needs: scope
+    if: needs.scope.outputs.run == 'all'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -130,9 +168,9 @@ jobs:
           retention-days: 7
   e2e-passed:
     # The repository's merge rule asks for checks named `e2e (mock)` and `e2e (worker)`: these two report for all
-    # the e2e parts above.
+    # the e2e parts above. A run that didn't need the e2e tests (scope) passes them.
     name: e2e (${{ matrix.suite }})
-    needs: e2e
+    needs: [scope, e2e]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -140,7 +178,9 @@ jobs:
       matrix:
         suite: [mock, worker]
     steps:
-      - name: Every e2e part passed
-        run: '[ "$RESULT" = success ] || [ "$RESULT" = skipped ]'
+      - name: Every e2e part passed, or none was needed
+        run: '[ "$E2E" = success ] || { [ "$E2E" = skipped ] && [ "$SCOPE" = success ] && [ "$RUN" != all ]; }'
         env:
-          RESULT: ${{ needs.e2e.result }}
+          E2E: ${{ needs.e2e.result }}
+          SCOPE: ${{ needs.scope.result }}
+          RUN: ${{ needs.scope.outputs.run }}
