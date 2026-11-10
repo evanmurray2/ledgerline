@@ -113,6 +113,34 @@ describe('Transaction sheet', () => {
     expect(now.getAttribute('aria-pressed')).toBe('true');
     await screen.findByText(/to Ready to Assign in November\./);
   });
+
+  it('a deposit with no category is in Ready to Assign: the sheet says so and nothing asks for a category', async () => {
+    const before = (await sql<{ rta: number }>(`SELECT rta FROM budget`))!.rta;
+    const r = await server.handle(
+      'PATCH',
+      '/api/transactions/n-payroll',
+      { 'content-type': 'application/json', 'x-ledgerline': '1' },
+      { categoryId: null },
+    );
+    expect(r.status).toBe(200);
+    expect(
+      (await sql<{ to_rta: number }>(`SELECT to_rta FROM txn_overlay WHERE txn_key = 'n-payroll'`))!.to_rta,
+    ).toBe(0);
+    expect((await sql<{ rta: number }>(`SELECT rta FROM budget`))!.rta).toBe(before);
+    const view = (await server.handle('GET', '/api/activity', {}, undefined)).body as {
+      needsCategory: { key: string }[];
+    };
+    expect(view.needsCategory.map((x) => x.key)).not.toContain('n-payroll');
+    show('/activity/txn/n-payroll');
+    const field = await screen.findByLabelText('Category', undefined, T);
+    expect(field.textContent).toMatch(/Ready to Assign/);
+    const now = await screen.findByRole('button', { name: 'Ready to Assign now' }, T);
+    expect(now.getAttribute('aria-pressed')).toBe('true');
+    // "Needs a category" isn't a choice for money in.
+    fireEvent.click(field);
+    await screen.findAllByRole('button', { name: /^Ready to Assign/ }, T);
+    expect(screen.queryByRole('button', { name: /^Needs a category/ })).toBeNull();
+  });
 });
 
 describe('Targets', () => {

@@ -25,7 +25,7 @@ import type { AppEnv } from '../http/context.js';
 import { HttpError, parse, scoped, GONE, BAD_MONTH, inReach } from './api.js';
 import { cards as loadCards, fresh, monthResult, shortDate, structure } from '../views/common.js';
 import { hiddenFromLists, listRow } from '../views/rows.js';
-import { TX_COLUMNS, uncovered, type TxRow } from '../ledger/ledger.js';
+import { TX_COLUMNS, needsCategory, uncovered, type TxRow } from '../ledger/ledger.js';
 import { monthTotals } from '../ledger/totals.js';
 import { DIFF_WAIT_MS, accountLedger, bankDiff } from '../ledger/bank-diff.js';
 import type { Scoped } from '../db/scoped.js';
@@ -346,7 +346,7 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
     !hiddenFromLists(t) &&
     (show === 'all' ||
       (show === 'pending' && t.status !== 'posted') ||
-      (show === 'needs' && !t.category_id && !t.to_rta && !t.transfer_state && !t.wtm_state) ||
+      (show === 'needs' && needsCategory(t)) ||
       (show === 'transfers' && t.transfer_state !== null));
   const credit = account.kind === 'credit';
   const days: RegisterView['days'] = [];

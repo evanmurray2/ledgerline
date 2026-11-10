@@ -21,7 +21,14 @@ import type { AppEnv } from '../http/context.js';
 import { BAD_MONTH, HttpError, TRY_AGAIN, scoped } from './api.js';
 import { fresh, monthResult, structure } from '../views/common.js';
 import { IN_BUDGET_ROWS, listRow } from '../views/rows.js';
-import { RECENT_TX, TX_COLUMNS, chunks, type TxRow } from '../ledger/ledger.js';
+import {
+  NOT_RTA_BY_DEFAULT,
+  RECENT_TX,
+  TX_COLUMNS,
+  chunks,
+  needsCategory as waitsForCategory,
+  type TxRow,
+} from '../ledger/ledger.js';
 import type { Scoped } from '../db/scoped.js';
 import { names } from './txn-common.js';
 import { samePurchaseCards } from './same-purchase.js';
@@ -38,7 +45,7 @@ const ATTENTION_SQL = `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = 
          AND ${IN_BUDGET_ROWS} AND (
          wtm_state IN ('waiting', 'send_back') OR transfer_state = 'unsorted' OR (alert IS NOT NULL AND reviewed_at IS NULL)
          OR (category_id IS NULL AND coalesce(to_rta, 0) = 0 AND transfer_state IS NULL AND wtm_state IS NULL AND wont_clear = 0
-             AND status != 'upcoming'
+             AND status != 'upcoming' AND ${NOT_RTA_BY_DEFAULT}
              AND key NOT IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1))
          -- A split whose lines no longer add up to the amount: you fix it (D-82).
          OR (key IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1)
@@ -76,9 +83,7 @@ activityViewRoutes.get('/badges', async (c) => {
   const activity =
     rows.filter((t) => t.wtm_state === 'waiting' || t.wtm_state === 'send_back').length +
     rows.filter((t) => t.transfer_state === 'unsorted' && t.amount < 0).length +
-    rows.filter(
-      (t) => !t.category_id && !t.to_rta && !t.transfer_state && !t.wtm_state && !(t.alert && !t.reviewed_at),
-    ).length +
+    rows.filter((t) => waitsForCategory(t) && !(t.alert && !t.reviewed_at)).length +
     rows.filter((t) => t.alert && !t.reviewed_at).length +
     ((stale!.results[0] as { n: number } | undefined)?.n ?? 0) +
     ((removed!.results[0] as { n: number } | undefined)?.n ?? 0) +
@@ -308,13 +313,7 @@ activityViewRoutes.get('/activity', async (c) => {
     .map(row);
   const transfersToSort = attnRows.filter((t) => t.transfer_state === 'unsorted' && t.amount < 0).map(row);
   const uncats = attnRows.filter(
-    (t) =>
-      !t.category_id &&
-      !t.to_rta &&
-      !t.transfer_state &&
-      !t.wtm_state &&
-      !(t.alert && !t.reviewed_at) &&
-      !splitKeys.has(t.key),
+    (t) => waitsForCategory(t) && !(t.alert && !t.reviewed_at) && !splitKeys.has(t.key),
   );
   // Payees you've categorized, by name: a payee you haven't is new, and one with the same name as yours gets
   // "Same as your …?" (docs/payees.md 4.2, 4.3).

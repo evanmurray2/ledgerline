@@ -19,9 +19,19 @@ export type TransferDecision =
   | { kind: 'paired'; outKey: string; inKey: string }
   | { kind: 'unclear'; outKey: string; candidates: string[] };
 
-const TRANSFER_WORDS = /\b(TRANSFER|XFER|ONLINE PMT|PAYMENT THANK YOU|AUTOPAY|DEPOSIT FROM|WITHDRAWAL TO)\b/i;
+/** The words that mark a transfer in a bank's description (also used to build a looser SQL test). */
+export const TRANSFER_WORD_LIST = [
+  'TRANSFER',
+  'XFER',
+  'ONLINE PMT',
+  'PAYMENT THANK YOU',
+  'AUTOPAY',
+  'DEPOSIT FROM',
+  'WITHDRAWAL TO',
+] as const;
+const TRANSFER_WORDS = new RegExp(`\\b(${TRANSFER_WORD_LIST.join('|')})\\b`, 'i');
 
-export function isTransferLike(r: TransferRow): boolean {
+export function isTransferLike(r: Pick<TransferRow, 'description' | 'providerCategory'>): boolean {
   return (
     (r.providerCategory?.startsWith('TRANSFER_') ?? false) ||
     r.providerCategory === 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT' ||
