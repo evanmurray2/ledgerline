@@ -1,5 +1,5 @@
 // Settings → Device check: the phase 0 checks of the privacy design (docs/privacy.md 15.4), run on this device.
-// The page is opened by its address; Settings doesn't list it.
+// Settings lists it while phase 0 runs, so the Home Screen app can reach it.
 import { useState } from 'react';
 import { Card, ErrorNote, SectionTitle, SoftButton } from '../../components/ui';
 import { type CheckResult, checkPasskey, type PasskeyCheck, runDeviceChecks } from '../../lib/device-check';
