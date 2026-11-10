@@ -7,7 +7,7 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 - App: https://ledgerline.ledger-line.workers.dev (Worker `ledgerline`, workers.dev subdomain `ledger-line`)
 - Cloudflare account id: `f2d39c71e2c0819833de7942cdcc1222`
 - Data: SQLite Durable Objects since Nov 2, 2026 (`docs/multi-user.md`): a `Directory` (sign-in) and one `BudgetStore` per budget, with Cloudflare's 30-day point-in-time recovery. D1 and Workflows are gone (D-37, D-38): production, local dev, tests and e2e all use `apps/worker/wrangler.jsonc`, and tests reach a store's database through `apps/worker/test/store-db.ts`. There is no staging (D-36). Since D-45/D-46 the server keeps nothing derived: the app syncs the budget (`GET /api/sync`) into an engine on the device (`apps/worker/src/local`, run in a Web Worker on sql.js) that answers every screen with the server's own routes; `apps/worker/test/engine.test.ts` checks they match (`docs/phone-budget.md`).
-- Sign-in is passkeys (D-27). The owner's passkey exists, and 7 of the 10 Plaid links are used (Charles Schwab, Chase, Wells Fargo, Citibank, Bank of America, American Express, SoFi; checked Nov 2, 2026), so 3 are left. Plaid allows 10 links for life: **never link, re-link or remove a bank without asking.**
+- Sign-in is passkeys (D-27). The owner's passkey exists, and 7 of the 10 Plaid links are used (checked Nov 2, 2026), so 3 are left. Plaid allows 10 links for life: **never link, re-link or remove a bank without asking.**
 
 ## Deploying
 

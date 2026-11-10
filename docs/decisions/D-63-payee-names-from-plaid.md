@@ -3,9 +3,9 @@
 **Decided by the owner** (`docs/payee-names.md`, approved v7, answers in its section 13). PR 2 of its section 11.
 
 **Context.** `docs/design.md` (Payee normalization and merge) made payees from the bank text: strip processor
-prefixes, store numbers, dates and city, then title case, and join look-alikes. On Nov 1 Plaid sent the Amex history
-before its merchant names were ready, so sync made "Hlu Huluplus Hulu" and "Hulu" from the text. The rows came again
-on Nov 2 with merchant name "Hulu", but a filed row was never named or filed again, and a merge then kept the app's
+prefixes, store numbers, dates and city, then title case, and join look-alikes. On Nov 1 Plaid sent one card's history
+before its merchant names were ready, so sync made "Stm Streamplus Streamco" and "Streamco" from the text. The rows came again
+on Nov 2 with merchant name "Streamco", but a filed row was never named or filed again, and a merge then kept the app's
 name.
 
 **Decision.**

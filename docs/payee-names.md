@@ -1,6 +1,6 @@
 # Payee names from Plaid, and no cleanup of bank text
 
-Status: approved, v7, Nov 5, 2026. Built: PRs #61–#63 and PR 4 of section 11. Asked by the owner after a Hulu charge arrived as "Hlu Huluplus Hulu".
+Status: approved, v7, Nov 5, 2026. Built: PRs #61–#63 and PR 4 of section 11. Asked by the owner after a streaming charge arrived under a mangled name (shown here as "Stm Streamplus Streamco").
 v5 followed an adversarial review of v4 and is simpler: two keys instead of five, no stop list, no name ranks, and
 a pending matcher with three plain rules. v6 added the owner's answers of Nov 5 and a fix for an entry and the bank's
 pending row counting twice. v7 follows a second review: the app pairs only on exact evidence and asks "Same
@@ -15,18 +15,18 @@ manual entry with the bank's pending row so the two stop counting twice. The own
 them, on Nov 5 (13). Every posted
 charge still counts exactly once.
 
-## 1. What happened to Hulu
+## 1. What happened to Streamco
 
 From the owner's backup:
 
-1. **Nov 1, first link.** Plaid sent the Amex history without merchant names (its enrichment wasn't done yet). Sync
-   made two payees from the cleaned bank text: "Hlu Huluplus Hulu" (`HLU*HULUPLUS HULU.COM/BILL CA`) and "Hulu"
-   (`HULU SANTA MONICA CA`).
-2. **Nov 2, six hours later.** Plaid sent the same rows again as `modified`, now with `merchant_name` "Hulu" and a
+1. **Nov 1, first link.** Plaid sent one card's history without merchant names (its enrichment wasn't done yet). Sync
+   made two payees from the cleaned bank text: "Stm Streamplus Streamco" (`STM*STREAMPLUS STREAMCO.COM/BILL CA`) and "Streamco"
+   (`STREAMCO SANTA MONICA CA`).
+2. **Nov 2, six hours later.** Plaid sent the same rows again as `modified`, now with `merchant_name` "Streamco" and a
    merchant id. Sync never names or re-files a row after it's filed (`payee_id = coalesce(...)` in `process.ts`
    step 5), so nothing changed.
 3. **Nov 2, a merge.** The old Payees page's suggestion card (since removed) offered to merge the two under the name
-   the app had made, "Hlu Huluplus Hulu", and the merge was accepted with that name.
+   the app had made, "Stm Streamplus Streamco", and the merge was accepted with that name.
 
 Today's import also keeps only one of Plaid's texts (`rawName: t.original_description ?? t.name`,
 `packages/bank-provider/src/plaid.ts`), so Plaid's short `name` is lost.
@@ -37,8 +37,8 @@ Today's import also keeps only one of Plaid's texts (`rawName: t.original_descri
 pending row a posted charge replaces.
 
 **New:** the app never edits, cleans or scores bank text. It uses Plaid's values as sent and compares them only for
-**equality**, by `payeeNameKey` (case, outer spaces and curly or straight apostrophes ignored, nothing else): "Hulu"
-equals "HULU"; "Shell" doesn't equal "Shell Oil". When Plaid gives no name, the payee is the bank's text exactly as
+**equality**, by `payeeNameKey` (case, outer spaces and curly or straight apostrophes ignored, nothing else): "Streamco"
+equals "STREAMCO"; "Shell" doesn't equal "Shell Oil". When Plaid gives no name, the payee is the bank's text exactly as
 sent. A payee's name changes only when the owner renames it, or while it's new (6).
 
 **Deleted:** `cleanDescription`, `titleCase`, `trigrams`, `similarity`, `jaccard`, `clusterPayees` and `payeeKey`
@@ -112,7 +112,7 @@ payee gets `named_by = 'sync'`.
 
 A payee is **new** while `named_by = 'sync'` and you haven't categorized any of its transactions (`docs/payees.md`
 4.2). While it's new, its name is the name (5) of the row that made it, as Plaid sends that row now: when the row
-comes again as `modified` with a better name, the payee takes it. Other rows don't change it. This fixes the Hulu case: the `modified` rows of Nov 2 would have renamed "Hlu Huluplus Hulu" to "Hulu".
+comes again as `modified` with a better name, the payee takes it. Other rows don't change it. This fixes the Streamco case: the `modified` rows of Nov 2 would have renamed "Stm Streamplus Streamco" to "Streamco".
 
 - Not when that name belongs to another payee (by `payeeNameKey`): the name stays, and Activity offers **Same as
   your …? Join** (`docs/payees.md` 4.3), so the owner decides.
@@ -134,7 +134,7 @@ job, run once after the migration.
    index) and takes `name`. One page per step (up to about 220 KB); measured against 10 ms.
 2. **Tell which names the owner chose.** All payees start as `user` (the column's default). The job sets `sync` on
    a payee unless an audit row shows a name you chose: a `payee.rename`, or a `payee.merge` whose name wasn't the
-   name of one of the payees joined. In the backup that's 1 rename; Hulu's merge kept the app's name, so Hulu is
+   name of one of the payees joined. In the backup that's 1 rename; Streamco's merge kept the app's name, so Streamco is
    `sync`. Renames through the transaction `payeeName` edit leave no audit row; the backup has none (every other
    payee's name is one the old rules made from its own rows). From then on, that edit sets `named_by = 'user'`.
 3. **Re-file.** Behind the `processed_through` fence of every connection, as `healPending` is, so no sync of any
@@ -148,8 +148,8 @@ job, run once after the migration.
    - One audit row records the job. An Undo of a join made before the job is refused ("Can't undo now: this payee
      changed since.").
 
-The phone downloads the changed payees, aliases and overlays once. In the backup: Hulu becomes one payee named
-"Hulu".
+The phone downloads the changed payees, aliases and overlays once. In the backup: Streamco becomes one payee named
+"Streamco".
 
 ## 9. The pending matcher without text
 
@@ -186,7 +186,7 @@ the bank's pending row, the pending row keeps what you set on the pair and the p
 
 **Today:** an entry (Add pending, or an Upcoming row) pairs only with a **posted** charge. When the bank also sends a
 pending row, both count until the charge posts, and the bank's row keeps counting after that until the bank removes
-it (hours or days at Bank of America).
+it (hours or days at Bank A).
 
 **New:** when a bank pending row has exact evidence with an unmatched entry (or you answer Yes), the bank row is
 **covered** by the entry:
@@ -213,7 +213,7 @@ connection, last 44 days).
 
 ### 9.3 A posted charge and the bank's pending row
 
-Plaid's link decides when there is one. Bank of America almost never sends it (5 links in 181 posted rows). Without
+Plaid's link decides when there is one. Bank A almost never sends it (5 links in 181 posted rows). Without
 the link, a candidate pairs on exact evidence (same merchant, or same amount and day); otherwise "Same purchase?"
 (9.1). When several candidates have exact evidence, today's pairing stays: best score first (amount 50%, day 20%,
 same merchant 30%), each row once, twins with nothing set paired without asking, and a close alternative with
@@ -222,7 +222,7 @@ different edits asked.
 **Gone:** text likeness, store numbers, and the weighted score for entries (an entry pairs only on exact evidence or
 your Yes).
 
-**Backup check:** Bank of America's 5 unlinked pairs pair again by themselves: 3 by the same merchant name (two with a
+**Backup check:** Bank A's 5 unlinked pairs pair again by themselves: 3 by the same merchant name (two with a
 tip), 2 by the same amount and day. A tipped charge whose pending row's Plaid name differs from its posted row's
 (6 of 11 pairs in the backup have different names) would ask "Same purchase?"; the backup has no such case. No entry
 in the backup met a bank pending row (1 of 5 entries matched a posted row; 3 were deleted by hand), so 9.2 isn't
@@ -230,21 +230,21 @@ checked against real data.
 
 ## 10. Backup check (Nov 4, 2026)
 
-The owner's full backup (751 bank rows, 184 Plaid pages, 310 payees), read in a scratch session; nothing from it is
+The owner's full backup (751 bank rows, 184 Plaid pages, 310 payees), read in a scratch session. The banks are named Bank A to Bank G here, and "Streamco" stands for a real merchant; nothing from the backup is
 in the repo.
 
-| Bank             | Rows (pending) | `merchant_name` | merchant id | `location.store_number` | `authorized_datetime` |
-| ---------------- | -------------- | --------------- | ----------- | ----------------------- | --------------------- |
-| Bank of America  | 194 (13)       | 185             | 46          | 9                       | 0                     |
-| Wells Fargo      | 220 (0)        | 196             | 135         | 35                      | 0                     |
-| Charles Schwab   | 181 (0)        | 45              | 28          | 0                       | 0                     |
-| Citibank         | 78 (1)         | 56              | 24          | 35                      | 0                     |
-| American Express | 57 (2)         | 32              | 25          | 0                       | 57                    |
-| Chase            | 8 (0)          | 1               | 1           | 0                       | 5                     |
-| SoFi             | 13 (0)         | 0               | 0           | 0                       | 0                     |
+| Bank   | Rows (pending) | `merchant_name` | merchant id | `location.store_number` | `authorized_datetime` |
+| ------ | -------------- | --------------- | ----------- | ----------------------- | --------------------- |
+| Bank A | 194 (13)       | 185             | 46          | 9                       | 0                     |
+| Bank B | 220 (0)        | 196             | 135         | 35                      | 0                     |
+| Bank C | 181 (0)        | 45              | 28          | 0                       | 0                     |
+| Bank D | 78 (1)         | 56              | 24          | 35                      | 0                     |
+| Bank E | 57 (2)         | 32              | 25          | 0                       | 57                    |
+| Bank F | 8 (0)          | 1               | 1           | 0                       | 5                     |
+| Bank G | 13 (0)         | 0               | 0           | 0                       | 0                     |
 
 - Plaid's `name` is on every row, and equals the bank text on 297.
-- No other field is worth adding: Bank of America sends no `authorized_datetime` and a store number on 1 of 13
+- No other field is worth adding: Bank A sends no `authorized_datetime` and a store number on 1 of 13
   pending rows; `check_number` is on 1 row, `payment_meta` on none.
 - A pending row's bank text never equals its posted row's (0 of 11 pairs).
 
@@ -271,14 +271,14 @@ Tests:
 - Domain: the keys of a row; the first key decides; the new-payee name follows the latest row and stops at the
   first categorization or rename; no rename into another payee's name; exact evidence only; several candidates; twins; an entry's
   typed name.
-- Sync (`sync.test.ts`, `pending-match.test.ts`): the Hulu story ends as one payee named "Hulu"; a filed row never
+- Sync (`sync.test.ts`, `pending-match.test.ts`): the Streamco story ends as one payee named "Streamco"; a filed row never
   moves; a rename adds `n:<name>`, so the next row with that Plaid name finds it; Venmo rows are one payee and Zelle
   rows one per person; a tipped pending row with a different Plaid name asks "Same purchase?"; the D-47 and D-50 cases
   rewritten with Plaid fields; an entry covers the bank's pending row and the posted row takes the entry's key, in every
   order (posted with or without link, bank row removed first, a new pending id); a leftover entry never takes a
   posted row whose pending row still counts; Yes, No and Not the same.
 - Phone (`engine.test.ts`): rename, join and the `payeeName` edit set `named_by`.
-- The job: restart after a failed step; runs under the sync lock; a renamed payee keeps its rows and name; Hulu's
+- The job: restart after a failed step; runs under the sync lock; a renamed payee keeps its rows and name; Streamco's
   merge counts as `sync`; categories, memos and owed marks unchanged on every moved row; old Undo refused; CPU per
   step.
 
@@ -308,7 +308,7 @@ Tests:
 
 | #   | Severity | Finding                                                                                                                   | Change                                                                                                |
 | --- | -------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| 1   | Blocker  | Live sync never re-files a row, so the Hulu story ended with two payees named "Hulu"                                      | A filed row never moves; a new payee's name follows Plaid but never takes another payee's name (4, 6) |
+| 1   | Blocker  | Live sync never re-files a row, so the Streamco story ended with two payees named "Streamco"                              | A filed row never moves; a new payee's name follows Plaid but never takes another payee's name (4, 6) |
 | 2   | Major    | The name-upgrade paths are skipped today (posted rows that take over a pending row, categorized rows)                     | Name upgrade only for new payees, from their own rows (6)                                             |
 | 3   | Major    | Filing depends on arrival order (305 vs 306 payees)                                                                       | Stated and accepted (4)                                                                               |
 | 4   | Major    | Names changed later without the owner, even after the owner OK'd them                                                     | Only while new; `name_source` and "posted over pending" dropped (6)                                   |

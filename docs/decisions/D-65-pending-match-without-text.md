@@ -5,7 +5,7 @@ section 11 (9.3). Changes D-47 (1) and (2) and replaces D-50.
 
 **Context.** Without Plaid's link (`pending_transaction_id`), D-47 paired a posted row with a bank pending row when
 their cleaned bank texts looked alike (trigram similarity ≥ 0.4) or the amount and day agreed exactly, and D-50 kept
-two branches of a chain apart by the store numbers in the text. Bank of America almost never sends the link (5 of 181
+two branches of a chain apart by the store numbers in the text. One of the owner's banks (Bank A) almost never sends the link (5 of 181
 posted rows in the owner's backup), and its pending text never equals its posted text (0 of 11 pairs), so the pairing
 rested on a guess from text. The owner asked for no cleanup of bank text anywhere.
 
@@ -51,5 +51,5 @@ its link wins (D-47), and the next sync would pair them again.
 
 **Not in this change.** A busy card can
 raise more questions than D-47 did: each posted row whose candidates have no exact evidence is asked about once,
-until it pairs or you answer. Bank of America sends an authorization date on every row (181 of 181 posted rows in
+until it pairs or you answer. Bank A sends an authorization date on every row (181 of 181 posted rows in
 the owner's Nov 4 backup), so its window is the same day or the day before, not 14 days.

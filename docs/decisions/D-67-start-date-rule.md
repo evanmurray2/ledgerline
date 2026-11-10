@@ -4,12 +4,12 @@
 link, and the posted transaction it becomes, is budgeted even if its date is earlier") and the reading of Money rule 8
 in `docs/sync-spec.md`. Builds on D-66 (the bank difference line).
 
-**Context.** The owner's Accounts showed two cards off from the bank, by $156.87 (Wells Fargo) and $187.53 (Amex).
-The backup of Nov 5 showed why. Four Wells Fargo purchases from Oct 31 were pending at the bank when it was linked on
-Nov 1, but Plaid sent them only on Nov 4, already posted. Amex sent a $390.16 Hertz hold at link, removed it, and sent
-the $187.53 charge as a new row with no link to the hold. Both were dated before the budget start, and neither was
+**Context.** The owner's Accounts showed two cards off from the bank, by $150.00 (a Bank B card) and $180.00 (a Bank E card). (The banks and amounts here are examples; the owner's own were taken out of this file.)
+The backup of Nov 5 showed why. Four Bank B purchases from Oct 31 were pending at the bank when it was linked on
+Nov 1, but Plaid sent them only on Nov 4, already posted. Bank E sent a $400.00 car rental hold at link, removed it, and sent
+the $180.00 charge as a new row with no link to the hold. Both were dated before the budget start, and neither was
 marked pending at link, so the app treated them as history. They weren't in the stored starting balance either, so
-the purchases were in no category and the accounts were off. Meanwhile five Atmos purchases from Oct 30–31 that were
+the purchases were in no category and the accounts were off. Meanwhile five purchases on a Bank A card from Oct 30–31 that were
 pending at link were counted in November's Fun money. Whether an October purchase counted depended on bank timing the
 owner can't see.
 
@@ -41,9 +41,9 @@ owner can't see.
    - Each linked account's page has a **Starting balance** (cards: **Starting debt**) row with "settling" or "final".
      It opens a sheet: the balance when you linked, the rows from before the start that came in later, the link-day
      rows counted in the budget instead, the total, and "Settling. Final on …" or "Final."
-   - For 7 days after a late row comes in, Accounts shows "Starting debt updated: Hertz $187.53" under the account.
+   - For 7 days after a late row comes in, Accounts shows "Starting debt updated: Car rental $180.00" under the account.
      (Replaced by D-70: no note on Accounts; the row moves to the ⋯ menu once final.)
-     The account page says "Hertz $187.53 from Oct 29 came in late. It is part of your starting debt, not your
+     The account page says "Car rental $180.00 from Oct 29 came in late. It is part of your starting debt, not your
      budget."
    - The read-only sheet of such a row says "Part of your starting balance" instead of "Not counted".
    - Setup's link step says that purchases from before the start are part of the starting balance, and that some
@@ -64,8 +64,8 @@ date only: two same-day purchases of the same amount, one reissued and one sent 
 difference shows it), and a reissue with a new posted date counts as late. Setup saves the balance the screen showed
 with the time of the latest sync, so a sync that finishes between the two can leave its rows out.
 
-**Money effect.** On the owner's budget of Nov 5: Wells Fargo active cash's starting debt grows by $156.87, Amex
-platinum's by $187.53, and Atmos Summit's by $124.80 (four purchases, which leave Fun money, so it gets $124.80 back).
-A $0.40 Atmos row authorized Nov 1 stays in November. Both "off from bank" lines go away. Ready to Assign doesn't
+**Money effect.** On the owner's budget of Nov 5: the Bank B card's starting debt grows by $150.00, the Bank E
+card's by $180.00, and the Bank A card's by $120.00 (four purchases, which leave Fun money, so it gets $120.00 back).
+A $0.50 Bank A row authorized Nov 1 stays in November. Both "off from bank" lines go away. Ready to Assign doesn't
 change, because card starting debt never touches it. On a checking account, a row that comes in late from before
 the start lowers Ready to Assign, and the account page says why.

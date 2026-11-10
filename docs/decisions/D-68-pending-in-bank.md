@@ -3,7 +3,7 @@
 **Decided by the owner** (chat, Nov 6, 2026). Changes D-66 (the bank difference line) and the working balance on
 Accounts.
 
-**Context.** Wells Fargo's balance came through Plaid before the row for the charge did. Accounts showed "$X off from
+**Context.** One bank's balance came through Plaid before the row for the charge did. Accounts showed "$X off from
 bank", so the owner added the charge with Add pending. The working balance (bank balance plus pending) then took the
 charge out twice: once in the bank's figure and once as the entry. The difference line stayed, since it compared
 only posted rows.
