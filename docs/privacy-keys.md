@@ -576,11 +576,10 @@ In `packages/seal`, each part with its tests. Nothing in the app or the Worker u
 | Snapshots: chunks, the manifest, the signed header, the check record                            | 8             | Each rule for opening one broken in turn; a snapshot that hides a later public entry is refused                                               |
 | The Worker's keys and its three stamps                                                          | 9.1, 9.2      | Both forms of the Worker secret pinned against the token code; the run-signing public key pinned; stored values that can't be stamped         |
 | Bank runs: sealing a page, signing a run, a device's checks, the server's receipt check         | 9.3           | Runs across one and two key changes, a rewound link, a restarted run, changed, missing and reordered pages                                    |
-
-| Adding a device: the three messages, the code, the sealed key, the confirmation | 10 | A separate program worked out the pinned commitment, transcript, code and confirmation; each step out of order is refused |
-| Requests signed with the budget's key | 11 | The signed bytes written out by a separate program; every changed field fails; small-order keys never verify |
-| The server's own rules for a write | 7.2 | Each rule broken in turn on a small budget: the clock, a write sent again, receipts, bank runs first, the breaker, the intent |
-| A chain that starts at a snapshot | 8 | A chain resumed from a snapshot takes the same next entries as the chain read from the start, and refuses the same ones |
+| Adding a device: the three messages, the code, the sealed key, the confirmation                 | 10            | A separate program worked out the pinned commitment, transcript, code and confirmation; each step out of order is refused                     |
+| Requests signed with the budget's key                                                           | 11            | The signed bytes written out by a separate program; every changed field fails; small-order keys never verify                                  |
+| The server's own rules for a write                                                              | 7.2           | Each rule broken in turn on a small budget: the clock, a write sent again, receipts, bank runs first, the breaker, the intent                 |
+| A chain that starts at a snapshot                                                               | 8             | A chain resumed from a snapshot takes the same next entries as the chain read from the start, and refuses the same ones                       |
 
 Every section of this file is built.
 
