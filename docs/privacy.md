@@ -470,7 +470,7 @@ Recorded in `docs/decisions/D-85-privacy-design-answers.md`.
 **Still open:**
 
 - **A. Background fetch (shape B).** With Plaid, shape B is the only way to both remove abandoned accounts' banks (answer 4) and leave D-67 and D-68 as they are. Confirm it, and question 1 goes away. The cost is the weaker bank claim in 5.5.
-- **B. The bank source.** Stay with Plaid for other people (which needs Plaid Production, and that costs money), or try SimpleFIN Bridge, where each person pays about $15 a year themselves (5.5)?
+- **B. The bank source: answered (owner, Nov 10, D-85).** Plaid stays. No other source is tried. Other people can link banks only once Plaid Production is an option, which costs money, so that part waits.
 - **C. The public repository** holds your own purchases and bank names in its docs and history. Leave them, or take them out?
 - **Raw Plaid pages** are the exact answers Plaid sent, kept word for word and never deleted, beside the cleaned-up bank log made from them. They exist so a bug in reading Plaid's data could be traced or redone. With shape B the server stops keeping them (it keeps sealed pages only until a device files them). Recommended: the device keeps the bank log and not the raw pages.
 

@@ -22,9 +22,10 @@ that design is built yet; these answers shape it, and each takes effect when its
 6. **The address will change later, not soon.** The design must keep passkeys working across that move.
 7. **Replacing the 7 bank tokens is tabled** until it is settled whether Plaid stays the bank source.
 8. **No spending is agreed.** The $0 rule stands; the audit, a lawyer and paid plans stay out.
+9. **Plaid stays the bank source** ("Let's stick with plaid"). No other source is tried.
 
 **Still open** (`docs/privacy.md` 14): background fetch with sealing (shape B), which would leave D-67 and D-68
-unchanged; the bank source for other people; the owner's own data in the public repository; raw Plaid pages.
+unchanged; the owner's own data in the public repository; raw Plaid pages.
 
 **Money effect.** None. No Money rule changes with these answers. Shape A in the design would change what "arrived"
 means for D-67 and D-68; it is not chosen.
