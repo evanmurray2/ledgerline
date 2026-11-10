@@ -150,6 +150,27 @@ export function toLedgerAccount(a: AccountRowDb): LedgerAccount {
   return { id: a.id, kind: a.kind, budgetFrom: a.budget_from, startingBalance: cents(a.starting_balance) };
 }
 
+/**
+ * Money into checking or savings that you haven't given a category goes to Ready to Assign (D-85). A card credit
+ * doesn't: it is a refund or rewards, and stays with "needs a category" until you say which.
+ */
+export function rtaByDefault(t: Pick<TxRow, 'amount' | 'account_kind' | 'category_id'>): boolean {
+  return t.amount > 0 && t.account_kind !== 'credit' && !t.category_id;
+}
+
+/** rtaByDefault as SQL, negated, for a v_transaction row: a row that can need a category. */
+export const NOT_RTA_BY_DEFAULT = `NOT (amount > 0 AND account_kind != 'credit')`;
+
+/** Not a transfer, Waiting to match or split (the caller checks those first): the money is in Ready to Assign. */
+export function inRta(t: TxRow): boolean {
+  return t.to_rta === 1 || t.wtm_state === 'matched' || t.wtm_state === 'income' || rtaByDefault(t);
+}
+
+/** The row waits for you to choose a category (a split's rows are checked by the caller). */
+export function needsCategory(t: TxRow): boolean {
+  return !t.category_id && !t.to_rta && !t.transfer_state && !t.wtm_state && !rtaByDefault(t);
+}
+
 export function useOf(t: TxRow, splits: SplitRow[], matched = 0): TxnUse {
   if (t.wtm_state === 'waiting' || t.wtm_state === 'send_back')
     return matched > 0 ? { type: 'waiting', matched: cents(matched) } : { type: 'waiting' };
@@ -165,7 +186,7 @@ export function useOf(t: TxRow, splits: SplitRow[], matched = 0): TxnUse {
         .map((s) => ({ id: s.id, categoryId: s.category_id, amount: cents(s.amount) })),
     };
   }
-  if (t.to_rta === 1 || t.wtm_state === 'matched' || t.wtm_state === 'income') return { type: 'rta' };
+  if (inRta(t)) return { type: 'rta' };
   if (t.category_id) return { type: 'category', categoryId: t.category_id };
   return { type: 'uncategorized' };
 }

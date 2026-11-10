@@ -1,7 +1,7 @@
 // One transaction as a list row (Activity, registers, category sheet).
 import type { TxnListRow } from '@ledgerline/contracts';
 import { cents, formatCents, type OwedStatus } from '@ledgerline/domain';
-import type { TxRow } from '../ledger/ledger.js';
+import { inRta, type TxRow } from '../ledger/ledger.js';
 
 export type ListSource = TxRow;
 
@@ -37,7 +37,7 @@ export function categoryLabel(
   if (t.transfer_state === 'unsorted') return null;
   if (t.transfer_state === 'manual') return 'Transfer';
   if (hasSplit) return 'Split';
-  if (t.to_rta === 1 || t.wtm_state === 'matched' || t.wtm_state === 'income') return 'Ready to Assign';
+  if (inRta(t)) return 'Ready to Assign';
   if (t.category_id) return categoryNames.get(t.category_id) ?? 'Category';
   return null;
 }

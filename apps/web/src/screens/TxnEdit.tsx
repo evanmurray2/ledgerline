@@ -40,15 +40,18 @@ function CategorySelect({
   onChange,
   id,
   allowRta,
+  noNeeds,
   valueName,
 }: {
   value: string;
   onChange: (v: string) => void;
   id: string;
   allowRta?: boolean;
+  /** Money into checking or savings: with no category it is in Ready to Assign, so "Needs a category" isn't a choice. */
+  noNeeds?: boolean;
   valueName?: string | null;
 }) {
-  const specials = [{ id: '', name: 'Needs a category' }];
+  const specials = noNeeds ? [] : [{ id: '', name: 'Needs a category' }];
   if (allowRta) specials.push({ id: 'rta', name: 'Ready to Assign' });
   return (
     <CategoryField
@@ -273,7 +276,51 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           </div>
         </div>
       )}
-      {isIncome ? (
+      <div className="flex flex-col gap-1">
+        <div className="flex min-h-9 items-center justify-between">
+          <label htmlFor="txn-cat" className="text-sm font-semibold text-ink-2">
+            Category
+          </label>
+          {outflow && t.amount < 0 && (
+            <Link
+              to={`${parent}/txn/${encodeURIComponent(t.key)}/split`}
+              data-track="txn.split"
+              className={cx(textLinkClass, 'self-center')}
+            >
+              Split into categories
+            </Link>
+          )}
+        </div>
+        {t.split && t.amount < 0 === outflow ? (
+          <Link
+            to={`${parent}/txn/${encodeURIComponent(t.key)}/split`}
+            data-track="txn.split.open"
+            className={cx(inputClass, 'flex items-center justify-between gap-2 no-underline')}
+          >
+            <span className="truncate">{t.categoryLabel ?? 'Split'}</span>
+            <Icon name="chevR" size={18} className="shrink-0 text-muted" />
+          </Link>
+        ) : (
+          <CategorySelect
+            id="txn-cat"
+            value={cat}
+            onChange={setCat}
+            allowRta={isRefund || !outflow}
+            noNeeds={!outflow && !onCard}
+            // A category archived since: the list no longer holds it, but this transaction still has it.
+            valueName={cat === origCat && !t.split ? t.categoryLabel : null}
+          />
+        )}
+        {t.categorizedBy && (cat === origCat || t.categorizedBy !== 'You') && (
+          <span className="text-xs text-muted">
+            {cat === origCat
+              ? `Set by ${t.categorizedBy === 'You' ? 'you' : t.categorizedBy}.`
+              : `Set by you. ${t.categorizedBy} won’t change it back.`}
+          </span>
+        )}
+      </div>
+      {/* Only money in Ready to Assign has a month to go to: income you gave a category doesn't. */}
+      {isIncome && cat === 'rta' && (
         <div className="flex flex-col gap-2 rounded-lg border border-line p-3">
           <span className="text-base font-semibold">Goes to</span>
           <Segmented
@@ -292,49 +339,6 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
               ? `Adds ${formatCents(t.amount)} to Ready to Assign in ${monthName(month)}.`
               : `Adds ${formatCents(t.amount)} to Ready to Assign on ${monthName(month)} 1.`}
           </span>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-1">
-          <div className="flex min-h-9 items-center justify-between">
-            <label htmlFor="txn-cat" className="text-sm font-semibold text-ink-2">
-              Category
-            </label>
-            {outflow && t.amount < 0 && (
-              <Link
-                to={`${parent}/txn/${encodeURIComponent(t.key)}/split`}
-                data-track="txn.split"
-                className={cx(textLinkClass, 'self-center')}
-              >
-                Split into categories
-              </Link>
-            )}
-          </div>
-          {t.split && t.amount < 0 === outflow ? (
-            <Link
-              to={`${parent}/txn/${encodeURIComponent(t.key)}/split`}
-              data-track="txn.split.open"
-              className={cx(inputClass, 'flex items-center justify-between gap-2 no-underline')}
-            >
-              <span className="truncate">{t.categoryLabel ?? 'Split'}</span>
-              <Icon name="chevR" size={18} className="shrink-0 text-muted" />
-            </Link>
-          ) : (
-            <CategorySelect
-              id="txn-cat"
-              value={cat}
-              onChange={setCat}
-              allowRta={isRefund || !outflow}
-              // A category archived since: the list no longer holds it, but this transaction still has it.
-              valueName={cat === origCat && !t.split ? t.categoryLabel : null}
-            />
-          )}
-          {t.categorizedBy && (cat === origCat || t.categorizedBy !== 'You') && (
-            <span className="text-xs text-muted">
-              {cat === origCat
-                ? `Set by ${t.categorizedBy === 'You' ? 'you' : t.categorizedBy}.`
-                : `Set by you. ${t.categorizedBy} won’t change it back.`}
-            </span>
-          )}
         </div>
       )}
       {isRefund && (catName || onCard) && (
@@ -479,9 +483,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
         extra={
           t.status === 'posted' && t.kind === 'posted' && t.postedDate
             ? `Posted ${dayLabel(t.postedDate)}`
-            : t.categorizedBy && isIncome
-              ? `Set by ${t.categorizedBy === 'You' ? 'you' : t.categorizedBy}`
-              : undefined
+            : undefined
         }
       />
       {(t.kind === 'manual' || t.kind === 'upcoming') &&

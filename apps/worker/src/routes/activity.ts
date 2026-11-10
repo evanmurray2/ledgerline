@@ -288,7 +288,7 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
       ),
     );
   } else {
-    // Neither: it was a payment (or, for a deposit, income) and needs a category.
+    // Neither: a payment needs a category; a deposit is income and goes to Ready to Assign (D-85).
     w.push(
       s.q(
         `UPDATE txn_overlay SET transfer_state = NULL, transfer_account_id = NULL, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,

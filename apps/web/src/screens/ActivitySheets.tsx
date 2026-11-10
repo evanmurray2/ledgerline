@@ -91,7 +91,7 @@ export function TransferScreen() {
   const lines = (name: string | null, picked?: { sheet: string }) =>
     name === null
       ? sent
-        ? 'Kept as income. It needs a category.'
+        ? 'Kept as income. It’s in Ready to Assign.'
         : `Kept as spending. It needs a category.${income(waiting)}`
       : `Paired with ${name}. It needs no category.${income(waiting - (picked?.sheet === 'transfer' ? 1 : 0))}`;
   const question = sent ? 'Which account sent this money?' : 'Which account got this money?';
@@ -222,7 +222,7 @@ export function TransferScreen() {
               >
                 <span className="text-base font-semibold">{sent ? 'It was income' : 'It was a payment'}</span>
                 <span className="text-xs text-muted">
-                  Give it a category like other {sent ? 'income' : 'spending'}
+                  {sent ? 'It goes to Ready to Assign' : 'Give it a category like other spending'}
                 </span>
               </Button>
             </div>
