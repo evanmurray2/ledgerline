@@ -69,6 +69,7 @@ payeesRoutes.get('/settings/payees', async (c) => {
           name: p.name,
           transactions: n.get(p.id)!,
           usual: top?.categoryId ? (catName.get(top.categoryId) ?? null) : null,
+          usualId: top?.categoryId ?? null,
           bankNames: bank.get(p.id) ?? [],
         };
       })

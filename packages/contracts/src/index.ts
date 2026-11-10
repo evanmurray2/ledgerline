@@ -578,6 +578,8 @@ export const PayeesView = z.object({
       transactions: z.number().int(),
       /** The category you've used most for money out to this payee. */
       usual: z.string().nullable(),
+      /** That category's id, to offer it first when you add a transaction for this payee. */
+      usualId: id.nullable(),
       /** The bank's own texts behind this payee, most used first (at most 10). */
       bankNames: z.array(z.object({ name: z.string(), count: z.number().int() })),
     }),

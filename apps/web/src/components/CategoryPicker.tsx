@@ -216,6 +216,8 @@ export function CategoryField({
   onChange,
   specials = [],
   groups: given,
+  suggested,
+  suggestedTitle,
   placeholder = 'Choose…',
   title,
   sub,
@@ -231,6 +233,9 @@ export function CategoryField({
   specials?: PickerSpecial[];
   /** Defaults to every category you can pick. */
   groups?: PickerGroup[];
+  /** Category ids the picker offers first, under `suggestedTitle`. */
+  suggested?: string[];
+  suggestedTitle?: string;
   placeholder?: string;
   title?: string;
   sub?: ReactNode;
@@ -278,6 +283,8 @@ export function CategoryField({
           sub={sub}
           groups={groups}
           specials={specials}
+          suggested={suggested}
+          suggestedTitle={suggestedTitle}
           value={value}
           track={track}
           onPick={(v) => {
