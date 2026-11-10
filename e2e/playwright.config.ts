@@ -14,6 +14,7 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 7_000 },
   reporter: report.reporter,
+  retries: report.retries,
   outputDir: report.outputDir,
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
