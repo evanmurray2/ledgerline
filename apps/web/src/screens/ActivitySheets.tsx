@@ -1,11 +1,13 @@
 // Transfer: pick the other side, Check not cleared, Add pending or upcoming.
 // Match money back is in ActivityMatch.tsx.
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams } from '@tanstack/react-router';
 import { useQueries } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
-import { useAccounts, useMoneyMutation, useTxn, useSession, qk } from '../api/hooks';
+import { useAccounts, useMoneyMutation, usePayees, useTxn, useSession, qk } from '../api/hooks';
+import { AccountField } from '../components/AccountField';
 import { CategoryField } from '../components/CategoryPicker';
+import { PayeeField } from '../components/PayeeField';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import {
   amountInputClass,
@@ -378,6 +380,12 @@ export function AddTxnScreen() {
   const [date, setDate] = useState('');
   const [repeats, setRepeats] = useState<'never' | 'monthly' | 'yearly'>('never');
   const accts = (accounts.data?.groups ?? []).flatMap((g) => g.accounts);
+  // Payees the bank's transactions already have, most used first, to offer as you type.
+  const known = usePayees().data;
+  const payeeNames = useMemo(
+    () => [...(known?.payees ?? []), ...(known?.others ?? [])].map((p) => p.name),
+    [known],
+  );
   const acct = accountId || accts[0]?.id || '';
   const cents = parseCents(amount);
   const on = date || today;
@@ -459,23 +467,26 @@ export function AddTxnScreen() {
           />
         </div>
       </div>
-      <Field label="Payee">
-        <input
-          className={inputClass}
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="add-payee" className="text-sm font-semibold text-ink-2">
+          Payee
+        </label>
+        <PayeeField
+          id="add-payee"
+          track="add_txn.payee"
           placeholder="e.g. Check #1044"
-          maxLength={120}
+          names={payeeNames}
           value={payee}
-          onChange={(e) => setPayee(e.target.value)}
+          onChange={setPayee}
         />
-      </Field>
+      </div>
       <Field label="Account">
-        <select className={inputClass} value={acct} onChange={(e) => setAccountId(e.target.value)}>
-          {accts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
+        <AccountField
+          track="add_txn.account"
+          groups={accounts.data?.groups ?? []}
+          value={acct}
+          onChange={setAccountId}
+        />
       </Field>
       <Field label="Category">
         <CategoryField

@@ -102,8 +102,10 @@ tapped again: pass it whenever the label says "Waiting…" or the step is runnin
 | `SearchField`      | The one search box. Escape clears it.                                              |
 | `Label`            | An upper-case label over a group.                                                  |
 
-A link or button that opens a picker in a form (`CategoryField`, the split link on a transaction) uses
-`inputClass` with a chevron, so it reads as one of the boxes.
+A link or button that opens a picker in a form (`CategoryField`, `AccountField`, the split link on a transaction)
+uses `inputClass` with a chevron, so it reads as one of the boxes. Both fields open the one picker sheet
+(`CategoryPickerSheet`): a search box, then the choices under their groups. `PayeeField` is a text box that lists
+your payees matching what you type under it; a tap fills the name in, and any other name can be typed.
 
 ### Display (`ui.tsx`)
 

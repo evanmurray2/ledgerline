@@ -67,10 +67,15 @@ export function CategoryPickerSheet({
   disabled,
   modal,
   track,
+  noun = 'category',
+  nounPlural = 'categories',
   children,
 }: {
   title?: string;
   sub?: ReactNode;
+  /** What the list holds, for the search box and the nothing-found note: "account" in the account picker. */
+  noun?: string;
+  nounPlural?: string;
   groups: PickerGroup[];
   specials?: PickerSpecial[];
   suggestedTitle?: string;
@@ -130,7 +135,7 @@ export function CategoryPickerSheet({
       onClose={onClose}
       gap="small"
       modal={modal}
-      closeLabel="Close category picker"
+      closeLabel={`Close ${noun} picker`}
       header={<SheetTitle title={title} sub={sub} />}
     >
       <div className="flex flex-col gap-2.5 pb-4">
@@ -140,8 +145,8 @@ export function CategoryPickerSheet({
             ref={search}
             value={q}
             onChange={setQ}
-            label="Search categories"
-            placeholder="Search categories"
+            label={`Search ${nounPlural}`}
+            placeholder={`Search ${nounPlural}`}
           />
         </div>
         {needle ? (
@@ -151,7 +156,9 @@ export function CategoryPickerSheet({
               {matches.map((c) => row(c, 'search_result', true))}
             </div>
           ) : (
-            <EmptyNote>No category called “{q.trim()}”.</EmptyNote>
+            <EmptyNote>
+              No {noun} called “{q.trim()}”.
+            </EmptyNote>
           )
         ) : (
           <>
