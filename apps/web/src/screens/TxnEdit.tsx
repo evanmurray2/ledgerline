@@ -176,7 +176,8 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       track="txn"
       onClose={close}
       gap="auto"
-      header={<TxnHeader t={t} />}
+      // Your own entry: the header follows the amount and Out / In as you change them.
+      header={<TxnHeader t={t} amount={canSetAmount ? (amtCents ?? sign * Math.abs(t.amount)) : t.amount} />}
       footer={
         <div className="flex flex-col gap-2">
           {patch.error && <ErrorNote error={patch.error} />}

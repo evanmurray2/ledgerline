@@ -181,7 +181,9 @@ test('Edit: an entry you added turns from Out to In, and goes to Ready to Assign
     .getByRole('dialog', { name: 'Choose a category' })
     .getByRole('button', { name: 'Needs a category' })
     .click();
+  await expect(sheet.getByRole('heading').first()).toContainText('−');
   await sheet.getByRole('button', { name: 'In', exact: true }).click();
+  await expect(sheet.getByRole('heading').first()).toContainText('+');
   await expect(sheet.getByLabel('Category')).toHaveText(/Ready to Assign/);
   await expect(sheet.getByText('Owed to you')).toHaveCount(0);
   await sheet.getByRole('button', { name: 'Save', exact: true }).click();
