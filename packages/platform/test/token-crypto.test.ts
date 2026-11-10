@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decryptToken, encryptToken, parseKeyring } from '../src/token-crypto.js';
+import { decryptToken, encryptToken, parseKeyring, tokenKeyBytes } from '../src/token-crypto.js';
 import { ulid } from '../src/ids.js';
 
 const k1 = btoa(String.fromCharCode(...new Uint8Array(32).fill(1)));
@@ -39,5 +39,28 @@ describe('access token encryption (AES-256-GCM, versioned keys)', () => {
   it('ULIDs sort by time', () => {
     expect(ulid(1000) < ulid(2000)).toBe(true);
     expect(ulid()).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+  });
+});
+
+describe('the 32 bytes of a keyring entry (docs/privacy-keys.md 9.1)', () => {
+  const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+
+  it('a base64 key gives its decoded bytes', async () => {
+    expect(hex(await tokenKeyBytes(k1))).toBe('01'.repeat(32));
+  });
+
+  it('a passphrase gives its SHA-256', async () => {
+    const phrase = 'correct horse battery staple, twice over';
+    expect(hex(await tokenKeyBytes(phrase))).toBe(
+      hex(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(phrase)))),
+    );
+    // Pinned: the Worker's run-signing key comes from these bytes, and the app is built with its public half.
+    expect(hex(await tokenKeyBytes(phrase))).toBe(
+      '5e840d5252a9a589f0de5b9c834652a1f320719f295e22745bbd8b58932c6cea',
+    );
+  });
+
+  it('anything shorter is refused', async () => {
+    await expect(tokenKeyBytes('too short')).rejects.toThrow();
   });
 });

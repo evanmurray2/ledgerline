@@ -24,14 +24,24 @@ function unb64(s: string): Uint8Array<ArrayBuffer> {
 const BASE64_32 = /^[A-Za-z0-9+/]{43}=$/;
 export const MIN_PASSPHRASE = 32;
 
-async function importKey(secret: string): Promise<CryptoKey> {
-  let raw: Uint8Array<ArrayBuffer>;
-  if (BASE64_32.test(secret)) raw = unb64(secret);
-  else if (secret.length >= MIN_PASSPHRASE)
+/**
+ * The 32 bytes of one keyring entry: the decoded bytes of a base64 key, or the SHA-256 of a passphrase. These exact
+ * bytes are the AES-GCM key for bank tokens, and what the privacy design derives the Worker's HMAC and run-signing
+ * keys from (docs/privacy-keys.md 9.1), under labels of their own.
+ */
+export async function tokenKeyBytes(secret: string): Promise<Uint8Array<ArrayBuffer>> {
+  if (BASE64_32.test(secret)) return unb64(secret);
+  if (secret.length >= MIN_PASSPHRASE)
     // A high-entropy random passphrase, not a memorable one: a fast hash is enough to make it a key.
-    raw = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret)));
-  else throw new Error('token key must be 32 bytes in base64 or a passphrase of 32+ characters');
-  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+    return new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret)));
+  throw new Error('token key must be 32 bytes in base64 or a passphrase of 32+ characters');
+}
+
+async function importKey(secret: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey('raw', await tokenKeyBytes(secret), 'AES-GCM', false, [
+    'encrypt',
+    'decrypt',
+  ]);
 }
 
 export async function encryptToken(

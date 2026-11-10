@@ -408,7 +408,7 @@ LLR1 || str(budgetId) || str(linkId)
      || H(cursor before) || H(cursor after)     this link's cursor; "before" is H of the empty string for a link's first run
      || u8(flags)           bit 0 has balances, bit 1 has liabilities, bit 2 is a link description
      || u32(added) || u32(modified) || u32(removed)
-     || u16(pages) || H(sealed_0) ... H(sealed_{pages-1})
+     || u16(pages) || [ u8(what_p) || H(sealed_p) ] ...     each page in order; the flags are those the page list gives
      || H(receipt)
      || prevManifestHash(32)                    H(manifest) of run - 1; zeros for run 1
      || u32(n)
