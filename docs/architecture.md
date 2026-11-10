@@ -53,7 +53,7 @@ Each `BudgetStore` runs jobs on its own alarm (`store/jobs.ts`): bank sync in st
 
 ## Deploys and recovery
 
-- Every merge to `main` deploys after its `ci` passes; there is no staging and no manual deploy (D-30, D-36, D-49). A failed smoke test rolls the code back; migrations are forward-only and expand-only.
+- Every merge to `main` deploys after its `ci` passes (a set of files that already passed as a pull request isn't tested again, and a docs-only merge doesn't deploy: D-84); there is no staging and no manual deploy (D-30, D-36, D-49). A failed smoke test rolls the code back; migrations are forward-only and expand-only.
 - Each object migrates itself when it starts.
 - Recovery is a runbook step (`docs/runbooks/restore.md`, D-77): a point-in-time restore, and its undo, which the Directory keeps.
 
