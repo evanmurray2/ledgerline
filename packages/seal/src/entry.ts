@@ -18,7 +18,7 @@ import {
 } from './bytes.js';
 import { aeadOpen, aeadSeal } from './aead.js';
 import type { BudgetKeys } from './budget-key.js';
-import { sign, verify } from './curve.js';
+import { isWeakSignKey, sign, verify } from './curve.js';
 import { sha256 } from './hash.js';
 import { NONCE_LEN, TAG_LEN } from './aead.js';
 import { MAX_PLAIN, pad, PAD_STEPS, unpad } from './pad.js';
@@ -323,6 +323,7 @@ export function readGenesis(body: Uint8Array): Genesis {
   const r = new Reader(body);
   r.magic('LLG1');
   const signPub = r.take(32);
+  if (isWeakSignKey(signPub)) throw new FormatError('signing key');
   if (r.u32() !== 1) throw new FormatError('inbox version');
   const g = { signPub, inboxPub: r.take(32), wrappedInbox: readWrapped(r), slots: readSlotRecords(r) };
   r.end();
@@ -444,6 +445,7 @@ export function readKeyChange(body: Uint8Array): KeyChange {
   const prevPublic = readRef(r);
   const version = r.u32();
   const signPub = r.take(32);
+  if (isWeakSignKey(signPub)) throw new FormatError('signing key');
   const wrappedPrevKey = readWrapped(r);
   const inboxVersion = r.u32();
   const inboxPub = r.take(32);

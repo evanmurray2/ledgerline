@@ -475,7 +475,18 @@ Both devices show `code`, and **the person confirms it on both**:
 3. `N -> O:   HMAC(HKDF(BK_v, transcript, "ledgerline/v1/add/confirm", 32), transcript)`. `O` shows "added" only after it verifies.
 4. `N`, which holds its own passkey's secret, makes its slot record and appends it in a slot-change entry, which it can now sign.
 
-`O` itself allows 3 attempts per start, then the person must start again; an attempt lasts 10 minutes; a cancelled one leaves nothing.
+**The messages as sent.** The commitment is 32 bytes. The offer is `nonceO(32) || signPub_v(32) || u32(v) || u64(head number) || head entryHash(32)`, 108 bytes. The reveal is `addPub(32) || nonceN(32)`. The sealed key is 80 bytes and the confirmation 32.
+
+**The order is the protection, so each side keeps it:**
+
+- `N` answers **one** offer per try. It never shows its key for a second offer: a server that could send one would choose its nonce after it saw `N`'s, and so choose the code.
+- `N` starts a new try only when the person asks. The app never starts one by itself.
+- `O` makes an offer only for a commitment it already holds, and takes one reveal per offer.
+- `O` makes at most 3 offers per start by the person, **shown or not**; then the person must start again. An offer lasts 10 minutes. A cancelled one leaves nothing.
+- `O` refuses a small-order `addPub` before it shows a code.
+- `O` seals the key once per start.
+- Before `N` opens the sealed key, it checks the offer against the log it was given: `signPub_v` and `v` are those in force at the end of the public chain it walked (4.4), and the head's hash is the hash of that entry in the log. An offer that does not agree is refused. This is `N`'s only tie to the real budget, because its passkey has no slot yet and so no anchor.
+- The confirmation proves that the other end holds `BK_v` and the transcript. `O` shows "added" when it verifies **and** the new device's slot change is in the log.
 
 The server relays every message. It must commit to an `addPub` before it sees `nonceO`, so it gets one guess in a million at a matching code, and a wrong guess shows as two different codes. Because `N` waits for the person too, a server that pretends to be `O` can't hand `N` a budget of its own making unseen.
 
@@ -488,7 +499,13 @@ signature = Ed25519(signPriv_v, "ledgerline/v1/request" || str(budgetId) || u32(
                                 || challenge(32) || H(payload))
 ```
 
-`action` is a fixed ASCII name for the request. `challenge` is 32 random bytes the server gave for this one request, used once and good for 5 minutes.
+`action` is a fixed ASCII name for the request: `store-sign-key`, `store-inbox-key`, `link-token` (to add or to repair a bank), `remove-bank`, `delete-account`. `challenge` is 32 random bytes the server gave for this one request, used once and good for 5 minutes.
+
+- `payload` is the request's body, exactly the bytes sent. Every parameter of the request is in the body and none in the address. The server hashes the bytes it received.
+- A request that names a key or a bank (`store-sign-key`, `store-inbox-key`, `remove-bank`) has a payload that is not empty.
+- The server takes `signPub_v` and `v` from the log, never from the request.
+
+**Signing keys.** The 14 encodings of Ed25519 points of small order are never a signing key: a genesis entry or a key change that names one is refused, and no signature verifies under one.
 
 ## 12. Limits
 
@@ -551,6 +568,9 @@ In `packages/seal`, each part with its tests. Nothing in the app or the Worker u
 | The Worker's keys and its three stamps                                                          | 9.1, 9.2      | Both forms of the Worker secret pinned against the token code; the run-signing public key pinned; stored values that can't be stamped         |
 | Bank runs: sealing a page, signing a run, a device's checks, the server's receipt check         | 9.3           | Runs across one and two key changes, a rewound link, a restarted run, changed, missing and reordered pages                                    |
 
-Not built yet: the server's own rules (7.2), a chain that starts from a snapshot and not from the genesis entry, adding a device (10), signed requests (11).
+| Adding a device: the three messages, the code, the sealed key, the confirmation | 10 | A separate program worked out the pinned commitment, transcript, code and confirmation; each step out of order is refused |
+| Requests signed with the budget's key | 11 | The signed bytes written out by a separate program; every changed field fails; small-order keys never verify |
 
-Each part's code got an adversarial review of its own before it merged. The review of snapshots, the Worker's keys and bank runs found 1 critical and 5 major faults, all fixed: after two key changes a run could be accepted under the first inbox key, so each replaced inbox version now has its own last run; a run that a key change overtook is started again and not signed; a snapshot must sit on the public chain the device walked, before the next public entry; a run's time must be later than the run before; a stamp check on a bad stored value answers "bad" and does not fail; a page's receipt bytes come from the Worker's key and the page's place, so the Worker holds no state between steps. The review of the entries and the chain found no wrong byte and 8 major faults in the rules, all fixed: an entry's hashes are worked out again and not trusted; the rules are one piece of code for the server and the device, so no honest entry can stop the log; an intent is judged when it is used; an inbox key with unfiled runs can't be dropped; an entry can't be dated in the checker's future; only a scan moves the scan date. The review of the first two parts found no wrong byte (it recomputed every label, layout and pinned value with a separate program) and 19 faults in checks and care with secrets, all fixed: a budget key sealed or wrapped is first checked to be the key its keys came from; a one-time key pair seals once; a slot id and base64url have one spelling; a byte-order mark is not dropped from a text field.
+Not built yet: the server's own rules (7.2), a chain that starts from a snapshot and not from the genesis entry.
+
+Each part's code got an adversarial review of its own before it merged. The review of adding a device and signed requests found no wrong byte and 4 major faults in the order of steps, each shown with a working attack and all fixed: the new device answered a second offer, so a server could pick the code; the signed-in device made an offer without a commitment; nothing counted offers; the new device got the key before it checked the offer against the log. Each side is now an object that allows each step once, in order. Smaller fixes: small-order signing keys are refused; a check of a signed request never fails on a wrong type. The review of snapshots, the Worker's keys and bank runs found 1 critical and 5 major faults, all fixed: after two key changes a run could be accepted under the first inbox key, so each replaced inbox version now has its own last run; a run that a key change overtook is started again and not signed; a snapshot must sit on the public chain the device walked, before the next public entry; a run's time must be later than the run before; a stamp check on a bad stored value answers "bad" and does not fail; a page's receipt bytes come from the Worker's key and the page's place, so the Worker holds no state between steps. The review of the entries and the chain found no wrong byte and 8 major faults in the rules, all fixed: an entry's hashes are worked out again and not trusted; the rules are one piece of code for the server and the device, so no honest entry can stop the log; an intent is judged when it is used; an inbox key with unfiled runs can't be dropped; an entry can't be dated in the checker's future; only a scan moves the scan date. The review of the first two parts found no wrong byte (it recomputed every label, layout and pinned value with a separate program) and 19 faults in checks and care with secrets, all fixed: a budget key sealed or wrapped is first checked to be the key its keys came from; a one-time key pair seals once; a slot id and base64url have one spelling; a byte-order mark is not dropped from a text field.

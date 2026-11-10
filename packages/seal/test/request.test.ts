@@ -2,10 +2,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   ACTION,
+  concat,
   deriveBudgetKeys,
   fromHex,
+  isWeakSignKey,
+  label,
   newChallenge,
   randomBytes,
+  sha256,
   signRequest,
   utf8,
   verify,
@@ -92,6 +96,60 @@ describe('a signed request', () => {
     expect(await v(keys.sign.pub, 1, BUDGET, 'no-such-request', challenge, sig)).toBe(false);
     expect(await v(keys.sign.pub, 1, BUDGET, ACTION.linkToken, challenge.slice(1), sig)).toBe(false);
     expect(await v(keys.sign.pub, 1, BUDGET, ACTION.linkToken, challenge, sig.slice(1))).toBe(false);
+  });
+
+  it('answers "no" and never fails for values of the wrong type, and for a small-order key', async () => {
+    const keys = await deriveBudgetKeys(randomBytes(32), BUDGET, 1);
+    const challenge = newChallenge();
+    const payload = utf8('{}');
+    const sig = await signRequest(keys, BUDGET, ACTION.linkToken, challenge, payload);
+    const none = undefined as unknown as Uint8Array;
+    const v = (pub: Uint8Array, c: Uint8Array, p: Uint8Array, s: Uint8Array) =>
+      verifyRequest(pub, 1, BUDGET, ACTION.linkToken, c, p, s);
+    expect(await v(keys.sign.pub, challenge, payload, sig)).toBe(true);
+    expect(await v(none, challenge, payload, sig)).toBe(false);
+    expect(await v(keys.sign.pub, none, payload, sig)).toBe(false);
+    expect(await v(keys.sign.pub, challenge, none, sig)).toBe(false);
+    expect(await v(keys.sign.pub, challenge, payload, none)).toBe(false);
+    // The small-order points: a signature of zeros (or of the point itself) must not verify for any message.
+    const zeros = new Uint8Array(64);
+    const identity = fromHex('01' + '00'.repeat(31));
+    expect(await v(new Uint8Array(32), challenge, payload, zeros)).toBe(false);
+    expect(await v(identity, challenge, payload, fromHex('01' + '00'.repeat(63)))).toBe(false);
+    for (const weak of [
+      'ec' + 'ff'.repeat(30) + '7f',
+      '26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05',
+      'c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa',
+      'ee' + 'ff'.repeat(31),
+    ]) {
+      expect(isWeakSignKey(fromHex(weak))).toBe(true);
+      expect(await v(fromHex(weak), challenge, payload, concat(fromHex(weak), new Uint8Array(32)))).toBe(
+        false,
+      );
+    }
+    expect(isWeakSignKey(keys.sign.pub)).toBe(false);
+  });
+
+  it('a request that names a key or a bank has a payload', async () => {
+    const keys = await deriveBudgetKeys(randomBytes(32), BUDGET, 1);
+    const empty = new Uint8Array();
+    for (const action of [ACTION.removeBank, ACTION.storeSignKey, ACTION.storeInboxKey])
+      await expect(signRequest(keys, BUDGET, action, newChallenge(), empty)).rejects.toThrow(RangeError);
+    const c = newChallenge();
+    const sig = await signRequest(keys, BUDGET, ACTION.deleteAccount, c, empty);
+    expect(await verifyRequest(keys.sign.pub, 1, BUDGET, ACTION.deleteAccount, c, empty, sig)).toBe(true);
+    expect(await verifyRequest(keys.sign.pub, 1, BUDGET, ACTION.removeBank, c, empty, sig)).toBe(false);
+  });
+
+  it('is not an entry, snapshot or recovery signature', async () => {
+    const keys = await deriveBudgetKeys(randomBytes(32), BUDGET, 1);
+    const c = newChallenge();
+    const payload = utf8('{}');
+    const sig = await signRequest(keys, BUDGET, ACTION.linkToken, c, payload);
+    for (const name of ['entry', 'snap', 'snap-checked', 'run', 'recovery/login'])
+      expect(
+        await verify(keys.sign.pub, concat(label(`ledgerline/v1/${name}`), await sha256(payload)), sig),
+      ).toBe(false);
   });
 
   it('refuses to sign an unknown request or a short challenge', async () => {

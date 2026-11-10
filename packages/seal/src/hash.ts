@@ -56,5 +56,10 @@ export async function hkdfExpand(prk: Uint8Array, info: Uint8Array, n: number): 
 
 /** HKDF(ikm, salt, info, n) as docs/privacy-keys.md writes it. */
 export async function hkdf(ikm: Uint8Array, salt: Uint8Array, info: Uint8Array, n: number): Promise<Bytes> {
-  return hkdfExpand(await hkdfExtract(salt, ikm), info, n);
+  const prk = await hkdfExtract(salt, ikm);
+  try {
+    return await hkdfExpand(prk, info, n);
+  } finally {
+    prk.fill(0);
+  }
 }

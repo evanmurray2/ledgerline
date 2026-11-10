@@ -16,6 +16,8 @@ export const ACTION = {
 } as const;
 export type Action = (typeof ACTION)[keyof typeof ACTION];
 const ACTIONS: readonly string[] = Object.values(ACTION);
+/** Requests that name a key or a bank: an empty payload would let one signature stand for any of them. */
+const NEEDS_PAYLOAD: readonly string[] = [ACTION.storeSignKey, ACTION.storeInboxKey, ACTION.removeBank];
 
 export const CHALLENGE_LEN = 32;
 /** A challenge is good for this long, and for one request. The server keeps that rule. */
@@ -34,7 +36,11 @@ async function requestMessage(
   if (!isUlid(budgetId)) throw new RangeError('budget id');
   if (!Number.isInteger(version) || version < 1 || version > 0xffffffff) throw new RangeError('key version');
   if (!ACTIONS.includes(action)) throw new RangeError('action');
-  if (challenge.length !== CHALLENGE_LEN) throw new RangeError('challenge');
+  if (!(challenge instanceof Uint8Array) || challenge.length !== CHALLENGE_LEN)
+    throw new RangeError('challenge');
+  if (!(payload instanceof Uint8Array)) throw new RangeError('payload');
+  // Everything the request asks for is in the payload, so a request that names something has one.
+  if (NEEDS_PAYLOAD.includes(action) && payload.length === 0) throw new RangeError('payload');
   return concat(
     label('ledgerline/v1/request'),
     str(budgetId),
@@ -45,7 +51,10 @@ async function requestMessage(
   );
 }
 
-/** A device's side: signs one request. `payload` is the request's body, exactly as sent. */
+/**
+ * A device's side: signs one request. `payload` is the request's body, exactly as sent. Every parameter of the
+ * request is in the body, none in the address, and the server hashes the bytes it received, not a copy it wrote again.
+ */
 export async function signRequest(
   keys: BudgetKeys,
   budgetId: string,
@@ -71,6 +80,7 @@ export async function verifyRequest(
   payload: Uint8Array,
   signature: Uint8Array,
 ): Promise<boolean> {
+  if (!(signPub instanceof Uint8Array) || !(signature instanceof Uint8Array)) return false;
   if (signPub.length !== 32 || signature.length !== 64) return false;
   let message: Bytes;
   try {
