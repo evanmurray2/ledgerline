@@ -46,12 +46,11 @@ async function ownerSetUp(page: Page) {
 }
 
 /** A new account on this page, through first-run setup to Budget. */
-async function newAccount(page: Page, name: string) {
+async function newAccount(page: Page) {
   await ownerSetUp(page);
   await withPasskeyDevice(page);
   await page.goto('/budget');
   await page.getByRole('button', { name: 'Create account' }).click();
-  await page.getByLabel('Name').fill(name);
   await page.getByRole('button', { name: 'Create passkey' }).click();
   await page.getByLabel(/I saved my recovery code/).check();
   await page.getByRole('button', { name: 'Continue' }).click();
@@ -65,7 +64,7 @@ test('Signed out in one tab: the other tab shows Sign in at once, not the budget
   page,
   context,
 }) => {
-  await newAccount(page, 'Sam');
+  await newAccount(page);
   const other = await context.newPage();
   await other.goto('/activity');
   await expect(other.getByText('No transactions in November.')).toBeVisible();
@@ -97,7 +96,7 @@ test('Using one tab keeps the other from ending the sign-in after 10 idle minute
   page,
   context,
 }) => {
-  await newAccount(page, 'Kim');
+  await newAccount(page);
   await context.clock.install();
   await page.goto('/activity');
   await expect(page.getByText('No transactions in November.')).toBeVisible();

@@ -69,16 +69,19 @@ async function runDirectoryJobs() {
 describe('Settings → Users', () => {
   it('is for admins only, and shows the accounts', async () => {
     await owner.ceremony(key(), '/api/auth/register/options', { setupCode: SETUP });
-    await sam.ceremony(samKey, '/api/auth/signup/options', { name: 'Sam', turnstileToken: TEST_TOKEN });
+    await sam.ceremony(samKey, '/api/auth/signup/options', { turnstileToken: TEST_TOKEN });
     samBudget = ((await sam.call('GET', '/api/session')).json.budget as { id: string }).id;
-    samId = (await dir.prepare(`SELECT id FROM user WHERE display_name = 'Sam'`).first<string>('id'))!;
+    samId = (await dir
+      .prepare(`SELECT user_id FROM budget_member WHERE budget_id = ?1`)
+      .bind(samBudget)
+      .first<string>('user_id'))!;
     expect((await sam.call('GET', '/api/settings/security/users')).status).toBe(404);
     expect((await sam.call('GET', '/api/settings/security')).json.usersScreen).toBe(false);
     expect((await owner.call('GET', '/api/settings/security')).json.usersScreen).toBe(true);
     const v = await owner.call('GET', '/api/settings/security/users');
     expect(v.status).toBe(200);
     expect(v.json).toMatchObject({ users: 2, signupsOpen: true });
-    expect((v.json.list as { name: string }[]).map((u) => u.name)).toEqual(['Sam', 'Admin']);
+    expect((v.json.list as { name: string }[]).map((u) => u.name)).toEqual(['Account', 'Admin']);
   });
 
   it('turning an account off signs it out and stops its jobs; on again brings them back', async () => {

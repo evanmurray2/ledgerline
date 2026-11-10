@@ -44,7 +44,8 @@ test('create an account, save the recovery code, and recover on another device',
   await alex.getByRole('button', { name: 'Create account' }).click();
   await expect(alex.getByRole('heading', { name: 'Create account' })).toBeVisible();
   await expect(alex.getByText('No one can recover it for you.')).toBeVisible();
-  await alex.getByLabel('Name').fill('Alex');
+  // A passkey and nothing else: no name or email is asked for (D-85).
+  await expect(alex.getByLabel('Name')).toHaveCount(0);
   await alex.getByRole('button', { name: 'Create passkey' }).click();
   await expect(alex.getByRole('heading', { name: 'Save your recovery code' })).toBeVisible();
   const code = (await alex.getByTestId('recovery-code').textContent())!.trim();

@@ -143,10 +143,9 @@ export function RecoveryCodeView({
   );
 }
 
-/** Create account: a name, the check, then a passkey; then the recovery code. */
+/** Create account: the check, then a passkey and nothing else (no name, no email: D-85); then the recovery code. */
 export function CreateAccountScreen({ siteKey, onBack }: { siteKey: string; onBack: () => void }) {
   const qc = useQueryClient();
-  const [name, setName] = useState('');
   const [token, setToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -170,7 +169,7 @@ export function CreateAccountScreen({ siteKey, onBack }: { siteKey: string; onBa
           setBusy(true);
           setErr(null);
           api
-            .signupOptions({ name: name.trim(), turnstileToken: token })
+            .signupOptions({ turnstileToken: token })
             .then(register)
             .then(
               (c) => {
@@ -185,19 +184,9 @@ export function CreateAccountScreen({ siteKey, onBack }: { siteKey: string; onBa
             );
         }}
       >
-        <Field label="Name">
-          <input
-            className={inputClass}
-            value={name}
-            maxLength={60}
-            onChange={(e) => setName(e.target.value)}
-            autoComplete="name"
-            required
-          />
-        </Field>
         <Turnstile siteKey={siteKey} action="signup" onToken={setToken} />
         <Problem text={err} />
-        <PrimaryButton type="submit" busy={busy} disabled={busy || !token || name.trim().length === 0}>
+        <PrimaryButton type="submit" busy={busy} disabled={busy || !token}>
           {busy ? 'Waiting for your passkey…' : 'Create passkey'}
         </PrimaryButton>
         <SecondaryButton type="button" onClick={onBack}>

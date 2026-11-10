@@ -41,7 +41,7 @@ Sign-up is open only when **all** of these hold: `SIGNUPS` is `open`, both Turns
 ### 3.1 Screens
 
 - Sign-in screen: **Create account** under **Sign in**, only when `signupOpen` is true.
-- Create account: **Name** (1–60 characters, shown on the passkey and to admins), the Turnstile check, then **Create passkey**. The screen says, before the passkey: "Your passkey is how you sign in. If you lose every passkey and your recovery code, you can't get back into your budget. No one can recover it for you."
+- Create account: the Turnstile check, then **Create passkey**. (**Now:** no name is asked for, D-85: sign-up takes a passkey and nothing else, the passkey's label is "Ledgerline" and the day, and Settings → Users lists an account as "Account" with the day it joined. The design said **Name**, 1–60 characters, shown on the passkey and to admins.) The screen says, before the passkey: "Your passkey is how you sign in. If you lose every passkey and your recovery code, you can't get back into your budget. No one can recover it for you."
 - Then the recovery code screen (4), which says the same again. The user ticks "I saved my recovery code. I understand that without it and my passkeys, my budget is lost." to go on.
 - Then the existing first-run Setup (`apps/web/src/screens/Setup.tsx`) on an empty budget.
 - UI text goes into `docs/copy.md` first.
