@@ -290,9 +290,12 @@ An intent is judged when it is used, not when it is written, so an intent from a
 **The server only**, because it needs its clock and its session:
 
 - `time` is within 5 minutes of the server's clock, either way. This is what makes the 7-day wait real: an intent can't be back-dated, and a key change can't be dated ahead.
-- `entryId` is new in the whole log; one it already holds gets "already stored", for the whole part set.
-- when an intent is required (6.3), "bank runs first" and the breaker (`docs/privacy.md` 5.3).
-- a bank entry's receipts match the runs it files (9.3).
+- `entryId` is new in the whole log. A write whose entry ids the log all holds gets "already stored". A write with some held and some new is refused; so is one id used for two changes in a write.
+- A write is stored whole or not at all. One that ends inside a part set is refused. A write holds at most 1,024 entries.
+- When an intent is required (6.3): the key change must name one, and the intent's `notBefore` is not later than the server's clock.
+- "Bank runs first": an edit is refused unless its `filedThrough` has reached the last complete run. The same write may file that run first.
+- The breaker refuses edits, bank entries, scans and data migrations while writes rest. It never holds back a slot change, a key change, a sign-out, an intent or a cancel; nor does "bank runs first" (`docs/privacy.md` 5.3).
+- A bank entry files only complete runs, and its receipts match the `H(receipt)` stored for exactly those runs, in order (9.3).
 
 **A device only:**
 
@@ -321,9 +324,15 @@ LLM1 || str(snapshotId) || u32(v) || u64(number) || entryHash(32)
      || u32(count) || H(chunk_1 as stored) ... H(chunk_count as stored)
      || u16(tables) || [ str(table name) || H(table) ] ...
      || u16(checkpoints) || [ u64(number) || entryHash(32) ] ...
+     || u64(time) || entryId(16) || u64(filedThrough) || u32(scanThrough)      of the entry the snapshot stands at
+     || u16(devices) || [ str(deviceId) || u64(deviceCounter) ] ...            each device's last counter
 ```
 
 The checkpoints are exactly these, in order: the `entryHash` of every entry before the snapshot's whose number is a multiple of 1,000, then the snapshot's own entry. A manifest with any other list is refused.
+
+The last two lines are the snapshot's **position**: what a device needs to check the entry after the snapshot. The devices are in ascending order of id, at least 1 and at most 4,096. Each entry raised one device's counter by 1, so the counters add up to the snapshot's `number`; a manifest where they don't is refused. A snapshot never stands inside a part set (6.4).
+
+**A chain that starts at a snapshot.** A device that opens a snapshot does not hold the entries before it. It takes the public state from the public chain, walked up to the public entry the header names, and the rest of its position from the manifest. From there it checks each later entry by the rules of 7.1, as if it had read the log from the start.
 
 **The header**, in clear, is what the server acts on:
 
@@ -570,7 +579,9 @@ In `packages/seal`, each part with its tests. Nothing in the app or the Worker u
 
 | Adding a device: the three messages, the code, the sealed key, the confirmation | 10 | A separate program worked out the pinned commitment, transcript, code and confirmation; each step out of order is refused |
 | Requests signed with the budget's key | 11 | The signed bytes written out by a separate program; every changed field fails; small-order keys never verify |
+| The server's own rules for a write | 7.2 | Each rule broken in turn on a small budget: the clock, a write sent again, receipts, bank runs first, the breaker, the intent |
+| A chain that starts at a snapshot | 8 | A chain resumed from a snapshot takes the same next entries as the chain read from the start, and refuses the same ones |
 
-Not built yet: the server's own rules (7.2), a chain that starts from a snapshot and not from the genesis entry.
+Every section of this file is built.
 
 Each part's code got an adversarial review of its own before it merged. The review of adding a device and signed requests found no wrong byte and 4 major faults in the order of steps, each shown with a working attack and all fixed: the new device answered a second offer, so a server could pick the code; the signed-in device made an offer without a commitment; nothing counted offers; the new device got the key before it checked the offer against the log. Each side is now an object that allows each step once, in order. Smaller fixes: small-order signing keys are refused; a check of a signed request never fails on a wrong type. The review of snapshots, the Worker's keys and bank runs found 1 critical and 5 major faults, all fixed: after two key changes a run could be accepted under the first inbox key, so each replaced inbox version now has its own last run; a run that a key change overtook is started again and not signed; a snapshot must sit on the public chain the device walked, before the next public entry; a run's time must be later than the run before; a stamp check on a bad stored value answers "bad" and does not fail; a page's receipt bytes come from the Worker's key and the page's place, so the Worker holds no state between steps. The review of the entries and the chain found no wrong byte and 8 major faults in the rules, all fixed: an entry's hashes are worked out again and not trusted; the rules are one piece of code for the server and the device, so no honest entry can stop the log; an intent is judged when it is used; an inbox key with unfiled runs can't be dropped; an entry can't be dated in the checker's future; only a scan moves the scan date. The review of the first two parts found no wrong byte (it recomputed every label, layout and pinned value with a separate program) and 19 faults in checks and care with secrets, all fixed: a budget key sealed or wrapped is first checked to be the key its keys came from; a one-time key pair seals once; a slot id and base64url have one spelling; a byte-order mark is not dropped from a text field.

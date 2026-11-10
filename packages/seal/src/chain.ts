@@ -486,3 +486,68 @@ export async function olderKeys(
     throw e;
   }
 }
+
+// ---------------------------------------------------------------- keeping a chain, and starting from a snapshot
+
+/** A chain state as a device or the server keeps it between runs: everything but the imported key. */
+export type StoredChain = Omit<ChainState, 'public'> & { public: Omit<PublicState, 'signKey'> };
+
+/** The state to store. It holds only numbers, text, bytes, lists and maps, so structured storage keeps it whole. */
+export function toStored(s: ChainState): StoredChain {
+  const { signKey: _, ...p } = s.public;
+  return { ...s, public: p };
+}
+
+/** The state back from storage. The store is the keeper's own; this trusts it and only imports the key again. */
+export async function fromStored(s: StoredChain): Promise<ChainState> {
+  return { ...s, public: { ...s.public, signKey: await signPublicKey(s.public.signPub) } };
+}
+
+/** Where a snapshot stands in the log, beyond its number and hash: what the next entry is checked against (section 8). */
+export interface ChainPosition {
+  number: number;
+  hash: Bytes;
+  /** Of the entry the snapshot stands at. */
+  time: number;
+  entryId: Bytes;
+  filedThrough: number;
+  scanThrough: number;
+  /** Each device's last counter. */
+  counters: Map<string, number>;
+}
+
+/**
+ * A chain that starts at a snapshot and not at the genesis entry. `p` is the public state after the snapshot's last
+ * public entry: the public chain walked up to that entry (`walkPublic` with `mustEndAt`). `at` comes from the
+ * snapshot's manifest, which the budget key sealed. A snapshot never stands inside a part set.
+ */
+export function resumeChain(p: PublicState, at: ChainPosition): ChainState {
+  const last = p.lastPublic;
+  if (!Number.isSafeInteger(at.number) || at.number < last.number)
+    fail('the snapshot stands before its public entry');
+  if (at.hash.length !== 32 || at.entryId.length !== 16) fail('snapshot position');
+  if (at.number === last.number && !equal(at.hash, last.hash))
+    fail('the snapshot stands before its public entry');
+  if (at.time < p.time || at.filedThrough < p.filedThrough)
+    fail('the snapshot stands before its public entry');
+  if (at.number === last.number && (at.time !== p.time || at.filedThrough !== p.filedThrough))
+    fail('snapshot position');
+  let total = 0;
+  for (const c of at.counters.values()) {
+    if (!Number.isSafeInteger(c) || c < 1) fail('device counter');
+    total += c;
+  }
+  // Every entry raised one device's counter by 1.
+  if (total !== at.number) fail('device counter');
+  return {
+    public: p,
+    number: at.number,
+    hash: at.hash,
+    time: at.time,
+    entryId: at.entryId,
+    filedThrough: at.filedThrough,
+    scanThrough: at.scanThrough,
+    counters: new Map(at.counters),
+    pending: null,
+  };
+}
