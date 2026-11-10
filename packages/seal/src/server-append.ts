@@ -26,10 +26,11 @@ export const SERVER_CLOCK_SLACK_MS = 5 * 60 * 1000;
 /** A passkey added less than this long ago is a "fresh" way in: it changes the key only through an intent that waited. */
 export const FRESH_WAY_MS = INTENT_WAIT_MS;
 /**
- * The most entries in one write, and so the most parts of one change set. A write is checked in one request, and each
- * entry costs a signature check and two hashes: about 0.2 ms. Measure on Cloudflare before raising it.
+ * The most entries in one write, and so the most parts of one change set. A write is checked in one request, which
+ * has 10 ms of CPU. Each entry costs a signature check and two hashes: 16 entries measured 4 to 5 ms, and 32 measured
+ * 8 to 12 ms (docs/measurements.md, Nov 10, 2026). Measure on Cloudflare before raising it.
  */
-export const MAX_WRITE_ENTRIES = 32;
+export const MAX_WRITE_ENTRIES = 16;
 /** The most entries in one write of the kinds no limit holds back (below). */
 export const MAX_KEY_ENTRIES_PER_WRITE = 4;
 /** A sign-out says nothing but who signs out: its sealed body is the smallest padding step. */

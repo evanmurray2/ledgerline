@@ -2,6 +2,27 @@
 
 How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history.
 
+## Update: the sealing code itself on the server's hot paths (Nov 10, 2026)
+
+`measure/seal-code.measure.ts` times the real code in `packages/seal`, which the section below could only stand in for. Times in ms, 60 runs each, in Node; the steps are measured again on Cloudflare before the cutover.
+
+| Step                                                       | median / p90 / max |
+| ---------------------------------------------------------- | ------------------ |
+| Seal one bank page (200 KB): one job step                  | 1.72 / 2.30 / 3.20 |
+| Sign a run of 10 pages: the last job step                  | 0.69 / 1.29 / 2.27 |
+| Check a write of 1 entry, 4 KB                             | 0.24 / 0.32 / 0.78 |
+| Check a write of 1 entry, 64 KB                            | 0.27 / 0.34 / 0.37 |
+| Check a write of 16 entries, 4 KB each                     | 4.12 / 4.77 / 7.95 |
+| Check a write of 16 entries, 64 KB each                    | 5.04 / 6.18 / 6.90 |
+| Check a write of 32 entries, 4 KB each                     | 7.95 / 9.64 / 10.8 |
+| Check a write of 32 entries, 64 KB each                    | 9.25 / 11.9 / 15.1 |
+| Check a signed request (remove a bank, delete the account) | 0.19 / 0.22 / 0.38 |
+| Check the stamp on a stored public key                     | 0.04 / 0.07 / 0.44 |
+
+- An entry costs about 0.25 ms to check, whatever its size: the signature check is most of it.
+- A write of 32 entries does not fit 10 ms, before any storage. So a write holds at most 16 entries (`MAX_WRITE_ENTRIES`), which leaves about half of the 10 ms for storing them.
+- A change set therefore has at most 16 parts, about 1 MB. How a larger first bank run is filed is open work (`docs/build-plan.md`).
+
 ## Update: sealing a bank page and checking a sealed entry (Nov 10, 2026)
 
 Phase 0 of `docs/privacy.md`: what its section 5.5 adds to the fetch step for each bank page, and what the server's checks on a sealed log entry (5.3) cost. `measure/seal.measure.ts` times WebCrypto calls of the kind the design names (X25519, HKDF, AES-256-GCM, SHA-256, Ed25519, HMAC); the sealing code itself doesn't exist yet. 60 runs each, wall time, ms. Node's WebCrypto does part of this work on other threads, and workerd counts all of it as CPU, so read these as a guide: the real steps are measured again on Cloudflare before the cutover.

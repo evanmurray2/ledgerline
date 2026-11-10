@@ -332,7 +332,7 @@ describe("the server's rules for a write", () => {
     expect(await refused(checkWrite(b.state, w, ctx(b)))).toBe('too large');
   });
 
-  it('takes at most 32 entries in a write', async () => {
+  it('takes at most 16 entries in a write', async () => {
     const b = await Budget.create();
     const w = await build(
       b,
