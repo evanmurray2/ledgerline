@@ -29,21 +29,19 @@ jobs:
         run: pnpm test:unit
       - name: Build the SPA
         run: pnpm --filter @ledgerline/web build
-      - name: Integration tests (Worker + Durable Objects in workerd)
-        run: pnpm --filter @ledgerline/worker test
       - name: Migration check
         run: node tools/ci/migration-check.mjs
       - name: Bundle size budget
         run: node tools/ci/bundle-budget.mjs
-  e2e:
-    # Runs alongside checks, split in two so the slow mock-API suite and the real-Worker suites don't queue.
-    name: e2e (${{ matrix.suite }})
+  integration:
+    # The slowest part of the checks, so it runs beside them, in three parts.
+    name: integration (${{ matrix.part }}/3)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        suite: [mock, worker]
+        part: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,7 +52,46 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # The browser download is cached per lockfile; the system libraries it needs come from apt each time.
+      - name: Build the SPA
+        run: pnpm --filter @ledgerline/web build
+      - name: Integration tests (Worker + Durable Objects in workerd), this part
+        working-directory: apps/worker
+        run: pnpm exec vitest run --shard="$PART/3"
+        env:
+          PART: ${{ matrix.part }}
+      - name: Integration tests, the Durable Object and sign-up suites
+        if: matrix.part == 3
+        working-directory: apps/worker
+        run: pnpm exec vitest run -c vitest.objects.config.ts && pnpm exec vitest run -c vitest.signup.config.ts
+  e2e:
+    # Runs beside the checks, in parts that each take about the same time: the mock-API suite and the real-Worker
+    # suite in three parts each (Playwright --shard), and the two sign-in suites together.
+    name: e2e (${{ matrix.suite }}${{ matrix.shard && format(' {0}', matrix.shard) || '' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { suite: mock, shard: 1/3 }
+          - { suite: mock, shard: 2/3 }
+          - { suite: mock, shard: 3/3 }
+          - { suite: worker, shard: 1/3 }
+          - { suite: worker, shard: 2/3 }
+          - { suite: worker, shard: 3/3 }
+          - { suite: sign-in }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The browser download is cached per lockfile. The runner image already has the system libraries Chromium needs,
+      # so a cached browser starts with no apt step.
       - id: browsers
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -63,23 +100,30 @@ jobs:
       - if: steps.browsers.outputs.cache-hit != 'true'
         run: pnpm exec playwright install --with-deps chromium
         working-directory: e2e
-      - if: steps.browsers.outputs.cache-hit == 'true'
-        run: pnpm exec playwright install-deps chromium
-        working-directory: e2e
       - name: Playwright against the SPA with the mock API, phone and desktop
         if: matrix.suite == 'mock'
-        run: pnpm --filter @ledgerline/e2e test
+        working-directory: e2e
+        run: pnpm exec playwright test --shard="$SHARD"
+        env:
+          SHARD: ${{ matrix.shard }}
       - name: Build the SPA
-        if: matrix.suite == 'worker'
+        if: matrix.suite != 'mock'
         run: pnpm --filter @ledgerline/web build
-      - name: Playwright against local wrangler dev with the November fixture, then passkey sign-in
+      - name: Playwright against local wrangler dev with the November fixture
         if: matrix.suite == 'worker'
-        run: pnpm --filter @ledgerline/e2e test:worker
+        working-directory: e2e
+        run: pnpm exec playwright test -c playwright.worker.config.ts --shard="$SHARD"
+        env:
+          SHARD: ${{ matrix.shard }}
+      - name: Playwright against local wrangler dev, passkey sign-in then sign-up
+        if: matrix.suite == 'sign-in'
+        working-directory: e2e
+        run: pnpm exec playwright test -c playwright.passkey.config.ts && pnpm exec playwright test -c playwright.signup.config.ts
       # Also when a test only passed on its retry (e2e/retry-log.ts writes flaky-<suite>.md): the failed try's trace.
       - if: ${{ !cancelled() && (failure() || hashFiles('e2e/test-results/flaky-*.md') != '') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: playwright-report-${{ matrix.suite }}
+          name: playwright-report-${{ matrix.suite }}-${{ strategy.job-index }}
           path: |
             e2e/playwright-report
             e2e/test-results

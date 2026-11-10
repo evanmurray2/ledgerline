@@ -47,7 +47,7 @@ The owner runs several Claude sessions side by side, each with its own container
 - Merge your own PR, without asking, once all of these hold (no rebase onto the latest `main` needed, D-51):
   1. GitHub shows no merge conflict with `main`,
   2. `pnpm check` passes locally,
-  3. every `ci` job (`checks`, `e2e (mock)`, `e2e (worker)`) passed on the PR's latest commit, and
+  3. every `ci` job (`checks`, `integration`, `e2e`: eleven in all) passed on the PR's latest commit, and
   4. it doesn't need an answer from the owner (Money rules, Plaid links, secrets).
      Then squash-merge with GitHub MCP `merge_pull_request` (`merge_method: squash`, `sha` set to the commit CI passed on). After the merge, start any further work fresh from `origin/main` on the same branch name.
 - The safety check is the `ci` run on `main` after each merge: `deploy.yml` only deploys a commit whose `ci` passed. After merging, check `ci` and `deploy` for your merge commit. If `ci` on `main` failed, fix it first, even if your PR alone was green. A deploy shown as skipped is fine: a newer merge cancelled its `ci`, and the newer deploy ships it.
