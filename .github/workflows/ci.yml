@@ -128,3 +128,19 @@ jobs:
             e2e/playwright-report
             e2e/test-results
           retention-days: 7
+  e2e-passed:
+    # The repository's merge rule asks for checks named `e2e (mock)` and `e2e (worker)`: these two report for all
+    # the e2e parts above.
+    name: e2e (${{ matrix.suite }})
+    needs: e2e
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        suite: [mock, worker]
+    steps:
+      - name: Every e2e part passed
+        run: '[ "$RESULT" = success ] || [ "$RESULT" = skipped ]'
+        env:
+          RESULT: ${{ needs.e2e.result }}
