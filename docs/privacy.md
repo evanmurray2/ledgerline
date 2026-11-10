@@ -1,6 +1,6 @@
 # Privacy design: a server that holds no key to a budget
 
-Status: v3, Nov 10, 2026. A proposal: nothing here is built. The owner answered most of its questions on Nov 10 (section 14, D-85); three are still open. v1 got two adversarial reviews (the key design and the claims; the fit with the code); v2 included their fixes, and section 15 lists them. v3 adds the owner's answers. `docs/architecture.md` says what runs today.
+Status: v3, Nov 10, 2026. A proposal: nothing here is built. The owner answered its questions on Nov 10 (section 14, D-85). The next step is phase 0. v1 got two adversarial reviews (the key design and the claims; the fit with the code); v2 included their fixes, and section 15 lists them. v3 adds the owner's answers. `docs/architecture.md` says what runs today.
 
 What the owner asked: to offer Ledgerline to other people as a privacy-focused budget app, with the strongest privacy and security claims that can be made honestly, and to know what has to change and what users would see.
 
@@ -203,7 +203,7 @@ What the engine runs today: every screen, and six kinds of edit while offline (`
 | Daily scan, maintenance                         | Alarms at 5:00 and 2:20                    | The engine, on the first open of the day                                                                                                                                   |
 | Handlers that mix Plaid calls and budget writes | One function                               | Split: a relay call on the Worker, a budget write in the engine                                                                                                            |
 | The bank log (`bank_event`, `bank_page`)        | Server only, append-only by trigger        | On the device, with the same triggers, stored beside the main copy and appended in chunks, so each save doesn't re-encrypt it all                                          |
-| Raw Plaid pages (`raw_page`)                    | Server only, kept for ever                 | Section 14: recommended not kept                                                                                                                                           |
+| Raw Plaid pages (`raw_page`)                    | Server only, kept for ever                 | Not kept (owner, D-85). The device keeps the bank log                                                                                                                      |
 | Health and alerts                               | Server writes them                         | The engine writes them                                                                                                                                                     |
 
 **One bank run is one unit.** v1 said two devices processing the same pages are safe because the second finds the cursor moved. That is wrong for today's code: the cursor moves only on a run's last page, events are unique per run id, and the lease lives in columns the copy doesn't hold (`sync/steps.ts`, `sync/lease.ts`), so a second device starting from the old cursor would write the same Plaid rows again as new events. Instead: a device fetches a run's pages into memory, applies and processes them on a scratch copy of the base, and sends **one** compare-and-swap write that holds the bank rows, the results and the cursor move. If another device got there first, the write is refused and the whole run is thrown away; on the redo the cursor has moved and there is nothing to do. No lease is needed between devices, and a phone put in the background mid-run loses nothing. A test with two engines covers exactly this.
@@ -216,9 +216,9 @@ What the engine runs today: every screen, and six kinds of edit while offline (`
 
 ### 5.5 Bank data: never stored readable
 
-There are two shapes. Which one fits depends on the bank source, which the owner has left open (question B in section 14).
+There are two shapes. The owner chose shape B (Nov 10, D-85), with Plaid as the bank source.
 
-**Shape B: the server keeps the bank key, fetches in the background, and seals each page at once. Recommended while the bank source is Plaid.**
+**Shape B (chosen): the server keeps the bank key, fetches in the background, and seals each page at once.**
 
 - The server keeps each access token as today (`connection.access_token_enc`, under `TOKEN_KEYS`). No token moves, and no Item is touched.
 - The fetch step runs on alarms as today. It already takes a page from Plaid without parsing it (`packages/bank-provider/src/plaid.ts`). Instead of storing the page in `raw_page`, it seals it to the budget's **inbox public key** (HPKE) and stores the sealed page with its arrival time in clear. The server's apply and processing steps are gone.
@@ -285,7 +285,7 @@ Also: drop `'unsafe-inline'` from `style-src`, add Trusted Types where the brows
 
 ### 5.9 Public, comparable releases
 
-- **The repository is already public** (checked Nov 10, 2026). So the code is open today, and branch protection is available. Its docs and history hold the owner's own purchases, bank names and the Cloudflare account id (for example `docs/decisions/D-67-start-date-rule.md`, `CLAUDE.md`); none is a secret, but the owner may want them out before pointing strangers at it (question C).
+- **The repository is already public** (checked Nov 10, 2026). So the code is open today, and branch protection is available. Its docs and history hold the owner's own purchases, bank names and the Cloudflare account id (for example `docs/decisions/D-67-start-date-rule.md`, `CLAUDE.md`); none is a secret, but the owner may want them out before pointing strangers at it; the owner chose to take them out of the docs (section 14).
 - The web build is made reproducible: the same commit gives the same files, byte for byte.
 - The deploy workflow publishes the list of file hashes for each release with a build attestation (free for public repositories), and Settings → About shows the release's commit and hash.
 - Anyone can then compare what the site serves with what the public build made. This covers the app's code. It says nothing about what the Worker runs, and it can't catch code sent to one person once (4.2). The policy says both.
@@ -328,7 +328,7 @@ This is the largest change since the budget moved to the phone.
 | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | Synced tables (`sync-tables.ts`)                                         | In log entries                                                                   |
 | `bank_event`, `bank_page`, connection cursor                             | In log entries; kept beside the copy                                             |
-| `raw_page`                                                               | Not kept (section 14, still open)                                                |
+| `raw_page`                                                               | Not kept (D-85)                                                                  |
 | `audit_log`, `txn_key_move`                                              | In log entries                                                                   |
 | `change_log`, `edit_seen`                                                | Replaced by the log's numbers and entry ids                                      |
 | `sync_run`, `sync_page`, `apply_counter`, `lease_guard`, connection lock | Device only, inside one run; not shared                                          |
@@ -417,7 +417,7 @@ The owner lifted D-78's freeze for the work in this design (D-85). Open sign-up 
 
 - **A privacy policy and terms** written from sections 2 and 4: what is stored, what is sealed, who else handles data (Cloudflare, Plaid), how long, how to delete, the "no reset" rule, and that in-app notices are the only way we can reach a person.
 - **A lawyer**, before sign-up opens. Questions to bring: whether US rules for companies that handle consumer financial data apply; state privacy laws; GDPR if anyone in Europe can sign up; breach notice duties with no email on file.
-- **Plaid Production** has its own security and privacy review, requires a privacy policy and a consent screen, and charges per linked Item: find the price before choosing it (section 14, B).
+- **Plaid Production** has its own security and privacy review, requires a privacy policy and a consent screen, and charges per linked Item: find the price before turning sign-up on.
 - **An outside audit** of the key design and its code. Without one, half of section 1.1 is our word.
 - **A security contact**: a `security.txt` and a short disclosure policy.
 - **A page that says what we can hand over** if a court asks: section 4.3, and nothing else.
@@ -447,17 +447,17 @@ The owner lifted D-78's freeze for the work in this design (D-85). Open sign-up 
 | The app's address changes later (the owner plans to, not soon). Passkeys are tied to the address | WebAuthn lets a new address use the old one's passkeys while the old address still answers ("related origins"; Safari 18 has it; to confirm in phase 0). The `workers.dev` address must then stay alive for good. Failing that, each person signs in once at the new address with the recovery key |
 | A sealed format or key mistake found after launch                                                | Every sealed value carries a format and key version; an outside review before the claims are published                                                                                                                                                                                             |
 
-## 14. The owner's answers (Nov 10, 2026) and what is still open
+## 14. The owner's answers (Nov 10, 2026)
 
 Recorded in `docs/decisions/D-85-privacy-design-answers.md`.
 
 | #   | Question                           | Answer                                                                                                                      |
 | --- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| 1   | What "arrived" means (D-67, D-68)  | **Open (A below).** The owner asked what the rules are and whether they can change                                          |
+| 1   | What "arrived" means (D-67, D-68)  | Unchanged: the owner chose background fetch with sealing (shape B, 5.5), "for now", so arrival times stay the server's      |
 | 2   | No reset                           | Yes                                                                                                                         |
 | 3   | D-78                               | Start now: the freeze is lifted for the work in this design. The owner also asked about bank sources other than Plaid (5.5) |
 | 4   | Abandoned accounts with bank links | Find a way to remove them. That needs the server to hold the bank key: shape B (5.5)                                        |
-| 5   | Raw Plaid pages                    | **Open (below).** The owner asked what they are                                                                             |
+| 5   | Raw Plaid pages                    | Stop keeping them                                                                                                           |
 | 6   | Restore                            | No restore at all: not in the app, and the runbook goes (5.3)                                                               |
 | 7   | Idle accounts                      | Yes, delete them (5.8: 24 months)                                                                                           |
 | 8   | Costs outside $0                   | Not agreed; the owner asked why any would be needed. Nothing here is needed to build the design. The $0 rule stands         |
@@ -467,12 +467,14 @@ Recorded in `docs/decisions/D-85-privacy-design-answers.md`.
 | 12  | Replacing the 7 bank tokens        | Tabled until the bank source is settled                                                                                     |
 | 13  | Order of phases                    | No preference                                                                                                               |
 
-**Still open:**
+**Answered after the first round (Nov 10):**
 
-- **A. Background fetch (shape B).** With Plaid, shape B is the only way to both remove abandoned accounts' banks (answer 4) and leave D-67 and D-68 as they are. Confirm it, and question 1 goes away. The cost is the weaker bank claim in 5.5.
-- **B. The bank source: answered (owner, Nov 10, D-85).** Plaid stays. No other source is tried. Other people can link banks only once Plaid Production is an option, which costs money, so that part waits.
-- **C. The public repository** holds your own purchases and bank names in its docs and history. Leave them, or take them out?
-- **Raw Plaid pages** are the exact answers Plaid sent, kept word for word and never deleted, beside the cleaned-up bank log made from them. They exist so a bug in reading Plaid's data could be traced or redone. With shape B the server stops keeping them (it keeps sealed pages only until a device files them). Recommended: the device keeps the bank log and not the raw pages.
+- **Background fetch with sealing (shape B):** yes, "for now". The owner asked whether a switch to shape A later is easy. It is a medium job, not a small one. The device's bank code is the same in both shapes if it reads pages through one small interface (sealed inbox, or relay), so build it that way. What a switch would still need: moving every bank key to a device, a Money-rules answer on what "arrived" means (D-67, D-68), and another way to remove an abandoned account's banks.
+- **The bank source:** Plaid stays. No other source is tried. Other people can link banks only once Plaid Production is an option, which costs money, so that part waits.
+- **The owner's data in the public repository:** take it out of the docs (a separate change; the git history keeps the old text).
+- **Raw Plaid pages:** stop keeping them. With shape B the server keeps a sealed page only until a device has filed it; the device keeps the bank log.
+
+Nothing is open. Phase 0 (section 10) is next.
 
 ## 15. Review
 

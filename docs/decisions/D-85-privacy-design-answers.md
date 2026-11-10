@@ -24,8 +24,13 @@ that design is built yet; these answers shape it, and each takes effect when its
 8. **No spending is agreed.** The $0 rule stands; the audit, a lawyer and paid plans stay out.
 9. **Plaid stays the bank source** ("Let's stick with plaid"). No other source is tried.
 
-**Still open** (`docs/privacy.md` 14): background fetch with sealing (shape B), which would leave D-67 and D-68
-unchanged; the owner's own data in the public repository; raw Plaid pages.
+10. **Background fetch with sealing** (the design's shape B): the server keeps each bank key, fetches in the
+    background as today, and seals each page at once ("Sure background sealing is fine for now"). Arrival times
+    stay the server's, so D-67 and D-68 are unchanged. The device's bank code is built so a later switch to the
+    relay shape stays possible.
+11. **Raw Plaid pages are no longer kept** once the design is built ("Yes stop keeping them"). The bank log stays.
+12. **The owner's own data comes out of the public docs** ("yes clean up docs"): purchases, bank names, the
+    Cloudflare account id. The git history keeps the old text.
 
 **Money effect.** None. No Money rule changes with these answers. Shape A in the design would change what "arrived"
 means for D-67 and D-68; it is not chosen.
