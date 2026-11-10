@@ -36,20 +36,22 @@ export async function deriveBudgetKeys(
 ): Promise<BudgetKeys> {
   if (bk.length !== BUDGET_KEY_LEN) throw new RangeError('budget key');
   const salt = keySalt(budgetId, version);
-  const raw = await Promise.all([
-    hkdf(bk, salt, label('ledgerline/v1/log'), 32),
-    hkdf(bk, salt, label('ledgerline/v1/snapshot'), 32),
-    hkdf(bk, salt, label('ledgerline/v1/wrap'), 32),
-    hkdf(bk, salt, label('ledgerline/v1/sign'), 32),
-  ]);
+  const raw: Bytes[] = [];
   try {
-    const [log, snapshot, wrap, sign] = await Promise.all([
-      aeadKey(raw[0]),
-      aeadKey(raw[1]),
-      aeadKey(raw[2]),
-      signPairFromSeed(raw[3]),
-    ]);
-    return { version, log, snapshot, wrap, sign };
+    for (const name of [
+      'ledgerline/v1/log',
+      'ledgerline/v1/snapshot',
+      'ledgerline/v1/wrap',
+      'ledgerline/v1/sign',
+    ])
+      raw.push(await hkdf(bk, salt, label(name), 32));
+    return {
+      version,
+      log: await aeadKey(raw[0]!),
+      snapshot: await aeadKey(raw[1]!),
+      wrap: await aeadKey(raw[2]!),
+      sign: await signPairFromSeed(raw[3]!),
+    };
   } finally {
     zeroize(...raw);
   }

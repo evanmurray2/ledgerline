@@ -42,10 +42,15 @@ export async function hkdfExpand(prk: Uint8Array, info: Uint8Array, n: number): 
   const out = bytes(n);
   let t: Uint8Array = bytes(0);
   for (let i = 1, o = 0; o < n; i++) {
-    t = await hmac(key, concat(t, info, u8(i)));
+    const block = concat(t, info, u8(i));
+    const next = await hmac(key, block);
+    block.fill(0);
+    t.fill(0);
+    t = next;
     out.set(t.subarray(0, Math.min(HASH_LEN, n - o)), o);
     o += HASH_LEN;
   }
+  t.fill(0);
   return out;
 }
 

@@ -59,13 +59,15 @@ async function sharedSecret(dhValue: Bytes, enc: Uint8Array, pkR: Uint8Array): P
 
 /** The key schedule for mode 0 (base): no pre-shared key. Gives the AEAD key and the nonce of the first seal. */
 async function keySchedule(shared: Bytes, info: Uint8Array): Promise<{ key: CryptoKey; nonce: Bytes }> {
-  const pskIdHash = await labeledExtract(HPKE_SUITE, EMPTY, 'psk_id_hash', EMPTY);
-  const infoHash = await labeledExtract(HPKE_SUITE, EMPTY, 'info_hash', info);
-  const context = concat(Uint8Array.of(0), pskIdHash, infoHash);
-  const secret = await labeledExtract(HPKE_SUITE, shared, 'secret', EMPTY);
-  const rawKey = await labeledExpand(HPKE_SUITE, secret, 'key', context, N_KEY);
-  const nonce = await labeledExpand(HPKE_SUITE, secret, 'base_nonce', context, N_NONCE);
+  let secret: Bytes = bytes(0);
+  let rawKey: Bytes = bytes(0);
   try {
+    const pskIdHash = await labeledExtract(HPKE_SUITE, EMPTY, 'psk_id_hash', EMPTY);
+    const infoHash = await labeledExtract(HPKE_SUITE, EMPTY, 'info_hash', info);
+    const context = concat(Uint8Array.of(0), pskIdHash, infoHash);
+    secret = await labeledExtract(HPKE_SUITE, shared, 'secret', EMPTY);
+    rawKey = await labeledExpand(HPKE_SUITE, secret, 'key', context, N_KEY);
+    const nonce = await labeledExpand(HPKE_SUITE, secret, 'base_nonce', context, N_NONCE);
     const key = await crypto.subtle.importKey('raw', rawKey, 'AES-GCM', false, ['encrypt', 'decrypt']);
     return { key, nonce };
   } finally {
@@ -73,7 +75,13 @@ async function keySchedule(shared: Bytes, info: Uint8Array): Promise<{ key: Cryp
   }
 }
 
-/** Seals with a given one-time pair. Only the test vectors call this with a fixed pair; `seal` makes a fresh one. */
+/** One-time pairs that have sealed: a second seal with one would reuse its AES-GCM key and nonce. */
+const used = new WeakSet<DhPair>();
+
+/**
+ * Seals with a given one-time pair, once: a second call with the same pair throws. Only the test vectors pass a fixed
+ * pair; `seal` makes a fresh one.
+ */
 export async function sealWith(
   eph: DhPair,
   pkR: Uint8Array,
@@ -82,6 +90,8 @@ export async function sealWith(
   plain: Uint8Array,
 ): Promise<Bytes> {
   if (pkR.length !== 32) throw new RangeError('public key');
+  if (used.has(eph)) throw new Error('a one-time key pair seals once');
+  used.add(eph);
   const shared = await sharedSecret(await dh(eph.privateKey, pkR), eph.pub, pkR);
   const { key, nonce } = await keySchedule(shared, info);
   // One sender context makes exactly one seal, so the first nonce is the only one ever used with this key.

@@ -86,6 +86,8 @@ describe('bytes', () => {
     expect(() => new Reader(str('toolong')).str(3)).toThrow(FormatError);
     expect(() => new Reader(concat(u32(5), utf8('ab'))).str(255)).toThrow(FormatError);
     expect(() => new Reader(concat(u32(2), Uint8Array.of(0xff, 0xfe))).text(255)).toThrow(FormatError);
+    // A byte-order mark stays in the text, so a field that starts with one is not read as the same text without it.
+    expect(new Reader(str(concat(Uint8Array.of(0xef, 0xbb, 0xbf), utf8('a')))).text(255)).toBe('\ufeffa');
     expect(() => new Reader(fromHex('ffffffffffffffff')).u64()).toThrow(FormatError);
   });
 
@@ -96,6 +98,11 @@ describe('bytes', () => {
     expect(toB64url(Uint8Array.of(0xfb, 0xff))).toBe('-_8');
     expect(() => fromHex('abc')).toThrow(RangeError);
     expect(() => fromB64url('a+b')).toThrow(RangeError);
+    // base64url has one spelling: an impossible length and stray trailing bits are refused.
+    expect(() => fromB64url('A')).toThrow(RangeError);
+    expect(() => fromB64url('AAAAA')).toThrow(RangeError);
+    expect(() => fromB64url('AR')).toThrow(RangeError);
+    expect(toHex(fromB64url('AQ'))).toBe('01');
     expect(isUlid('01ARZ3NDEKTSV4RRFFQ69G5FAV')).toBe(true);
     expect(isUlid('01arz3ndektsv4rrffq69g5fav')).toBe(false);
     expect(isUlid('01ARZ3NDEKTSV4RRFFQ69G5FA')).toBe(false);
@@ -212,6 +219,12 @@ describe('key pairs from seeds', () => {
     const one = bytes(32);
     one[0] = 1;
     await expect(dh(pair.privateKey, one)).rejects.toThrow(WeakKeyError);
+    // A caller's mistake is not reported as a weak key.
+    await expect(dh(pair.privateKey, bytes(31))).rejects.toThrow(RangeError);
+    const signer = await signPairFromSeed(randomBytes(32));
+    await expect(dh(signer.privateKey, pair.pub)).rejects.toThrow(TypeError);
+    // A public key that isn't one is simply "doesn't verify".
+    expect(await verify(bytes(31), utf8('m'), bytes(64))).toBe(false);
   });
 });
 

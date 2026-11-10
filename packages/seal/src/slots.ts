@@ -7,6 +7,7 @@ import {
   concat,
   equal,
   FormatError,
+  fromB64url,
   isUlid,
   label,
   Reader,
@@ -24,7 +25,8 @@ import { hkdf, hmac, hmacKey, hmacVerify, sha256 } from './hash.js';
 import * as hpke from './hpke.js';
 
 export const MAX_CREDENTIAL_ID = 1023;
-export const MAX_SLOT_ID = 2048;
+/** "p:" and the base64url of a 1,023-byte credential id. */
+export const MAX_SLOT_ID = 2 + Math.ceil((MAX_CREDENTIAL_ID * 4) / 3);
 export const MAX_SLOTS = 64;
 export const ANCHOR_LEN = 32;
 export const SEALED_KEY_LEN = 80;
@@ -46,6 +48,23 @@ export function prfInput(): Promise<Bytes> {
   return sha256(label('ledgerline/v1/prf/slot'));
 }
 
+/**
+ * Whether a text is a slot id in its one spelling: "p:" and the unpadded base64url of a credential id of 1 to 1,023
+ * bytes, or "r:" and a generation number from 1 to 2^32 - 1 with no leading zero. Two spellings of one credential
+ * would get past "no slot twice", so anything but the one spelling is refused, by writers and readers alike.
+ */
+export function isSlotId(id: string): boolean {
+  if (id.length > MAX_SLOT_ID) return false;
+  if (/^r:[1-9][0-9]{0,9}$/.test(id)) return Number(id.slice(2)) <= 0xffffffff;
+  if (!/^p:[A-Za-z0-9_-]+$/.test(id)) return false;
+  try {
+    const cred = fromB64url(id.slice(2));
+    return cred.length >= 1 && cred.length <= MAX_CREDENTIAL_ID;
+  } catch {
+    return false;
+  }
+}
+
 async function secretsFrom(
   ikm: Uint8Array,
   salt: Uint8Array,
@@ -53,14 +72,16 @@ async function secretsFrom(
   anchorLabel: string,
   slotId: string,
 ): Promise<SlotSecrets> {
-  const [seed, anchorRaw] = await Promise.all([
-    hkdf(ikm, salt, label(seedLabel), 32),
-    hkdf(ikm, salt, label(anchorLabel), 32),
-  ]);
+  const seed = await hkdf(ikm, salt, label(seedLabel), 32);
   try {
-    return { slotId, pair: await dhPairFromSeed(seed), anchorKey: await hmacKey(anchorRaw) };
+    const anchorRaw = await hkdf(ikm, salt, label(anchorLabel), 32);
+    try {
+      return { slotId, pair: await dhPairFromSeed(seed), anchorKey: await hmacKey(anchorRaw) };
+    } finally {
+      zeroize(anchorRaw);
+    }
   } finally {
-    zeroize(seed, anchorRaw);
+    zeroize(seed);
   }
 }
 
@@ -105,18 +126,27 @@ export async function recoverySlot(r: Uint8Array, generation: number): Promise<R
   const slotId = recoverySlotId(generation);
   const authSeed = await hkdf(r, ZERO, label('ledgerline/v1/recovery/auth'), 32);
   try {
-    const [slot, auth] = await Promise.all([
-      secretsFrom(r, ZERO, 'ledgerline/v1/recovery/x25519', 'ledgerline/v1/recovery/anchor', slotId),
-      signPairFromSeed(authSeed),
-    ]);
-    return { ...slot, auth };
+    const slot = await secretsFrom(
+      r,
+      ZERO,
+      'ledgerline/v1/recovery/x25519',
+      'ledgerline/v1/recovery/anchor',
+      slotId,
+    );
+    return { ...slot, auth: await signPairFromSeed(authSeed) };
   } finally {
     zeroize(authSeed);
   }
 }
 
+function keyVersion(v: number): number {
+  if (!Number.isInteger(v) || v < 1 || v > 0xffffffff) throw new RangeError('key version');
+  return v;
+}
+
 function anchorInput(budgetId: string, slotId: string, genesisSignPub: Uint8Array): Bytes {
   if (!isUlid(budgetId)) throw new RangeError('budget id');
+  if (!isSlotId(slotId)) throw new RangeError('slot id');
   if (genesisSignPub.length !== 32) throw new RangeError('genesis signing key');
   return concat(label('ledgerline/v1/anchor'), str(budgetId), str(slotId), genesisSignPub);
 }
@@ -162,6 +192,16 @@ export class SlotError extends Error {
   }
 }
 
+/**
+ * Throws unless `bk` is the budget key that `keys` came from. Every function that seals or wraps a budget key checks
+ * this first: a record sealed with the wrong 32 bytes looks fine when written and locks a way in out for good.
+ */
+export async function assertBudgetKey(bk: Uint8Array, keys: BudgetKeys, budgetId: string): Promise<void> {
+  if (bk.length !== BUDGET_KEY_LEN) throw new RangeError('budget key');
+  const derived = await deriveBudgetKeys(bk, budgetId, keys.version);
+  if (!equal(derived.sign.pub, keys.sign.pub)) throw new RangeError('budget key does not match its keys');
+}
+
 async function sealRecord(
   slotId: string,
   slotPub: Uint8Array,
@@ -170,17 +210,18 @@ async function sealRecord(
   keys: BudgetKeys,
   budgetId: string,
 ): Promise<SlotRecord> {
-  if (bk.length !== BUDGET_KEY_LEN) throw new RangeError('budget key');
-  const [sealedKey, wrappedPub] = await Promise.all([
-    hpke.seal(slotPub, slotInfo(budgetId, slotId, keys.version), keys.sign.pub, bk),
-    aeadSeal(keys.wrap, slotWrapAad(budgetId, slotId), slotPub),
-  ]);
+  if (!isUlid(budgetId)) throw new RangeError('budget id');
+  if (!isSlotId(slotId)) throw new RangeError('slot id');
+  await assertBudgetKey(bk, keys, budgetId);
+  const sealedKey = await hpke.seal(slotPub, slotInfo(budgetId, slotId, keys.version), keys.sign.pub, bk);
+  const wrappedPub = await aeadSeal(keys.wrap, slotWrapAad(budgetId, slotId), slotPub);
   return { slotId, anchor, sealedKey, wrappedPub };
 }
 
 /**
  * A new slot's record, made by the device that holds the slot's secret and the budget key. It opens its own sealed
- * key from the final bytes before it hands the record back, so a record that can't be opened is never written.
+ * key from the final bytes before it hands the record back, so a record that can't be opened is never written. At key
+ * version 1 the budget's first signing key is the one in force, so anything else is a mistake.
  */
 export async function newSlotRecord(
   s: SlotSecrets,
@@ -189,6 +230,8 @@ export async function newSlotRecord(
   budgetId: string,
   genesisSignPub: Uint8Array,
 ): Promise<SlotRecord> {
+  if (keys.version === 1 && !equal(genesisSignPub, keys.sign.pub))
+    throw new RangeError('genesis signing key');
   const anchor = await makeAnchor(s, budgetId, genesisSignPub);
   const record = await sealRecord(s.slotId, s.pair.pub, anchor, bk, keys, budgetId);
   const opened = await openSlotRecord(s, record, budgetId, keys.version, genesisSignPub, keys.sign.pub);
@@ -226,24 +269,27 @@ export async function openSlotRecord(
   genesisSignPub: Uint8Array,
   chainSignPub: Uint8Array,
 ): Promise<{ bk: Bytes; keys: BudgetKeys }> {
+  keyVersion(version);
+  if (!isUlid(budgetId)) throw new RangeError('budget id');
+  if (chainSignPub.length !== 32) throw new RangeError('signing key');
   if (record.slotId !== s.slotId || !(await checkAnchor(s, budgetId, genesisSignPub, record.anchor)))
     throw new SlotError('anchor');
+  const info = slotInfo(budgetId, s.slotId, version);
   let bk: Bytes;
   try {
-    bk = await hpke.open(s.pair, slotInfo(budgetId, s.slotId, version), chainSignPub, record.sealedKey);
+    bk = await hpke.open(s.pair, info, chainSignPub, record.sealedKey);
   } catch {
     throw new SlotError('open');
   }
-  if (bk.length !== BUDGET_KEY_LEN) {
+  try {
+    if (bk.length !== BUDGET_KEY_LEN) throw new SlotError('open');
+    const keys = await deriveBudgetKeys(bk, budgetId, version);
+    if (!equal(keys.sign.pub, chainSignPub)) throw new SlotError('signing_key');
+    return { bk, keys };
+  } catch (e) {
     zeroize(bk);
-    throw new SlotError('open');
+    throw e;
   }
-  const keys = await deriveBudgetKeys(bk, budgetId, version);
-  if (!equal(keys.sign.pub, chainSignPub)) {
-    zeroize(bk);
-    throw new SlotError('signing_key');
-  }
-  return { bk, keys };
 }
 
 export function encodeSlotRecord(r: SlotRecord): Bytes {
@@ -253,16 +299,13 @@ export function encodeSlotRecord(r: SlotRecord): Bytes {
     r.wrappedPub.length !== WRAPPED_PUB_LEN
   )
     throw new RangeError('slot record');
-  const id = utf8(r.slotId);
-  if (id.length === 0 || id.length > MAX_SLOT_ID || id.includes(0)) throw new RangeError('slot id');
-  return concat(str(id), r.anchor, r.sealedKey, r.wrappedPub);
+  if (!isSlotId(r.slotId)) throw new RangeError('slot id');
+  return concat(str(utf8(r.slotId)), r.anchor, r.sealedKey, r.wrappedPub);
 }
-
-const SLOT_ID = /^(p:[A-Za-z0-9_-]+|r:[1-9][0-9]{0,9})$/;
 
 export function readSlotRecord(r: Reader): SlotRecord {
   const slotId = r.text(MAX_SLOT_ID);
-  if (!SLOT_ID.test(slotId)) throw new FormatError('slot id');
+  if (!isSlotId(slotId)) throw new FormatError('slot id');
   return {
     slotId,
     anchor: r.take(ANCHOR_LEN),

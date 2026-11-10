@@ -7,11 +7,13 @@ import {
   checkAnchor,
   concat,
   deriveBudgetKeys,
+  dhPairFromSeed,
   encodeSlotRecords,
   equal,
   FormatError,
   fromHex,
   hpke,
+  isSlotId,
   newInbox,
   newSlotRecord,
   openInbox,
@@ -28,6 +30,7 @@ import {
   SlotError,
   toHex,
   u16,
+  u32,
   unwrapPrevKey,
   utf8,
   wrapPrevKey,
@@ -218,16 +221,109 @@ describe('a slot record', () => {
     expect(() => encodeSlotRecords(Array.from({ length: 65 }, () => a))).toThrow(RangeError);
     expect(() => readSlotRecords(new Reader(u16(0)))).toThrow(FormatError);
     expect(() => readSlotRecords(new Reader(encoded.subarray(0, encoded.length - 1)))).toThrow(FormatError);
-    const twice = concat(u16(2), encoded.subarray(2, 2 + (encoded.length - 2) / 1).subarray(0, 0));
-    expect(() => readSlotRecords(new Reader(twice))).toThrow(FormatError);
     const one = encodeSlotRecords([a]);
     expect(() => readSlotRecords(new Reader(concat(u16(2), one.subarray(2), one.subarray(2))))).toThrow(
       FormatError,
     );
-    const badId = encodeSlotRecords([{ ...a, slotId: 'x:1' }]);
-    expect(() => readSlotRecords(new Reader(badId))).toThrow(FormatError);
-    const leadingZero = encodeSlotRecords([{ ...b, slotId: 'r:01' }]);
-    expect(() => readSlotRecords(new Reader(leadingZero))).toThrow(FormatError);
+    // 64 slots are allowed, 65 are not.
+    const many = Array.from({ length: 64 }, (_, i) => ({ ...b, slotId: `r:${i + 1}` }));
+    expect(readSlotRecords(new Reader(encodeSlotRecords(many))).length).toBe(64);
+    expect(() => encodeSlotRecords([...many, { ...b, slotId: 'r:65' }])).toThrow(RangeError);
+  });
+
+  it('a slot id has one spelling, for writers and readers', async () => {
+    const good = ['r:1', 'r:4294967295', 'p:AQ', 'p:AQIDBAUGBwgJCgsMDQ4PEA', `p:${'A'.repeat(1364)}`];
+    const bad = [
+      'x:1',
+      'r:',
+      'r:0',
+      'r:01',
+      'r:4294967296',
+      'r:9999999999',
+      'p:',
+      'p:A', // an impossible base64url length
+      'p:AR', // stray trailing bits: the same credential as p:AQ
+      'p:AQ==',
+      'p:A+',
+      `p:${'A'.repeat(1366)}`, // a credential id over 1,023 bytes
+      '﻿r:1',
+      'r:1 ',
+    ];
+    for (const id of good) expect(isSlotId(id), id).toBe(true);
+    for (const id of bad) expect(isSlotId(id), id).toBe(false);
+
+    const { bk, keys } = await budget();
+    const a = await newSlotRecord(await recoverySlot(randomBytes(32), 1), bk, keys, BUDGET, keys.sign.pub);
+    // A writer refuses what a reader would refuse.
+    for (const id of bad) expect(() => encodeSlotRecords([{ ...a, slotId: id }]), id).toThrow(RangeError);
+    // And a reader refuses it in bytes built by hand, a leading byte-order mark included.
+    const body = (idBytes: Uint8Array) =>
+      concat(u16(1), u32(idBytes.length), idBytes, a.anchor, a.sealedKey, a.wrappedPub);
+    expect(readSlotRecords(new Reader(body(utf8('r:1')))).length).toBe(1);
+    for (const id of ['x:1', 'r:01', 'p:AR', 'r:4294967296'])
+      expect(() => readSlotRecords(new Reader(body(utf8(id)))), id).toThrow(FormatError);
+    expect(() =>
+      readSlotRecords(new Reader(body(concat(Uint8Array.of(0xef, 0xbb, 0xbf), utf8('r:1'))))),
+    ).toThrow(FormatError);
+    // Two spellings of one credential can't both be in one body: the second spelling is refused outright.
+    const rest = concat(a.anchor, a.sealedKey, a.wrappedPub);
+    const two = concat(u16(2), u32(4), utf8('p:AQ'), rest, u32(4), utf8('p:AR'), rest);
+    expect(() => readSlotRecords(new Reader(two))).toThrow(FormatError);
+  });
+
+  it('a record sealed with the wrong budget key is refused when it is written, not found out later', async () => {
+    const v1 = await budget(1);
+    const v2 = await budget(2);
+    const s = await passkeySlot(PRF, BUDGET, CRED);
+    const record = await newSlotRecord(s, v1.bk, v1.keys, BUDGET, v1.keys.sign.pub);
+    // A key change handed the old key by mistake would lock out every other way in for good.
+    await expect(resealSlotRecord(record, v1.keys, v1.bk, v2.keys, BUDGET)).rejects.toThrow(RangeError);
+    await expect(resealSlotRecord(record, v1.keys, randomBytes(32), v2.keys, BUDGET)).rejects.toThrow(
+      RangeError,
+    );
+    await expect(newSlotRecord(s, randomBytes(32), v1.keys, BUDGET, v1.keys.sign.pub)).rejects.toThrow(
+      RangeError,
+    );
+    // At version 1 the first signing key is the one in force.
+    await expect(newSlotRecord(s, v1.bk, v1.keys, BUDGET, randomBytes(32))).rejects.toThrow(RangeError);
+    // A mistake in an argument is the caller's error, not "this slot doesn't open".
+    await expect(openSlotRecord(s, record, BUDGET, 1.5, v1.keys.sign.pub, v1.keys.sign.pub)).rejects.toThrow(
+      RangeError,
+    );
+  });
+
+  it('the anchor is exactly HMAC(anchorKey, label || str(budgetId) || str(slotId) || genesisSignPub)', async () => {
+    const { bk, keys } = await budget();
+    const s = await passkeySlot(PRF, BUDGET, CRED);
+    const record = await newSlotRecord(s, bk, keys, BUDGET, keys.sign.pub);
+    // The anchor key, derived here with WebCrypto's own HKDF from the PRF output.
+    const salt = concat(Uint8Array.of(0, 0, 0, 26), utf8(BUDGET), u32(CRED.length), CRED);
+    const ikm = await crypto.subtle.importKey('raw', PRF, 'HKDF', false, ['deriveBits']);
+    const anchorKey = new Uint8Array(
+      await crypto.subtle.deriveBits(
+        {
+          name: 'HKDF',
+          hash: 'SHA-256',
+          salt,
+          info: concat(utf8('ledgerline/v1/slot/anchor'), Uint8Array.of(0)),
+        },
+        ikm,
+        256,
+      ),
+    );
+    const message = concat(
+      utf8('ledgerline/v1/anchor'),
+      Uint8Array.of(0, 0, 0, 0, 26),
+      utf8(BUDGET),
+      u32(s.slotId.length),
+      utf8(s.slotId),
+      keys.sign.pub,
+    );
+    const key = await crypto.subtle.importKey('raw', anchorKey, { name: 'HMAC', hash: 'SHA-256' }, false, [
+      'sign',
+    ]);
+    const theirs = new Uint8Array(await crypto.subtle.sign('HMAC', key, message));
+    expect(toHex(record.anchor)).toBe(toHex(theirs));
   });
 });
 
@@ -237,12 +333,18 @@ describe('small wrapped values', () => {
     const inbox = await newInbox(v1.keys, BUDGET, 1);
     expect(inbox.wrapped.length).toBe(60);
     expect(toHex((await openInbox(v1.keys, BUDGET, 1, inbox.wrapped)).pub)).toBe(toHex(inbox.pair.pub));
+    // The wrapped value is the pair's seed under AEAD(K_wrap, label || str(budgetId) || u32(i)), written out by hand.
+    const aad = concat(utf8('ledgerline/v1/wrap/inbox'), Uint8Array.of(0, 0, 0, 0, 26), utf8(BUDGET), u32(1));
+    const seed = await aeadOpen(v1.keys.wrap, aad, inbox.wrapped);
+    expect(toHex((await dhPairFromSeed(seed)).pub)).toBe(toHex(inbox.pair.pub));
     await expect(openInbox(v1.keys, BUDGET, 2, inbox.wrapped)).rejects.toThrow();
     await expect(openInbox(v1.keys, OTHER_BUDGET, 1, inbox.wrapped)).rejects.toThrow();
     await expect(openInbox((await budget(1)).keys, BUDGET, 1, inbox.wrapped)).rejects.toThrow();
     // A key change carries it forward under the new wrap key.
     const v2 = await budget(2);
     const carried = await rewrapInbox(v1.keys, v2.keys, BUDGET, 1, inbox.wrapped);
+    await expect(rewrapInbox(v2.keys, v1.keys, BUDGET, 1, inbox.wrapped)).rejects.toThrow(RangeError);
+    await expect(rewrapInbox(v1.keys, v1.keys, BUDGET, 1, inbox.wrapped)).rejects.toThrow(RangeError);
     expect(toHex((await openInbox(v2.keys, BUDGET, 1, carried)).pub)).toBe(toHex(inbox.pair.pub));
     // What it sealed still opens.
     const sealed = await hpke.seal(inbox.pair.pub, utf8('i'), utf8('a'), utf8('a bank page'));
@@ -254,8 +356,8 @@ describe('small wrapped values', () => {
     const v1 = await budget(1);
     const v2 = await budget(2);
     const v3 = await budget(3);
-    const w2 = await wrapPrevKey(v2.keys, BUDGET, v1.bk);
-    const w3 = await wrapPrevKey(v3.keys, BUDGET, v2.bk);
+    const w2 = await wrapPrevKey(v1.keys, v2.keys, BUDGET, v1.bk);
+    const w3 = await wrapPrevKey(v2.keys, v3.keys, BUDGET, v2.bk);
     expect(w2.length).toBe(60);
     // A device that holds only version 3 reaches version 2, then version 1.
     const bk2 = await unwrapPrevKey(v3.keys, BUDGET, w3);
@@ -264,6 +366,18 @@ describe('small wrapped values', () => {
     expect(toHex(bk1)).toBe(toHex(v1.bk));
     await expect(unwrapPrevKey(v3.keys, BUDGET, w2)).rejects.toThrow();
     await expect(unwrapPrevKey(v2.keys, OTHER_BUDGET, w2)).rejects.toThrow();
-    await expect(wrapPrevKey(v1.keys, BUDGET, v1.bk)).rejects.toThrow(RangeError);
+    // The key before must be the key before: the wrong 32 bytes, or keys that aren't one version apart, are refused.
+    await expect(wrapPrevKey(v1.keys, v2.keys, BUDGET, v2.bk)).rejects.toThrow(RangeError);
+    await expect(wrapPrevKey(v1.keys, v2.keys, BUDGET, randomBytes(32))).rejects.toThrow(RangeError);
+    await expect(wrapPrevKey(v1.keys, v3.keys, BUDGET, v1.bk)).rejects.toThrow(RangeError);
+    await expect(wrapPrevKey(v2.keys, v1.keys, BUDGET, v2.bk)).rejects.toThrow(RangeError);
+    // And the wrapped key is exactly AEAD(K_wrap_2, label || str(budgetId) || u32(1), BK_1), written out by hand.
+    const aad = concat(
+      utf8('ledgerline/v1/wrap/prev-key'),
+      Uint8Array.of(0, 0, 0, 0, 26),
+      utf8(BUDGET),
+      u32(1),
+    );
+    expect(toHex(await aeadOpen(v2.keys.wrap, aad, w2))).toBe(toHex(v1.bk));
   });
 });

@@ -5,7 +5,9 @@
 export type Bytes = Uint8Array<ArrayBuffer>;
 
 const enc = new TextEncoder();
-const dec = new TextDecoder('utf-8', { fatal: true });
+// ignoreBOM keeps a leading U+FEFF in the text, so it is refused like any other unexpected character: stripped,
+// two different byte strings would read as the same text.
+const dec = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 export function bytes(n: number): Bytes {
   return new Uint8Array(n);
@@ -93,8 +95,15 @@ export function fromHex(s: string): Bytes {
   return out;
 }
 
+/** Unpadded base64url, in its one spelling: an impossible length or stray trailing bits are refused. */
 export function fromB64url(s: string): Bytes {
-  if (!/^[A-Za-z0-9_-]*$/.test(s)) throw new RangeError('base64url');
+  if (!/^[A-Za-z0-9_-]*$/.test(s) || s.length % 4 === 1) throw new RangeError('base64url');
+  const out = b64urlBytes(s);
+  if (toB64url(out) !== s) throw new RangeError('base64url');
+  return out;
+}
+
+function b64urlBytes(s: string): Bytes {
   const bin = atob(
     s
       .replace(/-/g, '+')

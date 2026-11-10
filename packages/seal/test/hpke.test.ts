@@ -3,7 +3,17 @@
 // 0x0002, taken from test-vectors.json of github.com/cfrg/draft-irtf-cfrg-hpke). The vectors printed in RFC 9180's
 // own appendix use other AEADs with X25519.
 import { describe, expect, it } from 'vitest';
-import { dhPairFromSeed, equal, fromHex, hpke, OpenError, randomBytes, toHex, utf8 } from '../src/index.js';
+import {
+  dhPairFromSeed,
+  equal,
+  fromHex,
+  hpke,
+  OpenError,
+  randomBytes,
+  toHex,
+  utf8,
+  WeakKeyError,
+} from '../src/index.js';
 import vector from './hpke-vector.json' with { type: 'json' };
 
 describe('HPKE', () => {
@@ -54,6 +64,17 @@ describe('HPKE', () => {
   });
 
   it('refuses to seal to an all-zero public key', async () => {
-    await expect(hpke.seal(new Uint8Array(32), utf8('i'), utf8('a'), utf8('p'))).rejects.toThrow();
+    await expect(hpke.seal(new Uint8Array(32), utf8('i'), utf8('a'), utf8('p'))).rejects.toThrow(
+      WeakKeyError,
+    );
+  });
+
+  it('a one-time key pair seals once: a second seal would reuse its key and nonce', async () => {
+    const recipient = await dhPairFromSeed(randomBytes(32));
+    const eph = await dhPairFromSeed(randomBytes(32));
+    await hpke.sealWith(eph, recipient.pub, utf8('i'), utf8('a'), utf8('one'));
+    await expect(hpke.sealWith(eph, recipient.pub, utf8('i'), utf8('a'), utf8('two'))).rejects.toThrow(
+      'seals once',
+    );
   });
 });

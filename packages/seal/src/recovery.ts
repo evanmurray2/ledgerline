@@ -21,6 +21,14 @@ async function check(r: Uint8Array): Promise<Bytes> {
 export async function showRecoveryKey(r: Uint8Array): Promise<string> {
   if (r.length !== RECOVERY_KEY_LEN) throw new RangeError('recovery key');
   const data = concat(r, await check(r));
+  try {
+    return spell(data);
+  } finally {
+    data.fill(0);
+  }
+}
+
+function spell(data: Uint8Array): string {
   let out = '';
   let acc = 0;
   let bits = 0;
@@ -50,7 +58,10 @@ export async function readRecoveryKey(typed: string): Promise<Bytes | null> {
   let o = 0;
   for (const c of s) {
     const v = ALPHABET.indexOf(c);
-    if (v < 0) return null;
+    if (v < 0) {
+      data.fill(0);
+      return null;
+    }
     acc = (acc << 5) | v;
     bits += 5;
     if (bits >= 8) {
@@ -60,9 +71,12 @@ export async function readRecoveryKey(typed: string): Promise<Bytes | null> {
     }
   }
   // The 3 bits of padding in the last character must be zero: one key has one spelling.
-  if (o !== data.length || acc !== 0) return null;
+  const whole = o === data.length && acc === 0;
   const r = data.slice(0, RECOVERY_KEY_LEN) as Bytes;
-  return equal(await check(r), data.subarray(RECOVERY_KEY_LEN)) ? r : null;
+  const ok = whole && equal(await check(r), data.subarray(RECOVERY_KEY_LEN));
+  data.fill(0);
+  if (!ok) r.fill(0);
+  return ok ? r : null;
 }
 
 function loginMessage(budgetId: string, challenge: Uint8Array): Bytes {

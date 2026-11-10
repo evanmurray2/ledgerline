@@ -1,6 +1,7 @@
 // The recovery key as a person sees and types it, and its sign-in by signature (docs/privacy-keys.md 4.2).
 import { describe, expect, it } from 'vitest';
 import {
+  concat,
   fromHex,
   newRecoveryKey,
   randomBytes,
@@ -9,6 +10,8 @@ import {
   showRecoveryKey,
   signRecoveryLogin,
   toHex,
+  utf8,
+  verify,
   verifyRecoveryLogin,
 } from '../src/index.js';
 
@@ -63,6 +66,14 @@ describe('the recovery key', () => {
     const { auth } = await recoverySlot(r, 1);
     const challenge = randomBytes(32);
     const sig = await signRecoveryLogin(auth.privateKey, BUDGET, challenge);
+    // The signed message is exactly label || str(budgetId) || challenge, written out by hand.
+    const message = concat(
+      utf8('ledgerline/v1/recovery/login'),
+      Uint8Array.of(0, 0, 0, 0, 26),
+      utf8(BUDGET),
+      challenge,
+    );
+    expect(await verify(auth.pub, message, sig)).toBe(true);
     expect(await verifyRecoveryLogin(auth.pub, BUDGET, challenge, sig)).toBe(true);
     expect(await verifyRecoveryLogin(auth.pub, BUDGET, randomBytes(32), sig)).toBe(false);
     expect(await verifyRecoveryLogin(auth.pub, '01BX5ZZKBKACTAV9WEVGEMMVRZ', challenge, sig)).toBe(false);

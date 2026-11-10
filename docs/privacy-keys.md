@@ -38,9 +38,11 @@ salt_v = str(budgetId) || u32(v)
 1. Build the PKCS#8 bytes: a fixed 16-byte prefix, then the seed.
    - Ed25519: `30 2e 02 01 00 30 05 06 03 2b 65 70 04 22 04 20 || seed`
    - X25519: `30 2e 02 01 00 30 05 06 03 2b 65 6e 04 22 04 20 || seed`
-2. Import them once as extractable, export as JWK, and read the public half from its `x` field.
-3. Import them again as non-extractable. That is the key used from then on.
-4. Zero the seed, the PKCS#8 bytes and the JWK, and drop the extractable key.
+2. Work out the public half.
+   - Ed25519: import the bytes once as extractable, export as JWK, and read the public half from its `x` field. Drop that key and the JWK. (The JWK holds the seed as text, and JavaScript can't erase a string; dropping it is all that can be done.)
+   - X25519: no extractable key is needed. The public half is the X25519 result of the private key and the base point, `u = 9`.
+3. Import the bytes as non-extractable. That is the key used from then on.
+4. Zero the seed and the PKCS#8 bytes.
 
 Test vectors pin the public half for fixed seeds. Phase 0 confirms that Safari and Workers accept both imports.
 
@@ -473,11 +475,16 @@ Still to confirm in phase 0: that Safari and Workers accept both PKCS#8 imports,
 
 In `packages/seal`, each part with its tests. Nothing in the app or the Worker uses the package yet.
 
-| Part                                                                                            | Sections | Checked against                                                                                           |
-| ----------------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------- |
-| Byte layouts, labels, the strict reader; SHA-256, HMAC, HKDF; AES-256-GCM; key pairs from seeds | 1, 2     | RFC 5869 test cases 1 and 3, and WebCrypto's own HKDF; RFC 8032 test 1; RFC 7748 section 6.1              |
-| HPKE base mode, single-shot                                                                     | 3        | The CFRG's published test vector for this exact suite (mode 0, KEM `0x0020`, KDF `0x0001`, AEAD `0x0002`) |
-| Padding                                                                                         | 6.2      | Every step boundary                                                                                       |
-| The keys derived from a budget key                                                              | 2        | The same derivation done with WebCrypto's HKDF; the signing public key is pinned                          |
+| Part                                                                                            | Sections | Checked against                                                                                                                               |
+| ----------------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Byte layouts, labels, the strict reader; SHA-256, HMAC, HKDF; AES-256-GCM; key pairs from seeds | 1, 2     | RFC 5869 test cases 1 and 3, and WebCrypto's own HKDF; RFC 8032 test 1; RFC 7748 section 6.1                                                  |
+| HPKE base mode, single-shot                                                                     | 3        | The CFRG's published test vector for this exact suite (mode 0, KEM `0x0020`, KDF `0x0001`, AEAD `0x0002`)                                     |
+| Padding                                                                                         | 6.2      | Every step boundary                                                                                                                           |
+| The keys derived from a budget key                                                              | 2        | The same derivation done with WebCrypto's HKDF; the signing public key is pinned                                                              |
+| Ways in: a passkey's and the recovery key's secrets, the slot record and its anchor, slot ids   | 4        | The anchor, its key and the sealing inputs written out by hand with WebCrypto's HKDF and HMAC; pinned public keys; a forged budget is refused |
+| Small wrapped values: an inbox private key, the budget key before this one                      | 5        | The associated data written out by hand; a walk back over two key changes                                                                     |
+| The recovery key as shown and typed, and its sign-in by signature                               | 4.2      | A separate implementation of the spelling; every one-character slip is caught                                                                 |
 
-Not built yet: slots (4), wrapped values (5), entries (6, 7), snapshots (8), the Worker's keys, HMACs and bank runs (9), adding a device (10), signed requests (11).
+Not built yet: entries (6, 7), snapshots (8), the Worker's keys, HMACs and bank runs (9), adding a device (10), signed requests (11).
+
+Each part's code got an adversarial review of its own before it merged. The review of the first two parts found no wrong byte (it recomputed every label, layout and pinned value with a separate program) and 19 faults in checks and care with secrets, all fixed: a budget key sealed or wrapped is first checked to be the key its keys came from; a one-time key pair seals once; a slot id and base64url have one spelling; a byte-order mark is not dropped from a text field.
