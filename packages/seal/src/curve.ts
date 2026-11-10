@@ -31,10 +31,12 @@ export async function signPairFromSeed(seed: Uint8Array): Promise<SignPair> {
   try {
     const open = await crypto.subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, true, ['sign']);
     const jwk = await crypto.subtle.exportKey('jwk', open);
-    if (typeof jwk.x !== 'string') throw new Error('no public half');
-    const pub = fromB64url(jwk.x);
+    const x = jwk.x;
+    // The JWK also holds the seed, as text. JavaScript can't erase a string; dropping the reference is all there is.
     jwk.d = '';
-    if (pub.length !== 32) throw new Error('public half');
+    if (typeof x !== 'string') throw new Error('Ed25519: this browser gave no public key');
+    const pub = fromB64url(x);
+    if (pub.length !== 32) throw new Error('Ed25519: public key');
     const privateKey = await crypto.subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, false, ['sign']);
     return { privateKey, publicKey: await signPublicKey(pub), pub };
   } finally {
@@ -51,14 +53,19 @@ export async function sign(privateKey: CryptoKey, message: Uint8Array): Promise<
   return new Uint8Array(await crypto.subtle.sign('Ed25519', privateKey, message as Bytes));
 }
 
+/** Whether a signature verifies. A public key or a signature that isn't one is simply "no", on every engine. */
 export async function verify(
   pub: Uint8Array | CryptoKey,
   message: Uint8Array,
   signature: Uint8Array,
 ): Promise<boolean> {
   if (signature.length !== 64) return false;
-  const key = pub instanceof Uint8Array ? await signPublicKey(pub) : pub;
-  return crypto.subtle.verify('Ed25519', key, signature as Bytes, message as Bytes);
+  try {
+    const key = pub instanceof Uint8Array ? await signPublicKey(pub) : pub;
+    return await crypto.subtle.verify('Ed25519', key, signature as Bytes, message as Bytes);
+  } catch {
+    return false;
+  }
 }
 
 /** The X25519 base point, u = 9. */
@@ -105,11 +112,17 @@ export class WeakKeyError extends Error {
 
 /** The X25519 shared secret, refused when it is all zeros (WebCrypto implementations differ on that). */
 export async function dh(privateKey: CryptoKey, pub: Uint8Array): Promise<Bytes> {
+  if (privateKey.algorithm.name !== 'X25519') throw new TypeError('not an X25519 key');
+  const publicKey = await dhPublicKey(pub);
   let shared: Bytes;
   try {
-    shared = await dhRaw(privateKey, pub);
-  } catch {
-    throw new WeakKeyError();
+    shared = new Uint8Array(
+      await crypto.subtle.deriveBits({ name: 'X25519', public: publicKey }, privateKey, 256),
+    );
+  } catch (e) {
+    // Some engines refuse a small-order public key with OperationError; others return zeros, caught below.
+    if (e instanceof Error && e.name === 'OperationError') throw new WeakKeyError();
+    throw e;
   }
   if (equal(shared, bytes(32))) throw new WeakKeyError();
   return shared;

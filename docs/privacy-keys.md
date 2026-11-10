@@ -38,9 +38,11 @@ salt_v = str(budgetId) || u32(v)
 1. Build the PKCS#8 bytes: a fixed 16-byte prefix, then the seed.
    - Ed25519: `30 2e 02 01 00 30 05 06 03 2b 65 70 04 22 04 20 || seed`
    - X25519: `30 2e 02 01 00 30 05 06 03 2b 65 6e 04 22 04 20 || seed`
-2. Import them once as extractable, export as JWK, and read the public half from its `x` field.
-3. Import them again as non-extractable. That is the key used from then on.
-4. Zero the seed, the PKCS#8 bytes and the JWK, and drop the extractable key.
+2. Work out the public half.
+   - Ed25519: import the bytes once as extractable, export as JWK, and read the public half from its `x` field. Drop that key and the JWK. (The JWK holds the seed as text, and JavaScript can't erase a string; dropping it is all that can be done.)
+   - X25519: no extractable key is needed. The public half is the X25519 result of the private key and the base point, `u = 9`.
+3. Import the bytes as non-extractable. That is the key used from then on.
+4. Zero the seed and the PKCS#8 bytes.
 
 Test vectors pin the public half for fixed seeds. Phase 0 confirms that Safari and Workers accept both imports.
 
@@ -105,12 +107,19 @@ Making a new recovery key gives the next generation number and removes the old s
 
 Written in a genesis, slot-change or key-change entry (section 6.3), for key version `v`:
 
-| Field        | Bytes                                     | Length   | Who can read it |
-| ------------ | ----------------------------------------- | -------- | --------------- |
-| `slotId`     | `str`                                     | variable | Anyone          |
-| `anchor`     | `HMAC(anchorKey, "ledgerline/v1/anchor"   |          | str(budgetId)   |     | str(slotId)            |     | genesisSignPub)`          | 32  | Anyone; only the slot's owner can check it |
-| `sealedKey`  | `Seal(slotPub, "ledgerline/v1/hpke/slot"  |          | str(budgetId)   |     | str(slotId)            |     | u32(v), signPub_v, BK_v)` | 80  | The slot's owner                           |
-| `wrappedPub` | `AEAD(K_wrap_v, "ledgerline/v1/wrap/slot" |          | str(budgetId)   |     | str(slotId), slotPub)` | 60  | Holders of `BK_v`         |
+```
+slotId      str
+anchor      HMAC(anchorKey, "ledgerline/v1/anchor" || str(budgetId) || str(slotId) || genesisSignPub)          32 bytes
+sealedKey   Seal(slotPub, "ledgerline/v1/hpke/slot" || str(budgetId) || str(slotId) || u32(v), signPub_v, BK_v) 80 bytes
+wrappedPub  AEAD(K_wrap_v, "ledgerline/v1/wrap/slot" || str(budgetId) || str(slotId), slotPub)                 60 bytes
+```
+
+| Field        | Who can read it                            |
+| ------------ | ------------------------------------------ |
+| `slotId`     | Anyone                                     |
+| `anchor`     | Anyone; only the slot's owner can check it |
+| `sealedKey`  | The slot's owner                           |
+| `wrappedPub` | Holders of `BK_v`                          |
 
 - `anchor` is made once, by the device that holds the slot's secret, when the slot is created. It is copied unchanged into every later key-change entry.
 - `wrappedPub` is how a device doing a key change learns the other slots' public halves without the server ever seeing them.
@@ -134,11 +143,11 @@ What this can't catch is in `docs/privacy.md` 5.2: a removed way in and a dishon
 
 All are `AEAD(K_wrap_v, aad, plain)`:
 
-| Value                                      | `aad`                          |
-| ------------------------------------------ | ------------------------------ |
-| A slot's public half                       | `"ledgerline/v1/wrap/slot"     |     | str(budgetId) |     | str(slotId)` |
-| The inbox private key, version `i`         | `"ledgerline/v1/wrap/inbox"    |     | str(budgetId) |     | u32(i)`      |
-| The budget key before this one, `BK_{v-1}` | `"ledgerline/v1/wrap/prev-key" |     | str(budgetId) |     | u32(v - 1)`  |
+```
+a slot's public half                    aad = "ledgerline/v1/wrap/slot"     || str(budgetId) || str(slotId)
+the inbox private key, version i        aad = "ledgerline/v1/wrap/inbox"    || str(budgetId) || u32(i)
+the budget key before this one, BK_v-1  aad = "ledgerline/v1/wrap/prev-key" || str(budgetId) || u32(v - 1)
+```
 
 - The inbox key pair is a random X25519 pair. Its private half, wrapped, travels in the genesis entry and in each key change.
 - **Each key change carries the budget key it replaces**, wrapped under the new one. Without it, a device that joins after a key change (a recovery sign-in is always one) could not read the snapshot and entries sealed before the change, and if the device that made the change were lost first, the budget would be gone. It gives a removed way in nothing: that way in already held the older key.
@@ -149,25 +158,25 @@ An entry is a header, a body and a signature.
 
 ### 6.1 Header
 
-| #   | Field             | Bytes       | Notes                                                                                                                               |
-| --- | ----------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | magic             | 4           | `LLE1`                                                                                                                              |
-| 2   | kind              | `u8`        | 0 genesis, 1 edit, 2 bank, 3 scan, 4 slot change, 5 key change, 6 sign-out, 8 data migration, 9 key-change intent, 10 intent cancel |
-| 3   | budgetId          | `str`       |                                                                                                                                     |
-| 4   | number            | `u64`       | 1 for the genesis entry, then up by 1                                                                                               |
-| 5   | prevHash          | 32          | `entryHash` of entry `number - 1`; zeros for the genesis entry                                                                      |
-| 6   | entryId           | 16          | Random. The server answers "already stored" for one it holds                                                                        |
-| 7   | time              | `u64`       | For ordering only: the later of the writer's clock and 1 ms after the entry before                                                  |
-| 8   | deviceId          | `str`       |                                                                                                                                     |
-| 9   | deviceCounter     | `u64`       | This device's count of entries: its last value + 1, starting at 1                                                                   |
-| 10  | keyVersion        | `u32`       | The version whose signing key signs this entry                                                                                      |
-| 11  | schemaVersion     | `u32`       |                                                                                                                                     |
-| 12  | processingVersion | `u32`       |                                                                                                                                     |
-| 13  | part, parts       | `u16` each  | `1, 1` for a whole entry (6.4)                                                                                                      |
-| 14  | filedThrough      | `u64`       | The last bank run this budget has filed, after this entry                                                                           |
-| 15  | receipts          | `u16(count) |                                                                                                                                     | 32 × count` | For a bank entry, the receipt of each run it files, in order (9.3): `count` = `filedThrough` minus the one before. Otherwise count 0. At most 256 |
-| 16  | scanThrough       | `u32`       | The last day scanned, in the budget's time zone; never goes down                                                                    |
-| 17  | bodyHash          | 32          | `H(body)`, the bytes as stored                                                                                                      |
+| #   | Field             | Bytes                                | Notes                                                                                                                                             |
+| --- | ----------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | magic             | 4                                    | `LLE1`                                                                                                                                            |
+| 2   | kind              | `u8`                                 | 0 genesis, 1 edit, 2 bank, 3 scan, 4 slot change, 5 key change, 6 sign-out, 8 data migration, 9 key-change intent, 10 intent cancel               |
+| 3   | budgetId          | `str`                                |                                                                                                                                                   |
+| 4   | number            | `u64`                                | 1 for the genesis entry, then up by 1                                                                                                             |
+| 5   | prevHash          | 32                                   | `entryHash` of entry `number - 1`; zeros for the genesis entry                                                                                    |
+| 6   | entryId           | 16                                   | Random. The server answers "already stored" for one it holds                                                                                      |
+| 7   | time              | `u64`                                | For ordering only: the later of the writer's clock and 1 ms after the entry before                                                                |
+| 8   | deviceId          | `str`                                |                                                                                                                                                   |
+| 9   | deviceCounter     | `u64`                                | This device's count of entries: its last value + 1, starting at 1                                                                                 |
+| 10  | keyVersion        | `u32`                                | The version whose signing key signs this entry                                                                                                    |
+| 11  | schemaVersion     | `u32`                                |                                                                                                                                                   |
+| 12  | processingVersion | `u32`                                |                                                                                                                                                   |
+| 13  | part, parts       | `u16` each                           | `1, 1` for a whole entry (6.4)                                                                                                                    |
+| 14  | filedThrough      | `u64`                                | The last bank run this budget has filed, after this entry                                                                                         |
+| 15  | receipts          | `u16(count)`, then 32 bytes for each | For a bank entry, the receipt of each run it files, in order (9.3): `count` = `filedThrough` minus the one before. Otherwise count 0. At most 256 |
+| 16  | scanThrough       | `u32`                                | The last day scanned, in the budget's time zone; never goes down                                                                                  |
+| 17  | bodyHash          | 32                                   | `H(body)`, the bytes as stored                                                                                                                    |
 
 ```
 entryHash = H(header)
@@ -466,11 +475,16 @@ Still to confirm in phase 0: that Safari and Workers accept both PKCS#8 imports,
 
 In `packages/seal`, each part with its tests. Nothing in the app or the Worker uses the package yet.
 
-| Part                                                                                            | Sections | Checked against                                                                                           |
-| ----------------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------- |
-| Byte layouts, labels, the strict reader; SHA-256, HMAC, HKDF; AES-256-GCM; key pairs from seeds | 1, 2     | RFC 5869 test cases 1 and 3, and WebCrypto's own HKDF; RFC 8032 test 1; RFC 7748 section 6.1              |
-| HPKE base mode, single-shot                                                                     | 3        | The CFRG's published test vector for this exact suite (mode 0, KEM `0x0020`, KDF `0x0001`, AEAD `0x0002`) |
-| Padding                                                                                         | 6.2      | Every step boundary                                                                                       |
-| The keys derived from a budget key                                                              | 2        | The same derivation done with WebCrypto's HKDF; the signing public key is pinned                          |
+| Part                                                                                            | Sections | Checked against                                                                                                                               |
+| ----------------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Byte layouts, labels, the strict reader; SHA-256, HMAC, HKDF; AES-256-GCM; key pairs from seeds | 1, 2     | RFC 5869 test cases 1 and 3, and WebCrypto's own HKDF; RFC 8032 test 1; RFC 7748 section 6.1                                                  |
+| HPKE base mode, single-shot                                                                     | 3        | The CFRG's published test vector for this exact suite (mode 0, KEM `0x0020`, KDF `0x0001`, AEAD `0x0002`)                                     |
+| Padding                                                                                         | 6.2      | Every step boundary                                                                                                                           |
+| The keys derived from a budget key                                                              | 2        | The same derivation done with WebCrypto's HKDF; the signing public key is pinned                                                              |
+| Ways in: a passkey's and the recovery key's secrets, the slot record and its anchor, slot ids   | 4        | The anchor, its key and the sealing inputs written out by hand with WebCrypto's HKDF and HMAC; pinned public keys; a forged budget is refused |
+| Small wrapped values: an inbox private key, the budget key before this one                      | 5        | The associated data written out by hand; a walk back over two key changes                                                                     |
+| The recovery key as shown and typed, and its sign-in by signature                               | 4.2      | A separate implementation of the spelling; every one-character slip is caught                                                                 |
 
-Not built yet: slots (4), wrapped values (5), entries (6, 7), snapshots (8), the Worker's keys, HMACs and bank runs (9), adding a device (10), signed requests (11).
+Not built yet: entries (6, 7), snapshots (8), the Worker's keys, HMACs and bank runs (9), adding a device (10), signed requests (11).
+
+Each part's code got an adversarial review of its own before it merged. The review of the first two parts found no wrong byte (it recomputed every label, layout and pinned value with a separate program) and 19 faults in checks and care with secrets, all fixed: a budget key sealed or wrapped is first checked to be the key its keys came from; a one-time key pair seals once; a slot id and base64url have one spelling; a byte-order mark is not dropped from a text field.

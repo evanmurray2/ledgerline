@@ -7,3 +7,6 @@ export * from './curve.js';
 export * as hpke from './hpke.js';
 export * from './pad.js';
 export * from './budget-key.js';
+export * from './slots.js';
+export * from './wrap.js';
+export * from './recovery.js';
