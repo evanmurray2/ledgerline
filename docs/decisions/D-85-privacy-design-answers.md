@@ -32,5 +32,8 @@ that design is built yet; these answers shape it, and each takes effect when its
 12. **The owner's own data comes out of the public docs** ("yes clean up docs"): purchases, bank names, the
     Cloudflare account id. The git history keeps the old text.
 
+13. **Sign-up never asks for a name or an email** ("Sign up should never ask for name or email"). Today it requires
+    a name; the field goes when this is built.
+
 **Money effect.** None. No Money rule changes with these answers. Shape A in the design would change what "arrived"
 means for D-67 and D-68; it is not chosen.
