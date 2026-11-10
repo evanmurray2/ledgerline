@@ -408,7 +408,7 @@ const usersRoute = createRoute({
   path: 'users',
   component: UsersScreen,
 });
-// The phase 0 checks of the privacy design (docs/privacy.md 15.4). Opened by its address; Settings doesn't list it.
+// The phase 0 checks of the privacy design (docs/privacy.md 15.4).
 const deviceCheckRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'device-check',
