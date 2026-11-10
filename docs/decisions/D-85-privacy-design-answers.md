@@ -35,5 +35,8 @@ that design is built yet; these answers shape it, and each takes effect when its
 13. **Sign-up never asks for a name or an email** ("Sign up should never ask for name or email"). Today it requires
     a name; the field goes when this is built.
 
+14. **The recovery key stays** ("keep recovery key"). Sign-in is passkeys only; the recovery key is only for the
+    case that every passkey is lost.
+
 **Money effect.** None. No Money rule changes with these answers. Shape A in the design would change what "arrived"
 means for D-67 and D-68; it is not chosen.
