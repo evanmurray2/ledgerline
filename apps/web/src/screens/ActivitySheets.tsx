@@ -8,6 +8,7 @@ import { useAccounts, useMoneyMutation, usePayees, useTxn, useSession, qk } from
 import { AccountField } from '../components/AccountField';
 import { CategoryField } from '../components/CategoryPicker';
 import { PayeeField } from '../components/PayeeField';
+import { sameName } from '../components/RenamePayee';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import {
   amountInputClass,
@@ -386,6 +387,11 @@ export function AddTxnScreen() {
     () => [...(known?.payees ?? []), ...(known?.others ?? [])].map((p) => p.name),
     [known],
   );
+  // The category you've used most for money out to the payee typed: the picker offers it first, and you pick.
+  const usualFor =
+    dir === 'out' && payee.trim()
+      ? known?.payees.find((p) => p.usualId && sameName(p.name, payee))
+      : undefined;
   const acct = accountId || accts[0]?.id || '';
   const cents = parseCents(amount);
   const on = date || today;
@@ -493,6 +499,8 @@ export function AddTxnScreen() {
           track="add.category"
           value={categoryId}
           onChange={setCategoryId}
+          suggested={usualFor?.usualId ? [usualFor.usualId] : undefined}
+          suggestedTitle={usualFor ? `Usually for ${usualFor.name}` : undefined}
           specials={
             dir === 'in'
               ? [

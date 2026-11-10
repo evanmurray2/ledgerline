@@ -743,9 +743,14 @@ test('Add a transaction: typing finds a payee, an account and a category', async
   await accounts.getByLabel('Search accounts').fill('sapph');
   await accounts.getByRole('button', { name: /Sapphire Preferred/ }).click();
   await expect(add.getByLabel('Account')).toHaveText('Sapphire Preferred');
-  // Category.
+  // Category: the one you use most for the payee comes first.
+  await payee.fill('blue bottle coffee');
   await add.getByLabel('Category').click();
   const cats = page.getByRole('dialog', { name: 'Choose a category' });
+  await expect(cats.getByText('Usually for Blue Bottle Coffee')).toBeVisible();
+  await cats.getByRole('button', { name: 'Dining out' }).first().click();
+  await expect(add.getByLabel('Category')).toContainText('Dining out');
+  await add.getByLabel('Category').click();
   await cats.getByLabel('Search categories').fill('groc');
   await cats.getByRole('button', { name: /Groceries/ }).click();
   await expect(add.getByLabel('Category')).toContainText('Groceries');
