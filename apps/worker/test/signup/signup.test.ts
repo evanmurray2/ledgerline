@@ -67,7 +67,6 @@ describe('open sign-up', () => {
     expect(
       (
         await new Browser().ceremony(newKey(), '/api/auth/signup/options', {
-          name: 'Early',
           turnstileToken: TEST_TOKEN,
         })
       ).status,
@@ -81,43 +80,43 @@ describe('open sign-up', () => {
     });
   });
 
-  it('needs the Turnstile check, the app’s header and a name', async () => {
+  it('needs the Turnstile check and the app’s header, and nothing else', async () => {
     const b = new Browser();
-    expect(
-      (await b.call('POST', '/api/auth/signup/options', { name: 'Alex', turnstileToken: 'wrong' })).status,
-    ).toBe(403);
+    expect((await b.call('POST', '/api/auth/signup/options', { turnstileToken: 'wrong' })).status).toBe(403);
     expect(
       (
         await b.call(
           'POST',
           '/api/auth/signup/options',
-          { name: 'Alex', turnstileToken: TEST_TOKEN },
+          { turnstileToken: TEST_TOKEN },
           { 'x-ledgerline': '0' },
         )
       ).status,
     ).toBe(403);
-    expect(
-      (await b.call('POST', '/api/auth/signup/options', { name: '  ', turnstileToken: TEST_TOKEN })).status,
-    ).toBe(400);
+    // No name and no email (D-85): the check alone gives the passkey options, and a name that is sent is ignored.
+    const o = await b.call('POST', '/api/auth/signup/options', { name: 'Alex', turnstileToken: TEST_TOKEN });
+    expect(o.status).toBe(200);
+    expect((o.json.user as { name: string }).name).toMatch(/^Ledgerline, /);
     expect(await dir.prepare(`SELECT count(*) AS n FROM user`).first('n')).toBe(1);
   });
 
   it('makes an account with its own budget, passkey and recovery code, never an admin', async () => {
     const r = await alex.ceremony(alexKey, '/api/auth/signup/options', {
-      name: 'Alex',
       turnstileToken: TEST_TOKEN,
     });
     expect(r.status).toBe(200);
     alexCode = String(r.json.recoveryCode);
     expect(alexCode).toMatch(/^([A-Z2-7]{4}-){7}[A-Z2-7]{4}$/);
     const u = await dir
-      .prepare(`SELECT id, is_admin, display_name, email FROM user WHERE display_name = 'Alex'`)
+      .prepare(`SELECT id, is_admin, display_name, email FROM user WHERE is_admin = 0`)
       .first<{
         id: string;
         is_admin: number;
+        display_name: string | null;
         email: string;
       }>();
-    expect(u).toMatchObject({ is_admin: 0, email: `u:${u!.id}` });
+    // No name and no email are kept (D-85): the email column holds a random value.
+    expect(u).toMatchObject({ is_admin: 0, display_name: null, email: `u:${u!.id}` });
     const s = await alex.call('GET', '/api/session');
     expect(s.status).toBe(200);
     expect(s.json).toMatchObject({ canLinkBanks: false, recoveryNoticeAt: null });
@@ -131,13 +130,11 @@ describe('open sign-up', () => {
     expect(
       (
         await new Browser().ceremony(newKey(), '/api/auth/signup/options', {
-          name: 'Blake',
           turnstileToken: TEST_TOKEN,
         })
       ).status,
     ).toBe(200);
     const full = await new Browser().call('POST', '/api/auth/signup/options', {
-      name: 'Casey',
       turnstileToken: TEST_TOKEN,
     });
     expect(full).toMatchObject({ status: 403, json: { error: 'full' } });
@@ -146,22 +143,21 @@ describe('open sign-up', () => {
 
   it('a sign-up that was allowed when it started is refused if the limit was reached meanwhile', async () => {
     // Room again for one: start, then fill the day before the passkey comes back.
-    await dir.prepare(`UPDATE user SET created_at = 0 WHERE display_name = 'Blake'`).run();
+    const last = (await dir.prepare(`SELECT id FROM user ORDER BY rowid DESC LIMIT 1`).first<string>('id'))!;
+    await dir.prepare(`UPDATE user SET created_at = 0 WHERE id = ?1`).bind(last).run();
     const b = new Browser();
-    const o = await b.call('POST', '/api/auth/signup/options', { name: 'Drew', turnstileToken: TEST_TOKEN });
+    const o = await b.call('POST', '/api/auth/signup/options', { turnstileToken: TEST_TOKEN });
     expect(o.status).toBe(200);
     await dir
-      .prepare(`UPDATE user SET created_at = ?1 WHERE display_name = 'Blake'`)
-      .bind(Date.parse('2026-11-14T20:00:00Z'))
+      .prepare(`UPDATE user SET created_at = ?1 WHERE id = ?2`)
+      .bind(Date.parse('2026-11-14T20:00:00Z'), last)
       .run();
     const v = await b.call('POST', '/api/auth/register/verify', {
       response: await newKey().create(o.json as never),
       name: 'Phone',
     });
     expect(v).toMatchObject({ status: 403, json: { error: 'full' } });
-    expect(await dir.prepare(`SELECT count(*) AS n FROM user WHERE display_name = 'Drew'`).first('n')).toBe(
-      0,
-    );
+    expect(await dir.prepare(`SELECT count(*) AS n FROM user`).first('n')).toBe(3);
   });
 });
 

@@ -302,12 +302,9 @@ export class Directory extends DurableObject<Env> {
   }
 
   /** Sign-up's passkey options (routes/signup.ts); the Worker has checked the switch and Turnstile. */
-  async signupOptions(
-    url: string,
-    name: string,
-  ): Promise<{ status: number; body: unknown; cookie?: string }> {
+  async signupOptions(url: string): Promise<{ status: number; body: unknown; cookie?: string }> {
     this.ready();
-    return signupOptions(this.appEnv(), url, name, (await this.state(Date.now())) === 'normal');
+    return signupOptions(this.appEnv(), url, (await this.state(Date.now())) === 'normal');
   }
 
   /** A recovery code's passkey options (routes/signup.ts); the Worker has checked the switch and Turnstile. */

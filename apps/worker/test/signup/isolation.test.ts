@@ -82,8 +82,8 @@ describe('keeping users apart', () => {
     await owner.ceremony(key(), '/api/auth/register/options', { setupCode: SETUP });
     const a = new Browser();
     const b = new Browser();
-    await a.ceremony(key(), '/api/auth/signup/options', { name: 'Ana', turnstileToken: TEST_TOKEN });
-    await b.ceremony(key(), '/api/auth/signup/options', { name: 'Ben', turnstileToken: TEST_TOKEN });
+    await a.ceremony(key(), '/api/auth/signup/options', { turnstileToken: TEST_TOKEN });
+    await b.ceremony(key(), '/api/auth/signup/options', { turnstileToken: TEST_TOKEN });
     const bBudget = (JSON.parse((await b.call('GET', '/api/session')).text) as { budget: { id: string } })
       .budget.id;
     const aBudget = (JSON.parse((await a.call('GET', '/api/session')).text) as { budget: { id: string } })
@@ -118,7 +118,10 @@ describe('keeping users apart', () => {
         .bind(bBudget, MARK, t),
     ]);
     const bPasskey = await directoryDb()
-      .prepare(`SELECT p.id FROM passkey p JOIN user u ON u.id = p.user_id WHERE u.display_name = 'Ben'`)
+      .prepare(
+        `SELECT p.id FROM passkey p JOIN budget_member m ON m.user_id = p.user_id WHERE m.budget_id = ?1`,
+      )
+      .bind(bBudget)
       .first<string>('id');
     const ids = ['acct_b', 'cat_b', 'grp_b', 'm:mp_b', 'mp_b', bBudget, bPasskey!];
     const body = (id: string) => ({

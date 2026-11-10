@@ -103,7 +103,7 @@ function csrfOk(req: Request): boolean {
 
 /** The part of the Directory these routes call (store/directory.ts). */
 export interface SignupDirectory {
-  signupOptions(url: string, name: string): Promise<{ status: number; body: unknown; cookie?: string }>;
+  signupOptions(url: string): Promise<{ status: number; body: unknown; cookie?: string }>;
   recoverOptions(url: string, code: string): Promise<{ status: number; body: unknown; cookie?: string }>;
 }
 
@@ -114,7 +114,6 @@ export async function gatedOptions(req: Request, env: Env, dir: SignupDirectory)
     return json({ error: 'not_found', message: 'Not found.' }, 404);
   if (!csrfOk(req)) return json({ error: 'csrf', message: 'Something went wrong. Try again.' }, 403);
   const b = (await req.json().catch(() => null)) as {
-    name?: unknown;
     code?: unknown;
     turnstileToken?: unknown;
   } | null;
@@ -130,7 +129,7 @@ export async function gatedOptions(req: Request, env: Env, dir: SignupDirectory)
   );
   if (!ok) return json(fail('The check didn’t pass. Try again.'), 403);
   const r = signup
-    ? await dir.signupOptions(req.url, typeof b.name === 'string' ? b.name : '')
+    ? await dir.signupOptions(req.url)
     : await dir.recoverOptions(req.url, typeof b.code === 'string' ? b.code : '');
   return json(r.body, r.status, r.cookie ? { 'set-cookie': r.cookie } : {});
 }
@@ -158,16 +157,18 @@ function rpOf(url: string, env: Env): string {
   return env.RP_ID ?? new URL(url).hostname;
 }
 
-/** The passkey options for a new account; nothing is written (the challenge is a signed cookie). */
+/**
+ * The passkey options for a new account; nothing is written (the challenge is a signed cookie). Sign-up asks for a
+ * passkey and nothing else (D-85): no name, no email. The passkey's own label is the app's name and the day it was
+ * made, so two accounts on one device can be told apart.
+ */
 export async function signupOptions(
   env: Env,
   url: string,
-  rawName: string,
   normal: boolean,
 ): Promise<{ status: number; body: unknown; cookie?: string }> {
   const now = clock(env);
-  const name = rawName.trim().slice(0, 60);
-  if (!name) return { status: 400, body: fail('Enter your name.') };
+  const name = `${RP_NAME}, ${new Date(now).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`;
   if (!normal || !(await room(env, now))) return { status: 403, body: FULL };
   const handle = randomToken(32);
   const options = await generateRegistrationOptions({
@@ -182,7 +183,7 @@ export async function signupOptions(
   });
   const id = await sealChallenge(env, now, options.challenge, 'register', {
     kind: 'signup',
-    ref: JSON.stringify({ handle, name }),
+    ref: JSON.stringify({ handle }),
   });
   return { status: 200, body: options, cookie: cookie(CHALLENGE_COOKIE, id, CHALLENGE_MS) };
 }
@@ -250,13 +251,13 @@ export async function signupStmts(
   passkey: unknown[],
   now: number,
 ): Promise<{ stmts: Stmt[]; userId: string; budgetId: string; code: string } | null> {
-  let g: { handle?: unknown; name?: unknown };
+  let g: { handle?: unknown };
   try {
     g = JSON.parse(grantRef) as typeof g;
   } catch {
     return null;
   }
-  if (typeof g.handle !== 'string' || typeof g.name !== 'string') return null;
+  if (typeof g.handle !== 'string') return null;
   const userId = ulid(now);
   const budgetId = ulid(now);
   const { code, hash } = await newRecoveryCode();
@@ -265,11 +266,11 @@ export async function signupStmts(
     db
       .prepare(
         `INSERT INTO user (id, email, display_name, is_admin, status, webauthn_handle, created_at, updated_at)
-         SELECT ?1, 'u:' || ?1, ?2, 0, 'active', ?3, ?4, ?4
-         WHERE (SELECT count(*) FROM user) < ?5 AND (SELECT count(*) FROM user WHERE created_at >= ?6) < ?7
+         SELECT ?1, 'u:' || ?1, NULL, 0, 'active', ?2, ?3, ?3
+         WHERE (SELECT count(*) FROM user) < ?4 AND (SELECT count(*) FROM user WHERE created_at >= ?5) < ?6
            AND EXISTS (SELECT 1 FROM user WHERE is_admin = 1)`,
       )
-      .bind(userId, g.name, g.handle, now, maxUsers(env), today(now), signupsPerDay(env)),
+      .bind(userId, g.handle, now, maxUsers(env), today(now), signupsPerDay(env)),
     fence(env, `SELECT count(*) = 1 FROM user WHERE id = ?1`, userId),
     db
       .prepare(`INSERT INTO budget (id, name, created_at, updated_at) VALUES (?1, 'My budget', ?2, ?2)`)

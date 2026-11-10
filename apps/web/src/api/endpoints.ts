@@ -102,8 +102,7 @@ export const api = {
   registerVerify: (body: { response: unknown; name: string }) =>
     post('/api/auth/register/verify', RegisterResult, body),
   // Open sign-up and recovery codes (D-75): only while the switch is on.
-  signupOptions: (body: { name: string; turnstileToken: string }) =>
-    post('/api/auth/signup/options', z.unknown(), body),
+  signupOptions: (body: { turnstileToken: string }) => post('/api/auth/signup/options', z.unknown(), body),
   recoverOptions: (body: { code: string; turnstileToken: string }) =>
     post('/api/auth/recover/options', z.unknown(), body),
   newRecoveryCode: () => post('/api/settings/security/recovery-code', z.object({ code: z.string() })),

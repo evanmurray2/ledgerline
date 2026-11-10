@@ -108,7 +108,8 @@ peopleRoutes.get('/settings/security/users', async (c) => {
     signupsOpen: signupSwitchOn(env),
     list: list.map((u) => ({
       id: u.id,
-      name: u.display_name ?? (u.is_admin ? 'Admin' : 'No name'),
+      // Sign-up asks for no name (D-85): an account is told apart by the day it joined, which the list shows.
+      name: u.display_name ?? (u.is_admin ? 'Admin' : 'Account'),
       admin: u.is_admin === 1,
       status: u.status,
       joinedAt: new Date(u.created_at).toISOString(),
