@@ -720,6 +720,37 @@ test('Add a transaction: a future date shows Repeats, today hides it', async ({ 
   await expect(add.getByLabel('Repeats')).toHaveCount(0);
 });
 
+test('Add a transaction: typing finds a payee, an account and a category', async ({ page }) => {
+  await page.goto('/activity/add');
+  const add = page.getByRole('dialog', { name: 'Add a transaction' });
+  // Payee: your payees that match are listed as you type; a tap fills the name in.
+  const payee = add.getByLabel('Payee');
+  await payee.fill('blu');
+  const names = add.getByRole('listbox', { name: 'Matching names' });
+  await expect(names.getByRole('option').first()).toHaveText('Blue Bottle Coffee');
+  await names.getByRole('option', { name: 'Blue Bottle Coffee' }).click();
+  await expect(payee).toHaveValue('Blue Bottle Coffee');
+  await expect(names).toBeHidden();
+  // A name you don't have yet is fine: nothing is listed.
+  await payee.fill('Check #1044');
+  await expect(names).toBeHidden();
+  // Account: the same search sheet as the category.
+  await expect(add.getByLabel('Account')).toHaveText('Everyday Checking');
+  await add.getByLabel('Account').click();
+  const accounts = page.getByRole('dialog', { name: 'Choose an account' });
+  await accounts.getByLabel('Search accounts').fill('zzz');
+  await expect(accounts.getByText('No account called “zzz”.')).toBeVisible();
+  await accounts.getByLabel('Search accounts').fill('sapph');
+  await accounts.getByRole('button', { name: /Sapphire Preferred/ }).click();
+  await expect(add.getByLabel('Account')).toHaveText('Sapphire Preferred');
+  // Category.
+  await add.getByLabel('Category').click();
+  const cats = page.getByRole('dialog', { name: 'Choose a category' });
+  await cats.getByLabel('Search categories').fill('groc');
+  await cats.getByRole('button', { name: /Groceries/ }).click();
+  await expect(add.getByLabel('Category')).toContainText('Groceries');
+});
+
 test('Owed to you opened from Accounts goes back to Accounts', async ({ page }) => {
   await page.goto('/accounts');
   await page.getByRole('link', { name: /Owed to you · not in this total/ }).click();
