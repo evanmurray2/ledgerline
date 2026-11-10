@@ -2,6 +2,26 @@
 
 How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history.
 
+## Update: sealing a bank page and checking a sealed entry (Nov 10, 2026)
+
+Phase 0 of `docs/privacy.md`: what its section 5.5 adds to the fetch step for each bank page, and what the server's checks on a sealed log entry (5.3) cost. `measure/seal.measure.ts` times WebCrypto calls of the kind the design names (X25519, HKDF, AES-256-GCM, SHA-256, Ed25519, HMAC); the sealing code itself doesn't exist yet. 60 runs each, wall time, ms. Node's WebCrypto does part of this work on other threads, and workerd counts all of it as CPU, so read these as a guide: the real steps are measured again on Cloudflare before the cutover.
+
+| Step                                                                      | median / p90 / max |
+| ------------------------------------------------------------------------- | ------------------ |
+| A 100-transaction page (200 KB): check its shape and count its rows       | 0.34 / 0.48 / 1.42 |
+| The same page: seal it to a public key                                    | 0.68 / 0.92 / 6.51 |
+| The same page: hash the sealed bytes                                      | 0.17 / 0.21 / 0.48 |
+| **The three as one step**                                                 | 1.33 / 1.77 / 7.86 |
+| A 250-transaction page (500 KB), the three as one step                    | 2.39 / 4.09 / 12.8 |
+| Sign a run manifest (1 KB, Ed25519)                                       | 0.08 / 0.16 / 0.74 |
+| An HMAC over a bank link row                                              | 0.03 / 0.05 / 0.15 |
+| Append check, 4 KB entry: hash the body, check the signature and the HMAC | 0.25 / 0.31 / 1.20 |
+| Append check, 64 KB entry                                                 | 0.29 / 0.37 / 0.65 |
+
+- Production pages hold 100 transactions (D-6; the owner's largest is about 220 KB). Checking, sealing and hashing one is about 1.3 ms, well inside 10 ms, so the page size doesn't have to fall. The largest values are first calls (a key type used for the first time).
+- The checks on an append are about 0.3 ms.
+- Not measured here: the same on Cloudflare, and the device's side (opening a snapshot, filing a run, peak memory on the iPhone).
+
 ## Update: key lookups that read every bank row, and what the harness counts (Nov 9, 2026)
 
 **What the harness counts.** `measure/harness.ts` used `process.cpuUsage()`, which also counts Node's compiler and garbage-collector threads: about twice the step's own time (51 against 23 ms, 22 against 14). `process.threadCpuUsage()` is counted in 4 ms ticks on Linux (many readings exactly 0, 4 or 8), too coarse for these steps. The harness now uses wall time on the test's thread: a step is synchronous SQLite and JavaScript with no I/O, and wall time matched thread CPU within 0.5 ms. Run measures alone. Numbers above this section are `process.cpuUsage()`: read them as roughly half.
