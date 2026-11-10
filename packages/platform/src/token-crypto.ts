@@ -38,10 +38,12 @@ export async function tokenKeyBytes(secret: string): Promise<Uint8Array<ArrayBuf
 }
 
 async function importKey(secret: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey('raw', await tokenKeyBytes(secret), 'AES-GCM', false, [
-    'encrypt',
-    'decrypt',
-  ]);
+  const raw = await tokenKeyBytes(secret);
+  try {
+    return await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+  } finally {
+    raw.fill(0);
+  }
 }
 
 export async function encryptToken(

@@ -14,7 +14,7 @@ import {
   u64,
   utf8,
 } from './bytes.js';
-import { aeadOpen, aeadSeal } from './aead.js';
+import { aeadOpen, aeadSeal, OpenError } from './aead.js';
 import type { BudgetKeys } from './budget-key.js';
 import { sign, verify } from './curve.js';
 import type { PublicRef } from './entry.js';
@@ -36,6 +36,7 @@ export interface Manifest {
   /** H(chunk as stored), in order. */
   chunkHashes: Bytes[];
   tables: { name: string; hash: Bytes }[];
+  /** The hash of every entry whose number is a multiple of 1,000, in order, then the snapshot's own entry. */
   checkpoints: PublicRef[];
 }
 
@@ -67,7 +68,7 @@ const manifestAad = (budgetId: string, snapshotId: string): Bytes =>
   );
 
 /** Chunk `k` of `count` (from 1), sealed: it opens only as that chunk of that snapshot of that budget. */
-export function sealChunk(
+export async function sealChunk(
   keys: BudgetKeys,
   budgetId: string,
   snapshotId: string,
@@ -78,7 +79,7 @@ export function sealChunk(
   return aeadSeal(keys.snapshot, chunkAad(budgetId, snapshotId, k, count), plain);
 }
 
-export function openChunk(
+export async function openChunk(
   keys: BudgetKeys,
   budgetId: string,
   snapshotId: string,
@@ -89,9 +90,28 @@ export function openChunk(
   return aeadOpen(keys.snapshot, chunkAad(budgetId, snapshotId, k, count), sealed);
 }
 
+/** The checkpoints a snapshot at `number` must carry: how many there are. */
+const checkpointCount = (number: number): number => Math.floor((number - 1) / CHECKPOINT_EVERY) + 1;
+
+/** What is wrong with a manifest's numbers and checkpoints, or null. */
+function manifestFault(m: Manifest): string | null {
+  if (!Number.isInteger(m.version) || m.version < 1 || m.version > 0xffffffff) return 'key version';
+  if (!Number.isSafeInteger(m.number) || m.number < 1) return 'number';
+  const c = m.checkpoints;
+  if (c.length !== checkpointCount(m.number) || c.length > MAX_CHECKPOINTS) return 'checkpoint count';
+  for (let i = 0; i < c.length - 1; i++)
+    if (c[i]!.number !== (i + 1) * CHECKPOINT_EVERY || c[i]!.hash.length !== 32) return 'checkpoint';
+  const last = c[c.length - 1]!;
+  if (last.number !== m.number || !equal(last.hash, m.entryHash))
+    return 'the last checkpoint is the snapshot itself';
+  return null;
+}
+
 export function encodeManifest(m: Manifest): Bytes {
+  const fault = manifestFault(m);
+  if (fault) throw new RangeError(`manifest: ${fault}`);
   if (m.chunkHashes.length < 1 || m.chunkHashes.length > 0xffffffff) throw new RangeError('chunk count');
-  if (m.tables.length > MAX_TABLES || m.checkpoints.length > MAX_CHECKPOINTS) throw new RangeError('count');
+  if (m.tables.length > MAX_TABLES) throw new RangeError('table count');
   const names = m.tables.map((t) => t.name);
   if (new Set(names).size !== names.length) throw new RangeError('table twice');
   for (const t of m.tables) {
@@ -139,8 +159,10 @@ export function readManifest(bytes: Uint8Array): Manifest {
   const checkpoints: PublicRef[] = [];
   for (let i = 0; i < nc; i++) checkpoints.push({ number: r.u64(), hash: r.take(32) });
   r.end();
-  if (version < 1 || number < 1) throw new FormatError('version');
-  return { snapshotId, version, number, entryHash, chunkHashes, tables, checkpoints };
+  const m = { snapshotId, version, number, entryHash, chunkHashes, tables, checkpoints };
+  const fault = manifestFault(m);
+  if (fault) throw new FormatError(fault);
+  return m;
 }
 
 /** The clear header: what the server acts on. */
@@ -156,10 +178,19 @@ export interface SnapshotHeader {
   manifestHash: Bytes;
 }
 
+/** What is wrong with a header's numbers, or null. */
+function headerFault(h: SnapshotHeader): string | null {
+  if (!Number.isInteger(h.version) || h.version < 1 || h.version > 0xffffffff) return 'key version';
+  if (!Number.isSafeInteger(h.number) || !Number.isSafeInteger(h.lastPublic.number)) return 'number';
+  if (h.number < 1 || h.lastPublic.number < 1 || h.lastPublic.number > h.number) return 'number';
+  // A snapshot that stands at a public entry names that entry.
+  if (h.lastPublic.number === h.number && !equal(h.lastPublic.hash, h.entryHash)) return 'last public entry';
+  return null;
+}
+
 export function encodeSnapshotHeader(h: SnapshotHeader): Bytes {
-  if (!Number.isInteger(h.version) || h.version < 1) throw new RangeError('key version');
-  if (h.number < 1 || h.lastPublic.number < 1 || h.lastPublic.number > h.number)
-    throw new RangeError('number');
+  const fault = headerFault(h);
+  if (fault) throw new RangeError(`snapshot header: ${fault}`);
   return concat(
     utf8('LLN1'),
     str(ulid(h.budgetId, 'budget id')),
@@ -185,9 +216,10 @@ export function readSnapshotHeader(bytes: Uint8Array): SnapshotHeader {
   const manifestHash = r.take(32);
   r.end();
   if (!isUlid(budgetId) || !isUlid(snapshotId)) throw new FormatError('id');
-  if (version < 1 || number < 1 || lastPublic.number < 1 || lastPublic.number > number)
-    throw new FormatError('number');
-  return { budgetId, snapshotId, version, number, entryHash, lastPublic, manifestHash };
+  const h = { budgetId, snapshotId, version, number, entryHash, lastPublic, manifestHash };
+  const fault = headerFault(h);
+  if (fault) throw new FormatError(fault);
+  return h;
 }
 
 const headerMessage = async (header: Uint8Array): Promise<Bytes> =>
@@ -195,32 +227,29 @@ const headerMessage = async (header: Uint8Array): Promise<Bytes> =>
 const checkMessage = async (header: Uint8Array, deviceId: string): Promise<Bytes> =>
   concat(label('ledgerline/v1/snap-checked'), await sha256(header), str(ulid(deviceId, 'device id')));
 
+/** A stored value that couldn't have been signed at all simply doesn't verify. */
+async function verifies(
+  message: () => Promise<Bytes>,
+  signature: Uint8Array,
+  signPub: Uint8Array | CryptoKey,
+): Promise<boolean> {
+  let m: Bytes;
+  try {
+    m = await message();
+  } catch (e) {
+    if (e instanceof RangeError) return false;
+    throw e;
+  }
+  return verify(signPub, m, signature);
+}
+
 /** Whether a snapshot header's signature is good for the signing key of its key version. */
 export async function verifySnapshotHeader(
   header: Uint8Array,
   signature: Uint8Array,
   signPub: Uint8Array | CryptoKey,
 ): Promise<boolean> {
-  return verify(signPub, await headerMessage(header), signature);
-}
-
-/** The check record: this device rebuilt the budget from the snapshot before plus the entries since, and got the same. */
-export async function signSnapshotCheck(
-  keys: BudgetKeys,
-  header: Uint8Array,
-  deviceId: string,
-): Promise<Bytes> {
-  if (readSnapshotHeader(header).version !== keys.version) throw new RangeError('key version');
-  return sign(keys.sign.privateKey, await checkMessage(header, deviceId));
-}
-
-export async function verifySnapshotCheck(
-  header: Uint8Array,
-  deviceId: string,
-  signature: Uint8Array,
-  signPub: Uint8Array | CryptoKey,
-): Promise<boolean> {
-  return verify(signPub, await checkMessage(header, deviceId), signature);
+  return verifies(() => headerMessage(header), signature, signPub);
 }
 
 /** A snapshot as stored. */
@@ -229,6 +258,33 @@ export interface SealedSnapshot {
   signature: Bytes;
   manifest: Bytes;
   chunks: Bytes[];
+}
+
+/**
+ * The check record: this device rebuilt the budget from the snapshot before plus the entries since, and got the same.
+ * It is signed only for a header that is this budget's and carries a good signature of its own.
+ */
+export async function signSnapshotCheck(
+  keys: BudgetKeys,
+  s: Pick<SealedSnapshot, 'header' | 'signature'>,
+  budgetId: string,
+  deviceId: string,
+): Promise<Bytes> {
+  const header = readSnapshotHeader(s.header);
+  if (header.budgetId !== budgetId) throw new RangeError('another budget');
+  if (header.version !== keys.version) throw new RangeError('key version');
+  if (!(await verifySnapshotHeader(s.header, s.signature, keys.sign.pub)))
+    throw new RangeError('header signature');
+  return sign(keys.sign.privateKey, await checkMessage(s.header, deviceId));
+}
+
+export async function verifySnapshotCheck(
+  header: Uint8Array,
+  deviceId: string,
+  signature: Uint8Array,
+  signPub: Uint8Array | CryptoKey,
+): Promise<boolean> {
+  return verifies(() => checkMessage(header, deviceId), signature, signPub);
 }
 
 /** Seals a snapshot: the chunks, the manifest that names them, and the signed header that names the manifest. */
@@ -246,21 +302,31 @@ export async function sealSnapshot(
   plainChunks: Uint8Array[],
 ): Promise<SealedSnapshot> {
   if (plainChunks.length < 1) throw new RangeError('chunk count');
+  // Everything a reader would refuse is refused here, before anything is sealed.
+  const shape: Manifest = {
+    snapshotId: at.snapshotId,
+    version: keys.version,
+    number: at.number,
+    entryHash: at.entryHash,
+    chunkHashes: plainChunks.map(() => new Uint8Array(32) as Bytes),
+    tables: at.tables,
+    checkpoints: at.checkpoints,
+  };
+  encodeManifest(shape);
+  encodeSnapshotHeader({ ...at, version: keys.version, manifestHash: new Uint8Array(32) as Bytes });
+
   const chunks: Bytes[] = [];
   for (let k = 0; k < plainChunks.length; k++)
     chunks.push(
       await sealChunk(keys, at.budgetId, at.snapshotId, k + 1, plainChunks.length, plainChunks[k]!),
     );
-  const m = encodeManifest({
-    snapshotId: at.snapshotId,
-    version: keys.version,
-    number: at.number,
-    entryHash: at.entryHash,
-    chunkHashes: await Promise.all(chunks.map((c) => sha256(c))),
-    tables: at.tables,
-    checkpoints: at.checkpoints,
-  });
-  const manifest = await aeadSeal(keys.snapshot, manifestAad(at.budgetId, at.snapshotId), m);
+  const chunkHashes: Bytes[] = [];
+  for (const c of chunks) chunkHashes.push(await sha256(c));
+  const manifest = await aeadSeal(
+    keys.snapshot,
+    manifestAad(at.budgetId, at.snapshotId),
+    encodeManifest({ ...shape, chunkHashes }),
+  );
   const header = encodeSnapshotHeader({
     budgetId: at.budgetId,
     snapshotId: at.snapshotId,
@@ -278,31 +344,68 @@ export async function sealSnapshot(
   };
 }
 
-/** A snapshot that doesn't hold together: the header, the manifest and the chunks don't name each other. */
+/** A snapshot that doesn't hold together, or doesn't fit what the device knows of the chain. */
 export class SnapshotError extends Error {
-  constructor(why: string) {
+  constructor(readonly why: string) {
     super(`snapshot: ${why}`);
   }
 }
 
+/** What a device knows that a snapshot must agree with. */
+export interface SnapshotBounds {
+  /**
+   * The public entries the device walked (chain.ts `PublicState.publics`). The snapshot must name one of them as its
+   * last public entry, be sealed under the key version that was in force after it, and stand before the next one.
+   * This is what stops a snapshot signed with a key version that was since replaced.
+   */
+  publics: { number: number; hash: Uint8Array; keyVersion: number }[];
+  /** The highest entry this device has applied: a snapshot that stands before it is an older one shown as the newest. */
+  minNumber?: number;
+  /** A checkpoint this device remembers: the snapshot's chain must hold it. */
+  checkpoint?: PublicRef;
+}
+
 /**
- * Opens the manifest of a snapshot: the header's signature against the signing key the chain names for its key
- * version, then the manifest the header names, which must say the same as the header.
+ * Opens the manifest of a snapshot: the header against what the device knows of the chain; its signature against the
+ * signing key of its key version (`keys` are that version's, which the caller gets from the chain); then the
+ * manifest the header names, which must say the same as the header.
  */
 export async function openSnapshotManifest(
   keys: BudgetKeys,
   s: Pick<SealedSnapshot, 'header' | 'signature' | 'manifest'>,
   budgetId: string,
+  bounds: SnapshotBounds,
 ): Promise<{ header: SnapshotHeader; manifest: Manifest }> {
-  const header = readSnapshotHeader(s.header);
+  let header: SnapshotHeader;
+  try {
+    header = readSnapshotHeader(s.header);
+  } catch (e) {
+    if (e instanceof FormatError) throw new SnapshotError(`header: ${e.message}`);
+    throw e;
+  }
   if (header.budgetId !== budgetId) throw new SnapshotError('another budget');
+  const at = bounds.publics.findIndex((p) => p.number === header.lastPublic.number);
+  const named = bounds.publics[at];
+  if (!named || !equal(named.hash, header.lastPublic.hash))
+    throw new SnapshotError('not on the public chain');
+  if (named.keyVersion !== header.version) throw new SnapshotError('not the key version in force there');
+  const next = bounds.publics[at + 1];
+  if (next && next.number <= header.number) throw new SnapshotError('a later public entry comes before it');
+  if (bounds.minNumber !== undefined && header.number < bounds.minNumber)
+    throw new SnapshotError('older than this device');
   if (header.version !== keys.version) throw new SnapshotError('key version');
   if (!(await verifySnapshotHeader(s.header, s.signature, keys.sign.pub)))
     throw new SnapshotError('signature');
   if (!equal(await sha256(s.manifest), header.manifestHash)) throw new SnapshotError('manifest hash');
-  const manifest = readManifest(
-    await aeadOpen(keys.snapshot, manifestAad(budgetId, header.snapshotId), s.manifest),
-  );
+  let manifest: Manifest;
+  try {
+    manifest = readManifest(
+      await aeadOpen(keys.snapshot, manifestAad(budgetId, header.snapshotId), s.manifest),
+    );
+  } catch (e) {
+    if (e instanceof FormatError || e instanceof OpenError) throw new SnapshotError(`manifest: ${e.message}`);
+    throw e;
+  }
   if (
     manifest.snapshotId !== header.snapshotId ||
     manifest.version !== header.version ||
@@ -310,6 +413,9 @@ export async function openSnapshotManifest(
     !equal(manifest.entryHash, header.entryHash)
   )
     throw new SnapshotError('the manifest and the header differ');
+  const c = bounds.checkpoint;
+  if (c && !manifest.checkpoints.some((x) => x.number === c.number && equal(x.hash, c.hash)))
+    throw new SnapshotError('the checkpoint this device remembers is missing');
   return { header, manifest };
 }
 
@@ -322,7 +428,12 @@ export async function openSnapshotChunk(
   sealed: Uint8Array,
 ): Promise<Bytes> {
   const count = manifest.chunkHashes.length;
-  if (!Number.isInteger(k) || k < 1 || k > count) throw new RangeError('chunk number');
+  if (!Number.isInteger(k) || k < 1 || k > count) throw new SnapshotError('chunk number');
   if (!equal(await sha256(sealed), manifest.chunkHashes[k - 1]!)) throw new SnapshotError('chunk hash');
-  return openChunk(keys, budgetId, manifest.snapshotId, k, count, sealed);
+  try {
+    return await openChunk(keys, budgetId, manifest.snapshotId, k, count, sealed);
+  } catch (e) {
+    if (e instanceof OpenError) throw new SnapshotError('a chunk does not open');
+    throw e;
+  }
 }

@@ -2,6 +2,9 @@
 // the budget's inbox key the moment it arrives, under a manifest the Worker signs. The seal keeps the server from
 // keeping anything readable; the signature and the chain of manifests keep someone who can write to the database,
 // but holds no Worker secret, from inventing a run, replaying one, dropping one, or rewinding a link.
+//
+// The Worker's side is two functions, because each page is its own job step (10 ms of CPU): `sealPage` for a page,
+// and `signRun` once the run is complete.
 import {
   type Bytes,
   concat,
@@ -9,7 +12,6 @@ import {
   FormatError,
   isUlid,
   label,
-  randomBytes,
   Reader,
   str,
   u16,
@@ -20,7 +22,7 @@ import {
 } from './bytes.js';
 import { OpenError } from './aead.js';
 import { type DhPair, sign, verify } from './curve.js';
-import { sha256 } from './hash.js';
+import { hmac, sha256 } from './hash.js';
 import * as hpke from './hpke.js';
 import type { ServerKeys } from './server-keys.js';
 
@@ -29,10 +31,18 @@ export type What = (typeof WHAT)[keyof typeof WHAT];
 
 export const FLAG = { balances: 1, liabilities: 2, link: 4 } as const;
 export const MAX_PAGES = 4096;
+export const MAX_RECEIPTS_PER_ENTRY = 256;
 /** How far ahead of the device's clock a run's time may be. */
 export const RUN_CLOCK_SLACK_MS = 10 * 60 * 1000;
 const ZERO32 = new Uint8Array(32);
 const RECEIPT_PART = 32;
+const WHATS: readonly number[] = [0, 1, 2, 3];
+
+export interface RunPage {
+  what: What;
+  /** H(sealed page). */
+  hash: Bytes;
+}
 
 export interface RunManifest {
   budgetId: string;
@@ -44,6 +54,7 @@ export interface RunManifest {
   inboxVersion: number;
   /** H(inboxPub) of the inbox key the pages are sealed to. */
   inboxPubHash: Bytes;
+  /** Later than the run before: the Worker uses the later of its clock and 1 ms after that run. */
   runTime: number;
   /** The time of run - 1; 0 for run 1. */
   prevRunTime: number;
@@ -54,8 +65,8 @@ export interface RunManifest {
   added: number;
   modified: number;
   removed: number;
-  /** Each page, in order: what it is, and H(sealed page). */
-  pages: { what: What; hash: Bytes }[];
+  /** Each page, in order. */
+  pages: RunPage[];
   /** H(receipt). */
   receiptHash: Bytes;
   /** H(manifest) of run - 1; zeros for run 1. */
@@ -63,8 +74,6 @@ export interface RunManifest {
   /** The Worker key number that signs this manifest. */
   n: number;
 }
-
-const WHATS: readonly number[] = [0, 1, 2, 3];
 
 /** The flags a list of pages gives: which kinds of page the run holds besides transactions. */
 function flagsOf(pages: { what: number }[]): number {
@@ -78,33 +87,31 @@ function flagsOf(pages: { what: number }[]): number {
 
 const whole = (n: number, max: number, min = 0): boolean => Number.isInteger(n) && n >= min && n <= max;
 
-function checkManifest(m: RunManifest): void {
-  if (!isUlid(m.budgetId) || !isUlid(m.linkId)) throw new FormatError('id');
-  if (!whole(m.run, Number.MAX_SAFE_INTEGER, 1) || !whole(m.restart, 0xffffffff))
-    throw new FormatError('run');
-  if (!whole(m.inboxVersion, 0xffffffff, 1) || !whole(m.n, 0xffffffff, 1)) throw new FormatError('version');
+/** What is wrong with a manifest's fields, or null. */
+function manifestFault(m: RunManifest): string | null {
+  if (!isUlid(m.budgetId) || !isUlid(m.linkId)) return 'id';
+  if (!whole(m.run, Number.MAX_SAFE_INTEGER, 1) || !whole(m.restart, 0xffffffff)) return 'run';
+  if (!whole(m.inboxVersion, 0xffffffff, 1) || !whole(m.n, 0xffffffff, 1)) return 'version';
   if (!whole(m.runTime, Number.MAX_SAFE_INTEGER) || !whole(m.prevRunTime, Number.MAX_SAFE_INTEGER))
-    throw new FormatError('time');
-  if (!whole(m.flags, 7)) throw new FormatError('flags');
-  for (const c of [m.added, m.modified, m.removed]) if (!whole(c, 0xffffffff)) throw new FormatError('count');
-  if (m.pages.length < 1 || m.pages.length > MAX_PAGES) throw new FormatError('page count');
-  if (m.pages.some((p) => !WHATS.includes(p.what))) throw new FormatError('what');
-  if (flagsOf(m.pages) !== m.flags) throw new FormatError('flags');
-  for (const h of [
-    m.inboxPubHash,
-    m.cursorBefore,
-    m.cursorAfter,
-    m.receiptHash,
-    m.prevManifestHash,
-    ...m.pages.map((p) => p.hash),
-  ])
-    if (h.length !== 32) throw new FormatError('hash');
-  if ((m.run === 1) !== equal(m.prevManifestHash, ZERO32)) throw new FormatError('previous manifest');
-  if (m.run === 1 && m.prevRunTime !== 0) throw new FormatError('previous run time');
+    return 'time';
+  // A run's time is later than the run before, or no device would ever file it and every later run chains to it.
+  if (m.runTime <= m.prevRunTime) return 'run time';
+  for (const c of [m.added, m.modified, m.removed]) if (!whole(c, 0xffffffff)) return 'count';
+  if (m.pages.length < 1 || m.pages.length > MAX_PAGES) return 'page count';
+  if (m.pages.some((p) => !WHATS.includes(p.what))) return 'what';
+  if (!whole(m.flags, 7) || flagsOf(m.pages) !== m.flags) return 'flags';
+  for (const h of [m.inboxPubHash, m.cursorBefore, m.cursorAfter, m.receiptHash, m.prevManifestHash])
+    if (h.length !== 32) return 'hash';
+  if (m.pages.some((p) => p.hash.length !== 32)) return 'hash';
+  if ((m.run === 1) !== equal(m.prevManifestHash, ZERO32)) return 'previous manifest';
+  if (m.run === 1 && m.prevRunTime !== 0) return 'previous run time';
+  return null;
 }
 
+/** Writes a manifest. A field a writer got wrong is the writer's mistake: RangeError. */
 export function encodeRunManifest(m: RunManifest): Bytes {
-  checkManifest(m);
+  const fault = manifestFault(m);
+  if (fault) throw new RangeError(`run manifest: ${fault}`);
   return concat(
     utf8('LLR1'),
     str(m.budgetId),
@@ -129,6 +136,7 @@ export function encodeRunManifest(m: RunManifest): Bytes {
   );
 }
 
+/** Reads a manifest. One that doesn't hold together is refused whole: FormatError. */
 export function readRunManifest(bytes: Uint8Array): RunManifest {
   const r = new Reader(bytes);
   r.magic('LLR1');
@@ -146,10 +154,10 @@ export function readRunManifest(bytes: Uint8Array): RunManifest {
   const added = r.u32();
   const modified = r.u32();
   const removed = r.u32();
-  const pages = r.u16();
-  if (pages < 1 || pages > MAX_PAGES) throw new FormatError('page count');
-  const list: RunManifest['pages'] = [];
-  for (let i = 0; i < pages; i++) list.push({ what: r.u8() as What, hash: r.take(32) });
+  const count = r.u16();
+  if (count < 1 || count > MAX_PAGES) throw new FormatError('page count');
+  const pages: RunPage[] = [];
+  for (let i = 0; i < count; i++) pages.push({ what: r.u8() as What, hash: r.take(32) });
   const m: RunManifest = {
     budgetId,
     linkId,
@@ -165,19 +173,39 @@ export function readRunManifest(bytes: Uint8Array): RunManifest {
     added,
     modified,
     removed,
-    pages: list,
+    pages,
     receiptHash: r.take(32),
     prevManifestHash: r.take(32),
     n: r.u32(),
   };
   r.end();
-  checkManifest(m);
+  const fault = manifestFault(m);
+  if (fault) throw new FormatError(fault);
   return m;
 }
 
 /** The hash of a link's cursor as manifests name it. A link that has never run has the empty cursor. */
 export function cursorHash(cursor: string): Promise<Bytes> {
   return sha256(utf8(cursor));
+}
+
+/** Where a page sits. */
+export interface PagePlace {
+  budgetId: string;
+  linkId: string;
+  inboxVersion: number;
+  run: number;
+  restart: number;
+  /** The page's place in the run, from 0. */
+  page: number;
+}
+
+function checkPlace(at: PagePlace): void {
+  if (!isUlid(at.budgetId) || !isUlid(at.linkId)) throw new RangeError('id');
+  if (!whole(at.run, Number.MAX_SAFE_INTEGER, 1) || !whole(at.restart, 0xffffffff))
+    throw new RangeError('run');
+  if (!whole(at.inboxVersion, 0xffffffff, 1)) throw new RangeError('inbox version');
+  if (!whole(at.page, MAX_PAGES - 1)) throw new RangeError('page');
 }
 
 const pageInfo = (budgetId: string, linkId: string, inboxVersion: number): Bytes =>
@@ -189,6 +217,94 @@ const receiptOf = (parts: Uint8Array[]): Promise<Bytes> =>
 const runMessage = async (manifest: Uint8Array): Promise<Bytes> =>
   concat(label('ledgerline/v1/run'), await sha256(manifest));
 
+/**
+ * The 32 bytes that start a page's plain text. They come from the Worker's HMAC key and the page's place, so the
+ * Worker keeps nothing secret between sealing a page and signing its run, and nobody without that key can guess them.
+ */
+function receiptPart(k: ServerKeys, at: PagePlace): Promise<Bytes> {
+  return hmac(
+    k.mac,
+    concat(
+      label('ledgerline/v1/receipt-part'),
+      str(at.budgetId),
+      str(at.linkId),
+      u64(at.run),
+      u32(at.restart),
+      u16(at.page),
+    ),
+  );
+}
+
+/**
+ * The Worker's side, one page: seals the page to the inbox key. One job step per page. The page's plain text is
+ * `r || payload`, and the copy made here is zeroed before the function returns.
+ */
+export async function sealPage(
+  k: ServerKeys,
+  inboxPub: Uint8Array,
+  at: PagePlace,
+  what: What,
+  payload: Uint8Array,
+): Promise<{ sealed: Bytes; page: RunPage }> {
+  checkPlace(at);
+  if (!WHATS.includes(what)) throw new RangeError('what');
+  if (inboxPub.length !== 32) throw new RangeError('inbox key');
+  const r = await receiptPart(k, at);
+  const plain = concat(r, payload);
+  try {
+    const sealed = await hpke.seal(
+      inboxPub,
+      pageInfo(at.budgetId, at.linkId, at.inboxVersion),
+      pageAad(at.run, at.restart, at.page, what),
+      plain,
+    );
+    return { sealed, page: { what, hash: await sha256(sealed) } };
+  } finally {
+    r.fill(0);
+    plain.fill(0);
+  }
+}
+
+/** The run must start again: a key change landed while it was being fetched, and its pages are sealed to the old inbox key. */
+export class RestartRun extends Error {
+  constructor() {
+    super('restart this run: its pages are sealed to a replaced inbox key');
+  }
+}
+
+/**
+ * The Worker's side, last step: signs the manifest of a complete run. `inForce` is read in the transaction that
+ * completes the run: the inbox version in force, and the last run that may still be sealed to the run's own inbox
+ * version if that version was replaced (the `lastOldRun` of the key change that replaced it). A run past that number
+ * sealed to a replaced key is thrown back to be fetched again, or no device would ever file it.
+ */
+export async function signRun(
+  k: ServerKeys,
+  inboxPub: Uint8Array,
+  run: Omit<RunManifest, 'inboxPubHash' | 'receiptHash' | 'n' | 'flags'>,
+  inForce: { inboxVersion: number; lastRunForOld: number },
+): Promise<{ manifest: Bytes; signature: Bytes }> {
+  if (inboxPub.length !== 32) throw new RangeError('inbox key');
+  if (run.inboxVersion > inForce.inboxVersion) throw new RangeError('inbox version');
+  if (run.inboxVersion !== inForce.inboxVersion && run.run > inForce.lastRunForOld) throw new RestartRun();
+  const parts: Bytes[] = [];
+  try {
+    for (let p = 0; p < run.pages.length; p++) parts.push(await receiptPart(k, { ...run, page: p }));
+    const receipt = await receiptOf(parts);
+    const manifest = encodeRunManifest({
+      ...run,
+      inboxPubHash: await sha256(inboxPub),
+      flags: flagsOf(run.pages),
+      receiptHash: await sha256(receipt),
+      n: k.n,
+    });
+    receipt.fill(0);
+    return { manifest, signature: await sign(k.runSign.privateKey, await runMessage(manifest)) };
+  } finally {
+    for (const r of parts) r.fill(0);
+  }
+}
+
 /** What the Worker hands a device for one run, and keeps until a checked snapshot covers it. */
 export interface SealedRun {
   manifest: Bytes;
@@ -197,51 +313,21 @@ export interface SealedRun {
 }
 
 /**
- * The Worker's side: seals each page of a run to the inbox key and signs the manifest. Each page starts with 32
- * random bytes; the receipt is the hash of all of them, so only a device that opened every page can show it. The
- * Worker keeps `H(receipt)` (in the manifest) and forgets the rest.
+ * A run a device doesn't file. `retry` is true when the cause may be the device itself and not the run: its clock is
+ * behind, it hasn't taken the log entry that brings a new inbox key, or it doesn't hold the inbox key yet. Such a run
+ * is tried again later; any other is the server sending what the Worker could not have made, or out of order.
  */
-export async function sealRun(
-  k: ServerKeys,
-  inboxPub: Uint8Array,
-  run: Omit<RunManifest, 'inboxPubHash' | 'pages' | 'receiptHash' | 'n' | 'flags'>,
-  pages: { what: What; payload: Uint8Array }[],
-): Promise<SealedRun> {
-  if (pages.length < 1 || pages.length > MAX_PAGES) throw new RangeError('page count');
-  if (inboxPub.length !== 32) throw new RangeError('inbox key');
-  const info = pageInfo(run.budgetId, run.linkId, run.inboxVersion);
-  const parts: Bytes[] = [];
-  const sealed: Bytes[] = [];
-  for (let p = 0; p < pages.length; p++) {
-    const { what, payload } = pages[p]!;
-    if (!WHATS.includes(what)) throw new RangeError('what');
-    const r = randomBytes(RECEIPT_PART);
-    parts.push(r);
-    sealed.push(await hpke.seal(inboxPub, info, pageAad(run.run, run.restart, p, what), concat(r, payload)));
-  }
-  const list: RunManifest['pages'] = [];
-  for (let p = 0; p < pages.length; p++) list.push({ what: pages[p]!.what, hash: await sha256(sealed[p]!) });
-  const manifest = encodeRunManifest({
-    ...run,
-    inboxPubHash: await sha256(inboxPub),
-    flags: flagsOf(list),
-    pages: list,
-    receiptHash: await sha256(await receiptOf(parts)),
-    n: k.n,
-  });
-  for (const r of parts) r.fill(0);
-  return { manifest, pages: sealed, signature: await sign(k.runSign.privateKey, await runMessage(manifest)) };
-}
-
-/** A run a device refuses to file: the server sent what the Worker could not have made, or out of order. */
 export class RunError extends Error {
-  constructor(readonly why: string) {
+  constructor(
+    readonly why: string,
+    readonly retry = false,
+  ) {
     super(`run: ${why}`);
   }
 }
 
-const refuse = (why: string): never => {
-  throw new RunError(why);
+const refuse = (why: string, retry = false): never => {
+  throw new RunError(why, retry);
 };
 
 /** What a device knows when a run arrives. */
@@ -257,10 +343,11 @@ export interface FilingState {
   lastInboxVersion: number;
   /** H(cursor after) of the last run filed for each link. */
   cursors: Map<string, Uint8Array>;
-  /** From the log's public state: the inbox version in force, and the last run that existed at the last key change. */
+  /** From the log's public state (chain.ts): the inbox version in force... */
   inboxVersion: number;
-  lastOldRun: number;
-  /** The inbox pair for a version this device still holds, or null. */
+  /** ...and, for each inbox version a key change replaced, the last run that may be sealed to it. */
+  retiredAt: Map<number, number>;
+  /** The inbox pair for a version this device holds, or null. */
   inbox(version: number): Promise<DhPair | null>;
   /** The device's clock, Unix milliseconds. */
   now: number;
@@ -295,48 +382,62 @@ export async function openRun(s: FilingState, run: SealedRun): Promise<FiledRun>
   if (m.run !== s.filedThrough + 1) refuse('not the next run');
   if (!equal(m.prevManifestHash, m.run === 1 ? ZERO32 : s.lastManifestHash))
     refuse('not chained to the run before');
-  if (m.prevRunTime !== s.lastRunTime || m.runTime <= m.prevRunTime) refuse('run time');
-  if (m.runTime > s.now + RUN_CLOCK_SLACK_MS) refuse('dated in the future');
+  if (m.prevRunTime !== s.lastRunTime) refuse('run time does not follow the run before');
+  if (m.runTime > s.now + RUN_CLOCK_SLACK_MS) refuse('dated in the future', true);
 
-  // The inbox key: never an older one than the run before used; after the last key change's runs, only the one in
-  // force. An older key put back with its valid stamp would send new bank data to a key a removed way in holds.
-  if (m.inboxVersion < s.lastInboxVersion || m.inboxVersion > s.inboxVersion) refuse('inbox version');
-  if (m.run > s.lastOldRun && m.inboxVersion !== s.inboxVersion) refuse('sealed to a replaced inbox key');
+  // The inbox key. Never an older one than the run before used. A replaced one only for the runs that existed when
+  // it was replaced: an old inbox key put back with its valid stamp would otherwise send new bank data to a key a
+  // removed way in holds. And never a newer one than the log has brought this device.
+  if (m.inboxVersion > s.inboxVersion) refuse('sealed to an inbox key this device has not reached', true);
+  if (m.inboxVersion < s.lastInboxVersion) refuse('sealed to an older inbox key than the run before');
+  if (m.inboxVersion !== s.inboxVersion && m.run > (s.retiredAt.get(m.inboxVersion) ?? 0))
+    refuse('sealed to a replaced inbox key');
   const inbox = await s.inbox(m.inboxVersion);
-  if (!inbox) return refuse('no inbox key for this run');
-  if (!equal(await sha256(inbox.pub), m.inboxPubHash)) refuse('inbox key');
+  if (!inbox) return refuse('no inbox key for this run', true);
+  if (!equal(await sha256(inbox.pub), m.inboxPubHash)) refuse('not the inbox key the log names');
 
-  // The link's cursor continues from the last run filed for it: a rewound link shows here.
-  const before = s.cursors.get(m.linkId) ?? (await cursorHash(''));
-  if (!equal(m.cursorBefore, before)) refuse('cursor does not continue');
+  // The link's cursor continues from the last run filed for it: a rewound link shows here. A link's first run, and
+  // only that one, carries its description.
+  const known = s.cursors.get(m.linkId);
+  if (!equal(m.cursorBefore, known ?? (await cursorHash('')))) refuse('cursor does not continue');
+  if (((m.flags & FLAG.link) !== 0) !== (known === undefined)) refuse('link description');
 
   if (run.pages.length !== m.pages.length) refuse('page count');
   const info = pageInfo(m.budgetId, m.linkId, m.inboxVersion);
   const parts: Bytes[] = [];
   const pages: FiledRun['pages'] = [];
-  for (let p = 0; p < run.pages.length; p++) {
-    const sealed = run.pages[p]!;
-    const { what, hash } = m.pages[p]!;
-    if (!equal(await sha256(sealed), hash)) refuse('page hash');
-    let plain: Bytes;
-    try {
-      plain = await hpke.open(inbox, info, pageAad(m.run, m.restart, p, what), sealed);
-    } catch (e) {
-      if (e instanceof OpenError) return refuse('a page does not open');
-      throw e;
+  try {
+    for (let p = 0; p < run.pages.length; p++) {
+      const sealed = run.pages[p]!;
+      const { what, hash } = m.pages[p]!;
+      if (!equal(await sha256(sealed), hash)) refuse('page hash');
+      let plain: Bytes;
+      try {
+        plain = await hpke.open(inbox, info, pageAad(m.run, m.restart, p, what), sealed);
+      } catch (e) {
+        if (e instanceof OpenError) return refuse('a page does not open');
+        throw e;
+      }
+      if (plain.length < RECEIPT_PART) return refuse('a page does not open');
+      parts.push(plain.slice(0, RECEIPT_PART) as Bytes);
+      pages.push({ what, payload: plain.slice(RECEIPT_PART) as Bytes });
+      plain.fill(0);
     }
-    if (plain.length < RECEIPT_PART) return refuse('a page does not open');
-    parts.push(plain.slice(0, RECEIPT_PART) as Bytes);
-    pages.push({ what, payload: plain.slice(RECEIPT_PART) as Bytes });
+    const receipt = await receiptOf(parts);
+    if (!equal(await sha256(receipt), m.receiptHash)) refuse('receipt');
+    return { manifest: m, manifestHash: await sha256(run.manifest), pages, receipt };
+  } finally {
+    for (const r of parts) r.fill(0);
   }
-  const receipt = await receiptOf(parts);
-  if (!equal(await sha256(receipt), m.receiptHash)) refuse('receipt');
-  return { manifest: m, manifestHash: await sha256(run.manifest), pages, receipt };
 }
 
-/** The filing state after a run is filed. */
+/** The filing state after a run is filed. The run must be the one `openRun` just opened against this state. */
 export function afterRun(s: FilingState, filed: FiledRun): FilingState {
   const m = filed.manifest;
+  if (m.budgetId !== s.budgetId || m.run !== s.filedThrough + 1 || m.prevRunTime !== s.lastRunTime)
+    throw new RangeError('not the next run');
+  if (!equal(m.prevManifestHash, m.run === 1 ? ZERO32 : s.lastManifestHash))
+    throw new RangeError('not the next run');
   return {
     ...s,
     filedThrough: m.run,
@@ -349,9 +450,10 @@ export function afterRun(s: FilingState, filed: FiledRun): FilingState {
 
 /**
  * The server's side of filing: whether the receipts a bank entry shows are those of exactly the next runs, given the
- * `H(receipt)` the Worker stored for each, in run order.
+ * `H(receipt)` the Worker stored for each, in run order. Between 1 and 256 runs.
  */
 export async function checkReceipts(receipts: Uint8Array[], storedHashes: Uint8Array[]): Promise<boolean> {
+  if (receipts.length < 1 || receipts.length > MAX_RECEIPTS_PER_ENTRY) return false;
   if (receipts.length !== storedHashes.length) return false;
   let ok = true;
   for (let i = 0; i < receipts.length; i++)

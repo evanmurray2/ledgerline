@@ -2,7 +2,7 @@
 // both derived from the 32 bytes of the keyring entry that already encrypts bank tokens, under labels of their own.
 // The HMACs stop someone who can write to the database, but holds no Worker secret, from inventing a key, a bank
 // link or a run state.
-import { type Bytes, concat, isUlid, label, str, u16, u32, u64, u8, zeroize } from './bytes.js';
+import { type Bytes, concat, equal, isUlid, label, str, u16, u32, u64, u8, zeroize } from './bytes.js';
 import { type SignPair, signPairFromSeed } from './curve.js';
 import { hkdf, hmac, hmacKey, hmacVerify } from './hash.js';
 
@@ -46,6 +46,22 @@ const version = (v: number): number => {
   return v;
 };
 
+/**
+ * Checks a stamp. The values it covers come from the database, which an attacker may have written: values that
+ * couldn't have been stamped at all are simply "the stamp is bad", never a crash.
+ */
+async function checked(mac: Uint8Array, k: ServerKeys, input: () => Bytes): Promise<boolean> {
+  if (mac.length !== 32) return false;
+  let bytes: Bytes;
+  try {
+    bytes = input();
+  } catch (e) {
+    if (e instanceof RangeError) return false;
+    throw e;
+  }
+  return hmacVerify(k.mac, bytes, mac);
+}
+
 export const KEY_KIND = { sign: 1, inbox: 2 } as const;
 export type KeyKind = (typeof KEY_KIND)[keyof typeof KEY_KIND];
 
@@ -80,15 +96,16 @@ export async function checkKeyMac(
   pub: Uint8Array,
   mac: Uint8Array,
 ): Promise<boolean> {
-  return mac.length === 32 && hmacVerify(k.mac, keyMacInput(budgetId, v, kind, pub), mac);
+  return checked(mac, k, () => keyMacInput(budgetId, v, kind, pub));
 }
 
 export const MAX_ITEM_ID = 255;
 export const MAX_TOKEN_CIPHERTEXT = 4096;
 
 function linkMacInput(budgetId: string, linkId: string, itemId: string, tokenCiphertext: Uint8Array): Bytes {
+  // Printable ASCII only: text that isn't well-formed would be changed on its way to bytes, and two ids could share a stamp.
+  if (!/^[\x21-\x7e]{1,255}$/.test(itemId)) throw new RangeError('item id');
   const item = new TextEncoder().encode(itemId);
-  if (item.length < 1 || item.length > MAX_ITEM_ID) throw new RangeError('item id');
   if (tokenCiphertext.length < 1 || tokenCiphertext.length > MAX_TOKEN_CIPHERTEXT)
     throw new RangeError('token');
   return concat(
@@ -119,7 +136,7 @@ export async function checkLinkMac(
   tokenCiphertext: Uint8Array,
   mac: Uint8Array,
 ): Promise<boolean> {
-  return mac.length === 32 && hmacVerify(k.mac, linkMacInput(budgetId, linkId, itemId, tokenCiphertext), mac);
+  return checked(mac, k, () => linkMacInput(budgetId, linkId, itemId, tokenCiphertext));
 }
 
 /** A budget's whole run state: what `runsMac` covers at once, so no part can be moved back without the rest. */
@@ -136,8 +153,13 @@ export interface RunState {
 
 export const MAX_LINKS = 4096;
 
+const ZERO32 = new Uint8Array(32);
+
 function runsMacInput(budgetId: string, s: RunState): Bytes {
   if (s.lastManifestHash.length !== 32) throw new RangeError('manifest hash');
+  // Before any run, there is no last manifest and no last time; after one, there are both.
+  if ((s.run === 0) !== equal(s.lastManifestHash, ZERO32) || (s.run === 0) !== (s.lastRunTime === 0))
+    throw new RangeError('run state');
   if (s.links.length > MAX_LINKS) throw new RangeError('link count');
   // The links are written in ascending order of id, whatever order they were given in, so the stamp is one value.
   const links = [...s.links].sort((a, b) => (a.linkId < b.linkId ? -1 : a.linkId > b.linkId ? 1 : 0));
@@ -168,5 +190,5 @@ export async function checkRunsMac(
   s: RunState,
   mac: Uint8Array,
 ): Promise<boolean> {
-  return mac.length === 32 && hmacVerify(k.mac, runsMacInput(budgetId, s), mac);
+  return checked(mac, k, () => runsMacInput(budgetId, s));
 }
