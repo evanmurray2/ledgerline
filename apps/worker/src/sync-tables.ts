@@ -9,6 +9,13 @@ export interface SyncTable {
   pk: readonly string[];
   /** Columns never sent to the phone (secrets and server bookkeeping). */
   omit?: readonly string[];
+  /**
+   * The table's other unique keys. The copy can hold a row that is the same thing under another primary key: an
+   * edit made offline gives a new row an id of its own, and the server gives it another. When the server's row
+   * arrives, the copy's row with the same unique key goes first, or the write would be refused and the copy would
+   * stop syncing (local/engine.ts rowStatements).
+   */
+  unique?: readonly (readonly string[])[];
 }
 
 export const SYNC_TABLES: readonly SyncTable[] = [
@@ -18,23 +25,23 @@ export const SYNC_TABLES: readonly SyncTable[] = [
     pk: ['id'],
     omit: ['access_token_enc', 'key_version', 'cursor', 'sync_lock', 'lock_expires'],
   },
-  { name: 'provider_account', pk: ['id'] },
-  { name: 'liability_snapshot', pk: ['id'] },
+  { name: 'provider_account', pk: ['id'], unique: [['connection_id', 'provider_account_id']] },
+  { name: 'liability_snapshot', pk: ['id'], unique: [['budget_id', 'provider_account_id', 'as_of']] },
   { name: 'account', pk: ['id'] },
   { name: 'category_group', pk: ['id'] },
   { name: 'category', pk: ['id'] },
   { name: 'assignment', pk: ['budget_id', 'month', 'category_id'] },
-  { name: 'target', pk: ['id'] },
+  { name: 'target', pk: ['id'], unique: [['category_id', 'effective_from']] },
   { name: 'payee', pk: ['id'] },
   { name: 'payee_alias', pk: ['id'] },
   { name: 'rule', pk: ['id'] },
   { name: 'bank_txn', pk: ['provider_txn_id'] },
   { name: 'txn_overlay', pk: ['txn_key'] },
-  { name: 'manual_pending', pk: ['id'] },
+  { name: 'manual_pending', pk: ['id'], unique: [['txn_key']] },
   { name: 'txn_split', pk: ['id'] },
   { name: 'txn_link', pk: ['id'] },
   { name: 'expected_reimbursement', pk: ['id'] },
-  { name: 'alert', pk: ['id'] },
+  { name: 'alert', pk: ['id'], unique: [['budget_id', 'type', 'ref_key']] },
   { name: 'setting', pk: ['budget_id', 'key'] },
   { name: 'health_status', pk: ['budget_id', 'key'] },
   // "Same purchase?" answered No (migration 0007, which writes its triggers).

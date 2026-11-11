@@ -333,7 +333,21 @@ export class LocalEngine {
       .filter((c) => !t.pk.includes(c))
       .map((c) => `${c} = excluded.${c}`)
       .join(', ');
+    // The server's row replaces a row of the copy that is the same thing under another primary key (an edit made
+    // offline gave it an id of its own): without this the row's other unique key refuses the write, and every later
+    // page with it.
+    const displaced = (t.unique ?? [])
+      .filter((key) => key.every((c) => r.d![c] !== undefined && r.d![c] !== null))
+      .map((key) =>
+        this.db
+          .prepare(
+            `DELETE FROM ${t.name} WHERE ${key.map((c, i) => `${c} = ?${i + 1}`).join(' AND ')}
+               AND NOT (${t.pk.map((c, i) => `${c} = ?${key.length + i + 1}`).join(' AND ')})`,
+          )
+          .bind(...key.map((c) => r.d![c]), ...r.k),
+      );
     return [
+      ...displaced,
       this.db
         .prepare(
           `INSERT INTO ${t.name} (${cols.join(', ')}) VALUES (${cols.map((_, i) => `?${i + 1}`).join(', ')})
