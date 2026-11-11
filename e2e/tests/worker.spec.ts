@@ -288,6 +288,70 @@ test('An entry added with no signal is kept on the device and sent once when the
   await expect(page.getByText('Offline lunch')).toHaveCount(1);
 });
 
+test('An edit the server refuses is taken out; the edit made after it stays and is sent', async ({
+  page,
+  context,
+  request,
+}) => {
+  await page.goto('/activity');
+  const onServer = async (payee: string) =>
+    (await rows(request, 'manual_pending')).filter((m) => m.payee_name === payee).length;
+  const addLink = page.getByRole('link', { name: 'Add transaction' });
+  await expect(addLink).toBeVisible();
+  const addEntry = async (payee: string, amount: string) => {
+    await addLink.click();
+    const add = page.getByRole('dialog', { name: 'Add a transaction' });
+    await add.getByPlaceholder('0.00').fill(amount);
+    await add.getByLabel('Payee').fill(payee);
+    await add.getByLabel('Category').click();
+    await page
+      .getByRole('dialog', { name: 'Choose a category' })
+      .getByRole('button', { name: 'Dining out' })
+      .first()
+      .click();
+    await add.getByRole('button', { name: 'Add', exact: true }).click();
+    await expect(add).toHaveCount(0);
+  };
+
+  await context.setOffline(true);
+  await expect(page.getByTestId('offline-banner')).toBeVisible();
+  await addEntry('Refused dinner', '20.00');
+  await addEntry('Kept dinner', '30.00');
+  await expect(page.getByTestId('offline-banner')).toContainText('2 waiting to send');
+  await expect(page.getByText('Refused dinner').first()).toBeVisible();
+
+  // Back online, the server refuses the first of the two (here: the test answers in its place).
+  let refusedOnce = false;
+  await page.route('**/api/transactions', async (route) => {
+    const body = route.request().postData() ?? '';
+    if (!refusedOnce && route.request().method() === 'POST' && body.includes('Refused dinner')) {
+      refusedOnce = true;
+      await route.fulfill({
+        status: 422,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'invalid', message: 'Refused by the test.' }),
+      });
+    } else await route.continue();
+  });
+  // Nothing is downloaded again: every sync after this asks only for what changed.
+  const syncs: string[] = [];
+  page.on('request', (r) => {
+    if (r.url().includes('/api/sync')) syncs.push(new URL(r.url()).searchParams.get('since') ?? '');
+  });
+  await context.setOffline(false);
+  await expect.poll(() => onServer('Kept dinner'), { timeout: 15_000 }).toBe(1);
+  expect(refusedOnce).toBe(true);
+  expect(syncs.length).toBeGreaterThan(0);
+  expect(syncs.filter((since) => since === '0' || since === '')).toEqual([]);
+  expect(await onServer('Refused dinner')).toBe(0);
+  // The copy dropped the refused entry and kept the other, as one row.
+  await expect(page.getByText('Refused dinner')).toHaveCount(0);
+  await expect(page.getByText('Kept dinner')).toHaveCount(1);
+  await page.reload();
+  await expect(page.getByText('Refused dinner')).toHaveCount(0);
+  await expect(page.getByText('Kept dinner')).toHaveCount(1);
+});
+
 test('Accounts: net worth and the Ally repair prompt', async ({ page }) => {
   await page.goto('/accounts');
   await expect(page.getByText('$22,354.35').first()).toBeVisible();
