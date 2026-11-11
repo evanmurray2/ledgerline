@@ -65,7 +65,6 @@ connectionsRoutes.post('/settings/connections/link-token', async (c) => {
   const provider = makeProvider(c.env);
   // Hosted Link: the person links on Plaid's own site and comes back to a page of the app that only says "done".
   // The link is finished by /link-finish, which asks Plaid, never by where the browser lands.
-  if (r.hosted && c.env.HOSTED_LINK !== '1') throw new HttpError(400, 'invalid', TRY_AGAIN);
   const hosted = r.hosted ? { completionUrl: `${new URL(c.req.url).origin}/link-done` } : undefined;
   if (r.mode === 'repair') {
     // Update mode reuses the Item; it never uses a new slot.

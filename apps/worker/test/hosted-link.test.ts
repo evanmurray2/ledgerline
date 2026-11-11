@@ -71,7 +71,7 @@ describe('hosted Link', () => {
   });
   afterAll(() => vi.restoreAllMocks());
 
-  it('the session says banks are linked on Plaid’s site', async () => {
+  it('the session still says so, for an app from before Plaid’s script was removed', async () => {
     const s = await call('GET', '/api/session');
     expect(s.status).toBe(200);
     expect(s.json.hostedLink).toBe(true);

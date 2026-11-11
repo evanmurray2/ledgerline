@@ -257,7 +257,8 @@ budgetApi.get('/session', async (c) => {
     readsPaused: ws === 'rest',
     settings: { tracking: setting.get('tracking') !== false, noteButton: setting.get('noteButton') === true },
     canLinkBanks: canLinkBanks(c),
-    hostedLink: c.env.HOSTED_LINK === '1',
+    // Always: banks are linked on Plaid's own site. An app from before the script was removed still reads this.
+    hostedLink: true,
     recoveryNoticeAt: c.get('recoveryNoticeAt') ? new Date(c.get('recoveryNoticeAt')!).toISOString() : null,
   };
   return c.json(body);

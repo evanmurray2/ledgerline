@@ -58,7 +58,6 @@ export function LinkMeter({ used, limit }: { used: number; limit: number }) {
 export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label?: string }) {
   const conns = useConnections();
   const qc = useQueryClient();
-  const hosted = useSession().data?.hostedLink === true;
   const [step, setStep] = useState<'idle' | 'confirm' | 'linking' | 'done'>('idle');
   const [error, setError] = useState<unknown>(null);
   const canWrite = useCanWrite();
@@ -70,7 +69,7 @@ export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label
     setStep('linking');
     setError(null);
     try {
-      const r = await runPlaidLink('new', undefined, hosted);
+      const r = await runPlaidLink('new');
       if (r.status === 'exited') return setStep('idle');
       await Promise.all([
         qc.invalidateQueries({ queryKey: qk.connections }),

@@ -53,7 +53,8 @@ test('The app is served with its security headers, and nothing on Budget breaks 
   const res = await page.goto('/budget');
   const csp = res?.headers()['content-security-policy'] ?? '';
   expect(csp).toContain("frame-ancestors 'none'");
-  expect(csp).toContain('https://cdn.plaid.com');
+  // No outside host at all: banks are linked on Plaid's own site (docs/privacy.md 5.7).
+  expect(csp).not.toContain('https:');
   expect(res?.headers()['x-frame-options']).toBe('DENY');
   await expect(rta(page)).toHaveText('$981.90');
   await page

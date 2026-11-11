@@ -17,7 +17,6 @@ export default defineConfig(() => ({
           TOKEN_KEY_CURRENT: '1',
           DEV_AUTH_EMAIL: 'owner@example.com',
           DEV_ROUTES: '1',
-          HOSTED_LINK: '1',
           FAKE_NOW: '2026-11-14T20:00:00Z',
         },
       },
