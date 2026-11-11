@@ -366,6 +366,14 @@ export async function applyPage(
 type Preparer = Pick<Db, 'prepare'>;
 
 /**
+ * The time of a bank update (D-86 A1): when its fetch finished. A row's arrival (bank_txn.created_at, which D-67
+ * reads) and its removal carry this time, not the clock of whichever apply step ran, so they don't move when a step
+ * is retried or waits. A run with no such time (from before it was recorded) uses the step's clock, ?3, as before.
+ * In statements bound (?1 run id, ..., ?3 the step's clock).
+ */
+const RUN_TIME = `coalesce((SELECT fetched_at FROM sync_run WHERE id = ?1), ?3)`;
+
+/**
  * The apply step's compute: parse and normalize the page, hash each payload, and build the one batch that applies
  * it. Separate from I/O so the go/no-go harness can time exactly this work.
  */
@@ -449,7 +457,7 @@ export async function planApply(
            json_extract(payload, '$.pending'), json_extract(payload, '$.pendingProviderTxnId'), json_extract(payload, '$.rawName'),
            json_extract(payload, '$.merchantName'), json_extract(payload, '$.merchantEntityId'),
            json_extract(payload, '$.providerCategory'), json_extract(payload, '$.paymentChannel'),
-           json_extract(payload, '$.plaidName'), 'p:' || provider_txn_id, NULL, id, id, ?3, ?3
+           json_extract(payload, '$.plaidName'), 'p:' || provider_txn_id, NULL, id, id, ${RUN_TIME}, ?3
          FROM bank_event WHERE sync_run_id = ?1 AND page = ?2 AND position >= ?4 AND position < ?5 AND kind != 'removed' ORDER BY id
          ON CONFLICT (provider_txn_id) DO UPDATE SET
            amount = excluded.amount, date = excluded.date, authorized_date = excluded.authorized_date,
@@ -481,7 +489,7 @@ export async function planApply(
     stmts.push(
       db
         .prepare(
-          `UPDATE bank_txn SET removed_at = ?3, updated_at = ?3,
+          `UPDATE bank_txn SET removed_at = ${RUN_TIME}, updated_at = ?3,
              last_apply_seq = (SELECT max(e.id) FROM bank_event e WHERE e.sync_run_id = ?1 AND e.page = ?2 AND e.kind = 'removed'
                                AND e.position >= ?4 AND e.position < ?5 AND e.provider_txn_id = bank_txn.provider_txn_id)
            WHERE provider_txn_id IN (SELECT provider_txn_id FROM bank_event WHERE sync_run_id = ?1 AND page = ?2

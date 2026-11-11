@@ -8,7 +8,6 @@ import {
   type Month,
   addDays,
   cents,
-  currentMonth,
   localDate,
   matchReissues,
   type MatchRow,
@@ -73,16 +72,29 @@ export async function processPending(env: Env, budgetId: string, now = Date.now(
     }>(`SELECT processed_through, time_zone, budget_start_month FROM budget WHERE id = ?1`);
     if (!b) return { caughtUp: true, processed: 0 };
     const expected = b.processed_through;
-    const evs = await s.all<EventRow>(
-      `SELECT id, kind, provider_txn_id FROM bank_event WHERE budget_id = ?1 AND id > ?2 ORDER BY id LIMIT ?3`,
+    const next = await s.all<EventRow & { sync_run_id: string; fetched_at: number | null }>(
+      `SELECT e.id, e.kind, e.provider_txn_id, e.sync_run_id, r.fetched_at
+       FROM bank_event e LEFT JOIN sync_run r ON r.id = e.sync_run_id
+       WHERE e.budget_id = ?1 AND e.id > ?2 ORDER BY e.id LIMIT ?3`,
       expected,
       CHUNK.process,
     );
-    if (evs.length === 0) return { caughtUp: true, processed: 0 };
+    if (next.length === 0) return { caughtUp: true, processed: 0 };
+    // One bank update at a time (D-86 A1): a batch holds the events of one update, and everything it writes carries
+    // that update's time, the moment its fetch finished, not this step's clock. Updates are applied one at a time
+    // (turn.ts), so a batch that would reach into the next update is rare; it stops there. An update with no such
+    // time (from before it was recorded, or staged by hand) uses the caller's clock, as before.
+    const first = next[0]!;
+    const sameUpdate = (e: (typeof next)[number]) =>
+      e.sync_run_id === first.sync_run_id || (first.fetched_at !== null && e.fetched_at === first.fetched_at);
+    let n = 0;
+    while (n < next.length && sameUpdate(next[n]!)) n++;
+    const evs = next.slice(0, n);
+    const at = first.fetched_at ?? now;
     const through = evs[evs.length - 1]!.id;
-    const today = localDate(now, b.time_zone);
+    const today = localDate(at, b.time_zone);
     const meta = await budgetMeta(s);
-    const plan = meta ? await planProcessing(s, evs, today, now) : { stmts: [] };
+    const plan = meta ? await planProcessing(s, evs, today, at) : { stmts: [] };
     const fence = () =>
       conditionFence(env.DB, `SELECT processed_through = ?1 FROM budget WHERE id = ?2`, expected, budgetId);
     try {
@@ -93,7 +105,7 @@ export async function processPending(env: Env, budgetId: string, now = Date.now(
         fence(),
         s.q(`UPDATE budget SET processed_through = ?2, updated_at = ?3 WHERE id = ?1`, through, now),
       ]);
-      return { caughtUp: evs.length < CHUNK.process, processed: evs.length };
+      return { caughtUp: next.length < CHUNK.process && evs.length === next.length, processed: evs.length };
     } catch (e) {
       if (!isFenceAbort(e)) throw e;
       // Another processor moved the watermark first: re-read and continue.
@@ -213,7 +225,8 @@ async function planProcessing(
       inherit(add.provider_txn_id, old.txn_key, 'auto', add.amount, null);
     } else stmts.push(alert(s, 'possible_reissue', old.txn_key, { added: d.addedKeys }, now));
     // A posted row in an earlier month that is removed or re-issued: History changed.
-    const cm = currentMonth(now, 'America/Los_Angeles');
+    // The current month where the budget is, at the update's time (`today` is already in the budget's time zone).
+    const cm = today.slice(0, 7);
     if (old.date.slice(0, 7) < cm)
       stmts.push(
         alert(s, 'history_changed', old.txn_key, { month: old.date.slice(0, 7), amount: old.amount }, now),
@@ -257,6 +270,9 @@ async function planProcessing(
 /** After the watermark catches up: refresh balances and card liabilities, mark the sync done. */
 export async function finalizeConnection(env: Env, c: StepContext, runId: string): Promise<void> {
   const now = Date.now();
+  // What the update says about the bank carries the update's time (D-86 A1): the balance time, the day of a card's
+  // liability snapshot, and the start of a bank difference. When the run ended is still this step's clock.
+  const at = (await runFetchedAt(env.DB, runId)) ?? now;
   try {
     const provider = makeProvider(env);
     const token = await connectionToken(env, c.connectionId);
@@ -264,9 +280,17 @@ export async function finalizeConnection(env: Env, c: StepContext, runId: string
     const accounts = await provider.getAccounts(conn);
     const stmts: Stmt[] = accounts.map((a) =>
       env.DB.prepare(
-        `UPDATE provider_account SET current_balance = ?3, available_balance = ?4, credit_limit = ?5, balance_as_of = ?6, updated_at = ?6
+        `UPDATE provider_account SET current_balance = ?3, available_balance = ?4, credit_limit = ?5, balance_as_of = ?6, updated_at = ?7
          WHERE connection_id = ?1 AND provider_account_id = ?2`,
-      ).bind(c.connectionId, a.providerAccountId, a.currentBalance, a.availableBalance, a.creditLimit, now),
+      ).bind(
+        c.connectionId,
+        a.providerAccountId,
+        a.currentBalance,
+        a.availableBalance,
+        a.creditLimit,
+        at,
+        now,
+      ),
     );
     if (provider.getLiabilities) {
       const liab = await provider.getLiabilities(conn).catch(() => []);
@@ -274,7 +298,7 @@ export async function finalizeConnection(env: Env, c: StepContext, runId: string
       const zone = await env.DB.prepare(`SELECT time_zone FROM budget WHERE id = ?1`)
         .bind(c.budgetId)
         .first<{ time_zone: string }>();
-      const snapshotDay = localDate(now, zone?.time_zone ?? 'America/Los_Angeles');
+      const snapshotDay = localDate(at, zone?.time_zone ?? 'America/Los_Angeles');
       for (const l of liab) {
         stmts.push(
           env.DB.prepare(
@@ -304,7 +328,7 @@ export async function finalizeConnection(env: Env, c: StepContext, runId: string
     // Balances refresh on the next sync; the transactions are already applied.
   }
   try {
-    await markDrift(env.DB, c.budgetId, c.connectionId, now);
+    await markDrift(env.DB, c.budgetId, c.connectionId, at);
   } catch {
     // The next sync sets it; until then a difference waits a little longer to show.
   }
@@ -317,6 +341,15 @@ export async function finalizeConnection(env: Env, c: StepContext, runId: string
       `UPDATE connection SET last_synced_at = ?2, last_attempt_at = ?2, error_code = NULL, status = 'ok' WHERE id = ?1`,
     ).bind(c.connectionId, now),
   ]);
+}
+
+/** When a bank update finished fetching (sync_run.fetched_at); null for a run from before that was recorded. */
+export async function runFetchedAt(db: Db, runId: string): Promise<number | null> {
+  const r = await db
+    .prepare(`SELECT fetched_at FROM sync_run WHERE id = ?1`)
+    .bind(runId)
+    .first<{ fetched_at: number | null }>();
+  return r?.fetched_at ?? null;
 }
 
 /**

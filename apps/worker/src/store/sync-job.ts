@@ -7,7 +7,7 @@ import { ProviderError, type BankDataProvider } from '@ledgerline/bank-provider'
 import type { Env } from '../env.js';
 import { CHUNK, LeaseLost, applyPage, beginRun, fetchPage, restartFetch } from '../sync/steps.js';
 import { MAX_HANDOFFS, moveLease, releaseFailed, releaseSuccess, renew } from '../sync/lease.js';
-import { finalizeConnection, healPending, processPending } from '../sync/process.js';
+import { finalizeConnection, healPending, processPending, runFetchedAt } from '../sync/process.js';
 import { isMyTurn, TURN_WAIT_MS } from '../sync/turn.js';
 import { sleepUntilUtcMidnight } from '../sync/breaker.js';
 import type { Handler, Job, StepResult } from './jobs.js';
@@ -223,7 +223,9 @@ async function step(deps: SyncDeps, connectionId: string, s: SyncState, now: num
       const waiting = await waitForTurn();
       if (waiting) return waiting;
       // Pending rows a posted row should have claimed, whether or not the bank sent news about them (D-47).
-      await healPending(env, budgetId, connectionId, now).catch(() => ({ changed: false }));
+      // Its 44-day window is counted from the update's time (D-86 A1), not from when this step happened to run.
+      const at = (await runFetchedAt(db, s.runId!)) ?? now;
+      await healPending(env, budgetId, connectionId, at).catch(() => ({ changed: false }));
       return next({ ...s, phase: 'finalize' });
     }
     case 'finalize': {
