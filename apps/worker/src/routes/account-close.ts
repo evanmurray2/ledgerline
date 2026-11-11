@@ -8,6 +8,7 @@ import { CloseAccount, type AccountRow } from '@ledgerline/contracts';
 import { formatCents } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
 import { requestNow } from '../http/clock.js';
+import { changedSince } from '../http/through.js';
 import type { Scoped } from '../db/scoped.js';
 import { ACK, CHANGED, GONE, HttpError, parse, scoped } from './api.js';
 
@@ -65,10 +66,7 @@ accountCloseRoutes.post('/accounts/:id/close', async (c) => {
   if (a.closed_at !== null) return c.json(ACK);
   // The server doesn't work out balances (D-45): the phone sends what it showed, and nothing may have changed since
   // it worked them out (the same check as archiving a category).
-  const latest = await s.db
-    .prepare(`SELECT coalesce(max(seq), 0) AS n FROM change_log`)
-    .first<{ n: number }>();
-  if (r.through === undefined || (latest?.n ?? 0) > r.through) throw new HttpError(409, 'changed', CHANGED);
+  if (await changedSince(c, r.through)) throw new HttpError(409, 'changed', CHANGED);
   const credit = a.kind === 'credit';
   if (r.working !== 0 || (credit && r.available !== 0))
     throw new HttpError(422, 'invalid', 'Close works only at $0. Pull down to refresh.');
