@@ -13,6 +13,8 @@ const H = { origin: ORIGIN, 'content-type': 'application/json', 'x-ledgerline': 
 describe('the same edit on the phone and on the server', () => {
   let a: LocalEngine;
   let b: LocalEngine;
+  /** Takes only the rows the first phone records for each edit (twin.ts). */
+  let c: LocalEngine;
   let spending: string[];
   let txn: string;
   let payee: string;
@@ -35,6 +37,7 @@ describe('the same edit on the phone and on the server', () => {
     budget = session.budget.id;
     a = await syncPhone(await newPhone());
     b = await syncPhone(await newPhone());
+    c = await syncPhone(await newPhone());
     const cats = (await (await a.request('GET', '/api/settings/categories')).json()) as {
       groups: { categories: { id: string; kind: string }[] }[];
     };
@@ -307,11 +310,13 @@ describe('the same edit on the phone and on the server', () => {
         await prepare();
         await syncPhone(a);
         await syncPhone(b);
+        await syncPhone(c);
         expect(differences(await rowsOf(a), await rowsOf(b))).toEqual([]);
       }
       const [method, path, body] = await make();
-      const t = await twin(a, b, method, path, body);
+      const t = await twin(a, b, method, path, body, c);
       expect(t.phone.status, await t.phone.clone().text()).toBeLessThan(300);
+      expect(t.recorded).toBeGreaterThan(0);
       expect(t.differences).toEqual([]);
       // The phone that made the edit takes the server's rows next: nothing changes for it.
       await syncPhone(a);
@@ -327,7 +332,7 @@ describe('the same edit on the phone and on the server', () => {
         .bind(payee)
         .all<{ id: string }>()
     ).results.map((r) => r.id);
-    const joined = await twin(a, b, 'POST', '/api/settings/payees/merge', { ids: two, keep: two[0] });
+    const joined = await twin(a, b, 'POST', '/api/settings/payees/merge', { ids: two, keep: two[0] }, c);
     expect(joined.phone.status, await joined.phone.clone().text()).toBe(200);
     expect(joined.differences).toEqual([]);
     const onPhone = (await joined.phone.json()) as { undoId: string };
@@ -336,7 +341,7 @@ describe('the same edit on the phone and on the server', () => {
     // The phone takes the server's rows before the undo: they carry the join's own time, so the undo still finds
     // the payees as the join left them.
     await syncPhone(a);
-    const undone = await twin(a, b, 'POST', `/api/settings/payees/merge/${onPhone.undoId}/undo`, {});
+    const undone = await twin(a, b, 'POST', `/api/settings/payees/merge/${onPhone.undoId}/undo`, {}, c);
     expect(undone.phone.status, await undone.phone.clone().text()).toBe(200);
     expect(undone.differences).toEqual([]);
     const back = await a.db
@@ -355,6 +360,7 @@ describe('the same edit on the phone and on the server', () => {
       through: stale,
     });
     expect(t.phone.status).toBe(409);
+    expect(t.recorded).toBe(0);
     expect(t.differences).toEqual([]);
   });
 
