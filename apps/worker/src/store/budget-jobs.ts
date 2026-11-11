@@ -8,6 +8,7 @@ import type { Env } from '../env.js';
 import { dailyScan } from '../daily-scan.js';
 import { rollUpUsage, watchdogBudgetStmts } from '../maintenance.js';
 import { processPending } from '../sync/process.js';
+import { updateInFlight } from '../sync/turn.js';
 import { fillPlaidNameStep, type FillPlaidNameState } from '../sync/fill-plaid-name.js';
 import { QUEUE_REFILE, refilePayeesStep, type RefileState } from '../sync/refile-payees.js';
 import { QUEUE_DROP_TEXT_ALIASES, dropTextAliasesStep } from '../sync/drop-text-aliases.js';
@@ -137,7 +138,9 @@ export function maintenanceHandler(env: Env, budgetId: () => Promise<string>): H
       case 'start':
         return next({ phase: 'catchup', i: 0 });
       case 'catchup': {
-        // 2. Post-sync catch-up from the watermark.
+        // 2. Post-sync catch-up from the watermark: for rows whose sync job is gone. A bank update that is alive files
+        // its own rows, whole and in its turn (D-86 A2), so the catch-up leaves it alone.
+        if (await updateInFlight(db, b, now)) return next({ phase: 'rollup' });
         const r = await processPending(env, b, now);
         const i = (s.i ?? 0) + 1;
         return next(r.caughtUp || i >= 400 ? { phase: 'rollup' } : { phase: 'catchup', i });

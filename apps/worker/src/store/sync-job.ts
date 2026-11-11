@@ -150,7 +150,7 @@ async function step(deps: SyncDeps, connectionId: string, s: SyncState, now: num
       if (s.handoffFrom && !(await renew(db, connectionId, s.holder, Date.now())))
         throw new Error('lease not yet handed over');
       const rs = await beginRun(ctx(), s.trigger);
-      if (rs.phase === 'fetching')
+      if (rs.phase === 'fetching' && !rs.fetched)
         return next({
           ...s,
           phase: 'fetch',

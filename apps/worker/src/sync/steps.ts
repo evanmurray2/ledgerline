@@ -26,6 +26,8 @@ export interface RunState {
   appliedThrough: number;
   appliedEvents: number;
   restartCount: number;
+  /** Every page of the update is stored (D-86 A2): it is applied from where it stands, never fetched again. */
+  fetched: boolean;
 }
 
 interface Ctx {
@@ -60,8 +62,12 @@ export async function beginRun(c: Ctx, trigger: string): Promise<RunState> {
     string | null;
   const prevRow = prev?.results[0] as SyncRunRow | undefined;
   const stmts: Stmt[] = [leaseFence(c.db, c.connectionId, c.holder, c.now)];
-  if (prevRow && (prevRow.phase === 'applying' || prevRow.phase === 'finalizing')) {
-    // Adopt: move the not-yet-applied staged pages to this run and continue from applied_through.
+  // A run whose every page is stored is fetched: its phase stays 'fetching' until its first page is applied.
+  const prevFetched = !!prevRow && prevRow.fetch_seq !== null && prevRow.fetch_seq > 0;
+  if (prevRow && (prevRow.phase === 'applying' || prevRow.phase === 'finalizing' || prevFetched)) {
+    // Adopt: move the not-yet-applied staged pages to this run and continue from applied_through. A fetched update
+    // is never fetched again (D-86 A2): it keeps its place and its time, and what it brought stays what the bank sent
+    // then.
     stmts.push(
       c.db
         .prepare(
@@ -99,10 +105,12 @@ export async function beginRun(c: Ctx, trigger: string): Promise<RunState> {
       appliedThrough: prevRow.applied_through,
       appliedEvents: prevRow.applied_events,
       restartCount: prevRow.restart_count,
+      fetched: true,
     };
   }
   if (prevRow && prevRow.phase === 'fetching') {
-    // Nothing was applied; the connection cursor has not moved. Drop its pages and start over.
+    // Not fetched to the end, so nothing was applied and the connection cursor has not moved. Drop its pages and
+    // start over.
     stmts.push(
       c.db.prepare(`DELETE FROM sync_page WHERE sync_run_id = ?1`).bind(prevRow.id),
       c.db
@@ -129,6 +137,7 @@ export async function beginRun(c: Ctx, trigger: string): Promise<RunState> {
     appliedThrough: -1,
     appliedEvents: 0,
     restartCount: 0,
+    fetched: false,
   };
 }
 
@@ -140,6 +149,7 @@ interface SyncRunRow {
   applied_through: number;
   applied_events: number;
   restart_count: number;
+  fetch_seq: number | null;
 }
 
 function toState(r: SyncRunRow): RunState {
@@ -151,6 +161,7 @@ function toState(r: SyncRunRow): RunState {
     appliedThrough: r.applied_through,
     appliedEvents: r.applied_events,
     restartCount: r.restart_count,
+    fetched: r.fetch_seq !== null && r.fetch_seq > 0,
   };
 }
 
