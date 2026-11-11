@@ -13,6 +13,8 @@ const PENDING = 'ledgerline.link';
 let went: string[] = [];
 
 beforeEach(() => {
+  // The suite runs in mock mode, where linking is pretended. These tests are about the real path.
+  vi.stubEnv('VITE_MOCK', '');
   vi.useFakeTimers();
   localStorage.clear();
   sessionStorage.clear();
@@ -25,6 +27,7 @@ beforeEach(() => {
   vi.spyOn(leave, 'to').mockImplementation((url) => void went.push(url));
 });
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -32,7 +35,7 @@ afterEach(() => {
 describe('hosted Link', () => {
   it('goes to Plaid’s page only after the link token came, and remembers the session', async () => {
     linkFinish.mockResolvedValue({ status: 'waiting' });
-    void runPlaidLink('new', undefined, true);
+    void runPlaidLink('new');
     expect(went).toEqual([]);
     await vi.advanceTimersByTimeAsync(0);
     expect(linkToken).toHaveBeenCalledWith({
@@ -50,7 +53,7 @@ describe('hosted Link', () => {
     linkFinish
       .mockResolvedValueOnce({ status: 'waiting' })
       .mockResolvedValueOnce({ status: 'linked', connectionId: 'con_1' });
-    const run = runPlaidLink('new', undefined, true);
+    const run = runPlaidLink('new');
     await vi.advanceTimersByTimeAsync(2500);
     expect(linkFinish).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(2500);
@@ -65,7 +68,7 @@ describe('hosted Link', () => {
 
   it('a repair ends as "repaired", and a session the person left as "exited"', async () => {
     linkFinish.mockResolvedValueOnce({ status: 'repaired' });
-    const repair = runPlaidLink('repair', 'con_9', true);
+    const repair = runPlaidLink('repair', 'con_9');
     await vi.advanceTimersByTimeAsync(2500);
     await expect(repair).resolves.toEqual({ status: 'repaired' });
     expect(linkToken).toHaveBeenCalledWith({
@@ -75,14 +78,14 @@ describe('hosted Link', () => {
       hosted: true,
     });
     linkFinish.mockResolvedValueOnce({ status: 'exited' });
-    const left = runPlaidLink('new', undefined, true);
+    const left = runPlaidLink('new');
     await vi.advanceTimersByTimeAsync(2500);
     await expect(left).resolves.toEqual({ status: 'exited' });
   });
 
   it('gives up after 30 minutes with no answer', async () => {
     linkFinish.mockResolvedValue({ status: 'waiting' });
-    const run = runPlaidLink('new', undefined, true);
+    const run = runPlaidLink('new');
     await vi.advanceTimersByTimeAsync(31 * 60 * 1000);
     await expect(run).resolves.toEqual({ status: 'exited' });
     expect(localStorage.getItem(PENDING)).toBeNull();
@@ -90,7 +93,7 @@ describe('hosted Link', () => {
 
   it('goes nowhere when the server gives no page', async () => {
     linkToken.mockRejectedValue(new Error('All 10 bank links are used.'));
-    await expect(runPlaidLink('new', undefined, true)).rejects.toThrow('All 10 bank links are used.');
+    await expect(runPlaidLink('new')).rejects.toThrow('All 10 bank links are used.');
     expect(went).toEqual([]);
     expect(localStorage.getItem(PENDING)).toBeNull();
     expect(sessionStorage.getItem(LEFT_HERE_KEY)).toBeNull();
@@ -98,7 +101,7 @@ describe('hosted Link', () => {
 
   it('while this page waits on its own session, a resume leaves it alone', async () => {
     linkFinish.mockResolvedValue({ status: 'waiting' });
-    const run = runPlaidLink('new', undefined, true);
+    const run = runPlaidLink('new');
     await vi.advanceTimersByTimeAsync(0);
     expect(await resumeHostedLink()).toBeNull();
     expect(linkFinish).not.toHaveBeenCalled();

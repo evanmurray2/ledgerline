@@ -36,7 +36,7 @@ export function PrivacyScreen() {
       <Card>
         <Fact name="Cloudflare" text="Runs the server and stores the budget." />
         <Fact name="Plaid" text="Connects to your banks." />
-        <Fact name="Nobody else" text="No ads, and no outside trackers." />
+        <Fact name="Nobody else" text="No ads, no trackers, and no outside code in the app." />
       </Card>
       <SectionTitle>What the server notes about you</SectionTitle>
       <Card>

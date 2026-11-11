@@ -24,10 +24,10 @@ const csp = (() => {
 describe('Content-Security-Policy', () => {
   it.each([
     ['default-src', "'self'"],
-    ['script-src', "'self' 'wasm-unsafe-eval' https://cdn.plaid.com"],
+    ['script-src', "'self' 'wasm-unsafe-eval'"],
     ['worker-src', "'self'"],
-    ['connect-src', "'self' https://production.plaid.com https://sandbox.plaid.com"],
-    ['frame-src', 'https://cdn.plaid.com'],
+    ['connect-src', "'self'"],
+    ['frame-src', "'none'"],
     ['img-src', "'self' data: blob:"],
     ['style-src', "'self' 'unsafe-inline'"],
     ['font-src', "'self'"],

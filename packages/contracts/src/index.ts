@@ -33,7 +33,7 @@ export const Session = z.object({
   settings: z.object({ tracking: z.boolean(), noteButton: z.boolean() }),
   /** Whether this user may link a new bank (D-75: admins only on Plaid Trial). Older Workers omit it: true. */
   canLinkBanks: z.boolean().optional(),
-  /** Banks are linked on Plaid's own site, with no Plaid script in the app (docs/privacy.md 5.7). */
+  /** Always true now. An app from before Plaid's script was removed reads it to pick hosted Link. */
   hostedLink: z.boolean().optional(),
   /** When this user's recovery code was used, while the notice shows (14 days, D-75); null otherwise. */
   recoveryNoticeAt: z.string().nullable().optional(),
