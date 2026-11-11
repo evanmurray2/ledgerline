@@ -41,7 +41,10 @@ export function PrivacyScreen() {
       <SectionTitle>What the server notes about you</SectionTitle>
       <Card>
         <Fact name="Your devices and passkeys" text="Their names, and when each last signed in." />
-        <Fact name="Each request" text="Kept in a log for 3 days." />
+        <Fact
+          name="Each request"
+          text="Its address, your IP address and rough location, and your browser. Kept 3 days."
+        />
         <Fact
           name="How you use the app"
           text="Taps and timings, only while “Record how I use the app” is on."
