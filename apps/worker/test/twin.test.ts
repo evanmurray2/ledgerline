@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { LocalEngine } from '../src/local/engine.js';
 import { budgetApi } from '../src/routes/api.js';
 import { syncPhone } from './phone.js';
+import { storeDb } from './store-db.js';
 import { differences, newPhone, rowsOf, twin } from './twin.js';
 
 const ORIGIN = 'https://ledgerline.test';
@@ -15,11 +16,23 @@ describe('the same edit on the phone and on the server', () => {
   let spending: string[];
   let txn: string;
   let payee: string;
+  let budget: string;
+  /** Set-up data a case needs: written on the server, as a bank update would, then synced to both phones. */
+  const onServer =
+    (sql: string, ...values: unknown[]) =>
+    async () => {
+      await storeDb(budget)
+        .prepare(sql)
+        .bind(...values)
+        .run();
+    };
   const month = '2026-11';
 
   beforeAll(async () => {
     const r = await SELF.fetch(`${ORIGIN}/__dev/seed-november`, { method: 'POST', headers: H, body: '{}' });
     expect(r.status).toBe(200);
+    const session = (await (await SELF.fetch(`${ORIGIN}/api/session`)).json()) as { budget: { id: string } };
+    budget = session.budget.id;
     a = await syncPhone(await newPhone());
     b = await syncPhone(await newPhone());
     const cats = (await (await a.request('GET', '/api/settings/categories')).json()) as {
@@ -43,7 +56,7 @@ describe('the same edit on the phone and on the server', () => {
 
   type Case = [string, string, unknown];
   /** Name, the route it covers (as Hono names it), and the request. They run in this order on one budget. */
-  const cases: [string, string, () => Case | Promise<Case>][] = [
+  const cases: [string, string, () => Case | Promise<Case>, (() => Promise<void>)?][] = [
     [
       'assign',
       'POST /budget/assign',
@@ -187,6 +200,98 @@ describe('the same edit on the phone and on the server', () => {
       'POST /transfers/:key/unpair',
       () => ['POST', '/api/transfers/n-to-marcus/unpair', {}],
     ],
+    // Edits that need set-up data. A bank update would make it; here one statement on the server does.
+    [
+      'say a transfer went to an account that is not linked',
+      'POST /transfers/:key/pick',
+      () => ['POST', '/api/transfers/n-to-marcus/pick', { otherKey: null, unlinked: true }],
+      () =>
+        onServer(
+          `UPDATE txn_overlay SET transfer_state = 'unsorted' WHERE budget_id = ?1 AND txn_key = 'n-to-marcus'`,
+          budget,
+        )(),
+    ],
+    [
+      'match money in to what you are owed',
+      'POST /match',
+      async () => {
+        const view = (await (await a.request('GET', '/api/match/n-venmo')).json()) as {
+          open: { id: string }[];
+        };
+        return [
+          'POST',
+          '/api/match',
+          { inflowKey: 'n-venmo', items: [{ itemId: view.open[0]!.id, amount: 100 }], rest: 'income' },
+        ];
+      },
+    ],
+    ['undo that match', 'POST /match/:key/unlink', () => ['POST', '/api/match/n-venmo/unlink', {}]],
+    [
+      'dismiss an alert',
+      'POST /alerts/:id/dismiss',
+      () => ['POST', '/api/alerts/twin-alert/dismiss', {}],
+      () =>
+        onServer(
+          `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at) VALUES ('twin-alert', ?1, 'low_balance', 'checking', NULL, ?2)`,
+          budget,
+          Date.now(),
+        )(),
+    ],
+    [
+      'answer No to Same purchase?',
+      'POST /same-purchase/:id',
+      () => ['POST', '/api/same-purchase/twin-ask', { answer: 'no', key: 'n-shell' }],
+      () =>
+        onServer(
+          `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at) VALUES ('twin-ask', ?1, 'same_purchase', 'n-marriott', ?2, ?3)`,
+          budget,
+          JSON.stringify({ candidates: ['n-shell'] }),
+          Date.now(),
+        )(),
+    ],
+    [
+      'close an account at $0',
+      'POST /accounts/:id/close',
+      async () => [
+        'POST',
+        '/api/accounts/twin-acct/close',
+        { working: 0, available: 0, through: (await a.state()).through },
+      ],
+      () =>
+        onServer(
+          `INSERT INTO account (id, budget_id, name, kind, budget_from, created_at, updated_at)
+           SELECT 'twin-acct', budget_id, 'Twin closed', kind, budget_from, created_at, updated_at FROM account WHERE id = 'ally'`,
+        )(),
+    ],
+    ['reopen it', 'POST /accounts/:id/reopen', () => ['POST', '/api/accounts/twin-acct/reopen', {}]],
+    [
+      'confirm a starting balance',
+      'POST /setup/starting-balances',
+      () => [
+        'POST',
+        '/api/setup/starting-balances',
+        { accounts: [{ accountId: 'twin-acct', startingBalance: 0 }] },
+      ],
+    ],
+    [
+      'say an entry is not the same as a bank row',
+      'POST /transactions/:key/not-same',
+      () => ['POST', '/api/transactions/n-check-1043/not-same', {}],
+      () =>
+        onServer(
+          `UPDATE manual_pending SET covers_provider_txn_id =
+             (SELECT provider_txn_id FROM bank_txn WHERE txn_key = 'n-marriott' AND pending = 1 AND removed_at IS NULL)
+           WHERE budget_id = ?1 AND txn_key = 'n-check-1043'`,
+          budget,
+        )(),
+    ],
+    // Last: it sets the budget's start again, after the set-up statement took it away.
+    [
+      'pick the month the budget starts',
+      'POST /setup/start',
+      () => ['POST', '/api/setup/start', { startMonth: '2026-11' }],
+      () => onServer(`UPDATE budget SET budget_start_month = NULL WHERE id = ?1`, budget)(),
+    ],
   ];
 
   const ids = async (table: string) =>
@@ -196,8 +301,14 @@ describe('the same edit on the phone and on the server', () => {
   const named = async (table: string, name: string) =>
     (await a.db.prepare(`SELECT id FROM ${table} WHERE name = ?1`).bind(name).first<{ id: string }>())!.id;
 
-  for (const [name, , make] of cases)
+  for (const [name, , make, prepare] of cases)
     it(name, async () => {
+      if (prepare) {
+        await prepare();
+        await syncPhone(a);
+        await syncPhone(b);
+        expect(differences(await rowsOf(a), await rowsOf(b))).toEqual([]);
+      }
       const [method, path, body] = await make();
       const t = await twin(a, b, method, path, body);
       expect(t.phone.status, await t.phone.clone().text()).toBeLessThan(300);
@@ -300,15 +411,4 @@ const SERVER_ONLY: Record<string, string> = {
 };
 
 /** Not checked as a twin yet (docs/build-plan.md). This list only gets shorter. */
-const NOT_YET: Record<string, string> = {
-  'POST /accounts/:id/close': 'needs an account at $0',
-  'POST /accounts/:id/reopen': 'needs a closed account',
-  'POST /alerts/:id/dismiss': 'needs an alert',
-  'POST /match': 'needs a hand entry and its bank row',
-  'POST /match/:key/unlink': 'needs a match',
-  'POST /same-purchase/:id': 'needs a same-purchase question',
-  'POST /transactions/:key/not-same': 'needs a claimed pair',
-  'POST /transfers/:key/pick': 'needs an unclear transfer',
-  'POST /setup/start': 'setup',
-  'POST /setup/starting-balances': 'setup',
-};
+const NOT_YET: Record<string, string> = {};
