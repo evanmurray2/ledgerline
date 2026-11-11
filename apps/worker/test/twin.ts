@@ -62,6 +62,23 @@ export function differences(phone: Rows, server: Rows): string[] {
   return out;
 }
 
+const auditLine = (r: Record<string, unknown>) => [
+  r.action,
+  r.entity,
+  r.entity_id,
+  r.before,
+  r.after,
+  r.created_at,
+];
+
+let budget: Promise<string> | null = null;
+function budgetId(): Promise<string> {
+  budget ??= SELF.fetch(`${ORIGIN}/api/session`)
+    .then((r) => r.json())
+    .then((s) => (s as { budget: { id: string } }).budget.id);
+  return budget;
+}
+
 export interface Twin {
   phone: Response;
   server: Response;
@@ -104,6 +121,27 @@ export async function twin(
   expect(server.status, `${method} ${path}: the server's answer`).toBe(phone.status);
   await syncPhone(b);
   const diff = differences(await rowsOf(a), await rowsOf(b));
-  if (c) for (const d of differences(await rowsOf(c), await rowsOf(b))) diff.push(`recorded rows: ${d}`);
+  if (c) {
+    for (const d of differences(await rowsOf(c), await rowsOf(b))) diff.push(`recorded rows: ${d}`);
+    // The two tables an edit writes that no sync carries: the copy that took the recorded rows holds what the
+    // phone that ran the edit holds, ids included.
+    for (const t of ['audit_log', 'txn_key_move']) {
+      const all = async (e: LocalEngine) =>
+        JSON.stringify((await e.db.prepare(`SELECT * FROM ${t} ORDER BY 1`).all()).results);
+      if ((await all(a)) !== (await all(c))) diff.push(`recorded rows: ${t} differs`);
+    }
+  }
+  // What the edit wrote to the record of changes, against the server's newest lines (ids and the user are each
+  // side's own).
+  const audited = ran.rows.filter((r) => r.t === 'audit_log' && r.d).map((r) => auditLine(r.d!));
+  if (audited.length) {
+    const theirs = await storeDb(await budgetId())
+      .prepare(`SELECT * FROM audit_log ORDER BY id DESC LIMIT ?1`)
+      .bind(audited.length)
+      .all<Record<string, unknown>>();
+    const server = theirs.results.map(auditLine).reverse();
+    if (JSON.stringify(audited) !== JSON.stringify(server))
+      diff.push(`audit_log: phone ${JSON.stringify(audited)}, server ${JSON.stringify(server)}`);
+  }
   return { phone, server, differences: diff, recorded: ran.rows.length };
 }

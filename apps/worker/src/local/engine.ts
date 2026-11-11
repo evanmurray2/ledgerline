@@ -168,12 +168,24 @@ export async function migrateLocal(
     ),
   ]);
   await db.batch([
-    ...SYNC_TABLES.flatMap((t) => recordTriggers(t)).map((sql) => db.prepare(sql)),
+    ...RECORDED_TABLES.flatMap((t) => recordTriggers(t)).map((sql) => db.prepare(sql)),
     // A copy closed in the middle of a recording starts with it off.
     db.prepare(`DELETE FROM local_state WHERE key = 'recording'`),
     db.prepare(`DELETE FROM edit_change`),
   ]);
 }
+
+/**
+ * The tables an edit's recording covers: the ones the phone syncs, and the two others an edit writes
+ * (docs/privacy.md 5.3, "What the row changes cover"). `audit_log` is the record an undo reads; `txn_key_move` says
+ * where a transaction's key went. The server never sends these two in a sync: they reach a copy only as the
+ * recorded rows of an edit.
+ */
+export const RECORDED_TABLES: readonly SyncTable[] = [
+  ...SYNC_TABLES,
+  { name: 'audit_log', pk: ['id'] },
+  { name: 'txn_key_move', pk: ['old_key'] },
+];
 
 /** Set while the engine records an edit; the triggers below write nothing at any other time (a sync, derive()). */
 const RECORDING = `(SELECT value FROM local_state WHERE key = 'recording') = '1'`;
@@ -356,8 +368,8 @@ export class LocalEngine {
     }
   }
 
-  private rowStatements(r: SyncRow): Stmt[] {
-    const t = SYNC_TABLES.find((x) => x.name === r.t);
+  private rowStatements(r: SyncRow, tables: readonly SyncTable[] = SYNC_TABLES): Stmt[] {
+    const t = tables.find((x) => x.name === r.t);
     if (!t) return [];
     const where = t.pk.map((c, i) => `${c} = ?${i + 1}`).join(' AND ');
     if (!r.d) return [this.db.prepare(`DELETE FROM ${t.name} WHERE ${where}`).bind(...r.k)];
@@ -546,7 +558,7 @@ export class LocalEngine {
    * Runs an edit and gives the rows it changed, as they are after it: what a log entry for the edit holds
    * (docs/privacy.md 5.3: an entry is results, not operations). Another copy that writes these rows with
    * `applyRows` has the edit without running it. Only the edit's own writes are recorded, not what derive() works
-   * out from them. Covers the tables the phone syncs today (SYNC_TABLES).
+   * out from them. Covers RECORDED_TABLES.
    */
   async record(
     method: string,
@@ -562,7 +574,7 @@ export class LocalEngine {
     const todo = await this.pendingDerive();
     await this.noteChanges(rows, todo);
     const stmts: Stmt[] = [this.db.prepare(`PRAGMA defer_foreign_keys = ON`)];
-    for (const r of rows) stmts.push(...this.rowStatements(r));
+    for (const r of rows) stmts.push(...this.rowStatements(r, RECORDED_TABLES));
     stmts.push(this.setPendingDerive(todo));
     for (const part of chunks(stmts, 500)) await this.db.batch(part);
   }
@@ -582,7 +594,7 @@ export class LocalEngine {
       .all<{ tbl: string; pk: string; deleted: number }>();
     const rows: SyncRow[] = [];
     for (const ch of changes.results) {
-      const t = SYNC_TABLES.find((x) => x.name === ch.tbl)!;
+      const t = RECORDED_TABLES.find((x) => x.name === ch.tbl)!;
       const k = JSON.parse(ch.pk) as unknown[];
       let d: Record<string, unknown> | null = null;
       if (!ch.deleted) {
