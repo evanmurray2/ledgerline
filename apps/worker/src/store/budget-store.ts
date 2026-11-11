@@ -10,6 +10,8 @@ import { DIRECTORY_NAME } from './directory.js';
 import { TRY_AGAIN, budgetApi, serverReadsOnly } from '../routes/api.js';
 import { afterBankUpdate } from '../http/after-update.js';
 import { marksOf, refusal, type Marks } from './marks.js';
+import { QUEUE_STAMP_LINKS, stampLinksHandler } from './stamp-links.js';
+import { parseKeyring } from '@ledgerline/platform';
 import { dev } from '../dev-seed.js';
 import {
   BUDGET_TABLES,
@@ -412,6 +414,8 @@ export class BudgetStore extends DurableObject<Env> {
         state: { itemId: String(c.provider_item_id), connectionId: String(c.id) },
         runAt: now,
       });
+    // A bank link with no stamp yet (copied by the migration, or made since) is checked and stamped (5.5).
+    this.ctx.storage.sql.exec(QUEUE_STAMP_LINKS, now);
     await this.runner.scheduleNext(now);
     return { ok: true, jobs: this.runner.list() };
   }
@@ -621,6 +625,14 @@ export class BudgetStore extends DurableObject<Env> {
       fill_plaid_name: (job, now) => fillPlaidNameHandler(this.adapter(), budgetId)(job, now),
       refile_payees: (job, now) => refilePayeesHandler(this.adapter(), budgetId)(job, now),
       drop_text_aliases: (job, now) => dropTextAliasesHandler(this.adapter())(job, now),
+      stamp_links: (job, now) => {
+        const env = this.appEnv();
+        return stampLinksHandler({
+          db: this.adapter(),
+          keyring: () => parseKeyring(env.TOKEN_KEYS, env.TOKEN_KEY_CURRENT),
+          provider: () => makeProvider(env),
+        })(job, now);
+      },
       register_link: async (job) => {
         // Retried until the Directory answers; a duplicate Item is flagged on the connection (6.4).
         const { itemId, connectionId } = job.state as { itemId: string; connectionId: string };

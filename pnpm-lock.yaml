@@ -126,6 +126,9 @@ importers:
       '@ledgerline/platform':
         specifier: workspace:*
         version: link:../../packages/platform
+      '@ledgerline/seal':
+        specifier: workspace:*
+        version: link:../../packages/seal
       '@simplewebauthn/server':
         specifier: 14.0.3
         version: 14.0.3

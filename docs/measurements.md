@@ -6,18 +6,19 @@ How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.
 
 `measure/seal-code.measure.ts` times the real code in `packages/seal`, which the section below could only stand in for. Times in ms, 60 runs each, in Node; the steps are measured again on Cloudflare before the cutover.
 
-| Step                                                       | median / p90 / max |
-| ---------------------------------------------------------- | ------------------ |
-| Seal one bank page (200 KB): one job step                  | 1.72 / 2.30 / 3.20 |
-| Sign a run of 10 pages: the last job step                  | 0.69 / 1.29 / 2.27 |
-| Check a write of 1 entry, 4 KB                             | 0.24 / 0.32 / 0.78 |
-| Check a write of 1 entry, 64 KB                            | 0.27 / 0.34 / 0.37 |
-| Check a write of 16 entries, 4 KB each                     | 4.12 / 4.77 / 7.95 |
-| Check a write of 16 entries, 64 KB each                    | 5.04 / 6.18 / 6.90 |
-| Check a write of 32 entries, 4 KB each                     | 7.95 / 9.64 / 10.8 |
-| Check a write of 32 entries, 64 KB each                    | 9.25 / 11.9 / 15.1 |
-| Check a signed request (remove a bank, delete the account) | 0.19 / 0.22 / 0.38 |
-| Check the stamp on a stored public key                     | 0.04 / 0.07 / 0.44 |
+| Step                                                                                                                            | median / p90 / max |
+| ------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| Seal one bank page (200 KB): one job step                                                                                       | 1.72 / 2.30 / 3.20 |
+| Sign a run of 10 pages: the last job step                                                                                       | 0.69 / 1.29 / 2.27 |
+| Check a write of 1 entry, 4 KB                                                                                                  | 0.24 / 0.32 / 0.78 |
+| Check a write of 1 entry, 64 KB                                                                                                 | 0.27 / 0.34 / 0.37 |
+| Check a write of 16 entries, 4 KB each                                                                                          | 4.12 / 4.77 / 7.95 |
+| Check a write of 16 entries, 64 KB each                                                                                         | 5.04 / 6.18 / 6.90 |
+| Check a write of 32 entries, 4 KB each                                                                                          | 7.95 / 9.64 / 10.8 |
+| Check a write of 32 entries, 64 KB each                                                                                         | 9.25 / 11.9 / 15.1 |
+| Check a signed request (remove a bank, delete the account)                                                                      | 0.19 / 0.22 / 0.38 |
+| Check the stamp on a stored public key                                                                                          | 0.04 / 0.07 / 0.44 |
+| One step of the bank link check (open the token, derive the Worker's keys, stamp), without the bank's answer; Node, mean of 200 | 0.55               |
 
 - An entry costs about 0.25 ms to check, whatever its size: the signature check is most of it.
 - A write of 32 entries does not fit 10 ms, before any storage. So a write holds at most 16 entries (`MAX_WRITE_ENTRIES`), which leaves about half of the 10 ms for storing them.
