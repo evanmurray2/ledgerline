@@ -1,10 +1,11 @@
 // Settings → Payees: the list, renaming, and joining payees (rename = merge) with Undo (docs/payees.md 5, 6).
+import { newId } from '../../http/ids.js';
 import { Hono } from 'hono';
 import type { Stmt } from '@ledgerline/db/sql';
 import { requestNow } from '../../http/clock.js';
 import { MergePayees, RenamePayee, type MergeResult, type PayeesView } from '@ledgerline/contracts';
 import { nameKey, rankPastUses, samePayeeName } from '@ledgerline/domain';
-import { ulid } from '@ledgerline/platform';
+
 import type { AppEnv } from '../../http/context.js';
 import { CHANGED, GONE, HttpError, parse, scoped } from '../api.js';
 import { chunks } from '../../ledger/ledger.js';
@@ -141,7 +142,7 @@ payeesRoutes.post('/settings/payees/merge', async (c) => {
   };
   for (const m of moved!.results as { txn_key: string; payee_id: string }[])
     (before.keys[m.payee_id] ??= []).push(m.txn_key);
-  const undoId = ulid(now);
+  const undoId = newId(c);
   // Aliases and transactions move to the kept payee; raw bank descriptions stay untouched. A join is your choice of
   // name: sync never renames the payee (docs/payee-names.md 6), and the payee gets the key of its name.
   await s.batch([

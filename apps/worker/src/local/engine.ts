@@ -493,10 +493,20 @@ export class LocalEngine {
    * entered, as on the server; after a change this works out what it affects (derive()) and adds Ready to Assign to
    * the answer.
    */
-  async request(method: string, path: string, body?: unknown): Promise<Response> {
-    const now = await this.now();
+  async request(
+    method: string,
+    path: string,
+    body?: unknown,
+    /**
+     * A change the phone makes: its own id and the moment the person made it. The request runs at that moment, and
+     * its new rows get their ids from that id, so the server, which gets both with the queued edit, makes the same
+     * rows (docs/privacy.md 5.3).
+     */
+    edit?: { id: string; at: number },
+  ): Promise<Response> {
+    const now = edit?.at ?? (await this.now());
     const mutation = method !== 'GET' && method !== 'HEAD';
-    const r = await this.route(method, path, body, now, mutation);
+    const r = await this.route(method, path, body, now, mutation, edit);
     if (!mutation || r.status >= 300) return r;
     const todo = await this.pendingDerive();
     noteEdit(method, path, body, todo);
@@ -515,11 +525,18 @@ export class LocalEngine {
     body: unknown,
     now: number,
     mutation: boolean,
+    edit?: { id: string; at: number },
   ): Promise<Response> {
     const req = new Request(`https://engine.local${path}`, {
       method,
       headers: mutation
-        ? { 'content-type': 'application/json', [CSRF_HEADER]: '1', origin: 'https://engine.local' }
+        ? {
+            'content-type': 'application/json',
+            [CSRF_HEADER]: '1',
+            origin: 'https://engine.local',
+            // As the queued edit will carry them to the server (apps/web/src/copy/copy.ts flush).
+            ...(edit ? { 'x-edit-id': edit.id, 'x-edit-at': String(edit.at) } : {}),
+          }
         : {},
       body: mutation ? JSON.stringify(body ?? {}) : undefined,
     });

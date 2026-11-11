@@ -1,3 +1,4 @@
+import { newId } from '../http/ids.js';
 import type { Result } from '@ledgerline/db/sql';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import { requestNow } from '../http/clock.js';
@@ -11,7 +12,7 @@ import {
   type Session,
 } from '@ledgerline/contracts';
 import { type Month, addMonths, currentMonth, isMonth, monthsBetween } from '@ledgerline/domain';
-import { ulid } from '@ledgerline/platform';
+
 import type { AppEnv } from '../http/context.js';
 import { OPS_PATHS, REAUTH_MS, identify, needsRecentPasskey } from '../http/auth.js';
 import { securityRoutes } from './security.js';
@@ -376,7 +377,7 @@ budgetApi.put('/categories/:id/target', async (c) => {
        VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
        ON CONFLICT (category_id, effective_from) DO UPDATE SET type = excluded.type, amount = excluded.amount, period_months = excluded.period_months,
          period_anchor = excluded.period_anchor, target_month = excluded.target_month, monthly_contribution = excluded.monthly_contribution`,
-      ulid(now),
+      newId(c),
       id,
       t.type,
       t.type === 'none' ? 0 : t.amount,

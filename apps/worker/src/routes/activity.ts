@@ -1,11 +1,12 @@
 // Matching money back, transfers and Owed to you. The Activity screen and its badges are in activity-view.ts; the
 // transaction sheet and its edits in transactions.ts.
+import { newId } from '../http/ids.js';
 import type { Stmt } from '@ledgerline/db/sql';
 import { requestNow } from '../http/clock.js';
 import { Hono } from 'hono';
 import { MatchRequest, OwedAction, TransferPick, type MatchView, type OwedView } from '@ledgerline/contracts';
 import { cents, daysBetween, formatCents, owedList, owedOut, projectedFronts } from '@ledgerline/domain';
-import { ulid } from '@ledgerline/platform';
+
 import type { AppEnv } from '../http/context.js';
 import { CHANGED, GONE, HttpError, parse, scoped } from './api.js';
 import { fresh, shortDate } from '../views/common.js';
@@ -116,7 +117,7 @@ activityRoutes.post('/match', async (c) => {
     w.push(
       s.q(
         `INSERT INTO txn_link (id, budget_id, kind, from_key, to_key, amount, created_by, created_at) VALUES (?2, ?1, 'reimbursement_of', ?3, ?4, ?5, 'user', ?6)`,
-        ulid(now),
+        newId(c),
         r.inflowKey,
         i.itemId,
         i.amount,
@@ -221,7 +222,7 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
     w.push(
       s.q(
         `INSERT INTO txn_link (id, budget_id, kind, from_key, to_key, created_by, created_at) VALUES (?2, ?1, 'transfer', ?3, ?4, 'user', ?5)`,
-        ulid(now),
+        newId(c),
         from.key,
         to.key,
         now,
@@ -241,12 +242,12 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
         'before_start',
         `${acct.name}’s budget starts after this date. Pick another answer.`,
       );
-    const entry = `m:${ulid(now)}`;
+    const entry = `m:${newId(c)}`;
     w.push(
       s.q(
         `INSERT INTO manual_pending (id, budget_id, txn_key, account_id, kind, date, amount, payee_name, repeats, created_at, updated_at)
          VALUES (?2, ?1, ?3, ?4, 'pending', ?5, ?6, ?7, 'never', ?8, ?8)`,
-        ulid(now),
+        newId(c),
         entry,
         r.accountId,
         me.date,
@@ -271,7 +272,7 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
       // The link and the entry share created_at: Undo (unpair) removes an entry made this way while it is still yours.
       s.q(
         `INSERT INTO txn_link (id, budget_id, kind, from_key, to_key, created_by, created_at) VALUES (?2, ?1, 'transfer', ?3, ?4, 'user', ?5)`,
-        ulid(now),
+        newId(c),
         me.amount < 0 ? me.key : entry,
         me.amount < 0 ? entry : me.key,
         now,
@@ -430,7 +431,7 @@ activityRoutes.post('/owed/:id', async (c) => {
   const o = rows.find((x) => x.id === id);
   if (!o) throw new HttpError(404, 'not_found', GONE);
   let w: Stmt[];
-  if (r.action === 'reopen') w = await reopen(s, id, f.current, now);
+  if (r.action === 'reopen') w = await reopen(s, id, f.current, now, () => newId(c));
   else if (r.action === 'close') {
     // Rule 11: charge what's left to the original category this month; RTA gets it back.
     w = [
@@ -471,7 +472,14 @@ activityRoutes.post('/owed/:id', async (c) => {
  * made in an earlier month stays there as a close line (owed_close), and the undo is a line of the opposite amount
  * this month, so the earlier month stays as it was.
  */
-async function reopen(s: Scoped, id: string, current: string, now: number): Promise<Stmt[]> {
+async function reopen(
+  s: Scoped,
+  id: string,
+  current: string,
+  now: number,
+  /** The next new id of the request (http/ids.ts): the two undo lines each take one. */
+  nextId: () => string,
+): Promise<Stmt[]> {
   const e = await s.first<{
     txn_key: string;
     closed_at: number | null;
@@ -497,7 +505,7 @@ async function reopen(s: Scoped, id: string, current: string, now: number): Prom
     const add = (month: string, amount: number) =>
       s.q(
         `INSERT INTO owed_close (id, budget_id, item_id, txn_key, month, amount, created_at) VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7)`,
-        ulid(now),
+        nextId(),
         id,
         e.txn_key,
         month,

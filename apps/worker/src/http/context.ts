@@ -15,6 +15,8 @@ export interface Vars {
    * screens it answers treat the user as able to link banks and the server decides.
    */
   isAdmin?: boolean;
+  /** Where this request's new ids come from (http/ids.ts): its edit id and a count, or null for random ids. */
+  ids?: { seed: string; n: number; time: number } | null;
   /** The time of this request, read once when it arrives (http/clock.ts requestNow). */
   now?: number;
   /** When this user's recovery code was used, while its notice shows (routes/signup.ts). */

@@ -1,4 +1,5 @@
 // Settings → Categories and groups: list, add, rename, archive, remove, reorder and pin.
+import { newId } from '../../http/ids.js';
 import type { Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
 import { requestNow } from '../../http/clock.js';
@@ -12,7 +13,7 @@ import {
   type CategoriesView,
 } from '@ledgerline/contracts';
 import { type Month, cents, formatCents } from '@ledgerline/domain';
-import { ulid } from '@ledgerline/platform';
+
 import type { AppEnv } from '../../http/context.js';
 import { ACK, CHANGED, GONE, HttpError, parse, scoped } from '../api.js';
 import { fresh, monthResult, structure } from '../../views/common.js';
@@ -101,7 +102,7 @@ categoriesRoutes.post('/settings/categories', async (c) => {
     const g = await s.first(`SELECT id FROM category_group WHERE budget_id = ?1 AND id = ?2`, r.groupId);
     if (!g) throw new HttpError(404, 'not_found', GONE);
   }
-  const id = r.id ?? ulid(now);
+  const id = r.id ?? newId(c);
   if (r.id) {
     const ex = await s.first<{ kind: string }>(
       `SELECT kind FROM category WHERE budget_id = ?1 AND id = ?2`,
@@ -149,7 +150,7 @@ categoriesRoutes.post('/settings/groups', async (c) => {
   const r = await parse(GroupUpsert, c.req.raw);
   const s = scoped(c);
   const now = requestNow(c);
-  const id = r.id ?? ulid(now);
+  const id = r.id ?? newId(c);
   if (r.id)
     await s.run(
       `UPDATE category_group SET name = ?3, is_bills = ?4, updated_at = ?5 WHERE budget_id = ?1 AND id = ?2`,

@@ -557,7 +557,13 @@ export function canEditOffline(method: string, path: string): boolean {
 
 /** A change made with no signal: applied to the copy now, sent to the server when there's a connection. */
 export async function editOffline(method: string, path: string, body: unknown): Promise<unknown> {
-  const r = await host!.request(method, path, body);
+  // The edit's own id and time, made before it runs: the copy runs it at that time and names its new rows from that
+  // id, and the queue sends both to the server, which then makes the same rows.
+  const edit = {
+    id: crypto.randomUUID().replace(/-/g, ''),
+    at: Date.now() + (await host!.state()).offset,
+  };
+  const r = await host!.request(method, path, body, edit);
   const json = r.body ? (JSON.parse(r.body) as unknown) : null;
   if (r.status >= 300)
     throw Object.assign(
@@ -567,11 +573,10 @@ export async function editOffline(method: string, path: string, body: unknown): 
         status: r.status,
       },
     );
-  const st = await host!.state();
   const q = await queued();
   q.push({
-    id: crypto.randomUUID().replace(/-/g, ''),
-    at: Date.now() + st.offset,
+    id: edit.id,
+    at: edit.at,
     method,
     path,
     body,
