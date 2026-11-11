@@ -22,6 +22,11 @@ export function inheritStmts(
   postedAmount: number,
   expected: number | null,
   now: number,
+  /**
+   * The id of the link row. An edit gives it (http/ids.ts), so that the same edit on a phone and on the server
+   * makes the same row. Bank filing gives none and gets a random one.
+   */
+  linkId: string = ulid(now),
 ): Stmt[] {
   const stmts: Stmt[] = [
     s.q(
@@ -58,7 +63,7 @@ export function inheritStmts(
     ),
     s.q(
       `INSERT INTO txn_link (id, budget_id, kind, from_key, to_key, created_by, created_at) VALUES (?2, ?1, 'pending_match', ?3, ?4, ?5, ?6)`,
-      ulid(now),
+      linkId,
       `p:${postedId}`,
       fromKey,
       by,
@@ -127,6 +132,8 @@ export function matchEntryStmts(
   postedAmount: number,
   by: 'auto' | 'user',
   now: number,
+  /** As in inheritStmts. */
+  linkId?: string,
 ): Stmt[] {
   const stmts: Stmt[] = [];
   if (e.covers_provider_txn_id) {
@@ -157,7 +164,7 @@ export function matchEntryStmts(
     );
   }
   stmts.push(
-    ...inheritStmts(s, postedId, e.txn_key, by, postedAmount, e.amount, now),
+    ...inheritStmts(s, postedId, e.txn_key, by, postedAmount, e.amount, now, linkId),
     s.q(
       `UPDATE manual_pending SET matched_txn_key = ?2, matched_by = ?3, updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
       e.txn_key,
