@@ -69,4 +69,29 @@ describe('an edit names its own new rows', () => {
     const c = await make('2027-07');
     expect(new Set([a, b, c]).size).toBe(3);
   });
+
+  // The app sends an edit that can wait in its queue with its id from the start (apps/web/src/api/client.ts). If
+  // the answer is lost, the queue sends the same id again.
+  it('an edit sent online with its id still brings its changes, and is applied once when sent again', async () => {
+    const path = '/api/budget/assign';
+    const body = { month: '2026-11', items: [{ categoryId: category, amount: 700 }] };
+    const amount = async () => {
+      await syncPhone(engine);
+      const r = await engine.db
+        .prepare(`SELECT amount FROM assignment WHERE month = '2026-11' AND category_id = ?1`)
+        .bind(category)
+        .first<{ amount: number }>();
+      return r?.amount ?? 0;
+    };
+    const before = await amount();
+    const edit = { 'x-edit-id': 'online-edit-0001', 'x-edit-at': String(Date.now()) };
+    const since = String((await engine.state()).through);
+    const first = await send('POST', path, body, { ...edit, 'x-sync-since': since });
+    expect(first.status).toBe(200);
+    expect(((await first.json()) as { sync?: { rows: unknown[] } }).sync?.rows.length).toBeGreaterThan(0);
+    const again = await send('POST', path, body, edit);
+    expect(again.status).toBe(200);
+    expect(((await again.json()) as { repeated?: boolean }).repeated).toBe(true);
+    expect(await amount()).toBe(before + 700);
+  });
 });

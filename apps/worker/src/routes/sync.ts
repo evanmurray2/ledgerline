@@ -116,14 +116,15 @@ export const ANSWER_SYNC_ROWS = 50;
 /**
  * An online edit's answer carries the changes since the change number the phone sends (`x-sync-since`), so the phone
  * brings its copy up to date without a second request (a sync costs a Worker request and two Durable Object calls).
- * Only on success, only for a JSON object answer, and never for an edit the phone queued offline: those resend.
+ * Only on success and only for a JSON object answer. The queue of offline edits doesn't ask (it sends no change
+ * number): it syncs once at the end.
  */
 export const syncInAnswer: MiddlewareHandler<AppEnv> = async (c, next) => {
   await next();
   const m = c.req.method;
   if (m === 'GET' || m === 'HEAD' || c.res.status >= 300) return;
   const raw = c.req.header(SYNC_SINCE_HEADER);
-  if (raw === undefined || c.req.header('x-edit-id')) return;
+  if (raw === undefined) return;
   const since = Number(raw);
   if (!Number.isSafeInteger(since) || since <= 0) return;
   if (!(c.res.headers.get('content-type') ?? '').includes('application/json')) return;

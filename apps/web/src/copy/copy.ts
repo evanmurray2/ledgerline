@@ -530,8 +530,29 @@ export async function closeFields(
 
 // ---- offline edits (docs/phone-budget.md section 12)
 
+// Every route here has a twin case (apps/worker/test/twin.test.ts): the copy and the server write the same rows for
+// it. Left out on purpose: archiving or removing a category and closing an account (the server takes them only when
+// nothing changed since the phone worked out a balance, which a queue can't promise), joining payees, setup, and
+// everything that needs the server (bank links, sign-in).
 const OFFLINE_EDITS: [string, RegExp][] = [
   ['PATCH', /^\/api\/transactions\/[^/]+$/],
+  // An entry added by hand, and its removal. The entry's id comes from the edit's id, so a later queued edit of
+  // the entry finds it on the server.
+  ['POST', /^\/api\/transactions$/],
+  ['DELETE', /^\/api\/transactions\/[^/]+$/],
+  ['POST', /^\/api\/transactions\/[^/]+\/(review|pending|not-same)$/],
+  // What you're owed, matching money in, transfers, "Same purchase?" and alerts: each acts on rows the copy holds.
+  ['POST', /^\/api\/owed\/[^/]+$/],
+  ['POST', /^\/api\/match$/],
+  ['POST', /^\/api\/match\/[^/]+\/unlink$/],
+  ['POST', /^\/api\/transfers\/[^/]+\/(pick|unpair)$/],
+  ['POST', /^\/api\/same-purchase\/[^/]+$/],
+  ['POST', /^\/api\/alerts\/[^/]+\/dismiss$/],
+  // Names and order: an account's name, a category or group (new or renamed), their order, a setting.
+  ['POST', /^\/api\/accounts\/[^/]+\/name$/],
+  ['POST', /^\/api\/settings\/(categories|groups)$/],
+  ['POST', /^\/api\/settings\/(categories|groups)\/reorder$/],
+  ['PATCH', /^\/api\/settings$/],
   ['POST', /^\/api\/transactions\/categorize$/],
   ['POST', /^\/api\/budget\/(assign|set|move)$/],
   ['PUT', /^\/api\/categories\/[^/]+\/target$/],
@@ -541,6 +562,16 @@ const OFFLINE_EDITS: [string, RegExp][] = [
   // the payee was joined into another is refused instead of renaming the other one (docs/payees.md 5.3).
   ['POST', /^\/api\/settings\/payees\/(?!merge(?:\/|$))[^/]+$/],
 ];
+
+export interface EditStamp {
+  id: string;
+  at: number;
+}
+
+/** An id and a time for an edit: this device's clock, corrected by how far it is from the server's. */
+export async function newEdit(): Promise<EditStamp> {
+  return { id: crypto.randomUUID().replace(/-/g, ''), at: Date.now() + (await host!.state()).offset };
+}
 
 interface Queued {
   id: string;
@@ -556,13 +587,16 @@ export function canEditOffline(method: string, path: string): boolean {
 }
 
 /** A change made with no signal: applied to the copy now, sent to the server when there's a connection. */
-export async function editOffline(method: string, path: string, body: unknown): Promise<unknown> {
+export async function editOffline(
+  method: string,
+  path: string,
+  body: unknown,
+  /** The id and time this edit already went to the server with, when its connection dropped on the way. */
+  edit?: EditStamp,
+): Promise<unknown> {
   // The edit's own id and time, made before it runs: the copy runs it at that time and names its new rows from that
   // id, and the queue sends both to the server, which then makes the same rows.
-  const edit = {
-    id: crypto.randomUUID().replace(/-/g, ''),
-    at: Date.now() + (await host!.state()).offset,
-  };
+  edit ??= await newEdit();
   const r = await host!.request(method, path, body, edit);
   const json = r.body ? (JSON.parse(r.body) as unknown) : null;
   if (r.status >= 300)

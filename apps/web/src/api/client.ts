@@ -9,6 +9,7 @@ import {
   afterChange,
   archiveFields,
   canEditOffline,
+  newEdit,
   closeFields,
   dropSignedOut,
   editOffline,
@@ -251,16 +252,21 @@ async function sendOnce<S extends z.ZodType>(
   }
   // An edit's answer carries the changes since the copy's change number, so no second request syncs them.
   const since = mutation ? await syncSince().catch(() => null) : null;
+  // A change that can wait in the queue gets its id and time now, and the server gets both. If the connection
+  // drops on the way, the queue sends the same id again, and the server, which may have taken the change before
+  // the answer was lost, applies it once (routes/sync.ts editOnce).
+  const edit = mutation && canEditOffline(method, path) ? await newEdit().catch(() => null) : null;
+  const headers = (): Record<string, string> => ({
+    ...MUTATION_HEADERS,
+    ...(since === null ? {} : { [SYNC_SINCE_HEADER]: String(since) }),
+    ...(edit ? { 'x-edit-id': edit.id, 'x-edit-at': String(edit.at) } : {}),
+  });
   let res: Response;
   try {
     res = await fetch(path, {
       method,
       credentials: 'same-origin',
-      headers: mutation
-        ? since === null
-          ? MUTATION_HEADERS
-          : { ...MUTATION_HEADERS, [SYNC_SINCE_HEADER]: String(since) }
-        : { accept: 'application/json' },
+      headers: mutation ? headers() : { accept: 'application/json' },
       body: mutation && body !== undefined ? JSON.stringify(body) : mutation ? '{}' : undefined,
     });
   } catch {
@@ -268,7 +274,10 @@ async function sendOnce<S extends z.ZodType>(
     // The connection dropped on the way: an offline-capable change is kept on the phone instead.
     if (mutation && canEditOffline(method, path))
       return schema.parse(
-        withRta(await editOffline(method, path, body), await afterChange().catch(() => null)),
+        withRta(
+          await editOffline(method, path, body, edit ?? undefined),
+          await afterChange().catch(() => null),
+        ),
       );
     throw new ApiError('network', OFFLINE, 0, true);
   }
