@@ -195,6 +195,156 @@ describe('sync job', () => {
     });
   });
 
+  it('files two banks’ updates one at a time, in the order their fetches finished (D-86 A2)', async () => {
+    await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName('sync-turns')), async (_o, st) => {
+      const db = new DurableDb(st.storage);
+      await seed(db, 'b1', 'big');
+      await db
+        .prepare(
+          `INSERT INTO connection (id, budget_id, provider, institution_name, linked_at, created_at, updated_at)
+           VALUES ('small', 'b1', 'plaid', 'Second bank', 0, 0, 0)`,
+        )
+        .run();
+      // "big" has 3 pages; "small" has 1 page of other rows, so it finishes fetching first though it starts second.
+      const small = (DATA.slice(0, 40) as { transaction_id: string }[]).map((t) => ({
+        ...t,
+        transaction_id: `${t.transaction_id}-small`,
+      }));
+      const two = new PlaidProvider({
+        clientId: 'c',
+        secret: 's',
+        env: 'sandbox',
+        fetch: async (_u, init) => {
+          const body = JSON.parse(String(init?.body)) as { cursor?: string; access_token?: string };
+          const text =
+            body.access_token === 'token-small'
+              ? JSON.stringify({
+                  accounts: [],
+                  added: small,
+                  has_more: false,
+                  modified: [],
+                  next_cursor: 'end',
+                  removed: [],
+                  request_id: 'req_small',
+                  transactions_update_status: 'HISTORICAL_UPDATE_COMPLETE',
+                })
+              : pageBody(body.cursor ? Number(atob(body.cursor)) : 0);
+          return new Response(text, { status: 200, headers: { 'content-type': 'application/json' } });
+        },
+      });
+      await acquireFor(db, 'big', 'sync:big');
+      await acquireFor(db, 'small', 'sync:small');
+      const runner: JobRunner = new JobRunner(st.storage, {
+        sync: syncHandler(
+          deps(db, 'b1', {
+            provider: () => two,
+            token: async (c) => `token-${c}`,
+            enqueue: (kind, o) => runner.enqueue(kind, o, Date.now()),
+          }),
+        ),
+        recompute: async () => ({ done: true }),
+      });
+      await runner.enqueue(
+        'sync',
+        { id: 'sync:big', connectionId: 'big', state: start('sync:big'), runAt: T },
+        T,
+      );
+      await runner.enqueue(
+        'sync',
+        { id: 'sync:small', connectionId: 'small', state: start('sync:small'), runAt: T },
+        T,
+      );
+      let now = T;
+      for (let n = 0; n < 4000 && runner.list().length; n++) {
+        const o = await runner.runNext(now);
+        if (o.ran && o.result === 'retry') throw new Error(`step failed: ${runner.list()[0]?.last_error}`);
+        now += 500;
+      }
+      expect(runner.list()).toEqual([]);
+      const runs = (
+        await db
+          .prepare(
+            `SELECT r.id, r.phase, r.fetch_seq, min(e.id) AS first, max(e.id) AS last, count(e.id) AS events
+             FROM sync_run r LEFT JOIN bank_event e ON e.sync_run_id = r.id GROUP BY r.id ORDER BY r.fetch_seq`,
+          )
+          .all<{
+            id: string;
+            phase: string;
+            fetch_seq: number;
+            first: number;
+            last: number;
+            events: number;
+          }>()
+      ).results;
+      expect(runs.map((r) => [r.id, r.phase, r.fetch_seq, r.events])).toEqual([
+        ['sync:small', 'done', 1, 40],
+        ['sync:big', 'done', 2, TOTAL],
+      ]);
+      // Every event of the first update comes before every event of the second: no interleaving.
+      expect(runs[0]!.last).toBeLessThan(runs[1]!.first);
+      // Both leases are free, and every row is filed.
+      expect(
+        await db.prepare(`SELECT count(*) AS n FROM connection WHERE sync_lock IS NOT NULL`).first('n'),
+      ).toBe(0);
+      const filed = await db
+        .prepare(
+          `SELECT (SELECT processed_through FROM budget) AS through, (SELECT max(id) FROM bank_event) AS last`,
+        )
+        .first<{ through: number; last: number }>();
+      expect(filed!.through).toBe(filed!.last);
+    });
+  });
+
+  it('an update whose job is gone does not hold the others back', async () => {
+    await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName('sync-turn-stale')), async (_o, st) => {
+      const db = new DurableDb(st.storage);
+      await seed(db, 'b1', 'c1');
+      await db
+        .prepare(
+          `INSERT INTO connection (id, budget_id, provider, institution_name, linked_at, created_at, updated_at)
+           VALUES ('c2', 'b1', 'plaid', 'Second bank', 0, 0, 0)`,
+        )
+        .run();
+      const { isMyTurn } = await import('../src/sync/turn.js');
+      const run = (id: string, conn: string, phase: string, seq: number | null) =>
+        db
+          .prepare(
+            `INSERT INTO sync_run (id, budget_id, connection_id, phase, started_at, created_at, updated_at, fetched_at, fetch_seq)
+             VALUES (?1, 'b1', ?2, ?3, ?4, ?4, ?4, ?4, ?5)`,
+          )
+          .bind(id, conn, phase, T, seq)
+          .run();
+      await run('r1', 'c1', 'applying', 1);
+      await run('r2', 'c2', 'fetching', 2);
+      const lease = (conn: string, holder: string | null, expires: number) =>
+        db
+          .prepare(`UPDATE connection SET sync_lock = ?2, lock_expires = ?3 WHERE id = ?1`)
+          .bind(conn, holder, expires)
+          .run();
+      await lease('c1', 'r1', T + 60_000);
+      await lease('c2', 'r2', T + 60_000);
+      // r1 finished fetching first and is alive: r2 waits, r1 goes.
+      expect(await isMyTurn(db, 'b1', 'r1', T)).toBe(true);
+      expect(await isMyTurn(db, 'b1', 'r2', T)).toBe(false);
+      // r1's lease ran out, or went to another run: r2 goes.
+      await lease('c1', 'r1', T - 1);
+      expect(await isMyTurn(db, 'b1', 'r2', T)).toBe(true);
+      await lease('c1', 'other', T + 60_000);
+      expect(await isMyTurn(db, 'b1', 'r2', T)).toBe(true);
+      // r1 done or failed: r2 goes.
+      await lease('c1', 'r1', T + 60_000);
+      for (const phase of ['done', 'failed']) {
+        await db.prepare(`UPDATE sync_run SET phase = ?1 WHERE id = 'r1'`).bind(phase).run();
+        expect(await isMyTurn(db, 'b1', 'r2', T)).toBe(true);
+      }
+      // A run with no place (from before the rule) never waits, and nothing waits for it.
+      await db.prepare(`UPDATE sync_run SET phase = 'applying' WHERE id = 'r1'`).run();
+      await run('r0', 'c1', 'applying', null);
+      expect(await isMyTurn(db, 'b1', 'r0', T)).toBe(true);
+      expect(await isMyTurn(db, 'b1', 'r1', T)).toBe(true);
+    });
+  });
+
   it('pauses until 00:00 UTC when the account is near its daily limit, keeping the lease', async () => {
     await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName('sync-pause')), async (_o, st) => {
       const db = new DurableDb(st.storage);

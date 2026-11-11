@@ -8,6 +8,7 @@ import type { Env } from '../env.js';
 import { CHUNK, LeaseLost, applyPage, beginRun, fetchPage, restartFetch } from '../sync/steps.js';
 import { MAX_HANDOFFS, moveLease, releaseFailed, releaseSuccess, renew } from '../sync/lease.js';
 import { finalizeConnection, healPending, processPending } from '../sync/process.js';
+import { isMyTurn, TURN_WAIT_MS } from '../sync/turn.js';
 import { sleepUntilUtcMidnight } from '../sync/breaker.js';
 import type { Handler, Job, StepResult } from './jobs.js';
 
@@ -135,6 +136,14 @@ async function step(deps: SyncDeps, connectionId: string, s: SyncState, now: num
     return next(s, nextUtcMidnight(now));
   };
 
+  // One bank update at a time (D-86 A2): an update is applied and filed only when every update that finished
+  // fetching before it is done. Until then this job keeps its lease and asks again shortly.
+  const waitForTurn = async (): Promise<StepResult | null> => {
+    if (!s.runId || (await isMyTurn(db, budgetId, s.runId, Date.now()))) return null;
+    if (!(await renew(db, connectionId, s.holder, Date.now()))) throw new LeaseLost();
+    return next(s, now + TURN_WAIT_MS);
+  };
+
   switch (s.phase) {
     case 'begin': {
       // A hand-off job waits until the previous run has moved the lease to it.
@@ -192,6 +201,8 @@ async function step(deps: SyncDeps, connectionId: string, s: SyncState, now: num
     case 'apply': {
       const paused = await pauseIfNeeded();
       if (paused) return paused;
+      const waiting = await waitForTurn();
+      if (waiting) return waiting;
       const i = s.i ?? 0;
       const r = await applyPage(ctx(), deps.provider(), s.runId!, i, s.chunk ?? 0);
       const ni = r.pageDone ? i + 1 : i;
@@ -200,6 +211,8 @@ async function step(deps: SyncDeps, connectionId: string, s: SyncState, now: num
       return next({ ...s, i: ni, chunk: nc });
     }
     case 'process': {
+      const waiting = await waitForTurn();
+      if (waiting) return waiting;
       // Watermark-driven, independent of which run applied the events (F3).
       const r = await processPending(env, budgetId);
       const k = (s.k ?? 0) + 1;
@@ -207,11 +220,15 @@ async function step(deps: SyncDeps, connectionId: string, s: SyncState, now: num
       return next({ ...s, k });
     }
     case 'heal': {
+      const waiting = await waitForTurn();
+      if (waiting) return waiting;
       // Pending rows a posted row should have claimed, whether or not the bank sent news about them (D-47).
       await healPending(env, budgetId, connectionId, now).catch(() => ({ changed: false }));
       return next({ ...s, phase: 'finalize' });
     }
     case 'finalize': {
+      const waiting = await waitForTurn();
+      if (waiting) return waiting;
       await finalizeConnection(env, ctx(), s.runId!);
       return next({ ...s, phase: 'release' });
     }
