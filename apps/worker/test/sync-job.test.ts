@@ -197,6 +197,49 @@ describe('sync job', () => {
         .prepare(`SELECT coalesce(max(abs(fetch_seq)), 0) + 1 AS n FROM sync_run WHERE budget_id = 'b1'`)
         .first('n');
       expect(next).toBe(4);
+
+      // An update that was fetched to the end, and died before its first page was applied, is not fetched again
+      // (D-86 A2): the next run of its bank takes it over from where it stands.
+      await db.prepare(`UPDATE connection SET sync_lock = NULL, lock_expires = NULL WHERE id = 'c1'`).run();
+      await db.prepare(`UPDATE sync_run SET phase = 'done' WHERE id = 'sync:d'`).run();
+      await db
+        .prepare(
+          `INSERT INTO sync_run (id, budget_id, connection_id, phase, pages_fetched, started_at, created_at, updated_at, fetched_at, fetch_seq)
+           VALUES ('sync:e', 'b1', 'c1', 'fetching', 3, ?1, ?1, ?1, ?2, 4)`,
+        )
+        .bind(T, T + 4)
+        .run();
+      await acquireFor(db, 'c1', 'sync:f');
+      const taken = await beginRun(
+        { db, connectionId: 'c1', budgetId: 'b1', holder: 'sync:f', now: T + 20_000 },
+        'manual',
+      );
+      expect(taken).toMatchObject({ fetched: true, pagesFetched: 3, appliedThrough: -1 });
+      expect(
+        await db.prepare(`SELECT phase, error_code, fetch_seq FROM sync_run WHERE id = 'sync:e'`).first(),
+      ).toEqual({ phase: 'failed', error_code: 'ADOPTED', fetch_seq: -4 });
+      expect(
+        await db.prepare(`SELECT fetch_seq, fetched_at FROM sync_run WHERE id = 'sync:f'`).first(),
+      ).toEqual({ fetch_seq: 4, fetched_at: T + 4 });
+      // A run that did not fetch to the end has nothing worth keeping: it is dropped, and its bank starts over.
+      await db.prepare(`UPDATE connection SET sync_lock = NULL, lock_expires = NULL WHERE id = 'c1'`).run();
+      await db.prepare(`UPDATE sync_run SET phase = 'done' WHERE id = 'sync:f'`).run();
+      await db
+        .prepare(
+          `INSERT INTO sync_run (id, budget_id, connection_id, phase, pages_fetched, started_at, created_at, updated_at)
+           VALUES ('sync:g', 'b1', 'c1', 'fetching', 1, ?1, ?1, ?1)`,
+        )
+        .bind(T)
+        .run();
+      await acquireFor(db, 'c1', 'sync:h');
+      const fresh = await beginRun(
+        { db, connectionId: 'c1', budgetId: 'b1', holder: 'sync:h', now: T + 30_000 },
+        'manual',
+      );
+      expect(fresh).toMatchObject({ fetched: false, pagesFetched: 0, phase: 'fetching' });
+      expect(
+        await db.prepare(`SELECT error_code FROM sync_run WHERE id = 'sync:g'`).first('error_code'),
+      ).toBe('ABANDONED');
     });
   });
 
@@ -342,6 +385,15 @@ describe('sync job', () => {
         await db.prepare(`UPDATE sync_run SET phase = ?1 WHERE id = 'r1'`).bind(phase).run();
         expect(await isMyTurn(db, 'b1', 'r2', T)).toBe(true);
       }
+      // While an update is alive, the daily catch-up leaves its rows to its own job.
+      const { updateInFlight } = await import('../src/sync/turn.js');
+      await db.prepare(`UPDATE sync_run SET phase = 'applying' WHERE id = 'r1'`).run();
+      expect(await updateInFlight(db, 'b1', T)).toBe(true);
+      await lease('c1', 'r1', T - 1);
+      await lease('c2', 'r2', T - 1);
+      expect(await updateInFlight(db, 'b1', T)).toBe(false);
+      await lease('c1', 'r1', T + 60_000);
+      await lease('c2', 'r2', T + 60_000);
       // A run with no place (from before the rule) never waits, and nothing waits for it.
       await db.prepare(`UPDATE sync_run SET phase = 'applying' WHERE id = 'r1'`).run();
       await run('r0', 'c1', 'applying', null);
