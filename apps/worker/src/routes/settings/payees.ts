@@ -115,11 +115,12 @@ payeesRoutes.post('/settings/payees/merge', async (c) => {
   const name = r.name ?? found.find((p) => p.id === keep)!.name;
   const [aliases, moved, named] = await s.batch([
     s.q(
-      `SELECT id, payee_id, pattern, merchant_entity_id FROM payee_alias WHERE budget_id = ?1 AND payee_id IN (${places(rest.length, 2)})`,
+      // In a fixed order: the record of the join must be the same wherever the join runs (test/twin.ts).
+      `SELECT id, payee_id, pattern, merchant_entity_id FROM payee_alias WHERE budget_id = ?1 AND payee_id IN (${places(rest.length, 2)}) ORDER BY id`,
       ...rest,
     ),
     s.q(
-      `SELECT txn_key, payee_id FROM txn_overlay WHERE budget_id = ?1 AND payee_id IN (${places(rest.length, 2)})`,
+      `SELECT txn_key, payee_id FROM txn_overlay WHERE budget_id = ?1 AND payee_id IN (${places(rest.length, 2)}) ORDER BY txn_key`,
       ...rest,
     ),
     s.q(`SELECT 1 FROM payee_alias WHERE budget_id = ?1 AND pattern = ?2`, nameKey(name)),
