@@ -428,6 +428,11 @@ export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}):
         },
         () => set({ why: 'reset', progress: 0 }),
       );
+      if (r.lost) {
+        // The engine ran the queue again on the server's newer rows, and some edits no longer pass.
+        set({ queued: (await queued()).length });
+        window.dispatchEvent(new CustomEvent('ledgerline:edits-refused', { detail: r.lost }));
+      }
       if (state.why) set({ why: null });
       const derived = r.rows > 0 || !(await host!.state()).through;
       if (derived) await host!.derive();
@@ -591,6 +596,8 @@ interface Queued {
    * an older version of the app have neither. */
   undo?: RowChange[];
   through?: number;
+  /** Set just before the edit goes to the server. */
+  sending?: boolean;
 }
 
 export function canEditOffline(method: string, path: string): boolean {
@@ -657,6 +664,11 @@ export async function flush(): Promise<{ sent: number; refused: number }> {
     while (q.length) {
       const e = q[0]!;
       let dropped = false;
+      // From here the server may hold this edit: the copy must never run it again by itself (engine.ts apply).
+      if (!e.sending) {
+        e.sending = true;
+        await host.put('outbox', JSON.stringify(q));
+      }
       try {
         await server(e.method, e.path, e.body, { 'x-edit-id': e.id, 'x-edit-at': String(e.at) });
         sent++;

@@ -38,6 +38,8 @@ export interface ApplyResult {
   reset: boolean;
   rows: number;
   caughtUp: boolean;
+  /** Queued edits the engine took out, because they no longer pass on the server's newer rows (engine.ts apply). */
+  lost?: number;
 }
 export interface SyncPage {
   format: number;
@@ -150,9 +152,10 @@ export async function syncAll(
   fetchPage: (since: number, cursor: string | null) => Promise<SyncPage>,
   /** Called when the server's copy changed (a new epoch or format) and the whole budget downloads again. */
   onReset?: () => void,
-): Promise<{ pages: number; rows: number }> {
+): Promise<{ pages: number; rows: number; lost: number }> {
   let pages = 0;
   let rows = 0;
+  let lost = 0;
   for (let guard = 0; guard < 2000; guard++) {
     const { since, cursor } = await host.nextRequest();
     const page = await fetchPage(since, cursor);
@@ -160,7 +163,8 @@ export async function syncAll(
     pages++;
     if (r.reset) onReset?.();
     rows += r.rows;
-    if (r.caughtUp) return { pages, rows };
+    lost += r.lost ?? 0;
+    if (r.caughtUp) return { pages, rows, lost };
   }
   throw new Error('Your budget didn’t finish downloading. Try again.');
 }

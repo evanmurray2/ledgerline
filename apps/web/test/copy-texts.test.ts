@@ -38,6 +38,6 @@ describe('syncAll', () => {
     const onReset = vi.fn();
     const r = await syncAll(host, async () => ({}) as SyncPage, onReset);
     expect(onReset).toHaveBeenCalledTimes(1);
-    expect(r).toEqual({ pages: 2, rows: 3 });
+    expect(r).toEqual({ pages: 2, rows: 3, lost: 0 });
   });
 });

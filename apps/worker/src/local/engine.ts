@@ -74,6 +74,11 @@ export interface ApplyResult {
   rows: number;
   /** Everything up to the server's latest change is in the copy. */
   caughtUp: boolean;
+  /**
+   * Queued edits that no longer pass on the server's newer rows (the row they change is gone): taken out of the
+   * copy and out of the queue. Set only when the queue was run again on top of this page.
+   */
+  lost?: number;
 }
 
 /**
@@ -252,7 +257,15 @@ export interface QueuedEdit {
   undo: SyncRow[];
   /** The change number the copy held when the edit ran: its `undo` is good only while the copy still holds it. */
   through: number;
+  /**
+   * Set by the app just before it sends the edit to the server: from then on the server may hold the edit, so the
+   * copy never runs it again by itself.
+   */
+  sending?: boolean;
 }
+
+/** Where the app keeps its queue of edits (apps/web/src/copy/copy.ts), in `local_state`. */
+const OUTBOX = 'outbox';
 
 export class LocalEngine {
   private readonly app: Hono<AppEnv>;
@@ -316,6 +329,11 @@ export class LocalEngine {
       await this.clear();
       return { reset: true, rows: 0, caughtUp: false };
     }
+    // Edits wait in the queue: the server's rows go under them, not over them. The queue is taken out of the copy
+    // (which is then the server's rows as of `st.through`), the page is written, and the queue is run again on
+    // top (docs/privacy.md 5.3). Only when that can be done exactly, and in this one step.
+    const queue = fresh ? null : await this.exactQueue(st, page);
+    if (queue) for (const e of [...queue].reverse()) await this.applyRows(e.undo);
     const stmts: Stmt[] = [this.db.prepare(`PRAGMA defer_foreign_keys = ON`)];
     // What the next derive() must redo (read before the rows change: a moved or deleted row's old key counts too).
     const todo = await this.pendingDerive();
@@ -335,7 +353,59 @@ export class LocalEngine {
     };
     stmts.push(this.setState(next));
     for (const part of chunks(stmts, 500)) await this.db.batch(part);
-    return { reset: false, rows: page.rows.length, caughtUp: !page.more && !page.cursor };
+    const result: ApplyResult = {
+      reset: false,
+      rows: page.rows.length,
+      caughtUp: !page.more && !page.cursor,
+    };
+    if (queue) {
+      const { kept, lost } = await this.rerun(queue, next.through);
+      await this.putQueue(kept);
+      result.lost = lost.length;
+    }
+    return result;
+  }
+
+  /**
+   * The queue, when the server's page can go under it: every edit in it ran on the copy as it is now (the same
+   * change number, so the rows kept for taking it out are the server's), none is on its way to the server, and
+   * the page is the whole of what changed (one page of changes, not a download).
+   */
+  private async exactQueue(st: EngineState, page: SyncPage): Promise<QueuedEdit[] | null> {
+    if (st.cursor || page.cursor || page.more || st.through === 0 || page.rows.length === 0) return null;
+    const r = await this.db
+      .prepare(`SELECT value FROM local_state WHERE key = ?1`)
+      .bind(OUTBOX)
+      .first<{ value: string }>();
+    const q = r ? (JSON.parse(r.value) as Partial<QueuedEdit>[]) : [];
+    if (!q.length) return null;
+    const exact = q.every((e) => Array.isArray(e.undo) && e.through === st.through && !e.sending);
+    return exact ? (q as QueuedEdit[]) : null;
+  }
+
+  private async putQueue(q: readonly QueuedEdit[]): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO local_state (key, value) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+      )
+      .bind(OUTBOX, JSON.stringify(q))
+      .run();
+  }
+
+  /** Runs queued edits again, in order, on the copy as it is: the ones that pass, and the ones that no longer do. */
+  private async rerun(
+    queue: readonly QueuedEdit[],
+    through: number,
+  ): Promise<{ kept: QueuedEdit[]; lost: QueuedEdit[] }> {
+    const kept: QueuedEdit[] = [];
+    const lost: QueuedEdit[] = [];
+    for (const e of queue) {
+      const r = await this.record(e.method, e.path, e.body, { id: e.id, at: e.at });
+      if (r.response.status < 300) kept.push({ ...e, undo: r.undo, through });
+      else lost.push(e);
+    }
+    if (await this.needsDerive()) await this.derive();
+    return { kept, lost };
   }
 
   private async pendingDerive(): Promise<PendingDerive> {
@@ -628,15 +698,7 @@ export class LocalEngine {
   ): Promise<{ kept: QueuedEdit[]; lost: QueuedEdit[] }> {
     for (const e of [...later].reverse()) await this.applyRows(e.undo);
     await this.applyRows(refused.undo);
-    const kept: QueuedEdit[] = [];
-    const lost: QueuedEdit[] = [];
-    for (const e of later) {
-      const r = await this.record(e.method, e.path, e.body, { id: e.id, at: e.at });
-      if (r.response.status < 300) kept.push({ ...e, undo: r.undo });
-      else lost.push(e);
-    }
-    if (await this.needsDerive()) await this.derive();
-    return { kept, lost };
+    return this.rerun(later, refused.through);
   }
 
   /** Writes rows another copy recorded, and marks what derive() must work out again. */
