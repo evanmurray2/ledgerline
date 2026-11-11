@@ -39,7 +39,7 @@ function AssignedCell({
   cents: number;
   month: string;
 }) {
-  const canWrite = useCanWrite();
+  const canWrite = useCanWrite({ offline: true });
   const set = useMoneyMutation(api.setAssigned);
   const [draft, setDraft] = useState<string | null>(null);
   const draftRef = useRef<string | null>(null);

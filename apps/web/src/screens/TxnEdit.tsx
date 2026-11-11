@@ -493,6 +493,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
             label={`Delete ${t.payee}`}
             confirmLabel="Delete"
             track="txn.delete"
+            mutates="offline"
             busy={del.isPending}
             onCancel={() => setConfirmDelete(false)}
             onConfirm={async () => {
@@ -504,7 +505,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
             Delete {t.payee}?
           </ConfirmInline>
         ) : (
-          <DangerLink mutates onClick={() => setConfirmDelete(true)}>
+          <DangerLink mutates="offline" onClick={() => setConfirmDelete(true)}>
             Delete…
           </DangerLink>
         ))}

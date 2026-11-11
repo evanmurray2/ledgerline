@@ -119,7 +119,7 @@ export function SplitScreen() {
       }
       footer={
         <PrimaryButton
-          mutates
+          mutates="offline"
           track="split.save"
           disabled={!ok}
           why={

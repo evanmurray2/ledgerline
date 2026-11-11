@@ -64,12 +64,13 @@ export function RegisterScreen() {
   const [closing, setClosing] = useState(false);
   const qc = useQueryClient();
   const canWrite = useCanWrite();
+  const canRename = useCanWrite({ offline: true });
   // The Starting balance row shows while it may change or a late row is new; after that it moves to the ⋯ menu.
   const start = all.data?.start ?? null;
   const startRow = !!start && (start.settling || !!start.recent);
   const startName = a?.kind === 'credit' ? 'Starting debt' : 'Starting balance';
   const menu: MenuItem[] = [];
-  if (canWrite)
+  if (canRename)
     menu.push({ name: 'Rename account', track: 'account.rename', onClick: () => setRenaming(true) });
   if (start && !startRow)
     menu.push({ name: startName, track: 'account.start', onClick: () => setShowStart(true) });
@@ -305,7 +306,7 @@ function RenameAccountSheet({ id, name, close }: { id: string; name: string; clo
         <div className="flex flex-col gap-2">
           {error !== null && <ErrorNote error={error} />}
           <PrimaryButton
-            mutates
+            mutates="offline"
             track="account.rename.save"
             busy={busy}
             disabled={!next || busy}

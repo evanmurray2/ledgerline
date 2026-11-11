@@ -41,7 +41,7 @@ export function RemovedByBank({ rows }: { rows: Removed[] }) {
               {formatCents(r.amount, { plus: true })}
             </span>
             <SoftButton
-              mutates
+              mutates="offline"
               track="activity.removed.ok"
               aria-label={`OK, ${r.payee} ${formatCents(Math.abs(r.amount))} was removed by the bank`}
               disabled={ok.isPending}

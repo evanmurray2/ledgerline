@@ -46,7 +46,7 @@ export function CategoriesScreen() {
   const [showArchived, setShowArchived] = useState(false);
   const v = q.data;
   const qc = useQueryClient();
-  const canWrite = useCanWrite();
+  const canWrite = useCanWrite({ offline: true });
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: qk.categories });
     void qc.invalidateQueries({ queryKey: ['budget'] });
@@ -282,7 +282,7 @@ export function CategoryEditSheet() {
   const [isBills, setIsBills] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const canWrite = useCanWrite();
+  const canWrite = useCanWrite({ offline: true });
   const n = name ?? existing?.name ?? editingGroup?.name ?? '';
   const bills = isBills ?? editingGroup?.isBills ?? false;
   const g =
@@ -372,7 +372,7 @@ export function CategoryEditSheet() {
         <div className="flex flex-col gap-2">
           {error ? <ErrorNote error={error} /> : null}
           <PrimaryButton
-            mutates
+            mutates="offline"
             track="category_edit.save"
             busy={busy}
             disabled={!n.trim() || busy || !canWrite}
@@ -383,7 +383,7 @@ export function CategoryEditSheet() {
           </PrimaryButton>
           {isNew && !isGroup && (
             <SecondaryButton
-              mutates
+              mutates="offline"
               track="category_edit.save_target"
               disabled={!n.trim() || busy || !canWrite}
               onClick={() => void save(true)}

@@ -66,17 +66,24 @@ describe('an edit’s answer carries what it changed', () => {
     expect(((await after.json()) as SyncPage).rows).toEqual([]);
   });
 
-  it('carries nothing without the header, or for an edit from the offline queue', async () => {
+  it('carries nothing without the header: the offline queue sends none, and syncs once at its end', async () => {
     const plain = (await (await assign(1111)).json()) as Record<string, unknown>;
     expect(plain).not.toHaveProperty('sync');
-    const since = (await engine.state()).through;
-    const queued = await assign(2222, {
-      [SYNC_SINCE_HEADER]: String(since),
-      'x-edit-id': `e${Date.now()}`,
-      'x-edit-at': String(Date.now()),
-    });
+    const queued = await assign(2222, { 'x-edit-id': `e${Date.now()}`, 'x-edit-at': String(Date.now()) });
     expect(queued.status).toBe(200);
     expect(await queued.json()).not.toHaveProperty('sync');
+  });
+
+  // The app sends an edit that can wait in its queue with its id from the first try (apps/web/src/api/client.ts).
+  it('an online edit that carries its id still gets its changes', async () => {
+    const since = (await engine.state()).through;
+    const r = await assign(3333, {
+      [SYNC_SINCE_HEADER]: String(since),
+      'x-edit-id': `e${Date.now()}x`,
+      'x-edit-at': String(Date.now()),
+    });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toHaveProperty('sync');
   });
 
   it('a refused edit carries nothing', async () => {

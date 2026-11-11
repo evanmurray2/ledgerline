@@ -17,7 +17,7 @@ export function PairedWith({ t, close }: { t: TxnSheet; close: () => void }) {
       <div className="flex items-center justify-between gap-2 rounded-lg border border-line p-3">
         <span className="min-w-0 text-md font-semibold">{other}</span>
         <SoftButton
-          mutates
+          mutates="offline"
           tone="outline"
           track="txn.not_same"
           aria-label={`Not the same: ${t.payee} and ${other}`}

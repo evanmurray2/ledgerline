@@ -129,7 +129,7 @@ export function AttentionList({ b, month }: { b: BudgetView; month: string }) {
                 underfunded.length > 1 && (
                   <SoftButton
                     tone="filled"
-                    mutates
+                    mutates="offline"
                     track="budget.attention.fund_all"
                     onClick={() => void fundAll()}
                   >
@@ -175,7 +175,7 @@ export function AttentionList({ b, month }: { b: BudgetView; month: string }) {
                 </Link>
                 {a.fix && (
                   <SoftButton
-                    mutates={a.link !== 'owed'}
+                    mutates={a.link !== 'owed' && 'offline'}
                     track={`budget.attention.${a.fix.verb.toLowerCase().replace(' ', '_')}`}
                     aria-label={`${fixLabel(a.fix)} for ${a.name}`}
                     onClick={() => void run(a)}
@@ -213,7 +213,7 @@ export function AttentionList({ b, month }: { b: BudgetView; month: string }) {
               </div>
               <SoftButton
                 tone="outline"
-                mutates
+                mutates="offline"
                 track="budget.attention.undo"
                 onClick={() => void fixes.undo(f)}
                 className="min-w-[92px]"

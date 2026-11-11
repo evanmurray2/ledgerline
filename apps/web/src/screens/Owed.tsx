@@ -293,7 +293,7 @@ export function CloseSheet() {
       footer={
         done ? undefined : (
           <PrimaryButton
-            mutates
+            mutates="offline"
             track="owed.close.confirm"
             disabled={pick === 'snooze' && !date}
             why={pick === 'snooze' && !date ? 'Choose a new date' : ''}
@@ -312,7 +312,7 @@ export function CloseSheet() {
           <div className="flex gap-2">
             {(done.pick !== 'snooze' || done.prevDate) && (
               <SecondaryButton
-                mutates
+                mutates="offline"
                 track="owed.close.undo"
                 className="flex-1"
                 onClick={async () => {
@@ -444,7 +444,7 @@ function ClosedOut({ items, current }: { items: Item[]; current: string | null }
                 </span>
               </span>
               <SoftButton
-                mutates
+                mutates="offline"
                 track="owed.reopen"
                 aria-label={`Reopen ${o.label}`}
                 disabled={act.isPending}

@@ -62,7 +62,7 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
             </Link>
           ))}
           <SoftButton
-            mutates
+            mutates="offline"
             tone="outline"
             track="txn.paid.unlink"
             disabled={unlink.isPending}
@@ -91,7 +91,7 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
           <div className="flex gap-2">
             {inflowKey && undone.length > 0 && (
               <SoftButton
-                mutates
+                mutates="offline"
                 tone="outline"
                 track="txn.paid.undo"
                 disabled={match.isPending}
@@ -176,7 +176,7 @@ export function PairedTransfer({ t, close }: { t: TxnSheet; close: () => void })
               It moves money between your accounts. No category changes.
             </p>
             <SoftButton
-              mutates
+              mutates="offline"
               tone="outline"
               track="txn.transfer.unpair"
               onClick={async () => {

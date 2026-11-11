@@ -173,7 +173,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
       }
       footer={
         <PrimaryButton
-          mutates
+          mutates="offline"
           track={mode === 'assign' ? 'category.save' : 'category.move'}
           onClick={save}
           busy={busy}

@@ -548,11 +548,11 @@ const OFFLINE_EDITS: [string, RegExp][] = [
   ['POST', /^\/api\/transfers\/[^/]+\/(pick|unpair)$/],
   ['POST', /^\/api\/same-purchase\/[^/]+$/],
   ['POST', /^\/api\/alerts\/[^/]+\/dismiss$/],
-  // Names and order: an account's name, a category or group (new or renamed), their order, a setting.
+  // Names and order: an account's name, a category or group (new or renamed), their order. (Not PATCH /settings:
+  // the app reads those settings from the session, which only the server answers.)
   ['POST', /^\/api\/accounts\/[^/]+\/name$/],
   ['POST', /^\/api\/settings\/(categories|groups)$/],
   ['POST', /^\/api\/settings\/(categories|groups)\/reorder$/],
-  ['PATCH', /^\/api\/settings$/],
   ['POST', /^\/api\/transactions\/categorize$/],
   ['POST', /^\/api\/budget\/(assign|set|move)$/],
   ['PUT', /^\/api\/categories\/[^/]+\/target$/],

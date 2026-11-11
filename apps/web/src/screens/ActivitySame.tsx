@@ -38,7 +38,7 @@ export function SamePurchase({ cards }: { cards: Card[] }) {
                 action={
                   <span className="flex shrink-0 gap-1.5">
                     <SoftButton
-                      mutates
+                      mutates="offline"
                       tone="filled"
                       track="activity.same_purchase.yes"
                       aria-label={`Yes, ${named(c)} and ${named(card.row)} are the same purchase`}
@@ -48,7 +48,7 @@ export function SamePurchase({ cards }: { cards: Card[] }) {
                       Yes
                     </SoftButton>
                     <SoftButton
-                      mutates
+                      mutates="offline"
                       tone="outline"
                       track="activity.same_purchase.no"
                       aria-label={`No, ${named(c)} and ${named(card.row)} are not the same purchase`}
