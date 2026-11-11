@@ -32,13 +32,14 @@ export async function isMyTurn(db: Db, budgetId: string, runId: string, now: num
 /**
  * Whether a bank update is waiting to be filed, or is being filed: it is fetched, neither done nor failed, and its job
  * is alive. While one is, only that update's own job files rows, so each update is filed whole and in its turn; the
- * daily catch-up leaves it alone (it is for rows whose job is gone).
+ * daily catch-up leaves it alone (it is for rows whose job is gone). `budgetId` null: any budget of this store (a
+ * store holds one).
  */
-export async function updateInFlight(db: Db, budgetId: string, now: number): Promise<boolean> {
+export async function updateInFlight(db: Db, budgetId: string | null, now: number): Promise<boolean> {
   const r = await db
     .prepare(
       `SELECT 1 AS x FROM sync_run r JOIN connection c ON c.id = r.connection_id
-       WHERE r.budget_id = ?1 AND r.fetch_seq > 0 AND r.phase NOT IN ('done', 'failed')
+       WHERE (?1 IS NULL OR r.budget_id = ?1) AND r.fetch_seq > 0 AND r.phase NOT IN ('done', 'failed')
          AND c.sync_lock = r.id AND c.lock_expires > ?2 AND c.removed_at IS NULL LIMIT 1`,
     )
     .bind(budgetId, now)
