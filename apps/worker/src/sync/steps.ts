@@ -66,11 +66,21 @@ export async function beginRun(c: Ctx, trigger: string): Promise<RunState> {
       c.db
         .prepare(
           `INSERT INTO sync_run (id, budget_id, connection_id, phase, run_start_cursor, restart_count, pages_fetched,
-             applied_through, applied_events, next_cursor, trigger, started_at, created_at, updated_at)
+             applied_through, applied_events, next_cursor, trigger, started_at, created_at, updated_at, fetched_at)
            SELECT ?1, budget_id, connection_id, phase, run_start_cursor, restart_count, pages_fetched, applied_through,
-             applied_events, next_cursor, ?2, ?3, ?3, ?3 FROM sync_run WHERE id = ?4`,
+             applied_events, next_cursor, ?2, ?3, ?3, ?3, fetched_at FROM sync_run WHERE id = ?4`,
         )
         .bind(c.holder, `adopt:${trigger}`, c.now, prevRow.id),
+      // The same bank update under a new id: it keeps its time and its place (D-86 A1, A2). The place is unique, so
+      // the old row gives it up first, and keeps it as a negative number.
+      c.db
+        .prepare(`UPDATE sync_run SET fetch_seq = -fetch_seq WHERE id = ?1 AND fetch_seq > 0`)
+        .bind(prevRow.id),
+      c.db
+        .prepare(
+          `UPDATE sync_run SET fetch_seq = (SELECT -fetch_seq FROM sync_run WHERE id = ?2 AND fetch_seq < 0) WHERE id = ?1`,
+        )
+        .bind(c.holder, prevRow.id),
       c.db
         .prepare(`UPDATE sync_page SET sync_run_id = ?1 WHERE sync_run_id = ?2 AND page > ?3`)
         .bind(c.holder, prevRow.id, prevRow.applied_through),
@@ -216,6 +226,19 @@ export async function fetchPage(
     c.db
       .prepare(`UPDATE sync_run SET pages_fetched = ?2, next_cursor = ?3, updated_at = ?4 WHERE id = ?1`)
       .bind(runId, page + 1, staged.nextCursor, c.now),
+    // The last page: the update is fetched. Its time and its place among the budget's updates are set once (D-86 A1,
+    // A2); a step that runs again keeps them.
+    ...(staged.hasMore
+      ? []
+      : [
+          c.db
+            .prepare(
+              `UPDATE sync_run SET fetched_at = coalesce(fetched_at, ?2),
+                 fetch_seq = coalesce(fetch_seq, (SELECT coalesce(max(abs(fetch_seq)), 0) + 1 FROM sync_run WHERE budget_id = ?3))
+               WHERE id = ?1`,
+            )
+            .bind(runId, c.now, c.budgetId),
+        ]),
   ]);
   return { kind: 'page', hasMore: staged.hasMore, nextCursor: staged.nextCursor, bytes: staged.body.length };
 }
