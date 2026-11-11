@@ -16,6 +16,24 @@ export interface EngineState {
   serverTime: number | null;
   offset: number;
 }
+/** A changed row, as the engine records it (routes/sync.ts SyncRow). */
+export interface RowChange {
+  t: string;
+  k: unknown[];
+  d: Record<string, unknown> | null;
+}
+/** An edit kept on the device until the server takes it (engine.ts QueuedEdit). */
+export interface QueuedEdit {
+  id: string;
+  at: number;
+  method: string;
+  path: string;
+  body: unknown;
+  /** What takes the edit back out of the copy. */
+  undo: RowChange[];
+  /** The change number the copy held when the edit ran. */
+  through: number;
+}
 export interface ApplyResult {
   reset: boolean;
   rows: number;
@@ -86,6 +104,19 @@ export class EngineHost {
     edit?: { id: string; at: number },
   ): Promise<{ status: number; body: string }> {
     return this.call('request', { method, path, body, edit });
+  }
+  /** Runs an edit and gives what takes it back out of the copy (engine.ts record). */
+  record(
+    method: string,
+    path: string,
+    body: unknown,
+    edit: { id: string; at: number },
+  ): Promise<{ status: number; body: string; undo: RowChange[] }> {
+    return this.call('record', { method, path, body, edit });
+  }
+  /** Takes a refused edit and the ones after it out of the copy, and runs the later ones again (engine.ts). */
+  dropEdit(refused: QueuedEdit, later: QueuedEdit[]): Promise<{ kept: QueuedEdit[]; lost: QueuedEdit[] }> {
+    return this.call('dropEdit', { refused, later });
   }
   export(): Promise<ArrayBuffer> {
     return this.call('export');

@@ -37,7 +37,10 @@ export function inheritStmts(
     ),
     // An edit made offline to the posted row's own key lands on the key it now has (docs/phone-budget.md section 12).
     s.db
-      .prepare(`INSERT OR REPLACE INTO txn_key_move (old_key, new_key, at) VALUES (?1, ?2, ?3)`)
+      .prepare(
+        `INSERT INTO txn_key_move (old_key, new_key, at) VALUES (?1, ?2, ?3)
+         ON CONFLICT (old_key) DO UPDATE SET new_key = excluded.new_key, at = excluded.at`,
+      )
       .bind(`p:${postedId}`, fromKey, now),
     // What you set on the posted row itself before it claimed the pending row (a category from a rule or the payee, a
     // memo) fills what the pending row leaves empty; a category you chose on the pending row always wins.
@@ -149,7 +152,8 @@ export function matchEntryStmts(
       ),
       fillFrom(s, e.txn_key, keyOf, covered, now, true),
       s.q(
-        `INSERT OR REPLACE INTO txn_key_move (old_key, new_key, at) SELECT ${keyOf}, ?2, ?4 WHERE ${free} AND ${keyOf} != ?2`,
+        `INSERT INTO txn_key_move (old_key, new_key, at) SELECT ${keyOf}, ?2, ?4 WHERE ${free} AND ${keyOf} != ?2
+         ON CONFLICT (old_key) DO UPDATE SET new_key = excluded.new_key, at = excluded.at`,
         e.txn_key,
         covered,
         now,
