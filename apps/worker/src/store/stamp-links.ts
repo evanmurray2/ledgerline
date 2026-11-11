@@ -66,7 +66,17 @@ export function stampLinksHandler(deps: StampDeps): Handler {
          FROM bank_link WHERE ${WAITING} ORDER BY id LIMIT 1`,
       )
       .first<LinkRow>();
-    if (!link) return { done: true };
+    if (!link) {
+      // Once, when the last link is done: how large the bank log is, from the small table of its pages. The next
+      // step of the move puts the bank log on the device (docs/privacy.md 5.4), and its size decides how.
+      const size = await db
+        .prepare(
+          `SELECT count(*) AS pages, coalesce(sum(events), 0) AS events, coalesce(sum(bytes), 0) AS bytes FROM bank_page`,
+        )
+        .first<{ pages: number; events: number; bytes: number }>();
+      console.log(JSON.stringify({ event: 'bank_log_size', ...size }));
+      return { done: true };
+    }
     const { result, mac } = await check(deps, link);
     // Only if the token is still the one that was checked: a repair in between starts the link over.
     await db
