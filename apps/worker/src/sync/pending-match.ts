@@ -1,6 +1,7 @@
 // Processing steps 1–4 (process.ts planProcessing), in the batch order of docs/payee-names.md 9.2: (1) the provider's
-// link; (2) posted rows and bank pending rows without a link (D-47, 9.3); (3) posted rows and your entries; (4) new
-// bank pending rows and your entries (a cover). Each step skips rows an earlier step claimed in the same batch, and a
+// link; (2) posted rows and bank pending rows without a link (D-47, 9.3); (3) posted rows and your entries, then
+// posted rows that hold a bank pending row's key and your entries (D-92); (4) new bank pending rows and your entries
+// (a cover). Each step skips rows an earlier step claimed in the same batch, and a
 // posted row tries bank pending rows before entries, so a leftover entry never takes a charge whose pending row still
 // counts. A posted row that claims a covered pending row takes the covering entry's key, as if it had paired with the
 // entry. Without the provider's link, rows pair only on exact evidence (Plaid's merchant id or names, or the same
@@ -29,6 +30,7 @@ import {
   coverStmts,
   inheritStmts,
   loadNotSame,
+  matchEntryOverStmts,
   matchEntryStmts,
   ownKeyStmt,
   type Entry,
@@ -125,6 +127,14 @@ export async function planMatches(
   const inherit: Matches['inherit'] = (postedId, fromKey, by, postedAmount, expected) => {
     stmts.push(...inheritStmts(s, postedId, fromKey, by, postedAmount, expected, now));
     took(postedId, fromKey);
+  };
+  /** Posted rows that took a bank pending row's key in this batch (steps 1 and 2), with that key: step 3 meets them. */
+  const heldNow = new Map<string, string>();
+  /** Posted rows given their own key back in this batch (the provider's link won): the key read for them is stale. */
+  const unkeyed = new Set<string>();
+  const claimPending: Matches['inherit'] = (postedId, fromKey, by, postedAmount, expected) => {
+    inherit(postedId, fromKey, by, postedAmount, expected);
+    heldNow.set(postedId, fromKey);
   };
   const took = (postedId: string, key: string) => {
     inherited.add(postedId);
@@ -246,8 +256,9 @@ export async function planMatches(
     for (const other of holders.get(p.txn_key) ?? []) {
       if (other === r.provider_txn_id) continue;
       stmts.push(ownKeyStmt(s, other, now));
+      unkeyed.add(other);
     }
-    inherit(r.provider_txn_id, p.txn_key, 'provider', r.amount, p.estimated ?? p.amount);
+    claimPending(r.provider_txn_id, p.txn_key, 'provider', r.amount, p.estimated ?? p.amount);
   }
 
   // ---- 2. Bank pending rows a posted row came without a link to (D-47, 9.3). Some banks send no link and keep listing
@@ -383,7 +394,7 @@ export async function planMatches(
             !(await notSameFor())(`p:${q.provider_txn_id}`, cover.txn_key)
           )
             matchEntry(q.provider_txn_id, q.amount, cover, 'auto', p.txn_key);
-          else inherit(q.provider_txn_id, p.txn_key, 'auto', q.amount, p.estimated_amount ?? p.amount);
+          else claimPending(q.provider_txn_id, p.txn_key, 'auto', q.amount, p.estimated_amount ?? p.amount);
         } else {
           held.set(d.postedKey, d.candidates);
           const candidates = [...new Set(d.candidates.map((k) => coveredBy.get(k) ?? k))];
@@ -399,8 +410,24 @@ export async function planMatches(
     (r) => !r.pending && !inherited.has(r.provider_txn_id) && r.txn_key === `p:${r.provider_txn_id}`,
   );
   const newPending = live.filter((r) => r.pending && !claimed.has(r.txn_key));
-  if (!unlinkedPosted.length && !newPending.length) return done();
-  const entryAccts = [...new Set([...unlinkedPosted, ...newPending].map((r) => r.account_id!))];
+  // Posted rows holding a bank row's key, not your entry's (D-92): claimed in this batch, or earlier (the heal step
+  // reads those). No entry has met them: a posted row tries bank pending rows first.
+  const heldPosted = live.flatMap((r) => {
+    if (r.pending || unkeyed.has(r.provider_txn_id)) return [];
+    const now_ = heldNow.get(r.provider_txn_id);
+    const before =
+      !inherited.has(r.provider_txn_id) &&
+      r.txn_key !== `p:${r.provider_txn_id}` &&
+      r.txn_key.startsWith('p:')
+        ? r.txn_key
+        : undefined;
+    const key = now_ ?? before;
+    return key ? [{ r, key }] : [];
+  });
+  if (!unlinkedPosted.length && !newPending.length && !heldPosted.length) return done();
+  const entryAccts = [
+    ...new Set([...unlinkedPosted, ...newPending, ...heldPosted.map((h) => h.r)].map((r) => r.account_id!)),
+  ];
   const entries = await s.all<EntryDb>(
     `SELECT m.txn_key, m.account_id, m.amount, m.date, m.payee_name, m.covers_provider_txn_id,
        EXISTS (SELECT 1 FROM bank_txn b WHERE b.budget_id = m.budget_id AND b.provider_txn_id = m.covers_provider_txn_id
@@ -435,6 +462,35 @@ export async function planMatches(
         // The pending row it covers is claimed with it (unless it's gone or another posted row has it).
         matchEntry(r.provider_txn_id, r.amount, m, 'auto');
       } else ask(d.bankKey, d.kind === 'pair' ? [d.entryKey] : d.candidates);
+    }
+  }
+
+  // ---- 3b. Posted rows that hold a bank pending row's key, and your entries (D-92): the same rule as step 3. The
+  // entry takes the pair: both bank rows move to its key. Only entries not covering another bank row. A question is
+  // about the key the posted row holds (the row the screens show); No to either key counts.
+  const loose = openEntries().filter((m) => !m.covering);
+  if (heldPosted.length && loose.length) {
+    const byKey = new Map(heldPosted.map((h) => [h.key, h.r]));
+    const bank: BankSideRow[] = heldPosted.map(({ r, key }) => ({
+      key,
+      accountId: r.account_id!,
+      amount: cents(r.amount),
+      date: r.date,
+      authorizedDate: r.authorized_date,
+      names: plaidNames(r),
+      channel: channel(r),
+    }));
+    const notSame = await notSameFor();
+    const no = (bankKey: string, entryKey: string) =>
+      notSame(bankKey, entryKey) || notSame(`p:${byKey.get(bankKey)!.provider_txn_id}`, entryKey);
+    for (const d of pairEntries(bank, loose.map(entryRow), no)) {
+      if (d.kind === 'pair') {
+        const r = byKey.get(d.bankKey)!;
+        const m = entries.find((x) => x.txn_key === d.entryKey)!;
+        stmts.push(...matchEntryOverStmts(s, r.provider_txn_id, d.bankKey, m, r.amount, 'auto', now));
+        took(r.provider_txn_id, m.txn_key);
+        usedEntries.add(m.txn_key);
+      } else ask(d.bankKey, d.candidates);
     }
   }
 

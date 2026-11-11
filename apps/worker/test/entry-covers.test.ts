@@ -12,7 +12,7 @@ const { db, setup, sync, heal, keyOf, overlay, listed, counted, asks, call } = b
   'entry-covers',
   B,
   'con_ec',
-  14,
+  19,
   NOW,
 );
 
@@ -292,5 +292,103 @@ describe('your entry and the bank’s rows', () => {
     expect(await keyOf('sq-p')).toBe('m:sq');
     expect(await listed(13)).toEqual([{ key: 'm:sq', source: 'bank', status: 'posted', amount: -4800 }]);
     expect(await counted(13)).toEqual({ spent: -4800, pending: 0 });
+  });
+
+  // D-92: a posted row that took a bank pending row's key still meets your entries.
+  const WF = { authorized_date: null };
+
+  it('one update brings the pending row and the posted row: your entry still pairs on your typed name', async () => {
+    await entry('m:nf', 15, -1999, '2026-11-05', 'Streamco');
+    await sync([
+      pend('nf-p', 15, 19.99, '2026-11-06', 'STREAMCO.COM', { merchant: 'Streamco', ...WF }),
+      plaidTxn('nf', 15, 19.99, '2026-11-07', 'STREAMCO.COM', { merchant: 'Streamco', ...WF }),
+    ]);
+    expect(await keyOf('nf')).toBe('m:nf');
+    expect(await keyOf('nf-p')).toBe('m:nf');
+    expect((await mp('m:nf'))!.matched_txn_key).toBe('m:nf');
+    expect(await listed(15)).toEqual([{ key: 'm:nf', source: 'bank', status: 'posted', amount: -1999 }]);
+    expect(await counted(15)).toEqual({ spent: -1999, pending: 0 });
+    expect(await overlay('m:nf')).toMatchObject({ category_id: 'dining', memo: 'mine' });
+    // The bank drops its pending row later: nothing changes.
+    await sync([], [removal('nf-p', 15)]);
+    await heal();
+    expect(await counted(15)).toEqual({ spent: -1999, pending: 0 });
+  });
+
+  it('the bank’s pending row, then your entry, then the posted row with another amount: paired, and it says so', async () => {
+    await sync([
+      pend('vet-p', 16, 142.8, '2026-11-05', 'COAST ANIMAL', { merchant: 'Coast Animal Hospital', ...WF }),
+    ]);
+    await entry('m:vet', 16, -14280, '2026-11-05', 'coast animal hospital');
+    await sync([
+      plaidTxn('vet', 16, 162.35, '2026-11-05', 'COAST ANIMAL HOSPITAL', {
+        merchant: 'Coast Animal Hospital',
+        ...WF,
+      }),
+    ]);
+    expect(await keyOf('vet')).toBe('m:vet');
+    expect(await keyOf('vet-p')).toBe('m:vet');
+    expect(await listed(16)).toEqual([{ key: 'm:vet', source: 'bank', status: 'posted', amount: -16235 }]);
+    expect(await counted(16)).toEqual({ spent: -16235, pending: 0 });
+    expect(String((await overlay('m:vet'))!.alert)).toContain('amount_changed:-14280:-16235');
+  });
+
+  it('an entry you add after the posted row took the pending row’s key: the heal step pairs it', async () => {
+    await sync([pend('hd-p', 17, 60.95, '2026-11-08', 'HARDWARE STORE #12', WF)]);
+    await sync([
+      plaidTxn('hd', 17, 60.95, '2026-11-08', 'HARDWARE STORE #12 SAN JOSE', {
+        merchant: 'Hardware Store',
+        ...WF,
+      }),
+    ]);
+    expect(await keyOf('hd')).toBe('p:hd-p');
+    await entry('m:hd', 17, -6095, '2026-11-09', 'Hardware store');
+    expect(await counted(17)).toEqual({ spent: -6095 - 6095, pending: -6095 });
+    await heal();
+    expect(await keyOf('hd')).toBe('m:hd');
+    expect(await counted(17)).toEqual({ spent: -6095, pending: 0 });
+    // Nothing more to do on the next sync.
+    expect((await heal()).changed).toBe(false);
+  });
+
+  it('no exact evidence with the posted row that holds the pending row’s key: asked; Yes pairs', async () => {
+    await entry('m:din', 18, -3000, '2026-11-09', 'Dinner');
+    await sync([
+      pend('din-p', 18, 31, '2026-11-10', 'TST*NOODLES', { merchant: 'Noodles', ...WF }),
+      plaidTxn('din', 18, 36, '2026-11-11', 'TST*NOODLES', { merchant: 'Noodles', ...WF }),
+    ]);
+    expect(await keyOf('din')).toBe('p:din-p');
+    const a = (await asks()).find((x) => x.ref_key === 'p:din-p')!;
+    expect(JSON.parse(a.data)).toEqual({ candidates: ['m:din'] });
+    const view = (await call('GET', '/api/activity?filter=attention')).json as ActivityView;
+    const card = view.samePurchase.find((x) => x.id === a.id)!;
+    expect(card.row).toMatchObject({ key: 'p:din-p', status: 'posted', amount: -3600 });
+    expect((await call('POST', `/api/same-purchase/${a.id}`, { answer: 'yes', key: 'm:din' })).status).toBe(
+      200,
+    );
+    await workOut(db, B, NOW);
+    expect(await keyOf('din')).toBe('m:din');
+    expect(await keyOf('din-p')).toBe('m:din');
+    expect(await listed(18)).toEqual([{ key: 'm:din', source: 'bank', status: 'posted', amount: -3600 }]);
+    expect(await counted(18)).toEqual({ spent: -3600, pending: 0 });
+  });
+
+  it('Not the same on that pair: the entry counts alone again, and no sync pairs or asks again', async () => {
+    await entry('m:ns', 19, -1200, '2026-11-09', 'Bakery');
+    await sync([
+      pend('ns-p', 19, 12, '2026-11-10', 'BAKERY', { merchant: 'Bakery', ...WF }),
+      plaidTxn('ns', 19, 12, '2026-11-11', 'BAKERY', { merchant: 'Bakery', ...WF }),
+    ]);
+    expect(await keyOf('ns')).toBe('m:ns');
+    expect((await call('POST', '/api/transactions/m%3Ans/not-same')).status).toBe(200);
+    await workOut(db, B, NOW);
+    expect((await mp('m:ns'))!.matched_txn_key).toBeNull();
+    await heal();
+    // The posted row claims the bank's pending row again; your entry stays apart.
+    expect(await keyOf('ns')).toBe('p:ns-p');
+    expect((await mp('m:ns'))!.matched_txn_key).toBeNull();
+    expect((await asks()).find((x) => x.ref_key === 'p:ns-p')).toBeUndefined();
+    expect(await counted(19)).toEqual({ spent: -1200 - 1200, pending: -1200 });
+    expect((await heal()).changed).toBe(false);
   });
 });

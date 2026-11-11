@@ -179,6 +179,50 @@ export function matchEntryStmts(
   return stmts;
 }
 
+/**
+ * A posted row that already holds a bank pending row's key (it claimed that row, D-47) and your entry are one
+ * purchase (D-92): every bank row on that key takes the entry's key, what was set on the held key fills what the
+ * entry leaves empty, and the entry is matched, as in matchEntryStmts. Not the same on the entry gives each bank row
+ * its own key back.
+ */
+export function matchEntryOverStmts(
+  s: Scoped,
+  postedId: string,
+  heldKey: string,
+  e: Entry,
+  postedAmount: number,
+  by: 'auto' | 'user',
+  now: number,
+  /** As in inheritStmts. */
+  linkId?: string,
+): Stmt[] {
+  return [
+    s.q(
+      `INSERT INTO txn_overlay (txn_key, budget_id, created_at, updated_at) VALUES (?2, ?1, ?3, ?3) ON CONFLICT (txn_key) DO NOTHING`,
+      e.txn_key,
+      now,
+    ),
+    fillFrom(s, e.txn_key, `?3`, heldKey, now, true),
+    s.db
+      .prepare(`INSERT OR REPLACE INTO txn_key_move (old_key, new_key, at) VALUES (?1, ?2, ?3)`)
+      .bind(heldKey, e.txn_key, now),
+    s.q(
+      `UPDATE bank_txn SET txn_key = ?2, updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?3`,
+      e.txn_key,
+      heldKey,
+      now,
+    ),
+    ackAsks(s, heldKey, now),
+    ...inheritStmts(s, postedId, e.txn_key, by, postedAmount, e.amount, now, linkId),
+    s.q(
+      `UPDATE manual_pending SET matched_txn_key = ?2, matched_by = ?3, updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
+      e.txn_key,
+      by,
+      now,
+    ),
+  ];
+}
+
 /** Your entry covers the bank's pending row (9.2): the bank row is hidden and stops counting; nothing else moves. */
 export function coverStmts(s: Scoped, entryKey: string, pendingId: string, now: number): Stmt[] {
   return [

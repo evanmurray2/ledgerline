@@ -21,6 +21,7 @@ import {
   coverStmts,
   inheritStmts,
   loadNotSame,
+  matchEntryOverStmts,
   matchEntryStmts,
   notSameStmt,
   ownKeyStmt,
@@ -185,12 +186,35 @@ samePurchaseRoutes.post('/same-purchase/:id', async (c) => {
     ]);
     return c.json(ACK);
   }
-  // Yes: the card's row is a bank row (its own key); the candidate an entry or a bank pending row.
-  const ref = await s.first<BankDb>(`${BANK_SQL} AND b.provider_txn_id = ?2`, a.ref_key.slice(2));
-  if (!ref || ref.claimed || (ref.pending === 0 && ref.txn_key !== a.ref_key)) throw changed();
   const entry = await s.first<EntryDb>(`${ENTRY_SQL} AND m.txn_key = ?2`, r.key);
   const stmts: Stmt[] = [];
-  if (entry) {
+  // Yes about a posted row that holds a bank pending row's key (D-92): your entry takes the pair.
+  const holder = await s.first<{ provider_txn_id: string; amount: number }>(
+    `SELECT provider_txn_id, amount FROM bank_txn
+     WHERE budget_id = ?1 AND txn_key = ?2 AND pending = 0 AND removed_at IS NULL AND provider_txn_id != ?3`,
+    a.ref_key,
+    a.ref_key.slice(2),
+  );
+  // Otherwise the card's row is a bank row (its own key); the candidate an entry or a bank pending row.
+  const ref = holder
+    ? null
+    : await s.first<BankDb>(`${BANK_SQL} AND b.provider_txn_id = ?2`, a.ref_key.slice(2));
+  if (holder) {
+    if (!entry || entry.covering) throw changed();
+    stmts.push(
+      ...matchEntryOverStmts(
+        s,
+        holder.provider_txn_id,
+        a.ref_key,
+        entry,
+        holder.amount,
+        'user',
+        now,
+        newId(c),
+      ),
+    );
+  } else if (!ref || ref.claimed || (ref.pending === 0 && ref.txn_key !== a.ref_key)) throw changed();
+  else if (entry) {
     if (ref.pending === 1) {
       if (entry.covering && entry.covers_provider_txn_id !== ref.provider_txn_id) throw changed();
       const covered = await s.first(
