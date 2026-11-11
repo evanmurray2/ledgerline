@@ -7,7 +7,7 @@ import { Hono } from 'hono';
 import { CloseAccount, type AccountRow } from '@ledgerline/contracts';
 import { formatCents } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
-import { clock } from '../http/clock.js';
+import { requestNow } from '../http/clock.js';
 import type { Scoped } from '../db/scoped.js';
 import { ACK, CHANGED, GONE, HttpError, parse, scoped } from './api.js';
 
@@ -55,7 +55,7 @@ export function reopenStmts(s: Scoped, accountId: string, now: number): Stmt[] {
 accountCloseRoutes.post('/accounts/:id/close', async (c) => {
   const r = await parse(CloseAccount, c.req.raw);
   const s = scoped(c);
-  const now = clock(c.env);
+  const now = requestNow(c);
   const id = c.req.param('id');
   const a = await s.first<{ kind: string; closed_at: number | null; provider_account_id: string | null }>(
     `SELECT kind, closed_at, provider_account_id FROM account WHERE budget_id = ?1 AND id = ?2`,
@@ -105,7 +105,7 @@ accountCloseRoutes.post('/accounts/:id/close', async (c) => {
 
 accountCloseRoutes.post('/accounts/:id/reopen', async (c) => {
   const s = scoped(c);
-  const now = clock(c.env);
+  const now = requestNow(c);
   const id = c.req.param('id');
   const a = await s.first(`SELECT id FROM account WHERE budget_id = ?1 AND id = ?2`, id);
   if (!a) throw new HttpError(404, 'not_found', GONE);

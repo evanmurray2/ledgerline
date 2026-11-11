@@ -1,7 +1,7 @@
 // Settings → Payees: the list, renaming, and joining payees (rename = merge) with Undo (docs/payees.md 5, 6).
 import { Hono } from 'hono';
 import type { Stmt } from '@ledgerline/db/sql';
-import { clock } from '../../http/clock.js';
+import { requestNow } from '../../http/clock.js';
 import { MergePayees, RenamePayee, type MergeResult, type PayeesView } from '@ledgerline/contracts';
 import { nameKey, rankPastUses, samePayeeName } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
@@ -99,7 +99,7 @@ interface MergeBefore {
 payeesRoutes.post('/settings/payees/merge', async (c) => {
   const r = await parse(MergePayees, c.req.raw);
   const s = scoped(c);
-  const now = clock(c.env);
+  const now = requestNow(c);
   const keep = r.keep ?? r.ids[0]!;
   const ids = [...new Set(r.ids)];
   if (ids.length !== r.ids.length || ids.length < 2 || !ids.includes(keep))
@@ -176,7 +176,7 @@ payeesRoutes.post('/settings/payees/merge', async (c) => {
 
 payeesRoutes.post('/settings/payees/merge/:undoId/undo', async (c) => {
   const s = scoped(c);
-  const now = clock(c.env);
+  const now = requestNow(c);
   const undoId = c.req.param('undoId');
   const [row, done] = await s.batch([
     s.q(
@@ -307,7 +307,7 @@ payeesRoutes.post('/settings/payees/merge/:undoId/undo', async (c) => {
 payeesRoutes.post('/settings/payees/:id', async (c) => {
   const r = await parse(RenamePayee, c.req.raw);
   const s = scoped(c);
-  const now = clock(c.env);
+  const now = requestNow(c);
   const id = c.req.param('id');
   const all = await s.all<{ id: string; name: string; merged_into: string | null }>(
     `SELECT id, name, merged_into FROM payee WHERE budget_id = ?1 AND (id = ?2 OR merged_into IS NULL)`,

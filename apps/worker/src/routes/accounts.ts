@@ -1,5 +1,5 @@
 // Accounts (net worth, cash and cards, registers, repair and sync problems) and Reports.
-import { clock } from '../http/clock.js';
+import { requestNow } from '../http/clock.js';
 import { Hono } from 'hono';
 import {
   RenameAccount,
@@ -128,7 +128,7 @@ function syncedWhen(at: number, today: string, timeZone: string): string {
 
 accountRoutes.get('/accounts', async (c) => {
   const s = scoped(c);
-  const now = clock(c.env);
+  const now = requestNow(c);
   const f = await fresh(s, now);
   const { rows: all } = await accountRows(s, f.today, f.budget.time_zone, now, true);
   const rows = all.filter((r) => !r.closed);
@@ -291,7 +291,7 @@ export function storedAlert(a: StoredAlert): AccountsView['alerts'][number] {
 /** Dismiss a stored alert. It stays in the table, marked as seen. */
 accountRoutes.post('/alerts/:id/dismiss', async (c) => {
   const s = scoped(c);
-  const now = clock(c.env);
+  const now = requestNow(c);
   const id = c.req.param('id');
   const a = await s.first<{ id: string }>(`SELECT id FROM alert WHERE budget_id = ?1 AND id = ?2`, id);
   if (!a) throw new HttpError(404, 'not_found', GONE);
@@ -306,7 +306,7 @@ accountRoutes.post('/alerts/:id/dismiss', async (c) => {
 accountRoutes.post('/accounts/:id/name', async (c) => {
   const r = await parse(RenameAccount, c.req.raw);
   const s = scoped(c);
-  const now = clock(c.env);
+  const now = requestNow(c);
   const id = c.req.param('id');
   const a = await s.first<{ name: string }>(`SELECT name FROM account WHERE budget_id = ?1 AND id = ?2`, id);
   if (!a) throw new HttpError(404, 'not_found', GONE);
@@ -325,7 +325,7 @@ accountRoutes.post('/accounts/:id/name', async (c) => {
 
 accountRoutes.get('/accounts/:id/register', async (c) => {
   const s = scoped(c);
-  const now = clock(c.env);
+  const now = requestNow(c);
   const f = await fresh(s, now);
   const id = c.req.param('id');
   const show = c.req.query('show') ?? 'all';
@@ -403,7 +403,7 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
 
 accountRoutes.get('/reports', async (c) => {
   const s = scoped(c);
-  const now = clock(c.env);
+  const now = requestNow(c);
   const f = await fresh(s, now);
   const m = (c.req.query('month') ?? f.current) as Month;
   if (!isMonth(m) || !inReach(m, f.current)) throw new HttpError(400, 'invalid', BAD_MONTH);
@@ -457,7 +457,7 @@ accountRoutes.get('/reports', async (c) => {
   const nwNow = rows.reduce((a, r) => a + (r.kind === 'credit' ? -r.bank : r.bank), 0);
   const nwWorking = rows.reduce((a, r) => a + (r.kind === 'credit' ? -r.working : r.working), 0);
   // Posted totals per month over the last 13 months (ledger/totals.ts: stored for finished months).
-  const totals = await monthTotals(s, addMonths(f.current, -12), f.current, Date.now());
+  const totals = await monthTotals(s, addMonths(f.current, -12), f.current, now);
   const posted = [...totals].map(([mm, accts]) => ({
     m: mm,
     a: [...accts.values()].reduce((x, v) => x + v.all, 0),
