@@ -131,6 +131,11 @@ describe('sync job', () => {
       expect(run!.fetch_seq).toBe(1);
       expect(run!.fetched_at).toBeGreaterThanOrEqual(run!.started_at);
       expect(run!.fetched_at).toBeLessThan(run!.finished_at);
+      // Every row of the update arrived at one time: the moment its fetch finished, not the clock of each apply step.
+      const arrived = (
+        await db.prepare(`SELECT DISTINCT created_at FROM bank_txn`).all<{ created_at: number }>()
+      ).results;
+      expect(arrived).toEqual([{ created_at: run!.fetched_at }]);
       const conn = await db
         .prepare(`SELECT sync_lock, last_synced_at FROM connection`)
         .first<{ sync_lock: string | null; last_synced_at: number }>();

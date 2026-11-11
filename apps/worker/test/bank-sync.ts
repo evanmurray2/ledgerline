@@ -92,6 +92,8 @@ export function bankSync(name: string, B: string, C: string, accounts: number, s
   async function sync(
     added: unknown[],
     removed: { transaction_id: string; account_id: string }[] = [],
+    /** When the update finished fetching (D-86 A1), if it is to differ from the clock the steps run at. */
+    fetchedAt?: number,
   ): Promise<void> {
     const run = `run_${++runN}`;
     expect(await acquire(db, C, run, now)).toBe(true);
@@ -110,7 +112,11 @@ export function bankSync(name: string, B: string, C: string, accounts: number, s
           `INSERT INTO sync_page (sync_run_id, page, budget_id, restart, raw_key, sha256, bytes, next_cursor, has_more, created_at) VALUES (?1, 0, ?2, 0, ?3, 'x', ?4, ?5, 0, ?6)`,
         )
         .bind(run, B, key, body.length, `cur${runN}`, now),
-      db.prepare(`UPDATE sync_run SET pages_fetched = 1 WHERE id = ?1`).bind(run),
+      db
+        .prepare(
+          `UPDATE sync_run SET pages_fetched = 1, fetched_at = ?2, fetch_seq = CASE WHEN ?2 IS NULL THEN NULL ELSE ?3 END WHERE id = ?1`,
+        )
+        .bind(run, fetchedAt ?? null, runN),
     ]);
     for (let chunk = 0; ; chunk++) {
       const r = await applyPage(ctx, provider, run, 0, chunk);
