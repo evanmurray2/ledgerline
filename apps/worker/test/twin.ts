@@ -27,11 +27,13 @@ const DERIVED: Record<string, readonly string[]> = {
 };
 
 /**
- * Columns the two sides may still differ in. The list only gets shorter: an entry goes in the pull request that
- * makes the column equal. Today it is the times an edit writes: the phone writes when the person made the edit, the
- * server writes when the edit arrived (docs/build-plan.md, "edit time").
+ * What the two sides may still differ in: the times an edit writes. The phone writes when the person made the edit,
+ * the server writes when the edit arrived (docs/build-plan.md, "edit time"). Until they are equal, a time column
+ * (`at`, or a name that ends in `_at`) is compared only as set or not set. This goes in the pull request that makes
+ * the times equal.
  */
-export const NOT_YET_EQUAL: readonly string[] = ['created_at', 'updated_at', 'edited_at', 'at'];
+const isTime = (column: string) => column === 'at' || column.endsWith('_at');
+const setOrNot = (v: unknown) => (v === null ? null : 'set');
 
 export type Rows = Record<string, Record<string, unknown>[]>;
 
@@ -49,13 +51,13 @@ function fieldsOnly(v: unknown): unknown {
 export async function rowsOf(e: LocalEngine): Promise<Rows> {
   const out: Rows = {};
   for (const t of SYNC_TABLES) {
-    const skip = new Set([...(t.omit ?? []), ...(DERIVED[t.name] ?? []), ...NOT_YET_EQUAL]);
+    const skip = new Set([...(t.omit ?? []), ...(DERIVED[t.name] ?? [])]);
     const r = await e.db.prepare(`SELECT * FROM ${t.name} ORDER BY ${t.pk.join(', ')}`).all();
     out[t.name] = r.results.map((row) =>
       Object.fromEntries(
         Object.entries(row)
           .filter(([k]) => !skip.has(k))
-          .map(([k, v]) => [k, k === 'field_edits' ? fieldsOnly(v) : v]),
+          .map(([k, v]) => [k, k === 'field_edits' ? fieldsOnly(v) : isTime(k) ? setOrNot(v) : v]),
       ),
     );
   }

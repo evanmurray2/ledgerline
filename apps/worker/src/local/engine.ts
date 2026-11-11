@@ -470,12 +470,13 @@ export class LocalEngine {
     return { rta: b?.rta ?? 0, updating: (b?.summary_dirty_from ?? null) !== null };
   }
 
-  private env(now: number): Env {
+  private env(now: number, through?: number): Env {
     return {
       DB: this.db,
       PLAID_ENV: 'engine',
       // The time of this request, given by the engine (the device's clock plus its offset from the server's).
       NOW: now,
+      ...(through === undefined ? {} : { THROUGH: through }),
       USAGE: async () => ({
         written: 0,
         read: 0,
@@ -540,7 +541,8 @@ export class LocalEngine {
         : {},
       body: mutation ? JSON.stringify(body ?? {}) : undefined,
     });
-    return this.app.fetch(req, this.env(now), {
+    const through = mutation ? (await this.state()).through : undefined;
+    return this.app.fetch(req, this.env(now, through), {
       waitUntil: () => undefined,
       passThroughOnException() {},
     } as never);

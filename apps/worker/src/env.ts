@@ -21,6 +21,8 @@ export interface Env {
   PLAID_BASE_URL?: string;
   /** Set only by the phone's engine, for each request it runs: the time of that request (http/clock.ts). */
   NOW?: number;
+  /** Set only by the phone's engine, for each edit it runs: the change number its copy holds (http/through.ts). */
+  THROUGH?: number;
   /** Tests only: the longest an edit waits for a bank update, in ms (http/after-update.ts). */
   EDIT_WAIT_MS?: string;
   PLAID_WEBHOOK_URL?: string;

@@ -1,7 +1,8 @@
 // Settings → Categories and groups: list, add, rename, archive, remove, reorder and pin.
 import { newId } from '../../http/ids.js';
+import { changedSince } from '../../http/through.js';
 import type { Stmt } from '@ledgerline/db/sql';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { requestNow } from '../../http/clock.js';
 import {
   ArchiveRequest,
@@ -187,7 +188,7 @@ categoriesRoutes.post('/settings/categories/:id/archive', async (c) => {
   if (!cat) throw new HttpError(404, 'not_found', GONE);
   if (cat.kind === 'cc_payment')
     throw new HttpError(422, 'system', 'Card payment categories can’t be archived.');
-  await archiveCategory(s, id, r.archived, now, r);
+  await archiveCategory(c, s, id, r.archived, now, r);
   return c.json(ACK);
 });
 
@@ -196,6 +197,7 @@ categoriesRoutes.post('/settings/categories/:id/archive', async (c) => {
  * that is overspent is refused until the overspending is covered.
  */
 async function archiveCategory(
+  c: Context<AppEnv>,
   s: Scoped,
   id: string,
   archived: boolean,
@@ -217,11 +219,7 @@ async function archiveCategory(
     // changed since the phone worked it out. Anything able to send this can already assign and move money.
     const avail = sent.available ?? 0;
     if (avail !== 0) {
-      const latest = await s.db
-        .prepare(`SELECT coalesce(max(seq), 0) AS n FROM change_log`)
-        .first<{ n: number }>();
-      if (sent.through === undefined || (latest?.n ?? 0) > sent.through)
-        throw new HttpError(409, 'changed', CHANGED);
+      if (await changedSince(c, sent.through)) throw new HttpError(409, 'changed', CHANGED);
     }
     // Archived, its overspending would drop out of Budget's attention while still counting (D-79).
     if (avail < 0) throw new HttpError(422, 'overspent', 'Cover this category’s overspending first.');
@@ -288,7 +286,7 @@ categoriesRoutes.post('/settings/categories/:id/remove', async (c) => {
     id,
   );
   if ((used?.n ?? 0) > 0) {
-    await archiveCategory(s, id, true, now, sent);
+    await archiveCategory(c, s, id, true, now, sent);
     return c.json({ ok: true as const, outcome: 'archived' as const });
   }
   await s.batch([
