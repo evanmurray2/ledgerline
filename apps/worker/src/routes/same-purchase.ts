@@ -6,7 +6,7 @@ import type { Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
 import { SamePurchaseAnswer, type ActivityView, type TxnSheet } from '@ledgerline/contracts';
 import { cents, entryCandidate } from '@ledgerline/domain';
-import { clock } from '../http/clock.js';
+import { requestNow } from '../http/clock.js';
 import type { AppEnv } from '../http/context.js';
 import type { Scoped } from '../db/scoped.js';
 import { ACK, CHANGED, HttpError, parse, scoped } from './api.js';
@@ -161,7 +161,7 @@ async function fenced(s: Scoped, stmts: Stmt[]): Promise<void> {
 samePurchaseRoutes.post('/same-purchase/:id', async (c) => {
   const r = await parse(SamePurchaseAnswer, c.req.raw);
   const s = scoped(c);
-  const now = clock(c.env);
+  const now = requestNow(c);
   const a = await s.first<AskRow>(
     `SELECT id, type, ref_key, data FROM alert WHERE budget_id = ?1 AND id = ?2 AND acked_at IS NULL AND type IN ${ASK_TYPES}`,
     c.req.param('id'),
@@ -348,7 +348,7 @@ async function undoBankPair(s: Scoped, key: string, now: number): Promise<boolea
  */
 samePurchaseRoutes.post('/transactions/:key/not-same', async (c) => {
   const s = scoped(c);
-  const now = clock(c.env);
+  const now = requestNow(c);
   const key = c.req.param('key');
   const m = await s.first<EntryDb & { matched_txn_key: string | null }>(
     `SELECT m.txn_key, m.amount, m.covers_provider_txn_id, m.account_id, m.date, m.payee_name, m.matched_txn_key,

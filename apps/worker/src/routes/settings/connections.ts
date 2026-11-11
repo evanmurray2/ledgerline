@@ -2,7 +2,7 @@
 // starting a sync (Finish setup, Refresh).
 import type { Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
-import { clock } from '../../http/clock.js';
+import { clock, requestNow } from '../../http/clock.js';
 import {
   LinkExchange,
   LinkFinish,
@@ -275,7 +275,7 @@ export async function startSync(
 
 connectionsRoutes.post('/settings/connections/exchange', async (c) => {
   const r = await parse(LinkExchange, c.req.raw);
-  return c.json({ ok: true, ...(await finishLink(c.env, scoped(c), r.publicToken, clock(c.env))) });
+  return c.json({ ok: true, ...(await finishLink(c.env, scoped(c), r.publicToken, requestNow(c))) });
 });
 
 /**
@@ -292,7 +292,7 @@ connectionsRoutes.post('/settings/connections/link-finish', async (c) => {
     const publicToken = result.publicTokens[0];
     if (!publicToken) out = { status: 'exited' };
     else {
-      const done = await finishLink(c.env, scoped(c), publicToken, clock(c.env));
+      const done = await finishLink(c.env, scoped(c), publicToken, requestNow(c));
       out = { status: 'linked', connectionId: done.connectionId };
     }
   }
@@ -353,7 +353,7 @@ export const REFRESH_COOLDOWN_MS = 60_000;
  */
 connectionsRoutes.post('/settings/connections/refresh', async (c) => {
   const s = scoped(c);
-  const now = clock(c.env);
+  const now = requestNow(c);
   const conns = await s.all<{ id: string }>(
     `SELECT id FROM connection WHERE budget_id = ?1 AND removed_at IS NULL AND setup_done = 1
        AND provider != 'csv' AND status != 'login_required'
@@ -375,7 +375,7 @@ connectionsRoutes.post('/settings/connections/:id/refresh', async (c) => {
   if (conn.setup_done !== 1) {
     // Finish setup of a link saved before its accounts were set up.
     const token = await connectionToken(c.env, conn.id);
-    await setUpLinkedAccounts(c.env, s, conn.id, token, clock(c.env));
+    await setUpLinkedAccounts(c.env, s, conn.id, token, requestNow(c));
   }
   await startSync(c.env, s.budgetId, conn.id, 'refresh');
   return c.json({ ok: true });

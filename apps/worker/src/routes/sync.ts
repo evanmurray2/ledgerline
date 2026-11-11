@@ -6,7 +6,7 @@ import type { Db } from '@ledgerline/db/sql';
 import { Hono, type MiddlewareHandler } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../http/context.js';
-import { clock } from '../http/clock.js';
+import { requestNow } from '../http/clock.js';
 import { SYNC_FORMAT, SYNC_TABLES, type SyncTable } from '../sync-tables.js';
 import type { Scoped } from '../db/scoped.js';
 import { SYNC_SINCE_HEADER } from '@ledgerline/contracts';
@@ -129,7 +129,7 @@ export const syncInAnswer: MiddlewareHandler<AppEnv> = async (c, next) => {
     .json()
     .catch(() => null)) as Record<string, unknown> | null;
   if (!json || typeof json !== 'object' || Array.isArray(json)) return;
-  const base = { format: SYNC_FORMAT, epoch: c.get('syncEpoch') ?? 'e0', serverTime: clock(c.env) };
+  const base = { format: SYNC_FORMAT, epoch: c.get('syncEpoch') ?? 'e0', serverTime: requestNow(c) };
   const sync = await changePage(c.env.DB, since, ANSWER_SYNC_ROWS, base);
   c.res = new Response(JSON.stringify({ ...json, sync }), { status: c.res.status, headers: c.res.headers });
 };
@@ -141,7 +141,7 @@ syncRoutes.get('/sync', async (c) => {
   // A whole number of rows, 1 to 500: a negative LIMIT means no limit in SQLite, and a fraction is an SQL error.
   const asked = Number(c.req.query('limit') ?? SYNC_PAGE_ROWS);
   const limit = Number.isFinite(asked) && asked >= 1 ? Math.min(Math.floor(asked), 500) : SYNC_PAGE_ROWS;
-  const base = { format: SYNC_FORMAT, epoch: c.get('syncEpoch') ?? 'e0', serverTime: clock(c.env) };
+  const base = { format: SYNC_FORMAT, epoch: c.get('syncEpoch') ?? 'e0', serverTime: requestNow(c) };
 
   if (since === 0) {
     // Full download: tables in order, rows in key order.
@@ -207,7 +207,7 @@ syncRoutes.post('/identity-alert', async (c) => {
     .object({ difference: z.number().int(), month: z.string().regex(/^\d{4}-\d{2}$/) })
     .safeParse(await c.req.json().catch(() => null));
   if (!body.success) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
-  const now = clock(c.env);
+  const now = requestNow(c);
   await c.env.DB.prepare(
     `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at) VALUES (?1, ?2, 'identity', ?3, ?4, ?5)
      ON CONFLICT (budget_id, type, ref_key) DO UPDATE SET data = excluded.data`,
@@ -251,7 +251,7 @@ syncRoutes.post('/settings/restore', async (c) => {
     return c.json({ ok: true, ...r });
   }
   const at = Date.parse(body.data.before);
-  const now = clock(c.env);
+  const now = requestNow(c);
   if (!(at < now && at > now - 30 * 86_400_000))
     return c.json({ error: 'invalid', message: 'Pick a time in the last 30 days.' }, 422);
   return c.json({ ok: true, ...(await c.env.RESTORE_TO(at)) });
@@ -283,7 +283,7 @@ export const editOnce: MiddlewareHandler<AppEnv> = async (c, next) => {
   await next();
   if (c.res.status < 300)
     await c.env.DB.prepare(`INSERT OR IGNORE INTO edit_seen (id, at) VALUES (?1, ?2)`)
-      .bind(id, clock(c.env))
+      .bind(id, requestNow(c))
       .run();
 };
 

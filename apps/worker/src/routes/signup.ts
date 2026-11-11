@@ -11,7 +11,7 @@ import type { Env } from '../env.js';
 import type { AppEnv } from '../http/context.js';
 import { CHALLENGE_COOKIE, CHALLENGE_MS, cookie, randomToken, tokenHash as sha256Hex } from '../http/auth.js';
 import { sealChallenge } from '../http/challenge.js';
-import { clock } from '../http/clock.js';
+import { clock, requestNow } from '../http/clock.js';
 
 export const SIGNUP_PATH = '/api/auth/signup/options';
 export const RECOVER_PATH = '/api/auth/recover/options';
@@ -356,7 +356,7 @@ recoveryRoutes.post('/settings/security/recovery-code', async (c) => {
     `INSERT INTO recovery_code (user_id, code_hash, created_at) VALUES (?1, ?2, ?3)
      ON CONFLICT (user_id) DO UPDATE SET code_hash = excluded.code_hash, created_at = excluded.created_at`,
   )
-    .bind(userId, hash, clock(c.env))
+    .bind(userId, hash, requestNow(c))
     .run();
   return c.json({ code });
 });
@@ -366,7 +366,7 @@ recoveryRoutes.post('/settings/security/recovery-notice/dismiss', async (c) => {
   await c.env.DB.prepare(
     `UPDATE recovery_notice SET dismissed_at = ?2 WHERE user_id = ?1 AND dismissed_at IS NULL`,
   )
-    .bind(c.get('userId'), clock(c.env))
+    .bind(c.get('userId'), requestNow(c))
     .run();
   return c.json({ ok: true });
 });

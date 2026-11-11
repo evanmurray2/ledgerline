@@ -474,7 +474,8 @@ export class LocalEngine {
     return {
       DB: this.db,
       PLAID_ENV: 'engine',
-      FAKE_NOW: new Date(now).toISOString(),
+      // The time of this request, given by the engine (the device's clock plus its offset from the server's).
+      NOW: now,
       USAGE: async () => ({
         written: 0,
         read: 0,

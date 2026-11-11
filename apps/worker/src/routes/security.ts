@@ -2,7 +2,7 @@
 // need a passkey check within the last 15 minutes (http/auth.ts needsRecentPasskey).
 import { Hono } from 'hono';
 import type { AppEnv } from '../http/context.js';
-import { clock } from '../http/clock.js';
+import { requestNow } from '../http/clock.js';
 import { DEVICE_LINK_MS, SESSION_COOKIE, cookie, randomToken, tokenHash } from '../http/auth.js';
 import { describeAgent } from '../http/agent.js';
 import { bodyObject } from '../http/security.js';
@@ -99,7 +99,7 @@ const turnOff = (db: DB, userId: string, ids: string[], now: number) =>
   );
 
 securityRoutes.get('/settings/security', async (c) => {
-  const now = clock(c.env);
+  const now = requestNow(c);
   const pk = await c.env.DB.prepare(
     `SELECT id, name, created_at, last_used_at FROM passkey WHERE user_id = ?1 ORDER BY created_at`,
   )
@@ -152,7 +152,7 @@ const b64url = (b: Uint8Array) =>
 securityRoutes.post('/settings/security/devices', async (c) => {
   const body = (await bodyObject(c.req)) as { name?: unknown };
   const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 60) : 'Phone';
-  const now = clock(c.env);
+  const now = requestNow(c);
   const m = await c.env.DB.prepare(`SELECT budget_id FROM budget_member WHERE user_id = ?1 LIMIT 1`)
     .bind(c.get('userId'))
     .first<{ budget_id: string }>();
@@ -181,14 +181,14 @@ securityRoutes.post('/settings/security/devices/:id/share', async (c) => {
       410,
     );
   await c.env.DB.prepare(`UPDATE device SET last_seen_at = ?2, session_id = ?3 WHERE id = ?1`)
-    .bind(c.req.param('id'), clock(c.env), c.get('sessionId'))
+    .bind(c.req.param('id'), requestNow(c), c.get('sessionId'))
     .run();
   return c.json({ id: c.req.param('id'), share: d.share });
 });
 
 /** A single-use link, valid for 10 minutes, that lets another phone or computer add its own passkey. */
 securityRoutes.post('/settings/security/device-link', async (c) => {
-  const now = clock(c.env);
+  const now = requestNow(c);
   const token = randomToken();
   await c.env.DB.batch([
     c.env.DB.prepare(`DELETE FROM device_link WHERE expires_at <= ?1`).bind(now),
@@ -242,7 +242,7 @@ securityRoutes.post('/settings/security/sign-out-others', async (c) => {
       `UPDATE device SET revoked_at = coalesce(revoked_at, ?3), share = NULL
        WHERE user_id = ?1 AND revoked_at IS NULL AND (session_id IS NULL OR session_id != ?2)`,
     )
-    .bind(userId, c.get('sessionId'), clock(c.env))
+    .bind(userId, c.get('sessionId'), requestNow(c))
     .run();
   return c.json({ ok: true, ended: r.changes });
 });
@@ -252,7 +252,7 @@ securityRoutes.post('/settings/security/sign-out-session', async (c) => {
   const body = (await bodyObject(c.req)) as { id?: unknown };
   const db = c.env.DB;
   const userId = c.get('userId');
-  const now = clock(c.env);
+  const now = requestNow(c);
   const target = (await entries(db, userId, c.get('sessionId'), now)).find(
     (x) => x.id === body.id && !x.current,
   );
@@ -276,7 +276,7 @@ securityRoutes.post('/settings/security/sign-out', async (c) => {
   const body = (await bodyObject(c.req)) as { forget?: unknown; devices?: unknown };
   const db = c.env.DB;
   const userId = c.get('userId');
-  const now = clock(c.env);
+  const now = requestNow(c);
   const devices = Array.isArray(body.devices)
     ? body.devices.filter((d): d is string => typeof d === 'string').slice(0, 10)
     : [];

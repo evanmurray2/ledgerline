@@ -1,6 +1,6 @@
 // The Activity screen and the tab badges: Needs attention, Not posted yet and posted rows.
 import type { Stmt } from '@ledgerline/db/sql';
-import { clock } from '../http/clock.js';
+import { requestNow } from '../http/clock.js';
 import { Hono } from 'hono';
 import { type ActivityView } from '@ledgerline/contracts';
 import {
@@ -64,7 +64,7 @@ activityViewRoutes.get('/badges', async (c) => {
     summary_month: string | null;
     summary_dirty_from: string | null;
   }>(`SELECT time_zone, rta, summary_month, summary_dirty_from FROM budget WHERE id = ?1`);
-  const today = localDate(clock(c.env), tz?.time_zone ?? 'America/Los_Angeles');
+  const today = localDate(requestNow(c), tz?.time_zone ?? 'America/Los_Angeles');
   const [attn, stale, conns, removed] = await s.batch([
     s.q(ATTENTION_SQL),
     s.q(
@@ -209,7 +209,7 @@ function searchText(raw: string): string {
 
 activityViewRoutes.get('/activity', async (c) => {
   const s = scoped(c);
-  const f = await fresh(s, clock(c.env));
+  const f = await fresh(s, requestNow(c));
   const filter = c.req.query('filter') ?? 'all';
   const q = searchText(c.req.query('q') ?? '');
   const cursor = c.req.query('cursor');

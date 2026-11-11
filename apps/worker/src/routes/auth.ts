@@ -17,7 +17,7 @@ import type { Env } from '../env.js';
 import { ulid } from '@ledgerline/platform';
 import { resolveMembership } from '../db/scoped.js';
 import { isFence, recoveryStmts, signupStmts, signupSwitchOn } from './signup.js';
-import { clock } from '../http/clock.js';
+import { clock, requestNow } from '../http/clock.js';
 import { openChallenge, sealChallenge } from '../http/challenge.js';
 import { bodyObject, csrf } from '../http/security.js';
 import {
@@ -166,7 +166,7 @@ async function putChallenge(
 
 /** What the sign-in screen should show. */
 authRoutes.get('/status', async (c) => {
-  const now = clock(c.env);
+  const now = requestNow(c);
   const who = await identify(c.req.raw, c.env, now);
   const n = await passkeyCount(c.env);
   return c.json({

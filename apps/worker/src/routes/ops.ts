@@ -1,6 +1,6 @@
 // Usage tracking, notes, health, webhooks, the full backup and the usage export.
 import type { Stmt } from '@ledgerline/db/sql';
-import { clock } from '../http/clock.js';
+import { requestNow } from '../http/clock.js';
 import { Hono } from 'hono';
 import type { DumpChunk } from '@ledgerline/contracts';
 import { BUDGET_TABLES, budgetFilter, chain, readChunk, tableMeta } from '../store/dump.js';
@@ -69,7 +69,7 @@ opsRoutes.delete('/usage', async (c) => {
 opsRoutes.post('/notes', async (c) => {
   const r = await parse(NoteRequest, c.req.raw);
   const s = scoped(c);
-  const now = clock(c.env);
+  const now = requestNow(c);
   await s.run(
     `INSERT INTO usage_note (id, budget_id, at, screen, text, recent_events) VALUES (?2, ?1, ?3, ?4, ?5, ?6)`,
     ulid(now),
@@ -83,7 +83,7 @@ opsRoutes.post('/notes', async (c) => {
 
 opsRoutes.get('/health', async (c) => {
   const s = scoped(c);
-  const now = clock(c.env);
+  const now = requestNow(c);
   const [conns, lag] = await s.batch([
     s.q(
       `SELECT id, last_synced_at FROM connection WHERE budget_id = ?1 AND removed_at IS NULL AND provider != 'csv'`,
@@ -139,7 +139,7 @@ opsRoutes.post('/webhooks/plaid', async (c) => {
     await c.env.DB.prepare(
       `UPDATE connection SET status = 'login_required', error_code = ?2, updated_at = ?3 WHERE id = ?1`,
     )
-      .bind(conn.id, ev.code, clock(c.env))
+      .bind(conn.id, ev.code, requestNow(c))
       .run();
   }
   return c.json({ ok: true });
@@ -166,7 +166,7 @@ opsRoutes.get('/export/dump', async (c) => {
         format: 'ledgerline-dump',
         version: 1,
         budgetId: s.budgetId,
-        createdAt: new Date(clock(c.env)).toISOString(),
+        createdAt: new Date(requestNow(c)).toISOString(),
         appVersion: c.env.APP_VERSION ?? null,
       }),
     );
