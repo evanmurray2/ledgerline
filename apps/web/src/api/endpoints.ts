@@ -10,6 +10,8 @@ import {
   CategoriesView,
   CategorySheet,
   ConnectionsView,
+  LinkFinish,
+  LinkFinishResult,
   MatchView,
   MutationResult,
   OwedView,
@@ -73,7 +75,7 @@ const UsersView = z.object({
 export type UsersView = z.infer<typeof UsersView>;
 const RegisterResult = z.object({ ok: z.literal(true), recoveryCode: z.string().optional() });
 const OkId = z.object({ ok: z.literal(true), id: z.string() });
-const LinkToken = z.object({ linkToken: z.string() });
+const LinkToken = z.object({ linkToken: z.string(), hostedUrl: z.string().optional() });
 const Exchange = z.object({ ok: z.literal(true), connectionId: z.string(), accounts: z.unknown() });
 
 export type ActivityFilter = 'all' | 'attention' | 'pending';
@@ -203,6 +205,8 @@ export const api = {
   linkToken: (body: In<typeof LinkTokenRequest>) =>
     post('/api/settings/connections/link-token', LinkToken, body),
   exchange: (publicToken: string) => post('/api/settings/connections/exchange', Exchange, { publicToken }),
+  linkFinish: (body: In<typeof LinkFinish>) =>
+    post('/api/settings/connections/link-finish', LinkFinishResult, body),
   refreshConnection: (id: string) => post(`/api/settings/connections/${enc(id)}/refresh`, Ok),
   refreshAll: () =>
     post('/api/settings/connections/refresh', z.object({ ok: z.literal(true), started: z.number().int() })),

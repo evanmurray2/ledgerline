@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
-import { useAccounts, qk } from '../api/hooks';
+import { useAccounts, useSession, qk } from '../api/hooks';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import { Banner, ErrorNote, PrimaryButton } from '../components/ui';
 import { budgetDateTime } from '../lib/dates';
@@ -15,6 +15,7 @@ export function RepairScreen() {
   const { connectionId } = useParams({ strict: false }) as { connectionId: string };
   useScreen('repair');
   const q = useAccounts();
+  const hosted = useSession().data?.hostedLink === true;
   const qc = useQueryClient();
   const navigate = useNavigate();
   const close = () => void navigate({ to: '/accounts' });
@@ -34,7 +35,7 @@ export function RepairScreen() {
     setError(null);
     let signedIn = false;
     try {
-      const r = await runPlaidLink('repair', connectionId);
+      const r = await runPlaidLink('repair', connectionId, hosted);
       if (r.status === 'exited') return setStep('exited');
       signedIn = true;
       setStep('working');

@@ -24,6 +24,8 @@ function send(res, status, body) {
 }
 
 const items = new Map();
+/** Hosted Link sessions, by link token. */
+const hostedSessions = new Map();
 const server = http.createServer((req, res) => {
   let raw = '';
   req.on('data', (c) => (raw += c));
@@ -113,12 +115,36 @@ const server = http.createServer((req, res) => {
           institution: { name: 'First Platypus Bank', institution_id: 'ins_109508' },
           request_id: 'req',
         });
-      case '/link/token/create':
+      case '/link/token/create': {
+        const link_token = `link-sandbox-${Date.now()}`;
+        // Hosted Link: the mock has no page of its own, so its "page" is the address the person is sent back to.
+        // Opening it is finishing: the session then holds a public token (a repair holds none).
+        const hosted = body.hosted_link?.completion_redirect_uri;
+        if (hosted) hostedSessions.set(link_token, { repair: !!body.access_token });
         return send(res, 200, {
-          link_token: `link-sandbox-${Date.now()}`,
+          link_token,
           expiration: new Date(Date.now() + 4 * 3600e3).toISOString(),
+          ...(hosted ? { hosted_link_url: hosted } : {}),
           request_id: 'req',
         });
+      }
+      case '/link/token/get': {
+        const session = hostedSessions.get(body.link_token);
+        if (!session) return send(res, 200, { link_sessions: [], request_id: 'req' });
+        const now = new Date().toISOString();
+        return send(res, 200, {
+          link_sessions: [
+            {
+              started_at: now,
+              finished_at: now,
+              results: {
+                item_add_results: session.repair ? [] : [{ public_token: `public-sandbox-${Date.now()}` }],
+              },
+            },
+          ],
+          request_id: 'req',
+        });
+      }
       case '/liabilities/get':
         return send(res, 200, {
           accounts: [],
