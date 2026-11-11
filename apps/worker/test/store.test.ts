@@ -6,7 +6,7 @@ import { env, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { DurableDb } from '../src/store/adapter.js';
 import { migrate } from '../src/store/migrate.js';
-import { BUDGET_MIGRATIONS } from '../src/store/migrations.gen.js';
+import { BUDGET_STORE_MIGRATIONS } from '../src/store/migrations.gen.js';
 import type { BudgetStore } from '../src/store/budget-store.js';
 import type { Directory } from '../src/store/directory.js';
 import { acquire, isFenceAbort, leaseFence, renew } from '../src/sync/lease.js';
@@ -53,10 +53,13 @@ describe('object migrations', () => {
         '0009_drift_since.sql',
         '0010_owed_close.sql',
         '0011_run_fetched.sql',
+        'store/0001_marks.sql',
+        'store/0002_bank_link.sql',
       ],
     });
     // The four the phone keeps were dropped (migration 0006); not_same added (0007), owed_close (0010).
-    expect(h.tables).toBe(39);
+    // And the store's own tables: marks and bank links (store migrations).
+    expect(h.tables).toBe(41);
     const d = await e.DIRECTORY.get(e.DIRECTORY.idFromName('directory-test')).health();
     expect(d).toMatchObject({
       ok: true,
@@ -77,7 +80,7 @@ describe('object migrations', () => {
 
   it('running the migrations again does nothing', async () => {
     await inStore(async (_db, storage) => {
-      expect(migrate(storage, BUDGET_MIGRATIONS, NOW).applied).toEqual([]);
+      expect(migrate(storage, BUDGET_STORE_MIGRATIONS, NOW).applied).toEqual([]);
     });
   });
 });

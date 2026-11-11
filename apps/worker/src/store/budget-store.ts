@@ -9,6 +9,7 @@ import type { Caller } from './directory.js';
 import { DIRECTORY_NAME } from './directory.js';
 import { TRY_AGAIN, budgetApi, serverReadsOnly } from '../routes/api.js';
 import { afterBankUpdate } from '../http/after-update.js';
+import { marksOf, refusal, type Marks } from './marks.js';
 import { dev } from '../dev-seed.js';
 import {
   BUDGET_TABLES,
@@ -23,7 +24,7 @@ import {
 import type { Env } from '../env.js';
 import { DurableDb } from './adapter.js';
 import { appliedMigrations, migrate } from './migrate.js';
-import { BUDGET_MIGRATIONS } from './migrations.gen.js';
+import { BUDGET_STORE_MIGRATIONS } from './migrations.gen.js';
 import { JobRunner, type Handler, type Job } from './jobs.js';
 import { failSync, syncHandler, type SyncDeps, type SyncState } from './sync-job.js';
 import {
@@ -85,7 +86,7 @@ export class BudgetStore extends DurableObject<Env> {
     this.runner = new JobRunner(ctx.storage, this.handlers(), (job, err) => this.onFailed(job, err));
     void ctx.blockConcurrencyWhile(async () => {
       try {
-        const { applied } = migrate(ctx.storage, BUDGET_MIGRATIONS, Date.now());
+        const { applied } = migrate(ctx.storage, BUDGET_STORE_MIGRATIONS, Date.now());
         // Payees made by the old rules are filed again once (docs/payee-names.md 8), with no migration: checked
         // once per store, and queued only where old payees exist and the job hasn't run.
         const refile = await this.queueOnce(REFILE_CHECKED, QUEUE_REFILE).catch(() => false);
@@ -155,6 +156,13 @@ export class BudgetStore extends DurableObject<Env> {
         JSON.stringify({ error: 'not_member', message: 'You don’t have access to this budget.' }),
         { status: 403, headers: { 'content-type': 'application/json' } },
       );
+    // A sealed or frozen budget (store/marks.ts): the old routes leave it alone.
+    const held = refusal(this.marks(), request.method, new URL(request.url).pathname);
+    if (held)
+      return new Response(JSON.stringify(held.body), {
+        status: held.status,
+        headers: { 'content-type': 'application/json' },
+      });
     await this.rearm();
     this.app ??= withCaller((app) =>
       app.use('/api/*', serverReadsOnly).use('/api/*', afterBankUpdate).route('/api', budgetApi),
@@ -311,6 +319,7 @@ export class BudgetStore extends DurableObject<Env> {
    */
   async restoreTo(at: number): Promise<{ undo: string }> {
     this.ready();
+    if (this.held()) throw new Error('This budget is sealed or being moved: it can’t be restored.');
     const bookmark = await this.ctx.storage.getBookmarkForTime(at);
     return this.restoreBookmark(bookmark, at);
   }
@@ -377,9 +386,12 @@ export class BudgetStore extends DurableObject<Env> {
     const budgetId = await this.budgetId().catch(() => null);
     if (!budgetId) return { ok: false, jobs: [] };
     if (await this.ctx.storage.get<boolean>(DISABLED_KEY)) return { ok: true, jobs: this.runner.list() };
+    // Sealed or frozen: no job is queued or run (store/marks.ts).
+    if (this.held()) return { ok: true, jobs: this.runner.list() };
     if (o.idle) {
       const banks = this.ctx.storage.sql
-        .exec(`SELECT count(*) AS n FROM connection WHERE removed_at IS NULL`)
+        // From bank_link, not connection: a sealed budget's own tables are empty, and it must not look bank-less.
+        .exec(`SELECT count(*) AS n FROM bank_link`)
         .one() as { n: number };
       if (Number(banks.n) === 0) {
         this.ctx.storage.sql.exec(`DELETE FROM job WHERE recurring = 1`);
@@ -392,9 +404,7 @@ export class BudgetStore extends DurableObject<Env> {
     await ensureRecurring(this.enqueue, now, this.timeZone());
     // Every Plaid Item this budget holds is routed to it in the Directory (6.4); missing routes are re-registered.
     const items = this.ctx.storage.sql
-      .exec(
-        `SELECT id, provider_item_id FROM connection WHERE provider_item_id IS NOT NULL AND removed_at IS NULL`,
-      )
+      .exec(`SELECT connection_id AS id, provider_item_id FROM bank_link WHERE provider_item_id IS NOT NULL`)
       .toArray();
     for (const c of items)
       await this.enqueue('register_link', {
@@ -409,6 +419,7 @@ export class BudgetStore extends DurableObject<Env> {
   /** Starts a sync for one connection (webhook, refresh, link, backstop). */
   async startSync(connectionId: string, trigger: string): Promise<boolean> {
     this.ready();
+    if (this.held()) return false;
     return startSyncJob(this.adapter(), this.enqueue, connectionId, trigger, Date.now());
   }
 
@@ -422,6 +433,13 @@ export class BudgetStore extends DurableObject<Env> {
     this.ready();
     this.usage.request();
     this.counting ??= (await this.ctx.storage.get<boolean>(COUNT_KEY)) ?? false;
+    // Sealed: no job runs, and no alarm is set again. Frozen: no job runs until the freeze ends, then they go on.
+    const m = this.marks();
+    if (m.sealed) return;
+    if (m.frozenUntil !== null) {
+      await this.ctx.storage.setAlarm(m.frozenUntil);
+      return;
+    }
     const mark = markReads(this.db.stats);
     let what = 'job';
     try {
@@ -449,6 +467,17 @@ export class BudgetStore extends DurableObject<Env> {
    * the bank syncs and daily jobs waiting for the next daily ensureJobs. The first call after the object starts
    * puts the alarm back if jobs are waiting and none is set.
    */
+  /** The budget's marks now (store/marks.ts). */
+  private marks(): Marks {
+    return marksOf(this.ctx.storage.sql, Date.now());
+  }
+
+  /** Sealed or frozen: nothing may be written, queued or run. */
+  private held(): boolean {
+    const m = this.marks();
+    return m.sealed || m.frozenUntil !== null;
+  }
+
   private async rearm(): Promise<void> {
     if (this.armed) return;
     this.armed = true;
@@ -465,7 +494,7 @@ export class BudgetStore extends DurableObject<Env> {
     // A failed start (for example Cloudflare refusing writes for the rest of the day) is retried on the next call,
     // so the object recovers by itself once writes are allowed again instead of waiting to be evicted.
     try {
-      migrate(this.ctx.storage, BUDGET_MIGRATIONS, Date.now());
+      migrate(this.ctx.storage, BUDGET_STORE_MIGRATIONS, Date.now());
       this.startError = null;
     } catch (e) {
       this.startError = e instanceof Error ? e.message : String(e);
