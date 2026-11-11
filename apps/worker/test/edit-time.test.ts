@@ -56,5 +56,10 @@ describe('the time of an edit', () => {
       200,
     );
     expect(await assigned('rent')).toBeGreaterThanOrEqual(serverNow);
+    for (const [i, bad] of ['', ' ', '0', '-5', '1e15', '1794686400000.5'].entries()) {
+      const r = await assign('rent', { 'x-edit-id': `edit-time-bad-${i}-xx`, 'x-edit-at': bad });
+      expect(r.status).toBe(200);
+      expect(await assigned('rent'), JSON.stringify(bad)).toBeGreaterThanOrEqual(serverNow);
+    }
   });
 });

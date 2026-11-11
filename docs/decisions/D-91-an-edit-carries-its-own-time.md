@@ -6,7 +6,7 @@ server does it, before the move to the device, and what it changes.
 
 **Context.** The phone can make some edits offline and send them later, each with an id and the time it was made
 (`x-edit-id`, `x-edit-at`). Until now the server used that time only to settle which of two edits of one
-transaction field is newer (`editTime`). Everything else an edit wrote (a row's created and updated times, and any
+transaction field is newer (`editTime`, which this replaces). Everything else an edit wrote (a row's created and updated times, and any
 "today" or "this month" the edit worked out) used the moment the edit **arrived**. The phone's copy runs the same
 edit when the person makes it, so its rows had other times than the server's, and the twin check
 (`apps/worker/test/twin.ts`) could not compare times.

@@ -31,6 +31,17 @@ export function requestNow(c: Context<AppEnv>): number {
   return t;
 }
 
+/**
+ * The time in `x-edit-at`, or null when it is missing or not a time: a whole number of milliseconds between 2020
+ * and 2100. (An empty header would read as 0.)
+ */
+export function editAt(c: Context<AppEnv>): number | null {
+  const raw = c.req.header('x-edit-at');
+  if (!raw || !/^\d{1,16}$/.test(raw)) return null;
+  const at = Number(raw);
+  return Number.isSafeInteger(at) && at > 1_577_836_800_000 && at < 4_102_444_800_000 ? at : null;
+}
+
 /** How far back an edit's own time may lie: an edit made offline and sent later than this counts as 7 days old. */
 const EDIT_BACK_MS = 7 * 86_400_000;
 
@@ -48,7 +59,7 @@ export function editNow(c: Context<AppEnv>): number {
   const now = requestNow(c);
   const m = c.req.method;
   if (m === 'GET' || m === 'HEAD' || !c.req.header('x-edit-id')) return now;
-  const at = Number(c.req.header('x-edit-at'));
-  if (!Number.isFinite(at)) return now;
-  return Math.min(now, Math.max(now - EDIT_BACK_MS, Math.floor(at)));
+  const at = editAt(c);
+  if (at === null) return now;
+  return Math.min(now, Math.max(now - EDIT_BACK_MS, at));
 }

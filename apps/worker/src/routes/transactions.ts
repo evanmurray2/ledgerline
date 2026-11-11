@@ -25,7 +25,7 @@ import type { AppEnv } from '../http/context.js';
 import type { Scoped } from '../db/scoped.js';
 import { HttpError, parse, scoped, GONE, FAR_DATE, FAR_MONTH, inReach, thisMonth } from './api.js';
 import { reopenStmts } from './account-close.js';
-import { editTime, liveKey } from './sync.js';
+import { liveKey } from './sync.js';
 import { monthLong, shortDate } from '../views/common.js';
 import { categoryLabel, isHistory } from '../views/rows.js';
 import { TX_COLUMNS, chunks, txnCol, type TxRow } from '../ledger/ledger.js';
@@ -215,8 +215,9 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
   const t = await loadTx(s, key);
   refuseHistory(t);
   const now = editNow(c);
-  // Most-recent-edit-wins uses when the edit was made, which for an offline edit is before it arrives.
-  const editAt = editTime(c, now);
+  // Most-recent-edit-wins uses when the edit was made, which for an offline edit is before it arrives: `now` is
+  // already that time (http/clock.ts editNow).
+  const editAt = now;
   const w: Stmt[] = [s.q(OVERLAY_UPSERT, key, now)];
   const set = (col: string, v: unknown) =>
     w.push(
