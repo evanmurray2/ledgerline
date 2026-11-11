@@ -74,6 +74,11 @@ export interface ApplyResult {
   rows: number;
   /** Everything up to the server's latest change is in the copy. */
   caughtUp: boolean;
+  /**
+   * Queued edits that no longer pass on the server's newer rows (the row they change is gone): taken out of the
+   * copy and out of the queue. Set only when the queue was run again on top of this page.
+   */
+  lost?: number;
 }
 
 /**
@@ -168,7 +173,7 @@ export async function migrateLocal(
     const info = await db.prepare(`SELECT name FROM pragma_table_info('${t.name}')`).all<{ name: string }>();
     columns.set(
       t.name,
-      info.results.map((c) => c.name).filter((c) => !t.omit?.includes(c)),
+      info.results.map((c) => c.name).filter((c) => !t.omit?.includes(c) && !WORKED_OUT[t.name]?.includes(c)),
     );
   }
   await db.batch([
@@ -196,6 +201,14 @@ export const RECORDED_TABLES: readonly SyncTable[] = [
   { name: 'audit_log', pk: ['id'] },
   { name: 'txn_key_move', pk: ['old_key'] },
 ];
+
+/**
+ * Columns derive() works out, in a table an edit also writes: left out of the row kept for taking an edit back
+ * out, so that an undo never puts an older worked-out value over a newer one.
+ */
+const WORKED_OUT: Record<string, readonly string[]> = {
+  budget: ['rta', 'summary_version', 'summary_month', 'summary_dirty_from'],
+};
 
 /** Set while the engine records an edit; the triggers below write nothing at any other time (a sync, derive()). */
 const RECORDING = `(SELECT value FROM local_state WHERE key = 'recording') = '1'`;
@@ -242,17 +255,38 @@ export interface Recorded {
   undo: SyncRow[];
 }
 
-/** An edit kept on the device until the server takes it, with what takes it back out of the copy. */
+/**
+ * An edit kept on the device until the server takes it. The engine owns the queue (`local_state`, key `outbox`):
+ * every change to it is one step of the engine, so the copy and its queue can't come apart.
+ */
 export interface QueuedEdit {
   id: string;
   at: number;
   method: string;
   path: string;
   body: unknown;
-  undo: SyncRow[];
-  /** The change number the copy held when the edit ran: its `undo` is good only while the copy still holds it. */
-  through: number;
+  appVersion?: string;
+  /**
+   * What takes the edit back out of the copy, and the change number the copy held when the edit ran. The undo is
+   * good only while the copy still holds that number. An edit with neither (queued by an older app, or after the
+   * copy was downloaded again) can only be sent.
+   */
+  undo?: SyncRow[];
+  through?: number;
+  /**
+   * The server may hold this edit: the app is sending it, or sent it and lost the answer. The copy never runs
+   * such an edit again by itself; a sync brings its rows.
+   */
+  sending?: boolean;
 }
+
+/** An edit whose undo is good for a copy at change number `through`. */
+type Exact = QueuedEdit & { undo: SyncRow[]; through: number };
+const exactAt = (e: QueuedEdit, through: number): e is Exact =>
+  Array.isArray(e.undo) && e.through === through;
+
+/** Where the app keeps its queue of edits (apps/web/src/copy/copy.ts), in `local_state`. */
+const OUTBOX = 'outbox';
 
 export class LocalEngine {
   private readonly app: Hono<AppEnv>;
@@ -316,6 +350,11 @@ export class LocalEngine {
       await this.clear();
       return { reset: true, rows: 0, caughtUp: false };
     }
+    // Edits wait in the queue: the server's rows go under them, not over them. The queue is taken out of the copy
+    // (which is then the server's rows as of `st.through`), the page is written, and the queue is run again on
+    // top (docs/privacy.md 5.3). Only when that can be done exactly, and in this one step.
+    const queue = fresh ? null : await this.exactQueue(st, page);
+    if (queue) for (const e of [...queue].reverse()) await this.applyRows(e.undo);
     const stmts: Stmt[] = [this.db.prepare(`PRAGMA defer_foreign_keys = ON`)];
     // What the next derive() must redo (read before the rows change: a moved or deleted row's old key counts too).
     const todo = await this.pendingDerive();
@@ -335,7 +374,70 @@ export class LocalEngine {
     };
     stmts.push(this.setState(next));
     for (const part of chunks(stmts, 500)) await this.db.batch(part);
-    return { reset: false, rows: page.rows.length, caughtUp: !page.more && !page.cursor };
+    const result: ApplyResult = {
+      reset: false,
+      rows: page.rows.length,
+      caughtUp: !page.more && !page.cursor,
+    };
+    if (queue) {
+      const { kept, lost } = await this.rerun(queue, next.through);
+      await this.putQueue(kept);
+      result.lost = lost.length;
+    }
+    return result;
+  }
+
+  /**
+   * The queue, when the server's page can go under it: every edit in it ran on the copy as it is now (the same
+   * change number, so the rows kept for taking it out are the server's), none is on its way to the server, and
+   * the page is the whole of what changed (one page of changes, not a download).
+   */
+  private async exactQueue(st: EngineState, page: SyncPage): Promise<Exact[] | null> {
+    if (st.cursor || page.cursor || page.more || st.through === 0 || page.rows.length === 0) return null;
+    const q = await this.queue();
+    if (!q.length) return null;
+    return q.every((e) => exactAt(e, st.through) && !e.sending) ? (q as Exact[]) : null;
+  }
+
+  /** The queue of edits waiting for the server, oldest first. */
+  async queue(): Promise<QueuedEdit[]> {
+    const r = await this.db
+      .prepare(`SELECT value FROM local_state WHERE key = ?1`)
+      .bind(OUTBOX)
+      .first<{ value: string }>();
+    return r ? (JSON.parse(r.value) as QueuedEdit[]) : [];
+  }
+
+  private async putQueue(q: readonly QueuedEdit[]): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO local_state (key, value) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+      )
+      .bind(OUTBOX, JSON.stringify(q))
+      .run();
+  }
+
+  /**
+   * Runs queued edits again, in order, on the copy as it is. An edit its route refuses now (4xx: the row it
+   * changes is gone) is `lost`. An edit that fails any other way stays in the queue with no undo: the copy doesn't
+   * show it until the server has taken it and a sync brings its rows.
+   */
+  private async rerun(
+    queue: readonly QueuedEdit[],
+    through: number,
+  ): Promise<{ kept: QueuedEdit[]; lost: QueuedEdit[] }> {
+    const kept: QueuedEdit[] = [];
+    const lost: QueuedEdit[] = [];
+    for (const e of queue) {
+      const { undo: _undo, through: _through, ...bare } = e;
+      const r = await this.record(e.method, e.path, e.body, { id: e.id, at: e.at }).catch(() => null);
+      const status = r?.response.status ?? 500;
+      if (status < 300) kept.push({ ...bare, undo: r!.undo, through });
+      else if (status < 500) lost.push(e);
+      else kept.push(bare);
+    }
+    if (await this.needsDerive()) await this.derive();
+    return { kept, lost };
   }
 
   private async pendingDerive(): Promise<PendingDerive> {
@@ -458,6 +560,10 @@ export class LocalEngine {
       ...derivedTables.map((t) => this.db.prepare(`DELETE FROM ${t}`)),
       this.setState({ ...EMPTY }),
     ]);
+    // The rows kept for taking a queued edit out were this copy's: they mean nothing to the next download, even
+    // one that ends on the same change number.
+    const q = await this.queue();
+    if (q.length) await this.putQueue(q.map(({ undo: _undo, through: _through, ...e }) => e));
   }
 
   /**
@@ -616,27 +722,69 @@ export class LocalEngine {
   }
 
   /**
-   * The server refused a queued edit. Takes it out of the copy, with every edit queued after it (they ran on top
-   * of it), then runs those later edits again in order. An edit that no longer passes its route's own checks
-   * (it changed a row the refused edit made) is `lost`; the others are `kept`, with what takes them out now.
-   * The caller checks first that every one of these edits was recorded at the change number the copy holds now:
-   * after a sync, the rows as they were before an edit are no longer what the server has.
+   * An edit made on this device with no connection: runs it, and puts it in the queue with what takes it back
+   * out, in one step. `sending`: the edit already went to the server once and the answer was lost, so the server
+   * may hold it.
    */
-  async dropEdit(
-    refused: QueuedEdit,
-    later: readonly QueuedEdit[],
-  ): Promise<{ kept: QueuedEdit[]; lost: QueuedEdit[] }> {
-    for (const e of [...later].reverse()) await this.applyRows(e.undo);
-    await this.applyRows(refused.undo);
-    const kept: QueuedEdit[] = [];
-    const lost: QueuedEdit[] = [];
-    for (const e of later) {
-      const r = await this.record(e.method, e.path, e.body, { id: e.id, at: e.at });
-      if (r.response.status < 300) kept.push({ ...e, undo: r.undo });
-      else lost.push(e);
+  async enqueue(e: {
+    id: string;
+    at: number;
+    method: string;
+    path: string;
+    body: unknown;
+    appVersion?: string;
+    sending?: boolean;
+  }): Promise<{ response: Response; queued: number }> {
+    const through = (await this.state()).through;
+    const r = await this.record(e.method, e.path, e.body, { id: e.id, at: e.at });
+    const q = await this.queue();
+    if (r.response.status < 300) {
+      q.push({ ...e, undo: r.undo, through });
+      await this.putQueue(q);
     }
-    if (await this.needsDerive()) await this.derive();
-    return { kept, lost };
+    return { response: r.response, queued: q.length };
+  }
+
+  /** The app is about to send this edit: from now on the server may hold it. */
+  async queueSending(id: string): Promise<void> {
+    const q = await this.queue();
+    const e = q.find((x) => x.id === id);
+    if (!e || e.sending) return;
+    e.sending = true;
+    await this.putQueue(q);
+  }
+
+  /** The server took this edit: it leaves the queue. Gives how many are left. */
+  async queueDone(id: string): Promise<number> {
+    const q = (await this.queue()).filter((x) => x.id !== id);
+    await this.putQueue(q);
+    return q.length;
+  }
+
+  /**
+   * The server refused this edit. It leaves the queue, and the copy when that can be done exactly: the edit and
+   * every one queued after it (they ran on top of it) ran on the copy as it is now, so they are taken out, newest
+   * first, and the later ones are run again. A later edit that no longer passes (it changed a row the refused
+   * edit made) is lost too. When it can't be done exactly, `redownload` says the copy still shows the refused
+   * edit and must be downloaded again.
+   */
+  async queueRefused(id: string): Promise<{ redownload: boolean; lost: number; left: number }> {
+    const q = await this.queue();
+    const i = q.findIndex((x) => x.id === id);
+    if (i < 0) return { redownload: false, lost: 0, left: q.length };
+    const before = q.slice(0, i);
+    const refused = q[i]!;
+    const later = q.slice(i + 1);
+    const through = (await this.state()).through;
+    if (!exactAt(refused, through) || !later.every((e) => exactAt(e, through) && !e.sending)) {
+      await this.putQueue([...before, ...later]);
+      return { redownload: true, lost: 0, left: q.length - 1 };
+    }
+    for (const e of [...(later as Exact[])].reverse()) await this.applyRows(e.undo);
+    await this.applyRows(refused.undo);
+    const { kept, lost } = await this.rerun(later, through);
+    await this.putQueue([...before, ...kept]);
+    return { redownload: false, lost: lost.length, left: before.length + kept.length };
   }
 
   /** Writes rows another copy recorded, and marks what derive() must work out again. */

@@ -27,15 +27,11 @@ type Msg =
       body?: unknown;
       edit?: { id: string; at: number };
     }
-  | {
-      id: number;
-      op: 'record';
-      method: string;
-      path: string;
-      body?: unknown;
-      edit: { id: string; at: number };
-    }
-  | { id: number; op: 'dropEdit'; refused: QueuedEdit; later: QueuedEdit[] }
+  | { id: number; op: 'enqueue'; edit: QueuedEdit }
+  | { id: number; op: 'queue' }
+  | { id: number; op: 'queueSending'; editId: string }
+  | { id: number; op: 'queueDone'; editId: string }
+  | { id: number; op: 'queueRefused'; editId: string }
   | { id: number; op: 'export' }
   | { id: number; op: 'state' }
   | { id: number; op: 'rta' }
@@ -79,12 +75,22 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       const text = await r.text();
       return { value: { status: r.status, body: text } };
     }
-    case 'record': {
-      const r = await need().engine.record(m.method, m.path, m.body, m.edit);
-      return { value: { status: r.response.status, body: await r.response.text(), undo: r.undo } };
+    case 'enqueue': {
+      const r = await need().engine.enqueue(m.edit);
+      return { value: { status: r.response.status, body: await r.response.text(), queued: r.queued } };
     }
-    case 'dropEdit':
-      return { value: await need().engine.dropEdit(m.refused, m.later) };
+    case 'queue':
+      // Only what the app shows and sends: the rows kept for an undo stay in the engine.
+      return {
+        value: (await need().engine.queue()).map(({ undo: _undo, through: _through, ...e }) => e),
+      };
+    case 'queueSending':
+      await need().engine.queueSending(m.editId);
+      return { value: null };
+    case 'queueDone':
+      return { value: await need().engine.queueDone(m.editId) };
+    case 'queueRefused':
+      return { value: await need().engine.queueRefused(m.editId) };
     case 'export': {
       const bytes = need().db.db.export();
       const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;

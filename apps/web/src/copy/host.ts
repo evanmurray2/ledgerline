@@ -16,28 +16,23 @@ export interface EngineState {
   serverTime: number | null;
   offset: number;
 }
-/** A changed row, as the engine records it (routes/sync.ts SyncRow). */
-export interface RowChange {
-  t: string;
-  k: unknown[];
-  d: Record<string, unknown> | null;
-}
-/** An edit kept on the device until the server takes it (engine.ts QueuedEdit). */
+/** An edit kept on the device until the server takes it (engine.ts QueuedEdit, without its undo rows). */
 export interface QueuedEdit {
   id: string;
   at: number;
   method: string;
   path: string;
   body: unknown;
-  /** What takes the edit back out of the copy. */
-  undo: RowChange[];
-  /** The change number the copy held when the edit ran. */
-  through: number;
+  appVersion?: string;
+  /** The server may hold it already: it went out once and the answer was lost, or it is being sent. */
+  sending?: boolean;
 }
 export interface ApplyResult {
   reset: boolean;
   rows: number;
   caughtUp: boolean;
+  /** Queued edits the engine took out, because they no longer pass on the server's newer rows (engine.ts apply). */
+  lost?: number;
 }
 export interface SyncPage {
   format: number;
@@ -105,18 +100,25 @@ export class EngineHost {
   ): Promise<{ status: number; body: string }> {
     return this.call('request', { method, path, body, edit });
   }
-  /** Runs an edit and gives what takes it back out of the copy (engine.ts record). */
-  record(
-    method: string,
-    path: string,
-    body: unknown,
-    edit: { id: string; at: number },
-  ): Promise<{ status: number; body: string; undo: RowChange[] }> {
-    return this.call('record', { method, path, body, edit });
+  /** Runs an edit made with no connection and puts it in the queue, in one step (engine.ts enqueue). */
+  enqueue(edit: QueuedEdit): Promise<{ status: number; body: string; queued: number }> {
+    return this.call('enqueue', { edit });
   }
-  /** Takes a refused edit and the ones after it out of the copy, and runs the later ones again (engine.ts). */
-  dropEdit(refused: QueuedEdit, later: QueuedEdit[]): Promise<{ kept: QueuedEdit[]; lost: QueuedEdit[] }> {
-    return this.call('dropEdit', { refused, later });
+  /** The edits waiting for the server, oldest first. */
+  queue(): Promise<QueuedEdit[]> {
+    return this.call('queue');
+  }
+  /** The app is about to send this edit (engine.ts queueSending). */
+  queueSending(editId: string): Promise<void> {
+    return this.call('queueSending', { editId });
+  }
+  /** The server took this edit; gives how many are left. */
+  queueDone(editId: string): Promise<number> {
+    return this.call('queueDone', { editId });
+  }
+  /** The server refused this edit (engine.ts queueRefused). */
+  queueRefused(editId: string): Promise<{ redownload: boolean; lost: number; left: number }> {
+    return this.call('queueRefused', { editId });
   }
   export(): Promise<ArrayBuffer> {
     return this.call('export');
@@ -150,9 +152,10 @@ export async function syncAll(
   fetchPage: (since: number, cursor: string | null) => Promise<SyncPage>,
   /** Called when the server's copy changed (a new epoch or format) and the whole budget downloads again. */
   onReset?: () => void,
-): Promise<{ pages: number; rows: number }> {
+): Promise<{ pages: number; rows: number; lost: number }> {
   let pages = 0;
   let rows = 0;
+  let lost = 0;
   for (let guard = 0; guard < 2000; guard++) {
     const { since, cursor } = await host.nextRequest();
     const page = await fetchPage(since, cursor);
@@ -160,7 +163,8 @@ export async function syncAll(
     pages++;
     if (r.reset) onReset?.();
     rows += r.rows;
-    if (r.caughtUp) return { pages, rows };
+    lost += r.lost ?? 0;
+    if (r.caughtUp) return { pages, rows, lost };
   }
   throw new Error('Your budget didn’t finish downloading. Try again.');
 }
