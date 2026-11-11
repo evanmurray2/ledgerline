@@ -39,11 +39,24 @@ export function isTransferLike(r: Pick<TransferRow, 'description' | 'providerCat
   );
 }
 
+/**
+ * The transfers among `rows`, the rows of one bank update.
+ *
+ * `earlier` (D-86 A2, D-90) are rows filed before this update that have no partner and that the person has not
+ * sorted by hand: an outflow nobody answered for, an inflow that came alone. A new row can pair with one of them, by
+ * the same rule: the same amount, another account, dates at most 5 days apart, and exactly one possible partner on
+ * each side. When each row arrived does not matter. Two earlier rows never pair with each other here: every decision
+ * holds a row of this update, so rows from before the rule are not paired in bulk. A pair made before is not in
+ * `earlier`, so it stays, and a later row that could have been its partner is asked about.
+ */
 export function detectTransfers(
   rows: readonly TransferRow[],
   alreadyPaired: ReadonlySet<string> = new Set(),
+  earlier: readonly TransferRow[] = [],
 ): TransferDecision[] {
-  const open = rows.filter((r) => !alreadyPaired.has(r.key));
+  const fresh = rows.filter((r) => !alreadyPaired.has(r.key));
+  const isNew = new Set(fresh.map((r) => r.key));
+  const open = [...earlier.filter((r) => !alreadyPaired.has(r.key) && !isNew.has(r.key)), ...fresh];
   const inflows = open.filter((r) => r.amount > 0);
   const outflows = open.filter((o) => o.amount < 0 && isTransferLike(o));
   const matches = (o: TransferRow, i: TransferRow) =>
@@ -55,6 +68,8 @@ export function detectTransfers(
   const out: TransferDecision[] = [];
   for (const o of outflows) {
     const cands = inflows.filter((i) => matches(o, i));
+    // An earlier outflow is looked at again only when this update brought it a possible partner.
+    if (!isNew.has(o.key) && !cands.some((c) => isNew.has(c.key))) continue;
     if (cands.length === 1 && claims.get(cands[0]!.key) === 1)
       out.push({ kind: 'paired', outKey: o.key, inKey: cands[0]!.key });
     else out.push({ kind: 'unclear', outKey: o.key, candidates: cands.map((c) => c.key) });
