@@ -289,16 +289,6 @@ export const editOnce: MiddlewareHandler<AppEnv> = async (c, next) => {
       .run();
 };
 
-/**
- * When an offline edit was made: `x-edit-at` (the phone's clock, corrected by its measured offset from the server),
- * kept within the last 7 days and never later than now. Most-recent-edit-wins merges use it.
- */
-export function editTime(c: { req: { header(name: string): string | undefined } }, now: number): number {
-  const at = Number(c.req.header('x-edit-at'));
-  if (!Number.isFinite(at)) return now;
-  return Math.min(now, Math.max(now - 7 * 86_400_000, Math.floor(at)));
-}
-
 /** The key a transaction has now: an edit sent offline to a key that has since moved lands on the new one. */
 export async function liveKey(s: Scoped, key: string): Promise<string> {
   let k = key;

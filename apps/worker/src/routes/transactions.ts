@@ -1,7 +1,7 @@
 // The transaction sheet and every edit to one transaction's overlay: categorize, add, check pending, delete, review.
 import { newId } from '../http/ids.js';
 import type { Stmt } from '@ledgerline/db/sql';
-import { requestNow } from '../http/clock.js';
+import { editNow } from '../http/clock.js';
 import { Hono } from 'hono';
 import {
   CategorizeRequest,
@@ -25,7 +25,7 @@ import type { AppEnv } from '../http/context.js';
 import type { Scoped } from '../db/scoped.js';
 import { HttpError, parse, scoped, GONE, FAR_DATE, FAR_MONTH, inReach, thisMonth } from './api.js';
 import { reopenStmts } from './account-close.js';
-import { editTime, liveKey } from './sync.js';
+import { liveKey } from './sync.js';
 import { monthLong, shortDate } from '../views/common.js';
 import { categoryLabel, isHistory } from '../views/rows.js';
 import { TX_COLUMNS, chunks, txnCol, type TxRow } from '../ledger/ledger.js';
@@ -92,7 +92,7 @@ transactionRoutes.get('/transactions/:key', async (c) => {
     canceled_at: number | null;
   }[];
   const zone = (bz!.results[0] as { time_zone: string } | undefined)?.time_zone ?? 'America/Los_Angeles';
-  const today = localDate(requestNow(c), zone);
+  const today = localDate(editNow(c), zone);
   const owedView = owedList(
     owedRows.map((o) => ({
       id: o.id,
@@ -214,9 +214,10 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
   const key = await liveKey(s, c.req.param('key'));
   const t = await loadTx(s, key);
   refuseHistory(t);
-  const now = requestNow(c);
-  // Most-recent-edit-wins uses when the edit was made, which for an offline edit is before it arrives.
-  const editAt = editTime(c, now);
+  const now = editNow(c);
+  // Most-recent-edit-wins uses when the edit was made, which for an offline edit is before it arrives: `now` is
+  // already that time (http/clock.ts editNow).
+  const editAt = now;
   const w: Stmt[] = [s.q(OVERLAY_UPSERT, key, now)];
   const set = (col: string, v: unknown) =>
     w.push(
@@ -392,7 +393,7 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
 transactionRoutes.post('/transactions/categorize', async (c) => {
   const r = await parse(CategorizeRequest, c.req.raw);
   const s = scoped(c);
-  const now = requestNow(c);
+  const now = editNow(c);
   if (r.categoryId) {
     const ok = await s.first(
       `SELECT id FROM category WHERE budget_id = ?1 AND id = ?2 AND kind != 'cc_payment' AND archived_at IS NULL`,
@@ -443,7 +444,7 @@ transactionRoutes.post('/transactions/categorize', async (c) => {
 transactionRoutes.post('/transactions', async (c) => {
   const r = await parse(NewTxnRequest, c.req.raw);
   const s = scoped(c);
-  const now = requestNow(c);
+  const now = editNow(c);
   if (!inReach(monthOfDate(r.date), await thisMonth(s, now))) throw new HttpError(422, 'too_far', FAR_DATE);
   // Before the budget start is history, which never counts (D-61, D-67); your own entries there are refused too
   // (D-79).
@@ -500,7 +501,7 @@ transactionRoutes.post('/transactions/:key/pending', async (c) => {
   const r = await parse(PendingCheckAction, c.req.raw);
   const s = scoped(c);
   const key = c.req.param('key');
-  const now = requestNow(c);
+  const now = editNow(c);
   const m = await s.first<{ date: string }>(
     `SELECT date FROM manual_pending WHERE budget_id = ?1 AND txn_key = ?2 AND deleted_at IS NULL`,
     key,
@@ -533,7 +534,7 @@ transactionRoutes.post('/transactions/:key/pending', async (c) => {
 transactionRoutes.delete('/transactions/:key', async (c) => {
   const s = scoped(c);
   const key = c.req.param('key');
-  const now = requestNow(c);
+  const now = editNow(c);
   const m = await s.first(
     `SELECT id FROM manual_pending WHERE budget_id = ?1 AND txn_key = ?2 AND deleted_at IS NULL`,
     key,
@@ -556,7 +557,7 @@ transactionRoutes.delete('/transactions/:key', async (c) => {
 transactionRoutes.post('/transactions/:key/review', async (c) => {
   const s = scoped(c);
   const key = c.req.param('key');
-  const now = requestNow(c);
+  const now = editNow(c);
   const o = await s.first(`SELECT 1 FROM txn_overlay WHERE budget_id = ?1 AND txn_key = ?2`, key);
   if (!o) throw new HttpError(404, 'not_found', GONE);
   const w = [

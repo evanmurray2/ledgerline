@@ -30,3 +30,36 @@ export function requestNow(c: Context<AppEnv>): number {
   }
   return t;
 }
+
+/**
+ * The time in `x-edit-at`, or null when it is missing or not a time: a whole number of milliseconds between 2020
+ * and 2100. (An empty header would read as 0.)
+ */
+export function editAt(c: Context<AppEnv>): number | null {
+  const raw = c.req.header('x-edit-at');
+  if (!raw || !/^\d{1,16}$/.test(raw)) return null;
+  const at = Number(raw);
+  return Number.isSafeInteger(at) && at > 1_577_836_800_000 && at < 4_102_444_800_000 ? at : null;
+}
+
+/** How far back an edit's own time may lie: an edit made offline and sent later than this counts as 7 days old. */
+const EDIT_BACK_MS = 7 * 86_400_000;
+
+/**
+ * The time an edit's rows carry: when the person made the edit (docs/privacy.md 5.3: "the time the person made the
+ * edit travels with it"). An edit the phone queued says so in `x-edit-at` (its clock, corrected by its measured
+ * distance from the server's), beside its `x-edit-id`; that time is kept within the last 7 days and never later
+ * than now. So an edit made offline on the last day of a month acts on that month, and the phone, which ran the
+ * edit at that same time, already holds the rows the server writes. Any other request gets the request's time.
+ *
+ * Only the routes that change the budget read this. Sign-in, sessions, bank links and limits read `requestNow`,
+ * which a header can't move.
+ */
+export function editNow(c: Context<AppEnv>): number {
+  const now = requestNow(c);
+  const m = c.req.method;
+  if (m === 'GET' || m === 'HEAD' || !c.req.header('x-edit-id')) return now;
+  const at = editAt(c);
+  if (at === null) return now;
+  return Math.min(now, Math.max(now - EDIT_BACK_MS, at));
+}

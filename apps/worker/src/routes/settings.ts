@@ -1,6 +1,6 @@
 import type { Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
-import { requestNow } from '../http/clock.js';
+import { editNow } from '../http/clock.js';
 import { SettingsPatch, SetupStart, StartingBalances } from '@ledgerline/contracts';
 import type { AppEnv } from '../http/context.js';
 import { ACK, HttpError, parse, scoped, GONE, FAR_MONTH, inReach, thisMonth } from './api.js';
@@ -21,7 +21,7 @@ settingsRoutes.route('/', connectionsRoutes);
 settingsRoutes.post('/setup/start', async (c) => {
   const r = await parse(SetupStart, c.req.raw);
   const s = scoped(c);
-  const now = requestNow(c);
+  const now = editNow(c);
   const b = await s.first<{ budget_start_month: string | null }>(
     `SELECT budget_start_month FROM budget WHERE id = ?1`,
   );
@@ -41,7 +41,7 @@ settingsRoutes.post('/setup/start', async (c) => {
 settingsRoutes.post('/setup/starting-balances', async (c) => {
   const r = await parse(StartingBalances, c.req.raw);
   const s = scoped(c);
-  const now = requestNow(c);
+  const now = editNow(c);
   const meta = await budgetMeta(s);
   if (!meta) throw new HttpError(409, 'not_started', 'Pick the month your budget starts first.');
   const w: Stmt[] = [];
@@ -80,7 +80,7 @@ settingsRoutes.post('/setup/starting-balances', async (c) => {
 settingsRoutes.patch('/settings', async (c) => {
   const r = await parse(SettingsPatch, c.req.raw);
   const s = scoped(c);
-  const now = requestNow(c);
+  const now = editNow(c);
   const w: Stmt[] = [];
   for (const [k, v] of Object.entries(r)) {
     if (v === undefined) continue;
