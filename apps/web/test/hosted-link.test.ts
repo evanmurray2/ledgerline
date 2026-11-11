@@ -1,4 +1,5 @@
-// Hosted Link in the app (docs/privacy.md 5.7): a tab on Plaid's site, and the link finished by asking the server.
+// Hosted Link in the app (docs/privacy.md 5.7): this page goes to Plaid's site, and the link is finished by asking
+// the server.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const linkToken = vi.fn();
@@ -6,23 +7,22 @@ const linkFinish = vi.fn();
 const exchange = vi.fn();
 vi.mock('../src/api/endpoints', () => ({ api: { linkToken, linkFinish, exchange } }));
 
-const { resumeHostedLink, runPlaidLink } = await import('../src/lib/plaid');
+const { leave, LEFT_HERE_KEY, resumeHostedLink, runPlaidLink } = await import('../src/lib/plaid');
 
 const PENDING = 'ledgerline.link';
-const tab = { closed: false, location: { href: '' }, close: vi.fn(() => (tab.closed = true)) };
+let went: string[] = [];
 
 beforeEach(() => {
   vi.useFakeTimers();
   localStorage.clear();
-  tab.closed = false;
-  tab.location.href = '';
-  tab.close.mockClear();
+  sessionStorage.clear();
+  went = [];
   linkToken
     .mockReset()
     .mockResolvedValue({ linkToken: 'link-1', hostedUrl: 'https://secure.plaid.test/hl/abc' });
   linkFinish.mockReset();
   exchange.mockReset();
-  vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+  vi.spyOn(leave, 'to').mockImplementation((url) => void went.push(url));
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -30,15 +30,10 @@ afterEach(() => {
 });
 
 describe('hosted Link', () => {
-  it('opens the tab before anything is awaited, sends it to Plaid’s page, and asks the server until it is linked', async () => {
-    linkFinish
-      .mockResolvedValueOnce({ status: 'waiting' })
-      .mockResolvedValueOnce({ status: 'linked', connectionId: 'con_1' });
-    const run = runPlaidLink('new', undefined, true);
-    // Still inside the tap: the tab is open before the link token has come.
-    expect(window.open).toHaveBeenCalledWith('', '_blank');
-    expect(tab.location.href).toBe('');
-
+  it('goes to Plaid’s page only after the link token came, and remembers the session', async () => {
+    linkFinish.mockResolvedValue({ status: 'waiting' });
+    void runPlaidLink('new', undefined, true);
+    expect(went).toEqual([]);
     await vi.advanceTimersByTimeAsync(0);
     expect(linkToken).toHaveBeenCalledWith({
       mode: 'new',
@@ -46,49 +41,59 @@ describe('hosted Link', () => {
       confirmSlot: true,
       hosted: true,
     });
-    expect(tab.location.href).toBe('https://secure.plaid.test/hl/abc');
+    expect(went).toEqual(['https://secure.plaid.test/hl/abc']);
     expect(JSON.parse(localStorage.getItem(PENDING)!)).toMatchObject({ linkToken: 'link-1', mode: 'new' });
+    expect(sessionStorage.getItem(LEFT_HERE_KEY)).toBe('1');
+  });
 
+  it('a page that lives on (the Home Screen app) asks the server until the bank is linked', async () => {
+    linkFinish
+      .mockResolvedValueOnce({ status: 'waiting' })
+      .mockResolvedValueOnce({ status: 'linked', connectionId: 'con_1' });
+    const run = runPlaidLink('new', undefined, true);
     await vi.advanceTimersByTimeAsync(2500);
     expect(linkFinish).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(2500);
     await expect(run).resolves.toEqual({ status: 'linked', connectionId: 'con_1' });
     expect(linkFinish).toHaveBeenLastCalledWith({ linkToken: 'link-1', mode: 'new' });
-    expect(tab.close).toHaveBeenCalled();
     expect(localStorage.getItem(PENDING)).toBeNull();
+    expect(sessionStorage.getItem(LEFT_HERE_KEY)).toBeNull();
     // No Plaid script, and no public token ever in the app.
     expect(exchange).not.toHaveBeenCalled();
     expect(document.querySelector('script[src*="plaid"]')).toBeNull();
   });
 
-  it('a repair ends as "repaired"', async () => {
-    linkFinish.mockResolvedValue({ status: 'repaired' });
-    const run = runPlaidLink('repair', 'con_9', true);
+  it('a repair ends as "repaired", and a session the person left as "exited"', async () => {
+    linkFinish.mockResolvedValueOnce({ status: 'repaired' });
+    const repair = runPlaidLink('repair', 'con_9', true);
     await vi.advanceTimersByTimeAsync(2500);
-    await expect(run).resolves.toEqual({ status: 'repaired' });
+    await expect(repair).resolves.toEqual({ status: 'repaired' });
     expect(linkToken).toHaveBeenCalledWith({
       mode: 'repair',
       connectionId: 'con_9',
       confirmSlot: undefined,
       hosted: true,
     });
+    linkFinish.mockResolvedValueOnce({ status: 'exited' });
+    const left = runPlaidLink('new', undefined, true);
+    await vi.advanceTimersByTimeAsync(2500);
+    await expect(left).resolves.toEqual({ status: 'exited' });
   });
 
-  it('ends as "exited" when the person closes the tab and Plaid has nothing', async () => {
+  it('gives up after 30 minutes with no answer', async () => {
     linkFinish.mockResolvedValue({ status: 'waiting' });
     const run = runPlaidLink('new', undefined, true);
-    await vi.advanceTimersByTimeAsync(2500);
-    tab.closed = true;
-    await vi.advanceTimersByTimeAsync(2500 * 3);
+    await vi.advanceTimersByTimeAsync(31 * 60 * 1000);
     await expect(run).resolves.toEqual({ status: 'exited' });
     expect(localStorage.getItem(PENDING)).toBeNull();
   });
 
-  it('closes the tab and fails when the server gives no page', async () => {
+  it('goes nowhere when the server gives no page', async () => {
     linkToken.mockRejectedValue(new Error('All 10 bank links are used.'));
     await expect(runPlaidLink('new', undefined, true)).rejects.toThrow('All 10 bank links are used.');
-    expect(tab.close).toHaveBeenCalled();
+    expect(went).toEqual([]);
     expect(localStorage.getItem(PENDING)).toBeNull();
+    expect(sessionStorage.getItem(LEFT_HERE_KEY)).toBeNull();
   });
 
   it('while this page waits on its own session, a resume leaves it alone', async () => {
@@ -97,8 +102,7 @@ describe('hosted Link', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(await resumeHostedLink()).toBeNull();
     expect(linkFinish).not.toHaveBeenCalled();
-    tab.closed = true;
-    await vi.advanceTimersByTimeAsync(2500 * 4);
+    await vi.advanceTimersByTimeAsync(31 * 60 * 1000);
     await run;
   });
 });

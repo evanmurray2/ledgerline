@@ -16,11 +16,8 @@ export function LinkDoneScreen() {
     }
     // This page itself went to Plaid's site: go back into the app, which finishes the link.
     if (left) window.location.replace('/settings/connections');
-    else {
-      setHere(false);
-      // A tab the app opened closes itself. A browser refuses for a tab it didn't open, and the text below stays.
-      window.close();
-    }
+    // Another browser than the one that started (the Home Screen app shows Plaid's site in a sheet): say where to go.
+    else setHere(false);
   }, []);
   if (here) return null;
   return (
