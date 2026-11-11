@@ -62,6 +62,14 @@ export function differences(phone: Rows, server: Rows): string[] {
   return out;
 }
 
+/** All an edit can write in a copy: the synced tables, and the two that only a recording carries. */
+async function everything(e: LocalEngine): Promise<{ rows: Rows; other: string }> {
+  const other: unknown[] = [];
+  for (const t of ['audit_log', 'txn_key_move'])
+    other.push((await e.db.prepare(`SELECT * FROM ${t} ORDER BY 1`).all()).results);
+  return { rows: await rowsOf(e), other: JSON.stringify(other) };
+}
+
 const auditLine = (r: Record<string, unknown>) => [
   r.action,
   r.entity,
@@ -112,7 +120,18 @@ export async function twin(
   };
   const ran = await a.record(method, path, body, edit);
   const phone = ran.response;
-  if (c) await c.applyRows(ran.rows);
+  const undone: string[] = [];
+  if (c) {
+    // Taking an edit back out (the redo of a refused write): the third phone runs the edit itself, writes the
+    // rows as they were before it, and must be exactly as it was. Then it takes the first phone's rows.
+    const was = await everything(c);
+    const own = await c.record(method, path, body, edit);
+    await c.applyRows(own.undo);
+    const is = await everything(c);
+    for (const d of differences(is.rows, was.rows)) undone.push(`after undo: ${d}`);
+    if (is.other !== was.other) undone.push('after undo: audit_log or txn_key_move differs');
+    await c.applyRows(ran.rows);
+  }
   const server = await SELF.fetch(`${ORIGIN}${path}`, {
     method,
     headers: { ...H, 'x-edit-id': edit.id, 'x-edit-at': String(edit.at) },
@@ -120,7 +139,7 @@ export async function twin(
   });
   expect(server.status, `${method} ${path}: the server's answer`).toBe(phone.status);
   await syncPhone(b);
-  const diff = differences(await rowsOf(a), await rowsOf(b));
+  const diff = [...undone, ...differences(await rowsOf(a), await rowsOf(b))];
   if (c) {
     for (const d of differences(await rowsOf(c), await rowsOf(b))) diff.push(`recorded rows: ${d}`);
     // The two tables an edit writes that no sync carries: the copy that took the recorded rows holds what the

@@ -11,7 +11,14 @@
 import { useSyncExternalStore } from 'react';
 import { CSRF_HEADER, type Session } from '@ledgerline/contracts';
 import { connectivity } from '../state/connectivity';
-import { EngineHost, syncAll, type EngineIdentity, type SyncPage } from './host';
+import {
+  EngineHost,
+  syncAll,
+  type EngineIdentity,
+  type QueuedEdit,
+  type RowChange,
+  type SyncPage,
+} from './host';
 import { usage } from '../usage/tracker';
 import { assert, canUsePasskeys, keepsCopy, type RequestOptionsJSON } from './passkey';
 import {
@@ -580,6 +587,10 @@ interface Queued {
   path: string;
   body: unknown;
   appVersion: string;
+  /** What takes the edit back out of the copy, and the change number the copy held when it ran. Edits queued by
+   * an older version of the app have neither. */
+  undo?: RowChange[];
+  through?: number;
 }
 
 export function canEditOffline(method: string, path: string): boolean {
@@ -597,7 +608,8 @@ export async function editOffline(
   // The edit's own id and time, made before it runs: the copy runs it at that time and names its new rows from that
   // id, and the queue sends both to the server, which then makes the same rows.
   edit ??= await newEdit();
-  const r = await host!.request(method, path, body, edit);
+  const through = (await host!.state()).through;
+  const r = await host!.record(method, path, body, edit);
   const json = r.body ? (JSON.parse(r.body) as unknown) : null;
   if (r.status >= 300)
     throw Object.assign(
@@ -615,6 +627,8 @@ export async function editOffline(
     path,
     body,
     appVersion: typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev',
+    undo: r.undo,
+    through,
   });
   await host!.put('outbox', JSON.stringify(q));
   set({ queued: q.length });
@@ -637,24 +651,47 @@ export async function flush(): Promise<{ sent: number; refused: number }> {
   flushing = true;
   let sent = 0;
   let refused = 0;
+  let redownload = false;
   try {
     const q = await queued();
     while (q.length) {
       const e = q[0]!;
+      let dropped = false;
       try {
         await server(e.method, e.path, e.body, { 'x-edit-id': e.id, 'x-edit-at': String(e.at) });
         sent++;
       } catch (err) {
         if (!(err as { status?: number }).status) break; // no connection: try again later
         refused++;
+        // Take the refused edit out of the copy and run the later ones again on what is left, when that can be
+        // done exactly: every one of them ran on the copy as it still is (no sync since). Otherwise the copy is
+        // downloaded again below.
+        const now = (await host.state()).through;
+        const exact = (x: Queued): x is Queued & QueuedEdit => !!x.undo && x.through === now;
+        if (!redownload && q.every(exact)) {
+          const out = await host.dropEdit(e as Queued & QueuedEdit, q.slice(1) as (Queued & QueuedEdit)[]);
+          const undoOf = new Map(out.kept.map((k) => [k.id, k.undo]));
+          refused += out.lost.length;
+          q.splice(
+            1,
+            q.length - 1,
+            ...q
+              .slice(1)
+              .filter((x) => undoOf.has(x.id))
+              .map((x) => ({ ...x, undo: undoOf.get(x.id)! })),
+          );
+          dropped = true;
+        } else redownload = true;
       }
       q.shift();
       await host.put('outbox', JSON.stringify(q));
       set({ queued: q.length });
+      // The copy and its queue changed together: keep them together on the device.
+      if (dropped) await save();
     }
     if (refused) {
-      // The copy holds edits the server didn't take: download it again so it shows what the server has.
-      await host.clear();
+      // The copy may hold edits the server didn't take: download it again so it shows what the server has.
+      if (redownload) await host.clear();
       window.dispatchEvent(new CustomEvent('ledgerline:edits-refused', { detail: refused }));
     }
     if (sent || refused) await syncNow();

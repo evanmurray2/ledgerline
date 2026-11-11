@@ -159,19 +159,29 @@ export async function migrateLocal(
   await db.batch([
     ...PHONE_TABLES.map((sql) => db.prepare(sql)),
     db.prepare(`CREATE TABLE IF NOT EXISTS local_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)`),
-    // The rows one edit changed, while the engine records it (LocalEngine.record): one line per changed row, in the
-    // order of its last change.
+  ]);
+  // What one edit changed, while the engine records it (LocalEngine.record): one line per changed row, with the
+  // row as it was before the edit first touched it (`had` 0: there was none). Nothing is kept here between edits,
+  // so the table and its triggers are made again at each open: a migration may have added a column.
+  const columns = new Map<string, string[]>();
+  for (const t of RECORDED_TABLES) {
+    const info = await db.prepare(`SELECT name FROM pragma_table_info('${t.name}')`).all<{ name: string }>();
+    columns.set(
+      t.name,
+      info.results.map((c) => c.name).filter((c) => !t.omit?.includes(c)),
+    );
+  }
+  await db.batch([
+    db.prepare(`DROP TABLE IF EXISTS edit_change`),
     db.prepare(
-      `CREATE TABLE IF NOT EXISTS edit_change (
-         tbl TEXT NOT NULL, pk TEXT NOT NULL, n INTEGER NOT NULL, deleted INTEGER NOT NULL, PRIMARY KEY (tbl, pk)
+      `CREATE TABLE edit_change (
+         tbl TEXT NOT NULL, pk TEXT NOT NULL, n INTEGER NOT NULL, deleted INTEGER NOT NULL,
+         had INTEGER NOT NULL, before TEXT, PRIMARY KEY (tbl, pk)
        ) WITHOUT ROWID`,
     ),
-  ]);
-  await db.batch([
-    ...RECORDED_TABLES.flatMap((t) => recordTriggers(t)).map((sql) => db.prepare(sql)),
+    ...RECORDED_TABLES.flatMap((t) => recordTriggers(t, columns.get(t.name)!)).map((sql) => db.prepare(sql)),
     // A copy closed in the middle of a recording starts with it off.
     db.prepare(`DELETE FROM local_state WHERE key = 'recording'`),
-    db.prepare(`DELETE FROM edit_change`),
   ]);
 }
 
@@ -191,21 +201,57 @@ export const RECORDED_TABLES: readonly SyncTable[] = [
 const RECORDING = `(SELECT value FROM local_state WHERE key = 'recording') = '1'`;
 
 /**
- * The copy's own triggers for one table: the shape of the server's change-log triggers (sync-tables.ts triggerSql),
- * but into `edit_change`, and only while an edit is being recorded.
+ * The copy's own triggers for one table. They write into `edit_change`, only while an edit is being recorded: the
+ * row's key, whether it is gone now, and the row as it was before this edit first touched it (kept from the first
+ * touch: a later change to the same row in the same edit doesn't replace it).
  */
-function recordTriggers(t: SyncTable): string[] {
+function recordTriggers(t: SyncTable, columns: readonly string[]): string[] {
   const pk = (row: 'NEW' | 'OLD') => `json_array(${t.pk.map((c) => `${row}.${c}`).join(', ')})`;
-  const log = (row: 'NEW' | 'OLD', deleted: 0 | 1) =>
-    `INSERT INTO edit_change (tbl, pk, n, deleted) VALUES ('${t.name}', ${pk(row)}, (SELECT coalesce(max(n), 0) + 1 FROM edit_change), ${deleted}) ON CONFLICT (tbl, pk) DO UPDATE SET n = excluded.n, deleted = ${deleted};`;
+  const old = `json_object(${columns.map((c) => `'${c}', OLD.${c}`).join(', ')})`;
+  const n = `(SELECT coalesce(max(n), 0) + 1 FROM edit_change)`;
+  const log = (row: 'NEW' | 'OLD', deleted: 0 | 1, had: 0 | 1) =>
+    `INSERT INTO edit_change (tbl, pk, n, deleted, had, before) VALUES ('${t.name}', ${pk(row)}, ${n}, ${deleted}, ${had}, ${had ? old : 'NULL'}) ON CONFLICT (tbl, pk) DO UPDATE SET n = excluded.n, deleted = ${deleted};`;
   const moved = t.pk.map((c) => `OLD.${c} IS NOT NEW.${c}`).join(' OR ');
   const name = (kind: string) => `${t.name}_rec_${kind}`;
+  const make = (kind: string, when: string, body: string) =>
+    [
+      `DROP TRIGGER IF EXISTS ${name(kind)}`,
+      `CREATE TRIGGER ${name(kind)} AFTER ${when} ON ${t.name} WHEN ${RECORDING}`,
+    ].join(';;') + ` ${body}`;
   return [
-    `CREATE TRIGGER IF NOT EXISTS ${name('ins')} AFTER INSERT ON ${t.name} WHEN ${RECORDING} BEGIN ${log('NEW', 0)} END`,
-    `CREATE TRIGGER IF NOT EXISTS ${name('upd')} AFTER UPDATE ON ${t.name} WHEN ${RECORDING} BEGIN ${log('NEW', 0)} END`,
-    `CREATE TRIGGER IF NOT EXISTS ${name('key')} AFTER UPDATE OF ${t.pk.join(', ')} ON ${t.name} WHEN ${RECORDING} AND (${moved}) BEGIN ${log('OLD', 1)} END`,
-    `CREATE TRIGGER IF NOT EXISTS ${name('del')} AFTER DELETE ON ${t.name} WHEN ${RECORDING} BEGIN ${log('OLD', 1)} END`,
-  ];
+    make('ins', 'INSERT', `BEGIN ${log('NEW', 0, 0)} END`),
+    make('upd', 'UPDATE', `AND NOT (${moved}) BEGIN ${log('NEW', 0, 1)} END`),
+    // A changed primary key: the old key's row is gone, and the new key had no row.
+    make('key', 'UPDATE', `AND (${moved}) BEGIN ${log('OLD', 1, 1)} ${log('NEW', 0, 0)} END`),
+    make('del', 'DELETE', `BEGIN ${log('OLD', 1, 1)} END`),
+  ].flatMap((sql) => {
+    const [drop, create] = sql.split(';;');
+    return [drop!, create!];
+  });
+}
+
+/** An edit the engine ran and recorded. */
+export interface Recorded {
+  response: Response;
+  /** The rows the edit changed, as they are after it. */
+  rows: SyncRow[];
+  /**
+   * The same rows as they were before it, newest change first: written with `applyRows`, they take the edit back
+   * out of the copy (the redo of a refused write, docs/privacy.md 5.3).
+   */
+  undo: SyncRow[];
+}
+
+/** An edit kept on the device until the server takes it, with what takes it back out of the copy. */
+export interface QueuedEdit {
+  id: string;
+  at: number;
+  method: string;
+  path: string;
+  body: unknown;
+  undo: SyncRow[];
+  /** The change number the copy held when the edit ran: its `undo` is good only while the copy still holds it. */
+  through: number;
 }
 
 export class LocalEngine {
@@ -565,8 +611,32 @@ export class LocalEngine {
     path: string,
     body: unknown,
     edit: { id: string; at: number },
-  ): Promise<{ response: Response; rows: SyncRow[] }> {
+  ): Promise<Recorded> {
     return this.run(method, path, body, edit, true);
+  }
+
+  /**
+   * The server refused a queued edit. Takes it out of the copy, with every edit queued after it (they ran on top
+   * of it), then runs those later edits again in order. An edit that no longer passes its route's own checks
+   * (it changed a row the refused edit made) is `lost`; the others are `kept`, with what takes them out now.
+   * The caller checks first that every one of these edits was recorded at the change number the copy holds now:
+   * after a sync, the rows as they were before an edit are no longer what the server has.
+   */
+  async dropEdit(
+    refused: QueuedEdit,
+    later: readonly QueuedEdit[],
+  ): Promise<{ kept: QueuedEdit[]; lost: QueuedEdit[] }> {
+    for (const e of [...later].reverse()) await this.applyRows(e.undo);
+    await this.applyRows(refused.undo);
+    const kept: QueuedEdit[] = [];
+    const lost: QueuedEdit[] = [];
+    for (const e of later) {
+      const r = await this.record(e.method, e.path, e.body, { id: e.id, at: e.at });
+      if (r.response.status < 300) kept.push({ ...e, undo: r.undo });
+      else lost.push(e);
+    }
+    if (await this.needsDerive()) await this.derive();
+    return { kept, lost };
   }
 
   /** Writes rows another copy recorded, and marks what derive() must work out again. */
@@ -587,12 +657,16 @@ export class LocalEngine {
       .bind(on ? '1' : '0');
   }
 
-  /** The rows named in `edit_change`, as they are now, in the order they last changed. */
-  private async recorded(): Promise<SyncRow[]> {
+  /**
+   * The rows named in `edit_change`, as they are now, in the order they last changed; and what puts each back as it
+   * was, newest change first.
+   */
+  private async recorded(): Promise<{ rows: SyncRow[]; undo: SyncRow[] }> {
     const changes = await this.db
-      .prepare(`SELECT tbl, pk, deleted FROM edit_change ORDER BY n`)
-      .all<{ tbl: string; pk: string; deleted: number }>();
+      .prepare(`SELECT tbl, pk, deleted, had, before FROM edit_change ORDER BY n`)
+      .all<{ tbl: string; pk: string; deleted: number; had: number; before: string | null }>();
     const rows: SyncRow[] = [];
+    const undo: SyncRow[] = [];
     for (const ch of changes.results) {
       const t = RECORDED_TABLES.find((x) => x.name === ch.tbl)!;
       const k = JSON.parse(ch.pk) as unknown[];
@@ -605,8 +679,13 @@ export class LocalEngine {
           .first<Record<string, unknown>>();
       }
       rows.push({ t: t.name, k, d });
+      undo.unshift({
+        t: t.name,
+        k,
+        d: ch.had && ch.before ? (JSON.parse(ch.before) as Record<string, unknown>) : null,
+      });
     }
-    return rows;
+    return { rows, undo };
   }
 
   private async run(
@@ -615,21 +694,21 @@ export class LocalEngine {
     body: unknown,
     edit: { id: string; at: number } | undefined,
     record: boolean,
-  ): Promise<{ response: Response; rows: SyncRow[] }> {
+  ): Promise<Recorded> {
     const now = edit?.at ?? (await this.now());
     const mutation = method !== 'GET' && method !== 'HEAD';
-    let rows: SyncRow[] = [];
+    let rec: { rows: SyncRow[]; undo: SyncRow[] } = { rows: [], undo: [] };
     let r: Response;
     if (record) {
       await this.db.batch([this.db.prepare(`DELETE FROM edit_change`), this.recording(true)]);
       try {
         r = await this.route(method, path, body, now, mutation, edit);
-        rows = await this.recorded();
+        rec = await this.recorded();
       } finally {
         await this.db.batch([this.recording(false), this.db.prepare(`DELETE FROM edit_change`)]);
       }
     } else r = await this.route(method, path, body, now, mutation, edit);
-    return { response: await this.afterEdit(method, path, body, mutation, r), rows };
+    return { response: await this.afterEdit(method, path, body, mutation, r), ...rec };
   }
 
   private async afterEdit(
