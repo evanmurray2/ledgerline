@@ -1,6 +1,6 @@
 // A budget's store at the end of its account's life (D-75, docs/open-signup.md 10, 12): its name and banks for the
 // delete check, an admin turning the account off or on, and the wipe for the user's own explicit delete.
-import { BUDGET_MIGRATIONS } from './migrations.gen.js';
+import { BUDGET_STORE_MIGRATIONS } from './migrations.gen.js';
 import { migrate } from './migrate.js';
 import { ensureRecurring } from './budget-jobs.js';
 import type { Enqueue } from './budget-jobs.js';
@@ -11,7 +11,9 @@ export const DISABLED_KEY = 'disabled';
 export function budgetInfo(storage: DurableObjectStorage): { name: string; banks: number } {
   const b = storage.sql.exec(`SELECT name FROM budget LIMIT 1`).toArray()[0];
   const n = storage.sql
-    .exec(`SELECT count(*) AS n FROM connection WHERE provider = 'plaid' AND removed_at IS NULL`)
+    // From bank_link (docs/privacy.md 5.5): a sealed budget's `connection` is empty, and a budget with live Items
+    // must never look as if it had none (it could be wiped).
+    .exec(`SELECT count(*) AS n FROM bank_link WHERE provider = 'plaid'`)
     .one() as { n: number };
   return { name: typeof b?.name === 'string' ? b.name : '', banks: Number(n.n) };
 }
@@ -50,6 +52,6 @@ export async function wipeStore(
   if (has && budgetInfo(storage).banks > 0) return { ok: false, why: 'banks' };
   await storage.deleteAlarm();
   await storage.deleteAll();
-  migrate(storage, BUDGET_MIGRATIONS, Date.now());
+  migrate(storage, BUDGET_STORE_MIGRATIONS, Date.now());
   return { ok: true };
 }

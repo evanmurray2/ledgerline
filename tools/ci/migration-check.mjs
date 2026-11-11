@@ -9,19 +9,33 @@ import { execFileSync } from 'node:child_process';
 import { nonExpanding } from './expand-only.mjs';
 
 execFileSync('node', ['tools/db/gen-store-migrations.mjs', '--check'], { stdio: 'inherit' });
-for (const dir of ['packages/db/directory-migrations', 'packages/db/budget-migrations']) {
+for (const dir of [
+  'packages/db/directory-migrations',
+  'packages/db/budget-migrations',
+  'packages/db/store-migrations',
+]) {
   const mine = readdirSync(dir)
     .filter((f) => f.endsWith('.sql'))
     .sort();
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys = ON');
+  // A BudgetStore's own tables sit beside the budget's: its migrations run after the budget's (migrations.gen.ts).
+  if (dir.endsWith('store-migrations'))
+    for (const f of readdirSync('packages/db/budget-migrations')
+      .filter((x) => x.endsWith('.sql'))
+      .sort())
+      db.exec(readFileSync(`packages/db/budget-migrations/${f}`, 'utf8'));
   for (const f of mine) db.exec(readFileSync(`${dir}/${f}`, 'utf8'));
   if (db.prepare('PRAGMA foreign_key_check').all().length)
     throw new Error(`${dir}: foreign key check failed`);
   let released = [];
   try {
     const ref = process.env.BASE_REF ?? 'origin/main';
-    released = execFileSync('git', ['ls-tree', '--name-only', `${ref}:${dir}`], { encoding: 'utf8' })
+    // A folder that isn't on the base branch yet has no released files (git says so on stderr: not shown).
+    released = execFileSync('git', ['ls-tree', '--name-only', `${ref}:${dir}`], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
       .split('\n')
       .filter((f) => f.endsWith('.sql'));
     for (const f of released) {
