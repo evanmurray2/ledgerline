@@ -1,5 +1,6 @@
 // The twin check (docs/privacy.md 5.3): one edit, run on a phone's copy and on the server with the same edit id and
-// time, must leave the same rows on both sides. A second phone, which never runs the edit, syncs the server's rows;
+// time, must leave the same rows on both sides. The rows the phone recorded for the edit, written to a third copy,
+// must give the same again. A second phone, which never runs the edit, syncs the server's rows;
 // the two copies are then compared table by table.
 import { SELF } from 'cloudflare:test';
 import { expect } from 'vitest';
@@ -65,6 +66,8 @@ export interface Twin {
   phone: Response;
   server: Response;
   differences: string[];
+  /** How many rows the phone recorded for the edit. */
+  recorded: number;
 }
 
 /**
@@ -76,6 +79,11 @@ export async function twin(
   method: string,
   path: string,
   body: unknown,
+  /**
+   * A third phone, which neither runs the edit nor syncs it: it writes only the rows the first phone recorded for
+   * the edit (LocalEngine.record), as a device will apply a log entry. It must end with the same rows too.
+   */
+  c?: LocalEngine,
 ): Promise<Twin> {
   // As the app makes them (apps/web/src/copy/copy.ts editOffline): the time is this device's clock, corrected by
   // how far it is from the server's.
@@ -85,7 +93,9 @@ export async function twin(
     id: crypto.randomUUID().replace(/-/g, ''),
     at: Date.now() + (await a.state()).offset - 60_000,
   };
-  const phone = await a.request(method, path, body, edit);
+  const ran = await a.record(method, path, body, edit);
+  const phone = ran.response;
+  if (c) await c.applyRows(ran.rows);
   const server = await SELF.fetch(`${ORIGIN}${path}`, {
     method,
     headers: { ...H, 'x-edit-id': edit.id, 'x-edit-at': String(edit.at) },
@@ -93,5 +103,7 @@ export async function twin(
   });
   expect(server.status, `${method} ${path}: the server's answer`).toBe(phone.status);
   await syncPhone(b);
-  return { phone, server, differences: differences(await rowsOf(a), await rowsOf(b)) };
+  const diff = differences(await rowsOf(a), await rowsOf(b));
+  if (c) for (const d of differences(await rowsOf(c), await rowsOf(b))) diff.push(`recorded rows: ${d}`);
+  return { phone, server, differences: diff, recorded: ran.rows.length };
 }

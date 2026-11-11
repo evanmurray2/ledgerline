@@ -24,7 +24,7 @@ import { clearTotals } from '../ledger/totals.js';
 import { checkIdentityDb } from '../maintenance.js';
 import { splitStatements } from '../store/adapter.js';
 import { BUDGET_MIGRATIONS } from '../store/migrations.gen.js';
-import { SYNC_FORMAT, SYNC_TABLES, triggerNames } from '../sync-tables.js';
+import { SYNC_FORMAT, SYNC_TABLES, triggerNames, type SyncTable } from '../sync-tables.js';
 import type { SyncPage, SyncRow } from '../routes/sync.js';
 import { CSRF_HEADER } from '@ledgerline/contracts';
 
@@ -159,7 +159,41 @@ export async function migrateLocal(
   await db.batch([
     ...PHONE_TABLES.map((sql) => db.prepare(sql)),
     db.prepare(`CREATE TABLE IF NOT EXISTS local_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)`),
+    // The rows one edit changed, while the engine records it (LocalEngine.record): one line per changed row, in the
+    // order of its last change.
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS edit_change (
+         tbl TEXT NOT NULL, pk TEXT NOT NULL, n INTEGER NOT NULL, deleted INTEGER NOT NULL, PRIMARY KEY (tbl, pk)
+       ) WITHOUT ROWID`,
+    ),
   ]);
+  await db.batch([
+    ...SYNC_TABLES.flatMap((t) => recordTriggers(t)).map((sql) => db.prepare(sql)),
+    // A copy closed in the middle of a recording starts with it off.
+    db.prepare(`DELETE FROM local_state WHERE key = 'recording'`),
+    db.prepare(`DELETE FROM edit_change`),
+  ]);
+}
+
+/** Set while the engine records an edit; the triggers below write nothing at any other time (a sync, derive()). */
+const RECORDING = `(SELECT value FROM local_state WHERE key = 'recording') = '1'`;
+
+/**
+ * The copy's own triggers for one table: the shape of the server's change-log triggers (sync-tables.ts triggerSql),
+ * but into `edit_change`, and only while an edit is being recorded.
+ */
+function recordTriggers(t: SyncTable): string[] {
+  const pk = (row: 'NEW' | 'OLD') => `json_array(${t.pk.map((c) => `${row}.${c}`).join(', ')})`;
+  const log = (row: 'NEW' | 'OLD', deleted: 0 | 1) =>
+    `INSERT INTO edit_change (tbl, pk, n, deleted) VALUES ('${t.name}', ${pk(row)}, (SELECT coalesce(max(n), 0) + 1 FROM edit_change), ${deleted}) ON CONFLICT (tbl, pk) DO UPDATE SET n = excluded.n, deleted = ${deleted};`;
+  const moved = t.pk.map((c) => `OLD.${c} IS NOT NEW.${c}`).join(' OR ');
+  const name = (kind: string) => `${t.name}_rec_${kind}`;
+  return [
+    `CREATE TRIGGER IF NOT EXISTS ${name('ins')} AFTER INSERT ON ${t.name} WHEN ${RECORDING} BEGIN ${log('NEW', 0)} END`,
+    `CREATE TRIGGER IF NOT EXISTS ${name('upd')} AFTER UPDATE ON ${t.name} WHEN ${RECORDING} BEGIN ${log('NEW', 0)} END`,
+    `CREATE TRIGGER IF NOT EXISTS ${name('key')} AFTER UPDATE OF ${t.pk.join(', ')} ON ${t.name} WHEN ${RECORDING} AND (${moved}) BEGIN ${log('OLD', 1)} END`,
+    `CREATE TRIGGER IF NOT EXISTS ${name('del')} AFTER DELETE ON ${t.name} WHEN ${RECORDING} BEGIN ${log('OLD', 1)} END`,
+  ];
 }
 
 export class LocalEngine {
@@ -505,9 +539,94 @@ export class LocalEngine {
      */
     edit?: { id: string; at: number },
   ): Promise<Response> {
+    return (await this.run(method, path, body, edit, false)).response;
+  }
+
+  /**
+   * Runs an edit and gives the rows it changed, as they are after it: what a log entry for the edit holds
+   * (docs/privacy.md 5.3: an entry is results, not operations). Another copy that writes these rows with
+   * `applyRows` has the edit without running it. Only the edit's own writes are recorded, not what derive() works
+   * out from them. Covers the tables the phone syncs today (SYNC_TABLES).
+   */
+  async record(
+    method: string,
+    path: string,
+    body: unknown,
+    edit: { id: string; at: number },
+  ): Promise<{ response: Response; rows: SyncRow[] }> {
+    return this.run(method, path, body, edit, true);
+  }
+
+  /** Writes rows another copy recorded, and marks what derive() must work out again. */
+  async applyRows(rows: SyncRow[]): Promise<void> {
+    const todo = await this.pendingDerive();
+    await this.noteChanges(rows, todo);
+    const stmts: Stmt[] = [this.db.prepare(`PRAGMA defer_foreign_keys = ON`)];
+    for (const r of rows) stmts.push(...this.rowStatements(r));
+    stmts.push(this.setPendingDerive(todo));
+    for (const part of chunks(stmts, 500)) await this.db.batch(part);
+  }
+
+  private recording(on: boolean): Stmt {
+    return this.db
+      .prepare(
+        `INSERT INTO local_state (key, value) VALUES ('recording', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+      )
+      .bind(on ? '1' : '0');
+  }
+
+  /** The rows named in `edit_change`, as they are now, in the order they last changed. */
+  private async recorded(): Promise<SyncRow[]> {
+    const changes = await this.db
+      .prepare(`SELECT tbl, pk, deleted FROM edit_change ORDER BY n`)
+      .all<{ tbl: string; pk: string; deleted: number }>();
+    const rows: SyncRow[] = [];
+    for (const ch of changes.results) {
+      const t = SYNC_TABLES.find((x) => x.name === ch.tbl)!;
+      const k = JSON.parse(ch.pk) as unknown[];
+      let d: Record<string, unknown> | null = null;
+      if (!ch.deleted) {
+        const where = t.pk.map((c, i) => `${c} = ?${i + 1}`).join(' AND ');
+        d = await this.db
+          .prepare(`SELECT * FROM ${t.name} WHERE ${where}`)
+          .bind(...k)
+          .first<Record<string, unknown>>();
+      }
+      rows.push({ t: t.name, k, d });
+    }
+    return rows;
+  }
+
+  private async run(
+    method: string,
+    path: string,
+    body: unknown,
+    edit: { id: string; at: number } | undefined,
+    record: boolean,
+  ): Promise<{ response: Response; rows: SyncRow[] }> {
     const now = edit?.at ?? (await this.now());
     const mutation = method !== 'GET' && method !== 'HEAD';
-    const r = await this.route(method, path, body, now, mutation, edit);
+    let rows: SyncRow[] = [];
+    let r: Response;
+    if (record) {
+      await this.db.batch([this.db.prepare(`DELETE FROM edit_change`), this.recording(true)]);
+      try {
+        r = await this.route(method, path, body, now, mutation, edit);
+        rows = await this.recorded();
+      } finally {
+        await this.db.batch([this.recording(false), this.db.prepare(`DELETE FROM edit_change`)]);
+      }
+    } else r = await this.route(method, path, body, now, mutation, edit);
+    return { response: await this.afterEdit(method, path, body, mutation, r), rows };
+  }
+
+  private async afterEdit(
+    method: string,
+    path: string,
+    body: unknown,
+    mutation: boolean,
+    r: Response,
+  ): Promise<Response> {
     if (!mutation || r.status >= 300) return r;
     const todo = await this.pendingDerive();
     noteEdit(method, path, body, todo);
