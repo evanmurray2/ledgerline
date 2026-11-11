@@ -90,6 +90,17 @@ export interface Connection {
 export interface LinkSession {
   linkToken: string;
   expiration: string;
+  /** The page on the provider's own site where the person links the bank, when one was asked for. */
+  hostedUrl?: string;
+}
+
+/**
+ * Where a hosted Link session stands. `publicTokens` holds one token for each bank the person linked; a repair
+ * (update mode) finishes with none.
+ */
+export interface LinkResult {
+  state: 'waiting' | 'exited' | 'finished';
+  publicTokens: string[];
 }
 
 export interface CompletedLink {
@@ -124,7 +135,11 @@ export interface BankDataProvider {
     mode: 'new' | 'repair';
     accessToken?: string;
     userId: string;
+    /** Link on the provider's own site, with no provider script in the app. The person comes back to this address. */
+    hosted?: { completionUrl: string };
   }): Promise<LinkSession>;
+  /** What a hosted Link session came to. The app finishes a link by asking, not by trusting where the browser lands. */
+  linkResult(linkToken: string): Promise<LinkResult>;
   completeLink(publicToken: string): Promise<CompletedLink>;
   /** One raw page; the apply step parses it later with parsePage(). */
   fetchSyncPage(conn: Connection, cursor: string | null, count: number): Promise<StagedPage>;

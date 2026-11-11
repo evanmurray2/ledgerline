@@ -1,5 +1,5 @@
 // Settings → Bank connections: the Item meter, Link with a confirm step, Finish setup.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/endpoints';
 import { qk, useAccounts, useConnections, useSession } from '../../api/hooks';
@@ -19,7 +19,7 @@ import {
 } from '../../components/ui';
 import { syncedLabel } from '../../lib/dates';
 import { useScreen } from '../../lib/common';
-import { runPlaidLink } from '../../lib/plaid';
+import { resumeHostedLink, runPlaidLink } from '../../lib/plaid';
 import { usage } from '../../usage/tracker';
 import { useCanWrite } from '../../state/connectivity';
 import { Page } from './common';
@@ -58,6 +58,7 @@ export function LinkMeter({ used, limit }: { used: number; limit: number }) {
 export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label?: string }) {
   const conns = useConnections();
   const qc = useQueryClient();
+  const hosted = useSession().data?.hostedLink === true;
   const [step, setStep] = useState<'idle' | 'confirm' | 'linking' | 'done'>('idle');
   const [error, setError] = useState<unknown>(null);
   const canWrite = useCanWrite();
@@ -69,7 +70,7 @@ export function LinkBankFlow({ onLinked, label }: { onLinked?: () => void; label
     setStep('linking');
     setError(null);
     try {
-      const r = await runPlaidLink('new');
+      const r = await runPlaidLink('new', undefined, hosted);
       if (r.status === 'exited') return setStep('idle');
       await Promise.all([
         qc.invalidateQueries({ queryKey: qk.connections }),
@@ -166,8 +167,40 @@ function FinishSetup({ id, institution }: { id: string; institution: string }) {
   );
 }
 
+/**
+ * Hosted Link that left this page for Plaid's site, or outlived the app: on the way back in, ask the server what it
+ * came to and say so.
+ */
+function useResumeLink() {
+  const qc = useQueryClient();
+  useEffect(() => {
+    let gone = false;
+    void (async () => {
+      try {
+        const r = await resumeHostedLink();
+        if (!r || gone || r.status === 'exited') return;
+        if (r.status === 'repaired' && r.connectionId) await api.refreshConnection(r.connectionId);
+        toast.show({
+          text:
+            r.status === 'linked'
+              ? 'Linked. Transactions show up in Activity in a few minutes.'
+              : 'Signed in again. Its transactions are on the way.',
+        });
+      } catch (e) {
+        if (!gone) toast.show({ text: errorMessage(e) });
+      } finally {
+        if (!gone) void qc.invalidateQueries();
+      }
+    })();
+    return () => {
+      gone = true;
+    };
+  }, [qc]);
+}
+
 export function ConnectionsScreen() {
   useScreen('settings.connections');
+  useResumeLink();
   const q = useConnections();
   const session = useSession();
   const accounts = useAccounts();

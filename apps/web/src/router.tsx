@@ -28,6 +28,7 @@ import { RenamePayeeFromTxn, SplitScreen, TxnSheetScreen } from './screens/TxnSh
 import { AddTxnScreen, CheckPendingScreen, MatchScreen, TransferScreen } from './screens/ActivitySheets';
 import { AccountsScreen, RegisterScreen, RepairScreen } from './screens/Accounts';
 import { AddDeviceScreen, ReauthDialog, SignInScreen } from './screens/Auth';
+import { LinkDoneScreen } from './screens/LinkDone';
 import { ApiError } from './api/client';
 import { checkSaved, getCopy, onCopyChanged, start as startCopy, syncNow, flush, useCopy } from './copy/copy';
 import { CopyScreen } from './screens/Copy';
@@ -140,6 +141,7 @@ function Root() {
 
   const setupPath = path.startsWith('/setup') || path.startsWith('/welcome');
   if (path === '/add-device') return <AddDeviceScreen />;
+  if (path === '/link-done') return <LinkDoneScreen />;
   const unreachable = session.error instanceof ApiError && session.error.network;
   if (!s && unreachable && copy.hasSaved && copy.status !== 'ready')
     return (
@@ -208,6 +210,13 @@ const indexRoute = createRoute({
 const addDeviceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/add-device',
+  component: () => null,
+});
+
+// Root renders this one itself too: Plaid's site sends the person here after hosted Link.
+const linkDoneRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/link-done',
   component: () => null,
 });
 
@@ -521,6 +530,7 @@ const routeTree = rootRoute.addChildren([
   settingsRoute.addChildren([
     appearanceRoute,
     deviceCheckRoute,
+    linkDoneRoute,
     privacyRoute,
     oldCategoriesRoute,
     oldCategoryRoute,

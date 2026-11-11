@@ -47,7 +47,18 @@ export type LinkOutcome =
  * Gets a link token, opens Plaid Link and, for a new link, exchanges the public token. Repair (update mode)
  * keeps the same Item, so there's nothing to exchange; the caller refreshes the connection afterwards.
  */
-export async function runPlaidLink(mode: 'new' | 'repair', connectionId?: string): Promise<LinkOutcome> {
+export function runPlaidLink(
+  mode: 'new' | 'repair',
+  connectionId?: string,
+  /** The session's `hostedLink`: link on Plaid's own site, with no Plaid script in the app. */
+  hosted = false,
+): Promise<LinkOutcome> {
+  // Called straight from a tap, with nothing awaited before it: hosted Link opens a tab, which a browser allows only
+  // while it is still handling the tap.
+  return hosted ? runHostedLink(mode, connectionId) : runScriptLink(mode, connectionId);
+}
+
+async function runScriptLink(mode: 'new' | 'repair', connectionId?: string): Promise<LinkOutcome> {
   const { linkToken } = await api.linkToken({
     mode,
     connectionId,
@@ -82,4 +93,131 @@ function openLink(token: string): Promise<string | null> {
         handler.open();
       }),
   );
+}
+
+// ------------------------------------------------------------------ hosted Link (docs/privacy.md 5.7)
+// The person links the bank on Plaid's own site, in another tab, and no Plaid script runs in the app. The app
+// finishes the link by asking the server what the session came to, never by trusting where a browser lands.
+
+const PENDING_KEY = 'ledgerline.link';
+/** Set in the tab that left for Plaid's site, so `/link-done` knows to come back into the app. */
+export const LEFT_HERE_KEY = 'ledgerline.link.left';
+/** How long a session on Plaid's site may take: its link token lasts 30 minutes. */
+const HOSTED_MS = 30 * 60 * 1000;
+const POLL_MS = 2500;
+
+interface PendingLink {
+  linkToken: string;
+  mode: 'new' | 'repair';
+  connectionId?: string;
+  at: number;
+}
+
+function readPending(): PendingLink | null {
+  try {
+    const p = JSON.parse(localStorage.getItem(PENDING_KEY) ?? 'null') as PendingLink | null;
+    if (!p || typeof p.linkToken !== 'string' || Date.now() - p.at > HOSTED_MS) return null;
+    return p;
+  } catch {
+    return null;
+  }
+}
+function writePending(p: PendingLink | null): void {
+  try {
+    if (p) localStorage.setItem(PENDING_KEY, JSON.stringify(p));
+    else localStorage.removeItem(PENDING_KEY);
+  } catch {
+    // Storage is off (private mode): the link still finishes while this page stays open.
+  }
+}
+
+/** Waits `ms`, or less when the person comes back to this page. */
+function waitOrReturn(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      resolve();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') done();
+    };
+    const timer = setTimeout(done, ms);
+    document.addEventListener('visibilitychange', onVisible);
+  });
+}
+
+/** True while this page waits on a session it started: `resumeHostedLink` then leaves it alone. */
+let waiting = false;
+
+async function runHostedLink(mode: 'new' | 'repair', connectionId?: string): Promise<LinkOutcome> {
+  waiting = true;
+  try {
+    return await hostedLink(mode, connectionId);
+  } finally {
+    waiting = false;
+  }
+}
+
+async function hostedLink(mode: 'new' | 'repair', connectionId?: string): Promise<LinkOutcome> {
+  // Before anything is awaited: a tab opened later is blocked as a pop-up.
+  const tab = window.open('', '_blank');
+  let pending: PendingLink;
+  try {
+    const { linkToken, hostedUrl } = await api.linkToken({
+      mode,
+      connectionId,
+      confirmSlot: mode === 'new' ? true : undefined,
+      hosted: true,
+    });
+    if (!hostedUrl) throw new Error(LOAD_FAILED);
+    pending = { linkToken, mode, connectionId, at: Date.now() };
+    writePending(pending);
+    if (tab) tab.location.href = hostedUrl;
+    else {
+      // No new tab (the Home Screen app): this page goes to Plaid's site, and `resumeHostedLink` finishes on return.
+      try {
+        sessionStorage.setItem(LEFT_HERE_KEY, '1');
+      } catch {
+        // Without it, /link-done says to go back to Ledgerline, which still works.
+      }
+      window.location.assign(hostedUrl);
+      return await new Promise<LinkOutcome>(() => undefined);
+    }
+  } catch (e) {
+    tab?.close();
+    throw e;
+  }
+  let closedPolls = 0;
+  for (;;) {
+    await waitOrReturn(POLL_MS);
+    const r = await api.linkFinish({ linkToken: pending.linkToken, mode });
+    if (r.status !== 'waiting') {
+      writePending(null);
+      if (!tab.closed) tab.close();
+      return r.status === 'linked'
+        ? { status: 'linked', connectionId: r.connectionId }
+        : { status: r.status };
+    }
+    // The tab is gone and Plaid still has nothing after two more asks, or the time is up: the person left.
+    if (tab.closed) closedPolls++;
+    if (closedPolls > 2 || Date.now() - pending.at > HOSTED_MS) {
+      writePending(null);
+      return { status: 'exited' };
+    }
+  }
+}
+
+/**
+ * A hosted Link session this browser started and has not finished here: the page went to Plaid's site and came back,
+ * or the app was closed meanwhile. Asks the server once. Null when there is none, or the person is still at Plaid.
+ */
+export async function resumeHostedLink(): Promise<(LinkOutcome & { connectionId?: string }) | null> {
+  const pending = readPending();
+  if (!pending || waiting) return null;
+  const r = await api.linkFinish({ linkToken: pending.linkToken, mode: pending.mode });
+  if (r.status === 'waiting') return null;
+  writePending(null);
+  if (r.status === 'linked') return { status: 'linked', connectionId: r.connectionId };
+  return { status: r.status, connectionId: pending.connectionId };
 }

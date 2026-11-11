@@ -33,6 +33,8 @@ export const Session = z.object({
   settings: z.object({ tracking: z.boolean(), noteButton: z.boolean() }),
   /** Whether this user may link a new bank (D-75: admins only on Plaid Trial). Older Workers omit it: true. */
   canLinkBanks: z.boolean().optional(),
+  /** Banks are linked on Plaid's own site, with no Plaid script in the app (docs/privacy.md 5.7). */
+  hostedLink: z.boolean().optional(),
   /** When this user's recovery code was used, while the notice shows (14 days, D-75); null otherwise. */
   recoveryNoticeAt: z.string().nullable().optional(),
 });
@@ -630,8 +632,22 @@ export const LinkTokenRequest = z.object({
   mode: z.enum(['new', 'repair']),
   connectionId: id.optional(),
   confirmSlot: z.boolean().optional(),
+  /** Link on Plaid's own site (docs/privacy.md 5.7): the answer then holds the page's address. */
+  hosted: z.boolean().optional(),
 });
 export const LinkExchange = z.object({ publicToken: z.string().min(1).max(400) });
+/** Asks the server what a hosted Link session came to, and finishes the link if the person did. */
+export const LinkFinish = z.object({
+  linkToken: z.string().min(1).max(400),
+  mode: z.enum(['new', 'repair']),
+});
+export const LinkFinishResult = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('waiting') }),
+  z.object({ status: z.literal('exited') }),
+  z.object({ status: z.literal('repaired') }),
+  z.object({ status: z.literal('linked'), connectionId: id }),
+]);
+export type LinkFinishResult = z.infer<typeof LinkFinishResult>;
 export const StartingBalances = z.object({
   accounts: z.array(z.object({ accountId: id, startingBalance: cents })),
 });

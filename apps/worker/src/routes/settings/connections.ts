@@ -3,7 +3,13 @@
 import type { Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
 import { clock } from '../../http/clock.js';
-import { LinkExchange, LinkTokenRequest, type ConnectionsView } from '@ledgerline/contracts';
+import {
+  LinkExchange,
+  LinkFinish,
+  type LinkFinishResult,
+  LinkTokenRequest,
+  type ConnectionsView,
+} from '@ledgerline/contracts';
 import { localDate } from '@ledgerline/domain';
 import { encryptToken, parseKeyring, ulid } from '@ledgerline/platform';
 import { canLinkBanks, type AppEnv } from '../../http/context.js';
@@ -57,6 +63,10 @@ connectionsRoutes.post('/settings/connections/link-token', async (c) => {
   const r = await parse(LinkTokenRequest, c.req.raw);
   const s = scoped(c);
   const provider = makeProvider(c.env);
+  // Hosted Link: the person links on Plaid's own site and comes back to a page of the app that only says "done".
+  // The link is finished by /link-finish, which asks Plaid, never by where the browser lands.
+  if (r.hosted && c.env.HOSTED_LINK !== '1') throw new HttpError(400, 'invalid', TRY_AGAIN);
+  const hosted = r.hosted ? { completionUrl: `${new URL(c.req.url).origin}/link-done` } : undefined;
   if (r.mode === 'repair') {
     // Update mode reuses the Item; it never uses a new slot.
     if (!r.connectionId) throw new HttpError(400, 'invalid', TRY_AGAIN);
@@ -65,8 +75,9 @@ connectionsRoutes.post('/settings/connections/link-token', async (c) => {
       mode: 'repair',
       accessToken: token,
       userId: c.get('userId'),
+      hosted,
     });
-    return c.json({ linkToken: lt.linkToken });
+    return c.json({ linkToken: lt.linkToken, hostedUrl: lt.hostedUrl });
   }
   // Plaid Trial's links are for the whole Plaid account, so only admins link new banks (docs/open-signup.md 5).
   if (!canLinkBanks(c))
@@ -78,8 +89,8 @@ connectionsRoutes.post('/settings/connections/link-token', async (c) => {
     throw new HttpError(409, 'item_limit', `All ${ITEM_LIMIT} bank links are used.`);
   if (c.env.PLAID_ENV === 'production' && !r.confirmSlot)
     throw new HttpError(409, 'confirm_slot', 'Confirm that you want to use one of your bank links.');
-  const lt = await provider.createLinkSession({ mode: 'new', userId: c.get('userId') });
-  return c.json({ linkToken: lt.linkToken });
+  const lt = await provider.createLinkSession({ mode: 'new', userId: c.get('userId'), hosted });
+  return c.json({ linkToken: lt.linkToken, hostedUrl: lt.hostedUrl });
 });
 
 /** Maps a provider account to a budget account kind; investment and loan accounts are not linked in v1. */
@@ -265,10 +276,39 @@ export async function startSync(
 
 connectionsRoutes.post('/settings/connections/exchange', async (c) => {
   const r = await parse(LinkExchange, c.req.raw);
-  const s = scoped(c);
-  const now = clock(c.env);
-  const provider = makeProvider(c.env);
-  const done = await provider.completeLink(r.publicToken);
+  return c.json({ ok: true, ...(await finishLink(c.env, scoped(c), r.publicToken, clock(c.env))) });
+});
+
+/**
+ * Hosted Link: what the session came to, and the link finished if the person linked a bank. The app asks while the
+ * person is on Plaid's site and again when they come back. A repair keeps its Item, so there is nothing to exchange.
+ */
+connectionsRoutes.post('/settings/connections/link-finish', async (c) => {
+  const r = await parse(LinkFinish, c.req.raw);
+  const result = await makeProvider(c.env).linkResult(r.linkToken);
+  let out: LinkFinishResult;
+  if (result.state !== 'finished') out = { status: result.state };
+  else if (r.mode === 'repair') out = { status: 'repaired' };
+  else {
+    const publicToken = result.publicTokens[0];
+    if (!publicToken) out = { status: 'exited' };
+    else {
+      const done = await finishLink(c.env, scoped(c), publicToken, clock(c.env));
+      out = { status: 'linked', connectionId: done.connectionId };
+    }
+  }
+  return c.json(out);
+});
+
+/** Exchanges a public token and stores the link: a new connection with its accounts, or the same Item repaired. */
+async function finishLink(
+  env: Env,
+  s: Scoped,
+  publicToken: string,
+  now: number,
+): Promise<{ connectionId: string; accounts: unknown[] }> {
+  const provider = makeProvider(env);
+  const done = await provider.completeLink(publicToken);
   const existing = await s.first<{ id: string }>(
     `SELECT id FROM connection WHERE budget_id = ?1 AND provider_item_id = ?2`,
     done.providerItemId,
@@ -280,11 +320,11 @@ connectionsRoutes.post('/settings/connections/exchange', async (c) => {
       existing.id,
       now,
     );
-    await startSync(c.env, s.budgetId, existing.id, 'link');
-    return c.json({ ok: true, connectionId: existing.id, accounts: [] });
+    await startSync(env, s.budgetId, existing.id, 'link');
+    return { connectionId: existing.id, accounts: [] };
   }
   const connectionId = await saveLinkedItem(
-    c.env,
+    env,
     s,
     done.accessToken,
     done.providerItemId,
@@ -293,7 +333,7 @@ connectionsRoutes.post('/settings/connections/exchange', async (c) => {
   );
   let res;
   try {
-    res = await setUpLinkedAccounts(c.env, s, connectionId, done.accessToken, now);
+    res = await setUpLinkedAccounts(env, s, connectionId, done.accessToken, now);
   } catch {
     throw new HttpError(
       503,
@@ -301,9 +341,9 @@ connectionsRoutes.post('/settings/connections/exchange', async (c) => {
       'Your bank is linked, but its accounts aren’t set up yet. Tap Finish setup in Bank connections. It doesn’t use another link.',
     );
   }
-  await startSync(c.env, s.budgetId, connectionId, 'link');
-  return c.json({ ok: true, ...res });
-});
+  await startSync(env, s.budgetId, connectionId, 'link');
+  return res;
+}
 
 /** A refresh within this long of a bank's last sync or attempt skips that bank, so repeated pulls don't pile up. */
 export const REFRESH_COOLDOWN_MS = 60_000;

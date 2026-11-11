@@ -2,6 +2,7 @@ import {
   type BankDataProvider,
   type CompletedLink,
   type Connection,
+  type LinkResult,
   type LinkSession,
   type NormalizedTxn,
   type ProviderAccount,
@@ -227,6 +228,7 @@ export class PlaidProvider implements BankDataProvider {
     mode: 'new' | 'repair';
     accessToken?: string;
     userId: string;
+    hosted?: { completionUrl: string };
   }): Record<string, unknown> {
     const req: Record<string, unknown> = {
       user: { client_user_id: opts.userId },
@@ -237,6 +239,7 @@ export class PlaidProvider implements BankDataProvider {
     };
     if (this.cfg.webhookUrl) req.webhook = this.cfg.webhookUrl;
     if (this.cfg.redirectUri) req.redirect_uri = this.cfg.redirectUri;
+    if (opts.hosted) req.hosted_link = { completion_redirect_uri: opts.hosted.completionUrl };
     if (opts.mode === 'repair') {
       if (!opts.accessToken)
         throw new ProviderError('REPAIR_NEEDS_TOKEN', 'update mode needs the existing Item', false);
@@ -252,12 +255,47 @@ export class PlaidProvider implements BankDataProvider {
     mode: 'new' | 'repair';
     accessToken?: string;
     userId: string;
+    hosted?: { completionUrl: string };
   }): Promise<LinkSession> {
-    const r = await this.json<{ link_token: string; expiration: string }>(
+    const r = await this.json<{ link_token: string; expiration: string; hosted_link_url?: string }>(
       '/link/token/create',
       this.linkTokenRequest(opts),
     );
-    return { linkToken: r.link_token, expiration: r.expiration };
+    if (opts.hosted && !r.hosted_link_url)
+      throw new ProviderError('NO_HOSTED_LINK', 'the provider gave no hosted Link page', false);
+    return {
+      linkToken: r.link_token,
+      expiration: r.expiration,
+      ...(r.hosted_link_url ? { hostedUrl: r.hosted_link_url } : {}),
+    };
+  }
+
+  /**
+   * The newest session of a link token (`/link/token/get`). A session with no `finished_at` is still open; one that
+   * finished with an `exit` and linked nothing was left by the person.
+   */
+  async linkResult(linkToken: string): Promise<LinkResult> {
+    const r = await this.json<{
+      link_sessions?: {
+        started_at?: string;
+        finished_at?: string | null;
+        exit?: unknown;
+        results?: { item_add_results?: { public_token?: string }[] | null } | null;
+      }[];
+    }>('/link/token/get', { link_token: linkToken });
+    const sessions = [...(r.link_sessions ?? [])].sort((a, b) =>
+      (a.started_at ?? '').localeCompare(b.started_at ?? ''),
+    );
+    // A finished session with a linked bank wins over a later one the person only opened and left.
+    const publicTokens = sessions.flatMap((s) =>
+      s.finished_at
+        ? (s.results?.item_add_results ?? []).flatMap((i) => (i.public_token ? [i.public_token] : []))
+        : [],
+    );
+    if (publicTokens.length > 0) return { state: 'finished', publicTokens };
+    const last = sessions.at(-1);
+    if (!last?.finished_at) return { state: 'waiting', publicTokens: [] };
+    return { state: last.exit ? 'exited' : 'finished', publicTokens: [] };
   }
 
   async completeLink(publicToken: string): Promise<CompletedLink> {
