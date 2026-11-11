@@ -143,5 +143,14 @@ export async function twin(
     if (JSON.stringify(audited) !== JSON.stringify(server))
       diff.push(`audit_log: phone ${JSON.stringify(audited)}, server ${JSON.stringify(server)}`);
   }
+  // And where a transaction's key went: the same line on the server.
+  for (const r of ran.rows.filter((x) => x.t === 'txn_key_move' && x.d)) {
+    const theirs = await storeDb(await budgetId())
+      .prepare(`SELECT * FROM txn_key_move WHERE old_key = ?1`)
+      .bind(r.k[0])
+      .first<Record<string, unknown>>();
+    if (JSON.stringify(theirs) !== JSON.stringify(r.d))
+      diff.push(`txn_key_move: phone ${JSON.stringify(r.d)}, server ${JSON.stringify(theirs)}`);
+  }
   return { phone, server, differences: diff, recorded: ran.rows.length };
 }

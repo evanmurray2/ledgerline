@@ -288,6 +288,29 @@ describe('the same edit on the phone and on the server', () => {
           budget,
         )(),
     ],
+    // Yes: a posted bank row takes your entry's key, which writes `txn_key_move` (recorded, never synced).
+    [
+      'answer Yes to Same purchase?',
+      'POST /same-purchase/:id',
+      () => ['POST', '/api/same-purchase/twin-ask-yes', { answer: 'yes', key: 'n-comcast' }],
+      async () => {
+        // The question is about a bank row filed under its own key (`p:` and the bank's id), as sync files them.
+        for (const table of ['txn_overlay', 'bank_txn'])
+          await onServer(
+            `UPDATE ${table} SET txn_key = 'p:' || (SELECT provider_txn_id FROM bank_txn WHERE txn_key = 'n-bluebottle')
+             WHERE budget_id = ?1 AND txn_key = 'n-bluebottle'`,
+            budget,
+          )();
+        await onServer(
+          `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at)
+           SELECT 'twin-ask-yes', ?1, 'same_purchase', txn_key, ?2, ?3
+           FROM bank_txn WHERE raw_name = 'BLUE BOTTLE COFFEE' AND pending = 0 AND removed_at IS NULL`,
+          budget,
+          JSON.stringify({ candidates: ['n-comcast'] }),
+          Date.now(),
+        )();
+      },
+    ],
     // Last: it sets the budget's start again, after the set-up statement took it away.
     [
       'pick the month the budget starts',
@@ -362,6 +385,13 @@ describe('the same edit on the phone and on the server', () => {
     expect(t.phone.status).toBe(409);
     expect(t.recorded).toBe(0);
     expect(t.differences).toEqual([]);
+  });
+
+  it('the Yes answer moved a key, on the phone and on the copy that took its rows', async () => {
+    for (const e of [a, c]) {
+      const moved = await e.db.prepare(`SELECT count(*) AS n FROM txn_key_move`).first<{ n: number }>();
+      expect(moved!.n).toBeGreaterThan(0);
+    }
   });
 
   it('the check sees an edit that only one side has', async () => {

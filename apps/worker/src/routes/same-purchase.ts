@@ -7,6 +7,7 @@ import { Hono } from 'hono';
 import { SamePurchaseAnswer, type ActivityView, type TxnSheet } from '@ledgerline/contracts';
 import { cents, entryCandidate } from '@ledgerline/domain';
 import { editNow } from '../http/clock.js';
+import { newId } from '../http/ids.js';
 import type { AppEnv } from '../http/context.js';
 import type { Scoped } from '../db/scoped.js';
 import { ACK, CHANGED, HttpError, parse, scoped } from './api.js';
@@ -198,13 +199,14 @@ samePurchaseRoutes.post('/same-purchase/:id', async (c) => {
       );
       if (covered) throw changed();
       stmts.push(...coverStmts(s, entry.txn_key, ref.provider_txn_id, now));
-    } else stmts.push(...matchEntryStmts(s, ref.provider_txn_id, entry, ref.amount, 'user', now));
+    } else stmts.push(...matchEntryStmts(s, ref.provider_txn_id, entry, ref.amount, 'user', now, newId(c)));
   } else {
     // Another bank row: only a posted row can claim a pending one (several close candidates, ambiguous_match).
     const p = await s.first<BankDb>(`${BANK_SQL} AND b.txn_key = ?2 AND b.pending = 1`, r.key);
     if (ref.pending === 1 || !p || p.claimed) throw changed();
     const cover = await s.first<EntryDb>(`${ENTRY_SQL} AND m.covers_provider_txn_id = ?2`, p.provider_txn_id);
-    if (cover) stmts.push(...matchEntryStmts(s, ref.provider_txn_id, cover, ref.amount, 'user', now));
+    if (cover)
+      stmts.push(...matchEntryStmts(s, ref.provider_txn_id, cover, ref.amount, 'user', now, newId(c)));
     else
       stmts.push(
         ...inheritStmts(
@@ -215,6 +217,7 @@ samePurchaseRoutes.post('/same-purchase/:id', async (c) => {
           ref.amount,
           p.estimated_amount ?? p.amount,
           now,
+          newId(c),
         ),
       );
   }
