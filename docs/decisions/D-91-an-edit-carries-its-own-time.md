@@ -29,6 +29,9 @@ target names its month). When more edits can be made offline (`docs/build-plan.m
 such as closing out an owed item "this month", will act on the month it was made in. The same-day order of rows
 (newest first by time) now follows when edits were made, not when they arrived.
 
+**Confirmed by the owner** (chat, Nov 11, 2026: "Yes") before more edits could be made offline: an edit made
+offline acts on the month it was made in, not the month it arrives in.
+
 **Consequences.** A phone that joined payees, synced, and then pressed Undo was refused, because the undo compares
 times; it now works (twin test). After the move to the device the 7-day bound goes: the device's word is the
 entry, and the server bounds only the entry's clear time (5.3, check 4).

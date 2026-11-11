@@ -86,7 +86,7 @@ function StoredAlert({ a }: { a: AccountsView['alerts'][number] }) {
         a.id ? (
           <SoftButton
             tone="outline"
-            mutates
+            mutates="offline"
             disabled={busy}
             track={`accounts.alert.dismiss.${a.kind}`}
             onClick={() => void dismiss()}

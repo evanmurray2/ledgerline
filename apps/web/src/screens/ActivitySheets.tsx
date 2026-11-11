@@ -124,7 +124,7 @@ export function TransferScreen() {
             <Banner tone="success">{result}</Banner>
             <div className="flex gap-2">
               <SecondaryButton
-                mutates
+                mutates="offline"
                 track="transfer.undo"
                 className="flex-1"
                 onClick={async () => {
@@ -154,7 +154,7 @@ export function TransferScreen() {
               {candidates.map(({ row, account }) => (
                 <Button
                   key={row.key}
-                  mutates
+                  mutates="offline"
                   track="transfer.pick"
                   onClick={async () => {
                     await pick.mutateAsync({ otherKey: row.key });
@@ -183,7 +183,7 @@ export function TransferScreen() {
                 notYet.map((a) => (
                   <Button
                     key={a.id}
-                    mutates
+                    mutates="offline"
                     track="transfer.pick_pending"
                     onClick={async () => {
                       await pick.mutateAsync({ otherKey: null, accountId: a.id });
@@ -199,7 +199,7 @@ export function TransferScreen() {
                   </Button>
                 ))}
               <Button
-                mutates
+                mutates="offline"
                 track="transfer.unlinked"
                 onClick={async () => {
                   await pick.mutateAsync({ otherKey: null, unlinked: true });
@@ -218,7 +218,7 @@ export function TransferScreen() {
                 </span>
               </Button>
               <Button
-                mutates
+                mutates="offline"
                 track="transfer.none"
                 onClick={async () => {
                   await pick.mutateAsync({ otherKey: null });
@@ -324,7 +324,7 @@ export function CheckPendingScreen() {
           <div className="flex flex-col gap-2">
             {(keep.error || patch.error) && <ErrorNote error={keep.error ?? patch.error} />}
             <PrimaryButton
-              mutates
+              mutates="offline"
               track={`check.confirm.${pick}`}
               danger={pick === 'delete'}
               onClick={() => void confirm()}
@@ -435,7 +435,7 @@ export function AddTxnScreen() {
       header={<SheetTitle title="Add a transaction" />}
       footer={
         <PrimaryButton
-          mutates
+          mutates="offline"
           track="add_txn.add"
           disabled={!ok}
           why={

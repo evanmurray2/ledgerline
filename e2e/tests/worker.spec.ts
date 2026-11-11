@@ -251,6 +251,43 @@ test('A change made with no signal is kept on the device and sent when the conne
   await expect(chip).toHaveText(`Needs attention ${before - 1}`);
 });
 
+test('An entry added with no signal is kept on the device and sent once when the connection is back', async ({
+  page,
+  context,
+  request,
+}) => {
+  await page.goto('/activity');
+  const onServer = async () =>
+    (await rows(request, 'manual_pending')).filter((m) => m.payee_name === 'Offline lunch');
+  await expect(page.getByRole('link', { name: 'Add transaction' })).toBeVisible();
+
+  await context.setOffline(true);
+  await expect(page.getByTestId('offline-banner')).toBeVisible();
+  await page.getByRole('link', { name: 'Add transaction' }).click();
+  const add = page.getByRole('dialog', { name: 'Add a transaction' });
+  await add.getByPlaceholder('0.00').fill('12.34');
+  await add.getByLabel('Payee').fill('Offline lunch');
+  await add.getByLabel('Category').click();
+  await page
+    .getByRole('dialog', { name: 'Choose a category' })
+    .getByRole('button', { name: 'Dining out' })
+    .first()
+    .click();
+  await add.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(add).toHaveCount(0);
+  // The copy took it at once; the server hasn't seen it.
+  await expect(page.getByTestId('offline-banner')).toContainText('1 waiting to send');
+  await expect(page.getByText('Offline lunch').first()).toBeVisible();
+  expect(await onServer()).toHaveLength(0);
+
+  await context.setOffline(false);
+  await expect.poll(async () => (await onServer()).length, { timeout: 15_000 }).toBe(1);
+  expect((await onServer())[0]!.amount).toBe(-1234);
+  // The phone's row and the server's are one row (the same id), not two.
+  await page.reload();
+  await expect(page.getByText('Offline lunch')).toHaveCount(1);
+});
+
 test('Accounts: net worth and the Ally repair prompt', async ({ page }) => {
   await page.goto('/accounts');
   await expect(page.getByText('$22,354.35').first()).toBeVisible();

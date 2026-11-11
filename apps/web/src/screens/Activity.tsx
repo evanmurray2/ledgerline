@@ -485,7 +485,7 @@ export function ActivityScreen() {
                 action={
                   r.action === 'dismiss' ? (
                     <SoftButton
-                      mutates
+                      mutates="offline"
                       track="activity.check.ok"
                       aria-label={`OK ${r.payee}`}
                       onClick={() => void dismiss(r)}

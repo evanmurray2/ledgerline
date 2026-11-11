@@ -204,7 +204,7 @@ export function TargetScreen() {
       header={<SheetTitle title="Target" sub={c.name} />}
       footer={
         <PrimaryButton
-          mutates
+          mutates="offline"
           track="target.save"
           disabled={!target}
           why={
@@ -315,6 +315,7 @@ export function TargetScreen() {
             label="Remove target"
             confirmLabel="Remove target"
             track="target.remove.confirm"
+            mutates="offline"
             onConfirm={() => void submit({ type: 'none' })}
             onCancel={() => setAsking(false)}
             busy={save.isPending}

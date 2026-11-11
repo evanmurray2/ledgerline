@@ -28,7 +28,7 @@ export function OverAssigned({ b, month }: { b: BudgetView; month: string }) {
         action={
           <SoftButton
             tone="outline"
-            mutates
+            mutates="offline"
             track="budget.over.undo"
             onClick={async () => {
               await move.mutateAsync({ month, from: 'rta', to: took.id, amount: took.amount });
@@ -70,7 +70,7 @@ export function OverAssigned({ b, month }: { b: BudgetView; month: string }) {
                 </span>
               </span>
               <SoftButton
-                mutates
+                mutates="offline"
                 track="budget.over.take"
                 aria-label={`Take ${formatCents(need)} from ${c.name}`}
                 onClick={async () => {
@@ -135,7 +135,7 @@ export function NewMonth({ b, month }: { b: BudgetView; month: string }) {
           {filled && <span className="text-sm text-muted">Each target got what it needs this month.</span>}
           {filled ? (
             <SecondaryButton
-              mutates
+              mutates="offline"
               track="budget.newmonth.undo"
               onClick={async () => {
                 await assign.mutateAsync({
@@ -150,7 +150,7 @@ export function NewMonth({ b, month }: { b: BudgetView; month: string }) {
             </SecondaryButton>
           ) : (
             <PrimaryButton
-              mutates
+              mutates="offline"
               track="budget.newmonth.fill"
               onClick={async () => {
                 const items = targets.map((t) => ({ categoryId: t.categoryId, amount: t.amount }));

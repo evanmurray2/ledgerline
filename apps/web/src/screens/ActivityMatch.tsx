@@ -105,7 +105,7 @@ export function MatchScreen() {
             {match.error && <ErrorNote error={match.error} />}
             <div className="flex gap-2">
               <SecondaryButton
-                mutates
+                mutates="offline"
                 track="match.income"
                 className="flex-1"
                 onClick={() => void submit(true)}
@@ -113,7 +113,7 @@ export function MatchScreen() {
                 It’s income
               </SecondaryButton>
               <PrimaryButton
-                mutates
+                mutates="offline"
                 track="match.apply"
                 className="flex-[2]"
                 disabled={matched === 0}
@@ -132,7 +132,7 @@ export function MatchScreen() {
           <Banner tone="success">{done.text}</Banner>
           <div className="flex gap-2">
             <SecondaryButton
-              mutates
+              mutates="offline"
               track="match.undo"
               className="flex-1"
               onClick={async () => {
