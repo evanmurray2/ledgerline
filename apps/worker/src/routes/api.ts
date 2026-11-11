@@ -257,6 +257,7 @@ budgetApi.get('/session', async (c) => {
     readsPaused: ws === 'rest',
     settings: { tracking: setting.get('tracking') !== false, noteButton: setting.get('noteButton') === true },
     canLinkBanks: canLinkBanks(c),
+    hostedLink: c.env.HOSTED_LINK === '1',
     recoveryNoticeAt: c.get('recoveryNoticeAt') ? new Date(c.get('recoveryNoticeAt')!).toISOString() : null,
   };
   return c.json(body);

@@ -19,6 +19,8 @@ export interface Env {
   PLAID_SECRET?: string;
   /** Local Plaid-shaped mock (development and tests only). */
   PLAID_BASE_URL?: string;
+  /** '1': banks are linked on Plaid's own site (hosted Link, docs/privacy.md 5.7). Off until the owner turns it on. */
+  HOSTED_LINK?: string;
   PLAID_WEBHOOK_URL?: string;
   PLAID_REDIRECT_URI?: string;
   /** "1:base64key,2:base64key" and the current version. */
