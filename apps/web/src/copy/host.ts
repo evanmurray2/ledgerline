@@ -78,8 +78,14 @@ export class EngineHost {
   derive(): Promise<{ rta: number } | null> {
     return this.call('derive');
   }
-  request(method: string, path: string, body?: unknown): Promise<{ status: number; body: string }> {
-    return this.call('request', { method, path, body });
+  request(
+    method: string,
+    path: string,
+    body?: unknown,
+    /** A change made on this device: its own id and when the person made it (engine.ts request). */
+    edit?: { id: string; at: number },
+  ): Promise<{ status: number; body: string }> {
+    return this.call('request', { method, path, body, edit });
   }
   export(): Promise<ArrayBuffer> {
     return this.call('export');

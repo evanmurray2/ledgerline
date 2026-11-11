@@ -7,6 +7,9 @@ import { Hono, type MiddlewareHandler } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../http/context.js';
 import { requestNow } from '../http/clock.js';
+import { EDIT_ID } from '../http/ids.js';
+
+export { EDIT_ID };
 import { SYNC_FORMAT, SYNC_TABLES, type SyncTable } from '../sync-tables.js';
 import type { Scoped } from '../db/scoped.js';
 import { SYNC_SINCE_HEADER } from '@ledgerline/contracts';
@@ -267,9 +270,6 @@ syncRoutes.get('/settings/restore/last', async (c) => {
   });
 });
 
-/** Edit ids from the phone's offline queue: kept 30 days (pruned by the daily maintenance job). */
-export const EDIT_ID = /^[A-Za-z0-9_-]{8,64}$/;
-
 /**
  * A change sent with `x-edit-id` is applied once: sent again (after a dropped answer), it gets `{ ok: true }` and
  * nothing more happens.
@@ -277,6 +277,8 @@ export const EDIT_ID = /^[A-Za-z0-9_-]{8,64}$/;
 export const editOnce: MiddlewareHandler<AppEnv> = async (c, next) => {
   const id = c.req.header('x-edit-id');
   if (!id || c.req.method === 'GET' || c.req.method === 'HEAD') return next();
+  // On the phone the id only names the new rows (http/ids.ts): the copy runs each edit once by itself.
+  if (c.env.PLAID_ENV === 'engine') return next();
   if (!EDIT_ID.test(id)) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
   const seen = await c.env.DB.prepare(`SELECT 1 AS x FROM edit_seen WHERE id = ?1`).bind(id).first();
   if (seen) return c.json({ ok: true, repeated: true });

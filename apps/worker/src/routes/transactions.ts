@@ -1,4 +1,5 @@
 // The transaction sheet and every edit to one transaction's overlay: categorize, add, check pending, delete, review.
+import { newId } from '../http/ids.js';
 import type { Stmt } from '@ledgerline/db/sql';
 import { requestNow } from '../http/clock.js';
 import { Hono } from 'hono';
@@ -19,7 +20,7 @@ import {
   monthOfDate,
   owedList,
 } from '@ledgerline/domain';
-import { ulid } from '@ledgerline/platform';
+
 import type { AppEnv } from '../http/context.js';
 import type { Scoped } from '../db/scoped.js';
 import { HttpError, parse, scoped, GONE, FAR_DATE, FAR_MONTH, inReach, thisMonth } from './api.js';
@@ -466,14 +467,14 @@ transactionRoutes.post('/transactions', async (c) => {
   }
   // Only money in can go to Ready to Assign.
   const toRta = r.toRta === true && r.amount > 0;
-  const key = `m:${ulid(now)}`;
+  const key = `m:${newId(c)}`;
   const w = [
     // An entry for a closed account opens it again (D-73).
     ...reopenStmts(s, r.accountId, now),
     s.q(
       `INSERT INTO manual_pending (id, budget_id, txn_key, account_id, kind, date, amount, payee_name, repeats, created_at, updated_at)
        VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)`,
-      ulid(now),
+      newId(c),
       key,
       r.accountId,
       r.kind,

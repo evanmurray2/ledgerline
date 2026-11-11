@@ -19,7 +19,14 @@ type Msg =
   | { id: number; op: 'apply'; page: SyncPage; receivedAt: number }
   | { id: number; op: 'next' }
   | { id: number; op: 'derive' }
-  | { id: number; op: 'request'; method: string; path: string; body?: unknown }
+  | {
+      id: number;
+      op: 'request';
+      method: string;
+      path: string;
+      body?: unknown;
+      edit?: { id: string; at: number };
+    }
   | { id: number; op: 'export' }
   | { id: number; op: 'state' }
   | { id: number; op: 'rta' }
@@ -59,7 +66,7 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
     case 'derive':
       return { value: await need().engine.derive() };
     case 'request': {
-      const r = await need().engine.request(m.method, m.path, m.body);
+      const r = await need().engine.request(m.method, m.path, m.body, m.edit);
       const text = await r.text();
       return { value: { status: r.status, body: text } };
     }
