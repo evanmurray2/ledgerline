@@ -4,7 +4,7 @@ import type { Stmt } from '@ledgerline/db/sql';
 import { cents, detectTransfers, newPayeeName, payeeNameKey } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { Scoped } from '../db/scoped.js';
-import { chunks } from '../ledger/ledger.js';
+import { chunks, uncovered } from '../ledger/ledger.js';
 import type { BankRow } from './process.js';
 import { insertKey, loadOwners, payeeSource, rowKeys } from './payee-keys.js';
 
@@ -43,17 +43,21 @@ export async function planFresh(
   const overlayChunks = await s.batch(
     chunks(overlayKeys).map((k) =>
       s.q(
-        `SELECT txn_key, categorized_by, payee_id FROM txn_overlay WHERE +budget_id = ?1 AND txn_key IN (${inList(k.length)})`,
+        `SELECT txn_key, categorized_by, payee_id, transfer_state FROM txn_overlay WHERE +budget_id = ?1 AND txn_key IN (${inList(k.length)})`,
         ...k,
       ),
     ),
   );
-  const overlay = new Map<string, { categorized_by: string | null; payee_id: string | null }>();
+  const overlay = new Map<
+    string,
+    { categorized_by: string | null; payee_id: string | null; transfer_state: string | null }
+  >();
   for (const r of overlayChunks)
     for (const o of r.results as {
       txn_key: string;
       categorized_by: string | null;
       payee_id: string | null;
+      transfer_state: string | null;
     }[])
       overlay.set(o.txn_key, o);
   const userSet = new Set(
@@ -122,28 +126,61 @@ export async function planFresh(
   const budgetDate = (r: BankRow) =>
     r.account_kind === 'credit' && r.amount < 0 && r.authorized_date ? r.authorized_date : r.date;
   const isHistory = (r: BankRow) => r.budget_from !== null && budgetDate(r) < r.budget_from;
+  // Transfers (D-90). The rows of this batch that can still pair: not history, not sorted by hand, and not already
+  // a transfer (a row the bank sent again keeps what it has). A new row can also pair with an earlier row that has no
+  // partner (`earlierOpen`), by the same rule.
+  const open = fresh.filter(
+    (r) =>
+      !isHistory(r) &&
+      !userSet.has(r.txn_key) &&
+      [null, undefined, 'unsorted'].includes(overlay.get(r.txn_key)?.transfer_state),
+  );
+  const asRow = (
+    r: { txn_key: string; account_id: string | null; amount: number; date: string } & NameOf,
+  ) => ({
+    key: r.txn_key,
+    accountId: r.account_id!,
+    amount: cents(r.amount),
+    date: r.date,
+    description: r.raw_name,
+    providerCategory: r.provider_category,
+  });
+  const earlier = await earlierOpen(s, open);
+  const accountOf = new Map<string, string>();
+  for (const r of [...earlier, ...open]) accountOf.set(r.txn_key, r.account_id!);
+  const freshKeys = new Set(fresh.map((r) => r.txn_key));
   const transfers = new Map<string, { other: string; state: 'paired' | 'unsorted' }>();
-  for (const d of detectTransfers(
-    fresh
-      .filter((r) => !isHistory(r))
-      .map((r) => ({
-        key: r.txn_key,
-        accountId: r.account_id!,
-        amount: cents(r.amount),
-        date: r.date,
-        description: r.raw_name,
-        providerCategory: r.provider_category,
-      })),
-  )) {
+  for (const d of detectTransfers(open.map(asRow), new Set(), earlier.map(asRow))) {
     if (d.kind === 'paired') {
-      const o = fresh.find((r) => r.txn_key === d.outKey)!;
-      const i = fresh.find((r) => r.txn_key === d.inKey)!;
-      transfers.set(d.outKey, { other: i.account_id!, state: 'paired' });
-      transfers.set(d.inKey, { other: o.account_id!, state: 'paired' });
+      transfers.set(d.outKey, { other: accountOf.get(d.inKey)!, state: 'paired' });
+      transfers.set(d.inKey, { other: accountOf.get(d.outKey)!, state: 'paired' });
     } else {
       transfers.set(d.outKey, { other: '', state: 'unsorted' });
       for (const c of d.candidates) transfers.set(c, { other: '', state: 'unsorted' });
     }
+  }
+  // An earlier row this batch gave a partner, or a rival. It was filed before, so its overlay exists. A row the person
+  // sorted by hand since the read is left alone.
+  for (const [key, tr] of transfers) {
+    if (freshKeys.has(key)) continue;
+    stmts.push(
+      tr.state === 'paired'
+        ? s.q(
+            `UPDATE txn_overlay SET transfer_state = 'paired', transfer_account_id = ?3, categorized_by = 'auto',
+               wtm_state = CASE WHEN wtm_state = 'waiting' THEN NULL ELSE wtm_state END, updated_at = ?4
+             WHERE budget_id = ?1 AND txn_key = ?2 AND categorized_by IS NOT 'user'
+               AND (transfer_state IS NULL OR transfer_state = 'unsorted')`,
+            key,
+            tr.other,
+            now,
+          )
+        : s.q(
+            `UPDATE txn_overlay SET transfer_state = 'unsorted', categorized_by = 'auto', updated_at = ?3
+             WHERE budget_id = ?1 AND txn_key = ?2 AND categorized_by IS NOT 'user' AND transfer_state IS NULL`,
+            key,
+            now,
+          ),
+    );
   }
   for (const r of fresh) {
     if (userSet.has(r.txn_key)) continue;
@@ -161,9 +198,13 @@ export async function planFresh(
            category_id = CASE WHEN txn_overlay.categorized_by = 'user' THEN txn_overlay.category_id ELSE coalesce(excluded.category_id, txn_overlay.category_id) END,
            memo = coalesce(txn_overlay.memo, excluded.memo),
            budget_month = coalesce(txn_overlay.budget_month, excluded.budget_month),
-           transfer_state = coalesce(txn_overlay.transfer_state, excluded.transfer_state),
-           transfer_account_id = coalesce(txn_overlay.transfer_account_id, excluded.transfer_account_id),
-           wtm_state = coalesce(txn_overlay.wtm_state, excluded.wtm_state),
+           -- A row that was asked about ('unsorted') becomes paired when its partner arrives; any other state stays.
+           transfer_state = CASE WHEN excluded.transfer_state = 'paired' AND txn_overlay.transfer_state IS 'unsorted' THEN 'paired'
+             ELSE coalesce(txn_overlay.transfer_state, excluded.transfer_state) END,
+           transfer_account_id = CASE WHEN excluded.transfer_state = 'paired' AND txn_overlay.transfer_state IS 'unsorted' THEN excluded.transfer_account_id
+             ELSE coalesce(txn_overlay.transfer_account_id, excluded.transfer_account_id) END,
+           wtm_state = CASE WHEN excluded.transfer_state = 'paired' AND txn_overlay.wtm_state = 'waiting' THEN NULL
+             ELSE coalesce(txn_overlay.wtm_state, excluded.wtm_state) END,
            categorized_by = CASE WHEN txn_overlay.categorized_by = 'user' THEN 'user' ELSE coalesce(excluded.categorized_by, txn_overlay.categorized_by) END,
            rule_id = CASE WHEN txn_overlay.categorized_by = 'user' THEN txn_overlay.rule_id ELSE coalesce(excluded.rule_id, txn_overlay.rule_id) END,
            pending_at_link = max(txn_overlay.pending_at_link, excluded.pending_at_link),
@@ -184,6 +225,49 @@ export async function planFresh(
     );
   }
   return stmts;
+}
+
+type NameOf = { raw_name: string; provider_category: string | null };
+
+/**
+ * The rows filed before this batch that a row of it could pair with (D-90): another row of the same amount, with the
+ * other sign, dated within 5 days, that has no partner and that the person has not sorted by hand. Only rows the
+ * budget counts: not removed, not a pending row a posted row or an entry stands for, not history. The dates and
+ * amounts are the bank's own (`posted_date`, `bank_amount`), as for the rows of the batch.
+ */
+async function earlierOpen(
+  s: Scoped,
+  open: readonly BankRow[],
+): Promise<({ txn_key: string; account_id: string; amount: number; date: string } & NameOf)[]> {
+  if (open.length === 0) return [];
+  const amounts = [...new Set(open.map((r) => -r.amount))];
+  const dates = open.map((r) => r.date).sort();
+  const keys = open.map((r) => r.txn_key);
+  const out: ({ txn_key: string; account_id: string; amount: number; date: string } & NameOf)[] = [];
+  const seen = new Set(keys);
+  // Bound parameters: ?1 the budget, ?2 and ?3 the dates, then the amounts.
+  for (const part of chunks(amounts, 80)) {
+    const r = await s.all<{ txn_key: string; account_id: string; amount: number; date: string } & NameOf>(
+      `SELECT v.key AS txn_key, v.account_id, v.bank_amount AS amount, v.posted_date AS date, v.raw_name, v.provider_category
+       FROM v_txn_bank v
+       WHERE v.budget_id = ?1 AND v.posted_date BETWEEN date(?2, '-5 days') AND date(?3, '+5 days')
+         AND v.bank_amount IN (${inList(part.length, 4)})
+         AND (v.transfer_state IS NULL OR v.transfer_state = 'unsorted')
+         AND v.categorized_by IS NOT 'user' AND v.category_id IS NULL AND coalesce(v.to_rta, 0) = 0
+         AND (v.wtm_state IS NULL OR v.wtm_state = 'waiting')
+         AND (v.budget_from IS NULL OR v.date >= v.budget_from)
+         AND ${uncovered('v')}`,
+      dates[0]!,
+      dates.at(-1)!,
+      ...part,
+    );
+    for (const row of r)
+      if (!seen.has(row.txn_key)) {
+        seen.add(row.txn_key);
+        out.push(row);
+      }
+  }
+  return out;
 }
 
 /**

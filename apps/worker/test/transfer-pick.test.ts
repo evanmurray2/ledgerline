@@ -1,5 +1,5 @@
-// "Which account got this money?" accepts every row the sheet offers: a deposit that came in a later sync (another
-// bank's, so never marked unsorted itself), and a pick made from the deposit's side.
+// "Which account got this money?" accepts every row the sheet offers: a deposit that came in a later sync, and a
+// pick made from the deposit's side. A lone deposit that comes later pairs by itself (D-90).
 import { beforeAll, describe, expect, it } from 'vitest';
 import { bankSync, plaidTxn } from './bank-sync.js';
 
@@ -18,22 +18,37 @@ const link = (from: string) =>
 describe('Pick the other side of a transfer', () => {
   beforeAll(setup);
 
-  it('pairs a deposit that came in a later sync', async () => {
+  it('a deposit that came in a later sync pairs by itself (D-90); a pair is not offered again', async () => {
     await sync([plaidTxn('out1', 1, 250, '2026-11-10', 'ONLINE TRANSFER TO SAVINGS')]);
     const out = await keyOf('out1');
     expect((await overlay(out))?.transfer_state).toBe('unsorted');
     await sync([plaidTxn('in1', 2, -250, '2026-11-11', 'DEPOSIT')]);
     const dep = await keyOf('in1');
-    expect((await overlay(dep))?.transfer_state).toBeNull();
-
-    const r = await pick(out, { otherKey: dep });
-    expect(r.status, JSON.stringify(r.json)).toBe(200);
     expect(await overlay(out)).toMatchObject({ transfer_state: 'paired', transfer_account_id: 'a_2' });
     expect(await overlay(dep)).toMatchObject({ transfer_state: 'paired', transfer_account_id: 'a_1' });
-    expect(await link(out)).toEqual({ from_key: out, to_key: dep });
-    // Already a transfer: it isn't offered again.
+    // Nothing is left to pick.
+    expect((await pick(out, { otherKey: dep })).status).toBe(422);
+    // Already a transfer: it isn't offered again, and a later outflow of the same amount doesn't break the pair.
     await sync([plaidTxn('out1b', 3, 250, '2026-11-11', 'ONLINE TRANSFER TO SAVINGS')]);
+    expect((await overlay(await keyOf('out1b')))?.transfer_state).toBe('unsorted');
     expect((await pick(await keyOf('out1b'), { otherKey: dep })).status).toBe(404);
+    expect(await overlay(dep)).toMatchObject({ transfer_state: 'paired', transfer_account_id: 'a_1' });
+  });
+
+  it('pairs by hand a deposit that came in a later sync, when there were two to choose from', async () => {
+    await sync([plaidTxn('out0', 1, 610, '2026-11-10', 'ONLINE TRANSFER TO SAVINGS')]);
+    const out = await keyOf('out0');
+    await sync([
+      plaidTxn('in0a', 2, -610, '2026-11-11', 'DEPOSIT'),
+      plaidTxn('in0b', 3, -610, '2026-11-11', 'DEPOSIT'),
+    ]);
+    const [a, b] = [await keyOf('in0a'), await keyOf('in0b')];
+    for (const k of [out, a, b]) expect((await overlay(k))?.transfer_state, k).toBe('unsorted');
+    const r = await pick(out, { otherKey: a });
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
+    expect(await overlay(out)).toMatchObject({ transfer_state: 'paired', transfer_account_id: 'a_2' });
+    expect(await overlay(a)).toMatchObject({ transfer_state: 'paired', transfer_account_id: 'a_1' });
+    expect(await link(out)).toEqual({ from_key: out, to_key: a });
   });
 
   it('pairs from the deposit’s side; the other deposit counts as income', async () => {

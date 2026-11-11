@@ -295,7 +295,8 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
       s.q(
         income
           ? `UPDATE txn_overlay SET transfer_state = NULL, transfer_account_id = NULL, to_rta = 1, categorized_by = 'user', updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`
-          : `UPDATE txn_overlay SET transfer_state = NULL, transfer_account_id = NULL, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
+          : // The person's own answer (D-90): filing never pairs this row again.
+            `UPDATE txn_overlay SET transfer_state = NULL, transfer_account_id = NULL, categorized_by = 'user', updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
         key,
         now,
       ),
