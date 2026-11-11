@@ -52,6 +52,7 @@ describe('object migrations', () => {
         '0008_start_part_rows.sql',
         '0009_drift_since.sql',
         '0010_owed_close.sql',
+        '0011_run_fetched.sql',
       ],
     });
     // The four the phone keeps were dropped (migration 0006); not_same added (0007), owed_close (0010).

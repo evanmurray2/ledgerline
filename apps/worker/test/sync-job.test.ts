@@ -124,6 +124,13 @@ describe('sync job', () => {
       expect(runner.list()).toEqual([]);
       expect(await db.prepare(`SELECT count(*) AS n FROM bank_txn`).first('n')).toBe(TOTAL);
       expect(await db.prepare(`SELECT phase FROM sync_run`).first('phase')).toBe('done');
+      // The update's time and its place among the budget's updates, set when its last page was stored (D-86 A1, A2).
+      const run = await db
+        .prepare(`SELECT fetched_at, fetch_seq, started_at, finished_at FROM sync_run`)
+        .first<{ fetched_at: number; fetch_seq: number; started_at: number; finished_at: number }>();
+      expect(run!.fetch_seq).toBe(1);
+      expect(run!.fetched_at).toBeGreaterThanOrEqual(run!.started_at);
+      expect(run!.fetched_at).toBeLessThan(run!.finished_at);
       const conn = await db
         .prepare(`SELECT sync_lock, last_synced_at FROM connection`)
         .first<{ sync_lock: string | null; last_synced_at: number }>();
@@ -132,6 +139,59 @@ describe('sync job', () => {
       expect(
         await db.prepare(`SELECT summary_dirty_from FROM budget`).first('summary_dirty_from'),
       ).toBeNull();
+    });
+  });
+
+  it('numbers the budget’s bank updates in the order their fetches finished, and an adopted run keeps its number', async () => {
+    await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName('sync-fetch-seq')), async (_o, st) => {
+      const db = new DurableDb(st.storage);
+      await seed(db, 'b1', 'c1');
+      const { beginRun } = await import('../src/sync/steps.js');
+      const run = (id: string, phase: string, seq: number | null, at: number | null) =>
+        db
+          .prepare(
+            `INSERT INTO sync_run (id, budget_id, connection_id, phase, pages_fetched, applied_through, started_at, created_at, updated_at, fetched_at, fetch_seq)
+             VALUES (?1, 'b1', 'c1', ?2, 2, 0, ?3, ?3, ?3, ?4, ?5)`,
+          )
+          .bind(id, phase, T, at, seq)
+          .run();
+      // Two earlier updates, done; then one that was fetched to the end and died while it was being applied.
+      await run('sync:a', 'done', 1, T + 1);
+      await run('sync:b', 'done', 2, T + 2);
+      await run('sync:c', 'applying', 3, T + 3);
+      await acquireFor(db, 'c1', 'sync:d');
+      const state = await beginRun(
+        { db, connectionId: 'c1', budgetId: 'b1', holder: 'sync:d', now: T + 9000 },
+        'manual',
+      );
+      expect(state.phase).toBe('applying');
+      const rows = (
+        await db
+          .prepare(`SELECT id, phase, error_code, fetch_seq, fetched_at FROM sync_run ORDER BY id`)
+          .all<{
+            id: string;
+            phase: string;
+            error_code: string | null;
+            fetch_seq: number;
+            fetched_at: number;
+          }>()
+      ).results;
+      expect(rows.find((r) => r.id === 'sync:c')).toMatchObject({
+        phase: 'failed',
+        error_code: 'ADOPTED',
+        fetch_seq: -3,
+      });
+      // The same bank update under a new id: the time it was fetched and its place are the old run's.
+      expect(rows.find((r) => r.id === 'sync:d')).toMatchObject({
+        phase: 'applying',
+        fetch_seq: 3,
+        fetched_at: T + 3,
+      });
+      // The next update to finish fetching is number 4, not 3 again.
+      const next = await db
+        .prepare(`SELECT coalesce(max(abs(fetch_seq)), 0) + 1 AS n FROM sync_run WHERE budget_id = 'b1'`)
+        .first('n');
+      expect(next).toBe(4);
     });
   });
 
