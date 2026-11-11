@@ -8,6 +8,7 @@ import type { AppEnv } from '../http/context.js';
 import type { Caller } from './directory.js';
 import { DIRECTORY_NAME } from './directory.js';
 import { TRY_AGAIN, budgetApi, serverReadsOnly } from '../routes/api.js';
+import { afterBankUpdate } from '../http/after-update.js';
 import { dev } from '../dev-seed.js';
 import {
   BUDGET_TABLES,
@@ -155,7 +156,9 @@ export class BudgetStore extends DurableObject<Env> {
         { status: 403, headers: { 'content-type': 'application/json' } },
       );
     await this.rearm();
-    this.app ??= withCaller((app) => app.use('/api/*', serverReadsOnly).route('/api', budgetApi));
+    this.app ??= withCaller((app) =>
+      app.use('/api/*', serverReadsOnly).use('/api/*', afterBankUpdate).route('/api', budgetApi),
+    );
     this.usage.request();
     if (caller.countUsage !== undefined) {
       this.counting ??= (await this.ctx.storage.get<boolean>(COUNT_KEY)) ?? false;

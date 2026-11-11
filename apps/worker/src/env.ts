@@ -19,6 +19,8 @@ export interface Env {
   PLAID_SECRET?: string;
   /** Local Plaid-shaped mock (development and tests only). */
   PLAID_BASE_URL?: string;
+  /** Tests only: the longest an edit waits for a bank update, in ms (http/after-update.ts). */
+  EDIT_WAIT_MS?: string;
   PLAID_WEBHOOK_URL?: string;
   PLAID_REDIRECT_URI?: string;
   /** "1:base64key,2:base64key" and the current version. */
