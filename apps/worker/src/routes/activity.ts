@@ -2,7 +2,7 @@
 // transaction sheet and its edits in transactions.ts.
 import { newId } from '../http/ids.js';
 import type { Stmt } from '@ledgerline/db/sql';
-import { requestNow } from '../http/clock.js';
+import { editNow } from '../http/clock.js';
 import { Hono } from 'hono';
 import { MatchRequest, OwedAction, TransferPick, type MatchView, type OwedView } from '@ledgerline/contracts';
 import { cents, daysBetween, formatCents, owedList, owedOut, projectedFronts } from '@ledgerline/domain';
@@ -68,7 +68,7 @@ activityRoutes.get('/match/:key', async (c) => {
   const s = scoped(c);
   const key = c.req.param('key');
   const t = await loadTx(s, key);
-  const f = await fresh(s, requestNow(c));
+  const f = await fresh(s, editNow(c));
   const { cats, accts } = await names(s);
   const { rows, raw } = await openItems(s, f.today);
   let left = t.amount;
@@ -98,7 +98,7 @@ activityRoutes.get('/match/:key', async (c) => {
 activityRoutes.post('/match', async (c) => {
   const r = await parse(MatchRequest, c.req.raw);
   const s = scoped(c);
-  const now = requestNow(c);
+  const now = editNow(c);
   const t = await loadTx(s, r.inflowKey);
   refuseHistory(t);
   if (t.amount <= 0) throw new HttpError(422, 'not_inflow', 'Only money coming in can be matched.');
@@ -151,7 +151,7 @@ activityRoutes.post('/match', async (c) => {
 activityRoutes.post('/match/:key/unlink', async (c) => {
   const s = scoped(c);
   const key = c.req.param('key');
-  const now = requestNow(c);
+  const now = editNow(c);
   const t = await loadTx(s, key);
   // Rule 12: a person-to-person payback returns to Waiting to match; part of a paycheck stays in RTA.
   const p2p = t.wtm_state !== null;
@@ -181,7 +181,7 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
   const r = await parse(TransferPick, c.req.raw);
   const s = scoped(c);
   const key = c.req.param('key');
-  const now = requestNow(c);
+  const now = editNow(c);
   const me = await loadTx(s, key);
   refuseHistory(me);
   if (me.transfer_state !== 'unsorted' || me.amount === 0) throw new HttpError(422, 'not_unclear', CHANGED);
@@ -322,7 +322,7 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
 activityRoutes.post('/transfers/:key/unpair', async (c) => {
   const s = scoped(c);
   const key = c.req.param('key');
-  const now = requestNow(c);
+  const now = editNow(c);
   const link = await s.first<{ from_key: string; to_key: string; created_at: number }>(
     `SELECT from_key, to_key, created_at FROM txn_link WHERE budget_id = ?1 AND kind = 'transfer' AND undone_at IS NULL AND (from_key = ?2 OR to_key = ?2)`,
     key,
@@ -377,7 +377,7 @@ activityRoutes.post('/transfers/:key/unpair', async (c) => {
 
 activityRoutes.get('/owed', async (c) => {
   const s = scoped(c);
-  const f = await fresh(s, requestNow(c));
+  const f = await fresh(s, editNow(c));
   const { cats } = await names(s);
   const { rows, raw } = await openItems(s, f.today);
   const fr = await s.all<{ txn_key: string; date: string; payee_name: string; amount: number }>(
@@ -425,7 +425,7 @@ activityRoutes.post('/owed/:id', async (c) => {
   const r = await parse(OwedAction, c.req.raw);
   const s = scoped(c);
   const id = c.req.param('id');
-  const now = requestNow(c);
+  const now = editNow(c);
   const f = await fresh(s, now);
   const { rows } = await openItems(s, f.today);
   const o = rows.find((x) => x.id === id);

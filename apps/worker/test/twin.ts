@@ -26,26 +26,7 @@ const DERIVED: Record<string, readonly string[]> = {
   budget: ['rta', 'summary_version', 'summary_month', 'summary_dirty_from', 'updated_at'],
 };
 
-/**
- * What the two sides may still differ in: the times an edit writes. The phone writes when the person made the edit,
- * the server writes when the edit arrived (docs/build-plan.md, "edit time"). Until they are equal, a time column
- * (`at`, or a name that ends in `_at`) is compared only as set or not set. This goes in the pull request that makes
- * the times equal.
- */
-const isTime = (column: string) => column === 'at' || column.endsWith('_at');
-const setOrNot = (v: unknown) => (v === null ? null : 'set');
-
 export type Rows = Record<string, Record<string, unknown>[]>;
-
-/** `field_edits` is a JSON object of field to time: until the times are equal, only its fields are compared. */
-function fieldsOnly(v: unknown): unknown {
-  if (typeof v !== 'string') return v;
-  try {
-    return Object.keys(JSON.parse(v) as Record<string, unknown>).sort();
-  } catch {
-    return v;
-  }
-}
 
 /** Every row the phone keeps, in key order. */
 export async function rowsOf(e: LocalEngine): Promise<Rows> {
@@ -54,11 +35,7 @@ export async function rowsOf(e: LocalEngine): Promise<Rows> {
     const skip = new Set([...(t.omit ?? []), ...(DERIVED[t.name] ?? [])]);
     const r = await e.db.prepare(`SELECT * FROM ${t.name} ORDER BY ${t.pk.join(', ')}`).all();
     out[t.name] = r.results.map((row) =>
-      Object.fromEntries(
-        Object.entries(row)
-          .filter(([k]) => !skip.has(k))
-          .map(([k, v]) => [k, k === 'field_edits' ? fieldsOnly(v) : isTime(k) ? setOrNot(v) : v]),
-      ),
+      Object.fromEntries(Object.entries(row).filter(([k]) => !skip.has(k))),
     );
   }
   return out;
@@ -100,7 +77,14 @@ export async function twin(
   path: string,
   body: unknown,
 ): Promise<Twin> {
-  const edit = { id: crypto.randomUUID().replace(/-/g, ''), at: Date.now() };
+  // As the app makes them (apps/web/src/copy/copy.ts editOffline): the time is this device's clock, corrected by
+  // how far it is from the server's.
+  // One minute back, as an edit that waited in the queue: the server keeps an edit's time only when it is not
+  // later than its own clock (http/clock.ts editNow), and the test server's clock stands still.
+  const edit = {
+    id: crypto.randomUUID().replace(/-/g, ''),
+    at: Date.now() + (await a.state()).offset - 60_000,
+  };
   const phone = await a.request(method, path, body, edit);
   const server = await SELF.fetch(`${ORIGIN}${path}`, {
     method,

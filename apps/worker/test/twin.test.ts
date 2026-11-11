@@ -168,6 +168,25 @@ describe('the same edit on the phone and on the server', () => {
         undefined,
       ],
     ],
+    // Edits on what the seeded budget already holds.
+    [
+      'mark a row reviewed',
+      'POST /transactions/:key/review',
+      () => ['POST', `/api/transactions/${txn}/review`, {}],
+    ],
+    ['close out an owed item', 'POST /owed/:id', () => ['POST', '/api/owed/nopa', { action: 'close' }]],
+    ['reopen it', 'POST /owed/:id', () => ['POST', '/api/owed/nopa', { action: 'reopen' }]],
+    ['remove the mark from it', 'POST /owed/:id', () => ['POST', '/api/owed/nopa', { action: 'cancel' }]],
+    [
+      'keep waiting for a pending check',
+      'POST /transactions/:key/pending',
+      () => ['POST', '/api/transactions/n-check-1043/pending', { action: 'keep_waiting' }],
+    ],
+    [
+      'unpair a transfer',
+      'POST /transfers/:key/unpair',
+      () => ['POST', '/api/transfers/n-to-marcus/unpair', {}],
+    ],
   ];
 
   const ids = async (table: string) =>
@@ -203,8 +222,9 @@ describe('the same edit on the phone and on the server', () => {
     const onPhone = (await joined.phone.json()) as { undoId: string };
     const onServer = (await joined.server.json()) as { undoId: string };
     expect(onPhone.undoId).toBe(onServer.undoId);
-    // No sync in between yet: the undo checks that the payees' times are the join's, and the server's rows carry
-    // the server's time until an edit's own time is used on both sides (docs/build-plan.md, "edit time").
+    // The phone takes the server's rows before the undo: they carry the join's own time, so the undo still finds
+    // the payees as the join left them.
+    await syncPhone(a);
     const undone = await twin(a, b, 'POST', `/api/settings/payees/merge/${onPhone.undoId}/undo`, {});
     expect(undone.phone.status, await undone.phone.clone().text()).toBe(200);
     expect(undone.differences).toEqual([]);
@@ -286,13 +306,9 @@ const NOT_YET: Record<string, string> = {
   'POST /alerts/:id/dismiss': 'needs an alert',
   'POST /match': 'needs a hand entry and its bank row',
   'POST /match/:key/unlink': 'needs a match',
-  'POST /owed/:id': 'needs an owed item',
   'POST /same-purchase/:id': 'needs a same-purchase question',
   'POST /transactions/:key/not-same': 'needs a claimed pair',
-  'POST /transactions/:key/pending': 'needs a pending check',
-  'POST /transactions/:key/review': 'needs a row to review',
   'POST /transfers/:key/pick': 'needs an unclear transfer',
-  'POST /transfers/:key/unpair': 'needs a paired transfer',
   'POST /setup/start': 'setup',
   'POST /setup/starting-balances': 'setup',
 };

@@ -3,7 +3,7 @@ import { newId } from '../../http/ids.js';
 import { changedSince } from '../../http/through.js';
 import type { Stmt } from '@ledgerline/db/sql';
 import { Hono, type Context } from 'hono';
-import { requestNow } from '../../http/clock.js';
+import { editNow } from '../../http/clock.js';
 import {
   ArchiveRequest,
   RemoveCategoryRequest,
@@ -27,7 +27,7 @@ export const categoriesRoutes = new Hono<AppEnv>();
 
 categoriesRoutes.get('/settings/categories', async (c) => {
   const s = scoped(c);
-  const f = await fresh(s, requestNow(c));
+  const f = await fresh(s, editNow(c));
   const { categories, groups, targets } = await structure(s);
   const start = (f.budget.budget_start_month ?? f.current) as Month;
   const mr = await monthResult(s, f.current, start);
@@ -98,7 +98,7 @@ categoriesRoutes.get('/settings/categories', async (c) => {
 categoriesRoutes.post('/settings/categories', async (c) => {
   const r = await parse(CategoryUpsert, c.req.raw);
   const s = scoped(c);
-  const now = requestNow(c);
+  const now = editNow(c);
   if (r.groupId) {
     const g = await s.first(`SELECT id FROM category_group WHERE budget_id = ?1 AND id = ?2`, r.groupId);
     if (!g) throw new HttpError(404, 'not_found', GONE);
@@ -150,7 +150,7 @@ categoriesRoutes.post('/settings/categories', async (c) => {
 categoriesRoutes.post('/settings/groups', async (c) => {
   const r = await parse(GroupUpsert, c.req.raw);
   const s = scoped(c);
-  const now = requestNow(c);
+  const now = editNow(c);
   const id = r.id ?? newId(c);
   if (r.id)
     await s.run(
@@ -179,7 +179,7 @@ categoriesRoutes.post('/settings/groups', async (c) => {
 categoriesRoutes.post('/settings/categories/:id/archive', async (c) => {
   const r = await parse(ArchiveRequest, c.req.raw);
   const s = scoped(c);
-  const now = requestNow(c);
+  const now = editNow(c);
   const id = c.req.param('id');
   const cat = await s.first<{ kind: string }>(
     `SELECT kind FROM category WHERE budget_id = ?1 AND id = ?2`,
@@ -247,7 +247,7 @@ async function archiveCategory(
 categoriesRoutes.post('/settings/categories/:id/pin', async (c) => {
   const r = await parse(PinRequest, c.req.raw);
   const s = scoped(c);
-  const now = requestNow(c);
+  const now = editNow(c);
   const id = c.req.param('id');
   const row = await s.first<{ value: string }>(
     `SELECT value FROM setting WHERE budget_id = ?1 AND key = ?2`,
@@ -268,7 +268,7 @@ categoriesRoutes.post('/settings/categories/:id/pin', async (c) => {
 
 categoriesRoutes.post('/settings/categories/:id/remove', async (c) => {
   const s = scoped(c);
-  const now = requestNow(c);
+  const now = editNow(c);
   const id = c.req.param('id');
   const cat = await s.first<{ kind: string; name: string }>(
     `SELECT kind, name FROM category WHERE budget_id = ?1 AND id = ?2`,
@@ -301,7 +301,7 @@ categoriesRoutes.post('/settings/categories/:id/remove', async (c) => {
 /** Remove an empty group (it's archived, so nothing that points at it breaks). */
 categoriesRoutes.post('/settings/groups/:id/remove', async (c) => {
   const s = scoped(c);
-  const now = requestNow(c);
+  const now = editNow(c);
   const id = c.req.param('id');
   const g = await s.first<{ id: string }>(
     `SELECT id FROM category_group WHERE budget_id = ?1 AND id = ?2`,

@@ -1,7 +1,7 @@
 import { newId } from '../http/ids.js';
 import type { Result } from '@ledgerline/db/sql';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
-import { requestNow } from '../http/clock.js';
+import { editNow, requestNow } from '../http/clock.js';
 import { z } from 'zod';
 import {
   AssignRequest,
@@ -45,6 +45,7 @@ export const identity: MiddlewareHandler<AppEnv> = async (c, next) => {
   c.set('requestId', crypto.randomUUID());
   const path = new URL(c.req.url).pathname;
   if (path === '/api/webhooks/plaid' || path.startsWith('/api/auth/')) return next();
+  // The server's clock, never an edit's own time: a session's age is not for the phone to say.
   const now = requestNow(c);
   const who = await identify(c.req.raw, c.env, now);
   if (!who) return c.json({ error: 'unauthenticated', message: 'Sign in again with your passkey.' }, 401);
@@ -214,7 +215,7 @@ budgetApi.onError(onError);
 
 budgetApi.get('/session', async (c) => {
   const s = scoped(c);
-  const now = requestNow(c);
+  const now = editNow(c);
   const f = await fresh(s, now);
   const [accounts, cats, settings] = await s.batch([
     s.q(`SELECT count(*) AS n FROM account WHERE budget_id = ?1`),
@@ -269,7 +270,7 @@ budgetApi.get('/budget/:month', async (c) => {
   const m = c.req.param('month');
   if (!isMonth(m)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const s = scoped(c);
-  const f = await fresh(s, requestNow(c));
+  const f = await fresh(s, editNow(c));
   if (!inReach(m, f.current)) throw new HttpError(400, 'invalid', BAD_MONTH);
   return c.json(await budgetView(s, f, m));
 });
@@ -278,14 +279,14 @@ budgetApi.get('/budget/:month/assign', async (c) => {
   const m = c.req.param('month');
   if (!isMonth(m)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const s = scoped(c);
-  const f = await fresh(s, requestNow(c));
+  const f = await fresh(s, editNow(c));
   if (!inReach(m, f.current)) throw new HttpError(400, 'invalid', BAD_MONTH);
   return c.json(await assignView(s, f, m));
 });
 
 budgetApi.get('/categories/:id/sheet', async (c) => {
   const s = scoped(c);
-  const f = await fresh(s, requestNow(c));
+  const f = await fresh(s, editNow(c));
   const m = c.req.query('month') ?? f.current;
   if (!isMonth(m) || !inReach(m, f.current)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const sheet = await categorySheet(s, f, c.req.param('id'), m);
@@ -300,7 +301,7 @@ async function addAssignments(
 ): Promise<MutationAck> {
   checkAmounts(...items.map((i) => i.amount));
   const s = scoped(c);
-  const now = requestNow(c);
+  const now = editNow(c);
   const ids = items.map((i) => i.categoryId);
   const known = await s.all<{ id: string }>(
     `SELECT id FROM category WHERE budget_id = ?1 AND id IN (${ids.map((_, i) => `?${i + 2}`).join(',')})`,
@@ -357,7 +358,7 @@ budgetApi.post('/budget/move', async (c) => {
 budgetApi.put('/categories/:id/target', async (c) => {
   const r = await parse(TargetRequest, c.req.raw);
   const s = scoped(c);
-  const now = requestNow(c);
+  const now = editNow(c);
   const id = c.req.param('id');
   const t = r.target;
   if (t.type !== 'none') checkAmounts(t.amount, t.type === 'no_date' ? t.monthly : null);
