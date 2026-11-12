@@ -10,7 +10,7 @@ import { encodeEntry, readEntry, type BudgetKeys } from '@ledgerline/seal';
 import type { RestBatch, SyncPage } from '../routes/sync.js';
 import { cutoverOnDevice } from './cutover-device.js';
 import { DeviceLog } from './device-log.js';
-import { checkSnapshot, openSnapshot, writeSnapshot } from './device-snapshot.js';
+import { checkSnapshot, emptyOldCopy, openSnapshot, writeSnapshot } from './device-snapshot.js';
 import { cutoverTransport, httpTransport, type Fetch } from './http-transport.js';
 import { LogSession } from './log-session.js';
 import { reader, type ShadowEvent } from './shadow.js';
@@ -263,6 +263,8 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
     case 'sealedJoin': {
       const e = need().engine;
       if (!sealed) throw new Error('Your budget isn’t open on this device yet. Try again.');
+      // No place in the log (sealedOpen said so): a copy from before the move is emptied first.
+      const dropped = await emptyOldCopy(e);
       sealed.log = await openSnapshot(e, http, {
         keys: sealed.keys,
         budgetId: who!.budgetId,
@@ -270,7 +272,7 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
         clock,
       });
       await e.note(LogSession.PLACE, sealed.log.save());
-      return { value: { number: sealed.log.number } };
+      return { value: { number: sealed.log.number, dropped } };
     }
     case 'sealedSync': {
       const { engine: e, s, log } = needSealed();

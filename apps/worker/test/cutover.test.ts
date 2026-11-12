@@ -11,7 +11,13 @@ import { runDeps } from '../src/seal/runs.js';
 import { env, SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { DeviceLog } from '../src/local/device-log.js';
-import { differingTables, dumpChunks, openSnapshot, tableHashes } from '../src/local/device-snapshot.js';
+import {
+  differingTables,
+  dumpChunks,
+  emptyOldCopy,
+  openSnapshot,
+  tableHashes,
+} from '../src/local/device-snapshot.js';
 import type { LocalEngine } from '../src/local/engine.js';
 import { httpTransport } from '../src/local/http-transport.js';
 import { LogSession } from '../src/local/log-session.js';
@@ -111,7 +117,7 @@ describe('the cutover, rehearsed', () => {
         .run();
     };
     phone = await everything(await newPhone());
-    spare = await newPhone();
+    spare = await everything(await newPhone());
   });
 
   it('freezes, takes the first entry and snapshot, seals; the devices live on the log; and the way back works', async () => {
@@ -381,7 +387,19 @@ describe('the cutover, rehearsed', () => {
       now: NOW + 5000,
     });
     expect(filed).toMatchObject({ filed: 1, lost: 0 });
-    // A second device opens the first snapshot and reads the log: the same budget.
+    // A second device opens the first snapshot and reads the log: the same budget. It held a copy from before the
+    // move, with a change that never went out: that copy is emptied first, as the app does.
+    await spare.enqueue({
+      id: 'before-the-move-xxxxxxx',
+      at: NOW,
+      method: 'POST',
+      path: '/api/budget/assign',
+      body: { month: '2026-11', items: [{ categoryId: 'rent', amount: 1 }] },
+    });
+    await expect(
+      openSnapshot(spare, t, { keys: [w.keys], budgetId: budget, deviceId: LAPTOP, clock: () => NOW }),
+    ).rejects.toThrow('the copy is not empty');
+    expect(await emptyOldCopy(spare)).toBe(1);
     const log2 = await openSnapshot(spare, t, {
       keys: [w.keys],
       budgetId: budget,

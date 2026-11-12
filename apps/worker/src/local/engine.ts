@@ -924,6 +924,16 @@ export class LocalEngine {
   }
 
   /** The server took this edit: it leaves the queue. Gives how many are left. */
+  /**
+   * Drops every change waiting to be sent. Only for a copy of a budget that was moved to its sealed log on
+   * another device: those changes were made for the old routes, which take nothing any more.
+   */
+  async dropQueue(): Promise<number> {
+    const n = (await this.queue()).length;
+    if (n) await this.putQueue([]);
+    return n;
+  }
+
   async queueDone(id: string): Promise<number> {
     const q = (await this.queue()).filter((x) => x.id !== id);
     await this.putQueue(q);
