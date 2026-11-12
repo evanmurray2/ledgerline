@@ -25,7 +25,7 @@ import { checkIdentityDb } from '../maintenance.js';
 import { splitStatements } from '../store/adapter.js';
 import { BUDGET_MIGRATIONS } from '../store/migrations.gen.js';
 import { SYNC_FORMAT, SYNC_TABLES, triggerNames, type SyncTable } from '../sync-tables.js';
-import type { SyncPage, SyncRow } from '../routes/sync.js';
+import type { BankLogBatch, SyncPage, SyncRow } from '../routes/sync.js';
 import { CSRF_HEADER } from '@ledgerline/contracts';
 
 export interface EngineIdentity {
@@ -785,6 +785,42 @@ export class LocalEngine {
     const { kept, lost } = await this.rerun(later, through);
     await this.putQueue([...before, ...kept]);
     return { redownload: false, lost: lost.length, left: before.length + kept.length };
+  }
+
+  /** What to ask the server's bank log for next (routes/sync.ts `/sync/bank-log`). */
+  async bankLogRequest(): Promise<{ after: number; pagesAfter: string | null }> {
+    const r = await this.db
+      .prepare(`SELECT value FROM local_state WHERE key = 'bank_log'`)
+      .first<{ value: string }>();
+    return r
+      ? (JSON.parse(r.value) as { after: number; pagesAfter: string | null })
+      : { after: 0, pagesAfter: null };
+  }
+
+  /**
+   * Adds a batch of the server's bank log to the copy's own (docs/privacy.md 5.4). Rows are only ever added: the
+   * copy has the same append-only triggers as the server, and a row it already holds is left as it is.
+   */
+  async applyBankLog(batch: BankLogBatch): Promise<{ rows: number; caughtUp: boolean }> {
+    const insert = (table: string, row: Record<string, unknown>): Stmt => {
+      const cols = Object.keys(row);
+      return this.db
+        .prepare(
+          `INSERT OR IGNORE INTO ${table} (${cols.join(', ')}) VALUES (${cols.map((_, i) => `?${i + 1}`).join(', ')})`,
+        )
+        .bind(...cols.map((c) => row[c]));
+    };
+    const stmts: Stmt[] = [
+      ...batch.pages.map((r) => insert('bank_page', r)),
+      ...batch.events.map((r) => insert('bank_event', r)),
+      this.db
+        .prepare(
+          `INSERT INTO local_state (key, value) VALUES ('bank_log', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+        )
+        .bind(JSON.stringify({ after: batch.after, pagesAfter: batch.pagesAfter })),
+    ];
+    for (const part of chunks(stmts, 500)) await this.db.batch(part);
+    return { rows: batch.pages.length + batch.events.length, caughtUp: !batch.more };
   }
 
   /** Writes rows another copy recorded, and marks what derive() must work out again. */

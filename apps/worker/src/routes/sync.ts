@@ -202,6 +202,73 @@ syncRoutes.get('/sync', async (c) => {
   return c.json(await changePage(db, since, limit, base));
 });
 
+/** One batch of the bank log for a device (docs/privacy.md 5.4): rows only ever added, so it has cursors of its own. */
+export interface BankLogBatch {
+  /** `bank_event` rows after the event id the device holds, in id order. */
+  events: Record<string, unknown>[];
+  /** `bank_page` rows after the device's page cursor, in the order they were written. */
+  pages: Record<string, unknown>[];
+  /** What the device asks with next. */
+  after: number;
+  pagesAfter: string | null;
+  /** More of either is waiting. */
+  more: boolean;
+}
+
+const BANK_LOG_EVENTS = 100;
+const BANK_LOG_PAGES = 200;
+const PageCursor = z.tuple([z.number().int(), z.string(), z.number().int()]);
+
+/**
+ * The bank log (`bank_event`, `bank_page`), for the device to keep beside its copy: the device will file bank
+ * updates itself and needs the log whole (docs/privacy.md 5.4). The log is append-only, so a device asks for what
+ * comes after the newest row it holds; a row sent twice is ignored there. Small batches: a row's payload is
+ * about a kilobyte.
+ */
+syncRoutes.get('/sync/bank-log', async (c) => {
+  const after = Number(c.req.query('after') ?? '0');
+  if (!Number.isSafeInteger(after) || after < 0) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
+  let cursor: z.infer<typeof PageCursor> | null = null;
+  const raw = c.req.query('pagesAfter');
+  if (raw) {
+    try {
+      cursor = PageCursor.parse(JSON.parse(raw));
+    } catch {
+      return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
+    }
+  }
+  const db = c.env.DB;
+  const events = (
+    await db
+      .prepare(`SELECT * FROM bank_event WHERE id > ?1 ORDER BY id LIMIT ${BANK_LOG_EVENTS + 1}`)
+      .bind(after)
+      .all<Record<string, unknown>>()
+  ).results;
+  const pages = (
+    await db
+      .prepare(
+        `SELECT * FROM bank_page WHERE (created_at, sync_run_id, page) > (?1, ?2, ?3)
+         ORDER BY created_at, sync_run_id, page LIMIT ${BANK_LOG_PAGES + 1}`,
+      )
+      .bind(cursor?.[0] ?? -1, cursor?.[1] ?? '', cursor?.[2] ?? -1)
+      .all<Record<string, unknown>>()
+  ).results;
+  const more = events.length > BANK_LOG_EVENTS || pages.length > BANK_LOG_PAGES;
+  events.length = Math.min(events.length, BANK_LOG_EVENTS);
+  pages.length = Math.min(pages.length, BANK_LOG_PAGES);
+  const lastPage = pages[pages.length - 1];
+  const batch: BankLogBatch = {
+    events,
+    pages,
+    after: events.length ? Number(events[events.length - 1]!.id) : after,
+    pagesAfter: lastPage
+      ? JSON.stringify([lastPage.created_at, lastPage.sync_run_id, lastPage.page])
+      : (raw ?? null),
+    more,
+  };
+  return c.json(batch);
+});
+
 /**
  * Ready to Assign worked out on a phone that doesn't satisfy rule 10 (the identity check, sync spec): saved as an
  * `identity` alert, which shows on Accounts on every device until dismissed.
