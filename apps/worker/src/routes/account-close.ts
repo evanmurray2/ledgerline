@@ -1,7 +1,12 @@
-// Close an account, and open it again (D-73). Close runs only at $0: no bank balance, nothing pending or upcoming,
-// a working balance of $0 and, for a card, a payment category with $0 available. So no money moves: the account and
-// a card's payment category leave the screens, and every past row stays counted. A new row from the bank, or an entry
-// you add, opens the account again (`reopenStmts`, called by the sync's apply step and by Add).
+// Close an account, and open it again (D-73, D-93). Close runs only at $0: a working balance of $0, no pending row
+// from the bank, nothing upcoming and, for a card, a payment category with $0 available. So no money moves: the
+// account and a card's payment category leave the screens, and every past row stays counted. A new row from the bank,
+// or an entry you add, opens the account again (`reopenStmts`, called by the sync's apply step and by Add).
+//
+// A bank that closed the account sends nothing more, so a pending entry of yours there (a transfer's other side,
+// D-83) would never post and the bank's last balance would never change. Close therefore takes your own pending
+// entries as they are (D-93): they stay, count as they did, and stop waiting for the bank (`finalEntries`). The
+// bank's last balance is no longer shown: the closed account is $0. Changing such an entry opens the account again.
 import type { Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
 import { CloseAccount, type AccountRow } from '@ledgerline/contracts';
@@ -14,43 +19,81 @@ import { ACK, CHANGED, GONE, HttpError, parse, scoped } from './api.js';
 
 export const accountCloseRoutes = new Hono<AppEnv>();
 
-const PENDING =
-  'It has pending or upcoming transactions. Wait for the bank to post them, or delete your own entries.';
+const BANK_PENDING =
+  'The bank still shows a pending transaction here. Wait for the bank to post or remove it.';
+const UPCOMING = 'It has upcoming transactions. Delete them first.';
+
+/** What is still open in an account, as its register lists it. */
+export interface OpenRows {
+  /** A pending row from the bank that no entry of yours covers. */
+  bankPending: boolean;
+  upcoming: boolean;
+  /** Pending entries you added: they don't block Close (D-93). */
+  entries: boolean;
+}
 
 /** Why an open account can't be closed yet, or null when it can. The phone works it out (D-45). */
-export function closeBlocked(
-  a: AccountRow,
-  hasPending: boolean,
-  cardAvailable: number | null,
-): string | null {
+export function closeBlocked(a: AccountRow, open: OpenRows, cardAvailable: number | null): string | null {
   const credit = a.kind === 'credit';
-  if (a.bank !== 0)
+  // With an entry of yours, the bank's balance may never reach $0 (D-93): the working balance decides.
+  if (!open.entries && a.bank !== 0)
     return credit
       ? `You still owe ${formatCents(Math.abs(a.bank))} on this card. Pay it off first.`
       : `It still has ${formatCents(a.bank)} at the bank. Move the money out first.`;
-  if (hasPending || a.pending !== 0) return PENDING;
+  if (open.bankPending) return BANK_PENDING;
+  if (open.upcoming) return UPCOMING;
   if (a.working !== 0) return `Its balance after pending is ${formatCents(a.working)}, not $0.`;
   if (credit && cardAvailable !== null && cardAvailable !== 0)
     return `Its payment category has ${formatCents(cardAvailable)} available. Move it to another category first.`;
   return null;
 }
 
-/** Opens an account again with its card payment category. Nothing to do when it is open. */
-export function reopenStmts(s: Scoped, accountId: string, now: number): Stmt[] {
+/**
+ * Your pending entries in closed accounts, added up by the month of their date: they are final (D-93), so net worth
+ * over time counts them as it counts posted rows. Binds ?1 (budget id).
+ */
+export const FINAL_ENTRIES_BY_MONTH = `SELECT substr(v.date, 1, 7) AS month, sum(v.amount) AS a FROM v_txn_manual v
+  JOIN account a ON a.id = v.account_id
+  WHERE v.budget_id = ?1 AND v.status = 'pending' AND v.wont_clear = 0 AND a.closed_at IS NOT NULL GROUP BY 1`;
+
+/** A row of a closed account that is one of your pending entries: final, listed by its date (D-93). */
+export const IN_CLOSED_ACCOUNT = `(source = 'manual' AND account_id IN (SELECT id FROM account WHERE budget_id = ?1 AND closed_at IS NOT NULL))`;
+
+/** Opens the account `account` names (SQL over ?2) again, with its card payment category. */
+function reopen(s: Scoped, account: string, arg: string, now: number): Stmt[] {
   return [
     s.q(
       `UPDATE category SET archived_at = NULL, updated_at = ?3 WHERE budget_id = ?1 AND kind = 'cc_payment'
-         AND card_account_id = ?2 AND archived_at IS NOT NULL
-         AND EXISTS (SELECT 1 FROM account WHERE budget_id = ?1 AND id = ?2 AND closed_at IS NOT NULL)`,
-      accountId,
+         AND card_account_id = ${account} AND archived_at IS NOT NULL
+         AND EXISTS (SELECT 1 FROM account WHERE budget_id = ?1 AND id = ${account} AND closed_at IS NOT NULL)`,
+      arg,
       now,
     ),
     s.q(
-      `UPDATE account SET closed_at = NULL, updated_at = ?3 WHERE budget_id = ?1 AND id = ?2 AND closed_at IS NOT NULL`,
-      accountId,
+      `UPDATE account SET closed_at = NULL, updated_at = ?3 WHERE budget_id = ?1 AND id = ${account} AND closed_at IS NOT NULL`,
+      arg,
       now,
     ),
   ];
+}
+
+/** Opens an account again with its card payment category. Nothing to do when it is open. */
+export function reopenStmts(s: Scoped, accountId: string, now: number): Stmt[] {
+  return reopen(s, '?2', accountId, now);
+}
+
+/**
+ * Opens the account of your entry `key` again: deleting the entry, or changing what it counts, moves a closed
+ * account off $0 (D-93). Nothing to do when the account is open or the row is the bank's. `only` narrows the entry
+ * (SQL over manual_pending).
+ */
+export function reopenForEntry(s: Scoped, key: string, now: number, only = '1'): Stmt[] {
+  return reopen(
+    s,
+    `(SELECT account_id FROM manual_pending WHERE budget_id = ?1 AND txn_key = ?2 AND ${only})`,
+    key,
+    now,
+  );
 }
 
 accountCloseRoutes.post('/accounts/:id/close', async (c) => {
@@ -70,23 +113,31 @@ accountCloseRoutes.post('/accounts/:id/close', async (c) => {
   const credit = a.kind === 'credit';
   if (r.working !== 0 || (credit && r.available !== 0))
     throw new HttpError(422, 'invalid', 'Close works only at $0. Pull down to refresh.');
-  // What the server can check alone: the bank's balance, and no pending or upcoming row.
+  // What the server can check alone: no pending row from the bank (one a posted row has taken over, or an entry of
+  // yours covers, is done), nothing upcoming, and the bank's balance unless an entry of yours stays (D-93).
   const [bank, open] = await s.batch([
     s.q(
       `SELECT current_balance AS b FROM provider_account WHERE budget_id = ?1 AND provider_account_id = ?2`,
       a.provider_account_id,
     ),
     s.q(
-      `SELECT (SELECT count(*) FROM bank_txn WHERE budget_id = ?1 AND provider_account_id = ?3 AND pending = 1 AND removed_at IS NULL)
-            + (SELECT count(*) FROM manual_pending WHERE budget_id = ?1 AND account_id = ?2 AND deleted_at IS NULL AND matched_txn_key IS NULL) AS n`,
+      `SELECT (SELECT count(*) FROM bank_txn b WHERE b.budget_id = ?1 AND b.provider_account_id = ?3 AND b.pending = 1 AND b.removed_at IS NULL
+                 AND NOT EXISTS (SELECT 1 FROM bank_txn x WHERE x.txn_key = b.txn_key AND x.pending = 0 AND x.removed_at IS NULL)
+                 AND NOT EXISTS (SELECT 1 FROM manual_pending cv WHERE cv.budget_id = ?1 AND cv.covers_provider_txn_id = b.provider_txn_id
+                                   AND cv.deleted_at IS NULL AND cv.matched_txn_key IS NULL))
+            + (SELECT count(*) FROM manual_pending WHERE budget_id = ?1 AND account_id = ?2 AND kind = 'upcoming'
+                 AND deleted_at IS NULL AND matched_txn_key IS NULL) AS blocking,
+              (SELECT count(*) FROM manual_pending WHERE budget_id = ?1 AND account_id = ?2 AND kind = 'pending'
+                 AND deleted_at IS NULL AND matched_txn_key IS NULL) AS entries`,
       id,
       a.provider_account_id,
     ),
   ]);
+  const n = open!.results[0] as { blocking: number; entries: number } | undefined;
+  if ((n?.blocking ?? 0) > 0) throw new HttpError(422, 'invalid', BANK_PENDING);
   const b = (bank!.results[0] as { b: number | null } | undefined)?.b ?? 0;
-  if (b !== 0) throw new HttpError(422, 'invalid', 'Close works only at $0. Pull down to refresh.');
-  if (((open!.results[0] as { n: number } | undefined)?.n ?? 0) > 0)
-    throw new HttpError(422, 'invalid', PENDING);
+  if (b !== 0 && (n?.entries ?? 0) === 0)
+    throw new HttpError(422, 'invalid', 'Close works only at $0. Pull down to refresh.');
   await s.batch([
     s.q(`UPDATE account SET closed_at = ?3, updated_at = ?3 WHERE budget_id = ?1 AND id = ?2`, id, now),
     // Its available is $0 (checked above), so archiving moves no money.

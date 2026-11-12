@@ -30,7 +30,7 @@ import { monthTotals } from '../ledger/totals.js';
 import { DIFF_WAIT_MS, accountLedger, bankDiff } from '../ledger/bank-diff.js';
 import type { Scoped } from '../db/scoped.js';
 import { type Adjustments, startSheet } from '../ledger/start-part.js';
-import { closeBlocked } from './account-close.js';
+import { FINAL_ENTRIES_BY_MONTH, closeBlocked } from './account-close.js';
 
 export const accountRoutes = new Hono<AppEnv>();
 
@@ -89,6 +89,9 @@ async function accountRows(
     const statement = ci?.statement
       ? { balance: ci.statement.balance, due: ci.statement.due, covered: true }
       : null;
+    // A closed account is $0 (D-73). The bank's last balance and your entries that stayed (D-93) add up to that, and
+    // the bank sends no more: show the $0, not the parts.
+    const closed = a.closed_at !== null;
     const synced = a.last_synced_at
       ? `synced ${syncedWhen(a.last_synced_at, today, timeZone)}`
       : 'not synced yet';
@@ -98,14 +101,14 @@ async function accountRows(
       kind: a.kind,
       institution: a.institution ?? 'Manual',
       mask: a.mask,
-      bank: cents(bank),
-      pending: cents(credit ? -p : p),
+      bank: cents(closed ? working : bank),
+      pending: cents(closed ? 0 : credit ? -p : p),
       working: cents(working),
       syncedAt: a.last_synced_at,
       connectionStatus:
         a.status === 'login_required' ? 'login_required' : a.status === 'error' ? 'error' : 'ok',
-      drift: drift === null ? null : cents(drift),
-      pendingInBank: cents(Math.abs(diff.inBank)),
+      drift: drift === null || closed ? null : cents(drift),
+      pendingInBank: cents(closed ? 0 : Math.abs(diff.inBank)),
       statement,
       meta: `${a.institution ?? 'Manual'}${a.mask ? ` · ending ${a.mask}` : ''} · ${
         a.closed_at !== null
@@ -114,7 +117,7 @@ async function accountRows(
             ? 'sign in again'
             : synced
       }`,
-      closed: a.closed_at !== null,
+      closed,
     };
   });
   return { rows, raw, recent: startAdjust.recent };
@@ -146,7 +149,7 @@ accountRoutes.get('/accounts', async (c) => {
   // Net worth counts pending, like the Cash and Credit cards totals below (D-76), so the three numbers add up.
   const netWorth = cash.reduce((a, r) => a + r.working, 0) - credit.reduce((a, r) => a + r.working, 0);
   const netWorthAtBank = cash.reduce((a, r) => a + r.bank, 0) - credit.reduce((a, r) => a + r.bank, 0);
-  const [monthPosted, conns, health, hist, owedI, owedL] = await s.batch([
+  const [monthPosted, conns, health, hist, owedI, owedL, finals] = await s.batch([
     s.q(
       `SELECT sum(amount) AS p FROM v_txn_bank WHERE budget_id = ?1 AND status = 'posted'
          AND posted_date >= date(?2 || '-01', '-1 month') AND substr(date, 1, 7) = ?2`,
@@ -167,7 +170,11 @@ accountRoutes.get('/accounts', async (c) => {
     s.q(
       `SELECT from_key, to_key, amount FROM txn_link WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND undone_at IS NULL`,
     ),
+    s.q(FINAL_ENTRIES_BY_MONTH),
   ]);
+  // Your entries that stayed in a closed account are final (D-93): this month's count with the posted rows.
+  const finalNow =
+    (finals!.results as { month: string; a: number }[]).find((r) => r.month === f.current)?.a ?? 0;
   const owed = owedOut(
     owedList(
       (
@@ -223,7 +230,7 @@ accountRoutes.get('/accounts', async (c) => {
     // Posted this month, plus pending (the gap between net worth and the bank's balances): the same step as the
     // Reports chart from last month's end to now.
     netWorthChange: cents(
-      ((monthPosted!.results[0] as { p: number | null }).p ?? 0) + netWorth - netWorthAtBank,
+      ((monthPosted!.results[0] as { p: number | null }).p ?? 0) + finalNow + netWorth - netWorthAtBank,
     ),
     month: f.current,
     owedOut: owed,
@@ -345,22 +352,23 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
   const keep = (t: TxRow) =>
     !hiddenFromLists(t) &&
     (show === 'all' ||
-      (show === 'pending' && t.status !== 'posted') ||
+      (show === 'pending' && !dated(t)) ||
       (show === 'needs' && needsCategory(t)) ||
       (show === 'transfers' && t.transfer_state !== null));
   const credit = account.kind === 'credit';
   const days: RegisterView['days'] = [];
-  const pend = txs.filter((t) => t.status !== 'posted' && keep(t));
+  // In a closed account your pending entries are final (D-93): listed on their day, in the running balance.
+  const dated = (t: TxRow) => t.status === 'posted' || (account.closed && t.status === 'pending');
+  const pend = txs.filter((t) => !dated(t) && keep(t));
   if (pend.length)
     days.push({ label: 'Pending', balance: null, rows: pend.map((t) => listRow(t, accts, cats)) });
   // Running balance backwards from the bank balance, over posted rows.
   let bal = account.bank;
   const byDay = new Map<string, TxRow[]>();
-  for (const t of txs.filter((x) => x.status === 'posted'))
-    byDay.set(t.date, [...(byDay.get(t.date) ?? []), t]);
+  for (const t of txs.filter(dated)) byDay.set(t.date, [...(byDay.get(t.date) ?? []), t]);
   for (const [d, ts] of byDay) {
     const dayBal = bal;
-    for (const t of ts) bal = credit ? bal + t.amount : bal - t.amount;
+    for (const t of ts.filter((x) => !x.wont_clear)) bal = credit ? bal + t.amount : bal - t.amount;
     const shown = ts.filter(keep);
     if (shown.length)
       days.push({
@@ -388,7 +396,11 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
     ? null
     : closeBlocked(
         account,
-        txs.some((t) => t.status !== 'posted'),
+        {
+          bankPending: txs.some((t) => t.status === 'pending' && t.source === 'bank'),
+          upcoming: txs.some((t) => t.status === 'upcoming'),
+          entries: txs.some((t) => t.status === 'pending' && t.source === 'manual'),
+        },
         cardAvailable,
       );
   return c.json({
@@ -462,12 +474,16 @@ accountRoutes.get('/reports', async (c) => {
     m: mm,
     a: [...accts.values()].reduce((x, v) => x + v.all, 0),
   }));
+  // Your entries that stayed in closed accounts are final (D-93): they count in their month, as posted rows do.
+  const finals = new Map(
+    (await s.all<{ month: string; a: number }>(FINAL_ENTRIES_BY_MONTH)).map((r) => [r.month, r.a]),
+  );
   const netWorth: ReportsView['netWorth'] = [];
   let after = 0;
   for (let i = 0; i < 12; i++) {
     const mm = addMonths(f.current, -i);
     netWorth.unshift({ month: mm, value: cents(i === 0 ? nwWorking : nwNow - after) });
-    after += posted.find((p) => p.m === mm)?.a ?? 0;
+    after += (posted.find((p) => p.m === mm)?.a ?? 0) + (finals.get(mm) ?? 0);
   }
   const stillOwed = owedOut(
     owedList(

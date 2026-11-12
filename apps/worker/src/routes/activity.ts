@@ -14,6 +14,7 @@ import { isHistory, listRow } from '../views/rows.js';
 import { RECENT_TX, TX_COLUMNS, txnCol, type TxRow } from '../ledger/ledger.js';
 import type { Scoped } from '../db/scoped.js';
 import { OVERLAY_UPSERT, commit, loadTx, names, refuseHistory } from './txn-common.js';
+import { reopenForEntry } from './account-close.js';
 export const activityRoutes = new Hono<AppEnv>();
 
 // ---------------------------------------------------------------- matching money back
@@ -361,6 +362,13 @@ activityRoutes.post('/transfers/:key/unpair', async (c) => {
   for (const k of keys)
     if (link && k.startsWith('m:'))
       w.push(
+        // Before the entry goes: one that stayed in a closed account leaves it off $0 (D-93).
+        ...reopenForEntry(
+          s,
+          k,
+          now,
+          `created_at = ${Number(link.created_at)} AND matched_txn_key IS NULL AND deleted_at IS NULL`,
+        ),
         s.q(
           `UPDATE manual_pending SET deleted_at = ?4, updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2 AND created_at = ?3
              AND matched_txn_key IS NULL AND deleted_at IS NULL`,
