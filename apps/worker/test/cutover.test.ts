@@ -7,11 +7,17 @@ import { encryptToken, parseKeyring, tokenKeyBytes } from '@ledgerline/platform'
 import { PlaidProvider, type BankDataProvider } from '@ledgerline/bank-provider';
 import { cursorHash, encodeEntry, linkMac, serverKeys, startChain, toHex } from '@ledgerline/seal';
 import { SEALED_FETCH, sealedFetchHandler, type FetchState } from '../src/seal/fetch-job.js';
-import { runDeps } from '../src/seal/runs.js';
+import { abandonSealedRun, runDeps } from '../src/seal/runs.js';
 import { env, SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { DeviceLog } from '../src/local/device-log.js';
-import { differingTables, dumpChunks, openSnapshot, tableHashes } from '../src/local/device-snapshot.js';
+import {
+  differingTables,
+  dumpChunks,
+  emptyOldCopy,
+  openSnapshot,
+  tableHashes,
+} from '../src/local/device-snapshot.js';
 import type { LocalEngine } from '../src/local/engine.js';
 import { httpTransport } from '../src/local/http-transport.js';
 import { LogSession } from '../src/local/log-session.js';
@@ -111,7 +117,7 @@ describe('the cutover, rehearsed', () => {
         .run();
     };
     phone = await everything(await newPhone());
-    spare = await newPhone();
+    spare = await everything(await newPhone());
   });
 
   it('freezes, takes the first entry and snapshot, seals; the devices live on the log; and the way back works', async () => {
@@ -270,15 +276,13 @@ describe('the cutover, rehearsed', () => {
     // A fetch the person asks for: only stamped links are asked (the seeded ones never had a token).
     expect(await (await post('/api/settings/connections/refresh')).json()).toEqual({ ok: true, started: 1 });
     expect((await post(`/api/settings/connections/con_${LINK}/refresh`)).status).toBe(200);
+    // The fetch starts at once: a job for the link, not the backstop's next round.
+    expect(await jobs()).toContain('sealed_fetch');
     expect((await post('/api/settings/connections/con_nothing/refresh')).status).toBe(404);
-    expect(
-      (
-        await server
-          .prepare(`SELECT fetch_requested AS n FROM bank_link WHERE id = ?1`)
-          .bind(LINK)
-          .first<{ n: number }>()
-      )?.n,
-    ).toBe(1);
+    // The test runs the fetch itself below, with a bank that answers: the job the refresh queued goes (its alarm
+    // would ask the real bank), and a run it began is given up.
+    await server.prepare(`DELETE FROM job WHERE kind = 'sealed_fetch'`).run();
+    await abandonSealedRun(server, LINK);
     // What the server kept about the app's use is answered and dropped; every other old route stays closed.
     expect((await post('/api/usage')).status).toBe(204);
     expect((await post('/api/settings/connections/exchange')).status).toBe(409);
@@ -381,7 +385,19 @@ describe('the cutover, rehearsed', () => {
       now: NOW + 5000,
     });
     expect(filed).toMatchObject({ filed: 1, lost: 0 });
-    // A second device opens the first snapshot and reads the log: the same budget.
+    // A second device opens the first snapshot and reads the log: the same budget. It held a copy from before the
+    // move, with a change that never went out: that copy is emptied first, as the app does.
+    await spare.enqueue({
+      id: 'before-the-move-xxxxxxx',
+      at: NOW,
+      method: 'POST',
+      path: '/api/budget/assign',
+      body: { month: '2026-11', items: [{ categoryId: 'rent', amount: 1 }] },
+    });
+    await expect(
+      openSnapshot(spare, t, { keys: [w.keys], budgetId: budget, deviceId: LAPTOP, clock: () => NOW }),
+    ).rejects.toThrow('the copy is not empty');
+    expect(await emptyOldCopy(spare)).toBe(1);
     const log2 = await openSnapshot(spare, t, {
       keys: [w.keys],
       budgetId: budget,

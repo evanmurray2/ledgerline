@@ -558,6 +558,17 @@ async function isEmpty(engine: LocalEngine): Promise<boolean> {
   return true;
 }
 
+/**
+ * A copy from before its budget was sealed (another device made the move): it holds no place in the log, and
+ * its rows are the budget as it was. It is emptied so the device can join from a snapshot. Gives the number of
+ * changes that waited and are dropped (the old routes take none of them any more).
+ */
+export async function emptyOldCopy(engine: LocalEngine): Promise<number> {
+  const dropped = await engine.dropQueue();
+  await wipe(engine);
+  return dropped;
+}
+
 /** Takes every row of every snapshot table out of a copy that a failed open half filled. */
 async function wipe(engine: LocalEngine): Promise<void> {
   await engine.clear();

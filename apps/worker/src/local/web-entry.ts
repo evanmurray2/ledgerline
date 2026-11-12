@@ -10,7 +10,7 @@ import { encodeEntry, readEntry, type BudgetKeys } from '@ledgerline/seal';
 import type { RestBatch, SyncPage } from '../routes/sync.js';
 import { cutoverOnDevice } from './cutover-device.js';
 import { DeviceLog } from './device-log.js';
-import { checkSnapshot, openSnapshot, writeSnapshot } from './device-snapshot.js';
+import { checkSnapshot, emptyOldCopy, openSnapshot, writeSnapshot } from './device-snapshot.js';
 import { cutoverTransport, httpTransport, type Fetch } from './http-transport.js';
 import { LogSession } from './log-session.js';
 import { reader, type ShadowEvent } from './shadow.js';
@@ -56,6 +56,7 @@ type Msg =
   | { id: number; op: 'sealedSync' }
   | { id: number; op: 'sealedSnapshot'; snapshotId: string }
   | { id: number; op: 'sealedCheck' }
+  | { id: number; op: 'sealedUpkeep'; snapshotId: string }
   | {
       id: number;
       op: 'cutover';
@@ -87,6 +88,9 @@ let sealed: {
  */
 let skew = 0;
 const clock = (): number => Date.now() + skew;
+/** Entries since the newest snapshot that make the next one worth writing (a day or two of use and bank updates). */
+const SNAPSHOT_EVERY = 60;
+
 const call: Fetch = async (path, init) => {
   const asked = Date.now();
   const r = await fetch(path, init);
@@ -259,6 +263,8 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
     case 'sealedJoin': {
       const e = need().engine;
       if (!sealed) throw new Error('Your budget isn’t open on this device yet. Try again.');
+      // No place in the log (sealedOpen said so): a copy from before the move is emptied first.
+      const dropped = await emptyOldCopy(e);
       sealed.log = await openSnapshot(e, http, {
         keys: sealed.keys,
         budgetId: who!.budgetId,
@@ -266,7 +272,7 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
         clock,
       });
       await e.note(LogSession.PLACE, sealed.log.save());
-      return { value: { number: sealed.log.number } };
+      return { value: { number: sealed.log.number, dropped } };
     }
     case 'sealedSync': {
       const { engine: e, s, log } = needSealed();
@@ -291,6 +297,24 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
     case 'sealedSnapshot': {
       const { engine: e, log } = needSealed();
       return { value: await writeSnapshot(e, log, http, m.snapshotId) };
+    }
+    case 'sealedUpkeep': {
+      // Now and then (the app decides when): check the newest snapshot if it waits for its check, else write a new
+      // one once enough entries came since the last. One of the two at most, so a call is never long twice.
+      const { engine: e, log } = needSealed();
+      const list = await http.list();
+      const newest = list[0];
+      if (newest && !newest.check && list.length > 1) {
+        const s = await scratch(who!);
+        try {
+          return { value: { did: 'check', ...(await checkSnapshot(s.engine, log, http, clock)) } };
+        } finally {
+          s.close();
+        }
+      }
+      if (!newest || log.number - newest.number >= SNAPSHOT_EVERY)
+        return { value: { did: 'write', ...(await writeSnapshot(e, log, http, m.snapshotId)) } };
+      return { value: { did: 'nothing' } };
     }
     case 'sealedCheck': {
       const { log } = needSealed();

@@ -290,6 +290,46 @@ async function enterSealed(
   }
 }
 
+/** The engine's message for a log request refused because the sign-in ended (local/http-transport.ts). */
+const SIGNED_OUT_TEXT = 'Your sign-in ended. Sign in again.';
+/** How often a device looks whether a snapshot is due (docs/privacy.md 5.3: "this runs rarely"). */
+const UPKEEP_EVERY_MS = 6 * 60 * 60_000;
+const UPKEEP_AT = 'ledgerline.upkeep-at';
+let upkeeping = false;
+/**
+ * After a sealed sync, at most every 6 hours, while the app is in view: the engine writes a snapshot or checks
+ * the newest one if either is due. In the background; a failure waits for the next time.
+ */
+function upkeep(): void {
+  if (upkeeping || !host || !sealed || document.visibilityState !== 'visible') return;
+  let last = 0;
+  try {
+    last = Number(localStorage.getItem(UPKEEP_AT) ?? 0);
+  } catch {
+    // No storage: every sync may try, and the engine decides there is nothing to do.
+  }
+  if (Date.now() - last < UPKEEP_EVERY_MS) return;
+  upkeeping = true;
+  const h = host;
+  void h
+    .sealedUpkeep(newUlid())
+    .then(async (r) => {
+      try {
+        localStorage.setItem(UPKEEP_AT, String(Date.now()));
+      } catch {
+        // As above.
+      }
+      // A written snapshot moved nothing in the copy; a check that found the copy differs is told.
+      if (r.did === 'check' && r.why === 'differs')
+        console.warn(JSON.stringify({ event: 'snapshot_differs', tables: r.tables }));
+      if (r.did !== 'nothing' && record) await save();
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      upkeeping = false;
+    });
+}
+
 /** The session the app shows for a sealed budget whose copy is open: the copy's facts, the server's account. */
 async function sealedSessionNow(): Promise<Session | null> {
   if (!sealed || !host) return null;
@@ -816,7 +856,16 @@ export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}):
       if (sealed) {
         // A sealed budget: the engine reads the log, files the bank runs that wait, and sends the changes made
         // here, in one call. Nothing of it passes through this thread in the clear but counts.
-        const r = await host!.sealedSync();
+        let r: Awaited<ReturnType<EngineHost['sealedSync']>>;
+        try {
+          r = await host!.sealedSync();
+        } catch (e) {
+          // The log's routes said the sign-in ended: the same as any other request that says so (client.ts).
+          if (e instanceof Error && e.message === SIGNED_OUT_TEXT) {
+            void dropSignedOut(true).finally(() => window.dispatchEvent(new Event('ledgerline:signedout')));
+          }
+          throw e;
+        }
         set({ queued: (await queued()).length, ...(state.why ? { why: null } : {}) });
         if (r.lost) window.dispatchEvent(new CustomEvent('ledgerline:edits-refused', { detail: r.lost }));
         const moved = r.entries > 0 || r.filed > 0 || r.sent > 0;
@@ -825,6 +874,7 @@ export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}):
           await save();
         }
         if ((r.entries > 0 || r.filed > 0) && !opts.quiet) changed();
+        upkeep();
         return;
       }
       // An edit's answer carries the changes since the copy's change number: use them as the first page, but only if

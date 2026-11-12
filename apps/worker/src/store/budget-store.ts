@@ -14,6 +14,7 @@ import { logApi } from '../seal/log-routes.js';
 import { QUEUE_STAMP_LINKS, stampLinksHandler } from './stamp-links.js';
 import {
   failSealedFetch,
+  queueSealedFetch,
   SEALED_BACKSTOP,
   SEALED_BACKSTOP_ID,
   SEALED_FETCH,
@@ -220,9 +221,16 @@ export class BudgetStore extends DurableObject<Env> {
       this.usage.request();
       try {
         const r = await this.serve(this.sealedApp, request, caller);
-        // A fetch the person asked for: the backstop runs now and starts it (seal/fetch-job.ts).
+        // A fetch the person asked for starts now, one job per link asked (seal/fetch-job.ts). The backstop's own
+        // job is not moved: a pending job keeps its time when it is queued again.
         if (r.ok && request.method === 'POST' && /\/connections\/([^/]+\/)?refresh$/.test(path)) {
-          await this.enqueue(SEALED_BACKSTOP, { id: SEALED_BACKSTOP_ID, runAt: Date.now(), recurring: true });
+          const asked = await this.db
+            .prepare(
+              `SELECT id FROM bank_link WHERE fetch_requested = 1 AND mac IS NOT NULL AND provider = 'plaid' AND status = 'ok' ORDER BY id`,
+            )
+            .all<{ id: string }>();
+          const runs = (await this.fetchDeps()).runs;
+          for (const l of asked.results) await queueSealedFetch(runs, this.enqueue, l.id, Date.now());
           await this.runner.scheduleNext(Date.now());
         }
         return r;
