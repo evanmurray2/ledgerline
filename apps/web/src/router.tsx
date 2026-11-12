@@ -47,6 +47,7 @@ const CategoryEditSheet = lazyRouteComponent(settings, 'CategoryEditSheet');
 const ConnectionsScreen = lazyRouteComponent(settings, 'ConnectionsScreen');
 const DataScreen = lazyRouteComponent(settings, 'DataScreen');
 const PrivacyScreen = lazyRouteComponent(() => import('./screens/settings/Privacy'), 'PrivacyScreen');
+const AboutScreen = lazyRouteComponent(() => import('./screens/settings/About'), 'AboutScreen');
 const DeviceCheckScreen = lazyRouteComponent(
   () => import('./screens/settings/DeviceCheck'),
   'DeviceCheckScreen',
@@ -424,6 +425,11 @@ const usersRoute = createRoute({
   component: UsersScreen,
 });
 // The phase 0 checks of the privacy design (docs/privacy.md 15.4).
+const aboutRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'about',
+  component: AboutScreen,
+});
 const privacyRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'privacy',
@@ -537,6 +543,7 @@ const routeTree = rootRoute.addChildren([
     deviceCheckRoute,
     linkDoneRoute,
     privacyRoute,
+    aboutRoute,
     oldCategoriesRoute,
     oldCategoryRoute,
     rulesRoute,

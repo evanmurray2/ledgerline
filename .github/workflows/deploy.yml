@@ -39,6 +39,12 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 20
+    permissions:
+      contents: read
+      # Only for the build attestation step (docs/privacy.md 5.9): a signing identity for this run, and the right
+      # to store the attestation.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -53,6 +59,13 @@ jobs:
         env:
           # The same release id the Worker gets below: an open app that sees another one reloads.
           APP_VERSION: ${{ github.sha }}
+      - name: The release's list of file hashes
+        # One line per file of the web build, and one hash for all of it: anyone who builds this commit gets the
+        # same list (docs/runbooks/verify-build.md). The app serves the same facts at /release.json.
+        run: |
+          mkdir "$RUNNER_TEMP/web-build"
+          node tools/ci/build-hashes.mjs apps/web/dist --manifest "$RUNNER_TEMP/web-build/web-build-manifest.txt"
+          cp apps/web/dist/release.json "$RUNNER_TEMP/web-build/release.json"
       - name: Secrets the Worker already has
         # Names only, never values. A Worker that doesn't exist yet (first deploy) has none.
         working-directory: apps/worker
@@ -92,6 +105,21 @@ jobs:
         env:
           BASE_URL: ${{ vars.PRODUCTION_URL || 'https://ledgerline.ledger-line.workers.dev' }}
           OPS_TOKEN: ${{ secrets.OPS_TOKEN }}
+      # The two steps below run after the smoke test, so they never hold back or roll back a deploy: if one fails,
+      # the release is live and the run shows as failed.
+      - name: Keep the list with this run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-build-${{ github.sha }}
+          path: ${{ runner.temp }}/web-build
+          if-no-files-found: error
+      - name: Attest the list of file hashes
+        # GitHub signs "this run, from this commit, made this list" and keeps it in public (free for a public
+        # repository; skipped on a private one, where it is not). The attested digest is the build hash.
+        if: github.event.repository.private == false
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/web-build/web-build-manifest.txt
       - name: Roll back on failure
         if: failure() && steps.smoke.conclusion == 'failure'
         working-directory: apps/worker
