@@ -64,11 +64,20 @@ describe('a marked budget', () => {
     expect((await assign()).status).toBe(409);
     expect(await rent()).toBe(before - 0);
     expect(await stub().startSync('no-such-connection', 'test')).toBe(false);
-    // An alarm that fires runs no job and sets no new alarm.
+    // An alarm that fires runs none of the old jobs: one that is due is dropped unrun (the sealed budget's own
+    // jobs are in test/sealed-fetch.test.ts), and the others wait untouched.
     await runInDurableObject(stub(), async (obj, state) => {
-      await state.storage.deleteAlarm();
+      const jobs = () =>
+        state.storage.sql
+          .exec(`SELECT id, attempts, run_at FROM job WHERE id != 'due-now' ORDER BY id`)
+          .toArray();
+      const before = jobs();
+      state.storage.sql.exec(
+        `INSERT INTO job (id, kind, state, run_at, recurring, created_at, updated_at) VALUES ('due-now', 'daily_scan', '{}', 1, 0, 1, 1)`,
+      );
       await obj.alarm();
-      expect(await state.storage.getAlarm()).toBeNull();
+      expect(state.storage.sql.exec(`SELECT count(*) AS n FROM job WHERE id = 'due-now'`).one().n).toBe(0);
+      expect(jobs()).toEqual(before);
     });
     await clear();
     expect((await assign()).status).toBe(200);

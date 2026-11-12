@@ -12,6 +12,17 @@ import { afterBankUpdate } from '../http/after-update.js';
 import { marksOf, refusal, type Marks } from './marks.js';
 import { logApi } from '../seal/log-routes.js';
 import { QUEUE_STAMP_LINKS, stampLinksHandler } from './stamp-links.js';
+import {
+  failSealedFetch,
+  SEALED_BACKSTOP,
+  SEALED_BACKSTOP_ID,
+  SEALED_FETCH,
+  sealedBackstopHandler,
+  sealedFetchHandler,
+  sealedWebhook,
+  type FetchDeps,
+} from '../seal/fetch-job.js';
+import { runDeps } from '../seal/runs.js';
 import { parseKeyring } from '@ledgerline/platform';
 import { dev } from '../dev-seed.js';
 import {
@@ -170,6 +181,18 @@ export class BudgetStore extends DurableObject<Env> {
       } finally {
         this.reportUsage(caller.budgetId);
       }
+    }
+    // The bank's news about a sealed budget's link starts a sealed fetch (seal/fetch-job.ts). The Worker checked
+    // the webhook before it came here; it is checked again.
+    if (this.marks().sealed && path === '/api/webhooks/plaid' && request.method === 'POST') {
+      this.usage.request();
+      const ev = await makeProvider(this.appEnv())
+        .verifyWebhook(request)
+        .catch(() => null);
+      if (!ev) return Response.json({ error: 'unauthorized' }, { status: 401 });
+      await sealedWebhook((await this.fetchDeps()).runs, this.enqueue, ev, Date.now());
+      this.reportUsage(caller.budgetId);
+      return Response.json({ ok: true });
     }
     // A sealed or frozen budget (store/marks.ts): the old routes leave it alone.
     const held = refusal(this.marks(), request.method, path);
@@ -401,8 +424,16 @@ export class BudgetStore extends DurableObject<Env> {
     const budgetId = await this.budgetId().catch(() => null);
     if (!budgetId) return { ok: false, jobs: [] };
     if (await this.ctx.storage.get<boolean>(DISABLED_KEY)) return { ok: true, jobs: this.runner.list() };
-    // Sealed or frozen: no job is queued or run (store/marks.ts).
-    if (this.held()) return { ok: true, jobs: this.runner.list() };
+    // Frozen: no job is queued or run (store/marks.ts).
+    const marks = this.marks();
+    if (marks.frozenUntil !== null) return { ok: true, jobs: this.runner.list() };
+    // Sealed: the only work left on the server is fetching its bank runs (seal/fetch-job.ts).
+    if (marks.sealed) {
+      await this.enqueue(SEALED_BACKSTOP, { id: SEALED_BACKSTOP_ID, runAt: now, recurring: true });
+      this.ctx.storage.sql.exec(QUEUE_STAMP_LINKS, now);
+      await this.runner.scheduleNext(now);
+      return { ok: true, jobs: this.runner.list() };
+    }
     if (o.idle) {
       const banks = this.ctx.storage.sql
         // From bank_link, not connection: a sealed budget's own tables are empty, and it must not look bank-less.
@@ -450,9 +481,9 @@ export class BudgetStore extends DurableObject<Env> {
     this.ready();
     this.usage.request();
     this.counting ??= (await this.ctx.storage.get<boolean>(COUNT_KEY)) ?? false;
-    // Sealed: no job runs, and no alarm is set again. Frozen: no job runs until the freeze ends, then they go on.
+    // Frozen: no job runs until the freeze ends, then they go on. Sealed: only the jobs of a sealed budget run
+    // (handlers(), below); any other job is dropped unrun.
     const m = this.marks();
-    if (m.sealed) return;
     if (m.frozenUntil !== null) {
       await this.ctx.storage.setAlarm(m.frozenUntil);
       return;
@@ -626,7 +657,41 @@ export class BudgetStore extends DurableObject<Env> {
     };
   }
 
+  private async fetchDeps(): Promise<FetchDeps> {
+    const env = this.appEnv();
+    return {
+      runs: runDeps(
+        this.adapter(),
+        await this.budgetId(),
+        parseKeyring(env.TOKEN_KEYS, env.TOKEN_KEY_CURRENT),
+      ),
+      provider: () => makeProvider(env),
+      pageSize: pageSize(env),
+      budgetState: async () => ((await writeBudgetState(env)) === 'normal' ? 'normal' : 'pause'),
+    };
+  }
+
+  /**
+   * The job handlers. A sealed budget runs only its own kinds (the sealed fetch, and the stamping of a link);
+   * any other job found there is dropped unrun, and a sealed kind is dropped in a budget that isn't sealed.
+   */
   private handlers(): Record<string, Handler> {
+    const sealedKinds: Record<string, Handler> = {
+      [SEALED_FETCH]: async (job, now) => sealedFetchHandler(await this.fetchDeps())(job, now),
+      [SEALED_BACKSTOP]: async (job, now) =>
+        sealedBackstopHandler((await this.fetchDeps()).runs, this.enqueue)(job, now),
+    };
+    const both = new Set(['stamp_links']);
+    const out: Record<string, Handler> = {};
+    for (const [kind, h] of Object.entries(this.plainHandlers()))
+      out[kind] = (job, now) =>
+        this.marks().sealed && !both.has(kind) ? Promise.resolve({ done: true }) : h(job, now);
+    for (const [kind, h] of Object.entries(sealedKinds))
+      out[kind] = (job, now) => (this.marks().sealed ? h(job, now) : Promise.resolve({ done: true }));
+    return out;
+  }
+
+  private plainHandlers(): Record<string, Handler> {
     const budgetId = () => this.budgetId();
     return {
       sync: async (job, now) => syncHandler(await this.syncDeps())(job, now),
@@ -664,6 +729,7 @@ export class BudgetStore extends DurableObject<Env> {
 
   private async onFailed(job: Job, error: string): Promise<void> {
     console.log(JSON.stringify({ event: 'job_failed', kind: job.kind, id: job.id, error }));
+    if (job.kind === SEALED_FETCH) await failSealedFetch((await this.fetchDeps()).runs, job, error);
     if (job.kind === 'sync' && job.connectionId)
       await failSync(await this.syncDeps(), job.connectionId, job.state as SyncState, error);
   }

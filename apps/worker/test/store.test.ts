@@ -59,6 +59,7 @@ describe('object migrations', () => {
         'store/0004_inbox_scan.sql',
         'store/0005_log.sql',
         'store/0006_sealed_runs.sql',
+        'store/0007_link_fetch_state.sql',
       ],
     });
     // The four the phone keeps were dropped (migration 0006); not_same added (0007), owed_close (0010).

@@ -92,16 +92,17 @@ describe('bank_link', () => {
     await runInDurableObject(fresh(), async (_obj, state) => {
       // A store as it was before bank_link: the budget's tables and the marks, with two live links and one removed.
       await state.storage.deleteAll();
-      const before = STORE_MIGRATIONS.filter((m) => !m.name.includes('bank_link'));
+      const at = STORE_MIGRATIONS.findIndex((m) => m.name.includes('bank_link'));
+      const before = STORE_MIGRATIONS.slice(0, at);
       migrate(state.storage, [...BUDGET_MIGRATIONS, ...before], 1);
       const db = new DurableDb(state.storage);
       await budget(db);
       await connect(db, 'con_01HAAAAAAAAAAAAAAAAAAAAAAA');
       await connect(db, 'con_01HBBBBBBBBBBBBBBBBBBBBBBB');
       await connect(db, 'con_01HCCCCCCCCCCCCCCCCCCCCCCC', { removed: 3 });
-      expect(migrate(state.storage, [...BUDGET_MIGRATIONS, ...STORE_MIGRATIONS], 2).applied).toEqual([
-        'store/0002_bank_link.sql',
-      ]);
+      expect(
+        migrate(state.storage, [...BUDGET_MIGRATIONS, ...STORE_MIGRATIONS.slice(0, at + 1)], 2).applied,
+      ).toEqual(['store/0002_bank_link.sql']);
       expect((await links(db)).map((l) => [l.id, l.connection_id, l.access_token_enc, l.mac])).toEqual([
         [
           '01HAAAAAAAAAAAAAAAAAAAAAAA',
