@@ -228,7 +228,7 @@ activityViewRoutes.get('/activity', async (c) => {
   const [attn, pend, upc, posted, splits, owed, links, stale] = await s.batch([
     s.q(ATTENTION_SQL),
     s.q(
-      // Your entries in a closed account stopped waiting for the bank (D-93): they aren't "not posted yet".
+      // Pending rows in a closed account stopped waiting for the bank (D-93): they aren't "not posted yet".
       `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1 AND status = 'pending' AND NOT ${IN_CLOSED_ACCOUNT} ORDER BY date DESC, seq DESC LIMIT 200`,
     ),
     // Upcoming rows are read in every view (a small manual table): they count toward notPostedCount.

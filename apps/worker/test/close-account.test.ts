@@ -9,7 +9,7 @@ import type {
   RegisterView,
   ReportsView,
 } from '@ledgerline/contracts';
-import { bankSync, pend, plaidTxn } from './bank-sync.js';
+import { bankSync, pend, plaidTxn, removal } from './bank-sync.js';
 
 const B = 'b_close';
 const NOW = Date.UTC(2026, 10, 8, 18, 0);
@@ -92,13 +92,36 @@ describe('close account (D-73)', () => {
     expect((await accounts()).groups.flatMap((g) => g.accounts).some((a) => a.id === 'a_1')).toBe(true);
   });
 
-  it('a pending row blocks Close', async () => {
+  it('a pending row that leaves a balance blocks Close', async () => {
     await h.sync([pend('p2', 2, 4, '2026-11-08', 'COFFEE')]);
     const r = await register(2);
-    expect(r.closeBlock).toContain('pending');
-    // The server checks the bank's pending rows itself.
-    expect((await close(2, await atZero())).status).toBe(422);
+    expect(r.closeBlock).toContain('balance after pending is $4.00');
+    expect((await close(2, { ...(await atZero()), working: 400 })).status).toBe(422);
     expect(await closedAt(2)).toBeNull();
+  });
+
+  // D-93: the bank closed the account, so its own pending row never posts. A refund of the same amount is pending.
+  it('the bank’s pending row stays when the balance after pending is $0, and its removal opens the account', async () => {
+    await h.sync([pend('p2-back', 2, -4, '2026-11-08', 'COFFEE REFUND')]);
+    const r = await register(2);
+    expect(r.account.working).toBe(0);
+    expect(r.closeBlock).toBeNull();
+    const before = (await accounts()).netWorth;
+    expect((await close(2, await atZero())).status).toBe(200);
+    expect(await closedAt(2)).not.toBeNull();
+    const a = await accounts();
+    expect(a.netWorth).toBe(before);
+    expect(a.closed.find((x) => x.id === 'a_2')).toMatchObject({ bank: 0, pending: 0, working: 0 });
+    const closed = await register(2);
+    expect(closed.days.map((d) => d.label)).toEqual(['Nov 8']);
+    expect(closed.days[0]!.rows).toHaveLength(2);
+    const keys = closed.days[0]!.rows.map((x) => x.key);
+    const v = (await h.call('GET', '/api/activity')).json as ActivityView;
+    expect(v.pending.some((x) => keys.includes(x.key))).toBe(false);
+    // The bank removes one of the two: the account is no longer $0, so it opens again.
+    await h.sync([], [removal('p2-back', 2)]);
+    expect(await closedAt(2)).toBeNull();
+    expect((await register(2)).closeBlock).toContain('balance after pending is $4.00');
   });
 
   it('a balance blocks Close', async () => {

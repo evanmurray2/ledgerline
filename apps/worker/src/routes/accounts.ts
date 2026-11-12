@@ -30,7 +30,7 @@ import { monthTotals } from '../ledger/totals.js';
 import { DIFF_WAIT_MS, accountLedger, bankDiff } from '../ledger/bank-diff.js';
 import type { Scoped } from '../db/scoped.js';
 import { type Adjustments, startSheet } from '../ledger/start-part.js';
-import { FINAL_ENTRIES_BY_MONTH, closeBlocked } from './account-close.js';
+import { FINAL_ROWS_BY_MONTH, closeBlocked } from './account-close.js';
 
 export const accountRoutes = new Hono<AppEnv>();
 
@@ -89,7 +89,7 @@ async function accountRows(
     const statement = ci?.statement
       ? { balance: ci.statement.balance, due: ci.statement.due, covered: true }
       : null;
-    // A closed account is $0 (D-73). The bank's last balance and your entries that stayed (D-93) add up to that, and
+    // A closed account is $0 (D-73). The bank's last balance and the pending rows that stayed (D-93) add up to that, and
     // the bank sends no more: show the $0, not the parts.
     const closed = a.closed_at !== null;
     const synced = a.last_synced_at
@@ -170,9 +170,9 @@ accountRoutes.get('/accounts', async (c) => {
     s.q(
       `SELECT from_key, to_key, amount FROM txn_link WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND undone_at IS NULL`,
     ),
-    s.q(FINAL_ENTRIES_BY_MONTH),
+    s.q(FINAL_ROWS_BY_MONTH),
   ]);
-  // Your entries that stayed in a closed account are final (D-93): this month's count with the posted rows.
+  // Pending rows that stayed in a closed account are final (D-93): this month's count with the posted rows.
   const finalNow =
     (finals!.results as { month: string; a: number }[]).find((r) => r.month === f.current)?.a ?? 0;
   const owed = owedOut(
@@ -357,7 +357,7 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
       (show === 'transfers' && t.transfer_state !== null));
   const credit = account.kind === 'credit';
   const days: RegisterView['days'] = [];
-  // In a closed account your pending entries are final (D-93): listed on their day, in the running balance.
+  // In a closed account pending rows are final (D-93): listed on their day, in the running balance.
   const dated = (t: TxRow) => t.status === 'posted' || (account.closed && t.status === 'pending');
   const pend = txs.filter((t) => !dated(t) && keep(t));
   if (pend.length)
@@ -397,9 +397,8 @@ accountRoutes.get('/accounts/:id/register', async (c) => {
     : closeBlocked(
         account,
         {
-          bankPending: txs.some((t) => t.status === 'pending' && t.source === 'bank'),
+          pending: txs.some((t) => t.status === 'pending'),
           upcoming: txs.some((t) => t.status === 'upcoming'),
-          entries: txs.some((t) => t.status === 'pending' && t.source === 'manual'),
         },
         cardAvailable,
       );
@@ -474,9 +473,9 @@ accountRoutes.get('/reports', async (c) => {
     m: mm,
     a: [...accts.values()].reduce((x, v) => x + v.all, 0),
   }));
-  // Your entries that stayed in closed accounts are final (D-93): they count in their month, as posted rows do.
+  // Pending rows that stayed in closed accounts are final (D-93): they count in their month, as posted rows do.
   const finals = new Map(
-    (await s.all<{ month: string; a: number }>(FINAL_ENTRIES_BY_MONTH)).map((r) => [r.month, r.a]),
+    (await s.all<{ month: string; a: number }>(FINAL_ROWS_BY_MONTH)).map((r) => [r.month, r.a]),
   );
   const netWorth: ReportsView['netWorth'] = [];
   let after = 0;
