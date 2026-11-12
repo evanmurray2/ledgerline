@@ -19,6 +19,7 @@ import {
   type InboxRun,
 } from '../src/store/inbox.js';
 import { dailyScan, scanTime } from '../src/daily-scan.js';
+import { watchdogBudgetStmts } from '../src/maintenance.js';
 import { JobRunner } from '../src/store/jobs.js';
 import { syncHandler, type SyncState } from '../src/store/sync-job.js';
 import { acquire } from '../src/sync/lease.js';
@@ -299,8 +300,8 @@ describe('the inbox', () => {
            VALUES (1, 'r1', 'c1', 5, '[]', 4, 4, 5), (2, 'r2', 'c1', 7, '[]', 5, 5, 7), (3, 'r3', 'c1', 8, '[]', 5, 5, 8)`,
         )
         .run();
-      await inboxScanned(db, 600, 4, 5, 600);
-      await inboxScanned(db, 900, 5, 6, 900);
+      await inboxScanned(db, 'maintenance', 600, 4, 5, 600);
+      await inboxScanned(db, 'scan', 900, 5, 6, 900);
       const order: string[] = [];
       for (let run = 0, scan = 0; ;) {
         const next = await inboxNextEvent(db, run, scan);
@@ -329,7 +330,18 @@ describe('the inbox', () => {
     const main = await seedScan('scan-main');
     const clock = Date.parse('2026-11-10T13:00:05Z');
     expect(await dailyScan({ DB: server } as never, B, clock)).toEqual({ materialized: 1 });
-    const scan = { n: 1, at: scanTime(clock, 'America/Los_Angeles'), baseVersion: 0, endVersion: 1 };
+    const scan = {
+      n: 1,
+      kind: 'scan' as const,
+      at: scanTime(clock, 'America/Los_Angeles'),
+      baseVersion: 0,
+      endVersion: 1,
+    };
+    // The nightly maintenance after it: its watchdog step, at the step's own clock.
+    const night = Date.parse('2026-11-11T10:20:03Z');
+    await server.batch(watchdogBudgetStmts(server, B, night));
+    await server.prepare(`UPDATE budget SET data_version = data_version + 1`).run();
+    const maintenance = { n: 2, kind: 'maintenance' as const, at: night, baseVersion: 1, endVersion: 2 };
 
     const shadow = await Shadow.fork(main, B, async () => {
       const scratch = storeDb('scan-scratch');
@@ -337,9 +349,9 @@ describe('the inbox', () => {
       return { db: scratch };
     });
     await copyDb(server, main);
-    expect(await shadow.begin([{ scan }])).toBeNull();
+    expect(await shadow.begin([{ scan }, { scan: maintenance }])).toBeNull();
     while (await shadow.step());
-    expect(await shadow.end(main)).toEqual({ runs: 1, compared: true, differences: [] });
+    expect(await shadow.end(main)).toEqual({ runs: 2, compared: true, differences: [] });
     // A scan that is not where the copy is (an edit came between) is not run.
     const other = await Shadow.fork(main, B, async () => ({ db: await seedScan('scan-scratch-2') }));
     expect(await other.begin([{ scan: { ...scan, baseVersion: 3, endVersion: 4 } }])).toMatchObject({

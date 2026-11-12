@@ -10,6 +10,8 @@ import { PlaidProvider } from '@ledgerline/bank-provider';
 import type { Db, Stmt } from '@ledgerline/db/sql';
 import type { Env } from '../env.js';
 import { dailyScan } from '../daily-scan.js';
+import { bumpVersion } from '../http/version.js';
+import { watchdogBudgetStmts } from '../maintenance.js';
 import type { InboxRun, InboxScan } from '../store/inbox.js';
 import { SYNC_TABLES } from '../sync-tables.js';
 import { fileRun } from './file-run.js';
@@ -152,7 +154,12 @@ export class Shadow {
     try {
       const env = { DB: this.scratch } as Env;
       if ('run' in run) await fileRun(env, this.budgetId, run.run, reader);
-      else await dailyScan(env, this.budgetId, run.scan.at);
+      else if (run.scan.kind === 'scan') await dailyScan(env, this.budgetId, run.scan.at);
+      else {
+        // The nightly maintenance: its watchdog step is all it writes into the tables a phone keeps.
+        await this.scratch.batch(watchdogBudgetStmts(this.scratch, this.budgetId, run.scan.at));
+        await bumpVersion(this.scratch, this.budgetId);
+      }
     } catch {
       this.failed = true;
       return false;

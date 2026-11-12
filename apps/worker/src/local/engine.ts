@@ -355,9 +355,17 @@ export class LocalEngine {
     }
     // Edits wait in the queue: the server's rows go under them, not over them. The queue is taken out of the copy
     // (which is then the server's rows as of `st.through`), the page is written, and the queue is run again on
-    // top (docs/privacy.md 5.3). Only when that can be done exactly, and in this one step.
-    const queue = fresh ? null : await this.exactQueue(st, page);
-    if (queue) for (const e of [...queue].reverse()) await this.applyRows(e.undo);
+    // top (docs/privacy.md 5.3). Only when that can be done exactly. A sync of several pages takes the queue out
+    // before its first page and runs it again after its last: `held` is the queue while it is out.
+    let held = fresh ? null : await this.heldQueue();
+    if (!held && !fresh) {
+      const queue = await this.exactQueue(st, page);
+      if (queue) {
+        for (const e of [...queue].reverse()) await this.applyRows(e.undo);
+        held = queue;
+        if (page.more) await this.setHeld(queue);
+      }
+    }
     const stmts: Stmt[] = [this.db.prepare(`PRAGMA defer_foreign_keys = ON`)];
     // What the next derive() must redo (read before the rows change: a moved or deleted row's old key counts too).
     const todo = await this.pendingDerive();
@@ -382,9 +390,22 @@ export class LocalEngine {
       rows: page.rows.length,
       caughtUp: !page.more && !page.cursor,
     };
-    if (queue) {
-      const { kept, lost } = await this.rerun(queue, next.through);
-      await this.putQueue(kept);
+    if (held && !page.more) {
+      const { kept, lost } = await this.rerun(held, next.through);
+      // Edits made while the queue was out (between two pages) ran on a half-synced copy: they stay in the queue
+      // to be sent, with nothing kept for taking them out.
+      const mine = new Set(held.map((e) => e.id));
+      const since = (await this.queue())
+        .filter((e) => !mine.has(e.id))
+        .map(({ undo: _undo, through: _through, ...e }) => e);
+      await this.db.batch([
+        this.db
+          .prepare(
+            `INSERT INTO local_state (key, value) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+          )
+          .bind(OUTBOX, JSON.stringify([...kept, ...since])),
+        this.db.prepare(`DELETE FROM local_state WHERE key = 'held_queue'`),
+      ]);
       result.lost = lost.length;
     }
     return result;
@@ -393,13 +414,30 @@ export class LocalEngine {
   /**
    * The queue, when the server's page can go under it: every edit in it ran on the copy as it is now (the same
    * change number, so the rows kept for taking it out are the server's), none is on its way to the server, and
-   * the page is the whole of what changed (one page of changes, not a download).
+   * the page is one of changes, not of a download.
    */
   private async exactQueue(st: EngineState, page: SyncPage): Promise<Exact[] | null> {
-    if (st.cursor || page.cursor || page.more || st.through === 0 || page.rows.length === 0) return null;
+    if (st.cursor || page.cursor || st.through === 0 || page.rows.length === 0) return null;
     const q = await this.queue();
     if (!q.length) return null;
     return q.every((e) => exactAt(e, st.through) && !e.sending) ? (q as Exact[]) : null;
+  }
+
+  /** The queue while it is out of the copy, between the pages of one sync; null when it is in. */
+  private async heldQueue(): Promise<Exact[] | null> {
+    const r = await this.db
+      .prepare(`SELECT value FROM local_state WHERE key = 'held_queue'`)
+      .first<{ value: string }>();
+    return r ? (JSON.parse(r.value) as Exact[]) : null;
+  }
+
+  private async setHeld(q: readonly Exact[]): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO local_state (key, value) VALUES ('held_queue', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+      )
+      .bind(JSON.stringify(q))
+      .run();
   }
 
   /** The queue of edits waiting for the server, oldest first. */
@@ -567,8 +605,11 @@ export class LocalEngine {
     // one that ends on the same change number.
     const q = await this.queue();
     if (q.length) await this.putQueue(q.map(({ undo: _undo, through: _through, ...e }) => e));
-    // The next download already holds every bank update so far: the shadow run starts over from there.
-    await this.db.prepare(`DELETE FROM local_state WHERE key = 'shadow_seq'`).run();
+    // The next download already holds every bank update so far: the shadow run starts over from there. A queue
+    // that was out of the copy between two pages is simply the queue again.
+    await this.db
+      .prepare(`DELETE FROM local_state WHERE key IN ('shadow_seq', 'shadow_scan', 'held_queue')`)
+      .run();
   }
 
   /**

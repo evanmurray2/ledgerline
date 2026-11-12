@@ -118,7 +118,9 @@ export async function inboxLatest(db: Db): Promise<number> {
 /** A daily scan the server ran: all a device needs to run the same one (daily-scan.ts). */
 export interface InboxScan {
   n: number;
-  /** The scan's planned time. */
+  /** The daily scan, or the nightly maintenance (its watchdog step is the part a device repeats). */
+  kind: 'scan' | 'maintenance';
+  /** The scan's planned time; for the maintenance, the clock of its watchdog step. */
   at: number;
   baseVersion: number;
   endVersion: number;
@@ -130,6 +132,7 @@ export type InboxEvent = { run: InboxRun } | { scan: InboxScan } | null;
 /** Notes a scan the server just ran, with the data version before and after it. */
 export async function inboxScanned(
   db: Db,
+  kind: InboxScan['kind'],
   at: number,
   base: number,
   end: number,
@@ -137,8 +140,10 @@ export async function inboxScanned(
 ): Promise<void> {
   await db.batch([
     db
-      .prepare(`INSERT INTO inbox_scan (at, base_version, end_version, created_at) VALUES (?1, ?2, ?3, ?4)`)
-      .bind(at, base, end, now),
+      .prepare(
+        `INSERT INTO inbox_scan (kind, at, base_version, end_version, created_at) VALUES (?1, ?2, ?3, ?4, ?5)`,
+      )
+      .bind(kind, at, base, end, now),
     db.prepare(`DELETE FROM inbox_scan WHERE created_at < ?1`).bind(now - INBOX_KEEP_MS),
   ]);
 }
@@ -150,9 +155,9 @@ export async function inboxScanned(
  */
 export async function inboxNextEvent(db: Db, afterRun: number, afterScan: number): Promise<InboxEvent> {
   const s = await db
-    .prepare(`SELECT n, at, base_version, end_version FROM inbox_scan WHERE n > ?1 ORDER BY n LIMIT 1`)
+    .prepare(`SELECT n, kind, at, base_version, end_version FROM inbox_scan WHERE n > ?1 ORDER BY n LIMIT 1`)
     .bind(afterScan)
-    .first<{ n: number; at: number; base_version: number; end_version: number }>();
+    .first<{ n: number; kind: InboxScan['kind']; at: number; base_version: number; end_version: number }>();
   const next = await db
     .prepare(
       `SELECT base_version, end_version FROM inbox_run WHERE fetch_seq > ?1 ORDER BY fetch_seq LIMIT 1`,
@@ -160,7 +165,7 @@ export async function inboxNextEvent(db: Db, afterRun: number, afterScan: number
     .bind(afterRun)
     .first<{ base_version: number; end_version: number | null }>();
   const scan: InboxScan | null = s
-    ? { n: s.n, at: s.at, baseVersion: s.base_version, endVersion: s.end_version }
+    ? { n: s.n, kind: s.kind, at: s.at, baseVersion: s.base_version, endVersion: s.end_version }
     : null;
   if (next && (!scan || next.base_version <= scan.baseVersion)) {
     const run = await inboxNext(db, afterRun);
