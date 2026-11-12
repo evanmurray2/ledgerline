@@ -18,7 +18,14 @@ import {
 import type { AppEnv } from '../http/context.js';
 import { BAD_MONTH, HttpError, TRY_AGAIN, scoped } from './api.js';
 import { fresh, monthResult, structure } from '../views/common.js';
-import { owedLabels, owedStatements, type OwedItemRow, type PaybackLinkRow } from '../views/owed-rows.js';
+import {
+  owedLabels,
+  owedStatements,
+  paybacksIn,
+  paybacksWhere,
+  type OwedItemRow,
+  type PaybackLinkRow,
+} from '../views/owed-rows.js';
 import { IN_BUDGET_ROWS, listRow } from '../views/rows.js';
 import {
   NOT_RTA_BY_DEFAULT,
@@ -111,17 +118,22 @@ function shiftDate(d: string, n: number): string {
   return t.toISOString().slice(0, 10);
 }
 
-/** A search matches a row's category name too, split lines included. */
+/**
+ * A search matches a row's category name too: split lines included, and money in that paid back an owed purchase
+ * in a category with that name.
+ */
 const CATEGORY_MATCH = `category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND lower(name) LIKE ?3 ESCAPE '\\')
          OR key IN (SELECT sp.txn_key FROM txn_split sp JOIN category c ON c.id = sp.category_id
-                    WHERE sp.budget_id = ?1 AND lower(c.name) LIKE ?3 ESCAPE '\\')`;
+                    WHERE sp.budget_id = ?1 AND lower(c.name) LIKE ?3 ESCAPE '\\')
+         OR key IN (${paybacksWhere(`e.category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND lower(name) LIKE ?3 ESCAPE '\\')`)})`;
 
 /**
- * One category's rows (Reports opens Activity on a category, by id): the row's own category, or a split line in
- * it. `p` is the parameter holding the category id.
+ * One category's rows (Reports and the category sheet open Activity on a category, by id): the row's own category,
+ * a split line in it, or money in that paid back one of its owed purchases. `p` is the parameter holding the id.
  */
 const inCategory = (p: string) =>
-  `AND (category_id = ${p} OR key IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1 AND category_id = ${p}))`;
+  `AND (category_id = ${p} OR key IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1 AND category_id = ${p})
+    OR key IN (${paybacksIn(p)}))`;
 
 /**
  * A search's posted-row filter: ?3 is the text as a LIKE pattern (its % and _ are letters, not wildcards), `amt`
@@ -289,6 +301,15 @@ activityViewRoutes.get('/activity', async (c) => {
   const qSplits = new Set(
     splitRows.filter((r) => r.category_id && qCats.has(r.category_id)).map((r) => r.txn_key),
   );
+  // Money in that paid back an owed purchase in one of those categories (as CATEGORY_MATCH picks posted rows).
+  const qItems = new Set(
+    (owed!.results as OwedItemRow[])
+      .filter((o) => o.category_id && qCats.has(o.category_id))
+      .map((o) => o.id),
+  );
+  const qPaybacks = new Set(
+    (links!.results as PaybackLinkRow[]).filter((l) => qItems.has(l.to_key)).map((l) => l.from_key),
+  );
   // What each owed purchase still has owed ("$25 owed", then "Paid"), its share, and what each payback paid back.
   const labels = owedLabels(
     owed!.results as OwedItemRow[],
@@ -309,13 +330,23 @@ activityViewRoutes.get('/activity', async (c) => {
   const catSplits = new Set(
     category ? splitRows.filter((r) => r.category_id === category).map((r) => r.txn_key) : [],
   );
+  // Money in that paid back one of the category's owed purchases (as inCategory picks it for posted rows).
+  const catItems = new Set(
+    category
+      ? (owed!.results as OwedItemRow[]).filter((o) => o.category_id === category).map((o) => o.id)
+      : [],
+  );
+  const catPaybacks = new Set(
+    (links!.results as PaybackLinkRow[]).filter((l) => catItems.has(l.to_key)).map((l) => l.from_key),
+  );
   const match = (t: TxRow) =>
-    (!category || t.category_id === category || catSplits.has(t.key)) &&
+    (!category || t.category_id === category || catSplits.has(t.key) || catPaybacks.has(t.key)) &&
     (!q ||
       t.payee.toLowerCase().includes(q) ||
       (qAmount !== null && plainAmount(t.amount).includes(qAmount)) ||
       (!!t.category_id && qCats.has(t.category_id)) ||
-      qSplits.has(t.key));
+      qSplits.has(t.key) ||
+      qPaybacks.has(t.key));
   const attnRows = (attn!.results as TxRow[]).filter(match);
   const moneyToMatch = attnRows
     .filter((t) => t.wtm_state === 'waiting' || t.wtm_state === 'send_back')
