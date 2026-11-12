@@ -9,6 +9,7 @@ import type { AppEnv } from '../http/context.js';
 import { requestNow } from '../http/clock.js';
 import { EDIT_ID } from '../http/ids.js';
 import { inboxLatest, inboxNext } from '../store/inbox.js';
+import { updateInFlight } from '../sync/turn.js';
 
 export { EDIT_ID };
 import { SYNC_FORMAT, SYNC_TABLES, type SyncTable } from '../sync-tables.js';
@@ -46,6 +47,11 @@ export interface SyncPage {
    * updates too (the shadow run) asks the inbox only when this is past the last one it took.
    */
   inbox?: number;
+  /**
+   * The server is filing a bank update right now: this page may hold part of it. A device doesn't start a shadow
+   * run from such a page, nor from the next one.
+   */
+  filing?: boolean;
 }
 
 const Cursor = z.object({
@@ -210,6 +216,7 @@ syncRoutes.get('/sync', async (c) => {
   if (!page.more) {
     const inbox = await inboxLatest(db).catch(() => undefined);
     if (inbox !== undefined) page.inbox = inbox;
+    if (await updateInFlight(db, null, requestNow(c)).catch(() => false)) page.filing = true;
   }
   return c.json(page);
 });

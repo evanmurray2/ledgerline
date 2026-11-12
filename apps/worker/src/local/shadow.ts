@@ -78,27 +78,48 @@ export interface Fork {
   close?: () => void;
 }
 
+/**
+ * Makes a copy ready to file bank updates. A phone's copy has no bank log and no event counter (neither is
+ * synced), but filing numbers each new bank event from the counter and processes the events past the budget's
+ * watermark. The counter continues from the watermark, as on a server that has filed everything so far.
+ */
+export async function alignCounter(db: Db, budgetId: string): Promise<void> {
+  await db.batch([
+    db.prepare(`INSERT OR IGNORE INTO apply_counter (id, seq) VALUES (1, 0)`),
+    db
+      .prepare(
+        `UPDATE apply_counter SET seq = max(seq, coalesce((SELECT processed_through FROM budget WHERE id = ?1), 0)) WHERE id = 1`,
+      )
+      .bind(budgetId),
+  ]);
+}
+
 export class Shadow {
   private next = 0;
   private failed = false;
+  private runs: readonly InboxRun[] = [];
 
   private constructor(
     private readonly scratch: Db,
     private readonly budgetId: string,
-    private readonly runs: readonly InboxRun[],
     private readonly close: () => void,
   ) {}
 
   /**
-   * Starts a shadow run for these updates (in inbox order), or says why not. Call it before the server's rows for
-   * them are written into the copy.
+   * The scratch copy, made now: call it before the server's rows for newer bank updates are written into the real
+   * copy. Local and quick; the updates themselves are fetched later (`begin`).
    */
-  static async begin(
-    main: Db,
-    budgetId: string,
-    runs: readonly InboxRun[],
-    fork: () => Promise<Fork>,
-  ): Promise<Shadow | ShadowReport> {
+  static async fork(main: Db, budgetId: string, fork: () => Promise<Fork>): Promise<Shadow> {
+    void main;
+    const f = await fork();
+    await alignCounter(f.db, budgetId);
+    return new Shadow(f.db, budgetId, f.close ?? (() => undefined));
+  }
+
+  /**
+   * The updates to file (in inbox order). Null: ready to step. A report: a comparison would say nothing, and why.
+   */
+  async begin(runs: readonly InboxRun[]): Promise<ShadowReport | null> {
     const skip = (why: ShadowReport['why']): ShadowReport => ({
       runs: 0,
       compared: false,
@@ -106,14 +127,15 @@ export class Shadow {
       differences: [],
     });
     if (!runs.length) return skip('failed');
-    // The copy is what the server had when it began the first update, and nothing but the updates happened since.
-    if ((await version(main, budgetId)) !== runs[0]!.baseVersion) return skip('edited_before');
+    // The scratch copy is what the server had when it began the first update, and nothing but the updates
+    // happened since.
+    if ((await version(this.scratch, this.budgetId)) !== runs[0]!.baseVersion) return skip('edited_before');
     for (let i = 0; i < runs.length; i++) {
       if (runs[i]!.baseVersion !== runs[i]!.endVersion) return skip('edited_during');
       if (i > 0 && runs[i]!.baseVersion !== runs[i - 1]!.endVersion) return skip('edited_during');
     }
-    const f = await fork();
-    return new Shadow(f.db, budgetId, runs, f.close ?? (() => undefined));
+    this.runs = runs;
+    return null;
   }
 
   /** Files the next update on the scratch copy; false when none is left. One update a call, so the app stays live. */
@@ -146,7 +168,7 @@ export class Shadow {
 
   private async compare(main: Db): Promise<ShadowReport> {
     const report: ShadowReport = { runs: this.next, compared: false, differences: [] };
-    if (this.failed || this.next < this.runs.length) return { ...report, why: 'failed' };
+    if (this.failed || !this.runs.length || this.next < this.runs.length) return { ...report, why: 'failed' };
     // An edit or a daily job after the last update is in the real copy and not in the scratch one.
     if ((await version(main, this.budgetId)) !== this.runs[this.runs.length - 1]!.endVersion)
       return { ...report, why: 'edited_after' };

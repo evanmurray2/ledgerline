@@ -233,26 +233,23 @@ describe('the inbox', () => {
     });
     expect(inbox.length).toBe(2);
     let forks = 0;
-    const fork = async () => {
+    const forkOf = (copy: Db) => async () => {
       const scratch = storeDb(`shadow-scratch-${++forks}`);
-      await copyDb(main, scratch);
+      await copyDb(copy, scratch);
       return { db: scratch };
     };
 
-    const shadow = await Shadow.begin(main, B, inbox, fork);
-    if (!(shadow instanceof Shadow)) throw new Error(`not started: ${shadow.why}`);
-    // The real copy takes the server's rows, as a sync does; the scratch copy files the updates itself.
+    // The scratch copy is made before the real copy takes the server's rows (as a sync does); then the updates
+    // are filed on it and the two are compared.
+    const shadow = await Shadow.fork(main, B, forkOf(main));
     await copyDb(server, main);
+    expect(await shadow.begin(inbox)).toBeNull();
     while (await shadow.step());
     expect(await shadow.end(main)).toEqual({ runs: 2, compared: true, differences: [] });
 
     // A difference is found and named by table and column, with no row's content.
-    const again = await Shadow.begin(await seeded('shadow-main-2'), B, inbox, async () => {
-      const scratch = storeDb('shadow-scratch-x');
-      await copyDb(await seeded('shadow-main-3'), scratch);
-      return { db: scratch };
-    });
-    if (!(again instanceof Shadow)) throw new Error('not started');
+    const again = await Shadow.fork(main, B, forkOf(await seeded('shadow-main-2')));
+    expect(await again.begin(inbox)).toBeNull();
     while (await again.step());
     await main
       .prepare(`UPDATE bank_txn SET amount = amount + 1 WHERE provider_txn_id = ?1`)
@@ -264,25 +261,19 @@ describe('the inbox', () => {
       differences: [{ table: 'bank_txn', column: 'amount', rows: 1 }],
     });
 
-    // The copy is not where the server began (an edit moved the data version): nothing is filed.
+    // The copy was not where the server began (an edit moved the data version): nothing is filed.
     const edited = await seeded('shadow-main-4');
     await edited.prepare(`UPDATE budget SET data_version = data_version + 1`).run();
-    expect(await Shadow.begin(edited, B, inbox, fork)).toMatchObject({
-      compared: false,
-      why: 'edited_before',
-    });
+    const before = await Shadow.fork(edited, B, forkOf(edited));
+    expect(await before.begin(inbox)).toMatchObject({ compared: false, why: 'edited_before' });
+    expect(await before.end(main)).toMatchObject({ compared: false, why: 'failed' });
     // An edit landed while the server filed an update.
     const mixed = [{ ...inbox[0]!, endVersion: inbox[0]!.baseVersion + 1 }, inbox[1]!];
-    expect(await Shadow.begin(await seeded('shadow-main-5'), B, mixed, fork)).toMatchObject({
-      why: 'edited_during',
-    });
+    const during = await Shadow.fork(main, B, forkOf(await seeded('shadow-main-5')));
+    expect(await during.begin(mixed)).toMatchObject({ why: 'edited_during' });
     // An edit after the last update is in the real copy only.
-    const late = await Shadow.begin(await seeded('shadow-main-6'), B, inbox, async () => {
-      const scratch = storeDb('shadow-scratch-y');
-      await copyDb(await seeded('shadow-main-7'), scratch);
-      return { db: scratch };
-    });
-    if (!(late instanceof Shadow)) throw new Error('not started');
+    const late = await Shadow.fork(main, B, forkOf(await seeded('shadow-main-6')));
+    expect(await late.begin(inbox)).toBeNull();
     while (await late.step());
     await main.prepare(`UPDATE budget SET data_version = data_version + 1`).run();
     expect(await late.end(main)).toMatchObject({ runs: 2, compared: false, why: 'edited_after' });

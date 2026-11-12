@@ -568,6 +568,8 @@ export class LocalEngine {
     // one that ends on the same change number.
     const q = await this.queue();
     if (q.length) await this.putQueue(q.map(({ undo: _undo, through: _through, ...e }) => e));
+    // The next download already holds every bank update so far: the shadow run starts over from there.
+    await this.db.prepare(`DELETE FROM local_state WHERE key = 'shadow_seq'`).run();
   }
 
   /**
@@ -793,33 +795,44 @@ export class LocalEngine {
 
   // ---- the shadow run (local/shadow.ts): the device files the inbox's bank updates on a scratch copy
 
-  private shadow: Shadow | null = null;
+  private shadow: { run: Shadow; token: number } | null = null;
+  private shadowTokens = 0;
 
   /**
-   * Starts a shadow run for these updates, before the server's rows for them are written into the copy. Null: it
-   * started. A report: it didn't, and why.
+   * Makes the scratch copy for a shadow run, before the server's rows for newer bank updates are written into
+   * this copy. Gives a token for the later steps (a newer run replaces an unfinished one, whose steps then do
+   * nothing), or null when this engine can't make a scratch copy.
    */
-  async shadowBegin(runs: InboxRun[]): Promise<ShadowReport | null> {
-    // A run that never ended (the app moved on) gives its scratch copy back first.
-    this.shadow?.discard();
+  async shadowFork(): Promise<number | null> {
+    this.shadow?.run.discard();
     this.shadow = null;
-    if (!this.fork) return { runs: 0, compared: false, why: 'failed', differences: [] };
-    const s = await Shadow.begin(this.db, this.who.budgetId, runs, this.fork);
-    if (!(s instanceof Shadow)) return s;
-    this.shadow = s;
-    return null;
+    if (!this.fork) return null;
+    const run = await Shadow.fork(this.db, this.who.budgetId, this.fork);
+    this.shadow = { run, token: ++this.shadowTokens };
+    return this.shadow.token;
+  }
+
+  private shadowOf(token: number): Shadow | null {
+    return this.shadow?.token === token ? this.shadow.run : null;
+  }
+
+  /** The updates to file. Null: ready to step. A report: a comparison would say nothing, and why. */
+  async shadowBegin(token: number, runs: InboxRun[]): Promise<ShadowReport | null> {
+    const s = this.shadowOf(token);
+    return s ? s.begin(runs) : { runs: 0, compared: false, why: 'incomplete', differences: [] };
   }
 
   /** Files the next update on the scratch copy; false when none is left. */
-  async shadowStep(): Promise<boolean> {
-    return this.shadow ? this.shadow.step() : false;
+  async shadowStep(token: number): Promise<boolean> {
+    return (await this.shadowOf(token)?.step()) ?? false;
   }
 
   /** Compares the scratch copy with this one (which holds the server's rows by now) and frees it. */
-  async shadowEnd(): Promise<ShadowReport | null> {
-    const s = this.shadow;
+  async shadowEnd(token: number): Promise<ShadowReport | null> {
+    const s = this.shadowOf(token);
+    if (!s) return null;
     this.shadow = null;
-    return s ? s.end(this.db) : null;
+    return s.end(this.db);
   }
 
   /** What to ask the server's bank log for next (routes/sync.ts `/sync/bank-log`). */

@@ -33,9 +33,10 @@ type Msg =
   | { id: number; op: 'queueSending'; editId: string }
   | { id: number; op: 'queueDone'; editId: string }
   | { id: number; op: 'queueRefused'; editId: string }
-  | { id: number; op: 'shadowBegin'; runs: InboxRun[] }
-  | { id: number; op: 'shadowStep' }
-  | { id: number; op: 'shadowEnd' }
+  | { id: number; op: 'shadowFork' }
+  | { id: number; op: 'shadowBegin'; token: number; runs: InboxRun[] }
+  | { id: number; op: 'shadowStep'; token: number }
+  | { id: number; op: 'shadowEnd'; token: number }
   | { id: number; op: 'export' }
   | { id: number; op: 'state' }
   | { id: number; op: 'rta' }
@@ -100,12 +101,14 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       return { value: await need().engine.queueDone(m.editId) };
     case 'queueRefused':
       return { value: await need().engine.queueRefused(m.editId) };
+    case 'shadowFork':
+      return { value: await need().engine.shadowFork() };
     case 'shadowBegin':
-      return { value: await need().engine.shadowBegin(m.runs) };
+      return { value: await need().engine.shadowBegin(m.token, m.runs) };
     case 'shadowStep':
-      return { value: await need().engine.shadowStep() };
+      return { value: await need().engine.shadowStep(m.token) };
     case 'shadowEnd':
-      return { value: await need().engine.shadowEnd() };
+      return { value: await need().engine.shadowEnd(m.token) };
     case 'export': {
       const bytes = need().db.db.export();
       const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;

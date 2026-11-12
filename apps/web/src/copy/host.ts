@@ -44,6 +44,8 @@ export interface SyncPage {
   rows: { t: string; k: unknown[]; d: Record<string, unknown> | null }[];
   /** The place of the newest bank update the server has finished filing (routes/sync.ts). */
   inbox?: number;
+  /** The server is filing a bank update right now (routes/sync.ts). */
+  filing?: boolean;
 }
 /** One bank update from the server's inbox (store/inbox.ts): the engine files it; the app only passes it on. */
 export interface InboxRun {
@@ -114,17 +116,21 @@ export class EngineHost {
   ): Promise<{ status: number; body: string }> {
     return this.call('request', { method, path, body, edit });
   }
-  /** Starts a shadow run for these bank updates (engine.ts shadowBegin): null when it started. */
-  shadowBegin(runs: InboxRun[]): Promise<ShadowReport | null> {
-    return this.call('shadowBegin', { runs });
+  /** Makes the scratch copy for a shadow run (engine.ts shadowFork); gives its token, or null when it can't. */
+  shadowFork(): Promise<number | null> {
+    return this.call('shadowFork');
+  }
+  /** The bank updates to file on the scratch copy: null when ready, or why a comparison would say nothing. */
+  shadowBegin(token: number, runs: InboxRun[]): Promise<ShadowReport | null> {
+    return this.call('shadowBegin', { token, runs });
   }
   /** Files the next update on the scratch copy; false when none is left. */
-  shadowStep(): Promise<boolean> {
-    return this.call('shadowStep');
+  shadowStep(token: number): Promise<boolean> {
+    return this.call('shadowStep', { token });
   }
   /** Compares and frees the scratch copy. */
-  shadowEnd(): Promise<ShadowReport | null> {
-    return this.call('shadowEnd');
+  shadowEnd(token: number): Promise<ShadowReport | null> {
+    return this.call('shadowEnd', { token });
   }
   /** Runs an edit made with no connection and puts it in the queue, in one step (engine.ts enqueue). */
   enqueue(edit: QueuedEdit): Promise<{ status: number; body: string; queued: number }> {
