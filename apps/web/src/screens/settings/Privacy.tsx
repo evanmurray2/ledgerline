@@ -3,6 +3,7 @@
 import { Card, SectionTitle } from '../../components/ui';
 import { Why } from '../../components/Why';
 import { Page } from './common';
+import { MoveCard } from './Move';
 
 function Fact({ name, text }: { name: string; text: string }) {
   return (
@@ -26,6 +27,7 @@ export function PrivacyScreen() {
         Ledgerline is being rebuilt so that only your devices can read your budget. The server will hold it
         locked, with a key it never has. This page will say when that is true.
       </Why>
+      <MoveCard />
       <SectionTitle>Your banks</SectionTitle>
       <Card>
         <Fact name="Your bank password" text="You type it at Plaid. Ledgerline never gets it." />

@@ -15,6 +15,7 @@ import {
   archiveFields,
   canEditOffline,
   isSealed,
+  sealedServerPath,
   newEdit,
   closeFields,
   dropSignedOut,
@@ -234,12 +235,7 @@ async function sendOnce<S extends z.ZodType>(
   if (readsLocally(method, path)) return answer(schema, await readCopy(path));
   // Changes made with no signal go to the copy now and to the server later (a short list; copy.ts).
   // A sealed budget's changes are always made on the device: its log takes them as entries (copy.ts).
-  if (
-    mutation &&
-    isSealed() &&
-    !canEditOffline(method, path) &&
-    !/^\/api\/(auth|settings\/security|cutover)\//.test(path)
-  )
+  if (mutation && isSealed() && !canEditOffline(method, path) && !sealedServerPath(path))
     throw new ApiError('sealed', 'This can’t be changed here yet.', 409);
   if (mutation && (connectivity.isOffline() || isSealed()) && canEditOffline(method, path))
     return schema.parse(

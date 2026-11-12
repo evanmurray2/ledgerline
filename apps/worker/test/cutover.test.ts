@@ -239,6 +239,30 @@ describe('the cutover, rehearsed', () => {
     expect(sealedState).toMatchObject({ open: false, sealed: true });
     expect(Date.parse(sealedState.backUntil)).toBeGreaterThan(Date.now() + 6 * 86_400_000);
 
+    // ---- the banks of a sealed budget: the server says each link's state and no name
+    const links = (await (await get('/api/settings/connections')).json()) as {
+      used: number;
+      items: { id: string; institution: string; accounts: string; status: string }[];
+    };
+    expect(links.items.length).toBeGreaterThan(0);
+    expect(links.items.every((i) => i.institution === '' && i.accounts === '')).toBe(true);
+    expect(links.items.find((i) => i.id === `con_${LINK}`)).toMatchObject({ status: 'ok' });
+    // A fetch the person asks for: only stamped links are asked (the seeded ones never had a token).
+    expect(await (await post('/api/settings/connections/refresh')).json()).toEqual({ ok: true, started: 1 });
+    expect((await post(`/api/settings/connections/con_${LINK}/refresh`)).status).toBe(200);
+    expect((await post('/api/settings/connections/con_nothing/refresh')).status).toBe(404);
+    expect(
+      (
+        await server
+          .prepare(`SELECT fetch_requested AS n FROM bank_link WHERE id = ?1`)
+          .bind(LINK)
+          .first<{ n: number }>()
+      )?.n,
+    ).toBe(1);
+    // What the server kept about the app's use is answered and dropped; every other old route stays closed.
+    expect((await post('/api/usage')).status).toBe(204);
+    expect((await post('/api/settings/connections/exchange')).status).toBe(409);
+
     // ---- sealed: the old routes are closed, the log's are open, and the old tables are as they were
     expect((await get('/api/sync?since=0&limit=5')).status).toBe(409);
     expect((await assign(60)).status).toBe(409);

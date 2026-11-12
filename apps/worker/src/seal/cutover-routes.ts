@@ -42,6 +42,12 @@ const Begin = z.object({
 });
 
 export const cutoverApi = new Hono<AppEnv>();
+// Every answer says the server's time: a device dates its entries by the server's clock as it last saw it, since
+// the log refuses an entry more than 5 minutes off (packages/seal server-append.ts).
+cutoverApi.use('*', async (c, next) => {
+  await next();
+  c.header('x-ledgerline-time', String(requestNow(c)));
+});
 
 /**
  * Whether the cutover is open for this budget: the Worker's `CUTOVER` variable names the one budget that may be
@@ -50,6 +56,13 @@ export const cutoverApi = new Hono<AppEnv>();
  */
 const open = (c: { env: AppEnv['Bindings']; req: { path: string } }, budgetId: string): boolean =>
   c.req.path.endsWith('/cutover/back') || c.env.CUTOVER === budgetId || c.env.CUTOVER === 'any';
+
+/**
+ * The budget's person is the one who may move it. While one budget is named, that is the Directory's admin
+ * (the owner); `any` is for tests, where each account moves its own budget.
+ */
+const notAdmin = (c: { env: AppEnv['Bindings'] }, who: Caller): boolean =>
+  who.isAdmin === false && c.env.CUTOVER !== 'any';
 
 // Where the budget stands: asked by the Privacy screen each time it opens, so it needs no passkey check and
 // answers whether or not the move is open. It is in front of the guard below for that reason; it changes nothing.
@@ -61,9 +74,9 @@ cutoverApi.get('/cutover/state', async (c) => {
   const s = await cutoverState({ db: c.env.DB, now, markNow: Date.now() });
   return c.json({
     // The move is offered to the budget's admin only, and only while the Worker names this budget.
-    open: !s.sealed && who.isAdmin !== false && open(c, who.budgetId),
+    open: !s.sealed && !notAdmin(c, who) && open(c, who.budgetId),
     sealed: s.sealed,
-    backUntil: s.backUntil !== null && who.isAdmin !== false ? new Date(s.backUntil).toISOString() : null,
+    backUntil: s.backUntil !== null && !notAdmin(c, who) ? new Date(s.backUntil).toISOString() : null,
   });
 });
 
@@ -72,7 +85,7 @@ cutoverApi.use('*', async (c, next) => {
   // admin (its first user), when the Directory says who that is.
   const who = (c.env as typeof c.env & { CALLER?: Caller }).CALLER;
   if (!who || !open(c, who.budgetId)) return c.json({ error: 'not_found', message: TRY_AGAIN }, 404);
-  if (who.userId === 'system' || who.userId === 'service' || who.isAdmin === false)
+  if (who.userId === 'system' || who.userId === 'service' || notAdmin(c, who))
     return c.json({ error: 'forbidden', message: 'You can’t open this.' }, 403);
   if (requestNow(c) - who.verifiedAt > REAUTH_MS)
     return c.json({ error: 'reauth', message: 'Confirm it’s you with your passkey, then try again.' }, 401);

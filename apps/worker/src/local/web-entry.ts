@@ -80,7 +80,21 @@ let sealed: {
 
 /** The app's own origin, with the session's cookie. */
 // (A request to the app's own origin carries the cookie by default.)
-const call: Fetch = (path, init) => fetch(path, init);
+/**
+ * The server's clock less this device's, as last seen: from the old sync when the copy opens, then from each
+ * answer of the log's routes. The log refuses an entry dated more than 5 minutes off the server's clock, so the
+ * device's own clock never dates one.
+ */
+let skew = 0;
+const clock = (): number => Date.now() + skew;
+const call: Fetch = async (path, init) => {
+  const asked = Date.now();
+  const r = await fetch(path, init);
+  const t = Number(r.headers.get('x-ledgerline-time'));
+  // Half the round trip is the best guess of when the server read its clock.
+  if (Number.isFinite(t) && t > 0) skew = t - (asked + Date.now()) / 2;
+  return r;
+};
 const http = httpTransport(call);
 
 function needSealed(): { engine: LocalEngine; s: NonNullable<typeof sealed>; log: DeviceLog } {
@@ -233,9 +247,10 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       return { value: null };
     case 'sealedOpen': {
       const e = need().engine;
+      if (!skew) skew = (await e.state()).offset;
       sealed = { keys: m.keys, deviceId: m.deviceId, workerKeys: new Map(m.workerKeys), log: null };
       const place = await e.noted(LogSession.PLACE);
-      if (place) sealed.log = await DeviceLog.restore(m.keys, place, m.deviceId, () => Date.now());
+      if (place) sealed.log = await DeviceLog.restore(m.keys, place, m.deviceId, clock);
       // No place kept: a new device, or a copy made again. `sealedJoin` opens a snapshot.
       return { value: { ready: sealed.log !== null, number: sealed.log?.number ?? 0 } };
     }
@@ -246,7 +261,7 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
         keys: sealed.keys,
         budgetId: who!.budgetId,
         deviceId: sealed.deviceId,
-        clock: () => Date.now(),
+        clock,
       });
       await e.note(LogSession.PLACE, sealed.log.save());
       return { value: { number: sealed.log.number } };
@@ -279,19 +294,20 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       const { log } = needSealed();
       const s = await scratch(who!);
       try {
-        return { value: await checkSnapshot(s.engine, log, http, () => Date.now()) };
+        return { value: await checkSnapshot(s.engine, log, http, clock) };
       } finally {
         s.close();
       }
     }
     case 'cutover': {
       const e = need().engine;
+      if (!skew) skew = (await e.state()).offset;
       const r = await cutoverOnDevice(e, {
         keys: m.keys,
         genesis: await readEntry(m.genesis),
         budgetId: who!.budgetId,
         deviceId: m.deviceId,
-        clock: () => Date.now(),
+        clock,
         snapshotId: m.snapshotId,
         encode: encodeEntry,
         sync: () => oldSync(e),

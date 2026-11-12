@@ -10,12 +10,20 @@
 // offline.
 import { useSyncExternalStore } from 'react';
 import { CSRF_HEADER, type SealedSession, type Session } from '@ledgerline/contracts';
-import { slotPrfInput } from '../keys/budget';
+import { slotPrfInput, WayInError } from '../keys/budget';
+import { dropMove, prepareMove, proveMove, recoveryKeyOpens, type PreparedMove } from '../keys/move';
 import { WORKER_RUN_KEYS } from '../keys/worker-keys';
-import { logDeviceId, openSealedBudget } from './sealed';
+import { logDeviceId, newUlid, openSealedBudget } from './sealed';
 import { mergedSession } from './sealed-session';
 import { connectivity } from '../state/connectivity';
-import { EngineHost, syncAll, type EngineIdentity, type QueuedEdit, type SyncPage } from './host';
+import {
+  EngineHost,
+  syncAll,
+  type EngineIdentity,
+  type QueuedEdit,
+  type SealedKeys,
+  type SyncPage,
+} from './host';
 import { shadowBefore, shadowFinish, type Started } from './shadow';
 import { usage } from '../usage/tracker';
 import { assert, canUsePasskeys, keepsCopy, type RequestOptionsJSON } from './passkey';
@@ -308,6 +316,112 @@ async function askSlot(): Promise<{ credentialId: string; slotPrf: ArrayBuffer }
   return { credentialId: a.credentialId, slotPrf: a.slotPrf };
 }
 
+// ---------------------------------------------------------------- moving a budget to its sealed log
+
+export type MoveInHand = PreparedMove;
+const NOT_NOW = 'Something went wrong. Try again.';
+
+/**
+ * The first step of the move (docs/privacy.md section 8 step 6): the passkey is asked, and this device makes
+ * the budget's key, its recovery key and the log's first entry. Nothing is sent.
+ */
+export async function moveStart(): Promise<MoveInHand> {
+  if (!host || !who || state.status !== 'ready' || sealed) throw new Error(NOT_NOW);
+  if (state.offline) throw new Error('Connect to the internet to lock your budget.');
+  // Every change made here must be on the server first: the move takes the budget as the server holds it.
+  await flush();
+  if ((await queued()).length)
+    throw new Error('Some changes are not sent yet. Wait a moment, then try again.');
+  const w = await askSlot();
+  return prepareMove({
+    budgetId: who.budgetId,
+    deviceId: await logDeviceId(host),
+    passkey: { credentialId: new Uint8Array(fromB64url(w.credentialId)), prf: new Uint8Array(w.slotPrf) },
+    // The server's clock as this device measured it: the log refuses a first entry dated by another clock.
+    now: Date.now() + (await host.state()).offset,
+  });
+}
+
+/** The move is given up: the keys made for it are zeroed. */
+export function moveGiveUp(p: MoveInHand): void {
+  dropMove(p);
+}
+
+/**
+ * The rest of the move: the recovery key typed back and a fresh passkey prompt must both open the new key; then
+ * the engine freezes the budget, sends the first entry and the first snapshot, and reads the snapshot back.
+ * `retype`: the typed key was wrong, or the prompt was not answered; the same key is still in hand.
+ */
+export async function moveFinish(
+  p: MoveInHand,
+  typed: string,
+): Promise<{ ok: true } | { ok: false; why: string; retype?: boolean }> {
+  if (!host || !who || state.status !== 'ready' || sealed) throw new Error(NOT_NOW);
+  const h = host;
+  if (!(await recoveryKeyOpens(p, typed)))
+    return { ok: false, why: 'That is not the recovery key shown. Check it and try again.', retype: true };
+  let w: { credentialId: string; slotPrf: ArrayBuffer };
+  try {
+    w = await askSlot();
+  } catch (e) {
+    return { ok: false, why: e instanceof Error ? e.message : NOT_NOW, retype: true };
+  }
+  let proved: Awaited<ReturnType<typeof proveMove>>;
+  try {
+    proved = await proveMove(p, typed, {
+      credentialId: new Uint8Array(fromB64url(w.credentialId)),
+      prf: new Uint8Array(w.slotPrf),
+    });
+  } catch (e) {
+    dropMove(p);
+    if (e instanceof WayInError) return { ok: false, why: e.message };
+    throw e;
+  } finally {
+    dropMove(p);
+  }
+  const keys = proved.keys as unknown as SealedKeys;
+  const r = await h.cutover(keys, proved.genesis, proved.deviceId, newUlid());
+  if (!r.ok) return { ok: false, why: r.why };
+  // The budget is sealed. From here this device treats it so, whatever the server says later.
+  rememberSealed(who.budgetId);
+  sealed = {
+    sealed: true,
+    user: { email: who.email },
+    budgetId: who.budgetId,
+    appVersion: '',
+    writeState: 'ok',
+    readOnlyUntil: null,
+    readsPaused: false,
+    canLinkBanks: false,
+    recoveryNoticeAt: null,
+  };
+  await h.sealedOpen([keys], proved.deviceId, WORKER_RUN_KEYS);
+  await keepPublicSeen(h, who.budgetId, { number: 1, hash: toHex(p.genesis.hash) });
+  await h.put('publics', JSON.stringify([btoa(String.fromCharCode(...proved.genesis))]));
+  await h.put('sealed_session', JSON.stringify(sealed));
+  if (record && dataKey) {
+    await holdKey(record.key, dataKey, Date.now(), [keys]);
+    record = { ...record, sealed: true };
+    await save();
+  }
+  const made = await sealedSessionNow();
+  if (made) window.dispatchEvent(new CustomEvent('ledgerline:session', { detail: made }));
+  // The server's own answer for a sealed budget replaces the account facts made up above.
+  window.dispatchEvent(new Event('ledgerline:readonly'));
+  changed();
+  return { ok: true };
+}
+
+/**
+ * After the way back was taken on the server (`POST /api/cutover/back`): this device forgets that the budget was
+ * sealed, deletes its copy and starts again, from the budget as it was.
+ */
+export async function moveBack(): Promise<void> {
+  forgetSealed(who?.budgetId ?? sealed?.budgetId ?? null);
+  await wipe();
+  window.location.reload();
+}
+
 // ---------------------------------------------------------------- server calls (plain fetch: no import cycle)
 
 async function server<T>(
@@ -368,7 +482,12 @@ export async function signIn(): Promise<void> {
 }
 
 function identityOf(s: Session): EngineIdentity {
-  return { budgetId: s.budget.id, userId: s.user.email, email: s.user.email };
+  return {
+    budgetId: s.budget.id,
+    userId: s.user.email,
+    email: s.user.email,
+    ...(s.canLinkBanks ? {} : { noBanks: true }),
+  };
 }
 
 /** Opens the copy for a confirmed session (online). Called by the router once the session is known. */
@@ -730,6 +849,7 @@ const SERVER_READS = [
   /^\/api\/settings\/connections$/,
   /^\/api\/settings\/security/,
   /^\/api\/export\//,
+  /^\/api\/cutover\//,
 ];
 
 export function readsLocally(method: string, path: string): boolean {
@@ -843,8 +963,29 @@ export async function newEdit(): Promise<EditStamp> {
 }
 
 export function canEditOffline(method: string, path: string): boolean {
-  return state.status === 'ready' && !!host && OFFLINE_EDITS.some(([m, r]) => m === method && r.test(path));
+  if (state.status !== 'ready' || !host) return false;
+  // A sealed budget: every change of the budget is made on the device (each has a twin check against the
+  // server's own route, apps/worker/test/twin.test.ts). Only what needs the server goes to it.
+  if (sealed) return !sealedServerPath(path);
+  return OFFLINE_EDITS.some(([m, r]) => m === method && r.test(path));
 }
+
+/**
+ * What the server still does for a sealed budget: sign-in, the banks, the move itself, and the records it keeps
+ * about the app's use. The list is the twin test's "never run on a phone's copy" (SERVER_ONLY).
+ */
+const SEALED_SERVER = [
+  /^\/api\/auth\//,
+  /^\/api\/settings\/security(\/|$)/,
+  /^\/api\/cutover\//,
+  /^\/api\/settings\/connections\/(link-token|link-finish|exchange|refresh)$/,
+  /^\/api\/settings\/connections\/[^/]+\/refresh$/,
+  /^\/api\/settings\/restore$/,
+  /^\/api\/(usage|notes|identity-alert)$/,
+  /^\/api\/sync\/shadow$/,
+];
+export const sealedServerPath = (path: string): boolean =>
+  SEALED_SERVER.some((r) => r.test(path.split('?')[0]!));
 
 /** A change made with no signal: applied to the copy now, sent to the server when there's a connection. */
 export async function editOffline(
