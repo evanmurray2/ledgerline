@@ -243,7 +243,7 @@ describe('your entry and the bank’s rows', () => {
     expect((await mp('m:yes'))!.covers_provider_txn_id).toBe('yes-p');
     expect(await counted(10)).toEqual({ spent: -2500, pending: -2500 });
     const sheet = (await call('GET', '/api/transactions/m%3Ayes')).json as TxnSheet;
-    expect(sheet.pairedWith?.label).toMatch(/^Bank pending: WHOLEFDS MKT/);
+    expect(sheet.pairedWith?.label).toMatch(/^Bank pending: WHOLEFDS MKT.* · \$\d+\.\d\d$/);
     expect((await call('POST', '/api/transactions/m%3Ayes/not-same')).status).toBe(200);
     expect((await mp('m:yes'))!.covers_provider_txn_id).toBeNull();
     expect(await counted(10)).toEqual({ spent: -2500 - 2710, pending: -2500 - 2710 });

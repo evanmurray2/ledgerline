@@ -5,7 +5,7 @@
 import type { Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
 import { SamePurchaseAnswer, type ActivityView, type TxnSheet } from '@ledgerline/contracts';
-import { cents, entryCandidate } from '@ledgerline/domain';
+import { cents, entryCandidate, formatCents } from '@ledgerline/domain';
 import { editNow } from '../http/clock.js';
 import { newId } from '../http/ids.js';
 import type { AppEnv } from '../http/context.js';
@@ -259,13 +259,16 @@ samePurchaseRoutes.post('/same-purchase/:id', async (c) => {
  */
 export async function pairedWith(s: Scoped, t: TxRow): Promise<TxnSheet['pairedWith']> {
   if (t.source === 'manual') {
-    const b = await s.first<{ payee: string; date: string; status: string }>(
-      `SELECT coalesce(b.merchant_name, b.plaid_name, b.raw_name) AS payee, b.date, 'pending' AS status
+    const b = await s.first<{ payee: string; date: string; amount: number }>(
+      `SELECT coalesce(b.merchant_name, b.plaid_name, b.raw_name) AS payee, b.date, b.amount
        FROM manual_pending m JOIN bank_txn b ON b.budget_id = m.budget_id AND b.provider_txn_id = m.covers_provider_txn_id
        WHERE m.budget_id = ?1 AND m.txn_key = ?2 AND ${COVERING('m')}`,
       t.key,
     );
-    return b ? { label: `Bank pending: ${b.payee} · ${shortDate(b.date)}` } : null;
+    // The bank's own amount: your entry's can differ (a tip), and the bank's wins when it posts.
+    return b
+      ? { label: `Bank pending: ${b.payee} · ${shortDate(b.date)} · ${formatCents(Math.abs(b.amount))}` }
+      : null;
   }
   if (t.status !== 'posted') return null;
   const m = await s.first<{ payee_name: string; date: string }>(

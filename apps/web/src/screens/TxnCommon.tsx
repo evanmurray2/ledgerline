@@ -1,5 +1,5 @@
 // Pieces every transaction sheet shares: the path of the screen under a sheet, closing back to it, the
-// amount-led header and the "Bank says" lines with Rename payee.
+// amount-led header and the bank's name with Rename payee.
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import type { TxnSheet } from '@ledgerline/contracts';
 import { SheetTitle } from '../components/Sheet';
@@ -61,7 +61,8 @@ export function BankSays({ t, extra }: { t: TxnSheet; extra?: string }) {
   const parent = useParentPath();
   return (
     <div className="flex flex-col gap-1 text-xs text-muted">
-      <span>Bank says: {t.rawName}</span>
+      {/* Your own entry has no bank name: its raw name is the one you typed. */}
+      {t.kind !== 'manual' && t.kind !== 'upcoming' && <span>Bank name: {t.rawName}</span>}
       {extra && <span>{extra}</span>}
       <div className="flex gap-4">
         <Link

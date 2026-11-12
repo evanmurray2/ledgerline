@@ -236,15 +236,19 @@ with nothing posted after 5 days)
 ## Transaction sheet
 
 - Tags: "Pending" · "Posted" · "Income · posted" · "Refund · posted" · "Paid back" · "Transfer" · "Added by you" ·
-  "Upcoming" · "Before your budget" · "Pending · your estimate" · "Pending · won't clear" · "Bank says: {name}"
-- Estimate: "When it posts, the bank's amount wins. You'll see an alert if they differ."
+  "Upcoming" · "Before your budget" · "Pending · your estimate" · "Pending · won't clear" · "Bank name: {name}"
+- Estimate: closed: "Pending amount can change" + "Estimate…"; open: "When it posts, the bank's amount wins."
+- "More options" (closed unless Owed to you, the budget month or Won't clear is set): Owed to you, Counts in, Won't
+  clear, "It's a transfer…", "Bank name: {name}" (not on your own entry) + "Rename payee"
+- Category note: "Set by {who}." only when someone other than you set it
 - Refund: "The {amount} goes back to {category}." (+ on a card: "The card payment needs {amount} less.")
 - Income: "Ready to Assign now" / "Save for {Month}" + "Adds {amount} to Ready to Assign on {Month} 1."
 - "Money back for something owed to you?" + Match
 - Owed: "{category} pays only your share. The rest comes out of Ready to Assign until it's paid back."
 - Won't clear: "Turning this on removes what's owed" / "Stop counting this hold"
 - Memo: "Add a memo"
-- Same purchase: "Same purchase as {other}" + "Not the same" → "Kept as two purchases"
+- Same purchase: your entry: "Matched to the bank" + "Bank pending: {payee} · {date} · {amount}"; a posted row:
+  "Same purchase as" + "{other}"; both + "Not the same" → "Kept as two purchases"
 - Paid back: "It went to Ready to Assign and paid back {amount}." · "Unlinked": "{name} is owed again. This {amount} is
   back in Waiting to match."
 - Transfer: "It moves money between your accounts. No category changes." · "Unpair" → "Unpaired": "Both halves now
