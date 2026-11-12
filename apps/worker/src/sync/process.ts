@@ -15,6 +15,7 @@ import {
   ENTRY_DAYS_BEFORE,
 } from '@ledgerline/domain';
 import { seededUlid } from '@ledgerline/platform';
+import type { ProviderAccount, ProviderLiability } from '@ledgerline/bank-provider';
 import type { Env } from '../env.js';
 import { Scoped } from '../db/scoped.js';
 import { accountLedger, bankDiff } from '../ledger/bank-diff.js';
@@ -268,73 +269,117 @@ async function planProcessing(
   return { stmts };
 }
 
-/** After the watermark catches up: refresh balances and card liabilities, mark the sync done. */
-export async function finalizeConnection(env: Env, c: StepContext, runId: string): Promise<void> {
+/** What the bank says at the end of an update: each account's balances, and each card's statement. */
+export interface BankState {
+  accounts: Pick<
+    ProviderAccount,
+    'providerAccountId' | 'currentBalance' | 'availableBalance' | 'creditLimit'
+  >[];
+  liabilities: ProviderLiability[];
+}
+
+/**
+ * The end of a bank update, from what the bank said (`bank`; null when it couldn't be asked): the balances, a
+ * card's liability snapshot for the day, and the start or end of a bank difference (D-68). Everything carries the
+ * update's time `at` (D-86 A1). It asks the bank nothing, so a device that files the same update with the same
+ * `bank` writes the same rows (local/file-run.ts).
+ */
+export async function endOfUpdate(
+  db: Db,
+  c: { budgetId: string; connectionId: string },
+  at: number,
+  bank: BankState | null,
+): Promise<void> {
+  if (bank) {
+    const stmts: Stmt[] = bank.accounts.map((a) =>
+      db
+        .prepare(
+          `UPDATE provider_account SET current_balance = ?3, available_balance = ?4, credit_limit = ?5, balance_as_of = ?6, updated_at = ?6
+           WHERE connection_id = ?1 AND provider_account_id = ?2`,
+        )
+        .bind(c.connectionId, a.providerAccountId, a.currentBalance, a.availableBalance, a.creditLimit, at),
+    );
+    if (bank.liabilities.length) {
+      // One snapshot per card per day in the budget's time zone.
+      const zone = await db
+        .prepare(`SELECT time_zone FROM budget WHERE id = ?1`)
+        .bind(c.budgetId)
+        .first<{ time_zone: string }>();
+      const snapshotDay = localDate(at, zone?.time_zone ?? 'America/Los_Angeles');
+      for (const l of bank.liabilities) {
+        stmts.push(
+          db
+            .prepare(
+              // One snapshot per card per day: a later sync the same day replaces it (liability_day index).
+              `INSERT INTO liability_snapshot (id, budget_id, provider_account_id, as_of, statement_balance, statement_date, due_date, minimum_payment, apr_bp, data, created_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, '{}', ?10)
+               ON CONFLICT (budget_id, provider_account_id, as_of) DO UPDATE SET statement_balance = excluded.statement_balance,
+                 statement_date = excluded.statement_date, due_date = excluded.due_date, minimum_payment = excluded.minimum_payment,
+                 apr_bp = excluded.apr_bp, created_at = excluded.created_at`,
+            )
+            .bind(
+              // Named from the card and the day, never at random: a device that files the same update makes the
+              // same row (docs/privacy.md 5.3: ids are an input).
+              seededUlid(at, `liability:${l.providerAccountId}:${snapshotDay}`, 0),
+              c.budgetId,
+              l.providerAccountId,
+              snapshotDay,
+              l.statementBalance,
+              l.statementDate,
+              l.dueDate,
+              l.minimumPayment,
+              l.aprBasisPoints,
+              at,
+            ),
+        );
+      }
+    }
+    try {
+      if (stmts.length) await db.batch(stmts);
+    } catch {
+      // Balances refresh on the next sync; the transactions are already applied.
+    }
+  }
+  try {
+    await markDrift(db, c.budgetId, c.connectionId, at);
+  } catch {
+    // The next sync sets it; until then a difference waits a little longer to show.
+  }
+}
+
+/** Asks the bank for the balances and card statements of a connection; null when it can't be asked now. */
+export async function askBank(env: Env, connectionId: string): Promise<BankState | null> {
+  try {
+    const provider = makeProvider(env);
+    const token = await connectionToken(env, connectionId);
+    const conn = { id: connectionId, accessToken: token, providerItemId: null };
+    const accounts = await provider.getAccounts(conn);
+    const liabilities = provider.getLiabilities ? await provider.getLiabilities(conn).catch(() => []) : [];
+    return {
+      accounts: accounts.map((a) => ({
+        providerAccountId: a.providerAccountId,
+        currentBalance: a.currentBalance,
+        availableBalance: a.availableBalance,
+        creditLimit: a.creditLimit,
+      })),
+      liabilities,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * After the watermark catches up: asks the bank for balances and card liabilities, writes the end of the update,
+ * and marks the sync done. Gives what the bank said, for the device that files this update too.
+ */
+export async function finalizeConnection(env: Env, c: StepContext, runId: string): Promise<BankState | null> {
   const now = Date.now();
   // What the update says about the bank carries the update's time (D-86 A1): the balance time, the day of a card's
   // liability snapshot, and the start of a bank difference. When the run ended is still this step's clock.
   const at = (await runFetchedAt(env.DB, runId)) ?? now;
-  try {
-    const provider = makeProvider(env);
-    const token = await connectionToken(env, c.connectionId);
-    const conn = { id: c.connectionId, accessToken: token, providerItemId: null };
-    const accounts = await provider.getAccounts(conn);
-    const stmts: Stmt[] = accounts.map((a) =>
-      env.DB.prepare(
-        `UPDATE provider_account SET current_balance = ?3, available_balance = ?4, credit_limit = ?5, balance_as_of = ?6, updated_at = ?7
-         WHERE connection_id = ?1 AND provider_account_id = ?2`,
-      ).bind(
-        c.connectionId,
-        a.providerAccountId,
-        a.currentBalance,
-        a.availableBalance,
-        a.creditLimit,
-        at,
-        now,
-      ),
-    );
-    if (provider.getLiabilities) {
-      const liab = await provider.getLiabilities(conn).catch(() => []);
-      // One snapshot per card per day in the budget's time zone.
-      const zone = await env.DB.prepare(`SELECT time_zone FROM budget WHERE id = ?1`)
-        .bind(c.budgetId)
-        .first<{ time_zone: string }>();
-      const snapshotDay = localDate(at, zone?.time_zone ?? 'America/Los_Angeles');
-      for (const l of liab) {
-        stmts.push(
-          env.DB.prepare(
-            // One snapshot per card per day: a later sync the same day replaces it (liability_day index).
-            `INSERT INTO liability_snapshot (id, budget_id, provider_account_id, as_of, statement_balance, statement_date, due_date, minimum_payment, apr_bp, data, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, '{}', ?10)
-             ON CONFLICT (budget_id, provider_account_id, as_of) DO UPDATE SET statement_balance = excluded.statement_balance,
-               statement_date = excluded.statement_date, due_date = excluded.due_date, minimum_payment = excluded.minimum_payment,
-               apr_bp = excluded.apr_bp, created_at = excluded.created_at`,
-          ).bind(
-            // Named from the card and the day, never at random: a device that files the same update makes the
-            // same row (docs/privacy.md 5.3: ids are an input).
-            seededUlid(at, `liability:${l.providerAccountId}:${snapshotDay}`, 0),
-            c.budgetId,
-            l.providerAccountId,
-            snapshotDay,
-            l.statementBalance,
-            l.statementDate,
-            l.dueDate,
-            l.minimumPayment,
-            l.aprBasisPoints,
-            now,
-          ),
-        );
-      }
-    }
-    if (stmts.length) await env.DB.batch(stmts);
-  } catch {
-    // Balances refresh on the next sync; the transactions are already applied.
-  }
-  try {
-    await markDrift(env.DB, c.budgetId, c.connectionId, at);
-  } catch {
-    // The next sync sets it; until then a difference waits a little longer to show.
-  }
+  const bank = await askBank(env, c.connectionId);
+  await endOfUpdate(env.DB, c, at, bank);
   await env.DB.batch([
     env.DB.prepare(
       `UPDATE sync_run SET phase = 'done', finished_at = ?2, updated_at = ?2 WHERE id = ?1`,
@@ -344,6 +389,7 @@ export async function finalizeConnection(env: Env, c: StepContext, runId: string
       `UPDATE connection SET last_synced_at = ?2, last_attempt_at = ?2, error_code = NULL, status = 'ok' WHERE id = ?1`,
     ).bind(c.connectionId, now),
   ]);
+  return bank;
 }
 
 /** When a bank update finished fetching (sync_run.fetched_at); null for a run from before that was recorded. */

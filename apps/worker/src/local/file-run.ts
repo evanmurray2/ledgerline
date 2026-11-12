@@ -6,7 +6,7 @@
 import type { BankDataProvider } from '@ledgerline/bank-provider';
 import type { Env } from '../env.js';
 import { acquire } from '../sync/lease.js';
-import { healPending, processPending } from '../sync/process.js';
+import { endOfUpdate, healPending, processPending, type BankState } from '../sync/process.js';
 import { applyPage, beginRun } from '../sync/steps.js';
 
 /** One bank update, as fetched: nothing here is worked out. */
@@ -18,6 +18,11 @@ export interface RunPackage {
   /** Its place among the budget's updates (A2). */
   fetchSeq: number;
   /** Each page as stored by the fetch: its name in the bank log (`key`), its text and its checksum. */
+  /**
+   * What the bank said at the end of the update (balances, card statements), or null when the server couldn't ask.
+   * A device can't ask the bank, so this comes with the update.
+   */
+  bank: BankState | null;
   pages: { key: string; body: string; nextCursor: string | null; hasMore: boolean; sha256: string }[];
 }
 
@@ -78,6 +83,8 @@ export async function fileRun(
   // Pending rows a posted row should have claimed, whether or not the bank sent news about them (D-47), counted
   // from the update's time as on the server.
   await healPending(env, budgetId, connectionId, at);
+  // The end of the update: balances, card snapshots and the bank difference, from what the bank said.
+  await endOfUpdate(db, { budgetId, connectionId }, at, pkg.bank);
   await db.batch([
     db
       .prepare(`UPDATE connection SET sync_lock = NULL, lock_expires = NULL WHERE id = ?1`)
