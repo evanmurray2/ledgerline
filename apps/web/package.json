@@ -16,25 +16,25 @@
     "@ledgerline/contracts": "workspace:*",
     "@ledgerline/seal": "workspace:*",
     "@simplewebauthn/browser": "14.0.0",
-    "@tanstack/query-sync-storage-persister": "5.104.4",
-    "@tanstack/react-query": "5.105.0",
-    "@tanstack/react-query-persist-client": "5.104.4",
+    "@tanstack/query-sync-storage-persister": "5.107.1",
+    "@tanstack/react-query": "5.107.1",
+    "@tanstack/react-query-persist-client": "5.107.1",
     "@tanstack/react-router": "1.170.46",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "4.3.3",
+    "@tailwindcss/vite": "4.3.5",
     "@testing-library/dom": "10.4.2",
     "@testing-library/react": "16.3.3",
     "@testing-library/user-event": "14.6.8",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "@vitejs/plugin-react": "6.1.2",
-    "jsdom": "30.1.3",
-    "tailwindcss": "4.3.3",
-    "vite": "8.3.5",
-    "vitest": "4.1.12"
+    "@vitejs/plugin-react": "6.2.1",
+    "jsdom": "31.0.0",
+    "tailwindcss": "4.3.5",
+    "vite": "8.3.6",
+    "vitest": "5.1.0"
   }
 }
