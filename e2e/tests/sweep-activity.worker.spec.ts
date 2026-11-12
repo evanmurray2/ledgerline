@@ -245,6 +245,7 @@ test('Delete: an entry you added that was owed to you leaves nothing on Owed to 
   await page.goto('/activity');
   await page.getByText('Dinner with Sam', { exact: true }).first().click();
   const sheet = page.getByRole('dialog', { name: 'Dinner with Sam transaction' });
+  await sheet.getByRole('button', { name: 'More options' }).click();
   await sheet.getByRole('button', { name: 'Half', exact: true }).click();
   await sheet.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(sheet).toHaveCount(0);
@@ -318,19 +319,10 @@ test('Transaction sheet: a category archived since still shows by name, and Save
   expect(o).toMatchObject({ category_id: 'dining', memo: 'Birthday' });
 });
 
-test('Transaction sheet: your own category says “Set by you.”, and nothing about changing it back', async ({
-  page,
-}) => {
+test('Transaction sheet: your own category has no “Set by” note', async ({ page }) => {
   await page.goto('/activity/txn/n-dining');
   const sheet = page.getByRole('dialog', { name: 'Burma Superstar transaction' });
-  await expect(sheet.getByText('Set by you.', { exact: true })).toBeVisible();
-  await sheet.locator('#txn-cat').click();
-  await page
-    .getByRole('dialog', { name: 'Choose a category' })
-    .getByRole('button', { name: 'Groceries' })
-    .first()
-    .click();
-  await expect(sheet.locator('#txn-cat')).toHaveText(/Groceries/);
+  await expect(sheet.locator('#txn-cat')).toBeVisible();
   await expect(sheet.getByText(/Set by|won’t change it back/)).toHaveCount(0);
 });
 
@@ -382,6 +374,7 @@ test('Transfer: a deposit that didn’t ask can be called a transfer from its sh
   page,
 }) => {
   await page.goto('/activity/txn/n-payroll');
+  await page.getByRole('button', { name: 'More options' }).click();
   await page.getByRole('link', { name: 'It’s a transfer…' }).click();
   const sheet = page.getByRole('dialog', { name: 'Which account sent this money?' });
   // Nothing was asked about this deposit, so there is no "It was income" answer.
@@ -426,6 +419,7 @@ test('Owed to you: a custom amount over the purchase keeps Save off and says the
 }) => {
   await page.goto('/activity/txn/n-dining');
   const sheet = page.getByRole('dialog', { name: 'Burma Superstar transaction' });
+  await sheet.getByRole('button', { name: 'More options' }).click();
   await sheet.getByRole('button', { name: 'Custom', exact: true }).click();
   await sheet.getByLabel('Amount owed').fill('200');
   await expect(sheet.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();

@@ -444,6 +444,7 @@ test('Pending: money you add goes to Ready to Assign, and a bank pending charge 
   )!;
   const key = String(hold.txn_key);
   await page.goto(`/activity/txn/${encodeURIComponent(key)}`);
+  await page.getByRole('dialog').getByRole('button', { name: 'Estimate…' }).click();
   await page.getByRole('dialog').getByLabel('Your estimate').fill('123.45');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page).not.toHaveURL(/\/txn\//);

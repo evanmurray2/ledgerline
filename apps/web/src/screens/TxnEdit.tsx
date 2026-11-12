@@ -85,7 +85,13 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const [wont, setWont] = useState(t.wontClear);
   const [memo, setMemo] = useState(t.memo ?? '');
   const [confirmDelete, setConfirmDelete] = useState(false);
-  // Owed to you, budget month and Won't clear are rarely changed: folded into one row unless one is set.
+  // Your estimate is rarely needed: one line until you ask for it, or open when one is set.
+  const [estOpen, setEstOpen] = useState(t.estimatedAmount !== null);
+  // Owed to you, budget month, Won't clear, transfer and the bank's name are rarely changed: behind More options,
+  // open by itself when one of the first three is set, so nothing that changes the totals is hidden.
+  const [moreOpen, setMoreOpen] = useState(
+    t.owed.length > 0 || t.wontClear || t.budgetMonth !== t.date.slice(0, 7),
+  );
 
   useEffect(() => {
     usage.startTask('categorize');
@@ -107,7 +113,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
     canEstimate && bank < 0
       ? [15, 18, 20]
           .map((p) => ({
-            label: `+${p}% · ${formatCents(Math.abs(Math.round((bank * (100 + p)) / 100)))}`,
+            label: `+${p}%`,
             cents: Math.abs(Math.round((bank * (100 + p)) / 100)),
           }))
           .concat([{ label: `Bank ${formatCents(Math.abs(bank))}`, cents: Math.abs(bank) }])
@@ -228,41 +234,53 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           </div>
         </div>
       )}
-      {canEstimate && (
-        <div className="flex shrink-0 flex-col gap-2 rounded-lg bg-page p-3">
-          <div className="flex justify-between text-md">
-            <span className="text-muted">Bank amount</span>
-            <span className="tnum font-bold">{formatCents(Math.abs(bank))}</span>
+      {canEstimate &&
+        (estOpen ? (
+          <div className="flex shrink-0 flex-col gap-2 rounded-lg border border-line p-3">
+            <div className="flex justify-between text-md">
+              <span className="text-muted">Bank amount</span>
+              <span className="tnum font-bold">{formatCents(Math.abs(bank))}</span>
+            </div>
+            <label className="flex items-center justify-between gap-3 text-md font-semibold text-ink-2">
+              Your estimate
+              <span className="w-[120px] shrink-0">
+                <input
+                  inputMode="decimal"
+                  placeholder={centsToInput(Math.abs(bank))}
+                  value={est}
+                  onChange={(e) => setEst(e.target.value)}
+                  className={cx(amountInputClass, 'text-right')}
+                />
+              </span>
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {tips.map((tip) => (
+                <SoftButton
+                  key={tip.label}
+                  tone={estTyped === tip.cents ? 'soft' : 'outline'}
+                  track="txn.tip"
+                  aria-pressed={estTyped === tip.cents}
+                  onClick={() => setEst(centsToInput(tip.cents))}
+                >
+                  {tip.label}
+                </SoftButton>
+              ))}
+            </div>
+            <span className="text-xs text-muted">When it posts, the bank’s amount wins.</span>
           </div>
-          <label className="flex items-center justify-between gap-3 text-md font-semibold text-ink-2">
-            Your estimate
-            <span className="w-[120px] shrink-0">
-              <input
-                inputMode="decimal"
-                placeholder={centsToInput(Math.abs(bank))}
-                value={est}
-                onChange={(e) => setEst(e.target.value)}
-                className={cx(amountInputClass, 'text-right')}
-              />
-            </span>
-          </label>
-          <div className="flex flex-wrap gap-1.5">
-            {tips.map((tip) => (
-              <SoftButton
-                key={tip.label}
-                tone="outline"
-                track="txn.tip"
-                onClick={() => setEst(centsToInput(tip.cents))}
-              >
-                {tip.label}
-              </SoftButton>
-            ))}
+        ) : (
+          <div className="flex min-h-12 shrink-0 items-center justify-between gap-3 rounded-lg border border-line px-3">
+            <span className="text-md text-ink-2">Pending amount can change</span>
+            <button
+              type="button"
+              data-track="txn.estimate"
+              onClick={() => setEstOpen(true)}
+              className={cx(textLinkClass, 'self-center')}
+            >
+              Estimate…
+            </button>
           </div>
-          <span className="text-xs text-muted">
-            When it posts, the bank’s amount wins. You’ll see an alert if they differ.
-          </span>
-        </div>
-      )}
+        ))}
       {isRefund && t.refundOf && (
         <div className="flex flex-col gap-1.5">
           <Label>Refund of</Label>
@@ -312,21 +330,11 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
             valueName={cat === origCat && !t.split ? t.categoryLabel : null}
           />
         )}
-        {/* Any bank row can be a transfer, also one whose name didn't look like one (it never asks by itself). */}
-        {(t.kind === 'posted' || t.kind === 'pending' || t.kind === 'income' || t.kind === 'refund') &&
-          t.categoryLabel !== 'Transfer' && (
-            <Link
-              to={`${parent}/transfer/${encodeURIComponent(t.key)}`}
-              data-track="txn.transfer"
-              className={cx(textLinkClass, 'flex min-h-9 items-center self-start')}
-            >
-              It’s a transfer…
-            </Link>
-          )}
-        {t.categorizedBy && (cat === origCat || t.categorizedBy !== 'You') && (
+        {/* Only who else set it: your own choice needs no note. */}
+        {t.categorizedBy && t.categorizedBy !== 'You' && (
           <span className="text-xs text-muted">
             {cat === origCat
-              ? `Set by ${t.categorizedBy === 'You' ? 'you' : t.categorizedBy}.`
+              ? `Set by ${t.categorizedBy}.`
               : `Set by you. ${t.categorizedBy} won’t change it back.`}
           </span>
         )}
@@ -374,113 +382,6 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           </span>
         </Link>
       )}
-      {/* Owed to you and the budget month change the totals, so they always show (no More to open). */}
-      {outflow && !isIncome && (
-        <div className="shrink-0 overflow-hidden rounded-lg border border-line">
-          <div className="flex flex-col gap-2 p-3">
-            <span className="flex flex-col gap-px text-base font-semibold">
-              Owed to you
-              <span className="text-xs font-normal text-muted">Part you’ll get back from someone</span>
-            </span>
-            <Segmented
-              label="Owed to you"
-              track="txn.owed"
-              value={owed}
-              onChange={(v) => {
-                setOwed(v);
-                if (v !== 'none') setWont(false);
-              }}
-              options={[
-                ['none', 'None'],
-                ['half', 'Half'],
-                ['all', 'All'],
-                ['custom', 'Custom'],
-              ]}
-            />
-            {owed !== 'none' && (
-              <>
-                <div className="flex gap-2">
-                  <Field label="Amount owed" className="flex-1 text-xs">
-                    <input
-                      className={amountInputClass}
-                      inputMode="decimal"
-                      value={owed === 'custom' ? owedAmt : centsToInput(owedCents)}
-                      readOnly={owed !== 'custom'}
-                      onChange={(e) => setOwedAmt(e.target.value)}
-                    />
-                  </Field>
-                  <Field label="Expect by" className="flex-1 text-xs">
-                    <input
-                      type="date"
-                      className={inputClass}
-                      value={expectBy}
-                      onChange={(e) => setExpectBy(e.target.value)}
-                    />
-                  </Field>
-                </div>
-                <span className="flex flex-col gap-1 text-xs leading-snug text-muted">
-                  <span>
-                    {catName ?? 'The category'} pays only your share. The rest comes out of Ready to Assign
-                    until it’s paid back.
-                  </span>
-                  {(onCard || owed !== 'custom') && (
-                    <Why>
-                      {onCard ? 'The card payment still covers the full amount. ' : ''}
-                      {owed === 'half'
-                        ? 'It stays half if the amount changes when it posts.'
-                        : owed === 'all'
-                          ? 'It stays all of it if the amount changes when it posts.'
-                          : ''}
-                    </Why>
-                  )}
-                </span>
-              </>
-            )}
-          </div>
-          <div className="flex min-h-14 items-center justify-between border-t border-divider px-3 text-base font-semibold">
-            <span className="flex flex-col gap-px">
-              Counts in<span className="text-xs font-normal text-muted">Budget month</span>
-            </span>
-            <div role="group" aria-label="Counts in" className="flex gap-1">
-              {months.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  data-track="txn.month"
-                  aria-pressed={month === m}
-                  onClick={() => setMonth(m)}
-                  className={cx(
-                    'hit h-9 rounded-md border px-2.5 text-sm font-bold',
-                    month === m
-                      ? 'border-accent bg-accent-soft text-accent'
-                      : 'border-line-strong bg-surface text-ink-2',
-                  )}
-                >
-                  {monthShort(m)}
-                </button>
-              ))}
-            </div>
-          </div>
-          {t.status === 'pending' && (
-            <label className="flex min-h-14 items-center justify-between gap-3 border-t border-divider px-3 text-base font-semibold">
-              <span className="flex flex-col gap-px">
-                Won’t clear
-                <span className="text-xs font-normal text-muted">
-                  {owed !== 'none' ? 'Turning this on removes what’s owed' : 'Stop counting this hold'}
-                </span>
-              </span>
-              <Checkbox
-                checked={wont}
-                data-track="txn.wont_clear"
-                onChange={() => {
-                  setWont(!wont);
-                  if (!wont) setOwed('none');
-                }}
-              />
-            </label>
-          )}
-        </div>
-      )}
       <Field label="Memo">
         <input
           className={inputClass}
@@ -490,14 +391,149 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           onChange={(e) => setMemo(e.target.value)}
         />
       </Field>
-      <BankSays
-        t={t}
-        extra={
-          t.status === 'posted' && t.kind === 'posted' && t.postedDate
-            ? `Posted ${dayLabel(t.postedDate)}`
-            : undefined
-        }
-      />
+      <div className="shrink-0 overflow-hidden rounded-lg border border-line">
+        <button
+          type="button"
+          data-track="txn.more"
+          aria-expanded={moreOpen}
+          onClick={() => setMoreOpen(!moreOpen)}
+          className="hit flex min-h-12 w-full items-center justify-between gap-2 px-3 text-left text-md text-ink"
+        >
+          More options
+          <Icon name="chevD" size={18} className={cx('shrink-0 text-muted', moreOpen && 'rotate-180')} />
+        </button>
+        {moreOpen && (
+          <div className="flex flex-col border-t border-divider">
+            {outflow && !isIncome && (
+              <div className="flex flex-col border-b border-divider">
+                <div className="flex flex-col gap-2 p-3">
+                  <span className="flex flex-col gap-px text-base font-semibold">
+                    Owed to you
+                    <span className="text-xs font-normal text-muted">Part you’ll get back from someone</span>
+                  </span>
+                  <Segmented
+                    label="Owed to you"
+                    track="txn.owed"
+                    value={owed}
+                    onChange={(v) => {
+                      setOwed(v);
+                      if (v !== 'none') setWont(false);
+                    }}
+                    options={[
+                      ['none', 'None'],
+                      ['half', 'Half'],
+                      ['all', 'All'],
+                      ['custom', 'Custom'],
+                    ]}
+                  />
+                  {owed !== 'none' && (
+                    <>
+                      <div className="flex gap-2">
+                        <Field label="Amount owed" className="flex-1 text-xs">
+                          <input
+                            className={amountInputClass}
+                            inputMode="decimal"
+                            value={owed === 'custom' ? owedAmt : centsToInput(owedCents)}
+                            readOnly={owed !== 'custom'}
+                            onChange={(e) => setOwedAmt(e.target.value)}
+                          />
+                        </Field>
+                        <Field label="Expect by" className="flex-1 text-xs">
+                          <input
+                            type="date"
+                            className={inputClass}
+                            value={expectBy}
+                            onChange={(e) => setExpectBy(e.target.value)}
+                          />
+                        </Field>
+                      </div>
+                      <span className="flex flex-col gap-1 text-xs leading-snug text-muted">
+                        <span>
+                          {catName ?? 'The category'} pays only your share. The rest comes out of Ready to
+                          Assign until it’s paid back.
+                        </span>
+                        {(onCard || owed !== 'custom') && (
+                          <Why>
+                            {onCard ? 'The card payment still covers the full amount. ' : ''}
+                            {owed === 'half'
+                              ? 'It stays half if the amount changes when it posts.'
+                              : owed === 'all'
+                                ? 'It stays all of it if the amount changes when it posts.'
+                                : ''}
+                          </Why>
+                        )}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <div className="flex min-h-14 items-center justify-between border-t border-divider px-3 text-base font-semibold">
+                  <span className="flex flex-col gap-px">
+                    Counts in<span className="text-xs font-normal text-muted">Budget month</span>
+                  </span>
+                  <div role="group" aria-label="Counts in" className="flex gap-1">
+                    {months.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        data-track="txn.month"
+                        aria-pressed={month === m}
+                        onClick={() => setMonth(m)}
+                        className={cx(
+                          'hit h-9 rounded-md border px-2.5 text-sm font-bold',
+                          month === m
+                            ? 'border-accent bg-accent-soft text-accent'
+                            : 'border-line-strong bg-surface text-ink-2',
+                        )}
+                      >
+                        {monthShort(m)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {t.status === 'pending' && (
+                  <label className="flex min-h-14 items-center justify-between gap-3 border-t border-divider px-3 text-base font-semibold">
+                    <span className="flex flex-col gap-px">
+                      Won’t clear
+                      <span className="text-xs font-normal text-muted">
+                        {owed !== 'none' ? 'Turning this on removes what’s owed' : 'Stop counting this hold'}
+                      </span>
+                    </span>
+                    <Checkbox
+                      checked={wont}
+                      data-track="txn.wont_clear"
+                      onChange={() => {
+                        setWont(!wont);
+                        if (!wont) setOwed('none');
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+            )}
+            <div className="flex flex-col gap-2 p-3">
+              {/* Any bank row can be a transfer, also one whose name didn't look like one (it never asks by itself). */}
+              {(t.kind === 'posted' || t.kind === 'pending' || t.kind === 'income' || t.kind === 'refund') &&
+                t.categoryLabel !== 'Transfer' && (
+                  <Link
+                    to={`${parent}/transfer/${encodeURIComponent(t.key)}`}
+                    data-track="txn.transfer"
+                    className={cx(textLinkClass, 'flex min-h-9 items-center self-start')}
+                  >
+                    It’s a transfer…
+                  </Link>
+                )}
+              <BankSays
+                t={t}
+                extra={
+                  t.status === 'posted' && t.kind === 'posted' && t.postedDate
+                    ? `Posted ${dayLabel(t.postedDate)}`
+                    : undefined
+                }
+              />
+            </div>
+          </div>
+        )}
+      </div>
       {(t.kind === 'manual' || t.kind === 'upcoming') &&
         (confirmDelete ? (
           <ConfirmInline

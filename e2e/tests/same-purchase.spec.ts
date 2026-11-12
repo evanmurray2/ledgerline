@@ -48,9 +48,9 @@ test('Not the same on your entry’s sheet ends its cover: the bank’s row coun
   await page.goto('/activity?filter=pending&mock=samepurchase');
   await expect(page.getByText('TACOS EL PASTOR')).toHaveCount(0);
   await page.getByRole('link', { name: /^Tacos/ }).click();
-  await expect(page.getByText('Same purchase as')).toBeVisible();
+  await expect(page.getByText('Matched to the bank')).toBeVisible();
   await page
-    .getByRole('button', { name: 'Not the same: Tacos and Bank pending: TACOS EL PASTOR · Nov 12' })
+    .getByRole('button', { name: 'Not the same: Tacos and Bank pending: TACOS EL PASTOR · Nov 12 · $12.50' })
     .click();
   await expect(page.getByText('Kept as two purchases')).toBeVisible();
   await expect(page.getByText('TACOS EL PASTOR')).toBeVisible();

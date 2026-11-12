@@ -509,6 +509,7 @@ test('Desktop: the category panel steps to the next category with the arrow keys
 
 test('Rename payee: the same sheet from a transaction and from Settings', async ({ page }) => {
   await page.goto('/activity/txn/n-uber');
+  await page.getByRole('button', { name: 'More options' }).click();
   await page.getByRole('link', { name: 'Rename payee' }).click();
   let sheet = page.getByRole('dialog', { name: 'Rename payee' });
   await expect(sheet.getByRole('heading', { name: 'Rename payee' })).toBeVisible();
