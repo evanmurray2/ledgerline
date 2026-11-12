@@ -84,7 +84,8 @@ describe('November through the API', () => {
       'Car insurance': 'Fund 9000',
       Vacation: 'Fund 25000',
       'Personal care': 'Add 2000',
-      Gifts: 'Move -4000',
+      // Gifts spent $216 against its $170 refill, so all $210 left is extra (D-95).
+      Gifts: 'Move -21000',
     });
     expect(b.attention.some((a) => a.section === 'Owed to you' && a.name.startsWith('Rent on Nov 30'))).toBe(
       true,
@@ -233,7 +234,10 @@ describe('November through the API', () => {
       available: 17325,
       status: 'covered',
     });
-    expect(b.attention.filter((a) => a.categoryId)).toEqual([]);
+    // Gifts spent more than its $170 refill, so the $170 still left is extra too (D-95).
+    expect(b.attention.filter((a) => a.categoryId)).toMatchObject([
+      { name: 'Gifts', section: 'Overfunded', fix: { verb: 'Move', amount: -17000 } },
+    ]);
   });
 
   it('rejects mutations without the CSRF header', async () => {

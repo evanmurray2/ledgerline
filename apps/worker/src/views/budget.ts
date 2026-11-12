@@ -146,6 +146,7 @@ export async function categoryRows(
     else if (status === 'overfunded' && tAmount !== null)
       // The same amount the Move fix offers. A Set aside target is overfunded by the extra assigned this month that is
       // still unspent (D-69), which can leave less than the target available.
+      // A Refill target that spent more than its amount is overfunded by all that is left (D-95).
       detail = `${fmt(-fixAmount)} more than the target needs`;
     else if (status === 'underfunded') detail = `needs ${fmt(need)} this month`;
     else if (tAmount !== null && target?.type !== 'no_date') {
