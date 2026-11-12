@@ -288,6 +288,12 @@ export function notSameStmt(s: Scoped, x: string, y: string, now: number): Stmt 
   );
 }
 
+/** Forgets No for a pair: Undo of Not the same pairs the two rows again. */
+export function forgetNotSameStmt(s: Scoped, x: string, y: string): Stmt {
+  const [a, b] = notSameKeys(x, y);
+  return s.q(`DELETE FROM not_same WHERE budget_id = ?1 AND a_key = ?2 AND b_key = ?3`, a, b);
+}
+
 /** The pairs you answered No to, as a lookup. */
 export async function loadNotSame(s: Scoped): Promise<(x: string, y: string) => boolean> {
   const rows = await s.all<{ a_key: string; b_key: string }>(

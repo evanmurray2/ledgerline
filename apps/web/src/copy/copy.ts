@@ -986,7 +986,7 @@ const OFFLINE_EDITS: [string, RegExp][] = [
   // the entry finds it on the server.
   ['POST', /^\/api\/transactions$/],
   ['DELETE', /^\/api\/transactions\/[^/]+$/],
-  ['POST', /^\/api\/transactions\/[^/]+\/(review|pending|not-same)$/],
+  ['POST', /^\/api\/transactions\/[^/]+\/(review|pending|not-same|not-same\/undo)$/],
   // What you're owed, matching money in, transfers, "Same purchase?" and alerts: each acts on rows the copy holds.
   ['POST', /^\/api\/owed\/[^/]+$/],
   ['POST', /^\/api\/match$/],

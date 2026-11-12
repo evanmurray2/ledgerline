@@ -250,7 +250,7 @@ with nothing posted after 5 days)
 - Won't clear: "Turning this on removes what's owed" / "Stop counting this hold"
 - Memo: "Add a memo"
 - Same purchase: your entry: "Matched to the bank" + "Bank pending: {payee} · {date} · {amount}"; a posted row:
-  "Same purchase as" + "{other}"; both + "Not the same" → "Kept as two purchases"
+  "Same purchase as" + "{other}"; both + "Not the same" → "Kept as two purchases" with Undo → "Paired as one purchase"
 - Paid back: "It went to Ready to Assign and paid back {amount}." · "Unlinked": "{name} is owed again. This {amount} is
   back in Waiting to match."
 - Transfer: "It moves money between your accounts. No category changes." · "Unpair" → "Unpaired": "Both halves now
