@@ -29,16 +29,7 @@ import { sealedApi, sealedPath } from '../seal/sealed-routes.js';
 import { runDeps } from '../seal/runs.js';
 import { parseKeyring } from '@ledgerline/platform';
 import { dev } from '../dev-seed.js';
-import {
-  BUDGET_TABLES,
-  DROPPED_TABLES,
-  NO_FILTER,
-  chain,
-  insertStatements,
-  narrowMeta,
-  readChunk,
-  tableMeta,
-} from './dump.js';
+import { loadDumpPiece, verifyDump } from './restore-dump.js';
 import type { Env } from '../env.js';
 import { DurableDb } from './adapter.js';
 import { appliedMigrations, migrate } from './migrate.js';
@@ -312,92 +303,17 @@ export class BudgetStore extends DurableObject<Env> {
    * live budget can't be overwritten. Call with consecutive pieces of the file; then restoreVerify().
    */
   async restoreDump(lines: string): Promise<{ ok: true; rows: number } | { ok: false; reason: string }> {
-    const db = this.adapter();
-    // Each piece is checked in full, then written in one transaction: a piece that fails anywhere adds nothing,
-    // so the same piece can simply be sent again.
-    const rows: { t: string; r: Record<string, unknown> }[] = [];
-    let header = false;
-    let footer: unknown = undefined;
-    for (const line of lines.split('\n')) {
-      if (!line.trim()) continue;
-      let o: { format?: string; t?: string; r?: Record<string, unknown>; end?: boolean; tables?: unknown };
-      try {
-        o = JSON.parse(line) as typeof o;
-      } catch {
-        return { ok: false, reason: 'unreadable line' };
-      }
-      if (o.format) {
-        if (o.format !== 'ledgerline-dump') return { ok: false, reason: 'not a Ledgerline backup' };
-        header = true;
-        continue;
-      }
-      if (o.end) {
-        footer = o.tables;
-        continue;
-      }
-      // Worked out on the phone, not kept here (migration 0006): the phone works them out again.
-      if (o.t && DROPPED_TABLES.includes(o.t)) continue;
-      if (!o.t || !o.r || !(BUDGET_TABLES as readonly string[]).includes(o.t))
-        return { ok: false, reason: `unknown line` };
-      rows.push({ t: o.t, r: o.r });
-    }
-    if (header) {
-      const has = this.ctx.storage.sql.exec(`SELECT count(*) AS n FROM budget`).one().n;
-      if (Number(has) > 0) return { ok: false, reason: 'refused: this database already holds a budget' };
-    }
-    const metas = new Map<string, Awaited<ReturnType<typeof tableMeta>>>();
-    for (const { t } of rows) if (!metas.has(t)) metas.set(t, await tableMeta(db, t));
-    const stmts = [
-      ...(header ? [db.prepare(`DELETE FROM apply_counter`)] : []),
-      ...rows.flatMap(({ t, r }) => insertStatements(db, t, metas.get(t)!, [r])),
-    ];
-    try {
-      await db.batch(stmts);
-    } catch (e) {
-      return {
-        ok: false,
-        reason: `nothing from this piece was written: ${e instanceof Error ? e.message : e}`,
-      };
-    }
-    // The columns each table had in the backup: restoreVerify fingerprints only those, so a backup from before a
-    // migration added a column still verifies.
-    const cols = header ? {} : ((await this.ctx.storage.get<Record<string, string[]>>('restore_cols')) ?? {});
-    for (const { t, r } of rows) {
-      const have = new Set(cols[t] ?? []);
-      for (const c of Object.keys(r)) have.add(c);
-      cols[t] = [...have];
-    }
-    await this.ctx.storage.put('restore_cols', cols);
-    if (footer !== undefined) await this.ctx.storage.put('restore_footer', footer);
-    this.cachedBudgetId = null;
-    return { ok: true, rows: rows.length };
+    const r = await loadDumpPiece(this.ctx.storage, this.adapter(), lines);
+    if (r.ok) this.cachedBudgetId = null;
+    return r;
   }
 
   /** Recomputes every table's row count and fingerprint and compares them with the backup's footer. */
   async restoreVerify(): Promise<{ ok: boolean; differences: string[] }> {
-    const footer =
-      (await this.ctx.storage.get<Record<string, { count: number; hash: string }>>('restore_footer')) ?? {};
-    const backupCols = (await this.ctx.storage.get<Record<string, string[]>>('restore_cols')) ?? {};
-    const db = this.adapter();
-    const differences: string[] = [];
-    for (const t of BUDGET_TABLES) {
-      const meta = narrowMeta(await tableMeta(db, t), backupCols[t]);
-      let count = 0;
-      let hash = '';
-      let cursor: unknown[] | null = null;
-      do {
-        const c = await readChunk(db, t, meta, NO_FILTER, cursor);
-        count += c.rows.length;
-        hash = c.rows.length ? await chain(hash, c.text) : hash;
-        cursor = c.cursor;
-      } while (cursor);
-      const want = footer[t] ?? { count: 0, hash: '' };
-      if (want.count !== count || want.hash !== hash)
-        differences.push(`${t}: ${count} row(s), backup has ${want.count}`);
-    }
+    const r = await verifyDump(this.ctx.storage, this.adapter());
     // Phones holding a copy of this budget download it again (D-45, docs/phone-budget.md section 8).
-    if (differences.length === 0) await this.newSyncEpoch();
-    return { ok: differences.length === 0, differences };
+    if (r.ok) await this.newSyncEpoch();
+    return r;
   }
 
   /** A new sync epoch in the Directory for this budget: phones throw their copies away and download again. */
