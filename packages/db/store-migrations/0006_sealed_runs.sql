@@ -37,11 +37,14 @@ CREATE TABLE link_cursor (
 
 -- The one run being fetched. A budget's runs are numbered across all its links, and a page is sealed under its
 -- run's number, so one link fetches at a time.
+-- The row is under a stamp of its own (`mac`), which also covers a running hash of the run's pages
+-- (`pages_hash`), so each step goes on only from what the step before left.
 CREATE TABLE run_stage (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   link_id TEXT NOT NULL,
   run INTEGER NOT NULL,
   restart INTEGER NOT NULL,
+  bank_restarts INTEGER NOT NULL,     -- restarts the bank asked for (its data changed mid-run); these have a limit
   inbox_version INTEGER NOT NULL,
   n INTEGER NOT NULL,                 -- the Worker key number of the run's receipts and signature
   start_cursor TEXT NOT NULL,         -- the link's cursor before the run ('' for a link's first run)
@@ -52,7 +55,9 @@ CREATE TABLE run_stage (
   added INTEGER NOT NULL,
   modified INTEGER NOT NULL,
   removed INTEGER NOT NULL,
-  started_at INTEGER NOT NULL
+  pages_hash TEXT NOT NULL,           -- hex: zeros, then H(pages_hash || what || H(sealed page)) for each page
+  started_at INTEGER NOT NULL,
+  mac TEXT NOT NULL                   -- hex
 );
 
 -- Sealed pages: of the run being fetched, and of each complete run until a checked snapshot covers it.

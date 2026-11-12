@@ -2,22 +2,31 @@
 // step seals each page to the budget's inbox key the moment it arrives, and signs the run when it is whole. The
 // server keeps no readable page, in the database or between steps: a page is fetched and sealed in one step.
 //
-// Everything the Worker reads back from the database to decide where bank data goes is under one of its stamps,
-// since someone may have written to the database: the inbox key (`keyMac`), the bank link (`linkMac`), and the
-// budget's whole run state (`runsMac`). A bad stamp stops the fetch (`BadStamp`); it never seals to an unstamped
-// key. Each function here is one job step. Nothing calls this before the cutover.
+// Everything the Worker reads back from the database to decide where bank data goes, or what it signs, is under
+// one of its stamps, since someone may have written to the database: the inbox key (`keyMac`), the bank link
+// (`linkMac`), the budget's whole run state (`runsMac`), and the run being fetched (the stage's own stamp, which
+// also covers a running hash of its pages). A bad stamp stops the fetch (`BadStamp`); it never seals to an
+// unstamped key or signs what it did not fetch. The one thing with no stamp is the log's state, which says which
+// inbox version is in force: a changed one can only point at an older stamped key, never older than the last
+// signed run's, and a device refuses such a run (9.3 check 3).
+//
+// Each exported step is one job step, safe to run again. Nothing calls this before the cutover.
 import { MUTATION_DURING_PAGINATION, ProviderError, type BankDataProvider } from '@ledgerline/bank-provider';
 import type { Db, Stmt } from '@ledgerline/db/sql';
-import { tokenKeyBytes, type TokenKeyring } from '@ledgerline/platform';
+import { decryptToken, tokenKeyBytes, type TokenKeyring } from '@ledgerline/platform';
 import {
   checkKeyMac,
   checkLinkMac,
   checkRunsMac,
+  concat,
   cursorHash,
   fromHex,
+  hmac,
+  hmacVerify,
   isUlid,
   KEY_KIND,
   keyMac,
+  label,
   readRunManifest,
   RestartRun,
   runsMac,
@@ -25,19 +34,24 @@ import {
   serverKeys,
   sha256,
   signRun,
+  str,
   toHex,
+  u16,
+  u32,
+  u64,
+  u8,
   WHAT,
   type ChainState,
   type RunState,
   type ServerKeys,
   type What,
 } from '@ledgerline/seal';
-import { conditionFence, isFenceAbort, MAX_FETCH_RESTARTS } from '../sync/lease.js';
+import { conditionFence, isFenceAbort, LEASE_TTL_MS, MAX_FETCH_RESTARTS } from '../sync/lease.js';
 import { stateFromJson } from './log-store.js';
 
 /** A value the Worker must have stamped has no good stamp: the database was changed from outside, or lost a row. */
 export class BadStamp extends Error {
-  constructor(readonly what: 'inbox key' | 'link' | 'run state') {
+  constructor(readonly what: 'inbox key' | 'link' | 'run state' | 'run stage') {
     super(`bad stamp: ${what}`);
   }
 }
@@ -48,6 +62,7 @@ export class RunStopped extends Error {}
 /** The Worker's keys by key number, from the keyring that encrypts bank tokens (9.1). */
 export interface WorkerKeys {
   current: number;
+  /** Rejects for a key number the keyring doesn't hold. */
   keysFor(n: number): Promise<ServerKeys>;
 }
 
@@ -59,8 +74,7 @@ export function workerKeys(ring: TokenKeyring): WorkerKeys {
       let k = made.get(n);
       if (!k) {
         const secret = ring.keys[n];
-        // A key number the keyring doesn't hold stamped nothing this Worker can check.
-        if (secret === undefined) return Promise.reject(new BadStamp('run state'));
+        if (secret === undefined) return Promise.reject(new Error(`no Worker key ${n}`));
         k = tokenKeyBytes(secret).then(async (raw) => {
           try {
             return await serverKeys(raw, n);
@@ -78,8 +92,17 @@ export function workerKeys(ring: TokenKeyring): WorkerKeys {
 export interface RunDeps {
   db: Db;
   budgetId: string;
+  /** Opens a link's bank token. */
+  ring: TokenKeyring;
   keys: WorkerKeys;
 }
+
+export const runDeps = (db: Db, budgetId: string, ring: TokenKeyring): RunDeps => ({
+  db,
+  budgetId,
+  ring,
+  keys: workerKeys(ring),
+});
 
 const ZERO_HASH = '0'.repeat(64);
 const bytesOf = (v: unknown): Uint8Array<ArrayBuffer> =>
@@ -90,9 +113,10 @@ const unb64 = (s: string): Uint8Array<ArrayBuffer> => {
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 };
-const hexOr = (s: string): Uint8Array => {
+/** Hex from the database: text that is no hex is no bytes, and fails whatever check comes next. */
+const hexOr = (s: unknown): Uint8Array<ArrayBuffer> => {
   try {
-    return fromHex(s);
+    return fromHex(String(s));
   } catch {
     return new Uint8Array(0);
   }
@@ -101,10 +125,11 @@ const hexOr = (s: string): Uint8Array => {
 // ---- the stamps on keys
 
 /**
- * The stamps for the keys a stored write brought: the first entry's signing and inbox keys, and those of each key
- * change. `before` is the chain before the write (null for the first entry). The log store adds these statements
- * to the step that stores the write, so a key the log holds always has its stamp. The first entry also starts the
- * budget's run state, at no run.
+ * The stamps for the keys in force after a stored write, when the write changed them: the first entry's signing
+ * and inbox keys, and those of a key change. `before` is the chain before the write (null for the first entry).
+ * The log store adds these statements to the step that stores the write, so the keys in force always have their
+ * stamps. The first entry also starts the budget's run state, at no run. The write passed the log's rules, so
+ * its keys replace whatever a row held.
  */
 export async function keyStampStmts(
   d: RunDeps,
@@ -112,6 +137,11 @@ export async function keyStampStmts(
   after: ChainState,
   now: number,
 ): Promise<Stmt[]> {
+  const a = after.public;
+  const sign = !before || before.public.keyVersion !== a.keyVersion;
+  const inbox = !before || before.public.inboxVersion !== a.inboxVersion;
+  // Most writes bring no key: they cost no key derivation.
+  if (!sign && !inbox) return [];
   const k = await d.keys.keysFor(d.keys.current);
   const out: Stmt[] = [];
   const stamp = async (kind: 1 | 2, version: number, pub: Uint8Array) => {
@@ -120,17 +150,28 @@ export async function keyStampStmts(
       d.db
         .prepare(
           `INSERT INTO key_stamp (kind, version, pub, mac, n, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-           ON CONFLICT (kind, version) DO NOTHING`,
+           ON CONFLICT (kind, version) DO UPDATE SET pub = excluded.pub, mac = excluded.mac, n = excluded.n`,
         )
         .bind(kind, version, toHex(pub), toHex(mac), k.n, now),
     );
   };
-  const a = after.public;
-  if (!before || before.public.keyVersion !== a.keyVersion)
-    await stamp(KEY_KIND.sign, a.keyVersion, a.signPub);
-  if (!before || before.public.inboxVersion !== a.inboxVersion)
-    await stamp(KEY_KIND.inbox, a.inboxVersion, a.inboxPub);
-  if (!before) out.push(await runStateStmt(d, k, { run: 0, hash: ZERO_HASH, time: 0 }, [], now, true));
+  if (sign) await stamp(KEY_KIND.sign, a.keyVersion, a.signPub);
+  if (inbox) await stamp(KEY_KIND.inbox, a.inboxVersion, a.inboxPub);
+  if (!before) {
+    const mac = toHex(
+      await runsMac(k, d.budgetId, await runStateOf({ run: 0, hash: ZERO_HASH, time: 0 }, [])),
+    );
+    out.push(
+      d.db
+        .prepare(
+          `INSERT INTO run_state (id, run, last_manifest_hash, last_run_time, mac, n, updated_at)
+           VALUES (1, 0, ?1, 0, ?2, ?3, ?4)
+           ON CONFLICT (id) DO UPDATE SET run = 0, last_manifest_hash = excluded.last_manifest_hash,
+             last_run_time = 0, mac = excluded.mac, n = excluded.n, updated_at = excluded.updated_at`,
+        )
+        .bind(ZERO_HASH, mac, k.n, now),
+    );
+  }
   return out;
 }
 
@@ -145,21 +186,30 @@ async function stampedKey(d: RunDeps, kind: 1 | 2, version: number): Promise<Uin
   const k = await d.keys.keysFor(r.n).catch(() => null);
   if (!k || !(await checkKeyMac(k, d.budgetId, version, kind, pub, hexOr(r.mac))))
     throw new BadStamp('inbox key');
-  return new Uint8Array(pub);
+  return pub;
 }
 
 /**
- * The inbox version the log has in force, and for each replaced version the last run that may be sealed to it. The
- * log's state has no stamp: someone who changes it can at most make the Worker seal to an older stamped key, and a
- * device refuses such a run (9.3 check 3).
+ * What the log has in force: its last entry's number, the inbox version, and for each replaced version the last
+ * run that may be sealed to it. The log's state has no stamp (see the top of this file).
  */
-async function inForce(db: Db): Promise<{ inboxVersion: number; retiredAt: Map<number, number> }> {
-  const r = await db.prepare(`SELECT state FROM log_state WHERE id = 1`).first<{ state: string }>();
+async function inForce(
+  db: Db,
+): Promise<{ number: number; inboxVersion: number; retiredAt: Map<number, number> }> {
+  const r = await db
+    .prepare(`SELECT number, state FROM log_state WHERE id = 1`)
+    .first<{ number: number; state: string }>();
   if (!r) throw new BadStamp('inbox key');
-  const p = (stateFromJson(r.state) as unknown as { public: { inboxVersion: number; retiredAt: unknown } })
-    .public;
-  if (!Number.isInteger(p.inboxVersion) || !(p.retiredAt instanceof Map)) throw new BadStamp('inbox key');
-  return { inboxVersion: p.inboxVersion, retiredAt: p.retiredAt as Map<number, number> };
+  let p: { inboxVersion?: unknown; retiredAt?: unknown } | undefined;
+  try {
+    p = (stateFromJson(r.state) as unknown as { public?: typeof p }).public;
+  } catch {
+    p = undefined;
+  }
+  const v = p?.inboxVersion;
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || !(p?.retiredAt instanceof Map))
+    throw new BadStamp('inbox key');
+  return { number: r.number, inboxVersion: v, retiredAt: p.retiredAt as Map<number, number> };
 }
 
 // ---- the run state
@@ -170,35 +220,19 @@ interface Standing {
   hash: string;
   time: number;
 }
+type Cursors = { linkId: string; cursor: string }[];
 
-async function runStateOf(s: Standing, cursors: { linkId: string; cursor: string }[]): Promise<RunState> {
+async function runStateOf(s: Standing, cursors: Cursors): Promise<RunState> {
   const links = [];
   for (const c of cursors) links.push({ linkId: c.linkId, cursorHash: await cursorHash(c.cursor) });
   return { run: s.run, lastManifestHash: hexOr(s.hash), lastRunTime: s.time, links };
 }
 
-async function runStateStmt(
-  d: RunDeps,
-  k: ServerKeys,
-  s: Standing,
-  cursors: { linkId: string; cursor: string }[],
-  now: number,
-  first = false,
-): Promise<Stmt> {
-  const mac = toHex(await runsMac(k, d.budgetId, await runStateOf(s, cursors)));
-  return d.db
-    .prepare(
-      first
-        ? `INSERT INTO run_state (id, run, last_manifest_hash, last_run_time, mac, n, updated_at)
-           VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT (id) DO NOTHING`
-        : `UPDATE run_state SET run = ?1, last_manifest_hash = ?2, last_run_time = ?3, mac = ?4, n = ?5, updated_at = ?6
-           WHERE id = 1`,
-    )
-    .bind(s.run, s.hash, s.time, mac, k.n, now);
-}
-
-/** The budget's run state, checked against its stamp. */
-async function standing(d: RunDeps): Promise<{ s: Standing; cursors: { linkId: string; cursor: string }[] }> {
+/**
+ * The budget's run state, checked against its stamp, with the inbox version of the last run: its manifest is the
+ * one the stamped state names by hash. No run goes back to an older inbox key than the run before.
+ */
+async function standing(d: RunDeps): Promise<{ s: Standing; cursors: Cursors; lastInbox: number }> {
   const r = await d.db
     .prepare(`SELECT run, last_manifest_hash, last_run_time, mac, n FROM run_state WHERE id = 1`)
     .first<{ run: number; last_manifest_hash: string; last_run_time: number; mac: string; n: number }>();
@@ -211,15 +245,25 @@ async function standing(d: RunDeps): Promise<{ s: Standing; cursors: { linkId: s
   const k = await d.keys.keysFor(r.n).catch(() => null);
   if (!k || !(await checkRunsMac(k, d.budgetId, await runStateOf(s, cursors), hexOr(r.mac))))
     throw new BadStamp('run state');
-  return { s, cursors };
+  if (s.run === 0) return { s, cursors, lastInbox: 0 };
+  const last = await d.db
+    .prepare(`SELECT manifest FROM sealed_run WHERE run = ?1`)
+    .bind(s.run)
+    .first<{ manifest: unknown }>();
+  if (!last) throw new BadStamp('run state');
+  const manifest = bytesOf(last.manifest);
+  if (toHex(await sha256(manifest)) !== s.hash) throw new BadStamp('run state');
+  return { s, cursors, lastInbox: readRunManifest(manifest).inboxVersion };
 }
 
-// ---- a run, step by step
+// ---- the run being fetched, under its own stamp
 
 export interface Stage {
   linkId: string;
   run: number;
   restart: number;
+  /** Restarts the bank asked for; these have a limit. */
+  bankRestarts: number;
   inboxVersion: number;
   n: number;
   startCursor: string;
@@ -231,12 +275,16 @@ export interface Stage {
   added: number;
   modified: number;
   removed: number;
+  /** Hex: zeros, then H(pagesHash || what || H(sealed page)) for each page stored. */
+  pagesHash: string;
+  startedAt: number;
 }
 
 interface StageRow {
   link_id: string;
   run: number;
   restart: number;
+  bank_restarts: number;
   inbox_version: number;
   n: number;
   start_cursor: string;
@@ -247,31 +295,126 @@ interface StageRow {
   added: number;
   modified: number;
   removed: number;
+  pages_hash: string;
+  started_at: number;
+  mac: string;
 }
 
-export async function stageOf(db: Db): Promise<Stage | null> {
-  const r = await db.prepare(`SELECT * FROM run_stage WHERE id = 1`).first<StageRow>();
-  return r
-    ? {
-        linkId: r.link_id,
-        run: r.run,
-        restart: r.restart,
-        inboxVersion: r.inbox_version,
-        n: r.n,
-        startCursor: r.start_cursor,
-        cursor: r.cursor,
-        hasMore: r.has_more === 1,
-        describes: r.describes === 1,
-        pages: r.pages,
-        added: r.added,
-        modified: r.modified,
-        removed: r.removed,
-      }
-    : null;
+const STAGE_LABEL = 'ledgerline/v1/mac/stage';
+
+function stageInput(budgetId: string, st: Stage): Uint8Array<ArrayBuffer> {
+  return concat(
+    label(STAGE_LABEL),
+    str(budgetId),
+    str(st.linkId),
+    u64(st.run),
+    u32(st.restart),
+    u32(st.bankRestarts),
+    u32(st.inboxVersion),
+    u32(st.n),
+    str(st.startCursor),
+    str(st.cursor),
+    u8(st.hasMore ? 1 : 0),
+    u8(st.describes ? 1 : 0),
+    u16(st.pages),
+    u32(st.added),
+    u32(st.modified),
+    u32(st.removed),
+    fromHex(st.pagesHash),
+    u64(st.startedAt),
+  );
 }
 
-/** The bank link as the fetch may use it: its stamp is good. Gives what a bank call needs but the token. */
-export async function stampedLink(
+/** The statement that writes the stage, whole, with its stamp. */
+async function stageStmt(d: RunDeps, st: Stage): Promise<Stmt> {
+  const k = await d.keys.keysFor(st.n);
+  const mac = toHex(await hmac(k.mac, stageInput(d.budgetId, st)));
+  return d.db
+    .prepare(
+      `INSERT OR REPLACE INTO run_stage (id, link_id, run, restart, bank_restarts, inbox_version, n, start_cursor, cursor,
+         has_more, describes, pages, added, modified, removed, pages_hash, started_at, mac)
+       VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)`,
+    )
+    .bind(
+      st.linkId,
+      st.run,
+      st.restart,
+      st.bankRestarts,
+      st.inboxVersion,
+      st.n,
+      st.startCursor,
+      st.cursor,
+      st.hasMore ? 1 : 0,
+      st.describes ? 1 : 0,
+      st.pages,
+      st.added,
+      st.modified,
+      st.removed,
+      st.pagesHash,
+      st.startedAt,
+      mac,
+    );
+}
+
+/** The stage as it is stored, with whether its stamp is good. Null: no run is being fetched. */
+async function readStage(d: RunDeps): Promise<{ st: Stage; mac: string; good: boolean } | null> {
+  const r = await d.db.prepare(`SELECT * FROM run_stage WHERE id = 1`).first<StageRow>();
+  if (!r) return null;
+  const st: Stage = {
+    linkId: r.link_id,
+    run: r.run,
+    restart: r.restart,
+    bankRestarts: r.bank_restarts,
+    inboxVersion: r.inbox_version,
+    n: r.n,
+    startCursor: r.start_cursor,
+    cursor: r.cursor,
+    hasMore: r.has_more === 1,
+    describes: r.describes === 1,
+    pages: r.pages,
+    added: r.added,
+    modified: r.modified,
+    removed: r.removed,
+    pagesHash: r.pages_hash,
+    startedAt: r.started_at,
+  };
+  let good = false;
+  try {
+    const k = await d.keys.keysFor(st.n);
+    good = await hmacVerify(k.mac, stageInput(d.budgetId, st), hexOr(r.mac));
+  } catch {
+    // A row whose values can't be stamped, or whose key the Worker doesn't hold, has no good stamp.
+    good = false;
+  }
+  return { st, mac: String(r.mac), good };
+}
+
+/** The run being fetched, as the Worker left it; null when there is none. For the job and the tests. */
+export async function stageOf(d: RunDeps): Promise<Stage | null> {
+  const s = await readStage(d);
+  if (s && !s.good) throw new BadStamp('run stage');
+  return s?.st ?? null;
+}
+
+/** The stage a step goes on from: there, and with a good stamp. */
+async function openStage(d: RunDeps): Promise<{ st: Stage; mac: string }> {
+  const s = await readStage(d);
+  if (!s) throw new RunStopped('no run');
+  if (!s.good) throw new BadStamp('run stage');
+  return s;
+}
+
+/** True only while the stage is still the one a step read: any other step, or a new run, changes its stamp. */
+const stageFence = (d: RunDeps, mac: string): Stmt =>
+  conditionFence(d.db, `SELECT mac = ?1 FROM run_stage WHERE id = 1`, mac);
+
+const stopped = (x: unknown): never => {
+  if (!isFenceAbort(x)) throw x;
+  throw new RunStopped('another step moved the run');
+};
+
+/** The bank link as the fetch may use it: its stamp is good. */
+async function stampedLink(
   d: RunDeps,
   linkId: string,
 ): Promise<{ connectionId: string; itemId: string; tokenEnc: string; keyVersion: number }> {
@@ -314,21 +457,72 @@ export async function stampedLink(
   };
 }
 
+/** What a bank call for a link needs: the link checked against its stamp, and its token opened. */
+export async function linkForBank(
+  d: RunDeps,
+  linkId: string,
+): Promise<{ id: string; accessToken: string; providerItemId: string }> {
+  const l = await stampedLink(d, linkId);
+  return {
+    id: l.connectionId,
+    accessToken: await decryptToken(d.ring, l.tokenEnc, l.keyVersion, l.connectionId),
+    providerItemId: l.itemId,
+  };
+}
+
+/** A run left alone this long is given up, so one link's fault can't hold back the others for good. */
+export const STAGE_MAX_MS = LEASE_TTL_MS;
+
 /**
  * Begins the next run, for one link: checks the run state, the link and the inbox key, and notes the run. Gives
  * the run to go on with; `busy` when another link's run is being fetched. A run already begun for this link is
- * the one to go on with.
+ * the one to go on with. A run whose stamp is bad, or that was left alone too long, is dropped first: nothing of
+ * it was shown to a device, and the link's cursor has not moved.
  */
 export async function beginSealedRun(d: RunDeps, linkId: string, now: number): Promise<Stage | 'busy'> {
-  const open = await stageOf(d.db);
-  if (open) return open.linkId === linkId ? open : 'busy';
-  const { s, cursors } = await standing(d);
+  const open = await readStage(d);
+  if (open) {
+    if (open.good && now - open.st.startedAt <= STAGE_MAX_MS)
+      return open.st.linkId === linkId ? open.st : 'busy';
+    try {
+      await d.db.batch([
+        stageFence(d, open.mac),
+        d.db
+          .prepare(`DELETE FROM sealed_page WHERE run = ?1 AND run NOT IN (SELECT run FROM sealed_run)`)
+          .bind(open.st.run),
+        d.db.prepare(`DELETE FROM run_stage WHERE id = 1`),
+      ]);
+    } catch (x) {
+      if (!isFenceAbort(x)) throw x;
+      return 'busy';
+    }
+  }
+  const { s, cursors, lastInbox } = await standing(d);
   await stampedLink(d, linkId);
   const { inboxVersion } = await inForce(d.db);
+  if (inboxVersion < lastInbox) throw new BadStamp('inbox key');
   await stampedKey(d, KEY_KIND.inbox, inboxVersion);
   // A link with no cursor yet has never run: its first run describes it, and fetches no transactions.
   const known = cursors.find((c) => c.linkId === linkId);
   const cursor = known?.cursor ?? '';
+  const st: Stage = {
+    linkId,
+    run: s.run + 1,
+    restart: 0,
+    bankRestarts: 0,
+    inboxVersion,
+    n: d.keys.current,
+    startCursor: cursor,
+    cursor,
+    hasMore: !!known,
+    describes: !known,
+    pages: 0,
+    added: 0,
+    modified: 0,
+    removed: 0,
+    pagesHash: ZERO_HASH,
+    startedAt: now,
+  };
   try {
     await d.db.batch([
       conditionFence(
@@ -336,50 +530,77 @@ export async function beginSealedRun(d: RunDeps, linkId: string, now: number): P
         `SELECT (SELECT run FROM run_state WHERE id = 1) = ?1 AND NOT EXISTS (SELECT 1 FROM run_stage)`,
         s.run,
       ),
-      d.db
-        .prepare(
-          `INSERT INTO run_stage (id, link_id, run, restart, inbox_version, n, start_cursor, cursor, has_more, describes, pages, added, modified, removed, started_at)
-           VALUES (1, ?1, ?2, 0, ?3, ?4, ?5, ?5, ?6, ?7, 0, 0, 0, 0, ?8)`,
-        )
-        .bind(linkId, s.run + 1, inboxVersion, d.keys.current, cursor, known ? 1 : 0, known ? 0 : 1, now),
       // Nothing of an attempt that was given up stays under this run's number.
-      d.db.prepare(`DELETE FROM sealed_page WHERE run = ?1`).bind(s.run + 1),
+      d.db.prepare(`DELETE FROM sealed_page WHERE run = ?1`).bind(st.run),
+      await stageStmt(d, st),
     ]);
   } catch (x) {
     if (!isFenceAbort(x)) throw x;
     return 'busy';
   }
-  return (await stageOf(d.db))!;
+  return st;
 }
 
-/** Starts the run again from its first cursor: its pages are dropped, and its next pages get new receipts. */
-async function restart(d: RunDeps, st: Stage, inboxVersion: number): Promise<void> {
-  if (st.restart + 1 > MAX_FETCH_RESTARTS) throw new RunStopped('too many restarts');
-  await d.db.batch([
-    conditionFence(d.db, `SELECT restart = ?1 AND run = ?2 FROM run_stage WHERE id = 1`, st.restart, st.run),
-    d.db.prepare(`DELETE FROM sealed_page WHERE run = ?1`).bind(st.run),
-    d.db
-      .prepare(
-        `UPDATE run_stage SET restart = restart + 1, inbox_version = ?1, cursor = start_cursor,
-           has_more = 1 - describes, pages = 0, added = 0, modified = 0, removed = 0 WHERE id = 1`,
-      )
-      .bind(inboxVersion),
-  ]);
+/**
+ * Starts the run again from its first cursor: its pages are dropped, and its next pages get new receipts. `bank`:
+ * the bank asked for it (its data changed mid-run), which may happen only so often; a key change may always.
+ */
+async function restart(
+  d: RunDeps,
+  o: { st: Stage; mac: string },
+  inboxVersion: number,
+  bank: boolean,
+): Promise<void> {
+  const { st } = o;
+  if (bank && st.bankRestarts + 1 > MAX_FETCH_RESTARTS) throw new RunStopped('too many restarts');
+  const next: Stage = {
+    ...st,
+    restart: st.restart + 1,
+    bankRestarts: st.bankRestarts + (bank ? 1 : 0),
+    inboxVersion,
+    n: d.keys.current,
+    cursor: st.startCursor,
+    hasMore: !st.describes,
+    pages: 0,
+    added: 0,
+    modified: 0,
+    removed: 0,
+    pagesHash: ZERO_HASH,
+  };
+  try {
+    await d.db.batch([
+      stageFence(d, o.mac),
+      d.db.prepare(`DELETE FROM sealed_page WHERE run = ?1`).bind(st.run),
+      await stageStmt(d, next),
+    ]);
+  } catch (x) {
+    stopped(x);
+  }
 }
+
+/** The keys a page of this run is sealed with, checked: the Worker's for the run, and the stamped inbox key. */
+async function sealKeys(d: RunDeps, st: Stage): Promise<{ k: ServerKeys; pub: Uint8Array }> {
+  const k = await d.keys.keysFor(st.n).catch(() => null);
+  if (!k) throw new BadStamp('run stage');
+  return { k, pub: await stampedKey(d, KEY_KIND.inbox, st.inboxVersion) };
+}
+
+const nextPagesHash = async (before: string, what: number, pageHash: Uint8Array): Promise<string> =>
+  toHex(await sha256(concat(fromHex(before), u8(what), pageHash)));
 
 /** Seals one page of the run and stores it, only if the run still stands where this step found it. */
 async function addPage(
   d: RunDeps,
-  st: Stage,
+  o: { st: Stage; mac: string },
+  keys: { k: ServerKeys; pub: Uint8Array },
   what: What,
   payload: Uint8Array,
   move: { cursor: string; hasMore: boolean; added: number; modified: number; removed: number } | null,
 ): Promise<void> {
-  const k = await d.keys.keysFor(st.n);
-  const pub = await stampedKey(d, KEY_KIND.inbox, st.inboxVersion);
+  const { st } = o;
   const { sealed, page } = await sealPage(
-    k,
-    pub,
+    keys.k,
+    keys.pub,
     {
       budgetId: d.budgetId,
       linkId: st.linkId,
@@ -391,30 +612,32 @@ async function addPage(
     what,
     payload,
   );
+  const next: Stage = {
+    ...st,
+    pages: st.pages + 1,
+    pagesHash: await nextPagesHash(st.pagesHash, what, page.hash),
+    ...(move
+      ? {
+          cursor: move.cursor,
+          hasMore: move.hasMore,
+          added: st.added + move.added,
+          modified: st.modified + move.modified,
+          removed: st.removed + move.removed,
+        }
+      : {}),
+  };
   try {
     await d.db.batch([
-      conditionFence(
-        d.db,
-        `SELECT restart = ?1 AND run = ?2 AND pages = ?3 FROM run_stage WHERE id = 1`,
-        st.restart,
-        st.run,
-        st.pages,
-      ),
+      stageFence(d, o.mac),
       d.db
-        .prepare(`INSERT INTO sealed_page (run, page, what, hash, bytes) VALUES (?1, ?2, ?3, ?4, ?5)`)
+        .prepare(
+          `INSERT OR REPLACE INTO sealed_page (run, page, what, hash, bytes) VALUES (?1, ?2, ?3, ?4, ?5)`,
+        )
         .bind(st.run, st.pages, what, toHex(page.hash), sealed),
-      move
-        ? d.db
-            .prepare(
-              `UPDATE run_stage SET pages = pages + 1, cursor = ?1, has_more = ?2, added = added + ?3,
-                 modified = modified + ?4, removed = removed + ?5 WHERE id = 1`,
-            )
-            .bind(move.cursor, move.hasMore ? 1 : 0, move.added, move.modified, move.removed)
-        : d.db.prepare(`UPDATE run_stage SET pages = pages + 1 WHERE id = 1`),
+      await stageStmt(d, next),
     ]);
   } catch (x) {
-    if (!isFenceAbort(x)) throw x;
-    throw new RunStopped('another step moved the run');
+    stopped(x);
   }
 }
 
@@ -426,23 +649,20 @@ async function addPage(
 export async function fetchSealedPage(
   d: RunDeps,
   provider: BankDataProvider,
-  accessToken: string,
   pageSize: number,
 ): Promise<{ more: boolean } | 'restarted'> {
-  const st = await stageOf(d.db);
-  if (!st) throw new RunStopped('no run');
+  const o = await openStage(d);
+  const { st } = o;
   if (!st.hasMore) return { more: false };
-  const link = await stampedLink(d, st.linkId);
+  // Everything the page will be sealed with is checked before the bank is asked.
+  const keys = await sealKeys(d, st);
+  const conn = await linkForBank(d, st.linkId);
   let staged;
   try {
-    staged = await provider.fetchSyncPage(
-      { id: link.connectionId, accessToken, providerItemId: link.itemId },
-      st.cursor === '' ? null : st.cursor,
-      pageSize,
-    );
+    staged = await provider.fetchSyncPage(conn, st.cursor === '' ? null : st.cursor, pageSize);
   } catch (e) {
     if (!(e instanceof ProviderError) || e.code !== MUTATION_DURING_PAGINATION) throw e;
-    await restart(d, st, st.inboxVersion);
+    await restart(d, o, st.inboxVersion, true);
     return 'restarted';
   }
   // A page a device couldn't read is not sealed: the step fails and is tried again.
@@ -456,7 +676,7 @@ export async function fetchSealedPage(
     if (e.kind === 'added') added++;
     else if (e.kind === 'modified') modified++;
     else removed++;
-  await addPage(d, st, WHAT.transactions, staged.body, {
+  await addPage(d, o, keys, WHAT.transactions, staged.body, {
     cursor: staged.nextCursor,
     hasMore: staged.hasMore,
     added,
@@ -466,21 +686,28 @@ export async function fetchSealedPage(
   return { more: staged.hasMore };
 }
 
+const jsonBytes = (v: unknown): Uint8Array => {
+  const text = JSON.stringify(v) as string | undefined;
+  if (text === undefined) throw new RangeError('nothing to seal');
+  return new TextEncoder().encode(text);
+};
+
 /**
  * One step, after the last page of transactions: seals what the bank said about balances (`WHAT.balances`) or
  * card statements (`WHAT.liabilities`), as JSON. A run whose bank couldn't be asked is stored without it, and
  * its manifest says so: this step is then left out.
  */
 export async function sealBankAnswer(d: RunDeps, what: 1 | 2, answer: unknown): Promise<void> {
-  const st = await stageOf(d.db);
-  if (!st || st.hasMore || st.pages === 0 || st.describes) throw new RunStopped('the run has no page yet');
+  const o = await openStage(d);
+  const { st } = o;
+  if (st.hasMore || st.pages === 0 || st.describes) throw new RunStopped('the run has no page yet');
   const held = await d.db
     .prepare(`SELECT 1 AS x FROM sealed_page WHERE run = ?1 AND what = ?2`)
     .bind(st.run, what)
     .first();
   // The step ran before and its answer was lost: the page is there.
   if (held) return;
-  await addPage(d, st, what, new TextEncoder().encode(JSON.stringify(answer)), null);
+  await addPage(d, o, await sealKeys(d, st), what, jsonBytes(answer), null);
 }
 
 /**
@@ -489,32 +716,58 @@ export async function sealBankAnswer(d: RunDeps, what: 1 | 2, answer: unknown): 
  * come with its next run.
  */
 export async function sealLinkDescription(d: RunDeps, description: unknown): Promise<void> {
-  const st = await stageOf(d.db);
-  if (!st || !st.describes) throw new RunStopped('not a first run');
+  const o = await openStage(d);
+  const { st } = o;
+  if (!st.describes) throw new RunStopped('not a first run');
   // The step ran before and its answer was lost: the page is there.
   if (st.pages > 0) return;
-  await addPage(d, st, WHAT.link, new TextEncoder().encode(JSON.stringify(description)), null);
+  await addPage(d, o, await sealKeys(d, st), WHAT.link, jsonBytes(description), null);
 }
 
 /**
  * The last step: signs the run's manifest and, in one transaction, stores the run, moves the link's cursor and
  * stamps the budget's new run state. When a key change replaced the run's inbox key meanwhile, the run starts
- * again, sealed to the key in force (`restarted`).
+ * again, sealed to the key in force (`restarted`). `run`: the run this step is to complete; when the step ran
+ * before and its answer was lost, the run is there, and that is the answer.
  */
-export async function completeSealedRun(d: RunDeps, now: number): Promise<{ run: number } | 'restarted'> {
-  const st = await stageOf(d.db);
-  if (!st || st.hasMore || st.pages === 0) throw new RunStopped('the run is not whole');
-  const { s, cursors } = await standing(d);
+export async function completeSealedRun(
+  d: RunDeps,
+  now: number,
+  run?: number,
+): Promise<{ run: number } | 'restarted'> {
+  const o = await readStage(d);
+  if (!o || (run !== undefined && o.st.run !== run)) {
+    if (run !== undefined) {
+      const done = await d.db.prepare(`SELECT 1 AS x FROM sealed_run WHERE run = ?1`).bind(run).first();
+      if (done) return { run };
+    }
+    throw new RunStopped('no run');
+  }
+  if (!o.good) throw new BadStamp('run stage');
+  const { st } = o;
+  if (st.hasMore || st.pages === 0) throw new RunStopped('the run is not whole');
+  const { s, cursors, lastInbox } = await standing(d);
   if (s.run !== st.run - 1) throw new RunStopped('not the next run');
+
+  // The pages are the ones the steps stored, in order: their hashes chain to the stage's stamped hash.
   const rows = await d.db
     .prepare(`SELECT page, what, hash FROM sealed_page WHERE run = ?1 ORDER BY page`)
     .bind(st.run)
     .all<{ page: number; what: number; hash: string }>();
-  if (rows.results.length !== st.pages || rows.results.some((r, i) => r.page !== i))
-    throw new RunStopped('pages are missing');
+  let chain = ZERO_HASH;
+  const pages: { what: What; hash: Uint8Array<ArrayBuffer> }[] = [];
+  for (const [i, r] of rows.results.entries()) {
+    const hash = hexOr(r.hash);
+    if (r.page !== i || hash.length !== 32 || ![0, 1, 2, 3].includes(r.what)) throw new BadStamp('run stage');
+    chain = await nextPagesHash(chain, r.what, hash);
+    pages.push({ what: r.what as What, hash });
+  }
+  if (pages.length !== st.pages || chain !== st.pagesHash) throw new BadStamp('run stage');
+
   const force = await inForce(d.db);
-  const k = await d.keys.keysFor(st.n);
-  const pub = await stampedKey(d, KEY_KIND.inbox, st.inboxVersion);
+  // Never sealed to a newer key than the log has, nor to an older one than the run before.
+  if (st.inboxVersion > force.inboxVersion || st.inboxVersion < lastInbox) throw new BadStamp('inbox key');
+  const { k, pub } = await sealKeys(d, st);
   // Later than the run before, whatever this clock says (9.3).
   const runTime = Math.max(now, s.time + 1);
   let signed;
@@ -535,7 +788,7 @@ export async function completeSealedRun(d: RunDeps, now: number): Promise<{ run:
         added: st.added,
         modified: st.modified,
         removed: st.removed,
-        pages: rows.results.map((r) => ({ what: r.what as What, hash: fromHex(r.hash) })),
+        pages,
         prevManifestHash: fromHex(s.hash),
       },
       { inboxVersion: force.inboxVersion, lastRunForOld: force.retiredAt.get(st.inboxVersion) ?? 0 },
@@ -543,21 +796,25 @@ export async function completeSealedRun(d: RunDeps, now: number): Promise<{ run:
   } catch (x) {
     if (!(x instanceof RestartRun)) throw x;
     await stampedKey(d, KEY_KIND.inbox, force.inboxVersion);
-    await restart(d, st, force.inboxVersion);
+    await restart(d, o, force.inboxVersion, false);
     return 'restarted';
   }
   const hash = toHex(await sha256(signed.manifest));
   const after = [...cursors.filter((c) => c.linkId !== st.linkId), { linkId: st.linkId, cursor: st.cursor }];
+  const mac = toHex(
+    await runsMac(k, d.budgetId, await runStateOf({ run: st.run, hash, time: runTime }, after)),
+  );
   try {
     await d.db.batch([
+      // The run state, the stage and the log are all where this step read them: a key change stored meanwhile
+      // (which names the last run sealed to the old key) makes the step run again.
       conditionFence(
         d.db,
-        `SELECT (SELECT run FROM run_state WHERE id = 1) = ?1
-           AND (SELECT restart = ?2 AND run = ?3 AND pages = ?4 FROM run_stage WHERE id = 1)`,
+        `SELECT (SELECT run FROM run_state WHERE id = 1) = ?1 AND (SELECT mac FROM run_stage WHERE id = 1) = ?2
+           AND (SELECT number FROM log_state WHERE id = 1) = ?3`,
         s.run,
-        st.restart,
-        st.run,
-        st.pages,
+        o.mac,
+        force.number,
       ),
       d.db
         .prepare(
@@ -575,7 +832,12 @@ export async function completeSealedRun(d: RunDeps, now: number): Promise<{ run:
           runTime,
           now,
         ),
-      await runStateStmt(d, k, { run: st.run, hash, time: runTime }, after, now),
+      d.db
+        .prepare(
+          `UPDATE run_state SET run = ?1, last_manifest_hash = ?2, last_run_time = ?3, mac = ?4, n = ?5, updated_at = ?6
+           WHERE id = 1`,
+        )
+        .bind(st.run, hash, runTime, mac, k.n, now),
       d.db
         .prepare(
           `INSERT INTO link_cursor (link_id, cursor, updated_at) VALUES (?1, ?2, ?3)
@@ -585,8 +847,7 @@ export async function completeSealedRun(d: RunDeps, now: number): Promise<{ run:
       d.db.prepare(`DELETE FROM run_stage WHERE id = 1`),
     ]);
   } catch (x) {
-    if (!isFenceAbort(x)) throw x;
-    throw new RunStopped('another step moved the run');
+    stopped(x);
   }
   return { run: st.run };
 }
@@ -596,7 +857,8 @@ export async function abandonSealedRun(db: Db, linkId: string): Promise<void> {
   await db.batch([
     db
       .prepare(
-        `DELETE FROM sealed_page WHERE run = (SELECT run FROM run_stage WHERE id = 1 AND link_id = ?1)`,
+        `DELETE FROM sealed_page WHERE run = (SELECT run FROM run_stage WHERE id = 1 AND link_id = ?1)
+           AND run NOT IN (SELECT run FROM sealed_run)`,
       )
       .bind(linkId),
     db.prepare(`DELETE FROM run_stage WHERE id = 1 AND link_id = ?1`).bind(linkId),
@@ -618,7 +880,8 @@ export async function receiptHashes(db: Db, from: number, to: number): Promise<U
     .bind(from, to)
     .all<{ run: number; receipt_hash: string }>();
   if (rows.results.length !== to - from + 1) return null;
-  return rows.results.map((r) => fromHex(r.receipt_hash));
+  const out = rows.results.map((r) => hexOr(r.receipt_hash));
+  return out.every((h) => h.length === 32) ? out : null;
 }
 
 /** Complete runs after `after`, in order: each manifest with its signature and its number of pages. */

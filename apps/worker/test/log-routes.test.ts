@@ -60,7 +60,7 @@ describe('the routes of the sealed log', () => {
     await seal(true);
     try {
       // No bank run is complete yet.
-      expect(await (await get('/api/log/runs?after=0')).json()).toEqual({ runs: [], last: 0 });
+      expect(await (await get('/api/log/runs?after=0')).json()).toEqual({ runs: [], last: 0, more: false });
       expect((await get('/api/log/runs/1/0')).status).toBe(404);
       expect((await get('/api/log/runs?after=x')).status).toBe(400);
       const first = (await (await get('/api/log?after=0')).json()) as {

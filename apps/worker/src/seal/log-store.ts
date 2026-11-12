@@ -38,7 +38,7 @@ export interface LogDeps {
   resting: boolean;
   /** This session came in by the recovery key, or by a passkey added less than 7 days ago (D-89). */
   freshWay: boolean;
-  /** The highest bank run that is complete (signed), filed or not. */
+  /** The highest bank run that is complete (signed), filed or not: `run_state.run` as this request read it. */
   lastCompleteRun: number;
   /** The receipt hashes the Worker stored for runs `from` to `to`; null when one is missing. */
   receiptHashes: (from: number, to: number) => Promise<Uint8Array[] | null>;
@@ -247,7 +247,15 @@ async function store(
   const stamps = d.stamps ? await d.stamps(before, state) : [];
   try {
     await d.db.batch([
-      conditionFence(d.db, `SELECT coalesce((SELECT number FROM log_state WHERE id = 1), 0) = ?1`, base),
+      // The log still ends at `base`, and no bank run was completed since this write was checked against the
+      // last complete run (a key change names that run; a bank entry's receipts are checked against it).
+      conditionFence(
+        d.db,
+        `SELECT coalesce((SELECT number FROM log_state WHERE id = 1), 0) = ?1
+           AND coalesce((SELECT run FROM run_state WHERE id = 1), 0) = ?2`,
+        base,
+        d.lastCompleteRun,
+      ),
       ...storeStmts(d.db, entries, state, d.now),
       ...stamps,
     ]);

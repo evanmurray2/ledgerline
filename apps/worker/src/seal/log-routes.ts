@@ -17,8 +17,8 @@ import {
   lastCompleteRun,
   receiptHashes,
   runsAfter,
+  runDeps,
   sealedPageOf,
-  workerKeys,
   type RunDeps,
 } from './runs.js';
 
@@ -85,11 +85,11 @@ logApi.post('/log/append', async (c) => {
   const ask = c.env.USAGE_FOR_WRITE ?? c.env.USAGE;
   const u = ask ? await ask() : await usageToday(c.env);
   const state = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(c.env));
-  const runs: RunDeps = {
-    db: c.env.DB,
-    budgetId: c.get('budgetId'),
-    keys: workerKeys(parseKeyring(c.env.TOKEN_KEYS, c.env.TOKEN_KEY_CURRENT)),
-  };
+  const runs: RunDeps = runDeps(
+    c.env.DB,
+    c.get('budgetId'),
+    parseKeyring(c.env.TOKEN_KEYS, c.env.TOKEN_KEY_CURRENT),
+  );
   const deps: LogDeps = {
     db: c.env.DB,
     budgetId: c.get('budgetId'),
@@ -112,26 +112,29 @@ logApi.post('/log/append', async (c) => {
   return c.json(r, r.ok ? 200 : 409);
 });
 
-/** The most runs one answer names. A run's pages are read one by one. */
+/** The most runs one answer names, and the most text: a manifest grows with its pages. A run's pages are read one by one. */
 const PAGE_RUNS = 64;
+const RUNS_CHARS = 400_000;
 
 /**
  * The complete bank runs after run `after`, in order: each manifest as the Worker signed it, its signature, and
- * how many sealed pages it has. `last` is the newest complete run.
+ * how many sealed pages it has. `last` is the newest complete run; `more` says to ask again after the last one
+ * given.
  */
 logApi.get('/log/runs', async (c) => {
   const after = Number(c.req.query('after') ?? '0');
   if (!Number.isSafeInteger(after) || after < 0) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
-  const runs = await runsAfter(c.env.DB, after, PAGE_RUNS);
-  return c.json({
-    runs: runs.map((r) => ({
-      run: r.run,
-      manifest: b64(r.manifest),
-      signature: b64(r.signature),
-      pages: r.pages,
-    })),
-    last: await lastCompleteRun(c.env.DB),
-  });
+  const runs: { run: number; manifest: string; signature: string; pages: number }[] = [];
+  let chars = 0;
+  for (const r of await runsAfter(c.env.DB, after, PAGE_RUNS)) {
+    const manifest = b64(r.manifest);
+    // Always at least one run, then as many as fit one answer.
+    if (runs.length && chars + manifest.length > RUNS_CHARS) break;
+    runs.push({ run: r.run, manifest, signature: b64(r.signature), pages: r.pages });
+    chars += manifest.length;
+  }
+  const last = await lastCompleteRun(c.env.DB);
+  return c.json({ runs, last, more: (runs.at(-1)?.run ?? after) < last });
 });
 
 /** One sealed page of a complete run, as bytes. */

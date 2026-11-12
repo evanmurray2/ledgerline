@@ -37,7 +37,9 @@ import {
   sealedPageOf,
   sealLinkDescription,
   stageOf,
-  workerKeys,
+  runDeps,
+  RunStopped,
+  STAGE_MAX_MS,
   type RunDeps,
 } from '../src/seal/runs.js';
 import { DurableDb } from '../src/store/adapter.js';
@@ -60,12 +62,19 @@ interface Page {
   next: string;
   more: boolean;
 }
-function bank(pages: Record<string, Page>, o: { mutateOnce?: string } = {}) {
+function bank(
+  pages: Record<string, Page>,
+  o: { mutateOnce?: string; mutateAlways?: boolean; before?: () => Promise<void> } = {},
+) {
   let mutate = o.mutateOnce;
   const calls: (string | null)[] = [];
   const provider = {
-    fetchSyncPage: async (_c: unknown, cursor: string | null) => {
+    fetchSyncPage: async (c: { id: string; accessToken: string }, cursor: string | null) => {
       calls.push(cursor);
+      // The token is the link's own, opened by the step.
+      expect(c.accessToken).toBe(`token-${c.id.slice(4)}`);
+      await o.before?.();
+      if (o.mutateAlways) throw new ProviderError(MUTATION_DURING_PAGINATION, 'changed', true);
       if (mutate !== undefined && (cursor ?? '') === mutate) {
         mutate = undefined;
         throw new ProviderError(MUTATION_DURING_PAGINATION, 'changed', true);
@@ -104,7 +113,7 @@ interface World {
 async function world(fn: (x: World) => Promise<void>, o: { described?: boolean } = {}): Promise<void> {
   await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName(`runs-${Math.random()}`)), async (_o, state) => {
     const db = new DurableDb(state.storage);
-    const d: RunDeps = { db, budgetId: BUDGET, keys: workerKeys(ring) };
+    const d: RunDeps = runDeps(db, BUDGET, ring);
     const w = new Writer(BUDGET, T0);
     const r = await logGenesis(
       {
@@ -163,7 +172,7 @@ async function world(fn: (x: World) => Promise<void>, o: { described?: boolean }
 async function run(x: World, linkId: string, provider: BankDataProvider, now: number, balances?: unknown) {
   expect(await beginSealedRun(x.d, linkId, now)).toMatchObject({ linkId });
   for (let i = 0; ; i++) {
-    const r = await fetchSealedPage(x.d, provider, 'token', 100);
+    const r = await fetchSealedPage(x.d, provider, 100);
     if (r !== 'restarted' && !r.more) break;
     if (i > 20) throw new Error('never ends');
   }
@@ -193,16 +202,16 @@ describe('bank runs of a sealed budget', () => {
       expect(await beginSealedRun(x.d, LINK_A, T0 + 3000)).toMatchObject({ run: 3, restart: 0, pages: 0 });
       expect(await beginSealedRun(x.d, LINK_B, T0 + 3000)).toBe('busy');
       // A run still being fetched gives a device nothing.
-      expect(await fetchSealedPage(x.d, a.provider, 'token', 100)).toEqual({ more: true });
+      expect(await fetchSealedPage(x.d, a.provider, 100)).toEqual({ more: true });
       expect(await sealedPageOf(x.db, 3, 0)).toBeNull();
       expect(
         await run(x, LINK_A, a.provider, T0 + 3000, [{ providerAccountId: 'acc', currentBalance: 5 }]),
       ).toEqual({ run: 3 });
       expect(a.calls).toEqual([null, 'c1']);
-      expect(await stageOf(x.db)).toBeNull();
+      expect(await stageOf(x.d)).toBeNull();
       expect(await lastCompleteRun(x.db)).toBe(3);
 
-      // No stored page holds a readable word of the bank's answer.
+      // A stored page does not hold the bank's answer as it came.
       const stored = await handed(x.db, 3);
       for (const p of stored.pages) expect(text(p)).not.toContain('added');
 
@@ -256,10 +265,10 @@ describe('bank runs of a sealed budget', () => {
         const a = bank(TWO_PAGES);
         expect(await beginSealedRun(x.d, LINK_A, T0 + 3000)).toMatchObject({ run: 1, describes: true });
         // Not whole without the description, and it takes no transactions and no balances page.
-        await expect(completeSealedRun(x.d, T0 + 3000)).rejects.toThrow();
-        expect(await fetchSealedPage(x.d, a.provider, 'token', 100)).toEqual({ more: false });
+        await expect(completeSealedRun(x.d, T0 + 3000)).rejects.toBeInstanceOf(RunStopped);
+        expect(await fetchSealedPage(x.d, a.provider, 100)).toEqual({ more: false });
         expect(a.calls).toEqual([]);
-        await expect(sealBankAnswer(x.d, 1, [])).rejects.toThrow();
+        await expect(sealBankAnswer(x.d, 1, [])).rejects.toBeInstanceOf(RunStopped);
         await sealLinkDescription(x.d, { bank: 'First Bank', accounts: [{ name: 'Checking' }] });
         await sealLinkDescription(x.d, { bank: 'sent twice' });
         expect(await completeSealedRun(x.d, T0 + 3000)).toEqual({ run: 1 });
@@ -273,7 +282,7 @@ describe('bank runs of a sealed budget', () => {
           describes: false,
           cursor: '',
         });
-        await expect(sealLinkDescription(x.d, {})).rejects.toThrow();
+        await expect(sealLinkDescription(x.d, {})).rejects.toBeInstanceOf(RunStopped);
       },
       { described: false },
     );
@@ -283,9 +292,9 @@ describe('bank runs of a sealed budget', () => {
     await world(async (x) => {
       const a = bank(TWO_PAGES, { mutateOnce: 'c1' });
       expect(await beginSealedRun(x.d, LINK_A, T0 + 3000)).toMatchObject({ run: 3 });
-      expect(await fetchSealedPage(x.d, a.provider, 'token', 100)).toEqual({ more: true });
-      expect(await fetchSealedPage(x.d, a.provider, 'token', 100)).toBe('restarted');
-      expect(await stageOf(x.db)).toMatchObject({ restart: 1, pages: 0, cursor: '', added: 0 });
+      expect(await fetchSealedPage(x.d, a.provider, 100)).toEqual({ more: true });
+      expect(await fetchSealedPage(x.d, a.provider, 100)).toBe('restarted');
+      expect(await stageOf(x.d)).toMatchObject({ restart: 1, pages: 0, cursor: '', added: 0 });
       expect(await run(x, LINK_A, a.provider, T0 + 3000)).toEqual({ run: 3 });
       expect(a.calls).toEqual([null, 'c1', null, 'c1']);
       const filed = await openRun(x.filing, await handed(x.db, 3));
@@ -298,12 +307,12 @@ describe('bank runs of a sealed budget', () => {
     await world(async (x) => {
       const a = bank(TWO_PAGES);
       await beginSealedRun(x.d, LINK_A, T0 + 3000);
-      await fetchSealedPage(x.d, a.provider, 'token', 100);
+      await fetchSealedPage(x.d, a.provider, 100);
       // Giving up another link's run does nothing.
       await abandonSealedRun(x.db, LINK_B);
-      expect(await stageOf(x.db)).toMatchObject({ linkId: LINK_A, pages: 1 });
+      expect(await stageOf(x.d)).toMatchObject({ linkId: LINK_A, pages: 1 });
       await abandonSealedRun(x.db, LINK_A);
-      expect(await stageOf(x.db)).toBeNull();
+      expect(await stageOf(x.d)).toBeNull();
       expect(
         (await x.db.prepare(`SELECT count(*) AS n FROM sealed_page WHERE run > 2`).first<{ n: number }>())!.n,
       ).toBe(0);
@@ -318,8 +327,8 @@ describe('bank runs of a sealed budget', () => {
     await world(async (x) => {
       const a = bank(TWO_PAGES);
       await beginSealedRun(x.d, LINK_A, T0 + 3000);
-      await fetchSealedPage(x.d, a.provider, 'token', 100);
-      await fetchSealedPage(x.d, a.provider, 'token', 100);
+      await fetchSealedPage(x.d, a.provider, 100);
+      await fetchSealedPage(x.d, a.provider, 100);
 
       // The log takes a key change: inbox version 2 is in force, and only runs 1 and 2 may be sealed to version 1.
       const keys2 = await deriveBudgetKeys(randomBytes(32), BUDGET, 2);
@@ -342,7 +351,7 @@ describe('bank runs of a sealed budget', () => {
       ]);
 
       expect(await completeSealedRun(x.d, T0 + 3200)).toBe('restarted');
-      expect(await stageOf(x.db)).toMatchObject({ restart: 1, inboxVersion: 2, pages: 0, cursor: '' });
+      expect(await stageOf(x.d)).toMatchObject({ restart: 1, inboxVersion: 2, pages: 0, cursor: '' });
       expect(await run(x, LINK_A, a.provider, T0 + 3300)).toEqual({ run: 3 });
 
       const device: FilingState = {
@@ -413,7 +422,7 @@ describe('bank runs of a sealed budget', () => {
         const err = await beginSealedRun(x.d, LINK_A, T0 + 4000).catch((x: unknown) => x);
         expect(err, name).toBeInstanceOf(BadStamp);
         expect((err as BadStamp).what, name).toBe(what);
-        expect(await stageOf(x.db), name).toBeNull();
+        expect(await stageOf(x.d), name).toBeNull();
       });
     }
   });
@@ -422,11 +431,192 @@ describe('bank runs of a sealed budget', () => {
     await world(async (x) => {
       const a = bank(TWO_PAGES);
       await beginSealedRun(x.d, LINK_A, T0 + 3000);
-      await fetchSealedPage(x.d, a.provider, 'token', 100);
+      await fetchSealedPage(x.d, a.provider, 100);
       x.sql(`UPDATE key_stamp SET pub = ?1 WHERE kind = 2`, toHex(randomBytes(32)));
-      await expect(fetchSealedPage(x.d, a.provider, 'token', 100)).rejects.toBeInstanceOf(BadStamp);
-      expect(await stageOf(x.db)).toMatchObject({ pages: 1 });
-      await expect(sealBankAnswer(x.d, 1, [])).rejects.toThrow();
+      await expect(fetchSealedPage(x.d, a.provider, 100)).rejects.toBeInstanceOf(BadStamp);
+      expect(await stageOf(x.d)).toMatchObject({ pages: 1 });
+    });
+  });
+
+  it('goes on only from what its own steps left: a changed stage or page stops it', async () => {
+    const tampers: [string, (x: World) => void][] = [
+      [
+        'a page dropped and the counter put back',
+        (x) => {
+          x.sql(`DELETE FROM sealed_page WHERE run = 3`);
+          x.sql(`UPDATE run_stage SET pages = 0, added = 0, modified = 0, removed = 0`);
+        },
+      ],
+      ['a cursor the Worker never fetched', (x) => x.sql(`UPDATE run_stage SET cursor = 'elsewhere'`)],
+      ['the first cursor moved', (x) => x.sql(`UPDATE run_stage SET start_cursor = 'c2'`)],
+      ['the last page claimed early', (x) => x.sql(`UPDATE run_stage SET has_more = 0`)],
+      ['another inbox version', (x) => x.sql(`UPDATE run_stage SET inbox_version = 2`)],
+      ['a first run made of a later one', (x) => x.sql(`UPDATE run_stage SET describes = 1`)],
+      ['changed counts', (x) => x.sql(`UPDATE run_stage SET added = 0`)],
+      ['another run number', (x) => x.sql(`UPDATE run_stage SET run = 4`)],
+      ['another link', (x) => x.sql(`UPDATE run_stage SET link_id = ?1`, LINK_B)],
+      ['a Worker key the keyring does not hold', (x) => x.sql(`UPDATE run_stage SET n = 9`)],
+    ];
+    for (const [name, tamper] of tampers) {
+      await world(async (x) => {
+        const a = bank(TWO_PAGES);
+        await beginSealedRun(x.d, LINK_A, T0 + 3000);
+        await fetchSealedPage(x.d, a.provider, 100);
+        tamper(x);
+        const err = await fetchSealedPage(x.d, a.provider, 100).catch((e: unknown) => e);
+        expect(err, name).toBeInstanceOf(BadStamp);
+        expect((err as BadStamp).what, name).toBe('run stage');
+        await expect(completeSealedRun(x.d, T0 + 3000), name).rejects.toBeInstanceOf(BadStamp);
+        // The bank was not asked again, and nothing was signed.
+        expect(a.calls, name).toEqual([null]);
+        expect(await lastCompleteRun(x.db), name).toBe(2);
+        // The next begin drops the changed run and starts a clean one, for whichever link asks.
+        expect(await beginSealedRun(x.d, LINK_B, T0 + 3100), name).toMatchObject({
+          linkId: LINK_B,
+          run: 3,
+          pages: 0,
+        });
+      });
+    }
+    // The stage is whole, but a stored page is not the one a step sealed.
+    const pages: [string, (x: World) => void][] = [
+      [
+        'a page swapped for another',
+        (x) => x.sql(`UPDATE sealed_page SET hash = ?1 WHERE run = 3 AND page = 0`, 'ab'.repeat(32)),
+      ],
+      [
+        'a page called something else',
+        (x) => x.sql(`UPDATE sealed_page SET what = 1 WHERE run = 3 AND page = 1`),
+      ],
+      ['a page gone', (x) => x.sql(`DELETE FROM sealed_page WHERE run = 3 AND page = 1`)],
+      [
+        'pages in another order',
+        (x) => {
+          x.sql(`UPDATE sealed_page SET page = 9 WHERE run = 3 AND page = 0`);
+          x.sql(`UPDATE sealed_page SET page = 0 WHERE run = 3 AND page = 1`);
+          x.sql(`UPDATE sealed_page SET page = 1 WHERE run = 3 AND page = 9`);
+        },
+      ],
+    ];
+    for (const [name, tamper] of pages) {
+      await world(async (x) => {
+        const a = bank(TWO_PAGES);
+        await beginSealedRun(x.d, LINK_A, T0 + 3000);
+        await fetchSealedPage(x.d, a.provider, 100);
+        await fetchSealedPage(x.d, a.provider, 100);
+        tamper(x);
+        const err = await completeSealedRun(x.d, T0 + 3000).catch((e: unknown) => e);
+        expect(err, name).toBeInstanceOf(BadStamp);
+        expect(await lastCompleteRun(x.db), name).toBe(2);
+      });
+    }
+  });
+
+  it('a step that answers late, after its run was given up, writes nothing into the next run', async () => {
+    await world(async (x) => {
+      // While the bank is asked for link A's page, the run is given up and link B's begins.
+      const a = bank(TWO_PAGES, {
+        before: async () => {
+          await abandonSealedRun(x.db, LINK_A);
+          expect(await beginSealedRun(x.d, LINK_B, T0 + 3050)).toMatchObject({ linkId: LINK_B, run: 3 });
+        },
+      });
+      await beginSealedRun(x.d, LINK_A, T0 + 3000);
+      await expect(fetchSealedPage(x.d, a.provider, 100)).rejects.toBeInstanceOf(RunStopped);
+      expect(await stageOf(x.d)).toMatchObject({ linkId: LINK_B, pages: 0, cursor: '' });
+      expect(
+        (await x.db.prepare(`SELECT count(*) AS n FROM sealed_page WHERE run = 3`).first<{ n: number }>())!.n,
+      ).toBe(0);
+    });
+  });
+
+  it('a run left alone too long makes way; the bank may restart a run only so often', async () => {
+    await world(async (x) => {
+      await beginSealedRun(x.d, LINK_A, T0 + 3000);
+      expect(await beginSealedRun(x.d, LINK_B, T0 + 3000 + STAGE_MAX_MS)).toBe('busy');
+      expect(await beginSealedRun(x.d, LINK_B, T0 + 3001 + STAGE_MAX_MS)).toMatchObject({
+        linkId: LINK_B,
+        run: 3,
+      });
+      await abandonSealedRun(x.db, LINK_B);
+
+      const a = bank(TWO_PAGES, { mutateAlways: true });
+      await beginSealedRun(x.d, LINK_A, T0 + 4000);
+      for (let i = 0; i < 3; i++) expect(await fetchSealedPage(x.d, a.provider, 100)).toBe('restarted');
+      await expect(fetchSealedPage(x.d, a.provider, 100)).rejects.toBeInstanceOf(RunStopped);
+      expect(await stageOf(x.d)).toMatchObject({ restart: 3, bankRestarts: 3 });
+    });
+  });
+
+  it('the last step, run again after its answer was lost, says the run is there', async () => {
+    await world(async (x) => {
+      const a = bank(TWO_PAGES);
+      await beginSealedRun(x.d, LINK_A, T0 + 3000);
+      await fetchSealedPage(x.d, a.provider, 100);
+      // A page step run again fetches the next page, not the same one.
+      await fetchSealedPage(x.d, a.provider, 100);
+      expect(await fetchSealedPage(x.d, a.provider, 100)).toEqual({ more: false });
+      expect(a.calls).toEqual([null, 'c1']);
+      await sealBankAnswer(x.d, 2, [{ providerAccountId: 'card' }]);
+      await sealBankAnswer(x.d, 2, [{ providerAccountId: 'sent twice' }]);
+      expect(await completeSealedRun(x.d, T0 + 3000, 3)).toEqual({ run: 3 });
+      expect(await completeSealedRun(x.d, T0 + 3000, 3)).toEqual({ run: 3 });
+      await expect(completeSealedRun(x.d, T0 + 3000)).rejects.toBeInstanceOf(RunStopped);
+      await expect(completeSealedRun(x.d, T0 + 3000, 4)).rejects.toBeInstanceOf(RunStopped);
+      const filed = await openRun(x.filing, await handed(x.db, 3));
+      expect(filed.manifest.flags).toBe(2);
+      expect(filed.pages.map((p) => p.what)).toEqual([0, 0, 2]);
+      expect(JSON.parse(text(filed.pages[2]!.payload))).toEqual([{ providerAccountId: 'card' }]);
+    });
+  });
+
+  it('never goes back to an older inbox key than the last run, whatever the log state says', async () => {
+    await world(async (x) => {
+      const old = (await x.db.prepare(`SELECT state FROM log_state WHERE id = 1`).first<{ state: string }>())!
+        .state;
+      const keys2 = await deriveBudgetKeys(randomBytes(32), BUDGET, 2);
+      const inbox2 = await newInbox(keys2, BUDGET, 2);
+      const before = stateFromJson(old) as unknown as ChainState;
+      const after = stateFromJson(old) as unknown as ChainState & {
+        public: { retiredAt: Map<number, number> };
+      };
+      after.public.keyVersion = 2;
+      after.public.signPub = keys2.sign.pub;
+      after.public.inboxVersion = 2;
+      after.public.inboxPub = inbox2.pair.pub;
+      after.public.retiredAt.set(1, 2);
+      await x.db.batch([
+        x.db.prepare(`UPDATE log_state SET state = ?1 WHERE id = 1`).bind(stateToJson(after as never)),
+        ...(await keyStampStmts(x.d, before, after, T0 + 3100)),
+      ]);
+      expect(await run(x, LINK_A, bank(TWO_PAGES).provider, T0 + 3200)).toEqual({ run: 3 });
+      // Someone puts the log's state back to before the key change.
+      x.sql(`UPDATE log_state SET state = ?1 WHERE id = 1`, old);
+      const err = await beginSealedRun(x.d, LINK_A, T0 + 3300).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(BadStamp);
+      expect((err as BadStamp).what).toBe('inbox key');
+    });
+  });
+
+  it('a key the log takes replaces a row someone put there first', async () => {
+    await world(async (x) => {
+      x.sql(`INSERT INTO key_stamp (kind, version, pub, mac, n, created_at) VALUES (2, 2, 'aa', 'bb', 1, 0)`);
+      const row = (await x.db
+        .prepare(`SELECT state FROM log_state WHERE id = 1`)
+        .first<{ state: string }>())!;
+      const keys2 = await deriveBudgetKeys(randomBytes(32), BUDGET, 2);
+      const inbox2 = await newInbox(keys2, BUDGET, 2);
+      const before = stateFromJson(row.state) as unknown as ChainState;
+      const after = stateFromJson(row.state) as unknown as ChainState;
+      after.public.inboxVersion = 2;
+      after.public.inboxPub = inbox2.pair.pub;
+      await x.db.batch([
+        x.db.prepare(`UPDATE log_state SET state = ?1 WHERE id = 1`).bind(stateToJson(after as never)),
+        ...(await keyStampStmts(x.d, before, after, T0 + 3100)),
+      ]);
+      expect(await beginSealedRun(x.d, LINK_A, T0 + 3200)).toMatchObject({ inboxVersion: 2 });
+      // A write that changes no key costs no stamp.
+      expect(await keyStampStmts(x.d, after, after, T0 + 3300)).toEqual([]);
     });
   });
 });

@@ -9,6 +9,15 @@ export interface ServerKeys {
   runSign: unknown;
 }
 export function isUlid(s: string): boolean;
+export function concat(...parts: Uint8Array[]): Uint8Array<ArrayBuffer>;
+export function label(name: string): Uint8Array<ArrayBuffer>;
+export function str(x: Uint8Array | string): Uint8Array<ArrayBuffer>;
+export function u8(n: number): Uint8Array<ArrayBuffer>;
+export function u16(n: number): Uint8Array<ArrayBuffer>;
+export function u32(n: number): Uint8Array<ArrayBuffer>;
+export function u64(n: number): Uint8Array<ArrayBuffer>;
+export function hmac(key: Uint8Array | CryptoKey, x: Uint8Array): Promise<Uint8Array<ArrayBuffer>>;
+export function hmacVerify(key: Uint8Array | CryptoKey, x: Uint8Array, mac: Uint8Array): Promise<boolean>;
 export function serverKeys(secret: Uint8Array, n: number): Promise<ServerKeys>;
 export function linkMac(
   k: ServerKeys,
