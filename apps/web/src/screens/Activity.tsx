@@ -326,7 +326,9 @@ export function ActivityScreen() {
   };
 
   const selKeys = openNeeds.filter((r) => sel[r.key]).map((r) => r.key);
-  const showAttnHead = filter !== 'pending' && !allMonths && (v?.attentionCount ?? 0) > 0;
+  // Under All it sets the groups that need you apart from Pending and Posted; the Needs attention filter's chip
+  // already says it.
+  const showAttnHead = filter === 'all' && !allMonths && (v?.attentionCount ?? 0) > 0;
   const attentionCount = counts.data?.attentionCount ?? v?.attentionCount ?? 0;
   const notPostedCount = counts.data?.notPostedCount ?? v?.notPostedCount ?? 0;
   // A filter with nothing in it is hidden, unless it's the one showing; with neither, the chip row goes too.

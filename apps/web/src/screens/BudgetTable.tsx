@@ -12,7 +12,7 @@ import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { monthLabel } from '../lib/dates';
 import { useCanWrite } from '../state/connectivity';
 import { toast } from '../components/Toast';
-import { catTone, isQuiet, OWED_DETAIL, owedTone, pinnedRows } from './BudgetRows';
+import { catTone, isQuiet, OWED_DETAIL, owedTone, pinnedRows, StatusLine } from './BudgetRows';
 
 /** Moves focus to the Assigned field `step` rows away. False when there is none (Tab then leaves the table). */
 function focusAssigned(from: HTMLElement, step: number): boolean {
@@ -234,9 +234,7 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
           {c.detail}
         </>
       ) : (
-        <>
-          <StatusWord {...STATUS[c.status]} /> · {c.detail}
-        </>
+        <StatusLine {...STATUS[c.status]} detail={c.detail} />
       ),
       assigned: <AssignedCell id={c.id} name={c.name} cents={c.assigned} month={month} />,
       spent: <SpentCell row={c} />,

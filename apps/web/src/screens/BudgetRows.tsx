@@ -38,6 +38,27 @@ export function catTone(row: BudgetCategoryRow): Tone {
   return STATUS[row.status].tone;
 }
 
+/**
+ * A status word and its detail. "Overspent" plus "overspent on Freedom Unlimited" reads as one phrase,
+ * "Overspent on Freedom Unlimited", instead of saying the word twice.
+ */
+export function StatusLine({ detail, ...st }: Parameters<typeof StatusWord>[0] & { detail: string }) {
+  const rest =
+    st.word === 'Overspent' && /^overspent\b/.test(detail) ? detail.slice('overspent'.length).trim() : null;
+  if (rest === null)
+    return (
+      <>
+        <StatusWord {...st} /> · {detail}
+      </>
+    );
+  return (
+    <>
+      <StatusWord {...st} />
+      {rest && ` ${rest}`}
+    </>
+  );
+}
+
 /** Healthy rows stay quiet (no status word, no colored pill) so the ones that need you stand out. */
 export function isQuiet(status: BudgetCategoryRow['status']): boolean {
   return status === 'funded' || status === 'invested' || status === 'no_target';
@@ -58,13 +79,13 @@ function CategoryRowPhone({ row, month }: { row: BudgetCategoryRow; month: strin
           <span className="text-base font-semibold wrap-anywhere">{row.name}</span>
           <span className="text-xs leading-snug text-muted">
             {quiet ? (
-              <span className="sr-only">{st.word} · </span>
-            ) : (
               <>
-                <StatusWord word={st.word} tone={st.tone} icon={st.icon} /> ·{' '}
+                <span className="sr-only">{st.word} · </span>
+                {row.detail}
               </>
+            ) : (
+              <StatusLine word={st.word} tone={st.tone} icon={st.icon} detail={row.detail} />
             )}
-            {row.detail}
           </span>
         </div>
         {quiet ? (
