@@ -15,10 +15,14 @@ import { budgetTime } from '../lib/dates';
 import { dailyResetTime } from '../api/client';
 import { formatCents } from '../lib/money';
 import { useTabMonth } from '../state/month';
+import { returnOrigin, useHere } from '../lib/back';
 
 type Tab = 'budget' | 'activity' | 'accounts' | 'reports' | 'settings';
 
 export function tabFor(path: string, search?: Record<string, unknown>): Tab {
+  // A screen opened from another tab lights the tab it came from, where Back or closing returns (lib/back.ts).
+  const origin = search && returnOrigin(search);
+  if (origin) return tabFor(origin.path, origin.search);
   // Owed to you opens from Budget and from Accounts' net worth card; it lights the tab it came from.
   if (path.startsWith('/owed') && search?.from === 'accounts') return 'accounts';
   // One category's transactions open from Reports, with Back to it.
@@ -105,6 +109,7 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
   // Assigning works offline with the copy on this device (D-45), like the Assign sheet itself.
   const canWrite = useCanWrite({ offline: true });
   const month = useTabMonth();
+  const here = useHere();
   const rta = badges.rta;
   const items: { id: Tab; name: string; to: string; badge: number }[] = [
     { id: 'budget', name: 'Budget', to: '/budget', badge: 0 },
@@ -176,6 +181,8 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
           (canWrite ? (
             <Link
               to="/budget/assign"
+              // From another tab, closing Assign comes back to it (lib/back.ts).
+              search={here.startsWith('/budget') ? undefined : { close: here }}
               data-track="nav.assign"
               className="hit mt-1.5 flex h-9 items-center justify-center rounded-full bg-rta-fg text-md font-bold text-rta-btn-fg no-underline"
             >
@@ -268,11 +275,8 @@ function ReadOnlyBanner({ until }: { until: string }) {
 export function AppShell({ children }: { children: ReactNode }) {
   const desktop = useIsDesktop();
   const path = useRouterState({ select: (s) => s.location.pathname });
-  const from = useRouterState({ select: (s) => (s.location.search as { from?: unknown }).from });
-  const category = useRouterState({
-    select: (s) => (s.location.search as { category?: unknown }).category,
-  });
-  const active = tabFor(path, { from, category });
+  const search = useRouterState({ select: (s) => s.location.search as Record<string, unknown> });
+  const active = tabFor(path, search);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const [noteOpen, setNoteOpen] = useState(false);
   const session = useSession();

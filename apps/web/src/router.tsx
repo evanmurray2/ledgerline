@@ -33,6 +33,7 @@ import { ApiError } from './api/client';
 import { checkSaved, getCopy, onCopyChanged, start as startCopy, syncNow, flush, useCopy } from './copy/copy';
 import { CopyScreen } from './screens/Copy';
 import { toast } from './components/Toast';
+import { returnSearch } from './lib/back';
 
 // Screens opened now and then (Reports, Settings, Categories, first-run setup) load when first opened, so the app
 // starts with less to download and parse. After a new release, a missing piece reloads the app once.
@@ -250,6 +251,7 @@ const budgetRoute = createRoute({
     month: monthParam(s.month),
     view: s.view === 'attention' ? ('attention' as const) : undefined,
     from: s.from === 'categories' ? ('categories' as const) : undefined,
+    ...returnSearch(s),
   }),
   component: BudgetScreen,
 });
@@ -295,6 +297,7 @@ const owedRoute = createRoute({
   path: '/owed',
   validateSearch: (s: Record<string, unknown>) => ({
     from: s.from === 'accounts' ? ('accounts' as const) : undefined,
+    ...returnSearch(s),
   }),
   component: OwedScreen,
 });
@@ -320,6 +323,8 @@ const activityRoute = createRoute({
     category: str(s.category),
     // The app's month; a malformed one is dropped rather than refused by the server.
     month: monthParam(s.month),
+    // Opened from another tab (lib/back.ts).
+    ...returnSearch(s),
   }),
   component: ActivityScreen,
 });
@@ -359,6 +364,7 @@ const addRoute = createRoute({ getParentRoute: () => activityRoute, path: 'add',
 const accountsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/accounts',
+  validateSearch: returnSearch,
   component: AccountsScreen,
 });
 const repairRoute = createRoute({
@@ -371,6 +377,7 @@ const registerRoute = createRoute({
   path: '/accounts/$accountId',
   validateSearch: (s: Record<string, unknown>) => ({
     show: s.show === 'pending' || s.show === 'needs' || s.show === 'transfers' ? s.show : undefined,
+    ...returnSearch(s),
   }),
   component: RegisterScreen,
 });
@@ -493,7 +500,12 @@ const connectionsRoute = createRoute({
   path: 'connections',
   component: ConnectionsScreen,
 });
-const dataRoute = createRoute({ getParentRoute: () => settingsRoute, path: 'data', component: DataScreen });
+const dataRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'data',
+  validateSearch: returnSearch,
+  component: DataScreen,
+});
 const signInRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'sign-in',

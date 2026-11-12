@@ -28,6 +28,7 @@ import {
   SectionTitle,
 } from '../components/ui';
 import { formatCents } from '../lib/money';
+import { useBack } from '../lib/back';
 import { dayLabel, syncedLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
 import { TxnRow } from './Activity';
@@ -41,7 +42,9 @@ type Show = 'all' | 'pending' | 'needs' | 'transfers';
 
 export function RegisterScreen() {
   const { accountId } = useParams({ strict: false }) as { accountId: string };
-  const search = useSearch({ strict: false }) as { show?: Show };
+  const search = useSearch({ strict: false }) as { show?: Show; back?: string };
+  // Opened from Budget (a credit card): Back returns there.
+  const back = useBack();
   const show: Show = search.show ?? 'all';
   useScreen('register');
   const navigate = useNavigate();
@@ -103,8 +106,8 @@ export function RegisterScreen() {
       <BackHeader
         title={a?.name ?? 'Account'}
         sub={sub}
-        onBack={() => void navigate({ to: '/accounts' })}
-        backLabel="Back to accounts"
+        onBack={back ? back.go : () => void navigate({ to: '/accounts' })}
+        backLabel={back?.label ?? 'Back to accounts'}
         right={
           a && menu.length > 0 ? (
             <OverflowMenu label="More for this account" track="account.menu" items={menu} />
@@ -117,7 +120,12 @@ export function RegisterScreen() {
                 <Chip
                   key={id}
                   pressed={show === id}
-                  onClick={() => void navigate({ to: base, search: { show: id === 'all' ? undefined : id } })}
+                  onClick={() =>
+                    void navigate({
+                      to: base,
+                      search: { show: id === 'all' ? undefined : id, back: search.back },
+                    })
+                  }
                   track={`register.filter.${id}`}
                 >
                   {name}

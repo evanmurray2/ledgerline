@@ -21,6 +21,7 @@ import {
 import { MonthBar, TabHeader } from '../components/MonthBar';
 import { formatCents } from '../lib/money';
 import { useScreen } from '../lib/common';
+import { useHere } from '../lib/back';
 import { useCanWrite } from '../state/connectivity';
 import { clampMonth } from '../state/month';
 import { BlockedAction } from '../components/BlockedAction';
@@ -193,9 +194,11 @@ function ViewChips({
 }
 
 function SyncProblem({ text }: { text: string }) {
+  const here = useHere();
   return (
     <Link
       to="/accounts"
+      search={{ back: here }}
       className="flex items-center gap-2 bg-warn-bg px-4 py-2 text-sm font-semibold text-warn-fg no-underline"
     >
       <Icon name="alert" size={16} stroke={2.6} />

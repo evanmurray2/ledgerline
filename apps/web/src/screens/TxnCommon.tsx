@@ -6,6 +6,7 @@ import { SheetTitle } from '../components/Sheet';
 import { textLinkClass } from '../components/ui';
 import { formatCents } from '../lib/money';
 import { dayLabel } from '../lib/dates';
+import { useCloseTo } from '../lib/back';
 
 /** Path of the screen under a sheet: /activity/txn/x → /activity, /accounts/chk/txn/x/split → /accounts/chk. */
 export function useParentPath(): string {
@@ -16,8 +17,18 @@ export function useParentPath(): string {
 export function useClose() {
   const navigate = useNavigate();
   const parent = useParentPath();
+  // Opened from another tab (a category, Owed to you, an alert on Accounts): back there.
+  const closeTo = useCloseTo();
   // Back to the screen as it was: its month, filter and search stay.
-  return () => void navigate({ to: parent, search: true });
+  return closeTo ? closeTo.go : () => void navigate({ to: parent, search: true });
+}
+
+/** Where closing the sheet goes, as a path: for a link that leaves the sheet, so Back returns there. */
+export function useCloseHref(): string {
+  const parent = useParentPath();
+  const closeTo = useCloseTo();
+  const searchStr = useRouterState({ select: (s) => s.location.searchStr });
+  return closeTo?.to ?? parent + searchStr;
 }
 
 const TAG: Record<TxnSheet['kind'], string> = {
@@ -55,6 +66,7 @@ export function BankSays({ t, extra }: { t: TxnSheet; extra?: string }) {
       <div className="flex gap-4">
         <Link
           to={`${parent}/txn/${encodeURIComponent(t.key)}/rename`}
+          search
           data-track="txn.rename"
           className={textLinkClass}
         >

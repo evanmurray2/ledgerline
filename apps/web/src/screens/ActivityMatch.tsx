@@ -19,7 +19,7 @@ import {
 import { formatCents } from '../lib/money';
 import { dayLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
-import { useClose, useParentPath } from './TxnCommon';
+import { useClose, useCloseHref, useParentPath } from './TxnCommon';
 import { usage } from '../usage/tracker';
 import { Why } from '../components/Why';
 
@@ -36,6 +36,8 @@ export function MatchScreen() {
   const q = useMatchView(key);
   const close = useClose();
   const parent = useParentPath();
+  // Back from Owed to you returns to the screen under this sheet (the match is done).
+  const closeHref = useCloseHref();
   const match = useMoneyMutation(api.doMatch);
   const unlink = useMoneyMutation(api.unlink);
   const [on, setOn] = useState<Record<string, boolean> | null>(null);
@@ -145,6 +147,7 @@ export function MatchScreen() {
             </SecondaryButton>
             <Link
               to="/owed"
+              search={{ back: closeHref }}
               className="flex h-12 flex-[2] items-center justify-center rounded-lg bg-accent text-lg font-bold text-on-accent no-underline"
             >
               See what’s still owed

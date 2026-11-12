@@ -32,6 +32,7 @@ import {
 import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { dayLabel, monthName } from '../lib/dates';
 import { useCategoryOptions, useScreen } from '../lib/common';
+import { useCloseTo, useHere } from '../lib/back';
 import { useBudgetMonth } from './Budget';
 import { usage } from '../usage/tracker';
 import { useCanWrite } from '../state/connectivity';
@@ -39,7 +40,11 @@ import { toast } from '../components/Toast';
 
 function useCloseToBudget(month: string | undefined, current: string | undefined) {
   const navigate = useNavigate();
-  return () => void navigate({ to: '/budget', search: { month: month === current ? undefined : month } });
+  // Assign opened from another tab (the sidebar's Assign button): back there.
+  const closeTo = useCloseTo();
+  return closeTo
+    ? closeTo.go
+    : () => void navigate({ to: '/budget', search: { month: month === current ? undefined : month } });
 }
 
 // ------------------------------------------------------------------ category sheet
@@ -102,6 +107,8 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
   const set = useMoneyMutation(api.setAssigned);
   const move = useMoneyMutation(api.move);
   const steps = useCategorySteps(categoryId, month, current);
+  // A transaction or the category's list opened from this sheet comes back to it (lib/back.ts).
+  const here = useHere();
   const c = q.data;
 
   useEffect(() => {
@@ -299,7 +306,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
           {c.recentTotal > 0 && (
             <TextButton
               track="category.see_all"
-              onClick={() => void navigate({ to: '/activity', search: { q: c.name } })}
+              onClick={() => void navigate({ to: '/activity', search: { category: c.id, back: here } })}
               className="self-auto"
             >
               See all {c.recentTotal}
@@ -311,6 +318,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
           <Link
             key={r.key}
             to={`/activity/txn/${r.key}`}
+            search={{ close: here }}
             className="flex min-h-12 items-center justify-between border-t border-divider text-md text-ink no-underline"
           >
             <span className="flex flex-col gap-px">

@@ -2,6 +2,7 @@
 import { type ReactNode } from 'react';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import { BackHeader, cx, DESKTOP_WIDTH, Icon, PageFrame, useIsDesktop } from '../../components/ui';
+import { useBack } from '../../lib/back';
 
 export function Page({
   title,
@@ -22,6 +23,8 @@ export function Page({
 }) {
   const isDesktop = useIsDesktop();
   const navigate = useNavigate();
+  // Opened from another page (Users → Backup and export): Back returns there (lib/back.ts).
+  const ret = useBack();
   // Inside Settings the page sits in the right-hand pane under the Settings header. Elsewhere on desktop
   // (Categories, opened from Budget) it is a screen of its own, with the same header as every other screen.
   const inPane = useRouterState({ select: (s) => s.location.pathname.startsWith('/settings') });
@@ -33,8 +36,11 @@ export function Page({
       {!desktop && (
         <BackHeader
           title={title}
-          onBack={() => void navigate({ to: back, search: backSearch })}
-          backLabel={`Back to ${back === '/settings' ? 'settings' : back === '/accounts' ? 'accounts' : back === '/budget' ? 'budget' : 'list'}`}
+          onBack={ret ? ret.go : () => void navigate({ to: back, search: backSearch })}
+          backLabel={
+            ret?.label ??
+            `Back to ${back === '/settings' ? 'settings' : back === '/accounts' ? 'accounts' : back === '/budget' ? 'budget' : 'list'}`
+          }
           right={right}
         />
       )}
@@ -66,12 +72,15 @@ export function Page({
 
 export function RowLink({
   to,
+  search,
   name,
   meta,
   warn,
   track,
 }: {
   to: string;
+  /** Search for the page it opens, e.g. its `back` (lib/back.ts). */
+  search?: Record<string, string>;
   name: string;
   meta: string;
   /** The meta line needs the owner (a bank to sign in to again): the warn color, as on Accounts. */
@@ -81,6 +90,7 @@ export function RowLink({
   return (
     <Link
       to={to}
+      search={search}
       data-track={track}
       className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
     >

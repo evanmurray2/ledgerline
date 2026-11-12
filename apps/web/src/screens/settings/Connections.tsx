@@ -1,5 +1,5 @@
 // Settings → Bank connections: the Item meter, Link with a confirm step, Finish setup.
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/endpoints';
 import { qk, useAccounts, useConnections, useSession } from '../../api/hooks';
@@ -19,7 +19,8 @@ import {
 } from '../../components/ui';
 import { syncedLabel } from '../../lib/dates';
 import { useScreen } from '../../lib/common';
-import { resumeHostedLink, runPlaidLink } from '../../lib/plaid';
+import { runPlaidLink } from '../../lib/plaid';
+import { useResumeLink } from '../../lib/resume-link';
 import { usage } from '../../usage/tracker';
 import { useCanWrite } from '../../state/connectivity';
 import { Page } from './common';
@@ -166,37 +167,6 @@ function FinishSetup({ id, institution }: { id: string; institution: string }) {
   );
 }
 
-/**
- * Hosted Link that left this page for Plaid's site, or outlived the app: on the way back in, ask the server what it
- * came to and say so.
- */
-function useResumeLink() {
-  const qc = useQueryClient();
-  useEffect(() => {
-    let gone = false;
-    void (async () => {
-      try {
-        const r = await resumeHostedLink();
-        if (!r || gone || r.status === 'exited') return;
-        if (r.status === 'repaired' && r.connectionId) await api.refreshConnection(r.connectionId);
-        toast.show({
-          text:
-            r.status === 'linked'
-              ? 'Linked. Transactions show up in Activity in a few minutes.'
-              : 'Signed in again. Its transactions are on the way.',
-        });
-      } catch (e) {
-        if (!gone) toast.show({ text: errorMessage(e) });
-      } finally {
-        if (!gone) void qc.invalidateQueries();
-      }
-    })();
-    return () => {
-      gone = true;
-    };
-  }, [qc]);
-}
-
 export function ConnectionsScreen() {
   useScreen('settings.connections');
   useResumeLink();
@@ -256,6 +226,7 @@ export function ConnectionsScreen() {
                     {repair && (
                       <SoftLink
                         to={`/accounts/repair/${it.id}`}
+                        search={{ close: '/settings/connections' }}
                         track="connections.repair"
                         className="self-start"
                       >
