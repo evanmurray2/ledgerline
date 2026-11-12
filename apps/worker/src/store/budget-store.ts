@@ -22,6 +22,7 @@ import {
   sealedWebhook,
   type FetchDeps,
 } from '../seal/fetch-job.js';
+import { cutoverApi } from '../seal/cutover-routes.js';
 import { runDeps } from '../seal/runs.js';
 import { parseKeyring } from '@ledgerline/platform';
 import { dev } from '../dev-seed.js';
@@ -89,6 +90,7 @@ export class BudgetStore extends DurableObject<Env> {
   private cachedBudgetId: string | null = null;
   private app: Hono<AppEnv> | null = null;
   private logApp: Hono<AppEnv> | null = null;
+  private cutoverApp: Hono<AppEnv> | null = null;
   private devApp: Hono<AppEnv> | null = null;
   private readonly usage: UsageCounter;
   /** Fair use: whether to report usage; null until read from storage or set by a request. */
@@ -171,8 +173,30 @@ export class BudgetStore extends DurableObject<Env> {
         JSON.stringify({ error: 'not_member', message: 'You don’t have access to this budget.' }),
         { status: 403, headers: { 'content-type': 'application/json' } },
       );
-    // A sealed budget lives in its log: those routes, and no others (seal/log-routes.ts).
     const path = new URL(request.url).pathname;
+    // The cutover (seal/cutover-routes.ts): in front of the marks, since a frozen budget refuses every other write.
+    if (path.startsWith('/api/cutover/')) {
+      this.cutoverApp ??= withCaller((app) => app.route('/api', cutoverApi));
+      this.usage.request();
+      try {
+        const r = await this.serve(this.cutoverApp, request, caller);
+        // After the way back, the old daily jobs run again; after the seal, the sealed budget's own.
+        if (r.ok && request.method === 'POST' && /\/cutover\/(back|seal)$/.test(path)) {
+          if (!this.marks().sealed) await ensureRecurring(this.enqueue, Date.now(), this.timeZone());
+          else
+            await this.enqueue(SEALED_BACKSTOP, {
+              id: SEALED_BACKSTOP_ID,
+              runAt: Date.now(),
+              recurring: true,
+            });
+          await this.runner.scheduleNext(Date.now());
+        }
+        return r;
+      } finally {
+        this.reportUsage(caller.budgetId);
+      }
+    }
+    // A sealed budget lives in its log: those routes, and no others (seal/log-routes.ts).
     if (this.marks().sealed && (path === '/api/log' || path.startsWith('/api/log/'))) {
       this.logApp ??= withCaller((app) => app.route('/api', logApi));
       await this.rearmSealed();

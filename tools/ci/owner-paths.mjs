@@ -30,10 +30,13 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('owner-paths.m
   const files = git('diff', '--name-only', `${base}...HEAD`).split('\n').filter(Boolean);
   const owned = ownedFiles(files, ownerPaths(readFileSync(`${root}.github/CODEOWNERS`, 'utf8')));
   if (owned.length === 0) {
-    console.log('No owner paths changed: this pull request can be merged by its session.');
+    console.log('No key or shipping path changed.');
   } else {
-    console.log('Only the owner merges this pull request. It changes:');
+    console.log(
+      'This pull request changes key or shipping paths (a session merges it like any other, D-94):',
+    );
     for (const f of owned) console.log(`  ${f}`);
+    // For a script that wants to know: 1 says such a path changed. It blocks nothing.
     process.exit(1);
   }
 }

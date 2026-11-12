@@ -31,7 +31,7 @@ export interface ShadowReport {
 export type ShadowEvent = { run: InboxRun } | { scan: InboxScan };
 
 /** Reads a bank page (`parsePage`); it never calls the bank. */
-const reader = new PlaidProvider({ clientId: 'device', secret: 'device', env: 'sandbox' });
+export const reader = new PlaidProvider({ clientId: 'device', secret: 'device', env: 'sandbox' });
 
 /**
  * What filing on a device doesn't write, or writes from its own clock: the fetch state of a link (the server's

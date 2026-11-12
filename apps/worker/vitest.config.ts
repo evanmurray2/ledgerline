@@ -19,6 +19,7 @@ export default defineConfig(() => ({
           DEV_ROUTES: '1',
           EDIT_WAIT_MS: '400',
           FAKE_NOW: '2026-11-14T20:00:00Z',
+          CUTOVER: 'any',
         },
       },
     }),

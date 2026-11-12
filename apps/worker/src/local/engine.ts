@@ -25,7 +25,13 @@ import { checkIdentityDb } from '../maintenance.js';
 import { splitStatements } from '../store/adapter.js';
 import { BUDGET_MIGRATIONS } from '../store/migrations.gen.js';
 import { SYNC_FORMAT, SYNC_TABLES, triggerNames, type SyncTable } from '../sync-tables.js';
-import type { BankLogBatch, SyncPage, SyncRow } from '../routes/sync.js';
+import {
+  REST_TABLES,
+  type BankLogBatch,
+  type RestBatch,
+  type SyncPage,
+  type SyncRow,
+} from '../routes/sync.js';
 import { Shadow, type Fork, type ShadowEvent, type ShadowReport } from './shadow.js';
 import { CSRF_HEADER } from '@ledgerline/contracts';
 
@@ -706,6 +712,8 @@ export class LocalEngine {
       this.db.prepare(`PRAGMA defer_foreign_keys = ON`),
       ...[...SYNC_TABLES].reverse().map((t) => this.db.prepare(`DELETE FROM ${t.name}`)),
       ...derivedTables.map((t) => this.db.prepare(`DELETE FROM ${t}`)),
+      // The rest of the budget (the undo record, the moved keys) is read anew with the download.
+      ...REST_TABLES.map((t) => this.db.prepare(`DELETE FROM ${t.name}`)),
       this.setState({ ...EMPTY }),
     ]);
     // The rows kept for taking a queued edit out were this copy's: they mean nothing to the next download, even
@@ -715,7 +723,9 @@ export class LocalEngine {
     // The next download already holds every bank update so far: the shadow run starts over from there. A queue
     // that was out of the copy between two pages is simply the queue again.
     await this.db
-      .prepare(`DELETE FROM local_state WHERE key IN ('shadow_seq', 'shadow_scan', 'held_queue', 'filing')`)
+      .prepare(
+        `DELETE FROM local_state WHERE key IN ('shadow_seq', 'shadow_scan', 'held_queue', 'filing', 'rest')`,
+      )
       .run();
   }
 
@@ -1135,6 +1145,75 @@ export class LocalEngine {
     ];
     for (const part of chunks(stmts, 500)) await this.db.batch(part);
     return { rows: batch.pages.length + batch.events.length, caughtUp: !batch.more };
+  }
+
+  /**
+   * What to ask the server for next of the rest of the budget (routes/sync.ts `GET /sync/rest`): a table and the
+   * key of the last row this copy took of it. Null: every table was read to its end. Edits made later add rows,
+   * so the copy asks again before the cutover (`restAgain`).
+   */
+  async restRequest(): Promise<{ table: string; after: string | number | null } | null> {
+    const st = await this.restState();
+    for (const t of REST_TABLES) {
+      const s = st[t.name];
+      if (!s?.done) return { table: t.name, after: s?.after ?? null };
+    }
+    return null;
+  }
+
+  /** Writes one batch of the rest of the budget into the copy. */
+  async applyRest(batch: RestBatch): Promise<{ rows: number; caughtUp: boolean }> {
+    if (!REST_TABLES.some((t) => t.name === batch.table)) throw new RowsRefused('not a table of the rest');
+    if (batch.rows.some((r) => r.t !== batch.table || r.d === null))
+      throw new RowsRefused('not a row of the table');
+    await this.checkRows(batch.rows, RECORDED_TABLES, true);
+    const st = await this.restState();
+    // A batch that says "more" and brings nothing would be asked for again for ever.
+    if (batch.more && !batch.rows.length) throw new RowsRefused('an empty batch that says more');
+    st[batch.table] = { after: batch.after ?? st[batch.table]?.after ?? null, done: !batch.more };
+    const stmts: Stmt[] = [];
+    for (const r of batch.rows) stmts.push(...this.rowStatements(r, RECORDED_TABLES));
+    stmts.push(
+      this.db
+        .prepare(
+          `INSERT INTO local_state (key, value) VALUES ('rest', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+        )
+        .bind(JSON.stringify(st)),
+    );
+    for (const part of chunks(stmts, 500)) await this.db.batch(part);
+    return { rows: batch.rows.length, caughtUp: (await this.restRequest()) === null };
+  }
+
+  /** Reads the rest of the budget on from where each table ended: new rows came since. */
+  async restAgain(): Promise<void> {
+    const st = await this.restState();
+    const stmts: Stmt[] = [];
+    for (const t of REST_TABLES) {
+      const s = st[t.name];
+      if (!s) continue;
+      s.done = false;
+      // A table whose key is a growing number only gains rows past the last one read. Any other is read whole
+      // again: on the server its rows are also replaced and deleted, in no order of key.
+      if (!t.number) {
+        s.after = null;
+        stmts.push(this.db.prepare(`DELETE FROM ${t.name}`));
+      }
+    }
+    stmts.push(
+      this.db
+        .prepare(
+          `INSERT INTO local_state (key, value) VALUES ('rest', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+        )
+        .bind(JSON.stringify(st)),
+    );
+    await this.db.batch(stmts);
+  }
+
+  private async restState(): Promise<Record<string, { after: string | number | null; done: boolean }>> {
+    const r = await this.db
+      .prepare(`SELECT value FROM local_state WHERE key = 'rest'`)
+      .first<{ value: string }>();
+    return r ? (JSON.parse(r.value) as Record<string, { after: string | number | null; done: boolean }>) : {};
   }
 
   /** Writes rows another copy recorded, and marks what derive() must work out again. */
