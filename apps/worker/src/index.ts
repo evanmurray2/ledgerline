@@ -1,3 +1,5 @@
+import { parseKeyring, tokenKeyBytes } from '@ledgerline/platform';
+import { serverKeys, toHex } from '@ledgerline/seal';
 import { Hono } from 'hono';
 import type { Env } from './env.js';
 import type { AppEnv } from './http/context.js';
@@ -32,6 +34,23 @@ app.use('/api/auth/*', async (c, next) => {
   if (ip && c.env.AUTH_LIMITER && !(await c.env.AUTH_LIMITER.limit({ key })).success)
     return c.json({ error: 'rate_limited', message: 'Too many tries. Wait a minute and try again.' }, 429);
   return next();
+});
+// The Worker's public run-signing keys (docs/privacy-keys.md 9.1), by key number: what a device checks a bank
+// run's signature with. They are public by design: the app is built with the ones it accepts, and this is where a
+// release reads them from. No secret is in the answer, and none can be worked out from it.
+app.get('/api/run-keys', async (c) => {
+  const ring = parseKeyring(c.env.TOKEN_KEYS, c.env.TOKEN_KEY_CURRENT);
+  const keys: { n: number; pub: string }[] = [];
+  for (const [n, secret] of Object.entries(ring.keys)) {
+    const raw = await tokenKeyBytes(secret);
+    try {
+      const k = await serverKeys(raw, Number(n));
+      keys.push({ n: Number(n), pub: toHex((k.runSign as { pub: Uint8Array }).pub) });
+    } finally {
+      raw.fill(0);
+    }
+  }
+  return c.json({ current: ring.current, keys }, 200, { 'cache-control': 'public, max-age=3600' });
 });
 // The Directory and each budget's Durable Object serve the API (docs/multi-user.md 5.1).
 app.all('/api/*', async (c) => {
