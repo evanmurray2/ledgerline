@@ -23,10 +23,13 @@ export const OWED_ITEMS_SQL = `SELECT e.id, e.txn_key, e.amount, e.canceled_at, 
  * as OWED_ITEMS_SQL picks it. The money is in Ready to Assign: a category's list shows it so you can see the
  * payback, not because the category counts it.
  */
-export const paybacksIn = (
-  p: string,
+export const paybacksIn = (p: string) => paybacksWhere(`e.category_id = ${p}`);
+
+/** Keys of money in that paid back an owed item whose category (`e.category_id`) meets `cond`. */
+export const paybacksWhere = (
+  cond: string,
 ) => `SELECT l.from_key FROM txn_link l JOIN (${OWED_ITEMS_SQL}) e ON e.id = l.to_key
-  WHERE l.budget_id = ?1 AND l.kind = 'reimbursement_of' AND l.undone_at IS NULL AND e.category_id = ${p}`;
+  WHERE l.budget_id = ?1 AND l.kind = 'reimbursement_of' AND l.undone_at IS NULL AND ${cond}`;
 
 export const PAYBACK_LINKS_SQL = `SELECT from_key, to_key, amount FROM txn_link WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND undone_at IS NULL`;
 

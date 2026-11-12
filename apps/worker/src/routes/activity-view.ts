@@ -22,6 +22,7 @@ import {
   owedLabels,
   owedStatements,
   paybacksIn,
+  paybacksWhere,
   type OwedItemRow,
   type PaybackLinkRow,
 } from '../views/owed-rows.js';
@@ -117,10 +118,14 @@ function shiftDate(d: string, n: number): string {
   return t.toISOString().slice(0, 10);
 }
 
-/** A search matches a row's category name too, split lines included. */
+/**
+ * A search matches a row's category name too: split lines included, and money in that paid back an owed purchase
+ * in a category with that name.
+ */
 const CATEGORY_MATCH = `category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND lower(name) LIKE ?3 ESCAPE '\\')
          OR key IN (SELECT sp.txn_key FROM txn_split sp JOIN category c ON c.id = sp.category_id
-                    WHERE sp.budget_id = ?1 AND lower(c.name) LIKE ?3 ESCAPE '\\')`;
+                    WHERE sp.budget_id = ?1 AND lower(c.name) LIKE ?3 ESCAPE '\\')
+         OR key IN (${paybacksWhere(`e.category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND lower(name) LIKE ?3 ESCAPE '\\')`)})`;
 
 /**
  * One category's rows (Reports and the category sheet open Activity on a category, by id): the row's own category,
@@ -296,6 +301,15 @@ activityViewRoutes.get('/activity', async (c) => {
   const qSplits = new Set(
     splitRows.filter((r) => r.category_id && qCats.has(r.category_id)).map((r) => r.txn_key),
   );
+  // Money in that paid back an owed purchase in one of those categories (as CATEGORY_MATCH picks posted rows).
+  const qItems = new Set(
+    (owed!.results as OwedItemRow[])
+      .filter((o) => o.category_id && qCats.has(o.category_id))
+      .map((o) => o.id),
+  );
+  const qPaybacks = new Set(
+    (links!.results as PaybackLinkRow[]).filter((l) => qItems.has(l.to_key)).map((l) => l.from_key),
+  );
   // What each owed purchase still has owed ("$25 owed", then "Paid"), its share, and what each payback paid back.
   const labels = owedLabels(
     owed!.results as OwedItemRow[],
@@ -331,7 +345,8 @@ activityViewRoutes.get('/activity', async (c) => {
       t.payee.toLowerCase().includes(q) ||
       (qAmount !== null && plainAmount(t.amount).includes(qAmount)) ||
       (!!t.category_id && qCats.has(t.category_id)) ||
-      qSplits.has(t.key));
+      qSplits.has(t.key) ||
+      qPaybacks.has(t.key));
   const attnRows = (attn!.results as TxRow[]).filter(match);
   const moneyToMatch = attnRows
     .filter((t) => t.wtm_state === 'waiting' || t.wtm_state === 'send_back')

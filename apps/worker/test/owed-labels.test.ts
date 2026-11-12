@@ -86,6 +86,11 @@ describe('owed labels on list rows', () => {
       await app(`/api/activity?category=${encodeURIComponent(out.category_id)}`)
     ).json()) as ActivityView;
     expect(all.posted.find((r) => r.key === inflow.key)).toMatchObject({ badge: `Paid back · ${out.name}` });
+    // A search for the category's name finds the payback too.
+    const byName = (await (
+      await app(`/api/activity?q=${encodeURIComponent(out.name)}`)
+    ).json()) as ActivityView;
+    expect(byName.posted.some((r) => r.key === inflow.key)).toBe(true);
     // The sheet lists a few rows: the payback is there unless newer rows of the month push it out.
     if (sheet.recent.some((r) => r.key === inflow.key))
       expect(sheet.recent.find((r) => r.key === inflow.key)).toMatchObject({
