@@ -103,12 +103,12 @@ export async function samePurchaseCards(
 }
 
 /** An entry whose cover is in force: the bank row it covers is listed, and no posted row has claimed it. */
-const COVERING = (m: string) => `${m}.deleted_at IS NULL AND ${m}.matched_txn_key IS NULL AND EXISTS (
+export const COVERING = (m: string) => `${m}.deleted_at IS NULL AND ${m}.matched_txn_key IS NULL AND EXISTS (
   SELECT 1 FROM bank_txn b WHERE b.budget_id = ${m}.budget_id AND b.provider_txn_id = ${m}.covers_provider_txn_id
     AND b.pending = 1 AND b.removed_at IS NULL
     AND NOT EXISTS (SELECT 1 FROM bank_txn x WHERE x.txn_key = b.txn_key AND x.pending = 0 AND x.removed_at IS NULL))`;
 
-interface BankDb {
+export interface BankDb {
   provider_txn_id: string;
   txn_key: string;
   pending: number;
@@ -118,28 +118,28 @@ interface BankDb {
   claimed: number;
 }
 
-const BANK_SQL = `SELECT b.provider_txn_id, b.txn_key, b.pending, b.amount, o.estimated_amount,
+export const BANK_SQL = `SELECT b.provider_txn_id, b.txn_key, b.pending, b.amount, o.estimated_amount,
     EXISTS (SELECT 1 FROM bank_txn x WHERE x.txn_key = b.txn_key AND x.pending = 0 AND x.removed_at IS NULL
       AND x.provider_txn_id != b.provider_txn_id) AS claimed
   FROM bank_txn b LEFT JOIN txn_overlay o ON o.txn_key = b.txn_key
   WHERE b.budget_id = ?1 AND b.removed_at IS NULL`;
 
-interface EntryDb extends Entry {
+export interface EntryDb extends Entry {
   account_id: string;
   date: string;
   payee_name: string;
   covering: number;
 }
 
-const ENTRY_SQL = `SELECT m.txn_key, m.amount, m.covers_provider_txn_id, m.account_id, m.date, m.payee_name,
+export const ENTRY_SQL = `SELECT m.txn_key, m.amount, m.covers_provider_txn_id, m.account_id, m.date, m.payee_name,
     (${COVERING('m')}) AS covering
   FROM manual_pending m WHERE m.budget_id = ?1 AND m.deleted_at IS NULL AND m.matched_txn_key IS NULL
     AND m.kind IN ('pending', 'upcoming')`;
 
-const changed = () => new HttpError(409, 'changed', CHANGED);
+export const changed = () => new HttpError(409, 'changed', CHANGED);
 
 /** Runs writes that move bank rows' keys behind the processing watermark, as processing does. */
-async function fenced(s: Scoped, stmts: Stmt[]): Promise<void> {
+export async function fenced(s: Scoped, stmts: Stmt[]): Promise<void> {
   const b = await s.first<{ processed_through: number }>(
     `SELECT processed_through FROM budget WHERE id = ?1`,
   );

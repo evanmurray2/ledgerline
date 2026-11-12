@@ -1,14 +1,18 @@
 // On a transaction's sheet: the other row of a pair (your entry's cover of a bank row, the posted charge that took your
 // entry, or the posted charge that took the bank's pending row without the bank's link), with Not the same, which
-// undoes the pair and remembers No (docs/payee-names.md 9.1).
+// undoes the pair and remembers No, with Undo in its toast (docs/payee-names.md 9.1).
 import type { TxnSheet } from '@ledgerline/contracts';
+import { useQueryClient } from '@tanstack/react-query';
+import { ApiError, errorMessage } from '../api/client';
 import { api } from '../api/endpoints';
-import { useMoneyMutation } from '../api/hooks';
+import { invalidateMoney, useMoneyMutation } from '../api/hooks';
 import { toast } from '../components/Toast';
+import { usage } from '../usage/tracker';
 import { ErrorNote, Icon, Label, SoftButton } from '../components/ui';
 
 export function PairedWith({ t, close }: { t: TxnSheet; close: () => void }) {
   const undo = useMoneyMutation(api.notSame);
+  const qc = useQueryClient();
   if (!t.pairedWith) return null;
   const other = t.pairedWith.label;
   const notSame = (
@@ -20,7 +24,23 @@ export function PairedWith({ t, close }: { t: TxnSheet; close: () => void }) {
       disabled={undo.isPending}
       onClick={async () => {
         await undo.mutateAsync(t.key);
-        toast.show({ text: 'Kept as two purchases' });
+        const key = t.key;
+        toast.show({
+          text: 'Kept as two purchases',
+          // The sheet is closed by then, so this runs outside it.
+          undo: async () => {
+            try {
+              await api.notSameUndo(key);
+              usage.undo('not_same');
+              toast.show({ text: 'Paired as one purchase' });
+            } catch (e) {
+              toast.show({
+                text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t undo that. Try again.',
+              });
+            }
+            invalidateMoney(qc);
+          },
+        });
         close();
       }}
     >

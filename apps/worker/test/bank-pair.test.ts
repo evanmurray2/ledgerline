@@ -10,12 +10,13 @@ const { db, setup, sync, heal, keyOf, overlay, listed, counted, asks, call } = b
   'bank-pair',
   'b_bp',
   'con_bp',
-  3,
+  5,
   NOW,
 );
 const sheet = async (key: string) =>
   (await call('GET', `/api/transactions/${encodeURIComponent(key)}`)).json as TxnSheet;
 const notSame = (key: string) => call('POST', `/api/transactions/${encodeURIComponent(key)}/not-same`);
+const undo = (key: string) => call('POST', `/api/transactions/${encodeURIComponent(key)}/not-same/undo`);
 const link = (from: string) =>
   db
     .prepare(`SELECT created_by, undone_at FROM txn_link WHERE from_key = ?1 AND kind = 'pending_match'`)
@@ -124,5 +125,69 @@ describe('Not the same on two bank rows', () => {
     expect(await keyOf('ln')).toBe('p:ln-p');
     // A row on its own key isn't paired.
     expect((await notSame('p:bb')).status).toBe(422);
+  });
+
+  it('Undo pairs them again as Yes would, and forgets the No', async () => {
+    await sync([pend('ud-p', 4, 30, '2026-11-08', 'RAMEN', { merchant: 'Ramen Bar' })]);
+    await db
+      .prepare(
+        `UPDATE txn_overlay SET category_id = 'dining', categorized_by = 'user' WHERE txn_key = 'p:ud-p'`,
+      )
+      .run();
+    await sync([
+      plaidTxn('ud', 4, 35, '2026-11-09', 'RAMEN BAR SF', {
+        merchant: 'Ramen Bar',
+        authorized_date: '2026-11-08',
+      }),
+    ]);
+    expect(await keyOf('ud')).toBe('p:ud-p');
+    expect((await notSame('p:ud-p')).status).toBe(200);
+    expect(await counted(4)).toEqual({ spent: -3500 - 3000, pending: -3000 });
+
+    expect((await undo('p:ud-p')).status).toBe(200);
+    expect(await keyOf('ud')).toBe('p:ud-p');
+    expect(await counted(4)).toEqual({ spent: -3500, pending: 0 });
+    expect(await overlay('p:ud-p')).toMatchObject({ category_id: 'dining' });
+    expect(
+      await db
+        .prepare(
+          `SELECT created_by FROM txn_link WHERE from_key = 'p:ud' AND kind = 'pending_match' AND undone_at IS NULL`,
+        )
+        .all(),
+    ).toMatchObject({ results: [{ created_by: 'user' }] });
+    expect(await db.prepare(`SELECT 1 FROM not_same WHERE a_key = 'p:ud'`).first()).toBeNull();
+    expect((await sheet('p:ud-p')).pairedWith).toEqual({ label: 'Bank pending: Ramen Bar · Nov 8' });
+    // A second Undo changes nothing; the heal step and the next sync keep the pair.
+    expect((await undo('p:ud-p')).status).toBe(200);
+    await heal();
+    await sync([
+      plaidTxn('ud', 4, 35, '2026-11-09', 'RAMEN BAR SF', {
+        merchant: 'Ramen Bar',
+        authorized_date: '2026-11-08',
+      }),
+    ]);
+    expect(await keyOf('ud')).toBe('p:ud-p');
+    expect(await counted(4)).toEqual({ spent: -3500, pending: 0 });
+    // Not the same works again after an Undo.
+    expect((await notSame('p:ud-p')).status).toBe(200);
+    expect(await keyOf('ud')).toBe('p:ud');
+  });
+
+  it('Undo after the bank removed the pending row: the posted row takes its key again', async () => {
+    await sync([pend('ur-p', 5, 40, '2026-11-10', 'SQ *POKE')]);
+    await sync([plaidTxn('ur', 5, 48, '2026-11-11', 'POKE BOWL SF', { authorized_date: '2026-11-10' })]);
+    const a = (await asks()).find((x) => x.ref_key === 'p:ur')!;
+    await call('POST', `/api/same-purchase/${a.id}`, { answer: 'yes', key: 'p:ur-p' });
+    await sync([], [removal('ur-p', 5)]);
+    expect((await notSame('p:ur-p')).status).toBe(200);
+    expect(await keyOf('ur')).toBe('p:ur');
+    expect((await undo('p:ur-p')).status).toBe(200);
+    expect(await keyOf('ur')).toBe('p:ur-p');
+    expect(await counted(5)).toEqual({ spent: -4800, pending: 0 });
+    expect((await overlay('p:ur-p'))?.orphaned_at ?? null).toBeNull();
+  });
+
+  it('Undo refuses a row that was never said Not the same', async () => {
+    expect((await undo('p:ln-p')).status).toBe(404);
   });
 });

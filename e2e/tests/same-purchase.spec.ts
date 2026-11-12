@@ -1,5 +1,5 @@
 // "Same purchase?" and Not the same (docs/payee-names.md 9.1) in mock mode: the card's Yes and No on Activity's
-// Needs attention, and Not the same on your entry's sheet and on a posted row paired with the bank's pending row. The `samepurchase` scenario (apps/web/src/mock/server.ts).
+// Needs attention, and Not the same (with its Undo) on your entry's sheet and on a posted row paired with the bank's pending row. The `samepurchase` scenario (apps/web/src/mock/server.ts).
 import { expect, test, type Page } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
@@ -54,6 +54,19 @@ test('Not the same on your entry’s sheet ends its cover: the bank’s row coun
     .click();
   await expect(page.getByText('Kept as two purchases')).toBeVisible();
   await expect(page.getByText('TACOS EL PASTOR')).toBeVisible();
+});
+
+test('Undo after Not the same pairs them again: the bank’s row stops showing', async ({ page }) => {
+  await page.goto('/activity?filter=pending&mock=samepurchase');
+  await page.getByRole('link', { name: /^Tacos/ }).click();
+  await page
+    .getByRole('button', { name: 'Not the same: Tacos and Bank pending: TACOS EL PASTOR · Nov 12 · $12.50' })
+    .click();
+  await expect(page.getByText('TACOS EL PASTOR')).toBeVisible();
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByText('Paired as one purchase')).toBeVisible();
+  await expect(page.getByText('TACOS EL PASTOR')).toHaveCount(0);
+  await expect(page.getByText('Tacos', { exact: true })).toBeVisible();
 });
 
 test('Not the same on a posted row paired with the bank’s pending row: the pending row counts again', async ({
