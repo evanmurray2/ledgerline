@@ -102,7 +102,7 @@ export function MatchScreen() {
               <SecondaryButton
                 mutates="offline"
                 track="match.income"
-                className="flex-1"
+                className="shrink-0 whitespace-nowrap"
                 onClick={() => void submit(true)}
               >
                 It’s income
@@ -110,7 +110,7 @@ export function MatchScreen() {
               <PrimaryButton
                 mutates="offline"
                 track="match.apply"
-                className="flex-[2]"
+                className="min-w-0 flex-1"
                 disabled={matched === 0}
                 why={matched === 0 ? 'Pick what it pays back' : ''}
                 onClick={() => void submit(false)}

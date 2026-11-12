@@ -169,9 +169,11 @@ transactionRoutes.get('/transactions/:key', async (c) => {
     // 'rule' and 'payee' are only on rows categorized before D-60; they keep their label.
     categorizedBy:
       t.categorized_by === 'rule'
-        ? `Rule: ${ruleName ?? 'rule'}`
+        ? ruleName
+          ? `the rule “${ruleName}”`
+          : 'a rule'
         : t.categorized_by === 'payee'
-          ? 'Remembered for this payee'
+          ? 'your past choice for this payee'
           : t.categorized_by === 'user'
             ? 'You'
             : null,

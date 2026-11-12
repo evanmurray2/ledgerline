@@ -350,15 +350,8 @@ export function AccountsScreen() {
                         >
                           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                             <span className="text-base font-semibold">{a.name}</span>
-                            <span
-                              className={cx(
-                                'text-xs',
-                                // Needs a repair: the same warn color as the repair banner.
-                                a.connectionStatus !== 'ok' ? 'text-warn-fg' : 'text-muted',
-                              )}
-                            >
-                              {a.meta}
-                            </span>
+                            {/* Stays gray when a bank needs you: "may be out of date" on the right says it once. */}
+                            <span className="text-xs text-muted">{a.meta}</span>
                           </span>
                           <span className="flex shrink-0 flex-col items-end gap-0.5">
                             <span

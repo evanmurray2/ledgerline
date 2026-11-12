@@ -87,7 +87,7 @@ describe('Activity: removed by the bank', () => {
 describe('Transaction sheet', () => {
   it('a row a rule set before rules were removed keeps its chip (D-60)', async () => {
     show('/activity/txn/n-tj');
-    await screen.findByText(/^Set by Rule/, undefined, T);
+    await screen.findByText(/^Set by (a rule|the rule)/, undefined, T);
   });
 
   it('a pending row shows your estimate next to the bank amount', async () => {

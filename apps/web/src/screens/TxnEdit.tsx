@@ -337,7 +337,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           <span className="text-xs text-muted">
             {cat === origCat
               ? `Set by ${t.categorizedBy}.`
-              : `Set by you. ${t.categorizedBy} won’t change it back.`}
+              : `Set by you. ${t.categorizedBy[0]!.toUpperCase()}${t.categorizedBy.slice(1)} won’t change it back.`}
           </span>
         )}
       </div>

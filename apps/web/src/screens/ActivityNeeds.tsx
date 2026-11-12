@@ -154,7 +154,6 @@ export function NeedsCategory({
                     </Button>
                     <SoftButton
                       mutates="offline"
-                      tone="filled"
                       track="activity.category.ok"
                       aria-label={`Use ${sug.name} for ${r.payee} ${formatCents(r.amount)}`}
                       onClick={() => onAccept(r)}
