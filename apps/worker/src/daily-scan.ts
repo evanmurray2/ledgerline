@@ -1,17 +1,41 @@
 // The daily scan, run by each budget's daily_scan job (store/budget-jobs.ts).
 import type { Stmt } from '@ledgerline/db/sql';
-import { localDate, type Month } from '@ledgerline/domain';
+import { localDate, nextLocalTime, type Month } from '@ledgerline/domain';
 import type { Env } from './env.js';
 import { Scoped } from './db/scoped.js';
 import { budgetMeta } from './ledger/ledger.js';
-import { ulid } from '@ledgerline/platform';
+import { seededUlid } from '@ledgerline/platform';
 import { bumpVersion } from './http/version.js';
 
+/** The hour of the daily scan, in the budget's time zone. */
+export const SCAN_HOUR = 5;
+
+/**
+ * The time of the scan that `clock` belongs to: the last 5:00 in the budget's time zone at or before it. A scan
+ * writes this time, not the moment its job happened to run, so that a device that runs the same day's scan
+ * writes the same rows (docs/privacy.md 5.4: "a scan uses 5:00 on its day").
+ */
+export function scanTime(clock: number, timeZone: string): number {
+  // The newest 5:00 that is not after `clock`. Stepping from two days back is right on a 23- or 25-hour day too.
+  let t = nextLocalTime(clock - 2 * 86_400_000, timeZone, SCAN_HOUR, 0);
+  for (let i = 0; i < 4; i++) {
+    const next = nextLocalTime(t, timeZone, SCAN_HOUR, 0);
+    if (next > clock) break;
+    t = next;
+  }
+  return t;
+}
+
 /** Upcoming entries count from their date; repeating ones schedule their next occurrence. Vanished pending rows get an alert. */
-export async function dailyScan(env: Env, budgetId: string, now: number): Promise<{ materialized: number }> {
+export async function dailyScan(
+  env: Env,
+  budgetId: string,
+  clock: number,
+): Promise<{ materialized: number }> {
   const s = new Scoped(env.DB, budgetId, 'system');
   const meta = await budgetMeta(s);
   if (!meta) return { materialized: 0 };
+  const now = scanTime(clock, meta.timeZone);
   const today = localDate(now, meta.timeZone);
   const due = await s.all<{
     txn_key: string;
@@ -36,12 +60,13 @@ export async function dailyScan(env: Env, budgetId: string, now: number): Promis
       d.repeats === 'monthly'
         ? new Date(Date.UTC(y, mo, Math.min(dd, 28)))
         : new Date(Date.UTC(y + 1, mo - 1, dd));
-    const key = `m:${ulid(now)}`;
+    // Named from the entry it repeats and the scan's time, never at random (docs/privacy.md 5.3: ids are an input).
+    const key = `m:${seededUlid(now, `repeat:${d.txn_key}`, 1)}`;
     w.push(
       s.q(
         `INSERT INTO manual_pending (id, budget_id, txn_key, account_id, kind, date, amount, payee_name, repeats, created_at, updated_at)
          VALUES (?2, ?1, ?3, ?4, 'upcoming', ?5, ?6, ?7, ?8, ?9, ?9)`,
-        ulid(now),
+        seededUlid(now, `repeat:${d.txn_key}`, 0),
         key,
         d.account_id,
         next.toISOString().slice(0, 10),
