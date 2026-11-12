@@ -244,6 +244,9 @@ function recordTriggers(t: SyncTable, columns: readonly string[]): string[] {
   });
 }
 
+/** Rows that no honest writer makes (LocalEngine checkRows): nothing of them was written. */
+export class RowsRefused extends Error {}
+
 /** An edit the engine ran and recorded. */
 export interface Recorded {
   response: Response;
@@ -274,6 +277,11 @@ export interface QueuedEdit {
    */
   undo?: SyncRow[];
   through?: number;
+  /**
+   * The rows the edit changed, as they were after it: what the edit's entry in the log holds (local/log-session.ts).
+   * Made again whenever the edit is run again.
+   */
+  rows?: SyncRow[];
   /**
    * The server may hold this edit: the app is sending it, or sent it and lost the answer. The copy never runs
    * such an edit again by itself; a sync brings its rows.
@@ -346,7 +354,12 @@ export class LocalEngine {
    * Applies one sync page in one transaction. A page from another epoch or format, when the copy already holds
    * data, throws the copy away first; the caller then starts a full download (nextRequest() says so).
    */
-  async apply(page: SyncPage, receivedAt = this.deviceNow()): Promise<ApplyResult> {
+  async apply(
+    page: SyncPage,
+    receivedAt = this.deviceNow(),
+    /** The tables the page may write: a sync's, or everything an entry of the log carries (local/log-session.ts). */
+    tables: readonly SyncTable[] = SYNC_TABLES,
+  ): Promise<ApplyResult> {
     const st = await this.state();
     const fresh = st.epoch === null && st.through === 0 && st.cursor === null;
     if (!fresh && (page.epoch !== st.epoch || page.format !== st.format)) {
@@ -357,6 +370,7 @@ export class LocalEngine {
     // (which is then the server's rows as of `st.through`), the page is written, and the queue is run again on
     // top (docs/privacy.md 5.3). Only when that can be done exactly. A sync of several pages takes the queue out
     // before its first page and runs it again after its last: `held` is the queue while it is out.
+    await this.checkRows(page.rows, tables, tables !== SYNC_TABLES);
     let held = fresh ? null : await this.heldQueue();
     if (!held && !fresh) {
       const queue = await this.exactQueue(st, page);
@@ -371,7 +385,7 @@ export class LocalEngine {
     const todo = await this.pendingDerive();
     if (st.cursor || page.cursor || st.through === 0) todo.full = true;
     if (!todo.full) await this.noteChanges(page.rows, todo);
-    for (const r of page.rows) stmts.push(...this.rowStatements(r));
+    for (const r of page.rows) stmts.push(...this.rowStatements(r, tables));
     stmts.push(this.setPendingDerive(todo));
     const next: EngineState = {
       ...st,
@@ -397,7 +411,7 @@ export class LocalEngine {
       const mine = new Set(held.map((e) => e.id));
       const since = (await this.queue())
         .filter((e) => !mine.has(e.id))
-        .map(({ undo: _undo, through: _through, ...e }) => e);
+        .map(({ undo: _undo, through: _through, rows: _rows, ...e }) => e);
       await this.db.batch([
         this.db
           .prepare(
@@ -470,10 +484,10 @@ export class LocalEngine {
     const kept: QueuedEdit[] = [];
     const lost: QueuedEdit[] = [];
     for (const e of queue) {
-      const { undo: _undo, through: _through, ...bare } = e;
+      const { undo: _undo, through: _through, rows: _rows, ...bare } = e;
       const r = await this.record(e.method, e.path, e.body, { id: e.id, at: e.at }).catch(() => null);
       const status = r?.response.status ?? 500;
-      if (status < 300) kept.push({ ...bare, undo: r!.undo, through });
+      if (status < 300) kept.push({ ...bare, undo: r!.undo, rows: r!.rows, through });
       else if (status < 500) lost.push(e);
       else kept.push(bare);
     }
@@ -557,6 +571,59 @@ export class LocalEngine {
     }
   }
 
+  private readonly columnsOf = new Map<string, Set<string>>();
+
+  private async columns(table: string): Promise<Set<string>> {
+    let c = this.columnsOf.get(table);
+    if (!c) {
+      const info = await this.db
+        .prepare(`SELECT name FROM pragma_table_info('${table}')`)
+        .all<{ name: string }>();
+      c = new Set(info.results.map((x) => x.name));
+      this.columnsOf.set(table, c);
+    }
+    return c;
+  }
+
+  /**
+   * Refuses rows no honest writer makes, before any of them is written: a table that is not one of `tables`
+   * (`strict`: the rows of a log entry; a sync skips a table it doesn't know, as a newer server may have one), a
+   * key of the wrong length, a column the table doesn't have, a value that is not text, a number or null, or a
+   * row whose key columns differ from its key. A row's table and column names go into SQL, so they must be the
+   * copy's own names and nothing else: rows come from the server, or from another device through the log.
+   */
+  private async checkRows(
+    rows: readonly SyncRow[],
+    tables: readonly SyncTable[],
+    strict: boolean,
+  ): Promise<void> {
+    const scalar = (v: unknown) =>
+      v === null || typeof v === 'string' || (typeof v === 'number' && Number.isFinite(v));
+    const refuse = (why: string): never => {
+      throw new RowsRefused(why);
+    };
+    for (const r of rows) {
+      if (!r || typeof r.t !== 'string') return refuse('not a row');
+      const t = tables.find((x) => x.name === r.t);
+      if (!t) {
+        if (strict) refuse('a table this copy does not keep');
+        continue;
+      }
+      if (!Array.isArray(r.k) || r.k.length !== t.pk.length || !r.k.every(scalar))
+        refuse(`${t.name}: its key`);
+      if (r.d === null) continue;
+      if (typeof r.d !== 'object' || Array.isArray(r.d)) refuse(`${t.name}: not a row`);
+      const cols = await this.columns(t.name);
+      for (const [c, v] of Object.entries(r.d)) {
+        if (!cols.has(c)) refuse(`${t.name}: a column this copy does not have`);
+        if (!scalar(v)) refuse(`${t.name}: a value that is not text, a number or null`);
+      }
+      t.pk.forEach((c, i) => {
+        if (r.d![c] !== r.k[i]) refuse(`${t.name}: the row is not the one its key names`);
+      });
+    }
+  }
+
   private rowStatements(r: SyncRow, tables: readonly SyncTable[] = SYNC_TABLES): Stmt[] {
     const t = tables.find((x) => x.name === r.t);
     if (!t) return [];
@@ -604,7 +671,7 @@ export class LocalEngine {
     // The rows kept for taking a queued edit out were this copy's: they mean nothing to the next download, even
     // one that ends on the same change number.
     const q = await this.queue();
-    if (q.length) await this.putQueue(q.map(({ undo: _undo, through: _through, ...e }) => e));
+    if (q.length) await this.putQueue(q.map(({ undo: _undo, through: _through, rows: _rows, ...e }) => e));
     // The next download already holds every bank update so far: the shadow run starts over from there. A queue
     // that was out of the copy between two pages is simply the queue again.
     await this.db
@@ -785,7 +852,7 @@ export class LocalEngine {
     const r = await this.record(e.method, e.path, e.body, { id: e.id, at: e.at });
     const q = await this.queue();
     if (r.response.status < 300) {
-      q.push({ ...e, undo: r.undo, through });
+      q.push({ ...e, undo: r.undo, rows: r.rows, through });
       await this.putQueue(q);
     }
     return { response: r.response, queued: q.length };
@@ -804,6 +871,27 @@ export class LocalEngine {
   async queueDone(id: string): Promise<number> {
     const q = (await this.queue()).filter((x) => x.id !== id);
     await this.putQueue(q);
+    return q.length;
+  }
+
+  /**
+   * The log took this edit as an entry (local/log-session.ts): it leaves the queue, and the copy now stands at
+   * the log's new last entry. The edits still waiting ran on top of it, so what was kept for taking them out is
+   * still right, at the new place.
+   */
+  async queueSent(id: string, through: number): Promise<number> {
+    const st = await this.state();
+    const q = (await this.queue())
+      .filter((x) => x.id !== id)
+      .map((x) => (exactAt(x, st.through) ? { ...x, through } : x));
+    await this.db.batch([
+      this.setState({ ...st, through }),
+      this.db
+        .prepare(
+          `INSERT INTO local_state (key, value) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+        )
+        .bind(OUTBOX, JSON.stringify(q)),
+    ]);
     return q.length;
   }
 
@@ -913,6 +1001,7 @@ export class LocalEngine {
 
   /** Writes rows another copy recorded, and marks what derive() must work out again. */
   async applyRows(rows: SyncRow[]): Promise<void> {
+    await this.checkRows(rows, RECORDED_TABLES, true);
     const todo = await this.pendingDerive();
     await this.noteChanges(rows, todo);
     const stmts: Stmt[] = [this.db.prepare(`PRAGMA defer_foreign_keys = ON`)];

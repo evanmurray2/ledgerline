@@ -92,7 +92,9 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
     case 'queue':
       // Only what the app shows and sends: the rows kept for an undo stay in the engine.
       return {
-        value: (await need().engine.queue()).map(({ undo: _undo, through: _through, ...e }) => e),
+        value: (await need().engine.queue()).map(
+          ({ undo: _undo, through: _through, rows: _rows, ...e }) => e,
+        ),
       };
     case 'queueSending':
       await need().engine.queueSending(m.editId);

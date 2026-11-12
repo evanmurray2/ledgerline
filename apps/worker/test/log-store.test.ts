@@ -126,9 +126,12 @@ describe('the sealed log on the server', () => {
       stored: 'already',
     });
     const other = await new Writer().genesis();
-    expect(await logGenesis(deps(db, w.time), encodeEntry(other))).toMatchObject({
+    // A budget starts once: another first entry is refused for good, so a device doesn't try it again.
+    expect(await logGenesis(deps(db, w.time), encodeEntry(other))).toEqual({
       ok: false,
-      why: 'behind',
+      why: 'rules',
+      detail: 'a log exists',
+      retry: false,
     });
 
     // A write of two entries on top of entry 1.
@@ -173,7 +176,20 @@ describe('the sealed log on the server', () => {
     const bad = await w.edit('bad');
     const bytes = encodeEntry(bad);
     bytes[bytes.length - 80] = bytes[bytes.length - 80]! ^ 1;
-    expect(await logAppend(deps(db, w.time), 2, [encodeEntry(good), bytes])).toMatchObject({ ok: false });
+    expect(await logAppend(deps(db, w.time), 2, [encodeEntry(good), bytes])).toMatchObject({
+      ok: false,
+      why: 'rules',
+      retry: false,
+    });
+    expect(await logHead(db)).toBe(2);
+    // A signature that is not the budget's.
+    const forged = encodeEntry(good);
+    forged[forged.length - 1] = forged[forged.length - 1]! ^ 1;
+    expect(await logAppend(deps(db, w.time), 2, [forged])).toMatchObject({
+      ok: false,
+      why: 'rules',
+      retry: false,
+    });
     expect(await logHead(db)).toBe(2);
 
     // The server's clock is more than 5 minutes from the entry's.
@@ -188,7 +204,28 @@ describe('the sealed log on the server', () => {
       why: 'limit',
     });
     // Bytes that are no entry.
-    expect(await logAppend(deps(db, w.time), 2, [new Uint8Array([1, 2, 3])])).toMatchObject({ ok: false });
+    expect(await logAppend(deps(db, w.time), 2, [new Uint8Array([1, 2, 3])])).toEqual({
+      ok: false,
+      why: 'rules',
+      detail: 'not an entry',
+      retry: false,
+    });
+    // A fault that is not a refusal (here: the store can't be read) is thrown on, never answered as "refused
+    // for good".
+    const down = {
+      ...deps(db, w.time),
+      receiptHashes: async () => null,
+      db: new Proxy(db, {
+        get: (t, k) =>
+          k === 'prepare'
+            ? (sql: string) => {
+                if (sql.includes('count(*)')) throw new Error('database is down');
+                return t.prepare(sql);
+              }
+            : Reflect.get(t, k),
+      }),
+    };
+    await expect(logAppend(down, 2, [encodeEntry(good)])).rejects.toThrow('database is down');
     expect(await logHead(db)).toBe(2);
     expect((await logAppend(deps(db, w.time), 2, [encodeEntry(good)])).ok).toBe(true);
   });
