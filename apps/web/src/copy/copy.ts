@@ -1086,7 +1086,7 @@ const SEALED_SERVER = [
   /^\/api\/settings\/security(\/|$)/,
   /^\/api\/cutover\//,
   /^\/api\/settings\/connections\/(link-token|link-finish|exchange|refresh)$/,
-  /^\/api\/settings\/connections\/[^/]+\/refresh$/,
+  /^\/api\/settings\/connections\/[^/]+\/(refresh|remove)$/,
   /^\/api\/settings\/restore$/,
   /^\/api\/(usage|notes|identity-alert)$/,
   /^\/api\/sync\/shadow$/,

@@ -3,6 +3,9 @@
 **Decided by the owner** (chat, Nov 10, 2026): "I agree with B", in answer to the question in `docs/privacy.md` 14.4.
 Nothing is built yet: removing a bank at Plaid doesn't exist today (there is no `/item/remove` call, and nothing sets
 `connection.removed_at`). This takes effect when Settings → Banks → Remove is built (`docs/privacy.md` 5.5).
+Built Nov 12, 2026, for a locked budget: the server ends the Item at Plaid and forgets its token
+(`seal/sealed-routes.ts`), then the device marks the connection removed (`POST /settings/connections/:id/mark-removed`),
+and Accounts shows its accounts as "not linked" with no bank difference line.
 
 **Decision.**
 

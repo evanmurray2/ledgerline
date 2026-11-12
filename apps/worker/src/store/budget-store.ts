@@ -221,9 +221,14 @@ export class BudgetStore extends DurableObject<Env> {
       this.usage.request();
       try {
         const r = await this.serve(this.sealedApp, request, caller);
-        // A fetch the person asked for starts now, one job per link asked (seal/fetch-job.ts). The backstop's own
-        // job is not moved: a pending job keeps its time when it is queued again.
-        if (r.ok && request.method === 'POST' && /\/connections\/([^/]+\/)?refresh$/.test(path)) {
+        // A fetch the person asked for starts now, one job per link asked (seal/fetch-job.ts); so does a new link's
+        // first run, which describes it. The backstop's own job is not moved: a pending job keeps its time when it
+        // is queued again.
+        if (
+          r.ok &&
+          request.method === 'POST' &&
+          /\/connections\/(([^/]+\/)?refresh|link-finish)$/.test(path)
+        ) {
           const asked = await this.db
             .prepare(
               `SELECT id FROM bank_link WHERE fetch_requested = 1 AND mac IS NOT NULL AND provider = 'plaid' AND status = 'ok' ORDER BY id`,
@@ -505,7 +510,7 @@ export class BudgetStore extends DurableObject<Env> {
     if (o.idle) {
       const banks = this.ctx.storage.sql
         // From bank_link, not connection: a sealed budget's own tables are empty, and it must not look bank-less.
-        .exec(`SELECT count(*) AS n FROM bank_link`)
+        .exec(`SELECT count(*) AS n FROM bank_link WHERE status != 'removed'`)
         .one() as { n: number };
       if (Number(banks.n) === 0) {
         this.ctx.storage.sql.exec(`DELETE FROM job WHERE recurring = 1`);

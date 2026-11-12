@@ -2,7 +2,8 @@
 // server hands over runs it can't read: sealed pages under a manifest the Worker signed. The device checks each
 // run (`openRun`: the signature, the chain of runs, the inbox key, the link's cursor, every page), turns it into
 // the package `fileRun` files, and notes in its copy where filing stands, so that the next device to file
-// checks the next run against the same state.
+// checks the next run against the same state. A link's first run describes it (its bank and accounts): the device
+// writes the link's connection and accounts from it.
 //
 // Where filing stands is kept in the copy's `setting` table (it travels to other devices in the bank entry's
 // rows, like everything else filing writes):
@@ -22,7 +23,11 @@ import {
   type FilingState,
   type SealedRun,
 } from '@ledgerline/seal';
+import { seededUlid } from '@ledgerline/platform';
+import { Scoped } from '../db/scoped.js';
 import type { Env } from '../env.js';
+import { connectionStmts, linkedAccountStmts } from '../routes/settings/link-rows.js';
+import { readLinkDescription } from '../seal/link-description.js';
 import { fileRun, type RunPackage } from './file-run.js';
 import { alignCounter } from './shadow.js';
 
@@ -113,50 +118,20 @@ export async function fileOpened(
   const m = filed.manifest;
   const before = await filedOf(db, budgetId);
   if (m.run !== before.run + 1) throw new UnsupportedRun('not the next run');
-  // A link's first run describes a new link (its accounts): the app can't add a bank to a sealed budget yet.
-  if (filed.pages.some((p) => p.what === 3)) throw new UnsupportedRun('a new bank link');
+  const runId = `sealed:${m.run}`;
+  // A link's first run describes a new link: its bank and its accounts, which the copy doesn't hold yet.
+  const description = filed.pages.some((p) => p.what === 3);
   const conn = await db
     .prepare(`SELECT id FROM connection WHERE id IN (?1, ?2) AND removed_at IS NULL`)
     .bind(`con_${m.linkId}`, m.linkId)
     .first<{ id: string }>();
-  if (!conn) throw new UnsupportedRun('a bank link this copy does not know');
-
-  const runId = `sealed:${m.run}`;
+  if (description && conn) throw new UnsupportedRun('a new bank link this copy already has');
+  if (!description && !conn) throw new UnsupportedRun('a bank link this copy does not know');
   // What an earlier filing of this run, or of a later one, left outside the rows an undo covers (the bank log,
   // the run's own rows, the link's lock) goes first: a run filed again is filed whole, as if for the first time.
   await resetFiling(db, budgetId, before.run);
-  const pages: RunPackage['pages'] = [];
-  let accounts: ProviderAccount[] | null = null;
-  let liabilities: ProviderLiability[] = [];
-  for (const [i, p] of filed.pages.entries()) {
-    if (p.what === 0) {
-      const body = text(p.payload);
-      const read = provider.parsePage(body);
-      pages.push({
-        // Named from the run and the page, never at random: every device names it the same.
-        key: `raw/${budgetId}/${conn.id}/${runId}/${m.restart}-${String(i).padStart(4, '0')}-sealed`,
-        body,
-        nextCursor: read.nextCursor,
-        hasMore: read.hasMore,
-        sha256: 'none',
-      });
-    } else if (p.what === 1) accounts = list<ProviderAccount>(p.payload);
-    else if (p.what === 2) liabilities = list<ProviderLiability>(p.payload);
-  }
-  await alignCounter(db, budgetId);
-  await fileRun(
-    env,
-    budgetId,
-    {
-      runId,
-      connectionId: conn.id,
-      fetchedAt: m.runTime,
-      fetchSeq: before.seqBase + m.run,
-      bank: accounts ? { accounts, liabilities } : null,
-      pages,
-    },
-    provider,
-  );
+  if (description) await fileDescription(db, budgetId, filed);
+  else await fileUpdate(env, budgetId, filed, conn!.id, runId, before, provider);
   // Every record the Worker counted when it sealed the run is in the bank log now: a run is never noted as filed
   // with less.
   const logged = await db
@@ -175,6 +150,84 @@ export async function fileOpened(
   await db.batch([
     put(db, budgetId, FILED_KEY, JSON.stringify(after), m.runTime),
     put(db, budgetId, `${FILED_LINK}${m.linkId}`, toHex(m.cursorAfter), m.runTime),
+  ]);
+}
+
+/** Files a run of transactions (and the bank's answers) for a link the copy holds, with the server's own steps. */
+async function fileUpdate(
+  env: Env,
+  budgetId: string,
+  filed: FiledRun,
+  connectionId: string,
+  runId: string,
+  before: Filed,
+  provider: BankDataProvider,
+): Promise<void> {
+  const db = env.DB;
+  const m = filed.manifest;
+  const pages: RunPackage['pages'] = [];
+  let accounts: ProviderAccount[] | null = null;
+  let liabilities: ProviderLiability[] = [];
+  for (const [i, p] of filed.pages.entries()) {
+    if (p.what === 0) {
+      const body = text(p.payload);
+      const read = provider.parsePage(body);
+      pages.push({
+        // Named from the run and the page, never at random: every device names it the same.
+        key: `raw/${budgetId}/${connectionId}/${runId}/${m.restart}-${String(i).padStart(4, '0')}-sealed`,
+        body,
+        nextCursor: read.nextCursor,
+        hasMore: read.hasMore,
+        sha256: 'none',
+      });
+    } else if (p.what === 1) accounts = list<ProviderAccount>(p.payload);
+    else if (p.what === 2) liabilities = list<ProviderLiability>(p.payload);
+  }
+  await alignCounter(db, budgetId);
+  await fileRun(
+    env,
+    budgetId,
+    {
+      runId,
+      connectionId,
+      fetchedAt: m.runTime,
+      fetchSeq: before.seqBase + m.run,
+      bank: accounts ? { accounts, liabilities } : null,
+      pages,
+    },
+    provider,
+  );
+}
+
+/**
+ * Files a link's first run: the link's connection, its bank accounts and their setup (budget accounts, card payment
+ * categories, starting balances at the bank's balance), written as the server's own exchange wrote them before the
+ * budget was sealed (routes/settings/link-rows.ts), at the time the link was made. The person confirms or corrects
+ * the starting balances afterwards, as before. Ids come from the link, so every device that files the run writes
+ * the same rows.
+ */
+async function fileDescription(db: Db, budgetId: string, filed: FiledRun): Promise<void> {
+  const m = filed.manifest;
+  const page = filed.pages[0];
+  if (filed.pages.length !== 1 || page?.what !== 3) throw new UnsupportedRun('a link description');
+  const d = readLinkDescription(text(page.payload));
+  if (!d || d.linkId !== m.linkId) throw new UnsupportedRun('a link description');
+  const s = new Scoped(db, budgetId, 'bank');
+  const connectionId = `con_${m.linkId}`;
+  let n = 0;
+  const id = () => seededUlid(d.linkedAt, `link:${m.linkId}`, n++);
+  const accounts = await linkedAccountStmts(s, connectionId, d.accounts, d.linkedAt, id);
+  await db.batch([
+    ...connectionStmts(s, {
+      id: connectionId,
+      // As the server's exchange named a bank Plaid couldn't name.
+      institution: d.institution ?? 'Bank',
+      itemId: null,
+      tokenEnc: null,
+      keyVersion: null,
+      linkedAt: d.linkedAt,
+    }),
+    ...accounts.stmts,
   ]);
 }
 
