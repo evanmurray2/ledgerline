@@ -20,13 +20,18 @@ import {
 import { formatCents, parseCents } from '../lib/money';
 import { monthName } from '../lib/dates';
 import { useCategoryOptions, useScreen } from '../lib/common';
+import { useCloseTo } from '../lib/back';
 import { useBudgetMonth } from './Budget';
 import { usage } from '../usage/tracker';
 import { useCanWrite } from '../state/connectivity';
 
 export function useCloseToBudget(month: string | undefined, current: string | undefined) {
   const navigate = useNavigate();
-  return () => void navigate({ to: '/budget', search: { month: month === current ? undefined : month } });
+  // Assign opened from another tab (the sidebar's Assign button): back there.
+  const closeTo = useCloseTo();
+  return closeTo
+    ? closeTo.go
+    : () => void navigate({ to: '/budget', search: { month: month === current ? undefined : month } });
 }
 
 // ------------------------------------------------------------------ assign sheet

@@ -21,7 +21,7 @@ import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { dayLabel } from '../lib/dates';
 import { useCategoryOptions, useScreen } from '../lib/common';
 import { usage } from '../usage/tracker';
-import { useParentPath } from './TxnCommon';
+import { useClose, useParentPath } from './TxnCommon';
 
 interface Line {
   id: number;
@@ -35,7 +35,9 @@ export function SplitScreen() {
   const q = useTxn(key);
   const navigate = useNavigate();
   const parent = useParentPath();
-  const back = () => void navigate({ to: `${parent}/txn/${encodeURIComponent(key)}` });
+  const back = () => void navigate({ to: `${parent}/txn/${encodeURIComponent(key)}`, search: true });
+  // Saved: the sheet is done, so back to where it was opened (the list under it, or another tab).
+  const done = useClose();
   const patch = useMoneyMutation((v: { key: string; body: Parameters<typeof api.patchTxn>[1] }) =>
     api.patchTxn(v.key, v.body),
   );
@@ -102,7 +104,7 @@ export function SplitScreen() {
       },
     });
     usage.record('task', 'split');
-    void navigate({ to: parent });
+    done();
   };
   return (
     <Sheet

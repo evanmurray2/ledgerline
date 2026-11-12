@@ -10,9 +10,11 @@ import { formatCents } from '../lib/money';
 import { dayLabel } from '../lib/dates';
 import { usage } from '../usage/tracker';
 import { BankSays, useParentPath } from './TxnCommon';
+import { useHere } from '../lib/back';
 
 export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
   const parent = useParentPath();
+  const here = useHere();
   const unlink = useMoneyMutation(api.unlink);
   const match = useMoneyMutation(api.doMatch);
   /** After Unlink: who is owed again ('' when the label has no name). */
@@ -53,6 +55,7 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
             <Link
               key={`${p.inflowKey}:${p.itemId}`}
               to="/owed"
+              search={{ back: here }}
               className="flex items-center justify-between gap-2 rounded-lg border border-line p-3 text-ink no-underline"
             >
               <span className="flex flex-col">
@@ -109,7 +112,7 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
               </SoftButton>
             )}
             {moneyIn && (
-              <SoftLink to={`${parent}/match/${encodeURIComponent(t.key)}`} tone="filled">
+              <SoftLink to={`${parent}/match/${encodeURIComponent(t.key)}`} search tone="filled">
                 Match to something else
               </SoftLink>
             )}

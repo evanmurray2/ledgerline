@@ -1,6 +1,7 @@
 // Owed to you: a list of what others owe you. Close out what's owed (they won't pay / marked by mistake / more time).
 import { useState } from 'react';
 import { Link, Outlet, useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { useBack, useHere } from '../lib/back';
 import type { OwedView } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
 import { useActivity, useMoneyMutation, useOwed, useBudget, useSession } from '../api/hooks';
@@ -44,6 +45,9 @@ export function OwedScreen() {
   const q = useOwed();
   const navigate = useNavigate();
   const { from } = useSearch({ from: '/owed' });
+  // Opened from a sheet or another screen (lib/back.ts): Back returns there.
+  const back = useBack();
+  const here = useHere();
   const activity = useActivity('attention', '');
   const session = useSession();
   const budget = useBudget(session.data?.budget.currentMonth);
@@ -58,8 +62,8 @@ export function OwedScreen() {
     <PageFrame>
       <BackHeader
         title="Owed to you"
-        onBack={() => void navigate({ to: from === 'accounts' ? '/accounts' : '/budget' })}
-        backLabel={from === 'accounts' ? 'Back to accounts' : 'Back to budget'}
+        onBack={back ? back.go : () => void navigate({ to: from === 'accounts' ? '/accounts' : '/budget' })}
+        backLabel={back ? back.label : from === 'accounts' ? 'Back to accounts' : 'Back to budget'}
       />
       <ScreenBody>
         {!v ? (
@@ -133,6 +137,7 @@ export function OwedScreen() {
                   >
                     <Link
                       to={`/activity/txn/${o.txnKey}`}
+                      search={{ close: here }}
                       className="flex min-w-0 flex-1 justify-between gap-2.5 text-ink no-underline"
                     >
                       <span className="flex min-w-0 flex-col gap-0.5">
@@ -190,6 +195,7 @@ export function OwedScreen() {
                       <Link
                         key={o.id}
                         to={`/activity/txn/${o.txnKey}`}
+                        search={{ close: here }}
                         className="flex min-h-14 items-center justify-between border-t border-divider px-3 py-1.5 text-ink no-underline first:border-t-0"
                       >
                         <span className="flex flex-col gap-0.5">

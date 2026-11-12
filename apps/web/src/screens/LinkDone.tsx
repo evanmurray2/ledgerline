@@ -3,19 +3,27 @@
 // because the return can land in a browser that isn't signed in (the Home Screen app keeps its own sign-in).
 import { useEffect, useState } from 'react';
 import { LEFT_HERE_KEY } from '../lib/plaid';
+import { appPath } from '../lib/back';
+
+/** Where to go back into the app: the page that left for Plaid's site (Bank connections, or Accounts' repair). */
+function returnPath(left: string | null): string | null {
+  if (left === null) return null;
+  // '1': kept by an older version of the app, before the page was kept.
+  return appPath(left) ?? '/settings/connections';
+}
 
 export function LinkDoneScreen() {
   const [here, setHere] = useState(true);
   useEffect(() => {
-    let left = false;
+    let left: string | null = null;
     try {
-      left = sessionStorage.getItem(LEFT_HERE_KEY) === '1';
+      left = returnPath(sessionStorage.getItem(LEFT_HERE_KEY));
       sessionStorage.removeItem(LEFT_HERE_KEY);
     } catch {
       // No storage: say where to go.
     }
-    // This page itself went to Plaid's site: go back into the app, which finishes the link.
-    if (left) window.location.replace('/settings/connections');
+    // This page itself went to Plaid's site: go back into the app, to the page it left, which finishes the link.
+    if (left) window.location.replace(left);
     // Another browser than the one that started (the Home Screen app shows Plaid's site in a sheet): say where to go.
     else setHere(false);
   }, []);

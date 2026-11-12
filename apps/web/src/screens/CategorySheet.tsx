@@ -28,6 +28,7 @@ import {
 import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { dayLabel, monthName } from '../lib/dates';
 import { useScreen } from '../lib/common';
+import { useHere } from '../lib/back';
 import { useBudgetMonth } from './Budget';
 import { usage } from '../usage/tracker';
 import { useCanWrite } from '../state/connectivity';
@@ -93,6 +94,8 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
   const [moving, setMoving] = useState(false);
   const set = useMoneyMutation(api.setAssigned);
   const steps = useCategorySteps(categoryId, month, current);
+  // A transaction or the category's list opened from this sheet comes back to it (lib/back.ts).
+  const here = useHere();
   const row = useBudget(month)
     .data?.groups.flatMap((g) => g.categories)
     .find((x) => x.id === categoryId);
@@ -265,7 +268,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
           {c.recentTotal > 0 && (
             <TextButton
               track="category.see_all"
-              onClick={() => void navigate({ to: '/activity', search: { q: c.name } })}
+              onClick={() => void navigate({ to: '/activity', search: { category: c.id, back: here } })}
               className="self-auto"
             >
               See all {c.recentTotal}
@@ -277,6 +280,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
           <Link
             key={r.key}
             to={`/activity/txn/${r.key}`}
+            search={{ close: here }}
             className="flex min-h-12 items-center justify-between border-t border-divider text-md text-ink no-underline"
           >
             <span className="flex flex-col gap-px">

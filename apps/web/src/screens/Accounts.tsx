@@ -22,6 +22,8 @@ import {
 import { formatCents } from '../lib/money';
 import { monthName } from '../lib/dates';
 import { useScreen } from '../lib/common';
+import { useBack, useHere } from '../lib/back';
+import { BackHeader } from '../components/headers';
 import { useCanWrite } from '../state/connectivity';
 import { toast } from '../components/Toast';
 import { TabHeader } from '../components/MonthBar';
@@ -65,6 +67,8 @@ function accountSub(a: AccountRow): { text: string; warn: boolean } {
 /** One Accounts alert. A stored one has Dismiss; one about a transaction that still exists opens it. */
 function StoredAlert({ a }: { a: AccountsView['alerts'][number] }) {
   const qc = useQueryClient();
+  // The transaction opens over Activity; closing it comes back here (lib/back.ts).
+  const here = useHere();
   const [busy, setBusy] = useState(false);
   const dismiss = async () => {
     if (!a.id) return;
@@ -103,6 +107,7 @@ function StoredAlert({ a }: { a: AccountsView['alerts'][number] }) {
           <Link
             to="/activity/txn/$key"
             params={{ key: a.txnKey }}
+            search={{ close: here }}
             data-track={`accounts.alert.open.${a.kind}`}
             className="font-semibold text-inherit underline"
           >
@@ -236,6 +241,7 @@ export function AccountsScreen() {
       toast.show({ text: 'Your banks are still syncing. New transactions show up in a few minutes.' });
     return undefined;
   };
+  const back = useBack();
   const { armed, busy, note, run, body, indicator } = usePullToRefresh(scroller, sync, !desktop && canWrite);
   const syncAction = (
     <HeaderAction
@@ -250,21 +256,26 @@ export function AccountsScreen() {
   );
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Accounts has no month: balances are today's. Its name sits where the other tabs' month does. */}
-      <TabHeader
-        name="Accounts"
-        left={
-          <Link
-            to="/settings"
-            data-track="accounts.settings"
-            aria-label="Settings"
-            className="hit flex h-11 w-11 items-center justify-center rounded-full text-ink-2 hover:bg-sunken"
-          >
-            <Icon name="gear" size={22} />
-          </Link>
-        }
-        right={syncAction}
-      />
+      {/* Opened from another tab (Budget's bank-problem bar): a page with Back to it, as an account is. */}
+      {back ? (
+        <BackHeader title="Accounts" onBack={back.go} backLabel={back.label} right={syncAction} />
+      ) : (
+        // Accounts has no month: balances are today's. Its name sits where the other tabs' month does.
+        <TabHeader
+          name="Accounts"
+          left={
+            <Link
+              to="/settings"
+              data-track="accounts.settings"
+              aria-label="Settings"
+              className="hit flex h-11 w-11 items-center justify-center rounded-full text-ink-2 hover:bg-sunken"
+            >
+              <Icon name="gear" size={22} />
+            </Link>
+          }
+          right={syncAction}
+        />
+      )}
       {/* The pull indicator sits over the top of the scroller, outside the content the pull moves down. */}
       <div className="relative flex min-h-0 flex-1 flex-col">
         <ScreenBody scrollRef={scroller} innerRef={body}>

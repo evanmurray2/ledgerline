@@ -49,7 +49,7 @@ export function RenamePayeeFromTxn() {
   const payees = usePayees();
   const navigate = useNavigate();
   const parent = useParentPath();
-  const back = () => void navigate({ to: `${parent}/txn/${encodeURIComponent(key)}` });
+  const back = () => void navigate({ to: `${parent}/txn/${encodeURIComponent(key)}`, search: true });
   const save = usePayeeSave();
   const patch = useMoneyMutation(
     (v: { key: string; body: Parameters<typeof api.patchTxn>[1] }) => api.patchTxn(v.key, v.body),

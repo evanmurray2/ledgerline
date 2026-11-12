@@ -56,13 +56,18 @@ export function isLow(s: StatusInput): boolean {
 /**
  * How much more a category holds than its target asks for (0 when it isn't overfunded). A Set aside target counts
  * only the extra assigned this month that is still unspent: money assigned on top to cover spending, then spent, is
- * not extra (D-69).
+ * not extra (D-69). A Refill category that spent more than its target this month has used the target up, so all the
+ * money still left is extra (D-95).
  */
 export function overfundedBy(s: StatusInput): Cents {
   const t = s.target;
   if (!t) return cents(0);
   const extra =
-    t.type === 'set_aside' ? Math.min(s.assignedThisMonth - t.amount, s.available) : s.available - t.amount;
+    t.type === 'set_aside'
+      ? Math.min(s.assignedThisMonth - t.amount, s.available)
+      : t.type === 'refill' && s.spent > t.amount
+        ? s.available
+        : s.available - t.amount;
   return cents(Math.max(0, extra));
 }
 

@@ -46,7 +46,8 @@ describe('hosted Link', () => {
     });
     expect(went).toEqual(['https://secure.plaid.test/hl/abc']);
     expect(JSON.parse(localStorage.getItem(PENDING)!)).toMatchObject({ linkToken: 'link-1', mode: 'new' });
-    expect(sessionStorage.getItem(LEFT_HERE_KEY)).toBe('1');
+    // The page that left, so /link-done comes back to it.
+    expect(sessionStorage.getItem(LEFT_HERE_KEY)).toBe(window.location.pathname + window.location.search);
   });
 
   it('a page that lives on (the Home Screen app) asks the server until the bank is linked', async () => {

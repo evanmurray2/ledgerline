@@ -9,6 +9,7 @@ import { useMoneyMutation } from '../api/hooks';
 import { Card, cx, SoftButton, TONE, type IconName, type Tone } from '../components/ui';
 import { GroupHeader } from './BudgetRows';
 import { formatCents } from '../lib/money';
+import { useHere } from '../lib/back';
 import { toast } from '../components/Toast';
 import { usage } from '../usage/tracker';
 
@@ -72,6 +73,8 @@ function useFixes(month: string) {
 export function AttentionList({ b, month }: { b: BudgetView; month: string }) {
   const fixes = useFixes(month);
   const navigate = useNavigate();
+  // An account or Owed to you opened from this list comes back to it (lib/back.ts).
+  const here = useHere();
   // Ready to Assign below zero shows once, in the banner above the list (OverAssigned).
   const open = b.attention.filter(
     (a) => !fixes.done.some((d) => d.key === a.key) && a.section !== 'Ready to Assign' && a.section !== 'Low',
@@ -85,7 +88,7 @@ export function AttentionList({ b, month }: { b: BudgetView; month: string }) {
     b.cards.find((c) => c.categoryId === id)?.available;
   const run = async (a: AttentionItem) => {
     if (!a.fix) return;
-    if (a.link === 'owed') return navigate({ to: '/owed' });
+    if (a.link === 'owed') return navigate({ to: '/owed', search: { back: here } });
     if (a.section === 'Ready to Assign') return navigate({ to: '/budget', search: { month, view: 'all' } });
     if (!a.categoryId) return;
     try {
@@ -153,7 +156,13 @@ export function AttentionList({ b, month }: { b: BudgetView; month: string }) {
                           ? `/budget/category/${a.categoryId}`
                           : '/budget'
                   }
-                  search={a.categoryId && a.link !== 'card' ? { month } : undefined}
+                  search={
+                    a.link === 'owed' || (a.link === 'card' && a.accountId)
+                      ? { back: here }
+                      : a.categoryId
+                        ? { month }
+                        : undefined
+                  }
                   className="flex min-h-11 min-w-0 flex-1 flex-col justify-center gap-[3px] text-ink no-underline"
                 >
                   <span className="flex justify-between gap-2">

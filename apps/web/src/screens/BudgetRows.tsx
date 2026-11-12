@@ -4,6 +4,7 @@ import { Link } from '@tanstack/react-router';
 import type { BudgetCategoryRow, BudgetView, CardRow } from '@ledgerline/contracts';
 import { Bar, Card, cx, Icon, Pill, STATUS, StatusWord, type IconName, type Tone } from '../components/ui';
 import { formatCents } from '../lib/money';
+import { useHere } from '../lib/back';
 
 const COLLAPSE_KEY = 'ledgerline-collapsed';
 function readCollapsed(): Record<string, boolean> {
@@ -79,9 +80,11 @@ function CategoryRowPhone({ row, month }: { row: BudgetCategoryRow; month: strin
 
 function CardRowPhone({ card }: { card: CardRow }) {
   const tone: Tone = card.status === 'short' ? 'over' : 'funded';
+  const here = useHere();
   return (
     <Link
       to={`/accounts/${card.accountId}`}
+      search={{ back: here }}
       data-track="budget.card"
       className="relative flex min-h-11 flex-col gap-[7px] border-t border-divider px-3 py-2.5 text-ink no-underline first:border-t-0"
     >
@@ -120,9 +123,11 @@ export const OWED_DETAIL = 'Goes back to Ready to Assign when paid back';
 
 function OwedRowPhone({ b }: { b: BudgetView }) {
   const t = owedTone(b);
+  const here = useHere();
   return (
     <Link
       to="/owed"
+      search={{ back: here }}
       data-track="budget.owed"
       className="flex min-h-11 flex-col gap-[7px] px-3 py-2.5 text-ink no-underline"
     >
