@@ -35,6 +35,8 @@ export class Writer {
   last: Entry | null = null;
   time: number;
   counter = 0;
+  /** The inbox pair of version 1, private half too: a device holds it. */
+  inbox: unknown = null;
 
   fields(kind: number, over: Record<string, unknown> = {}) {
     this.time += 1000;
@@ -62,6 +64,7 @@ export class Writer {
   async genesis(): Promise<Entry> {
     this.keys = await deriveBudgetKeys(this.bk, this.budgetId, 1);
     const inbox = await newInbox(this.keys, this.budgetId, 1);
+    this.inbox = inbox.pair;
     const pub = this.keys.sign.pub;
     const body = encodeGenesis({
       signPub: pub,

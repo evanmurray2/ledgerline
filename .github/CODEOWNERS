@@ -1,5 +1,6 @@
-# The owner's paths (docs/privacy.md 5.10, D-85, D-88): a pull request that changes any of these is merged by the
-# owner, never by a Claude session. `node tools/ci/owner-paths.mjs` lists the files of a branch that match.
+# The key and shipping paths (docs/privacy.md 5.10, D-85). A Claude session merges a pull request that changes
+# these like any other (D-94 replaced D-88's rule that only the owner merges them).
+# `node tools/ci/owner-paths.mjs` lists the files of a branch that match.
 # A line is a file, or a folder ending in "/". Paths that don't exist yet are where that code will live.
 
 # Keys and sealing, on the device and in the Worker

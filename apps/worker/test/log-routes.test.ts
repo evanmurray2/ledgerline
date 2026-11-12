@@ -59,6 +59,10 @@ describe('the routes of the sealed log', () => {
   it('a sealed budget: the log is read and written here, and nothing else answers', async () => {
     await seal(true);
     try {
+      // No bank run is complete yet.
+      expect(await (await get('/api/log/runs?after=0')).json()).toEqual({ runs: [], last: 0, more: false });
+      expect((await get('/api/log/runs/1/0')).status).toBe(404);
+      expect((await get('/api/log/runs?after=x')).status).toBe(400);
       const first = (await (await get('/api/log?after=0')).json()) as {
         entries: string[];
         number: number;

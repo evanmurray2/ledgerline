@@ -38,10 +38,15 @@ export interface LogDeps {
   resting: boolean;
   /** This session came in by the recovery key, or by a passkey added less than 7 days ago (D-89). */
   freshWay: boolean;
-  /** The highest bank run that is complete (signed), filed or not. */
+  /** The highest bank run that is complete (signed), filed or not: `run_state.run` as this request read it. */
   lastCompleteRun: number;
   /** The receipt hashes the Worker stored for runs `from` to `to`; null when one is missing. */
   receiptHashes: (from: number, to: number) => Promise<Uint8Array[] | null>;
+  /**
+   * The Worker's stamps on the keys a write brings (seal/runs.ts keyStampStmts), stored in the same step as the
+   * write. `before` is null for the first entry.
+   */
+  stamps?: (before: ChainState | null, after: ChainState) => Promise<Stmt[]>;
 }
 
 export type AppendResult =
@@ -200,7 +205,7 @@ export async function logGenesis(d: LogDeps, bytes: Uint8Array): Promise<AppendR
   } catch (x) {
     return refusal(x);
   }
-  return store(d, 0, [{ e, bytes }], state);
+  return store(d, 0, [{ e, bytes }], state, null);
 }
 
 /**
@@ -228,7 +233,7 @@ export async function logAppend(d: LogDeps, base: number, encoded: Uint8Array[])
   }
   if (next === 'already stored') return { ok: true, number: state.number, stored: 'already' };
   if (base !== state.number) return { ok: false, why: 'behind', number: state.number, retry: true };
-  return store(d, base, entries, next);
+  return store(d, base, entries, next, state);
 }
 
 /** All of the write and the new state in one step, only if the log still ends at `base`. */
@@ -237,11 +242,22 @@ async function store(
   base: number,
   entries: { e: Entry; bytes: Uint8Array }[],
   state: ChainState,
+  before: ChainState | null,
 ): Promise<AppendResult> {
+  const stamps = d.stamps ? await d.stamps(before, state) : [];
   try {
     await d.db.batch([
-      conditionFence(d.db, `SELECT coalesce((SELECT number FROM log_state WHERE id = 1), 0) = ?1`, base),
+      // The log still ends at `base`, and no bank run was completed since this write was checked against the
+      // last complete run (a key change names that run; a bank entry's receipts are checked against it).
+      conditionFence(
+        d.db,
+        `SELECT coalesce((SELECT number FROM log_state WHERE id = 1), 0) = ?1
+           AND coalesce((SELECT run FROM run_state WHERE id = 1), 0) = ?2`,
+        base,
+        d.lastCompleteRun,
+      ),
       ...storeStmts(d.db, entries, state, d.now),
+      ...stamps,
     ]);
   } catch (x) {
     if (!isFenceAbort(x)) throw x;

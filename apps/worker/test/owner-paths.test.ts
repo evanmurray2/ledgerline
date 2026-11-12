@@ -1,5 +1,5 @@
-// The owner's paths (docs/privacy.md 5.10, D-88): a pull request that changes one is merged by the owner, not by a
-// session. tools/ci/owner-paths.mjs reads them from .github/CODEOWNERS.
+// The key and shipping paths (docs/privacy.md 5.10): tools/ci/owner-paths.mjs reads them from .github/CODEOWNERS and
+// lists the files of a branch that match. It informs only (D-94 replaced D-88's rule that the owner merges them).
 import { describe, expect, it } from 'vitest';
 import { ownedFiles, ownerPaths } from '../../../tools/ci/owner-paths.mjs';
 

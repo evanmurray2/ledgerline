@@ -4,6 +4,7 @@
 //
 // The first entry of a log is not written here: the cutover stores it with the budget's first snapshot, in one
 // step (section 8, step 6).
+import { parseKeyring } from '@ledgerline/platform';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { requestNow } from '../http/clock.js';
@@ -11,6 +12,15 @@ import type { AppEnv } from '../http/context.js';
 import { csrf } from '../http/security.js';
 import { classifyUsage, dailyLimits, usageToday } from '../sync/breaker.js';
 import { logAfter, logAppend, logHead, type LogDeps } from './log-store.js';
+import {
+  keyStampStmts,
+  lastCompleteRun,
+  receiptHashes,
+  runsAfter,
+  runDeps,
+  sealedPageOf,
+  type RunDeps,
+} from './runs.js';
 
 /** The most entries one answer carries, and the most text: an entry is up to 64 KB sealed. */
 const PAGE_ENTRIES = 32;
@@ -75,6 +85,11 @@ logApi.post('/log/append', async (c) => {
   const ask = c.env.USAGE_FOR_WRITE ?? c.env.USAGE;
   const u = ask ? await ask() : await usageToday(c.env);
   const state = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(c.env));
+  const runs: RunDeps = runDeps(
+    c.env.DB,
+    c.get('budgetId'),
+    parseKeyring(c.env.TOKEN_KEYS, c.env.TOKEN_KEY_CURRENT),
+  );
   const deps: LogDeps = {
     db: c.env.DB,
     budgetId: c.get('budgetId'),
@@ -84,9 +99,10 @@ logApi.post('/log/append', async (c) => {
     // Until the Directory tells the store how this session came in (a recovery key, or a passkey added in the
     // last 7 days), every session counts as a fresh way in: a key change needs an intent that has waited (D-89).
     freshWay: true,
-    // No bank run is signed yet (the fetch step seals and signs runs in a later step): none is complete.
-    lastCompleteRun: 0,
-    receiptHashes: async () => null,
+    lastCompleteRun: await lastCompleteRun(c.env.DB),
+    receiptHashes: (from, to) => receiptHashes(c.env.DB, from, to),
+    // A key change brings new keys: each gets the Worker's stamp in the step that stores the write.
+    stamps: (before, after) => keyStampStmts(runs, before, after, now),
   };
   const r = await logAppend(
     deps,
@@ -94,4 +110,42 @@ logApi.post('/log/append', async (c) => {
     parsed.data.entries.map((e) => unb64(e)),
   );
   return c.json(r, r.ok ? 200 : 409);
+});
+
+/** The most runs one answer names, and the most text: a manifest grows with its pages. A run's pages are read one by one. */
+const PAGE_RUNS = 64;
+const RUNS_CHARS = 400_000;
+
+/**
+ * The complete bank runs after run `after`, in order: each manifest as the Worker signed it, its signature, and
+ * how many sealed pages it has. `last` is the newest complete run; `more` says to ask again after the last one
+ * given.
+ */
+logApi.get('/log/runs', async (c) => {
+  const after = Number(c.req.query('after') ?? '0');
+  if (!Number.isSafeInteger(after) || after < 0) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
+  const runs: { run: number; manifest: string; signature: string; pages: number }[] = [];
+  let chars = 0;
+  for (const r of await runsAfter(c.env.DB, after, PAGE_RUNS)) {
+    const manifest = b64(r.manifest);
+    // Always at least one run, then as many as fit one answer.
+    if (runs.length && chars + manifest.length > RUNS_CHARS) break;
+    runs.push({ run: r.run, manifest, signature: b64(r.signature), pages: r.pages });
+    chars += manifest.length;
+  }
+  const last = await lastCompleteRun(c.env.DB);
+  return c.json({ runs, last, more: (runs.at(-1)?.run ?? after) < last });
+});
+
+/** One sealed page of a complete run, as bytes. */
+logApi.get('/log/runs/:run/:page', async (c) => {
+  const run = Number(c.req.param('run'));
+  const page = Number(c.req.param('page'));
+  if (!Number.isSafeInteger(run) || run < 1 || !Number.isSafeInteger(page) || page < 0)
+    return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
+  const bytes = await sealedPageOf(c.env.DB, run, page);
+  if (!bytes) return c.json({ error: 'not_found', message: TRY_AGAIN }, 404);
+  return new Response(bytes as Uint8Array<ArrayBuffer>, {
+    headers: { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' },
+  });
 });

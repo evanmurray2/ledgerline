@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Lists the files a branch changes that only the owner may merge (docs/privacy.md 5.10, D-88). The paths are the lines
-// of .github/CODEOWNERS: a file, or a folder ending in "/". Run it before merging your own pull request:
+// Lists the files a branch changes on the key and shipping paths (docs/privacy.md 5.10). The paths are the lines of
+// .github/CODEOWNERS: a file, or a folder ending in "/". It informs only: a session merges such a pull request like
+// any other (D-94 replaced D-88).
 //   node tools/ci/owner-paths.mjs            the branch against origin/main
 //   node tools/ci/owner-paths.mjs <base>     against another base
 // It prints the matching files and exits 1 when there are any, 0 when there are none.

@@ -1,5 +1,7 @@
 # D-88: The owner merges changes to key code and the shipping path (Nov 10, 2026)
 
+**Replaced by D-94 (Nov 12, 2026):** the owner removed the rule that only the owner merges these paths.
+
 **Decided by the owner** (chat, Nov 10, 2026: "Yea sure" to reviewing key code before it merges, D-85 item 5; "Get
 building everything"). This file records how that rule works, because the way `docs/privacy.md` 5.10 first described
 it can't be done.
