@@ -59,6 +59,7 @@ Each `BudgetStore` runs jobs on its own alarm (`store/jobs.ts`): bank sync in st
 
 - Every merge to `main` deploys after its `ci` passes (a set of files that already passed as a pull request isn't tested again, and a docs-only merge doesn't deploy: D-84); there is no staging and no manual deploy (D-30, D-36, D-49). A failed smoke test rolls the code back; migrations are forward-only and expand-only.
 - Each object migrates itself when it starts.
+- The web build is reproducible (D-95): the same commit gives the same files, and `ci` builds twice to check it. Each build writes `/release.json` (the commit, a hash of every file, and one build hash); the deploy keeps that list with its run and attests it; Settings → About shows the commit and the build hash. `docs/runbooks/verify-build.md` has the steps to check a release.
 - Recovery is a runbook step (`docs/runbooks/restore.md`, D-77): a point-in-time restore, and its undo, which the Directory keeps.
 
 ## Multi-user
