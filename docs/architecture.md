@@ -39,11 +39,15 @@ Each write checks today's usage, kept up to 30 seconds in the store (`USAGE_FOR_
 - **Migrations.** The copy runs the server's budget migrations itself (`migrateLocal`), skipping `SERVER_ONLY`. `tools/ci/migration-check.mjs` applies each one in sql.js too, and `engine-upgrade.test.ts` upgrades copies left at older schemas.
 - **Time.** Today and the current month come from the server's clock and the budget's time zone, never the device's.
 - **Saved copy.** Encrypted with a key from the passkey (WebAuthn PRF) and a per-device share the server keeps (`copy/vault.ts`), as one blob in IndexedDB. It is saved after changes, and at least once an hour while open. Signing out a device in Settings → Sign-in turns its copy off.
-- **Offline edits.** A short list (`copy.ts` `OFFLINE_EDITS`) is applied to the copy and queued; the queue is sent with edit ids, so a resend applies once. A refused edit drops the copy, which downloads again.
+- **Edits on the device.** Every edit route gives the same rows on the copy as on the server: a request has one time (`http/clock.ts`), an edit carries the time it was made (D-91) and names its new rows from its own id (`http/ids.ts`), and `apps/worker/test/twin.test.ts` runs each route on both sides and compares every table. Most edits therefore also work with no signal (`copy.ts` `OFFLINE_EDITS`): the engine runs the edit and puts it in a queue it owns, with the rows as they were before it (`LocalEngine.enqueue`). The queue is sent with edit ids, so a resend applies once. A refused edit is taken back out and the later ones run again; a sync goes under the queue, not over it (`test/drop-edit.test.ts`).
 
 ## Background work
 
 Each `BudgetStore` runs jobs on its own alarm (`store/jobs.ts`): bank sync in steps of 100 rows, a 4-hour backstop, the daily scan at 5:00 AM and maintenance at 2:20 AM in the budget's time zone. A failed step backs off, up to 6 tries. The one cron (10:20 UTC) wakes the Directory, which refreshes usage and checks every budget's jobs. Idle budgets with no banks stop their jobs until used again.
+
+**Server-only tables.** Store migrations (`packages/db/store-migrations`) run on the `BudgetStore` only, never on a copy: the marks "sealed" and "frozen" (`store/marks.ts`, obeyed by every route, job and webhook; no budget is marked), `bank_link` (a copy of each link and its encrypted token, stamped by `store/stamp-links.ts`), and the inbox.
+
+**The shadow run** (`docs/privacy.md` phase 4). The sync job keeps each bank update it filed in the inbox, with what the bank said at its end (`store/inbox.ts`), and each daily job it ran. When a sync tells a device of new ones, the device makes a scratch copy, files the same updates and jobs on it with the server's own steps (`local/file-run.ts`, `local/shadow.ts`), compares it with the real copy once the server's rows are in, and posts names and counts of any difference to `POST /api/sync/shadow`, which logs them. The real copy only ever takes the server's rows.
 
 ## Limits that shape the code
 
