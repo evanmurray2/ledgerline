@@ -169,17 +169,30 @@ describe('the routes of the sealed log', () => {
         ...new Uint8Array(await (await get(`/api/log/snapshots/${id}/manifest`)).arrayBuffer()),
       ]).toEqual([...snap.manifest]);
       expect((await get(`/api/log/snapshots/${id}/chunks/2`)).status).toBe(404);
+      // A check record names the snapshot it was built on. The budget's first snapshot has none, so it stays
+      // unchecked; a record with a wrong signature, or with no base, is refused.
       const check = b64(await signSnapshotCheck(w.keys, snap, budget, PHONE));
       expect(
-        (await post(`/api/log/snapshots/${id}/check`, { deviceId: PHONE, signature: b64(randomBytes(64)) }))
-          .status,
-      ).toBe(409);
-      expect(
-        await (await post(`/api/log/snapshots/${id}/check`, { deviceId: PHONE, signature: check })).json(),
-      ).toEqual({ ok: true });
+        (await post(`/api/log/snapshots/${id}/check`, { deviceId: PHONE, signature: check })).status,
+      ).toBe(400);
+      const forged = await post(`/api/log/snapshots/${id}/check`, {
+        deviceId: PHONE,
+        signature: b64(randomBytes(64)),
+        base: id,
+      });
+      expect(await forged.json()).toEqual({ ok: false, why: 'signature' });
+      const alone = await post(`/api/log/snapshots/${id}/check`, {
+        deviceId: PHONE,
+        signature: check,
+        base: id,
+      });
+      expect(alone.status).toBe(409);
+      expect(await alone.json()).toEqual({ ok: false, why: 'base' });
       expect(((await (await get('/api/log/snapshots')).json()) as typeof listed).snapshots[0]!.checked).toBe(
-        true,
+        false,
       );
+      // The public entries, for a device that starts from a snapshot.
+      expect(await (await get('/api/log/public?after=0')).json()).toMatchObject({ last: 1, more: false });
       // Nothing was deleted: there is no older snapshot.
       expect(await (await get('/api/log?after=0')).json()).toMatchObject({ number: 3, floor: 0 });
 

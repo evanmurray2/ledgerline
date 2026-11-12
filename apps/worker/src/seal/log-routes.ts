@@ -15,6 +15,7 @@ import { classifyUsage, dailyLimits, usageToday } from '../sync/breaker.js';
 import { logAfter, logAppend, logHead, type LogDeps } from './log-store.js';
 import {
   logFloor,
+  publicAfter,
   snapshotBegin,
   snapshotCheck,
   snapshotChunk,
@@ -180,6 +181,31 @@ logApi.get('/log/runs/:run/:page', async (c) => {
 
 // ---- snapshots (seal/snapshot-store.ts)
 
+/**
+ * The public entries after entry `after`, in order (the first entry, key and slot changes, intents): a device
+ * that starts from a snapshot walks them all, since the sealed entries between them may be gone. `more` says to
+ * ask again after the last one given.
+ */
+logApi.get('/log/public', async (c) => {
+  const after = Number(c.req.query('after') ?? '0');
+  if (!Number.isSafeInteger(after) || after < 0) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
+  const entries: string[] = [];
+  let chars = 0;
+  let last = after;
+  let more = false;
+  for (const e of await publicAfter(c.env.DB, after, PAGE_ENTRIES + 1)) {
+    const text = b64(e.bytes);
+    if (entries.length >= PAGE_ENTRIES || (entries.length && chars + text.length > PAGE_CHARS)) {
+      more = true;
+      break;
+    }
+    entries.push(text);
+    chars += text.length;
+    last = e.number;
+  }
+  return c.json({ entries, last, more });
+});
+
 const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const Begin = z.object({
   header: z.string().regex(B64).max(2_000),
@@ -189,6 +215,7 @@ const Begin = z.object({
 });
 const Check = z.object({
   deviceId: z.string().length(26),
+  base: z.string().length(26),
   signature: z.string().regex(B64).max(200),
 });
 const bytes = (b: Uint8Array) =>
@@ -267,7 +294,13 @@ logApi.post('/log/snapshots/:id/check', async (c) => {
   const parsed = Check.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
   const d = await snapshotDeps(c);
-  const r = await snapshotCheck(d, c.req.param('id'), parsed.data.deviceId, unb64(parsed.data.signature));
+  const r = await snapshotCheck(
+    d,
+    c.req.param('id'),
+    parsed.data.deviceId,
+    unb64(parsed.data.signature),
+    parsed.data.base,
+  );
   if (r.ok && !d.resting) await snapshotPrune(c.env.DB);
   return c.json(r, r.ok ? 200 : 409);
 });

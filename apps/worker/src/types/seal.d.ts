@@ -317,6 +317,23 @@ export interface SnapshotHeader {
   manifestHash: Bytes;
 }
 export function isPublicKind(kind: number): boolean;
+/** What the public entries say (chain.ts PublicState); the Worker and a device pass it between the package's functions. */
+export type PublicState = ChainState['public'] & {
+  lastPublic: PublicRef;
+  publics: { number: number; hash: Bytes; keyVersion: number }[];
+  signPubs: Map<number, Bytes>;
+};
+export function walkPublic(
+  entries: Entry[],
+  budgetId: string,
+  bounds?: { mustEndAt?: PublicRef; mustPass?: PublicRef },
+): Promise<PublicState>;
+export function resumeChain(
+  p: PublicState,
+  at: PublicRef,
+  last: Entry,
+  counters: Map<string, number>,
+): Promise<ChainState>;
 export function readSnapshotHeader(bytes: Uint8Array): SnapshotHeader;
 export function verifySnapshotHeader(
   header: Uint8Array,

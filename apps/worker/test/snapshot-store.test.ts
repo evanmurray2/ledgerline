@@ -110,6 +110,9 @@ describe('the store of sealed snapshots', () => {
       async (x) => {
         const [e2, e3] = await edits(x, 2, T0 + 5000);
         const now = T0 + 6000;
+        // The budget's first snapshot, at entry 2: what a first check is built on.
+        const root = await store(x, await snapshot(x, e2!), now - 100);
+        const ids = async () => (await snapshotList(x.db)).map((s) => s.id);
         const good = await snapshot(x, e3!);
         const begin = (
           s: { header: Bytes; signature: Bytes; manifest: Bytes },
@@ -140,12 +143,19 @@ describe('the store of sealed snapshots', () => {
         expect(await begin(good, 0)).toEqual({ ok: false, why: 'too large' });
         expect(await begin(good, 5000)).toEqual({ ok: false, why: 'too large' });
         expect(await begin(good, 2, deps(x, now, true))).toEqual({ ok: false, why: 'resting' });
-        expect(await snapshotList(x.db)).toEqual([]);
+        // A manifest that is not the one the signed header names.
+        expect(await begin({ ...good, manifest: randomBytes(good.manifest.length) })).toEqual({
+          ok: false,
+          why: 'not a header',
+        });
+        expect(await ids()).toEqual([root]);
 
         // Begun, it is not offered until every chunk is stored.
         expect(await begin(good)).toEqual({ ok: true });
         expect(await begin(good)).toEqual({ ok: true });
-        const id = (await x.db.prepare(`SELECT id FROM snapshot`).first<{ id: string }>())!.id;
+        const id = (await x.db
+          .prepare(`SELECT id FROM snapshot WHERE whole_at IS NULL`)
+          .first<{ id: string }>())!.id;
         expect(await snapshotChunk(deps(x, now), id, 3, good.chunks[0]!)).toEqual({
           ok: false,
           why: 'chunk',
@@ -163,16 +173,19 @@ describe('the store of sealed snapshots', () => {
           why: 'no such snapshot',
         });
         expect(await snapshotChunk(deps(x, now), id, 2, good.chunks[1]!)).toEqual({ ok: true });
-        expect(await snapshotList(x.db)).toEqual([]);
+        expect(await ids()).toEqual([root]);
         expect(await snapshotManifest(x.db, id)).toBeNull();
         expect(await snapshotChunkOf(x.db, id, 2)).toBeNull();
         // Not whole: no check record is taken.
         const check = await signSnapshotCheck(x.w.keys, good, BUDGET, PHONE);
-        expect(await snapshotCheck(deps(x, now), id, PHONE, check)).toEqual({ ok: false, why: 'not whole' });
+        expect(await snapshotCheck(deps(x, now), id, PHONE, check, root)).toEqual({
+          ok: false,
+          why: 'not whole',
+        });
 
         expect(await snapshotChunk(deps(x, now), id, 1, good.chunks[0]!)).toEqual({ ok: true });
         const list = await snapshotList(x.db);
-        expect(list).toMatchObject([{ id, number: 3, chunks: 2, checked: false, check: null }]);
+        expect(list).toMatchObject([{ id, number: 3, chunks: 2, checked: false, check: null }, { id: root }]);
         expect([...list[0]!.header]).toEqual([...good.header]);
         expect([...(await snapshotManifest(x.db, id))!]).toEqual([...good.manifest]);
         expect([...(await snapshotChunkOf(x.db, id, 2))!]).toEqual([...good.chunks[1]!]);
@@ -181,16 +194,39 @@ describe('the store of sealed snapshots', () => {
         expect([...(await snapshotChunkOf(x.db, id, 2))!]).toEqual([...good.chunks[1]!]);
 
         // The check record: signed for this header, by this budget's key, for the device it names.
-        expect(await snapshotCheck(deps(x, now), id, PHONE, randomBytes(64))).toEqual({
+        expect(await snapshotCheck(deps(x, now), id, PHONE, randomBytes(64), root)).toEqual({
           ok: false,
           why: 'signature',
         });
-        expect(await snapshotCheck(deps(x, now), id, '01CX5ZZKBKACTAV9WEVGEMMVRZ', check)).toEqual({
+        expect(await snapshotCheck(deps(x, now), id, '01CX5ZZKBKACTAV9WEVGEMMVRZ', check, root)).toEqual({
           ok: false,
           why: 'signature',
         });
-        expect(await snapshotCheck(deps(x, now), id, PHONE, check)).toEqual({ ok: true });
-        expect(await snapshotList(x.db)).toMatchObject([{ id, checked: true, check: { deviceId: PHONE } }]);
+        // Built on a snapshot: an older one, that the server holds whole. Not on itself, not on nothing.
+        expect(await snapshotCheck(deps(x, now), id, PHONE, check, id)).toEqual({ ok: false, why: 'base' });
+        expect(await snapshotCheck(deps(x, now), id, PHONE, check, OTHER)).toEqual({
+          ok: false,
+          why: 'base',
+        });
+        // The budget's first snapshot has nothing older to be built on: it is never checked.
+        const rootCheck = await signSnapshotCheck(x.w.keys, list[1]!, BUDGET, PHONE);
+        expect(await snapshotCheck(deps(x, now), root, PHONE, rootCheck, id)).toEqual({
+          ok: false,
+          why: 'base',
+        });
+        expect(await snapshotCheck(deps(x, now), id, PHONE, check, root)).toEqual({ ok: true });
+        expect(await snapshotList(x.db)).toMatchObject([
+          { id, checked: true, check: { deviceId: PHONE } },
+          { id: root, checked: false },
+        ]);
+        // Sent again it is taken as stored, but only with a real signature.
+        expect(await snapshotCheck(deps(x, now), id, PHONE, check, root)).toEqual({ ok: true });
+        expect(await snapshotCheck(deps(x, now), id, PHONE, randomBytes(64), root)).toEqual({
+          ok: false,
+          why: 'signature',
+        });
+        // No other snapshot joins a checked one at its entry.
+        expect(await begin(await snapshot(x, e3!))).toEqual({ ok: false, why: 'older than a snapshot' });
         // An older snapshot than the newest whole one is not taken.
         expect(await begin(await snapshot(x, e2!))).toEqual({ ok: false, why: 'older than a snapshot' });
       },
@@ -198,7 +234,7 @@ describe('the store of sealed snapshots', () => {
     );
   });
 
-  it('a snapshot that was begun and left makes way for the next', async () => {
+  it('a snapshot that was begun and left makes way after an hour; only so many are begun in a day', async () => {
     await world(
       async (x) => {
         const [, e3] = await edits(x, 2, T0 + 5000);
@@ -206,21 +242,29 @@ describe('the store of sealed snapshots', () => {
         expect(await snapshotBegin(deps(x, T0 + 6000), { ...left, chunks: 2 })).toEqual({ ok: true });
         const id = (await x.db.prepare(`SELECT id FROM snapshot`).first<{ id: string }>())!.id;
         await snapshotChunk(deps(x, T0 + 6000), id, 1, left.chunks[0]!);
+        // Another device's snapshot, begun meanwhile, leaves it alone.
         const next = await store(x, await snapshot(x, e3!), T0 + 7000);
         expect(next).not.toBe(id);
-        expect((await x.db.prepare(`SELECT count(*) AS n FROM snapshot`).first<{ n: number }>())!.n).toBe(1);
+        expect((await x.db.prepare(`SELECT count(*) AS n FROM snapshot`).first<{ n: number }>())!.n).toBe(2);
+        // An hour later it is gone, with its chunk.
+        await store(x, await snapshot(x, e3!), T0 + 6000 + 3_600_001);
+        expect(
+          (await x.db
+            .prepare(`SELECT count(*) AS n FROM snapshot WHERE id = ?1`)
+            .bind(id)
+            .first<{ n: number }>())!.n,
+        ).toBe(0);
         expect(
           (await x.db
             .prepare(`SELECT count(*) AS n FROM snapshot_chunk WHERE snapshot_id = ?1`)
             .bind(id)
             .first<{ n: number }>())!.n,
         ).toBe(0);
-        // Only so many in a day.
-        for (let i = 0; i < 4; i++) await store(x, await snapshot(x, e3!), T0 + 8000 + i);
-        expect(await snapshotBegin(deps(x, T0 + 9000), { ...(await snapshot(x, e3!)), chunks: 2 })).toEqual({
-          ok: false,
-          why: 'limit',
-        });
+        // Only so many in a day, begun or whole.
+        for (let i = 0; i < 3; i++) await store(x, await snapshot(x, e3!), T0 + 6000 + 3_700_000 + i);
+        expect(
+          await snapshotBegin(deps(x, T0 + 6000 + 3_800_000), { ...(await snapshot(x, e3!)), chunks: 2 }),
+        ).toEqual({ ok: false, why: 'limit' });
       },
       { described: false },
     );
@@ -263,16 +307,8 @@ describe('the store of sealed snapshots', () => {
       const [, e4] = await edits(x, 2, T0 + 6000);
       expect(await numbers(x)).toEqual([1, 2, 3, 4]);
 
-      // The first snapshot, checked: there is no older one, so nothing goes.
+      // The first snapshot: nothing is checked yet, so nothing goes.
       const s1 = await store(x, await snapshot(x, e4!), T0 + 7000);
-      expect(
-        await snapshotCheck(
-          deps(x, T0 + 7000),
-          s1,
-          PHONE,
-          await signSnapshotCheck(x.w.keys, (await snapshotList(x.db))[0]!, BUDGET, PHONE),
-        ),
-      ).toEqual({ ok: true });
       expect(await snapshotPrune(x.db)).toEqual({ deleted: 0, more: false });
       expect(await logFloor(x.db)).toBe(0);
 
@@ -282,7 +318,7 @@ describe('the store of sealed snapshots', () => {
       expect(await snapshotPrune(x.db)).toEqual({ deleted: 0, more: false });
       expect(await sealedPageOf(x.db, 1, 0)).not.toBeNull();
 
-      // Checked: the first snapshot is the one kept before it. Sealed entries before entry 4 go (not the first
+      // Checked, built on the first: the first snapshot is the one kept. Sealed entries before entry 4 go (not the first
       // entry, which is public), and the pages of the runs that entry 4 says are filed.
       const list2 = await snapshotList(x.db);
       expect(list2.map((s) => s.id)).toEqual([s2, s1]);
@@ -292,6 +328,7 @@ describe('the store of sealed snapshots', () => {
           s2,
           PHONE,
           await signSnapshotCheck(x.w.keys, list2[0]!, BUDGET, PHONE),
+          s1,
         ),
       ).toEqual({ ok: true });
       expect(await snapshotPrune(x.db)).toMatchObject({ more: false });
@@ -313,6 +350,7 @@ describe('the store of sealed snapshots', () => {
           s3,
           PHONE,
           await signSnapshotCheck(x.w.keys, (await snapshotList(x.db))[0]!, BUDGET, PHONE),
+          s2,
         ),
       ).toEqual({ ok: true });
       await snapshotPrune(x.db);
@@ -322,6 +360,23 @@ describe('the store of sealed snapshots', () => {
       expect(await logFloor(x.db)).toBe(7);
       // Run again, it deletes nothing more.
       expect(await snapshotPrune(x.db)).toEqual({ deleted: 0, more: false });
+
+      // A snapshot nobody checked (a check refused it, say) is never what a later check is built on, and it goes
+      // when a later snapshot is checked on the last checked one.
+      const [e10, e11] = await edits(x, 2, T0 + 3 * day);
+      const s4 = await store(x, await snapshot(x, e10!), T0 + 3 * day + 1000);
+      const s5 = await store(x, await snapshot(x, e11!), T0 + 3 * day + 2000);
+      const sig5 = await signSnapshotCheck(x.w.keys, (await snapshotList(x.db))[0]!, BUDGET, PHONE);
+      expect(await snapshotCheck(deps(x, T0 + 3 * day + 3000), s5, PHONE, sig5, s4)).toEqual({
+        ok: false,
+        why: 'base',
+      });
+      expect(await snapshotPrune(x.db)).toEqual({ deleted: 0, more: false });
+      expect(await snapshotCheck(deps(x, T0 + 3 * day + 3000), s5, PHONE, sig5, s3)).toEqual({ ok: true });
+      await snapshotPrune(x.db);
+      expect((await snapshotList(x.db)).map((s) => s.id)).toEqual([s5, s3]);
+      expect(await snapshotChunkOf(x.db, s4, 1)).toBeNull();
+      expect(await numbers(x)).toEqual([1, 9, 10, 11]);
     });
   });
 });

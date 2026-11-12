@@ -13,8 +13,14 @@ import {
   KIND,
   MAX_PLAIN,
   MAX_WRITE_ENTRIES,
+  fromHex,
+  fromStored,
   openEntryBody,
   openInbox,
+  openSnapshotChunk,
+  openSnapshotManifest,
+  sealSnapshot,
+  signSnapshotCheck,
   randomBytes,
   sealedEntry,
   toHex,
@@ -22,11 +28,22 @@ import {
   type Bytes,
   type ChainState,
   type DhPair,
+  type PublicRef,
+  type PublicState,
+  type SealedSnapshot,
+  type SnapshotHeader,
+  type SnapshotManifest,
   type Entry,
   type FullChainState,
+  sha256,
+  toStored,
 } from '@ledgerline/seal';
 import type { SyncRow } from '../routes/sync.js';
+import { stateFromJson, stateToJson } from '../seal/log-store.js';
 import { LOG_PROCESSING_VERSION, LOG_SCHEMA_VERSION } from '../seal/log-versions.js';
+
+/** A snapshot's manifest lists the hash of every entry whose number is a multiple of this (privacy-keys.md 8). */
+const CHECKPOINT_EVERY = 1000;
 
 /** What one sealed entry (or part set) carries. */
 export interface ChangeSet {
@@ -79,6 +96,8 @@ const CHANGE_KINDS: readonly number[] = [KIND.edit, KIND.bank, KIND.scan, KIND.d
 export interface Taken {
   /** The number of its last entry (its only one, unless it came in parts). */
   number: number;
+  /** The id its entries share, hex: for a device's own change, the id `entryIdOf` gives its edit. */
+  entryId: string;
   kind: number;
   deviceId: string;
   set: ChangeSet;
@@ -93,6 +112,19 @@ export interface Read {
   commit(): void;
 }
 
+/**
+ * The entry id of a change this device made, from the change's own id (an edit's id, or a filed set of bank
+ * runs'). The same change always gets the same entry id: sent again after a lost answer, the server says it holds
+ * it already, and when the entry comes back from the log the device knows its own change and does not run it
+ * twice.
+ */
+export async function entryIdOf(changeId: string): Promise<Bytes> {
+  return (await sha256(new TextEncoder().encode(`ledgerline/v1/entry-id\u0000${changeId}`))).slice(
+    0,
+    16,
+  ) as Bytes;
+}
+
 /** A change set too large for one write of the log (16 parts, about 1 MB). */
 export class TooLarge extends Error {}
 
@@ -105,13 +137,160 @@ export class DeviceLog {
   /** The budget's keys by key version: an entry is opened with the keys of its own version. */
   private readonly keys: Map<number, BudgetKeys>;
 
+  /**
+   * The hash of every entry whose number is a multiple of 1,000, as far as this device knows them: what a
+   * snapshot's manifest lists, so that a device can tell its chain is the one a snapshot stands on (8).
+   */
+  private checkpoints: PublicRef[];
+
   constructor(
     keys: BudgetKeys | readonly BudgetKeys[],
     private state: ChainState,
     readonly deviceId: string,
     private readonly clock: () => number,
+    /** The checkpoints before this device's place (from the snapshot it started at; none for a log read from its start). */
+    checkpoints: readonly PublicRef[] = [],
   ) {
     this.keys = new Map((Array.isArray(keys) ? keys : [keys as BudgetKeys]).map((k) => [k.version, k]));
+    this.checkpoints = [...checkpoints];
+  }
+
+  /**
+   * Where this device stands, as a snapshot names it: the last entry taken, the last public entry, each device's
+   * counter, and the checkpoints with this entry last. `whole`: the entry ends its part set (a snapshot never
+   * stands inside one).
+   */
+  place(): {
+    number: number;
+    hash: Bytes;
+    lastPublic: PublicRef;
+    counters: { deviceId: string; counter: number }[];
+    checkpoints: PublicRef[];
+    whole: boolean;
+  } {
+    const s = this.state as FullChainState;
+    const here = { number: s.number, hash: s.hash };
+    return {
+      ...here,
+      lastPublic: (s.public as unknown as PublicState).lastPublic,
+      counters: [...s.counters.entries()]
+        .map(([deviceId, counter]) => ({ deviceId, counter }))
+        .sort((a, b) => (a.deviceId < b.deviceId ? -1 : 1)),
+      checkpoints: [...this.checkpoints.filter((c) => c.number < s.number), here],
+      whole: this.parts.length === 0 && s.pending === null,
+    };
+  }
+
+  /** Seals a snapshot of this device's base, standing at its place in the log. */
+  async sealSnapshot(
+    snapshotId: string,
+    tables: { name: string; hash: Bytes }[],
+    plainChunks: Uint8Array[],
+  ): Promise<SealedSnapshot> {
+    const at = this.place();
+    if (!at.whole) throw new LogFormatError('a snapshot never stands inside a part set');
+    return sealSnapshot(
+      this.current(),
+      {
+        budgetId: this.budgetId,
+        snapshotId,
+        number: at.number,
+        entryHash: at.hash,
+        lastPublic: at.lastPublic,
+        tables,
+        checkpoints: at.checkpoints,
+        counters: at.counters,
+      },
+      plainChunks,
+    );
+  }
+
+  /**
+   * Opens the manifest of a snapshot against what this device knows of the chain (8, the six checks): the public
+   * entries it walked and, with `notOlder`, its own place. Throws `SnapshotError`.
+   */
+  async openManifest(
+    s: Pick<SealedSnapshot, 'header' | 'signature' | 'manifest'>,
+    version: number,
+    o: { notOlder?: boolean } = {},
+  ): Promise<{ header: SnapshotHeader; manifest: SnapshotManifest }> {
+    const keys = this.keys.get(version);
+    if (!keys) throw new LogFormatError(`this device does not hold key version ${version}`);
+    const last = this.checkpoints[this.checkpoints.length - 1];
+    return openSnapshotManifest(keys, s, this.budgetId, {
+      publics: (this.state.public as unknown as PublicState).publics,
+      ...(o.notOlder ? { minNumber: this.state.number, ...(last ? { checkpoint: last } : {}) } : {}),
+    });
+  }
+
+  /** Opens chunk `k` (from 1) of a snapshot whose manifest is open. */
+  async openChunk(manifest: SnapshotManifest, k: number, sealed: Uint8Array): Promise<Bytes> {
+    const keys = this.keys.get(manifest.version);
+    if (!keys) throw new LogFormatError(`this device does not hold key version ${manifest.version}`);
+    return openSnapshotChunk(keys, this.budgetId, manifest, k, sealed);
+  }
+
+  /** This device's check record for a snapshot it rebuilt (8). */
+  async signCheck(s: Pick<SealedSnapshot, 'header' | 'signature'>): Promise<Bytes> {
+    // With the key in force: the server takes a check record under no other (a removed way in can't check).
+    return signSnapshotCheck(this.current(), s, this.budgetId, this.deviceId);
+  }
+
+  /**
+   * This device's place in the log, as text to keep with its copy: the chain, a part set that is half read, the
+   * last entry seen from each other device, and the checkpoints. No key is in it.
+   */
+  save(): string {
+    return JSON.stringify({
+      v: 1,
+      state: stateToJson(toStored(this.state)),
+      parts: this.parts.map((p) => toHex(p)),
+      seen: [...this.seen.entries()],
+      checkpoints: this.checkpoints.map((c) => [c.number, toHex(c.hash)]),
+    });
+  }
+
+  /** A device's place in the log as `save` wrote it, with the keys the device holds now. */
+  static async restore(
+    keys: BudgetKeys | readonly BudgetKeys[],
+    saved: string,
+    deviceId: string,
+    clock: () => number,
+  ): Promise<DeviceLog> {
+    let v: { v?: unknown; state?: unknown; parts?: unknown; seen?: unknown; checkpoints?: unknown };
+    try {
+      v = JSON.parse(saved) as typeof v;
+    } catch {
+      throw new LogFormatError('not a saved place in the log');
+    }
+    if (
+      v.v !== 1 ||
+      typeof v.state !== 'string' ||
+      !Array.isArray(v.parts) ||
+      !Array.isArray(v.seen) ||
+      !Array.isArray(v.checkpoints)
+    )
+      throw new LogFormatError('not a saved place in the log');
+    const log = new DeviceLog(
+      keys,
+      await fromStored(stateFromJson(v.state)),
+      deviceId,
+      clock,
+      (v.checkpoints as [number, string][]).map(([number, hash]) => ({ number, hash: fromHex(hash) })),
+    );
+    log.parts = (v.parts as string[]).map((p) => fromHex(p));
+    log.seen = new Map(v.seen as [string, [number, string]][]);
+    return log;
+  }
+
+  /** The keys this device holds, by version: for a second log over the same budget (a snapshot's check). */
+  keysHeld(): BudgetKeys[] {
+    return [...this.keys.values()];
+  }
+
+  /** What the public entries say, as this device has walked them. */
+  get publicState(): PublicState {
+    return this.state.public as unknown as PublicState;
   }
 
   /** The number of the last entry this device has taken. */
@@ -163,7 +342,7 @@ export class DeviceLog {
   async build(
     kind: ChangeKind,
     set: { at: number; rows: SyncRow[] },
-    over: { filedThrough?: number; receipts?: Bytes[]; scanThrough?: number } = {},
+    over: { filedThrough?: number; receipts?: Bytes[]; scanThrough?: number; entryId?: Bytes } = {},
   ): Promise<Entry[]> {
     const s = this.state as FullChainState;
     const keys = this.current();
@@ -174,7 +353,7 @@ export class DeviceLog {
     if (chunks.length > MAX_WRITE_ENTRIES) throw new TooLarge('this change is too large for one write');
     // For ordering only: the later of this device's clock and one millisecond after the entry before (5.3 check 4).
     const time = Math.max(this.clock(), s.time + 1);
-    const entryId = randomBytes(16);
+    const entryId = over.entryId ?? randomBytes(16);
     const counter = s.counters.get(this.deviceId) ?? 0;
     const out: Entry[] = [];
     let prev = { number: s.number, hash: s.hash };
@@ -218,10 +397,12 @@ export class DeviceLog {
     let state = this.state;
     let parts = [...this.parts];
     const seen = new Map(this.seen);
+    const checkpoints = [...this.checkpoints];
     const sets: Taken[] = [];
     for (const e of entries) {
       state = await advance(state, e, { now: this.clock(), schemaVersion: LOG_SCHEMA_VERSION });
       const h = e.header;
+      if (h.number % CHECKPOINT_EVERY === 0) checkpoints.push({ number: h.number, hash: e.hash });
       if (!CHANGE_KINDS.includes(h.kind)) continue;
       const keys = this.keys.get(h.keyVersion);
       if (!keys) throw new LogFormatError(`this device does not hold key version ${h.keyVersion}`);
@@ -235,7 +416,13 @@ export class DeviceLog {
         at += p.length;
       }
       parts = [];
-      sets.push({ number: h.number, kind: h.kind, deviceId: h.deviceId, set: decodeChangeSet(whole) });
+      sets.push({
+        number: h.number,
+        entryId: toHex(h.entryId),
+        kind: h.kind,
+        deviceId: h.deviceId,
+        set: decodeChangeSet(whole),
+      });
     }
     return {
       sets,
@@ -244,6 +431,7 @@ export class DeviceLog {
         this.state = state;
         this.parts = parts;
         this.seen = seen;
+        this.checkpoints = checkpoints;
       },
     };
   }

@@ -14,6 +14,7 @@ import {
   isUlid,
   readEntry,
   readSnapshotHeader,
+  sha256,
   toHex,
   verifySnapshotCheck,
   verifySnapshotHeader,
@@ -23,13 +24,17 @@ import { conditionFence, isFenceAbort } from '../sync/lease.js';
 import { stateFromJson } from './log-store.js';
 
 /** The most chunks one snapshot has, and the most bytes of one chunk and of a manifest, as stored. */
-export const MAX_CHUNKS = 4096;
+export const MAX_CHUNKS = 256;
 export const MAX_CHUNK_BYTES = 1_100_000;
 export const MAX_MANIFEST_BYTES = 400_000;
 /** Snapshots one budget may begin in a day. */
 export const SNAPSHOTS_A_DAY = 6;
 /** How many rows one call of the delete rule removes: the rest goes at the next call. */
 const PRUNE_ROWS = 400;
+/** Chunks are large rows: the delete rule removes only a few a call. */
+const PRUNE_CHUNKS = 8;
+/** A snapshot that was begun and not finished in this time makes way. */
+const UNFINISHED_MS = 3_600_000;
 
 export type SnapshotRefused =
   | 'not a header'
@@ -45,6 +50,7 @@ export type SnapshotRefused =
   | 'resting'
   | 'no such snapshot'
   | 'not whole'
+  | 'base'
   | 'chunk';
 
 export type SnapshotAnswer = { ok: true } | { ok: false; why: SnapshotRefused };
@@ -95,6 +101,8 @@ export async function snapshotBegin(
   if (!keys || h.version !== keys.keyVersion) return no('key version');
   const pub = keys.signPubs.get(h.version);
   if (!pub || !(await verifySnapshotHeader(s.header, s.signature, pub))) return no('signature');
+  // The manifest is the one the signed header names.
+  if (toHex(await sha256(s.manifest)) !== toHex(h.manifestHash)) return no('not a header');
 
   const held = await d.db
     .prepare(`SELECT header FROM snapshot WHERE id = ?1`)
@@ -118,10 +126,15 @@ export async function snapshotBegin(
     .first<{ number: number; hash: string }>();
   if (!pubEntry || pubEntry.number !== h.lastPublic.number || pubEntry.hash !== toHex(h.lastPublic.hash))
     return no('last public entry');
+  // Not older than the newest whole snapshot, and past the newest checked one: a checked snapshot is never
+  // joined by another at its own entry.
   const newest = await d.db
-    .prepare(`SELECT max(number) AS n FROM snapshot WHERE whole_at IS NOT NULL`)
-    .first<{ n: number | null }>();
+    .prepare(
+      `SELECT max(number) AS n, max(iif(checked_at IS NOT NULL, number, NULL)) AS checked FROM snapshot WHERE whole_at IS NOT NULL`,
+    )
+    .first<{ n: number | null; checked: number | null }>();
   if (newest?.n != null && h.number < newest.n) return no('older than a snapshot');
+  if (newest?.checked != null && h.number <= newest.checked) return no('older than a snapshot');
   // Counted as begun, whole or not: a snapshot that is begun and left still cost its rows.
   const day = Math.floor(d.now / 86_400_000);
   const notes = await d.db
@@ -140,14 +153,18 @@ export async function snapshotBegin(
   await d.db.batch([
     setNote('snapshot_day', day),
     setNote('snapshots_begun', begun + 1),
-    // A snapshot that was begun and never finished makes way: one is written at a time.
-    d.db.prepare(
-      `DELETE FROM snapshot_chunk WHERE snapshot_id IN (SELECT id FROM snapshot WHERE whole_at IS NULL)`,
-    ),
-    d.db.prepare(`DELETE FROM snapshot WHERE whole_at IS NULL`),
+    // A snapshot that was begun and left unfinished for an hour makes way.
     d.db
       .prepare(
-        `INSERT INTO snapshot (id, number, key_version, header, signature, manifest, chunks, created_at)
+        `DELETE FROM snapshot_chunk WHERE snapshot_id IN (SELECT id FROM snapshot WHERE whole_at IS NULL AND created_at < ?1)`,
+      )
+      .bind(d.now - UNFINISHED_MS),
+    d.db
+      .prepare(`DELETE FROM snapshot WHERE whole_at IS NULL AND created_at < ?1`)
+      .bind(d.now - UNFINISHED_MS),
+    d.db
+      .prepare(
+        `INSERT OR IGNORE INTO snapshot (id, number, key_version, header, signature, manifest, chunks, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
       )
       .bind(h.snapshotId, h.number, h.version, s.header, s.signature, s.manifest, s.chunks, d.now),
@@ -195,32 +212,57 @@ export async function snapshotChunk(
 }
 
 /**
- * A device's check record for a whole snapshot: it rebuilt the budget from the snapshot before plus the entries
- * since, and got the same. The snapshot then counts as checked, and the delete rule may run.
+ * A device's check record for a whole snapshot: it rebuilt the budget from the snapshot `baseId` plus the entries
+ * since, and got the same. The base must be one a check may be built on: a checked snapshot, or, while the budget
+ * has no checked snapshot at all, its first. The snapshot then counts as checked, and the delete rule may run.
  */
 export async function snapshotCheck(
   d: SnapshotDeps,
   id: string,
   deviceId: string,
   signature: Uint8Array,
+  baseId: string,
 ): Promise<SnapshotAnswer> {
-  if (!isUlid(id) || !isUlid(deviceId)) return no('no such snapshot');
+  if (!isUlid(id) || !isUlid(deviceId) || !isUlid(baseId)) return no('no such snapshot');
   const s = await d.db
-    .prepare(`SELECT header, key_version, whole_at, checked_at FROM snapshot WHERE id = ?1`)
+    .prepare(`SELECT number, header, key_version, whole_at, checked_at FROM snapshot WHERE id = ?1`)
     .bind(id)
-    .first<{ header: unknown; key_version: number; whole_at: number | null; checked_at: number | null }>();
+    .first<{
+      number: number;
+      header: unknown;
+      key_version: number;
+      whole_at: number | null;
+      checked_at: number | null;
+    }>();
   if (!s) return no('no such snapshot');
   if (s.whole_at === null) return no('not whole');
-  if (s.checked_at !== null) return { ok: true };
   const keys = await signKeys(d.db);
-  const pub = keys?.signPubs.get(s.key_version);
+  // By the key in force: a way in that a key change removed can't mark an old snapshot as checked.
+  if (!keys || s.key_version !== keys.keyVersion) return no('key version');
+  const pub = keys.signPubs.get(s.key_version);
   if (!pub || !(await verifySnapshotCheck(bytesOf(s.header), deviceId, signature, pub)))
     return no('signature');
+  if (s.checked_at !== null) return { ok: true };
+  const base = await d.db
+    .prepare(`SELECT number, checked_at FROM snapshot WHERE id = ?1 AND whole_at IS NOT NULL`)
+    .bind(baseId)
+    .first<{ number: number; checked_at: number | null }>();
+  if (!base || base.number >= s.number) return no('base');
+  if (base.checked_at === null) {
+    const any = await d.db
+      .prepare(`SELECT 1 AS x FROM snapshot WHERE checked_at IS NOT NULL LIMIT 1`)
+      .first();
+    const first = await d.db
+      .prepare(`SELECT id FROM snapshot WHERE whole_at IS NOT NULL ORDER BY number, created_at, id LIMIT 1`)
+      .first<{ id: string }>();
+    if (any || first?.id !== baseId) return no('base');
+  }
   await d.db
     .prepare(
-      `UPDATE snapshot SET check_signature = ?2, check_device = ?3, checked_at = ?4 WHERE id = ?1 AND checked_at IS NULL`,
+      `UPDATE snapshot SET check_signature = ?2, check_device = ?3, checked_at = ?4, check_base = ?5
+       WHERE id = ?1 AND checked_at IS NULL`,
     )
-    .bind(id, signature, deviceId, d.now)
+    .bind(id, signature, deviceId, d.now, baseId)
     .run();
   return { ok: true };
 }
@@ -241,7 +283,7 @@ export async function snapshotList(db: Db): Promise<StoredSnapshot[]> {
   const rows = await db
     .prepare(
       `SELECT id, number, header, signature, chunks, check_signature, check_device, checked_at FROM snapshot
-       WHERE whole_at IS NOT NULL ORDER BY number DESC, created_at DESC LIMIT 8`,
+       WHERE whole_at IS NOT NULL ORDER BY number DESC, created_at DESC LIMIT 32`,
     )
     .all<{
       id: string;
@@ -288,6 +330,24 @@ export async function snapshotChunkOf(db: Db, id: string, k: number): Promise<Ui
   return r ? bytesOf(r.bytes) : null;
 }
 
+/** The public entries (key and slot changes, the first entry) after `after`, in order: a device walks them all. */
+export async function publicAfter(
+  db: Db,
+  after: number,
+  limit: number,
+): Promise<{ number: number; bytes: Uint8Array }[]> {
+  const rows = await db
+    .prepare(
+      `SELECT number, bytes FROM log_entry WHERE number > ?1 AND kind IN (${PUBLIC_KIND_LIST}) ORDER BY number LIMIT ?2`,
+    )
+    .bind(after, limit)
+    .all<{ number: number; bytes: string }>();
+  return rows.results.map((r) => ({
+    number: r.number,
+    bytes: Uint8Array.from(atob(r.bytes), (c) => c.charCodeAt(0)),
+  }));
+}
+
 /**
  * The entry number below which the log's sealed entries may be gone: a device whose place is lower opens a
  * snapshot. 0 when nothing was deleted.
@@ -300,25 +360,26 @@ export async function logFloor(db: Db): Promise<number> {
 }
 
 /**
- * The one delete rule (5.3): with a checked snapshot, the server keeps the snapshot before it (the newest whole
- * one that stands lower) and every entry and filed bank run since that older snapshot. Older snapshots, older
- * sealed entries and the pages of older filed runs go, a few hundred rows a call; `more` says to call again.
- * Never deleted: a public entry, the entry a kept snapshot stands at, a run's manifest and receipt hash.
+ * The one delete rule (5.3): with a checked snapshot, the server keeps the snapshot its check was built on, and
+ * every entry and filed bank run since that older snapshot. Every other snapshot up to the checked one goes (an
+ * unchecked one, or one a check refused, is never what the budget is rebuilt from), with the sealed entries
+ * before the kept one and the pages of the runs it says are filed: a few hundred rows a call, and only a few of
+ * the large rows; `more` says to call again. Never deleted: a public entry, the entry a kept snapshot stands at,
+ * a run's manifest and receipt hash, and any snapshot newer than the checked one.
  */
 export async function snapshotPrune(db: Db): Promise<{ deleted: number; more: boolean }> {
   const checked = await db
     .prepare(
-      `SELECT number FROM snapshot WHERE checked_at IS NOT NULL AND whole_at IS NOT NULL ORDER BY number DESC LIMIT 1`,
+      `SELECT id, number, check_base FROM snapshot WHERE checked_at IS NOT NULL AND whole_at IS NOT NULL
+       ORDER BY number DESC LIMIT 1`,
     )
-    .first<{ number: number }>();
-  if (!checked) return { deleted: 0, more: false };
+    .first<{ id: string; number: number; check_base: string | null }>();
+  if (!checked?.check_base) return { deleted: 0, more: false };
   const kept = await db
-    .prepare(
-      `SELECT id, number FROM snapshot WHERE whole_at IS NOT NULL AND number < ?1 ORDER BY number DESC, created_at DESC LIMIT 1`,
-    )
-    .bind(checked.number)
+    .prepare(`SELECT id, number FROM snapshot WHERE id = ?1 AND whole_at IS NOT NULL AND number < ?2`)
+    .bind(checked.check_base, checked.number)
     .first<{ id: string; number: number }>();
-  // With no older snapshot, the checked one is the only copy besides the log: nothing goes.
+  // Without the snapshot the check was built on, the checked one is the only copy besides the log: nothing goes.
   if (!kept) return { deleted: 0, more: false };
   const at = await db
     .prepare(`SELECT bytes FROM log_entry WHERE number = ?1`)
@@ -328,13 +389,15 @@ export async function snapshotPrune(db: Db): Promise<{ deleted: number; more: bo
   const filed = (await readEntry(Uint8Array.from(atob(at.bytes), (c) => c.charCodeAt(0)))).header
     .filedThrough;
 
+  let more = false;
   let deleted = 0;
-  const run = async (sql: string, ...params: unknown[]) => {
+  const run = async (limit: number, sql: string, ...params: unknown[]) => {
     const r = await db
       .prepare(sql)
       .bind(...params)
       .run();
     deleted += r.changes ?? 0;
+    if ((r.changes ?? 0) >= limit) more = true;
   };
   await db
     .prepare(
@@ -343,28 +406,36 @@ export async function snapshotPrune(db: Db): Promise<{ deleted: number; more: bo
     )
     .bind(kept.number)
     .run();
+  // The snapshots that go: whole ones up to the checked one, but for it and the one it was built on.
+  const goes = `s.whole_at IS NOT NULL AND s.number <= ?1 AND s.id NOT IN (?2, ?3)`;
   await run(
+    PRUNE_CHUNKS,
     `DELETE FROM snapshot_chunk WHERE rowid IN (
-       SELECT c.rowid FROM snapshot_chunk c JOIN snapshot s ON s.id = c.snapshot_id
-       WHERE s.number < ?1 OR (s.number = ?1 AND s.id != ?2) LIMIT ${PRUNE_ROWS})`,
-    kept.number,
+       SELECT c.rowid FROM snapshot_chunk c JOIN snapshot s ON s.id = c.snapshot_id WHERE ${goes} LIMIT ${PRUNE_CHUNKS})`,
+    checked.number,
+    checked.id,
     kept.id,
   );
   await run(
-    `DELETE FROM snapshot WHERE (number < ?1 OR (number = ?1 AND id != ?2))
-       AND NOT EXISTS (SELECT 1 FROM snapshot_chunk c WHERE c.snapshot_id = snapshot.id)`,
-    kept.number,
+    PRUNE_ROWS,
+    `DELETE FROM snapshot WHERE id IN (
+       SELECT s.id FROM snapshot s WHERE ${goes}
+         AND NOT EXISTS (SELECT 1 FROM snapshot_chunk c WHERE c.snapshot_id = s.id) LIMIT ${PRUNE_ROWS})`,
+    checked.number,
+    checked.id,
     kept.id,
   );
   await run(
+    PRUNE_ROWS,
     `DELETE FROM log_entry WHERE number IN (
        SELECT number FROM log_entry WHERE number < ?1 AND kind NOT IN (${PUBLIC_KIND_LIST}) ORDER BY number LIMIT ${PRUNE_ROWS})`,
     kept.number,
   );
   await run(
+    PRUNE_CHUNKS,
     `DELETE FROM sealed_page WHERE rowid IN (
-       SELECT rowid FROM sealed_page WHERE run <= ?1 AND run IN (SELECT run FROM sealed_run) LIMIT ${PRUNE_ROWS})`,
+       SELECT rowid FROM sealed_page WHERE run <= ?1 AND run IN (SELECT run FROM sealed_run) LIMIT ${PRUNE_CHUNKS})`,
     filed,
   );
-  return { deleted, more: deleted >= PRUNE_ROWS };
+  return { deleted, more };
 }

@@ -6,6 +6,7 @@ import {
   differingTables,
   dumpChunks,
   rowsOfChunk,
+  schemaOfChunk,
   SnapshotFormatError,
   tableHashes,
 } from '../src/local/device-snapshot.js';
@@ -62,8 +63,18 @@ describe('a copy as a snapshot', () => {
   it('an empty copy is one empty chunk; bytes that are not rows are refused', async () => {
     const empty = await newPhone();
     const chunks = await dumpChunks(empty.db);
-    expect(chunks.map((c) => c.length)).toEqual([0]);
+    // One chunk: the line that lists each table's columns, and no row.
+    expect(chunks.length).toBe(1);
     expect(rowsOfChunk(chunks[0]!)).toEqual([]);
+    const schema = schemaOfChunk(chunks[0]!);
+    expect(schema.category).toContain('name');
+    expect(schema.budget).not.toContain('rta');
+    expect(() => schemaOfChunk(new TextEncoder().encode('{"t":"category","k":[1],"d":{}}\n'))).toThrow(
+      SnapshotFormatError,
+    );
+    expect(() => schemaOfChunk(new TextEncoder().encode('{"schema":{"category":["name; DROP"]}}\n'))).toThrow(
+      SnapshotFormatError,
+    );
     const enc = (s: string) => new TextEncoder().encode(s);
     expect(() => rowsOfChunk(enc('{"t":"category"}\n'))).toThrow(SnapshotFormatError);
     expect(() => rowsOfChunk(enc('not json\n'))).toThrow(SnapshotFormatError);

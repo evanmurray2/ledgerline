@@ -1029,6 +1029,24 @@ export class LocalEngine {
     return { rows: rec.rows, lost: lost.length };
   }
 
+  /** A small text the device keeps with its copy (its place in the log, local/log-session.ts); null: none. */
+  async noted(key: string): Promise<string | null> {
+    const r = await this.db
+      .prepare(`SELECT value FROM local_state WHERE key = ?1`)
+      .bind(`note:${key}`)
+      .first<{ value: string }>();
+    return r?.value ?? null;
+  }
+
+  async note(key: string, value: string): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO local_state (key, value) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+      )
+      .bind(`note:${key}`, value)
+      .run();
+  }
+
   /** Whether bank runs can be filed under the queue now: every waiting edit can be taken out exactly. */
   async canFileBank(): Promise<boolean> {
     const st = await this.state();

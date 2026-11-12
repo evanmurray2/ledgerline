@@ -19,7 +19,7 @@ import {
 } from '@ledgerline/seal';
 import type { SyncPage, SyncRow } from '../routes/sync.js';
 import type { AppendResult } from '../seal/log-store.js';
-import { TooLarge, type DeviceLog } from './device-log.js';
+import { entryIdOf, TooLarge, type DeviceLog } from './device-log.js';
 import { FilingInterrupted, RECORDED_TABLES, type LocalEngine } from './engine.js';
 import { CopyAhead, fileOpened, filedOf, filingState, openRuns } from './sealed-filing.js';
 
@@ -63,6 +63,14 @@ export class LogSession {
     private readonly encode: (e: Entry) => Uint8Array,
   ) {}
 
+  /** The name the device's place in the log is kept under, with its copy (`LocalEngine.note`). */
+  static readonly PLACE = 'device_log';
+
+  /** Keeps this device's place in the log with its copy, so a closed app goes on from there. */
+  private async keep(): Promise<void> {
+    await this.engine.note(LogSession.PLACE, this.log.save());
+  }
+
   /**
    * Reads what the log holds past this device's place and writes it into the base, under the queue. Gives how
    * many entries came and how many waiting edits were lost to them.
@@ -74,6 +82,12 @@ export class LogSession {
     for (const bytes of fresh) entries.push(await readEntry(bytes));
     // Checked by the log's rules before anything is written: a bad entry throws here and the copy is untouched.
     const taken = await this.log.read(entries);
+    // A change of this device's own that the log holds already (its answer was lost, or the app was closed before
+    // it was noted) leaves the queue as sent: its rows are in the copy and in the entry, and it is not run again.
+    const mine = new Set(taken.sets.filter((s) => s.deviceId === this.log.deviceId).map((s) => s.entryId));
+    if (mine.size)
+      for (const e of await this.engine.queue())
+        if (mine.has(toHex(await entryIdOf(e.id)))) await this.engine.queueDone(e.id);
     const rows: SyncRow[] = taken.sets.flatMap((s) => s.set.rows);
     const st = await this.engine.state();
     // Written as one page of changes that ends at the log's new last entry. The device's measured distance from
@@ -92,6 +106,7 @@ export class LogSession {
     // written); only then are the entries this device's place in the log.
     const r = await this.engine.apply(page, received, RECORDED_TABLES);
     taken.commit();
+    await this.keep();
     if (await this.engine.needsDerive()) await this.engine.derive();
     return { entries: entries.length, lost: r.lost ?? 0 };
   }
@@ -136,13 +151,18 @@ export class LogSession {
       }
       let entries: Entry[];
       try {
+        const entryId = await entryIdOf(e.id);
         entries = e.bank
           ? await this.log.build(
               KIND.bank,
               { at: e.at, rows: e.rows },
-              { filedThrough: e.bank.filedThrough, receipts: e.bank.receipts.map((r) => fromHex(r)) },
+              {
+                filedThrough: e.bank.filedThrough,
+                receipts: e.bank.receipts.map((r) => fromHex(r)),
+                entryId,
+              },
             )
-          : await this.log.build(KIND.edit, { at: e.at, rows: e.rows });
+          : await this.log.build(KIND.edit, { at: e.at, rows: e.rows }, { entryId });
       } catch (x) {
         // Too many runs for one write: they come out of the copy, and the device files fewer at a time.
         if (!(x instanceof TooLarge) || !e.bank) throw x;
@@ -154,6 +174,7 @@ export class LogSession {
       if (answer.ok) {
         await this.log.take(entries);
         await this.engine.queueSent(e.id, this.log.number);
+        await this.keep();
         sent++;
         if (e.bank) bank = 'sent';
         continue;
@@ -165,6 +186,17 @@ export class LogSession {
         if (e.bank) bank = (await this.engine.queue())[0]?.id === e.id ? 'waits' : 'out';
         if (answer.why !== 'behind') break;
         continue;
+      }
+      if (answer.why === 'entry id') {
+        // The log holds an entry with this change's id: the change itself, sent before with its answer lost
+        // (sealed again, its bytes differ). Read the log: the device knows its own entry, and the change leaves
+        // the queue as sent. Only if it is still waiting after that was it refused.
+        round++;
+        lost += (await this.pull()).lost;
+        if ((await this.engine.queue())[0]?.id !== e.id) {
+          if (e.bank) bank = 'sent';
+          continue;
+        }
       }
       // The server refused the entry for good: the edit comes out of the copy, and the later ones run again.
       if (e.bank) {
