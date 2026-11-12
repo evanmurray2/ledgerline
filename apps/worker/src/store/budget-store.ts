@@ -10,6 +10,7 @@ import { DIRECTORY_NAME } from './directory.js';
 import { TRY_AGAIN, budgetApi, serverReadsOnly } from '../routes/api.js';
 import { afterBankUpdate } from '../http/after-update.js';
 import { marksOf, refusal, type Marks } from './marks.js';
+import { logApi } from '../seal/log-routes.js';
 import { QUEUE_STAMP_LINKS, stampLinksHandler } from './stamp-links.js';
 import { parseKeyring } from '@ledgerline/platform';
 import { dev } from '../dev-seed.js';
@@ -76,6 +77,7 @@ export class BudgetStore extends DurableObject<Env> {
   private readonly runner: JobRunner;
   private cachedBudgetId: string | null = null;
   private app: Hono<AppEnv> | null = null;
+  private logApp: Hono<AppEnv> | null = null;
   private devApp: Hono<AppEnv> | null = null;
   private readonly usage: UsageCounter;
   /** Fair use: whether to report usage; null until read from storage or set by a request. */
@@ -158,8 +160,19 @@ export class BudgetStore extends DurableObject<Env> {
         JSON.stringify({ error: 'not_member', message: 'You don’t have access to this budget.' }),
         { status: 403, headers: { 'content-type': 'application/json' } },
       );
+    // A sealed budget lives in its log: those routes, and no others (seal/log-routes.ts).
+    const path = new URL(request.url).pathname;
+    if (this.marks().sealed && (path === '/api/log' || path.startsWith('/api/log/'))) {
+      this.logApp ??= withCaller((app) => app.route('/api', logApi));
+      this.usage.request();
+      try {
+        return await this.serve(this.logApp, request, caller);
+      } finally {
+        this.reportUsage(caller.budgetId);
+      }
+    }
     // A sealed or frozen budget (store/marks.ts): the old routes leave it alone.
-    const held = refusal(this.marks(), request.method, new URL(request.url).pathname);
+    const held = refusal(this.marks(), request.method, path);
     if (held)
       return new Response(JSON.stringify(held.body), {
         status: held.status,
