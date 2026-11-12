@@ -34,7 +34,9 @@ describe('no Waiting to match (D-98)', () => {
     expect(owed.payback).toMatchObject({ key: 'n-venmo', amount: 101800 });
     const before = await rta();
     const view = await json<{ open: { id: string; suggested: number }[] }>('/api/match/n-venmo');
-    const items = view.open.filter((o) => o.suggested > 0).map((o) => ({ itemId: o.id, amount: o.suggested }));
+    const items = view.open
+      .filter((o) => o.suggested > 0)
+      .map((o) => ({ itemId: o.id, amount: o.suggested }));
     expect(items.length).toBeGreaterThan(0);
     const r = await app('/api/match', {
       method: 'POST',
@@ -67,8 +69,12 @@ describe('no Waiting to match (D-98)', () => {
   it('migration 0012 releases held money: matched when it pays something back, else the usual rules', async () => {
     const m = BUDGET_MIGRATIONS.find((x) => x.name === '0012_release_waiting_to_match.sql')!;
     // Hold n-venmo with nothing matched, and n-zelle (which the seed matched) as "I'll send it back".
-    await db.prepare(`UPDATE txn_overlay SET wtm_state = 'waiting', to_rta = 0 WHERE txn_key = 'n-venmo'`).run();
-    await db.prepare(`UPDATE txn_overlay SET wtm_state = 'send_back', to_rta = 0 WHERE txn_key = 'n-zelle'`).run();
+    await db
+      .prepare(`UPDATE txn_overlay SET wtm_state = 'waiting', to_rta = 0 WHERE txn_key = 'n-venmo'`)
+      .run();
+    await db
+      .prepare(`UPDATE txn_overlay SET wtm_state = 'send_back', to_rta = 0 WHERE txn_key = 'n-zelle'`)
+      .run();
     const statements = m.sql
       .split('\n')
       .filter((l) => !l.startsWith('--'))

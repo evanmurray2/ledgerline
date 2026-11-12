@@ -200,7 +200,7 @@ test('Ready to Assign: a seven-figure amount below zero stays on one line, insid
 }) => {
   const r = await request.post('/api/budget/set', {
     headers: H,
-    data: { month: '2026-11', categoryId: 'home', assigned: 123_494_989 },
+    data: { month: '2026-11', categoryId: 'home', assigned: 123_596_789 },
   });
   expect(r.ok()).toBe(true);
   // The narrowest phone, and the computer's sidebar.
