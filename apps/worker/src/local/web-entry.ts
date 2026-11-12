@@ -6,8 +6,14 @@ import initSqlJs from 'sql.js';
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { LocalEngine, migrateLocal, type EngineIdentity, type QueuedEdit } from './engine.js';
 import { SqlJsDb } from './sqljs-db.js';
-import type { SyncPage } from '../routes/sync.js';
-import type { ShadowEvent } from './shadow.js';
+import { encodeEntry, readEntry, type BudgetKeys } from '@ledgerline/seal';
+import type { RestBatch, SyncPage } from '../routes/sync.js';
+import { cutoverOnDevice } from './cutover-device.js';
+import { DeviceLog } from './device-log.js';
+import { checkSnapshot, openSnapshot, writeSnapshot } from './device-snapshot.js';
+import { cutoverTransport, httpTransport, type Fetch } from './http-transport.js';
+import { LogSession } from './log-session.js';
+import { reader, type ShadowEvent } from './shadow.js';
 
 interface Ctx {
   onmessage: ((e: MessageEvent) => void) | null;
@@ -43,11 +49,75 @@ type Msg =
   | { id: number; op: 'clear' }
   | { id: number; op: 'get'; key: string }
   | { id: number; op: 'put'; key: string; value: string | null }
-  | { id: number; op: 'close' };
+  | { id: number; op: 'close' }
+  // ---- a sealed budget (docs/privacy.md 5.3): the copy lives on the log
+  | { id: number; op: 'sealedOpen'; keys: BudgetKeys[]; deviceId: string; workerKeys: [number, Uint8Array][] }
+  | { id: number; op: 'sealedJoin' }
+  | { id: number; op: 'sealedSync' }
+  | { id: number; op: 'sealedSnapshot'; snapshotId: string }
+  | { id: number; op: 'sealedCheck' }
+  | {
+      id: number;
+      op: 'cutover';
+      keys: BudgetKeys;
+      genesis: Uint8Array;
+      deviceId: string;
+      snapshotId: string;
+    };
 
 let sqlite: Awaited<ReturnType<typeof initSqlJs>> | null = null;
 let db: SqlJsDb | null = null;
+let who: EngineIdentity | null = null;
 let engine: LocalEngine | null = null;
+
+/** A sealed budget's keys and place in the log, once `sealedOpen` gave them. Held in memory only. */
+let sealed: {
+  keys: BudgetKeys[];
+  deviceId: string;
+  workerKeys: Map<number, Uint8Array>;
+  log: DeviceLog | null;
+} | null = null;
+
+/** The app's own origin, with the session's cookie. */
+// (A request to the app's own origin carries the cookie by default.)
+const call: Fetch = (path, init) => fetch(path, init);
+const http = httpTransport(call);
+
+function needSealed(): { engine: LocalEngine; s: NonNullable<typeof sealed>; log: DeviceLog } {
+  const { engine: e } = need();
+  if (!sealed?.log) throw new Error('Your budget isn’t open on this device yet. Try again.');
+  return { engine: e, s: sealed, log: sealed.log };
+}
+
+/** An empty copy in a second database, for work that must not touch the real one. */
+async function scratch(who: EngineIdentity): Promise<{ engine: LocalEngine; close: () => void }> {
+  const copy = new sqlite!.Database();
+  const d = new SqlJsDb(copy);
+  await migrateLocal(d, Date.now());
+  return { engine: new LocalEngine(d, who, () => Date.now()), close: () => copy.close() };
+}
+
+/** Brings the copy up to date with a budget that is not sealed yet: the synced tables, then the rest. */
+async function oldSync(e: LocalEngine): Promise<void> {
+  for (let n = 0; n < 10_000; n++) {
+    const { since, cursor } = await e.nextRequest();
+    const q = new URLSearchParams({ since: String(since), limit: '200' });
+    if (cursor) q.set('cursor', cursor);
+    const r = await call(`/api/sync?${q}`);
+    if (!r.ok) throw new Error('The server gave no answer. Try again.');
+    if ((await e.apply((await r.json()) as SyncPage, Date.now())).caughtUp) break;
+  }
+  await e.restAgain();
+  for (let n = 0; n < 10_000; n++) {
+    const ask = await e.restRequest();
+    if (!ask) return;
+    const q = new URLSearchParams({ table: ask.table });
+    if (ask.after !== null) q.set('after', String(ask.after));
+    const r = await call(`/api/sync/rest?${q}`);
+    if (!r.ok) throw new Error('The server gave no answer. Try again.');
+    await e.applyRest((await r.json()) as RestBatch);
+  }
+}
 
 function need(): { db: SqlJsDb; engine: LocalEngine } {
   if (!db || !engine) throw new Error('Your budget isn’t open on this device yet. Try again.');
@@ -61,6 +131,8 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       db?.db.close();
       db = new SqlJsDb(m.bytes ? new sqlite.Database(new Uint8Array(m.bytes)) : new sqlite.Database());
       await migrateLocal(db, Date.now());
+      who = m.who;
+      sealed = null;
       engine = new LocalEngine(
         db,
         m.who,
@@ -146,7 +218,84 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       db?.db.close();
       db = null;
       engine = null;
+      sealed = null;
       return { value: null };
+    case 'sealedOpen': {
+      const e = need().engine;
+      sealed = { keys: m.keys, deviceId: m.deviceId, workerKeys: new Map(m.workerKeys), log: null };
+      const place = await e.noted(LogSession.PLACE);
+      if (place) sealed.log = await DeviceLog.restore(m.keys, place, m.deviceId, () => Date.now());
+      // No place kept: a new device, or a copy made again. `sealedJoin` opens a snapshot.
+      return { value: { ready: sealed.log !== null, number: sealed.log?.number ?? 0 } };
+    }
+    case 'sealedJoin': {
+      const e = need().engine;
+      if (!sealed) throw new Error('Your budget isn’t open on this device yet. Try again.');
+      sealed.log = await openSnapshot(e, http, {
+        keys: sealed.keys,
+        budgetId: who!.budgetId,
+        deviceId: sealed.deviceId,
+        clock: () => Date.now(),
+      });
+      await e.note(LogSession.PLACE, sealed.log.save());
+      return { value: { number: sealed.log.number } };
+    }
+    case 'sealedSync': {
+      const { engine: e, s, log } = needSealed();
+      const session = new LogSession(e, log, http, encodeEntry);
+      const pulled = await session.pull();
+      const runs = await session.fileRuns(http, {
+        workerKeys: s.workerKeys,
+        provider: reader,
+        now: await e.now(),
+      });
+      const sent = await session.flush();
+      return {
+        value: {
+          entries: pulled.entries,
+          filed: runs.filed,
+          waiting: runs.waiting,
+          sent: sent.sent,
+          lost: pulled.lost + runs.lost + sent.lost,
+        },
+      };
+    }
+    case 'sealedSnapshot': {
+      const { engine: e, log } = needSealed();
+      return { value: await writeSnapshot(e, log, http, m.snapshotId) };
+    }
+    case 'sealedCheck': {
+      const { log } = needSealed();
+      const s = await scratch(who!);
+      try {
+        return { value: await checkSnapshot(s.engine, log, http, () => Date.now()) };
+      } finally {
+        s.close();
+      }
+    }
+    case 'cutover': {
+      const e = need().engine;
+      const r = await cutoverOnDevice(e, {
+        keys: m.keys,
+        genesis: await readEntry(m.genesis),
+        budgetId: who!.budgetId,
+        deviceId: m.deviceId,
+        clock: () => Date.now(),
+        snapshotId: m.snapshotId,
+        encode: encodeEntry,
+        sync: () => oldSync(e),
+        cutover: cutoverTransport(call),
+        snapshots: http,
+      });
+      if (!r.ok) return { value: r };
+      sealed = {
+        keys: [m.keys],
+        deviceId: m.deviceId,
+        workerKeys: sealed?.workerKeys ?? new Map(),
+        log: r.log,
+      };
+      return { value: { ok: true, number: r.log.number } };
+    }
   }
 }
 

@@ -68,6 +68,41 @@ describe('the rest of the budget', () => {
     expect(await audit(again.db)).toBe(await audit(server));
   });
 
+  it('the moved keys are read whole each time: a row replaced or deleted on the server is so on the phone', async () => {
+    const server = ownerDb();
+    const moves = async (db: { prepare: LocalEngine['db']['prepare'] }) =>
+      JSON.stringify((await db.prepare(`SELECT * FROM txn_key_move ORDER BY old_key`).all()).results);
+    const put = (old: string, to: string) =>
+      server
+        .prepare(`INSERT OR REPLACE INTO txn_key_move (old_key, new_key, at) VALUES (?1, ?2, 5)`)
+        .bind(old, to)
+        .run();
+    await put('k', 'k2');
+    await put('m', 'm2');
+    const phone = await syncPhone(await newPhone());
+    await rest(phone);
+    expect(await moves(phone.db)).toBe(await moves(server));
+    // A new row with a lower key, a replaced row, a deleted row.
+    await put('a', 'a2');
+    await put('m', 'm3');
+    await server.prepare(`DELETE FROM txn_key_move WHERE old_key = 'k'`).run();
+    await phone.restAgain();
+    await rest(phone);
+    expect(await moves(phone.db)).toBe(await moves(server));
+    // A copy that is thrown away and downloaded again holds nothing of the old rest.
+    await phone.clear();
+    expect(await moves(phone.db)).toBe('[]');
+    expect(await audit(phone.db)).toBe('[]');
+    await syncPhone(phone);
+    await rest(phone);
+    expect(await moves(phone.db)).toBe(await moves(server));
+    expect(await audit(phone.db)).toBe(await audit(server));
+    // A batch that says "more" and brings nothing is refused.
+    await expect(
+      phone.applyRest({ table: 'audit_log', rows: [], after: 1, more: true }),
+    ).rejects.toBeInstanceOf(RowsRefused);
+  });
+
   it('refuses a table that is not part of the rest, and rows that are not that table’s', async () => {
     expect((await SELF.fetch(`${ORIGIN}/api/sync/rest?table=bank_txn`)).status).toBe(400);
     expect((await SELF.fetch(`${ORIGIN}/api/sync/rest?table=audit_log&after=x`)).status).toBe(400);

@@ -712,6 +712,8 @@ export class LocalEngine {
       this.db.prepare(`PRAGMA defer_foreign_keys = ON`),
       ...[...SYNC_TABLES].reverse().map((t) => this.db.prepare(`DELETE FROM ${t.name}`)),
       ...derivedTables.map((t) => this.db.prepare(`DELETE FROM ${t}`)),
+      // The rest of the budget (the undo record, the moved keys) is read anew with the download.
+      ...REST_TABLES.map((t) => this.db.prepare(`DELETE FROM ${t.name}`)),
       this.setState({ ...EMPTY }),
     ]);
     // The rows kept for taking a queued edit out were this copy's: they mean nothing to the next download, even
@@ -1166,6 +1168,8 @@ export class LocalEngine {
       throw new RowsRefused('not a row of the table');
     await this.checkRows(batch.rows, RECORDED_TABLES, true);
     const st = await this.restState();
+    // A batch that says "more" and brings nothing would be asked for again for ever.
+    if (batch.more && !batch.rows.length) throw new RowsRefused('an empty batch that says more');
     st[batch.table] = { after: batch.after ?? st[batch.table]?.after ?? null, done: !batch.more };
     const stmts: Stmt[] = [];
     for (const r of batch.rows) stmts.push(...this.rowStatements(r, RECORDED_TABLES));
@@ -1183,13 +1187,26 @@ export class LocalEngine {
   /** Reads the rest of the budget on from where each table ended: new rows came since. */
   async restAgain(): Promise<void> {
     const st = await this.restState();
-    for (const t of Object.values(st)) t.done = false;
-    await this.db
-      .prepare(
-        `INSERT INTO local_state (key, value) VALUES ('rest', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
-      )
-      .bind(JSON.stringify(st))
-      .run();
+    const stmts: Stmt[] = [];
+    for (const t of REST_TABLES) {
+      const s = st[t.name];
+      if (!s) continue;
+      s.done = false;
+      // A table whose key is a growing number only gains rows past the last one read. Any other is read whole
+      // again: on the server its rows are also replaced and deleted, in no order of key.
+      if (!t.number) {
+        s.after = null;
+        stmts.push(this.db.prepare(`DELETE FROM ${t.name}`));
+      }
+    }
+    stmts.push(
+      this.db
+        .prepare(
+          `INSERT INTO local_state (key, value) VALUES ('rest', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+        )
+        .bind(JSON.stringify(st)),
+    );
+    await this.db.batch(stmts);
   }
 
   private async restState(): Promise<Record<string, { after: string | number | null; done: boolean }>> {

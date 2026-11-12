@@ -46,8 +46,9 @@ export interface Env {
   /** Local development and tests only: a fixed "now" (ISO time). Ignored in production. */
   FAKE_NOW?: string;
   /**
-   * `on` opens the routes of the cutover (seal/cutover-routes.ts). Unset in production until the owner's budget
-   * is to be moved (docs/privacy.md section 8): the routes then answer nothing.
+   * The id of the one budget whose cutover is open (seal/cutover-routes.ts); `any` in tests. Unset in production
+   * until the owner's budget is to be moved (docs/privacy.md section 8): the routes then answer nothing, but
+   * for the way back of a budget that is sealed.
    */
   CUTOVER?: string;
   /** Enables /__dev routes (seed data) in local development. Ignored in production. */

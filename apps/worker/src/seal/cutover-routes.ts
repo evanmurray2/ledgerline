@@ -36,15 +36,25 @@ const Begin = z.object({
   signature: z.string().regex(B64).max(200),
   manifest: z.string().regex(B64).max(600_000),
   chunks: z.number().int().min(1).max(256),
+  tables: z.array(z.object({ name: z.string().max(64), hash: z.string().regex(/^[0-9a-f]{64}$/) })).max(200),
 });
 
 export const cutoverApi = new Hono<AppEnv>();
 
+/**
+ * Whether the cutover is open for this budget: the Worker's `CUTOVER` variable names the one budget that may be
+ * moved (`any` is for tests). The way back needs no variable: a sealed budget can always take it inside its 7
+ * days, whatever was deployed since.
+ */
+const open = (c: { env: AppEnv['Bindings']; req: { path: string } }, budgetId: string): boolean =>
+  c.req.path.endsWith('/cutover/back') || c.env.CUTOVER === budgetId || c.env.CUTOVER === 'any';
+
 cutoverApi.use('*', async (c, next) => {
-  if (c.env.CUTOVER !== 'on') return c.json({ error: 'not_found', message: TRY_AGAIN }, 404);
-  // A person, signed in, who used their passkey minutes ago: not the ops token, not a job.
+  // A person, signed in, who used their passkey minutes ago: not the ops token, not a job. And the budget's
+  // admin (its first user), when the Directory says who that is.
   const who = (c.env as typeof c.env & { CALLER?: Caller }).CALLER;
-  if (!who || who.userId === 'system' || who.userId === 'service')
+  if (!who || !open(c, who.budgetId)) return c.json({ error: 'not_found', message: TRY_AGAIN }, 404);
+  if (who.userId === 'system' || who.userId === 'service' || who.isAdmin === false)
     return c.json({ error: 'forbidden', message: 'You can’t open this.' }, 403);
   if (requestNow(c) - who.verifiedAt > REAUTH_MS)
     return c.json({ error: 'reauth', message: 'Confirm it’s you with your passkey, then try again.' }, 401);
@@ -66,6 +76,7 @@ const deps = (
   db: c.env.DB,
   budgetId: c.get('budgetId'),
   now,
+  markNow: Date.now(),
   runs: runDeps(c.env.DB, c.get('budgetId'), parseKeyring(c.env.TOKEN_KEYS, c.env.TOKEN_KEY_CURRENT)),
 });
 
@@ -83,6 +94,7 @@ cutoverApi.post('/cutover/begin', async (c) => {
     signature: unb64(parsed.data.signature),
     manifest: unb64(parsed.data.manifest),
     chunks: parsed.data.chunks,
+    tables: parsed.data.tables,
   });
   return c.json(r, r.ok ? 200 : 409);
 });
@@ -105,6 +117,9 @@ cutoverApi.post('/cutover/seal', async (c) => {
 });
 
 cutoverApi.post('/cutover/back', async (c) => {
-  const r = await cutoverBack({ db: c.env.DB, now: requestNow(c) });
+  const r = await cutoverBack({ db: c.env.DB, now: requestNow(c), markNow: Date.now() });
   return c.json(r, r.ok ? 200 : 409);
 });
+
+// A fault is an answer too: the phone's side reads JSON.
+cutoverApi.onError((_e, c) => c.json({ error: 'server', message: TRY_AGAIN }, 500));

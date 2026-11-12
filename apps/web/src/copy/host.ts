@@ -69,6 +69,9 @@ export interface ShadowReport {
   differences: { table: string; column: string; rows: number }[];
 }
 
+/** A budget's derived keys of one version (`BudgetKeys` in @ledgerline/seal): passed on, never read. */
+export type SealedKeys = { version: number } & Record<string, unknown>;
+
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 
 export class EngineHost {
@@ -163,6 +166,52 @@ export class EngineHost {
   }
   export(): Promise<ArrayBuffer> {
     return this.call('export');
+  }
+
+  // ---- a sealed budget (apps/worker/src/local/web-entry.ts; docs/privacy.md 5.3). The keys are derived keys
+  // that can't be read out; they go to the engine's own thread and are held there in memory only.
+
+  /**
+   * Gives the engine a sealed budget's keys. `ready` says the copy knows its place in the log; if not, it is a
+   * new device or a copy made again, and `sealedJoin` opens a snapshot.
+   */
+  sealedOpen(
+    keys: SealedKeys[],
+    deviceId: string,
+    workerKeys: [number, Uint8Array][],
+  ): Promise<{ ready: boolean; number: number }> {
+    return this.call('sealedOpen', { keys, deviceId, workerKeys });
+  }
+  /** Opens the budget's snapshot into the empty copy and takes the device's place in the log from it. */
+  sealedJoin(): Promise<{ number: number }> {
+    return this.call('sealedJoin');
+  }
+  /** Reads the log, files the bank runs that wait, and sends the changes made here. */
+  sealedSync(): Promise<{ entries: number; filed: number; waiting: boolean; sent: number; lost: number }> {
+    return this.call('sealedSync');
+  }
+  /** Writes a snapshot of the copy and reads it back. */
+  sealedSnapshot(
+    snapshotId: string,
+  ): Promise<{ written: true; id: string; number: number } | { written: false; why: string }> {
+    return this.call('sealedSnapshot', { snapshotId });
+  }
+  /** Checks the newest snapshot by rebuilding the budget in a second, empty copy. */
+  sealedCheck(): Promise<{ checked: boolean; why?: string; tables?: string[] }> {
+    return this.call('sealedCheck');
+  }
+  /**
+   * Moves a budget that exists to its sealed log (docs/privacy.md section 8 step 6): the keys and the first
+   * entry were made by keys/budget.ts. `sealed` with `ok: false` means the budget is sealed and its first
+   * snapshot did not read back: take the way back.
+   */
+  cutover(
+    keys: SealedKeys,
+    genesis: Uint8Array,
+    deviceId: string,
+    snapshotId: string,
+  ): Promise<{ ok: true; number: number } | { ok: false; why: string; tables?: string[]; sealed?: boolean }> {
+    return this.call('cutover', { keys, genesis, deviceId, snapshotId });
   }
   state(): Promise<EngineState> {
     return this.call('state');

@@ -102,7 +102,6 @@ describe('the cutover, rehearsed', () => {
 
   it('freezes, takes the first entry and snapshot, seals; the devices live on the log; and the way back works', async () => {
     const server = ownerDb();
-    void ulid;
     const jobs = async () =>
       (await server.prepare(`SELECT kind FROM job ORDER BY kind`).all<{ kind: string }>()).results.map(
         (j) => j.kind,
@@ -122,9 +121,11 @@ describe('the cutover, rehearsed', () => {
     const frozen = (await (await post('/api/cutover/freeze')).json()) as FreezeAnswer;
     expect(frozen, JSON.stringify(frozen).slice(0, 300)).toMatchObject({ ok: true });
     if (!frozen.ok) return;
-    expect(frozen.until).toBe(NOW + 15 * 60_000);
+    // The freeze ends by the store's own clock, the one every old route reads the mark by.
+    expect(Math.abs(frozen.until - (Date.now() + 15 * 60_000))).toBeLessThan(60_000);
     const before = await rowsOf(phone);
     const mine = await tableHashes(phone.db);
+    const shown = mine.map((x) => ({ name: x.name, hash: toHex(x.hash) }));
     expect(
       differingTables(
         mine,
@@ -175,12 +176,39 @@ describe('the cutover, rehearsed', () => {
 
     // Sealing before the first entry is refused.
     expect(await (await post('/api/cutover/seal')).json()).toMatchObject({ ok: false });
+    const first = {
+      genesis: b64(encodeEntry(genesis)),
+      header: b64(sealed.header),
+      signature: b64(sealed.signature),
+      manifest: b64(sealed.manifest),
+      chunks: sealed.chunks.length,
+    };
+    // The server compares the phone's hashes with its own: a copy that differs is not taken.
+    const off = shown.map((x, i) => (i === 0 ? { ...x, hash: 'ab'.repeat(32) } : x));
+    expect(await (await post('/api/cutover/begin', { ...first, tables: off })).json()).toEqual({
+      ok: false,
+      why: 'This device’s copy is not the same as the server’s.',
+    });
+    // A write that slipped past the freeze (a read that also writes, a step that was running) stops the move.
+    await server
+      .prepare(
+        `INSERT INTO audit_log (budget_id, action, entity, created_at) VALUES (?1, 'slipped', 'test', 1)`,
+      )
+      .bind(budget)
+      .run();
+    expect(await (await post('/api/cutover/begin', { ...first, tables: shown })).json()).toEqual({
+      ok: false,
+      why: 'The budget changed while it was frozen. Start again.',
+    });
+    await server.prepare(`DELETE FROM audit_log WHERE action = 'slipped'`).run();
+    expect(await (await post('/api/cutover/freeze')).json()).toMatchObject({ ok: true });
     const begun = await post('/api/cutover/begin', {
       genesis: b64(encodeEntry(genesis)),
       header: b64(sealed.header),
       signature: b64(sealed.signature),
       manifest: b64(sealed.manifest),
       chunks: sealed.chunks.length,
+      tables: shown,
     });
     expect(await begun.json()).toEqual({ ok: true });
     // Not whole yet: not sealed.
@@ -236,7 +264,20 @@ describe('the cutover, rehearsed', () => {
     expect(await new LogSession(spare, log2, t, encodeEntry).pull()).toEqual({ entries: 1, lost: 0 });
     expect(differences(await rowsOf(spare), await rowsOf(phone))).toEqual([]);
 
-    // ---- the way back: the old budget, as it was at the freeze
+    // ---- the way back: open for 7 days, then closed
+    const at = (await server
+      .prepare(`SELECT value FROM store_note WHERE key = 'cutover_at'`)
+      .first<{ value: number }>())!.value;
+    await server
+      .prepare(`UPDATE store_note SET value = ?1 WHERE key = 'cutover_at'`)
+      .bind(at - 8 * 86_400_000)
+      .run();
+    expect(await (await post('/api/cutover/back')).json()).toEqual({
+      ok: false,
+      why: 'The way back is closed.',
+    });
+    await server.prepare(`UPDATE store_note SET value = ?1 WHERE key = 'cutover_at'`).bind(at).run();
+    // The old budget, as it was at the freeze.
     expect(await (await post('/api/cutover/back')).json()).toEqual({ ok: true });
     expect((await get('/api/sync?since=0&limit=5')).status).toBe(200);
     expect(await jobs()).toEqual(jobsBefore);
@@ -269,6 +310,7 @@ describe('the cutover, rehearsed', () => {
       signature: b64(sealed.signature),
       manifest: b64(sealed.manifest),
       chunks: sealed.chunks.length,
+      tables: shown,
     });
     expect(await late.json()).toEqual({ ok: false, why: 'The budget is not frozen any more. Start again.' });
     expect((await assign(82)).status).toBe(200);
