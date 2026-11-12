@@ -1,5 +1,5 @@
 // Post-apply work driven by the watermark (Sync spec F3). Each step reads up to CHUNK.process events after
-// budget.processed_through, decides matches, categorization, transfers and Waiting to match with the pure domain
+// budget.processed_through, decides matches, categorization and transfers with the pure domain
 // functions, and writes everything plus the new watermark in one batch behind a watermark fence. Reprocessing is
 // harmless: it never overwrites a user's categorization. Categories come only from you (docs/payees.md: no rules).
 import type { Db, Stmt } from '@ledgerline/db/sql';
@@ -263,7 +263,7 @@ async function planProcessing(
     }
   }
 
-  // ---- 6. For rows without your categorization: the payee, transfers and Waiting to match. No category is set.
+  // ---- 6. For rows without your categorization: the payee and transfers. No category is set.
   const fresh = live.filter((r) => !inherited.has(r.provider_txn_id));
   if (fresh.length || tookOver.length) stmts.push(...(await planFresh(s, fresh, now, tookOver)));
   return { stmts };

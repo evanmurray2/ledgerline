@@ -33,7 +33,6 @@ export function categoryLabel(
   categoryNames: ReadonlyMap<string, string>,
   hasSplit = false,
 ): string | null {
-  if (t.wtm_state === 'waiting' || t.wtm_state === 'send_back') return 'Waiting to match';
   if (t.transfer_state === 'paired') return 'Transfer';
   if (t.transfer_state === 'unsorted') return null;
   if (t.transfer_state === 'manual') return 'Transfer';
@@ -71,11 +70,6 @@ export function listRow(
     badge = 'Won’t clear';
     badgeKind = 'hold';
     sub = 'not counted';
-  } else if (t.wtm_state === 'waiting' || t.wtm_state === 'send_back') {
-    badge = 'Waiting to match';
-    badgeKind = 'match';
-    sub = 'held';
-    sheet = 'match';
   } else if (t.transfer_state === 'unsorted') {
     badge = 'Pick the account';
     badgeKind = 'alert';

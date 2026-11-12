@@ -33,7 +33,6 @@ Check a new text against it, and keep the terms below the same everywhere: code,
 | Card payments (the group)                        | Credit card payments                          |
 | Low (status)                                     | Running low                                   |
 | Owed to you                                      | fronted, not a category                       |
-| Waiting to match                                 | held                                          |
 | Needs a category                                 | Choose later, Don't set a category            |
 | Memo                                             | Note (on a transaction)                       |
 | join (payees)                                    | merge                                         |

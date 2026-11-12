@@ -492,7 +492,7 @@ export function badgeClass(kind: string | null): string {
     case 'alert':
       return 'bg-under-bg text-under-fg';
     case 'match':
-      // Waiting to match is a to-do, not a success: the Owed to you color, never green.
+      // Paid back and Paid: the Owed to you color, so they read as part of that story.
       return 'bg-owed-bg text-owed-fg';
     case 'est':
       return 'bg-info-bg text-info-fg';

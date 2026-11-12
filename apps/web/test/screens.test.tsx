@@ -155,14 +155,14 @@ describe('Activity', () => {
 
   it('shows the Needs attention groups and lists', async () => {
     renderAt('/activity?filter=all');
-    await text('Money to match');
-    expect(screen.getAllByText('+$1,018.00').length).toBeGreaterThan(0);
+    await text('Check these');
+    expect(screen.queryByText('Money to match')).toBeNull();
     expect(screen.queryByText('Transfers to sort out')).toBeNull();
     expect(screen.getByText(/4 · −\$86\.48/)).toBeTruthy();
     expect(screen.getByText('Check these')).toBeTruthy();
     expect(screen.getByText('counts now · $201.00')).toBeTruthy();
     expect(screen.getByText('Acme Corp payroll')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Needs attention 7' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Needs attention 6' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Not posted yet' })).toBeTruthy();
   });
 

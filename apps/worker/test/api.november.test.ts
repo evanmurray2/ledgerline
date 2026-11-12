@@ -120,7 +120,6 @@ describe('November through the API', () => {
 
   it('Activity: Needs attention groups and pending', async () => {
     const v = await get<ActivityView>('/api/activity');
-    expect(v.moneyToMatch.map((r) => [r.payee, r.amount])).toEqual([['Venmo cashout', 101800]]);
     expect(v.needsCategory.map((r) => r.payee).sort()).toEqual([
       'Amazon',
       'Amazon',
@@ -194,7 +193,7 @@ describe('November through the API', () => {
   it('Activity search: an amount matches with or without $ and commas; % and _ are only letters', async () => {
     const payees = async (q: string) => {
       const v = await get<ActivityView>(`/api/activity?q=${encodeURIComponent(q)}`);
-      return [...v.posted, ...v.pending, ...v.upcoming, ...v.moneyToMatch].map((r) => r.payee);
+      return [...v.posted, ...v.pending, ...v.upcoming].map((r) => r.payee);
     };
     for (const q of ['200.80', '$200.80', '−$200.80']) expect(await payees(q), q).toContain('Uniqlo');
     for (const q of ['1500', '1,500', '$1,500.00']) expect(await payees(q), q).toContain('Vanguard');

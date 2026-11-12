@@ -4,7 +4,7 @@ import { Link, Outlet, useNavigate, useParams, useSearch } from '@tanstack/react
 import { useBack, useHere } from '../lib/back';
 import type { OwedView } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
-import { useActivity, useMoneyMutation, useOwed, useBudget, useSession } from '../api/hooks';
+import { useMoneyMutation, useOwed, useBudget, useSession } from '../api/hooks';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import { OneBanner, Why } from '../components/Why';
 import {
@@ -48,11 +48,11 @@ export function OwedScreen() {
   // Opened from a sheet or another screen (lib/back.ts): Back returns there.
   const back = useBack();
   const here = useHere();
-  const activity = useActivity('attention', '');
   const session = useSession();
   const budget = useBudget(session.data?.budget.currentMonth);
   const v = q.data;
-  const waiting = activity.data?.moneyToMatch[0];
+  // Money in from a person that pays back nothing yet: offered, never held (D-98).
+  const payback = v?.payback ?? null;
   const rta = budget.data?.rta ?? 0;
   const desktop = useIsDesktop();
   // Match is the row's main action (a pill); Close out is a quiet text link next to it.
@@ -81,11 +81,11 @@ export function OwedScreen() {
                 It goes back to Ready to Assign when you’re paid back.
               </span>
             </Card>
-            {/* One banner at a time: a shortfall first, then money waiting to match, then what's covered. */}
+            {/* One banner at a time: a shortfall first, then money that may be a payback, then what's covered. */}
             <OneBanner
               items={[
                 ...v.projected
-                  .filter((p) => rta + (waiting?.amount ?? 0) < p.owed)
+                  .filter((p) => rta < p.owed)
                   .map((p) => (
                     <Banner
                       key={p.key}
@@ -98,22 +98,22 @@ export function OwedScreen() {
                       </Why>
                     </Banner>
                   )),
-                waiting && (
+                payback && (
                   <Link
-                    key="waiting"
-                    to={`/owed/match/${waiting.key}`}
+                    key="payback"
+                    to={`/owed/match/${payback.key}`}
                     search
-                    data-track="owed.waiting.match"
+                    data-track="owed.payback.match"
                     className="flex min-h-11 shrink-0 items-center gap-2.5 rounded-lg bg-owed-bg px-3 py-2 text-owed-fg no-underline"
                   >
                     <span className="flex-1 text-md font-bold">
-                      {waiting.payee} {formatCents(waiting.amount, { plus: true })} is waiting to match
+                      {payback.payee} {formatCents(payback.amount, { plus: true })} came in. Is it money back?
                     </span>
                     <span className="text-md font-bold underline">Match</span>
                   </Link>
                 ),
                 ...v.projected
-                  .filter((p) => rta + (waiting?.amount ?? 0) >= p.owed)
+                  .filter((p) => rta >= p.owed)
                   .map((p) => <Banner key={p.key} tone="info" title={`${p.label} is covered`} />),
               ]}
             />
@@ -159,9 +159,9 @@ export function OwedScreen() {
                       </span>
                     </Link>
                     <div className={cx('flex items-center gap-4', desktop && 'shrink-0')}>
-                      {waiting && (
+                      {payback && (
                         <Link
-                          to={`/owed/match/${waiting.key}`}
+                          to={`/owed/match/${payback.key}`}
                           search
                           data-track="owed.match"
                           aria-label={`Match money back for ${o.label}`}

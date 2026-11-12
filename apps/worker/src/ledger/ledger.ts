@@ -179,7 +179,8 @@ export const NOT_RTA_BY_DEFAULT = `NOT (amount > 0 AND account_kind != 'credit' 
   substr(coalesce(provider_category, ''), 1, 9) = 'TRANSFER_' OR provider_category = 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT'
   OR ${TRANSFER_WORD_LIST.map((w) => `raw_name LIKE '%${w}%'`).join(' OR ')}))`;
 
-/** Not a transfer, Waiting to match or split (the caller checks those first): the money is in Ready to Assign. */
+/** Not a transfer or split (the caller checks those first): the money is in Ready to Assign. 'matched' and 'income' are
+ * left from Match and from Waiting to match before D-98. */
 export function inRta(t: TxRow): boolean {
   return t.to_rta === 1 || t.wtm_state === 'matched' || t.wtm_state === 'income' || rtaByDefault(t);
 }
@@ -189,9 +190,7 @@ export function needsCategory(t: TxRow): boolean {
   return !t.category_id && !t.to_rta && !t.transfer_state && !t.wtm_state && !rtaByDefault(t);
 }
 
-export function useOf(t: TxRow, splits: SplitRow[], matched = 0): TxnUse {
-  if (t.wtm_state === 'waiting' || t.wtm_state === 'send_back')
-    return matched > 0 ? { type: 'waiting', matched: cents(matched) } : { type: 'waiting' };
+export function useOf(t: TxRow, splits: SplitRow[]): TxnUse {
   if (t.transfer_state === 'paired' && t.transfer_account_id)
     return { type: 'transfer', otherAccountId: t.transfer_account_id };
   if (t.transfer_state === 'unsorted') return { type: 'unsorted' };
@@ -214,7 +213,6 @@ export function toLogical(
   splits: SplitRow[],
   owed: OwedRow[],
   refundOf: string | undefined,
-  matched = 0,
   role: StartRole | null = null,
 ): LogicalTxn {
   const marks: OwedMark[] = owed.map((o) => ({
@@ -245,7 +243,7 @@ export function toLogical(
     seq: t.seq,
     ...(t.budget_month ? { budgetMonth: t.budget_month as Month } : {}),
     ...(role ? { startRole: role } : {}),
-    use: useOf(t, splits, matched),
+    use: useOf(t, splits),
     ...(refundOf ? { refundOf } : {}),
     ...(marks.length ? { owed: marks } : {}),
   };
@@ -278,11 +276,10 @@ export async function loadTxns(
   const splitsBy = new Map<string, SplitRow[]>();
   const owedBy = new Map<string, OwedRow[]>();
   const refund = new Map<string, string>();
-  const matched = new Map<string, number>();
   for (let i = 0; i < keys.length; i += 90) {
     const chunk = keys.slice(i, i + 90);
     const ph = inList(chunk, 2);
-    const [t, sp, ow, ln, mt, pc] = await s.batch([
+    const [t, sp, ow, ln, pc] = await s.batch([
       s.q(
         `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND key IN (${ph}) AND ${uncovered('v_transaction')}`,
         ...chunk,
@@ -294,15 +291,10 @@ export async function loadTxns(
         ...chunk,
       ),
       s.q(
-        `SELECT from_key, sum(amount) AS m FROM txn_link WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND undone_at IS NULL AND from_key IN (${ph}) GROUP BY from_key`,
-        ...chunk,
-      ),
-      s.q(
         `SELECT id, item_id, month, amount FROM owed_close WHERE budget_id = ?1 AND txn_key IN (${ph}) ORDER BY created_at, id`,
         ...chunk,
       ),
     ]);
-    for (const r of mt!.results as { from_key: string; m: number }[]) matched.set(r.from_key, r.m);
     rows.push(...(t!.results as TxRow[]));
     for (const r of sp!.results as SplitRow[])
       splitsBy.set(r.txn_key, [...(splitsBy.get(r.txn_key) ?? []), r]);
@@ -320,14 +312,7 @@ export async function loadTxns(
   for (const r of rows)
     logical.set(
       r.key,
-      toLogical(
-        r,
-        splitsBy.get(r.key) ?? [],
-        owedBy.get(r.key) ?? [],
-        refund.get(r.key),
-        matched.get(r.key) ?? 0,
-        roleOf(r, links),
-      ),
+      toLogical(r, splitsBy.get(r.key) ?? [], owedBy.get(r.key) ?? [], refund.get(r.key), roleOf(r, links)),
     );
   return { rows, logical, splits: splitsBy, owed: owedBy };
 }

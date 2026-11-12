@@ -13,7 +13,7 @@ const SCREENS: { name: string; path: string; ready?: string; prepare?: (page: Pa
   { name: 'assign', path: '/budget/assign', ready: 'Suggested' },
   { name: 'owed', path: '/owed', ready: 'Still owed' },
   { name: 'close', path: '/owed/close/rent', ready: 'They won’t pay it' },
-  { name: 'activity', path: '/activity?filter=all', ready: 'Money to match' },
+  { name: 'activity', path: '/activity?filter=all', ready: 'Needs category' },
   { name: 'activity-pending', path: '/activity?filter=pending', ready: 'Upcoming' },
   {
     name: 'activity-picker',
@@ -31,7 +31,7 @@ const SCREENS: { name: string; path: string; ready?: string; prepare?: (page: Pa
   { name: 'txn-paid', path: '/activity/txn/n-zelle', ready: 'Pays back' },
   { name: 'txn-transfer', path: '/activity/txn/n-to-marcus', ready: 'Transfer' },
   { name: 'split', path: '/accounts/sapphire/txn/n-costco/split', ready: 'Takes any difference' },
-  { name: 'match', path: '/activity/match/n-venmo', ready: 'What is this money?' },
+  { name: 'match', path: '/activity/match/n-venmo', ready: 'What does this money pay back?' },
   { name: 'check-pending', path: '/activity/check/n-check-1043', ready: 'Keep waiting' },
   { name: 'add', path: '/activity/add', ready: 'Add a transaction' },
   { name: 'accounts', path: '/accounts', ready: 'Net worth' },

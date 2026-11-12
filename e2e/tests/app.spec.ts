@@ -275,7 +275,7 @@ test('Offline: last data stays visible and every change is disabled', async ({ p
   // Activity opens on Not posted yet (D-97); the categories are under All.
   await expect(page.getByRole('button', { name: 'Not posted yet' })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'All', exact: true }).click();
-  await expect(page.getByText('Money to match')).toBeVisible();
+  await expect(page.getByText('Needs category')).toBeVisible();
   await expect(page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ })).toBeDisabled();
 
   await context.setOffline(false);

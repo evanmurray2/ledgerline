@@ -45,12 +45,12 @@ export const activityViewRoutes = new Hono<AppEnv>();
 // ---------------------------------------------------------------- Activity
 
 /**
- * Rows that need you: Waiting to match, transfers to sort out, alerts, uncategorized rows in the budget, and splits
+ * Rows that need you: transfers to sort out, alerts, uncategorized rows in the budget, and splits
  * whose lines no longer add up.
  */
 const ATTENTION_SQL = `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1
          AND ${IN_BUDGET_ROWS} AND (
-         wtm_state IN ('waiting', 'send_back') OR transfer_state = 'unsorted' OR (alert IS NOT NULL AND reviewed_at IS NULL)
+         transfer_state = 'unsorted' OR (alert IS NOT NULL AND reviewed_at IS NULL)
          OR (category_id IS NULL AND coalesce(to_rta, 0) = 0 AND transfer_state IS NULL AND wtm_state IS NULL AND wont_clear = 0
              AND status != 'upcoming' AND ${NOT_RTA_BY_DEFAULT}
              AND key NOT IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1))
@@ -88,7 +88,6 @@ activityViewRoutes.get('/badges', async (c) => {
   ]);
   const rows = attn!.results as TxRow[];
   const activity =
-    rows.filter((t) => t.wtm_state === 'waiting' || t.wtm_state === 'send_back').length +
     rows.filter((t) => t.transfer_state === 'unsorted' && t.amount < 0).length +
     rows.filter((t) => waitsForCategory(t) && !(t.alert && !t.reviewed_at)).length +
     rows.filter((t) => t.alert && !t.reviewed_at).length +
@@ -348,9 +347,6 @@ activityViewRoutes.get('/activity', async (c) => {
       qSplits.has(t.key) ||
       qPaybacks.has(t.key));
   const attnRows = (attn!.results as TxRow[]).filter(match);
-  const moneyToMatch = attnRows
-    .filter((t) => t.wtm_state === 'waiting' || t.wtm_state === 'send_back')
-    .map(row);
   const transfersToSort = attnRows.filter((t) => t.transfer_state === 'unsorted' && t.amount < 0).map(row);
   const uncats = attnRows.filter(
     (t) => waitsForCategory(t) && !(t.alert && !t.reviewed_at) && !splitKeys.has(t.key),
@@ -482,14 +478,12 @@ activityViewRoutes.get('/activity', async (c) => {
     .filter((g) => g.categories.length);
   const view: ActivityView = {
     attentionCount:
-      moneyToMatch.length +
       transfersToSort.length +
       needsCategory.length +
       checkThese.length +
       samePurchase.length +
       removed.length,
     notPostedCount: pend!.results.length + upc!.results.length,
-    moneyToMatch,
     transfersToSort,
     needsCategory,
     checkThese,
