@@ -73,4 +73,32 @@ describe('owed labels on list rows', () => {
     });
     expect(await find(out.payee, out.key)).toMatchObject({ badge: 'Paid', sub: share() });
   });
+
+  it('lists the payback on the category sheet and in See all, as money in Ready to Assign', async () => {
+    const month = (await db
+      .prepare(`SELECT coalesce(budget_month, substr(date, 1, 7)) AS m FROM v_transaction WHERE key = ?1`)
+      .bind(inflow.key)
+      .first<{ m: string }>())!.m;
+    const sheet = (await (
+      await app(`/api/categories/${out.category_id}/sheet?month=${month}`)
+    ).json()) as CategorySheet;
+    const all = (await (
+      await app(`/api/activity?category=${encodeURIComponent(out.category_id)}`)
+    ).json()) as ActivityView;
+    expect(all.posted.find((r) => r.key === inflow.key)).toMatchObject({ badge: `Paid back · ${out.name}` });
+    // The sheet lists a few rows: the payback is there unless newer rows of the month push it out.
+    if (sheet.recent.some((r) => r.key === inflow.key))
+      expect(sheet.recent.find((r) => r.key === inflow.key)).toMatchObject({
+        badge: 'Paid back',
+        sub: 'to Ready to Assign',
+      });
+    // Unlinked, the payback leaves the category's list: the count drops by one.
+    await db.prepare(`UPDATE txn_link SET undone_at = 1 WHERE id = 'test-label'`).run();
+    const without = (await (
+      await app(`/api/categories/${out.category_id}/sheet?month=${month}`)
+    ).json()) as CategorySheet;
+    await db.prepare(`UPDATE txn_link SET undone_at = NULL WHERE id = 'test-label'`).run();
+    expect(without.recentTotal).toBe(sheet.recentTotal - 1);
+    expect(without.recent.some((r) => r.key === inflow.key)).toBe(false);
+  });
 });

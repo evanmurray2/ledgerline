@@ -7,6 +7,7 @@ import { useBudget, useCategorySheet, useMoneyMutation } from '../api/hooks';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import {
   amountInputClass,
+  badgeClass,
   Bar,
   cx,
   EmptyNote,
@@ -276,28 +277,40 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
           )}
         </div>
         {c.recent.length === 0 && <EmptyNote>No transactions in {monthName(month)}.</EmptyNote>}
-        {c.recent.map((r) => (
-          <Link
-            key={r.key}
-            to={`/activity/txn/${r.key}`}
-            search={{ close: here }}
-            className="flex min-h-12 items-center justify-between border-t border-divider text-md text-ink no-underline"
-          >
-            <span className="flex flex-col gap-px">
-              <span className="font-semibold">{r.payee}</span>
-              <span className="text-xs text-muted">
-                {[
-                  dayLabel(r.date),
-                  r.accountName,
-                  r.badge === 'By rule' ? 'by rule' : r.categoryLabel === 'split' ? 'split' : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
+        {c.recent.map((r) => {
+          // Money in that paid back one of this category's owed purchases: listed here, counted in Ready to Assign.
+          const paidBack = r.badge === 'Paid back';
+          return (
+            <Link
+              key={r.key}
+              to={`/activity/txn/${r.key}`}
+              search={{ close: here }}
+              className="flex min-h-12 items-center justify-between border-t border-divider text-md text-ink no-underline"
+            >
+              <span className="flex flex-col gap-px">
+                <span className="font-semibold">{r.payee}</span>
+                <span className="text-xs text-muted">
+                  {[
+                    dayLabel(r.date),
+                    r.accountName,
+                    r.badge === 'By rule' ? 'by rule' : r.categoryLabel === 'split' ? 'split' : null,
+                    paidBack ? r.sub : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
               </span>
-            </span>
-            <span className="tnum font-bold">{formatCents(r.amount)}</span>
-          </Link>
-        ))}
+              <span className="flex items-center gap-2">
+                {paidBack && (
+                  <span className={cx('rounded-sm px-2 py-0.5 text-xs font-bold', badgeClass(r.badgeKind))}>
+                    {r.badge}
+                  </span>
+                )}
+                <span className="tnum font-bold">{formatCents(r.amount)}</span>
+              </span>
+            </Link>
+          );
+        })}
       </div>
       {moving && (
         <MoveMoneySheet
