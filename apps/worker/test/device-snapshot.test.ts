@@ -9,6 +9,8 @@ import {
   schemaOfChunk,
   SnapshotFormatError,
   tableHashes,
+  HASH_START,
+  hashStep,
 } from '../src/local/device-snapshot.js';
 import type { LocalEngine } from '../src/local/engine.js';
 import { syncPhone } from './phone.js';
@@ -16,6 +18,8 @@ import { newPhone } from './twin.js';
 
 const ORIGIN = 'https://ledgerline.test';
 const H = { origin: ORIGIN, 'content-type': 'application/json', 'x-ledgerline': '1' };
+
+const toHex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
 
 describe('a copy as a snapshot', () => {
   let a: LocalEngine;
@@ -27,6 +31,23 @@ describe('a copy as a snapshot', () => {
 
   it('rebuilt from its chunks, a copy has the same table hashes', async () => {
     const hashes = await tableHashes(a.db);
+    // Hashed a few rows at a time, with the place kept as plain JSON between the steps (the server's freeze
+    // does so), the hashes are the same.
+    for (const rows of [1, 7, 10_000]) {
+      let p = HASH_START;
+      let steps = 0;
+      for (;;) {
+        const r = await hashStep(a.db, JSON.parse(JSON.stringify(p)) as typeof p, rows, 1_000_000);
+        steps++;
+        p = r.progress;
+        if (r.finished) break;
+      }
+      expect(p.done.map((t) => t.hash)).toEqual(hashes.map((t) => toHex(t.hash)));
+      expect(p.done.map((t) => t.name)).toEqual(hashes.map((t) => t.name));
+      if (rows === 1) expect(steps).toBeGreaterThan(50);
+    }
+    // A step also ends on its byte limit.
+    expect((await hashStep(a.db, HASH_START, 10_000, 1)).finished).toBe(false);
     expect(hashes.length).toBeGreaterThan(10);
     // Worked out again, the same.
     expect(differingTables(hashes, await tableHashes(a.db))).toEqual([]);

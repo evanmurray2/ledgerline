@@ -8,6 +8,8 @@ import {
   resetRecentChanges,
   setPasskeyCheck,
 } from '../src/api/client';
+import { isSealed, resetCopyForTests } from '../src/copy/copy';
+import { NOT_LOCKED } from '../src/copy/sealed-session';
 import { connectivity } from '../src/state/connectivity';
 
 type Call = { url: string; init: RequestInit };
@@ -32,6 +34,26 @@ afterEach(() => vi.restoreAllMocks());
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const ok = { ok: true, rta: 96365, rtaUpdating: false };
+const plainSession = {
+  user: { email: 'owner@example.com', login: null },
+  budget: {
+    id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+    name: 'Home',
+    startMonth: '2026-01',
+    timeZone: 'America/Chicago',
+    currentMonth: '2026-11',
+    today: '2026-11-12',
+    setupStep: 'done',
+  },
+  settings: { tracking: true, noteButton: true },
+  appVersion: '1.0.0',
+  writeState: 'ok',
+  readOnlyUntil: null,
+  readsPaused: false,
+  canLinkBanks: true,
+  hostedLink: false,
+  recoveryNoticeAt: null,
+};
 
 describe('API client', () => {
   it('sends the CSRF header and JSON content type on every mutation', async () => {
@@ -147,6 +169,45 @@ describe('API client', () => {
       code: 'read_only',
     });
     expect(calls).toHaveLength(0);
+  });
+
+  it('for a sealed budget, says it can open one and sends no change of the budget to the server', async () => {
+    respond = () =>
+      json({
+        sealed: true,
+        user: { email: 'owner@example.com' },
+        budgetId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+        appVersion: '1.0.0',
+        writeState: 'ok',
+        readOnlyUntil: null,
+        readsPaused: false,
+        canLinkBanks: true,
+        recoveryNoticeAt: null,
+      });
+    try {
+      const s = await api.session();
+      expect(new Headers(calls[0]!.init.headers).get('x-ledgerline-sealed')).toBe('1');
+      // The copy is closed: nothing of the budget is known yet.
+      expect(s.budget).toMatchObject({ id: '01ARZ3NDEKTSV4RRFFQ69G5FAV', name: '' });
+      expect(isSealed()).toBe(true);
+      await expect(
+        api.assign({ month: '2026-11', items: [{ categoryId: 'x', amount: 1 }] }),
+      ).rejects.toMatchObject({ code: 'sealed', status: 409 });
+      expect(calls).toHaveLength(1);
+      // The server now answers as if the budget were not sealed: the app refuses the answer, stays sealed,
+      // and still sends no change.
+      respond = () => json(plainSession);
+      await expect(api.session()).rejects.toThrow(NOT_LOCKED);
+      expect(isSealed()).toBe(true);
+      await expect(
+        api.assign({ month: '2026-11', items: [{ categoryId: 'x', amount: 1 }] }),
+      ).rejects.toMatchObject({ code: 'sealed' });
+      expect(calls).toHaveLength(2);
+    } finally {
+      resetCopyForTests();
+    }
+    // A device that never knew the budget as sealed takes the plain answer.
+    expect((await api.session()).budget.name).toBe('Home');
   });
 
   it('while resting, asks only for the session and stops after a resting answer', async () => {

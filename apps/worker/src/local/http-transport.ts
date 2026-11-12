@@ -1,7 +1,7 @@
 // How a device reaches the server's sealed log over HTTP (seal/log-routes.ts): the entries, the bank runs and
 // the snapshots, as the session and the snapshot code ask for them (log-session.ts, device-snapshot.ts). Nothing
 // here is trusted because the server said it: every byte this hands on is checked by the code that asked.
-import type { FreezeAnswer } from '../seal/cutover.js';
+import type { FreezeStep } from '../seal/cutover.js';
 import type { AppendResult } from '../seal/log-store.js';
 import type { CutoverTransport } from './cutover-device.js';
 import type { SnapshotTransport } from './device-snapshot.js';
@@ -175,7 +175,14 @@ export function cutoverTransport(fetch: Fetch): CutoverTransport {
   const post = <T>(path: string, body: unknown = {}): Promise<T> =>
     call<T>(path, { method: 'POST', headers, body: JSON.stringify(body) });
   return {
-    freeze: () => post<FreezeAnswer>('/api/cutover/freeze'),
+    // The server hashes the budget a few hundred rows a call: asked again until the answer is whole.
+    freeze: async () => {
+      for (let n = 0; n < 5_000; n++) {
+        const r = await post<FreezeStep>('/api/cutover/freeze');
+        if (!r.ok || !('more' in r)) return r;
+      }
+      throw new TransportError(200, 'The server gave no answer. Try again.');
+    },
     begin: (s) =>
       post('/api/cutover/begin', {
         genesis: b64(s.genesis),

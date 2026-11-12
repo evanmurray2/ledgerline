@@ -36,6 +36,17 @@ const fromHex = (s: string) => Uint8Array.from(s.match(/../g) ?? [], (x) => pars
 const get = (path: string) => SELF.fetch(`${ORIGIN}${path}`);
 const post = (path: string, body: unknown = {}) =>
   SELF.fetch(`${ORIGIN}${path}`, { method: 'POST', headers: H, body: JSON.stringify(body) });
+/** The freeze, asked again while the server is still hashing (a few hundred rows a call). */
+async function freeze(): Promise<unknown> {
+  for (let calls = 1; ; calls++) {
+    const r = (await (await post('/api/cutover/freeze')).json()) as { ok: boolean; more?: boolean };
+    if (!r.ok || !r.more) {
+      freezeCalls = calls;
+      return r;
+    }
+  }
+}
+let freezeCalls = 0;
 const assign = (amount: number) =>
   post('/api/budget/assign', { month: '2026-11', items: [{ categoryId: 'rent', amount }] });
 
@@ -108,8 +119,17 @@ describe('the cutover, rehearsed', () => {
       );
     const jobsBefore = await jobs();
 
-    // ---- a link the Worker has not checked and stamped stands in the way
-    expect(await (await post('/api/cutover/freeze')).json()).toEqual({
+    // ---- the screen asks where the budget stands, and what stands in the way, before any key is made
+    expect(await (await get('/api/cutover/state')).json()).toEqual({
+      open: true,
+      sealed: false,
+      backUntil: null,
+    });
+    expect(await (await post('/api/cutover/ready')).json()).toEqual({
+      ok: true,
+      blocks: ['A bank link has not been checked yet.'],
+    });
+    expect(await freeze()).toEqual({
       ok: false,
       why: ['A bank link has not been checked yet.'],
     });
@@ -118,8 +138,11 @@ describe('the cutover, rehearsed', () => {
     phone = await everything(phone);
 
     // ---- freeze: nothing is part-way, and the phone's copy is the server's
-    const frozen = (await (await post('/api/cutover/freeze')).json()) as FreezeAnswer;
+    const frozen = (await freeze()) as FreezeAnswer;
     expect(frozen, JSON.stringify(frozen).slice(0, 300)).toMatchObject({ ok: true });
+    // The server hashed the budget in calls after the one that froze it (in steps: test/device-snapshot.test.ts), and the hashes are the
+    // very ones a phone works out in one go (compared below).
+    expect(freezeCalls).toBeGreaterThanOrEqual(2);
     if (!frozen.ok) return;
     // The freeze ends by the store's own clock, the one every old route reads the mark by.
     expect(Math.abs(frozen.until - (Date.now() + 15 * 60_000))).toBeLessThan(60_000);
@@ -201,7 +224,7 @@ describe('the cutover, rehearsed', () => {
       why: 'The budget changed while it was frozen. Start again.',
     });
     await server.prepare(`DELETE FROM audit_log WHERE action = 'slipped'`).run();
-    expect(await (await post('/api/cutover/freeze')).json()).toMatchObject({ ok: true });
+    expect(await freeze()).toMatchObject({ ok: true });
     const begun = await post('/api/cutover/begin', {
       genesis: b64(encodeEntry(genesis)),
       header: b64(sealed.header),
@@ -222,6 +245,40 @@ describe('the cutover, rehearsed', () => {
       expect(await r.json()).toEqual({ ok: true });
     }
     expect(await (await post('/api/cutover/seal')).json()).toEqual({ ok: true });
+    // A sealed budget is not offered the move again, and its freeze can't be ended.
+    expect((await post('/api/cutover/ready')).status).toBe(409);
+    expect((await post('/api/cutover/unfreeze')).status).toBe(409);
+    const sealedState = (await (await get('/api/cutover/state')).json()) as {
+      open: boolean;
+      sealed: boolean;
+      backUntil: string;
+    };
+    expect(sealedState).toMatchObject({ open: false, sealed: true });
+    expect(Date.parse(sealedState.backUntil)).toBeGreaterThan(Date.now() + 6 * 86_400_000);
+
+    // ---- the banks of a sealed budget: the server says each link's state and no name
+    const links = (await (await get('/api/settings/connections')).json()) as {
+      used: number;
+      items: { id: string; institution: string; accounts: string; status: string }[];
+    };
+    expect(links.items.length).toBeGreaterThan(0);
+    expect(links.items.every((i) => i.institution === '' && i.accounts === '')).toBe(true);
+    expect(links.items.find((i) => i.id === `con_${LINK}`)).toMatchObject({ status: 'ok' });
+    // A fetch the person asks for: only stamped links are asked (the seeded ones never had a token).
+    expect(await (await post('/api/settings/connections/refresh')).json()).toEqual({ ok: true, started: 1 });
+    expect((await post(`/api/settings/connections/con_${LINK}/refresh`)).status).toBe(200);
+    expect((await post('/api/settings/connections/con_nothing/refresh')).status).toBe(404);
+    expect(
+      (
+        await server
+          .prepare(`SELECT fetch_requested AS n FROM bank_link WHERE id = ?1`)
+          .bind(LINK)
+          .first<{ n: number }>()
+      )?.n,
+    ).toBe(1);
+    // What the server kept about the app's use is answered and dropped; every other old route stays closed.
+    expect((await post('/api/usage')).status).toBe(204);
+    expect((await post('/api/settings/connections/exchange')).status).toBe(409);
 
     // ---- sealed: the old routes are closed, the log's are open, and the old tables are as they were
     expect((await get('/api/sync?since=0&limit=5')).status).toBe(409);
@@ -300,12 +357,16 @@ describe('the cutover, rehearsed', () => {
       )
       .bind(NOW + 86_400_000)
       .run();
-    const blocked = (await (await post('/api/cutover/freeze')).json()) as FreezeAnswer;
+    const blocked = (await freeze()) as FreezeAnswer;
     expect(blocked).toEqual({ ok: false, why: ['A background job is part-way.'] });
     expect((await assign(81)).status).toBe(200);
     await server.prepare(`DELETE FROM job WHERE id = 'one-off'`).run();
-    const second = (await (await post('/api/cutover/freeze')).json()) as FreezeAnswer;
+    const second = (await freeze()) as FreezeAnswer;
     expect(second).toMatchObject({ ok: true });
+    // A move that failed ends its freeze at once: writes go on.
+    expect(await (await post('/api/cutover/unfreeze')).json()).toEqual({ ok: true });
+    expect((await assign(82)).status).toBe(200);
+    expect((await freeze()) as FreezeAnswer).toMatchObject({ ok: true });
     expect((await server.prepare(`SELECT count(*) AS n FROM log_entry`).first<{ n: number }>())!.n).toBe(0);
     // A freeze that is over: nothing more is taken, and the budget is as it was.
     await server.prepare(`UPDATE store_mark SET until = 1 WHERE key = 'frozen'`).run();

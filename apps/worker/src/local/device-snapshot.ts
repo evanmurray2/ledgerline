@@ -141,6 +141,72 @@ export async function tableHashes(
   return out;
 }
 
+/** How far a table-by-table hashing has come (`hashStep`): small, and plain JSON. */
+export interface HashProgress {
+  /** The tables done, in order. */
+  done: { name: string; hash: string }[];
+  /** In the table after those: the key of the last row hashed (null: none yet), and the hash so far. */
+  last: unknown[] | null;
+  h: string;
+}
+export const HASH_START: HashProgress = { done: [], last: null, h: '00'.repeat(32) };
+
+const hexOf = (b: Uint8Array): string => [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+const bytesOf = (s: string): Uint8Array<ArrayBuffer> =>
+  Uint8Array.from(s.match(/../g) ?? [], (x) => parseInt(x, 16));
+
+/**
+ * `tableHashes` in steps, for a server that may spend only a little time in one request: hashes at most `rows`
+ * rows (or `bytes` bytes of them) from where `p` stopped, and gives the new place. The hashes are the very ones
+ * `tableHashes` gives; `finished` when every table is done.
+ */
+export async function hashStep(
+  db: Db,
+  p: HashProgress,
+  rows: number,
+  bytes: number,
+): Promise<{ progress: HashProgress; finished: boolean }> {
+  const enc = new TextEncoder();
+  const done = [...p.done];
+  let last = p.last;
+  let h = bytesOf(p.h);
+  let leftRows = rows;
+  let leftBytes = bytes;
+  while (done.length < SNAPSHOT_TABLES.length) {
+    const t = SNAPSHOT_TABLES[done.length]!;
+    const cols = (await ownColumns(db, t)).filter((c) => !OWN_CLOCK[t.name]?.includes(c));
+    let ended = cols.length === 0;
+    while (!ended && leftRows > 0 && leftBytes > 0) {
+      const after = `(${t.pk.join(', ')}) > (${t.pk.map((_, i) => `?${i + 1}`).join(', ')})`;
+      const take = Math.min(PAGE, leftRows);
+      const page: { results: Record<string, unknown>[] } = await db
+        .prepare(
+          `SELECT ${[...cols].sort().join(', ')} FROM ${t.name} ${last ? `WHERE ${after}` : ''}
+           ORDER BY ${t.pk.join(', ')} LIMIT ${take}`,
+        )
+        .bind(...(last ?? []))
+        .all<Record<string, unknown>>();
+      for (const d of page.results) {
+        const row: SyncRow = { t: t.name, k: t.pk.map((c) => d[c]), d };
+        const text = enc.encode(JSON.stringify(row));
+        const joined = new Uint8Array(32 + text.length);
+        joined.set(h);
+        joined.set(text, 32);
+        h = await sha256(joined);
+        leftBytes -= text.length;
+      }
+      leftRows -= page.results.length;
+      if (page.results.length) last = t.pk.map((c) => page.results[page.results.length - 1]![c]);
+      if (page.results.length < take) ended = true;
+    }
+    if (!ended) return { progress: { done, last, h: hexOf(h) }, finished: false };
+    done.push({ name: t.name, hash: hexOf(h) });
+    last = null;
+    h = new Uint8Array(32);
+  }
+  return { progress: { done, last: null, h: hexOf(h) }, finished: true };
+}
+
 /**
  * The copy as plain chunks: a first line that says which columns each table has, then the rows as lines, cut
  * only between lines. Always at least one chunk.

@@ -40,6 +40,8 @@ export interface CopyRecord {
   credentialIdHint?: string | null;
   blob: Wrapped | null;
   savedAt: number;
+  /** The budget is sealed: opening this copy with no signal asks the passkey for the budget's secret too. */
+  sealed?: boolean;
 }
 
 // ---------------------------------------------------------------- IndexedDB
@@ -139,6 +141,11 @@ interface Held {
   key: string;
   dataKey: CryptoKey;
   lastActive: number;
+  /**
+   * A sealed budget's derived keys (docs/privacy.md 5.2, "In memory"): keys that can't be read out, held like the
+   * data key and for as long, so a refresh doesn't ask for the passkey. Never the budget key itself.
+   */
+  sealed?: unknown[];
 }
 
 async function held<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
@@ -161,9 +168,58 @@ async function held<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBR
   }
 }
 
-export async function holdKey(key: string, dataKey: CryptoKey, lastActive: number): Promise<void> {
+export async function holdKey(
+  key: string,
+  dataKey: CryptoKey,
+  lastActive: number,
+  /**
+   * A sealed budget's derived keys, to hold from now on. Without them, the ones held already stay, unless they
+   * are older than `maxAge`: keys that are too old to use are never made fresh again by a later activity.
+   */
+  sealed?: unknown[],
+  maxAge = Infinity,
+): Promise<void> {
   if (typeof indexedDB === 'undefined') return;
-  await held('readwrite', (s) => s.put({ key, dataKey, lastActive } satisfies Held)).catch(() => undefined);
+  // One transaction: a read and a write in two could put old keys back over newer ones.
+  await heldTx('readwrite', (s) => {
+    const g = s.get(key);
+    g.onsuccess = () => {
+      const before = g.result as Held | undefined;
+      const fresh =
+        before?.sealed && lastActive >= before.lastActive && lastActive - before.lastActive < maxAge;
+      const keep = sealed ?? (fresh ? before.sealed : undefined);
+      s.put({ key, dataKey, lastActive, ...(keep ? { sealed: keep } : {}) } satisfies Held);
+    };
+  }).catch(() => undefined);
+}
+
+/** Several requests in one transaction of the held keys. */
+async function heldTx(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => void): Promise<void> {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const r = indexedDB.open(HELD_DB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(HELD, { keyPath: 'key' });
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error ?? new Error(STORAGE_FAILED));
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const t = db.transaction(HELD, mode);
+      fn(t.objectStore(HELD));
+      t.oncomplete = () => resolve();
+      t.onerror = () => reject(t.error ?? new Error(STORAGE_FAILED));
+      t.onabort = () => reject(t.error ?? new Error(STORAGE_FAILED));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+/** The sealed budget's derived keys held with the data key, under the same time limit; null when none. */
+export async function heldSealed(key: string, maxAge: number, now = Date.now()): Promise<unknown[] | null> {
+  if (typeof indexedDB === 'undefined') return null;
+  const h = (await held('readonly', (s) => s.get(key)).catch(() => undefined)) as Held | undefined;
+  if (!h?.sealed || now < h.lastActive || now - h.lastActive >= maxAge) return null;
+  return h.sealed;
 }
 
 /** The held data key, when the last activity was less than `maxAge` ago; an older one is deleted. */

@@ -40,6 +40,8 @@ Check a new text against it, and keep the terms below the same everywhere: code,
 | Up to date                                       | Already up to date                            |
 | passkey                                          | Face ID (except on the Face ID button itself) |
 | recovery code                                    | backup code, reset code                       |
+| recovery key (opens a locked budget)             | backup key, master key, seed                  |
+| locked (a budget only your devices can read)     | sealed, encrypted, end-to-end                 |
 | View only until {time} (daily limit for changes) | paused, turned off, database limit            |
 | Paused until {time} (daily limit for loading)    | resting, reading is paused                    |
 | You're offline                                   | No signal, Network request failed             |

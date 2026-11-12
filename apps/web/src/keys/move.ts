@@ -34,6 +34,21 @@ export async function prepareMove(o: {
   };
 }
 
+/**
+ * Whether the recovery key as typed opens the key the first entry holds. Nothing is zeroed: a slip of the
+ * finger is typed again, with the same key still in hand.
+ */
+export async function recoveryKeyOpens(p: PreparedMove, typed: string): Promise<boolean> {
+  try {
+    const r = await openWithRecoveryKey([p.genesis], p.budgetId, typed);
+    const same = equal(r.budget.bk, p.secret.bk);
+    zeroize(r.budget.bk);
+    return same;
+  } catch {
+    return false;
+  }
+}
+
 /** Forgets a prepared move: the key bytes are zeroed. */
 export function dropMove(p: PreparedMove): void {
   zeroize(p.secret.bk, p.secret.recoveryKey);

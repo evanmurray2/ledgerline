@@ -15,12 +15,14 @@ import {
 import { AppShell } from './components/AppShell';
 import { ErrorNote, Loading } from './components/ui';
 import { useQueryClient } from '@tanstack/react-query';
+import type { Session } from '@ledgerline/contracts';
 import { forgetSignedOut, qk, useSession } from './api/hooks';
 import { copySettled, needsReload, reloadForVersion } from './state/version';
 import { connectivity } from './state/connectivity';
 import { usage } from './usage/tracker';
 import { BudgetScreen } from './screens/Budget';
-import { AssignSheetScreen, CategorySheetScreen } from './screens/BudgetSheets';
+import { AssignSheetScreen } from './screens/BudgetSheets';
+import { CategorySheetScreen } from './screens/CategorySheet';
 import { TargetScreen, TargetsScreen } from './screens/Targets';
 import { CloseSheet, OwedScreen } from './screens/Owed';
 import { ActivityScreen } from './screens/Activity';
@@ -47,6 +49,7 @@ const CategoryEditSheet = lazyRouteComponent(settings, 'CategoryEditSheet');
 const ConnectionsScreen = lazyRouteComponent(settings, 'ConnectionsScreen');
 const DataScreen = lazyRouteComponent(settings, 'DataScreen');
 const PrivacyScreen = lazyRouteComponent(() => import('./screens/settings/Privacy'), 'PrivacyScreen');
+const AboutScreen = lazyRouteComponent(() => import('./screens/settings/About'), 'AboutScreen');
 const DeviceCheckScreen = lazyRouteComponent(
   () => import('./screens/settings/DeviceCheck'),
   'DeviceCheckScreen',
@@ -111,11 +114,15 @@ function Root() {
     // The Worker refused a write because the daily limit was reached: refresh writeState and readOnlyUntil.
     const onReadOnly = () => void qc.invalidateQueries({ queryKey: qk.session });
     window.addEventListener('ledgerline:readonly', onReadOnly);
+    // A sealed budget's copy is open: the session made from it (copy/copy.ts) is the one the screens read.
+    const onSession = (e: Event) => qc.setQueryData(qk.session, (e as CustomEvent<Session>).detail);
+    window.addEventListener('ledgerline:session', onSession);
     // The session ended (24 hours, or signed out elsewhere): show sign-in.
     const onSignedOut = () => forgetSignedOut(qc);
     window.addEventListener('ledgerline:signedout', onSignedOut);
     return () => {
       window.removeEventListener('ledgerline:readonly', onReadOnly);
+      window.removeEventListener('ledgerline:session', onSession);
       window.removeEventListener('ledgerline:signedout', onSignedOut);
     };
   }, [qc]);
@@ -375,10 +382,7 @@ const repairRoute = createRoute({
 const registerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/accounts/$accountId',
-  validateSearch: (s: Record<string, unknown>) => ({
-    show: s.show === 'pending' || s.show === 'needs' || s.show === 'transfers' ? s.show : undefined,
-    ...returnSearch(s),
-  }),
+  validateSearch: returnSearch,
   component: RegisterScreen,
 });
 const registerTxnRoute = createRoute({
@@ -428,6 +432,11 @@ const usersRoute = createRoute({
   component: UsersScreen,
 });
 // The phase 0 checks of the privacy design (docs/privacy.md 15.4).
+const aboutRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'about',
+  component: AboutScreen,
+});
 const privacyRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'privacy',
@@ -546,6 +555,7 @@ const routeTree = rootRoute.addChildren([
     deviceCheckRoute,
     linkDoneRoute,
     privacyRoute,
+    aboutRoute,
     oldCategoriesRoute,
     oldCategoryRoute,
     rulesRoute,
