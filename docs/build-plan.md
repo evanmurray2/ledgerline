@@ -49,4 +49,4 @@ The UI works around these (details in `apps/web/CONTRACT_NOTES.md`):
 - [ ] Endpoints: accept a changed amount, edit a manual entry's amount or date, mark any transaction (not only an unclear transfer) as a transfer to an unlinked account by hand.
 - [ ] Extra fields: the new-month carry-over summary, recent paybacks, the repeat interval on upcoming rows, per-filter register counts, amounts on Move money options.
 - [ ] Desktop: account registers in the side panel, and a per-row category dropdown in Activity.
-- [ ] Your entries that stayed in a closed account (D-93) show in its register only: list them with the posted rows on Activity too.
+- [ ] Pending rows that stayed in a closed account (D-93) show in its register only: list them with the posted rows on Activity too.

@@ -3,8 +3,8 @@
 **Decided by the owner** (chat, Nov 8, 2026). Fills in `account.closed_at` from `docs/design.md` (Data model), which
 nothing set until now.
 
-**Now:** item 1 also lets Close run with your own pending entries, at a working balance of $0 (D-93,
-`docs/decisions/D-93-close-with-your-pending-entries.md`).
+**Now:** item 1 also lets Close run with pending rows left, at a working balance of $0 (D-93,
+`docs/decisions/D-93-close-with-pending-rows.md`).
 
 **Context.** An account closed at the bank stayed on Accounts with its last balance, and a card kept its payment
 category on Budget. The owner asked how to close one.

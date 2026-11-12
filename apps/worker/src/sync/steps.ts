@@ -483,10 +483,11 @@ export async function planApply(
       )
       .bind(runId, page, c.now, from, to),
   );
-  // A new row for a closed account opens it again, with its card payment category (D-73).
-  if (evs.some((e) => e.kind === 'added')) {
+  // Any word from the bank about a closed account opens it again, with its card payment category: a new row
+  // (D-73), or a change to or the removal of a row that stayed there, which leaves it off $0 (D-93).
+  if (evs.length) {
     const closedHere = `SELECT a.id FROM account a WHERE a.closed_at IS NOT NULL AND a.provider_account_id IN (
-        SELECT provider_account_id FROM bank_event WHERE sync_run_id = ?1 AND page = ?2 AND position >= ?4 AND position < ?5 AND kind = 'added')`;
+        SELECT provider_account_id FROM bank_event WHERE sync_run_id = ?1 AND page = ?2 AND position >= ?4 AND position < ?5)`;
     stmts.push(
       db
         .prepare(
