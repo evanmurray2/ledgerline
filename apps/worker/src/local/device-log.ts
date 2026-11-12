@@ -298,6 +298,11 @@ export class DeviceLog {
     return this.state.number;
   }
 
+  /** The day (days since 1970, UTC) of the last daily scan the log holds; 0 for none. */
+  get scanThrough(): number {
+    return (this.state as FullChainState).scanThrough;
+  }
+
   /** The last bank run the log says is filed. */
   get filedThrough(): number {
     return (this.state as FullChainState).filedThrough;

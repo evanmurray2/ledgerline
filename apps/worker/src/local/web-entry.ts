@@ -283,11 +283,13 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
         provider: reader,
         now: await e.now(),
       });
+      // The daily scan once the bank runs are in (the device's clock as the server's).
+      const scans = runs.waiting ? 0 : await session.scan(clock());
       const sent = await session.flush();
       return {
         value: {
           entries: pulled.entries,
-          filed: runs.filed,
+          filed: runs.filed + scans,
           waiting: runs.waiting,
           sent: sent.sent,
           lost: pulled.lost + runs.lost + sent.lost,
