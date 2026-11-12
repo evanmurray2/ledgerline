@@ -615,18 +615,22 @@ test('Month bar: tabs go Budget, Activity, Reports, Accounts', async ({ page }) 
   expect(names.slice(0, 4)).toEqual(['Budget', 'Activity', 'Reports', 'Accounts']);
 });
 
-test('Tabs: the Budget badge counts what Needs attention holds', async ({ page }) => {
-  await page.goto('/activity');
-  const tab = page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Budget/ });
-  const count = async () => {
-    const text = (await tab.getAttribute('aria-label')) ?? (await tab.innerText());
-    return Number(/\d+/.exec(text)?.[0] ?? 0);
-  };
-  await expect.poll(count).toBeGreaterThan(0);
-  const n = await count();
-  await tab.click();
-  // The sample budget's Ready to Assign isn't below zero, so the tab and the chip count the same items.
-  await expect(page.getByRole('button', { name: /^Needs attention/ })).toContainText(String(n));
+test('Tabs: a red "!" on each tab that needs you', async ({ page }) => {
+  await page.goto('/reports');
+  const nav = page.getByRole('navigation', { name: 'Main' });
+  // The sample budget has an overspent category, Activity to-dos and a bank to repair.
+  for (const [tab, why] of [
+    ['Budget', 'needs attention'],
+    ['Activity', 'needs attention'],
+    ['Accounts', 'a bank needs repair'],
+  ] as const) {
+    const link = nav.getByRole('link', { name: `${tab}, ${why}` });
+    await expect(link).toBeVisible();
+    await expect(link.getByTestId('alert-badge')).toHaveText('!');
+  }
+  await expect(nav.getByRole('link', { name: /^Reports/ }).getByTestId('alert-badge')).toHaveCount(0);
+  // No counts on the tabs (the desktop sidebar's Ready to Assign amount isn't a tab).
+  for (const link of await nav.getByRole('link').all()) await expect(link).not.toContainText(/\d/);
 });
 
 test('Activity: a transaction opened on October closes back to October; a search covers every month', async ({

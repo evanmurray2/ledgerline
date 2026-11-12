@@ -6,10 +6,9 @@ import { Link, useRouterState } from '@tanstack/react-router';
 import { PanelSlotContext, useModalOpen } from './Sheet';
 import { ToastHost } from './Toast';
 import { BlockedAction } from './BlockedAction';
-import { CountBadge, cx, Icon, useIsDesktop, type IconName } from './ui';
+import { AlertBadge, cx, Icon, useIsDesktop, type IconName } from './ui';
 import { NoteSheet } from '../screens/Note';
 import { useBadgeCounts, useBudget, useSession } from '../api/hooks';
-import { budgetBadge } from '../screens/BudgetAttention';
 import { useCopy } from '../copy/copy';
 import { useCanWrite, useConnectivity } from '../state/connectivity';
 import { budgetTime } from '../lib/dates';
@@ -36,43 +35,32 @@ export function tabFor(path: string, search?: Record<string, unknown>): Tab {
 }
 
 /**
- * The tab badges come from a cheap endpoint: the full Activity and Accounts views read every transaction. Budget's
- * comes from this month's budget, worked out on the device (D-45) and shared with the Budget screen's own query.
+ * Which tabs need you, each shown as a red "!". Activity and Accounts come from a cheap endpoint (the full views read
+ * every transaction). Budget's comes from this month's budget, worked out on the device (D-45) and shared with the
+ * Budget screen's own query: anything in its Needs attention list, or Ready to Assign below zero.
  */
 function useBadges() {
   const b = useBadgeCounts();
   const session = useSession();
   const budget = useBudget(session.data?.budget.currentMonth);
-  const bb = budget.data ? budgetBadge(budget.data) : { n: 0, danger: false };
   return {
-    budget: bb.n,
-    budgetDanger: bb.danger,
-    activity: b.data?.activity ?? 0,
-    accounts: b.data?.accounts ?? 0,
+    budget: !!budget.data && budget.data.attention.some((a) => a.section !== 'Low'),
+    activity: (b.data?.activity ?? 0) > 0,
+    accounts: (b.data?.accounts ?? 0) > 0,
+    reports: false,
+    settings: false,
     rta: b.data?.rta,
     rtaUpdating: b.data?.rtaUpdating ?? false,
   };
 }
 
 // The three month tabs side by side, then Accounts (today's balances, no month) with Settings behind it.
-// `what` names the badge's count, singular and plural.
-const TABS: { id: Tab; name: string; to: string; icon: IconName; what: [string, string] | null }[] = [
-  {
-    id: 'budget',
-    name: 'Budget',
-    to: '/budget',
-    icon: 'budget',
-    what: ['needs attention', 'need attention'],
-  },
-  { id: 'activity', name: 'Activity', to: '/activity', icon: 'activity', what: ['to do', 'to do'] },
-  { id: 'reports', name: 'Reports', to: '/reports', icon: 'reports', what: null },
-  {
-    id: 'accounts',
-    name: 'Accounts',
-    to: '/accounts',
-    icon: 'accounts',
-    what: ['bank needs you', 'banks need you'],
-  },
+// `alert` is what VoiceOver hears after the tab's name when the tab shows its "!".
+const TABS: { id: Tab; name: string; to: string; icon: IconName; alert: string }[] = [
+  { id: 'budget', name: 'Budget', to: '/budget', icon: 'budget', alert: 'needs attention' },
+  { id: 'activity', name: 'Activity', to: '/activity', icon: 'activity', alert: 'needs attention' },
+  { id: 'reports', name: 'Reports', to: '/reports', icon: 'reports', alert: '' },
+  { id: 'accounts', name: 'Accounts', to: '/accounts', icon: 'accounts', alert: 'a bank needs repair' },
 ];
 
 /** The app's month goes with the tab links to Budget, Activity and Reports (docs/month-header.md). */
@@ -91,16 +79,7 @@ function TabBar({ active }: { active: Tab }) {
     >
       {TABS.map((t) => {
         const on = t.id === current;
-        const badge =
-          t.id === 'budget'
-            ? badges.budget
-            : t.id === 'activity'
-              ? badges.activity
-              : t.id === 'accounts'
-                ? badges.accounts
-                : 0;
-        // Activity counts to-dos (gray); Accounts counts broken bank links (red); Budget is red when money is short.
-        const problem = t.id === 'accounts' || (t.id === 'budget' && badges.budgetDanger);
+        const alert = badges[t.id];
         return (
           <Link
             key={t.id}
@@ -108,16 +87,14 @@ function TabBar({ active }: { active: Tab }) {
             search={tabSearch(t.id, month)}
             data-track={`tabs.${t.id}`}
             aria-current={on ? 'page' : undefined}
-            aria-label={badge > 0 && t.what ? `${t.name}, ${badge} ${t.what[badge === 1 ? 0 : 1]}` : t.name}
+            aria-label={alert ? `${t.name}, ${t.alert}` : t.name}
             className={cx(
               'relative flex min-h-12 flex-col items-center justify-center gap-[3px] text-xs no-underline',
               on ? 'font-bold text-accent' : 'font-medium text-muted',
             )}
           >
             <Icon name={t.icon} size={22} />
-            {badge > 0 && (
-              <CountBadge n={badge} danger={problem} size="sm" className="absolute left-1/2 top-0.5 ml-1.5" />
-            )}
+            {alert && <AlertBadge className="absolute left-1/2 top-0.5 ml-1.5" />}
             <span aria-hidden="true">{t.name}</span>
           </Link>
         );
@@ -133,12 +110,9 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
   const month = useTabMonth();
   const here = useHere();
   const rta = badges.rta;
-  const items: { id: Tab; name: string; to: string; badge: number; danger: boolean }[] = [
-    { id: 'budget', name: 'Budget', to: '/budget', badge: badges.budget, danger: badges.budgetDanger },
-    { id: 'activity', name: 'Activity', to: '/activity', badge: badges.activity, danger: false },
-    { id: 'reports', name: 'Reports', to: '/reports', badge: 0, danger: false },
-    { id: 'accounts', name: 'Accounts', to: '/accounts', badge: badges.accounts, danger: true },
-    { id: 'settings', name: 'Settings', to: '/settings', badge: 0, danger: false },
+  const items: { id: Tab; name: string; to: string; alert: string }[] = [
+    ...TABS,
+    { id: 'settings', name: 'Settings', to: '/settings', alert: '' },
   ];
   const negative = rta !== undefined && rta < 0;
   const done = rta === 0 && !badges.rtaUpdating;
@@ -157,13 +131,14 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
             search={tabSearch(n.id, month)}
             data-track={`nav.${n.id}`}
             aria-current={on ? 'page' : undefined}
+            aria-label={badges[n.id] ? `${n.name}, ${n.alert}` : undefined}
             className={cx(
               'hit flex h-10 items-center justify-between rounded-md px-2.5 text-md font-semibold no-underline',
               on ? 'bg-accent-soft text-accent' : 'bg-transparent text-ink-2',
             )}
           >
             <span>{n.name}</span>
-            {n.badge > 0 && <CountBadge n={n.badge} danger={n.danger} />}
+            {badges[n.id] && <AlertBadge />}
           </Link>
         );
       })}
