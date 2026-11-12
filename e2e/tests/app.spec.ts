@@ -25,14 +25,14 @@ test('Budget shows Ready to Assign and the November groups', async ({ page }) =>
   await expect(page.getByText('$1,430.60 out').first()).toBeVisible();
 });
 
-test('Needs attention fixes move money and Ready to Assign reads $663.65', async ({ page }) => {
+test('Needs attention fixes move money and Ready to Assign reads $833.65', async ({ page }) => {
   await page.goto('/budget?view=attention');
   await expect(rta(page)).toHaveText('$981.90');
   const fixes: [string, string][] = [
     ['Cover $18.25 for Dining out', '$963.65'],
     ['Fund $90.00 for Car insurance', '$873.65'],
     ['Fund $250.00 for Vacation', '$623.65'],
-    ['Move $40.00 for Gifts', '$663.65'],
+    ['Move $210.00 for Gifts', '$833.65'],
   ];
   for (const [name, after] of fixes) {
     await page.getByRole('button', { name }).click();
@@ -43,7 +43,7 @@ test('Needs attention fixes move money and Ready to Assign reads $663.65', async
   await expect(page.getByRole('button', { name: /^Low/ })).toHaveCount(0);
   await expect(page.getByText('Done just now')).toBeVisible();
   await expect(page.getByText('Added $18.25 from Ready to Assign')).toBeVisible();
-  await expect(page.getByText('Moved $40.00 back to Ready to Assign')).toBeVisible();
+  await expect(page.getByText('Moved $210.00 back to Ready to Assign')).toBeVisible();
   // Freedom's payment category is covered once Dining out is.
   await page.getByRole('button', { name: 'All' }).click();
   await expect(page.getByText('Freedom Unlimited').first()).toBeVisible();

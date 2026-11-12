@@ -83,20 +83,20 @@ test('With no passkey copy, nothing is kept on the device: with no signal it say
   await context.setOffline(false);
 });
 
-test('Needs attention fixes reach $663.65 through the API', async ({ page }) => {
+test('Needs attention fixes reach $833.65 through the API', async ({ page }) => {
   await page.goto('/budget?view=attention');
   await expect(rta(page)).toHaveText('$981.90');
   for (const [name, after] of [
     ['Cover $18.25 for Dining out', '$963.65'],
     ['Fund $90.00 for Car insurance', '$873.65'],
     ['Fund $250.00 for Vacation', '$623.65'],
-    ['Move $40.00 for Gifts', '$663.65'],
+    ['Move $210.00 for Gifts', '$833.65'],
   ] as const) {
     await page.getByRole('button', { name }).click();
     await expect(rta(page)).toHaveText(after);
   }
   await page.reload();
-  await expect(rta(page)).toHaveText('$663.65');
+  await expect(rta(page)).toHaveText('$833.65');
 });
 
 test('A pinned category is saved with the budget', async ({ page }) => {
