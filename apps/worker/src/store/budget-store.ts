@@ -22,7 +22,9 @@ import {
   sealedWebhook,
   type FetchDeps,
 } from '../seal/fetch-job.js';
+import { SEALED_HEADER } from '@ledgerline/contracts';
 import { cutoverApi } from '../seal/cutover-routes.js';
+import { sealedApi } from '../seal/sealed-routes.js';
 import { runDeps } from '../seal/runs.js';
 import { parseKeyring } from '@ledgerline/platform';
 import { dev } from '../dev-seed.js';
@@ -91,6 +93,7 @@ export class BudgetStore extends DurableObject<Env> {
   private app: Hono<AppEnv> | null = null;
   private logApp: Hono<AppEnv> | null = null;
   private cutoverApp: Hono<AppEnv> | null = null;
+  private sealedApp: Hono<AppEnv> | null = null;
   private devApp: Hono<AppEnv> | null = null;
   private readonly usage: UsageCounter;
   /** Fair use: whether to report usage; null until read from storage or set by a request. */
@@ -203,6 +206,21 @@ export class BudgetStore extends DurableObject<Env> {
       this.usage.request();
       try {
         return await this.serve(this.logApp, request, caller);
+      } finally {
+        this.reportUsage(caller.budgetId);
+      }
+    }
+    // An app that can open a sealed budget asks who is signed in (seal/sealed-routes.ts).
+    if (
+      this.marks().sealed &&
+      path === '/api/session' &&
+      request.method === 'GET' &&
+      request.headers.get(SEALED_HEADER) === '1'
+    ) {
+      this.sealedApp ??= withCaller((app) => app.route('/api', sealedApi));
+      this.usage.request();
+      try {
+        return await this.serve(this.sealedApp, request, caller);
       } finally {
         this.reportUsage(caller.budgetId);
       }

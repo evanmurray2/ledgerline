@@ -40,6 +40,29 @@ export const Session = z.object({
 });
 export type Session = z.infer<typeof Session>;
 
+/**
+ * The header an app sends to say it can open a sealed budget (docs/privacy.md 5.3). Without it, a sealed budget
+ * answers every old route "update the app".
+ */
+export const SEALED_HEADER = 'x-ledgerline-sealed';
+
+/**
+ * What the server says about a signed-in person whose budget is sealed: who they are and what the account may
+ * do now. It holds nothing of the budget: the name, the time zone and the months come from the device's copy.
+ */
+export const SealedSession = z.object({
+  sealed: z.literal(true),
+  user: z.object({ email: z.string() }),
+  budgetId: id,
+  appVersion: z.string(),
+  writeState: z.enum(['ok', 'paused', 'readonly']),
+  readOnlyUntil: z.string().nullable(),
+  readsPaused: z.boolean(),
+  canLinkBanks: z.boolean(),
+  recoveryNoticeAt: z.string().nullable(),
+});
+export type SealedSession = z.infer<typeof SealedSession>;
+
 // ---------------------------------------------------------------- budget
 
 export const CategoryStatus = z.enum([

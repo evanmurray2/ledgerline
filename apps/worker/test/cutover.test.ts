@@ -226,6 +226,11 @@ describe('the cutover, rehearsed', () => {
     // ---- sealed: the old routes are closed, the log's are open, and the old tables are as they were
     expect((await get('/api/sync?since=0&limit=5')).status).toBe(409);
     expect((await assign(60)).status).toBe(409);
+    // An app that can open a sealed budget learns who is signed in, and nothing of the budget; an older app is
+    // told to update.
+    expect((await get('/api/session')).status).toBe(409);
+    const who = await SELF.fetch(`${ORIGIN}/api/session`, { headers: { 'x-ledgerline-sealed': '1' } });
+    expect(await who.json()).toMatchObject({ sealed: true, budgetId: budget, writeState: 'ok' });
     expect(await (await get('/api/log?after=0')).json()).toMatchObject({ number: 1 });
     expect(await t.list()).toMatchObject([{ id: snapshotId, number: 1, check: null }]);
     // Only the sealed budget's own jobs are left (the backstop, and the fetch it queues for the link).
