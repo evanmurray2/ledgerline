@@ -24,7 +24,7 @@ import {
 } from '../seal/fetch-job.js';
 import { SEALED_HEADER } from '@ledgerline/contracts';
 import { cutoverApi } from '../seal/cutover-routes.js';
-import { sealedApi } from '../seal/sealed-routes.js';
+import { sealedApi, sealedPath } from '../seal/sealed-routes.js';
 import { runDeps } from '../seal/runs.js';
 import { parseKeyring } from '@ledgerline/platform';
 import { dev } from '../dev-seed.js';
@@ -213,14 +213,19 @@ export class BudgetStore extends DurableObject<Env> {
     // An app that can open a sealed budget asks who is signed in (seal/sealed-routes.ts).
     if (
       this.marks().sealed &&
-      path === '/api/session' &&
-      request.method === 'GET' &&
-      request.headers.get(SEALED_HEADER) === '1'
+      sealedPath(request.method, path) &&
+      (path !== '/api/session' || request.headers.get(SEALED_HEADER) === '1')
     ) {
       this.sealedApp ??= withCaller((app) => app.route('/api', sealedApi));
       this.usage.request();
       try {
-        return await this.serve(this.sealedApp, request, caller);
+        const r = await this.serve(this.sealedApp, request, caller);
+        // A fetch the person asked for: the backstop runs now and starts it (seal/fetch-job.ts).
+        if (r.ok && request.method === 'POST' && /\/connections\/([^/]+\/)?refresh$/.test(path)) {
+          await this.enqueue(SEALED_BACKSTOP, { id: SEALED_BACKSTOP_ID, runAt: Date.now(), recurring: true });
+          await this.runner.scheduleNext(Date.now());
+        }
+        return r;
       } finally {
         this.reportUsage(caller.budgetId);
       }

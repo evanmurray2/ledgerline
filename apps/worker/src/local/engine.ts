@@ -39,6 +39,11 @@ export interface EngineIdentity {
   budgetId: string;
   userId: string;
   email: string;
+  /**
+   * The account can't link banks (the server said so). The copy answers the session's setup step with it; left
+   * out, the copy answers as the budget's owner.
+   */
+  noBanks?: boolean;
 }
 
 export interface EngineState {
@@ -346,6 +351,7 @@ export class LocalEngine {
       c.set('userId', who.userId);
       c.set('budgetId', who.budgetId);
       c.set('email', who.email);
+      if (who.noBanks) c.set('isAdmin', false);
       c.set('sessionId', '');
       c.set('syncEpoch', 'local');
       return next();

@@ -22,20 +22,31 @@ export type Fetch = (path: string) => Promise<Response>;
 
 const unb64 = (s: string): Uint8Array => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
-/** Every public entry of the budget's log, in order (GET /api/log/public), read strictly. */
-export async function fetchPublicEntries(fetch: Fetch): Promise<Entry[]> {
-  const out: Entry[] = [];
+/** Every public entry of the budget's log, in order (GET /api/log/public), as the server gave them (base64). */
+export async function fetchPublics(fetch: Fetch): Promise<string[]> {
+  const out: string[] = [];
   let after = 0;
   for (let n = 0; n < 10_000; n++) {
     const r = await fetch(`/api/log/public?after=${after}`);
     if (!r.ok) throw new Error('Something went wrong. Try again.');
     const page = (await r.json()) as { entries: string[]; last: number; more: boolean };
-    for (const e of page.entries) out.push(await readEntry(unb64(e)));
+    out.push(...page.entries);
     if (!page.more || !page.entries.length) return out;
     after = page.last;
   }
   throw new Error('Something went wrong. Try again.');
 }
+
+/** The public entries, read strictly. */
+export async function readPublics(publics: string[]): Promise<Entry[]> {
+  const out: Entry[] = [];
+  for (const e of publics) out.push(await readEntry(unb64(e)));
+  return out;
+}
+
+/** Every public entry of the budget's log, in order, read strictly. */
+export const fetchPublicEntries = async (fetch: Fetch): Promise<Entry[]> =>
+  readPublics(await fetchPublics(fetch));
 
 /**
  * Opens a sealed budget on this device with the passkey just used. Gives where the engine stands in the log, and
@@ -43,26 +54,42 @@ export async function fetchPublicEntries(fetch: Fetch): Promise<Entry[]> {
  */
 export async function openSealedBudget(o: {
   host: SealedHost;
-  fetch: Fetch;
+  /** Reads the public entries from the server. Without it (no signal), `kept` is all there is. */
+  fetch?: Fetch;
+  /**
+   * The public entries kept with the copy the last time (they are no secret). With no signal the budget opens
+   * from them: the ways in they hold are the ones this device last saw.
+   */
+  kept?: string[];
   budgetId: string;
   deviceId: string;
   passkey: PasskeySecret;
   workerKeys: WorkerRunKeys;
   /** The last public entry this device saw before, if any. */
   remembered?: PublicRef;
-}): Promise<{ number: number; lastPublic: PublicRef; joined: boolean }> {
-  const publics = await fetchPublicEntries(o.fetch);
+}): Promise<{
+  number: number;
+  lastPublic: PublicRef;
+  joined: boolean;
+  /** The derived keys handed to the engine: held by the caller for a refresh, never stored in the clear. */
+  keys: ({ version: number } & Record<string, unknown>)[];
+  /** The public entries this opened from, to keep with the copy. */
+  publics: string[];
+}> {
+  const raw = o.fetch ? await fetchPublics(o.fetch) : o.kept;
+  if (!raw?.length) throw new Error('Connect to the internet to open your budget.');
+  const publics = await readPublics(raw);
   const { budget, state } = await openWithPasskey(publics, o.budgetId, o.passkey, o.remembered);
   try {
-    const keys = await keysOfEveryVersion(state, budget);
-    const opened = await o.host.sealedOpen(
-      keys as unknown as ({ version: number } & Record<string, unknown>)[],
-      o.deviceId,
-      o.workerKeys,
-    );
+    const keys = (await keysOfEveryVersion(state, budget)) as unknown as ({ version: number } & Record<
+      string,
+      unknown
+    >)[];
+    const opened = await o.host.sealedOpen(keys, o.deviceId, o.workerKeys);
     // No place kept with the copy: a new device, or a copy made again. It starts from a snapshot.
+    if (!opened.ready && !o.fetch) throw new Error('Connect to the internet to open your budget.');
     const at = opened.ready ? opened : await o.host.sealedJoin();
-    return { number: at.number, lastPublic: state.lastPublic, joined: !opened.ready };
+    return { number: at.number, lastPublic: state.lastPublic, joined: !opened.ready, keys, publics: raw };
   } finally {
     zeroize(budget.bk);
   }

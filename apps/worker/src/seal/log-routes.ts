@@ -67,6 +67,12 @@ const Append = z.object({
 });
 
 export const logApi = new Hono<AppEnv>();
+// Every answer says the server's time: a device dates its entries by the server's clock as it last saw it, since
+// the log refuses an entry more than 5 minutes off (packages/seal server-append.ts).
+logApi.use('*', async (c, next) => {
+  await next();
+  c.header('x-ledgerline-time', String(requestNow(c)));
+});
 /**
  * The same guard as every other route (http/security.ts), with one more body type: a snapshot's chunk is sealed
  * bytes, sent as `application/octet-stream`. Like JSON, that type can't be sent across sites without a

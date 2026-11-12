@@ -5,7 +5,8 @@ import { gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 
 const WORKER_BUDGET = 1024 * 1024;
-const WEB_BUDGET = 400 * 1024;
+// 420: the sealed budget's code in the app (keys, the move, the log) and Settings → About (Nov 12, 2026).
+const WEB_BUDGET = 420 * 1024;
 execFileSync('pnpm', ['exec', 'wrangler', 'deploy', '--dry-run', '--outdir', '.bundle'], {
   cwd: 'apps/worker',
   stdio: 'inherit',

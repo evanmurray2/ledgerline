@@ -9,9 +9,21 @@
 // holdKey). Wipe: signing out, here or from another device (Settings → Sign-in), no longer a member, or 7 days
 // offline.
 import { useSyncExternalStore } from 'react';
-import { CSRF_HEADER, type Session } from '@ledgerline/contracts';
+import { CSRF_HEADER, type SealedSession, type Session } from '@ledgerline/contracts';
+import { slotPrfInput, WayInError } from '../keys/budget';
+import { dropMove, prepareMove, proveMove, recoveryKeyOpens, type PreparedMove } from '../keys/move';
+import { WORKER_RUN_KEYS } from '../keys/worker-keys';
+import { logDeviceId, newUlid, openSealedBudget } from './sealed';
+import { mergedSession } from './sealed-session';
 import { connectivity } from '../state/connectivity';
-import { EngineHost, syncAll, type EngineIdentity, type QueuedEdit, type SyncPage } from './host';
+import {
+  EngineHost,
+  syncAll,
+  type EngineIdentity,
+  type QueuedEdit,
+  type SealedKeys,
+  type SyncPage,
+} from './host';
 import { shadowBefore, shadowFinish, type Started } from './shadow';
 import { usage } from '../usage/tracker';
 import { assert, canUsePasskeys, keepsCopy, type RequestOptionsJSON } from './passkey';
@@ -22,8 +34,10 @@ import {
   deleteRecord,
   dropHeld,
   heldKey,
+  heldSealed,
   holdKey,
   fromB64url,
+  toB64url,
   lastRecord,
   loadRecord,
   newKeys,
@@ -118,7 +132,345 @@ let who: EngineIdentity | null = null;
 const turnedOff = new Set<string>();
 
 /** A sign-in that just produced a PRF output, for start() to use without asking for Face ID again. */
-let pending: { credentialId: string; prf: ArrayBuffer | null; salt: ArrayBuffer } | null = null;
+let pending: {
+  credentialId: string;
+  prf: ArrayBuffer | null;
+  salt: ArrayBuffer;
+  /** The passkey's secret for a sealed budget's way in, when the sign-in asked for it. */
+  slotPrf: ArrayBuffer | null;
+} | null = null;
+
+// ---------------------------------------------------------------- a sealed budget (docs/privacy.md 5.3)
+
+/** What the server said about a signed-in person whose budget is sealed; null for a budget that is not. */
+let sealed: SealedSession | null = null;
+/** The budget lives in its sealed log: the copy syncs with the log, and every change is made on the device. */
+export const isSealed = (): boolean => sealed !== null;
+/**
+ * The server says the budget is sealed. It is remembered on this device from then on: the next sign-in asks the
+ * passkey for the budget's secret in the same prompt, and an answer that says the budget is not sealed is
+ * refused (sealed-session.ts). Nothing the server says later takes this back.
+ */
+export function noteSealed(s: SealedSession): void {
+  const first = sealed === null;
+  sealed = s;
+  rememberSealed(s.budgetId);
+  // A copy that was open as a plain budget (another device moved the budget meanwhile) holds no place in the
+  // log, and its queue was made for the old routes: the app starts again and opens the budget from the log.
+  if (first && state.status === 'ready' && who && !MOCK) {
+    void host?.close();
+    host = null;
+    window.location.reload();
+  }
+}
+/** The budgets this device knows as sealed (their ids, no more), kept outside the copy so a wipe leaves them. */
+const sealedBudgets = (): string[] => {
+  try {
+    return (localStorage.getItem(SEALED_FLAG) ?? '').split(',').filter(Boolean);
+  } catch {
+    return [];
+  }
+};
+function rememberSealed(budgetId: string): void {
+  try {
+    const all = sealedBudgets();
+    if (!all.includes(budgetId)) localStorage.setItem(SEALED_FLAG, [...all, budgetId].join(','));
+  } catch {
+    // No storage: the device knows it only while the app is open.
+  }
+}
+/** Only the person's own act on this device forgets it: the way back, or signing out here. */
+function forgetSealed(budgetId: string | null): void {
+  try {
+    const rest = budgetId ? sealedBudgets().filter((b) => b !== budgetId) : [];
+    if (rest.length) localStorage.setItem(SEALED_FLAG, rest.join(','));
+    else localStorage.removeItem(SEALED_FLAG);
+    if (budgetId) localStorage.removeItem(PUBLIC_MARK + budgetId);
+  } catch {
+    // Nothing kept, nothing to forget.
+  }
+}
+/** This device knows the budget as sealed. */
+export const sealedKnown = (budgetId: string): boolean =>
+  sealed?.budgetId === budgetId || sealedBudgets().includes(budgetId);
+
+// The last public entry of the log this device saw, kept in the copy and, as a second mark, outside it: a copy
+// that is made again (or lives in memory only) still refuses a log that does not pass through it.
+const PUBLIC_MARK = 'ledgerline.public.';
+type PublicMark = { number: number; hash: string };
+async function lastPublicSeen(h: EngineHost, budgetId: string): Promise<PublicMark | null> {
+  const marks: PublicMark[] = [];
+  const kept = await h.get('last_public');
+  if (kept) marks.push(JSON.parse(kept) as PublicMark);
+  try {
+    const out = localStorage.getItem(PUBLIC_MARK + budgetId);
+    if (out) marks.push(JSON.parse(out) as PublicMark);
+  } catch {
+    // The copy's own mark is all there is.
+  }
+  return marks.sort((a, b) => b.number - a.number)[0] ?? null;
+}
+async function keepPublicSeen(h: EngineHost, budgetId: string, m: PublicMark): Promise<void> {
+  await h.put('last_public', JSON.stringify(m));
+  try {
+    localStorage.setItem(PUBLIC_MARK + budgetId, JSON.stringify(m));
+  } catch {
+    // The copy's own mark stays.
+  }
+}
+export const sealedSession = (): SealedSession | null => sealed;
+/** The copy is open and can answer for the budget. */
+export const copyReady = (): boolean => state.status === 'ready' && host !== null;
+/** Keeps the session with the copy, for a start with no signal. */
+export async function keepSession(s: Session): Promise<void> {
+  if (!host) return;
+  const text = JSON.stringify(s);
+  if ((await host.get('session')) === text) return;
+  await host.put('session', text);
+  // Saved when it changed, so that a start with no signal finds it.
+  if (record) await save().catch(() => undefined);
+}
+const SEALED_FLAG = 'ledgerline.sealed';
+const knowsSealed = (): boolean => sealedBudgets().length > 0;
+/** Shown, with the button that tries again, when a sealed budget needs the passkey once more. */
+export const NEEDS_PASSKEY = 'Your passkey is needed once more to open your budget. Try again.';
+
+const toHex = (b: Uint8Array): string => [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+const fromHex = (s: string): Uint8Array<ArrayBuffer> =>
+  Uint8Array.from(s.match(/../g) ?? [], (x) => parseInt(x, 16));
+
+/**
+ * Opens the sealed budget in the engine: with the passkey's secret from the sign-in just made, or with the keys
+ * held since (a refresh). The engine then knows its place in the log, or starts from a snapshot.
+ */
+async function enterSealed(
+  way: { credentialId: string; slotPrf: ArrayBuffer | null } | null,
+  heldKeys: unknown[] | null,
+  online = true,
+): Promise<void> {
+  const h = host!;
+  const deviceId = await logDeviceId(h);
+  let keys: unknown[];
+  if (!way?.slotPrf && heldKeys) {
+    const o = await h.sealedOpen(heldKeys as never, deviceId, WORKER_RUN_KEYS);
+    if (!o.ready) await h.sealedJoin();
+    keys = heldKeys;
+  } else {
+    // No secret from the sign-in (this device opens a sealed budget for the first time, or the keys held are too
+    // old): the passkey is asked once more, for the budget's secret alone. Nothing of this goes to the server.
+    const w = way?.slotPrf ? way : await askSlot();
+    const last = await lastPublicSeen(h, who!.budgetId);
+    const publics = await h.get('publics');
+    const r = await openSealedBudget({
+      host: h,
+      ...(online
+        ? {
+            fetch: (path: string) =>
+              fetch(path, { credentials: 'same-origin', headers: { accept: 'application/json' } }),
+          }
+        : {}),
+      ...(publics ? { kept: JSON.parse(publics) as string[] } : {}),
+      budgetId: who!.budgetId,
+      deviceId,
+      passkey: { credentialId: new Uint8Array(fromB64url(w.credentialId)), prf: new Uint8Array(w.slotPrf!) },
+      workerKeys: WORKER_RUN_KEYS,
+      ...(last ? { remembered: { number: last.number, hash: fromHex(last.hash) } } : {}),
+    });
+    await keepPublicSeen(h, who!.budgetId, { number: r.lastPublic.number, hash: toHex(r.lastPublic.hash) });
+    await h.put('publics', JSON.stringify(r.publics));
+    keys = r.keys;
+  }
+  if (sealed) await h.put('sealed_session', JSON.stringify(sealed));
+  if (record && dataKey) await holdKey(record.key, dataKey, Date.now(), keys);
+  // Saved now: the place in the log, the writer's id and the marks above must outlive a closed app, or the next
+  // start would join again as a new writer.
+  if (record && online) {
+    record = { ...record, sealed: true };
+    await save();
+  }
+}
+
+/** The session the app shows for a sealed budget whose copy is open: the copy's facts, the server's account. */
+async function sealedSessionNow(): Promise<Session | null> {
+  if (!sealed || !host) return null;
+  const m = mergedSession(sealed, await host.request('GET', '/api/session'));
+  if (m) await host.put('session', JSON.stringify(m));
+  return m;
+}
+
+/** Asks the passkey for the budget's secret alone (a challenge made here: the server has no part in it). */
+async function askSlot(): Promise<{ credentialId: string; slotPrf: ArrayBuffer }> {
+  const slot = (await slotPrfInput()).buffer as ArrayBuffer;
+  let a;
+  try {
+    a = await assert(
+      { challenge: toB64url(randomBytes(32)), rpId: location.hostname },
+      { salt: record?.salt ?? randomBytes(32), credentialId: record?.credentialIdHint ?? null, slot },
+    );
+  } catch (e) {
+    // Shown with the button that tries again: a passkey prompt needs a tap on some phones.
+    if ((e as { name?: string }).name === 'UserVerificationRequired') throw e;
+    throw new Error(NEEDS_PASSKEY);
+  }
+  if (!a.slotPrf) throw new Error('This passkey can’t open your budget on this device.');
+  return { credentialId: a.credentialId, slotPrf: a.slotPrf };
+}
+
+// ---------------------------------------------------------------- moving a budget to its sealed log
+
+export type MoveInHand = PreparedMove;
+const NOT_NOW = 'Something went wrong. Try again.';
+
+/**
+ * The first step of the move (docs/privacy.md section 8 step 6): the passkey is asked, and this device makes
+ * the budget's key, its recovery key and the log's first entry. Nothing is sent.
+ */
+export async function moveStart(): Promise<MoveInHand> {
+  if (!host || !who || state.status !== 'ready' || sealed) throw new Error(NOT_NOW);
+  if (state.offline) throw new Error('Connect to the internet to lock your budget.');
+  // Asked of the server, not of this device's memory: an earlier try may have sealed the budget.
+  if ((await server<{ sealed: boolean }>('GET', '/api/cutover/state')).sealed)
+    throw new Error('This budget is locked already.');
+  // Every change made here must be on the server first: the move takes the budget as the server holds it.
+  await flush();
+  if ((await queued()).length)
+    throw new Error('Some changes are not sent yet. Wait a moment, then try again.');
+  const w = await askSlot();
+  return prepareMove({
+    budgetId: who.budgetId,
+    deviceId: await logDeviceId(host),
+    passkey: { credentialId: new Uint8Array(fromB64url(w.credentialId)), prf: new Uint8Array(w.slotPrf) },
+    // The server's clock as this device measured it: the log refuses a first entry dated by another clock.
+    now: Date.now() + (await host.state()).offset,
+  });
+}
+
+/** The move is given up: the keys made for it are zeroed. */
+export function moveGiveUp(p: MoveInHand): void {
+  dropMove(p);
+}
+
+/**
+ * The rest of the move: the recovery key typed back and a fresh passkey prompt must both open the new key; then
+ * the engine freezes the budget, sends the first entry and the first snapshot, and reads the snapshot back.
+ * `retype`: the typed key was wrong, or the prompt was not answered; the same key is still in hand.
+ */
+export async function moveFinish(
+  p: MoveInHand,
+  typed: string,
+): Promise<{ ok: true } | { ok: false; why: string; retype?: boolean; again?: boolean }> {
+  if (!host || !who || state.status !== 'ready' || sealed) throw new Error(NOT_NOW);
+  const h = host;
+  // The first entry is dated when the key was made; the server takes it for an hour (seal/cutover.ts).
+  if (Date.now() + (await h.state()).offset - p.genesis.header.time > 50 * 60_000) {
+    dropMove(p);
+    return { ok: false, why: 'This took too long. Start again: a new recovery key is made.' };
+  }
+  if (!(await recoveryKeyOpens(p, typed)))
+    return { ok: false, why: 'That is not the recovery key shown. Check it and try again.', retype: true };
+  let w: { credentialId: string; slotPrf: ArrayBuffer };
+  try {
+    w = await askSlot();
+  } catch (e) {
+    return { ok: false, why: e instanceof Error ? e.message : NOT_NOW, retype: true };
+  }
+  let proved: Awaited<ReturnType<typeof proveMove>>;
+  try {
+    proved = await proveMove(p, typed, {
+      credentialId: new Uint8Array(fromB64url(w.credentialId)),
+      prf: new Uint8Array(w.slotPrf),
+    });
+  } catch (e) {
+    dropMove(p);
+    if (e instanceof WayInError) return { ok: false, why: e.message };
+    throw e;
+  } finally {
+    dropMove(p);
+  }
+  const keys = proved.keys as unknown as SealedKeys;
+  let r: Awaited<ReturnType<EngineHost['cutover']>>;
+  try {
+    r = await h.cutover(keys, proved.genesis, proved.deviceId, newUlid());
+  } catch (e) {
+    r = { ok: false, why: e instanceof Error ? e.message : NOT_NOW };
+  }
+  if (!r.ok) return { ok: false, why: await moveFailed(r.why), again: true };
+  // The budget is sealed. From here this device treats it so, whatever the server says later.
+  rememberSealed(who.budgetId);
+  sealed = {
+    sealed: true,
+    user: { email: who.email },
+    budgetId: who.budgetId,
+    appVersion: '',
+    writeState: 'ok',
+    readOnlyUntil: null,
+    readsPaused: false,
+    canLinkBanks: false,
+    recoveryNoticeAt: null,
+  };
+  await h.sealedOpen([keys], proved.deviceId, WORKER_RUN_KEYS);
+  await keepPublicSeen(h, who.budgetId, { number: 1, hash: toHex(p.genesis.hash) });
+  await h.put('publics', JSON.stringify([btoa(String.fromCharCode(...proved.genesis))]));
+  await h.put('sealed_session', JSON.stringify(sealed));
+  if (record && dataKey) {
+    await holdKey(record.key, dataKey, Date.now(), [keys]);
+    record = { ...record, sealed: true };
+    await save();
+  }
+  const made = await sealedSessionNow();
+  if (made) window.dispatchEvent(new CustomEvent('ledgerline:session', { detail: made }));
+  // The server's own answer for a sealed budget replaces the account facts made up above.
+  window.dispatchEvent(new Event('ledgerline:readonly'));
+  changed();
+  return { ok: true };
+}
+
+/**
+ * The move stopped after the engine began it. The copy on this device may be empty now, and the server may hold
+ * a freeze or even a sealed budget whose first snapshot this device never read back. The server is asked where
+ * it stands: a freeze is ended; a sealed budget is taken back at once (nothing was changed since). Gives what
+ * to tell the person. The caller then deletes the copy and starts the app again (`moveAgain`).
+ */
+async function moveFailed(why: string): Promise<string> {
+  const st = await server<{ sealed: boolean }>('GET', '/api/cutover/state').catch(() => null);
+  if (!st) return `${why} Check Settings → Privacy when you are online again.`;
+  if (!st.sealed) {
+    await server('POST', '/api/cutover/unfreeze').catch(() => undefined);
+    return `${why} Nothing was changed.`;
+  }
+  const back = await server('POST', '/api/cutover/back').then(
+    () => true,
+    () => false,
+  );
+  if (back) return `${why} The move was undone. Nothing was lost.`;
+  // The budget is sealed and stays so: this device treats it so, and opens it from the log.
+  if (who) rememberSealed(who.budgetId);
+  return `${why} Your budget is locked. To undo it, open Settings → Privacy and go back.`;
+}
+
+/** After a move that failed: the copy (which the engine may have emptied) is deleted and the app starts again. */
+export async function moveAgain(): Promise<void> {
+  await wipe();
+  window.location.reload();
+}
+
+/**
+ * Before the way back is asked of the server: this device forgets that the budget was sealed, so that it takes
+ * the plain budget even if the app is closed before `moveBack` runs. The person's own act, on this device.
+ */
+export function moveBackStart(): void {
+  forgetSealed(who?.budgetId ?? sealed?.budgetId ?? null);
+}
+
+/**
+ * After the way back was taken on the server (`POST /api/cutover/back`): this device forgets that the budget was
+ * sealed, deletes its copy and starts again, from the budget as it was.
+ */
+export async function moveBack(): Promise<void> {
+  forgetSealed(who?.budgetId ?? sealed?.budgetId ?? null);
+  await wipe();
+  window.location.reload();
+}
 
 // ---------------------------------------------------------------- server calls (plain fetch: no import cycle)
 
@@ -167,16 +519,25 @@ export async function signIn(): Promise<void> {
   const options = await server<RequestOptionsJSON>('POST', '/api/auth/login/options');
   const saved = keepsCopy() ? await lastRecord() : null;
   const salt = saved?.salt ?? randomBytes(32);
+  // On a device that opened a sealed budget before, the same prompt also gives the budget's secret.
+  const slot = knowsSealed() ? ((await slotPrfInput()).buffer as ArrayBuffer) : undefined;
   const a = await assert(
     options,
-    keepsCopy() ? { salt, credentialId: saved?.credentialIdHint ?? null } : undefined,
+    keepsCopy() || slot
+      ? { salt, credentialId: saved?.credentialIdHint ?? null, ...(slot ? { slot } : {}) }
+      : undefined,
   );
   await server('POST', '/api/auth/login/verify', { response: a.json });
-  pending = { credentialId: a.credentialId, prf: a.prf, salt };
+  pending = { credentialId: a.credentialId, prf: a.prf, salt, slotPrf: a.slotPrf };
 }
 
 function identityOf(s: Session): EngineIdentity {
-  return { budgetId: s.budget.id, userId: s.user.email, email: s.user.email };
+  return {
+    budgetId: s.budget.id,
+    userId: s.user.email,
+    email: s.user.email,
+    ...(s.canLinkBanks ? {} : { noBanks: true }),
+  };
 }
 
 /** Opens the copy for a confirmed session (online). Called by the router once the session is known. */
@@ -302,10 +663,39 @@ export async function start(session: Session): Promise<void> {
       if (memoryOnly) why = unreadableStorage ? 'storage' : 'no_prf';
       await openHost(null);
     }
-    await host!.put('session', JSON.stringify(session));
-    if (record && dataKey) await holdKey(record.key, dataKey, Date.now());
+    // A sealed budget's facts are in the copy itself: the session saved for an offline start is made from it
+    // once the copy is open (client.ts), not from the server's answer.
+    // A copy from a sealed budget, on a device that was told (by the person, with the way back) that the
+    // budget is not sealed any more: it is deleted, and the app starts again with the budget as the server has it.
+    if (!sealed && (await host!.get('sealed_session'))) {
+      await wipe();
+      window.location.reload();
+      return;
+    }
+    if (!sealed) await host!.put('session', JSON.stringify(session));
+    // Read before the data key is held anew, which would make old keys look fresh.
+    const heldKeys = sealed && record ? await heldSealed(record.key, IDLE_MS) : null;
+    if (record && dataKey) await holdKey(record.key, dataKey, Date.now(), undefined, IDLE_MS);
+    if (sealed) {
+      try {
+        await enterSealed(p, heldKeys);
+      } catch (e) {
+        // The sign-in's secrets are kept for the button that tries again: the copy made above is opened with
+        // them, not made a second time in memory.
+        if (p && !pending) pending = p;
+        throw e;
+      }
+    }
     set({ saved: record !== null, hasSaved: record !== null, why });
     await syncNow();
+    if (sealed) {
+      // The session the screens read is made from the copy, before the copy says it is ready: no screen shows
+      // a budget with no name, in another time zone.
+      const made = await sealedSessionNow();
+      if (!made) throw new Error('Something went wrong. Try again.');
+      if (record) await save();
+      window.dispatchEvent(new CustomEvent('ledgerline:session', { detail: made }));
+    }
     set({ status: 'ready' });
     watch();
     void flush();
@@ -333,7 +723,14 @@ export async function openWithoutSignal(onSession?: (s: Session) => void): Promi
         .replace(/=+$/, ''),
       rpId: location.hostname,
     },
-    { salt: rec.salt, credentialId: rec.credentialIdHint ?? null },
+    {
+      salt: rec.salt,
+      credentialId: rec.credentialIdHint ?? null,
+      // A sealed budget opens from the same prompt (its public entries are kept with the copy).
+      ...(rec.sealed || sealedKnown(rec.who.budgetId)
+        ? { slot: (await slotPrfInput()).buffer as ArrayBuffer }
+        : {}),
+    },
   );
   if (!a.prf)
     throw new Error('This passkey can’t open the budget saved here. Connect to the internet to open it.');
@@ -357,6 +754,13 @@ export async function openWithoutSignal(onSession?: (s: Session) => void): Promi
     const s = await host!.get('session');
     if (!s) throw new Error(UNREADABLE);
     const session = JSON.parse(s) as Session;
+    const wasSealed = await host!.get('sealed_session');
+    if (wasSealed) {
+      sealed = JSON.parse(wasSealed) as SealedSession;
+      await enterSealed({ credentialId: a.credentialId, slotPrf: a.slotPrf }, null, false);
+    } else if (sealedKnown(rec.who.budgetId))
+      // The copy saved here is from before the budget was sealed: it is not opened as the budget.
+      throw new Error('Connect to the internet to open your budget.');
     // The saved session goes to the app first (onSession), then the copy says it's ready, so the app never shows a
     // moment with an open copy and no session ("Couldn't reach Ledgerline").
     onSession?.(session);
@@ -367,6 +771,8 @@ export async function openWithoutSignal(onSession?: (s: Session) => void): Promi
     await host?.close();
     host = null;
     dataKey = null;
+    record = null;
+    sealed = null;
     set({ status: 'failed', error: e instanceof Error ? e.message : String(e) });
     throw e;
   }
@@ -407,6 +813,20 @@ export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}):
   syncing = (async () => {
     try {
       lastSync = Date.now();
+      if (sealed) {
+        // A sealed budget: the engine reads the log, files the bank runs that wait, and sends the changes made
+        // here, in one call. Nothing of it passes through this thread in the clear but counts.
+        const r = await host!.sealedSync();
+        set({ queued: (await queued()).length, ...(state.why ? { why: null } : {}) });
+        if (r.lost) window.dispatchEvent(new CustomEvent('ledgerline:edits-refused', { detail: r.lost }));
+        const moved = r.entries > 0 || r.filed > 0 || r.sent > 0;
+        if (record && (moved || Date.now() - record.lastServerTime >= KEEP_ALIVE_MS)) {
+          record = { ...record, lastServerTime: Date.now() };
+          await save();
+        }
+        if ((r.entries > 0 || r.filed > 0) && !opts.quiet) changed();
+        return;
+      }
       // An edit's answer carries the changes since the copy's change number: use them as the first page, but only if
       // the copy is still there (another sync may have moved it on meanwhile).
       let first = opts.first;
@@ -486,6 +906,7 @@ const SERVER_READS = [
   /^\/api\/settings\/connections$/,
   /^\/api\/settings\/security/,
   /^\/api\/export\//,
+  /^\/api\/cutover\//,
 ];
 
 export function readsLocally(method: string, path: string): boolean {
@@ -599,8 +1020,29 @@ export async function newEdit(): Promise<EditStamp> {
 }
 
 export function canEditOffline(method: string, path: string): boolean {
-  return state.status === 'ready' && !!host && OFFLINE_EDITS.some(([m, r]) => m === method && r.test(path));
+  if (state.status !== 'ready' || !host) return false;
+  // A sealed budget: every change of the budget is made on the device (each has a twin check against the
+  // server's own route, apps/worker/test/twin.test.ts). Only what needs the server goes to it.
+  if (sealed) return !sealedServerPath(path);
+  return OFFLINE_EDITS.some(([m, r]) => m === method && r.test(path));
 }
+
+/**
+ * What the server still does for a sealed budget: sign-in, the banks, the move itself, and the records it keeps
+ * about the app's use. The list is the twin test's "never run on a phone's copy" (SERVER_ONLY).
+ */
+const SEALED_SERVER = [
+  /^\/api\/auth\//,
+  /^\/api\/settings\/security(\/|$)/,
+  /^\/api\/cutover\//,
+  /^\/api\/settings\/connections\/(link-token|link-finish|exchange|refresh)$/,
+  /^\/api\/settings\/connections\/[^/]+\/refresh$/,
+  /^\/api\/settings\/restore$/,
+  /^\/api\/(usage|notes|identity-alert)$/,
+  /^\/api\/sync\/shadow$/,
+];
+export const sealedServerPath = (path: string): boolean =>
+  SEALED_SERVER.some((r) => r.test(path.split('?')[0]!));
 
 /** A change made with no signal: applied to the copy now, sent to the server when there's a connection. */
 export async function editOffline(
@@ -651,6 +1093,14 @@ let flushing = false;
 /** Sends changes made offline, in order. One the server refuses is dropped and the copy is downloaded again. */
 export async function flush(): Promise<{ sent: number; refused: number }> {
   if (!host || flushing || state.offline) return { sent: 0, refused: 0 };
+  if (sealed) {
+    // A sealed budget's changes go out as entries of its log, with the sync. A sync that fails is tried again
+    // by the next one; nothing is dropped.
+    const before = (await queued()).length;
+    if (!before) return { sent: 0, refused: 0 };
+    await syncNow().catch(() => undefined);
+    return { sent: Math.max(0, before - (await queued()).length), refused: 0 };
+  }
   flushing = true;
   let sent = 0;
   let refused = 0;
@@ -823,6 +1273,7 @@ export async function signOutIdle(here = true): Promise<void> {
   host = null;
   dataKey = null;
   record = null;
+  sealed = null;
   pending = null;
   delete document.documentElement.dataset.covered;
   return endSignIn(state.saved, here);
@@ -835,6 +1286,7 @@ export async function wipe(all = false): Promise<void> {
   dataKey = null;
   const key = record?.key ?? (who ? recordKey(who.email, who.budgetId) : null);
   record = null;
+  sealed = null;
   if (key) await dropHeld(key);
   if (all) await deleteAll();
   else if (key) await deleteRecord(key);
@@ -852,6 +1304,8 @@ export async function wipe(all = false): Promise<void> {
  */
 export async function signOutHere(): Promise<void> {
   const devices = MOCK ? [] : (await allRecords()).map((r) => r.deviceId);
+  // The person's own act: this device forgets every budget it knew as sealed.
+  forgetSealed(null);
   await wipe(true);
   await server('POST', '/api/settings/security/sign-out', { forget: true, devices });
   tellOtherTabs('deleted');
@@ -913,4 +1367,6 @@ export function useCopy(): CopyState {
 /** Tests only. */
 export function resetCopyForTests(patch: Partial<CopyState> = {}): void {
   state = { ...state, ...patch };
+  sealed = null;
+  forgetSealed(null);
 }

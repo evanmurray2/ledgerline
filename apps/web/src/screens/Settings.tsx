@@ -35,6 +35,7 @@ const SECTIONS: { id: string; name: string; to: string }[] = [
   { id: 'data', name: 'Backup and export', to: '/settings/data' },
   { id: 'sign-in', name: 'Sign-in and devices', to: '/settings/sign-in' },
   { id: 'privacy', name: 'Privacy', to: '/settings/privacy' },
+  { id: 'about', name: 'About', to: '/settings/about' },
   // The phase 0 checks of the privacy design (docs/privacy.md 15.4). Remove with the page when phase 0 ends.
   { id: 'device-check', name: 'Device check', to: '/settings/device-check' },
 ];
@@ -69,6 +70,7 @@ function useSectionMeta() {
     users: 'Accounts · turn one off',
     'sign-in': signInMeta(security.data),
     privacy: 'What is stored, and who can read it',
+    about: 'This release, and how to check it',
     'device-check': 'Tests this device for the privacy work',
   };
   return { text, repair: needRepair.length > 0, users: security.data?.usersScreen === true };
@@ -259,6 +261,7 @@ function SettingsHome() {
             meta={meta.text.privacy ?? ''}
             track="settings.privacy"
           />
+          <RowLink to="/settings/about" name="About" meta={meta.text.about ?? ''} track="settings.about" />
           <RowLink
             to="/settings/device-check"
             name="Device check"
