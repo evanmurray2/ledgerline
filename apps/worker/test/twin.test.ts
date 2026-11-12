@@ -215,6 +215,11 @@ describe('the same edit on the phone and on the server', () => {
         )(),
     ],
     [
+      'call a deposit that did not ask a transfer, to an account whose side has not arrived',
+      'POST /transfers/:key/pick',
+      () => ['POST', '/api/transfers/n-payroll/pick', { otherKey: null, accountId: 'marcus' }],
+    ],
+    [
       'match money in to what you are owed',
       'POST /match',
       async () => {

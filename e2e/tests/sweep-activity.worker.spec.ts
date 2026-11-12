@@ -378,6 +378,21 @@ test('Transfer: Unpair says what happened, and both halves then need a category'
   ).toBeVisible();
 });
 
+test('Transfer: a deposit that didn’t ask can be called a transfer from its sheet, and Undo takes it back', async ({
+  page,
+}) => {
+  await page.goto('/activity/txn/n-payroll');
+  await page.getByRole('link', { name: 'It’s a transfer…' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Which account sent this money?' });
+  // Nothing was asked about this deposit, so there is no "It was income" answer.
+  await expect(sheet.getByRole('button', { name: /An account that isn’t linked/ })).toBeVisible();
+  await expect(sheet.getByRole('button', { name: /It was income/ })).toHaveCount(0);
+  await sheet.getByRole('button', { name: /Marcus Savings/ }).click();
+  await expect(sheet.getByText(/Paired with Marcus Savings\./)).toBeVisible();
+  await sheet.getByRole('button', { name: 'Undo' }).click();
+  await expect(sheet.getByRole('button', { name: /Marcus Savings/ })).toBeVisible();
+});
+
 test('Paid back: money in that paid back two purchases lists both; Unlink, then Undo, puts both back', async ({
   page,
 }) => {

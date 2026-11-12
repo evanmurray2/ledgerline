@@ -185,7 +185,17 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
   const now = editNow(c);
   const me = await loadTx(s, key);
   refuseHistory(me);
-  if (me.transfer_state !== 'unsorted' || me.amount === 0) throw new HttpError(422, 'not_unclear', CHANGED);
+  // Any row that isn't a transfer yet can be called one, not only one filing left to sort out: a deposit whose name
+  // doesn't look like a transfer is in Ready to Assign (D-85) and is never asked about. Money matched to what you're
+  // owed is unlinked first. "It was income / a payment" answers a question, so it needs a row that asks one.
+  const unclear = me.transfer_state === 'unsorted';
+  const answers = !!r.otherKey || !!r.accountId || !!r.unlinked;
+  if (
+    me.amount === 0 ||
+    !(unclear || (me.transfer_state === null && answers)) ||
+    !(me.wtm_state === null || me.wtm_state === 'waiting' || me.wtm_state === 'income')
+  )
+    throw new HttpError(422, 'not_unclear', CHANGED);
   // The other side: a row of the opposite amount in another account within 5 days that isn't already a transfer
   // and isn't matched to what you're owed. A deposit from another bank comes in its own sync, so it is often not
   // marked unsorted itself; the sheet offers it all the same (it reads the other registers), so it is accepted.
@@ -283,8 +293,9 @@ activityRoutes.post('/transfers/:key/pick', async (c) => {
     // An account that isn't linked (Venmo, say): the money leaves (or enters) the budget accounts with no category,
     // so it comes out of (or goes into) Ready to Assign (D-20).
     w.push(
+      s.q(OVERLAY_UPSERT, key, now),
       s.q(
-        `UPDATE txn_overlay SET transfer_state = 'manual', transfer_account_id = NULL, categorized_by = 'user', updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
+        `UPDATE txn_overlay SET transfer_state = 'manual', transfer_account_id = NULL, wtm_state = NULL, categorized_by = 'user', updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
         key,
         now,
       ),
