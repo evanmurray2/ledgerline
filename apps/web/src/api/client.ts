@@ -1,6 +1,11 @@
 // Thin fetch wrapper for the Worker API. Same-origin session cookie (passkey sign-in), JSON in and out, every
 // response parsed with the shared Zod schema. Mutations carry the CSRF header; the Worker also checks Origin.
-import { ApiError as ApiErrorBody, CSRF_HEADER, SYNC_SINCE_HEADER } from '@ledgerline/contracts';
+import {
+  ApiError as ApiErrorBody,
+  CSRF_HEADER,
+  SEALED_HEADER,
+  SYNC_SINCE_HEADER,
+} from '@ledgerline/contracts';
 import type { z } from 'zod';
 import { connectivity } from '../state/connectivity';
 import { budgetTime } from '../lib/dates';
@@ -9,6 +14,7 @@ import {
   afterChange,
   archiveFields,
   canEditOffline,
+  isSealed,
   newEdit,
   closeFields,
   dropSignedOut,
@@ -227,7 +233,15 @@ async function sendOnce<S extends z.ZodType>(
   // Screens are worked out from the copy on this device (D-45, src/copy).
   if (readsLocally(method, path)) return answer(schema, await readCopy(path));
   // Changes made with no signal go to the copy now and to the server later (a short list; copy.ts).
-  if (mutation && connectivity.isOffline() && canEditOffline(method, path))
+  // A sealed budget's changes are always made on the device: its log takes them as entries (copy.ts).
+  if (
+    mutation &&
+    isSealed() &&
+    !canEditOffline(method, path) &&
+    !/^\/api\/(auth|settings\/security|cutover)\//.test(path)
+  )
+    throw new ApiError('sealed', 'This can’t be changed here yet.', 409);
+  if (mutation && (connectivity.isOffline() || isSealed()) && canEditOffline(method, path))
     return schema.parse(
       withRta(await editOffline(method, path, body), await afterChange().catch(() => null)),
     );
@@ -266,7 +280,9 @@ async function sendOnce<S extends z.ZodType>(
     res = await fetch(path, {
       method,
       credentials: 'same-origin',
-      headers: mutation ? headers() : { accept: 'application/json' },
+      headers: mutation
+        ? headers()
+        : { accept: 'application/json', ...(path === '/api/session' ? { [SEALED_HEADER]: '1' } : {}) },
       body: mutation && body !== undefined ? JSON.stringify(body) : mutation ? '{}' : undefined,
     });
   } catch {

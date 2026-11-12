@@ -88,6 +88,33 @@ describe('opening a sealed budget in the app', () => {
     expect(j).toMatchObject({ number: 3, joined: true });
     expect(fresh.calls.map((c) => c[0])).toEqual(['open', 'join']);
 
+    // With no signal the budget opens from the public entries kept with the copy, and only on a device that
+    // has its place in the log: a snapshot can't be read without the server.
+    const off = host(true);
+    const o = await openSealedBudget({
+      host: off.h,
+      kept: r.publics,
+      budgetId: BUDGET,
+      deviceId: PHONE,
+      passkey: second,
+      workerKeys: [],
+      remembered: r.lastPublic,
+    });
+    expect(o).toMatchObject({ number: 7, joined: false, publics: r.publics });
+    await expect(
+      openSealedBudget({
+        host: host(false).h,
+        kept: r.publics,
+        budgetId: BUDGET,
+        deviceId: PHONE,
+        passkey: second,
+        workerKeys: [],
+      }),
+    ).rejects.toThrow('Connect to the internet to open your budget.');
+    await expect(
+      openSealedBudget({ host: off.h, budgetId: BUDGET, deviceId: PHONE, passkey: second, workerKeys: [] }),
+    ).rejects.toThrow('Connect to the internet to open your budget.');
+
     // A passkey that is no way in, and a server that hides the entry the device remembers: the engine gets nothing.
     const none = host(true);
     await expect(

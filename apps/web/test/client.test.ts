@@ -8,6 +8,7 @@ import {
   resetRecentChanges,
   setPasskeyCheck,
 } from '../src/api/client';
+import { isSealed, noteSealed } from '../src/copy/copy';
 import { connectivity } from '../src/state/connectivity';
 
 type Call = { url: string; init: RequestInit };
@@ -147,6 +148,34 @@ describe('API client', () => {
       code: 'read_only',
     });
     expect(calls).toHaveLength(0);
+  });
+
+  it('for a sealed budget, says it can open one and sends no change of the budget to the server', async () => {
+    respond = () =>
+      json({
+        sealed: true,
+        user: { email: 'owner@example.com' },
+        budgetId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+        appVersion: '1.0.0',
+        writeState: 'ok',
+        readOnlyUntil: null,
+        readsPaused: false,
+        canLinkBanks: true,
+        recoveryNoticeAt: null,
+      });
+    try {
+      const s = await api.session();
+      expect(new Headers(calls[0]!.init.headers).get('x-ledgerline-sealed')).toBe('1');
+      // The copy is closed: nothing of the budget is known yet.
+      expect(s.budget).toMatchObject({ id: '01ARZ3NDEKTSV4RRFFQ69G5FAV', name: '' });
+      expect(isSealed()).toBe(true);
+      await expect(
+        api.assign({ month: '2026-11', items: [{ categoryId: 'x', amount: 1 }] }),
+      ).rejects.toMatchObject({ code: 'sealed', status: 409 });
+      expect(calls).toHaveLength(1);
+    } finally {
+      noteSealed(null);
+    }
   });
 
   it('while resting, asks only for the session and stops after a resting answer', async () => {

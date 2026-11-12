@@ -9,7 +9,10 @@
 // holdKey). Wipe: signing out, here or from another device (Settings → Sign-in), no longer a member, or 7 days
 // offline.
 import { useSyncExternalStore } from 'react';
-import { CSRF_HEADER, type Session } from '@ledgerline/contracts';
+import { CSRF_HEADER, type SealedSession, type Session } from '@ledgerline/contracts';
+import { slotPrfInput } from '../keys/budget';
+import { WORKER_RUN_KEYS } from '../keys/worker-keys';
+import { logDeviceId, openSealedBudget } from './sealed';
 import { connectivity } from '../state/connectivity';
 import { EngineHost, syncAll, type EngineIdentity, type QueuedEdit, type SyncPage } from './host';
 import { shadowBefore, shadowFinish, type Started } from './shadow';
@@ -22,8 +25,10 @@ import {
   deleteRecord,
   dropHeld,
   heldKey,
+  heldSealed,
   holdKey,
   fromB64url,
+  toB64url,
   lastRecord,
   loadRecord,
   newKeys,
@@ -118,7 +123,118 @@ let who: EngineIdentity | null = null;
 const turnedOff = new Set<string>();
 
 /** A sign-in that just produced a PRF output, for start() to use without asking for Face ID again. */
-let pending: { credentialId: string; prf: ArrayBuffer | null; salt: ArrayBuffer } | null = null;
+let pending: {
+  credentialId: string;
+  prf: ArrayBuffer | null;
+  salt: ArrayBuffer;
+  /** The passkey's secret for a sealed budget's way in, when the sign-in asked for it. */
+  slotPrf: ArrayBuffer | null;
+} | null = null;
+
+// ---------------------------------------------------------------- a sealed budget (docs/privacy.md 5.3)
+
+/** What the server said about a signed-in person whose budget is sealed; null for a budget that is not. */
+let sealed: SealedSession | null = null;
+/** The budget lives in its sealed log: the copy syncs with the log, and every change is made on the device. */
+export const isSealed = (): boolean => sealed !== null;
+export function noteSealed(s: SealedSession | null): void {
+  sealed = s;
+  // Remembered on this device, so that the next sign-in asks the passkey for the budget's secret in the same
+  // prompt. A device that never opened a sealed budget is asked for nothing more than before.
+  try {
+    if (s) localStorage.setItem(SEALED_FLAG, '1');
+  } catch {
+    // No storage: the next sign-in asks once more.
+  }
+}
+export const sealedSession = (): SealedSession | null => sealed;
+/** The copy is open and can answer for the budget. */
+export const copyReady = (): boolean => state.status === 'ready' && host !== null;
+/** Keeps the session with the copy, for a start with no signal. */
+export async function keepSession(s: Session): Promise<void> {
+  await host?.put('session', JSON.stringify(s));
+}
+const SEALED_FLAG = 'ledgerline.sealed';
+const knowsSealed = (): boolean => {
+  try {
+    return localStorage.getItem(SEALED_FLAG) === '1';
+  } catch {
+    return false;
+  }
+};
+/** Shown when a sealed budget needs the passkey once more (its keys are not held on this device now). */
+export const NEEDS_PASSKEY = 'Sign in again with your passkey to open your budget.';
+
+const toHex = (b: Uint8Array): string => [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+const fromHex = (s: string): Uint8Array<ArrayBuffer> =>
+  Uint8Array.from(s.match(/../g) ?? [], (x) => parseInt(x, 16));
+
+/**
+ * Opens the sealed budget in the engine: with the passkey's secret from the sign-in just made, or with the keys
+ * held since (a refresh). The engine then knows its place in the log, or starts from a snapshot.
+ */
+async function enterSealed(
+  way: { credentialId: string; slotPrf: ArrayBuffer | null } | null,
+  heldKeys: unknown[] | null,
+  online = true,
+): Promise<void> {
+  const h = host!;
+  const deviceId = await logDeviceId(h);
+  let keys: unknown[];
+  if (!way?.slotPrf && heldKeys) {
+    const o = await h.sealedOpen(heldKeys as never, deviceId, WORKER_RUN_KEYS);
+    if (!o.ready) await h.sealedJoin();
+    keys = heldKeys;
+  } else {
+    // No secret from the sign-in (this device opens a sealed budget for the first time, or the keys held are too
+    // old): the passkey is asked once more, for the budget's secret alone. Nothing of this goes to the server.
+    const w = way?.slotPrf ? way : await askSlot();
+    const kept = await h.get('last_public');
+    const last = kept ? (JSON.parse(kept) as { number: number; hash: string }) : null;
+    const publics = await h.get('publics');
+    const r = await openSealedBudget({
+      host: h,
+      ...(online
+        ? {
+            fetch: (path: string) =>
+              fetch(path, { credentials: 'same-origin', headers: { accept: 'application/json' } }),
+          }
+        : {}),
+      ...(publics ? { kept: JSON.parse(publics) as string[] } : {}),
+      budgetId: who!.budgetId,
+      deviceId,
+      passkey: { credentialId: new Uint8Array(fromB64url(w.credentialId)), prf: new Uint8Array(w.slotPrf!) },
+      workerKeys: WORKER_RUN_KEYS,
+      ...(last ? { remembered: { number: last.number, hash: fromHex(last.hash) } } : {}),
+    });
+    await h.put(
+      'last_public',
+      JSON.stringify({ number: r.lastPublic.number, hash: toHex(r.lastPublic.hash) }),
+    );
+    await h.put('publics', JSON.stringify(r.publics));
+    keys = r.keys;
+  }
+  if (sealed) await h.put('sealed_session', JSON.stringify(sealed));
+  if (record && dataKey) await holdKey(record.key, dataKey, Date.now(), keys);
+}
+
+/** Asks the passkey for the budget's secret alone (a challenge made here: the server has no part in it). */
+async function askSlot(): Promise<{ credentialId: string; slotPrf: ArrayBuffer }> {
+  const slot = (await slotPrfInput()).buffer as ArrayBuffer;
+  let a;
+  try {
+    a = await assert(
+      { challenge: toB64url(randomBytes(32)), rpId: location.hostname },
+      { salt: record?.salt ?? randomBytes(32), credentialId: record?.credentialIdHint ?? null, slot },
+    );
+  } catch (e) {
+    // Shown with the button that tries again: a passkey prompt needs a tap on some phones.
+    if ((e as { name?: string }).name === 'UserVerificationRequired') throw e;
+    throw new Error(NEEDS_PASSKEY);
+  }
+  if (!a.slotPrf) throw new Error('This passkey can’t open your budget on this device.');
+  return { credentialId: a.credentialId, slotPrf: a.slotPrf };
+}
 
 // ---------------------------------------------------------------- server calls (plain fetch: no import cycle)
 
@@ -167,12 +283,16 @@ export async function signIn(): Promise<void> {
   const options = await server<RequestOptionsJSON>('POST', '/api/auth/login/options');
   const saved = keepsCopy() ? await lastRecord() : null;
   const salt = saved?.salt ?? randomBytes(32);
+  // On a device that opened a sealed budget before, the same prompt also gives the budget's secret.
+  const slot = knowsSealed() ? ((await slotPrfInput()).buffer as ArrayBuffer) : undefined;
   const a = await assert(
     options,
-    keepsCopy() ? { salt, credentialId: saved?.credentialIdHint ?? null } : undefined,
+    keepsCopy() || slot
+      ? { salt, credentialId: saved?.credentialIdHint ?? null, ...(slot ? { slot } : {}) }
+      : undefined,
   );
   await server('POST', '/api/auth/login/verify', { response: a.json });
-  pending = { credentialId: a.credentialId, prf: a.prf, salt };
+  pending = { credentialId: a.credentialId, prf: a.prf, salt, slotPrf: a.slotPrf };
 }
 
 function identityOf(s: Session): EngineIdentity {
@@ -302,11 +422,18 @@ export async function start(session: Session): Promise<void> {
       if (memoryOnly) why = unreadableStorage ? 'storage' : 'no_prf';
       await openHost(null);
     }
-    await host!.put('session', JSON.stringify(session));
+    // A sealed budget's facts are in the copy itself: the session saved for an offline start is made from it
+    // once the copy is open (client.ts), not from the server's answer.
+    if (!sealed) await host!.put('session', JSON.stringify(session));
+    // Read before the data key is held anew, which would make old keys look fresh.
+    const heldKeys = sealed && record ? await heldSealed(record.key, IDLE_MS) : null;
     if (record && dataKey) await holdKey(record.key, dataKey, Date.now());
+    if (sealed) await enterSealed(p, heldKeys);
     set({ saved: record !== null, hasSaved: record !== null, why });
     await syncNow();
     set({ status: 'ready' });
+    // A sealed budget's session is made from the copy, which is open only now: the app asks for it again.
+    if (sealed) window.dispatchEvent(new Event('ledgerline:readonly'));
     watch();
     void flush();
   } catch (e) {
@@ -333,7 +460,12 @@ export async function openWithoutSignal(onSession?: (s: Session) => void): Promi
         .replace(/=+$/, ''),
       rpId: location.hostname,
     },
-    { salt: rec.salt, credentialId: rec.credentialIdHint ?? null },
+    {
+      salt: rec.salt,
+      credentialId: rec.credentialIdHint ?? null,
+      // A sealed budget opens from the same prompt (its public entries are kept with the copy).
+      ...(knowsSealed() ? { slot: (await slotPrfInput()).buffer as ArrayBuffer } : {}),
+    },
   );
   if (!a.prf)
     throw new Error('This passkey can’t open the budget saved here. Connect to the internet to open it.');
@@ -357,6 +489,11 @@ export async function openWithoutSignal(onSession?: (s: Session) => void): Promi
     const s = await host!.get('session');
     if (!s) throw new Error(UNREADABLE);
     const session = JSON.parse(s) as Session;
+    const wasSealed = await host!.get('sealed_session');
+    if (wasSealed) {
+      sealed = JSON.parse(wasSealed) as SealedSession;
+      await enterSealed({ credentialId: a.credentialId, slotPrf: a.slotPrf }, null, false);
+    }
     // The saved session goes to the app first (onSession), then the copy says it's ready, so the app never shows a
     // moment with an open copy and no session ("Couldn't reach Ledgerline").
     onSession?.(session);
@@ -407,6 +544,20 @@ export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}):
   syncing = (async () => {
     try {
       lastSync = Date.now();
+      if (sealed) {
+        // A sealed budget: the engine reads the log, files the bank runs that wait, and sends the changes made
+        // here, in one call. Nothing of it passes through this thread in the clear but counts.
+        const r = await host!.sealedSync();
+        set({ queued: (await queued()).length, ...(state.why ? { why: null } : {}) });
+        if (r.lost) window.dispatchEvent(new CustomEvent('ledgerline:edits-refused', { detail: r.lost }));
+        const moved = r.entries > 0 || r.filed > 0 || r.sent > 0;
+        if (record && (moved || Date.now() - record.lastServerTime >= KEEP_ALIVE_MS)) {
+          record = { ...record, lastServerTime: Date.now() };
+          await save();
+        }
+        if ((r.entries > 0 || r.filed > 0) && !opts.quiet) changed();
+        return;
+      }
       // An edit's answer carries the changes since the copy's change number: use them as the first page, but only if
       // the copy is still there (another sync may have moved it on meanwhile).
       let first = opts.first;
@@ -651,6 +802,12 @@ let flushing = false;
 /** Sends changes made offline, in order. One the server refuses is dropped and the copy is downloaded again. */
 export async function flush(): Promise<{ sent: number; refused: number }> {
   if (!host || flushing || state.offline) return { sent: 0, refused: 0 };
+  if (sealed) {
+    // A sealed budget's changes go out as entries of its log, with the sync.
+    const before = (await queued()).length;
+    await syncNow();
+    return { sent: Math.max(0, before - (await queued()).length), refused: 0 };
+  }
   flushing = true;
   let sent = 0;
   let refused = 0;
@@ -823,6 +980,7 @@ export async function signOutIdle(here = true): Promise<void> {
   host = null;
   dataKey = null;
   record = null;
+  sealed = null;
   pending = null;
   delete document.documentElement.dataset.covered;
   return endSignIn(state.saved, here);
@@ -835,6 +993,7 @@ export async function wipe(all = false): Promise<void> {
   dataKey = null;
   const key = record?.key ?? (who ? recordKey(who.email, who.budgetId) : null);
   record = null;
+  sealed = null;
   if (key) await dropHeld(key);
   if (all) await deleteAll();
   else if (key) await deleteRecord(key);

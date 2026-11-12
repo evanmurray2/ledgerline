@@ -1,4 +1,6 @@
 // One function per endpoint in docs/api.md. Types come from @ledgerline/contracts.
+import { copyReady, keepSession, noteSealed, read as readCopy } from '../copy/copy';
+import { sessionFor } from '../copy/sealed-session';
 import {
   AuthStatus,
   DeviceLink,
@@ -21,6 +23,7 @@ import {
   ReportsView,
   Session,
   TxnSheet,
+  SealedSession,
 } from '@ledgerline/contracts';
 import type {
   AssignRequest,
@@ -84,7 +87,17 @@ export type RegisterShow = 'all' | 'pending' | 'needs' | 'transfers';
 const enc = encodeURIComponent;
 
 export const api = {
-  session: () => get('/api/session', Session),
+  /**
+   * The session. For a sealed budget the server's answer holds nothing of the budget: its facts come from the
+   * copy on this device (copy/sealed-session.ts).
+   */
+  session: async (): Promise<Session> =>
+    sessionFor(await get('/api/session', z.union([Session, SealedSession])), {
+      ready: copyReady,
+      local: () => readCopy('/api/session'),
+      note: noteSealed,
+      keep: keepSession,
+    }),
   /** Tab badge counts, cheaply: shown on every screen. */
   badges: () =>
     get(

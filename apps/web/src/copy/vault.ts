@@ -139,6 +139,11 @@ interface Held {
   key: string;
   dataKey: CryptoKey;
   lastActive: number;
+  /**
+   * A sealed budget's derived keys (docs/privacy.md 5.2, "In memory"): keys that can't be read out, held like the
+   * data key and for as long, so a refresh doesn't ask for the passkey. Never the budget key itself.
+   */
+  sealed?: unknown[];
 }
 
 async function held<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
@@ -161,9 +166,29 @@ async function held<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBR
   }
 }
 
-export async function holdKey(key: string, dataKey: CryptoKey, lastActive: number): Promise<void> {
+export async function holdKey(
+  key: string,
+  dataKey: CryptoKey,
+  lastActive: number,
+  /** A sealed budget's derived keys, to hold from now on; without them, the ones held already stay. */
+  sealed?: unknown[],
+): Promise<void> {
   if (typeof indexedDB === 'undefined') return;
-  await held('readwrite', (s) => s.put({ key, dataKey, lastActive } satisfies Held)).catch(() => undefined);
+  const before = sealed
+    ? undefined
+    : ((await held('readonly', (s) => s.get(key)).catch(() => undefined)) as Held | undefined);
+  const keep = sealed ?? before?.sealed;
+  await held('readwrite', (s) =>
+    s.put({ key, dataKey, lastActive, ...(keep ? { sealed: keep } : {}) } satisfies Held),
+  ).catch(() => undefined);
+}
+
+/** The sealed budget's derived keys held with the data key, under the same time limit; null when none. */
+export async function heldSealed(key: string, maxAge: number, now = Date.now()): Promise<unknown[] | null> {
+  if (typeof indexedDB === 'undefined') return null;
+  const h = (await held('readonly', (s) => s.get(key)).catch(() => undefined)) as Held | undefined;
+  if (!h?.sealed || now < h.lastActive || now - h.lastActive >= maxAge) return null;
+  return h.sealed;
 }
 
 /** The held data key, when the last activity was less than `maxAge` ago; an older one is deleted. */
