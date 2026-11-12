@@ -93,6 +93,7 @@ const ICONS = {
   grip: 'M5 8h14M5 12h14M5 16h14',
   pin: 'M9 3h6M10 3v6l-4 5h12l-4-5V3M12 14v7',
   refresh: 'M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5',
+  swap: 'M7 20V4M3 8l4-4 4 4M17 4v16M13 16l4 4 4-4',
   wifiOff: 'M2 2l20 20M8.5 16.5a5 5 0 0 1 7 0M5 13a10 10 0 0 1 5.2-2.8M19 13a10 10 0 0 0-2.2-1.6M12 20h.01',
 } as const;
 export type IconName = keyof typeof ICONS;

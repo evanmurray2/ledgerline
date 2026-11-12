@@ -1,4 +1,4 @@
-// Category sheet: Assign / Move money, target, recent.
+// Category sheet: what's available, the month's assigned amount, Move money, target, recent.
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { errorMessage } from '../api/client';
@@ -7,17 +7,15 @@ import { useBudget, useCategorySheet, useMoneyMutation } from '../api/hooks';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import {
   amountInputClass,
-  Card,
+  Bar,
   cx,
   EmptyNote,
   ErrorNote,
   Field,
   Icon,
-  inputClass,
   Label,
   Loading,
   PrimaryButton,
-  Segmented,
   SoftButton,
   SoftLink,
   STATUS,
@@ -35,6 +33,8 @@ import { usage } from '../usage/tracker';
 import { useCanWrite } from '../state/connectivity';
 import { toast } from '../components/Toast';
 import { useCloseToBudget } from './BudgetSheets';
+import { isQuiet } from './BudgetRows';
+import { MoveMoneySheet } from './MoveMoneySheet';
 
 // ------------------------------------------------------------------ category sheet
 
@@ -89,13 +89,13 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
   const q = useCategorySheet(categoryId, month);
   const close = useCloseToBudget(month, current);
   const navigate = useNavigate();
-  const [mode, setMode] = useState<'assign' | 'move'>('assign');
   const [assigned, setAssigned] = useState<string | null>(null);
-  const [moveTo, setMoveTo] = useState<string>('');
-  const [moveAmt, setMoveAmt] = useState('');
+  const [moving, setMoving] = useState(false);
   const set = useMoneyMutation(api.setAssigned);
-  const move = useMoneyMutation(api.move);
   const steps = useCategorySteps(categoryId, month, current);
+  const row = useBudget(month)
+    .data?.groups.flatMap((g) => g.categories)
+    .find((x) => x.id === categoryId);
   const c = q.data;
 
   useEffect(() => {
@@ -104,8 +104,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
   }, []);
   useEffect(() => {
     if (c && assigned === null) setAssigned(centsToInput(c.assigned));
-    if (c && !moveTo) setMoveTo(c.moveOptions[0]?.id ?? 'rta');
-  }, [c, assigned, moveTo]);
+  }, [c, assigned]);
 
   if (!c || !month) {
     return (
@@ -117,30 +116,47 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
   const st = STATUS[c.status];
   const newAssigned = parseCents(assigned ?? '');
   const changed = newAssigned !== null && newAssigned !== c.assigned;
-  const available = c.available + (newAssigned !== null ? newAssigned - c.assigned : 0);
-  const moveCents = parseCents(moveAmt);
-  const moveOk = moveCents !== null && moveCents > 0 && !!moveTo;
-  const target = c.target.type === 'refill' || c.target.type === 'set_aside' ? c.target.amount : null;
+  const delta = changed ? newAssigned - c.assigned : 0;
+  const available = c.available + delta;
+  const rtaAfter = c.rta - delta;
   const save = async () => {
-    if (mode === 'assign') {
-      if (newAssigned === null) return;
-      await set.mutateAsync({ month, categoryId: c.id, assigned: newAssigned });
-      usage.endTask('assign');
-    } else {
-      if (!moveOk) return;
-      await move.mutateAsync({ month, from: c.id, to: moveTo, amount: moveCents });
-      usage.endTask('assign');
-    }
+    if (newAssigned === null) return;
+    await set.mutateAsync({ month, categoryId: c.id, assigned: newAssigned });
+    usage.endTask('assign');
     close();
   };
-  const err = set.error ?? move.error;
   // Enter (or the keyboard's Go) saves, as the button does when it can.
-  const busy = set.isPending || move.isPending;
   const onEnter = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    if (!busy && (mode === 'assign' ? changed : moveOk)) void save().catch(() => undefined);
+    if (!set.isPending && changed) void save().catch(() => undefined);
   };
+
+  // Amounts one tap away, each shown only when it would change the box: what Needs attention would do (Cover,
+  // Fund, Add), the target, and last month's amount.
+  const fix = row?.fix && row.fix.verb !== 'Move' && row.fix.amount > 0 ? row.fix : null;
+  const target = c.target.type === 'refill' || c.target.type === 'set_aside' ? c.target.amount : null;
+  const presets: { label: string; value: number; track: string }[] = [];
+  const offer = (label: string, value: number, track: string) => {
+    if (value !== newAssigned && !presets.some((p) => p.value === value))
+      presets.push({ label, value, track });
+  };
+  if (fix) offer(`${fix.verb} ${formatCents(fix.amount)}`, c.assigned + fix.amount, 'category.quick.fix');
+  if (target !== null)
+    offer(`Target ${formatCents(target, { whole: true })}`, target, 'category.quick.target');
+  if (c.lastMonthAssigned > 0)
+    offer(
+      `Last month ${formatCents(c.lastMonthAssigned, { whole: true })}`,
+      c.lastMonthAssigned,
+      'category.quick.last',
+    );
+
+  // The bar follows the Budget row's rule (no bar where the row has none) and moves as you type.
+  const total = c.spent + available;
+  const leftPercent = total > 0 ? Math.max(0, Math.min(100, Math.round((available * 100) / total))) : 0;
+  const tone = available < 0 ? 'over' : st.tone;
+  const spentWord = c.status === 'invested' ? 'invested' : 'spent';
+
   return (
     <Sheet
       label={c.name}
@@ -168,125 +184,81 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
       footer={
         <PrimaryButton
           mutates="offline"
-          track={mode === 'assign' ? 'category.save' : 'category.move'}
+          track="category.save"
           onClick={save}
-          busy={busy}
-          disabled={mode === 'assign' ? !changed : !moveOk}
-          why={
-            mode === 'assign'
-              ? newAssigned === null
-                ? 'Enter an amount to save'
-                : !changed
-                  ? 'Change the amount to save'
-                  : ''
-              : !moveOk
-                ? 'Enter an amount to move'
-                : ''
-          }
+          busy={set.isPending}
+          disabled={!changed}
+          why={newAssigned === null ? 'Enter an amount to save' : !changed ? 'Change the amount to save' : ''}
         >
-          {mode === 'assign'
-            ? 'Save'
-            : `Move ${moveCents && moveCents > 0 ? formatCents(moveCents) : ''}`.trim()}
+          Save
         </PrimaryButton>
       }
     >
-      <div className="grid grid-cols-3 gap-2">
-        <div className="flex flex-col gap-0.5 rounded-lg bg-page p-2.5">
-          <span className="text-xs text-muted">Assigned</span>
-          <span className="tnum text-lg font-bold">{formatCents(c.assigned)}</span>
-        </div>
-        <div className="flex flex-col gap-0.5 rounded-lg bg-page p-2.5">
-          <span className="text-xs text-muted">{c.status === 'invested' ? 'Invested' : 'Spent'}</span>
-          <span className="tnum text-lg font-bold">{formatCents(c.spent)}</span>
-        </div>
-        <div className={cx('flex flex-col gap-0.5 rounded-lg p-2.5', TONE[st.tone].bg)}>
-          <span className={cx('text-xs', TONE[st.tone].fg)}>Available</span>
-          <span className={cx('tnum text-lg font-bold', TONE[st.tone].fg)} data-testid="category-available">
-            {formatCents(available)}
-          </span>
-        </div>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm font-semibold text-muted">Available</span>
+        <span
+          className={cx(
+            'tnum text-4xl leading-tight font-bold',
+            isQuiet(c.status) && available >= 0 ? 'text-ink' : TONE[tone].fg,
+          )}
+          data-testid="category-available"
+        >
+          {formatCents(available)}
+        </span>
+        {row?.leftPercent !== null && row?.leftPercent !== undefined && (
+          <Bar percent={leftPercent} tone={tone} />
+        )}
+        <span className="text-sm text-muted">
+          {c.spent > 0
+            ? `${formatCents(c.spent)} ${spentWord} in ${monthName(month)}`
+            : `Nothing ${spentWord} in ${monthName(month)}`}
+        </span>
       </div>
-      <Segmented
-        label="Mode"
-        track="category.mode"
-        value={mode}
-        onChange={setMode}
-        options={[
-          ['assign', 'Assign'],
-          ['move', 'Move money'],
-        ]}
-      />
-      {mode === 'assign' ? (
-        <>
-          <Field label={`Assigned in ${monthName(month)}`}>
-            <input
-              className={amountInputClass}
-              inputMode="decimal"
-              value={assigned ?? ''}
-              onChange={(e) => setAssigned(e.target.value)}
-              onKeyDown={onEnter}
-              aria-invalid={newAssigned === null}
-            />
-          </Field>
-          <div className="flex flex-wrap gap-2">
-            <QuickChip
-              label="+ $50"
-              onClick={() => setAssigned(centsToInput((newAssigned ?? c.assigned) + 5000))}
-            />
-            {c.lastMonthAssigned > 0 && (
-              <QuickChip
-                label={`Last month ${formatCents(c.lastMonthAssigned, { whole: true })}`}
-                onClick={() => setAssigned(centsToInput(c.lastMonthAssigned))}
-              />
-            )}
-            {target !== null && (
-              <QuickChip
-                label={`Target ${formatCents(target, { whole: true })}`}
-                onClick={() => setAssigned(centsToInput(target))}
-              />
-            )}
-          </div>
-          <p className="m-0 text-xs text-muted">Ready to Assign has {formatCents(c.rta)}.</p>
-        </>
-      ) : (
-        <>
-          <Field label="Move to">
-            <select className={inputClass} value={moveTo} onChange={(e) => setMoveTo(e.target.value)}>
-              {c.moveOptions.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Amount">
-            <input
-              className={amountInputClass}
-              inputMode="decimal"
-              placeholder="0.00"
-              value={moveAmt}
-              onChange={(e) => setMoveAmt(e.target.value)}
-              onKeyDown={onEnter}
-            />
-          </Field>
-          <p className="m-0 text-xs text-muted">
-            {c.available - (moveCents ?? 0) < 0
-              ? `${c.name} would be overspent by ${formatCents(moveCents! - c.available)}.`
-              : `${c.name} would have ${formatCents(c.available - (moveCents ?? 0))} left.`}
-          </p>
-        </>
-      )}
-      {err && <ErrorNote error={err} />}
-      <Card className="flex items-center justify-between gap-3 p-3">
-        <div className="flex flex-col gap-0.5">
-          <Label>Target</Label>
+      <div className="flex flex-col gap-2">
+        <Field label={`Assigned in ${monthName(month)}`}>
+          <input
+            className={amountInputClass}
+            inputMode="decimal"
+            value={assigned ?? ''}
+            onChange={(e) => setAssigned(e.target.value)}
+            onKeyDown={onEnter}
+            aria-invalid={newAssigned === null}
+          />
+        </Field>
+        <p className={cx('m-0 text-sm', rtaAfter < 0 ? 'text-over-fg' : 'text-muted')} aria-live="polite">
+          {!changed
+            ? `Ready to Assign has ${formatCents(c.rta)}.`
+            : rtaAfter < 0
+              ? `That’s ${formatCents(-rtaAfter)} more than Ready to Assign has.`
+              : `Ready to Assign goes from ${formatCents(c.rta)} to ${formatCents(rtaAfter)}.`}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {presets.map((p) => (
+          <SoftButton
+            key={p.track}
+            tone="outline"
+            track={p.track}
+            onClick={() => setAssigned(centsToInput(p.value))}
+          >
+            {p.label}
+          </SoftButton>
+        ))}
+        <SoftButton track="category.move.open" onClick={() => setMoving(true)}>
+          <Icon name="swap" size={16} />
+          Move money
+        </SoftButton>
+      </div>
+      {set.error && <ErrorNote error={set.error} />}
+      <div className="flex items-center justify-between gap-3 border-t border-divider pt-3">
+        <div className="flex min-w-0 flex-col gap-0.5">
           <span className="text-md font-semibold">{c.targetText}</span>
           <span className="text-xs text-muted">{c.targetHelp}</span>
         </div>
         <SoftLink to={`/budget/category/${c.id}/target`} search={{ month }} track="category.target.edit">
-          Edit
+          {c.target.type === 'none' ? 'Add' : 'Edit'}
         </SoftLink>
-      </Card>
+      </div>
       <div className="flex flex-col">
         <div className="flex items-center justify-between">
           <Label>Recent</Label>
@@ -323,6 +295,17 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
           </Link>
         ))}
       </div>
+      {moving && (
+        <MoveMoneySheet
+          month={month}
+          categoryId={c.id}
+          onClose={() => setMoving(false)}
+          onMoved={() => {
+            usage.endTask('assign');
+            close();
+          }}
+        />
+      )}
     </Sheet>
   );
 }
@@ -365,13 +348,5 @@ function PinButton({ id, name, month }: { id: string; name: string; month: strin
           the accent color and aria-pressed show that it's on. */}
       Pin
     </button>
-  );
-}
-
-function QuickChip({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <SoftButton tone="outline" track="category.quick" onClick={onClick}>
-      {label}
-    </SoftButton>
   );
 }

@@ -108,13 +108,20 @@ test('Category sheet: Enter saves the amount, and Enter on a move moves it', asy
   await expect.poll(() => assigned(request, 'groceries', '2026-11')).toBe(65_000);
 
   await page.goto('/budget/category/groceries');
-  await sheet.getByText('Move money', { exact: true }).click();
-  await sheet.getByLabel('Move to').selectOption({ label: 'Ready to Assign' });
-  await sheet.getByLabel('Amount').fill('1,234.5');
-  // More than Groceries has: it says so.
-  await expect(sheet.getByText('Groceries would be overspent by $972.10.')).toBeVisible();
-  await sheet.getByLabel('Amount').fill('25');
-  await sheet.getByLabel('Amount').press('Enter');
+  await sheet.getByRole('button', { name: 'Move money' }).click();
+  const move = page.getByRole('dialog', { name: 'Move money' });
+  await expect(move.getByRole('button', { name: 'From', exact: true })).toContainText('Groceries');
+  await move.getByRole('button', { name: 'To', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Move to' })
+    .getByRole('button', { name: 'Ready to Assign' })
+    .click();
+  await expect(move.getByRole('button', { name: 'To', exact: true })).toContainText('Ready to Assign');
+  await move.getByLabel('Amount').fill('1,234.5');
+  // More than Groceries has: its new amount shows below zero.
+  await expect(move.getByText('−$972.10')).toBeVisible();
+  await move.getByLabel('Amount').fill('25');
+  await move.getByLabel('Amount').press('Enter');
   await expect(page).not.toHaveURL(/category/);
   await expect(rta(page)).toHaveText('$956.90');
   // Enter with nothing to save does nothing.
@@ -122,6 +129,24 @@ test('Category sheet: Enter saves the amount, and Enter on a move moves it', asy
   await sheet.getByLabel('Assigned in November').press('Enter');
   await expect(sheet).toBeVisible();
   await expect(page).toHaveURL(/category/);
+});
+
+test('Category sheet: Move money on an overspent category covers it from Ready to Assign', async ({
+  page,
+  request,
+}) => {
+  const before = await assigned(request, 'dining', '2026-11');
+  await page.goto('/budget/category/dining');
+  await page.getByRole('dialog').getByRole('button', { name: 'Move money' }).click();
+  const move = page.getByRole('dialog', { name: 'Move money' });
+  // It starts with the cover: from Ready to Assign, the amount it's over.
+  await expect(move.getByRole('button', { name: 'From', exact: true })).toContainText('Ready to Assign');
+  await expect(move.getByRole('button', { name: 'To', exact: true })).toContainText('Dining out');
+  await expect(move.getByLabel('Amount')).toHaveValue('18.25');
+  await move.getByRole('button', { name: 'Move $18.25' }).click();
+  await expect(page).not.toHaveURL(/category/);
+  await expect(rta(page)).toHaveText('$963.65');
+  await expect.poll(() => assigned(request, 'dining', '2026-11')).toBe(before + 1825);
 });
 
 test('Assign sheet: with a category picked, a missing or wrong amount says to enter one', async ({
