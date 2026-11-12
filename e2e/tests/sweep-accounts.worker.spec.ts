@@ -11,13 +11,9 @@ test.beforeEach(async ({ page, request }) => {
   await page.addInitScript(() => window.localStorage.setItem('ledgerline-theme', 'light'));
 });
 
-test('Register: a filter that no longer matches anything can still go back to All', async ({ page }) => {
+test('Register: an old filter link shows every transaction, with no filter chips', async ({ page }) => {
   await page.goto('/accounts/marcus?show=pending');
-  await expect(page.getByText('No transactions match.')).toBeVisible();
-  // The filter on screen keeps its chip, at 0.
-  await expect(page.getByRole('button', { name: /^Pending/ })).toHaveAttribute('aria-pressed', 'true');
-  await page.getByRole('button', { name: 'All', exact: true }).click();
-  await expect(page).toHaveURL(/\/accounts\/marcus$/);
+  await expect(page.getByRole('group', { name: 'Show' })).toHaveCount(0);
   await expect(page.getByText('No transactions match.')).toHaveCount(0);
 });
 

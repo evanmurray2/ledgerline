@@ -1,7 +1,7 @@
-// An account's register: balances, the filter chips and its transactions by day; Rename, Close and Reopen from the ⋯
+// An account's register: balances and its transactions by day; Rename, Close and Reopen from the ⋯
 // menu (Close and Reopen in AccountClose.tsx).
 import { useState } from 'react';
-import { Outlet, useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { Outlet, useNavigate, useParams } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
 import { useRegister, useSession } from '../api/hooks';
@@ -12,8 +12,6 @@ import {
   PageFrame,
   Banner,
   Card,
-  Chip,
-  CountBadge,
   cx,
   EmptyNote,
   ErrorNote,
@@ -37,26 +35,14 @@ import { CloseAccountSheet } from './AccountClose';
 import { errorMessage } from '../api/client';
 import { toast } from '../components/Toast';
 
-type Show = 'all' | 'pending' | 'needs' | 'transfers';
-
 export function RegisterScreen() {
   const { accountId } = useParams({ strict: false }) as { accountId: string };
-  const search = useSearch({ strict: false }) as { show?: Show };
-  const show: Show = search.show ?? 'all';
   useScreen('register');
   const navigate = useNavigate();
   const all = useRegister(accountId, 'all');
-  const filtered = useRegister(accountId, show);
   const session = useSession();
-  const v = (show === 'all' ? all : filtered).data;
+  const v = all.data;
   const a = all.data?.account;
-  const rows = (all.data?.days ?? []).flatMap((d) => d.rows);
-  const counts = {
-    // The same rows as the Pending section and the server's pending filter: anything not posted yet (upcoming too).
-    pending: rows.filter((r) => r.status !== 'posted').length,
-    needs: rows.filter((r) => r.badge === 'Needs category').length,
-    transfers: rows.filter((r) => r.badge === 'Transfer' || r.sheet === 'transfer').length,
-  };
   const today = session.data?.budget.today ?? '';
   const base = `/accounts/${accountId}`;
   const [renaming, setRenaming] = useState(false);
@@ -88,13 +74,6 @@ export function RegisterScreen() {
   };
   if (canWrite && a?.closed)
     menu.push({ name: 'Reopen account', track: 'account.reopen', onClick: () => void reopen() });
-  const chips: [Show, string, number?][] = [['all', 'All']];
-  // The filter on screen keeps its chip after its last row is gone (or from a saved link), so All can clear it.
-  if (counts.pending || show === 'pending') chips.push(['pending', 'Pending', counts.pending]);
-  if ((a?.kind === 'credit' && counts.needs) || show === 'needs')
-    chips.push(['needs', 'Needs category', counts.needs]);
-  if ((a?.kind !== 'credit' && counts.transfers) || show === 'transfers')
-    chips.push(['transfers', 'Transfers', counts.transfers]);
   const sub = a
     ? `${a.institution}${a.mask ? ` · ending ${a.mask}` : ''} · ${a.syncedAt ? `${a.connectionStatus === 'ok' ? 'synced' : 'last synced'} ${syncedLabel(a.syncedAt, today)}` : 'not synced yet'}${a.connectionStatus === 'login_required' ? ' · sign in again on Accounts' : a.connectionStatus !== 'ok' ? ' · see Accounts' : ''}`
     : '';
@@ -109,23 +88,6 @@ export function RegisterScreen() {
           a && menu.length > 0 ? (
             <OverflowMenu label="More for this account" track="account.menu" items={menu} />
           ) : undefined
-        }
-        below={
-          chips.length > 1 && (
-            <div role="group" aria-label="Show" className="chip-row">
-              {chips.map(([id, name, n]) => (
-                <Chip
-                  key={id}
-                  pressed={show === id}
-                  onClick={() => void navigate({ to: base, search: { show: id === 'all' ? undefined : id } })}
-                  track={`register.filter.${id}`}
-                >
-                  {name}
-                  {n !== undefined && <CountBadge n={n} inverted={show === id} />}
-                </Chip>
-              ))}
-            </div>
-          )
         }
       />
       {renaming && a && <RenameAccountSheet id={a.id} name={a.name} close={() => setRenaming(false)} />}
@@ -238,9 +200,7 @@ export function RegisterScreen() {
                 <p className="m-0 text-xs leading-snug text-muted">Upcoming bills aren’t subtracted here.</p>
               )}
             </section>
-            {v.days.length === 0 && (
-              <EmptyNote>{show === 'all' ? 'No transactions yet.' : 'No transactions match.'}</EmptyNote>
-            )}
+            {v.days.length === 0 && <EmptyNote>No transactions yet.</EmptyNote>}
             {v.days.map((d) => (
               <section key={d.label} className="flex shrink-0 flex-col gap-1.5">
                 <SectionTitle
