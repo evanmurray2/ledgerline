@@ -84,6 +84,11 @@ export class Writer {
     return (this.last = await publicEntry(this.fields(KIND.genesis), body, this.keys));
   }
 
+  /** A sealed entry of any kind with a change set's place (a bank entry, a scan). */
+  async entry(kind: number, text: string, over: Record<string, unknown> = {}): Promise<Entry> {
+    return (this.last = await sealedEntry(this.fields(kind, over), utf8(text), this.keys));
+  }
+
   async edit(text: string, over: Record<string, unknown> = {}): Promise<Entry> {
     return (this.last = await sealedEntry(this.fields(KIND.edit, over), utf8(text), this.keys));
   }

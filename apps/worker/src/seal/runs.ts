@@ -420,11 +420,20 @@ export async function stageOf(d: RunDeps): Promise<Stage | null> {
   return s?.st ?? null;
 }
 
-/** The stage a step goes on from: there, and with a good stamp. */
-async function openStage(d: RunDeps): Promise<{ st: Stage; mac: string }> {
+/** The run a job began: its steps act on that run only, never on one that took its place. */
+export interface OwnRun {
+  linkId: string;
+  startedAt: number;
+}
+const own = (st: Stage, only: OwnRun | undefined): boolean =>
+  !only || (st.linkId === only.linkId && st.startedAt === only.startedAt);
+
+/** The stage a step goes on from: there, with a good stamp, and the one its job began. */
+async function openStage(d: RunDeps, only?: OwnRun): Promise<{ st: Stage; mac: string }> {
   const s = await readStage(d);
   if (!s) throw new RunStopped('no run');
   if (!s.good) throw new BadStamp('run stage');
+  if (!own(s.st, only)) throw new RunStopped('another run took its place');
   return s;
 }
 
@@ -674,8 +683,9 @@ export async function fetchSealedPage(
   d: RunDeps,
   provider: BankDataProvider,
   pageSize: number,
+  only?: OwnRun,
 ): Promise<{ more: boolean } | 'restarted'> {
-  const o = await openStage(d);
+  const o = await openStage(d, only);
   const { st } = o;
   if (!st.hasMore) return { more: false };
   // Everything the page will be sealed with is checked before the bank is asked.
@@ -721,8 +731,8 @@ const jsonBytes = (v: unknown): Uint8Array => {
  * card statements (`WHAT.liabilities`), as JSON. A run whose bank couldn't be asked is stored without it, and
  * its manifest says so: this step is then left out.
  */
-export async function sealBankAnswer(d: RunDeps, what: 1 | 2, answer: unknown): Promise<void> {
-  const o = await openStage(d);
+export async function sealBankAnswer(d: RunDeps, what: 1 | 2, answer: unknown, only?: OwnRun): Promise<void> {
+  const o = await openStage(d, only);
   const { st } = o;
   if (st.hasMore || st.pages === 0 || st.describes) throw new RunStopped('the run has no page yet');
   const held = await d.db
@@ -739,8 +749,8 @@ export async function sealBankAnswer(d: RunDeps, what: 1 | 2, answer: unknown): 
  * balances, when it was linked), as JSON. A device writes the link's accounts from it; the link's transactions
  * come with its next run.
  */
-export async function sealLinkDescription(d: RunDeps, description: unknown): Promise<void> {
-  const o = await openStage(d);
+export async function sealLinkDescription(d: RunDeps, description: unknown, only?: OwnRun): Promise<void> {
+  const o = await openStage(d, only);
   const { st } = o;
   if (!st.describes) throw new RunStopped('not a first run');
   // The step ran before and its answer was lost: the page is there.
@@ -758,12 +768,16 @@ export async function completeSealedRun(
   d: RunDeps,
   now: number,
   run?: number,
+  only?: OwnRun,
 ): Promise<{ run: number } | 'restarted'> {
   const o = await readStage(d);
-  if (!o || (run !== undefined && o.st.run !== run)) {
+  if (!o || (run !== undefined && o.st.run !== run) || (o.good && !own(o.st, only))) {
     if (run !== undefined) {
-      const done = await d.db.prepare(`SELECT 1 AS x FROM sealed_run WHERE run = ?1`).bind(run).first();
-      if (done) return { run };
+      const done = await d.db
+        .prepare(`SELECT link_id FROM sealed_run WHERE run = ?1`)
+        .bind(run)
+        .first<{ link_id: string }>();
+      if (done && (!only || done.link_id === only.linkId)) return { run };
     }
     throw new RunStopped('no run');
   }

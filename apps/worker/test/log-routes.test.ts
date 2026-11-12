@@ -1,10 +1,18 @@
 // The routes of the sealed log (src/seal/log-routes.ts): they answer only for a budget marked sealed, and a
 // sealed budget has no other routes.
-import { encodeEntry } from '@ledgerline/seal';
+import { ulid } from '@ledgerline/platform';
+import {
+  encodeEntry,
+  randomBytes,
+  readEntry,
+  readSnapshotHeader,
+  sealSnapshot,
+  signSnapshotCheck,
+} from '@ledgerline/seal';
 import { SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { logGenesis, logHead } from '../src/seal/log-store.js';
-import { Writer } from './log-writer.js';
+import { PHONE, Writer } from './log-writer.js';
 import { storeDb } from './store-db.js';
 
 const ORIGIN = 'https://ledgerline.test';
@@ -12,6 +20,7 @@ const H = { origin: ORIGIN, 'content-type': 'application/json', 'x-ledgerline': 
 /** The test server's clock (FAKE_NOW). */
 const NOW = Date.parse('2026-11-14T20:00:00Z');
 const b64 = (b: Uint8Array) => btoa(String.fromCharCode(...b));
+const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 const get = (path: string) => SELF.fetch(`${ORIGIN}${path}`);
 const post = (path: string, body: unknown) =>
   SELF.fetch(`${ORIGIN}${path}`, { method: 'POST', headers: H, body: JSON.stringify(body) });
@@ -71,7 +80,6 @@ describe('the routes of the sealed log', () => {
       expect(first).toMatchObject({ number: 1, more: false });
       expect(first.entries.length).toBe(1);
       // The writer continues from the stored first entry.
-      const { readEntry } = await import('@ledgerline/seal');
       w.last = await readEntry(Uint8Array.from(atob(first.entries[0]!), (c) => c.charCodeAt(0)));
 
       const a = await w.edit('one');
@@ -94,6 +102,86 @@ describe('the routes of the sealed log', () => {
       expect(await late.json()).toMatchObject({ ok: false, why: 'behind', number: 3, retry: true });
       const after = (await (await get('/api/log?after=1')).json()) as { entries: string[]; number: number };
       expect(after.entries).toEqual(write.entries);
+
+      // ---- a snapshot, over the routes: begun, its chunk stored, read back, checked
+      expect(await (await get('/api/log/snapshots')).json()).toEqual({ snapshots: [] });
+      const snap = await sealSnapshot(
+        w.keys,
+        {
+          budgetId: budget,
+          snapshotId: ulid(NOW),
+          number: 3,
+          entryHash: b.hash,
+          lastPublic: { number: 1, hash: (await readEntry(unb64(first.entries[0]!))).hash },
+          tables: [],
+          checkpoints: [{ number: 3, hash: b.hash }],
+          counters: [{ deviceId: PHONE, counter: 3 }],
+        },
+        [randomBytes(5000)],
+      );
+      const begin = {
+        header: b64(snap.header),
+        signature: b64(snap.signature),
+        manifest: b64(snap.manifest),
+        chunks: 1,
+      };
+      expect((await post('/api/log/snapshots', { ...begin, chunks: 0 })).status).toBe(400);
+      const refusedSnap = await post('/api/log/snapshots', { ...begin, signature: b64(randomBytes(64)) });
+      expect(refusedSnap.status).toBe(409);
+      expect(await refusedSnap.json()).toEqual({ ok: false, why: 'signature' });
+      expect(await (await post('/api/log/snapshots', begin)).json()).toEqual({ ok: true });
+      const id = readSnapshotHeader(snap.header).snapshotId;
+      const put = (k: number, body: Uint8Array) =>
+        SELF.fetch(`${ORIGIN}/api/log/snapshots/${id}/chunks/${k}`, {
+          method: 'PUT',
+          headers: { origin: ORIGIN, 'x-ledgerline': '1', 'content-type': 'application/octet-stream' },
+          body,
+        });
+      expect((await put(2, snap.chunks[0]!)).status).toBe(409);
+      expect((await get(`/api/log/snapshots/${id}/manifest`)).status).toBe(404);
+      // A chunk is a write like any other: no app header, no chunk.
+      const noHeader = await SELF.fetch(`${ORIGIN}/api/log/snapshots/${id}/chunks/1`, {
+        method: 'PUT',
+        headers: { origin: ORIGIN, 'content-type': 'application/octet-stream' },
+        body: snap.chunks[0]!,
+      });
+      expect(noHeader.status).toBe(403);
+      const elsewhere = await SELF.fetch(`${ORIGIN}/api/log/snapshots/${id}/chunks/1`, {
+        method: 'PUT',
+        headers: {
+          origin: 'https://elsewhere.example',
+          'x-ledgerline': '1',
+          'content-type': 'application/octet-stream',
+        },
+        body: snap.chunks[0]!,
+      });
+      expect(elsewhere.status).toBe(403);
+      expect(await (await put(1, snap.chunks[0]!)).json()).toEqual({ ok: true });
+      const listed = (await (await get('/api/log/snapshots')).json()) as {
+        snapshots: { id: string; number: number; header: string; chunks: number; checked: boolean }[];
+      };
+      expect(listed.snapshots).toMatchObject([
+        { id, number: 3, header: begin.header, chunks: 1, checked: false },
+      ]);
+      const back = new Uint8Array(await (await get(`/api/log/snapshots/${id}/chunks/1`)).arrayBuffer());
+      expect([...back]).toEqual([...snap.chunks[0]!]);
+      expect([
+        ...new Uint8Array(await (await get(`/api/log/snapshots/${id}/manifest`)).arrayBuffer()),
+      ]).toEqual([...snap.manifest]);
+      expect((await get(`/api/log/snapshots/${id}/chunks/2`)).status).toBe(404);
+      const check = b64(await signSnapshotCheck(w.keys, snap, budget, PHONE));
+      expect(
+        (await post(`/api/log/snapshots/${id}/check`, { deviceId: PHONE, signature: b64(randomBytes(64)) }))
+          .status,
+      ).toBe(409);
+      expect(
+        await (await post(`/api/log/snapshots/${id}/check`, { deviceId: PHONE, signature: check })).json(),
+      ).toEqual({ ok: true });
+      expect(((await (await get('/api/log/snapshots')).json()) as typeof listed).snapshots[0]!.checked).toBe(
+        true,
+      );
+      // Nothing was deleted: there is no older snapshot.
+      expect(await (await get('/api/log?after=0')).json()).toMatchObject({ number: 3, floor: 0 });
 
       // A body that is not a write, and a request with no CSRF header.
       expect((await post('/api/log/append', { base: 3, entries: ['not base64!'] })).status).toBe(400);

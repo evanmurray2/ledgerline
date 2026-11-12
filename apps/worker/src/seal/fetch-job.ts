@@ -37,8 +37,9 @@ const MAX_BEGINS = 5;
 export interface FetchState {
   phase: 'begin' | 'describe' | 'fetch' | 'balances' | 'liabilities' | 'complete';
   linkId: string;
-  /** The run this job began. */
+  /** The run this job began, and when: its steps act on that run only. */
   run?: number;
+  startedAt?: number;
   pages?: number;
   busy?: number;
   begins?: number;
@@ -59,7 +60,10 @@ type Enqueue = (
   o: { id?: string; connectionId?: string | null; state?: unknown; runAt: number; recurring?: boolean },
 ) => Promise<string>;
 
-/** Queues a fetch for one link. A fetch already queued for it stays as it is, and is asked to run once more. */
+/**
+ * Queues a fetch for one link. A fetch already queued for it stays as it is; the request is noted on the link, so
+ * news that comes while a run is open is fetched by the next backstop at the latest.
+ */
 export async function queueSealedFetch(
   d: RunDeps,
   enqueue: Enqueue,
@@ -177,6 +181,10 @@ async function step(deps: FetchDeps, s: FetchState, now: number): Promise<StepRe
   if ((s.phase === 'begin' || s.phase === 'fetch') && (await deps.budgetState()) === 'pause')
     return next(s, nextUtcMidnight(now));
 
+  // The run this job began: if another took its place (this one was left too long, or given up), every step
+  // stops, and the job begins again.
+  const only = { linkId: s.linkId, startedAt: s.startedAt ?? -1 };
+
   switch (s.phase) {
     case 'begin': {
       const st = await beginSealedRun(d, s.linkId, now);
@@ -192,6 +200,7 @@ async function step(deps: FetchDeps, s: FetchState, now: number): Promise<StepRe
         phase: st.describes ? 'describe' : st.hasMore ? 'fetch' : 'balances',
         linkId: s.linkId,
         run: st.run,
+        startedAt: st.startedAt,
         pages: 0,
         begins: s.begins,
         first: st.describes,
@@ -204,11 +213,11 @@ async function step(deps: FetchDeps, s: FetchState, now: number): Promise<StepRe
         .prepare(`SELECT linked_at FROM bank_link WHERE id = ?1`)
         .bind(s.linkId)
         .first<{ linked_at: number }>();
-      await sealLinkDescription(d, { linkId: s.linkId, linkedAt: link?.linked_at ?? null, accounts });
+      await sealLinkDescription(d, { linkId: s.linkId, linkedAt: link?.linked_at ?? null, accounts }, only);
       return next({ ...s, phase: 'complete' });
     }
     case 'fetch': {
-      const r = await fetchSealedPage(d, deps.provider(), deps.pageSize);
+      const r = await fetchSealedPage(d, deps.provider(), deps.pageSize, only);
       if (r === 'restarted') return next({ ...s, pages: 0 });
       if (!r.more) return next({ ...s, phase: 'balances' });
       const pages = (s.pages ?? 0) + 1;
@@ -232,6 +241,7 @@ async function step(deps: FetchDeps, s: FetchState, now: number): Promise<StepRe
             availableBalance: a.availableBalance,
             creditLimit: a.creditLimit,
           })),
+          only,
         );
       return next({ ...s, phase: 'liabilities' });
     }
@@ -240,12 +250,12 @@ async function step(deps: FetchDeps, s: FetchState, now: number): Promise<StepRe
       if (provider.getLiabilities) {
         const conn = await linkForBank(d, s.linkId);
         const liabilities = await provider.getLiabilities(conn).catch(() => null);
-        if (liabilities?.length) await sealBankAnswer(d, 2, liabilities);
+        if (liabilities?.length) await sealBankAnswer(d, 2, liabilities, only);
       }
       return next({ ...s, phase: 'complete' });
     }
     case 'complete': {
-      const r = await completeSealedRun(d, now, s.run);
+      const r = await completeSealedRun(d, now, s.run, only);
       // A key change replaced the inbox key: the same run, fetched again and sealed to the key in force.
       if (r === 'restarted') return next({ ...s, phase: 'begin' });
       await d.db

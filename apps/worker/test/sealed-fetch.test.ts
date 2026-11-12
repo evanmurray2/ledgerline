@@ -14,7 +14,7 @@ import {
   type FetchDeps,
   type FetchState,
 } from '../src/seal/fetch-job.js';
-import { lastCompleteRun, stageOf } from '../src/seal/runs.js';
+import { lastCompleteRun, STAGE_MAX_MS, stageOf } from '../src/seal/runs.js';
 import type { BudgetStore } from '../src/store/budget-store.js';
 import { nextUtcMidnight } from '../src/store/sync-job.js';
 import { T0 } from './log-writer.js';
@@ -321,6 +321,50 @@ describe('the fetch job of a sealed budget', () => {
       x.sql(`UPDATE bank_link SET mac = NULL WHERE id = ?1`, LINK_A);
       await ev('sync_updates_available', `item-${LINK_A}`);
       expect(queued.length).toBe(2);
+    });
+  });
+
+  it('a job whose run was replaced by another link does nothing to that run', async () => {
+    await world(async (x) => {
+      const a = fullBank(TWO_PAGES);
+      const b = fullBank({ '': { added: 1, next: 'b1', more: false } });
+      const ha = sealedFetchHandler(deps(x, a.provider));
+      const hb = sealedFetchHandler(deps(x, b.provider));
+      const job = (linkId: string, state: FetchState) => ({
+        id: sealedFetchId(linkId),
+        kind: SEALED_FETCH,
+        connectionId: null,
+        state,
+        attempts: 1,
+        recurring: false,
+      });
+      // Link A's job fetches all its pages, then is left alone for too long (a pause to the next day).
+      let sa = (
+        (await ha(job(LINK_A, { phase: 'begin', linkId: LINK_A }), T0 + 3000)) as { state: FetchState }
+      ).state;
+      sa = ((await ha(job(LINK_A, sa), T0 + 3001)) as { state: FetchState }).state;
+      sa = ((await ha(job(LINK_A, sa), T0 + 3002)) as { state: FetchState }).state;
+      expect(sa).toMatchObject({ phase: 'balances', run: 3 });
+      // Link B's job takes the place: run 3 is link B's now.
+      const late = T0 + 3003 + STAGE_MAX_MS;
+      const sb = ((await hb(job(LINK_B, { phase: 'begin', linkId: LINK_B }), late)) as { state: FetchState })
+        .state;
+      expect(sb).toMatchObject({ phase: 'fetch', run: 3 });
+      // Link A's job goes on from its saved state: it must not seal its balances into link B's run.
+      const r = await ha(job(LINK_A, sa), late + 1);
+      expect(r).toEqual({ state: { phase: 'begin', linkId: LINK_A, begins: 1 }, runAt: late + 1 });
+      expect(await stageOf(x.d)).toMatchObject({ linkId: LINK_B, pages: 0 });
+      expect(a.asked.accounts).toBe(1);
+      // Nor complete it, nor mark link A as fetched.
+      const c = await ha(job(LINK_A, { ...sa, phase: 'complete' }), late + 2);
+      expect(c).toMatchObject({ state: { phase: 'begin' } });
+      expect(await lastCompleteRun(x.db)).toBe(2);
+      expect((await linkRow(x, LINK_A))!.last_fetched_at).toBeNull();
+      // Link B's run goes on untouched, with its own balances.
+      expect((await drive(deps(x, b.provider), LINK_B, late + 3)).phases.at(-1)).toBe('complete');
+      const filed = await openRun({ ...x.filing, now: late + 60_000 }, await handed(x.db, 3));
+      expect(filed.manifest.linkId).toBe(LINK_B);
+      expect(filed.pages.map((p) => p.what)).toEqual([0, 1, 2]);
     });
   });
 

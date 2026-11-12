@@ -17,14 +17,14 @@ import {
 import { tokenKeyBytes } from '@ledgerline/platform';
 import { describe, expect, it } from 'vitest';
 import { DeviceLog } from '../src/local/device-log.js';
-import { LocalEngine, migrateLocal } from '../src/local/engine.js';
+import { FilingInterrupted, LocalEngine, migrateLocal } from '../src/local/engine.js';
 import {
   LogSession,
   type FilingDeps,
   type LogTransport,
   type RunTransport,
 } from '../src/local/log-session.js';
-import { FILED_KEY, FILED_LINK, UnsupportedRun } from '../src/local/sealed-filing.js';
+import { CopyAhead, FILED_KEY, FILED_LINK, UnsupportedRun } from '../src/local/sealed-filing.js';
 import type { SyncPage } from '../src/routes/sync.js';
 import { SEALED_FETCH, sealedFetchHandler, type FetchState } from '../src/seal/fetch-job.js';
 import { logAfter, logAppend, logHead } from '../src/seal/log-store.js';
@@ -353,10 +353,118 @@ describe('a sealed budget: the server seals bank runs, the phones file them', ()
         expect(await txns(a)).toContain('a-6');
         expect(await b.session.pull()).toMatchObject({ entries: 1 });
         expect(await same()).toEqual([]);
+
+        // ---- runs 6 and 7: phone A files both and is cut off; phone B files run 6 alone and wins. Phone A's
+        // filing comes out, and it files run 7 again, whole.
+        for (const [cur, id] of [
+          ['cur6', 'a-7'],
+          ['cur7', 'a-8'],
+        ] as const) {
+          clock += 3_600_000;
+          await fetchRun(
+            x,
+            plaidBank({
+              [cur]: {
+                added: [plaidTxn(id, 1, 7, '2026-11-12', 'RUN AGAIN')],
+                next: `cur${Number(cur[3]) + 1}`,
+              },
+            }),
+            clock,
+          );
+        }
+        clock += 1000;
+        expect(await offline.fileRuns(src, filing())).toMatchObject({ filed: 0, waiting: true });
+        expect((await a.engine.queue())[0]!.bank).toMatchObject({ filedThrough: 7 });
+        const onlySix: RunTransport = {
+          runs: async (n) => (await src.runs(n)).filter((r) => r.run <= 6),
+          page: src.page,
+        };
+        expect(await b.session.fileRuns(onlySix, filing())).toEqual({ filed: 1, waiting: false, lost: 0 });
+        expect(await a.session.fileRuns(src, filing())).toEqual({ filed: 1, waiting: false, lost: 0 });
+        expect(await txns(a)).toEqual(expect.arrayContaining(['a-7', 'a-8']));
+        expect(await b.session.pull()).toMatchObject({ entries: 1 });
+        expect(await txns(b)).toEqual(expect.arrayContaining(['a-7', 'a-8']));
+        expect(await same()).toEqual([]);
+
+        // ---- run 8: the server refuses the bank entry once; the run is filed again, whole
+        clock += 3_600_000;
+        await fetchRun(
+          x,
+          plaidBank({ cur8: { added: [plaidTxn('a-9', 2, 3, '2026-11-13', 'REFUSED ONCE')], next: 'cur9' } }),
+          clock,
+        );
+        clock += 1000;
+        let refusals = 1;
+        const fussy = new LogSession(
+          b.engine,
+          b.log,
+          {
+            after: transport.after,
+            append: async (base, entries) =>
+              refusals-- > 0
+                ? { ok: false, why: 'receipts', detail: 'once', retry: false }
+                : transport.append(base, entries),
+          },
+          encodeEntry,
+        );
+        expect(await fussy.fileRuns(src, filing())).toEqual({ filed: 1, waiting: false, lost: 0 });
+        expect(await txns(b)).toContain('a-9');
+        expect(await a.session.pull()).toMatchObject({ entries: 1 });
+        expect(await same()).toEqual([]);
+
+        // ---- runs 9 and 10 in one entry; the first try fails part-way and leaves nothing behind
+        for (const [cur, id] of [
+          ['cur9', 'a-10'],
+          ['cur10', 'a-11'],
+        ] as const) {
+          clock += 3_600_000;
+          await fetchRun(
+            x,
+            plaidBank({
+              [cur]: {
+                added: [plaidTxn(id, 1, 5, '2026-11-14', 'TWO AT ONCE')],
+                next: `cur${Number(cur.slice(3)) + 1}`,
+              },
+            }),
+            clock,
+          );
+        }
+        clock += 1000;
+        let reads = 0;
+        const flaky = {
+          parsePage: (body: string) => {
+            // The device reads each page twice (once to name it, once to file it): the fault is in the filing.
+            if (++reads === 4) throw new Error('a page did not read');
+            return plaid.parsePage(body);
+          },
+        } as unknown as BankDataProvider;
+        const whole = await rowsOf(a.engine);
+        await expect(a.session.fileRuns(src, { ...filing(), provider: flaky })).rejects.toThrow(
+          'a page did not read',
+        );
+        expect(differences(await rowsOf(a.engine), whole)).toEqual([]);
+        expect(await a.engine.queue()).toEqual([]);
+        expect(await a.session.fileRuns(src, filing())).toEqual({ filed: 2, waiting: false, lost: 0 });
+        const two = await lastEntry();
+        expect(two.header).toMatchObject({ kind: KIND.bank, filedThrough: 10 });
+        expect((two.header as unknown as { receipts: unknown[] }).receipts.length).toBe(2);
+        expect(await txns(a)).toEqual(expect.arrayContaining(['a-10', 'a-11']));
+        expect(await b.session.pull()).toMatchObject({ entries: 1 });
+        expect(await same()).toEqual([]);
+
+        // ---- a copy that can't be used as it is says so, and files nothing
+        await a.engine.db.prepare(`INSERT INTO local_state (key, value) VALUES ('filing', '1')`).run();
+        await expect(a.session.fileRuns(src, filing())).rejects.toBeInstanceOf(FilingInterrupted);
+        await a.engine.db.prepare(`DELETE FROM local_state WHERE key = 'filing'`).run();
+        await b.engine.db
+          .prepare(`UPDATE setting SET value = json_set(value, '$.run', 99) WHERE key = ?1`)
+          .bind(FILED_KEY)
+          .run();
+        await expect(b.session.fileRuns(src, filing())).rejects.toBeInstanceOf(CopyAhead);
       },
       { described: false },
     );
-  }, 60_000);
+  }, 120_000);
 
   it('a run for a bank this copy does not know is not filed, and not skipped', async () => {
     const old = bankSync(`sealed-unknown-${Math.random()}`, BUDGET, 'con_01HCCCCCCCCCCCCCCCCCCCCCCC', 1, T0);

@@ -7,12 +7,21 @@
 //
 // In this mode the copy's change number (`EngineState.through`) is the number of the last log entry in the base.
 import type { BankDataProvider } from '@ledgerline/bank-provider';
-import { fromHex, KIND, readEntry, RunError, toHex, type Entry, type SealedRun } from '@ledgerline/seal';
+import {
+  fromHex,
+  KIND,
+  readEntry,
+  readRunManifest,
+  RunError,
+  toHex,
+  type Entry,
+  type SealedRun,
+} from '@ledgerline/seal';
 import type { SyncPage, SyncRow } from '../routes/sync.js';
 import type { AppendResult } from '../seal/log-store.js';
-import type { DeviceLog } from './device-log.js';
-import { RECORDED_TABLES, type LocalEngine } from './engine.js';
-import { fileOpened, filedOf, filingState, openRuns } from './sealed-filing.js';
+import { TooLarge, type DeviceLog } from './device-log.js';
+import { FilingInterrupted, RECORDED_TABLES, type LocalEngine } from './engine.js';
+import { CopyAhead, fileOpened, filedOf, filingState, openRuns } from './sealed-filing.js';
 
 /** How the device reaches the server's log store. */
 export interface LogTransport {
@@ -91,9 +100,19 @@ export class LogSession {
    * Sends the waiting edits, oldest first, each as its own write. Gives how many the log took and how many were
    * lost on the way (run again on newer entries, they no longer passed).
    */
-  async flush(o: { onlyBank?: boolean } = {}): Promise<{ sent: number; lost: number }> {
+  async flush(
+    o: { onlyBank?: boolean } = {},
+  ): Promise<{ sent: number; lost: number; bank?: 'sent' | 'waits' | 'out' | 'too large' }> {
     let sent = 0;
     let lost = 0;
+    let bank: 'sent' | 'waits' | 'out' | 'too large' | undefined;
+    /** Filed runs come out of the copy exactly, or the copy can't be used as it is. */
+    const bankOut = async (id: string) => {
+      const out = await this.engine.queueRefused(id);
+      if (out.redownload) throw new CopyAhead();
+      lost += out.lost;
+      bank = 'out';
+    };
     for (let round = 0; round < MAX_ROUNDS;) {
       const e = (await this.engine.queue())[0];
       if (!e || (o.onlyBank && !e.bank)) break;
@@ -106,44 +125,57 @@ export class LogSession {
         const again = (await this.engine.queue())[0];
         if (again?.id === e.id && (!again.rows || again.through !== (await this.engine.state()).through)) {
           // Nothing newer to read and still not exact: this copy can't make the entry (an edit queued by an older
-          // version of the app). It is dropped from the queue, and counted. Filed runs come out of the copy too,
-          // and are filed again.
-          if (again.bank) await this.engine.queueRefused(e.id);
+          // version of the app). It is dropped from the queue, and counted.
+          if (again.bank) await bankOut(e.id);
           else {
             await this.engine.queueDone(e.id);
             lost += 1;
           }
-        }
+        } else if (e.bank && again?.id !== e.id) bank = 'out';
         continue;
       }
-      const entries = e.bank
-        ? await this.log.build(
-            KIND.bank,
-            { at: e.at, rows: e.rows },
-            { filedThrough: e.bank.filedThrough, receipts: e.bank.receipts.map((r) => fromHex(r)) },
-          )
-        : await this.log.build(KIND.edit, { at: e.at, rows: e.rows });
+      let entries: Entry[];
+      try {
+        entries = e.bank
+          ? await this.log.build(
+              KIND.bank,
+              { at: e.at, rows: e.rows },
+              { filedThrough: e.bank.filedThrough, receipts: e.bank.receipts.map((r) => fromHex(r)) },
+            )
+          : await this.log.build(KIND.edit, { at: e.at, rows: e.rows });
+      } catch (x) {
+        // Too many runs for one write: they come out of the copy, and the device files fewer at a time.
+        if (!(x instanceof TooLarge) || !e.bank) throw x;
+        await bankOut(e.id);
+        bank = 'too large';
+        break;
+      }
       const answer = await this.transport.append(this.log.number, entries.map(this.encode));
       if (answer.ok) {
         await this.log.take(entries);
         await this.engine.queueSent(e.id, this.log.number);
         sent++;
+        if (e.bank) bank = 'sent';
         continue;
       }
       if (answer.why === 'behind' || answer.retry) {
         // The log moved on (or the server asks to try later): read it, which runs the queue again, and go round.
         round++;
         lost += (await this.pull()).lost;
+        if (e.bank) bank = (await this.engine.queue())[0]?.id === e.id ? 'waits' : 'out';
         if (answer.why !== 'behind') break;
         continue;
       }
       // The server refused the entry for good: the edit comes out of the copy, and the later ones run again.
+      if (e.bank) {
+        // Filed runs the server won't take are not sent again in this call: the device opens the runs anew.
+        await bankOut(e.id);
+        break;
+      }
       const out = await this.engine.queueRefused(e.id);
-      lost += (e.bank ? 0 : 1) + out.lost;
-      // Filed runs the server won't take are not sent again in this call: the device opens the runs anew.
-      if (e.bank) break;
+      lost += 1 + out.lost;
     }
-    return { sent, lost };
+    return bank ? { sent, lost, bank } : { sent, lost };
   }
 
   /**
@@ -152,7 +184,8 @@ export class LogSession {
    * that prove this device opened every page. Gives how many runs the log took. `waiting`: runs are left that
    * this device can't file yet (a run dated ahead of its clock, an inbox key it hasn't got) or couldn't get into
    * the log this time. A run that is not what the Worker made throws `RunError`; one this app can't file throws
-   * `UnsupportedRun`. Nothing is skipped: edits wait behind unfiled runs (5.3, "bank runs first").
+   * `UnsupportedRun`. A copy that can't be used as it is throws `CopyAhead` or `FilingInterrupted`: it is made
+   * again from the log. Nothing is skipped: edits wait behind unfiled runs (5.3, "bank runs first").
    */
   async fileRuns(
     src: RunTransport,
@@ -160,25 +193,45 @@ export class LogSession {
   ): Promise<{ filed: number; waiting: boolean; lost: number }> {
     let filed = 0;
     let lost = 0;
+    let limit = RUNS_PER_ENTRY;
     for (let round = 0; round < MAX_ROUNDS; round++) {
+      if (await this.engine.filingInterrupted()) throw new FilingInterrupted();
       lost += (await this.pull()).lost;
       // Runs filed here and not yet in the log go first.
-      if ((await this.engine.queue())[0]?.bank) {
-        const before = this.log.filedThrough;
-        lost += (await this.flush({ onlyBank: true })).lost;
-        filed += this.log.filedThrough - before;
+      const waits = (await this.engine.queue())[0];
+      if (waits?.bank) {
+        const runs = waits.bank.receipts.length;
+        const r = await this.flush({ onlyBank: true });
+        lost += r.lost;
+        if (r.bank === 'sent') filed += runs;
+        else if (r.bank === 'too large') {
+          // One run alone that is too large for a write can't be filed by this version of the app.
+          if (limit === 1) throw new TooLarge('one bank run is too large for one write');
+          limit = Math.max(1, limit >> 1);
+        } else if (r.bank !== 'out') return { filed, waiting: true, lost };
         continue;
       }
       const from = this.log.filedThrough;
-      // The copy stands where the log does: what it has filed is what the log says is filed.
-      if ((await filedOf(this.engine.db, this.log.budgetId)).run !== from)
-        return { filed, waiting: true, lost };
-      const next = (await src.runs(from)).slice(0, RUNS_PER_ENTRY);
+      // The copy stands where the log does: what it has filed is what the log says is filed. A copy that says
+      // more holds filed rows that are in neither the queue nor the log.
+      const copy = (await filedOf(this.engine.db, this.log.budgetId)).run;
+      if (copy > from) throw new CopyAhead();
+      if (copy < from) return { filed, waiting: true, lost };
+      // An edit that can't be taken out exactly (it is on its way, or has nothing kept for it) must go first.
+      if (!(await this.engine.canFileBank())) return { filed, waiting: true, lost };
+      const next = (await src.runs(from)).slice(0, limit);
       if (!next.length) return { filed, waiting: false, lost };
       const sealed: SealedRun[] = [];
       for (const r of next) {
+        // How many pages a run has is what its manifest says, never what the server says beside it.
+        let count = 0;
+        try {
+          count = readRunManifest(r.manifest).pages.length;
+        } catch {
+          count = 0;
+        }
         const pages: Uint8Array[] = [];
-        for (let p = 0; p < r.pages; p++) pages.push(await src.page(r.run, p));
+        for (let p = 0; p < count; p++) pages.push(await src.page(r.run, p));
         sealed.push({ manifest: r.manifest, signature: r.signature, pages });
       }
       const state = await filingState(this.engine.db, this.log.budgetId, {
@@ -204,7 +257,6 @@ export class LogSession {
           for (const f of opened) await fileOpened(env, this.log.budgetId, f, deps.provider);
         },
       );
-      // An edit is on its way, or the copy moved: read the log again and try once more.
       if (done) lost += done.lost;
     }
     return { filed, waiting: true, lost };
