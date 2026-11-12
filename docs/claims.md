@@ -109,7 +109,6 @@ Each has a line in `docs/build-plan.md`.
 - **The idle job** (claim 8).
 - **Deleting the old readable copy** (phase 6, claim 2).
 - **A full backup made on the device.** The server's dump is refused for a locked budget.
-- **The daily scan on the device** (repeating entries and "pending row vanished" alerts).
 
 ## What the server still sees
 
