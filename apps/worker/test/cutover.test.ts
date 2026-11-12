@@ -108,7 +108,16 @@ describe('the cutover, rehearsed', () => {
       );
     const jobsBefore = await jobs();
 
-    // ---- a link the Worker has not checked and stamped stands in the way
+    // ---- the screen asks where the budget stands, and what stands in the way, before any key is made
+    expect(await (await get('/api/cutover/state')).json()).toEqual({
+      open: true,
+      sealed: false,
+      backUntil: null,
+    });
+    expect(await (await post('/api/cutover/ready')).json()).toEqual({
+      ok: true,
+      blocks: ['A bank link has not been checked yet.'],
+    });
     expect(await (await post('/api/cutover/freeze')).json()).toEqual({
       ok: false,
       why: ['A bank link has not been checked yet.'],
@@ -222,6 +231,13 @@ describe('the cutover, rehearsed', () => {
       expect(await r.json()).toEqual({ ok: true });
     }
     expect(await (await post('/api/cutover/seal')).json()).toEqual({ ok: true });
+    const sealedState = (await (await get('/api/cutover/state')).json()) as {
+      open: boolean;
+      sealed: boolean;
+      backUntil: string;
+    };
+    expect(sealedState).toMatchObject({ open: false, sealed: true });
+    expect(Date.parse(sealedState.backUntil)).toBeGreaterThan(Date.now() + 6 * 86_400_000);
 
     // ---- sealed: the old routes are closed, the log's are open, and the old tables are as they were
     expect((await get('/api/sync?since=0&limit=5')).status).toBe(409);

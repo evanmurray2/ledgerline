@@ -14,6 +14,8 @@ import type { Caller } from '../store/directory.js';
 import {
   cutoverBack,
   cutoverBegin,
+  cutoverBlocks,
+  cutoverState,
   cutoverChunk,
   cutoverFreeze,
   cutoverSeal,
@@ -48,6 +50,22 @@ export const cutoverApi = new Hono<AppEnv>();
  */
 const open = (c: { env: AppEnv['Bindings']; req: { path: string } }, budgetId: string): boolean =>
   c.req.path.endsWith('/cutover/back') || c.env.CUTOVER === budgetId || c.env.CUTOVER === 'any';
+
+// Where the budget stands: asked by the Privacy screen each time it opens, so it needs no passkey check and
+// answers whether or not the move is open. It is in front of the guard below for that reason; it changes nothing.
+cutoverApi.get('/cutover/state', async (c) => {
+  const who = (c.env as typeof c.env & { CALLER?: Caller }).CALLER;
+  if (!who || who.userId === 'system' || who.userId === 'service')
+    return c.json({ error: 'not_found', message: TRY_AGAIN }, 404);
+  const now = requestNow(c);
+  const s = await cutoverState({ db: c.env.DB, now, markNow: Date.now() });
+  return c.json({
+    // The move is offered to the budget's admin only, and only while the Worker names this budget.
+    open: !s.sealed && who.isAdmin !== false && open(c, who.budgetId),
+    sealed: s.sealed,
+    backUntil: s.backUntil !== null && who.isAdmin !== false ? new Date(s.backUntil).toISOString() : null,
+  });
+});
 
 cutoverApi.use('*', async (c, next) => {
   // A person, signed in, who used their passkey minutes ago: not the ops token, not a job. And the budget's
@@ -110,6 +128,11 @@ cutoverApi.put('/cutover/chunks/:id/:k', async (c) => {
   );
   return c.json(r, r.ok ? 200 : 409);
 });
+
+// What stands in the way, in words for the person, before any key is made. The freeze checks the same again.
+cutoverApi.post('/cutover/ready', async (c) =>
+  c.json({ ok: true, blocks: await cutoverBlocks(c.env.DB, c.get('budgetId'), requestNow(c)) }),
+);
 
 cutoverApi.post('/cutover/seal', async (c) => {
   const r = await cutoverSeal(deps(c, requestNow(c)));

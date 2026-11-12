@@ -354,6 +354,19 @@ export async function cutoverSeal(d: CutoverDeps): Promise<CutoverAnswer> {
 }
 
 /**
+ * Where the budget stands, for the screen that offers the move and the way back: sealed or not, and until when
+ * the way back is open. It says nothing of the budget itself.
+ */
+export async function cutoverState(
+  d: Pick<CutoverDeps, 'db' | 'now' | 'markNow'>,
+): Promise<{ sealed: boolean; backUntil: number | null }> {
+  const m = await marks(d.db, d.markNow);
+  if (!m.sealed) return { sealed: false, backUntil: null };
+  const at = await note(d.db, 'cutover_at');
+  return { sealed: true, backUntil: at !== null && d.now - at <= WAY_BACK_MS ? at + WAY_BACK_MS : null };
+}
+
+/**
  * The way back, for 7 days after the cutover (section 8 step 7): the mark is cleared, the sealed budget's jobs
  * go, and the old code runs on the old tables, which nothing touched since the freeze (each link's cursor there
  * is its cutover cursor). What the log took since is not carried over. The caller queues the daily jobs again.
