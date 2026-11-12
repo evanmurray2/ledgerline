@@ -178,6 +178,8 @@ never asked again. Until you answer, both rows count, as they do today when noth
 `ambiguous_match` alert (several rows with exact evidence and different edits) uses the same card.
 
 Every pair, automatic or by Yes, has **Not the same** in the transaction's sheet, which undoes it and remembers No.
+Its toast has **Undo**, which pairs the two rows again as Yes would and forgets the No, while both rows are still as
+Not the same left them.
 A pair made by Plaid's link has none: the link wins, and the next sync would pair them again. For a posted row and
 the bank's pending row, the pending row keeps what you set on the pair and the posted row is filed as a new row
 (D-65).

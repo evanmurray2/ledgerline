@@ -136,6 +136,11 @@ describe('your entry and the bank’s rows', () => {
     expect(await db.prepare(`SELECT a_key, b_key FROM not_same WHERE a_key = 'm:close'`).all()).toMatchObject(
       { results: [{ a_key: 'm:close', b_key: 'p:close' }] },
     );
+    // Undo pairs them again, as Yes did, and forgets the No.
+    expect((await call('POST', '/api/transactions/m%3Aclose/not-same/undo')).status).toBe(200);
+    expect(await keyOf('close')).toBe('m:close');
+    expect(await counted(4)).toEqual({ spent: -3100, pending: 0 });
+    expect(await db.prepare(`SELECT 1 FROM not_same WHERE a_key = 'm:close'`).first()).toBeNull();
   });
 
   it('the bank removes the covered row before posting: the entry still counts; the posted row still pairs', async () => {
@@ -250,6 +255,17 @@ describe('your entry and the bank’s rows', () => {
     await heal();
     expect((await mp('m:yes'))!.covers_provider_txn_id).toBeNull();
     expect((await asks()).find((x) => x.ref_key === 'p:yes-p')).toBeUndefined();
+    // Undo: your entry covers the bank's row again, and only your entry counts.
+    expect((await call('POST', '/api/transactions/m%3Ayes/not-same/undo')).status).toBe(200);
+    expect((await mp('m:yes'))!.covers_provider_txn_id).toBe('yes-p');
+    expect(await counted(10)).toEqual({ spent: -2500, pending: -2500 });
+    await heal();
+    expect((await mp('m:yes'))!.covers_provider_txn_id).toBe('yes-p');
+    // Not the same again, then your entry is deleted: Undo refuses, and nothing changes.
+    expect((await call('POST', '/api/transactions/m%3Ayes/not-same')).status).toBe(200);
+    expect((await call('DELETE', '/api/transactions/m%3Ayes')).status).toBe(200);
+    expect((await call('POST', '/api/transactions/m%3Ayes/not-same/undo')).status).toBe(409);
+    expect(await counted(10)).toEqual({ spent: -2710, pending: -2710 });
   });
 
   it('an entry deleted, or edited so it no longer fits, ends its cover', async () => {

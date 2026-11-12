@@ -293,6 +293,12 @@ describe('the same edit on the phone and on the server', () => {
           budget,
         )(),
     ],
+    // Undo reads the record Not the same wrote (audit_log, never synced): each side wrote its own.
+    [
+      'undo Not the same',
+      'POST /transactions/:key/not-same/undo',
+      () => ['POST', '/api/transactions/n-check-1043/not-same/undo', {}],
+    ],
     // Yes: a posted bank row takes your entry's key, which writes `txn_key_move` (recorded, never synced).
     [
       'answer Yes to Same purchase?',

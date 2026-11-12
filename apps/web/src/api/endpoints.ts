@@ -179,6 +179,7 @@ export const api = {
     post(`/api/same-purchase/${enc(v.id)}`, MutationResult, { answer: v.answer, key: v.key }),
   /** Not the same: undoes a pair (your entry and a bank row, or two bank rows), and remembers No. */
   notSame: (key: string) => post(`/api/transactions/${enc(key)}/not-same`, MutationResult),
+  notSameUndo: (key: string) => post(`/api/transactions/${enc(key)}/not-same/undo`, MutationResult),
 
   match: (inflowKey: string) => get(`/api/match/${enc(inflowKey)}`, MatchView),
   doMatch: (body: In<typeof MatchRequest>) => post('/api/match', MutationResult, body),
