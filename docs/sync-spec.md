@@ -5,7 +5,7 @@ This tab is the implementation contract for the bank sync engine and budget reca
 
 ## What's true now
 
-The **Money rules** and the matching mechanics below still stand exactly. The plumbing around them changed: see [`docs/whats-true-now.md`](whats-true-now.md). Where a section disagrees, the decision named wins; each changed section starts with a **Now** note.
+The **Money rules** and the matching mechanics below still stand exactly, except rule 9 (Waiting to match, removed by D-98). The plumbing around them changed: see [`docs/whats-true-now.md`](whats-true-now.md). Where a section disagrees, the decision named wins; each changed section starts with a **Now** note.
 
 ## Guarantees the code must uphold
 
@@ -157,7 +157,7 @@ Amounts are integer cents. For each category and month, transactions are process
 6. **Month end:** for every category, negative cash available is added to that month's uncovered cash overspending, which RTA subtracts, and the category starts the next month at 0. Owed to you is a list, not a category, so nothing about it rolls over.
 7. **Card coverage:** fully funded when `P = card bank balance + budgeted pending charges − uncategorized card spending`. Statement covered when `P ≥ statement balance`.
 8. **Starting balances:** checking and savings become RTA inflows at budget start (or link). A card's starting debt never touches RTA; P starts at 0. **Now:** the starting balance is the balance at the start of the account's budget start date: rows dated before it that weren't in the balance at link add to it, link-day rows already in it come out (D-67).
-9. **Waiting to match:** a person-to-person inflow held for matching is excluded from RTA and categories until you choose Match (moves it to RTA and settles the owed items it pays) or Income (RTA).
+9. **Now:** removed (D-98): nothing is held; money from a person counts like any other money in, and Match only links it. Rule 10's Waiting to match term is 0, and in rule 12 Unlink returns the inflow to the usual rules, with no rest choice. As written: **Waiting to match:** a person-to-person inflow held for matching is excluded from RTA and categories until you choose Match (moves it to RTA and settles the owed items it pays) or Income (RTA).
 10. **Identity, asserted after every recompute:** sum of cash and card working balances = sum of available in every category except card payment categories + RTA + Waiting to match + unsorted transfer sides (net) − uncategorized spending. Card payment categories are left out because each one mirrors card debt already counted in the card balances (rule 7 checks them separately).
 11. **Close and Cancel:** Close charges the open owed amount to the original category in the current month and adds the same amount to RTA. Cancel removes the mark: the original category is charged the full amount in the transaction's own month (which can change that month's uncovered overspending), and RTA gets the owed amount back.
 12. **Unlink and the rest of a payback:** unlinking a matched person-to-person inflow returns it to Waiting to match (RTA drops by that amount; the owed item reopens). The unmatched rest of an inflow follows your choice: Income goes to RTA; Keep waiting and I'll send it back stay in Waiting to match.

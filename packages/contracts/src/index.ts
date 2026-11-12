@@ -272,7 +272,6 @@ export const ActivityView = z.object({
   attentionCount: z.number().int(),
   /** Pending and upcoming rows, whatever the filter or search: Activity hides its Not posted yet chip at 0. */
   notPostedCount: z.number().int(),
-  moneyToMatch: z.array(TxnListRow),
   transfersToSort: z.array(TxnListRow),
   needsCategory: z.array(
     TxnListRow.extend({
@@ -455,8 +454,11 @@ export const NewTxnRequest = z.object({
 export const MatchRequest = z.object({
   inflowKey: z.string(),
   items: z.array(z.object({ itemId: id, amount: cents.positive() })),
-  /** The rest of the inflow: Income goes to RTA; Keep waiting and I'll send it back stay in Waiting to match. */
-  rest: z.enum(['income', 'keep', 'send_back']),
+  /**
+   * Ignored since D-98: all of a matched inflow is in RTA. Kept, optional, so an edit an older app queued offline (with
+   * Keep waiting or I'll send it back) still applies.
+   */
+  rest: z.enum(['income', 'keep', 'send_back']).optional(),
 });
 /**
  * The answer to "Which account got this money?": a deposit's key, `null` for a payment, or `unlinked: true` (with
@@ -510,6 +512,11 @@ export const OwedView = z.object({
     }),
   ),
   projected: z.array(z.object({ key: z.string(), date, owed: cents, shortfall: cents, label: z.string() })),
+  /**
+   * The newest money in from a person (Zelle, Venmo and the like) in the last 30 days that pays back nothing yet: what
+   * Match money back opens (D-98). Null when there is none.
+   */
+  payback: z.object({ key: z.string(), payee: z.string(), amount: cents, date }).nullable().default(null),
 });
 export type OwedView = z.infer<typeof OwedView>;
 export const OwedAction = z.object({

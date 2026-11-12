@@ -6,7 +6,7 @@ The rules and terms are in `docs/copy.md`. A snapshot, not kept up to date: the 
 ## What changed
 
 - **About 300 texts rewritten, about 40 deleted.** Most texts went from two or three sentences to one.
-- **One word for each idea.** "bank link", "Card payments", "Low", "Owed to you", "Waiting to match", "Needs a
+- **One word for each idea.** "bank link", "Card payments", "Low", "Owed to you", "Needs a
   category", "Memo", "View only until", "Paused until", "This changed. Pull down to refresh."
 - **No raw errors.** Every error is a sentence that says what to do. One-word server errors (`month`, `category`)
   and browser text ("Network request failed") are gone.
@@ -155,7 +155,7 @@ spending not covered yet"
 - "It goes back to Ready to Assign when you're paid back."
 - "Leave {amount} in Ready to Assign for {name}" + Why: "This payment takes {amount} from Ready to Assign until you're
   paid back. Ready to Assign has {rta} now."
-- "{payee} +{amount} is waiting to match" · "{name} is covered" · "{n} more" / "Show less"
+- "{payee} +{amount} came in. Is it money back?" + Match · "{name} is covered" · "{n} more" / "Show less"
 - "Nothing is owed to you." · "Late · expected by {date}" · "Expected by {date}" · "Late" · "No date" · "of {amount}
   owed" · "Paid back in full" / "{amount} still open"
 - Close out (amounts in cents):
@@ -226,12 +226,12 @@ with nothing posted after 5 days)
 
 **Match money back**
 
-- "What is this money?" + "It stays out of Ready to Assign until you decide."
+- Tag "Money in" · "What does this money pay back?" + "It is in Ready to Assign. Matching it doesn't change that."
 - "Nothing is marked as owed to you." · "of {amount}, rest stays owed"
 - "It's for something I didn't mark…" → "Open that purchase in Activity and set Owed to you. It then shows up here."
-- "The other {amount}": "Keep it waiting to match" / "Count it as income" / "I'll send it back"
-- "The matched money goes to Ready to Assign." + Why: "What it pays back leaves Owed to you. Income also goes to Ready
-  to Assign. Money you'll send back stays out until it leaves."
+- "What it pays back leaves Owed to you." + Why: "Money that comes in counts in Ready to Assign right away. A match
+  only marks what it pays back as paid, so the money isn't counted twice. Any money left over stays in Ready to
+  Assign."
 - "Pick what it pays back" + "Match" → "Counted as income. Ready to Assign is now {rta}." / "Matched {amount}. 1 item is
   paid back. Ready to Assign is now {rta}."
 
@@ -251,8 +251,8 @@ with nothing posted after 5 days)
 - Memo: "Add a memo"
 - Same purchase: your entry: "Matched to the bank" + "Bank pending: {payee} · {date} · {amount}"; a posted row:
   "Same purchase as" + "{other}"; both + "Not the same" → "Kept as two purchases" with Undo → "Paired as one purchase"
-- Paid back: "It went to Ready to Assign and paid back {amount}." · "Unlinked": "{name} is owed again. This {amount} is
-  back in Waiting to match."
+- Paid back: "It went to Ready to Assign and paid back {amount}." · "Unlinked": "{name} is owed again. This {amount} no
+  longer pays it back."
 - Transfer: "It moves money between your accounts. No category changes." · "Unpair" → "Unpaired": "Both halves now
   need a category."
 - Before your budget: "Part of your starting balance": "It came in after you linked this account. It changes your

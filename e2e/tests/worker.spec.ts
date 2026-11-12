@@ -32,7 +32,7 @@ test.beforeEach(async ({ page, request }) => {
 
 test('Budget shows the November numbers from the Worker', async ({ page }) => {
   await page.goto('/budget');
-  await expect(rta(page)).toHaveText('$981.90');
+  await expect(rta(page)).toHaveText('$1,999.90');
   if (test.info().project.name === 'phone') {
     // Group totals appear on the phone layout; the desktop table shows group names only, as in the prototype.
     await expect(page.getByText('$1,121.85').first()).toBeVisible();
@@ -56,7 +56,7 @@ test('The app is served with its security headers, and nothing on Budget breaks 
   // No outside host at all: banks are linked on Plaid's own site (docs/privacy.md 5.7).
   expect(csp).not.toContain('https:');
   expect(res?.headers()['x-frame-options']).toBe('DENY');
-  await expect(rta(page)).toHaveText('$981.90');
+  await expect(rta(page)).toHaveText('$1,999.90');
   await page
     .getByRole('link', { name: /Activity/ })
     .first()
@@ -72,7 +72,7 @@ test('With no passkey copy, nothing is kept on the device: with no signal it say
   // A saved copy needs a passkey sign-in on an iPhone or iPad (D-45, D-48; passkey.spec.ts covers it). This
   // browser signs in without one.
   await page.goto('/budget');
-  await expect(rta(page)).toHaveText('$981.90');
+  await expect(rta(page)).toHaveText('$1,999.90');
   await page.waitForFunction(async () => !!(await navigator.serviceWorker.ready).active);
   expect(await page.evaluate(() => window.localStorage.getItem('ledgerline-saved-data'))).toBeNull();
   await context.setOffline(true);
@@ -83,20 +83,20 @@ test('With no passkey copy, nothing is kept on the device: with no signal it say
   await context.setOffline(false);
 });
 
-test('Needs attention fixes reach $833.65 through the API', async ({ page }) => {
+test('Needs attention fixes reach $1,851.65 through the API', async ({ page }) => {
   await page.goto('/budget?view=attention');
-  await expect(rta(page)).toHaveText('$981.90');
+  await expect(rta(page)).toHaveText('$1,999.90');
   for (const [name, after] of [
-    ['Cover $18.25 for Dining out', '$963.65'],
-    ['Fund $90.00 for Car insurance', '$873.65'],
-    ['Fund $250.00 for Vacation', '$623.65'],
-    ['Move $210.00 for Gifts', '$833.65'],
+    ['Cover $18.25 for Dining out', '$1,981.65'],
+    ['Fund $90.00 for Car insurance', '$1,891.65'],
+    ['Fund $250.00 for Vacation', '$1,641.65'],
+    ['Move $210.00 for Gifts', '$1,851.65'],
   ] as const) {
     await page.getByRole('button', { name }).click();
     await expect(rta(page)).toHaveText(after);
   }
   await page.reload();
-  await expect(rta(page)).toHaveText('$833.65');
+  await expect(rta(page)).toHaveText('$1,851.65');
 });
 
 test('A pinned category is saved with the budget', async ({ page }) => {
@@ -429,7 +429,7 @@ test('Pending: money you add goes to Ready to Assign, and a bank pending charge 
   // The sheet closes when the add is saved: leaving the page sooner can drop it.
   await expect(add).toHaveCount(0);
   await page.goto('/budget');
-  await expect(rta(page)).toHaveText('$1,481.90');
+  await expect(rta(page)).toHaveText('$2,499.90');
 
   // A card hold with no estimate yet: set your own amount.
   // Screens are worked out on the device (D-45): the server's own rows say which charge is a plain card hold.

@@ -28,8 +28,6 @@ function useRta() {
   return useBudget(session.data?.budget.currentMonth).data?.rta;
 }
 
-type Rest = 'keep' | 'income' | 'send_back';
-
 export function MatchScreen() {
   const { key } = useParams({ strict: false }) as { key: string };
   useScreen('match');
@@ -41,7 +39,6 @@ export function MatchScreen() {
   const match = useMoneyMutation(api.doMatch);
   const unlink = useMoneyMutation(api.unlink);
   const [on, setOn] = useState<Record<string, boolean> | null>(null);
-  const [rest, setRest] = useState<Rest>('keep');
   const [other, setOther] = useState(false);
   const [done, setDone] = useState<{ text: string } | null>(null);
   const rta = useRta();
@@ -74,11 +71,7 @@ export function MatchScreen() {
     const items = asIncome
       ? []
       : applied.filter((a) => a.applied > 0).map((a) => ({ itemId: a.id, amount: a.applied }));
-    const r = await match.mutateAsync({
-      inflowKey: v.inflow.key,
-      items,
-      rest: asIncome ? 'income' : left > 0 ? rest : 'income',
-    });
+    const r = await match.mutateAsync({ inflowKey: v.inflow.key, items });
     usage.endTask('match');
     setDone({
       text: asIncome
@@ -94,8 +87,8 @@ export function MatchScreen() {
       gap="small"
       header={
         <SheetTitle
-          tag="Waiting to match"
-          tagClass="text-owed-fg"
+          tag="Money in"
+          tagClass="text-funded-fg"
           amount={formatCents(inflow, { plus: true })}
           amountClass="text-funded-fg"
           sub={`${v.inflow.payee} · ${v.inflow.accountName} · ${dayLabel(v.inflow.date)}`}
@@ -157,8 +150,10 @@ export function MatchScreen() {
       ) : (
         <>
           <div className="flex flex-col gap-0.5">
-            <span className="text-base font-bold">What is this money?</span>
-            <span className="text-sm text-muted">It stays out of Ready to Assign until you decide.</span>
+            <span className="text-base font-bold">What does this money pay back?</span>
+            <span className="text-sm text-muted">
+              It is in Ready to Assign. Matching it doesn’t change that.
+            </span>
           </div>
           <Label>What it pays back</Label>
           <div className="shrink-0 overflow-hidden rounded-lg border border-line">
@@ -199,34 +194,11 @@ export function MatchScreen() {
               It’s for something I didn’t mark…
             </TextButton>
           )}
-          {left > 0 && matched > 0 && (
-            <fieldset className="m-0 flex flex-col gap-2 rounded-lg border border-line p-3">
-              <legend className="px-1 text-sm font-bold text-ink-2">The other {formatCents(left)}</legend>
-              {(
-                [
-                  ['keep', 'Keep it waiting to match'],
-                  ['income', 'Count it as income'],
-                  ['send_back', 'I’ll send it back'],
-                ] as const
-              ).map(([id, name]) => (
-                <label key={id} className="flex min-h-9 items-center gap-2 text-md">
-                  <input
-                    type="radio"
-                    name="rest"
-                    className="hit h-5 w-5 accent-accent"
-                    checked={rest === id}
-                    onChange={() => setRest(id)}
-                  />
-                  {name}
-                </label>
-              ))}
-            </fieldset>
-          )}
           <div className="flex flex-col gap-1 text-xs leading-snug text-muted">
-            <span>The matched money goes to Ready to Assign.</span>
+            <span>What it pays back leaves Owed to you.</span>
             <Why>
-              What it pays back leaves Owed to you. Income also goes to Ready to Assign. Money you’ll send
-              back stays out until it leaves.
+              Money that comes in counts in Ready to Assign right away. A match only marks what it pays back
+              as paid, so the money isn’t counted twice. Any money left over stays in Ready to Assign.
               {rta !== undefined ? ` Ready to Assign has ${formatCents(rta)} now.` : ''}
             </Why>
           </div>

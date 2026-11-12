@@ -58,7 +58,7 @@ afterEach(() => cleanup());
 describe('Budget', () => {
   it('shows Ready to Assign, card rows, Owed to you and group totals', async () => {
     renderAt('/budget');
-    expect((await screen.findByTestId('rta', undefined, { timeout: 4000 })).textContent).toBe('$981.90');
+    expect((await screen.findByTestId('rta', undefined, { timeout: 4000 })).textContent).toBe('$1,999.90');
     await text('Sapphire Preferred');
     expect(screen.getByText('$878.32')).toBeTruthy();
     expect(screen.getByText('$155.00')).toBeTruthy();
@@ -82,9 +82,9 @@ describe('Budget', () => {
     expect(screen.queryByRole('button', { name: 'Add $20.00 for Personal care' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Move $210.00 for Gifts' })).toBeTruthy();
     fireEvent.click(cover);
-    await waitFor(() => expect(screen.getByTestId('rta').textContent).toBe('$963.65'), { timeout: 4000 });
+    await waitFor(() => expect(screen.getByTestId('rta').textContent).toBe('$1,981.65'), { timeout: 4000 });
     expect(screen.getByText('Done just now')).toBeTruthy();
-    expect(await storedRta()).toBe(96365);
+    expect(await storedRta()).toBe(198165);
   });
 
   it('desktop shows the table with Assigned, Spent and Available', async () => {
@@ -95,7 +95,7 @@ describe('Budget', () => {
     expect(within(table).getByText('Spent')).toBeTruthy();
     expect(within(table).getByText('Available')).toBeTruthy();
     expect(within(table).getByText('$387.60')).toBeTruthy();
-    expect(screen.getByTestId('nav-rta').textContent).toBe('$981.90');
+    expect(screen.getByTestId('nav-rta').textContent).toBe('$1,999.90');
   });
 
   it('category sheet shows available, spent and the assigned amount, with no mode to choose', async () => {
@@ -110,7 +110,7 @@ describe('Budget', () => {
     expect(screen.queryByRole('button', { name: /^Target/ })).toBeNull();
     // Typing says what it does to Ready to Assign, and moves Available with it.
     fireEvent.change(screen.getByLabelText('Assigned in November'), { target: { value: '650' } });
-    expect(screen.getByText('Ready to Assign goes from $981.90 to $931.90.')).toBeTruthy();
+    expect(screen.getByText('Ready to Assign goes from $1,999.90 to $1,949.90.')).toBeTruthy();
     expect(screen.getByTestId('category-available').textContent).toBe('$262.40');
     expect(screen.getByRole('button', { name: 'Target $600' })).toBeTruthy();
   });
@@ -134,9 +134,9 @@ describe('Budget', () => {
 
   it('assign sheet totals the suggestions', async () => {
     renderAt('/budget/assign');
-    await text('Assign $981.90');
+    await text('Assign $1,999.90');
     expect(screen.getByRole('button', { name: 'Assign $358.25' })).toBeTruthy();
-    expect(screen.getByTestId('assign-left').textContent).toBe('$623.65');
+    expect(screen.getByTestId('assign-left').textContent).toBe('$1,641.65');
   });
 
   it('first budget state asks to give the money a job', async () => {
@@ -155,14 +155,14 @@ describe('Activity', () => {
 
   it('shows the Needs attention groups and lists', async () => {
     renderAt('/activity?filter=all');
-    await text('Money to match');
-    expect(screen.getAllByText('+$1,018.00').length).toBeGreaterThan(0);
+    await text('Check these');
+    expect(screen.queryByText('Money to match')).toBeNull();
     expect(screen.queryByText('Transfers to sort out')).toBeNull();
     expect(screen.getByText(/4 · −\$86\.48/)).toBeTruthy();
     expect(screen.getByText('Check these')).toBeTruthy();
     expect(screen.getByText('counts now · $201.00')).toBeTruthy();
     expect(screen.getByText('Acme Corp payroll')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Needs attention 7' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Needs attention 6' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Not posted yet' })).toBeTruthy();
   });
 
@@ -338,7 +338,7 @@ describe('States', () => {
     connectivity.setOnline(false);
     await waitFor(() => expect((cover as HTMLButtonElement).disabled).toBe(true));
     expect(screen.getByTestId('offline-banner')).toBeTruthy();
-    expect(screen.getByTestId('rta').textContent).toBe('$981.90');
+    expect(screen.getByTestId('rta').textContent).toBe('$1,999.90');
   });
 
   it('offline, OK all still leaves out the "Same as your…" row, whose question hides', async () => {

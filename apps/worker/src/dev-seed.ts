@@ -414,7 +414,8 @@ export async function seedNovember(db: Db, budgetId: string, userId: string, now
         t.wontClear ? 1 : 0,
         u.type === 'transfer' ? 'paired' : u.type === 'unsorted' ? 'unsorted' : null,
         u.type === 'transfer' ? u.otherAccountId : null,
-        u.type === 'waiting' ? 'waiting' : null,
+        // Nothing is held in Waiting to match since D-98: the fixture's held Venmo row is plain money in.
+        null,
         by,
         t.key === 'n-tj' ? 'r_tj' : null,
         alertJson,

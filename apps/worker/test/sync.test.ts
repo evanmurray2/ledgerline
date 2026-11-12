@@ -1,5 +1,5 @@
 // The sync pipeline on a Durable Object's SQLite inside workerd: staged pages → apply (fenced, chunked) → watermark
-// processing (matcher, transfers, Waiting to match) → budget lines → recompute.
+// processing (matcher, transfers) → budget lines → recompute.
 import { env } from 'cloudflare:test';
 import { storeDb } from './store-db.js';
 import { phoneTables, workOut } from './work-out.js';
@@ -165,7 +165,7 @@ describe('sync pipeline', () => {
     expect(tj).toEqual({ amount: -6422, pending: 0 }); // Plaid's outflow sign flipped
   });
 
-  it('sync sets no category, transfers pair, person-to-person money waits to match', async () => {
+  it('sync sets no category, transfers pair, person-to-person money is not held (D-98)', async () => {
     // Categories only ever come from you (docs/payees.md): sync finds the payee and leaves the category empty.
     expect(await overlay(await keyOf('tj'))).toMatchObject({
       category_id: null,
@@ -180,13 +180,13 @@ describe('sync pipeline', () => {
       transfer_state: 'paired',
       transfer_account_id: 'a_chk',
     });
-    expect(await overlay(await keyOf('zelle'))).toMatchObject({ wtm_state: 'waiting' });
+    expect(await overlay(await keyOf('zelle'))).toMatchObject({ wtm_state: null });
     expect((await overlay(await keyOf('amazon')))?.category_id).toBeNull();
     const wait = await db
       .prepare(`SELECT sum(amount) AS a FROM budget_line WHERE budget_id = ?1 AND kind = 'wait'`)
       .bind(B)
       .first<{ a: number }>();
-    expect(wait?.a).toBe(100000);
+    expect(wait?.a ?? null).toBeNull();
   });
 
   it('a posted row inherits the pending row’s txn_key, so your category survives posting', async () => {
@@ -251,7 +251,7 @@ describe('sync pipeline', () => {
     expect(await keyOf('bulkp10')).toBe(await keyOf('bulk20'));
   });
 
-  it('history before the budget start needs nothing: no Waiting to match, no transfer to sort out', async () => {
+  it('history before the budget start needs nothing: no transfer to sort out', async () => {
     await sync([
       plaidTxn('old-zelle', 'pa_chk', -250, '2026-08-03', 'ZELLE FROM ALEX'),
       plaidTxn('old-out', 'pa_chk', 300, '2026-08-12', 'ONLINE TRANSFER TO SAVINGS'),
@@ -323,9 +323,9 @@ describe('sync pipeline', () => {
     expect(await stored()).toEqual(await direct());
   });
 
-  it('recompute after the sync: RTA excludes Waiting to match', async () => {
+  it('recompute after the sync: money from a person is in RTA (D-98)', async () => {
     const r = await recompute(db, B, NOW, { force: true, fullFrom: true });
     expect(r.ok).toBe(true);
-    expect(r.rta).toBe(500000); // starting balance only; the $1,000 Zelle waits to match
+    expect(r.rta).toBe(600000); // the starting balance and the $1,000 Zelle: nothing is held
   });
 });

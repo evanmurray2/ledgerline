@@ -241,7 +241,6 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
     set('to_rta', p.toRta ? 1 : 0);
     set('categorized_by', 'user');
     set('transfer_state', null);
-    if (t.wtm_state === 'waiting' && p.toRta) set('wtm_state', 'income');
     w.push(s.q(`DELETE FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`, key));
     edits.category_id = editAt;
   }
@@ -431,7 +430,6 @@ transactionRoutes.post('/transactions/categorize', async (c) => {
       s.q(OVERLAY_UPSERT, key, now),
       s.q(
         `UPDATE txn_overlay SET category_id = ?3, to_rta = ?4, categorized_by = 'user', transfer_state = NULL, updated_at = ?5,
-           wtm_state = CASE WHEN wtm_state = 'waiting' AND ?4 = 1 THEN 'income' ELSE wtm_state END,
            field_edits = json_patch(coalesce(field_edits, '{}'), json_object('category_id', ?5))
          WHERE budget_id = ?1 AND txn_key = ?2`,
         key,

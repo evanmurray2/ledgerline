@@ -1,5 +1,5 @@
-// Activity: search, All / Needs attention / Not posted yet; Not posted yet shows first (D-97). Needs attention groups: Money to match, Transfers
-// to sort out, Same purchase?, Needs category (with Select several and the category picker), Check these. Under All the same
+// Activity: search, All / Needs attention / Not posted yet; Not posted yet shows first (D-97). Needs attention groups: Transfers to sort
+// out, Same purchase?, Needs category (with Select several and the category picker), Check these. Under All the same
 // groups sit on top, then Pending, Upcoming and Posted. A row can carry a suggested category with OK, and OK all
 // takes every strong suggestion (docs/payees.md 2.2). Categorizing shows an Undo toast.
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -115,8 +115,7 @@ export function ActivityScreen() {
   );
 
   const total = v
-    ? v.moneyToMatch.length +
-      v.transfersToSort.length +
+    ? v.transfersToSort.length +
       v.checkThese.length +
       v.samePurchase.length +
       v.removedByBank.length +
@@ -452,27 +451,6 @@ export function ActivityScreen() {
                 Nothing needs attention.
               </p>
             )}
-          {v && v.moneyToMatch.length > 0 && (
-            <Section title="Money to match">
-              {v.moneyToMatch.map((r) => (
-                <TxnRow
-                  key={r.key}
-                  r={r}
-                  base="/activity"
-                  action={
-                    <Link
-                      to={sheetPath('/activity', r)}
-                      data-track="activity.match"
-                      aria-label={`Match ${r.payee}`}
-                      className={softButtonClass()}
-                    >
-                      Match
-                    </Link>
-                  }
-                />
-              ))}
-            </Section>
-          )}
           {v && v.transfersToSort.length > 0 && (
             <Section title="Transfers to sort out">
               {v.transfersToSort.map((r) => (

@@ -401,7 +401,7 @@ test('Paid back: money in that paid back two purchases lists both; Unlink, then 
   await expect(sheet.getByText('Rent · Oct 31')).toBeVisible();
   await expect(sheet.getByText('It went to Ready to Assign and paid back $1,018.00.')).toBeVisible();
   await sheet.getByRole('button', { name: 'Unlink' }).click();
-  await expect(sheet.getByText('This $1,018.00 is back in Waiting to match.')).toBeVisible();
+  await expect(sheet.getByText('This $1,018.00 no longer pays it back.')).toBeVisible();
   await sheet.getByRole('button', { name: 'Undo' }).click();
   await expect(sheet.getByText('Nopa · Nov 8')).toBeVisible();
   await page.goto('/owed');

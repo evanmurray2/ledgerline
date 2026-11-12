@@ -126,22 +126,12 @@ activityRoutes.post('/match', async (c) => {
       ),
     );
   }
-  // Rule 9/12: Match moves the matched part to RTA; the rest follows your choice.
-  const rest = t.amount - total;
-  const state =
-    rest > 0 && r.rest !== 'income'
-      ? r.rest === 'send_back'
-        ? 'send_back'
-        : 'waiting'
-      : total > 0
-        ? 'matched'
-        : 'income';
+  // Rule 12: a matched inflow is in RTA, all of it; what it pays back is settled. Nothing is held back (D-98).
   w.push(
     s.q(
-      `UPDATE txn_overlay SET wtm_state = ?3, to_rta = ?4, updated_at = ?5 WHERE budget_id = ?1 AND txn_key = ?2`,
+      `UPDATE txn_overlay SET wtm_state = ?3, to_rta = 1, updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
       r.inflowKey,
-      state,
-      state === 'matched' || state === 'income' ? 1 : 0,
+      total > 0 ? 'matched' : 'income',
       now,
     ),
   );
@@ -153,24 +143,20 @@ activityRoutes.post('/match/:key/unlink', async (c) => {
   const s = scoped(c);
   const key = c.req.param('key');
   const now = editNow(c);
-  const t = await loadTx(s, key);
-  // Rule 12: a person-to-person payback returns to Waiting to match; part of a paycheck stays in RTA.
-  const p2p = t.wtm_state !== null;
+  await loadTx(s, key);
+  // Rule 12: the owed items open again, and the inflow goes back to where the usual rules put it (D-98): Ready to Assign
+  // for money into checking or savings (D-85), Needs category for a card credit or a deposit that looks like a transfer.
   const w = [
     s.q(
       `UPDATE txn_link SET undone_at = ?3 WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND from_key = ?2 AND undone_at IS NULL`,
       key,
       now,
     ),
-    ...(p2p
-      ? [
-          s.q(
-            `UPDATE txn_overlay SET wtm_state = 'waiting', to_rta = 0, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
-            key,
-            now,
-          ),
-        ]
-      : []),
+    s.q(
+      `UPDATE txn_overlay SET wtm_state = NULL, to_rta = 0, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
+      key,
+      now,
+    ),
     s.audit('match.unlink', 'transaction', key, null, null, now),
   ];
   return c.json(await commit(c, w));
@@ -394,6 +380,27 @@ activityRoutes.post('/transfers/:key/unpair', async (c) => {
 
 // ---------------------------------------------------------------- Owed to you
 
+/** Names of person-to-person payments: the money in that Match money back offers first (D-98). */
+const PERSON_TO_PERSON = ['ZELLE', 'VENMO', 'CASH APP', 'CASHAPP', 'PAYPAL', 'APPLE CASH'];
+
+/**
+ * The newest money in from a person in the last 30 days that pays back nothing yet and that you haven't called income
+ * or a transfer. It is only offered: nothing is held for it (D-98).
+ */
+async function possiblePayback(s: Scoped, today: string): Promise<OwedView['payback']> {
+  const r = await s.first<{ key: string; payee: string; amount: number; date: string }>(
+    `SELECT v.key, v.payee, v.amount, v.date FROM v_txn_bank v
+     WHERE v.budget_id = ?1 AND v.amount > 0 AND v.posted_date >= date(?2, '-30 days')
+       AND (v.budget_from IS NULL OR v.date >= v.budget_from)
+       AND v.wtm_state IS NULL AND v.transfer_state IS NULL AND v.category_id IS NULL AND coalesce(v.to_rta, 0) = 0
+       AND (${PERSON_TO_PERSON.map((w) => `v.raw_name LIKE '%${w}%'`).join(' OR ')})
+       AND NOT EXISTS (SELECT 1 FROM txn_link l WHERE l.budget_id = ?1 AND l.from_key = v.key AND l.undone_at IS NULL)
+     ORDER BY v.posted_date DESC, v.seq DESC LIMIT 1`,
+    today,
+  );
+  return r ? { key: r.key, payee: r.payee, amount: cents(r.amount), date: r.date } : null;
+}
+
 activityRoutes.get('/owed', async (c) => {
   const s = scoped(c);
   const f = await fresh(s, editNow(c));
@@ -403,6 +410,7 @@ activityRoutes.get('/owed', async (c) => {
     `SELECT m.txn_key, m.date, m.payee_name, e.amount FROM manual_pending m JOIN expected_reimbursement e ON e.budget_id = m.budget_id AND e.txn_key = m.txn_key
      WHERE m.budget_id = ?1 AND m.kind = 'upcoming' AND m.deleted_at IS NULL AND m.matched_txn_key IS NULL AND e.canceled_at IS NULL`,
   );
+  const open = rows.some((o) => o.status === 'open' || o.status === 'late');
   const view: OwedView = {
     out: owedOut(rows),
     items: rows
@@ -436,6 +444,7 @@ activityRoutes.get('/owed', async (c) => {
       ...p,
       label: fr.find((x) => x.txn_key === p.key)!.payee_name,
     })),
+    payback: open ? await possiblePayback(s, f.today) : null,
   };
   return c.json(view);
 });

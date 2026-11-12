@@ -1,5 +1,5 @@
 // Step 6 of processing (process.ts planProcessing): for new rows without your categorization, the payee, transfers
-// and Waiting to match. No category is set. Payees follow docs/payee-names.md 4–6 (sync/payee-keys.ts).
+// and transfers. No category is set. Payees follow docs/payee-names.md 4–6 (sync/payee-keys.ts).
 import type { Stmt } from '@ledgerline/db/sql';
 import { cents, detectTransfers, newPayeeName, payeeNameKey } from '@ledgerline/domain';
 import { seededUlid } from '@ledgerline/platform';
@@ -7,8 +7,6 @@ import type { Scoped } from '../db/scoped.js';
 import { chunks, uncovered } from '../ledger/ledger.js';
 import type { BankRow } from './process.js';
 import { insertKey, loadOwners, payeeSource, rowKeys } from './payee-keys.js';
-
-const P2P = /\b(ZELLE|VENMO|CASH APP|CASHAPP|PAYPAL TRANSFER|APPLE CASH)\b/i;
 
 /** A posted row that took over another row's key in this batch (process.ts inherit), and that key. */
 export interface Inherited {
@@ -123,7 +121,7 @@ export async function planFresh(
   stmts.push(...(await planNewNames(s, batchRows, created, userTaken, now)));
 
   // A row dated before the account's budget start (history, or part of the starting balance, D-67) is never budgeted,
-  // so it gets no transfer or Waiting-to-match state: nothing about it needs your attention. The date is the one
+  // so it gets no transfer state: nothing about it needs your attention. The date is the one
   // the budget uses: the authorized date for a card purchase (v_txn_bank).
   const budgetDate = (r: BankRow) =>
     r.account_kind === 'credit' && r.amount < 0 && r.authorized_date ? r.authorized_date : r.date;
@@ -168,8 +166,7 @@ export async function planFresh(
     stmts.push(
       tr.state === 'paired'
         ? s.q(
-            `UPDATE txn_overlay SET transfer_state = 'paired', transfer_account_id = ?3, categorized_by = 'auto',
-               wtm_state = CASE WHEN wtm_state = 'waiting' THEN NULL ELSE wtm_state END, updated_at = ?4
+            `UPDATE txn_overlay SET transfer_state = 'paired', transfer_account_id = ?3, categorized_by = 'auto', updated_at = ?4
              WHERE budget_id = ?1 AND txn_key = ?2 AND categorized_by IS NOT 'user'
                AND (transfer_state IS NULL OR transfer_state = 'unsorted')`,
             key,
@@ -188,7 +185,6 @@ export async function planFresh(
     if (userSet.has(r.txn_key)) continue;
     const payee = payeeOf.get(r.txn_key)!;
     const tr = transfers.get(r.txn_key);
-    const waiting = !tr && !isHistory(r) && r.amount > 0 && P2P.test(r.raw_name) ? 'waiting' : null;
     const pendingAtLink = r.pending === 1 && isHistory(r) ? 1 : 0;
     stmts.push(
       s.q(
@@ -205,8 +201,6 @@ export async function planFresh(
              ELSE coalesce(txn_overlay.transfer_state, excluded.transfer_state) END,
            transfer_account_id = CASE WHEN excluded.transfer_state = 'paired' AND txn_overlay.transfer_state IS 'unsorted' THEN excluded.transfer_account_id
              ELSE coalesce(txn_overlay.transfer_account_id, excluded.transfer_account_id) END,
-           wtm_state = CASE WHEN excluded.transfer_state = 'paired' AND txn_overlay.wtm_state = 'waiting' THEN NULL
-             ELSE coalesce(txn_overlay.wtm_state, excluded.wtm_state) END,
            categorized_by = CASE WHEN txn_overlay.categorized_by = 'user' THEN 'user' ELSE coalesce(excluded.categorized_by, txn_overlay.categorized_by) END,
            rule_id = CASE WHEN txn_overlay.categorized_by = 'user' THEN txn_overlay.rule_id ELSE coalesce(excluded.rule_id, txn_overlay.rule_id) END,
            pending_at_link = max(txn_overlay.pending_at_link, excluded.pending_at_link),
@@ -218,7 +212,7 @@ export async function planFresh(
         null,
         tr ? tr.state : null,
         tr ? tr.other || null : null,
-        waiting,
+        null,
         tr ? 'auto' : null,
         null,
         pendingAtLink,
@@ -256,7 +250,7 @@ async function earlierOpen(
          AND v.bank_amount IN (${inList(part.length, 4)})
          AND (v.transfer_state IS NULL OR v.transfer_state = 'unsorted')
          AND v.categorized_by IS NOT 'user' AND v.category_id IS NULL AND coalesce(v.to_rta, 0) = 0
-         AND (v.wtm_state IS NULL OR v.wtm_state = 'waiting')
+         AND v.wtm_state IS NULL
          AND (v.budget_from IS NULL OR v.date >= v.budget_from)
          AND ${uncovered('v')}`,
       dates[0]!,

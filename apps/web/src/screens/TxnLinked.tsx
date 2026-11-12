@@ -35,7 +35,7 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
       gap="auto"
       header={
         <SheetTitle
-          tag={unlinked !== null ? (moneyIn ? 'Waiting to match' : 'Owed to you') : 'Paid back'}
+          tag={unlinked !== null ? (moneyIn ? 'Money in' : 'Owed to you') : 'Paid back'}
           tagClass={unlinked !== null ? 'text-funded-fg' : 'text-owed-fg'}
           amount={formatCents(t.amount, { plus: true })}
           amountClass={moneyIn ? 'text-funded-fg' : undefined}
@@ -88,7 +88,7 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
         <div className="flex flex-col gap-2">
           <Banner tone="success" title="Unlinked">
             {moneyIn
-              ? `${unlinked ? `${unlinked} is owed again. ` : ''}This ${formatCents(t.amount)} is back in Waiting to match.`
+              ? `${unlinked ? `${unlinked} is owed again. ` : ''}This ${formatCents(t.amount)} no longer pays it back.`
               : `${formatCents(total)} is owed to you again.`}
           </Banner>
           <div className="flex gap-2">
@@ -102,7 +102,6 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
                   await match.mutateAsync({
                     inflowKey,
                     items: undone.map((p) => ({ itemId: p.itemId, amount: p.amount })),
-                    rest: 'income',
                   });
                   usage.undo('unlink');
                   setUnlinked(null);

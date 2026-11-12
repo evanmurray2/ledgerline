@@ -95,9 +95,9 @@ export interface ApplyResult {
 
 /**
  * Bump when the rules that turn rows into budget lines or stored totals change, so every copy rebuilds them once
- * (2: rows dated before the budget start move the starting balance, D-67).
+ * (2: rows dated before the budget start move the starting balance, D-67; 3: nothing is held in Waiting to match, D-98).
  */
-export const DERIVE_VERSION = 2;
+export const DERIVE_VERSION = 3;
 const derivedMark = (today: string) => `${today}#${DERIVE_VERSION}`;
 
 /** Server migrations the copy skips: they remove what only the phone keeps. */

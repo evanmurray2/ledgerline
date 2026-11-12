@@ -1,6 +1,6 @@
 # What's true now
 
-`docs/design.md` (Oct 31 design) and `docs/sync-spec.md` are kept as written. The system has moved on in the places below. Where a section there disagrees, the decision named wins (`docs/decisions.md`, `docs/decisions/`); each replaced section starts with a **Now** note. The Money rules, the budgeting model and the matching mechanics are unchanged.
+`docs/design.md` (Oct 31 design) and `docs/sync-spec.md` are kept as written. The system has moved on in the places below. Where a section there disagrees, the decision named wins (`docs/decisions.md`, `docs/decisions/`); each replaced section starts with a **Now** note. The Money rules, the budgeting model and the matching mechanics are unchanged, except Waiting to match (rule 9, D-98).
 
 One line per entry; add yours at the end of its list. This file merges with `merge=union` (`.gitattributes`, D-59): after a local merge, check for an entry listed twice.
 
@@ -27,13 +27,14 @@ One line per entry; add yours at the end of its list. This file merges with `mer
 - **Sign-up asks for no name:** `docs/open-signup.md` 3.1 said a Name field. Now sign-up takes a passkey and nothing else; no name or email is kept. D-85 (`docs/decisions/D-85-privacy-design-answers.md`), the first built step of `docs/privacy.md`.
 - **Overview:** `docs/architecture.md` describes the system as built, on one page.
 - **Net worth:** the design said the sum of every linked account balance. Now it counts pending, like the Cash and Credit cards totals on Accounts, so the three add up; Reports' current month and "in November" follow. D-76 (`docs/decisions/D-76-net-worth-counts-pending.md`).
+- **Money to match:** the design said unmatched person-to-person money waits in Activity → Needs attention → Money to match, with Keep waiting and I'll send it back. Now there's no such group or hold; Match is on the transaction's sheet, and Owed to you offers the newest money in from a person. D-98 (`docs/decisions/D-98-no-waiting-to-match.md`).
 
 ## Sync spec (`docs/sync-spec.md`)
 
 - **Storage and jobs:** SQLite in Durable Objects instead of D1, and alarm jobs in each budget's store instead of Workflows (D-37, D-38; `apps/worker/src/store/jobs.ts`). A failed step backs off and is tried up to 6 times.
 - **Recalculation:** the phone works out budget lines, month snapshots and Ready to Assign from its own copy, with the same `computeBudget()`; the server keeps nothing derived and has no recompute (D-45, D-46). The guarantee in point 3 holds on the phone (`apps/worker/test/engine.test.ts`).
 - **Limits:** D1's limits no longer apply; Durable Object rows read and written, requests and Worker requests do, and SQLite's CPU counts toward the 10 ms (D-40; `docs/measurements.md`).
-- **Rules:** processing writes no rule results; it finds the payee, transfers and Waiting to match, and sets no category. D-60.
+- **Rules:** processing writes no rule results; it finds the payee and transfers (and, until D-98, Waiting to match), and sets no category. D-60.
 - **Matching mechanics, manual pending:** your entry pairs with a bank row only on exact evidence, else "Same purchase?" asks; it covers the bank's pending row (hidden, the entry counts) until the charge posts and takes the entry's key; batch order link, posted ↔ bank pending, posted ↔ entries, bank pending ↔ entries (`docs/payee-names.md` 9.1, 9.2). D-64 (`docs/decisions/D-64-entry-covers-bank-pending.md`).
 - **Matching mechanics, posted ↔ bank pending without the link:** pairs only on exact evidence (same merchant by Plaid's merchant id or names, or the same amount on the same day), else "Same purchase?" asks; no text likeness or store numbers (`docs/payee-names.md` 9.3). D-65 (`docs/decisions/D-65-pending-match-without-text.md`), changing D-47 and D-50.
 - **Matching mechanics, a posted row that took a bank pending row's key:** it was never compared with your entries, so a leftover entry counted twice with no question. Now it meets them by the same rule (exact evidence, else "Same purchase?"), in its batch and in the heal step, and the entry takes the pair. D-92 (`docs/decisions/D-92-posted-row-on-a-pending-key-meets-entries.md`), changing D-64 and D-72.
@@ -67,3 +68,4 @@ One line per entry; add yours at the end of its list. This file merges with `mer
 - **Who merges key code:** `docs/privacy.md` 5.10 and D-88 said the owner merges every change to the key and sealing code, the CSP, the service worker, the build and `.github/`. Now a session merges those like any other change; `.github/CODEOWNERS` and `tools/ci/owner-paths.mjs` only name the paths (D-94).
 - **Shadow run:** `docs/privacy.md` section 8 said the device files bank updates beside the server for two weeks before the move. Now there is no such wait: the rest of the design ships together and the move follows at once, checked by tests, the freeze, the table comparison, the read-back and the 7-day way back (D-95).
 - **The filter Activity opens on:** `docs/design.md` listed All first, and Activity opened on it. Now it opens on Not posted yet on this month, and on All when nothing is waiting to post, on a past month or for a search (D-97, `docs/decisions/D-97-activity-opens-on-not-posted-yet.md`).
+- **Waiting to match (rules 9, 10 and 12):** rule 9 said money from a person is held out of Ready to Assign until Match or Income. Now nothing is held: it counts like any other money in (D-85); Match only links it to what it pays back, all of it in Ready to Assign; Unlink returns it to the usual rules; rule 10's Waiting to match term is always 0. D-98 (`docs/decisions/D-98-no-waiting-to-match.md`).

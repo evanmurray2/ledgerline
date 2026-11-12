@@ -72,7 +72,7 @@ describe('input the app never sends', () => {
     expect((await send('PATCH', `/api/transactions/${key}`, { budgetMonth: '9999-12' })).status).toBe(422);
     for (const path of ['/api/budget/9999-12', '/api/budget/9999-12/assign', '/api/reports?month=9999-12'])
       expect((await read(path)).status, path).toBe(400);
-    expect((await read('/api/budget/2026-11')).json).toMatchObject({ rta: 98190, maxMonth: '2026-12' });
+    expect((await read('/api/budget/2026-11')).json).toMatchObject({ rta: 199990, maxMonth: '2026-12' });
     expect((await read('/api/budget/2036-11')).status).toBe(200);
   });
 

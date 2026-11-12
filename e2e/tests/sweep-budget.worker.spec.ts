@@ -54,7 +54,7 @@ test('Budget: a month before the budget starts shows its first month, and a malf
   for (const bad of ['abc', '2026-13', '2026-1']) {
     await page.goto(`/budget?month=${bad}`);
     await expect(label(page)).toHaveAccessibleName('November 2026');
-    await expect(rta(page)).toHaveText('$981.90');
+    await expect(rta(page)).toHaveText('$1,999.90');
   }
 });
 
@@ -72,13 +72,13 @@ test('Assign: an amount too large is refused with the limit, and the budget stil
   await sheet.getByLabel('Assigned in November').fill('99,999,999.99');
   await sheet.getByRole('button', { name: 'Save' }).click();
   await expect(page).not.toHaveURL(/category/);
-  await expect(rta(page)).toHaveText('−$99,998,418.09');
+  await expect(rta(page)).toHaveText('−$99,997,400.09');
   await page.goto('/budget/category/dining');
   await page.getByRole('dialog').getByLabel('Assigned in November').fill('99999999.99');
   await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click();
   await expect(page).not.toHaveURL(/category/);
   await page.reload();
-  await expect(rta(page)).toHaveText('−$199,998,218.08');
+  await expect(rta(page)).toHaveText('−$199,997,200.08');
 });
 
 test('Category sheet: a pasted "$-3" is an amount, and letters say to enter one', async ({
@@ -104,7 +104,7 @@ test('Category sheet: Enter saves the amount, and Enter on a move moves it', asy
   await sheet.getByLabel('Assigned in November').fill('650');
   await sheet.getByLabel('Assigned in November').press('Enter');
   await expect(page).not.toHaveURL(/category/);
-  await expect(rta(page)).toHaveText('$931.90');
+  await expect(rta(page)).toHaveText('$1,949.90');
   await expect.poll(() => assigned(request, 'groceries', '2026-11')).toBe(65_000);
 
   await page.goto('/budget/category/groceries');
@@ -123,7 +123,7 @@ test('Category sheet: Enter saves the amount, and Enter on a move moves it', asy
   await move.getByLabel('Amount').fill('25');
   await move.getByLabel('Amount').press('Enter');
   await expect(page).not.toHaveURL(/category/);
-  await expect(rta(page)).toHaveText('$956.90');
+  await expect(rta(page)).toHaveText('$1,974.90');
   // Enter with nothing to save does nothing.
   await page.goto('/budget/category/groceries');
   await sheet.getByLabel('Assigned in November').press('Enter');
@@ -145,7 +145,7 @@ test('Category sheet: Move money on an overspent category covers it from Ready t
   await expect(move.getByLabel('Amount')).toHaveValue('18.25');
   await move.getByRole('button', { name: 'Move $18.25' }).click();
   await expect(page).not.toHaveURL(/category/);
-  await expect(rta(page)).toHaveText('$963.65');
+  await expect(rta(page)).toHaveText('$1,981.65');
   await expect.poll(() => assigned(request, 'dining', '2026-11')).toBe(before + 1825);
 });
 
@@ -165,7 +165,7 @@ test('Assign sheet: with a category picked, a missing or wrong amount says to en
   await expect(sheet.getByTestId('disabled-why')).toHaveText('Enter an amount to assign');
   await sheet.getByLabel('Amount').fill('12.345');
   await expect(sheet.getByTestId('disabled-why')).toHaveText('Enter an amount to assign');
-  await sheet.getByLabel('Amount').fill('$1,234.5');
+  await sheet.getByLabel('Amount').fill('$2,252.5');
   await expect(sheet.getByRole('button', { name: 'Assign anyway' })).toBeEnabled();
   await expect(sheet.getByTestId('assign-left')).toHaveText('−$252.60');
 });
@@ -200,7 +200,7 @@ test('Ready to Assign: a seven-figure amount below zero stays on one line, insid
 }) => {
   const r = await request.post('/api/budget/set', {
     headers: H,
-    data: { month: '2026-11', categoryId: 'home', assigned: 123_494_989 },
+    data: { month: '2026-11', categoryId: 'home', assigned: 123_596_789 },
   });
   expect(r.ok()).toBe(true);
   // The narrowest phone, and the computer's sidebar.
