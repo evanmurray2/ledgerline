@@ -42,6 +42,11 @@ export interface LogDeps {
   lastCompleteRun: number;
   /** The receipt hashes the Worker stored for runs `from` to `to`; null when one is missing. */
   receiptHashes: (from: number, to: number) => Promise<Uint8Array[] | null>;
+  /**
+   * The Worker's stamps on the keys a write brings (seal/runs.ts keyStampStmts), stored in the same step as the
+   * write. `before` is null for the first entry.
+   */
+  stamps?: (before: ChainState | null, after: ChainState) => Promise<Stmt[]>;
 }
 
 export type AppendResult =
@@ -200,7 +205,7 @@ export async function logGenesis(d: LogDeps, bytes: Uint8Array): Promise<AppendR
   } catch (x) {
     return refusal(x);
   }
-  return store(d, 0, [{ e, bytes }], state);
+  return store(d, 0, [{ e, bytes }], state, null);
 }
 
 /**
@@ -228,7 +233,7 @@ export async function logAppend(d: LogDeps, base: number, encoded: Uint8Array[])
   }
   if (next === 'already stored') return { ok: true, number: state.number, stored: 'already' };
   if (base !== state.number) return { ok: false, why: 'behind', number: state.number, retry: true };
-  return store(d, base, entries, next);
+  return store(d, base, entries, next, state);
 }
 
 /** All of the write and the new state in one step, only if the log still ends at `base`. */
@@ -237,11 +242,14 @@ async function store(
   base: number,
   entries: { e: Entry; bytes: Uint8Array }[],
   state: ChainState,
+  before: ChainState | null,
 ): Promise<AppendResult> {
+  const stamps = d.stamps ? await d.stamps(before, state) : [];
   try {
     await d.db.batch([
       conditionFence(d.db, `SELECT coalesce((SELECT number FROM log_state WHERE id = 1), 0) = ?1`, base),
       ...storeStmts(d.db, entries, state, d.now),
+      ...stamps,
     ]);
   } catch (x) {
     if (!isFenceAbort(x)) throw x;

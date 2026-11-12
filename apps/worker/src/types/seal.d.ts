@@ -25,6 +25,118 @@ export function checkLinkMac(
   tokenCiphertext: Uint8Array,
   mac: Uint8Array,
 ): Promise<boolean>;
+export const KEY_KIND: { readonly sign: 1; readonly inbox: 2 };
+export function keyMac(
+  k: ServerKeys,
+  budgetId: string,
+  v: number,
+  kind: 1 | 2,
+  pub: Uint8Array,
+): Promise<Uint8Array>;
+export function checkKeyMac(
+  k: ServerKeys,
+  budgetId: string,
+  v: number,
+  kind: 1 | 2,
+  pub: Uint8Array,
+  mac: Uint8Array,
+): Promise<boolean>;
+export interface RunState {
+  run: number;
+  lastManifestHash: Uint8Array;
+  lastRunTime: number;
+  links: { linkId: string; cursorHash: Uint8Array }[];
+}
+export function runsMac(k: ServerKeys, budgetId: string, s: RunState): Promise<Uint8Array>;
+export function checkRunsMac(k: ServerKeys, budgetId: string, s: RunState, mac: Uint8Array): Promise<boolean>;
+
+// ---- bank runs (apps/worker/src/seal/runs.ts; packages/seal run.ts)
+export const WHAT: {
+  readonly transactions: 0;
+  readonly balances: 1;
+  readonly liabilities: 2;
+  readonly link: 3;
+};
+export type What = 0 | 1 | 2 | 3;
+export interface RunPage {
+  what: What;
+  hash: Uint8Array<ArrayBuffer>;
+}
+export interface RunManifest {
+  budgetId: string;
+  linkId: string;
+  run: number;
+  restart: number;
+  inboxVersion: number;
+  inboxPubHash: Uint8Array<ArrayBuffer>;
+  runTime: number;
+  prevRunTime: number;
+  cursorBefore: Uint8Array<ArrayBuffer>;
+  cursorAfter: Uint8Array<ArrayBuffer>;
+  flags: number;
+  added: number;
+  modified: number;
+  removed: number;
+  pages: RunPage[];
+  receiptHash: Uint8Array<ArrayBuffer>;
+  prevManifestHash: Uint8Array<ArrayBuffer>;
+  n: number;
+}
+export function readRunManifest(bytes: Uint8Array): RunManifest;
+export function cursorHash(cursor: string): Promise<Uint8Array<ArrayBuffer>>;
+export function sha256(bytes: Uint8Array): Promise<Uint8Array<ArrayBuffer>>;
+export interface PagePlace {
+  budgetId: string;
+  linkId: string;
+  inboxVersion: number;
+  run: number;
+  restart: number;
+  page: number;
+}
+export function sealPage(
+  k: ServerKeys,
+  inboxPub: Uint8Array,
+  at: PagePlace,
+  what: What,
+  payload: Uint8Array,
+): Promise<{ sealed: Uint8Array<ArrayBuffer>; page: RunPage }>;
+export class RestartRun extends Error {}
+export function signRun(
+  k: ServerKeys,
+  inboxPub: Uint8Array,
+  run: Omit<RunManifest, 'inboxPubHash' | 'receiptHash' | 'n' | 'flags'>,
+  inForce: { inboxVersion: number; lastRunForOld: number },
+): Promise<{ manifest: Uint8Array<ArrayBuffer>; signature: Uint8Array<ArrayBuffer> }>;
+export interface SealedRun {
+  manifest: Uint8Array;
+  signature: Uint8Array;
+  pages: Uint8Array[];
+}
+export class RunError extends Error {
+  readonly why: string;
+  readonly retry: boolean;
+}
+export interface FilingState {
+  budgetId: string;
+  workerKeys: Map<number, Uint8Array>;
+  filedThrough: number;
+  lastManifestHash: Uint8Array;
+  lastRunTime: number;
+  lastInboxVersion: number;
+  cursors: Map<string, Uint8Array>;
+  inboxVersion: number;
+  retiredAt: Map<number, number>;
+  inbox(version: number): Promise<unknown>;
+  now: number;
+}
+export interface FiledRun {
+  manifest: RunManifest;
+  manifestHash: Uint8Array<ArrayBuffer>;
+  pages: { what: What; payload: Uint8Array<ArrayBuffer> }[];
+  receipt: Uint8Array<ArrayBuffer>;
+}
+export function openRun(s: FilingState, run: SealedRun): Promise<FiledRun>;
+export function afterRun(s: FilingState, filed: FiledRun): FilingState;
 
 // ---- the log (apps/worker/src/seal/log-store.ts). The entry and the chain state are the package's own shapes;
 // the Worker reads a few header fields and otherwise only passes them between the package's functions.
@@ -53,6 +165,13 @@ export interface ChainState {
   number: number;
   hash: Bytes;
   pending: unknown;
+  public: {
+    budgetId: string;
+    keyVersion: number;
+    signPub: Bytes;
+    inboxVersion: number;
+    inboxPub: Bytes;
+  } & Record<string, unknown>;
 }
 export type StoredChain = Record<string, unknown> & { number: number };
 export const KIND: {
@@ -155,7 +274,6 @@ export interface FullChainState extends ChainState {
   filedThrough: number;
   scanThrough: number;
   counters: Map<string, number>;
-  public: { keyVersion: number; budgetId: string } & Record<string, unknown>;
 }
 export const MAX_PLAIN: number;
 export function startChain(genesis: Entry, c: Checker, budgetId?: string): Promise<ChainState>;
