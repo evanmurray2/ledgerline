@@ -206,12 +206,31 @@ describe('November statuses match the prototype', () => {
   for (const [id, st] of Object.entries(expected)) {
     it(`${id} is ${st}`, () => expect(categoryStatus(input(id))).toBe(st));
   }
-  it('Needs attention fixes: Cover $18.25, Fund $90 and $250, Add $20, Move $40', () => {
+  it('Needs attention fixes: Cover $18.25, Fund $90 and $250, Add $20, Move $210', () => {
     expect(suggestedFix('overspent', input('dining'))).toBe($('18.25'));
     expect(suggestedFix('underfunded', input('car'))).toBe($('90'));
     expect(suggestedFix('underfunded', input('vacation'))).toBe($('250'));
     expect(suggestedFix('low', input('personal'))).toBe($('20'));
-    expect(suggestedFix('overfunded', input('gifts'))).toBe($('-40'));
+    // Gifts spent $216 against its $170 refill, so all $210 left is extra (D-95).
+    expect(suggestedFix('overfunded', input('gifts'))).toBe($('-210'));
+  });
+  it('a Refill category that spent more than its target is overfunded by all the money left (D-95)', () => {
+    // Refill to $25: $49.97 assigned, $33.98 spent, $15.99 left.
+    const base: StatusInput = {
+      ...input('personal'),
+      target: { type: 'refill', amount: $('25'), periodMonths: 1, anchor: F.START },
+      assignedThisMonth: $('49.97'),
+      spent: $('33.98'),
+      available: $('15.99'),
+      need: cents(0),
+    };
+    expect(categoryStatus(base)).toBe('overfunded');
+    expect(suggestedFix('overfunded', base)).toBe($('-15.99'));
+    // Nothing left: not overfunded.
+    expect(categoryStatus({ ...base, available: cents(0) })).not.toBe('overfunded');
+    // Spending at or below the target: only money above the target is extra.
+    expect(categoryStatus({ ...base, spent: $('25'), available: $('15.99') })).not.toBe('overfunded');
+    expect(suggestedFix('overfunded', { ...base, spent: $('10'), available: $('39.97') })).toBe($('-14.97'));
   });
   it('Low is for spending running through a monthly category, not a yearly fund or goal on its way up', () => {
     const base = { ...input('personal'), today: '2026-11-02' as IsoDate };

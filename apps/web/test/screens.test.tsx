@@ -80,7 +80,7 @@ describe('Budget', () => {
     expect(screen.getByRole('button', { name: /Fund all · \$340\.00/ })).toBeTruthy();
     // Low categories have their own filter now, so Personal care isn't listed here.
     expect(screen.queryByRole('button', { name: 'Add $20.00 for Personal care' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Move $40.00 for Gifts' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Move $210.00 for Gifts' })).toBeTruthy();
     fireEvent.click(cover);
     await waitFor(() => expect(screen.getByTestId('rta').textContent).toBe('$963.65'), { timeout: 4000 });
     expect(screen.getByText('Done just now')).toBeTruthy();

@@ -300,7 +300,7 @@ Balance, no date: need = max(0, min(C, B − X) − a) when C is set; with no C 
 | Overspent | Available < 0 |
 | Underfunded | Need > 0 |
 | Funded | Need = 0 and not overfunded |
-| Overfunded | Refill: available > A. Set aside: min(a − N, available) > 0, the extra assigned that is still unspent (D-69). Balance targets: available > B |
+| Overfunded | Refill: available > A; or, when this month's spending is above A, any available at all (D-95). Set aside: min(a − N, available) > 0, the extra assigned that is still unspent (D-69). Balance targets: available > B |
 | Low | Spending categories only (decided Oct 31, 2026): bills, meaning categories in a bills group or with a due date, are never Low, since paying them early is normal. Low means less than 20% of the period amount left (or a per-category amount), or month-to-date spending running more than 30 points ahead of the month's elapsed share. |
 | Covered / Short | Card payment categories only: Covered when the category holds at least the card's balance plus budgeted pending minus uncategorized card spending; Short by the difference otherwise. |
 | Invested | A Saving or investing category whose money has left the budget this month as planned (e.g. the monthly Vanguard transfer). |
