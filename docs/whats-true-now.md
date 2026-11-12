@@ -28,6 +28,10 @@ One line per entry; add yours at the end of its list. This file merges with `mer
 - **Overview:** `docs/architecture.md` describes the system as built, on one page.
 - **Net worth:** the design said the sum of every linked account balance. Now it counts pending, like the Cash and Credit cards totals on Accounts, so the three add up; Reports' current month and "in November" follow. D-76 (`docs/decisions/D-76-net-worth-counts-pending.md`).
 - **Money to match:** the design said unmatched person-to-person money waits in Activity → Needs attention → Money to match, with Keep waiting and I'll send it back. Now there's no such group or hold; Match is on the transaction's sheet, and Owed to you offers the newest money in from a person. D-98 (`docs/decisions/D-98-no-waiting-to-match.md`).
+- **Who reads and edits the budget:** the server stored the budget readable, ran most edits and all bank filing, and the phone synced its rows (`GET /api/sync`). Now, for a locked budget (the owner's since Nov 12, 2026), the server holds a signed, sealed log and snapshots it can't read; the device makes every edit and files every bank update, and sends sealed entries (`docs/privacy.md` 5.3, 5.4; `docs/architecture.md`). D-95.
+- **Restore:** a point-in-time restore was a runbook step that the server ran (D-77). Now the server can't restore a locked budget, because it never has the key; its devices hold it, and `POST /api/settings/restore` is refused (`seal/sealed-routes.ts`). The runbook applies only to a budget that is not locked.
+- **Full backup:** Settings → Backup and export downloaded the server's dump (`GET /api/export/dump`). Now a locked budget's server refuses it; a backup made on the device, after a passkey prompt, replaces it and is being built (`docs/privacy.md` 5.8).
+- **Bank data on the server:** each sync kept Plaid's pages and the bank log readable (`raw_page`, `bank_event`). Now, for a locked budget, each page is sealed for the devices the moment it arrives and the run is signed (`seal/runs.ts`, `seal/fetch-job.ts`); what came before the move stays in the old tables until phase 6.
 
 ## Sync spec (`docs/sync-spec.md`)
 

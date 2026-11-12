@@ -5,7 +5,7 @@ import { api } from '../../api/endpoints';
 import { isSealed } from '../../copy/copy';
 import { Card, SectionTitle } from '../../components/ui';
 import { Why } from '../../components/Why';
-import { Page } from './common';
+import { Page, RowLink } from './common';
 import { MoveCard } from './Move';
 
 function Fact({ name, text }: { name: string; text: string }) {
@@ -53,6 +53,14 @@ export function PrivacyScreen() {
           </Why>
         </>
       )}
+      <Card>
+        <RowLink
+          to="/settings/privacy/claims"
+          name="What Ledgerline claims"
+          meta="Each claim, if it is true now, and its limit"
+          track="settings.privacy.claims"
+        />
+      </Card>
       <MoveCard />
       <SectionTitle>Your banks</SectionTitle>
       <Card>
