@@ -21,10 +21,9 @@ import {
   type StoredChain,
 } from '@ledgerline/seal';
 import { conditionFence, isFenceAbort } from '../sync/lease.js';
+import { LOG_PROCESSING_VERSION, LOG_SCHEMA_VERSION } from './log-versions.js';
 
-/** The newest schema and processing versions the released app writes (5.3): a newer one in an entry is refused. */
-export const LOG_SCHEMA_VERSION = 1;
-export const LOG_PROCESSING_VERSION = 1;
+export { LOG_PROCESSING_VERSION, LOG_SCHEMA_VERSION };
 
 /** Entries of the kinds the breaker never holds back that one budget may store in a day (5.3 check 7). */
 export const KEY_ENTRIES_A_DAY = 32;

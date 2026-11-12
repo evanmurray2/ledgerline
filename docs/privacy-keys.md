@@ -2,7 +2,7 @@
 
 Status: v2, Nov 10, 2026. Section 15 lists which parts are built in `packages/seal`; nothing uses them yet. This is the appendix `docs/privacy.md` 5.2 asks for before any key code: every derivation label, associated-data string, nonce rule and byte layout. An adversarial review of v1 made 20 findings; this version includes their fixes (section 14). The code in `packages/seal` will follow this file exactly, and its tests will pin each derivation with fixed test vectors, so a change here without a format version bump breaks a test. `docs/privacy.md` says why each thing exists; this file says only what the bytes are and what each side checks.
 
-Not covered here, on purpose: how row changes are written inside an entry's sealed body and inside a snapshot, and how a table is hashed. Those belong to the phases that move edits and bank filing to the device (`docs/privacy.md` section 10, phases 3 and 4).
+Not covered here, on purpose: how row changes are written inside a snapshot, and how a table is hashed (the row changes inside an entry's sealed body are in 6.2). Those belong to the phases that move edits and bank filing to the device (`docs/privacy.md` section 10, phases 3 and 4).
 
 ## 1. Conventions
 
@@ -194,7 +194,18 @@ aad   = "ledgerline/v1/body" || H(header fields 1 to 16)
 body  = AEAD(K_log_keyVersion, aad, pad(plain))
 ```
 
-`plain` holds what `docs/privacy.md` 5.3 lists (the row changes; for an edit, the time the person made it; what this device last saw from each other device). Its inner layout is fixed in a later phase.
+`plain` holds what `docs/privacy.md` 5.3 lists (the row changes; for an edit, the time the person made it; what this device last saw from each other device). For kinds 1, 2 and 3 it is a **change set**, UTF-8 JSON (`apps/worker/src/local/device-log.ts`):
+
+```
+{ "v": 1, "at": ms, "rows": [ { "t": table, "k": [key values], "d": row or null } ], "seen": { deviceId: [number, entryHash hex] } }
+```
+
+- `at`: for an edit, when the person made it; for a bank entry, the update's time; for a scan, its planned time.
+- `rows`: the changed rows as they are after the change, in the order they last changed; `d` is the whole row (column name to value), or `null` for a row that is gone. The tables are the ones a copy keeps and the two only a recording carries (`RECORDED_TABLES` in `apps/worker/src/local/engine.ts`). A reader writes the rows and runs nothing.
+- `seen`: the last entry this device has taken from each other device.
+- A reader refuses a body that is not this shape (`v` other than 1 is a newer app's: the header's schema version says so first).
+
+With parts (6.4), `plain` is the JSON's bytes cut in order; a reader joins the parts before it reads the JSON.
 
 **Padding.** The steps are 256, 1,024, 4,096, 16,384 and 65,536 bytes. `pad(x)` is `x || 0x80 || zeros` up to the smallest step that fits, so `x` is at most 65,535 bytes; anything larger uses parts (6.4). To unpad: the length must be a step; drop trailing zeros; the last byte left must be `0x80`; and what remains must not have fitted a smaller step. Otherwise the entry is refused.
 
@@ -573,7 +584,7 @@ Still to confirm in phase 0: that Safari and Workers accept both PKCS#8 imports,
 
 ## 15. What is built
 
-In `packages/seal`, each part with its tests. Nothing in the app or the Worker uses the package yet.
+In `packages/seal`, each part with its tests. Outside the package so far, and used by nothing in production: the server's store of the log (`apps/worker/src/seal/log-store.ts`, 7.2), a device's side of the log (`apps/worker/src/local/device-log.ts`, 6.2 and 6.4), and the Worker's stamp on a bank link (`apps/worker/src/store/stamp-links.ts`, 9.2), which runs in production.
 
 | Part                                                                                            | Sections      | Checked against                                                                                                                               |
 | ----------------------------------------------------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
