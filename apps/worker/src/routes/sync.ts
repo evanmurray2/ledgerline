@@ -341,6 +341,64 @@ syncRoutes.get('/sync/bank-log', async (c) => {
   return c.json(batch);
 });
 
+/** The tables an edit writes that a sync never sends: the record an undo reads, and where a moved key went. */
+export const REST_TABLES = [
+  { name: 'audit_log', pk: 'id', number: true },
+  { name: 'txn_key_move', pk: 'old_key', number: false },
+] as const;
+const REST_ROWS = 200;
+const REST_CHARS = 300_000;
+
+/** One batch of a table of `REST_TABLES`, in key order. */
+export interface RestBatch {
+  table: string;
+  rows: SyncRow[];
+  /** The key of the last row given; the next request names it. */
+  after: string | number | null;
+  more: boolean;
+}
+
+/**
+ * The rest of the budget (docs/privacy.md 6.2 and section 8 step 6): the two tables an edit writes that the sync
+ * leaves out. A phone needs them whole before the cutover, when its copy becomes the budget. In key order, a
+ * small batch a request; a row sent twice is the same row.
+ */
+syncRoutes.get('/sync/rest', async (c) => {
+  const t = REST_TABLES.find((x) => x.name === c.req.query('table'));
+  const raw = c.req.query('after');
+  if (!t) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
+  let after: string | number = t.number ? 0 : '';
+  if (raw !== undefined) {
+    after = t.number ? Number(raw) : raw;
+    if (t.number && !Number.isSafeInteger(after))
+      return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
+  }
+  const found = (
+    await c.env.DB.prepare(
+      `SELECT * FROM ${t.name} WHERE ${t.pk} > ?1 ORDER BY ${t.pk} LIMIT ${REST_ROWS + 1}`,
+    )
+      .bind(after)
+      .all<Record<string, unknown>>()
+  ).results;
+  const rows: SyncRow[] = [];
+  let chars = 0;
+  for (const d of found.slice(0, REST_ROWS)) {
+    const size = JSON.stringify(d).length;
+    // Always at least one row, then as many as fit one answer.
+    if (rows.length && chars + size > REST_CHARS) break;
+    rows.push({ t: t.name, k: [d[t.pk]], d });
+    chars += size;
+  }
+  const last = rows[rows.length - 1];
+  const batch: RestBatch = {
+    table: t.name,
+    rows,
+    after: last ? (last.k[0] as string | number) : raw === undefined ? null : after,
+    more: rows.length < found.length,
+  };
+  return c.json(batch);
+});
+
 /**
  * Ready to Assign worked out on a phone that doesn't satisfy rule 10 (the identity check, sync spec): saved as an
  * `identity` alert, which shows on Accounts on every device until dismissed.

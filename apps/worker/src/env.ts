@@ -45,6 +45,11 @@ export interface Env {
   OWNER_EMAIL?: string;
   /** Local development and tests only: a fixed "now" (ISO time). Ignored in production. */
   FAKE_NOW?: string;
+  /**
+   * `on` opens the routes of the cutover (seal/cutover-routes.ts). Unset in production until the owner's budget
+   * is to be moved (docs/privacy.md section 8): the routes then answer nothing.
+   */
+  CUTOVER?: string;
   /** Enables /__dev routes (seed data) in local development. Ignored in production. */
   DEV_ROUTES?: string;
   /** Account-wide usage via GraphQL Analytics (read-only token). */
