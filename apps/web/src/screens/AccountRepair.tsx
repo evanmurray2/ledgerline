@@ -9,15 +9,21 @@ import { Banner, ErrorNote, PrimaryButton } from '../components/ui';
 import { budgetDateTime } from '../lib/dates';
 import { useScreen } from '../lib/common';
 import { runPlaidLink } from '../lib/plaid';
+import { useCloseTo } from '../lib/back';
+import { useResumeLink } from '../lib/resume-link';
 import { usage } from '../usage/tracker';
 
 export function RepairScreen() {
   const { connectionId } = useParams({ strict: false }) as { connectionId: string };
   useScreen('repair');
+  // Back from Plaid's site in a browser (lib/plaid.ts): the sign-in started here finishes here.
+  useResumeLink();
   const q = useAccounts();
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const close = () => void navigate({ to: '/accounts' });
+  // Opened from Settings, Bank connections: closing goes back there (lib/back.ts).
+  const closeTo = useCloseTo();
+  const close = closeTo ? closeTo.go : () => void navigate({ to: '/accounts', search: true });
   const [step, setStep] = useState<'before' | 'working' | 'after' | 'exited'>('before');
   const [error, setError] = useState<unknown>(null);
   // Signed in, but the sync after it failed: say so, not "needs you to sign in again".
@@ -61,7 +67,7 @@ export function RepairScreen() {
       track="repair"
       onClose={close}
       gap="auto"
-      closeLabel="Back to accounts"
+      closeLabel={closeTo?.label ?? 'Back to accounts'}
       header={<SheetTitle title={title} />}
       footer={
         step === 'after' || nothingToDo ? (

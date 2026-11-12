@@ -11,6 +11,7 @@ import { adjustAttention, qk, useActivity, useBudget, useMoneyMutation, useSessi
 import { MonthBar, TabHeader } from '../components/MonthBar';
 import { BackHeader, PageFrame } from '../components/headers';
 import { monthName } from '../lib/dates';
+import { useBack } from '../lib/back';
 import { clampMonth } from '../state/month';
 import { toast } from '../components/Toast';
 import {
@@ -49,8 +50,11 @@ export function ActivityScreen() {
     q?: string;
     category?: string;
     month?: string;
+    back?: string;
   };
   const navigate = useNavigate();
+  // One category's list opened from a category sheet: Back returns there; from Reports, to the report's month.
+  const back = useBack();
   // The app's month (docs/month-header.md): this month by default, never past it.
   const current = useSession().data?.budget.currentMonth;
   const min = useBudget(current).data?.minMonth;
@@ -127,12 +131,24 @@ export function ActivityScreen() {
   const setFilter = (f: ActivityFilter) =>
     navigate({
       to: '/activity',
-      search: { filter: f === 'all' ? undefined : f, q: q || undefined, category, month: search.month },
+      search: {
+        filter: f === 'all' ? undefined : f,
+        q: q || undefined,
+        category,
+        month: search.month,
+        back: search.back,
+      },
     });
   const goMonth = (m: string) =>
     void navigate({
       to: '/activity',
-      search: { filter: search.filter, q: q || undefined, category, month: m === current ? undefined : m },
+      search: {
+        filter: search.filter,
+        q: q || undefined,
+        category,
+        month: m === current ? undefined : m,
+        back: search.back,
+      },
     });
 
   const pickerGroups = v?.categoryPicker ?? [];
@@ -324,7 +340,7 @@ export function ActivityScreen() {
   const empty = v && total === 0 && !showNeeds && !(filter === 'attention' && !q);
 
   // The sheet keeps the list's month, filter and search, so the list under it doesn't change.
-  const addSearch = { month: search.month, filter: search.filter, q: search.q, category };
+  const addSearch = { month: search.month, filter: search.filter, q: search.q, category, back: search.back };
   // On a phone Add floats at the bottom right, in thumb reach (D-71); it steps aside while Select is on.
   const addButton = desktop && (
     <HeaderAction
@@ -389,8 +405,8 @@ export function ActivityScreen() {
           <BackHeader
             title={v ? (v.categoryName ?? 'Category') : ''}
             sub="All months"
-            backLabel="Back to Reports"
-            onBack={() => void navigate({ to: '/reports', search: { month: search.month } })}
+            backLabel={back?.label ?? 'Back to Reports'}
+            onBack={back ? back.go : () => void navigate({ to: '/reports', search: { month: search.month } })}
             below={searchBox}
           />
         ) : (

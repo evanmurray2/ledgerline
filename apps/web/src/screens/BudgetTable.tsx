@@ -2,6 +2,7 @@
 // the pinned categories in a card of their own above it.
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
+import { useHere } from '../lib/back';
 import type { BudgetCategoryRow, BudgetView } from '@ledgerline/contracts';
 import { errorMessage } from '../api/client';
 import { api } from '../api/endpoints';
@@ -118,6 +119,8 @@ function SpentCell({ row }: { row: BudgetCategoryRow }) {
 export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
+  // An account or Owed to you opened from here comes back here (lib/back.ts).
+  const here = useHere();
   const selected = /\/budget\/category\/([^/]+)/.exec(path)?.[1];
   // Narrow (a side panel open on a small screen): Spent drops out so Assigned and Available stay in view.
   const head =
@@ -309,7 +312,7 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
               spent: '—',
               avail: formatCents(c.available),
               tone: c.status === 'short' ? 'over' : null,
-              open: () => void navigate({ to: `/accounts/${c.accountId}` }),
+              open: () => void navigate({ to: `/accounts/${c.accountId}`, search: { back: here } }),
               track: 'budget.card',
             }),
           )}
@@ -328,7 +331,7 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
             spent: '—',
             avail: `${formatCents(b.owed.out)} out`,
             tone: b.owed.status === 'late' ? t.tone : null,
-            open: () => void navigate({ to: '/owed' }),
+            open: () => void navigate({ to: '/owed', search: { back: here } }),
             track: 'budget.owed',
           })}
         </div>

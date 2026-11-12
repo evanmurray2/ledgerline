@@ -149,7 +149,8 @@ export function SoftLink({
   children,
 }: {
   to: string;
-  search?: Record<string, unknown>;
+  /** `true` keeps the screen's search. */
+  search?: Record<string, unknown> | true;
   tone?: PillTone;
   track?: string;
   className?: string;

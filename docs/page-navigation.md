@@ -122,3 +122,20 @@ An adversarial review (fresh reviewer, checked against the code) said **ship wit
 - **View Transitions:** a possible follow-up only if this feels lacking. It would need the support guard,
   route-id classification, no slide for tabs, Settings panes, sheets or the side panel, root naming off, loaders,
   a swipe-back check and a test hook.
+
+## Coming back from another tab (Nov 12, 2026)
+
+A link that opens a screen of another tab says where it was opened, so you come back there and not to that
+tab's own list (`apps/web/src/lib/back.ts`):
+
+- `?back=<path>` on a page: its Back button goes there, labeled by the screen ("Back to category", "Back to
+  budget", "Back to Owed to you"). Budget's card rows and Needs attention open an account this way; Budget opens
+  Owed to you and Accounts (the bank-problem bar) this way; a category's See all opens its list across all months;
+  a transaction's Paid back rows and "See what's still owed" open Owed to you; Users opens Backup and export.
+- `?close=<path>` on a sheet: closing it goes there. A transaction opened from a category, from Owed to you or
+  from an Accounts alert; Sign in again from Bank connections; Assign from the sidebar on any tab.
+- The page's own sheets and filters keep its search, so the way back survives them; a path can carry a `back`
+  of its own, so the way back chains. Only a path in this app is kept.
+- The tab bar and the sidebar light the tab the screen was opened from.
+- After a bank sign-in on Plaid's site in a browser, `/link-done` returns to the page that left (Bank connections
+  or Accounts' repair sheet), and that page finishes the sign-in.

@@ -28,6 +28,7 @@ import {
 import { formatCents } from '../lib/money';
 import { dayLabel, syncedLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
+import { useBack } from '../lib/back';
 import { TxnRow } from './Activity';
 import { useCanWrite } from '../state/connectivity';
 import { StartBalanceSheet, shownBalance } from './StartBalanceSheet';
@@ -39,6 +40,8 @@ export function RegisterScreen() {
   const { accountId } = useParams({ strict: false }) as { accountId: string };
   useScreen('register');
   const navigate = useNavigate();
+  // Opened from Budget (a credit card): Back returns there.
+  const back = useBack();
   const all = useRegister(accountId, 'all');
   const session = useSession();
   const v = all.data;
@@ -82,8 +85,8 @@ export function RegisterScreen() {
       <BackHeader
         title={a?.name ?? 'Account'}
         sub={sub}
-        onBack={() => void navigate({ to: '/accounts' })}
-        backLabel="Back to accounts"
+        onBack={back ? back.go : () => void navigate({ to: '/accounts' })}
+        backLabel={back?.label ?? 'Back to accounts'}
         right={
           a && menu.length > 0 ? (
             <OverflowMenu label="More for this account" track="account.menu" items={menu} />

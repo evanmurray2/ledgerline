@@ -33,7 +33,7 @@ async function mockLink(mode: 'new' | 'repair', connectionId?: string): Promise<
 // "Confirm it's you", whose passkey prompt a new tab would cover.
 
 const PENDING_KEY = 'ledgerline.link';
-/** Set in the page that left for Plaid's site, so `/link-done` knows to come back into the app. */
+/** Set in the page that left for Plaid's site, so `/link-done` comes back into the app, to that page (its path). */
 export const LEFT_HERE_KEY = 'ledgerline.link.left';
 /** How long a session on Plaid's site may take: its link token lasts 30 minutes. */
 const HOSTED_MS = 30 * 60 * 1000;
@@ -68,7 +68,7 @@ function writePending(p: PendingLink | null): void {
 }
 function markLeft(left: boolean): void {
   try {
-    if (left) sessionStorage.setItem(LEFT_HERE_KEY, '1');
+    if (left) sessionStorage.setItem(LEFT_HERE_KEY, window.location.pathname + window.location.search);
     else sessionStorage.removeItem(LEFT_HERE_KEY);
   } catch {
     // Without it, /link-done says to go back to Ledgerline, which still works.

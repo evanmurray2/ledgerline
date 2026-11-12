@@ -284,6 +284,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           {outflow && t.amount < 0 && (
             <Link
               to={`${parent}/txn/${encodeURIComponent(t.key)}/split`}
+              search
               data-track="txn.split"
               className={cx(textLinkClass, 'self-center')}
             >
@@ -294,6 +295,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
         {t.split && t.amount < 0 === outflow ? (
           <Link
             to={`${parent}/txn/${encodeURIComponent(t.key)}/split`}
+            search
             data-track="txn.split.open"
             className={cx(inputClass, 'flex items-center justify-between gap-2 no-underline')}
           >
@@ -317,6 +319,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           t.categoryLabel !== 'Transfer' && (
             <Link
               to={`${parent}/transfer/${encodeURIComponent(t.key)}`}
+              search
               data-track="txn.transfer"
               className={cx(textLinkClass, 'flex min-h-9 items-center self-start')}
             >
@@ -364,6 +367,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       {(isIncome || (isRefund && !t.refundOf)) && (
         <Link
           to={`${parent}/match/${encodeURIComponent(t.key)}`}
+          search
           data-track="txn.income.match"
           className="flex min-h-12 shrink-0 items-center justify-between gap-3 rounded-lg border border-line px-3 text-ink no-underline"
         >
