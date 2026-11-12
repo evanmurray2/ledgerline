@@ -67,6 +67,20 @@ function useFixes(month: string) {
   return { done, apply, undo, pending: assign.isPending };
 }
 
+/**
+ * The Budget tab's badge: the Needs attention list, plus Ready to Assign below zero (its banner on Budget). Red when
+ * money is short (overspent, a card payment short, Ready to Assign below zero); gray for targets and the rest.
+ */
+export function budgetBadge(b: BudgetView): { n: number; danger: boolean } {
+  const items = b.attention.filter((a) => a.section !== 'Low');
+  return {
+    n: items.length,
+    danger: items.some(
+      (a) => a.section === 'Ready to Assign' || a.section === 'Overspent' || a.section === 'Card payments',
+    ),
+  };
+}
+
 // ------------------------------------------------------------------ needs attention
 
 /** Needs attention: everything but Low. */

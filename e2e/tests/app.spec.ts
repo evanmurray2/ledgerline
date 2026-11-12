@@ -615,6 +615,20 @@ test('Month bar: tabs go Budget, Activity, Reports, Accounts', async ({ page }) 
   expect(names.slice(0, 4)).toEqual(['Budget', 'Activity', 'Reports', 'Accounts']);
 });
 
+test('Tabs: the Budget badge counts what Needs attention holds', async ({ page }) => {
+  await page.goto('/activity');
+  const tab = page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Budget/ });
+  const count = async () => {
+    const text = (await tab.getAttribute('aria-label')) ?? (await tab.innerText());
+    return Number(/\d+/.exec(text)?.[0] ?? 0);
+  };
+  await expect.poll(count).toBeGreaterThan(0);
+  const n = await count();
+  await tab.click();
+  // The sample budget's Ready to Assign isn't below zero, so the tab and the chip count the same items.
+  await expect(page.getByRole('button', { name: /^Needs attention/ })).toContainText(String(n));
+});
+
 test('Activity: a transaction opened on October closes back to October; a search covers every month', async ({
   page,
 }) => {

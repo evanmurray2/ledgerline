@@ -8,7 +8,8 @@ import { ToastHost } from './Toast';
 import { BlockedAction } from './BlockedAction';
 import { CountBadge, cx, Icon, useIsDesktop, type IconName } from './ui';
 import { NoteSheet } from '../screens/Note';
-import { useBadgeCounts, useSession } from '../api/hooks';
+import { useBadgeCounts, useBudget, useSession } from '../api/hooks';
+import { budgetBadge } from '../screens/BudgetAttention';
 import { useCopy } from '../copy/copy';
 import { useCanWrite, useConnectivity } from '../state/connectivity';
 import { budgetTime } from '../lib/dates';
@@ -34,10 +35,18 @@ export function tabFor(path: string, search?: Record<string, unknown>): Tab {
   return 'budget';
 }
 
-/** The tab badges come from a cheap endpoint: the full Activity and Accounts views read every transaction. */
+/**
+ * The tab badges come from a cheap endpoint: the full Activity and Accounts views read every transaction. Budget's
+ * comes from this month's budget, worked out on the device (D-45) and shared with the Budget screen's own query.
+ */
 function useBadges() {
   const b = useBadgeCounts();
+  const session = useSession();
+  const budget = useBudget(session.data?.budget.currentMonth);
+  const bb = budget.data ? budgetBadge(budget.data) : { n: 0, danger: false };
   return {
+    budget: bb.n,
+    budgetDanger: bb.danger,
     activity: b.data?.activity ?? 0,
     accounts: b.data?.accounts ?? 0,
     rta: b.data?.rta,
@@ -48,7 +57,13 @@ function useBadges() {
 // The three month tabs side by side, then Accounts (today's balances, no month) with Settings behind it.
 // `what` names the badge's count, singular and plural.
 const TABS: { id: Tab; name: string; to: string; icon: IconName; what: [string, string] | null }[] = [
-  { id: 'budget', name: 'Budget', to: '/budget', icon: 'budget', what: null },
+  {
+    id: 'budget',
+    name: 'Budget',
+    to: '/budget',
+    icon: 'budget',
+    what: ['needs attention', 'need attention'],
+  },
   { id: 'activity', name: 'Activity', to: '/activity', icon: 'activity', what: ['to do', 'to do'] },
   { id: 'reports', name: 'Reports', to: '/reports', icon: 'reports', what: null },
   {
@@ -76,9 +91,16 @@ function TabBar({ active }: { active: Tab }) {
     >
       {TABS.map((t) => {
         const on = t.id === current;
-        const badge = t.id === 'activity' ? badges.activity : t.id === 'accounts' ? badges.accounts : 0;
-        // Activity counts to-dos (gray); Accounts counts broken bank links (red).
-        const problem = t.id === 'accounts';
+        const badge =
+          t.id === 'budget'
+            ? badges.budget
+            : t.id === 'activity'
+              ? badges.activity
+              : t.id === 'accounts'
+                ? badges.accounts
+                : 0;
+        // Activity counts to-dos (gray); Accounts counts broken bank links (red); Budget is red when money is short.
+        const problem = t.id === 'accounts' || (t.id === 'budget' && badges.budgetDanger);
         return (
           <Link
             key={t.id}
@@ -111,12 +133,12 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
   const month = useTabMonth();
   const here = useHere();
   const rta = badges.rta;
-  const items: { id: Tab; name: string; to: string; badge: number }[] = [
-    { id: 'budget', name: 'Budget', to: '/budget', badge: 0 },
-    { id: 'activity', name: 'Activity', to: '/activity', badge: badges.activity },
-    { id: 'reports', name: 'Reports', to: '/reports', badge: 0 },
-    { id: 'accounts', name: 'Accounts', to: '/accounts', badge: badges.accounts },
-    { id: 'settings', name: 'Settings', to: '/settings', badge: 0 },
+  const items: { id: Tab; name: string; to: string; badge: number; danger: boolean }[] = [
+    { id: 'budget', name: 'Budget', to: '/budget', badge: badges.budget, danger: badges.budgetDanger },
+    { id: 'activity', name: 'Activity', to: '/activity', badge: badges.activity, danger: false },
+    { id: 'reports', name: 'Reports', to: '/reports', badge: 0, danger: false },
+    { id: 'accounts', name: 'Accounts', to: '/accounts', badge: badges.accounts, danger: true },
+    { id: 'settings', name: 'Settings', to: '/settings', badge: 0, danger: false },
   ];
   const negative = rta !== undefined && rta < 0;
   const done = rta === 0 && !badges.rtaUpdating;
@@ -141,7 +163,7 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
             )}
           >
             <span>{n.name}</span>
-            {n.badge > 0 && <CountBadge n={n.badge} danger={n.id === 'accounts'} />}
+            {n.badge > 0 && <CountBadge n={n.badge} danger={n.danger} />}
           </Link>
         );
       })}

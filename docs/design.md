@@ -401,7 +401,7 @@ Archived categories disappear from every picker but keep their history in Budget
 - Scheduled / recurring transactions (rent, subscriptions, paychecks) shown as Upcoming. They count in the budget from their date, then match the bank transaction like a manual pending entry.
 - CSV/OFX import as a fallback provider, for banks Plaid can't reach or once the 10 Items are used.
 - Full data export (JSON + CSV) and a CSV import of past transactions from your previous budgeting tool, so you start with years of analytics.
-- Notifications: no app email. Cloudflare can only send email from a domain you own, which the $0 rule excludes, so Needs attention and the badges on Activity and Accounts are the in-app signals, and GitHub's failure emails cover infrastructure problems.
+- Notifications: no app email. Cloudflare can only send email from a domain you own, which the $0 rule excludes, so Needs attention and the badges on Budget, Activity and Accounts are the in-app signals (Budget's counts its Needs attention list for this month, red when money is short), and GitHub's failure emails cover infrastructure problems.
 - Age of money and "days of buffer" as optional metrics.
 - Month close: lock a month after reconciliation so later edits require confirmation.
 
