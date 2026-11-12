@@ -134,7 +134,7 @@ test('Activity: the filter chips row has no scroll bar', async ({ page }) => {
 });
 
 test('Activity: categorize from the picker, undo, and OK a suggestion', async ({ page }) => {
-  await page.goto('/activity');
+  await page.goto('/activity?filter=all');
   await expect(page.getByText(/Needs category/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Needs attention 7' })).toBeVisible();
 
@@ -272,6 +272,9 @@ test('Offline: last data stays visible and every change is disabled', async ({ p
     .getByRole('link', { name: /Activity/ })
     .first()
     .click();
+  // Activity opens on Not posted yet (D-97); the categories are under All.
+  await expect(page.getByRole('button', { name: 'Not posted yet' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'All', exact: true }).click();
   await expect(page.getByText('Money to match')).toBeVisible();
   await expect(page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ })).toBeDisabled();
 
@@ -698,7 +701,7 @@ test('Desktop: Budget header pills for Edit categories and Set targets, like Syn
 
 test('Phone: Add floats at the bottom right, above the tabs; Select hides it', async ({ page }, info) => {
   test.skip(info.project.name !== 'phone', 'on a computer Add is a header pill');
-  await page.goto('/activity');
+  await page.goto('/activity?filter=all');
   const add = page.getByRole('link', { name: 'Add transaction' });
   await expect(add).toBeVisible();
   // In thumb reach: just above the tab bar, at the right edge.

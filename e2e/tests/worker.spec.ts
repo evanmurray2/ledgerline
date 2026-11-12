@@ -144,7 +144,7 @@ test('An edit’s answer brings what it changed: no second sync request', async 
 });
 
 test('Activity: categorizing an uncategorized purchase persists', async ({ page }) => {
-  await page.goto('/activity');
+  await page.goto('/activity?filter=all');
   const chip = page.getByRole('button', { name: /^Needs attention \d+$/ });
   await expect(page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ })).toBeVisible();
   await expect(chip).toHaveText(/Needs attention [1-9]/);
@@ -221,7 +221,7 @@ test('A change made with no signal is kept on the device and sent when the conne
   context,
   request,
 }) => {
-  await page.goto('/activity');
+  await page.goto('/activity?filter=all');
   const chip = page.getByRole('button', { name: /^Needs attention \d+$/ });
   await expect(chip).toHaveText(/Needs attention [1-9]/);
   const before = Number((await chip.textContent())!.match(/\d+/)![0]);

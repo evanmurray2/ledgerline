@@ -1,4 +1,4 @@
-// Activity: search, All / Needs attention / Not posted yet. Needs attention groups: Money to match, Transfers
+// Activity: search, All / Needs attention / Not posted yet; Not posted yet shows first (D-97). Needs attention groups: Money to match, Transfers
 // to sort out, Same purchase?, Needs category (with Select several and the category picker), Check these. Under All the same
 // groups sit on top, then Pending, Upcoming and Posted. A row can carry a suggested category with OK, and OK all
 // takes every strong suggestion (docs/payees.md 2.2). Categorizing shows an Undo toast.
@@ -46,7 +46,7 @@ export { TxnRow } from './ActivityRows';
 
 export function ActivityScreen() {
   const search = useSearch({ strict: false }) as {
-    filter?: 'attention' | 'pending';
+    filter?: ActivityFilter;
     q?: string;
     category?: string;
     month?: string;
@@ -60,10 +60,7 @@ export function ActivityScreen() {
   const min = useBudget(current).data?.minMonth;
   const month = clampMonth(search.month, min, current) ?? current;
   const past = !!month && !!current && month !== current;
-  // Not posted yet belongs to this month: on a past month the filter shows everything instead.
-  const filter: ActivityFilter = search.filter === 'pending' && past ? 'all' : (search.filter ?? 'all');
   const desktop = useIsDesktop();
-  useScreen(filter === 'all' ? 'activity' : `activity.${filter}`);
   const [qInput, setQInput] = useState(search.q ?? '');
   const searchRef = useRef<HTMLInputElement>(null);
   useShortcuts({ '/': () => searchRef.current?.focus() }, desktop);
@@ -79,10 +76,16 @@ export function ActivityScreen() {
   // A search looks through every month, and so does one category's list (Reports → a category).
   const category = search.category;
   const allMonths = !!q || !!category;
+  const counts = useActivity('attention', '');
+  // Not posted yet belongs to this month: on a past month the filter shows everything instead. With no filter
+  // chosen, Activity opens on Not posted yet (D-97), or on All when there is none or for a search.
+  const noneNotPosted = counts.data?.notPostedCount === 0;
+  const chosenFilter = search.filter ?? (past || allMonths || noneNotPosted ? 'all' : 'pending');
+  const filter: ActivityFilter = chosenFilter === 'pending' && past ? 'all' : chosenFilter;
+  useScreen(filter === 'all' ? 'activity' : `activity.${filter}`);
   const query = useActivity(filter, q, allMonths ? undefined : month, category);
   const v = query.data;
   const more = useMorePosted(v, filter, q, allMonths ? undefined : month, category);
-  const counts = useActivity('attention', '');
   const canWrite = useCanWrite({ offline: true });
   const qc = useQueryClient();
   // The list keeps categorized rows in place and the counts are adjusted here, so Activity isn't refetched after
@@ -132,7 +135,7 @@ export function ActivityScreen() {
     navigate({
       to: '/activity',
       search: {
-        filter: f === 'all' ? undefined : f,
+        filter: f,
         q: q || undefined,
         category,
         month: search.month,

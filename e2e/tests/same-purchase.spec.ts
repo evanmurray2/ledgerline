@@ -59,7 +59,7 @@ test('Not the same on your entry’s sheet ends its cover: the bank’s row coun
 test('Not the same on a posted row paired with the bank’s pending row: the pending row counts again', async ({
   page,
 }) => {
-  await page.goto('/activity?mock=samepurchase');
+  await page.goto('/activity?mock=samepurchase&filter=all');
   await page
     .getByRole('link', { name: /^PHO 24 SAN FRANCISCO/ })
     .first()

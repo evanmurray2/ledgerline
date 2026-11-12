@@ -89,7 +89,7 @@ month it goes back, on this month it's `aria-disabled`. On a computer `[` and `]
   `routes/activity.ts`, the same rule as `linesForTxn`). History (dated before an account's budget start) isn't
   listed on any month (D-61); a search finds it. The date is the one the list shows (a card purchase's authorized date), as in Budget.
 - **Pending and upcoming**: every one on this month, whatever its date; none on a past month. The Not posted yet
-  chip shows only on this month; `?filter=pending` on a past month shows everything.
+  chip shows only on this month, and Activity opens on it there when it has rows (D-97); `?filter=pending` on a past month shows everything.
 - **To-dos** (Money to match, Transfers to sort out, Needs category, Check these) show whatever the month: they're
   waiting now, and the tab's count must match the screen.
 - **Search** looks through every month ("Searching all months" above the results); the bar stays as it is.

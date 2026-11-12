@@ -13,11 +13,11 @@ const SCREENS: { name: string; path: string; ready?: string; prepare?: (page: Pa
   { name: 'assign', path: '/budget/assign', ready: 'Suggested' },
   { name: 'owed', path: '/owed', ready: 'Still owed' },
   { name: 'close', path: '/owed/close/rent', ready: 'They won’t pay it' },
-  { name: 'activity', path: '/activity', ready: 'Money to match' },
+  { name: 'activity', path: '/activity?filter=all', ready: 'Money to match' },
   { name: 'activity-pending', path: '/activity?filter=pending', ready: 'Upcoming' },
   {
     name: 'activity-picker',
-    path: '/activity',
+    path: '/activity?filter=all',
     ready: 'Needs category',
     prepare: async (p) => {
       await p.getByRole('button', { name: /Choose category for Blue Bottle Coffee/ }).click();
