@@ -4,7 +4,7 @@
 // caller's one batch.
 import type { Stmt } from '@ledgerline/db/sql';
 import { notSameKeys } from '@ledgerline/domain';
-import { ulid } from '@ledgerline/platform';
+import { seededUlid } from '@ledgerline/platform';
 import type { Scoped } from '../db/scoped.js';
 
 /** The alerts that ask about a row's pairing: "Same purchase?", and several close candidates with different edits. */
@@ -24,9 +24,10 @@ export function inheritStmts(
   now: number,
   /**
    * The id of the link row. An edit gives it (http/ids.ts), so that the same edit on a phone and on the server
-   * makes the same row. Bank filing gives none and gets a random one.
+   * makes the same row. Bank filing gives none: the id is then named from the pair and the update's time, so that
+   * a device filing the same update makes the same row (docs/privacy.md 5.3: ids are an input).
    */
-  linkId: string = ulid(now),
+  linkId: string = seededUlid(now, `pending_match:${postedId}:${fromKey}`, 0),
 ): Stmt[] {
   const stmts: Stmt[] = [
     s.q(
@@ -65,7 +66,10 @@ export function inheritStmts(
       now,
     ),
     s.q(
-      `INSERT INTO txn_link (id, budget_id, kind, from_key, to_key, created_by, created_at) VALUES (?2, ?1, 'pending_match', ?3, ?4, ?5, ?6)`,
+      // The same pair made again at the same moment (undone and paired again inside one bank update) is the same
+      // row, put back.
+      `INSERT INTO txn_link (id, budget_id, kind, from_key, to_key, created_by, created_at) VALUES (?2, ?1, 'pending_match', ?3, ?4, ?5, ?6)
+       ON CONFLICT (id) DO UPDATE SET undone_at = NULL, created_by = excluded.created_by, created_at = excluded.created_at`,
       linkId,
       `p:${postedId}`,
       fromKey,
@@ -266,7 +270,7 @@ export function askStmt(s: Scoped, ref: string, candidates: string[], now: numbe
     `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at) VALUES (?2, ?1, 'same_purchase', ?3, ?4, ?5)
      ON CONFLICT (budget_id, type, ref_key) DO UPDATE SET data = excluded.data, acked_at = NULL
        WHERE alert.data IS NOT excluded.data`,
-    ulid(now),
+    seededUlid(now, `same_purchase:${ref}`, 0),
     ref,
     JSON.stringify({ candidates }),
     now,
