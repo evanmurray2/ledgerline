@@ -175,7 +175,7 @@ spending not covered yet"
 
 ## Activity
 
-**List:** "Searching all months" · "No transactions match." · "No transactions in {Month}." · "Nothing needs
+**List:** "Searching all months" · "All months" (under a category's name, from Reports) · "No transactions match." · "No transactions in {Month}." · "Nothing needs
 attention."
 
 - Sections: "Money to match" · "Transfers to sort out" · "Check these" · "Pending · counts now" · "Upcoming · counts on

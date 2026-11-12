@@ -626,6 +626,19 @@ test('Activity: a transaction opened on October closes back to October; a search
   await page.getByLabel('Search transactions').fill('Safeway');
   await expect(page.getByTestId('all-months')).toHaveText('Searching all months');
 });
+test('Reports: a category opens only its transactions, and Back to Reports returns to the month', async ({
+  page,
+}) => {
+  await page.goto('/reports?month=2026-10');
+  await page.locator('[data-track="reports.category"]').first().click();
+  await expect(page).toHaveURL(/\/activity\?.*category=/);
+  await expect(page).not.toHaveURL(/[?&]q=/);
+  await expect(page.getByRole('heading', { level: 1 })).not.toHaveText('');
+  await expect(page.getByText('All months')).toBeVisible();
+  await expect(page.getByLabel('Search transactions')).toHaveValue('');
+  await page.getByRole('button', { name: 'Back to Reports' }).click();
+  await expect(page).toHaveURL(/\/reports\?month=2026-10$/);
+});
 test('Pages slide in when opened and back when Back returns to them; tabs and the first screen do not', async ({
   page,
 }, info) => {

@@ -93,6 +93,8 @@ month it goes back, on this month it's `aria-disabled`. On a computer `[` and `]
 - **To-dos** (Money to match, Transfers to sort out, Needs category, Check these) show whatever the month: they're
   waiting now, and the tab's count must match the screen.
 - **Search** looks through every month ("Searching all months" above the results); the bar stays as it is.
+- **One category** (Reports → a category, `?category=<id>`) also looks through every month: only rows in that
+  category (split lines included), as a page of its own: the category's name, "All months", and Back to the report's month.
 - **Show more** reads the next 50 posted rows (the list had no paging before; a busy month can hold more than 50).
 - A past month with nothing posted says "No transactions in October."
 - While another month loads, the last month's rows aren't kept on screen under the new month's name.

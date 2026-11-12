@@ -328,6 +328,8 @@ export const ActivityView = z.object({
       categories: z.array(z.object({ id, name: z.string(), available: cents })),
     }),
   ),
+  /** With `?category=<id>` (one category's transactions): its name, null when there is no such category. */
+  categoryName: z.string().nullable().optional(),
 });
 export type ActivityView = z.infer<typeof ActivityView>;
 

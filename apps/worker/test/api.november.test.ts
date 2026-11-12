@@ -9,6 +9,7 @@ import type {
   MutationResult,
   OwedView,
   ReportsView,
+  TxnSheet,
 } from '@ledgerline/contracts';
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
@@ -168,6 +169,25 @@ describe('November through the API', () => {
       const rows = [...v.posted, ...v.pending, ...v.upcoming];
       expect(rows.length, c.name).toBeGreaterThan(0);
     }
+  });
+
+  it('Reports → Activity: a category by id lists only that category’s transactions, not payees with its name', async () => {
+    const r = await get<ReportsView>('/api/reports?month=2026-11');
+    for (const c of r.byCategory) {
+      const v = await get<ActivityView>(`/api/activity?category=${encodeURIComponent(c.categoryId)}`);
+      expect(v.categoryName).toBe(c.name);
+      const rows = [...v.posted, ...v.pending, ...v.upcoming, ...v.checkThese];
+      expect(rows.length, c.name).toBeGreaterThan(0);
+      for (const row of rows) {
+        const t = await get<TxnSheet>(`/api/transactions/${encodeURIComponent(row.key)}`);
+        const ids = t.split?.length ? t.split.map((l) => l.categoryId) : [t.categoryId];
+        expect(ids, `${c.name}: ${row.payee}`).toContain(c.categoryId);
+      }
+      expect(v.needsCategory).toEqual([]);
+    }
+    const none = await get<ActivityView>('/api/activity?category=nope');
+    expect(none.categoryName).toBeNull();
+    expect([...none.posted, ...none.pending, ...none.upcoming]).toEqual([]);
   });
 
   it('Activity search: an amount matches with or without $ and commas; % and _ are only letters', async () => {

@@ -112,10 +112,17 @@ function shiftDate(d: string, n: number): string {
   return t.toISOString().slice(0, 10);
 }
 
-/** A search matches a row's category name too (Reports opens Activity searching for a category), split lines included. */
+/** A search matches a row's category name too, split lines included. */
 const CATEGORY_MATCH = `category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND lower(name) LIKE ?3 ESCAPE '\\')
          OR key IN (SELECT sp.txn_key FROM txn_split sp JOIN category c ON c.id = sp.category_id
                     WHERE sp.budget_id = ?1 AND lower(c.name) LIKE ?3 ESCAPE '\\')`;
+
+/**
+ * One category's rows (Reports opens Activity on a category, by id): the row's own category, or a split line in
+ * it. `p` is the parameter holding the category id.
+ */
+const inCategory = (p: string) =>
+  `AND (category_id = ${p} OR key IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1 AND category_id = ${p}))`;
 
 /**
  * A search's posted-row filter: ?3 is the text as a LIKE pattern (its % and _ are letters, not wildcards), `amt`
@@ -163,7 +170,13 @@ const IN_BUDGET = `(date >= budget_from)`;
  * override is the month before or after), and it posts within POST_LAG of its date. The budget's first month has
  * no lower bound, since rows pending when a bank was linked count there.
  */
-function postedQuery(s: Scoped, from: PostedScope, cursor: string | null, q: string): Stmt {
+function postedQuery(
+  s: Scoped,
+  from: PostedScope,
+  cursor: string | null,
+  q: string,
+  category: string | null = null,
+): Stmt {
   if (typeof from === 'object') {
     const first = from.month === from.start;
     return s.q(
@@ -172,6 +185,7 @@ function postedQuery(s: Scoped, from: PostedScope, cursor: string | null, q: str
          AND posted_date < date(?6, '+4 months') AND ${IN_BUDGET} AND ${ROW_MONTH} = ?7
          AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
          ${q ? searchMatch('?8') : 'AND ?3 IS NULL AND ?8 IS NULL'}
+         ${category ? inCategory('?9') : ''}
        ORDER BY date DESC, seq DESC LIMIT 50`,
       cursor,
       q ? textPattern(q) : null,
@@ -180,6 +194,7 @@ function postedQuery(s: Scoped, from: PostedScope, cursor: string | null, q: str
       `${addMonths(from.month, 2)}-01`,
       from.month,
       q && searchAmount(q) !== null ? `%${searchAmount(q)}%` : null,
+      ...(category ? [category] : []),
     );
   }
   const window = from !== 'all' && from !== 'none';
@@ -189,11 +204,13 @@ function postedQuery(s: Scoped, from: PostedScope, cursor: string | null, q: str
        AND ${IN_BUDGET}
        AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
        ${q ? searchMatch('?4') : 'AND ?3 IS NULL AND ?4 IS NULL'}
+       ${category ? inCategory(window ? '?6' : '?5') : ''}
      ORDER BY date DESC, seq DESC LIMIT 50`,
     cursor,
     q ? textPattern(q) : null,
     q && searchAmount(q) !== null ? `%${searchAmount(q)}%` : null,
     ...(window ? [from] : []),
+    ...(category ? [category] : []),
   );
 }
 
@@ -213,6 +230,9 @@ activityViewRoutes.get('/activity', async (c) => {
   const f = await fresh(s, requestNow(c));
   const filter = c.req.query('filter') ?? 'all';
   const q = searchText(c.req.query('q') ?? '');
+  // One category's transactions, by id (Reports → a category). Like a search, it looks through every month.
+  const category = c.req.query('category') || null;
+  const searching = !!q || !!category;
   const cursor = c.req.query('cursor');
   // The cursor is the `nextCursor` of an earlier page: a date and a sequence number.
   if (cursor !== undefined && !(/^.{10}\|\d{15}$/.test(cursor) && isIsoDate(cursor.slice(0, 10))))
@@ -221,7 +241,7 @@ activityViewRoutes.get('/activity', async (c) => {
   const monthQ = c.req.query('month');
   if (monthQ !== undefined && !isMonth(monthQ)) throw new HttpError(400, 'invalid', BAD_MONTH);
   const start = (f.budget.budget_start_month ?? f.current) as Month;
-  const month = monthQ && !q ? (monthQ < start ? start : monthQ) : undefined;
+  const month = monthQ && !searching ? (monthQ < start ? start : monthQ) : undefined;
   // Pending and upcoming rows are waiting now: they show on this month, whatever their date, and never on a past one.
   const past = !!month && month < f.current;
   const { cats, accts } = await names(s);
@@ -240,9 +260,16 @@ activityViewRoutes.get('/activity', async (c) => {
     // Posted rows are bank rows only. Without a search, the first try reads only a recent window (see postedPage).
     postedQuery(
       s,
-      filter === 'attention' ? 'none' : q ? 'all' : month ? { month, start } : windowStart(cursor, f.today),
+      filter === 'attention'
+        ? 'none'
+        : searching
+          ? 'all'
+          : month
+            ? { month, start }
+            : windowStart(cursor, f.today),
       cursor ?? null,
       q,
+      category,
     ),
     s.q(`SELECT txn_key, category_id, amount FROM txn_split WHERE budget_id = ?1`),
     s.q(
@@ -303,12 +330,16 @@ activityViewRoutes.get('/activity', async (c) => {
       splitOff: splitOff(t),
     });
   const qAmount = searchAmount(q);
+  const catSplits = new Set(
+    category ? splitRows.filter((r) => r.category_id === category).map((r) => r.txn_key) : [],
+  );
   const match = (t: TxRow) =>
-    !q ||
-    t.payee.toLowerCase().includes(q) ||
-    (qAmount !== null && plainAmount(t.amount).includes(qAmount)) ||
-    (!!t.category_id && qCats.has(t.category_id)) ||
-    qSplits.has(t.key);
+    (!category || t.category_id === category || catSplits.has(t.key)) &&
+    (!q ||
+      t.payee.toLowerCase().includes(q) ||
+      (qAmount !== null && plainAmount(t.amount).includes(qAmount)) ||
+      (!!t.category_id && qCats.has(t.category_id)) ||
+      qSplits.has(t.key));
   const attnRows = (attn!.results as TxRow[]).filter(match);
   const moneyToMatch = attnRows
     .filter((t) => t.wtm_state === 'waiting' || t.wtm_state === 'send_back')
@@ -363,8 +394,8 @@ activityViewRoutes.get('/activity', async (c) => {
   }
   const { categories, groups } = await structure(s);
   // "Same purchase?" asks only when nothing is searched for: its rows are the bank's and your entries.
-  const samePurchase = q ? [] : await samePurchaseCards(s, accts, cats);
-  const removed = q ? [] : await removedByBank(s);
+  const samePurchase = searching ? [] : await samePurchaseCards(s, accts, cats);
+  const removed = searching ? [] : await removedByBank(s);
   const usable = new Set(
     categories.filter((c) => !c.archived_at && c.kind !== 'cc_payment').map((c) => c.id),
   );
@@ -420,7 +451,7 @@ activityViewRoutes.get('/activity', async (c) => {
     .reduce((a, t) => a - t.amount, 0);
   const upcoming = (upc!.results as TxRow[]).filter(match).map(row);
   let postedTx = posted!.results as TxRow[];
-  if (filter === 'all' && !q && !month && postedTx.length < 50) {
+  if (filter === 'all' && !searching && !month && postedTx.length < 50) {
     // The recent window had fewer than 50 rows: widen it, then read everything.
     const run = async (from: string) => (await postedQuery(s, from, cursor ?? null, q).all<TxRow>()).results;
     const wider = await run(shiftDate(windowStart(cursor, f.today), -180));
@@ -463,6 +494,7 @@ activityViewRoutes.get('/activity', async (c) => {
     posted: filter === 'all' ? postedRows : [],
     nextCursor: last ? `${last.date}|${String(last.seq).padStart(15, '0')}` : null,
     categoryPicker: picker,
+    ...(category ? { categoryName: cats.get(category) ?? null } : {}),
   };
   return c.json(view);
 });

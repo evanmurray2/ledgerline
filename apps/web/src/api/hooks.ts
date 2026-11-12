@@ -18,8 +18,8 @@ export const qk = {
   budget: (month: string) => ['budget', month] as const,
   assign: (month: string) => ['budget', month, 'assign'] as const,
   category: (id: string, month: string) => ['category', id, month] as const,
-  activity: (filter: ActivityFilter, q: string, month?: string) =>
-    ['activity', filter, q, month ?? ''] as const,
+  activity: (filter: ActivityFilter, q: string, month?: string, category?: string) =>
+    ['activity', filter, q, month ?? '', category ?? ''] as const,
   txn: (key: string) => ['txn', key] as const,
   match: (key: string) => ['match', key] as const,
   owed: ['owed'] as const,
@@ -84,10 +84,10 @@ export function useCategorySheet(id: string, month: string | undefined) {
     enabled: !!month,
   });
 }
-export function useActivity(filter: ActivityFilter, q: string, month?: string) {
+export function useActivity(filter: ActivityFilter, q: string, month?: string, category?: string) {
   return useQuery({
-    queryKey: qk.activity(filter, q, month),
-    queryFn: () => api.activity(filter, q || undefined, undefined, month),
+    queryKey: qk.activity(filter, q, month, category),
+    queryFn: () => api.activity(filter, q || undefined, undefined, month, category),
     // Keep the last list while a search or filter loads, but never one month's rows under another month's name.
     placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[3] === (month ?? '') ? prev : undefined),
   });
