@@ -220,6 +220,22 @@ export function Chip({
  * A count of to-dos. Gray unless `danger`: red is kept for real problems (overspending, broken links).
  * size 'sm': the smaller one on a phone tab icon.
  */
+/** A red "!" on a tab: something there needs you. The tab's own label says what, for VoiceOver. */
+export function AlertBadge({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-testid="alert-badge"
+      className={cx(
+        'flex h-[18px] w-[18px] items-center justify-center rounded-full bg-danger text-xs font-bold text-on-danger',
+        className,
+      )}
+    >
+      !
+    </span>
+  );
+}
+
 export function CountBadge({
   n,
   inverted,

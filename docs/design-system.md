@@ -115,7 +115,8 @@ your payees matching what you type under it; a tap fills the name in, and any ot
 | `Pill`, `StatusWord`, `Bar`         | A category's state, in its `TONE`.                                            |
 | `Money`                             | An amount, formatted, tabular digits.                                         |
 | `Chip`                              | A filter in a `chip-row`.                                                     |
-| `CountBadge`                        | A count of to-dos; `danger` for problems; `size="sm"` on a tab icon.          |
+| `CountBadge`                        | A count of to-dos on a filter chip; `danger` for problems.                    |
+| `AlertBadge`                        | A red "!" on a tab (or sidebar item) that needs you; no count on tabs.        |
 | `Segmented`                         | Two to four choices in a row.                                                 |
 | `OptionCard`                        | A larger choice with a description.                                           |
 | `Banner`                            | The one note or warning card: `info`, `warn`, `neutral`, `danger`, `success`. |
