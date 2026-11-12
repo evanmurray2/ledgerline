@@ -376,9 +376,6 @@ const repairRoute = createRoute({
 const registerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/accounts/$accountId',
-  validateSearch: (s: Record<string, unknown>) => ({
-    show: s.show === 'pending' || s.show === 'needs' || s.show === 'transfers' ? s.show : undefined,
-  }),
   component: RegisterScreen,
 });
 const registerTxnRoute = createRoute({
