@@ -3,7 +3,7 @@ import { centsToInput, formatCents, MINUS, parseCents, percentOf } from '../src/
 
 describe('formatCents', () => {
   it('formats dollars and cents with grouping', () => {
-    expect(formatCents(98190)).toBe('$981.90');
+    expect(formatCents(98190)).toBe('$1,999.90');
     expect(formatCents(101800)).toBe('$1,018.00');
     expect(formatCents(2255535)).toBe('$22,555.35');
     expect(formatCents(1887763)).toBe('$18,877.63');

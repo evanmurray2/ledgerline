@@ -98,9 +98,9 @@ describe('transfer matching looks back', () => {
     expect(await state('old-in')).toEqual({ state: null, other: null });
   });
 
-  it('a person-to-person deposit that waited becomes the transfer’s other side', async () => {
+  it('a person-to-person deposit becomes the transfer’s other side', async () => {
     await sync([plaidTxn('p2p', 2, -60, '2026-11-09', 'ZELLE FROM A FRIEND')]);
-    expect((await overlay(await keyOf('p2p')))?.wtm_state).toBe('waiting');
+    expect((await overlay(await keyOf('p2p')))?.wtm_state).toBeNull();
     await sync([plaidTxn('p2p-out', 1, 60, '2026-11-10', 'ONLINE TRANSFER')]);
     expect(await state('p2p')).toEqual({ state: 'paired', other: 'a_1' });
     expect((await overlay(await keyOf('p2p')))?.wtm_state).toBeNull();

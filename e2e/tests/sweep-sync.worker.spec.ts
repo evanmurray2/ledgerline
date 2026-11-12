@@ -32,7 +32,7 @@ test('A Budget link to a month thousands of years away doesn’t stop the app', 
   await expect(page.getByText('That month isn’t in your budget. Pick another month.').first()).toBeVisible();
   // The app still works: this month opens.
   await page.goto('/budget');
-  await expect(rta(page)).toHaveText('$981.90');
+  await expect(rta(page)).toHaveText('$1,999.90');
 });
 
 test('A change made between the pages of a full download arrives with the next sync', async ({ request }) => {
@@ -68,8 +68,8 @@ test('Two tabs assigning at once both count', async ({ page, context }) => {
   const other = await context.newPage();
   await page.goto('/budget?view=attention');
   await other.goto('/budget?view=attention');
-  await expect(rta(page)).toHaveText('$981.90');
-  await expect(rta(other)).toHaveText('$981.90');
+  await expect(rta(page)).toHaveText('$1,999.90');
+  await expect(rta(other)).toHaveText('$1,999.90');
   // The same fix on both tabs at the same moment: each tab's tap is its own change.
   await Promise.all([
     page.getByRole('button', { name: 'Cover $18.25 for Dining out' }).click(),
@@ -77,8 +77,8 @@ test('Two tabs assigning at once both count', async ({ page, context }) => {
   ]);
   await page.reload();
   await other.reload();
-  await expect(rta(page)).toHaveText('$945.40');
-  await expect(rta(other)).toHaveText('$945.40');
+  await expect(rta(page)).toHaveText('$1,963.40');
+  await expect(rta(other)).toHaveText('$1,963.40');
 });
 
 test('The API answers bad input plainly, never with a server error', async ({ request }) => {

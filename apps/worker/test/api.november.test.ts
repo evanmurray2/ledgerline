@@ -38,9 +38,9 @@ describe('November through the API', () => {
     expect(r.status).toBe(200);
   });
 
-  it('Budget: RTA $981.90, cards, groups, Owed to you, Needs attention', async () => {
+  it('Budget: RTA $1,999.90 (the Venmo $1,018 is in it, D-98), cards, groups, Owed to you, Needs attention', async () => {
     const b = await get<BudgetView>('/api/budget/2026-11');
-    expect(b.rta).toBe(98190);
+    expect(b.rta).toBe(199990);
     expect(b.rtaUpdating).toBe(false);
     const sapphire = b.cards.find((c) => c.name === 'Sapphire Preferred')!;
     expect(sapphire).toMatchObject({
@@ -141,7 +141,7 @@ describe('November through the API', () => {
     const o = await get<OwedView>('/api/owed');
     expect(o.out).toBe(143060);
     expect(o.items.find((i) => i.id === 'nopa')!.status).toBe('late');
-    expect(o.projected[0]).toMatchObject({ owed: 200000, shortfall: 200000 - 98190 });
+    expect(o.projected[0]).toMatchObject({ owed: 200000, shortfall: 200000 - 199990 });
   });
 
   it('Reports: month to date', async () => {
@@ -210,7 +210,7 @@ describe('November through the API', () => {
     ]);
   });
 
-  it('after Cover $18.25, Fund $90 and $250, Add $20, Move $40 back from Gifts: RTA $643.65', async () => {
+  it('after Cover $18.25, Fund $90 and $250, Add $20, Move $40 back from Gifts: RTA $1,661.65', async () => {
     let res = await post<MutationResult>('/api/budget/assign', {
       month: '2026-11',
       items: [
@@ -226,9 +226,9 @@ describe('November through the API', () => {
       to: 'rta',
       amount: 4000,
     });
-    expect(res.rta).toBe(64365);
+    expect(res.rta).toBe(166165);
     const b = await get<BudgetView>('/api/budget/2026-11');
-    expect(b.rta).toBe(64365);
+    expect(b.rta).toBe(166165);
     expect(b.cards.find((c) => c.name === 'Freedom Unlimited')).toMatchObject({
       available: 17325,
       status: 'covered',

@@ -15,7 +15,7 @@ const overlay = (key: string) =>
     .prepare(`SELECT wtm_state, to_rta FROM txn_overlay WHERE txn_key = ?1`)
     .bind(key)
     .first<{ wtm_state: string | null; to_rta: number }>();
-const rta = async () => (await json<BudgetView>('/api/budget')).rta;
+const rta = async () => (await json<BudgetView>('/api/budget/2026-11')).rta;
 
 describe('no Waiting to match (D-98)', () => {
   beforeAll(async () => {

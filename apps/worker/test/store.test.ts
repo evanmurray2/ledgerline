@@ -53,6 +53,7 @@ describe('object migrations', () => {
         '0009_drift_since.sql',
         '0010_owed_close.sql',
         '0011_run_fetched.sql',
+        '0012_release_waiting_to_match.sql',
         'store/0001_marks.sql',
         'store/0002_bank_link.sql',
         'store/0003_inbox.sql',

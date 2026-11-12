@@ -40,7 +40,7 @@ describe('Amount limit on assignments, moves and targets', () => {
       expect(((await r.json()) as { message: string }).message).toBe('Enter an amount up to $99,999,999.99.');
     }
     const b = (await (await app('/api/budget/2026-11')).json()) as BudgetView;
-    expect(b.rta).toBe(98190);
+    expect(b.rta).toBe(199990);
   });
 
   it('takes $99,999,999.99 exactly', async () => {
@@ -51,7 +51,7 @@ describe('Amount limit on assignments, moves and targets', () => {
     });
     expect(r.status).toBe(200);
     const b = (await (await app('/api/budget/2026-11')).json()) as BudgetView;
-    expect(b.rta).toBe(98190 + 60000 - 9_999_999_999);
+    expect(b.rta).toBe(199990 + 60000 - 9_999_999_999);
   });
 
   it('refuses the same on transactions, splits, owed amounts and starting balances', async () => {

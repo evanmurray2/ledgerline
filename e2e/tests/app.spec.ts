@@ -12,7 +12,7 @@ test.beforeEach(async ({ page }) => {
 
 test('Budget shows Ready to Assign and the November groups', async ({ page }) => {
   await page.goto('/budget');
-  await expect(rta(page)).toHaveText('$981.90');
+  await expect(rta(page)).toHaveText('$1,999.90');
   if (test.info().project.name === 'phone') {
     await expect(page.getByText('$1,121.85')).toBeVisible();
     await expect(page.getByText('$441.45')).toBeVisible();
@@ -25,14 +25,14 @@ test('Budget shows Ready to Assign and the November groups', async ({ page }) =>
   await expect(page.getByText('$1,430.60 out').first()).toBeVisible();
 });
 
-test('Needs attention fixes move money and Ready to Assign reads $833.65', async ({ page }) => {
+test('Needs attention fixes move money and Ready to Assign reads $1,851.65', async ({ page }) => {
   await page.goto('/budget?view=attention');
-  await expect(rta(page)).toHaveText('$981.90');
+  await expect(rta(page)).toHaveText('$1,999.90');
   const fixes: [string, string][] = [
-    ['Cover $18.25 for Dining out', '$963.65'],
-    ['Fund $90.00 for Car insurance', '$873.65'],
-    ['Fund $250.00 for Vacation', '$623.65'],
-    ['Move $210.00 for Gifts', '$833.65'],
+    ['Cover $18.25 for Dining out', '$1,981.65'],
+    ['Fund $90.00 for Car insurance', '$1,891.65'],
+    ['Fund $250.00 for Vacation', '$1,641.65'],
+    ['Move $210.00 for Gifts', '$1,851.65'],
   ];
   for (const [name, after] of fixes) {
     await page.getByRole('button', { name }).click();
@@ -92,15 +92,15 @@ test('Needs attention: a Short card shows under Card payments, and Fund covers i
 test('Fund all funds every underfunded category at once', async ({ page }) => {
   await page.goto('/budget?view=attention');
   await page.getByRole('button', { name: /Fund all · \$340\.00/ }).click();
-  await expect(rta(page)).toHaveText('$641.90');
+  await expect(rta(page)).toHaveText('$1,659.90');
 });
 
 test('Undo on a fix puts the money back', async ({ page }) => {
   await page.goto('/budget?view=attention');
   await page.getByRole('button', { name: 'Cover $18.25 for Dining out' }).click();
-  await expect(rta(page)).toHaveText('$963.65');
+  await expect(rta(page)).toHaveText('$1,981.65');
   await page.getByRole('button', { name: 'Undo' }).click();
-  await expect(rta(page)).toHaveText('$981.90');
+  await expect(rta(page)).toHaveText('$1,999.90');
 });
 
 test('At the bottom of the list the Ready to Assign bar stays still', async ({ page }) => {
@@ -122,7 +122,7 @@ test('At the bottom of the list the Ready to Assign bar stays still', async ({ p
 test('Activity: the filter chips row has no scroll bar', async ({ page }) => {
   await page.goto('/activity');
   const row = page.getByRole('group', { name: 'Filter' });
-  await expect(row.getByRole('button', { name: 'Needs attention 7' })).toBeVisible();
+  await expect(row.getByRole('button', { name: 'Needs attention 6' })).toBeVisible();
   // The chips' 44 px touch targets used to overflow the row, which then scrolled up and down.
   const { scroll, client, bar } = await row.evaluate((el) => ({
     scroll: el.scrollHeight,
@@ -136,7 +136,7 @@ test('Activity: the filter chips row has no scroll bar', async ({ page }) => {
 test('Activity: categorize from the picker, undo, and OK a suggestion', async ({ page }) => {
   await page.goto('/activity?filter=all');
   await expect(page.getByText(/Needs category/)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Needs attention 7' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Needs attention 6' })).toBeVisible();
 
   await page.getByRole('button', { name: /Choose category for Amazon −\$38\.10/ }).click();
   const picker = page.getByRole('dialog', { name: 'Choose a category' });
@@ -148,10 +148,10 @@ test('Activity: categorize from the picker, undo, and OK a suggestion', async ({
   await expect(page.getByRole('button', { name: /Change category for Amazon −\$38\.10/ })).toHaveText(
     'Shopping',
   );
-  await expect(page.getByRole('button', { name: 'Needs attention 6' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Needs attention 5' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Undo' }).click();
-  await expect(page.getByRole('button', { name: 'Needs attention 7' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Needs attention 6' })).toBeVisible();
 
   // Blue Bottle Coffee has always been Dining out, so it comes suggested: OK takes it, with no rule offer.
   await page.getByRole('button', { name: /^Use Dining out for Blue Bottle Coffee/ }).click();
@@ -165,15 +165,15 @@ test('Activity: categorize from the picker, undo, and OK a suggestion', async ({
 
 test('Activity: OK all takes every strong suggestion, with one Undo', async ({ page }) => {
   await page.goto('/activity?filter=attention');
-  await expect(page.getByRole('button', { name: 'Needs attention 7' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Needs attention 6' })).toBeVisible();
   // The second Amazon is a new payee offered as "Same as your Amazon?", so OK all leaves it for you.
   await page.getByRole('button', { name: 'Use 2 suggestions' }).click();
   await expect(page.getByRole('status').filter({ hasText: '2 transactions categorized' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Needs attention 5' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Needs attention 4' })).toBeVisible();
   // CVS Pharmacy has no suggestion, so it still waits.
   await expect(page.getByRole('button', { name: /Choose category for CVS Pharmacy/ })).toBeVisible();
   await page.getByRole('button', { name: 'Undo' }).click();
-  await expect(page.getByRole('button', { name: 'Needs attention 7' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Needs attention 6' })).toBeVisible();
 });
 
 test('Activity: a new payee shows its bank text, and Same as your… joins it into yours, with Undo', async ({
@@ -263,7 +263,7 @@ test('Offline: last data stays visible and every change is disabled', async ({ p
   await expect(page.getByTestId('offline-banner')).toBeVisible();
   await expect(cover).toBeDisabled();
   await expect(page.getByRole('button', { name: /Fund all/ })).toBeDisabled();
-  await expect(rta(page)).toHaveText('$981.90');
+  await expect(rta(page)).toHaveText('$1,999.90');
   if (test.info().project.name === 'phone')
     await expect(page.getByText('Assign', { exact: true })).toHaveAttribute('aria-disabled', 'true');
 
@@ -315,7 +315,7 @@ test('Assigned more than you have offers to take it back', async ({ page }) => {
     .getByRole('dialog', { name: 'Choose a category' })
     .getByRole('button', { name: /^Vacation/ })
     .click();
-  await page.getByLabel('Amount').fill('1000');
+  await page.getByLabel('Amount').fill('2018');
   await page.getByRole('button', { name: 'Assign anyway' }).click();
   await expect(rta(page)).toHaveText('−$18.10');
   await expect(page.getByText('You assigned $18.10 more than you have')).toBeVisible();
@@ -487,12 +487,12 @@ test('Desktop: type into Assigned, Tab saves and moves on, Escape puts it back',
   await groceries.fill('650');
   await page.keyboard.press('Tab');
   await expect(page.getByLabel('Assigned to Dining out')).toBeFocused();
-  await expect(rta(page)).toHaveText('$931.90');
+  await expect(rta(page)).toHaveText('$1,949.90');
   await expect(groceries).toHaveValue('$650.00');
   await page.keyboard.type('999');
   await page.keyboard.press('Escape');
   await expect(page.getByLabel('Assigned to Dining out')).toHaveValue('$200.00');
-  await expect(rta(page)).toHaveText('$931.90');
+  await expect(rta(page)).toHaveText('$1,949.90');
 });
 
 test('Desktop: the category panel steps to the next category with the arrow keys', async ({ page }, info) => {
