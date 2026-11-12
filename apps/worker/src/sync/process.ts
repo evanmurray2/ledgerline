@@ -15,7 +15,7 @@ import {
   ENTRY_DAYS_BEFORE,
 } from '@ledgerline/domain';
 import { seededUlid } from '@ledgerline/platform';
-import type { ProviderAccount, ProviderLiability } from '@ledgerline/bank-provider';
+import type { BankDataProvider, ProviderAccount, ProviderLiability } from '@ledgerline/bank-provider';
 import type { Env } from '../env.js';
 import { Scoped } from '../db/scoped.js';
 import { accountLedger, bankDiff } from '../ledger/bank-diff.js';
@@ -348,11 +348,13 @@ export async function endOfUpdate(
 }
 
 /** Asks the bank for the balances and card statements of a connection; null when it can't be asked now. */
-export async function askBank(env: Env, connectionId: string): Promise<BankState | null> {
+export async function askBank(
+  provider: BankDataProvider,
+  token: () => Promise<string>,
+  connectionId: string,
+): Promise<BankState | null> {
   try {
-    const provider = makeProvider(env);
-    const token = await connectionToken(env, connectionId);
-    const conn = { id: connectionId, accessToken: token, providerItemId: null };
+    const conn = { id: connectionId, accessToken: await token(), providerItemId: null };
     const accounts = await provider.getAccounts(conn);
     const liabilities = provider.getLiabilities ? await provider.getLiabilities(conn).catch(() => []) : [];
     return {
@@ -373,12 +375,19 @@ export async function askBank(env: Env, connectionId: string): Promise<BankState
  * After the watermark catches up: asks the bank for balances and card liabilities, writes the end of the update,
  * and marks the sync done. Gives what the bank said, for the device that files this update too.
  */
-export async function finalizeConnection(env: Env, c: StepContext, runId: string): Promise<BankState | null> {
+export async function finalizeConnection(
+  env: Env,
+  c: StepContext,
+  runId: string,
+  /** How the bank is asked (the sync job gives its own provider and token). */
+  ask: () => Promise<BankState | null> = () =>
+    askBank(makeProvider(env), () => connectionToken(env, c.connectionId), c.connectionId),
+): Promise<BankState | null> {
   const now = Date.now();
   // What the update says about the bank carries the update's time (D-86 A1): the balance time, the day of a card's
   // liability snapshot, and the start of a bank difference. When the run ended is still this step's clock.
   const at = (await runFetchedAt(env.DB, runId)) ?? now;
-  const bank = await askBank(env, c.connectionId);
+  const bank = await ask();
   await endOfUpdate(env.DB, c, at, bank);
   await env.DB.batch([
     env.DB.prepare(

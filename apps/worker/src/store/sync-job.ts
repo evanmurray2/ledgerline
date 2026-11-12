@@ -7,8 +7,9 @@ import { ProviderError, type BankDataProvider } from '@ledgerline/bank-provider'
 import type { Env } from '../env.js';
 import { CHUNK, LeaseLost, applyPage, beginRun, fetchPage, restartFetch } from '../sync/steps.js';
 import { MAX_HANDOFFS, moveLease, releaseFailed, releaseSuccess, renew } from '../sync/lease.js';
-import { finalizeConnection, healPending, processPending, runFetchedAt } from '../sync/process.js';
+import { askBank, finalizeConnection, healPending, processPending, runFetchedAt } from '../sync/process.js';
 import { isMyTurn, TURN_WAIT_MS } from '../sync/turn.js';
+import { inboxClose, inboxOpen } from './inbox.js';
 import { sleepUntilUtcMidnight } from '../sync/breaker.js';
 import type { Handler, Job, StepResult } from './jobs.js';
 
@@ -204,6 +205,8 @@ async function step(deps: SyncDeps, connectionId: string, s: SyncState, now: num
       const waiting = await waitForTurn();
       if (waiting) return waiting;
       const i = s.i ?? 0;
+      // The update is kept for the device as it was fetched, before anything of it is filed (store/inbox.ts).
+      if (i === 0 && (s.chunk ?? 0) === 0) await inboxOpen(db, s.runId!, Date.now());
       const r = await applyPage(ctx(), deps.provider(), s.runId!, i, s.chunk ?? 0);
       const ni = r.pageDone ? i + 1 : i;
       const nc = r.pageDone ? 0 : (s.chunk ?? 0) + 1;
@@ -213,6 +216,8 @@ async function step(deps: SyncDeps, connectionId: string, s: SyncState, now: num
     case 'process': {
       const waiting = await waitForTurn();
       if (waiting) return waiting;
+      // An update with no page still has an end (balances): it is kept for the device too.
+      if ((s.k ?? 0) === 0) await inboxOpen(db, s.runId!, Date.now());
       // Watermark-driven, independent of which run applied the events (F3).
       const r = await processPending(env, budgetId);
       const k = (s.k ?? 0) + 1;
@@ -231,7 +236,10 @@ async function step(deps: SyncDeps, connectionId: string, s: SyncState, now: num
     case 'finalize': {
       const waiting = await waitForTurn();
       if (waiting) return waiting;
-      await finalizeConnection(env, ctx(), s.runId!);
+      const bank = await finalizeConnection(env, ctx(), s.runId!, () =>
+        askBank(deps.provider(), () => deps.token(connectionId), connectionId),
+      );
+      await inboxClose(db, s.runId!, bank, Date.now());
       return next({ ...s, phase: 'release' });
     }
     case 'release': {

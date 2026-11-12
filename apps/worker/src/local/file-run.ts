@@ -46,18 +46,20 @@ export async function fileRun(
   await db.batch([
     ...pkg.pages.flatMap((p, i) => {
       const key = p.key;
+      // The page's size as the fetch step counts it: bytes, not characters.
+      const bytes = new TextEncoder().encode(p.body).length;
       return [
         db
           .prepare(
             `INSERT OR IGNORE INTO raw_page (key, budget_id, body, sha256, bytes, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
           )
-          .bind(key, budgetId, p.body, p.sha256, p.body.length, at),
+          .bind(key, budgetId, p.body, p.sha256, bytes, at),
         db
           .prepare(
             `INSERT OR IGNORE INTO sync_page (sync_run_id, page, budget_id, restart, raw_key, sha256, bytes, next_cursor, has_more, created_at)
              VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9)`,
           )
-          .bind(runId, i, budgetId, key, p.sha256, p.body.length, p.nextCursor, p.hasMore ? 1 : 0, at),
+          .bind(runId, i, budgetId, key, p.sha256, bytes, p.nextCursor, p.hasMore ? 1 : 0, at),
       ];
     }),
     db
