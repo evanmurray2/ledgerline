@@ -145,6 +145,14 @@ export interface FiledRun {
   receipt: Uint8Array<ArrayBuffer>;
 }
 export function openRun(s: FilingState, run: SealedRun): Promise<FiledRun>;
+/** An inbox pair, private half too (curve.ts DhPair). */
+export type DhPair = { pub: Uint8Array<ArrayBuffer> } & Record<string, unknown>;
+export function openInbox(
+  keys: BudgetKeys,
+  budgetId: string,
+  i: number,
+  wrapped: Uint8Array,
+): Promise<DhPair>;
 export function afterRun(s: FilingState, filed: FiledRun): FilingState;
 
 // ---- the log (apps/worker/src/seal/log-store.ts). The entry and the chain state are the package's own shapes;
@@ -293,3 +301,88 @@ export class ChainError extends Error {}
 export class FormatError extends Error {}
 /** A sealed value that doesn't open: the wrong key, or changed bytes (aead.ts). */
 export class OpenError extends Error {}
+
+// ---- snapshots (apps/worker/src/seal/snapshot-store.ts; packages/seal snapshot.ts)
+export interface PublicRef {
+  number: number;
+  hash: Bytes;
+}
+export interface SnapshotHeader {
+  budgetId: string;
+  snapshotId: string;
+  version: number;
+  number: number;
+  entryHash: Bytes;
+  lastPublic: PublicRef;
+  manifestHash: Bytes;
+}
+export function isPublicKind(kind: number): boolean;
+export function readSnapshotHeader(bytes: Uint8Array): SnapshotHeader;
+export function verifySnapshotHeader(
+  header: Uint8Array,
+  signature: Uint8Array,
+  signPub: Uint8Array | CryptoKey,
+): Promise<boolean>;
+export function verifySnapshotCheck(
+  header: Uint8Array,
+  deviceId: string,
+  signature: Uint8Array,
+  signPub: Uint8Array | CryptoKey,
+): Promise<boolean>;
+export interface SnapshotManifest {
+  snapshotId: string;
+  version: number;
+  number: number;
+  entryHash: Bytes;
+  chunkHashes: Bytes[];
+  tables: { name: string; hash: Bytes }[];
+  checkpoints: PublicRef[];
+  counters: { deviceId: string; counter: number }[];
+}
+export interface SealedSnapshot {
+  header: Bytes;
+  signature: Bytes;
+  manifest: Bytes;
+  chunks: Bytes[];
+}
+export function sealSnapshot(
+  keys: BudgetKeys,
+  at: {
+    budgetId: string;
+    snapshotId: string;
+    number: number;
+    entryHash: Bytes;
+    lastPublic: PublicRef;
+    tables: SnapshotManifest['tables'];
+    checkpoints: PublicRef[];
+    counters: SnapshotManifest['counters'];
+  },
+  plainChunks: Uint8Array[],
+): Promise<SealedSnapshot>;
+export function signSnapshotCheck(
+  keys: BudgetKeys,
+  s: Pick<SealedSnapshot, 'header' | 'signature'>,
+  budgetId: string,
+  deviceId: string,
+): Promise<Bytes>;
+export class SnapshotError extends Error {
+  readonly why: string;
+}
+export interface SnapshotBounds {
+  publics: { number: number; hash: Uint8Array; keyVersion: number }[];
+  minNumber?: number;
+  checkpoint?: PublicRef;
+}
+export function openSnapshotManifest(
+  keys: BudgetKeys,
+  s: Pick<SealedSnapshot, 'header' | 'signature' | 'manifest'>,
+  budgetId: string,
+  bounds: SnapshotBounds,
+): Promise<{ header: SnapshotHeader; manifest: SnapshotManifest }>;
+export function openSnapshotChunk(
+  keys: BudgetKeys,
+  budgetId: string,
+  manifest: SnapshotManifest,
+  k: number,
+  sealed: Uint8Array,
+): Promise<Bytes>;

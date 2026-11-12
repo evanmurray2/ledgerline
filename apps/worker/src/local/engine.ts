@@ -162,6 +162,17 @@ export async function migrateLocal(
   await db.batch(
     SYNC_TABLES.flatMap((t) => triggerNames(t.name)).map((n) => db.prepare(`DROP TRIGGER IF EXISTS ${n}`)),
   );
+  // The bank log only grows, on the server and here. One thing a copy takes back out: a bank run it filed
+  // itself, when the log took another device's entry for it (local/sealed-filing.ts resetFiling). So the copy's
+  // own guard lets the rows of a sealed run be deleted, and no others.
+  await db.batch(
+    ['bank_event', 'bank_page'].flatMap((t) => [
+      db.prepare(`DROP TRIGGER IF EXISTS ${t}_no_delete`),
+      db.prepare(
+        `CREATE TRIGGER ${t}_no_delete BEFORE DELETE ON ${t} WHEN OLD.sync_run_id NOT LIKE 'sealed:%' BEGIN SELECT RAISE(ABORT, '${t} is append-only'); END`,
+      ),
+    ]),
+  );
   await db.batch([
     ...PHONE_TABLES.map((sql) => db.prepare(sql)),
     db.prepare(`CREATE TABLE IF NOT EXISTS local_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)`),
@@ -207,7 +218,7 @@ export const RECORDED_TABLES: readonly SyncTable[] = [
  * Columns derive() works out, in a table an edit also writes: left out of the row kept for taking an edit back
  * out, so that an undo never puts an older worked-out value over a newer one.
  */
-const WORKED_OUT: Record<string, readonly string[]> = {
+export const WORKED_OUT: Record<string, readonly string[]> = {
   budget: ['rta', 'summary_version', 'summary_month', 'summary_dirty_from'],
 };
 
@@ -242,6 +253,13 @@ function recordTriggers(t: SyncTable, columns: readonly string[]): string[] {
     const [drop, create] = sql.split(';;');
     return [drop!, create!];
   });
+}
+
+/** The app was closed while the copy was filing bank runs (LocalEngine.fileBank): the copy must be made again. */
+export class FilingInterrupted extends Error {
+  constructor() {
+    super('this copy was closed while it was filing bank runs');
+  }
 }
 
 /** Rows that no honest writer makes (LocalEngine checkRows): nothing of them was written. */
@@ -287,6 +305,12 @@ export interface QueuedEdit {
    * such an edit again by itself; a sync brings its rows.
    */
   sending?: boolean;
+  /**
+   * Not an edit: bank runs this device filed (`LocalEngine.fileBank`), waiting to become a bank entry of the log.
+   * Always first in the queue: the edits after it ran on top of it. It is never run again by the engine (the
+   * runs are not kept here): when it must come out, it is dropped, and the device files the runs again.
+   */
+  bank?: { filedThrough: number; receipts: string[] };
 }
 
 /** An edit whose undo is good for a copy at change number `through`. */
@@ -399,6 +423,20 @@ export class LocalEngine {
     };
     stmts.push(this.setState(next));
     for (const part of chunks(stmts, 500)) await this.db.batch(part);
+    // A page of changes with no row (in the log: a key or slot change) leaves the copy as it was, at a new place:
+    // what was kept for taking the waiting edits out is still right there.
+    if (
+      !held &&
+      !fresh &&
+      page.rows.length === 0 &&
+      !st.cursor &&
+      !page.cursor &&
+      next.through !== st.through
+    ) {
+      const q = await this.queue();
+      if (q.some((e) => exactAt(e, st.through)))
+        await this.putQueue(q.map((e) => (exactAt(e, st.through) ? { ...e, through: next.through } : e)));
+    }
     const result: ApplyResult = {
       reset: false,
       rows: page.rows.length,
@@ -484,6 +522,8 @@ export class LocalEngine {
     const kept: QueuedEdit[] = [];
     const lost: QueuedEdit[] = [];
     for (const e of queue) {
+      // Filed bank runs are not run again here: the device opens and files them again (local/log-session.ts).
+      if (e.bank) continue;
       const { undo: _undo, through: _through, rows: _rows, ...bare } = e;
       const r = await this.record(e.method, e.path, e.body, { id: e.id, at: e.at }).catch(() => null);
       const status = r?.response.status ?? 500;
@@ -675,7 +715,7 @@ export class LocalEngine {
     // The next download already holds every bank update so far: the shadow run starts over from there. A queue
     // that was out of the copy between two pages is simply the queue again.
     await this.db
-      .prepare(`DELETE FROM local_state WHERE key IN ('shadow_seq', 'shadow_scan', 'held_queue')`)
+      .prepare(`DELETE FROM local_state WHERE key IN ('shadow_seq', 'shadow_scan', 'held_queue', 'filing')`)
       .run();
   }
 
@@ -919,6 +959,86 @@ export class LocalEngine {
     const { kept, lost } = await this.rerun(later, through);
     await this.putQueue([...before, ...kept]);
     return { redownload: false, lost: lost.length, left: before.length + kept.length };
+  }
+
+  /**
+   * Files bank runs on the copy, under the queue (docs/privacy.md 5.4): the waiting edits come out, `work` files
+   * the runs with everything it writes recorded, and the edits run again on top. What was filed waits first in
+   * the queue, as `bank`, until the log takes it as a bank entry. Null when it can't be done exactly now (an edit
+   * is on its way, was queued on another base, or filed runs already wait): read the log, then try again. If
+   * `work` throws, what it wrote is taken back out and the copy is as it was.
+   */
+  async fileBank(
+    id: string,
+    at: number,
+    bank: { filedThrough: number; receipts: string[] },
+    work: (env: Env) => Promise<void>,
+  ): Promise<{ rows: SyncRow[]; lost: number } | null> {
+    if (await this.filingInterrupted()) throw new FilingInterrupted();
+    if (!(await this.canFileBank())) return null;
+    const st = await this.state();
+    const q = await this.queue();
+    // Filing is many steps. If the app is closed in the middle, the copy holds half of it: the mark says so, and
+    // the copy is then made again from the log, never used as it is.
+    await this.db
+      .prepare(
+        `INSERT INTO local_state (key, value) VALUES ('filing', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+      )
+      .bind(String(st.through))
+      .run();
+    const finished = () => this.db.prepare(`DELETE FROM local_state WHERE key = 'filing'`);
+    for (const e of [...(q as Exact[])].reverse()) await this.applyRows(e.undo);
+    let rec: { rows: SyncRow[]; undo: SyncRow[] } = { rows: [], undo: [] };
+    let failed: unknown = null;
+    await this.db.batch([this.db.prepare(`DELETE FROM edit_change`), this.recording(true)]);
+    try {
+      await work(this.env(at));
+    } catch (x) {
+      failed = x ?? new Error('filing failed');
+    } finally {
+      rec = await this.recorded();
+      await this.db.batch([this.recording(false), this.db.prepare(`DELETE FROM edit_change`)]);
+    }
+    if (failed) {
+      await this.applyRows(rec.undo);
+      const { kept } = await this.rerun(q, st.through);
+      await this.putQueue(kept);
+      await finished().run();
+      throw failed;
+    }
+    // What derive() must work out again: the rows as they were name the old keys, the copy holds the new ones.
+    const todo = await this.pendingDerive();
+    await this.noteChanges(rec.undo, todo);
+    await this.db.batch([this.setPendingDerive(todo)]);
+    const filed: QueuedEdit = {
+      id,
+      at,
+      method: 'BANK',
+      path: '',
+      body: null,
+      undo: rec.undo,
+      rows: rec.rows,
+      through: st.through,
+      bank,
+    };
+    await this.putQueue([filed, ...q]);
+    const { kept, lost } = await this.rerun(q, st.through);
+    await this.putQueue([filed, ...kept]);
+    await finished().run();
+    if (await this.needsDerive()) await this.derive();
+    return { rows: rec.rows, lost: lost.length };
+  }
+
+  /** Whether bank runs can be filed under the queue now: every waiting edit can be taken out exactly. */
+  async canFileBank(): Promise<boolean> {
+    const st = await this.state();
+    const q = await this.queue();
+    return !st.cursor && !q.some((e) => e.bank || !exactAt(e, st.through) || e.sending);
+  }
+
+  /** The app was closed while this copy was filing bank runs: the copy holds half of it and must be made again. */
+  async filingInterrupted(): Promise<boolean> {
+    return !!(await this.db.prepare(`SELECT 1 AS x FROM local_state WHERE key = 'filing'`).first());
   }
 
   // ---- the shadow run (local/shadow.ts): the device files the inbox's bank updates on a scratch copy

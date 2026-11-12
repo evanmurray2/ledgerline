@@ -14,12 +14,14 @@ import {
   MAX_PLAIN,
   MAX_WRITE_ENTRIES,
   openEntryBody,
+  openInbox,
   randomBytes,
   sealedEntry,
   toHex,
   type BudgetKeys,
   type Bytes,
   type ChainState,
+  type DhPair,
   type Entry,
   type FullChainState,
 } from '@ledgerline/seal';
@@ -115,6 +117,35 @@ export class DeviceLog {
   /** The number of the last entry this device has taken. */
   get number(): number {
     return this.state.number;
+  }
+
+  /** The last bank run the log says is filed. */
+  get filedThrough(): number {
+    return (this.state as FullChainState).filedThrough;
+  }
+
+  get budgetId(): string {
+    return this.state.public.budgetId;
+  }
+
+  /** What the log says about inbox keys: the version in force, and the last run each replaced version may hold. */
+  get inboxes(): { inboxVersion: number; retiredAt: Map<number, number> } {
+    const p = this.state.public;
+    return { inboxVersion: p.inboxVersion, retiredAt: p.retiredAt as Map<number, number> };
+  }
+
+  /**
+   * The inbox pair of a version, opened from the wrapped private half the log carries; null when the log
+   * carries none for it (the key was retired) or it doesn't open with this device's keys.
+   */
+  async inbox(version: number): Promise<DhPair | null> {
+    const wrapped = (this.state.public.inboxes as Map<number, Bytes>).get(version);
+    if (!wrapped) return null;
+    try {
+      return await openInbox(this.current(), this.budgetId, version, wrapped);
+    } catch {
+      return null;
+    }
   }
 
   /** The keys of the log's current key version. */

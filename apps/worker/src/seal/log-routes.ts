@@ -4,14 +4,26 @@
 //
 // The first entry of a log is not written here: the cutover stores it with the budget's first snapshot, in one
 // step (section 8, step 6).
+import { CSRF_HEADER } from '@ledgerline/contracts';
 import { parseKeyring } from '@ledgerline/platform';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { requestNow } from '../http/clock.js';
 import type { AppEnv } from '../http/context.js';
 import { csrf } from '../http/security.js';
 import { classifyUsage, dailyLimits, usageToday } from '../sync/breaker.js';
 import { logAfter, logAppend, logHead, type LogDeps } from './log-store.js';
+import {
+  logFloor,
+  snapshotBegin,
+  snapshotCheck,
+  snapshotChunk,
+  snapshotChunkOf,
+  snapshotList,
+  snapshotManifest,
+  snapshotPrune,
+  type SnapshotDeps,
+} from './snapshot-store.js';
 import {
   keyStampStmts,
   lastCompleteRun,
@@ -54,7 +66,22 @@ const Append = z.object({
 });
 
 export const logApi = new Hono<AppEnv>();
-logApi.use('*', csrf);
+/**
+ * The same guard as every other route (http/security.ts), with one more body type: a snapshot's chunk is sealed
+ * bytes, sent as `application/octet-stream`. Like JSON, that type can't be sent across sites without a
+ * preflight, and the app's own header and the origin are checked as for any write.
+ */
+logApi.use('*', async (c, next) => {
+  const chunk =
+    c.req.method === 'PUT' &&
+    /\/log\/snapshots\/[^/]+\/chunks\/\d+$/.test(new URL(c.req.url).pathname) &&
+    (c.req.header('content-type') ?? '').toLowerCase().startsWith('application/octet-stream');
+  if (!chunk) return csrf(c, next);
+  const origin = c.req.header('origin');
+  if (c.req.header(CSRF_HEADER) !== '1' || (origin && origin !== new URL(c.req.url).origin))
+    return c.json({ error: 'csrf', message: TRY_AGAIN }, 403);
+  return next();
+});
 
 /** The entries after `after`, in order, as their devices signed them; `number` is where the log stands. */
 logApi.get('/log', async (c) => {
@@ -71,7 +98,8 @@ logApi.get('/log', async (c) => {
     chars += text.length;
   }
   const number = await logHead(db);
-  return c.json({ entries, number, more: after + entries.length < number });
+  // `floor`: sealed entries below it may be gone; a device whose place is lower opens a snapshot (below).
+  return c.json({ entries, number, more: after + entries.length < number, floor: await logFloor(db) });
 });
 
 /**
@@ -148,4 +176,98 @@ logApi.get('/log/runs/:run/:page', async (c) => {
   return new Response(bytes as Uint8Array<ArrayBuffer>, {
     headers: { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' },
   });
+});
+
+// ---- snapshots (seal/snapshot-store.ts)
+
+const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
+const Begin = z.object({
+  header: z.string().regex(B64).max(2_000),
+  signature: z.string().regex(B64).max(200),
+  manifest: z.string().regex(B64).max(600_000),
+  chunks: z.number().int().min(1).max(4096),
+});
+const Check = z.object({
+  deviceId: z.string().length(26),
+  signature: z.string().regex(B64).max(200),
+});
+const bytes = (b: Uint8Array) =>
+  new Response(b as Uint8Array<ArrayBuffer>, {
+    headers: { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' },
+  });
+
+async function snapshotDeps(c: Context<AppEnv>): Promise<SnapshotDeps> {
+  const ask = c.env.USAGE_FOR_WRITE ?? c.env.USAGE;
+  const u = ask ? await ask() : await usageToday(c.env);
+  const state = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(c.env));
+  return {
+    db: c.env.DB,
+    budgetId: c.get('budgetId'),
+    now: requestNow(c),
+    resting: state === 'readonly' || state === 'rest',
+  };
+}
+
+/** The whole snapshots the server keeps, newest first: each clear header with its signature and check record. */
+logApi.get('/log/snapshots', async (c) => {
+  const list = await snapshotList(c.env.DB);
+  return c.json({
+    snapshots: list.map((s) => ({
+      id: s.id,
+      number: s.number,
+      header: b64(s.header),
+      signature: b64(s.signature),
+      chunks: s.chunks,
+      checked: s.checked,
+      check: s.check ? { deviceId: s.check.deviceId, signature: b64(s.check.signature) } : null,
+    })),
+  });
+});
+
+/** Begins a snapshot: its signed header, its sealed manifest, and how many chunks follow. */
+logApi.post('/log/snapshots', async (c) => {
+  const parsed = Begin.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
+  const r = await snapshotBegin(await snapshotDeps(c), {
+    header: unb64(parsed.data.header),
+    signature: unb64(parsed.data.signature),
+    manifest: unb64(parsed.data.manifest),
+    chunks: parsed.data.chunks,
+  });
+  return c.json(r, r.ok ? 200 : 409);
+});
+
+/** One sealed chunk of a snapshot that was begun, as bytes. */
+logApi.put('/log/snapshots/:id/chunks/:k', async (c) => {
+  const k = Number(c.req.param('k'));
+  const length = Number(c.req.header('content-length') ?? '0');
+  // Refused by its stated size before the body is read.
+  if (!(length > 0) || length > 1_100_000) return c.json({ ok: false, why: 'too large' }, 409);
+  const body = new Uint8Array(await c.req.arrayBuffer());
+  const r = await snapshotChunk(await snapshotDeps(c), c.req.param('id'), k, body);
+  return c.json(r, r.ok ? 200 : 409);
+});
+
+logApi.get('/log/snapshots/:id/manifest', async (c) => {
+  const m = await snapshotManifest(c.env.DB, c.req.param('id'));
+  return m ? bytes(m) : c.json({ error: 'not_found', message: TRY_AGAIN }, 404);
+});
+
+logApi.get('/log/snapshots/:id/chunks/:k', async (c) => {
+  const k = Number(c.req.param('k'));
+  const b = Number.isSafeInteger(k) ? await snapshotChunkOf(c.env.DB, c.req.param('id'), k) : null;
+  return b ? bytes(b) : c.json({ error: 'not_found', message: TRY_AGAIN }, 404);
+});
+
+/**
+ * A device's check record for a snapshot: it rebuilt the budget and got the same. The delete rule then runs
+ * once (a few hundred rows); the fetch backstop finishes it.
+ */
+logApi.post('/log/snapshots/:id/check', async (c) => {
+  const parsed = Check.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
+  const d = await snapshotDeps(c);
+  const r = await snapshotCheck(d, c.req.param('id'), parsed.data.deviceId, unb64(parsed.data.signature));
+  if (r.ok && !d.resting) await snapshotPrune(c.env.DB);
+  return c.json(r, r.ok ? 200 : 409);
 });

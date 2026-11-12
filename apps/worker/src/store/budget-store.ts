@@ -175,6 +175,7 @@ export class BudgetStore extends DurableObject<Env> {
     const path = new URL(request.url).pathname;
     if (this.marks().sealed && (path === '/api/log' || path.startsWith('/api/log/'))) {
       this.logApp ??= withCaller((app) => app.route('/api', logApi));
+      await this.rearmSealed();
       this.usage.request();
       try {
         return await this.serve(this.logApp, request, caller);
@@ -191,6 +192,7 @@ export class BudgetStore extends DurableObject<Env> {
         .catch(() => null);
       if (!ev) return Response.json({ error: 'unauthorized' }, { status: 401 });
       await sealedWebhook((await this.fetchDeps()).runs, this.enqueue, ev, Date.now());
+      await this.rearmSealed();
       this.reportUsage(caller.budgetId);
       return Response.json({ ok: true });
     }
@@ -430,6 +432,17 @@ export class BudgetStore extends DurableObject<Env> {
     // Sealed: the only work left on the server is fetching its bank runs (seal/fetch-job.ts).
     if (marks.sealed) {
       await this.enqueue(SEALED_BACKSTOP, { id: SEALED_BACKSTOP_ID, runAt: now, recurring: true });
+      // Its Items stay routed to it in the Directory, so the bank's webhooks arrive.
+      for (const c of this.ctx.storage.sql
+        .exec(
+          `SELECT connection_id AS id, provider_item_id FROM bank_link WHERE provider_item_id IS NOT NULL`,
+        )
+        .toArray())
+        await this.enqueue('register_link', {
+          id: `register_link:${String(c.id)}`,
+          state: { itemId: String(c.provider_item_id), connectionId: String(c.id) },
+          runAt: now,
+        });
       this.ctx.storage.sql.exec(QUEUE_STAMP_LINKS, now);
       await this.runner.scheduleNext(now);
       return { ok: true, jobs: this.runner.list() };
@@ -524,6 +537,11 @@ export class BudgetStore extends DurableObject<Env> {
   private held(): boolean {
     const m = this.marks();
     return m.sealed || m.frozenUntil !== null;
+  }
+
+  /** A sealed budget whose alarm was lost gets it back on its next request. */
+  private async rearmSealed(): Promise<void> {
+    if ((await this.ctx.storage.getAlarm()) === null) await this.runner.scheduleNext(Date.now());
   }
 
   private async rearm(): Promise<void> {
@@ -681,7 +699,8 @@ export class BudgetStore extends DurableObject<Env> {
       [SEALED_BACKSTOP]: async (job, now) =>
         sealedBackstopHandler((await this.fetchDeps()).runs, this.enqueue)(job, now),
     };
-    const both = new Set(['stamp_links']);
+    // Both kinds of budget stamp their links and keep their Items routed to them in the Directory.
+    const both = new Set(['stamp_links', 'register_link']);
     const out: Record<string, Handler> = {};
     for (const [kind, h] of Object.entries(this.plainHandlers()))
       out[kind] = (job, now) =>
@@ -716,7 +735,8 @@ export class BudgetStore extends DurableObject<Env> {
         const { itemId, connectionId } = job.state as { itemId: string; connectionId: string };
         const dir = this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName(DIRECTORY_NAME));
         const r = await dir.registerRoute(itemId, await budgetId(), connectionId);
-        if (r === 'duplicate')
+        // A sealed budget's `connection` is not written any more.
+        if (r === 'duplicate' && !this.marks().sealed)
           this.ctx.storage.sql.exec(
             `UPDATE connection SET error_code = 'duplicate_item', updated_at = ? WHERE id = ?`,
             Date.now(),
