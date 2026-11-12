@@ -42,6 +42,20 @@ export interface SyncPage {
   more: boolean;
   cursor: string | null;
   rows: { t: string; k: unknown[]; d: Record<string, unknown> | null }[];
+  /** The place of the newest bank update the server has finished filing (routes/sync.ts). */
+  inbox?: number;
+}
+/** One bank update from the server's inbox (store/inbox.ts): the engine files it; the app only passes it on. */
+export interface InboxRun {
+  fetchSeq: number;
+  [more: string]: unknown;
+}
+/** What a shadow run found (local/shadow.ts): names and counts, never a row's content. */
+export interface ShadowReport {
+  runs: number;
+  compared: boolean;
+  why?: string;
+  differences: { table: string; column: string; rows: number }[];
 }
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
@@ -100,6 +114,18 @@ export class EngineHost {
   ): Promise<{ status: number; body: string }> {
     return this.call('request', { method, path, body, edit });
   }
+  /** Starts a shadow run for these bank updates (engine.ts shadowBegin): null when it started. */
+  shadowBegin(runs: InboxRun[]): Promise<ShadowReport | null> {
+    return this.call('shadowBegin', { runs });
+  }
+  /** Files the next update on the scratch copy; false when none is left. */
+  shadowStep(): Promise<boolean> {
+    return this.call('shadowStep');
+  }
+  /** Compares and frees the scratch copy. */
+  shadowEnd(): Promise<ShadowReport | null> {
+    return this.call('shadowEnd');
+  }
   /** Runs an edit made with no connection and puts it in the queue, in one step (engine.ts enqueue). */
   enqueue(edit: QueuedEdit): Promise<{ status: number; body: string; queued: number }> {
     return this.call('enqueue', { edit });
@@ -152,6 +178,8 @@ export async function syncAll(
   fetchPage: (since: number, cursor: string | null) => Promise<SyncPage>,
   /** Called when the server's copy changed (a new epoch or format) and the whole budget downloads again. */
   onReset?: () => void,
+  /** Called with each page before the copy takes it. */
+  beforeApply?: (page: SyncPage) => Promise<void>,
 ): Promise<{ pages: number; rows: number; lost: number }> {
   let pages = 0;
   let rows = 0;
@@ -159,6 +187,7 @@ export async function syncAll(
   for (let guard = 0; guard < 2000; guard++) {
     const { since, cursor } = await host.nextRequest();
     const page = await fetchPage(since, cursor);
+    await beforeApply?.(page);
     const r = await host.apply(page, Date.now());
     pages++;
     if (r.reset) onReset?.();

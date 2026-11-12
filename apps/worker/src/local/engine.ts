@@ -26,6 +26,8 @@ import { splitStatements } from '../store/adapter.js';
 import { BUDGET_MIGRATIONS } from '../store/migrations.gen.js';
 import { SYNC_FORMAT, SYNC_TABLES, triggerNames, type SyncTable } from '../sync-tables.js';
 import type { BankLogBatch, SyncPage, SyncRow } from '../routes/sync.js';
+import type { InboxRun } from '../store/inbox.js';
+import { Shadow, type Fork, type ShadowReport } from './shadow.js';
 import { CSRF_HEADER } from '@ledgerline/contracts';
 
 export interface EngineIdentity {
@@ -298,6 +300,8 @@ export class LocalEngine {
     private readonly deviceNow: () => number = () => Date.now(),
     /** Called when Ready to Assign doesn't satisfy rule 10 (the identity check). */
     private readonly onIdentity?: (r: { difference: number; month: string }) => Promise<void>,
+    /** Makes a scratch copy of this database, for the shadow run (local/shadow.ts). */
+    private readonly fork?: () => Promise<Fork>,
   ) {
     const app = new Hono<AppEnv>();
     app.use('*', async (c, next) => {
@@ -785,6 +789,37 @@ export class LocalEngine {
     const { kept, lost } = await this.rerun(later, through);
     await this.putQueue([...before, ...kept]);
     return { redownload: false, lost: lost.length, left: before.length + kept.length };
+  }
+
+  // ---- the shadow run (local/shadow.ts): the device files the inbox's bank updates on a scratch copy
+
+  private shadow: Shadow | null = null;
+
+  /**
+   * Starts a shadow run for these updates, before the server's rows for them are written into the copy. Null: it
+   * started. A report: it didn't, and why.
+   */
+  async shadowBegin(runs: InboxRun[]): Promise<ShadowReport | null> {
+    // A run that never ended (the app moved on) gives its scratch copy back first.
+    this.shadow?.discard();
+    this.shadow = null;
+    if (!this.fork) return { runs: 0, compared: false, why: 'failed', differences: [] };
+    const s = await Shadow.begin(this.db, this.who.budgetId, runs, this.fork);
+    if (!(s instanceof Shadow)) return s;
+    this.shadow = s;
+    return null;
+  }
+
+  /** Files the next update on the scratch copy; false when none is left. */
+  async shadowStep(): Promise<boolean> {
+    return this.shadow ? this.shadow.step() : false;
+  }
+
+  /** Compares the scratch copy with this one (which holds the server's rows by now) and frees it. */
+  async shadowEnd(): Promise<ShadowReport | null> {
+    const s = this.shadow;
+    this.shadow = null;
+    return s ? s.end(this.db) : null;
   }
 
   /** What to ask the server's bank log for next (routes/sync.ts `/sync/bank-log`). */

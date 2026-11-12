@@ -6,7 +6,7 @@ import type { Db } from '@ledgerline/db/sql';
 import type { AppEnv } from './context.js';
 
 /** Changes that don't alter any screen. */
-const NO_BUMP = new Set(['/api/usage', '/api/notes']);
+const NO_BUMP = new Set(['/api/usage', '/api/notes', '/api/sync/shadow']);
 
 export async function bumpVersion(db: Db, budgetId: string): Promise<void> {
   await db.prepare(`UPDATE budget SET data_version = data_version + 1 WHERE id = ?1`).bind(budgetId).run();

@@ -12,6 +12,7 @@ import { useSyncExternalStore } from 'react';
 import { CSRF_HEADER, type Session } from '@ledgerline/contracts';
 import { connectivity } from '../state/connectivity';
 import { EngineHost, syncAll, type EngineIdentity, type QueuedEdit, type SyncPage } from './host';
+import { shadowBefore, shadowFinish } from './shadow';
 import { usage } from '../usage/tracker';
 import { assert, canUsePasskeys, keepsCopy, type RequestOptionsJSON } from './passkey';
 import {
@@ -409,6 +410,7 @@ export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}):
       // An edit's answer carries the changes since the copy's change number: use them as the first page, but only if
       // the copy is still there (another sync may have moved it on meanwhile).
       let first = opts.first;
+      let shadowing: number | null = null;
       const r = await syncAll(
         host!,
         async (since, cursor) => {
@@ -420,6 +422,16 @@ export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}):
           return p;
         },
         () => set({ why: 'reset', progress: 0 }),
+        // The shadow run (shadow.ts): when the server filed bank updates this device hasn't seen, the device files
+        // them too, on a scratch copy made now, before the server's rows arrive.
+        async (page) => {
+          shadowing = await shadowBefore(
+            host!,
+            page,
+            (path) => server('GET', path),
+            (path, body) => server('POST', path, body),
+          );
+        },
       );
       if (r.lost) {
         // The engine ran the queue again on the server's newer rows, and some edits no longer pass.
@@ -436,6 +448,8 @@ export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}):
         await save();
       }
       if (r.rows > 0 && !opts.quiet) changed();
+      // In the background: it files and compares after the screens have what the server sent.
+      if (shadowing !== null) void shadowFinish(host!, shadowing, (path, body) => server('POST', path, body));
     } finally {
       syncing = null;
     }

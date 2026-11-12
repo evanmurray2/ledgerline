@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { generate } from '../../../tools/plaid-mock/data.mjs';
 import type { Env } from '../src/env.js';
 import { fileRun } from '../src/local/file-run.js';
+import { copyDb, Shadow } from '../src/local/shadow.js';
 import { DurableDb } from '../src/store/adapter.js';
 import type { BudgetStore } from '../src/store/budget-store.js';
 import { inboxLatest, inboxNext, type InboxRun } from '../src/store/inbox.js';
@@ -14,6 +15,7 @@ import { JobRunner } from '../src/store/jobs.js';
 import { syncHandler, type SyncState } from '../src/store/sync-job.js';
 import { acquire } from '../src/sync/lease.js';
 import { SYNC_TABLES } from '../src/sync-tables.js';
+import { storeDb } from './store-db.js';
 
 const e = env as unknown as Env & { BUDGET: DurableObjectNamespace<BudgetStore> };
 const T = Date.parse('2026-11-14T20:00:00Z');
@@ -204,4 +206,92 @@ describe('the inbox', () => {
       expect(await inboxNext(db, 1)).toBeNull();
     });
   });
+
+  // The shadow run (local/shadow.ts): the device files the inbox on a scratch copy while its real copy takes the
+  // server's rows as always; then the two are compared.
+  it('a shadow run on a scratch copy finds no difference, and says when a comparison means nothing', async () => {
+    const server = storeDb('shadow-server');
+    const main = storeDb('shadow-main');
+    const inbox: InboxRun[] = [];
+    await seed(main);
+    await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName('shadow-server')), async (_o, st) => {
+      const db = new DurableDb(st.storage);
+      await seed(db);
+      for (const [n, total] of [
+        [1, 120],
+        [2, 200],
+      ] as const) {
+        upTo = total;
+        await serverSync(db, st, n);
+      }
+      for (let seq = 0; ;) {
+        const run = await inboxNext(db, seq);
+        if (!run) break;
+        inbox.push(run);
+        seq = run.fetchSeq;
+      }
+    });
+    expect(inbox.length).toBe(2);
+    let forks = 0;
+    const fork = async () => {
+      const scratch = storeDb(`shadow-scratch-${++forks}`);
+      await copyDb(main, scratch);
+      return { db: scratch };
+    };
+
+    const shadow = await Shadow.begin(main, B, inbox, fork);
+    if (!(shadow instanceof Shadow)) throw new Error(`not started: ${shadow.why}`);
+    // The real copy takes the server's rows, as a sync does; the scratch copy files the updates itself.
+    await copyDb(server, main);
+    while (await shadow.step());
+    expect(await shadow.end(main)).toEqual({ runs: 2, compared: true, differences: [] });
+
+    // A difference is found and named by table and column, with no row's content.
+    const again = await Shadow.begin(await seeded('shadow-main-2'), B, inbox, async () => {
+      const scratch = storeDb('shadow-scratch-x');
+      await copyDb(await seeded('shadow-main-3'), scratch);
+      return { db: scratch };
+    });
+    if (!(again instanceof Shadow)) throw new Error('not started');
+    while (await again.step());
+    await main
+      .prepare(`UPDATE bank_txn SET amount = amount + 1 WHERE provider_txn_id = ?1`)
+      .bind(DATA[0]!.transaction_id)
+      .run();
+    expect(await again.end(main)).toEqual({
+      runs: 2,
+      compared: true,
+      differences: [{ table: 'bank_txn', column: 'amount', rows: 1 }],
+    });
+
+    // The copy is not where the server began (an edit moved the data version): nothing is filed.
+    const edited = await seeded('shadow-main-4');
+    await edited.prepare(`UPDATE budget SET data_version = data_version + 1`).run();
+    expect(await Shadow.begin(edited, B, inbox, fork)).toMatchObject({
+      compared: false,
+      why: 'edited_before',
+    });
+    // An edit landed while the server filed an update.
+    const mixed = [{ ...inbox[0]!, endVersion: inbox[0]!.baseVersion + 1 }, inbox[1]!];
+    expect(await Shadow.begin(await seeded('shadow-main-5'), B, mixed, fork)).toMatchObject({
+      why: 'edited_during',
+    });
+    // An edit after the last update is in the real copy only.
+    const late = await Shadow.begin(await seeded('shadow-main-6'), B, inbox, async () => {
+      const scratch = storeDb('shadow-scratch-y');
+      await copyDb(await seeded('shadow-main-7'), scratch);
+      return { db: scratch };
+    });
+    if (!(late instanceof Shadow)) throw new Error('not started');
+    while (await late.step());
+    await main.prepare(`UPDATE budget SET data_version = data_version + 1`).run();
+    expect(await late.end(main)).toMatchObject({ runs: 2, compared: false, why: 'edited_after' });
+  });
 });
+
+/** A copy as it is before any update. */
+async function seeded(name: string): Promise<Db> {
+  const db = storeDb(name);
+  await seed(db);
+  return db;
+}

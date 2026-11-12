@@ -444,6 +444,7 @@ const SERVER_ONLY: Record<string, string> = {
   'DELETE /usage': 'the usage record, kept on the server only',
   'POST /notes': 'notes to the owner, kept on the server only',
   'POST /identity-alert': 'a phone tells the server what it worked out',
+  'POST /sync/shadow': 'a phone tells the server what its shadow run found',
 };
 
 /** Not checked as a twin yet (docs/build-plan.md). This list only gets shorter. */
