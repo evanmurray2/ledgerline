@@ -7,6 +7,7 @@ import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { LocalEngine, migrateLocal, type EngineIdentity, type QueuedEdit } from './engine.js';
 import { SqlJsDb } from './sqljs-db.js';
 import type { SyncPage } from '../routes/sync.js';
+import type { InboxRun } from '../store/inbox.js';
 
 interface Ctx {
   onmessage: ((e: MessageEvent) => void) | null;
@@ -32,6 +33,10 @@ type Msg =
   | { id: number; op: 'queueSending'; editId: string }
   | { id: number; op: 'queueDone'; editId: string }
   | { id: number; op: 'queueRefused'; editId: string }
+  | { id: number; op: 'shadowFork' }
+  | { id: number; op: 'shadowBegin'; token: number; runs: InboxRun[] }
+  | { id: number; op: 'shadowStep'; token: number }
+  | { id: number; op: 'shadowEnd'; token: number }
   | { id: number; op: 'export' }
   | { id: number; op: 'state' }
   | { id: number; op: 'rta' }
@@ -61,6 +66,11 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
         m.who,
         () => Date.now(),
         async (r) => ctx.postMessage({ event: 'identity', ...r }),
+        // A scratch copy for the shadow run: the same bytes in a second database, closed when the run ends.
+        async () => {
+          const copy = new sqlite!.Database(db!.db.export());
+          return { db: new SqlJsDb(copy), close: () => copy.close() };
+        },
       );
       return { value: await engine.state() };
     }
@@ -91,6 +101,14 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       return { value: await need().engine.queueDone(m.editId) };
     case 'queueRefused':
       return { value: await need().engine.queueRefused(m.editId) };
+    case 'shadowFork':
+      return { value: await need().engine.shadowFork() };
+    case 'shadowBegin':
+      return { value: await need().engine.shadowBegin(m.token, m.runs) };
+    case 'shadowStep':
+      return { value: await need().engine.shadowStep(m.token) };
+    case 'shadowEnd':
+      return { value: await need().engine.shadowEnd(m.token) };
     case 'export': {
       const bytes = need().db.db.export();
       const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;

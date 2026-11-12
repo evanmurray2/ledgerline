@@ -5,6 +5,7 @@ import { env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { LocalEngine, migrateLocal } from '../src/local/engine.js';
 import { fileRun, type RunPackage } from '../src/local/file-run.js';
+import { alignCounter } from '../src/local/shadow.js';
 import type { BankLogBatch, SyncPage } from '../src/routes/sync.js';
 import { endOfUpdate, type BankState } from '../src/sync/process.js';
 import { bankSync, pend, plaidTxn } from './bank-sync.js';
@@ -142,5 +143,23 @@ describe('a device files a bank update', () => {
       expect(differences(await rowsOf(device), await rowsOf(reader))).toEqual([]);
       expect(await log(device.db)).toEqual(await log(reader.db));
     }
+
+    // A phone that only synced so far, as every phone today: it has no bank log and no event counter. It files the
+    // next update once its counter continues from the budget's watermark (local/shadow.ts alignCounter), and
+    // numbers the new bank events as the server does.
+    const synced = await phone('file-run-synced');
+    await sync(synced);
+    expect((await log(synced.db)).events.length).toBe(0);
+    t += 3_600_000;
+    h.setNow(t);
+    await h.sync([plaidTxn('a-9', 2, 19.99, '2026-11-09', 'SHELL OIL')], [], t);
+    await h.heal();
+    await alignCounter(synced.db, B);
+    await fileRun({ ...env, DB: synced.db } as never, B, { ...(await lastRun()), bank: null }, provider);
+    await sync(reader);
+    expect(differences(await rowsOf(synced), await rowsOf(reader))).toEqual([]);
+    const mine = (await log(synced.db)).events as { id: number }[];
+    const theirs = (await log(h.db)).events as { id: number }[];
+    expect(mine.map((e) => e.id)).toEqual([theirs[theirs.length - 1]!.id]);
   });
 });

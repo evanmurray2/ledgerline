@@ -5,6 +5,9 @@ import type { Db } from '@ledgerline/db/sql';
 import type { RunPackage } from '../local/file-run.js';
 import type { BankState } from '../sync/process.js';
 
+/** The most page text one inbox answer carries. */
+export const INBOX_MAX_CHARS = 1_000_000;
+
 /** How long a filed update stays in the inbox. Its pages stay in `raw_page` in any case. */
 export const INBOX_KEEP_MS = 14 * 86_400_000;
 
@@ -73,6 +76,7 @@ export async function inboxNext(db: Db, after: number): Promise<InboxRun | null>
     sha256: string;
   }[];
   const pages: RunPackage['pages'] = [];
+  let size = 0;
   for (const p of named) {
     const raw = await db
       .prepare(`SELECT body FROM raw_page WHERE key = ?1`)
@@ -80,6 +84,9 @@ export async function inboxNext(db: Db, after: number): Promise<InboxRun | null>
       .first<{ body: string }>();
     // A page that is gone can't be filed: the update is not offered, nor any after it.
     if (!raw) return null;
+    // A very large update (a new bank's first import) is not offered: one answer must stay small.
+    size += raw.body.length;
+    if (size > INBOX_MAX_CHARS) return null;
     pages.push({
       key: p.key,
       body: raw.body,
