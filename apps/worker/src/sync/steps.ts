@@ -382,6 +382,9 @@ type Preparer = Pick<Db, 'prepare'>;
  * is retried or waits. A run with no such time (from before it was recorded) uses the step's clock, ?3, as before.
  * In statements bound (?1 run id, ..., ?3 the step's clock).
  */
+// Every time the apply step writes into the budget's rows and the bank log is the update's time, also a row's
+// `updated_at` and a log row's `created_at`: a device
+// that files the same update (local/file-run.ts) must write the same rows, and its steps run at another moment.
 const RUN_TIME = `coalesce((SELECT fetched_at FROM sync_run WHERE id = ?1), ?3)`;
 
 /**
@@ -431,7 +434,7 @@ export async function planApply(
       const pos = from + rel;
       const b = params.length;
       vals.push(
-        `((SELECT seq FROM apply_counter) + ${rel + 1}, ?${b + 1}, ?${b + 2}, ?${b + 3}, ?${b + 4}, ${pos}, (SELECT seq FROM apply_counter) + ${rel + 1}, ?${b + 5}, ?${b + 6}, ?${b + 7}, ?${b + 8}, ?${b + 9}, ?${b + 10}, ${c.now})`,
+        `((SELECT seq FROM apply_counter) + ${rel + 1}, ?${b + 1}, ?${b + 2}, ?${b + 3}, ?${b + 4}, ${pos}, (SELECT seq FROM apply_counter) + ${rel + 1}, ?${b + 5}, ?${b + 6}, ?${b + 7}, ?${b + 8}, ?${b + 9}, ?${b + 10}, coalesce((SELECT fetched_at FROM sync_run WHERE id = ?${b + 3}), ${c.now}))`,
       );
       params.push(
         c.budgetId,
@@ -468,7 +471,7 @@ export async function planApply(
            json_extract(payload, '$.pending'), json_extract(payload, '$.pendingProviderTxnId'), json_extract(payload, '$.rawName'),
            json_extract(payload, '$.merchantName'), json_extract(payload, '$.merchantEntityId'),
            json_extract(payload, '$.providerCategory'), json_extract(payload, '$.paymentChannel'),
-           json_extract(payload, '$.plaidName'), 'p:' || provider_txn_id, NULL, id, id, ${RUN_TIME}, ?3
+           json_extract(payload, '$.plaidName'), 'p:' || provider_txn_id, NULL, id, id, ${RUN_TIME}, ${RUN_TIME}
          FROM bank_event WHERE sync_run_id = ?1 AND page = ?2 AND position >= ?4 AND position < ?5 AND kind != 'removed' ORDER BY id
          ON CONFLICT (provider_txn_id) DO UPDATE SET
            amount = excluded.amount, date = excluded.date, authorized_date = excluded.authorized_date,
@@ -487,12 +490,12 @@ export async function planApply(
     stmts.push(
       db
         .prepare(
-          `UPDATE category SET archived_at = NULL, updated_at = ?3
+          `UPDATE category SET archived_at = NULL, updated_at = ${RUN_TIME}
            WHERE kind = 'cc_payment' AND archived_at IS NOT NULL AND card_account_id IN (${closedHere})`,
         )
         .bind(runId, page, c.now, from, to),
       db
-        .prepare(`UPDATE account SET closed_at = NULL, updated_at = ?3 WHERE id IN (${closedHere})`)
+        .prepare(`UPDATE account SET closed_at = NULL, updated_at = ${RUN_TIME} WHERE id IN (${closedHere})`)
         .bind(runId, page, c.now, from, to),
     );
   }
@@ -500,7 +503,7 @@ export async function planApply(
     stmts.push(
       db
         .prepare(
-          `UPDATE bank_txn SET removed_at = ${RUN_TIME}, updated_at = ?3,
+          `UPDATE bank_txn SET removed_at = ${RUN_TIME}, updated_at = ${RUN_TIME},
              last_apply_seq = (SELECT max(e.id) FROM bank_event e WHERE e.sync_run_id = ?1 AND e.page = ?2 AND e.kind = 'removed'
                                AND e.position >= ?4 AND e.position < ?5 AND e.provider_txn_id = bank_txn.provider_txn_id)
            WHERE provider_txn_id IN (SELECT provider_txn_id FROM bank_event WHERE sync_run_id = ?1 AND page = ?2
@@ -516,7 +519,7 @@ export async function planApply(
       db
         .prepare(
           `INSERT INTO bank_page (sync_run_id, page, budget_id, connection_id, raw_key, sha256, bytes, events, created_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, coalesce((SELECT fetched_at FROM sync_run WHERE id = ?1), ?9))`,
         )
         .bind(
           runId,

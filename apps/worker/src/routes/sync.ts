@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../http/context.js';
 import { requestNow } from '../http/clock.js';
 import { EDIT_ID } from '../http/ids.js';
+import { inboxLatest, inboxNext } from '../store/inbox.js';
 
 export { EDIT_ID };
 import { SYNC_FORMAT, SYNC_TABLES, type SyncTable } from '../sync-tables.js';
@@ -200,6 +201,19 @@ syncRoutes.get('/sync', async (c) => {
   }
 
   return c.json(await changePage(db, since, limit, base));
+});
+
+/**
+ * The next bank update for the device to file itself (docs/privacy.md 5.4, phase 4; store/inbox.ts): the update
+ * after the one the device last took, whole, or `run: null` when there is none the server has finished. One
+ * update per request: its pages can be large.
+ */
+syncRoutes.get('/sync/inbox', async (c) => {
+  const after = Number(c.req.query('after') ?? '0');
+  if (!Number.isSafeInteger(after) || after < 0) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
+  const db = c.env.DB;
+  const run = await inboxNext(db, after);
+  return c.json({ run, latest: await inboxLatest(db) });
 });
 
 /** One batch of the bank log for a device (docs/privacy.md 5.4): rows only ever added, so it has cursors of its own. */
