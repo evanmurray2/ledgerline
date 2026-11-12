@@ -146,8 +146,15 @@ describe('Budget', () => {
 });
 
 describe('Activity', () => {
-  it('shows the Needs attention groups and lists', async () => {
+  it('opens on Not posted yet when this month has rows waiting to post (D-97)', async () => {
     renderAt('/activity');
+    const chip = await screen.findByRole('button', { name: 'Not posted yet' }, { timeout: 4000 });
+    await waitFor(() => expect(chip.getAttribute('aria-pressed')).toBe('true'));
+    expect(screen.getByRole('button', { name: 'All' }).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('shows the Needs attention groups and lists', async () => {
+    renderAt('/activity?filter=all');
     await text('Money to match');
     expect(screen.getAllByText('+$1,018.00').length).toBeGreaterThan(0);
     expect(screen.queryByText('Transfers to sort out')).toBeNull();
@@ -169,7 +176,7 @@ describe('Activity', () => {
   it('OK takes the suggested category, with Undo and no rule offer', async () => {
     server = installMock('default', 0, (now) => novemberCopy(now));
     await categorize(['n-amazon-f'], 'household');
-    show('/activity');
+    show('/activity?filter=all');
     fireEvent.click(
       await screen.findByRole('button', { name: /^Use Household for Amazon/ }, { timeout: 4000 }),
     );
@@ -182,7 +189,7 @@ describe('Activity', () => {
   it('the picker lists the payee’s past categories most used first, with counts', async () => {
     server = installMock('default', 0, (now) => novemberCopy(now));
     await categorize(['n-amazon-f'], 'household');
-    show('/activity');
+    show('/activity?filter=all');
     fireEvent.click(
       (await screen.findAllByRole('button', { name: /^Choose category for Amazon/ }, { timeout: 4000 }))[0]!,
     );

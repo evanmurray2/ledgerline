@@ -324,7 +324,8 @@ const activityRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/activity',
   validateSearch: (s: Record<string, unknown>) => ({
-    filter: s.filter === 'attention' || s.filter === 'pending' ? s.filter : undefined,
+    // No filter: Not posted yet on this month, else All (screens/Activity.tsx).
+    filter: s.filter === 'all' || s.filter === 'attention' || s.filter === 'pending' ? s.filter : undefined,
     q: str(s.q),
     // One category's transactions (Reports → a category).
     category: str(s.category),

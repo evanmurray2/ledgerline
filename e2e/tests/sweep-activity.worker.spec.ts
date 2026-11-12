@@ -34,7 +34,7 @@ const search = async (page: Page, text: string) => {
 test('Search: an amount typed with a dollar sign or a comma finds posted and waiting rows', async ({
   page,
 }) => {
-  await page.goto('/activity');
+  await page.goto('/activity?filter=all');
   await expect(page.getByText('Uniqlo').first()).toBeVisible();
   for (const [text, payee] of [
     ['$200.80', 'Uniqlo'],
@@ -64,7 +64,7 @@ test('Search: under Needs attention, an amount or a category finds rows that nee
 });
 
 test('Search: _ and % are plain letters, not wildcards', async ({ page }) => {
-  await page.goto('/activity');
+  await page.goto('/activity?filter=all');
   await expect(page.getByText('Uniqlo').first()).toBeVisible();
   for (const text of ['_', '%', 'a_b']) {
     await search(page, text);
@@ -211,7 +211,7 @@ test('Add: money in starts in Ready to Assign', async ({ page, request }) => {
 });
 
 test('Split: a line amount that is not money keeps Save split off', async ({ page }) => {
-  await page.goto('/activity');
+  await page.goto('/activity?filter=all');
   await page.getByText('Target', { exact: true }).first().click();
   await page.getByRole('link', { name: 'Split into categories' }).click();
   const sheet = page.getByRole('dialog', { name: 'Split' });
@@ -357,7 +357,7 @@ test('Transfer: both sides name the two accounts the right way round', async ({ 
 });
 
 test('Transfer: Unpair says what happened, and both halves then need a category', async ({ page }) => {
-  await page.goto('/activity/txn/n-to-marcus');
+  await page.goto('/activity/txn/n-to-marcus?filter=all');
   const sheet = page.getByRole('dialog', { name: 'Transfer' });
   await sheet.getByRole('button', { name: 'Unpair' }).click();
   await expect(sheet.getByText('Both halves now need a category.')).toBeVisible();
