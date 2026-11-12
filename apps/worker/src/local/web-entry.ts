@@ -119,6 +119,15 @@ async function oldSync(e: LocalEngine): Promise<void> {
   }
 }
 
+/**
+ * A copy that has a place in a sealed log takes nothing from the old sync and sends no change the old way,
+ * whatever the page says the budget is: a server that answers as if the budget were not sealed gets nothing.
+ */
+async function plainOnly(): Promise<void> {
+  if (await need().engine.noted(LogSession.PLACE))
+    throw new Error('Your budget is locked on this device. Nothing was sent.');
+}
+
 function need(): { db: SqlJsDb; engine: LocalEngine } {
   if (!db || !engine) throw new Error('Your budget isn’t open on this device yet. Try again.');
   return { db, engine };
@@ -147,6 +156,7 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       return { value: await engine.state() };
     }
     case 'apply':
+      await plainOnly();
       return { value: await need().engine.apply(m.page, m.receivedAt) };
     case 'next':
       return { value: await need().engine.nextRequest() };
@@ -169,6 +179,7 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
         ),
       };
     case 'queueSending':
+      await plainOnly();
       await need().engine.queueSending(m.editId);
       return { value: null };
     case 'queueDone':

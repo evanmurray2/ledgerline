@@ -12,19 +12,5 @@ const PRODUCTION: [number, string][] = [
   [1, '40b4ab6d7d4148004989ceb11a3424ecd0dae66e974fbafaa8f290edce99bb3b'],
 ];
 
-/**
- * A build for tests or local work names its own Worker's keys in `VITE_RUN_KEYS` (the JSON of `[[n, hex], …]`),
- * and then accepts those in place of production's. The release build sets nothing (deploy.yml), so the app the
- * owner runs accepts production's keys only.
- */
-function listed(): [number, string][] {
-  const own = (import.meta.env as Record<string, string | undefined>).VITE_RUN_KEYS;
-  if (!own) return PRODUCTION;
-  const keys = JSON.parse(own) as [number, string][];
-  if (!Array.isArray(keys) || keys.some(([n, pub]) => !Number.isInteger(n) || !/^[0-9a-f]{64}$/.test(pub)))
-    throw new Error('VITE_RUN_KEYS is not a list of [key number, 64 hex characters].');
-  return keys;
-}
-
 /** [key number, public key]: a sealed bank run is accepted only when one of these signed it. */
-export const WORKER_RUN_KEYS: [number, Uint8Array][] = listed().map(([n, pub]) => [n, hex(pub)]);
+export const WORKER_RUN_KEYS: [number, Uint8Array][] = PRODUCTION.map(([n, pub]) => [n, hex(pub)]);

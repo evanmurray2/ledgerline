@@ -101,9 +101,10 @@ describe('opening a sealed budget in the app', () => {
       remembered: r.lastPublic,
     });
     expect(o).toMatchObject({ number: 7, joined: false, publics: r.publics });
+    const noPlace = host(false);
     await expect(
       openSealedBudget({
-        host: host(false).h,
+        host: noPlace.h,
         kept: r.publics,
         budgetId: BUDGET,
         deviceId: PHONE,
@@ -111,6 +112,7 @@ describe('opening a sealed budget in the app', () => {
         workerKeys: [],
       }),
     ).rejects.toThrow('Connect to the internet to open your budget.');
+    expect(noPlace.calls.map((c) => c[0])).toEqual(['open']);
     await expect(
       openSealedBudget({ host: off.h, budgetId: BUDGET, deviceId: PHONE, passkey: second, workerKeys: [] }),
     ).rejects.toThrow('Connect to the internet to open your budget.');

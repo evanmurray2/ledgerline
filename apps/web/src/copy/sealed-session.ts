@@ -3,13 +3,19 @@
 // from the copy on this device, which answers the same question the server used to.
 import { Session, type SealedSession } from '@ledgerline/contracts';
 
+/** Shown when the server answers for a budget this device knows as locked as if it were not. */
+export const NOT_LOCKED =
+  'Your budget is locked on this device, but the server says it isn’t. Nothing was sent. If you went back on another device, sign out here and sign in again.';
+
 export interface SessionDeps {
   /** The copy is open: it can answer for the budget. */
   ready: () => boolean;
   /** The copy's own answer to `GET /api/session`. */
   local: () => Promise<{ status: number; body: string }>;
-  /** Tells the copy that the budget is sealed (or is not). */
-  note: (s: SealedSession | null) => void;
+  /** Tells the copy that the budget is sealed. */
+  note: (s: SealedSession) => void;
+  /** This device knows the budget as sealed (it opened it so before). */
+  known: (budgetId: string) => boolean;
   /** Keeps the session with the copy, for a start with no signal. */
   keep: (s: Session) => Promise<void>;
   now?: () => Date;
@@ -18,33 +24,23 @@ export interface SessionDeps {
 /** What the app shows as the session, from the server's answer and, for a sealed budget, from the copy. */
 export async function sessionFor(server: Session | SealedSession, d: SessionDeps): Promise<Session> {
   if (!('sealed' in server)) {
-    d.note(null);
+    // A sealed budget does not become a plain one because the server says so: the app would then send the
+    // budget's changes in the clear. Only the way back, taken on this device, or signing out here ends it.
+    if (d.known(server.budget.id)) throw new Error(NOT_LOCKED);
     return server;
   }
   d.note(server);
-  const account = {
-    user: { email: server.user.email, login: null },
-    appVersion: server.appVersion,
-    writeState: server.writeState,
-    readOnlyUntil: server.readOnlyUntil,
-    readsPaused: server.readsPaused,
-    canLinkBanks: server.canLinkBanks,
-    hostedLink: true,
-    recoveryNoticeAt: server.recoveryNoticeAt,
-  };
   if (d.ready()) {
-    const r = await d.local();
-    const local = r.status === 200 ? Session.safeParse(JSON.parse(r.body)) : null;
-    if (local?.success && local.data.budget.id === server.budgetId) {
-      const merged: Session = { ...local.data, ...account };
-      await d.keep(merged).catch(() => undefined);
-      return merged;
+    const m = mergedSession(server, await d.local());
+    if (m) {
+      await d.keep(m).catch(() => undefined);
+      return m;
     }
   }
   // Before the copy is open, nothing of the budget is known here: enough to open the copy with, and no more.
   const today = (d.now?.() ?? new Date()).toISOString().slice(0, 10);
   return {
-    ...account,
+    ...accountOf(server),
     budget: {
       id: server.budgetId,
       name: '',
@@ -56,4 +52,32 @@ export async function sessionFor(server: Session | SealedSession, d: SessionDeps
     },
     settings: { tracking: false, noteButton: false },
   };
+}
+
+const accountOf = (server: SealedSession) => ({
+  user: { email: server.user.email, login: null },
+  appVersion: server.appVersion,
+  writeState: server.writeState,
+  readOnlyUntil: server.readOnlyUntil,
+  readsPaused: server.readsPaused,
+  canLinkBanks: server.canLinkBanks,
+  hostedLink: true,
+  recoveryNoticeAt: server.recoveryNoticeAt,
+});
+
+/**
+ * The budget's facts from the copy's own answer to `GET /api/session`, the account's from the server; null when
+ * the copy gave no answer for this budget.
+ */
+export function mergedSession(server: SealedSession, r: { status: number; body: string }): Session | null {
+  if (r.status !== 200) return null;
+  let body: unknown;
+  try {
+    body = JSON.parse(r.body);
+  } catch {
+    return null;
+  }
+  const local = Session.safeParse(body);
+  if (!local.success || local.data.budget.id !== server.budgetId) return null;
+  return { ...local.data, ...accountOf(server) };
 }

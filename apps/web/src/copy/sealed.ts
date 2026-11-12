@@ -87,8 +87,8 @@ export async function openSealedBudget(o: {
     >)[];
     const opened = await o.host.sealedOpen(keys, o.deviceId, o.workerKeys);
     // No place kept with the copy: a new device, or a copy made again. It starts from a snapshot.
-    const at = opened.ready ? opened : await o.host.sealedJoin();
     if (!opened.ready && !o.fetch) throw new Error('Connect to the internet to open your budget.');
+    const at = opened.ready ? opened : await o.host.sealedJoin();
     return { number: at.number, lastPublic: state.lastPublic, joined: !opened.ready, keys, publics: raw };
   } finally {
     zeroize(budget.bk);

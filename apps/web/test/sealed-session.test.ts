@@ -1,6 +1,6 @@
 import type { SealedSession, Session } from '@ledgerline/contracts';
 import { describe, expect, it } from 'vitest';
-import { sessionFor, type SessionDeps } from '../src/copy/sealed-session';
+import { NOT_LOCKED, sessionFor, type SessionDeps } from '../src/copy/sealed-session';
 
 const BUDGET = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
 const plain: Session = {
@@ -36,12 +36,13 @@ const sealed: SealedSession = {
 };
 
 const deps = (over: Partial<SessionDeps> = {}) => {
-  const noted: (SealedSession | null)[] = [];
+  const noted: SealedSession[] = [];
   const kept: Session[] = [];
   const d: SessionDeps = {
     ready: () => true,
     local: async () => ({ status: 200, body: JSON.stringify(plain) }),
     note: (s) => void noted.push(s),
+    known: () => false,
     keep: async (s) => void kept.push(s),
     now: () => new Date('2026-11-12T10:00:00Z'),
     ...over,
@@ -53,8 +54,14 @@ describe('the session of a sealed budget', () => {
   it('leaves the session of a budget that is not sealed as the server gave it', async () => {
     const { d, noted, kept } = deps();
     expect(await sessionFor(plain, d)).toBe(plain);
-    expect(noted).toEqual([null]);
+    expect(noted).toEqual([]);
     expect(kept).toEqual([]);
+  });
+
+  it('refuses an answer that says a budget this device knows as sealed is not', async () => {
+    const { d, noted } = deps({ known: (id) => id === BUDGET });
+    await expect(sessionFor(plain, d)).rejects.toThrow(NOT_LOCKED);
+    expect(noted).toEqual([]);
   });
 
   it('takes the budget from the copy and the account from the server, and keeps the result', async () => {

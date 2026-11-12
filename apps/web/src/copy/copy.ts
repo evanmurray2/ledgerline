@@ -13,6 +13,7 @@ import { CSRF_HEADER, type SealedSession, type Session } from '@ledgerline/contr
 import { slotPrfInput } from '../keys/budget';
 import { WORKER_RUN_KEYS } from '../keys/worker-keys';
 import { logDeviceId, openSealedBudget } from './sealed';
+import { mergedSession } from './sealed-session';
 import { connectivity } from '../state/connectivity';
 import { EngineHost, syncAll, type EngineIdentity, type QueuedEdit, type SyncPage } from './host';
 import { shadowBefore, shadowFinish, type Started } from './shadow';
@@ -137,14 +138,76 @@ let pending: {
 let sealed: SealedSession | null = null;
 /** The budget lives in its sealed log: the copy syncs with the log, and every change is made on the device. */
 export const isSealed = (): boolean => sealed !== null;
-export function noteSealed(s: SealedSession | null): void {
+/**
+ * The server says the budget is sealed. It is remembered on this device from then on: the next sign-in asks the
+ * passkey for the budget's secret in the same prompt, and an answer that says the budget is not sealed is
+ * refused (sealed-session.ts). Nothing the server says later takes this back.
+ */
+export function noteSealed(s: SealedSession): void {
+  const first = sealed === null;
   sealed = s;
-  // Remembered on this device, so that the next sign-in asks the passkey for the budget's secret in the same
-  // prompt. A device that never opened a sealed budget is asked for nothing more than before.
+  rememberSealed(s.budgetId);
+  // A copy that was open as a plain budget (another device moved the budget meanwhile) holds no place in the
+  // log, and its queue was made for the old routes: the app starts again and opens the budget from the log.
+  if (first && state.status === 'ready' && who && !MOCK) {
+    void host?.close();
+    host = null;
+    window.location.reload();
+  }
+}
+/** The budgets this device knows as sealed (their ids, no more), kept outside the copy so a wipe leaves them. */
+const sealedBudgets = (): string[] => {
   try {
-    if (s) localStorage.setItem(SEALED_FLAG, '1');
+    return (localStorage.getItem(SEALED_FLAG) ?? '').split(',').filter(Boolean);
   } catch {
-    // No storage: the next sign-in asks once more.
+    return [];
+  }
+};
+function rememberSealed(budgetId: string): void {
+  try {
+    const all = sealedBudgets();
+    if (!all.includes(budgetId)) localStorage.setItem(SEALED_FLAG, [...all, budgetId].join(','));
+  } catch {
+    // No storage: the device knows it only while the app is open.
+  }
+}
+/** Only the person's own act on this device forgets it: the way back, or signing out here. */
+function forgetSealed(budgetId: string | null): void {
+  try {
+    const rest = budgetId ? sealedBudgets().filter((b) => b !== budgetId) : [];
+    if (rest.length) localStorage.setItem(SEALED_FLAG, rest.join(','));
+    else localStorage.removeItem(SEALED_FLAG);
+    if (budgetId) localStorage.removeItem(PUBLIC_MARK + budgetId);
+  } catch {
+    // Nothing kept, nothing to forget.
+  }
+}
+/** This device knows the budget as sealed. */
+export const sealedKnown = (budgetId: string): boolean =>
+  sealed?.budgetId === budgetId || sealedBudgets().includes(budgetId);
+
+// The last public entry of the log this device saw, kept in the copy and, as a second mark, outside it: a copy
+// that is made again (or lives in memory only) still refuses a log that does not pass through it.
+const PUBLIC_MARK = 'ledgerline.public.';
+type PublicMark = { number: number; hash: string };
+async function lastPublicSeen(h: EngineHost, budgetId: string): Promise<PublicMark | null> {
+  const marks: PublicMark[] = [];
+  const kept = await h.get('last_public');
+  if (kept) marks.push(JSON.parse(kept) as PublicMark);
+  try {
+    const out = localStorage.getItem(PUBLIC_MARK + budgetId);
+    if (out) marks.push(JSON.parse(out) as PublicMark);
+  } catch {
+    // The copy's own mark is all there is.
+  }
+  return marks.sort((a, b) => b.number - a.number)[0] ?? null;
+}
+async function keepPublicSeen(h: EngineHost, budgetId: string, m: PublicMark): Promise<void> {
+  await h.put('last_public', JSON.stringify(m));
+  try {
+    localStorage.setItem(PUBLIC_MARK + budgetId, JSON.stringify(m));
+  } catch {
+    // The copy's own mark stays.
   }
 }
 export const sealedSession = (): SealedSession | null => sealed;
@@ -152,18 +215,17 @@ export const sealedSession = (): SealedSession | null => sealed;
 export const copyReady = (): boolean => state.status === 'ready' && host !== null;
 /** Keeps the session with the copy, for a start with no signal. */
 export async function keepSession(s: Session): Promise<void> {
-  await host?.put('session', JSON.stringify(s));
+  if (!host) return;
+  const text = JSON.stringify(s);
+  if ((await host.get('session')) === text) return;
+  await host.put('session', text);
+  // Saved when it changed, so that a start with no signal finds it.
+  if (record) await save().catch(() => undefined);
 }
 const SEALED_FLAG = 'ledgerline.sealed';
-const knowsSealed = (): boolean => {
-  try {
-    return localStorage.getItem(SEALED_FLAG) === '1';
-  } catch {
-    return false;
-  }
-};
-/** Shown when a sealed budget needs the passkey once more (its keys are not held on this device now). */
-export const NEEDS_PASSKEY = 'Sign in again with your passkey to open your budget.';
+const knowsSealed = (): boolean => sealedBudgets().length > 0;
+/** Shown, with the button that tries again, when a sealed budget needs the passkey once more. */
+export const NEEDS_PASSKEY = 'Your passkey is needed once more to open your budget. Try again.';
 
 const toHex = (b: Uint8Array): string => [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
 const fromHex = (s: string): Uint8Array<ArrayBuffer> =>
@@ -189,8 +251,7 @@ async function enterSealed(
     // No secret from the sign-in (this device opens a sealed budget for the first time, or the keys held are too
     // old): the passkey is asked once more, for the budget's secret alone. Nothing of this goes to the server.
     const w = way?.slotPrf ? way : await askSlot();
-    const kept = await h.get('last_public');
-    const last = kept ? (JSON.parse(kept) as { number: number; hash: string }) : null;
+    const last = await lastPublicSeen(h, who!.budgetId);
     const publics = await h.get('publics');
     const r = await openSealedBudget({
       host: h,
@@ -207,15 +268,26 @@ async function enterSealed(
       workerKeys: WORKER_RUN_KEYS,
       ...(last ? { remembered: { number: last.number, hash: fromHex(last.hash) } } : {}),
     });
-    await h.put(
-      'last_public',
-      JSON.stringify({ number: r.lastPublic.number, hash: toHex(r.lastPublic.hash) }),
-    );
+    await keepPublicSeen(h, who!.budgetId, { number: r.lastPublic.number, hash: toHex(r.lastPublic.hash) });
     await h.put('publics', JSON.stringify(r.publics));
     keys = r.keys;
   }
   if (sealed) await h.put('sealed_session', JSON.stringify(sealed));
   if (record && dataKey) await holdKey(record.key, dataKey, Date.now(), keys);
+  // Saved now: the place in the log, the writer's id and the marks above must outlive a closed app, or the next
+  // start would join again as a new writer.
+  if (record && online) {
+    record = { ...record, sealed: true };
+    await save();
+  }
+}
+
+/** The session the app shows for a sealed budget whose copy is open: the copy's facts, the server's account. */
+async function sealedSessionNow(): Promise<Session | null> {
+  if (!sealed || !host) return null;
+  const m = mergedSession(sealed, await host.request('GET', '/api/session'));
+  if (m) await host.put('session', JSON.stringify(m));
+  return m;
 }
 
 /** Asks the passkey for the budget's secret alone (a challenge made here: the server has no part in it). */
@@ -427,13 +499,28 @@ export async function start(session: Session): Promise<void> {
     if (!sealed) await host!.put('session', JSON.stringify(session));
     // Read before the data key is held anew, which would make old keys look fresh.
     const heldKeys = sealed && record ? await heldSealed(record.key, IDLE_MS) : null;
-    if (record && dataKey) await holdKey(record.key, dataKey, Date.now());
-    if (sealed) await enterSealed(p, heldKeys);
+    if (record && dataKey) await holdKey(record.key, dataKey, Date.now(), undefined, IDLE_MS);
+    if (sealed) {
+      try {
+        await enterSealed(p, heldKeys);
+      } catch (e) {
+        // The sign-in's secrets are kept for the button that tries again: the copy made above is opened with
+        // them, not made a second time in memory.
+        if (p && !pending) pending = p;
+        throw e;
+      }
+    }
     set({ saved: record !== null, hasSaved: record !== null, why });
     await syncNow();
+    if (sealed) {
+      // The session the screens read is made from the copy, before the copy says it is ready: no screen shows
+      // a budget with no name, in another time zone.
+      const made = await sealedSessionNow();
+      if (!made) throw new Error('Something went wrong. Try again.');
+      if (record) await save();
+      window.dispatchEvent(new CustomEvent('ledgerline:session', { detail: made }));
+    }
     set({ status: 'ready' });
-    // A sealed budget's session is made from the copy, which is open only now: the app asks for it again.
-    if (sealed) window.dispatchEvent(new Event('ledgerline:readonly'));
     watch();
     void flush();
   } catch (e) {
@@ -464,7 +551,9 @@ export async function openWithoutSignal(onSession?: (s: Session) => void): Promi
       salt: rec.salt,
       credentialId: rec.credentialIdHint ?? null,
       // A sealed budget opens from the same prompt (its public entries are kept with the copy).
-      ...(knowsSealed() ? { slot: (await slotPrfInput()).buffer as ArrayBuffer } : {}),
+      ...(rec.sealed || sealedKnown(rec.who.budgetId)
+        ? { slot: (await slotPrfInput()).buffer as ArrayBuffer }
+        : {}),
     },
   );
   if (!a.prf)
@@ -493,7 +582,9 @@ export async function openWithoutSignal(onSession?: (s: Session) => void): Promi
     if (wasSealed) {
       sealed = JSON.parse(wasSealed) as SealedSession;
       await enterSealed({ credentialId: a.credentialId, slotPrf: a.slotPrf }, null, false);
-    }
+    } else if (sealedKnown(rec.who.budgetId))
+      // The copy saved here is from before the budget was sealed: it is not opened as the budget.
+      throw new Error('Connect to the internet to open your budget.');
     // The saved session goes to the app first (onSession), then the copy says it's ready, so the app never shows a
     // moment with an open copy and no session ("Couldn't reach Ledgerline").
     onSession?.(session);
@@ -504,6 +595,8 @@ export async function openWithoutSignal(onSession?: (s: Session) => void): Promi
     await host?.close();
     host = null;
     dataKey = null;
+    record = null;
+    sealed = null;
     set({ status: 'failed', error: e instanceof Error ? e.message : String(e) });
     throw e;
   }
@@ -803,9 +896,11 @@ let flushing = false;
 export async function flush(): Promise<{ sent: number; refused: number }> {
   if (!host || flushing || state.offline) return { sent: 0, refused: 0 };
   if (sealed) {
-    // A sealed budget's changes go out as entries of its log, with the sync.
+    // A sealed budget's changes go out as entries of its log, with the sync. A sync that fails is tried again
+    // by the next one; nothing is dropped.
     const before = (await queued()).length;
-    await syncNow();
+    if (!before) return { sent: 0, refused: 0 };
+    await syncNow().catch(() => undefined);
     return { sent: Math.max(0, before - (await queued()).length), refused: 0 };
   }
   flushing = true;
@@ -1011,6 +1106,8 @@ export async function wipe(all = false): Promise<void> {
  */
 export async function signOutHere(): Promise<void> {
   const devices = MOCK ? [] : (await allRecords()).map((r) => r.deviceId);
+  // The person's own act: this device forgets every budget it knew as sealed.
+  forgetSealed(null);
   await wipe(true);
   await server('POST', '/api/settings/security/sign-out', { forget: true, devices });
   tellOtherTabs('deleted');
@@ -1072,4 +1169,6 @@ export function useCopy(): CopyState {
 /** Tests only. */
 export function resetCopyForTests(patch: Partial<CopyState> = {}): void {
   state = { ...state, ...patch };
+  sealed = null;
+  forgetSealed(null);
 }

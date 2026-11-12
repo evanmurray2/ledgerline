@@ -1,5 +1,5 @@
 // One function per endpoint in docs/api.md. Types come from @ledgerline/contracts.
-import { copyReady, keepSession, noteSealed, read as readCopy } from '../copy/copy';
+import { copyReady, keepSession, noteSealed, read as readCopy, sealedKnown } from '../copy/copy';
 import { sessionFor } from '../copy/sealed-session';
 import {
   AuthStatus,
@@ -96,6 +96,7 @@ export const api = {
       ready: copyReady,
       local: () => readCopy('/api/session'),
       note: noteSealed,
+      known: sealedKnown,
       keep: keepSession,
     }),
   /** Tab badge counts, cheaply: shown on every screen. */

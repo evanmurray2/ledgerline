@@ -15,6 +15,7 @@ import {
 import { AppShell } from './components/AppShell';
 import { ErrorNote, Loading } from './components/ui';
 import { useQueryClient } from '@tanstack/react-query';
+import type { Session } from '@ledgerline/contracts';
 import { forgetSignedOut, qk, useSession } from './api/hooks';
 import { copySettled, needsReload, reloadForVersion } from './state/version';
 import { connectivity } from './state/connectivity';
@@ -110,11 +111,15 @@ function Root() {
     // The Worker refused a write because the daily limit was reached: refresh writeState and readOnlyUntil.
     const onReadOnly = () => void qc.invalidateQueries({ queryKey: qk.session });
     window.addEventListener('ledgerline:readonly', onReadOnly);
+    // A sealed budget's copy is open: the session made from it (copy/copy.ts) is the one the screens read.
+    const onSession = (e: Event) => qc.setQueryData(qk.session, (e as CustomEvent<Session>).detail);
+    window.addEventListener('ledgerline:session', onSession);
     // The session ended (24 hours, or signed out elsewhere): show sign-in.
     const onSignedOut = () => forgetSignedOut(qc);
     window.addEventListener('ledgerline:signedout', onSignedOut);
     return () => {
       window.removeEventListener('ledgerline:readonly', onReadOnly);
+      window.removeEventListener('ledgerline:session', onSession);
       window.removeEventListener('ledgerline:signedout', onSignedOut);
     };
   }, [qc]);
