@@ -98,12 +98,38 @@ describe('Budget', () => {
     expect(screen.getByTestId('nav-rta').textContent).toBe('$981.90');
   });
 
-  it('category sheet shows assigned, spent and available', async () => {
+  it('category sheet shows available, spent and the assigned amount, with no mode to choose', async () => {
     renderAt('/budget/category/groceries');
     await text('Refill to $600.00 every month');
     expect(screen.getByTestId('category-available').textContent).toBe('$212.40');
-    expect(screen.getByText('$387.60')).toBeTruthy();
+    expect(screen.getByText('$387.60 spent in November')).toBeTruthy();
+    expect((screen.getByLabelText('Assigned in November') as HTMLInputElement).value).toBe('600.00');
     expect(screen.getByText('See all 4')).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Mode' })).toBeNull();
+    // The target is already the amount, so it isn't offered.
+    expect(screen.queryByRole('button', { name: /^Target/ })).toBeNull();
+    // Typing says what it does to Ready to Assign, and moves Available with it.
+    fireEvent.change(screen.getByLabelText('Assigned in November'), { target: { value: '650' } });
+    expect(screen.getByText('Ready to Assign goes from $981.90 to $931.90.')).toBeTruthy();
+    expect(screen.getByTestId('category-available').textContent).toBe('$262.40');
+    expect(screen.getByRole('button', { name: 'Target $600' })).toBeTruthy();
+  });
+
+  it('category sheet offers the Needs attention amount, and Move money starts by covering it', async () => {
+    renderAt('/budget/category/dining');
+    fireEvent.click(await screen.findByRole('button', { name: 'Cover $18.25' }));
+    expect(screen.getByTestId('category-available').textContent).toBe('$0.00');
+    expect(screen.queryByRole('button', { name: 'Cover $18.25' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Move money' }));
+    const move = await screen.findByRole('dialog', { name: 'Move money' });
+    expect(within(move).getByLabelText('From').textContent).toContain('Ready to Assign');
+    expect(within(move).getByLabelText('To').textContent).toContain('Dining out');
+    expect((within(move).getByLabelText('Amount') as HTMLInputElement).value).toBe('18.25');
+    expect(within(move).getByRole('button', { name: 'Move $18.25' })).toBeTruthy();
+    // Swapping keeps the amount and turns the move around.
+    fireEvent.click(within(move).getByRole('button', { name: 'Swap From and To' }));
+    expect(within(move).getByLabelText('From').textContent).toContain('Dining out');
+    expect(within(move).getByLabelText('To').textContent).toContain('Ready to Assign');
   });
 
   it('assign sheet totals the suggestions', async () => {
