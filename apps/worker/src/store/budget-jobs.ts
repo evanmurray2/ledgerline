@@ -5,7 +5,8 @@ import type { Db } from '@ledgerline/db/sql';
 import { nextLocalTime } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { Env } from '../env.js';
-import { dailyScan } from '../daily-scan.js';
+import { dailyScan, scanTime } from '../daily-scan.js';
+import { inboxScanned } from './inbox.js';
 import { rollUpUsage, watchdogBudgetStmts } from '../maintenance.js';
 import { processPending } from '../sync/process.js';
 import { updateInFlight } from '../sync/turn.js';
@@ -110,7 +111,24 @@ export function backstopHandler(db: Db, enqueue: Enqueue): Handler {
 export function dailyScanHandler(env: Env, budgetId: () => Promise<string>): Handler {
   return async (_job, now): Promise<StepResult> => {
     const b = await budgetId();
+    // The scan is noted for the device, which runs the same one (store/inbox.ts): its planned time, and the
+    // budget's data version before and after it.
+    const version = async () =>
+      (
+        await env.DB.prepare(`SELECT data_version AS v FROM budget WHERE id = ?1`)
+          .bind(b)
+          .first<{ v: number }>()
+      )?.v ?? 0;
+    const base = await version();
     const r = await dailyScan(env, b, now);
+    await inboxScanned(
+      env.DB,
+      'scan',
+      scanTime(now, await budgetZone(env.DB, b)),
+      base,
+      await version(),
+      now,
+    ).catch(() => undefined);
     // A full batch may mean more are due: run again shortly instead of waiting a day.
     if (r.materialized >= SCAN_BATCH) return { state: {}, runAt: now + 1000 };
     return { state: {}, runAt: nextScan(now, await budgetZone(env.DB, b)) };
@@ -120,6 +138,8 @@ export function dailyScanHandler(env: Env, budgetId: () => Promise<string>): Han
 interface MaintState {
   phase: 'start' | 'catchup' | 'rollup' | 'watchdog' | 'prune' | 'bump';
   i?: number;
+  /** The clock of the watchdog step, carried to the end of the run. */
+  at?: number;
 }
 
 /**
@@ -152,7 +172,8 @@ export function maintenanceHandler(env: Env, budgetId: () => Promise<string>): H
       case 'watchdog':
         // 4. Watchdog (the account-wide usage refresh and the auth prune run in the Directory).
         await db.batch(watchdogBudgetStmts(db, b, now));
-        return next({ phase: 'prune' });
+        // The clock of this step goes with the run: a device repeats the step at the same time (store/inbox.ts).
+        return next({ phase: 'prune', at: now });
       case 'prune':
         // Staged pages of finished runs (driven from sync_page, which stays small, not from every run ever), and
         // jobs that failed for good more than 30 days ago. The bank history itself (raw_page, bank_page,
@@ -172,10 +193,19 @@ export function maintenanceHandler(env: Env, budgetId: () => Promise<string>): H
           db.prepare(`DELETE FROM edit_seen WHERE at < ?1`).bind(now - 30 * 86_400_000),
           db.prepare(`DELETE FROM txn_key_move WHERE at < ?1`).bind(now - 30 * 86_400_000),
         ]);
-        return next({ phase: 'bump' });
+        return next({ phase: 'bump', ...(s.at === undefined ? {} : { at: s.at }) });
       case 'bump':
         // The daily job's writes change what screens show: a new data version (http/version.ts). Then wait for tomorrow.
-        await bumpVersion(db, b);
+        {
+          const v = await db
+            .prepare(`SELECT data_version AS v FROM budget WHERE id = ?1`)
+            .bind(b)
+            .first<{ v: number }>();
+          await bumpVersion(db, b);
+          // Noted for the device's shadow run, with the data version before and after (store/inbox.ts).
+          if (v && s.at !== undefined)
+            await inboxScanned(db, 'maintenance', s.at, v.v, v.v + 1, now).catch(() => undefined);
+        }
         return { state: { phase: 'start' }, runAt: nextMaintenance(now, await budgetZone(db, b)) };
     }
   };

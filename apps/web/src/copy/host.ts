@@ -44,6 +44,8 @@ export interface SyncPage {
   rows: { t: string; k: unknown[]; d: Record<string, unknown> | null }[];
   /** The place of the newest bank update the server has finished filing (routes/sync.ts). */
   inbox?: number;
+  /** The newest daily scan the server noted (routes/sync.ts). */
+  inboxScan?: number;
   /** The server is filing a bank update right now (routes/sync.ts). */
   filing?: boolean;
 }
@@ -52,6 +54,13 @@ export interface InboxRun {
   fetchSeq: number;
   [more: string]: unknown;
 }
+/** A daily scan the server ran (store/inbox.ts): the engine runs the same one. */
+export interface InboxScan {
+  n: number;
+  [more: string]: unknown;
+}
+/** What the device does beside the server in a shadow run (local/shadow.ts ShadowEvent). */
+export type ShadowEvent = { run: InboxRun } | { scan: InboxScan };
 /** What a shadow run found (local/shadow.ts): names and counts, never a row's content. */
 export interface ShadowReport {
   runs: number;
@@ -121,7 +130,7 @@ export class EngineHost {
     return this.call('shadowFork');
   }
   /** The bank updates to file on the scratch copy: null when ready, or why a comparison would say nothing. */
-  shadowBegin(token: number, runs: InboxRun[]): Promise<ShadowReport | null> {
+  shadowBegin(token: number, runs: ShadowEvent[]): Promise<ShadowReport | null> {
     return this.call('shadowBegin', { token, runs });
   }
   /** Files the next update on the scratch copy; false when none is left. */

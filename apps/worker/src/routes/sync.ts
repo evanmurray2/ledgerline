@@ -8,7 +8,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../http/context.js';
 import { requestNow } from '../http/clock.js';
 import { EDIT_ID } from '../http/ids.js';
-import { inboxLatest, inboxNext } from '../store/inbox.js';
+import { inboxLatest, inboxLatestScan, inboxNextEvent } from '../store/inbox.js';
 import { updateInFlight } from '../sync/turn.js';
 
 export { EDIT_ID };
@@ -47,6 +47,8 @@ export interface SyncPage {
    * updates too (the shadow run) asks the inbox only when this is past the last one it took.
    */
   inbox?: number;
+  /** The newest daily scan the server noted (store/inbox.ts), for the same reason. */
+  inboxScan?: number;
   /**
    * The server is filing a bank update right now: this page may hold part of it. A device doesn't start a shadow
    * run from such a page, nor from the next one.
@@ -216,6 +218,8 @@ syncRoutes.get('/sync', async (c) => {
   if (!page.more) {
     const inbox = await inboxLatest(db).catch(() => undefined);
     if (inbox !== undefined) page.inbox = inbox;
+    const scans = await inboxLatestScan(db).catch(() => undefined);
+    if (scans !== undefined) page.inboxScan = scans;
     if (await updateInFlight(db, null, requestNow(c)).catch(() => false)) page.filing = true;
   }
   return c.json(page);
@@ -228,10 +232,18 @@ syncRoutes.get('/sync', async (c) => {
  */
 syncRoutes.get('/sync/inbox', async (c) => {
   const after = Number(c.req.query('after') ?? '0');
-  if (!Number.isSafeInteger(after) || after < 0) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
+  const scan = Number(c.req.query('scan') ?? '0');
+  if (!Number.isSafeInteger(after) || after < 0 || !Number.isSafeInteger(scan) || scan < 0)
+    return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
   const db = c.env.DB;
-  const run = await inboxNext(db, after);
-  return c.json({ run, latest: await inboxLatest(db) });
+  // A bank update or a daily scan, whichever the server did first after what the device has.
+  const next = await inboxNextEvent(db, after, scan);
+  return c.json({
+    run: next && 'run' in next ? next.run : null,
+    scan: next && 'scan' in next ? next.scan : null,
+    latest: await inboxLatest(db),
+    latestScan: await inboxLatestScan(db),
+  });
 });
 
 const ShadowReportBody = z.object({

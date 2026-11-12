@@ -1,7 +1,7 @@
 // The app's side of the shadow run (src/copy/shadow.ts): when it starts one, what it asks the inbox for, and what
 // it reports. The filing and the comparison themselves are the engine's (apps/worker/test/inbox.test.ts).
 import { describe, expect, it } from 'vitest';
-import type { EngineHost, InboxRun, ShadowReport, SyncPage } from '../src/copy/host';
+import type { EngineHost, InboxRun, InboxScan, ShadowEvent, ShadowReport, SyncPage } from '../src/copy/host';
 import { MAX_RUNS, shadowBefore, shadowFinish } from '../src/copy/shadow';
 
 const page = (o: Partial<SyncPage> = {}): SyncPage => ({
@@ -17,12 +17,21 @@ const page = (o: Partial<SyncPage> = {}): SyncPage => ({
 const CLEAN: ShadowReport = { runs: 2, compared: true, differences: [] };
 const INCOMPLETE = { compared: false, why: 'incomplete', differences: [] };
 
-function setup(o: { seq?: string; inbox?: number[]; refuse?: ShadowReport } = {}) {
-  const kv = new Map<string, string>(o.seq === undefined ? [] : [['shadow_seq', o.seq]]);
+function setup(
+  o: { seq?: string; scan?: string; inbox?: number[]; scans?: number[]; refuse?: ShadowReport } = {},
+) {
+  const kv = new Map<string, string>(
+    o.seq === undefined
+      ? []
+      : [
+          ['shadow_seq', o.seq],
+          ['shadow_scan', o.scan ?? '0'],
+        ],
+  );
   const asked: string[] = [];
   const posted: unknown[] = [];
   const calls: string[] = [];
-  let runs: InboxRun[] = [];
+  let runs: ShadowEvent[] = [];
   let steps = 0;
   const host = {
     get: async (k: string) => kv.get(k) ?? null,
@@ -31,7 +40,7 @@ function setup(o: { seq?: string; inbox?: number[]; refuse?: ShadowReport } = {}
       calls.push('fork');
       return 5;
     },
-    shadowBegin: async (_token: number, r: InboxRun[]) => {
+    shadowBegin: async (_token: number, r: ShadowEvent[]) => {
       calls.push('begin');
       runs = r;
       return o.refuse ?? null;
@@ -47,9 +56,12 @@ function setup(o: { seq?: string; inbox?: number[]; refuse?: ShadowReport } = {}
   } as unknown as EngineHost;
   const get = async (path: string) => {
     asked.push(path);
-    const after = Number(new URL(path, 'https://x').searchParams.get('after'));
-    const next = (o.inbox ?? []).find((n) => n > after);
-    return { run: next === undefined ? null : ({ fetchSeq: next } as InboxRun), latest: 0 };
+    const q = new URL(path, 'https://x').searchParams;
+    const next = (o.inbox ?? []).find((n) => n > Number(q.get('after')));
+    const scan = (o.scans ?? []).find((n) => n > Number(q.get('scan')));
+    // In this test a scan comes after the updates that wait.
+    if (next !== undefined) return { run: { fetchSeq: next } as InboxRun, scan: null };
+    return { run: null, scan: scan === undefined ? null : ({ n: scan } as InboxScan) };
   };
   const post = async (_path: string, body: unknown) => void posted.push(body);
   return { host, kv, asked, posted, calls, get, post, runs: () => runs };
@@ -80,14 +92,14 @@ describe('the shadow run in the app', () => {
   it('makes the scratch copy before the sync with no network, then files and reports after it', async () => {
     const s = setup({ seq: '7', inbox: [8, 9] });
     const started = await shadowBefore(s.host, page({ inbox: 9 }), true, s.post);
-    expect(started).toEqual({ token: 5, from: 7, to: 9 });
+    expect(started).toEqual({ token: 5, from: 7, to: 9, scanFrom: 0, scanTo: 0 });
     expect(s.calls).toEqual(['fork']);
     expect(s.asked).toEqual([]);
     expect(s.kv.get('shadow_seq')).toBe('9');
     await shadowFinish(s.host, started!, s.get, s.post);
     await settle();
-    expect(s.asked).toEqual(['/api/sync/inbox?after=7', '/api/sync/inbox?after=8']);
-    expect(s.runs().map((r) => r.fetchSeq)).toEqual([8, 9]);
+    expect(s.asked).toEqual(['/api/sync/inbox?after=7&scan=0', '/api/sync/inbox?after=8&scan=0']);
+    expect(s.runs()).toEqual([{ run: { fetchSeq: 8 } }, { run: { fetchSeq: 9 } }]);
     expect(s.calls).toEqual(['fork', 'begin', 'step', 'step', 'end']);
     expect(s.posted).toEqual([CLEAN]);
   });
@@ -150,5 +162,19 @@ describe('the shadow run in the app', () => {
     await shadowFinish(s.host, started!, s.get, s.post);
     await settle();
     expect(s.posted).toEqual([{ runs: 2, ...INCOMPLETE }]);
+  });
+
+  it('a daily scan the server ran starts a run too, in its place after the updates before it', async () => {
+    const s = setup({ seq: '7', scan: '2', inbox: [8], scans: [3] });
+    const started = await shadowBefore(s.host, page({ inbox: 8, inboxScan: 3 }), true, s.post);
+    expect(started).toEqual({ token: 5, from: 7, to: 8, scanFrom: 2, scanTo: 3 });
+    expect(s.kv.get('shadow_scan')).toBe('3');
+    await shadowFinish(s.host, started!, s.get, s.post);
+    await settle();
+    expect(s.runs()).toEqual([{ run: { fetchSeq: 8 } }, { scan: { n: 3 } }]);
+    expect(s.posted).toEqual([CLEAN]);
+    // A scan alone is enough to start one.
+    const only = setup({ seq: '7', scan: '2', scans: [3] });
+    expect(await shadowBefore(only.host, page({ inbox: 7, inboxScan: 3 }), true, only.post)).not.toBeNull();
   });
 });

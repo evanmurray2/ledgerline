@@ -227,4 +227,42 @@ describe('the queue of offline edits', () => {
     await same();
     expect(await assigned(b, 'rent')).toBe(server + 100);
   });
+
+  it('a sync of several pages takes the queue out before its first page and runs it again after its last', async () => {
+    await same();
+    const add = await offline('POST', '/api/budget/assign', {
+      month: '2026-11',
+      items: [{ categoryId: 'rent', amount: 500 }],
+    });
+    const before = await assigned(a, 'rent');
+    // Another device changes three things: more than one small page of changes.
+    for (const [categoryId, amount] of [
+      ['rent', 70_000],
+      ['electric', 8_000],
+      ['internet', 6_000],
+    ] as const)
+      expect(
+        (await other('POST', '/api/budget/set', { month: '2026-11', categoryId, assigned: amount })).status,
+      ).toBe(200);
+    let pages = 0;
+    for (;;) {
+      const { since } = await a.nextRequest();
+      const page = (await (
+        await SELF.fetch(`${ORIGIN}/api/sync?since=${since}&limit=1`)
+      ).json()) as Parameters<LocalEngine['apply']>[0];
+      const r = await a.apply(page);
+      pages++;
+      if (r.caughtUp) break;
+      // Between two pages the phone's own edit is out of the copy: Rent is the amount before it, or the server's.
+      expect([before - 500, 70_000]).toContain(await assigned(a, 'rent'));
+      expect(await ids()).toEqual([add]);
+    }
+    expect(pages).toBeGreaterThan(1);
+    // The server's rows, then the queued edit on top.
+    expect(await assigned(a, 'rent')).toBe(70_500);
+    expect(await ids()).toEqual([add]);
+    await flush();
+    await same();
+    expect(await assigned(b, 'rent')).toBe(70_500);
+  });
 });
