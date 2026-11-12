@@ -54,6 +54,7 @@ function Tiles({ r, desktop }: { r: ReportsView; desktop: boolean }) {
 function ByCategory({ r }: { r: ReportsView }) {
   const navigate = useNavigate();
   const desktop = useIsDesktop();
+  const current = useSession().data?.budget.currentMonth;
   const sorted = [...r.byCategory].sort((a, b) => b.spent - a.spent);
   const max = sorted[0]?.spent ?? 1;
   return (
@@ -64,7 +65,12 @@ function ByCategory({ r }: { r: ReportsView }) {
           key={c.categoryId}
           type="button"
           data-track="reports.category"
-          onClick={() => void navigate({ to: '/activity', search: { q: c.name } })}
+          onClick={() =>
+            void navigate({
+              to: '/activity',
+              search: { category: c.categoryId, month: r.month === current ? undefined : r.month },
+            })
+          }
           aria-label={`${c.name}, ${formatCents(c.spent)}: see its transactions`}
           className={cx(
             'flex min-h-12 flex-col justify-center gap-1.5 border-t border-divider px-3 py-2 text-left first:border-t-0',

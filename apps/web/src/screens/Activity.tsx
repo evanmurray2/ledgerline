@@ -9,6 +9,7 @@ import { api, type ActivityFilter } from '../api/endpoints';
 import { ApiError, errorMessage } from '../api/client';
 import { adjustAttention, qk, useActivity, useBudget, useMoneyMutation, useSession } from '../api/hooks';
 import { MonthBar, TabHeader } from '../components/MonthBar';
+import { BackHeader, PageFrame } from '../components/headers';
 import { monthName } from '../lib/dates';
 import { clampMonth } from '../state/month';
 import { toast } from '../components/Toast';
@@ -46,6 +47,7 @@ export function ActivityScreen() {
   const search = useSearch({ strict: false }) as {
     filter?: 'attention' | 'pending';
     q?: string;
+    category?: string;
     month?: string;
   };
   const navigate = useNavigate();
@@ -70,10 +72,12 @@ export function ActivityScreen() {
     setQInput(search.q ?? '');
   }, [search.q]);
 
-  // A search looks through every month.
-  const query = useActivity(filter, q, q ? undefined : month);
+  // A search looks through every month, and so does one category's list (Reports → a category).
+  const category = search.category;
+  const allMonths = !!q || !!category;
+  const query = useActivity(filter, q, allMonths ? undefined : month, category);
   const v = query.data;
-  const more = useMorePosted(v, filter, q, q ? undefined : month);
+  const more = useMorePosted(v, filter, q, allMonths ? undefined : month, category);
   const counts = useActivity('attention', '');
   const canWrite = useCanWrite({ offline: true });
   const qc = useQueryClient();
@@ -123,12 +127,12 @@ export function ActivityScreen() {
   const setFilter = (f: ActivityFilter) =>
     navigate({
       to: '/activity',
-      search: { filter: f === 'all' ? undefined : f, q: q || undefined, month: search.month },
+      search: { filter: f === 'all' ? undefined : f, q: q || undefined, category, month: search.month },
     });
   const goMonth = (m: string) =>
     void navigate({
       to: '/activity',
-      search: { filter: search.filter, q: q || undefined, month: m === current ? undefined : m },
+      search: { filter: search.filter, q: q || undefined, category, month: m === current ? undefined : m },
     });
 
   const pickerGroups = v?.categoryPicker ?? [];
@@ -304,7 +308,7 @@ export function ActivityScreen() {
   };
 
   const selKeys = openNeeds.filter((r) => sel[r.key]).map((r) => r.key);
-  const showAttnHead = filter !== 'pending' && !q && (v?.attentionCount ?? 0) > 0;
+  const showAttnHead = filter !== 'pending' && !allMonths && (v?.attentionCount ?? 0) > 0;
   const attentionCount = counts.data?.attentionCount ?? v?.attentionCount ?? 0;
   const notPostedCount = counts.data?.notPostedCount ?? v?.notPostedCount ?? 0;
   // A filter with nothing in it is hidden, unless it's the one showing; with neither, the chip row goes too.
@@ -320,7 +324,7 @@ export function ActivityScreen() {
   const empty = v && total === 0 && !showNeeds && !(filter === 'attention' && !q);
 
   // The sheet keeps the list's month, filter and search, so the list under it doesn't change.
-  const addSearch = { month: search.month, filter: search.filter, q: search.q };
+  const addSearch = { month: search.month, filter: search.filter, q: search.q, category };
   // On a phone Add floats at the bottom right, in thumb reach (D-71); it steps aside while Select is on.
   const addButton = desktop && (
     <HeaderAction
@@ -331,7 +335,7 @@ export function ActivityScreen() {
       label="Add transaction"
     />
   );
-  const addFab = !desktop && !selecting && (
+  const addFab = !desktop && !selecting && !category && (
     <FloatingAction
       to="/activity/add"
       search={addSearch}
@@ -378,201 +382,214 @@ export function ActivityScreen() {
   );
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
-      <TabHeader
-        name="Activity"
-        month={
-          month &&
-          current && <MonthBar month={month} current={current} min={min} max={current} onGo={goMonth} />
-        }
-        right={addButton}
-        below={[searchBox, chips]}
-      />
-      <ScreenBody className={addFab ? 'pb-20' : undefined}>
-        {q && month && (
-          <p className="m-0 px-0.5 text-sm text-muted" data-testid="all-months">
-            Searching all months
-          </p>
-        )}
-        {!v && (query.error ? <ErrorNote error={query.error} /> : <Loading />)}
-        {empty && (
-          <EmptyNote>
-            {q || filter !== 'all' || !month
-              ? 'No transactions match.'
-              : `No transactions in ${monthName(month)}.`}
-          </EmptyNote>
-        )}
-        {v && showAttnHead && (
-          // The count is already on the filter chip above.
-          // Same look as every other section heading (small capitals).
-          <SectionTitle>Needs attention</SectionTitle>
-        )}
-        {v &&
-          filter === 'attention' &&
-          !q &&
-          v.attentionCount === 0 &&
-          openNeeds.length === 0 &&
-          !showNeeds && (
-            <p className="m-0 rounded-lg bg-funded-bg p-4 text-center text-base font-semibold text-funded-fg">
-              Nothing needs attention.
-            </p>
-          )}
-        {v && v.moneyToMatch.length > 0 && (
-          <Section title="Money to match">
-            {v.moneyToMatch.map((r) => (
-              <TxnRow
-                key={r.key}
-                r={r}
-                base="/activity"
-                action={
-                  <Link
-                    to={sheetPath('/activity', r)}
-                    data-track="activity.match"
-                    aria-label={`Match ${r.payee}`}
-                    className={softButtonClass()}
-                  >
-                    Match
-                  </Link>
-                }
-              />
-            ))}
-          </Section>
-        )}
-        {v && v.transfersToSort.length > 0 && (
-          <Section title="Transfers to sort out">
-            {v.transfersToSort.map((r) => (
-              <TxnRow
-                key={r.key}
-                r={r}
-                base="/activity"
-                action={
-                  <Link
-                    to={sheetPath('/activity', r)}
-                    data-track="activity.transfer.pick"
-                    aria-label={`Pick ${r.payee}`}
-                    className={softButtonClass()}
-                  >
-                    Pick
-                  </Link>
-                }
-              />
-            ))}
-          </Section>
-        )}
-        {v && v.samePurchase.length > 0 && <SamePurchase cards={v.samePurchase} />}
-        {v && showNeeds && (
-          <NeedsCategory
-            needs={shownNeeds}
-            openNeeds={openNeeds}
-            chosen={chosen}
-            selecting={selecting}
-            setSelecting={setSelecting}
-            sel={sel}
-            setSel={setSel}
-            openPicker={openPicker}
-            onAccept={accept}
-            onAcceptAll={acceptAll}
-            onJoin={(r) => void join(r)}
+    <PageFrame still={!category}>
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {category ? (
+          // Reports → a category: a page of its own, with Back to the report's month.
+          <BackHeader
+            title={v ? (v.categoryName ?? 'Category') : ''}
+            sub="All months"
+            backLabel="Back to Reports"
+            onBack={() => void navigate({ to: '/reports', search: { month: search.month } })}
+            below={searchBox}
+          />
+        ) : (
+          <TabHeader
+            name="Activity"
+            month={
+              month &&
+              current && <MonthBar month={month} current={current} min={min} max={current} onGo={goMonth} />
+            }
+            right={addButton}
+            below={[searchBox, chips]}
           />
         )}
-        {v && v.checkThese.length > 0 && (
-          <Section title="Check these">
-            {v.checkThese.map((r) => (
-              <TxnRow
-                key={r.key}
-                r={r}
-                base="/activity"
-                action={
-                  r.action === 'dismiss' ? (
-                    <SoftButton
-                      mutates="offline"
-                      track="activity.check.ok"
-                      aria-label={`OK ${r.payee}`}
-                      onClick={() => void dismiss(r)}
-                    >
-                      OK
-                    </SoftButton>
-                  ) : (
+        <ScreenBody className={addFab ? 'pb-20' : undefined}>
+          {q && !category && month && (
+            <p className="m-0 px-0.5 text-sm text-muted" data-testid="all-months">
+              Searching all months
+            </p>
+          )}
+          {!v && (query.error ? <ErrorNote error={query.error} /> : <Loading />)}
+          {empty && (
+            <EmptyNote>
+              {allMonths || filter !== 'all' || !month
+                ? 'No transactions match.'
+                : `No transactions in ${monthName(month)}.`}
+            </EmptyNote>
+          )}
+          {v && showAttnHead && (
+            // The count is already on the filter chip above.
+            // Same look as every other section heading (small capitals).
+            <SectionTitle>Needs attention</SectionTitle>
+          )}
+          {v &&
+            filter === 'attention' &&
+            !q &&
+            v.attentionCount === 0 &&
+            openNeeds.length === 0 &&
+            !showNeeds && (
+              <p className="m-0 rounded-lg bg-funded-bg p-4 text-center text-base font-semibold text-funded-fg">
+                Nothing needs attention.
+              </p>
+            )}
+          {v && v.moneyToMatch.length > 0 && (
+            <Section title="Money to match">
+              {v.moneyToMatch.map((r) => (
+                <TxnRow
+                  key={r.key}
+                  r={r}
+                  base="/activity"
+                  action={
                     <Link
                       to={sheetPath('/activity', r)}
-                      data-track="activity.check.review"
-                      aria-label={`Review ${r.payee}`}
+                      data-track="activity.match"
+                      aria-label={`Match ${r.payee}`}
                       className={softButtonClass()}
                     >
-                      Review
+                      Match
                     </Link>
-                  )
-                }
-              />
-            ))}
-          </Section>
-        )}
-        {v && v.removedByBank.length > 0 && <RemovedByBank rows={v.removedByBank} />}
-        {v && v.pending.length > 0 && (
-          <Section title="Pending" note={`counts now · ${formatCents(v.pendingTotal)}`}>
-            {v.pending.map((r) => (
-              <TxnRow key={r.key} r={r} base="/activity" />
-            ))}
-          </Section>
-        )}
-        {v && v.upcoming.length > 0 && (
-          <Section title="Upcoming" note="counts on its date">
-            {v.upcoming.map((r) => (
-              <TxnRow key={r.key} r={r} base="/activity" />
-            ))}
-          </Section>
-        )}
-        {v && v.posted.length > 0 && (
-          <Section title="Posted" note="newest first">
-            {[...v.posted, ...more.rows].map((r) => (
-              <TxnRow key={r.key} r={r} base="/activity" style="posted" />
-            ))}
-          </Section>
-        )}
-        {v && v.posted.length > 0 && more.cursor && (
-          <SoftButton track="activity.more" disabled={more.loading} onClick={() => void more.load()}>
-            {more.loading ? 'Loading…' : 'Show more'}
-          </SoftButton>
-        )}
-      </ScreenBody>
-      {selecting && (
-        <div className="flex shrink-0 items-center gap-2.5 border-t border-line bg-surface px-4 py-2.5">
-          <span className="flex-1 text-md font-semibold">{selKeys.length} selected</span>
-          {/* The button keeps its own width next to the count. */}
-          <div className="shrink-0">
-            <PrimaryButton
-              mutates="offline"
-              track="activity.select.choose"
-              disabled={selKeys.length === 0 || !canWrite}
-              onClick={() => openPicker({ keys: selKeys, row: null })}
-            >
-              Choose category
-            </PrimaryButton>
+                  }
+                />
+              ))}
+            </Section>
+          )}
+          {v && v.transfersToSort.length > 0 && (
+            <Section title="Transfers to sort out">
+              {v.transfersToSort.map((r) => (
+                <TxnRow
+                  key={r.key}
+                  r={r}
+                  base="/activity"
+                  action={
+                    <Link
+                      to={sheetPath('/activity', r)}
+                      data-track="activity.transfer.pick"
+                      aria-label={`Pick ${r.payee}`}
+                      className={softButtonClass()}
+                    >
+                      Pick
+                    </Link>
+                  }
+                />
+              ))}
+            </Section>
+          )}
+          {v && v.samePurchase.length > 0 && <SamePurchase cards={v.samePurchase} />}
+          {v && showNeeds && (
+            <NeedsCategory
+              needs={shownNeeds}
+              openNeeds={openNeeds}
+              chosen={chosen}
+              selecting={selecting}
+              setSelecting={setSelecting}
+              sel={sel}
+              setSel={setSel}
+              openPicker={openPicker}
+              onAccept={accept}
+              onAcceptAll={acceptAll}
+              onJoin={(r) => void join(r)}
+            />
+          )}
+          {v && v.checkThese.length > 0 && (
+            <Section title="Check these">
+              {v.checkThese.map((r) => (
+                <TxnRow
+                  key={r.key}
+                  r={r}
+                  base="/activity"
+                  action={
+                    r.action === 'dismiss' ? (
+                      <SoftButton
+                        mutates="offline"
+                        track="activity.check.ok"
+                        aria-label={`OK ${r.payee}`}
+                        onClick={() => void dismiss(r)}
+                      >
+                        OK
+                      </SoftButton>
+                    ) : (
+                      <Link
+                        to={sheetPath('/activity', r)}
+                        data-track="activity.check.review"
+                        aria-label={`Review ${r.payee}`}
+                        className={softButtonClass()}
+                      >
+                        Review
+                      </Link>
+                    )
+                  }
+                />
+              ))}
+            </Section>
+          )}
+          {v && v.removedByBank.length > 0 && <RemovedByBank rows={v.removedByBank} />}
+          {v && v.pending.length > 0 && (
+            <Section title="Pending" note={`counts now · ${formatCents(v.pendingTotal)}`}>
+              {v.pending.map((r) => (
+                <TxnRow key={r.key} r={r} base="/activity" />
+              ))}
+            </Section>
+          )}
+          {v && v.upcoming.length > 0 && (
+            <Section title="Upcoming" note="counts on its date">
+              {v.upcoming.map((r) => (
+                <TxnRow key={r.key} r={r} base="/activity" />
+              ))}
+            </Section>
+          )}
+          {v && v.posted.length > 0 && (
+            <Section title="Posted" note="newest first">
+              {[...v.posted, ...more.rows].map((r) => (
+                <TxnRow key={r.key} r={r} base="/activity" style="posted" />
+              ))}
+            </Section>
+          )}
+          {v && v.posted.length > 0 && more.cursor && (
+            <SoftButton track="activity.more" disabled={more.loading} onClick={() => void more.load()}>
+              {more.loading ? 'Loading…' : 'Show more'}
+            </SoftButton>
+          )}
+        </ScreenBody>
+        {selecting && (
+          <div className="flex shrink-0 items-center gap-2.5 border-t border-line bg-surface px-4 py-2.5">
+            <span className="flex-1 text-md font-semibold">{selKeys.length} selected</span>
+            {/* The button keeps its own width next to the count. */}
+            <div className="shrink-0">
+              <PrimaryButton
+                mutates="offline"
+                track="activity.select.choose"
+                disabled={selKeys.length === 0 || !canWrite}
+                onClick={() => openPicker({ keys: selKeys, row: null })}
+              >
+                Choose category
+              </PrimaryButton>
+            </div>
           </div>
-        </div>
-      )}
-      {addFab}
-      {picking && v && (
-        <ActivityCategoryPicker
-          picking={picking}
-          groups={v.categoryPicker}
-          onPick={(id) => void assign(picking.keys, id)}
-          onClose={() => {
-            usage.cancelTask('categorize');
-            setPicking(null);
-          }}
-          onSplit={(key) => {
-            setPicking(null);
-            void navigate({ to: `/activity/txn/${encodeURIComponent(key)}/split`, search: true });
-          }}
-          onTransfer={(key) => {
-            setPicking(null);
-            void navigate({ to: `/activity/transfer/${encodeURIComponent(key)}`, search: true });
-          }}
-        />
-      )}
-      <Outlet />
-    </div>
+        )}
+        {addFab}
+        {picking && v && (
+          <ActivityCategoryPicker
+            picking={picking}
+            groups={v.categoryPicker}
+            onPick={(id) => void assign(picking.keys, id)}
+            onClose={() => {
+              usage.cancelTask('categorize');
+              setPicking(null);
+            }}
+            onSplit={(key) => {
+              setPicking(null);
+              void navigate({ to: `/activity/txn/${encodeURIComponent(key)}/split`, search: true });
+            }}
+            onTransfer={(key) => {
+              setPicking(null);
+              void navigate({ to: `/activity/transfer/${encodeURIComponent(key)}`, search: true });
+            }}
+          />
+        )}
+        <Outlet />
+      </div>
+    </PageFrame>
   );
 }
 
@@ -580,21 +597,27 @@ export function ActivityScreen() {
  * Posted rows after the first page of 50 ("Show more"), read with the page's cursor. Starts again whenever the
  * list itself changes (another month, filter or search).
  */
-function useMorePosted(v: ActivityView | undefined, filter: ActivityFilter, q: string, month?: string) {
+function useMorePosted(
+  v: ActivityView | undefined,
+  filter: ActivityFilter,
+  q: string,
+  month?: string,
+  category?: string,
+) {
   const [state, setState] = useState<{ key: string; rows: TxnListRow[]; cursor: string | null }>({
     key: '',
     rows: [],
     cursor: null,
   });
   const [loading, setLoading] = useState(false);
-  const key = `${filter}|${q}|${month ?? ''}|${v?.nextCursor ?? ''}`;
+  const key = `${filter}|${q}|${month ?? ''}|${category ?? ''}|${v?.nextCursor ?? ''}`;
   const mine = state.key === key;
   const cursor = mine ? state.cursor : (v?.nextCursor ?? null);
   const load = async () => {
     if (!cursor) return;
     setLoading(true);
     try {
-      const page = await api.activity(filter, q || undefined, cursor, month);
+      const page = await api.activity(filter, q || undefined, cursor, month, category);
       setState({ key, rows: [...(mine ? state.rows : []), ...page.posted], cursor: page.nextCursor });
     } catch (e) {
       toast.show({ text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t load more. Try again.' });

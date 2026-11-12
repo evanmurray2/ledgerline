@@ -316,6 +316,8 @@ const activityRoute = createRoute({
   validateSearch: (s: Record<string, unknown>) => ({
     filter: s.filter === 'attention' || s.filter === 'pending' ? s.filter : undefined,
     q: str(s.q),
+    // One category's transactions (Reports → a category).
+    category: str(s.category),
     // The app's month; a malformed one is dropped rather than refused by the server.
     month: monthParam(s.month),
   }),
