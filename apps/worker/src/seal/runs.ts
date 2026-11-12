@@ -175,6 +175,30 @@ export async function keyStampStmts(
   return out;
 }
 
+/**
+ * The cutover of a budget that already has bank links (section 8 step 6): each link starts at its cutover
+ * cursor, with no run yet. Only for a budget whose runs have not started; the run state gets its stamp anew.
+ */
+export async function startLinks(d: RunDeps, cursors: Cursors, now: number): Promise<void> {
+  const { s } = await standing(d);
+  if (s.run !== 0) throw new RunStopped('runs have started');
+  const k = await d.keys.keysFor(d.keys.current);
+  const mac = toHex(await runsMac(k, d.budgetId, await runStateOf(s, cursors)));
+  await d.db.batch([
+    conditionFence(
+      d.db,
+      `SELECT (SELECT run FROM run_state WHERE id = 1) = 0 AND NOT EXISTS (SELECT 1 FROM run_stage)`,
+    ),
+    d.db.prepare(`DELETE FROM link_cursor`),
+    ...cursors.map((c) =>
+      d.db
+        .prepare(`INSERT INTO link_cursor (link_id, cursor, updated_at) VALUES (?1, ?2, ?3)`)
+        .bind(c.linkId, c.cursor, now),
+    ),
+    d.db.prepare(`UPDATE run_state SET mac = ?1, n = ?2, updated_at = ?3 WHERE id = 1`).bind(mac, k.n, now),
+  ]);
+}
+
 /** A key the Worker stamped, by kind and version; throws when the row is missing or its stamp is bad. */
 async function stampedKey(d: RunDeps, kind: 1 | 2, version: number): Promise<Uint8Array<ArrayBuffer>> {
   const r = await d.db

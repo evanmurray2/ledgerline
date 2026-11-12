@@ -287,6 +287,12 @@ export interface QueuedEdit {
    * such an edit again by itself; a sync brings its rows.
    */
   sending?: boolean;
+  /**
+   * Not an edit: bank runs this device filed (`LocalEngine.fileBank`), waiting to become a bank entry of the log.
+   * Always first in the queue: the edits after it ran on top of it. It is never run again by the engine (the
+   * runs are not kept here): when it must come out, it is dropped, and the device files the runs again.
+   */
+  bank?: { filedThrough: number; receipts: string[] };
 }
 
 /** An edit whose undo is good for a copy at change number `through`. */
@@ -399,6 +405,20 @@ export class LocalEngine {
     };
     stmts.push(this.setState(next));
     for (const part of chunks(stmts, 500)) await this.db.batch(part);
+    // A page of changes with no row (in the log: a key or slot change) leaves the copy as it was, at a new place:
+    // what was kept for taking the waiting edits out is still right there.
+    if (
+      !held &&
+      !fresh &&
+      page.rows.length === 0 &&
+      !st.cursor &&
+      !page.cursor &&
+      next.through !== st.through
+    ) {
+      const q = await this.queue();
+      if (q.some((e) => exactAt(e, st.through)))
+        await this.putQueue(q.map((e) => (exactAt(e, st.through) ? { ...e, through: next.through } : e)));
+    }
     const result: ApplyResult = {
       reset: false,
       rows: page.rows.length,
@@ -484,6 +504,8 @@ export class LocalEngine {
     const kept: QueuedEdit[] = [];
     const lost: QueuedEdit[] = [];
     for (const e of queue) {
+      // Filed bank runs are not run again here: the device opens and files them again (local/log-session.ts).
+      if (e.bank) continue;
       const { undo: _undo, through: _through, rows: _rows, ...bare } = e;
       const r = await this.record(e.method, e.path, e.body, { id: e.id, at: e.at }).catch(() => null);
       const status = r?.response.status ?? 500;
@@ -919,6 +941,62 @@ export class LocalEngine {
     const { kept, lost } = await this.rerun(later, through);
     await this.putQueue([...before, ...kept]);
     return { redownload: false, lost: lost.length, left: before.length + kept.length };
+  }
+
+  /**
+   * Files bank runs on the copy, under the queue (docs/privacy.md 5.4): the waiting edits come out, `work` files
+   * the runs with everything it writes recorded, and the edits run again on top. What was filed waits first in
+   * the queue, as `bank`, until the log takes it as a bank entry. Null when it can't be done exactly now (an edit
+   * is on its way, was queued on another base, or filed runs already wait): read the log, then try again. If
+   * `work` throws, what it wrote is taken back out and the copy is as it was.
+   */
+  async fileBank(
+    id: string,
+    at: number,
+    bank: { filedThrough: number; receipts: string[] },
+    work: (env: Env) => Promise<void>,
+  ): Promise<{ rows: SyncRow[]; lost: number } | null> {
+    const st = await this.state();
+    const q = await this.queue();
+    if (st.cursor || q.some((e) => e.bank || !exactAt(e, st.through) || e.sending)) return null;
+    for (const e of [...(q as Exact[])].reverse()) await this.applyRows(e.undo);
+    let rec: { rows: SyncRow[]; undo: SyncRow[] } = { rows: [], undo: [] };
+    let failed: unknown = null;
+    await this.db.batch([this.db.prepare(`DELETE FROM edit_change`), this.recording(true)]);
+    try {
+      await work(this.env(at));
+    } catch (x) {
+      failed = x ?? new Error('filing failed');
+    } finally {
+      rec = await this.recorded();
+      await this.db.batch([this.recording(false), this.db.prepare(`DELETE FROM edit_change`)]);
+    }
+    if (failed) {
+      await this.applyRows(rec.undo);
+      const { kept } = await this.rerun(q, st.through);
+      await this.putQueue(kept);
+      throw failed;
+    }
+    // What derive() must work out again: the rows as they were name the old keys, the copy holds the new ones.
+    const todo = await this.pendingDerive();
+    await this.noteChanges(rec.undo, todo);
+    await this.db.batch([this.setPendingDerive(todo)]);
+    const filed: QueuedEdit = {
+      id,
+      at,
+      method: 'BANK',
+      path: '',
+      body: null,
+      undo: rec.undo,
+      rows: rec.rows,
+      through: st.through,
+      bank,
+    };
+    await this.putQueue([filed, ...q]);
+    const { kept, lost } = await this.rerun(q, st.through);
+    await this.putQueue([filed, ...kept]);
+    if (await this.needsDerive()) await this.derive();
+    return { rows: rec.rows, lost: lost.length };
   }
 
   // ---- the shadow run (local/shadow.ts): the device files the inbox's bank updates on a scratch copy

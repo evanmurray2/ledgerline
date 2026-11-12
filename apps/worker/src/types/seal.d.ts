@@ -145,6 +145,14 @@ export interface FiledRun {
   receipt: Uint8Array<ArrayBuffer>;
 }
 export function openRun(s: FilingState, run: SealedRun): Promise<FiledRun>;
+/** An inbox pair, private half too (curve.ts DhPair). */
+export type DhPair = { pub: Uint8Array<ArrayBuffer> } & Record<string, unknown>;
+export function openInbox(
+  keys: BudgetKeys,
+  budgetId: string,
+  i: number,
+  wrapped: Uint8Array,
+): Promise<DhPair>;
 export function afterRun(s: FilingState, filed: FiledRun): FilingState;
 
 // ---- the log (apps/worker/src/seal/log-store.ts). The entry and the chain state are the package's own shapes;
