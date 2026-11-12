@@ -5,7 +5,13 @@ import { categoryRows } from './budget.js';
 import { cards as loadCards, monthLong, structure, type Fresh } from './common.js';
 import { IN_BUDGET_ROWS, listRow, type ListSource } from './rows.js';
 import { TX_COLUMNS, uncovered } from '../ledger/ledger.js';
-import { owedLabels, owedStatements, type OwedItemRow, type PaybackLinkRow } from './owed-rows.js';
+import {
+  owedLabels,
+  owedStatements,
+  paybacksIn,
+  type OwedItemRow,
+  type PaybackLinkRow,
+} from './owed-rows.js';
 
 const fmt = (c: number) => formatCents(c);
 
@@ -38,13 +44,13 @@ export async function categorySheet(
       addMonths(month, -1),
     ),
     s.q(
-      `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND (category_id = ?2 OR key IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1 AND category_id = ?2))
+      `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND (category_id = ?2 OR key IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1 AND category_id = ?2) OR key IN (${paybacksIn('?2')}))
          AND coalesce(budget_month, substr(date, 1, 7)) = ?3 AND ${IN_BUDGET_ROWS} AND ${uncovered('v_transaction')} ORDER BY date DESC, seq DESC LIMIT 3`,
       id,
       month,
     ),
     s.q(
-      `SELECT count(*) AS n FROM v_transaction WHERE budget_id = ?1 AND (category_id = ?2 OR key IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1 AND category_id = ?2))
+      `SELECT count(*) AS n FROM v_transaction WHERE budget_id = ?1 AND (category_id = ?2 OR key IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1 AND category_id = ?2) OR key IN (${paybacksIn('?2')}))
          AND coalesce(budget_month, substr(date, 1, 7)) = ?3 AND ${IN_BUDGET_ROWS} AND ${uncovered('v_transaction')}`,
       id,
       month,
@@ -107,12 +113,14 @@ export async function categorySheet(
     targetHelp: help,
     lastMonthAssigned: cents((last!.results[0] as { amount: number } | undefined)?.amount ?? 0),
     rta: cents(f.budget.rta),
-    recent: (recent!.results as ListSource[]).map((t) =>
-      listRow(t, accts, new Map(), {
+    // Paybacks of this category's owed purchases are listed too. Their money is in Ready to Assign, so they say so.
+    recent: (recent!.results as ListSource[]).map((t) => {
+      const row = listRow(t, accts, new Map(), {
         owed: labels.owed.get(t.key) ?? null,
         paidFor: labels.paidFor.get(t.key) ?? null,
-      }),
-    ),
+      });
+      return labels.paidFor.has(t.key) ? { ...row, badge: 'Paid back', sub: 'to Ready to Assign' } : row;
+    }),
     recentTotal: (count!.results[0] as { n: number }).n,
     moveOptions,
   };
