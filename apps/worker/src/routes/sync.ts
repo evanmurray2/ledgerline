@@ -9,6 +9,7 @@ import type { AppEnv } from '../http/context.js';
 import { requestNow } from '../http/clock.js';
 import { EDIT_ID } from '../http/ids.js';
 import { inboxLatest, inboxNext } from '../store/inbox.js';
+import { updateInFlight } from '../sync/turn.js';
 
 export { EDIT_ID };
 import { SYNC_FORMAT, SYNC_TABLES, type SyncTable } from '../sync-tables.js';
@@ -41,6 +42,16 @@ export interface SyncPage {
   /** Full download only: where the next page starts. */
   cursor: string | null;
   rows: SyncRow[];
+  /**
+   * The place of the newest bank update the server has finished filing (store/inbox.ts). A device that files
+   * updates too (the shadow run) asks the inbox only when this is past the last one it took.
+   */
+  inbox?: number;
+  /**
+   * The server is filing a bank update right now: this page may hold part of it. A device doesn't start a shadow
+   * run from such a page, nor from the next one.
+   */
+  filing?: boolean;
 }
 
 const Cursor = z.object({
@@ -200,7 +211,14 @@ syncRoutes.get('/sync', async (c) => {
     return c.json(page);
   }
 
-  return c.json(await changePage(db, since, limit, base));
+  // The newest filed bank update, for the shadow run. Only a complete page of changes carries it.
+  const page = await changePage(db, since, limit, base);
+  if (!page.more) {
+    const inbox = await inboxLatest(db).catch(() => undefined);
+    if (inbox !== undefined) page.inbox = inbox;
+    if (await updateInFlight(db, null, requestNow(c)).catch(() => false)) page.filing = true;
+  }
+  return c.json(page);
 });
 
 /**
@@ -214,6 +232,34 @@ syncRoutes.get('/sync/inbox', async (c) => {
   const db = c.env.DB;
   const run = await inboxNext(db, after);
   return c.json({ run, latest: await inboxLatest(db) });
+});
+
+const ShadowReportBody = z.object({
+  runs: z.number().int().min(0).max(100),
+  compared: z.boolean(),
+  why: z.enum(['edited_before', 'edited_during', 'edited_after', 'failed', 'incomplete']).optional(),
+  differences: z
+    .array(
+      z.object({
+        table: z.string().max(40),
+        column: z.string().max(60),
+        rows: z.number().int().min(0),
+      }),
+    )
+    .max(200),
+  through: z.number().int().min(0).optional(),
+});
+
+/**
+ * What a device's shadow run found (local/shadow.ts): written to the server's log, where the owner's two weeks of
+ * shadow runs are read. It holds table and column names and counts, never a row's content. Nothing is stored,
+ * and the budget's data version doesn't move (http/version.ts).
+ */
+syncRoutes.post('/sync/shadow', async (c) => {
+  const parsed = ShadowReportBody.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
+  console.log(JSON.stringify({ event: 'shadow', ...parsed.data }));
+  return c.json({ ok: true });
 });
 
 /** One batch of the bank log for a device (docs/privacy.md 5.4): rows only ever added, so it has cursors of its own. */

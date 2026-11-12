@@ -6,7 +6,8 @@ import type { Db } from '@ledgerline/db/sql';
 import type { AppEnv } from './context.js';
 
 /** Changes that don't alter any screen. */
-const NO_BUMP = new Set(['/api/usage', '/api/notes']);
+// The bank's webhook only starts a fetch: what the fetch brings is filed by the sync job, which never bumps.
+const NO_BUMP = new Set(['/api/usage', '/api/notes', '/api/sync/shadow', '/api/webhooks/plaid']);
 
 export async function bumpVersion(db: Db, budgetId: string): Promise<void> {
   await db.prepare(`UPDATE budget SET data_version = data_version + 1 WHERE id = ?1`).bind(budgetId).run();
