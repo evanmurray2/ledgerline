@@ -18,7 +18,7 @@
 // never reads, and the next freeze clears it. Nothing here runs unless the Worker's `CUTOVER` variable is `on`.
 import type { Db } from '@ledgerline/db/sql';
 import { cursorHash, toHex } from '@ledgerline/seal';
-import { tableHashes } from '../local/device-snapshot.js';
+import { HASH_START, type HashProgress, hashStep } from '../local/device-snapshot.js';
 import { MAX_FREEZE_MS } from '../store/marks.js';
 import { SEALED_BACKSTOP, SEALED_FETCH } from './fetch-job.js';
 import { logGenesis, logHead, type AppendResult } from './log-store.js';
@@ -146,6 +146,9 @@ export async function cutoverBlocks(db: Db, budgetId: string, now: number): Prom
   return why;
 }
 
+/** One call of the freeze: the whole answer, or "frozen, still hashing: ask again". */
+export type FreezeStep = FreezeAnswer | { ok: true; more: true; until: number };
+
 export type FreezeAnswer =
   | { ok: false; why: string[] }
   | {
@@ -195,16 +198,52 @@ async function linkCursors(db: Db, budgetId: string): Promise<{ linkId: string; 
   return rows.results.map((r) => ({ linkId: r.id, cursor: r.cursor ?? '' }));
 }
 
-/** Freezes the budget for the cutover, when nothing stands in its way. */
-export async function cutoverFreeze(d: CutoverDeps): Promise<FreezeAnswer> {
+/** What one freeze request may hash: a few hundred rows, so no request is long (10 ms of CPU, CLAUDE.md). */
+const HASH_ROWS = 300;
+const HASH_BYTES = 120_000;
+
+/**
+ * Freezes the budget for the cutover, when nothing stands in its way, and hashes every table for the phone to
+ * compare. The hashing is done in steps: the first call freezes the budget and starts, and the phone calls again
+ * while the answer says `more`. A step that finds the budget changed since the freeze ends it.
+ */
+export async function cutoverFreeze(d: CutoverDeps): Promise<FreezeStep> {
   const m = await marks(d.db, d.markNow);
   if (m.sealed) return { ok: false, why: ['This budget is sealed already.'] };
   const why = await cutoverBlocks(d.db, d.budgetId, d.now);
   if (why.length) return { ok: false, why };
-  // The answer is worked out first, and the budget is frozen last, only if nothing moved meanwhile: a request
-  // that dies while it hashes leaves no freeze behind.
-  const before = await fingerprint(d.db, d.budgetId);
-  const tables = (await tableHashes(d.db)).map((t) => ({ name: t.name, hash: toHex(t.hash) }));
+  const print = await fingerprint(d.db, d.budgetId);
+  let note = m.frozenUntil === null ? null : await frozenNote(d.db);
+  let until = m.frozenUntil ?? d.markNow + MAX_FREEZE_MS;
+  if (note && note.print !== print) {
+    await d.db.prepare(`DELETE FROM store_mark WHERE key = 'frozen'`).run();
+    return { ok: false, why: ['The budget changed just now. Try again.'] };
+  }
+  if (!note || !note.hashing) {
+    // A new freeze (also over one that had finished: the phone starts again from the top).
+    note = { print, tables: [], hashing: HASH_START };
+    until = d.markNow + MAX_FREEZE_MS;
+    await d.db.batch([
+      // What an earlier try stored goes: the old code never read it.
+      ...SEALED_TABLES.map((t) => d.db.prepare(`DELETE FROM ${t}`)),
+      d.db
+        .prepare(
+          `INSERT INTO store_mark (key, at, until, note) VALUES ('frozen', ?1, ?2, ?3)
+           ON CONFLICT (key) DO UPDATE SET at = excluded.at, until = excluded.until, note = excluded.note`,
+        )
+        .bind(d.markNow, until, JSON.stringify(note)),
+    ]);
+    // Frozen now. If a write landed between the last look and the mark, the next step sees it and stops.
+    return { ok: true, more: true, until };
+  }
+  const step = await hashStep(d.db, note.hashing, HASH_ROWS, HASH_BYTES);
+  const setNote = (n: FrozenNote) =>
+    d.db.prepare(`UPDATE store_mark SET note = ?1 WHERE key = 'frozen'`).bind(JSON.stringify(n)).run();
+  if (!step.finished) {
+    await setNote({ print, tables: [], hashing: step.progress });
+    return { ok: true, more: true, until };
+  }
+  const tables = step.progress.done;
   const links = [];
   for (const l of await linkCursors(d.db, d.budgetId))
     links.push({ linkId: l.linkId, cursorHash: toHex(await cursorHash(l.cursor)) });
@@ -212,34 +251,26 @@ export async function cutoverFreeze(d: CutoverDeps): Promise<FreezeAnswer> {
     .prepare(`SELECT coalesce(max(abs(fetch_seq)), 0) AS n FROM sync_run WHERE budget_id = ?1`)
     .bind(d.budgetId)
     .first<{ n: number }>();
-  if ((await fingerprint(d.db, d.budgetId)) !== before)
-    return { ok: false, why: ['The budget changed just now. Try again.'] };
-  const until = d.markNow + MAX_FREEZE_MS;
-  await d.db.batch([
-    // What an earlier try stored goes: the old code never read it.
-    ...SEALED_TABLES.map((t) => d.db.prepare(`DELETE FROM ${t}`)),
-    // With the freeze: what the budget looked like, and the hashes the phone must show it has too.
-    d.db
-      .prepare(
-        `INSERT INTO store_mark (key, at, until, note) VALUES ('frozen', ?1, ?2, ?3)
-         ON CONFLICT (key) DO UPDATE SET at = excluded.at, until = excluded.until, note = excluded.note`,
-      )
-      .bind(d.markNow, until, JSON.stringify({ print: before, tables })),
-  ]);
-  // Frozen now. If a write landed between the last look and the mark, the next step sees it and stops.
+  // With the freeze: what the budget looked like, and the hashes the phone must show it has too.
+  await setNote({ print, tables });
   return { ok: true, until, tables, links, seqBase: seq?.n ?? 0 };
 }
 
+interface FrozenNote {
+  print: string;
+  tables: { name: string; hash: string }[];
+  /** While the tables are being hashed: how far it has come. Gone when `tables` is whole. */
+  hashing?: HashProgress;
+}
+
 /** What the freeze noted: the budget's fingerprint and the table hashes given to the phone. */
-async function frozenNote(
-  db: Db,
-): Promise<{ print: string; tables: { name: string; hash: string }[] } | null> {
+async function frozenNote(db: Db): Promise<FrozenNote | null> {
   const r = await db
     .prepare(`SELECT note FROM store_mark WHERE key = 'frozen'`)
     .first<{ note: string | null }>();
   if (!r?.note) return null;
   try {
-    return JSON.parse(r.note) as { print: string; tables: { name: string; hash: string }[] };
+    return JSON.parse(r.note) as FrozenNote;
   } catch {
     return null;
   }
@@ -251,7 +282,7 @@ async function stillFrozen(d: CutoverDeps): Promise<string | null> {
   if (m.sealed) return 'This budget is sealed already.';
   if (m.frozenUntil === null) return 'The budget is not frozen any more. Start again.';
   const noted = await frozenNote(d.db);
-  if (!noted || noted.print !== (await fingerprint(d.db, d.budgetId)))
+  if (!noted || noted.hashing || noted.print !== (await fingerprint(d.db, d.budgetId)))
     return 'The budget changed while it was frozen. Start again.';
   const why = await cutoverBlocks(d.db, d.budgetId, d.now);
   return why[0] ?? null;

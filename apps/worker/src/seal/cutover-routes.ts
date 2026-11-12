@@ -54,8 +54,12 @@ cutoverApi.use('*', async (c, next) => {
  * moved (`any` is for tests). The way back needs no variable: a sealed budget can always take it inside its 7
  * days, whatever was deployed since.
  */
-const open = (c: { env: AppEnv['Bindings']; req: { path: string } }, budgetId: string): boolean =>
-  c.req.path.endsWith('/cutover/back') || c.env.CUTOVER === budgetId || c.env.CUTOVER === 'any';
+const open = (c: { env: AppEnv['Bindings']; req: { path: string } }, who: Caller): boolean =>
+  c.req.path.endsWith('/cutover/back') ||
+  c.env.CUTOVER === who.budgetId ||
+  c.env.CUTOVER === 'any' ||
+  // `owner`: the budget of the Directory's admin, with no id written in the Worker's settings.
+  (c.env.CUTOVER === 'owner' && who.isAdmin === true);
 
 /**
  * The budget's person is the one who may move it. While one budget is named, that is the Directory's admin
@@ -74,7 +78,7 @@ cutoverApi.get('/cutover/state', async (c) => {
   const s = await cutoverState({ db: c.env.DB, now, markNow: Date.now() });
   return c.json({
     // The move is offered to the budget's admin only, and only while the Worker names this budget.
-    open: !s.sealed && !notAdmin(c, who) && open(c, who.budgetId),
+    open: !s.sealed && !notAdmin(c, who) && open(c, who),
     sealed: s.sealed,
     backUntil: s.backUntil !== null && !notAdmin(c, who) ? new Date(s.backUntil).toISOString() : null,
   });
@@ -84,7 +88,7 @@ cutoverApi.use('*', async (c, next) => {
   // A person, signed in, who used their passkey minutes ago: not the ops token, not a job. And the budget's
   // admin (its first user), when the Directory says who that is.
   const who = (c.env as typeof c.env & { CALLER?: Caller }).CALLER;
-  if (!who || !open(c, who.budgetId)) return c.json({ error: 'not_found', message: TRY_AGAIN }, 404);
+  if (!who || !open(c, who)) return c.json({ error: 'not_found', message: TRY_AGAIN }, 404);
   if (who.userId === 'system' || who.userId === 'service' || notAdmin(c, who))
     return c.json({ error: 'forbidden', message: 'You can’t open this.' }, 403);
   if (requestNow(c) - who.verifiedAt > REAUTH_MS)

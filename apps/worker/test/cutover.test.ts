@@ -36,6 +36,17 @@ const fromHex = (s: string) => Uint8Array.from(s.match(/../g) ?? [], (x) => pars
 const get = (path: string) => SELF.fetch(`${ORIGIN}${path}`);
 const post = (path: string, body: unknown = {}) =>
   SELF.fetch(`${ORIGIN}${path}`, { method: 'POST', headers: H, body: JSON.stringify(body) });
+/** The freeze, asked again while the server is still hashing (a few hundred rows a call). */
+async function freeze(): Promise<unknown> {
+  for (let calls = 1; ; calls++) {
+    const r = (await (await post('/api/cutover/freeze')).json()) as { ok: boolean; more?: boolean };
+    if (!r.ok || !r.more) {
+      freezeCalls = calls;
+      return r;
+    }
+  }
+}
+let freezeCalls = 0;
 const assign = (amount: number) =>
   post('/api/budget/assign', { month: '2026-11', items: [{ categoryId: 'rent', amount }] });
 
@@ -118,7 +129,7 @@ describe('the cutover, rehearsed', () => {
       ok: true,
       blocks: ['A bank link has not been checked yet.'],
     });
-    expect(await (await post('/api/cutover/freeze')).json()).toEqual({
+    expect(await freeze()).toEqual({
       ok: false,
       why: ['A bank link has not been checked yet.'],
     });
@@ -127,8 +138,11 @@ describe('the cutover, rehearsed', () => {
     phone = await everything(phone);
 
     // ---- freeze: nothing is part-way, and the phone's copy is the server's
-    const frozen = (await (await post('/api/cutover/freeze')).json()) as FreezeAnswer;
+    const frozen = (await freeze()) as FreezeAnswer;
     expect(frozen, JSON.stringify(frozen).slice(0, 300)).toMatchObject({ ok: true });
+    // The server hashed the budget in calls after the one that froze it (in steps: test/device-snapshot.test.ts), and the hashes are the
+    // very ones a phone works out in one go (compared below).
+    expect(freezeCalls).toBeGreaterThanOrEqual(2);
     if (!frozen.ok) return;
     // The freeze ends by the store's own clock, the one every old route reads the mark by.
     expect(Math.abs(frozen.until - (Date.now() + 15 * 60_000))).toBeLessThan(60_000);
@@ -210,7 +224,7 @@ describe('the cutover, rehearsed', () => {
       why: 'The budget changed while it was frozen. Start again.',
     });
     await server.prepare(`DELETE FROM audit_log WHERE action = 'slipped'`).run();
-    expect(await (await post('/api/cutover/freeze')).json()).toMatchObject({ ok: true });
+    expect(await freeze()).toMatchObject({ ok: true });
     const begun = await post('/api/cutover/begin', {
       genesis: b64(encodeEntry(genesis)),
       header: b64(sealed.header),
@@ -340,11 +354,11 @@ describe('the cutover, rehearsed', () => {
       )
       .bind(NOW + 86_400_000)
       .run();
-    const blocked = (await (await post('/api/cutover/freeze')).json()) as FreezeAnswer;
+    const blocked = (await freeze()) as FreezeAnswer;
     expect(blocked).toEqual({ ok: false, why: ['A background job is part-way.'] });
     expect((await assign(81)).status).toBe(200);
     await server.prepare(`DELETE FROM job WHERE id = 'one-off'`).run();
-    const second = (await (await post('/api/cutover/freeze')).json()) as FreezeAnswer;
+    const second = (await freeze()) as FreezeAnswer;
     expect(second).toMatchObject({ ok: true });
     expect((await server.prepare(`SELECT count(*) AS n FROM log_entry`).first<{ n: number }>())!.n).toBe(0);
     // A freeze that is over: nothing more is taken, and the budget is as it was.
