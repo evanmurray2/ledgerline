@@ -33,8 +33,9 @@ export interface OpenRows {
 /** Why an open account can't be closed yet, or null when it can. The phone works it out (D-45). */
 export function closeBlocked(a: AccountRow, open: OpenRows, cardAvailable: number | null): string | null {
   const credit = a.kind === 'credit';
-  // With a pending row, the bank's balance may never reach $0 (D-93): the working balance decides.
-  if (!open.pending && a.bank !== 0)
+  // With a pending row, the bank's balance may never reach $0 (D-93): the working balance decides. When that isn't
+  // $0 either, the bank balance is what to deal with first.
+  if (a.bank !== 0 && (!open.pending || a.working !== 0))
     return credit
       ? `You still owe ${formatCents(Math.abs(a.bank))} on this card. Pay it off first.`
       : `It still has ${formatCents(a.bank)} at the bank. Move the money out first.`;
