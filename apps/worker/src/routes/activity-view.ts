@@ -33,6 +33,7 @@ import type { Scoped } from '../db/scoped.js';
 import { names } from './txn-common.js';
 import { samePurchaseCards } from './same-purchase.js';
 import { removedByBank } from './removed-by-bank.js';
+import { IN_CLOSED_ACCOUNT } from './account-close.js';
 export const activityViewRoutes = new Hono<AppEnv>();
 
 // ---------------------------------------------------------------- Activity
@@ -69,7 +70,7 @@ activityViewRoutes.get('/badges', async (c) => {
     s.q(ATTENTION_SQL),
     s.q(
       `SELECT count(*) AS n FROM manual_pending m JOIN account a ON a.id = m.account_id WHERE m.budget_id = ?1 AND m.kind = 'pending' AND m.deleted_at IS NULL
-         AND m.matched_txn_key IS NULL AND julianday(?2) - julianday(m.date) >= a.stale_pending_days AND (m.stale_snooze_until IS NULL OR m.stale_snooze_until <= ?2)`,
+         AND m.matched_txn_key IS NULL AND a.closed_at IS NULL AND julianday(?2) - julianday(m.date) >= a.stale_pending_days AND (m.stale_snooze_until IS NULL OR m.stale_snooze_until <= ?2)`,
       today,
     ),
     s.q(
@@ -227,7 +228,8 @@ activityViewRoutes.get('/activity', async (c) => {
   const [attn, pend, upc, posted, splits, owed, links, stale] = await s.batch([
     s.q(ATTENTION_SQL),
     s.q(
-      `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1 AND status = 'pending' ORDER BY date DESC, seq DESC LIMIT 200`,
+      // Your entries in a closed account stopped waiting for the bank (D-93): they aren't "not posted yet".
+      `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1 AND status = 'pending' AND NOT ${IN_CLOSED_ACCOUNT} ORDER BY date DESC, seq DESC LIMIT 200`,
     ),
     // Upcoming rows are read in every view (a small manual table): they count toward notPostedCount.
     s.q(
@@ -251,7 +253,7 @@ activityViewRoutes.get('/activity', async (c) => {
     ),
     s.q(
       `SELECT m.txn_key FROM manual_pending m JOIN account a ON a.id = m.account_id WHERE m.budget_id = ?1 AND m.kind = 'pending' AND m.deleted_at IS NULL
-         AND m.matched_txn_key IS NULL AND julianday(?2) - julianday(m.date) >= a.stale_pending_days AND (m.stale_snooze_until IS NULL OR m.stale_snooze_until <= ?2)`,
+         AND m.matched_txn_key IS NULL AND a.closed_at IS NULL AND julianday(?2) - julianday(m.date) >= a.stale_pending_days AND (m.stale_snooze_until IS NULL OR m.stale_snooze_until <= ?2)`,
       f.today,
     ),
   ]);

@@ -2,12 +2,18 @@
 // working balance and a card's payment category at $0), the account and its payment category leave the screens, and
 // a new bank row or an entry you add opens it again. Through the real sync and the routes the phone runs.
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { AccountsView, CategoriesView, RegisterView } from '@ledgerline/contracts';
+import type {
+  AccountsView,
+  ActivityView,
+  CategoriesView,
+  RegisterView,
+  ReportsView,
+} from '@ledgerline/contracts';
 import { bankSync, pend, plaidTxn } from './bank-sync.js';
 
 const B = 'b_close';
 const NOW = Date.UTC(2026, 10, 8, 18, 0);
-const h = bankSync('close-account', B, 'c_close', 3, NOW);
+const h = bankSync('close-account', B, 'c_close', 5, NOW);
 
 const through = async () =>
   (await h.db.prepare(`SELECT coalesce(max(seq), 0) AS n FROM change_log`).first<{ n: number }>())!.n;
@@ -114,5 +120,91 @@ describe('close account (D-73)', () => {
     });
     expect(add.status).toBe(200);
     expect(await closedAt(3)).toBeNull();
+  });
+
+  // D-93: the bank closed the account and sends nothing more, so your own pending entry never posts.
+  describe('with a pending entry of yours (D-93)', () => {
+    const add = (n: number, kind: 'pending' | 'upcoming', amount: number, date = '2026-11-08') =>
+      h.call('POST', '/api/transactions', {
+        kind,
+        accountId: `a_${n}`,
+        date,
+        amount,
+        payee: 'Payment',
+        categoryId: null,
+        repeats: 'never',
+      });
+    const entryKey = async (n: number) =>
+      (await h.db
+        .prepare(`SELECT txn_key FROM manual_pending WHERE account_id = ?1 AND deleted_at IS NULL`)
+        .bind(`a_${n}`)
+        .first<{ txn_key: string }>())!.txn_key;
+    const reports = async () => (await h.call('GET', '/api/reports')).json as ReportsView;
+    let before: { netWorth: number; change: number; series: ReportsView['netWorth'] };
+
+    it('Close works at a working balance of $0, though the bank balance is not $0', async () => {
+      await h.sync([plaidTxn('last-charge', 4, 50, '2026-11-06', 'LAST CHARGE')]);
+      expect((await register(4)).closeBlock).toContain('You still owe $50.00');
+      expect((await add(4, 'pending', 5000)).status).toBe(200);
+      const r = await register(4);
+      expect(r.account).toMatchObject({ bank: 5000, pending: -5000, working: 0 });
+      expect(r.closeBlock).toBeNull();
+      const a = await accounts();
+      before = { netWorth: a.netWorth, change: a.netWorthChange, series: (await reports()).netWorth };
+      expect((await close(4, await atZero())).status).toBe(200);
+      expect(await closedAt(4)).not.toBeNull();
+    });
+
+    it('the closed account is $0, and net worth is the same now and in every month', async () => {
+      const a = await accounts();
+      expect(a.closed.find((x) => x.id === 'a_4')).toMatchObject({ bank: 0, pending: 0, working: 0 });
+      expect(a.netWorth).toBe(before.netWorth);
+      expect(a.netWorthChange).toBe(before.change);
+      expect((await reports()).netWorth).toEqual(before.series);
+    });
+
+    it('the entry is final: on its day in the register, not waiting on Activity', async () => {
+      const key = await entryKey(4);
+      const r = await register(4);
+      expect(r.days.map((d) => d.label)).toEqual(['Nov 8', 'Nov 6']);
+      expect(r.days[0]).toMatchObject({ balance: 0, rows: [{ key }] });
+      expect(r.days[1]!.balance).toBe(5000);
+      const v = (await h.call('GET', '/api/activity')).json as ActivityView;
+      expect(v.pending.some((x) => x.key === key)).toBe(false);
+      // Long after: it is never "not at the bank yet".
+      h.setNow(NOW + 40 * 86_400_000);
+      const later = (await h.call('GET', '/api/activity')).json as ActivityView;
+      expect(later.checkThese.some((x) => x.key === key)).toBe(false);
+      h.setNow(NOW);
+    });
+
+    it('deleting the entry opens the account again', async () => {
+      expect((await h.call('DELETE', `/api/transactions/${await entryKey(4)}`)).status).toBe(200);
+      expect(await closedAt(4)).toBeNull();
+      expect((await register(4)).closeBlock).toContain('You still owe $50.00');
+    });
+
+    it('an upcoming entry, or a balance after pending that is not $0, still blocks', async () => {
+      expect((await add(5, 'upcoming', -1000, '2026-12-01')).status).toBe(200);
+      expect((await register(5)).closeBlock).toContain('upcoming');
+      expect((await close(5, await atZero())).status).toBe(422);
+      expect((await h.call('DELETE', `/api/transactions/${await entryKey(5)}`)).status).toBe(200);
+      expect((await add(5, 'pending', -700)).status).toBe(200);
+      expect((await register(5)).closeBlock).toContain('balance after pending is $7.00');
+      expect(await closedAt(5)).toBeNull();
+    });
+
+    it('the server refuses a bank balance that is not $0 when no entry of yours stays', async () => {
+      await h.call('DELETE', `/api/transactions/${await entryKey(5)}`);
+      await h.db
+        .prepare(
+          `INSERT INTO provider_account (id, budget_id, connection_id, provider_account_id, name, type, current_balance, created_at, updated_at)
+           VALUES ('pa5', ?1, 'c_close', 'pa_5', 'Card 5', 'credit', 900, 0, 0)`,
+        )
+        .bind(B)
+        .run();
+      expect((await close(5, await atZero())).status).toBe(422);
+      expect(await closedAt(5)).toBeNull();
+    });
   });
 });

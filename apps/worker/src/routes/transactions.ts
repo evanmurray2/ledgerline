@@ -24,7 +24,7 @@ import {
 import type { AppEnv } from '../http/context.js';
 import type { Scoped } from '../db/scoped.js';
 import { HttpError, parse, scoped, GONE, FAR_DATE, FAR_MONTH, inReach, thisMonth } from './api.js';
-import { reopenStmts } from './account-close.js';
+import { reopenForEntry, reopenStmts } from './account-close.js';
 import { liveKey } from './sync.js';
 import { monthLong, shortDate } from '../views/common.js';
 import { categoryLabel, isHistory } from '../views/rows.js';
@@ -297,6 +297,8 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
       ),
       // A new amount that no longer fits the bank row it covers ends the cover (docs/payee-names.md 9.2).
       ...(await coverAfterAmount(s, key, p.amount, now)),
+      // An entry that stayed in a closed account no longer adds up to $0 there (D-93).
+      ...reopenForEntry(s, key, now),
     );
     edits.amount = editAt;
   }
@@ -305,6 +307,7 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
     if (p.wontClear && t.status === 'posted')
       throw new HttpError(422, 'posted', 'This has posted, so it can’t be marked won’t clear.');
     set('wont_clear', p.wontClear ? 1 : 0);
+    w.push(...reopenForEntry(s, key, now));
   }
   if (p.budgetMonth !== undefined) {
     if (p.budgetMonth !== null && !inReach(p.budgetMonth, await thisMonth(s, now)))
@@ -526,6 +529,7 @@ transactionRoutes.post('/transactions/:key/pending', async (c) => {
             now,
           ),
           cancelOwed(s, key, now),
+          ...reopenForEntry(s, key, now),
         ];
   w.push(s.audit(`pending.${r.action}`, 'transaction', key, null, null, now));
   return c.json(await commit(c, w));
@@ -549,6 +553,7 @@ transactionRoutes.delete('/transactions/:key', async (c) => {
         now,
       ),
       cancelOwed(s, key, now),
+      ...reopenForEntry(s, key, now),
       s.audit('txn.delete', 'transaction', key, null, null, now),
     ]),
   );

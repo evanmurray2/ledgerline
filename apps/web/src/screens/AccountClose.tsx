@@ -1,5 +1,5 @@
 // Close account and Reopen account, from an account's ⋯ menu (D-73). Close works only at $0; the register says why
-// when it can't yet. A closed account leaves Accounts and the Add list, keeps its rows, and opens again on a new row.
+// when it can't yet. Pending transactions you added don't block it: they stay and stop waiting for the bank (D-93). A closed account leaves Accounts and the Add list, keeps its rows, and opens again on a new row.
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -60,6 +60,11 @@ export function CloseAccountSheet({
       }
     >
       {block !== null && <Banner tone="warn">{block}</Banner>}
+      {block === null && account.pending !== 0 && (
+        <p className="m-0 text-sm leading-snug text-muted">
+          The pending transactions you added here stay and still count. They stop waiting for the bank.
+        </p>
+      )}
       <p className="m-0 text-sm leading-snug text-muted">
         The account leaves Accounts and the Add list. Its transactions stay, so past months don’t change.
         {credit && ' Its payment category leaves the Budget.'}
