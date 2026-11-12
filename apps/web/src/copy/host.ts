@@ -202,6 +202,10 @@ export class EngineHost {
     return this.call('sealedSnapshot', { snapshotId });
   }
   /** Checks the newest snapshot by rebuilding the budget in a second, empty copy. */
+  /** Writes a snapshot, or checks the newest one, when either is due (local/web-entry.ts). */
+  sealedUpkeep(snapshotId: string): Promise<{ did: 'check' | 'write' | 'nothing'; [k: string]: unknown }> {
+    return this.call('sealedUpkeep', { snapshotId });
+  }
   sealedCheck(): Promise<{ checked: boolean; why?: string; tables?: string[] }> {
     return this.call('sealedCheck');
   }

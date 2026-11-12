@@ -56,6 +56,7 @@ type Msg =
   | { id: number; op: 'sealedSync' }
   | { id: number; op: 'sealedSnapshot'; snapshotId: string }
   | { id: number; op: 'sealedCheck' }
+  | { id: number; op: 'sealedUpkeep'; snapshotId: string }
   | {
       id: number;
       op: 'cutover';
@@ -87,6 +88,9 @@ let sealed: {
  */
 let skew = 0;
 const clock = (): number => Date.now() + skew;
+/** Entries since the newest snapshot that make the next one worth writing (a day or two of use and bank updates). */
+const SNAPSHOT_EVERY = 60;
+
 const call: Fetch = async (path, init) => {
   const asked = Date.now();
   const r = await fetch(path, init);
@@ -291,6 +295,24 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
     case 'sealedSnapshot': {
       const { engine: e, log } = needSealed();
       return { value: await writeSnapshot(e, log, http, m.snapshotId) };
+    }
+    case 'sealedUpkeep': {
+      // Now and then (the app decides when): check the newest snapshot if it waits for its check, else write a new
+      // one once enough entries came since the last. One of the two at most, so a call is never long twice.
+      const { engine: e, log } = needSealed();
+      const list = await http.list();
+      const newest = list[0];
+      if (newest && !newest.check && list.length > 1) {
+        const s = await scratch(who!);
+        try {
+          return { value: { did: 'check', ...(await checkSnapshot(s.engine, log, http, clock)) } };
+        } finally {
+          s.close();
+        }
+      }
+      if (!newest || log.number - newest.number >= SNAPSHOT_EVERY)
+        return { value: { did: 'write', ...(await writeSnapshot(e, log, http, m.snapshotId)) } };
+      return { value: { did: 'nothing' } };
     }
     case 'sealedCheck': {
       const { log } = needSealed();

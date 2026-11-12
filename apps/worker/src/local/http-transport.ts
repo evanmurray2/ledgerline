@@ -29,6 +29,11 @@ const unb64 = (s: string): Uint8Array<ArrayBuffer> => {
   return out;
 };
 
+/** The message of a request the server refused because the sign-in ended (the app then shows sign-in). */
+export const SIGNED_OUT = 'Your sign-in ended. Sign in again.';
+const fault = (status: number): TransportError =>
+  new TransportError(status, status === 401 ? SIGNED_OUT : 'The server gave no answer. Try again.');
+
 /** Guards a paged read against a server that says "more" for ever. */
 const MAX_PAGES = 10_000;
 
@@ -40,22 +45,23 @@ export function httpTransport(fetch: Fetch): LogTransport & RunTransport & Snaps
   const json = async <T>(path: string, init?: RequestInit): Promise<{ status: number; body: T }> => {
     const r = await fetch(path, init);
     let body: unknown;
+    if (r.status === 401) throw fault(401);
     try {
       body = await r.json();
     } catch {
-      throw new TransportError(r.status, 'The server gave no answer. Try again.');
+      throw fault(r.status);
     }
     return { status: r.status, body: body as T };
   };
   const get = async <T>(path: string): Promise<T> => {
     const r = await json<T>(path);
-    if (r.status !== 200) throw new TransportError(r.status, 'The server gave no answer. Try again.');
+    if (r.status !== 200) throw fault(r.status);
     return r.body;
   };
   const bytes = async (path: string): Promise<Uint8Array | null> => {
     const r = await fetch(path);
     if (r.status === 404) return null;
-    if (r.status !== 200) throw new TransportError(r.status, 'The server gave no answer. Try again.');
+    if (r.status !== 200) throw fault(r.status);
     return new Uint8Array(await r.arrayBuffer());
   };
   /** A write's answer: the store's own (200 or 409), as it gave it. */
