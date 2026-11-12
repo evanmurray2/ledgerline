@@ -14,7 +14,7 @@ import {
   ENTRY_DAYS_AFTER,
   ENTRY_DAYS_BEFORE,
 } from '@ledgerline/domain';
-import { ulid } from '@ledgerline/platform';
+import { seededUlid } from '@ledgerline/platform';
 import type { Env } from '../env.js';
 import { Scoped } from '../db/scoped.js';
 import { accountLedger, bankDiff } from '../ledger/bank-diff.js';
@@ -310,7 +310,9 @@ export async function finalizeConnection(env: Env, c: StepContext, runId: string
                statement_date = excluded.statement_date, due_date = excluded.due_date, minimum_payment = excluded.minimum_payment,
                apr_bp = excluded.apr_bp, created_at = excluded.created_at`,
           ).bind(
-            ulid(now),
+            // Named from the card and the day, never at random: a device that files the same update makes the
+            // same row (docs/privacy.md 5.3: ids are an input).
+            seededUlid(at, `liability:${l.providerAccountId}:${snapshotDay}`, 0),
             c.budgetId,
             l.providerAccountId,
             snapshotDay,

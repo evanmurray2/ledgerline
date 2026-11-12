@@ -2,7 +2,7 @@
 // and Waiting to match. No category is set. Payees follow docs/payee-names.md 4–6 (sync/payee-keys.ts).
 import type { Stmt } from '@ledgerline/db/sql';
 import { cents, detectTransfers, newPayeeName, payeeNameKey } from '@ledgerline/domain';
-import { ulid } from '@ledgerline/platform';
+import { seededUlid } from '@ledgerline/platform';
 import type { Scoped } from '../db/scoped.js';
 import { chunks, uncovered } from '../ledger/ledger.js';
 import type { BankRow } from './process.js';
@@ -73,7 +73,9 @@ export async function planFresh(
     const keys = keysOf.get(r)!;
     let payee = current ?? keys.map((k) => owners.get(k)).find((p) => p);
     if (!payee) {
-      payee = ulid(now);
+      // Named from the row's first key and the update's time, never at random (docs/privacy.md 5.3: ids are an
+      // input): a device that files the same update makes the same payee.
+      payee = seededUlid(now, `payee:${keys[0] ?? r.provider_txn_id}`, 0);
       const name = newPayeeName(payeeSource(r));
       created.set(payee, name);
       // Sync chose its name (named_by 'sync', docs/payee-names.md 5).

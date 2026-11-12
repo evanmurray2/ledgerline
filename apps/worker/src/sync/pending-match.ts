@@ -20,7 +20,7 @@ import {
   pairEntries,
   type MatchRow,
 } from '@ledgerline/domain';
-import { ulid } from '@ledgerline/platform';
+import { seededUlid } from '@ledgerline/platform';
 import type { Scoped } from '../db/scoped.js';
 import { chunks } from '../ledger/ledger.js';
 import type { Inherited } from './file-fresh.js';
@@ -55,7 +55,8 @@ export function alert(s: Scoped, type: string, ref: string, data: unknown, now: 
   return s.q(
     `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at) VALUES (?2, ?1, ?3, ?4, ?5, ?6)
      ON CONFLICT (budget_id, type, ref_key) DO UPDATE SET data = excluded.data`,
-    ulid(now),
+    // Named from what it is about (docs/privacy.md 5.3: ids are an input): any filer makes the same row.
+    seededUlid(now, `alert:${type}:${ref}`, 0),
     type,
     ref,
     JSON.stringify(data),
