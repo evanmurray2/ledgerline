@@ -1,4 +1,4 @@
-# D-95: The web build is reproducible, and each release publishes its hashes (Nov 12, 2026)
+# D-96: The web build is reproducible, and each release publishes its hashes (Nov 12, 2026)
 
 Phase 7 of `docs/privacy.md` (5.9, section 10). It needs no other phase.
 

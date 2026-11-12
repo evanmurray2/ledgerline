@@ -326,7 +326,7 @@ Also: drop `'unsafe-inline'` from `style-src`, add Trusted Types where the brows
 - **The repository is already public** (checked Nov 10, 2026), so the code is open today and branch protection is available. Its docs held the owner's own purchases and bank names; they were taken out on Nov 10, 2026 (D-85). The git history keeps the old text.
 - The web build is made reproducible: the same commit gives the same files, byte for byte.
 - The deploy workflow publishes the list of file hashes for each release with a build attestation (free for public repositories), and Settings → About shows the release's commit and hash.
-- **Built (Nov 12, 2026, D-95):** `tools/ci/reproducible-check.mjs` in `ci`, `/release.json`, the attestation step in `deploy.yml`, Settings → About, and the steps to check a release in `docs/runbooks/verify-build.md`.
+- **Built (Nov 12, 2026, D-96):** `tools/ci/reproducible-check.mjs` in `ci`, `/release.json`, the attestation step in `deploy.yml`, Settings → About, and the steps to check a release in `docs/runbooks/verify-build.md`.
 - Anyone can then compare what the site serves with what the public build made. This covers the app's code. It says nothing about what the Worker runs, and it can't catch code sent to one person once (4.2). The policy says both.
 
 ### 5.10 Who can ship code
