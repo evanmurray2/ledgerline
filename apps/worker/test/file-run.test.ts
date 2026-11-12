@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { LocalEngine, migrateLocal } from '../src/local/engine.js';
 import { fileRun, type RunPackage } from '../src/local/file-run.js';
 import type { BankLogBatch, SyncPage } from '../src/routes/sync.js';
+import { endOfUpdate, type BankState } from '../src/sync/process.js';
 import { bankSync, pend, plaidTxn } from './bank-sync.js';
 import { storeDb } from './store-db.js';
 import { differences, rowsOf } from './twin.js';
@@ -43,7 +44,7 @@ async function bankLog(e: LocalEngine): Promise<void> {
   }
 }
 /** The newest update the server filed, as it was fetched. */
-async function lastRun(): Promise<RunPackage> {
+async function lastRun(): Promise<Omit<RunPackage, 'bank'>> {
   const run = (await h.db
     .prepare(`SELECT id, connection_id, fetched_at, fetch_seq FROM sync_run ORDER BY fetch_seq DESC LIMIT 1`)
     .first<{ id: string; connection_id: string; fetched_at: number; fetch_seq: number }>())!;
@@ -109,8 +110,31 @@ describe('a device files a bank update', () => {
       h.setNow(t);
       await h.sync(added, removed, t);
       await h.heal();
+      // What the bank says at the end of this update: a balance that moves, and a card statement.
+      const bank: BankState = {
+        accounts: [
+          {
+            providerAccountId: 'pa_1',
+            currentBalance: 10_000 + (t % 977),
+            availableBalance: null,
+            creditLimit: 500_000,
+          },
+          { providerAccountId: 'pa_2', currentBalance: 8_000, availableBalance: null, creditLimit: null },
+        ],
+        liabilities: [
+          {
+            providerAccountId: 'pa_1',
+            statementBalance: 4_200,
+            statementDate: '2026-11-01',
+            dueDate: '2026-11-25',
+            minimumPayment: 2_500,
+            aprBasisPoints: 2_199,
+          },
+        ],
+      };
+      await endOfUpdate(h.db, { budgetId: B, connectionId: C }, t, bank);
       // The device files the same update from its pages, on the copy it had before.
-      const pkg = await lastRun();
+      const pkg = { ...(await lastRun()), bank };
       await fileRun({ ...env, DB: device.db } as never, B, pkg, provider);
       // A second phone only reads what the server filed.
       await sync(reader);
