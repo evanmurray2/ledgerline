@@ -245,6 +245,9 @@ describe('the cutover, rehearsed', () => {
       expect(await r.json()).toEqual({ ok: true });
     }
     expect(await (await post('/api/cutover/seal')).json()).toEqual({ ok: true });
+    // A sealed budget is not offered the move again, and its freeze can't be ended.
+    expect((await post('/api/cutover/ready')).status).toBe(409);
+    expect((await post('/api/cutover/unfreeze')).status).toBe(409);
     const sealedState = (await (await get('/api/cutover/state')).json()) as {
       open: boolean;
       sealed: boolean;
@@ -360,6 +363,10 @@ describe('the cutover, rehearsed', () => {
     await server.prepare(`DELETE FROM job WHERE id = 'one-off'`).run();
     const second = (await freeze()) as FreezeAnswer;
     expect(second).toMatchObject({ ok: true });
+    // A move that failed ends its freeze at once: writes go on.
+    expect(await (await post('/api/cutover/unfreeze')).json()).toEqual({ ok: true });
+    expect((await assign(82)).status).toBe(200);
+    expect((await freeze()) as FreezeAnswer).toMatchObject({ ok: true });
     expect((await server.prepare(`SELECT count(*) AS n FROM log_entry`).first<{ n: number }>())!.n).toBe(0);
     // A freeze that is over: nothing more is taken, and the budget is as it was.
     await server.prepare(`UPDATE store_mark SET until = 1 WHERE key = 'frozen'`).run();

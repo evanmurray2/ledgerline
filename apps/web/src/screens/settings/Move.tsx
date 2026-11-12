@@ -3,7 +3,7 @@
 // the budget's key and its recovery key on this device; the person writes the recovery key down and types it
 // back; a second passkey prompt proves the passkey opens the key; only then is anything sent. For 7 days after,
 // the same card offers the way back.
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, errorMessage } from '../../api/client';
 import { api } from '../../api/endpoints';
@@ -22,7 +22,28 @@ import {
 } from '../../components/ui';
 import { toast } from '../../components/Toast';
 import { Why } from '../../components/Why';
-import { moveBack, moveFinish, moveGiveUp, moveStart, type MoveInHand } from '../../copy/copy';
+import {
+  isSealed,
+  moveAgain,
+  moveBack,
+  moveBackStart,
+  moveFinish,
+  moveGiveUp,
+  moveStart,
+  type MoveInHand,
+} from '../../copy/copy';
+
+/** Where the reason of a move that failed waits while the app starts again. */
+const MOVE_NOTE = 'ledgerline.move-note';
+const takeNote = (): string | null => {
+  try {
+    const n = sessionStorage.getItem(MOVE_NOTE);
+    if (n) sessionStorage.removeItem(MOVE_NOTE);
+    return n;
+  } catch {
+    return null;
+  }
+};
 
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
 
@@ -38,13 +59,24 @@ export function MoveCard() {
   const state = useQuery({ queryKey: ['cutover'], queryFn: api.cutoverState, retry: false });
   const [step, setStep] = useState<Step>({ at: 'idle' });
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(takeNote);
   const [blocks, setBlocks] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
   const [typed, setTyped] = useState('');
   const [asking, setAsking] = useState(false);
 
-  const s = state.data;
+  // Leaving the screen with a key in hand gives the key up.
+  const inHand = useRef<MoveInHand | null>(null);
+  inHand.current = step.at === 'key' || step.at === 'type' ? step.move : null;
+  useEffect(
+    () => () => {
+      if (inHand.current) moveGiveUp(inHand.current);
+    },
+    [],
+  );
+
+  // With no signal the server can't say: a budget this device holds as sealed is sealed.
+  const s = state.data ?? (isSealed() ? { open: false, sealed: true, backUntil: null } : undefined);
   if (!s || (!s.open && !s.backUntil && step.at !== 'done')) return null;
 
   const fail = (e: unknown) => {
@@ -70,10 +102,20 @@ export function MoveCard() {
       setStep({ at: 'key', move: await moveStart() });
     });
 
+  /** A move that stopped after it began: the copy is deleted, the app starts again and shows why here. */
+  const again = async (why: string) => {
+    try {
+      sessionStorage.setItem(MOVE_NOTE, why);
+    } catch {
+      // No storage: the page starts again without the note.
+    }
+    await moveAgain();
+  };
+
   const finish = (move: MoveInHand) =>
     run(async () => {
-      // The server asks for a passkey check minutes before the move: made now, not in the middle of it.
-      const ready = await api.cutoverReady();
+      // The server asks for a passkey check moments before the move: made now, not in the middle of it.
+      const ready = await api.cutoverReady(true);
       if (ready.blocks.length) {
         moveGiveUp(move);
         setBlocks(ready.blocks);
@@ -81,25 +123,30 @@ export function MoveCard() {
         return;
       }
       setStep({ at: 'moving' });
+      let r: Awaited<ReturnType<typeof moveFinish>>;
       try {
-        const r = await moveFinish(move, typed);
-        if (r.ok) {
-          setStep({ at: 'done' });
-          await qc.invalidateQueries({ queryKey: ['cutover'] });
-          return;
-        }
-        if (r.retype) {
-          setStep({ at: 'type', move });
-          setErr(r.why);
-          return;
-        }
-        setStep({ at: 'idle' });
-        setErr(r.why);
-        await qc.invalidateQueries({ queryKey: ['cutover'] });
+        r = await moveFinish(move, typed);
       } catch (e) {
         setStep({ at: 'idle' });
+        await qc.invalidateQueries({ queryKey: ['cutover'] });
         throw e;
       }
+      if (r.ok) {
+        setTyped('');
+        setStep({ at: 'done' });
+        await qc.invalidateQueries({ queryKey: ['cutover'] });
+        return;
+      }
+      if (r.retype) {
+        setStep({ at: 'type', move });
+        setErr(r.why);
+        return;
+      }
+      if (r.again) return again(r.why);
+      setTyped('');
+      setStep({ at: 'idle' });
+      setErr(r.why);
+      await qc.invalidateQueries({ queryKey: ['cutover'] });
     });
 
   const giveUp = (move: MoveInHand) => {
@@ -233,6 +280,9 @@ export function MoveCard() {
                       busy={busy}
                       onConfirm={() =>
                         run(async () => {
+                          // Forgotten on this device first: if the app closes before the last step, it
+                          // still opens the budget as the server has it.
+                          moveBackStart();
                           await api.cutoverBack();
                           await moveBack();
                         })

@@ -2,6 +2,7 @@
 // page changes with each phase of the privacy design: it never says more than is true on the day.
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/endpoints';
+import { isSealed } from '../../copy/copy';
 import { Card, SectionTitle } from '../../components/ui';
 import { Why } from '../../components/Why';
 import { Page } from './common';
@@ -19,7 +20,7 @@ function Fact({ name, text }: { name: string; text: string }) {
 export function PrivacyScreen() {
   // What this page says follows what is true for this budget now (sealed or not).
   const locked =
-    useQuery({ queryKey: ['cutover'], queryFn: api.cutoverState, retry: false }).data?.sealed === true;
+    useQuery({ queryKey: ['cutover'], queryFn: api.cutoverState, retry: false }).data?.sealed ?? isSealed();
   return (
     <Page title="Privacy" back="/settings">
       <SectionTitle>Your budget</SectionTitle>

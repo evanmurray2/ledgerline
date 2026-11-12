@@ -92,7 +92,9 @@ const call: Fetch = async (path, init) => {
   const r = await fetch(path, init);
   const t = Number(r.headers.get('x-ledgerline-time'));
   // Half the round trip is the best guess of when the server read its clock.
-  if (Number.isFinite(t) && t > 0) skew = t - (asked + Date.now()) / 2;
+  // A time a day off this device's own clock is no clock: it is not taken (the log would refuse such entries).
+  const seen = t - (asked + Date.now()) / 2;
+  if (Number.isFinite(t) && t > 0 && Math.abs(seen) < 86_400_000) skew = seen;
   return r;
 };
 const http = httpTransport(call);

@@ -127,8 +127,8 @@ export const api = {
       '/api/cutover/state',
       z.object({ open: z.boolean(), sealed: z.boolean(), backUntil: z.string().nullable() }),
     ),
-  cutoverReady: () =>
-    post('/api/cutover/ready', z.object({ ok: z.literal(true), blocks: z.array(z.string()) })),
+  cutoverReady: (fresh = false) =>
+    post('/api/cutover/ready', z.object({ ok: z.literal(true), blocks: z.array(z.string()) }), { fresh }),
   cutoverBack: () => post('/api/cutover/back', z.object({ ok: z.boolean() })),
   newRecoveryCode: () => post('/api/settings/security/recovery-code', z.object({ code: z.string() })),
   dismissRecoveryNotice: () => post('/api/settings/security/recovery-notice/dismiss', Ok),

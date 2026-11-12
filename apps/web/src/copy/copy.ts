@@ -328,6 +328,9 @@ const NOT_NOW = 'Something went wrong. Try again.';
 export async function moveStart(): Promise<MoveInHand> {
   if (!host || !who || state.status !== 'ready' || sealed) throw new Error(NOT_NOW);
   if (state.offline) throw new Error('Connect to the internet to lock your budget.');
+  // Asked of the server, not of this device's memory: an earlier try may have sealed the budget.
+  if ((await server<{ sealed: boolean }>('GET', '/api/cutover/state')).sealed)
+    throw new Error('This budget is locked already.');
   // Every change made here must be on the server first: the move takes the budget as the server holds it.
   await flush();
   if ((await queued()).length)
@@ -355,9 +358,14 @@ export function moveGiveUp(p: MoveInHand): void {
 export async function moveFinish(
   p: MoveInHand,
   typed: string,
-): Promise<{ ok: true } | { ok: false; why: string; retype?: boolean }> {
+): Promise<{ ok: true } | { ok: false; why: string; retype?: boolean; again?: boolean }> {
   if (!host || !who || state.status !== 'ready' || sealed) throw new Error(NOT_NOW);
   const h = host;
+  // The first entry is dated when the key was made; the server takes it for an hour (seal/cutover.ts).
+  if (Date.now() + (await h.state()).offset - p.genesis.header.time > 50 * 60_000) {
+    dropMove(p);
+    return { ok: false, why: 'This took too long. Start again: a new recovery key is made.' };
+  }
   if (!(await recoveryKeyOpens(p, typed)))
     return { ok: false, why: 'That is not the recovery key shown. Check it and try again.', retype: true };
   let w: { credentialId: string; slotPrf: ArrayBuffer };
@@ -380,8 +388,13 @@ export async function moveFinish(
     dropMove(p);
   }
   const keys = proved.keys as unknown as SealedKeys;
-  const r = await h.cutover(keys, proved.genesis, proved.deviceId, newUlid());
-  if (!r.ok) return { ok: false, why: r.why };
+  let r: Awaited<ReturnType<EngineHost['cutover']>>;
+  try {
+    r = await h.cutover(keys, proved.genesis, proved.deviceId, newUlid());
+  } catch (e) {
+    r = { ok: false, why: e instanceof Error ? e.message : NOT_NOW };
+  }
+  if (!r.ok) return { ok: false, why: await moveFailed(r.why), again: true };
   // The budget is sealed. From here this device treats it so, whatever the server says later.
   rememberSealed(who.budgetId);
   sealed = {
@@ -410,6 +423,43 @@ export async function moveFinish(
   window.dispatchEvent(new Event('ledgerline:readonly'));
   changed();
   return { ok: true };
+}
+
+/**
+ * The move stopped after the engine began it. The copy on this device may be empty now, and the server may hold
+ * a freeze or even a sealed budget whose first snapshot this device never read back. The server is asked where
+ * it stands: a freeze is ended; a sealed budget is taken back at once (nothing was changed since). Gives what
+ * to tell the person. The caller then deletes the copy and starts the app again (`moveAgain`).
+ */
+async function moveFailed(why: string): Promise<string> {
+  const st = await server<{ sealed: boolean }>('GET', '/api/cutover/state').catch(() => null);
+  if (!st) return `${why} Check Settings → Privacy when you are online again.`;
+  if (!st.sealed) {
+    await server('POST', '/api/cutover/unfreeze').catch(() => undefined);
+    return `${why} Nothing was changed.`;
+  }
+  const back = await server('POST', '/api/cutover/back').then(
+    () => true,
+    () => false,
+  );
+  if (back) return `${why} The move was undone. Nothing was lost.`;
+  // The budget is sealed and stays so: this device treats it so, and opens it from the log.
+  if (who) rememberSealed(who.budgetId);
+  return `${why} Your budget is locked. To undo it, open Settings → Privacy and go back.`;
+}
+
+/** After a move that failed: the copy (which the engine may have emptied) is deleted and the app starts again. */
+export async function moveAgain(): Promise<void> {
+  await wipe();
+  window.location.reload();
+}
+
+/**
+ * Before the way back is asked of the server: this device forgets that the budget was sealed, so that it takes
+ * the plain budget even if the app is closed before `moveBack` runs. The person's own act, on this device.
+ */
+export function moveBackStart(): void {
+  forgetSealed(who?.budgetId ?? sealed?.budgetId ?? null);
 }
 
 /**
@@ -615,6 +665,13 @@ export async function start(session: Session): Promise<void> {
     }
     // A sealed budget's facts are in the copy itself: the session saved for an offline start is made from it
     // once the copy is open (client.ts), not from the server's answer.
+    // A copy from a sealed budget, on a device that was told (by the person, with the way back) that the
+    // budget is not sealed any more: it is deleted, and the app starts again with the budget as the server has it.
+    if (!sealed && (await host!.get('sealed_session'))) {
+      await wipe();
+      window.location.reload();
+      return;
+    }
     if (!sealed) await host!.put('session', JSON.stringify(session));
     // Read before the data key is held anew, which would make old keys look fresh.
     const heldKeys = sealed && record ? await heldSealed(record.key, IDLE_MS) : null;

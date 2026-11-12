@@ -39,9 +39,20 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   // The owner sets up first: until then there is no Create account.
   await withPasskeyDevice(owner);
   await owner.goto('/budget');
-  await owner.getByLabel('Setup code').fill('e2e-setup-code-0123456789abcdefghijklmnop');
-  await owner.getByRole('button', { name: 'Create passkey' }).click();
-  await expect(owner).toHaveURL(/\/welcome/);
+  // On a retry the same server has its owner already.
+  const setup = owner.getByLabel('Setup code');
+  const fresh = await Promise.race([
+    setup.waitFor({ timeout: 15_000 }).then(() => true),
+    owner
+      .getByRole('button', { name: 'Create account' })
+      .waitFor({ timeout: 15_000 })
+      .then(() => false),
+  ]).catch(() => false);
+  if (fresh) {
+    await setup.fill('e2e-setup-code-0123456789abcdefghijklmnop');
+    await owner.getByRole('button', { name: 'Create passkey' }).click();
+    await expect(owner).toHaveURL(/\/welcome/);
+  }
 
   // A new account: its first-run setup has no bank step, so its budget is ready in three taps.
   const page = await (await browser.newContext()).newPage();
@@ -90,6 +101,8 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   await expect(page.getByText('Groceries')).toBeVisible({ timeout: 30_000 });
   // ---- a change is made on the device and goes out as an entry of the log
   await page.goto('/settings/categories');
+  // The screen shows once the copy is open; a change made before that is refused for a locked budget.
+  await expect(page.getByText('Rent')).toBeVisible({ timeout: 30_000 });
   const appended = page.waitForResponse((r) => r.url().includes('/api/log/append'));
   await page.getByRole('link', { name: 'Add category' }).first().click();
   await page.getByRole('dialog').getByRole('textbox').first().fill('Climbing');

@@ -16,6 +16,7 @@ import {
   cutoverBegin,
   cutoverBlocks,
   cutoverState,
+  cutoverUnfreeze,
   cutoverChunk,
   cutoverFreeze,
   cutoverSeal,
@@ -24,6 +25,8 @@ import {
 import { runDeps } from './runs.js';
 
 const TRY_AGAIN = 'Something went wrong. Try again.';
+/** How recent the passkey check is when the move itself starts. */
+const FRESH_MS = 2 * 60_000;
 const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const unb64 = (s: string): Uint8Array<ArrayBuffer> => {
   const bin = atob(s);
@@ -91,7 +94,10 @@ cutoverApi.use('*', async (c, next) => {
   if (!who || !open(c, who)) return c.json({ error: 'not_found', message: TRY_AGAIN }, 404);
   if (who.userId === 'system' || who.userId === 'service' || notAdmin(c, who))
     return c.json({ error: 'forbidden', message: 'You can’t open this.' }, 403);
-  if (requestNow(c) - who.verifiedAt > REAUTH_MS)
+  // A passkey check minutes ago, for what starts or undoes a move. The steps after the freeze need none: they
+  // act only on a budget this person froze moments ago, and a check that ran out in the middle would only make
+  // the move fail.
+  if (/\/cutover\/(freeze|ready|back)$/.test(c.req.path) && requestNow(c) - who.verifiedAt > REAUTH_MS)
     return c.json({ error: 'reauth', message: 'Confirm it’s you with your passkey, then try again.' }, 401);
   // The same guard as every write; a chunk is sealed bytes (see seal/log-routes.ts).
   const chunk =
@@ -147,9 +153,23 @@ cutoverApi.put('/cutover/chunks/:id/:k', async (c) => {
 });
 
 // What stands in the way, in words for the person, before any key is made. The freeze checks the same again.
-cutoverApi.post('/cutover/ready', async (c) =>
-  c.json({ ok: true, blocks: await cutoverBlocks(c.env.DB, c.get('budgetId'), requestNow(c)) }),
-);
+// `fresh`: asked just before the move itself, which must not run out of its passkey check half-way.
+cutoverApi.post('/cutover/ready', async (c) => {
+  const now = requestNow(c);
+  const body = (await c.req.json().catch(() => null)) as { fresh?: boolean } | null;
+  const who = (c.env as typeof c.env & { CALLER?: Caller }).CALLER!;
+  if (body?.fresh === true && now - who.verifiedAt > FRESH_MS)
+    return c.json({ error: 'reauth', message: 'Confirm it’s you with your passkey, then try again.' }, 401);
+  if ((await cutoverState({ db: c.env.DB, now, markNow: Date.now() })).sealed)
+    return c.json({ error: 'sealed', message: 'This budget is locked already.' }, 409);
+  return c.json({ ok: true, blocks: await cutoverBlocks(c.env.DB, c.get('budgetId'), now) });
+});
+
+// A move that failed ends its freeze at once.
+cutoverApi.post('/cutover/unfreeze', async (c) => {
+  const r = await cutoverUnfreeze({ db: c.env.DB, markNow: Date.now() });
+  return c.json(r, r.ok ? 200 : 409);
+});
 
 cutoverApi.post('/cutover/seal', async (c) => {
   const r = await cutoverSeal(deps(c, requestNow(c)));

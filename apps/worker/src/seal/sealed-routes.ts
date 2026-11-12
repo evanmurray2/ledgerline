@@ -176,6 +176,11 @@ sealedApi.post('/usage', (c) => c.body(null, 204));
 sealedApi.delete('/usage', (c) => c.json({ ok: true }));
 sealedApi.post('/identity-alert', (c) => c.json({ ok: true }));
 sealedApi.post('/sync/shadow', (c) => c.json({ ok: true }));
+// The server can't read a locked budget, so it can't restore one, and it keeps no notes about it.
+sealedApi.post('/settings/restore', () =>
+  no(409, 'sealed', 'A locked budget can’t be restored by the server. Your devices hold it.'),
+);
+sealedApi.post('/notes', () => no(409, 'sealed', 'Notes can’t be sent from a locked budget yet.'));
 
 sealedApi.onError((_e, c) => c.json({ error: 'internal', message: TRY_AGAIN }, 500));
 
@@ -186,5 +191,8 @@ export function sealedPath(method: string, path: string): boolean {
   if (/^\/api\/settings\/connections\/(refresh|link-token|link-finish|[^/]+\/refresh)$/.test(path))
     return method === 'POST';
   if (path === '/api/usage') return method === 'POST' || method === 'DELETE';
-  return method === 'POST' && (path === '/api/identity-alert' || path === '/api/sync/shadow');
+  return (
+    method === 'POST' &&
+    ['/api/identity-alert', '/api/sync/shadow', '/api/settings/restore', '/api/notes'].includes(path)
+  );
 }
