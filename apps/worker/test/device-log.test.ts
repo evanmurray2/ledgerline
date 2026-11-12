@@ -15,14 +15,20 @@ import {
   readEntry,
   recoverySlot,
   startChain,
+  toHex,
+  ChainError,
+  OpenError,
+  openEntryBody,
   type BudgetKeys,
+  type ChainState,
   type Bytes,
   type Entry,
 } from '@ledgerline/seal';
 import { SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { decodeChangeSet, DeviceLog, encodeChangeSet, LogFormatError } from '../src/local/device-log.js';
-import type { LocalEngine } from '../src/local/engine.js';
+import { decodeChangeSet, DeviceLog, LogFormatError } from '../src/local/device-log.js';
+import { RowsRefused, type LocalEngine } from '../src/local/engine.js';
+import { LogSession, type LogTransport } from '../src/local/log-session.js';
 import { logAfter, logAppend, logGenesis, type LogDeps } from '../src/seal/log-store.js';
 import { syncPhone } from './phone.js';
 import { storeDb } from './store-db.js';
@@ -63,7 +69,9 @@ describe('two devices and the sealed log', () => {
     const fresh = await logAfter(server, log.number, 100);
     const entries: Entry[] = [];
     for (const e of fresh) entries.push(await readEntry(e.bytes));
-    for (const set of await log.take(entries)) await engine.applyRows(set.rows);
+    const taken = await log.read(entries);
+    for (const t of taken.sets) await engine.applyRows(t.set.rows);
+    taken.commit();
     if (await engine.needsDerive()) await engine.derive();
   };
 
@@ -194,11 +202,11 @@ describe('two devices and the sealed log', () => {
     await logB.take(again.entries);
     await read(a, logA);
     expect(differences(await rowsOf(a), await rowsOf(b))).toEqual([]);
-    // Each device noted what it last saw from the other: the laptop's entry names the phone's last one.
-    const set = decodeChangeSet(
-      encodeChangeSet({ v: 1, at: 1, rows: [], seen: { [PHONE]: [first.entries[0]!.header.number, 'x'] } }),
-    );
-    expect(set.seen[PHONE]![0]).toBe(first.entries[0]!.header.number);
+    // Each device notes what it last took from the other, inside its own sealed entries: the laptop's entry names
+    // the phone's last one, by number and hash.
+    const body = decodeChangeSet(await openEntryBody(again.entries[0]!, keys));
+    expect(body.seen[PHONE]).toEqual([first.entries[0]!.header.number, toHex(first.entries[0]!.hash)]);
+    expect(body.at).toBe(clock);
   });
 
   it('a large change set travels as parts and arrives whole; a changed entry is refused', async () => {
@@ -219,12 +227,224 @@ describe('two devices and the sealed log', () => {
     await read(b, logB);
     expect(differences(await rowsOf(a), await rowsOf(b))).toEqual([]);
 
-    // An entry whose sealed body was changed doesn't open, and a device takes nothing from it.
-    clock += 1000;
-    const [good] = await logA.build(KIND.edit, { at: clock, rows: [] });
-    const bad = { ...good!, body: good!.body.slice() as Bytes };
-    bad.body[5] = bad.body[5]! ^ 1;
-    await expect(logB.take([bad])).rejects.toThrow();
     expect(() => decodeChangeSet(new Uint8Array([1, 2, 3]))).toThrow(LogFormatError);
   });
+
+  it('one bad entry among good ones: the device takes none of them, and stays where it was', async () => {
+    clock += 1000;
+    const good = await logA.build(KIND.edit, {
+      at: clock,
+      rows: [
+        {
+          t: 'setting',
+          k: [await budgetOf(a), 'kept'],
+          d: { budget_id: await budgetOf(a), key: 'kept', value: '1', updated_at: clock },
+        },
+      ],
+    });
+    expect((await logAppend(deps(), logA.number, good.map(encodeEntry))).ok).toBe(true);
+    for (const t of await logA.take(good)) await a.applyRows(t.set.rows);
+    clock += 1000;
+    const [next] = await logA.build(KIND.edit, { at: clock, rows: [] });
+    const at = logB.number;
+
+    // A signature that is not the budget's.
+    const forged = { ...next!, signature: next!.signature.slice() as Bytes };
+    forged.signature[3] = forged.signature[3]! ^ 1;
+    await expect(logB.read([...good, forged])).rejects.toThrow(ChainError);
+    expect(logB.number).toBe(at);
+
+    // Signed by the budget's key, but sealed with a key that is not the log's: it doesn't open.
+    const otherKeys = await deriveBudgetKeys(randomBytes(32), BUDGET, 1);
+    const [sealedWrong] = await new DeviceLog(
+      { ...keys, log: otherKeys.log },
+      stateOf(logA),
+      PHONE,
+      () => clock,
+    ).build(KIND.edit, { at: clock, rows: [] });
+    await expect(logB.read([...good, sealedWrong!])).rejects.toThrow(OpenError);
+    expect(logB.number).toBe(at);
+
+    // The good entry alone is taken, with its rows, as if nothing had happened.
+    const taken = await logB.read(good);
+    expect(taken.sets.map((t) => [t.deviceId, t.kind, t.set.rows.length])).toEqual([[PHONE, KIND.edit, 1]]);
+    for (const t of taken.sets) await b.applyRows(t.set.rows);
+    taken.commit();
+    expect(logB.number).toBe(at + 1);
+  });
+
+  it('rows no honest device writes are refused before anything is written', async () => {
+    const budget = await budgetOf(b);
+    const before = JSON.stringify(await rowsOf(b));
+    const good = {
+      t: 'setting',
+      k: [budget, 'fine'],
+      d: { budget_id: budget, key: 'fine', value: '1', updated_at: 1 },
+    };
+    const bad: [string, unknown][] = [
+      // A column name that is SQL.
+      [
+        'column',
+        {
+          t: 'setting',
+          k: [budget, 'x'],
+          d: {
+            budget_id: budget,
+            key: 'x',
+            "value, updated_at) SELECT ?1, 'leak', (SELECT value FROM local_state LIMIT 1), 1 --": 'v',
+          },
+        },
+      ],
+      ['table', { t: 'local_state', k: ['sync'], d: { key: 'sync', value: '{}' } }],
+      ['table', { t: 'setting; DROP TABLE budget', k: [budget, 'x'], d: null }],
+      ['key', { t: 'setting', k: [budget], d: null }],
+      [
+        'not the one',
+        { t: 'setting', k: [budget, 'x'], d: { budget_id: budget, key: 'y', value: '1', updated_at: 1 } },
+      ],
+      [
+        'value',
+        {
+          t: 'setting',
+          k: [budget, 'x'],
+          d: { budget_id: budget, key: 'x', value: { a: 1 }, updated_at: 1 },
+        },
+      ],
+    ];
+    for (const [why, row] of bad) {
+      // A good row first: it must not be written when a later row of the same set is refused.
+      await expect(b.applyRows([good, row] as never), why).rejects.toThrow(RowsRefused);
+      expect(JSON.stringify(await rowsOf(b)), why).toBe(before);
+    }
+    expect((await b.db.prepare(`SELECT count(*) AS n FROM budget`).first<{ n: number }>())!.n).toBe(1);
+  });
+
+  // The copy as a base plus a queue (local/log-session.ts): edits made with no connection wait in the engine's
+  // queue; the session sends each as an entry, and reads the other device's entries under the queue.
+  describe('a session: base plus queue', () => {
+    const transport: LogTransport = {
+      after: async (number) => (await logAfter(server, number, 100)).map((e) => e.bytes),
+      append: (base, entries) => logAppend(deps(), base, entries),
+    };
+    let sa: LogSession;
+    let sb: LogSession;
+    const offline = async (engine: LocalEngine, method: string, path: string, body: unknown) => {
+      clock += 1000;
+      const r = await engine.enqueue({ id: `session-edit-${++n}-xxx`, at: clock, method, path, body });
+      expect(r.response.status, await r.response.clone().text()).toBeLessThan(300);
+    };
+    const rent = async (e: LocalEngine) =>
+      (await e.db
+        .prepare(`SELECT amount FROM assignment WHERE month = '2026-11' AND category_id = 'rent'`)
+        .first<{ amount: number }>())!.amount;
+
+    beforeAll(async () => {
+      sa = new LogSession(a, logA, transport, encodeEntry);
+      sb = new LogSession(b, logB, transport, encodeEntry);
+      // Both copies stand at the log's last entry (what the tests above left).
+      await read(a, logA);
+      await read(b, logB);
+      for (const [engine, log] of [
+        [a, logA],
+        [b, logB],
+      ] as const) {
+        const st = await engine.state();
+        await engine.apply({ ...basePage(st), through: log.number }, Date.now());
+      }
+      expect(differences(await rowsOf(a), await rowsOf(b))).toEqual([]);
+    });
+
+    it('waiting edits go to the log one by one, and the other device reads them', async () => {
+      await offline(a, 'POST', '/api/budget/assign', {
+        month: '2026-11',
+        items: [{ categoryId: 'rent', amount: 100 }],
+      });
+      await offline(a, 'POST', '/api/transactions', {
+        kind: 'pending',
+        accountId: 'checking',
+        date: '2026-11-11',
+        amount: -450,
+        payee: 'Queued lunch',
+        categoryId: 'electric',
+        repeats: 'never',
+      });
+      expect((await a.queue()).length).toBe(2);
+      expect(await sa.flush()).toEqual({ sent: 2, lost: 0 });
+      expect((await a.queue()).length).toBe(0);
+      expect((await a.state()).through).toBe(logA.number);
+      expect(await sb.pull()).toMatchObject({ entries: 2, lost: 0 });
+      expect(differences(await rowsOf(a), await rowsOf(b))).toEqual([]);
+    });
+
+    it('the log moved on: the queue comes out, the newer entries go in, the queue runs again', async () => {
+      const start = await rent(a);
+      // The phone adds 500 to Rent with no connection. Meanwhile the laptop sets Rent to 90,000 and sends it.
+      await offline(a, 'POST', '/api/budget/assign', {
+        month: '2026-11',
+        items: [{ categoryId: 'rent', amount: 500 }],
+      });
+      expect(await rent(a)).toBe(start + 500);
+      await offline(b, 'POST', '/api/budget/set', { month: '2026-11', categoryId: 'rent', assigned: 90_000 });
+      expect(await sb.flush()).toEqual({ sent: 1, lost: 0 });
+      // The phone sends: behind, so it reads the laptop's entry under its queue and sends its edit on top.
+      expect(await sa.flush()).toEqual({ sent: 1, lost: 0 });
+      expect(await rent(a)).toBe(90_500);
+      await sb.pull();
+      expect(await rent(b)).toBe(90_500);
+      expect(differences(await rowsOf(a), await rowsOf(b))).toEqual([]);
+    });
+
+    it('an edit of a row another device removed is lost, and says so', async () => {
+      await offline(b, 'POST', '/api/transactions', {
+        kind: 'pending',
+        accountId: 'checking',
+        date: '2026-11-12',
+        amount: -200,
+        payee: 'Gone soon',
+        categoryId: 'electric',
+        repeats: 'never',
+      });
+      await sb.flush();
+      await sa.pull();
+      const key = (await a.db
+        .prepare(`SELECT txn_key FROM manual_pending WHERE payee_name = 'Gone soon'`)
+        .first<{ txn_key: string }>())!.txn_key;
+      // The phone writes a note on it with no connection; the laptop deletes it and sends that.
+      await offline(a, 'PATCH', `/api/transactions/${key}`, { note: 'too late' });
+      await offline(a, 'POST', '/api/budget/assign', {
+        month: '2026-11',
+        items: [{ categoryId: 'internet', amount: 7 }],
+      });
+      await offline(b, 'DELETE', `/api/transactions/${key}`, undefined);
+      expect(await sb.flush()).toEqual({ sent: 1, lost: 0 });
+      // The note has nothing to act on any more; the other edit goes through.
+      expect(await sa.flush()).toEqual({ sent: 1, lost: 1 });
+      await sb.pull();
+      expect(differences(await rowsOf(a), await rowsOf(b))).toEqual([]);
+      expect(await other(b)).toBe(await other(a));
+    });
+  });
 });
+
+/** The budget a copy holds. */
+async function budgetOf(e: LocalEngine): Promise<string> {
+  return (await e.db.prepare(`SELECT id FROM budget`).first<{ id: string }>())!.id;
+}
+
+/** Where a device's log stands (for a second writer on the same place, in a test). */
+function stateOf(log: DeviceLog): ChainState {
+  return (log as unknown as { state: ChainState }).state;
+}
+
+/** An empty page of changes for a copy, to set where it stands. */
+function basePage(st: { format: number; epoch: string | null; offset: number }) {
+  return {
+    format: st.format,
+    epoch: st.epoch ?? 'log',
+    serverTime: Date.now() + st.offset,
+    through: 0,
+    more: false,
+    cursor: null,
+    rows: [],
+  };
+}

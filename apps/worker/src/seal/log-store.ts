@@ -7,6 +7,7 @@ import type { Db, Stmt } from '@ledgerline/db/sql';
 import {
   AppendRefused,
   checkGenesisWrite,
+  FormatError,
   checkWrite,
   fromHex,
   fromStored,
@@ -169,10 +170,15 @@ function storeStmts(
   ];
 }
 
+/**
+ * What a refused write answers. Only a refusal is an answer: bytes that are no entry, or a rule of the log or of
+ * the server. Any other fault (the database, a helper that threw) is thrown on, so the device tries again and
+ * a good write is never told it was refused for good.
+ */
 const refusal = (x: unknown): AppendResult => {
   if (x instanceof AppendRefused) return { ok: false, why: x.why, detail: x.detail, retry: x.retry };
-  // Bytes that are not an entry at all.
-  return { ok: false, why: 'rules', detail: 'not an entry', retry: false };
+  if (x instanceof FormatError) return { ok: false, why: 'rules', detail: 'not an entry', retry: false };
+  throw x;
 };
 
 /** The first write of a budget: its genesis entry. Only when the budget has no log. */
@@ -187,7 +193,8 @@ export async function logGenesis(d: LogDeps, bytes: Uint8Array): Promise<AppendR
       const first = (await logAfter(d.db, 0, 1))[0];
       if (first && toHex((await readEntry(first.bytes)).hash) === toHex(e.hash))
         return { ok: true, number: head, stored: 'already' };
-      return { ok: false, why: 'behind', number: head, retry: true };
+      // A budget starts once: another first entry can never be stored, so the device must not try again.
+      return { ok: false, why: 'rules', detail: 'a log exists', retry: false };
     }
     state = await checkGenesisWrite(e, d.budgetId, await context(d));
   } catch (x) {

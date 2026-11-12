@@ -12,6 +12,7 @@ import {
   advance,
   KIND,
   MAX_PLAIN,
+  MAX_WRITE_ENTRIES,
   openEntryBody,
   randomBytes,
   sealedEntry,
@@ -61,27 +62,67 @@ export function decodeChangeSet(bytes: Uint8Array): ChangeSet {
   };
   if (!c || c.v !== 1 || !Number.isSafeInteger(c.at) || !Array.isArray(c.rows) || !c.rows.every(row))
     throw new LogFormatError('not a change set');
-  if (!c.seen || typeof c.seen !== 'object') throw new LogFormatError('not a change set');
+  const seen = c.seen as unknown;
+  if (!seen || typeof seen !== 'object' || Array.isArray(seen)) throw new LogFormatError('not a change set');
+  for (const v of Object.values(seen as Record<string, unknown>))
+    if (!Array.isArray(v) || v.length !== 2 || !Number.isSafeInteger(v[0]) || typeof v[1] !== 'string')
+      throw new LogFormatError('not a change set');
   return c as ChangeSet;
 }
+
+/** The kinds of entry whose sealed body is a change set (a data migration's rows are written like any other's). */
+const CHANGE_KINDS: readonly number[] = [KIND.edit, KIND.bank, KIND.scan, KIND.dataMigration];
+
+/** One whole change set of the log, with where it came from. */
+export interface Taken {
+  /** The number of its last entry (its only one, unless it came in parts). */
+  number: number;
+  kind: number;
+  deviceId: string;
+  set: ChangeSet;
+}
+
+/** Entries read and checked, not yet part of this device's place in the log. */
+export interface Read {
+  sets: Taken[];
+  /** Where the log stands after them. */
+  number: number;
+  /** Makes them this device's place. Call it once their rows are in the copy. */
+  commit(): void;
+}
+
+/** A change set too large for one write of the log (16 parts, about 1 MB). */
+export class TooLarge extends Error {}
 
 /** A device writing to, and reading from, one budget's log. */
 export class DeviceLog {
   /** The last entry taken from each other device. */
-  private readonly seen = new Map<string, [number, string]>();
+  private seen = new Map<string, [number, string]>();
   /** The parts of a change set that is not whole yet. */
   private parts: Bytes[] = [];
+  /** The budget's keys by key version: an entry is opened with the keys of its own version. */
+  private readonly keys: Map<number, BudgetKeys>;
 
   constructor(
-    private readonly keys: BudgetKeys,
+    keys: BudgetKeys | readonly BudgetKeys[],
     private state: ChainState,
     readonly deviceId: string,
     private readonly clock: () => number,
-  ) {}
+  ) {
+    this.keys = new Map((Array.isArray(keys) ? keys : [keys as BudgetKeys]).map((k) => [k.version, k]));
+  }
 
   /** The number of the last entry this device has taken. */
   get number(): number {
     return this.state.number;
+  }
+
+  /** The keys of the log's current key version. */
+  private current(): BudgetKeys {
+    const v = (this.state as FullChainState).public.keyVersion;
+    const k = this.keys.get(v);
+    if (!k) throw new LogFormatError(`this device does not hold key version ${v}`);
+    return k;
   }
 
   /**
@@ -94,10 +135,12 @@ export class DeviceLog {
     over: { filedThrough?: number; receipts?: Bytes[]; scanThrough?: number } = {},
   ): Promise<Entry[]> {
     const s = this.state as FullChainState;
+    const keys = this.current();
     const plain = encodeChangeSet({ v: 1, at: set.at, rows: set.rows, seen: Object.fromEntries(this.seen) });
     const chunks: Bytes[] = [];
-    for (let i = 0; i < plain.length || i === 0; i += MAX_PLAIN)
-      chunks.push(plain.slice(i, i + MAX_PLAIN) as Bytes);
+    for (let i = 0; i < plain.length; i += MAX_PLAIN) chunks.push(plain.slice(i, i + MAX_PLAIN) as Bytes);
+    // One write holds at most 16 entries, and a part set is never split over two writes (privacy-keys.md 7.2).
+    if (chunks.length > MAX_WRITE_ENTRIES) throw new TooLarge('this change is too large for one write');
     // For ordering only: the later of this device's clock and one millisecond after the entry before (5.3 check 4).
     const time = Math.max(this.clock(), s.time + 1);
     const entryId = randomBytes(16);
@@ -108,14 +151,14 @@ export class DeviceLog {
       const e = await sealedEntry(
         {
           kind,
-          budgetId: this.keysBudget(),
+          budgetId: s.public.budgetId,
           number: prev.number + 1,
           prevHash: prev.hash,
           entryId,
           time,
           deviceId: this.deviceId,
           deviceCounter: counter + 1 + i,
-          keyVersion: this.keys.version,
+          keyVersion: keys.version,
           schemaVersion: LOG_SCHEMA_VERSION,
           processingVersion: LOG_PROCESSING_VERSION,
           part: i + 1,
@@ -125,7 +168,7 @@ export class DeviceLog {
           scanThrough: over.scanThrough ?? s.scanThrough,
         },
         chunk,
-        this.keys,
+        keys,
       );
       out.push(e);
       prev = { number: e.header.number, hash: e.hash };
@@ -133,33 +176,51 @@ export class DeviceLog {
     return out;
   }
 
-  private keysBudget(): string {
-    return (this.state as FullChainState & { public: { budgetId: string } }).public.budgetId;
-  }
-
   /**
-   * Takes the next entries of the log, in order: each is checked by the log's rules (the chain, the signature,
-   * the device's counter), and each whole change set is given back to be written into the copy. Entries with a
-   * public body (a key or slot change) move the chain and carry no rows. Throws when an entry doesn't follow.
+   * Reads the next entries of the log, in order, and changes nothing: each entry is checked by the log's rules
+   * (the chain, the signature, the device's counter), each sealed body is opened with the keys of its version,
+   * and each whole change set is given back. All of them pass, or this throws and the device stays where it was:
+   * one bad entry among good ones never makes the device skip the good ones. Entries with a public body (a key
+   * or slot change) move the chain and carry no rows.
    */
-  async take(entries: readonly Entry[]): Promise<ChangeSet[]> {
-    const sets: ChangeSet[] = [];
+  async read(entries: readonly Entry[]): Promise<Read> {
+    let state = this.state;
+    let parts = [...this.parts];
+    const seen = new Map(this.seen);
+    const sets: Taken[] = [];
     for (const e of entries) {
-      this.state = await advance(this.state, e, { now: this.clock(), schemaVersion: LOG_SCHEMA_VERSION });
+      state = await advance(state, e, { now: this.clock(), schemaVersion: LOG_SCHEMA_VERSION });
       const h = e.header;
-      if (h.kind !== KIND.edit && h.kind !== KIND.bank && h.kind !== KIND.scan) continue;
-      if (h.deviceId !== this.deviceId) this.seen.set(h.deviceId, [h.number, toHex(e.hash)]);
-      this.parts.push(await openEntryBody(e, this.keys));
+      if (!CHANGE_KINDS.includes(h.kind)) continue;
+      const keys = this.keys.get(h.keyVersion);
+      if (!keys) throw new LogFormatError(`this device does not hold key version ${h.keyVersion}`);
+      parts.push(await openEntryBody(e, keys));
+      if (h.deviceId !== this.deviceId) seen.set(h.deviceId, [h.number, toHex(e.hash)]);
       if (h.part < h.parts) continue;
-      const whole = new Uint8Array(this.parts.reduce((n, p) => n + p.length, 0));
+      const whole = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
       let at = 0;
-      for (const p of this.parts) {
+      for (const p of parts) {
         whole.set(p, at);
         at += p.length;
       }
-      this.parts = [];
-      sets.push(decodeChangeSet(whole));
+      parts = [];
+      sets.push({ number: h.number, kind: h.kind, deviceId: h.deviceId, set: decodeChangeSet(whole) });
     }
-    return sets;
+    return {
+      sets,
+      number: state.number,
+      commit: () => {
+        this.state = state;
+        this.parts = parts;
+        this.seen = seen;
+      },
+    };
+  }
+
+  /** `read`, then make the entries this device's place at once: for a device's own entries the server stored. */
+  async take(entries: readonly Entry[]): Promise<Taken[]> {
+    const r = await this.read(entries);
+    r.commit();
+    return r.sets;
   }
 }

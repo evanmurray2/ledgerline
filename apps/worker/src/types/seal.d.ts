@@ -155,10 +155,14 @@ export interface FullChainState extends ChainState {
   filedThrough: number;
   scanThrough: number;
   counters: Map<string, number>;
-  public: { keyVersion: number } & Record<string, unknown>;
+  public: { keyVersion: number; budgetId: string } & Record<string, unknown>;
 }
 export const MAX_PLAIN: number;
 export function startChain(genesis: Entry, c: Checker, budgetId?: string): Promise<ChainState>;
 export function advance(s: ChainState, e: Entry, c: Checker): Promise<ChainState>;
 export function openEntryBody(e: Entry, keys: BudgetKeys): Promise<Bytes>;
 export class ChainError extends Error {}
+/** Bytes that are not what they claim to be (bytes.ts). */
+export class FormatError extends Error {}
+/** A sealed value that doesn't open: the wrong key, or changed bytes (aead.ts). */
+export class OpenError extends Error {}
