@@ -567,7 +567,7 @@ export function ActivityScreen() {
           }}
           onTransfer={(key) => {
             setPicking(null);
-            void navigate({ to: `/activity/txn/${encodeURIComponent(key)}`, search: true });
+            void navigate({ to: `/activity/transfer/${encodeURIComponent(key)}`, search: true });
           }}
         />
       )}

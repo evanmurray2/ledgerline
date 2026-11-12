@@ -65,6 +65,8 @@ export function TransferScreen() {
   // The contract has no candidate list: find rows of the opposite amount within 5 days in the other accounts that
   // aren't a transfer already (the route accepts the same ones). From a deposit, the other side is an outflow.
   const sent = t.amount > 0;
+  // Filing asked about this row. Any other row gets here from "It's a transfer…": it has no question to answer "no" to.
+  const unclear = t.kind === 'transfer' && !t.otherAccountName;
   // Money into checking or savings you call income goes to Ready to Assign (D-85); a credit on a card needs a category.
   const onCard =
     (accounts.data?.groups ?? []).flatMap((g) => g.accounts).find((a) => a.id === t.accountId)?.kind ===
@@ -112,7 +114,7 @@ export function TransferScreen() {
       gap="auto"
       header={
         <SheetTitle
-          tag="Transfer to sort out"
+          tag={unclear ? 'Transfer to sort out' : 'Transfer'}
           amount={formatCents(Math.abs(t.amount))}
           sub={`${t.accountName} · ${dayLabel(t.date)} · “${t.rawName}”`}
         />
@@ -217,22 +219,26 @@ export function TransferScreen() {
                   Like Venmo. It {sent ? 'goes into' : 'comes out of'} Ready to Assign.
                 </span>
               </Button>
-              <Button
-                mutates="offline"
-                track="transfer.none"
-                onClick={async () => {
-                  await pick.mutateAsync({ otherKey: null });
-                  setResult(lines(null));
-                }}
-                className="flex min-h-14 w-full flex-col items-start justify-center rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"
-              >
-                <span className="text-base font-semibold">{sent ? 'It was income' : 'It was a payment'}</span>
-                <span className="text-xs text-muted">
-                  {sent && !onCard
-                    ? 'It goes to Ready to Assign'
-                    : `Give it a category like other ${sent ? 'income' : 'spending'}`}
-                </span>
-              </Button>
+              {unclear && (
+                <Button
+                  mutates="offline"
+                  track="transfer.none"
+                  onClick={async () => {
+                    await pick.mutateAsync({ otherKey: null });
+                    setResult(lines(null));
+                  }}
+                  className="flex min-h-14 w-full flex-col items-start justify-center rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"
+                >
+                  <span className="text-base font-semibold">
+                    {sent ? 'It was income' : 'It was a payment'}
+                  </span>
+                  <span className="text-xs text-muted">
+                    {sent && !onCard
+                      ? 'It goes to Ready to Assign'
+                      : `Give it a category like other ${sent ? 'income' : 'spending'}`}
+                  </span>
+                </Button>
+              )}
             </div>
             {pick.error && <ErrorNote error={pick.error} />}
           </>

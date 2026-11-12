@@ -312,6 +312,17 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
             valueName={cat === origCat && !t.split ? t.categoryLabel : null}
           />
         )}
+        {/* Any bank row can be a transfer, also one whose name didn't look like one (it never asks by itself). */}
+        {(t.kind === 'posted' || t.kind === 'pending' || t.kind === 'income' || t.kind === 'refund') &&
+          t.categoryLabel !== 'Transfer' && (
+            <Link
+              to={`${parent}/transfer/${encodeURIComponent(t.key)}`}
+              data-track="txn.transfer"
+              className={cx(textLinkClass, 'flex min-h-9 items-center self-start')}
+            >
+              It’s a transfer…
+            </Link>
+          )}
         {t.categorizedBy && (cat === origCat || t.categorizedBy !== 'You') && (
           <span className="text-xs text-muted">
             {cat === origCat
