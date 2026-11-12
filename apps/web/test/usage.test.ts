@@ -128,7 +128,7 @@ describe('UsageTracker', () => {
     const { tracker, sent } = make();
     tracker.setEnabled(true);
     document.body.innerHTML =
-      '<button data-track="budget.assign">Assign <span id="inner">$1,999.90</span></button><p id="text">Ready to Assign</p>';
+      '<button data-track="budget.assign">Assign <span id="inner">$981.90</span></button><p id="text">Ready to Assign</p>';
     tracker.onClick(new MouseEvent('click', { bubbles: true }) as MouseEvent & { target: Element });
     const inner = document.getElementById('inner')!;
     inner.dispatchEvent(new MouseEvent('click', { bubbles: true }));
