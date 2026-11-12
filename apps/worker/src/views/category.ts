@@ -5,6 +5,7 @@ import { categoryRows } from './budget.js';
 import { cards as loadCards, monthLong, structure, type Fresh } from './common.js';
 import { IN_BUDGET_ROWS, listRow, type ListSource } from './rows.js';
 import { TX_COLUMNS, uncovered } from '../ledger/ledger.js';
+import { owedLabels, owedStatements, type OwedItemRow, type PaybackLinkRow } from './owed-rows.js';
 
 const fmt = (c: number) => formatCents(c);
 
@@ -28,9 +29,9 @@ export async function categorySheet(
   const { rows } = await categoryRows(s, month, start, f.today);
   const r = rows.find((x) => x.row.id === id);
   if (!r) return null;
-  const { targets } = await structure(s);
+  const { targets, categories } = await structure(s);
   const target = targetFor(targets.get(id) ?? [], month);
-  const [last, recent, count] = await s.batch([
+  const [last, recent, count, owedItems, links] = await s.batch([
     s.q(
       `SELECT amount FROM assignment WHERE budget_id = ?1 AND category_id = ?2 AND month = ?3`,
       id,
@@ -48,6 +49,7 @@ export async function categorySheet(
       id,
       month,
     ),
+    ...owedStatements(s),
   ]);
   const spentPct =
     r.row.spent + r.row.available > 0 ? Math.round((r.row.spent * 100) / (r.row.spent + r.row.available)) : 0;
@@ -83,6 +85,14 @@ export async function categorySheet(
             ? 'No date. Add a monthly amount if you like.'
             : 'Add a target to see what this category needs.';
   const accts = await accountNames(s);
+  const cats = new Map(categories.map((c) => [c.id, c.name]));
+  // The owed part never counts in the category: each row says your share, so the list adds up to Spent.
+  const labels = owedLabels(
+    owedItems!.results as OwedItemRow[],
+    links!.results as PaybackLinkRow[],
+    cats,
+    f.today,
+  );
   return {
     id,
     name: r.row.name,
@@ -97,7 +107,12 @@ export async function categorySheet(
     targetHelp: help,
     lastMonthAssigned: cents((last!.results[0] as { amount: number } | undefined)?.amount ?? 0),
     rta: cents(f.budget.rta),
-    recent: (recent!.results as ListSource[]).map((t) => listRow(t, accts, new Map())),
+    recent: (recent!.results as ListSource[]).map((t) =>
+      listRow(t, accts, new Map(), {
+        owed: labels.owed.get(t.key) ?? null,
+        paidFor: labels.paidFor.get(t.key) ?? null,
+      }),
+    ),
     recentTotal: (count!.results[0] as { n: number }).n,
     moveOptions,
   };

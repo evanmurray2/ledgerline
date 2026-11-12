@@ -180,7 +180,9 @@ attention."
 
 - Sections: "Money to match" · "Transfers to sort out" · "Check these" · "Pending · counts now" · "Upcoming · counts on
   its date" · "Posted · newest first"
-- Badges: "Pick the account" · "Cleared after all"
+- Badges: "Pick the account" · "Cleared after all" · "{amount} owed" / "Paid" / "Closed out" with "your share
+  {amount}" under the amount (what the category counts) · "Paid back · {category}" ("Paid back" when it paid back
+  several categories), with the "Ready to Assign" tag
 
 **Toasts:** "{payee} → {category}" / "{n} transactions → {category}" + Undo · "… · Overspent by {amount}. Cover it on
 Budget." · "1 transaction" / "{n} transactions" · "Joined into {payee}" · "{payee} · marked OK" · "Couldn't categorize

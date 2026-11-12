@@ -1,7 +1,8 @@
 // One transaction as a list row (Activity, registers, category sheet).
 import type { TxnListRow } from '@ledgerline/contracts';
-import { cents, formatCents, type OwedStatus } from '@ledgerline/domain';
+import { cents, formatCents } from '@ledgerline/domain';
 import { inRta, type TxRow } from '../ledger/ledger.js';
+import type { OwedOnRow } from './owed-rows.js';
 
 export type ListSource = TxRow;
 
@@ -47,8 +48,9 @@ export function listRow(
   accountNames: ReadonlyMap<string, string>,
   categoryNames: ReadonlyMap<string, string>,
   extra: {
-    owed?: { still: number; status: OwedStatus } | null;
-    paidBack?: boolean;
+    owed?: OwedOnRow | null;
+    /** Money in that paid back owed purchases: their categories' names (owed-rows.ts). */
+    paidFor?: readonly string[] | null;
     stale?: boolean;
     split?: boolean;
     /** What the split's lines leave out of the amount (D-82). */
@@ -92,10 +94,15 @@ export function listRow(
     badge = 'Card hold';
     badgeKind = 'hold';
     sub = 'card hold';
-  } else if (extra.paidBack) {
-    badge = 'Paid back';
+  } else if (extra.paidFor) {
+    // Which purchases it paid back: the money is in Ready to Assign (the category tag), since the owed part never
+    // came out of their categories.
+    badge = extra.paidFor.length === 1 ? `Paid back · ${extra.paidFor[0]}` : 'Paid back';
     badgeKind = 'match';
   } else if (extra.owed) {
+    // What the category counts: the purchase less the owed part, so the category's list adds up to its Spent.
+    if (t.amount < 0 && extra.owed.total > 0)
+      sub = `your share ${formatCents(Math.max(0, -t.amount - extra.owed.total))}`;
     // Just what is still owed ("$25 owed"); "Paid" once money back covers it.
     if (extra.owed.status === 'paid_back') {
       badge = 'Paid';

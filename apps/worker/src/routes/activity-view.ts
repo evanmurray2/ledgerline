@@ -10,8 +10,6 @@ import {
   isIsoDate,
   isMonth,
   localDate,
-  owedList,
-  type OwedStatus,
   payeeNameKey,
   rankPastUses,
   suggestCategory,
@@ -20,6 +18,7 @@ import {
 import type { AppEnv } from '../http/context.js';
 import { BAD_MONTH, HttpError, TRY_AGAIN, scoped } from './api.js';
 import { fresh, monthResult, structure } from '../views/common.js';
+import { owedLabels, owedStatements, type OwedItemRow, type PaybackLinkRow } from '../views/owed-rows.js';
 import { IN_BUDGET_ROWS, listRow } from '../views/rows.js';
 import {
   NOT_RTA_BY_DEFAULT,
@@ -272,12 +271,7 @@ activityViewRoutes.get('/activity', async (c) => {
       category,
     ),
     s.q(`SELECT txn_key, category_id, amount FROM txn_split WHERE budget_id = ?1`),
-    s.q(
-      `SELECT id, txn_key, amount, canceled_at, closed_at FROM expected_reimbursement WHERE budget_id = ?1`,
-    ),
-    s.q(
-      `SELECT from_key, to_key, amount FROM txn_link WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND undone_at IS NULL`,
-    ),
+    ...owedStatements(s),
     s.q(
       `SELECT m.txn_key FROM manual_pending m JOIN account a ON a.id = m.account_id WHERE m.budget_id = ?1 AND m.kind = 'pending' AND m.deleted_at IS NULL
          AND m.matched_txn_key IS NULL AND a.closed_at IS NULL AND julianday(?2) - julianday(m.date) >= a.stale_pending_days AND (m.stale_snooze_until IS NULL OR m.stale_snooze_until <= ?2)`,
@@ -295,36 +289,18 @@ activityViewRoutes.get('/activity', async (c) => {
   const qSplits = new Set(
     splitRows.filter((r) => r.category_id && qCats.has(r.category_id)).map((r) => r.txn_key),
   );
-  // What each owed purchase still has owed, so its row says "$25 owed", then "Paid" once money back matches it.
-  const linkRows = links!.results as { from_key: string; to_key: string; amount: number }[];
-  const owedRows = owed!.results as {
-    id: string;
-    txn_key: string;
-    amount: number;
-    canceled_at: number | null;
-    closed_at: number | null;
-  }[];
-  const owedBy = new Map<string, { still: number; status: OwedStatus }>();
-  for (const o of owedList(
-    owedRows.map((o) => ({
-      id: o.id,
-      txnKey: o.txn_key,
-      amount: cents(o.amount),
-      expectBy: null,
-      closedAt: o.closed_at ? 'x' : null,
-      canceledAt: o.canceled_at ? 'x' : null,
-    })),
-    linkRows.map((l) => ({ inflowKey: l.from_key, itemId: l.to_key, amount: cents(l.amount) })),
+  // What each owed purchase still has owed ("$25 owed", then "Paid"), its share, and what each payback paid back.
+  const labels = owedLabels(
+    owed!.results as OwedItemRow[],
+    links!.results as PaybackLinkRow[],
+    cats,
     f.today,
-  )) {
-    if (o.status !== 'canceled') owedBy.set(o.txnKey, { still: o.stillOwed, status: o.status });
-  }
-  const paid = new Set(linkRows.map((r) => r.from_key));
+  );
   const staleKeys = new Set((stale!.results as { txn_key: string }[]).map((r) => r.txn_key));
   const row = (t: TxRow) =>
     listRow(t, accts, cats, {
-      owed: owedBy.get(t.key) ?? null,
-      paidBack: paid.has(t.key),
+      owed: labels.owed.get(t.key) ?? null,
+      paidFor: labels.paidFor.get(t.key) ?? null,
       stale: staleKeys.has(t.key),
       split: splitKeys.has(t.key),
       splitOff: splitOff(t),
