@@ -4,7 +4,10 @@
 // back puts the old budget back as it was.
 import { ulid } from '@ledgerline/platform';
 import { encryptToken, parseKeyring, tokenKeyBytes } from '@ledgerline/platform';
+import { PlaidProvider, type BankDataProvider } from '@ledgerline/bank-provider';
 import { cursorHash, encodeEntry, linkMac, serverKeys, startChain, toHex } from '@ledgerline/seal';
+import { SEALED_FETCH, sealedFetchHandler, type FetchState } from '../src/seal/fetch-job.js';
+import { runDeps } from '../src/seal/runs.js';
 import { env, SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { DeviceLog } from '../src/local/device-log.js';
@@ -315,6 +318,69 @@ describe('the cutover, rehearsed', () => {
     });
     expect(r.response.status).toBe(200);
     expect(await session.flush()).toEqual({ sent: 1, lost: 0 });
+
+    // The copy answers the app's session with its filing notes in place (they are not JSON).
+    expect((await phone.request('GET', '/api/session')).status).toBe(200);
+
+    // ---- the bank goes on: the server fetches the link from its cutover cursor, and the phone files the run
+    const ring = parseKeyring(e.TOKEN_KEYS, e.TOKEN_KEY_CURRENT);
+    const plaid = new PlaidProvider({ clientId: 'x', secret: 'y', env: 'sandbox' });
+    const bankPage = {
+      added: [
+        {
+          transaction_id: 'after-cutover-1',
+          account_id: 'none',
+          amount: 12.5,
+          iso_currency_code: 'USD',
+          date: '2026-11-12',
+          authorized_date: null,
+          name: 'COFFEE',
+          merchant_name: null,
+          pending: false,
+          pending_transaction_id: null,
+        },
+      ],
+      modified: [],
+      removed: [],
+      next_cursor: 'cursor-after',
+      has_more: false,
+    };
+    const fake = {
+      fetchSyncPage: async (_c: unknown, cursor: string | null) => {
+        expect(cursor).toBe('cursor-at-the-cutover');
+        return {
+          body: new TextEncoder().encode(JSON.stringify(bankPage)),
+          nextCursor: 'cursor-after',
+          hasMore: false,
+        };
+      },
+      parsePage: (body: string) => plaid.parsePage(body),
+      getAccounts: async () => [],
+      getLiabilities: async () => [],
+    } as unknown as BankDataProvider;
+    const h = sealedFetchHandler({
+      runs: runDeps(server, budget, ring),
+      provider: () => fake,
+      pageSize: 100,
+      budgetState: async () => 'normal',
+    });
+    let fs: FetchState = { phase: 'begin', linkId: LINK };
+    for (let i = 0; ; i++) {
+      if (i > 20) throw new Error('the fetch did not finish');
+      const step = await h(
+        { id: 'j', kind: SEALED_FETCH, connectionId: null, state: fs, attempts: 1, recurring: false },
+        NOW + 1000 + i,
+      );
+      if ('done' in step) break;
+      fs = step.state as FetchState;
+    }
+    const k = await serverKeys(await tokenKeyBytes(ring.keys[ring.current]!), ring.current);
+    const filed = await session.fileRuns(t, {
+      workerKeys: new Map([[ring.current, (k.runSign as { pub: Uint8Array }).pub]]),
+      provider: plaid,
+      now: NOW + 5000,
+    });
+    expect(filed).toMatchObject({ filed: 1, lost: 0 });
     // A second device opens the first snapshot and reads the log: the same budget.
     const log2 = await openSnapshot(spare, t, {
       keys: [w.keys],
@@ -323,7 +389,7 @@ describe('the cutover, rehearsed', () => {
       clock: () => NOW,
     });
     expect(log2.number).toBe(1);
-    expect(await new LogSession(spare, log2, t, encodeEntry).pull()).toEqual({ entries: 1, lost: 0 });
+    expect(await new LogSession(spare, log2, t, encodeEntry).pull()).toEqual({ entries: 2, lost: 0 });
     expect(differences(await rowsOf(spare), await rowsOf(phone))).toEqual([]);
 
     // ---- the way back: open for 7 days, then closed

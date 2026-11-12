@@ -223,12 +223,16 @@ budgetApi.get('/session', async (c) => {
     s.q(`SELECT key, value FROM setting WHERE budget_id = ?1`),
   ]);
   const n = (r: Result | undefined) => (r?.results[0] as { n: number } | undefined)?.n ?? 0;
-  const setting = new Map(
-    (settings!.results as { key: string; value: string }[]).map((r) => [
-      r.key,
-      JSON.parse(r.value) as unknown,
-    ]),
-  );
+  // Not every setting is JSON: a sealed budget's filing notes (local/sealed-filing.ts) are plain text. One that
+  // doesn't read is left out; the session reads only its own keys.
+  const setting = new Map<string, unknown>();
+  for (const r of settings!.results as { key: string; value: string }[]) {
+    try {
+      setting.set(r.key, JSON.parse(r.value));
+    } catch {
+      // Not JSON: not a setting the session reads.
+    }
+  }
   const setupStep: Session['budget']['setupStep'] = !f.budget.budget_start_month
     ? 'start'
     : n(accounts) === 0 && !setting.get('setup.skipLink') && canLinkBanks(c)
