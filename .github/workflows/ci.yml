@@ -61,8 +61,8 @@ jobs:
       - run: pnpm format:check
       - name: Unit tests (domain, provider, platform, web)
         run: pnpm test:unit
-      - name: Build the SPA
-        run: pnpm --filter @ledgerline/web build
+      - name: Build the SPA twice, and fail unless both builds are the same (docs/privacy.md 5.9)
+        run: node tools/ci/reproducible-check.mjs
       - name: Migration check
         run: node tools/ci/migration-check.mjs
       - name: Bundle size budget
