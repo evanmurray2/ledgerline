@@ -24,7 +24,7 @@ import {
   type LogTransport,
   type RunTransport,
 } from '../src/local/log-session.js';
-import { CopyAhead, FILED_KEY, FILED_LINK, UnsupportedRun } from '../src/local/sealed-filing.js';
+import { CopyAhead, FILED_KEY, FILED_LINK } from '../src/local/sealed-filing.js';
 import type { SyncPage } from '../src/routes/sync.js';
 import { SEALED_FETCH, sealedFetchHandler, type FetchState } from '../src/seal/fetch-job.js';
 import { logAfter, logAppend, logHead } from '../src/seal/log-store.js';
@@ -38,7 +38,7 @@ import {
 } from '../src/seal/runs.js';
 import { bankSync, pend, plaidTxn, removal } from './bank-sync.js';
 import { BUDGET, PHONE, T0 } from './log-writer.js';
-import { LINK_A, ring, world, type World } from './sealed-world.js';
+import { bank, LINK_A, ring, run, world, type World } from './sealed-world.js';
 import { storeDb } from './store-db.js';
 import { differences, rowsOf } from './twin.js';
 
@@ -469,62 +469,72 @@ describe('a sealed budget: the server seals bank runs, the phones file them', ()
   it('a run for a bank this copy does not know is not filed, and not skipped', async () => {
     const old = bankSync(`sealed-unknown-${Math.random()}`, BUDGET, 'con_01HCCCCCCCCCCCCCCCCCCCCCCC', 1, T0);
     await old.setup();
-    await world(async (x) => {
-      // The world's two links are described and filed by its own device state; this copy has neither.
-      const db = storeDb(`sealed-unknown-phone-${Math.random()}`);
-      await migrateLocal(db, T0);
-      const engine = new LocalEngine(
-        db,
-        { budgetId: BUDGET, userId: 'phone', email: 'o@example.com' },
-        () => T0,
-      );
-      for (;;) {
-        const { since, cursor } = await engine.nextRequest();
-        const q = new URLSearchParams({ since: String(since), limit: '200' });
-        if (cursor) q.set('cursor', cursor);
-        if ((await engine.apply((await old.call('GET', `/api/sync?${q}`)).json as SyncPage)).caughtUp) break;
-      }
-      const st = await engine.state();
-      await engine.apply({
-        format: st.format,
-        epoch: st.epoch!,
-        serverTime: T0,
-        through: 1,
-        more: false,
-        cursor: null,
-        rows: [],
-      });
-      const log = new DeviceLog(
-        x.w.keys,
-        await startChain(x.w.last!, { now: T0 + 5000, schemaVersion: 1 }, BUDGET),
-        PHONE,
-        () => T0 + 5000,
-      );
-      const session = new LogSession(
-        engine,
-        log,
-        {
-          after: async (n) => (await logAfter(x.db, n, 100)).map((e) => e.bytes),
-          append: async () => ({ ok: false, why: 'limit', detail: '', retry: true }),
-        },
-        encodeEntry,
-      );
-      const k = await serverKeys(await tokenKeyBytes(ring.keys[1]!), 1);
-      // Run 1 describes a link: this app can't add a bank to a sealed budget yet.
-      await expect(
-        session.fileRuns(
+    await world(
+      async (x) => {
+        // The server fetches a link from a cursor this copy has noted, but the copy has no connection for it.
+        await startLinks(x.d, [{ linkId: LINK_A, cursor: 'cur1' }], T0 + 3000);
+        await run(x, LINK_A, bank({ cur1: { added: 1, next: 'cur2', more: false } }).provider, T0 + 4000);
+        const db = storeDb(`sealed-unknown-phone-${Math.random()}`);
+        await migrateLocal(db, T0);
+        const engine = new LocalEngine(
+          db,
+          { budgetId: BUDGET, userId: 'phone', email: 'o@example.com' },
+          () => T0,
+        );
+        for (;;) {
+          const { since, cursor } = await engine.nextRequest();
+          const q = new URLSearchParams({ since: String(since), limit: '200' });
+          if (cursor) q.set('cursor', cursor);
+          if ((await engine.apply((await old.call('GET', `/api/sync?${q}`)).json as SyncPage)).caughtUp)
+            break;
+        }
+        const st = await engine.state();
+        await engine.apply({
+          format: st.format,
+          epoch: st.epoch!,
+          serverTime: T0,
+          through: 1,
+          more: false,
+          cursor: null,
+          rows: [],
+        });
+        await db
+          .prepare(`INSERT INTO setting (budget_id, key, value, updated_at) VALUES (?1, ?2, ?3, 0)`)
+          .bind(BUDGET, `${FILED_LINK}${LINK_A}`, toHex(await cursorHash('cur1')))
+          .run();
+        const log = new DeviceLog(
+          x.w.keys,
+          await startChain(x.w.last!, { now: T0 + 5000, schemaVersion: 1 }, BUDGET),
+          PHONE,
+          () => T0 + 5000,
+        );
+        const session = new LogSession(
+          engine,
+          log,
           {
-            runs: (after) => runsAfter(x.db, after, 64),
-            page: async (r, p) => (await sealedPageOf(x.db, r, p))!,
+            after: async (n) => (await logAfter(x.db, n, 100)).map((e) => e.bytes),
+            append: async () => ({ ok: false, why: 'limit', detail: '', retry: true }),
           },
-          {
-            workerKeys: new Map([[1, (k.runSign as { pub: Uint8Array }).pub]]),
-            provider: plaid,
-            now: T0 + 5000,
-          },
-        ),
-      ).rejects.toBeInstanceOf(UnsupportedRun);
-      expect(await engine.queue()).toEqual([]);
-    });
+          encodeEntry,
+        );
+        const k = await serverKeys(await tokenKeyBytes(ring.keys[1]!), 1);
+        // Run 1 is for a link the copy doesn't hold: it waits.
+        await expect(
+          session.fileRuns(
+            {
+              runs: (after) => runsAfter(x.db, after, 64),
+              page: async (r, p) => (await sealedPageOf(x.db, r, p))!,
+            },
+            {
+              workerKeys: new Map([[1, (k.runSign as { pub: Uint8Array }).pub]]),
+              provider: plaid,
+              now: T0 + 5000,
+            },
+          ),
+        ).rejects.toThrow('a bank link this copy does not know');
+        expect(await engine.queue()).toEqual([]);
+      },
+      { described: false },
+    );
   });
 });

@@ -147,5 +147,9 @@ export interface BankDataProvider {
   getAccounts(conn: Connection): Promise<ProviderAccount[]>;
   getHoldings?(conn: Connection): Promise<ProviderHolding[]>;
   getLiabilities?(conn: Connection): Promise<ProviderLiability[]>;
+  /** The bank an Item is at; its name is null when the provider can't say it. */
+  getInstitution?(conn: Connection): Promise<{ id: string | null; name: string | null }>;
+  /** Ends an Item at the provider. One already gone is not an error. */
+  removeItem?(accessToken: string): Promise<void>;
   verifyWebhook(req: Request): Promise<ProviderWebhookEvent | null>;
 }

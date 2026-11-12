@@ -137,7 +137,13 @@ export async function world(fn: (x: World) => Promise<void>, o: { described?: bo
       // Each link's first run describes it (runs 1 and 2); the device has filed both.
       for (const [i, id] of [LINK_A, LINK_B].entries()) {
         expect(await beginSealedRun(d, id, T0 + 2100 + i)).toMatchObject({ describes: true, hasMore: false });
-        await sealLinkDescription(d, { bank: `Bank ${id}`, accounts: [] });
+        await sealLinkDescription(d, {
+          v: 1,
+          linkId: id,
+          linkedAt: 5,
+          institution: `Bank ${id}`,
+          accounts: [],
+        });
         expect(await completeSealedRun(d, T0 + 2100 + i)).toEqual({ run: i + 1 });
         x.filing = afterRun(x.filing, await openRun(x.filing, await handed(db, i + 1)));
       }

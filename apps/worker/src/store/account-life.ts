@@ -13,7 +13,7 @@ export function budgetInfo(storage: DurableObjectStorage): { name: string; banks
   const n = storage.sql
     // From bank_link (docs/privacy.md 5.5): a sealed budget's `connection` is empty, and a budget with live Items
     // must never look as if it had none (it could be wiped).
-    .exec(`SELECT count(*) AS n FROM bank_link WHERE provider = 'plaid'`)
+    .exec(`SELECT count(*) AS n FROM bank_link WHERE provider = 'plaid' AND status != 'removed'`)
     .one() as { n: number };
   return { name: typeof b?.name === 'string' ? b.name : '', banks: Number(n.n) };
 }

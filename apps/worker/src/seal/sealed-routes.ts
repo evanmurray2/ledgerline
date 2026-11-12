@@ -8,14 +8,24 @@ import {
   LinkTokenRequest,
   type SealedSession,
 } from '@ledgerline/contracts';
-import { decryptToken, parseKeyring } from '@ledgerline/platform';
-import { Hono } from 'hono';
+import { decryptToken, encryptToken, parseKeyring, ulid } from '@ledgerline/platform';
+import { linkMac } from '@ledgerline/seal';
+import { type Context, Hono } from 'hono';
 import { requestNow } from '../http/clock.js';
 import { canLinkBanks, type AppEnv } from '../http/context.js';
 import { csrf } from '../http/security.js';
 import { ITEM_LIMIT } from '../routes/settings/connections.js';
 import { classifyUsage, dailyLimits, usageToday } from '../sync/breaker.js';
 import { makeProvider } from '../sync/provider.js';
+import { sealedFetchId } from './fetch-job.js';
+import { abandonSealedRun, workerKeys } from './runs.js';
+
+const b64 = (bytes: Uint8Array): string => {
+  let s = '';
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s);
+};
+const unb64 = (s: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(s), (ch) => ch.charCodeAt(0));
 
 export const sealedApi = new Hono<AppEnv>();
 
@@ -81,7 +91,14 @@ sealedApi.get('/settings/connections', async (c) => {
       // Not known here: the app reads them from its copy.
       institution: '',
       accounts: '',
-      status: r.status === 'needs_repair' ? 'login_required' : r.error_code ? 'error' : 'ok',
+      status:
+        r.status === 'removed'
+          ? 'removed'
+          : r.status === 'needs_repair'
+            ? 'login_required'
+            : r.error_code
+              ? 'error'
+              : 'ok',
       lastSynced: r.last_fetched_at,
       linkedAt: r.linked_at,
       setupDone: true,
@@ -130,11 +147,40 @@ sealedApi.post('/settings/connections/:id/refresh', async (c) => {
   return c.json({ ok: true });
 });
 
+/** Plaid Trial counts every link ever made, removed ones too: so does this (a removed link keeps its row). */
+async function linksMade(db: AppEnv['Bindings']['DB'], budgetId: string): Promise<number> {
+  return (
+    (
+      await db
+        .prepare(`SELECT count(*) AS n FROM bank_link WHERE budget_id = ?1 AND provider = 'plaid'`)
+        .bind(budgetId)
+        .first<{ n: number }>()
+    )?.n ?? 0
+  );
+}
+
+const keyring = (env: AppEnv['Bindings']) => parseKeyring(env.TOKEN_KEYS, env.TOKEN_KEY_CURRENT);
+
 sealedApi.post('/settings/connections/link-token', async (c) => {
   const r = LinkTokenRequest.safeParse(await c.req.json().catch(() => null));
   if (!r.success) return no(400, 'invalid', TRY_AGAIN);
-  if (r.data.mode !== 'repair' || !r.data.connectionId)
-    return no(409, 'sealed', 'A new bank can’t be linked to a locked budget yet.');
+  const hosted = r.data.hosted ? { completionUrl: `${new URL(c.req.url).origin}/link-done` } : undefined;
+  if (r.data.mode === 'new') {
+    // The same checks as before the budget was sealed (routes/settings/connections.ts). The Directory has already
+    // asked for a recent passkey check on this path (http/auth.ts needsRecentPasskey).
+    if (!canLinkBanks(c))
+      return Response.json(
+        { error: 'banks_off', message: 'Linking banks isn’t available on your account yet.' },
+        { status: 403 },
+      );
+    if ((await linksMade(c.env.DB, c.get('budgetId'))) >= ITEM_LIMIT)
+      return no(409, 'item_limit', `All ${ITEM_LIMIT} bank links are used.`);
+    if (c.env.PLAID_ENV === 'production' && !r.data.confirmSlot)
+      return no(409, 'confirm_slot', 'Confirm that you want to use one of your bank links.');
+    const lt = await makeProvider(c.env).createLinkSession({ mode: 'new', userId: c.get('userId'), hosted });
+    return c.json({ linkToken: lt.linkToken, hostedUrl: lt.hostedUrl });
+  }
+  if (!r.data.connectionId) return no(400, 'invalid', TRY_AGAIN);
   const row = await c.env.DB.prepare(
     `SELECT access_token_enc, key_version FROM bank_link WHERE budget_id = ?1 AND connection_id = ?2 AND mac IS NOT NULL`,
   )
@@ -143,7 +189,7 @@ sealedApi.post('/settings/connections/link-token', async (c) => {
   if (!row?.access_token_enc || row.key_version === null)
     return no(404, 'not_found', 'This is gone. Go back and try again.');
   const token = await decryptToken(
-    parseKeyring(c.env.TOKEN_KEYS, c.env.TOKEN_KEY_CURRENT),
+    keyring(c.env),
     row.access_token_enc,
     row.key_version,
     r.data.connectionId,
@@ -153,7 +199,7 @@ sealedApi.post('/settings/connections/link-token', async (c) => {
     mode: 'repair',
     accessToken: token,
     userId: c.get('userId'),
-    hosted: r.data.hosted ? { completionUrl: `${new URL(c.req.url).origin}/link-done` } : undefined,
+    hosted,
   });
   return c.json({ linkToken: lt.linkToken, hostedUrl: lt.hostedUrl });
 });
@@ -161,13 +207,99 @@ sealedApi.post('/settings/connections/link-token', async (c) => {
 sealedApi.post('/settings/connections/link-finish', async (c) => {
   const r = LinkFinish.safeParse(await c.req.json().catch(() => null));
   if (!r.success) return no(400, 'invalid', TRY_AGAIN);
-  if (r.data.mode !== 'repair')
-    return no(409, 'sealed', 'A new bank can’t be linked to a locked budget yet.');
-  const result = await makeProvider(c.env).linkResult(r.data.linkToken);
+  const provider = makeProvider(c.env);
+  const result = await provider.linkResult(r.data.linkToken);
+  let out: LinkFinishResult;
   // A repair keeps its link, so there is nothing to exchange. The app then asks for a fetch of that link.
-  const out: LinkFinishResult =
-    result.state !== 'finished' ? { status: result.state } : { status: 'repaired' };
+  if (result.state !== 'finished') out = { status: result.state };
+  else if (r.data.mode === 'repair') out = { status: 'repaired' };
+  else {
+    const publicToken = result.publicTokens[0];
+    out = publicToken
+      ? { status: 'linked', connectionId: await saveLink(c, publicToken) }
+      : { status: 'exited' };
+  }
   return c.json(out);
+});
+
+/**
+ * Exchanges a new link's public token and keeps the link: its token encrypted under TOKEN_KEYS, with the Worker's
+ * stamp (`linkMac`), and a fetch asked for. The bank's name and accounts are not kept: the link's first run asks
+ * the bank for them and seals them to the budget's inbox (seal/fetch-job.ts), and a device writes them. The store
+ * starts the fetch once this answers (store/budget-store.ts). Gives the link's connection id.
+ */
+async function saveLink(c: Context<AppEnv>, publicToken: string): Promise<string> {
+  const budgetId = c.get('budgetId');
+  const done = await makeProvider(c.env).completeLink(publicToken);
+  // The same Item again (update mode, or a link finished twice): the link it is, not a new one.
+  const same = await c.env.DB.prepare(
+    `SELECT connection_id FROM bank_link WHERE budget_id = ?1 AND provider_item_id = ?2`,
+  )
+    .bind(budgetId, done.providerItemId)
+    .first<{ connection_id: string }>();
+  if (same) return same.connection_id;
+  const now = requestNow(c);
+  const linkId = ulid(now);
+  const connectionId = `con_${linkId}`;
+  const ring = keyring(c.env);
+  const enc = await encryptToken(ring, done.accessToken, connectionId);
+  const keys = await workerKeys(ring).keysFor(enc.keyVersion);
+  const mac = await linkMac(keys, budgetId, linkId, done.providerItemId, unb64(enc.enc));
+  await c.env.DB.prepare(
+    `INSERT INTO bank_link (id, connection_id, budget_id, provider, provider_item_id, access_token_enc, key_version,
+       linked_at, mac, checked_at, check_result, status, fetch_requested, created_at)
+     VALUES (?1, ?2, ?3, 'plaid', ?4, ?5, ?6, ?7, ?8, ?7, 'ok', 'ok', 1, ?7)`,
+  )
+    .bind(linkId, connectionId, budgetId, done.providerItemId, enc.enc, enc.keyVersion, now, b64(mac))
+    .run();
+  // Which budget owns the Item, for the bank's webhooks (docs/multi-user.md 6.4).
+  if (c.env.ROUTE_LINK) await c.env.ROUTE_LINK(done.providerItemId, connectionId);
+  return connectionId;
+}
+
+/**
+ * Removes a bank (docs/privacy.md 5.5, D-87): ends the link at Plaid, forgets its token, and stops its fetches. The
+ * link's row stays, marked removed, because Plaid counts every link ever made. The budget's side (the connection
+ * marked removed; its accounts and rows stay) is an edit the device makes next
+ * (POST /settings/connections/:id/mark-removed). The Directory has already asked for a recent passkey check on
+ * this path. Asked again for a link already removed, it answers as before.
+ */
+sealedApi.post('/settings/connections/:id/remove', async (c) => {
+  const budgetId = c.get('budgetId');
+  const link = await c.env.DB.prepare(
+    `SELECT id, connection_id, status, access_token_enc, key_version FROM bank_link
+     WHERE budget_id = ?1 AND connection_id = ?2 AND provider = 'plaid'`,
+  )
+    .bind(budgetId, c.req.param('id'))
+    .first<{
+      id: string;
+      connection_id: string;
+      status: string;
+      access_token_enc: string | null;
+      key_version: number | null;
+    }>();
+  if (!link) return no(404, 'not_found', 'This is gone. Go back and try again.');
+  if (link.status === 'removed') return c.json({ ok: true });
+  if (link.access_token_enc && link.key_version !== null) {
+    const token = await decryptToken(
+      keyring(c.env),
+      link.access_token_enc,
+      link.key_version,
+      link.connection_id,
+    );
+    await makeProvider(c.env).removeItem(token);
+  }
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `UPDATE bank_link SET status = 'removed', access_token_enc = NULL, key_version = NULL, provider_item_id = NULL,
+         mac = NULL, check_result = 'removed', error_code = NULL, fetch_requested = 0
+       WHERE id = ?1`,
+    ).bind(link.id),
+    c.env.DB.prepare(`DELETE FROM job WHERE id = ?1`).bind(sealedFetchId(link.id)),
+  ]);
+  // A run of this link being fetched goes too: nothing of it was shown to a device.
+  await abandonSealedRun(c.env.DB, link.id);
+  return c.json({ ok: true });
 });
 
 // What the server kept about the app's use and the phone's checks while it could read the budget. For a sealed
@@ -188,7 +320,7 @@ sealedApi.onError((_e, c) => c.json({ error: 'internal', message: TRY_AGAIN }, 5
 export function sealedPath(method: string, path: string): boolean {
   if (path === '/api/session') return method === 'GET';
   if (path === '/api/settings/connections') return method === 'GET';
-  if (/^\/api\/settings\/connections\/(refresh|link-token|link-finish|[^/]+\/refresh)$/.test(path))
+  if (/^\/api\/settings\/connections\/(refresh|link-token|link-finish|[^/]+\/(refresh|remove))$/.test(path))
     return method === 'POST';
   if (path === '/api/usage') return method === 'POST' || method === 'DELETE';
   return (

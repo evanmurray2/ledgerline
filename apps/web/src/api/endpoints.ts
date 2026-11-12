@@ -235,12 +235,19 @@ export const api = {
     const local = await readCopy('/api/settings/connections');
     const mine = local.status === 200 ? ConnectionsView.safeParse(JSON.parse(local.body)) : null;
     const names = new Map((mine?.success ? mine.data.items : []).map((i) => [i.id, i]));
+    // A bank removed at the server whose removal the copy doesn't have yet (the app closed in between): the copy
+    // gets it now. Its accounts stay (D-87).
+    for (const i of server.items) {
+      const n = names.get(i.id);
+      if (i.status === 'removed' && n && n.status !== 'removed')
+        await api.markRemoved(i.id).catch(() => undefined);
+    }
     return {
       ...server,
       items: server.items.map((i) => {
         const n = names.get(i.id);
         if (!n) return i;
-        const status = n.status === 'removed' ? ('removed' as const) : i.status;
+        const status = n.status === 'removed' || i.status === 'removed' ? ('removed' as const) : i.status;
         return { ...i, institution: n.institution, accounts: n.accounts, setupDone: n.setupDone, status };
       }),
     };
@@ -251,6 +258,10 @@ export const api = {
   linkFinish: (body: In<typeof LinkFinish>) =>
     post('/api/settings/connections/link-finish', LinkFinishResult, body),
   refreshConnection: (id: string) => post(`/api/settings/connections/${enc(id)}/refresh`, Ok),
+  /** Ends a bank link at the bank (a sealed budget: the server). The budget's side is `markRemoved`. */
+  removeConnection: (id: string) => post(`/api/settings/connections/${enc(id)}/remove`, Ok),
+  /** Marks a removed bank in the budget: its accounts and rows stay (D-87). An edit on the device's copy. */
+  markRemoved: (id: string) => post(`/api/settings/connections/${enc(id)}/mark-removed`, Ok),
   refreshAll: () =>
     post('/api/settings/connections/refresh', z.object({ ok: z.literal(true), started: z.number().int() })),
 

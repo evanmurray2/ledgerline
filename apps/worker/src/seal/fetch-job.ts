@@ -7,6 +7,7 @@ import { ProviderError, type BankDataProvider, type ProviderWebhookEvent } from 
 import { isUlid } from '@ledgerline/seal';
 import type { Handler, Job, StepResult } from '../store/jobs.js';
 import { NEEDS_SIGN_IN, nextUtcMidnight } from '../store/sync-job.js';
+import type { LinkDescription } from './link-description.js';
 import { snapshotPrune } from './snapshot-store.js';
 import {
   abandonSealedRun,
@@ -215,13 +216,26 @@ async function step(deps: FetchDeps, s: FetchState, now: number): Promise<StepRe
       });
     }
     case 'describe': {
+      // The bank's name and its accounts are asked here, not kept from the exchange: the server stores no word of
+      // them (docs/privacy.md 5.5).
       const conn = await linkForBank(d, s.linkId);
-      const accounts = await deps.provider().getAccounts(conn);
+      const provider = deps.provider();
+      const accounts = await provider.getAccounts(conn);
+      const institution = provider.getInstitution
+        ? ((await provider.getInstitution(conn).catch(() => null))?.name ?? null)
+        : null;
       const link = await d.db
         .prepare(`SELECT linked_at FROM bank_link WHERE id = ?1`)
         .bind(s.linkId)
         .first<{ linked_at: number }>();
-      await sealLinkDescription(d, { linkId: s.linkId, linkedAt: link?.linked_at ?? null, accounts }, only);
+      const description: LinkDescription = {
+        v: 1,
+        linkId: s.linkId,
+        linkedAt: link?.linked_at ?? now,
+        institution,
+        accounts,
+      };
+      await sealLinkDescription(d, description, only);
       return next({ ...s, phase: 'complete' });
     }
     case 'fetch': {
