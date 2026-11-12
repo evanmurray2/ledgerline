@@ -17,6 +17,11 @@ export interface Assertion {
   credentialId: string;
   /** The PRF output, when the passkey gave one. */
   prf: ArrayBuffer | null;
+  /**
+   * The PRF output for the budget's way in (docs/privacy-keys.md 4.1), when it was asked for and the passkey gave
+   * one. Like `prf`, it never leaves the device.
+   */
+  slotPrf: ArrayBuffer | null;
 }
 
 /**
@@ -33,7 +38,16 @@ export function canUsePasskeys(): boolean {
 
 export async function assert(
   options: RequestOptionsJSON,
-  prf?: { salt: ArrayBuffer; credentialId?: string | null },
+  prf?: {
+    salt: ArrayBuffer;
+    credentialId?: string | null;
+    /**
+     * The one PRF input of the budget's ways in (`slotPrfInput()` in keys/budget.ts). With it, the passkey is
+     * asked for two outputs in one prompt: this one first, the copy's own salt second (4.1). An output depends
+     * only on the passkey and its own input, so the copy's key is the same whichever place its salt is asked in.
+     */
+    slot?: ArrayBuffer;
+  },
 ): Promise<Assertion> {
   const allow = prf?.credentialId
     ? [{ id: fromB64url(prf.credentialId), type: 'public-key' as const }]
@@ -49,7 +63,11 @@ export async function assert(
     userVerification: 'required',
     allowCredentials: allow,
     ...(prf
-      ? { extensions: { prf: { eval: { first: prf.salt } } } as AuthenticationExtensionsClientInputs }
+      ? {
+          extensions: {
+            prf: { eval: prf.slot ? { first: prf.slot, second: prf.salt } : { first: prf.salt } },
+          } as AuthenticationExtensionsClientInputs,
+        }
       : {}),
   };
   const cred = (await navigator.credentials.get({ publicKey })) as PublicKeyCredential | null;
@@ -60,11 +78,15 @@ export async function assert(
   if ((flags & 0x04) === 0)
     // Not NotAllowedError: the screens read that as Cancelled, and this message must show.
     throw Object.assign(new Error('Use your passkey to continue.'), { name: 'UserVerificationRequired' });
-  const ext = cred.getClientExtensionResults() as { prf?: { results?: { first?: ArrayBuffer } } };
+  const ext = cred.getClientExtensionResults() as {
+    prf?: { results?: { first?: ArrayBuffer; second?: ArrayBuffer } };
+  };
+  const out = ext.prf?.results;
   const credentialId = toB64url(cred.rawId);
   return {
     credentialId,
-    prf: ext.prf?.results?.first ?? null,
+    prf: (prf?.slot ? out?.second : out?.first) ?? null,
+    slotPrf: (prf?.slot ? out?.first : undefined) ?? null,
     json: {
       id: credentialId,
       rawId: credentialId,

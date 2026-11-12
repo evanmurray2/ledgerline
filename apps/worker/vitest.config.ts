@@ -27,5 +27,8 @@ export default defineConfig(() => ({
     include: ['test/**/*.test.ts'],
     exclude: ['test/objects/**', 'test/signup/**'],
     setupFiles: ['./test/setup.ts'],
+    // Many files run side by side, each with its own Durable Objects: a test that takes a second alone can take
+    // several here. The default (5 s) made slow tests fail by chance.
+    testTimeout: 30_000,
   },
 }));

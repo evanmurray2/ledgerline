@@ -3,15 +3,17 @@
 // log; a device checks the next snapshot by rebuilding the budget, and only then does the server delete what
 // is older; a snapshot of a copy that drifted is not checked.
 import { ulid } from '@ledgerline/platform';
-import { encodeEntry, SnapshotError, startChain } from '@ledgerline/seal';
+import { ChainError, encodeEntry, randomBytes, SnapshotError, startChain } from '@ledgerline/seal';
 import { SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { DeviceLog } from '../src/local/device-log.js';
 import {
   checkSnapshot,
   openSnapshot,
-  SnapshotMismatch,
+  SnapshotNewer,
   writeSnapshot,
+  type ListedSnapshot,
+  type OpenDeps,
   type SnapshotTransport,
 } from '../src/local/device-snapshot.js';
 import type { LocalEngine } from '../src/local/engine.js';
@@ -73,8 +75,8 @@ describe('snapshots, from one device to the next', () => {
           chunk: (id, k) => snapshotChunkOf(x.db, id, k),
           begin: (s) => snapshotBegin(deps(), s),
           put: (id, k, bytes) => snapshotChunk(deps(), id, k, bytes),
-          check: async (id, deviceId, signature) => {
-            const r = await snapshotCheck(deps(), id, deviceId, signature);
+          check: async (id, deviceId, signature, baseId) => {
+            const r = await snapshotCheck(deps(), id, deviceId, signature, baseId);
             if (r.ok) await snapshotPrune(x.db);
             return r;
           },
@@ -205,29 +207,39 @@ describe('snapshots, from one device to the next', () => {
         expect(differences(await rowsOf(c), await rowsOf(a))).toEqual([]);
         expect(differences(await rowsOf(c), await rowsOf(b))).toEqual([]);
 
-        // ---- a server that hands out other bytes: the snapshot does not open, and nothing is written
+        // ---- a server that hands out other bytes: the snapshot does not open, and the copy is left empty
         const d = await newPhone();
-        const swapped: SnapshotTransport = {
+        const open = (
+          e: LocalEngine,
+          with_: SnapshotTransport,
+          more: Partial<OpenDeps> = {},
+          pick?: ListedSnapshot,
+        ) =>
+          openSnapshot(
+            e,
+            with_,
+            { keys: [x.w.keys], budgetId: BUDGET, deviceId: TABLET, clock: () => clock, ...more },
+            pick,
+          );
+        const rowsIn = async (e: LocalEngine) =>
+          (await e.db.prepare(`SELECT count(*) AS n FROM category`).first<{ n: number }>())!.n;
+        // The last chunk is cut short: the chunks before it were written, and are taken out again.
+        const small: SnapshotTransport = {
           ...t,
-          chunk: async (id) => t.chunk(id, 1).then((b) => b && b.slice(0, -1)),
+          chunk: async (id, k) => {
+            const b = await t.chunk(id, k);
+            return b && k === 1 ? b.slice(0, -1) : b;
+          },
         };
-        await expect(
-          openSnapshot(d, swapped, {
-            keys: [x.w.keys],
-            budgetId: BUDGET,
-            deviceId: TABLET,
-            clock: () => clock,
-          }),
-        ).rejects.toBeInstanceOf(SnapshotError);
-        const hidden: SnapshotTransport = { ...t, publics: async () => (await t.publics()).slice(0, 0) };
-        await expect(
-          openSnapshot(await newPhone(), hidden, {
-            keys: [x.w.keys],
-            budgetId: BUDGET,
-            deviceId: TABLET,
-            clock: () => clock,
-          }),
-        ).rejects.toThrow();
+        await expect(open(d, small)).rejects.toBeInstanceOf(SnapshotError);
+        expect(await rowsIn(d)).toBe(0);
+        // A log shown without its public entries is no log.
+        await expect(open(d, { ...t, publics: async () => [] })).rejects.toBeInstanceOf(ChainError);
+        // A device that remembers a later place is not sent back to an older snapshot.
+        await expect(open(d, t, { applied: 6 })).rejects.toBeInstanceOf(SnapshotError);
+        expect(await rowsIn(d)).toBe(0);
+        // After the failures the same copy opens the real thing.
+        expect((await open(d, t)).number).toBe(5);
 
         // ---- a copy that drifted writes a snapshot: the rebuild differs, and it is not checked
         clock += 86_400_000;
@@ -239,33 +251,65 @@ describe('snapshots, from one device to the next', () => {
           why: 'differs',
           tables: ['category'],
         });
-        expect((await snapshotList(x.db)).map((s) => [s.number, s.checked])).toEqual([
+        const state = async () => (await snapshotList(x.db)).map((s) => [s.number, s.checked]);
+        expect(await state()).toEqual([
           [6, false],
           [5, true],
           [3, false],
         ]);
-        // A new device takes the checked one, not the newest.
-        const e = await newPhone();
-        const logE = await openSnapshot(e, t, {
-          keys: [x.w.keys],
-          budgetId: BUDGET,
-          deviceId: TABLET,
-          clock: () => clock,
+        // A new device takes the checked one, not the newest, even when the server says the newest is checked.
+        expect((await open(await newPhone(), t)).number).toBe(5);
+        const lying: SnapshotTransport = {
+          ...t,
+          list: async () =>
+            (await t.list()).map((s, i) =>
+              i === 0 ? { ...s, check: { deviceId: PHONE, signature: randomBytes(64) } } : s,
+            ),
+        };
+        expect((await open(await newPhone(), lying)).number).toBe(5);
+
+        // ---- the drifted device goes on: its next snapshot is checked against the last CHECKED one, not against
+        // its own drifted one, so it is refused too, and nothing is deleted
+        expect(await edit(b, sessionB, 600)).toEqual({ sent: 1, lost: 0 });
+        expect(await writeSnapshot(b, logB, t, ulid(clock + 1))).toMatchObject({ written: true, number: 7 });
+        await sessionA.pull();
+        expect(await checkSnapshot(await newPhone(), logA, t, () => clock)).toMatchObject({
+          checked: false,
+          why: 'differs',
         });
-        expect(logE.number).toBe(5);
-        // The one that differs can be opened by name, and its own hashes hold: what it says is what it has.
-        const bad = (await snapshotList(x.db))[0]!;
-        await expect(
-          openSnapshot(
-            await newPhone(),
-            t,
-            { keys: [x.w.keys], budgetId: BUDGET, deviceId: TABLET, clock: () => clock },
-            bad,
-          ),
-        ).resolves.toBeInstanceOf(DeviceLog);
-        expect(SnapshotMismatch).toBeDefined();
+        expect(await numbers()).toEqual([1, 3, 4, 5, 6, 7]);
+        // A device with the true rows writes the next one; it is checked on the last checked one, and the two
+        // drifted ones go.
+        expect(await edit(a, sessionA, 700)).toEqual({ sent: 1, lost: 0 });
+        expect(await writeSnapshot(a, logA, t, ulid(clock + 2))).toMatchObject({ written: true, number: 8 });
+        await sessionC.pull();
+        const fixed = await checkSnapshot(await newPhone(), logC, t, () => clock);
+        expect(fixed).toMatchObject({ checked: true });
+        expect(await state()).toEqual([
+          [8, true],
+          [5, true],
+        ]);
+        expect(await numbers()).toEqual([1, 5, 6, 7, 8]);
+        // A new device now has the true name.
+        const fresh = await newPhone();
+        expect((await open(fresh, t)).number).toBe(8);
+        expect(await fresh.db.prepare(`SELECT name FROM category WHERE id = 'rent'`).first()).toEqual(
+          await a.db.prepare(`SELECT name FROM category WHERE id = 'rent'`).first(),
+        );
+
+        // ---- another version of the app: a copy with one more column opens an older snapshot; a snapshot with a
+        // column this copy doesn't have says "update", and nothing is written
+        const newer = await newPhone();
+        await newer.db.prepare(`ALTER TABLE payee ADD COLUMN zz TEXT`).run();
+        expect((await open(newer, t)).number).toBe(8);
+        await a.db.prepare(`ALTER TABLE payee ADD COLUMN zz TEXT`).run();
+        expect(await edit(a, sessionA, 800)).toEqual({ sent: 1, lost: 0 });
+        expect(await writeSnapshot(a, logA, t, ulid(clock + 3))).toMatchObject({ written: true, number: 9 });
+        const older = await newPhone();
+        await expect(open(older, t, {}, (await t.list())[0]!)).rejects.toBeInstanceOf(SnapshotNewer);
+        expect(await rowsIn(older)).toBe(0);
       },
       { described: false },
     );
-  }, 120_000);
+  }, 180_000);
 });

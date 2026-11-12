@@ -215,6 +215,7 @@ const Begin = z.object({
 });
 const Check = z.object({
   deviceId: z.string().length(26),
+  base: z.string().length(26),
   signature: z.string().regex(B64).max(200),
 });
 const bytes = (b: Uint8Array) =>
@@ -293,7 +294,13 @@ logApi.post('/log/snapshots/:id/check', async (c) => {
   const parsed = Check.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
   const d = await snapshotDeps(c);
-  const r = await snapshotCheck(d, c.req.param('id'), parsed.data.deviceId, unb64(parsed.data.signature));
+  const r = await snapshotCheck(
+    d,
+    c.req.param('id'),
+    parsed.data.deviceId,
+    unb64(parsed.data.signature),
+    parsed.data.base,
+  );
   if (r.ok && !d.resting) await snapshotPrune(c.env.DB);
   return c.json(r, r.ok ? 200 : 409);
 });

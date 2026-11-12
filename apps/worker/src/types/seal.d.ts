@@ -321,6 +321,7 @@ export function isPublicKind(kind: number): boolean;
 export type PublicState = ChainState['public'] & {
   lastPublic: PublicRef;
   publics: { number: number; hash: Bytes; keyVersion: number }[];
+  signPubs: Map<number, Bytes>;
 };
 export function walkPublic(
   entries: Entry[],

@@ -13,6 +13,8 @@ import {
   KIND,
   MAX_PLAIN,
   MAX_WRITE_ENTRIES,
+  fromHex,
+  fromStored,
   openEntryBody,
   openInbox,
   openSnapshotChunk,
@@ -33,8 +35,11 @@ import {
   type SnapshotManifest,
   type Entry,
   type FullChainState,
+  sha256,
+  toStored,
 } from '@ledgerline/seal';
 import type { SyncRow } from '../routes/sync.js';
+import { stateFromJson, stateToJson } from '../seal/log-store.js';
 import { LOG_PROCESSING_VERSION, LOG_SCHEMA_VERSION } from '../seal/log-versions.js';
 
 /** A snapshot's manifest lists the hash of every entry whose number is a multiple of this (privacy-keys.md 8). */
@@ -91,6 +96,8 @@ const CHANGE_KINDS: readonly number[] = [KIND.edit, KIND.bank, KIND.scan, KIND.d
 export interface Taken {
   /** The number of its last entry (its only one, unless it came in parts). */
   number: number;
+  /** The id its entries share, hex: for a device's own change, the id `entryIdOf` gives its edit. */
+  entryId: string;
   kind: number;
   deviceId: string;
   set: ChangeSet;
@@ -103,6 +110,19 @@ export interface Read {
   number: number;
   /** Makes them this device's place. Call it once their rows are in the copy. */
   commit(): void;
+}
+
+/**
+ * The entry id of a change this device made, from the change's own id (an edit's id, or a filed set of bank
+ * runs'). The same change always gets the same entry id: sent again after a lost answer, the server says it holds
+ * it already, and when the entry comes back from the log the device knows its own change and does not run it
+ * twice.
+ */
+export async function entryIdOf(changeId: string): Promise<Bytes> {
+  return (await sha256(new TextEncoder().encode(`ledgerline/v1/entry-id\u0000${changeId}`))).slice(
+    0,
+    16,
+  ) as Bytes;
 }
 
 /** A change set too large for one write of the log (16 parts, about 1 MB). */
@@ -212,7 +232,55 @@ export class DeviceLog {
 
   /** This device's check record for a snapshot it rebuilt (8). */
   async signCheck(s: Pick<SealedSnapshot, 'header' | 'signature'>): Promise<Bytes> {
+    // With the key in force: the server takes a check record under no other (a removed way in can't check).
     return signSnapshotCheck(this.current(), s, this.budgetId, this.deviceId);
+  }
+
+  /**
+   * This device's place in the log, as text to keep with its copy: the chain, a part set that is half read, the
+   * last entry seen from each other device, and the checkpoints. No key is in it.
+   */
+  save(): string {
+    return JSON.stringify({
+      v: 1,
+      state: stateToJson(toStored(this.state)),
+      parts: this.parts.map((p) => toHex(p)),
+      seen: [...this.seen.entries()],
+      checkpoints: this.checkpoints.map((c) => [c.number, toHex(c.hash)]),
+    });
+  }
+
+  /** A device's place in the log as `save` wrote it, with the keys the device holds now. */
+  static async restore(
+    keys: BudgetKeys | readonly BudgetKeys[],
+    saved: string,
+    deviceId: string,
+    clock: () => number,
+  ): Promise<DeviceLog> {
+    let v: { v?: unknown; state?: unknown; parts?: unknown; seen?: unknown; checkpoints?: unknown };
+    try {
+      v = JSON.parse(saved) as typeof v;
+    } catch {
+      throw new LogFormatError('not a saved place in the log');
+    }
+    if (
+      v.v !== 1 ||
+      typeof v.state !== 'string' ||
+      !Array.isArray(v.parts) ||
+      !Array.isArray(v.seen) ||
+      !Array.isArray(v.checkpoints)
+    )
+      throw new LogFormatError('not a saved place in the log');
+    const log = new DeviceLog(
+      keys,
+      await fromStored(stateFromJson(v.state)),
+      deviceId,
+      clock,
+      (v.checkpoints as [number, string][]).map(([number, hash]) => ({ number, hash: fromHex(hash) })),
+    );
+    log.parts = (v.parts as string[]).map((p) => fromHex(p));
+    log.seen = new Map(v.seen as [string, [number, string]][]);
+    return log;
   }
 
   /** The keys this device holds, by version: for a second log over the same budget (a snapshot's check). */
@@ -274,7 +342,7 @@ export class DeviceLog {
   async build(
     kind: ChangeKind,
     set: { at: number; rows: SyncRow[] },
-    over: { filedThrough?: number; receipts?: Bytes[]; scanThrough?: number } = {},
+    over: { filedThrough?: number; receipts?: Bytes[]; scanThrough?: number; entryId?: Bytes } = {},
   ): Promise<Entry[]> {
     const s = this.state as FullChainState;
     const keys = this.current();
@@ -285,7 +353,7 @@ export class DeviceLog {
     if (chunks.length > MAX_WRITE_ENTRIES) throw new TooLarge('this change is too large for one write');
     // For ordering only: the later of this device's clock and one millisecond after the entry before (5.3 check 4).
     const time = Math.max(this.clock(), s.time + 1);
-    const entryId = randomBytes(16);
+    const entryId = over.entryId ?? randomBytes(16);
     const counter = s.counters.get(this.deviceId) ?? 0;
     const out: Entry[] = [];
     let prev = { number: s.number, hash: s.hash };
@@ -348,7 +416,13 @@ export class DeviceLog {
         at += p.length;
       }
       parts = [];
-      sets.push({ number: h.number, kind: h.kind, deviceId: h.deviceId, set: decodeChangeSet(whole) });
+      sets.push({
+        number: h.number,
+        entryId: toHex(h.entryId),
+        kind: h.kind,
+        deviceId: h.deviceId,
+        set: decodeChangeSet(whole),
+      });
     }
     return {
       sets,
