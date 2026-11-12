@@ -4,16 +4,18 @@
 // them itself on the scratch copy, compares it with the real copy, and tells the server what it found: table and
 // column names and counts, never a row's content. The real copy is never touched by it, nothing here waits on the
 // network before a sync is applied, and a failure here never stops a sync.
-import type { EngineHost, InboxRun, ShadowReport, SyncPage } from './host';
+import type { EngineHost, InboxRun, InboxScan, ShadowEvent, ShadowReport, SyncPage } from './host';
 
 /** The last update of the inbox this device has looked at (kept with the copy), or a word when it can't tell. */
 const SEQ = 'shadow_seq';
+/** The last daily scan of the inbox this device has looked at. */
+const SCAN = 'shadow_scan';
 /** The server was filing when this device last synced: the copy may hold part of an update. */
 const FILING = 'filing';
-/** The most updates one shadow run files. More than this waited (a night with many banks): they are skipped. */
+/** The most updates and scans one shadow run does. More than this waited (a night with many banks): skipped. */
 export const MAX_RUNS = 4;
 
-type Get = (path: string) => Promise<{ run: InboxRun | null; latest: number }>;
+type Get = (path: string) => Promise<{ run: InboxRun | null; scan?: InboxScan | null }>;
 type Post = (path: string, body: unknown) => Promise<unknown>;
 
 /** A shadow run that has its scratch copy and waits for the sync to finish. */
@@ -22,6 +24,9 @@ export interface Started {
   /** The updates after `from`, up to `to`, are the ones to file. */
   from: number;
   to: number;
+  /** The same for the daily scans. */
+  scanFrom: number;
+  scanTo: number;
 }
 
 /**
@@ -46,16 +51,22 @@ export async function shadowBefore(
       return null;
     }
     if (page.more) return null;
-    // Whatever happens below, these updates are looked at once.
+    const scans = page.inboxScan ?? 0;
+    const savedScan = await host.get(SCAN);
+    const scanSeq = savedScan === null ? NaN : Number(savedScan);
+    // Whatever happens below, these updates and scans are looked at once.
     if (saved === null || page.inbox !== seq) await host.put(SEQ, String(page.inbox));
+    if (savedScan === null || scans !== scanSeq) await host.put(SCAN, String(scans));
     // The first time, after a download, and after a sync that met the server filing: nothing to compare with.
-    if (!Number.isSafeInteger(seq) || page.inbox <= seq) return null;
-    if (!first || page.inbox - seq > MAX_RUNS) {
+    if (!Number.isSafeInteger(seq) || !Number.isSafeInteger(scanSeq)) return null;
+    const waiting = Math.max(0, page.inbox - seq) + Math.max(0, scans - scanSeq);
+    if (waiting === 0 || page.inbox < seq || scans < scanSeq) return null;
+    if (!first || waiting > MAX_RUNS) {
       report(post, { runs: 0, compared: false, why: 'incomplete', differences: [] });
       return null;
     }
     const token = await host.shadowFork();
-    return token === null ? null : { token, from: seq, to: page.inbox };
+    return token === null ? null : { token, from: seq, to: page.inbox, scanFrom: scanSeq, scanTo: scans };
   } catch {
     return null;
   }
@@ -67,19 +78,25 @@ export async function shadowBefore(
  */
 export async function shadowFinish(host: EngineHost, s: Started, get: Get, post: Post): Promise<void> {
   try {
-    const runs: InboxRun[] = [];
-    for (let after = s.from; after < s.to;) {
-      const r = await get(`/api/sync/inbox?after=${after}`);
-      if (!r.run) break;
-      runs.push(r.run);
-      after = r.run.fetchSeq;
+    const runs: ShadowEvent[] = [];
+    let after = s.from;
+    let scan = s.scanFrom;
+    while ((after < s.to || scan < s.scanTo) && runs.length <= MAX_RUNS) {
+      const r = await get(`/api/sync/inbox?after=${after}&scan=${scan}`);
+      if (r.run) {
+        runs.push({ run: r.run });
+        after = r.run.fetchSeq;
+      } else if (r.scan) {
+        runs.push({ scan: r.scan });
+        scan = r.scan.n;
+      } else break;
     }
-    const complete = runs.length > 0 && runs[runs.length - 1]!.fetchSeq === s.to;
+    const complete = runs.length > 0 && after === s.to && scan === s.scanTo;
     const refused = complete ? await host.shadowBegin(s.token, runs) : null;
     if (complete && !refused) while (await host.shadowStep(s.token));
     // A later sync brought a newer bank update into the copy meanwhile, or met the server filing one: the scratch
     // copy doesn't have it, so the comparison would say nothing.
-    const moved = (await host.get(SEQ)) !== String(s.to);
+    const moved = (await host.get(SEQ)) !== String(s.to) || (await host.get(SCAN)) !== String(s.scanTo);
     const found = await host.shadowEnd(s.token);
     if (refused) report(post, refused);
     else if (!complete || moved || !found)

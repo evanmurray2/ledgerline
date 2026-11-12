@@ -7,7 +7,7 @@ import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { LocalEngine, migrateLocal, type EngineIdentity, type QueuedEdit } from './engine.js';
 import { SqlJsDb } from './sqljs-db.js';
 import type { SyncPage } from '../routes/sync.js';
-import type { InboxRun } from '../store/inbox.js';
+import type { ShadowEvent } from './shadow.js';
 
 interface Ctx {
   onmessage: ((e: MessageEvent) => void) | null;
@@ -34,7 +34,7 @@ type Msg =
   | { id: number; op: 'queueDone'; editId: string }
   | { id: number; op: 'queueRefused'; editId: string }
   | { id: number; op: 'shadowFork' }
-  | { id: number; op: 'shadowBegin'; token: number; runs: InboxRun[] }
+  | { id: number; op: 'shadowBegin'; token: number; runs: ShadowEvent[] }
   | { id: number; op: 'shadowStep'; token: number }
   | { id: number; op: 'shadowEnd'; token: number }
   | { id: number; op: 'export' }

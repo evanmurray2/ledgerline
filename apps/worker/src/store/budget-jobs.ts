@@ -5,7 +5,8 @@ import type { Db } from '@ledgerline/db/sql';
 import { nextLocalTime } from '@ledgerline/domain';
 import { ulid } from '@ledgerline/platform';
 import type { Env } from '../env.js';
-import { dailyScan } from '../daily-scan.js';
+import { dailyScan, scanTime } from '../daily-scan.js';
+import { inboxScanned } from './inbox.js';
 import { rollUpUsage, watchdogBudgetStmts } from '../maintenance.js';
 import { processPending } from '../sync/process.js';
 import { updateInFlight } from '../sync/turn.js';
@@ -110,7 +111,19 @@ export function backstopHandler(db: Db, enqueue: Enqueue): Handler {
 export function dailyScanHandler(env: Env, budgetId: () => Promise<string>): Handler {
   return async (_job, now): Promise<StepResult> => {
     const b = await budgetId();
+    // The scan is noted for the device, which runs the same one (store/inbox.ts): its planned time, and the
+    // budget's data version before and after it.
+    const version = async () =>
+      (
+        await env.DB.prepare(`SELECT data_version AS v FROM budget WHERE id = ?1`)
+          .bind(b)
+          .first<{ v: number }>()
+      )?.v ?? 0;
+    const base = await version();
     const r = await dailyScan(env, b, now);
+    await inboxScanned(env.DB, scanTime(now, await budgetZone(env.DB, b)), base, await version(), now).catch(
+      () => undefined,
+    );
     // A full batch may mean more are due: run again shortly instead of waiting a day.
     if (r.materialized >= SCAN_BATCH) return { state: {}, runAt: now + 1000 };
     return { state: {}, runAt: nextScan(now, await budgetZone(env.DB, b)) };

@@ -9,7 +9,8 @@
 import { PlaidProvider } from '@ledgerline/bank-provider';
 import type { Db, Stmt } from '@ledgerline/db/sql';
 import type { Env } from '../env.js';
-import type { InboxRun } from '../store/inbox.js';
+import { dailyScan } from '../daily-scan.js';
+import type { InboxRun, InboxScan } from '../store/inbox.js';
 import { SYNC_TABLES } from '../sync-tables.js';
 import { fileRun } from './file-run.js';
 
@@ -23,6 +24,9 @@ export interface ShadowReport {
   /** Where the device's rows differ from the server's: a table, a column (or `row` for a missing one), a count. */
   differences: { table: string; column: string; rows: number }[];
 }
+
+/** What the device does beside the server: files a bank update, or runs a daily scan. */
+export type ShadowEvent = { run: InboxRun } | { scan: InboxScan };
 
 /** Reads a bank page (`parsePage`); it never calls the bank. */
 const reader = new PlaidProvider({ clientId: 'device', secret: 'device', env: 'sandbox' });
@@ -97,7 +101,7 @@ export async function alignCounter(db: Db, budgetId: string): Promise<void> {
 export class Shadow {
   private next = 0;
   private failed = false;
-  private runs: readonly InboxRun[] = [];
+  private runs: readonly ShadowEvent[] = [];
 
   private constructor(
     private readonly scratch: Db,
@@ -119,7 +123,7 @@ export class Shadow {
   /**
    * The updates to file (in inbox order). Null: ready to step. A report: a comparison would say nothing, and why.
    */
-  async begin(runs: readonly InboxRun[]): Promise<ShadowReport | null> {
+  async begin(runs: readonly ShadowEvent[]): Promise<ShadowReport | null> {
     const skip = (why: ShadowReport['why']): ShadowReport => ({
       runs: 0,
       compared: false,
@@ -127,12 +131,15 @@ export class Shadow {
       differences: [],
     });
     if (!runs.length) return skip('failed');
-    // The scratch copy is what the server had when it began the first update, and nothing but the updates
-    // happened since.
-    if ((await version(this.scratch, this.budgetId)) !== runs[0]!.baseVersion) return skip('edited_before');
-    for (let i = 0; i < runs.length; i++) {
-      if (runs[i]!.baseVersion !== runs[i]!.endVersion) return skip('edited_during');
-      if (i > 0 && runs[i]!.baseVersion !== runs[i - 1]!.endVersion) return skip('edited_during');
+    // The scratch copy is what the server had when it began the first of these, and nothing else happened since:
+    // each begins at the data version the one before it ended at. A bank update leaves the version as it is; a
+    // scan moves it by one.
+    let v = await version(this.scratch, this.budgetId);
+    for (const [i, e] of runs.entries()) {
+      const { baseVersion, endVersion } = 'run' in e ? e.run : e.scan;
+      if (baseVersion !== v) return skip(i === 0 ? 'edited_before' : 'edited_during');
+      if (endVersion !== baseVersion + ('run' in e ? 0 : 1)) return skip('edited_during');
+      v = endVersion;
     }
     this.runs = runs;
     return null;
@@ -143,7 +150,9 @@ export class Shadow {
     const run = this.runs[this.next];
     if (!run || this.failed) return false;
     try {
-      await fileRun({ DB: this.scratch } as Env, this.budgetId, run, reader);
+      const env = { DB: this.scratch } as Env;
+      if ('run' in run) await fileRun(env, this.budgetId, run.run, reader);
+      else await dailyScan(env, this.budgetId, run.scan.at);
     } catch {
       this.failed = true;
       return false;
@@ -170,7 +179,8 @@ export class Shadow {
     const report: ShadowReport = { runs: this.next, compared: false, differences: [] };
     if (this.failed || !this.runs.length || this.next < this.runs.length) return { ...report, why: 'failed' };
     // An edit or a daily job after the last update is in the real copy and not in the scratch one.
-    if ((await version(main, this.budgetId)) !== this.runs[this.runs.length - 1]!.endVersion)
+    const last = this.runs[this.runs.length - 1]!;
+    if ((await version(main, this.budgetId)) !== ('run' in last ? last.run : last.scan).endVersion)
       return { ...report, why: 'edited_after' };
     const count = new Map<string, number>();
     const note = (table: string, column: string) =>

@@ -56,11 +56,12 @@ describe('object migrations', () => {
         'store/0001_marks.sql',
         'store/0002_bank_link.sql',
         'store/0003_inbox.sql',
+        'store/0004_inbox_scan.sql',
       ],
     });
     // The four the phone keeps were dropped (migration 0006); not_same added (0007), owed_close (0010).
     // And the store's own tables: marks, bank links and the inbox (store migrations).
-    expect(h.tables).toBe(42);
+    expect(h.tables).toBe(43);
     const d = await e.DIRECTORY.get(e.DIRECTORY.idFromName('directory-test')).health();
     expect(d).toMatchObject({
       ok: true,

@@ -26,8 +26,7 @@ import { splitStatements } from '../store/adapter.js';
 import { BUDGET_MIGRATIONS } from '../store/migrations.gen.js';
 import { SYNC_FORMAT, SYNC_TABLES, triggerNames, type SyncTable } from '../sync-tables.js';
 import type { BankLogBatch, SyncPage, SyncRow } from '../routes/sync.js';
-import type { InboxRun } from '../store/inbox.js';
-import { Shadow, type Fork, type ShadowReport } from './shadow.js';
+import { Shadow, type Fork, type ShadowEvent, type ShadowReport } from './shadow.js';
 import { CSRF_HEADER } from '@ledgerline/contracts';
 
 export interface EngineIdentity {
@@ -817,7 +816,7 @@ export class LocalEngine {
   }
 
   /** The updates to file. Null: ready to step. A report: a comparison would say nothing, and why. */
-  async shadowBegin(token: number, runs: InboxRun[]): Promise<ShadowReport | null> {
+  async shadowBegin(token: number, runs: ShadowEvent[]): Promise<ShadowReport | null> {
     const s = this.shadowOf(token);
     return s ? s.begin(runs) : { runs: 0, compared: false, why: 'incomplete', differences: [] };
   }

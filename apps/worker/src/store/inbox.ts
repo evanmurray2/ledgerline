@@ -114,3 +114,63 @@ export async function inboxLatest(db: Db): Promise<number> {
     .first<{ n: number }>();
   return r?.n ?? 0;
 }
+
+/** A daily scan the server ran: all a device needs to run the same one (daily-scan.ts). */
+export interface InboxScan {
+  n: number;
+  /** The scan's planned time. */
+  at: number;
+  baseVersion: number;
+  endVersion: number;
+}
+
+/** What comes next for a device that has taken updates up to `afterRun` and scans up to `afterScan`. */
+export type InboxEvent = { run: InboxRun } | { scan: InboxScan } | null;
+
+/** Notes a scan the server just ran, with the data version before and after it. */
+export async function inboxScanned(
+  db: Db,
+  at: number,
+  base: number,
+  end: number,
+  now: number,
+): Promise<void> {
+  await db.batch([
+    db
+      .prepare(`INSERT INTO inbox_scan (at, base_version, end_version, created_at) VALUES (?1, ?2, ?3, ?4)`)
+      .bind(at, base, end, now),
+    db.prepare(`DELETE FROM inbox_scan WHERE created_at < ?1`).bind(now - INBOX_KEEP_MS),
+  ]);
+}
+
+/**
+ * The next bank update or daily scan, in the order the server did them. The data versions give the order: a
+ * scan moves the version and an update doesn't, so an update that began at or before a scan's `base_version` came
+ * before that scan.
+ */
+export async function inboxNextEvent(db: Db, afterRun: number, afterScan: number): Promise<InboxEvent> {
+  const s = await db
+    .prepare(`SELECT n, at, base_version, end_version FROM inbox_scan WHERE n > ?1 ORDER BY n LIMIT 1`)
+    .bind(afterScan)
+    .first<{ n: number; at: number; base_version: number; end_version: number }>();
+  const next = await db
+    .prepare(
+      `SELECT base_version, end_version FROM inbox_run WHERE fetch_seq > ?1 ORDER BY fetch_seq LIMIT 1`,
+    )
+    .bind(afterRun)
+    .first<{ base_version: number; end_version: number | null }>();
+  const scan: InboxScan | null = s
+    ? { n: s.n, at: s.at, baseVersion: s.base_version, endVersion: s.end_version }
+    : null;
+  if (next && (!scan || next.base_version <= scan.baseVersion)) {
+    const run = await inboxNext(db, afterRun);
+    return run ? { run } : null;
+  }
+  return scan ? { scan } : null;
+}
+
+/** The newest scan the server noted (0: none). */
+export async function inboxLatestScan(db: Db): Promise<number> {
+  const r = await db.prepare(`SELECT coalesce(max(n), 0) AS n FROM inbox_scan`).first<{ n: number }>();
+  return r?.n ?? 0;
+}
