@@ -7,6 +7,7 @@ import { ProviderError, type BankDataProvider, type ProviderWebhookEvent } from 
 import { isUlid } from '@ledgerline/seal';
 import type { Handler, Job, StepResult } from '../store/jobs.js';
 import { NEEDS_SIGN_IN, nextUtcMidnight } from '../store/sync-job.js';
+import { snapshotPrune } from './snapshot-store.js';
 import {
   abandonSealedRun,
   BadStamp,
@@ -26,6 +27,7 @@ export const SEALED_BACKSTOP_ID = 'sealed_backstop';
 export const sealedFetchId = (linkId: string): string => `${SEALED_FETCH}:${linkId}`;
 
 const FOUR_HOURS = 4 * 3_600_000;
+const PRUNE_AGAIN_MS = 60_000;
 /** How long a link waits for another link's run, and how often it asks, before it leaves it to the backstop. */
 const BUSY_WAIT_MS = 20_000;
 const MAX_BUSY = 30;
@@ -108,7 +110,10 @@ export async function sealedWebhook(
     await queueSealedFetch(d, enqueue, link.id, now);
 }
 
-/** Every 4 hours: each stamped link with no complete run in the last 4 hours, or with news waiting. */
+/**
+ * Every 4 hours: each stamped link with no complete run in the last 4 hours, or with news waiting, gets a fetch;
+ * and what a checked snapshot made deletable is deleted.
+ */
 export function sealedBackstopHandler(d: RunDeps, enqueue: Enqueue): Handler {
   return async (_job, now): Promise<StepResult> => {
     const due = await d.db
@@ -119,7 +124,10 @@ export function sealedBackstopHandler(d: RunDeps, enqueue: Enqueue): Handler {
       .bind(now - FOUR_HOURS)
       .all<{ id: string }>();
     for (const l of due.results) await queueSealedFetch(d, enqueue, l.id, now);
-    return { state: {}, runAt: now + FOUR_HOURS };
+    // The one delete rule (seal/snapshot-store.ts), a few hundred rows a step: it comes back soon while more is
+    // left to delete.
+    const pruned = await snapshotPrune(d.db);
+    return { state: {}, runAt: pruned.more ? now + PRUNE_AGAIN_MS : now + FOUR_HOURS };
   };
 }
 

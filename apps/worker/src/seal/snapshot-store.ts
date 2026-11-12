@@ -288,6 +288,24 @@ export async function snapshotChunkOf(db: Db, id: string, k: number): Promise<Ui
   return r ? bytesOf(r.bytes) : null;
 }
 
+/** The public entries (key and slot changes, the first entry) after `after`, in order: a device walks them all. */
+export async function publicAfter(
+  db: Db,
+  after: number,
+  limit: number,
+): Promise<{ number: number; bytes: Uint8Array }[]> {
+  const rows = await db
+    .prepare(
+      `SELECT number, bytes FROM log_entry WHERE number > ?1 AND kind IN (${PUBLIC_KIND_LIST}) ORDER BY number LIMIT ?2`,
+    )
+    .bind(after, limit)
+    .all<{ number: number; bytes: string }>();
+  return rows.results.map((r) => ({
+    number: r.number,
+    bytes: Uint8Array.from(atob(r.bytes), (c) => c.charCodeAt(0)),
+  }));
+}
+
 /**
  * The entry number below which the log's sealed entries may be gone: a device whose place is lower opens a
  * snapshot. 0 when nothing was deleted.
