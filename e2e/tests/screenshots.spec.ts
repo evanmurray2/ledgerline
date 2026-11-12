@@ -81,7 +81,7 @@ const SCREENS: { name: string; path: string; ready?: string; prepare?: (page: Pa
         .getByRole('dialog', { name: 'Choose a category' })
         .getByRole('button', { name: /^Vacation/ })
         .click();
-      await p.getByLabel('Amount').fill('1000');
+      await p.getByLabel('Amount').fill('2018');
       await p.getByRole('button', { name: 'Assign anyway' }).click();
       await p.getByText('more than you have').first().waitFor();
     },
