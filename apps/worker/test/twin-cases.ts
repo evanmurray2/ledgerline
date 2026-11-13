@@ -1,5 +1,6 @@
 // The edits twin.test.ts runs as twins, in order, on one budget. Split from twin.test.ts.
 import type { LocalEngine } from '../src/local/engine.js';
+import { twinBranchCases } from './twin-branches.js';
 
 export type Case = [string, string, unknown];
 
@@ -497,6 +498,8 @@ export function twinCases(e: TwinEnv): TwinCase[] {
         )();
       },
     ],
+    // Branches of the edits above that those cases don't take (twin-branches.ts).
+    ...twinBranchCases(e),
     // Last: it sets the budget's start again, after the set-up statement took it away.
     [
       'pick the month the budget starts',
