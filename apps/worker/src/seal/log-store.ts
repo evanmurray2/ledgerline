@@ -117,6 +117,44 @@ export function stateFromJson(text: string): StoredChain {
   }) as StoredChain;
 }
 
+/** The parts of the stored state's public half that the Worker reads outside the log's own rules. */
+export interface LogPublic {
+  keyVersion?: number;
+  signPub?: Uint8Array<ArrayBuffer>;
+  signPubs?: Map<number, Uint8Array<ArrayBuffer>>;
+  inboxVersion?: number;
+  retiredAt?: Map<number, number>;
+}
+
+const isVersion = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1;
+function mapOf<V>(v: unknown, isValue: (x: unknown) => x is V): Map<number, V> | undefined {
+  if (!(v instanceof Map)) return undefined;
+  for (const [k, x] of v as Map<unknown, unknown>) if (typeof k !== 'number' || !isValue(x)) return undefined;
+  return v as Map<number, V>;
+}
+const isBytes = (x: unknown): x is Uint8Array<ArrayBuffer> => x instanceof Uint8Array;
+const isNumber = (x: unknown): x is number => typeof x === 'number';
+
+/**
+ * The public half of the state in `log_state` (`stateJson`), checked field by field: a field is there only when it
+ * has its type (a version is a whole number from 1). Null when the state has no public half. JSON that doesn't
+ * parse throws, as `stateFromJson` does.
+ */
+export function publicOf(stateJson: string): LogPublic | null {
+  const p: unknown = (stateFromJson(stateJson) as { public?: unknown }).public;
+  if (!p || typeof p !== 'object') return null;
+  const o = p as Record<string, unknown>;
+  const out: LogPublic = {};
+  if (isVersion(o.keyVersion)) out.keyVersion = o.keyVersion;
+  if (isBytes(o.signPub)) out.signPub = o.signPub;
+  const signPubs = mapOf(o.signPubs, isBytes);
+  if (signPubs) out.signPubs = signPubs;
+  if (isVersion(o.inboxVersion)) out.inboxVersion = o.inboxVersion;
+  const retiredAt = mapOf(o.retiredAt, isNumber);
+  if (retiredAt) out.retiredAt = retiredAt;
+  return out;
+}
+
 // ---- where the chain stands
 
 /**

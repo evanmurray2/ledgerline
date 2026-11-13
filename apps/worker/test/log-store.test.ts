@@ -9,6 +9,7 @@ import {
   logAppend,
   logGenesis,
   logHead,
+  publicOf,
   stateFromJson,
   stateToJson,
   type LogDeps,
@@ -360,5 +361,25 @@ describe('the sealed log on the server', () => {
     expect(back).toEqual(state);
     expect(back.hash).toBeInstanceOf(Uint8Array);
     expect(back.public.signPubs.get(1)).toEqual(new Uint8Array([9]));
+  });
+
+  it("reads the state's public half field by field", () => {
+    const json = (pub: unknown) => stateToJson({ number: 1, public: pub } as never);
+    const pub = {
+      keyVersion: 2,
+      signPub: new Uint8Array([1]),
+      signPubs: new Map([[1, new Uint8Array([9])]]),
+      inboxVersion: 3,
+      retiredAt: new Map([[2, 40]]),
+    };
+    expect(publicOf(json(pub))).toEqual(pub);
+    // A field without its type is left out; the others stay.
+    expect(
+      publicOf(
+        json({ ...pub, keyVersion: 1.5, signPub: 'x', signPubs: new Map([[1, 'x']]), inboxVersion: 0 }),
+      ),
+    ).toEqual({ retiredAt: pub.retiredAt });
+    expect(publicOf(json(undefined))).toBeNull();
+    expect(() => publicOf('{')).toThrow();
   });
 });

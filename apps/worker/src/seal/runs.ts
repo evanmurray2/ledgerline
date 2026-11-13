@@ -32,7 +32,7 @@ import {
   type ServerKeys,
 } from '@ledgerline/seal';
 import { conditionFence } from '../sync/lease.js';
-import { stateFromJson } from './log-store.js';
+import { publicOf, type LogPublic } from './log-store.js';
 
 /** A value the Worker must have stamped has no good stamp: the database was changed from outside, or lost a row. */
 export class BadStamp extends Error {
@@ -209,16 +209,14 @@ export async function inForce(
     .prepare(`SELECT number, state FROM log_state WHERE id = 1`)
     .first<{ number: number; state: string }>();
   if (!r) throw new BadStamp('inbox key');
-  let p: { inboxVersion?: unknown; retiredAt?: unknown } | undefined;
+  let p: LogPublic | null;
   try {
-    p = (stateFromJson(r.state) as unknown as { public?: typeof p }).public;
+    p = publicOf(r.state);
   } catch {
-    p = undefined;
+    p = null;
   }
-  const v = p?.inboxVersion;
-  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || !(p?.retiredAt instanceof Map))
-    throw new BadStamp('inbox key');
-  return { number: r.number, inboxVersion: v, retiredAt: p.retiredAt as Map<number, number> };
+  if (p?.inboxVersion === undefined || !p.retiredAt) throw new BadStamp('inbox key');
+  return { number: r.number, inboxVersion: p.inboxVersion, retiredAt: p.retiredAt };
 }
 
 // ---- the run state
