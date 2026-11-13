@@ -6,7 +6,6 @@ import type { TxnSheet } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
 import { useAccounts, useMoneyMutation } from '../api/hooks';
 import { Sheet } from '../components/Sheet';
-import { CategoryField } from '../components/CategoryPicker';
 import {
   amountInputClass,
   Banner,
@@ -33,40 +32,10 @@ import { toast } from '../components/Toast';
 import { Why } from '../components/Why';
 import { BankSays, TxnHeader, useParentPath } from './TxnCommon';
 import { PairedWith } from './TxnPair';
-import { EntryAmount, IncomeGoesTo } from './TxnEditParts';
+import { CategorySelect, EntryAmount, IncomeGoesTo } from './TxnEditParts';
 import { useHere } from '../lib/back';
 
 type OwedMode = 'none' | 'half' | 'all' | 'custom';
-
-function CategorySelect({
-  value,
-  onChange,
-  id,
-  allowRta,
-  noNeeds,
-  valueName,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  id: string;
-  allowRta?: boolean;
-  /** Money into checking or savings that is in Ready to Assign with no category: "Needs a category" isn't a choice. */
-  noNeeds?: boolean;
-  valueName?: string | null;
-}) {
-  const specials = noNeeds ? [] : [{ id: '', name: 'Needs a category' }];
-  if (allowRta) specials.push({ id: 'rta', name: 'Ready to Assign' });
-  return (
-    <CategoryField
-      id={id}
-      track="txn.category"
-      value={value}
-      onChange={onChange}
-      specials={specials}
-      valueName={valueName}
-    />
-  );
-}
 
 export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const parent = useParentPath();
