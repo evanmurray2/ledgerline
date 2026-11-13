@@ -52,9 +52,6 @@ const SCREEN_NAMES: Record<string, string> = {
   'settings.sign-in': 'Settings · Sign-in and devices',
   'settings.signin': 'Settings · Sign-in and devices',
   'settings.users': 'Settings · Users',
-  'settings.privacy': 'Settings · Privacy',
-  'settings.about': 'Settings · About',
-  'settings.device-check': 'Settings · Device check',
 };
 
 /** A friendly name for a screen key: its own, else its first part's (txn.posted → Transaction), never the key. */

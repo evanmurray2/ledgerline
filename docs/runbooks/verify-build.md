@@ -6,7 +6,6 @@ can't catch files sent to one person once (`docs/privacy.md` 4.2).
 
 ## What a release publishes
 
-- **In the app:** Settings → About shows the commit and the build hash.
 - **`/release.json`** on the app's address: `{ "commit", "hash", "files": [{ "path", "sha256" }] }`. `hash` is the
   build hash. The file is not in its own list.
 - **On GitHub:** the `deploy` run of that commit keeps an artifact `web-build-<commit>` with the list
@@ -45,7 +44,7 @@ You need git, Node 22 and pnpm (the version in `package.json`, `packageManager`)
    node tools/ci/build-hashes.mjs apps/web/dist --manifest manifest.txt
    ```
 
-   The last line is `build-hash <hash>`. It must equal `hash` in `/release.json` and the hash in Settings → About.
+   The last line is `build-hash <hash>`. It must equal `hash` in `/release.json`.
 
 5. Check that GitHub attested the same list (needs the GitHub CLI):
 
