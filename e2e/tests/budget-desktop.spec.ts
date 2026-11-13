@@ -1,5 +1,6 @@
 // Budget on a computer: the sidebar's Assign button and the table's Assigned cells. Mock mode, desktop only.
 import { expect, test, type Locator } from '@playwright/test';
+import { rta } from './mock-helpers';
 
 test.beforeEach(async ({ page }, info) => {
   test.skip(info.project.name !== 'desktop', 'the sidebar and the table are desktop only');
@@ -48,4 +49,36 @@ test('Desktop: Assigned shows $99,999,999.99 whole, also with the side panel ope
   await expect(page).toHaveURL(/\/budget\/category\/gas/);
   expect(await fits(groceries)).toBe(true);
   expect(await fits(dining)).toBe(true);
+});
+
+test('Desktop: type into Assigned, Tab saves and moves on, Escape puts it back', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'the table is desktop only');
+  await page.goto('/budget');
+  const groceries = page.getByLabel('Assigned to Groceries');
+  await groceries.click();
+  await expect(groceries).toHaveValue('600.00');
+  await groceries.fill('650');
+  await page.keyboard.press('Tab');
+  await expect(page.getByLabel('Assigned to Dining out')).toBeFocused();
+  await expect(rta(page)).toHaveText('$1,949.90');
+  await expect(groceries).toHaveValue('$650.00');
+  await page.keyboard.type('999');
+  await page.keyboard.press('Escape');
+  await expect(page.getByLabel('Assigned to Dining out')).toHaveValue('$200.00');
+  await expect(rta(page)).toHaveText('$1,949.90');
+});
+
+test('Desktop: the category panel steps to the next category with the arrow keys', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'the side panel is desktop only');
+  await page.goto('/budget');
+  await page
+    .getByRole('row', { name: /Groceries/ })
+    .getByRole('cell')
+    .nth(1)
+    .click();
+  await expect(page).toHaveURL(/\/budget\/category\/groceries/);
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByRole('dialog', { name: 'Dining out' })).toBeVisible();
+  await page.getByRole('button', { name: 'Previous category' }).click();
+  await expect(page.getByRole('dialog', { name: 'Groceries' })).toBeVisible();
 });
