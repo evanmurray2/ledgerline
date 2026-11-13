@@ -19,6 +19,7 @@ import { qk } from '../api/hooks';
 import { Frame, Problem } from '../components/Frame';
 import {
   Banner,
+  Button,
   Card,
   Checkbox,
   PrimaryButton,
@@ -242,12 +243,14 @@ export function RecoveryKeyCard() {
       },
     );
   };
-  return (
-    <Card>
-      <div className="flex flex-col gap-2 px-3 py-3" data-testid="recovery-key-card">
-        <span className="text-base font-semibold">Recovery key</span>
-        {step === 'idle' && (
-          <>
+  // The two actions are rows at the foot of the card, like Add a device (settings/SignIn.tsx).
+  const actionRow =
+    'flex min-h-12 w-full items-center border-t border-divider px-3 text-left text-md font-bold text-accent first:border-t-0';
+  if (step === 'idle')
+    return (
+      <Card>
+        <div data-testid="recovery-key-card">
+          <div className="flex flex-col gap-2 px-3 py-3 empty:hidden">
             {st.data && !st.data.set && (
               <Banner tone="warn">
                 Your recovery key can’t sign in yet. Set it up, so you can get back in if you lose every
@@ -255,30 +258,34 @@ export function RecoveryKeyCard() {
               </Banner>
             )}
             {st.data?.set && (
-              <span className="text-sm text-muted">
+              <span className="text-sm leading-snug text-muted">
                 It opens your budget and signs you in if you lose every passkey.
               </span>
             )}
             {note && <Banner tone="info">{note}</Banner>}
             <Problem text={err} />
-            {st.data && !st.data.set && (
-              <SecondaryButton className="self-start" onClick={() => setStep('set')}>
-                Set up sign-in with it
-              </SecondaryButton>
-            )}
-            <SecondaryButton
-              className="self-start"
-              onClick={() => {
-                const key = newRecoveryKey();
-                inHand.current = key;
-                void showRecoveryKey(key).then((text) => setStep({ at: 'show', key, text }));
-              }}
-            >
-              Make a new recovery key
-            </SecondaryButton>
-          </>
-        )}
-
+          </div>
+          {st.data && !st.data.set && (
+            <Button className={actionRow} onClick={() => setStep('set')}>
+              Set up sign-in with it
+            </Button>
+          )}
+          <Button
+            className={actionRow}
+            onClick={() => {
+              const key = newRecoveryKey();
+              inHand.current = key;
+              void showRecoveryKey(key).then((text) => setStep({ at: 'show', key, text }));
+            }}
+          >
+            Make a new recovery key
+          </Button>
+        </div>
+      </Card>
+    );
+  return (
+    <Card>
+      <div className="flex flex-col gap-2 px-3 py-3" data-testid="recovery-key-card">
         {step === 'set' && (
           <>
             <KeyField value={typed} onChange={setTyped} label="Type your recovery key" />
