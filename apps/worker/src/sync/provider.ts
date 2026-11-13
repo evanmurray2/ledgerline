@@ -1,5 +1,4 @@
 import { PlaidProvider, type BankDataProvider } from '@ledgerline/bank-provider';
-import { decryptToken, parseKeyring } from '@ledgerline/platform';
 import type { Env } from '../env.js';
 
 export function makeProvider(env: Env): BankDataProvider & PlaidProvider {
@@ -24,19 +23,6 @@ export function makeProvider(env: Env): BankDataProvider & PlaidProvider {
 export function pageSize(env: Env): number {
   const n = Number(env.SYNC_PAGE_SIZE ?? 100);
   return [50, 100, 250, 500].includes(n) ? n : 100;
-}
-
-export async function connectionToken(env: Env, connectionId: string): Promise<string> {
-  const row = await env.DB.prepare(`SELECT access_token_enc, key_version FROM connection WHERE id = ?1`)
-    .bind(connectionId)
-    .first<{ access_token_enc: string | null; key_version: number | null }>();
-  if (!row?.access_token_enc || row.key_version === null) throw new Error('connection has no credential');
-  return decryptToken(
-    parseKeyring(env.TOKEN_KEYS, env.TOKEN_KEY_CURRENT),
-    row.access_token_enc,
-    row.key_version,
-    connectionId,
-  );
 }
 
 /**

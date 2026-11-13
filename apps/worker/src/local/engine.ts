@@ -955,16 +955,6 @@ export class LocalEngine {
     return { response: r.response, queued: q.length };
   }
 
-  /** The app is about to send this edit: from now on the server may hold it. */
-  async queueSending(id: string): Promise<void> {
-    const q = await this.queue();
-    const e = q.find((x) => x.id === id);
-    if (!e || e.sending) return;
-    e.sending = true;
-    await this.putQueue(q);
-  }
-
-  /** The server took this edit: it leaves the queue. Gives how many are left. */
   /**
    * Drops every change waiting to be sent. Only for a copy of a budget that was moved to its sealed log on
    * another device: those changes were made for the old routes, which take nothing any more.
@@ -975,6 +965,7 @@ export class LocalEngine {
     return n;
   }
 
+  /** The log holds this edit already: it leaves the queue. Gives how many are left. */
   async queueDone(id: string): Promise<number> {
     const q = (await this.queue()).filter((x) => x.id !== id);
     await this.putQueue(q);

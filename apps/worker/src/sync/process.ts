@@ -15,7 +15,7 @@ import {
   ENTRY_DAYS_BEFORE,
 } from '@ledgerline/domain';
 import { seededUlid } from '@ledgerline/platform';
-import type { BankDataProvider, ProviderAccount, ProviderLiability } from '@ledgerline/bank-provider';
+import type { ProviderAccount, ProviderLiability } from '@ledgerline/bank-provider';
 import type { Env } from '../env.js';
 import { Scoped } from '../db/scoped.js';
 import { accountLedger, bankDiff } from '../ledger/bank-diff.js';
@@ -343,39 +343,6 @@ export async function endOfUpdate(
   } catch {
     // The next sync sets it; until then a difference waits a little longer to show.
   }
-}
-
-/** Asks the bank for the balances and card statements of a connection; null when it can't be asked now. */
-export async function askBank(
-  provider: BankDataProvider,
-  token: () => Promise<string>,
-  connectionId: string,
-): Promise<BankState | null> {
-  try {
-    const conn = { id: connectionId, accessToken: await token(), providerItemId: null };
-    const accounts = await provider.getAccounts(conn);
-    const liabilities = provider.getLiabilities ? await provider.getLiabilities(conn).catch(() => []) : [];
-    return {
-      accounts: accounts.map((a) => ({
-        providerAccountId: a.providerAccountId,
-        currentBalance: a.currentBalance,
-        availableBalance: a.availableBalance,
-        creditLimit: a.creditLimit,
-      })),
-      liabilities,
-    };
-  } catch {
-    return null;
-  }
-}
-
-/** When a bank update finished fetching (sync_run.fetched_at); null for a run from before that was recorded. */
-export async function runFetchedAt(db: Db, runId: string): Promise<number | null> {
-  const r = await db
-    .prepare(`SELECT fetched_at FROM sync_run WHERE id = ?1`)
-    .bind(runId)
-    .first<{ fetched_at: number | null }>();
-  return r?.fetched_at ?? null;
 }
 
 /**

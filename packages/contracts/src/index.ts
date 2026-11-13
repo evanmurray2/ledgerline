@@ -8,8 +8,6 @@ import { AccountRow, StartBalance } from './accounts.js';
 export * from './accounts.js';
 
 export const CSRF_HEADER = 'x-ledgerline';
-/** On an online edit: the change number the phone's copy holds; the answer then carries the changes since it. */
-export const SYNC_SINCE_HEADER = 'x-sync-since';
 
 // ---------------------------------------------------------------- session
 
@@ -736,7 +734,6 @@ export const LinkTokenRequest = z.object({
   /** Link on Plaid's own site (docs/privacy.md 5.7): the answer then holds the page's address. */
   hosted: z.boolean().optional(),
 });
-export const LinkExchange = z.object({ publicToken: z.string().min(1).max(400) });
 /** Asks the server what a hosted Link session came to, and finishes the link if the person did. */
 export const LinkFinish = z.object({
   linkToken: z.string().min(1).max(400),
@@ -854,16 +851,4 @@ export const SecurityView = z.object({
 export type SecurityView = z.infer<typeof SecurityView>;
 
 export const DeviceLink = z.object({ url: z.string(), expiresAt: z.string() });
-/** A phone's share of its copy's key (docs/phone-budget.md 13.2); never stored by the app outside its copy. */
-export const DeviceShare = z.object({ id: z.string(), share: z.string() });
-export type DeviceShare = z.infer<typeof DeviceShare>;
 export type DeviceLink = z.infer<typeof DeviceLink>;
-
-// ---------------------------------------------------------------- full backup (docs/multi-user.md 8.7)
-
-/**
- * One piece of the full backup: NDJSON lines (a header, then {"t": table, "r": row} lines, then a footer with each
- * table's row count and fingerprint). The app asks for pieces until `cursor` is null and saves them as one file.
- */
-export const DumpChunk = z.object({ data: z.string(), cursor: z.string().nullable() });
-export type DumpChunk = z.infer<typeof DumpChunk>;

@@ -56,20 +56,6 @@ export async function renew(
   return r.changes === 1;
 }
 
-/** Before sleeping for the write budget: keep the lease past the wake time. */
-export async function extendForSleep(
-  db: Db,
-  connectionId: string,
-  holder: string,
-  wakeAt: number,
-): Promise<boolean> {
-  const r = await db
-    .prepare(`UPDATE connection SET lock_expires = ?1 WHERE id = ?2 AND sync_lock = ?3`)
-    .bind(wakeAt + LEASE_TTL_MS, connectionId, holder)
-    .run();
-  return r.changes === 1;
-}
-
 /** Successful release: only when no request arrived mid-run. Returns false when a hand-off is needed. */
 export async function releaseSuccess(db: Db, connectionId: string, holder: string): Promise<boolean> {
   const r = await db
