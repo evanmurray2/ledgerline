@@ -221,7 +221,7 @@ export const RECORDED_TABLES: readonly SyncTable[] = [
   ...SYNC_TABLES,
   { name: 'audit_log', pk: ['id'] },
   { name: 'txn_key_move', pk: ['old_key'] },
-  // The bank log a device writes while it files a sealed run (D-102): it travels in the bank entry with the rest of
+  // The bank log a device writes while it files a sealed run (D-103): it travels in the bank entry with the rest of
   // the run's rows, so every copy holds the same log and a snapshot can carry it.
   { name: 'bank_page', pk: ['sync_run_id', 'page'], appendOnly: true },
   { name: 'bank_event', pk: ['id'], appendOnly: true },

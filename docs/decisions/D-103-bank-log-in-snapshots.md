@@ -1,4 +1,4 @@
-# D-102: A sealed budget's bank log lives in the copy, travels in bank entries, and is part of snapshots (Nov 13, 2026)
+# D-103: A sealed budget's bank log lives in the copy, travels in bank entries, and is part of snapshots (Nov 13, 2026)
 
 Answers the open question in `docs/build-plan.md` ("decide with `bank_log_size` whether it lives in the copy or
 beside it") and replaces the row "The bank log" of the table in `docs/privacy.md` 5.4, which said it is stored

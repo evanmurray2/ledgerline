@@ -32,7 +32,7 @@ import { SYNC_FORMAT, type SyncTable } from '../sync-tables.js';
 import { DeviceLog } from './device-log.js';
 import { BANK_LOG_TABLES, RECORDED_TABLES, WORKED_OUT, wipeBankLog, type LocalEngine } from './engine.js';
 
-/** The tables a snapshot holds: everything an entry of the log can change, the bank log included (D-102). */
+/** The tables a snapshot holds: everything an entry of the log can change, the bank log included (D-103). */
 export const SNAPSHOT_TABLES: readonly SyncTable[] = RECORDED_TABLES;
 
 /**

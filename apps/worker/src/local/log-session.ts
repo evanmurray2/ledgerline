@@ -241,7 +241,7 @@ export class LogSession {
   static readonly BANK_LOG_SHARED = 'bank_log_shared';
 
   /**
-   * Once per copy (D-102): the bank log of runs this copy filed before bank entries carried it is sent as edits,
+   * Once per copy (D-103): the bank log of runs this copy filed before bank entries carried it is sent as edits,
    * so every copy holds the same log and the snapshots of two devices compare equal. A copy made from a snapshot,
    * or that holds nothing of its own, sends nothing. Gives the number of edits queued (`flush` sends them).
    */

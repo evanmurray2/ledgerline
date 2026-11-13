@@ -1,4 +1,4 @@
-// One order for everything, and the bank log in the copy (docs/privacy.md 5.4; D-102): a device back after days
+// One order for everything, and the bank log in the copy (docs/privacy.md 5.4; D-103): a device back after days
 // away works through the bank runs and the missed days' scans strictly by time, each scan at 5:00 that day; the
 // bank log a filing writes travels in its bank entry, so the other device holds it too; a device that joins from a
 // snapshot holds the bank log and files the next run; a copy's bank log from before entries carried it is sent once.
