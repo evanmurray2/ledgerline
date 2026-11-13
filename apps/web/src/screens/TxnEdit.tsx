@@ -26,13 +26,14 @@ import {
 } from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { amountWhy } from '../lib/amount-check';
-import { addMonths, dayLabel, monthName, monthShort } from '../lib/dates';
+import { addMonths, dayLabel, monthShort } from '../lib/dates';
 import { useCategoryOptions } from '../lib/common';
 import { usage } from '../usage/tracker';
 import { toast } from '../components/Toast';
 import { Why } from '../components/Why';
 import { BankSays, TxnHeader, useParentPath } from './TxnCommon';
 import { PairedWith } from './TxnPair';
+import { EntryAmount, IncomeGoesTo } from './TxnEditParts';
 import { useHere } from '../lib/back';
 
 type OwedMode = 'none' | 'half' | 'all' | 'custom';
@@ -236,30 +237,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
         </Banner>
       ))}
       <PairedWith t={t} close={close} />
-      {canSetAmount && (
-        <div className="flex shrink-0 items-end gap-2">
-          <Field label="Amount" className="min-w-0 flex-1">
-            <input
-              inputMode="decimal"
-              value={amt}
-              onChange={(e) => setAmt(e.target.value)}
-              className={amountInputClass}
-            />
-          </Field>
-          <div className="w-[140px]">
-            <Segmented
-              label="Direction"
-              track="txn.direction"
-              value={dir}
-              onChange={turn}
-              options={[
-                ['out', 'Out'],
-                ['in', 'In'],
-              ]}
-            />
-          </div>
-        </div>
-      )}
+      {canSetAmount && <EntryAmount amount={amt} onAmount={setAmt} dir={dir} onDir={turn} />}
       {canEstimate &&
         (estOpen ? (
           <div className="flex shrink-0 flex-col gap-2 rounded-lg border border-line p-3">
@@ -369,25 +347,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       </div>
       {/* Only money in Ready to Assign has a month to go to: income you gave a category doesn't. */}
       {isIncome && cat === 'rta' && (
-        <div className="flex flex-col gap-2 rounded-lg border border-line p-3">
-          <span className="text-base font-semibold">Goes to</span>
-          <Segmented
-            label="Goes to"
-            track="txn.income.month"
-            // The same test as the help line below: the month the income is dated in, or a later one.
-            value={month === t.date.slice(0, 7) ? 'now' : 'next'}
-            onChange={(v) => setMonth(v === 'now' ? t.date.slice(0, 7) : addMonths(t.date.slice(0, 7), 1))}
-            options={[
-              ['now', 'Ready to Assign now'],
-              ['next', `Save for ${monthName(addMonths(t.date.slice(0, 7), 1))}`],
-            ]}
-          />
-          <span className="text-xs text-muted">
-            {month === t.date.slice(0, 7)
-              ? `Adds ${formatCents(t.amount)} to Ready to Assign in ${monthName(month)}.`
-              : `Adds ${formatCents(t.amount)} to Ready to Assign on ${monthName(month)} 1.`}
-          </span>
-        </div>
+        <IncomeGoesTo date={t.date} amount={t.amount} month={month} onMonth={setMonth} />
       )}
       {isRefund && (catName || onCard) && (
         <p className="m-0 text-sm leading-snug text-muted">
