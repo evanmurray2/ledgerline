@@ -3,7 +3,9 @@ import { useState } from 'react';
 import { DumpChunk } from '@ledgerline/contracts';
 import { download, get, qs, saveFile } from '../../api/client';
 import { exportUrls } from '../../api/endpoints';
+import { isSealed } from '../../copy/copy';
 import { Card, ErrorNote, SectionTitle, SoftButton } from '../../components/ui';
+import { DeviceBackup } from './DeviceBackup';
 import { useScreen } from '../../lib/common';
 import { Page } from './common';
 import { Why } from '../../components/Why';
@@ -40,7 +42,22 @@ export function DataScreen() {
           <ExportRow key={name} name={name} meta={meta} href={href} filename={filename} />
         ))}
       </Card>
-      <FullBackup />
+      {isSealed() ? <DeviceBackup /> : <FullBackup />}
+      {isSealed() ? (
+        <span className="text-xs text-muted">
+          The server can’t rewind a locked budget: it can’t read it. Keep a full backup of your own.
+        </span>
+      ) : (
+        <ServerRecovery />
+      )}
+    </Page>
+  );
+}
+
+/** Rewinding on the server (runbooks/restore.md), for a budget that is not locked. */
+function ServerRecovery() {
+  return (
+    <>
       <SectionTitle>Recovery</SectionTitle>
       <Card>
         <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
@@ -58,7 +75,7 @@ export function DataScreen() {
           restore guide.
         </Why>
       </span>
-    </Page>
+    </>
   );
 }
 

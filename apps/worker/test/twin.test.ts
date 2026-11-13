@@ -400,6 +400,25 @@ describe('the same edit on the phone and on the server', () => {
         )();
       },
     ],
+    // A bank removed at the bank (D-87): the budget marks it removed, and its account stays. The server's own copy
+    // of a link that still has its token refuses it (the bank must go first); this one has none.
+    [
+      'mark a removed bank',
+      'POST /settings/connections/:id/mark-removed',
+      () => ['POST', '/api/settings/connections/con_twin/mark-removed', {}],
+      async () => {
+        await onServer(
+          `INSERT INTO connection (id, budget_id, provider, provider_item_id, institution_name, setup_done, linked_at, created_at, updated_at)
+           VALUES ('con_twin', ?1, 'plaid', 'item-twin', 'Twin Bank', 1, 5, 5, 5)`,
+          budget,
+        )();
+        await onServer(
+          `INSERT INTO provider_account (id, budget_id, connection_id, provider_account_id, name, type, subtype, current_balance, created_at, updated_at)
+           VALUES ('pa-twin', ?1, 'con_twin', 'pa-twin', 'Twin Checking', 'depository', 'checking', 1000, 5, 5)`,
+          budget,
+        )();
+      },
+    ],
     // Last: it sets the budget's start again, after the set-up statement took it away.
     [
       'pick the month the budget starts',

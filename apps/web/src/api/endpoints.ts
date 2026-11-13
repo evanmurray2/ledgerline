@@ -88,6 +88,19 @@ export type RegisterShow = 'all' | 'pending' | 'needs' | 'transfers';
 
 const enc = encodeURIComponent;
 
+/** Where emptying a locked budget's old copy on the server stands (Settings → Privacy). */
+const PurgeView = z.object({
+  stage: z.enum(['none', 'waiting', 'ready', 'running', 'stopped', 'done', 'checked']),
+  tables: z.number(),
+  done: z.number(),
+  rows: z.number(),
+  startedAt: z.string().nullable(),
+  doneAt: z.string().nullable(),
+  checkAt: z.string().nullable(),
+  clean: z.boolean().nullable(),
+});
+export type PurgeView = z.infer<typeof PurgeView>;
+
 export const api = {
   /**
    * The session. For a sealed budget the server's answer holds nothing of the budget: its facts come from the
@@ -127,12 +140,28 @@ export const api = {
   cutoverState: () =>
     get(
       '/api/cutover/state',
-      z.object({ open: z.boolean(), sealed: z.boolean(), backUntil: z.string().nullable() }),
+      z.object({
+        open: z.boolean(),
+        sealed: z.boolean(),
+        backUntil: z.string().nullable(),
+        // Emptying the old copy (the Worker's seal/purge.ts); absent from a server before it.
+        purge: PurgeView.nullable().optional(),
+      }),
     ),
+  cutoverPurge: () => post('/api/cutover/purge', z.object({ ok: z.literal(true) })),
   cutoverReady: (fresh = false) =>
     post('/api/cutover/ready', z.object({ ok: z.literal(true), blocks: z.array(z.string()) }), { fresh }),
   cutoverBack: () => post('/api/cutover/back', z.object({ ok: z.boolean() })),
   newRecoveryCode: () => post('/api/settings/security/recovery-code', z.object({ code: z.string() })),
+  // The recovery key of a locked budget (docs/privacy-keys.md 4.2): its sign-in, and its public half.
+  recoverKeyOptions: (authPub: string) =>
+    post('/api/auth/recover-key/options', z.object({ budgetId: z.string(), challenge: z.string() }), {
+      authPub,
+    }),
+  recoverKeyVerify: (signature: string) => post('/api/auth/recover-key/verify', z.unknown(), { signature }),
+  recoveryKey: () =>
+    get('/api/settings/security/recovery-key', z.object({ set: z.boolean(), setAt: z.string().nullable() })),
+  setRecoveryKey: (authPub: string) => post('/api/settings/security/recovery-key', Ok, { authPub }),
   dismissRecoveryNotice: () => post('/api/settings/security/recovery-notice/dismiss', Ok),
   // Deleting your own account, and Settings → Users for admins (D-75).
   deleteAccount: (budgetName: string) => post('/api/settings/security/delete-account', Ok, { budgetName }),
@@ -244,12 +273,19 @@ export const api = {
     const local = await readCopy('/api/settings/connections');
     const mine = local.status === 200 ? ConnectionsView.safeParse(JSON.parse(local.body)) : null;
     const names = new Map((mine?.success ? mine.data.items : []).map((i) => [i.id, i]));
+    // A bank removed at the server whose removal the copy doesn't have yet (the app closed in between): the copy
+    // gets it now. Its accounts stay (D-87).
+    for (const i of server.items) {
+      const n = names.get(i.id);
+      if (i.status === 'removed' && n && n.status !== 'removed')
+        await api.markRemoved(i.id).catch(() => undefined);
+    }
     return {
       ...server,
       items: server.items.map((i) => {
         const n = names.get(i.id);
         if (!n) return i;
-        const status = n.status === 'removed' ? ('removed' as const) : i.status;
+        const status = n.status === 'removed' || i.status === 'removed' ? ('removed' as const) : i.status;
         return { ...i, institution: n.institution, accounts: n.accounts, setupDone: n.setupDone, status };
       }),
     };
@@ -260,6 +296,10 @@ export const api = {
   linkFinish: (body: In<typeof LinkFinish>) =>
     post('/api/settings/connections/link-finish', LinkFinishResult, body),
   refreshConnection: (id: string) => post(`/api/settings/connections/${enc(id)}/refresh`, Ok),
+  /** Ends a bank link at the bank (a sealed budget: the server). The budget's side is `markRemoved`. */
+  removeConnection: (id: string) => post(`/api/settings/connections/${enc(id)}/remove`, Ok),
+  /** Marks a removed bank in the budget: its accounts and rows stay (D-87). An edit on the device's copy. */
+  markRemoved: (id: string) => post(`/api/settings/connections/${enc(id)}/mark-removed`, Ok),
   refreshAll: () =>
     post('/api/settings/connections/refresh', z.object({ ok: z.literal(true), started: z.number().int() })),
 

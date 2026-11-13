@@ -6,6 +6,7 @@ import { ApiError, errorMessage } from '../../api/client';
 import { api } from '../../api/endpoints';
 import { Problem } from '../../components/Frame';
 import {
+  Banner,
   Button,
   Card,
   ConfirmInline,
@@ -20,9 +21,10 @@ import {
 import { toast } from '../../components/Toast';
 import { useScreen } from '../../lib/common';
 import { clearSavedData } from '../../state/saved';
-import { signOutHere } from '../../copy/copy';
+import { isSealed, signOutHere } from '../../copy/copy';
 import { SIGNED_OUT_HERE } from '../Auth';
 import { RecoveryCodeCard } from '../Signup';
+import { PlannedChanges, RecoveryKeyCard, removeLockedPasskey } from '../RecoveryKey';
 import { DeleteAccountCard } from './People';
 import { Page } from './common';
 
@@ -57,6 +59,8 @@ export function SignInSettingsScreen() {
   const sec = useSecurity();
   const [err, setErr] = useState<string | null>(null);
   const [asking, setAsking] = useState<string | null>(null);
+  /** A change that waits 7 days (a locked budget, D-89), said plainly. */
+  const [note, setNote] = useState<string | null>(null);
   const run: Run = (fn, done) => {
     setErr(null);
     fn().then(
@@ -71,9 +75,12 @@ export function SignInSettingsScreen() {
   };
   const signIns = sec.data?.signIns ?? [];
   const here = signIns.find((x) => x.current);
+  /** A locked budget: its ways in are in its log too (RecoveryKey.tsx). */
+  const locked = import.meta.env.VITE_MOCK !== '1' && isSealed();
   return (
     <Page title="Sign-in and devices" back="/settings">
       <Problem text={err} />
+      {note && <Banner tone="info">{note}</Banner>}
       <SectionTitle>This device</SectionTitle>
       {here && (
         <Card>
@@ -92,14 +99,29 @@ export function SignInSettingsScreen() {
         setAsking={setAsking}
       />
       <SectionTitle>Passkeys</SectionTitle>
-      <Passkeys keys={sec.data?.passkeys ?? []} run={run} asking={asking} setAsking={setAsking} />
+      <Passkeys
+        keys={sec.data?.passkeys ?? []}
+        run={run}
+        asking={asking}
+        setAsking={setAsking}
+        locked={locked}
+        onNote={setNote}
+      />
       <p className="m-0 px-0.5 text-sm leading-snug text-muted">
         Name each passkey after where it’s saved, like Apple Passwords.
       </p>
+      {locked && (
+        <>
+          <PlannedChanges names={new Map((sec.data?.passkeys ?? []).map((k) => [k.id, k.name]))} />
+          <SectionTitle>Recovery key</SectionTitle>
+          <RecoveryKeyCard />
+        </>
+      )}
       {sec.data?.recoveryCode && (
         <>
           <SectionTitle>Account</SectionTitle>
-          <RecoveryCodeCard />
+          {/* A locked budget's recovery key takes the code's place (docs/privacy-keys.md 4.2). */}
+          {!locked && <RecoveryCodeCard />}
           <DeleteAccountCard />
         </>
       )}
@@ -257,7 +279,14 @@ function OtherDevices({ others: listed, run, asking, setAsking }: { others: Sign
 }
 
 /** Each passkey with Rename, and Remove when there is more than one (never the last: you'd be locked out). */
-function Passkeys({ keys, run, asking, setAsking }: { keys: Passkey[]; run: Run } & Asking) {
+function Passkeys({
+  keys,
+  run,
+  asking,
+  setAsking,
+  locked,
+  onNote,
+}: { keys: Passkey[]; run: Run; locked: boolean; onNote: (n: string | null) => void } & Asking) {
   return (
     <Card>
       {keys.map((k) => (
@@ -305,14 +334,19 @@ function Passkeys({ keys, run, asking, setAsking }: { keys: Passkey[]; run: Run 
               mutates={false}
               onConfirm={() =>
                 run(
-                  () => api.removePasskey(k.id),
-                  () => setAsking(null),
+                  // A locked budget: the passkey's way in goes too, so it can't open the budget.
+                  () => (locked ? removeLockedPasskey(k.id) : api.removePasskey(k.id)),
+                  (r) => {
+                    setAsking(null);
+                    if (typeof r === 'string') onNote(r);
+                  },
                 )
               }
               onCancel={() => setAsking(null)}
               className="mx-3 mb-3"
             >
-              Remove the passkey {k.name}? You can’t sign in with it any more.
+              Remove the passkey {k.name}? You can’t sign in with it any more
+              {locked ? ', and it can’t open your budget' : ''}.
             </ConfirmInline>
           )}
         </div>

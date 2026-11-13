@@ -394,6 +394,40 @@ describe('the cutover, rehearsed', () => {
       now: NOW + 5000,
     });
     expect(filed).toMatchObject({ filed: 1, lost: 0 });
+
+    // ---- the daily scan, which the server ran before: the phone runs today's, once, as a scan entry. A monthly
+    // upcoming entry that came due gets its next one.
+    const acct = (await phone.db
+      .prepare(`SELECT id FROM account WHERE closed_at IS NULL ORDER BY id LIMIT 1`)
+      .first<{ id: string }>())!.id;
+    const upcoming = await phone.enqueue({
+      id: 'repeating-upcoming-xxxxx',
+      at: NOW + 5500,
+      method: 'POST',
+      path: '/api/transactions',
+      body: {
+        kind: 'upcoming',
+        accountId: acct,
+        date: '2026-11-01',
+        amount: -1500,
+        payee: 'Gym',
+        categoryId: null,
+        repeats: 'monthly',
+      },
+    });
+    expect(upcoming.response.status).toBe(200);
+    expect(await session.flush()).toMatchObject({ sent: 1 });
+    const gym = async () =>
+      (
+        await phone.db
+          .prepare(`SELECT date FROM manual_pending WHERE payee_name = 'Gym' ORDER BY date`)
+          .all<{ date: string }>()
+      ).results.map((r) => r.date);
+    expect(await gym()).toEqual(['2026-11-01']);
+    expect(await session.scan(NOW + 6000)).toBe(1);
+    expect(await gym()).toEqual(['2026-11-01', '2026-12-01']);
+    expect(await session.scan(NOW + 7000)).toBe(0);
+    expect(log.scanThrough).toBeGreaterThan(0);
     // A second device opens the first snapshot and reads the log: the same budget. It held a copy from before the
     // move, with a change that never went out: that copy is emptied first, as the app does.
     await spare.enqueue({
@@ -414,7 +448,7 @@ describe('the cutover, rehearsed', () => {
       clock: () => NOW,
     });
     expect(log2.number).toBe(1);
-    expect(await new LogSession(spare, log2, t, encodeEntry).pull()).toEqual({ entries: 2, lost: 0 });
+    expect(await new LogSession(spare, log2, t, encodeEntry).pull()).toEqual({ entries: 4, lost: 0 });
     expect(differences(await rowsOf(spare), await rowsOf(phone))).toEqual([]);
 
     // ---- the way back: open for 7 days, then closed

@@ -321,7 +321,8 @@ export interface QueuedEdit {
    * Always first in the queue: the edits after it ran on top of it. It is never run again by the engine (the
    * runs are not kept here): when it must come out, it is dropped, and the device files the runs again.
    */
-  bank?: { filedThrough: number; receipts: string[] };
+  /** Bank runs filed (or, with `scanThrough`, one day's scan): sent as a bank or scan entry (local/log-session.ts). */
+  bank?: { filedThrough: number; receipts: string[]; scanThrough?: number };
 }
 
 /** An edit whose undo is good for a copy at change number `through`. */
@@ -997,7 +998,7 @@ export class LocalEngine {
   async fileBank(
     id: string,
     at: number,
-    bank: { filedThrough: number; receipts: string[] },
+    bank: { filedThrough: number; receipts: string[]; scanThrough?: number },
     work: (env: Env) => Promise<void>,
   ): Promise<{ rows: SyncRow[]; lost: number } | null> {
     if (await this.filingInterrupted()) throw new FilingInterrupted();

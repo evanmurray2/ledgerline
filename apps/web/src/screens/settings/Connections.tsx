@@ -8,7 +8,9 @@ import {
   Banner,
   Button,
   Card,
+  ConfirmInline,
   cx,
+  DangerLink,
   ErrorNote,
   Icon,
   Loading,
@@ -26,6 +28,7 @@ import { useCanWrite } from '../../state/connectivity';
 import { Page } from './common';
 import { Why } from '../../components/Why';
 import { errorMessage } from '../../api/client';
+import { isSealed } from '../../copy/copy';
 
 // ------------------------------------------------------------------ connections
 
@@ -167,6 +170,56 @@ function FinishSetup({ id, institution }: { id: string; institution: string }) {
   );
 }
 
+/**
+ * Removes a bank of a locked budget (D-87): the server ends the link at the bank, then this device marks it removed
+ * in the budget. Its accounts and past transactions stay. The link isn't given back.
+ */
+function RemoveBank({ id, institution }: { id: string; institution: string }) {
+  const qc = useQueryClient();
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  if (!asking)
+    return (
+      <DangerLink track="connections.remove" onClick={() => setAsking(true)} className="self-start">
+        Remove bank…
+      </DangerLink>
+    );
+  return (
+    <div className="flex flex-col gap-2">
+      <ConfirmInline
+        label={`Remove ${institution}`}
+        confirmLabel="Remove bank"
+        track="connections.remove.confirm"
+        busy={busy}
+        onCancel={() => setAsking(false)}
+        onConfirm={() => {
+          setBusy(true);
+          setError(null);
+          api
+            .removeConnection(id)
+            .then(() => api.markRemoved(id))
+            .then(
+              () => {
+                setBusy(false);
+                setAsking(false);
+                toast.show({ text: `${institution} is removed. Its accounts stay.` });
+                void qc.invalidateQueries();
+              },
+              (e: unknown) => {
+                setBusy(false);
+                setError(e);
+              },
+            );
+        }}
+      >
+        {institution} stops syncing, and its accounts stay. Removing a link doesn’t give it back.
+      </ConfirmInline>
+      {error ? <ErrorNote error={error} /> : null}
+    </div>
+  );
+}
+
 export function ConnectionsScreen() {
   useScreen('settings.connections');
   useResumeLink();
@@ -177,6 +230,8 @@ export function ConnectionsScreen() {
   const today = session.data?.budget.today ?? '';
   // Only admins link new banks while Plaid Trial applies (D-75); others never see the link count.
   const canLink = session.data?.canLinkBanks !== false;
+  // Removing a bank is built for a locked budget only (docs/privacy.md 5.5).
+  const canRemove = isSealed();
   const status = (s: string) =>
     s === 'ok'
       ? { text: 'Synced', cls: 'bg-funded-bg text-funded-fg' }
@@ -206,7 +261,7 @@ export function ConnectionsScreen() {
                         <span
                           className={cx('text-base font-semibold', it.status === 'removed' && 'text-muted')}
                         >
-                          {it.institution}
+                          {it.institution || 'New bank'}
                         </span>
                         <span className="text-xs text-muted">
                           {[it.accounts, `linked ${syncedLabel(it.linkedAt, '')}`]
@@ -222,7 +277,7 @@ export function ConnectionsScreen() {
                             : st.text}
                       </span>
                     </div>
-                    {!it.setupDone && it.status !== 'removed' && (
+                    {!it.setupDone && it.status !== 'removed' && !canRemove && (
                       <FinishSetup id={it.id} institution={it.institution} />
                     )}
                     {repair && (
@@ -234,6 +289,9 @@ export function ConnectionsScreen() {
                       >
                         Sign in again
                       </SoftLink>
+                    )}
+                    {canRemove && it.status !== 'removed' && (
+                      <RemoveBank id={it.id} institution={it.institution || 'This bank'} />
                     )}
                   </div>
                 );

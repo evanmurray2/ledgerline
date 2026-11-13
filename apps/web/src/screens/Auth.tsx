@@ -11,6 +11,7 @@ import { Field, PrimaryButton, SecondaryButton, inputClass } from '../components
 import { signIn as copySignIn } from '../copy/copy';
 import { CreateAccountScreen, RecoverScreen } from './Signup';
 import { passkeyName } from '../lib/device-name';
+import { RecoveryKeySignInScreen } from './RecoveryKey';
 
 /** Runs a WebAuthn ceremony and turns the browser's errors into plain sentences. */
 async function ceremony(fn: () => Promise<unknown>): Promise<string | null> {
@@ -71,7 +72,7 @@ export function SignInScreen() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   /** Open sign-up (D-75): Create account and Use a recovery code, only once the server turns them on. */
-  const [mode, setMode] = useState<'signin' | 'create' | 'recover'>('signin');
+  const [mode, setMode] = useState<'signin' | 'create' | 'recover' | 'recovery-key'>('signin');
   const done = () => void qc.invalidateQueries({ queryKey: qk.session });
   const supported = browserSupportsWebAuthn();
   const siteKey = status.data?.signupOpen ? (status.data.turnstileSiteKey ?? null) : null;
@@ -137,6 +138,8 @@ export function SignInScreen() {
       </Frame>
     );
   }
+  // A locked budget's recovery key (docs/privacy-keys.md 4.2): open to every account, with or without sign-up.
+  if (mode === 'recovery-key') return <RecoveryKeySignInScreen onBack={() => setMode('signin')} />;
   if (siteKey && mode === 'create')
     return <CreateAccountScreen siteKey={siteKey} onBack={() => setMode('signin')} />;
   if (siteKey && mode === 'recover')
@@ -168,6 +171,11 @@ export function SignInScreen() {
             Use a recovery code
           </SecondaryButton>
         </>
+      )}
+      {status.data?.hasPasskey && (
+        <SecondaryButton disabled={!supported} onClick={() => setMode('recovery-key')}>
+          Use your recovery key
+        </SecondaryButton>
       )}
     </Frame>
   );

@@ -55,6 +55,19 @@ export interface OpenBudget {
 /** A way in that does not open this budget. The message says which case it is, in words for a person. */
 export class WayInError extends Error {}
 
+/** A typed recovery key whose check letters don't match: refused before anything else. */
+export const KEY_TYPO = 'That recovery key has a typing mistake. Check it and try again.';
+
+/**
+ * The passkey just used is no way in to this budget: it was made after the budget was locked (a recovery, or a
+ * new passkey that did not reach this budget yet), or it was removed. The recovery key opens it (4.4).
+ */
+export class NoSlotError extends WayInError {
+  constructor() {
+    super('This passkey can’t open your budget yet. Open it with your recovery key.');
+  }
+}
+
 /**
  * Makes a budget's keys and its first entry: the budget key, the passkey's way in, a new recovery key and its way
  * in, and the inbox pair. Before anything is handed back, both ways in are opened from the entry's own bytes, as
@@ -137,12 +150,10 @@ export async function openWithPasskey(
   passkey: PasskeySecret,
   remembered?: PublicRef,
 ): Promise<{ budget: OpenBudget; state: PublicState }> {
-  return openFrom(
-    publics,
-    budgetId,
-    await passkeySlot(passkey.prf, budgetId, passkey.credentialId),
-    remembered,
-  );
+  const slot = await passkeySlot(passkey.prf, budgetId, passkey.credentialId);
+  const state = await walkPublic(publics, budgetId, remembered ? { mustPass: remembered } : {});
+  if (!state.slots.has(slot.slotId)) throw new NoSlotError();
+  return { budget: await openBudget(state, slot), state };
 }
 
 /**
@@ -157,22 +168,22 @@ export async function openWithRecoveryKey(
   remembered?: PublicRef,
 ): Promise<{ budget: OpenBudget; state: PublicState }> {
   const r = await readRecoveryKey(typed);
-  if (!r) throw new WayInError('That recovery key has a typing mistake. Check it and try again.');
+  if (!r) throw new WayInError(KEY_TYPO);
   try {
     const state = await walkPublic(publics, budgetId, remembered ? { mustPass: remembered } : {});
     const generations = [...state.slots.keys()]
       .filter((id) => /^r:[1-9][0-9]*$/.test(id))
       .map((id) => Number(id.slice(2)))
       .sort((a, b) => b - a);
-    let last: unknown = new WayInError('This budget has no recovery key.');
+    if (!generations.length) throw new WayInError('This budget has no recovery key.');
     for (const g of generations) {
       try {
         return { budget: await openBudget(state, await recoverySlot(r, g)), state };
-      } catch (x) {
-        last = x;
+      } catch {
+        // Another generation may be this key.
       }
     }
-    throw last;
+    throw new WayInError('That recovery key doesn’t open this budget. Check it and try again.');
   } finally {
     zeroize(r);
   }

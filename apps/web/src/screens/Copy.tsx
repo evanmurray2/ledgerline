@@ -6,6 +6,7 @@ import { Frame, Problem } from '../components/Frame';
 import { PrimaryButton } from '../components/ui';
 import { errorMessage } from '../api/client';
 import { type CopyState, type FullWhy, openWithoutSignal, start } from '../copy/copy';
+import { OpenWithRecoveryKey } from './RecoveryKey';
 
 /** Why the whole budget is downloading instead of only what changed (also sent to the server's logs). */
 const WHY: Record<FullWhy, string | null> = {
@@ -58,6 +59,9 @@ export function CopyScreen({
         {copy.why && WHY[copy.why] && <p className="m-0 text-sm leading-snug text-muted">{WHY[copy.why]}</p>}
       </Frame>
     );
+  // A locked budget this passkey can't open yet: the recovery key opens it, and the passkey is added.
+  if (copy.status === 'failed' && copy.needsRecovery && session)
+    return <OpenWithRecoveryKey session={session} />;
   if (copy.status === 'failed')
     return (
       <Frame title="Couldn’t open your budget">

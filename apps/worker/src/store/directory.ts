@@ -34,6 +34,9 @@ import { nextUtc } from './budget-jobs.js';
 import { SHARE_PAUSED, Shares, type ShareState } from './shares.js';
 import { recoverOptions, recoveryNotice, recoveryRoutes, signupOptions } from '../routes/signup.js';
 import { deletingKey, peopleRoutes } from '../routes/people.js';
+import { expireIdle, startDeletionSql } from './idle-accounts.js';
+import { recoveryKeyAuth, recoveryKeySettings } from '../routes/recovery-key.js';
+import { FRESH_WAY_MS } from '@ledgerline/seal';
 
 /** Budgets checked per ensure_all step (docs/multi-user.md 6.2). */
 export const ENSURE_BATCH = 25;
@@ -71,6 +74,11 @@ export interface Caller {
   recoveryNoticeAt?: number | null;
   /** The budget's sync epoch (migration 0006): changes when its database is restored. */
   syncEpoch?: string;
+  /**
+   * The session signed in with a passkey added less than 7 days ago, or with none (a recovery-key sign-in always
+   * adds one): a key change of a locked budget from it waits (D-89). True when not given.
+   */
+  freshWay?: boolean;
 }
 
 export type AuthResult =
@@ -127,6 +135,7 @@ export class Directory extends DurableObject<Env> {
       now,
     );
     await this.runner.enqueue('ensure_all', { id: 'ensure_all', state: { cursor: '' }, runAt: now }, now);
+    await this.runner.enqueue('expire_idle', { id: 'expire_idle', runAt: now }, now);
     return { jobs: this.runner.list() };
   }
 
@@ -154,13 +163,44 @@ export class Directory extends DurableObject<Env> {
       // Deleting an account (routes/people.ts): the store wipes itself, then the user's last rows go. Each step is
       // idempotent; after 6 failed tries the job stops and Settings → Users offers Try again.
       delete_account: async (job) => {
-        const { userId, budgetId } = job.state as { userId: string; budgetId: string };
-        const w = await this.env.BUDGET.get(this.env.BUDGET.idFromName(budgetId)).wipe(budgetId);
+        const { userId, budgetId, userIds } = job.state as {
+          userId: string;
+          budgetId: string;
+          /** Every member of the budget (an account that expired); just the one user when absent. */
+          userIds?: string[];
+        };
+        const users = userIds?.length ? userIds : [userId];
+        // Never an admin's account: its budget and its banks stay (docs/privacy.md 5.5).
+        const admins = this.ctx.storage.sql
+          .exec(
+            `SELECT count(*) AS n FROM user WHERE is_admin = 1 AND id IN (SELECT value FROM json_each(?))`,
+            JSON.stringify(users),
+          )
+          .one();
+        if (Number(admins.n) > 0) throw new Error('admin_refused');
+        const store = this.env.BUDGET.get(this.env.BUDGET.idFromName(budgetId));
+        // Each bank link is removed at Plaid first; a failure is tried again with the job.
+        const rb = await store.removeBanks(budgetId);
+        if (rb.left > 0) throw new Error('remove_banks_left');
+        const w = await store.wipe(budgetId);
         if (!w.ok) throw new Error(`wipe_${w.why}`);
+        const others = users.filter((u) => u !== userId);
         await this.db.batch([
+          ...others.flatMap((u) => [
+            this.db.prepare(`DELETE FROM passkey WHERE user_id = ?1`).bind(u),
+            this.db.prepare(`DELETE FROM recovery_code WHERE user_id = ?1`).bind(u),
+            this.db.prepare(`DELETE FROM recovery_notice WHERE user_id = ?1`).bind(u),
+            // Before the user row: it refers to it.
+            this.db.prepare(`DELETE FROM recovery_key WHERE user_id = ?1`).bind(u),
+            this.db.prepare(`DELETE FROM auth_session WHERE user_id = ?1`).bind(u),
+            this.db
+              .prepare(`DELETE FROM user WHERE id = ?1 AND status = 'deleting' AND is_admin = 0`)
+              .bind(u),
+          ]),
           this.db.prepare(`DELETE FROM passkey WHERE user_id = ?1`).bind(userId),
           this.db.prepare(`DELETE FROM recovery_code WHERE user_id = ?1`).bind(userId),
           this.db.prepare(`DELETE FROM recovery_notice WHERE user_id = ?1`).bind(userId),
+          this.db.prepare(`DELETE FROM recovery_key WHERE user_id = ?1`).bind(userId),
           this.db.prepare(`DELETE FROM device WHERE user_id = ?1`).bind(userId),
           this.db.prepare(`DELETE FROM device_link WHERE user_id = ?1`).bind(userId),
           this.db.prepare(`DELETE FROM auth_session WHERE user_id = ?1`).bind(userId),
@@ -175,6 +215,42 @@ export class Directory extends DurableObject<Env> {
             .prepare(`DELETE FROM app_state WHERE key IN (?1, ?2)`)
             .bind(deletingKey(budgetId), `idle:${budgetId}`),
         ]);
+        return { done: true };
+      },
+      // Accounts nobody opened for 24 months (store/idle-accounts.ts), once a day.
+      expire_idle: async (_job, now) => {
+        const out = this.ctx.storage.transactionSync(() => expireIdle(this.ctx.storage.sql, now));
+        for (const d of out.start) {
+          this.ctx.storage.transactionSync(() => {
+            for (const [q, p] of startDeletionSql(d.budgetId, d.userIds, now))
+              this.ctx.storage.sql.exec(q, ...(p as SqlStorageValue[]));
+          });
+          console.log(JSON.stringify({ event: 'account_expired', budget: d.budgetId }));
+          await this.queueDelete(d.userIds[0]!, d.budgetId, d.userIds, now);
+        }
+        for (const d of out.again) {
+          const prev = this.ctx.storage.sql
+            .exec(`SELECT state FROM job WHERE id = ?`, `delete_account:${d.userId}`)
+            .toArray()[0];
+          const userIds = prev
+            ? (JSON.parse(String(prev.state)) as { userIds?: string[] }).userIds
+            : undefined;
+          await this.queueDelete(d.userId, d.budgetId, userIds, now);
+        }
+        const marked = this.ctx.storage.sql
+          .exec(`SELECT count(*) AS n FROM app_state WHERE key LIKE 'expire:%'`)
+          .one();
+        // Counts only: a bug shows here before it deletes much.
+        console.log(
+          JSON.stringify({
+            event: 'idle_accounts',
+            marked: Number(marked.n),
+            newly: out.marked,
+            cleared: out.cleared,
+            started: out.start.length,
+            deleting: out.again.length,
+          }),
+        );
         return { done: true };
       },
       // Every budget's ensureJobs, ENSURE_BATCH per step.
@@ -228,11 +304,13 @@ export class Directory extends DurableObject<Env> {
     if (!this.app) {
       const app = new Hono<AppEnv>();
       app.route('/api/auth', authRoutes);
+      app.route('/api/auth', recoveryKeyAuth);
       app.use('/api/settings/security/*', identity);
       app.use('/api/settings/security/*', csrf);
       app.use('/api/settings/security', identity);
       app.route('/api', securityRoutes);
       app.route('/api', recoveryRoutes);
+      app.route('/api', recoveryKeySettings);
       app.route('/api', peopleRoutes);
       // Every answer is JSON, so the app can read it: a route that doesn't exist, and anything unexpected.
       app.notFound((c) => c.json({ error: 'not_found', message: TRY_AGAIN }, 404));
@@ -297,6 +375,7 @@ export class Directory extends DurableObject<Env> {
         share: share.state,
         recoveryNoticeAt: m.isAdmin ? null : await recoveryNotice(env, m.userId, now),
         syncEpoch: this.syncEpoch(m.budgetId),
+        freshWay: this.freshWay(who.sessionId, now),
       },
     };
   }
@@ -332,6 +411,26 @@ export class Directory extends DurableObject<Env> {
     return Number(r.ok) === 1;
   }
 
+  /** Queues the delete job for an account (idempotent: a pending one stays, one that stopped starts again). */
+  private async queueDelete(userId: string, budgetId: string, userIds: string[] | undefined, now: number) {
+    await this.runner.enqueue(
+      'delete_account',
+      {
+        id: `delete_account:${userId}`,
+        state: { userId, budgetId, ...(userIds && userIds.length > 1 ? { userIds } : {}) },
+        runAt: now,
+      },
+      now,
+    );
+  }
+
+  /** The budget's name as the Directory holds it (only the default is ever written here), or null. */
+  async budgetName(budgetId: string): Promise<string | null> {
+    this.ready();
+    const r = this.ctx.storage.sql.exec(`SELECT name FROM budget WHERE id = ?`, budgetId).toArray()[0];
+    return r ? String(r.name) : null;
+  }
+
   /** Whether this budget's account is being deleted: only then may its store wipe itself. */
   async isDeleting(budgetId: string): Promise<boolean> {
     this.ready();
@@ -339,6 +438,21 @@ export class Directory extends DurableObject<Env> {
       this.ctx.storage.sql.exec(`SELECT 1 FROM app_state WHERE key = ?`, deletingKey(budgetId)).toArray()
         .length > 0
     );
+  }
+
+  /**
+   * Whether a session came in by a fresh way (D-89): its passkey was added less than 7 days ago, or it has none
+   * this can find. A recovery-key sign-in always makes a new passkey, so it is fresh for its first 7 days.
+   */
+  private freshWay(sessionId: string | null, now: number): boolean {
+    if (!sessionId) return true;
+    const r = this.ctx.storage.sql
+      .exec(
+        `SELECT p.created_at FROM auth_session s JOIN passkey p ON p.id = s.passkey_id WHERE s.id = ?`,
+        sessionId,
+      )
+      .toArray()[0];
+    return !r || now - Number(r.created_at) < FRESH_WAY_MS;
   }
 
   /** The budget's sync epoch (D-45, migration 0006). */
