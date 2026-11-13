@@ -12,7 +12,7 @@ import { checkSnapshot, openSnapshot, wipe, writeSnapshot } from './device-snaps
 import { httpTransport, startTransport, type Fetch } from './http-transport.js';
 import { startOnDevice } from './start-device.js';
 import { LogSession } from './log-session.js';
-import { needsRebuild, rebuildCopy } from './rebuild.js';
+import { afterRebuild, needsRebuild, readStale, rebuildFrom, unlessGone } from './rebuild.js';
 import { pageReader } from './file-run.js';
 
 interface Ctx {
@@ -165,21 +165,14 @@ async function sealedRound(): Promise<{
 }
 
 /**
- * Makes the copy again from the newest trusted snapshot (local/rebuild.ts), in a new database beside this one,
- * and puts it in this one's place only once it is whole. The app's own values in the copy go with it.
+ * Makes the copy again from the newest trusted snapshot (local/rebuild.ts). What the new copy needs of the old one
+ * is read first; the old database is then kept only as its bytes, compressed, and closed, so the two copies never
+ * sit side by side in memory (sql.js never gives memory back, so they would for as long as the app runs). The old
+ * copy comes back from its bytes if the new one can't be made. The app's own values in the copy go with it.
  */
 async function rebuild(): Promise<{ kept: number; lost: number }> {
   const { db: old, engine: stale, s, log } = { ...need(), ...needSealed() };
-  const fresh = new SqlJsDb(new sqlite!.Database());
-  await migrateLocal(fresh, Date.now());
-  const e = makeEngine(fresh, who!);
-  let r: Awaited<ReturnType<typeof rebuildCopy>>;
-  try {
-    r = await rebuildCopy(e, stale, http, log, { clock, encode: encodeEntry });
-  } catch (x) {
-    fresh.db.close();
-    throw x;
-  }
+  const kept = await readStale(stale);
   const app = (
     await old
       .prepare(
@@ -187,6 +180,22 @@ async function rebuild(): Promise<{ kept: number; lost: number }> {
       )
       .all<{ key: string; value: string }>()
   ).results;
+  const before = await shrink(old.db.export());
+  old.db.close();
+  db = null;
+  engine = null;
+  const fresh = new SqlJsDb(new sqlite!.Database());
+  const e = makeEngine(fresh, who!);
+  let r: Awaited<ReturnType<typeof rebuildFrom>>;
+  try {
+    await migrateLocal(fresh, Date.now());
+    r = await rebuildFrom(e, kept, http, log, { clock, encode: encodeEntry });
+  } catch (x) {
+    fresh.db.close();
+    db = new SqlJsDb(new sqlite!.Database(await grow(before)));
+    engine = makeEngine(db, who!);
+    throw x;
+  }
   if (app.length)
     await fresh.batch(
       app.map((x) =>
@@ -197,12 +206,36 @@ async function rebuild(): Promise<{ kept: number; lost: number }> {
           .bind(x.key, x.value),
       ),
     );
-  old.db.close();
   db = fresh;
   engine = e;
   s.log = r.log;
   return { kept: r.kept, lost: r.lost };
 }
+
+/** A copy's bytes, gzipped where the browser can (a copy is mostly text and compresses well). */
+async function shrink(bytes: Uint8Array): Promise<{ gz: boolean; bytes: Uint8Array }> {
+  if (typeof CompressionStream === 'undefined') return { gz: false, bytes };
+  const out = new Blob([bytes as Uint8Array<ArrayBuffer>])
+    .stream()
+    .pipeThrough(new CompressionStream('gzip'));
+  return { gz: true, bytes: new Uint8Array(await new Response(out).arrayBuffer()) };
+}
+
+async function grow(s: { gz: boolean; bytes: Uint8Array }): Promise<Uint8Array> {
+  if (!s.gz) return s.bytes;
+  const out = new Blob([s.bytes as Uint8Array<ArrayBuffer>])
+    .stream()
+    .pipeThrough(new DecompressionStream('gzip'));
+  return new Uint8Array(await new Response(out).arrayBuffer());
+}
+
+/** Runs `fn`, and once more on a copy made again if it finds the copy can't go on as it is (local/rebuild.ts). */
+const orRebuild = <T>(fn: () => Promise<T>): Promise<T> =>
+  afterRebuild(fn, rebuild, (event) => ctx.postMessage({ event }));
+
+/** Checks the newest snapshot in a scratch copy; entries gone below the floor mean nothing to check here. */
+const checkOrGone = (scratchEngine: LocalEngine, log: DeviceLog) =>
+  unlessGone(() => checkSnapshot(scratchEngine, log, http, clock));
 
 function need(): { db: SqlJsDb; engine: LocalEngine } {
   if (!db || !engine) throw new Error('Your budget isn’t open on this device yet. Try again.');
@@ -330,7 +363,7 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       if (newest && !newest.check && list.length > 1) {
         const s = await scratch(who!);
         try {
-          return { value: { did: 'check', ...(await checkSnapshot(s.engine, log, http, clock)) } };
+          return { value: { did: 'check', ...(await checkOrGone(s.engine, log)) } };
         } finally {
           s.close();
         }
@@ -341,16 +374,20 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
     }
     case 'sealedPlace': {
       // Where a public entry the app makes goes (a way in added or removed): the log is read up to its end
-      // first, so the entry goes on top of the newest one.
-      const { engine: e, log } = needSealed();
-      await new LogSession(e, log, http, encodeEntry).pull();
-      return { value: log.writePlace() };
+      // first, so the entry goes on top of the newest one. A copy below the floor is made again first.
+      return {
+        value: await orRebuild(async () => {
+          const { engine: e, log } = needSealed();
+          await new LogSession(e, log, http, encodeEntry).pull();
+          return log.writePlace();
+        }),
+      };
     }
     case 'sealedAppend': {
       // Public entries the app made with the budget key in hand (apps/web/src/copy/sealed-ways.ts), sent as one
       // write on top of this device's place. Taken as any other entry: read back from the log, by its rules.
       // `keys`: the derived keys of the version a key change here brings.
-      const { engine: e, s, log } = needSealed();
+      const { s, log } = needSealed();
       const first = (await readEntry(m.entries[0]!)).header;
       if (first.number !== log.number + 1 || first.deviceId !== s.deviceId)
         return { value: { ok: false, why: 'behind', number: log.number, retry: true } };
@@ -360,8 +397,13 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
         log.holdKeys(m.keys);
         for (const k of m.keys) if (!s.keys.some((x) => x.version === k.version)) s.keys.push(k);
       }
-      await new LogSession(e, log, http, encodeEntry).pull();
-      return { value: { ok: true, number: log.number } };
+      // Read back by the log's rules; a copy found below the floor meanwhile is made again (it reads them too).
+      const number = await orRebuild(async () => {
+        const now = needSealed();
+        await new LogSession(now.engine, now.log, http, encodeEntry).pull();
+        return now.log.number;
+      });
+      return { value: { ok: true, number } };
     }
     case 'sealedSign': {
       // A request signed with the budget's key (docs/privacy-keys.md 11): the signing key stays here. It is the
@@ -380,7 +422,7 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       const { log } = needSealed();
       const s = await scratch(who!);
       try {
-        return { value: await checkSnapshot(s.engine, log, http, clock) };
+        return { value: await checkOrGone(s.engine, log) };
       } finally {
         s.close();
       }
@@ -405,7 +447,7 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
         workerKeys: sealed?.workerKeys ?? new Map(),
         log: r.log,
       };
-      return { value: { ok: true, number: r.log.number } };
+      return { value: { ok: true, number: r.log.number, snapshotRead: r.snapshotRead } };
     }
   }
 }

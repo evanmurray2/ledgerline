@@ -254,6 +254,16 @@ export class LogSession {
    */
   async shareBankLog(at: number): Promise<number> {
     if (await this.engine.noted(LogSession.BANK_LOG_SHARED)) return 0;
+    return this.shareRuns(at);
+  }
+
+  /**
+   * Queues the bank log of these sealed runs (all of the copy's, without `only`) as edits, a few hundred kilobytes
+   * each, and notes the copy's bank log as shared. A range never spans a run that is not listed. Gives the number
+   * of edits queued.
+   */
+  async shareRuns(at: number, only?: readonly number[]): Promise<number> {
+    const listed = only ? new Set(only) : null;
     const runs = (
       await this.engine.db
         .prepare(
@@ -261,17 +271,19 @@ export class LogSession {
            FROM bank_event WHERE sync_run_id LIKE 'sealed:%' GROUP BY run ORDER BY run`,
         )
         .all<{ run: number; bytes: number }>()
-    ).results;
+    ).results.filter((r) => !listed || listed.has(r.run));
     // A few hundred kilobytes an edit: one write holds about 1 MB.
     const ranges: { from: number; to: number }[] = [];
     let size = Infinity;
+    let prev = -1;
     for (const r of runs) {
-      if (size + r.bytes > SHARE_BYTES) {
+      if (size + r.bytes > SHARE_BYTES || (listed && r.run !== prev + 1)) {
         ranges.push({ from: r.run, to: r.run });
         size = 0;
       }
       ranges[ranges.length - 1]!.to = r.run;
       size += r.bytes;
+      prev = r.run;
     }
     for (const r of ranges)
       await this.engine.enqueue({

@@ -5,6 +5,7 @@ import {
   logDeviceId,
   newUlid,
   openSealedBudget,
+  openSealedHeld,
   type SealedHost,
 } from '../src/copy/sealed';
 import { addPasskeyEntry, createBudget, openWithPasskey } from '../src/keys/budget';
@@ -146,6 +147,86 @@ describe('opening a sealed budget in the app', () => {
     await expect(fetchPublicEntries(async () => new Response('no', { status: 500 }))).rejects.toThrow(
       'Something went wrong. Try again.',
     );
+  });
+});
+
+describe('a refresh that opens with the keys held', () => {
+  it('reads the public entries again, and opens nothing with keys that are not in force', async () => {
+    const mine = passkey();
+    const made = await createBudget({ budgetId: BUDGET, deviceId: PHONE, passkey: mine, now: NOW });
+    const opened = await openWithPasskey([made.genesis], BUDGET, mine);
+    const slot = await addPasskeyEntry({
+      state: opened.state,
+      budget: opened.budget,
+      passkey: passkey(),
+      deviceId: PHONE,
+      at: { number: 1, hash: made.genesis.hash, deviceCounter: 1, filedThrough: 0, scanThrough: 0 },
+      now: NOW + 1000,
+    });
+    const s = server([encodeEntry(made.genesis), encodeEntry(slot)]);
+    const keys = [made.budget.keys as never];
+
+    // Another device added a way in since: the entries are read, and the last of them is the one to remember.
+    const kept = host(true);
+    const r = await openSealedHeld({
+      host: kept.h,
+      fetch: s.fetch,
+      budgetId: BUDGET,
+      deviceId: PHONE,
+      keys,
+      workerKeys: [],
+      remembered: { number: 1, hash: made.genesis.hash },
+    });
+    expect(r).toMatchObject({ number: 7, joined: false, lastPublic: { number: 2 } });
+    expect(r!.publics).toEqual([encodeEntry(made.genesis), encodeEntry(slot)].map(b64));
+    expect(s.asked).toEqual(['/api/log/public?after=0', '/api/log/public?after=1']);
+    expect(kept.calls.map((c) => c[0])).toEqual(['open']);
+
+    // A server that hides the entry the device remembers: the engine gets nothing.
+    const hidden = host(true);
+    await expect(
+      openSealedHeld({
+        host: hidden.h,
+        fetch: server([encodeEntry(made.genesis)]).fetch,
+        budgetId: BUDGET,
+        deviceId: PHONE,
+        keys,
+        workerKeys: [],
+        remembered: r!.lastPublic!,
+      }),
+    ).rejects.toThrow();
+    expect(hidden.calls).toEqual([]);
+
+    // Keys that are not the ones in force (another budget key's): nothing opens, and the passkey is needed.
+    const other = await createBudget({ budgetId: BUDGET, deviceId: PHONE, passkey: passkey(), now: NOW });
+    const wrong = host(true);
+    expect(
+      await openSealedHeld({
+        host: wrong.h,
+        fetch: s.fetch,
+        budgetId: BUDGET,
+        deviceId: PHONE,
+        keys: [other.budget.keys as never],
+        workerKeys: [],
+      }),
+    ).toBeNull();
+    expect(wrong.calls).toEqual([]);
+
+    // With no signal the held keys open the copy as they are.
+    const off = host(true);
+    expect(
+      await openSealedHeld({
+        host: off.h,
+        fetch: async () => {
+          throw new TypeError('Failed to fetch');
+        },
+        budgetId: BUDGET,
+        deviceId: PHONE,
+        keys,
+        workerKeys: [],
+      }),
+    ).toMatchObject({ number: 7, publics: null, lastPublic: null });
+    expect(off.calls.map((c) => c[0])).toEqual(['open']);
   });
 });
 

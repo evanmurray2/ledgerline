@@ -2,7 +2,7 @@
 // secret for the budget's way in opens the budget key from the log's public entries, the derived keys go to the
 // engine's thread, and the engine takes its place in the log (kept with the copy, or from a snapshot on a new
 // device). Nothing here is a screen; the pieces that touch the network and the engine are passed in.
-import { type Bytes, type Entry, type PublicRef, readEntry, zeroize } from '@ledgerline/seal';
+import { type Bytes, type Entry, type PublicRef, readEntry, walkPublic, zeroize } from '@ledgerline/seal';
 import {
   keysOfEveryVersion,
   NoSlotError,
@@ -133,6 +133,66 @@ export async function openSealedBudget(o: {
   } finally {
     zeroize(budget.bk);
   }
+}
+
+type HeldKeys = ({ version: number } & Record<string, unknown>)[];
+
+const sameBytes = (a: Uint8Array, b: Uint8Array): boolean =>
+  a.length === b.length && a.every((x, i) => x === b[i]);
+
+/**
+ * Opens a sealed budget with the derived keys held since the last open (a refresh), and reads the public entries
+ * again on the way, as an open with the passkey does: the log must pass through the last public entry this device
+ * remembers (or the server hides a change, and this throws `ChainError`), and the keys held must be the ones in
+ * force there. Gives null, with nothing opened, when they are not (another device changed the key since): the
+ * passkey is then needed. With no signal (`fetch` fails or is not given) it opens as it is, and `publics` is null.
+ */
+export async function openSealedHeld(o: {
+  host: SealedHost;
+  fetch?: Fetch;
+  budgetId: string;
+  deviceId: string;
+  keys: HeldKeys;
+  workerKeys: WorkerRunKeys;
+  remembered?: PublicRef;
+}): Promise<{
+  number: number;
+  joined: boolean;
+  keys: HeldKeys;
+  /** The public entries read now and the last of them, to keep with the copy; null when none were read. */
+  publics: string[] | null;
+  lastPublic: PublicRef | null;
+} | null> {
+  let raw: string[] | null = null;
+  if (o.fetch)
+    try {
+      raw = await fetchPublics(o.fetch);
+    } catch {
+      // No signal: the held keys open the copy as they are, and the next open reads the entries.
+      raw = null;
+    }
+  let lastPublic: PublicRef | null = null;
+  if (raw?.length) {
+    const state = await walkPublic(
+      await readPublics(raw),
+      o.budgetId,
+      o.remembered ? { mustPass: o.remembered } : {},
+    );
+    const inForce = o.keys.find((k) => k.version === state.keyVersion) as
+      { sign?: { pub?: Uint8Array } } | undefined;
+    const pub = inForce?.sign?.pub;
+    if (!pub || !sameBytes(pub, state.signPub)) return null;
+    lastPublic = state.lastPublic;
+  }
+  const opened = await o.host.sealedOpen(o.keys, o.deviceId, o.workerKeys);
+  const at = opened.ready ? opened : await o.host.sealedJoin();
+  return {
+    number: at.number,
+    joined: !opened.ready,
+    keys: o.keys,
+    publics: raw?.length ? raw : null,
+    lastPublic,
+  };
 }
 
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
