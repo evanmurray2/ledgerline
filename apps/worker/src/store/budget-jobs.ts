@@ -69,6 +69,14 @@ export async function ensureRecurring(enqueue: Enqueue, now: number, timeZone: s
 }
 
 /**
+ * A sealed budget (store/marks.ts): its old tables, `connection` among them, are emptied by seal/purge.ts and
+ * never read again. The store drops these jobs for it already; this holds wherever they are called from.
+ */
+async function sealed(db: Db): Promise<boolean> {
+  return !!(await db.prepare(`SELECT 1 AS x FROM store_mark WHERE key = 'sealed'`).first());
+}
+
+/**
  * Starts a sync for one connection, as routes/settings.ts startSync() does: only once the link's
  * accounts are set up; records the request; takes the lease; queues a sync job holding it.
  */
@@ -79,6 +87,7 @@ export async function startSyncJob(
   trigger: string,
   now: number,
 ): Promise<boolean> {
+  if (await sealed(db)) return false;
   const ready = await db
     .prepare(`SELECT setup_done FROM connection WHERE id = ?1`)
     .bind(connectionId)
@@ -95,6 +104,8 @@ export async function startSyncJob(
 /** Every 4 hours: any connection without a successful sync in the last 4 hours, or with a request left by a failed run. */
 export function backstopHandler(db: Db, enqueue: Enqueue): Handler {
   return async (_job, now): Promise<StepResult> => {
+    // A sealed budget's links are fetched by its own backstop (seal/fetch-job.ts), from `bank_link`.
+    if (await sealed(db)) return { done: true };
     const due = await db
       .prepare(
         `SELECT id FROM connection WHERE removed_at IS NULL AND provider = 'plaid' AND status != 'login_required'

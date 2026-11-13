@@ -286,6 +286,20 @@ describe('a new bank in a sealed budget, and removing one', () => {
         expect(again.json).toEqual({ status: 'linked', connectionId });
         const listed = await call('GET', '/api/settings/connections');
         expect(listed.json).toMatchObject({ used: 3, limit: 10 });
+        // Health, for the ops token: each link from `bank_link` (the old tables are emptied), none fetched yet.
+        const usage = async () => ({ written: 10, read: 20 });
+        const health = await call('GET', '/api/health', undefined, { USAGE: usage } as Partial<Env>);
+        expect(health.status).toBe(200);
+        expect(health.json).toMatchObject({ ok: false, watermarkLag: 0, usage: { rowsRead: 20 } });
+        const linked = (
+          await x.db
+            .prepare(`SELECT connection_id FROM bank_link WHERE status != 'removed' ORDER BY linked_at`)
+            .all<{ connection_id: string }>()
+        ).results.map((r) => r.connection_id);
+        expect((health.json.connections as { id: string; stale: boolean }[]).map((h) => h.id)).toEqual(
+          linked,
+        );
+        expect(linked).toContain(connectionId);
 
         // ---- the fetch: the link's first run describes it, and its transactions come with the next run
         const bankPage = {
