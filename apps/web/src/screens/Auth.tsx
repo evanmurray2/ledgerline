@@ -10,6 +10,7 @@ import { Frame, Problem } from '../components/Frame';
 import { Field, PrimaryButton, SecondaryButton, inputClass } from '../components/ui';
 import { signIn as copySignIn } from '../copy/copy';
 import { CreateAccountScreen, RecoverScreen } from './Signup';
+import { passkeyName } from '../lib/device-name';
 
 /** Runs a WebAuthn ceremony and turns the browser's errors into plain sentences. */
 async function ceremony(fn: () => Promise<unknown>): Promise<string | null> {
@@ -44,15 +45,7 @@ async function addPasskey(start: { setupCode?: string; deviceToken?: string }, n
   await api.registerVerify({ response, name });
 }
 
-function deviceName(): string {
-  const ua = navigator.userAgent;
-  if (/iPhone/.test(ua)) return 'iPhone';
-  if (/iPad/.test(ua)) return 'iPad';
-  if (/Android/.test(ua)) return 'Android phone';
-  if (/Mac/.test(ua)) return 'Mac';
-  if (/Windows/.test(ua)) return 'Windows computer';
-  return 'This device';
-}
+const deviceName = () => passkeyName();
 
 const NoPasskeys = () => (
   <Problem text="This browser can’t use passkeys. Open Ledgerline in Safari, Chrome, Edge or Firefox." />

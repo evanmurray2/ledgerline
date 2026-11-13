@@ -19,6 +19,7 @@ import {
   inputClass,
 } from '../components/ui';
 import { toast } from '../components/Toast';
+import { passkeyName } from '../lib/device-name';
 
 /** Losing both is final: said before the passkey and again with the code (docs/open-signup.md 3.1). */
 const NO_WAY_BACK =
@@ -29,11 +30,28 @@ const TEST_KEY = /^[123]x0{20}AA$/;
 const TEST_TOKEN = 'XXXX.DUMMY.TOKEN.XXXX';
 
 interface TurnstileApi {
-  render(el: HTMLElement, o: { sitekey: string; action: string; callback: (t: string) => void }): string;
+  render(
+    el: HTMLElement,
+    o: {
+      sitekey: string;
+      action: string;
+      callback: (t: string) => void;
+      'error-callback': () => void;
+      'expired-callback': () => void;
+    },
+  ): string;
   remove(id: string): void;
 }
 
-/** Cloudflare Turnstile: a token for `action`, or null until the check passes. */
+/** Said when the check can't load or fails: otherwise the button stays gray with no reason. */
+export const CHECK_FAILED = 'The robot check couldn’t load. Check your connection, then try the check again.';
+/** How long the check may take to show before the screen says it couldn't load. */
+const CHECK_WAIT_MS = 20_000;
+
+/**
+ * Cloudflare Turnstile: a token for `action`, or null until the check passes. When its script is blocked or
+ * offline, or the check fails, it says so and offers to try again.
+ */
 function Turnstile({
   siteKey,
   action,
@@ -43,6 +61,8 @@ function Turnstile({
   action: string;
   onToken: (t: string | null) => void;
 }) {
+  const [tries, setTries] = useState(0);
+  const [failed, setFailed] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (TEST_KEY.test(siteKey)) {
@@ -50,23 +70,69 @@ function Turnstile({
       return;
     }
     let id: string | null = null;
+    let over = false;
+    const fail = () => {
+      if (over) return;
+      over = true;
+      onToken(null);
+      setFailed(true);
+    };
     const w = window as unknown as { turnstile?: TurnstileApi };
     const draw = () => {
-      if (box.current && w.turnstile)
-        id = w.turnstile.render(box.current, { sitekey: siteKey, action, callback: onToken });
+      if (!box.current || !w.turnstile) return fail();
+      try {
+        id = w.turnstile.render(box.current, {
+          sitekey: siteKey,
+          action,
+          callback: (t) => {
+            over = true;
+            onToken(t);
+          },
+          'error-callback': fail,
+          'expired-callback': () => onToken(null),
+        });
+      } catch {
+        fail();
+      }
     };
+    // Blocked or slow: the check never shows, so say so instead of waiting for ever.
+    const timer = setTimeout(() => {
+      if (!id) fail();
+    }, CHECK_WAIT_MS);
     if (w.turnstile) draw();
     else {
       const s = document.createElement('script');
       s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
       s.async = true;
       s.onload = draw;
+      s.onerror = () => {
+        s.remove();
+        fail();
+      };
       document.head.appendChild(s);
     }
     return () => {
+      over = true;
+      clearTimeout(timer);
       if (id && w.turnstile) w.turnstile.remove(id);
     };
-  }, [siteKey, action]);
+  }, [siteKey, action, tries]);
+  if (failed)
+    return (
+      <div className="flex flex-col gap-3">
+        <Problem text={CHECK_FAILED} />
+        <SecondaryButton
+          type="button"
+          data-track="signup.check.retry"
+          onClick={() => {
+            setFailed(false);
+            setTries((n) => n + 1);
+          }}
+        >
+          Try the check again
+        </SecondaryButton>
+      </div>
+    );
   return <div ref={box} />;
 }
 
@@ -74,18 +140,8 @@ async function register(options: unknown): Promise<string | null> {
   const response = await startRegistration({
     optionsJSON: options as Parameters<typeof startRegistration>[0]['optionsJSON'],
   });
-  const r = await api.registerVerify({ response, name: deviceName() });
+  const r = await api.registerVerify({ response, name: passkeyName() });
   return r.recoveryCode ?? null;
-}
-
-function deviceName(): string {
-  const ua = navigator.userAgent;
-  if (/iPhone/.test(ua)) return 'iPhone';
-  if (/iPad/.test(ua)) return 'iPad';
-  if (/Android/.test(ua)) return 'Android phone';
-  if (/Mac/.test(ua)) return 'Mac';
-  if (/Windows/.test(ua)) return 'Windows computer';
-  return 'This device';
 }
 
 function problem(e: unknown): string {
