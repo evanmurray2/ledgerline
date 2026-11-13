@@ -181,5 +181,20 @@ export function listRow(
     badgeKind,
     sub,
     sheet,
+    // Only for a caller that knows the splits (Activity): a split row is never pickable.
+    ...(extra.split !== undefined && pickable(t, history, extra.split) ? { categoryId: t.category_id } : {}),
   };
+}
+
+/** One category is all the row needs (TxnListRow.categoryId): money out, nothing else decides where it counts. */
+function pickable(t: TxRow, history: boolean, split: boolean | undefined): boolean {
+  return (
+    t.amount < 0 &&
+    !history &&
+    !split &&
+    !t.wont_clear &&
+    t.status !== 'upcoming' &&
+    t.transfer_state === null &&
+    t.wtm_state === null
+  );
 }

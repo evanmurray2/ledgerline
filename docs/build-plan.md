@@ -57,4 +57,4 @@ The UI works around these (details in `apps/web/CONTRACT_NOTES.md`):
 - [ ] Candidate deposits for an unclear transfer in the API (the UI searches other registers today).
 - [ ] Endpoints: accept a changed amount, edit a manual entry's amount or date.
 - [ ] Extra fields: the new-month carry-over summary, recent paybacks, the repeat interval on upcoming rows, per-filter register counts, amounts on Move money options.
-- [ ] Desktop: account registers in the side panel, and a per-row category dropdown in Activity.
+- [ ] Desktop: account registers in the side panel.

@@ -269,6 +269,12 @@ export const TxnListRow = z.object({
   sub: z.string().nullable(),
   /** Which sheet opens: pending, posted, income, refund, paid back, transfer pick, match, check pending. */
   sheet: z.enum(['txn', 'transfer', 'match', 'checkPending']),
+  /**
+   * Set (null for none) only when one category is all the row needs, so a picker on the row can change it with
+   * POST /api/transactions/categorize: money out, not a transfer, a split, an upcoming bill, a won't-clear row or one
+   * before the budget. Desktop Activity shows it as each row's category menu.
+   */
+  categoryId: id.nullable().optional(),
 });
 export type TxnListRow = z.infer<typeof TxnListRow>;
 

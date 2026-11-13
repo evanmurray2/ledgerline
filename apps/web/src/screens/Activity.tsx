@@ -43,6 +43,7 @@ import { SamePurchase } from './ActivitySame';
 import { RemovedByBank } from './ActivityRemoved';
 import { CheckThese, TransfersToSort } from './ActivityAttention';
 import { useMorePosted } from './ActivityMore';
+import { useRowPicker } from './ActivityRowPick';
 
 export { TxnRow } from './ActivityRows';
 
@@ -100,6 +101,12 @@ export function ActivityScreen() {
   const query = useActivity(filter, q, allMonths ? undefined : month, category);
   const v = query.data;
   const more = useMorePosted(v, filter, q, allMonths ? undefined : month, category);
+  // Desktop: each row's category menu (ActivityRowPick.tsx).
+  const rowPick = useRowPicker(v?.categoryPicker);
+  const picked = (r: TxnListRow) => {
+    const action = rowPick.action(r);
+    return { action, hideCategory: !!action };
+  };
   const canWrite = useCanWrite({ offline: true });
   const qc = useQueryClient();
   // The list keeps categorized rows in place and the counts are adjusted here, so Activity isn't refetched after
@@ -505,7 +512,7 @@ export function ActivityScreen() {
           {v && v.pending.length > 0 && (
             <Section title="Pending" note={`counts now · ${formatCents(v.pendingTotal)}`}>
               {v.pending.map((r) => (
-                <TxnRow key={r.key} r={r} base="/activity" />
+                <TxnRow key={r.key} r={r} base="/activity" {...picked(r)} />
               ))}
             </Section>
           )}
@@ -519,7 +526,7 @@ export function ActivityScreen() {
           {v && v.posted.length > 0 && (
             <Section title="Posted" note="newest first">
               {[...v.posted, ...more.rows].map((r) => (
-                <TxnRow key={r.key} r={r} base="/activity" style="posted" />
+                <TxnRow key={r.key} r={r} base="/activity" style="posted" {...picked(r)} />
               ))}
             </Section>
           )}
@@ -546,6 +553,7 @@ export function ActivityScreen() {
           </div>
         )}
         {addFab}
+        {rowPick.sheet}
         {picking && v && (
           <ActivityCategoryPicker
             picking={picking}
