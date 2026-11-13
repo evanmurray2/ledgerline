@@ -125,7 +125,7 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   expect((await again).status()).toBe(200);
   await expect(page.getByText('Groceries')).toBeVisible({ timeout: 30_000 });
 
-  // ---- the recovery key: it signs in from now on (the move set its public half)
+  // ---- the recovery key: it signs in from now on (the move set its public half, signed with the budget's key)
   expect((await call(page, 'GET', '/api/settings/security/recovery-key')).json).toMatchObject({ set: true });
   // A new device with a new passkey: the recovery key signs in, opens the budget, and adds the passkey to it.
   // Its own address: sign-in checks are counted per address (AUTH_LIMITER), and the owner's device goes on below.
@@ -145,6 +145,11 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   await other.reload();
   await expect(other.getByText('Groceries')).toBeVisible({ timeout: 60_000 });
   await expect(other.getByText('Open your budget with your recovery key')).toHaveCount(0);
+  // The recovery key signed in here, and this device added its passkey itself: it tells itself of neither.
+  await other.waitForTimeout(3000);
+  await expect(other.getByText(/Your recovery key signed in on/)).toHaveCount(0);
+  await expect(other.getByText(/A way in was added on/)).toHaveCount(0);
+
   // ---- two devices on one log: a change made on the new device (its flush) reaches the owner's (its sync)
   await other.goto('/settings/categories');
   await expect(other.getByText('Climbing')).toBeVisible({ timeout: 30_000 });
@@ -166,36 +171,54 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   expect((await onTop).status()).toBe(200);
   await expect(page.getByText('Sailing')).toBeVisible();
 
+  // ---- the owner's device tells of both when it opens (docs/privacy.md 5.8), and each is dismissed here only.
+  // Its own address from here: the checks each start makes are counted per address (AUTH_LIMITER).
+  await page.setExtraHTTPHeaders({ 'cf-connecting-ip': '198.51.100.8' });
+  await page.goto('/budget');
+  const notices = page.getByTestId('sealed-notices');
+  const added = notices.getByRole('alert').filter({ hasText: 'A way in was added on' });
+  await expect(added).toBeVisible({ timeout: 30_000 });
+  await expect(notices.getByText(/Your recovery key signed in on/)).toBeVisible();
+  await added.getByRole('button', { name: 'This was me' }).click();
+  await expect(added).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId('sealed-notices').getByText(/Your recovery key signed in on/)).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByText(/A way in was added on/)).toHaveCount(0);
+
   // ---- add a device with its own passkey (docs/privacy-keys.md section 10): the link signs it in, then both
   // devices show six digits, the person taps They match on both, and the budget key crosses, sealed to it.
   await page.goto('/settings/sign-in');
   await page.getByRole('button', { name: 'Add a device' }).click();
   const link = await page.getByLabel('Device link').inputValue();
-  const added = await (
-    await browser.newContext({ extraHTTPHeaders: { 'cf-connecting-ip': '198.51.100.8' } })
+  const addedPage = await (
+    await browser.newContext({ extraHTTPHeaders: { 'cf-connecting-ip': '198.51.100.9' } })
   ).newPage();
-  await withPasskeyDevice(added);
-  await added.goto(link.replace(/^https?:\/\/[^/]+/, ''));
-  await added.getByRole('button', { name: 'Create passkey' }).click();
-  await added.getByRole('button', { name: 'Open Ledgerline' }).click();
+  await withPasskeyDevice(addedPage);
+  await addedPage.goto(link.replace(/^https?:\/\/[^/]+/, ''));
+  await addedPage.getByRole('button', { name: 'Create passkey' }).click();
+  await addedPage.getByRole('button', { name: 'Open Ledgerline' }).click();
   // Its passkey is no way in yet: the screen offers the add, and the recovery key instead.
-  await expect(added.getByRole('button', { name: 'Type your recovery key instead' })).toBeVisible({
+  await expect(addedPage.getByRole('button', { name: 'Type your recovery key instead' })).toBeVisible({
     timeout: 60_000,
   });
-  const codeHere = added.getByTestId('add-code');
+  const codeHere = addedPage.getByTestId('add-code');
   await expect(codeHere).toHaveText(/^\d{6}$/, { timeout: 30_000 });
   await expect(page.getByTestId('add-code')).toHaveText((await codeHere.textContent())!, { timeout: 30_000 });
   await page.getByRole('button', { name: 'They match' }).click();
-  const joinedSlot = added.waitForResponse((r) => r.url().includes('/api/log/append'), { timeout: 60_000 });
-  await added.getByRole('button', { name: 'They match' }).click();
+  const joinedSlot = addedPage.waitForResponse((r) => r.url().includes('/api/log/append'), {
+    timeout: 60_000,
+  });
+  await addedPage.getByRole('button', { name: 'They match' }).click();
   expect((await joinedSlot).status()).toBe(200);
-  await expect(added.getByText('Groceries')).toBeVisible({ timeout: 60_000 });
+  await expect(addedPage.getByText('Groceries')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText('The new device can open your budget')).toBeVisible({ timeout: 30_000 });
   // After a reload its own passkey alone opens the budget.
-  await added.reload();
-  await expect(added.getByText('Groceries')).toBeVisible({ timeout: 60_000 });
-  await expect(added.getByRole('button', { name: 'Type your recovery key instead' })).toHaveCount(0);
-  await added.close();
+  await addedPage.reload();
+  await expect(addedPage.getByText('Groceries')).toBeVisible({ timeout: 60_000 });
+  await expect(addedPage.getByRole('button', { name: 'Type your recovery key instead' })).toHaveCount(0);
+  await addedPage.close();
 
   // ---- the way back (in the app: one more reload so soon would run into the sign-in checks' limit per minute)
   await page.getByRole('link', { name: /^Privacy/ }).click();

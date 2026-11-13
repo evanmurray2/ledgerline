@@ -10,12 +10,13 @@ import {
   type SealedSession,
 } from '@ledgerline/contracts';
 import { decryptToken, encryptToken, parseKeyring, ulid } from '@ledgerline/platform';
-import { linkMac } from '@ledgerline/seal';
+import { ACTION, linkMac } from '@ledgerline/seal';
 import { ProviderError } from '@ledgerline/bank-provider';
 import { type Context, Hono } from 'hono';
 import { requestNow } from '../http/clock.js';
 import { canLinkBanks, type AppEnv } from '../http/context.js';
 import { csrf } from '../http/security.js';
+import { jsonOf, storeSigned, UNSIGNED } from '../http/signed-request.js';
 import { ITEM_LIMIT } from '../routes/settings/connections.js';
 import { classifyUsage, dailyLimits, usageToday, utcDay } from '../sync/breaker.js';
 import { makeProvider } from '../sync/provider.js';
@@ -39,6 +40,7 @@ sealedApi.get('/session', async (c) => {
   const tomorrow = new Date(now);
   tomorrow.setUTCHours(24, 0, 0, 0);
   const notice = c.get('recoveryNoticeAt');
+  const keyUsed = c.get('recoveryKeyUsedAt');
   const body: SealedSession = {
     sealed: true,
     user: { email: c.get('email') },
@@ -49,6 +51,7 @@ sealedApi.get('/session', async (c) => {
     readsPaused: ws === 'rest',
     canLinkBanks: canLinkBanks(c),
     recoveryNoticeAt: notice ? new Date(notice).toISOString() : null,
+    recoveryKeyUsedAt: keyUsed ? new Date(keyUsed).toISOString() : null,
   };
   return c.json(body);
 });
@@ -203,8 +206,14 @@ async function linksMade(db: AppEnv['Bindings']['DB'], budgetId: string): Promis
 const keyring = (env: AppEnv['Bindings']) => parseKeyring(env.TOKEN_KEYS, env.TOKEN_KEY_CURRENT);
 
 sealedApi.post('/settings/connections/link-token', async (c) => {
-  const r = LinkTokenRequest.safeParse(await c.req.json().catch(() => null));
+  // The body's bytes as they came, before anything parses them: a signature covers exactly them.
+  const raw = new Uint8Array(await c.req.arrayBuffer());
+  const r = LinkTokenRequest.safeParse(jsonOf(raw));
   if (!r.success) return no(400, 'invalid', TRY_AGAIN);
+  // Only a device that holds the budget's key asks for a link token, to add or to repair a bank
+  // (docs/privacy-keys.md 11): a new link uses one of Plaid's links for good.
+  const refused = await storeSigned(c, ACTION.linkToken, raw);
+  if (refused) return refused;
   const hosted = r.data.hosted ? { completionUrl: `${new URL(c.req.url).origin}/link-done` } : undefined;
   if (r.data.mode === 'new') {
     // The same checks as before the budget was sealed (routes/settings/connections.ts). The Directory has already
@@ -246,8 +255,14 @@ sealedApi.post('/settings/connections/link-token', async (c) => {
 });
 
 sealedApi.post('/settings/connections/link-finish', async (c) => {
-  const r = LinkFinish.safeParse(await c.req.json().catch(() => null));
+  const raw = new Uint8Array(await c.req.arrayBuffer());
+  const r = LinkFinish.safeParse(jsonOf(raw));
   if (!r.success) return no(400, 'invalid', TRY_AGAIN);
+  // Finishing a new link keeps it (a token the server holds from then on): signed, as its link token was.
+  if (r.data.mode === 'new') {
+    const refused = await storeSigned(c, ACTION.linkFinish, raw);
+    if (refused) return refused;
+  }
   const provider = makeProvider(c.env);
   const result = await provider.linkResult(r.data.linkToken);
   let out: LinkFinishResult;
@@ -307,6 +322,13 @@ async function saveLink(c: Context<AppEnv>, publicToken: string): Promise<string
  */
 sealedApi.post('/settings/connections/:id/remove', async (c) => {
   const budgetId = c.get('budgetId');
+  // Signed by a device that holds the budget's key, and the signed body names this bank (docs/privacy-keys.md 11:
+  // every parameter is in the body).
+  const raw = new Uint8Array(await c.req.arrayBuffer());
+  const refused = await storeSigned(c, ACTION.removeBank, raw);
+  if (refused) return refused;
+  const named = jsonOf(raw) as { connectionId?: unknown } | null;
+  if (named?.connectionId !== c.req.param('id')) return Response.json(UNSIGNED, { status: 403 });
   const link = await c.env.DB.prepare(
     `SELECT id, connection_id, status, access_token_enc, key_version, provider_item_id FROM bank_link
      WHERE budget_id = ?1 AND connection_id = ?2 AND provider = 'plaid'`,

@@ -314,7 +314,9 @@ export const api = {
     post('/api/settings/connections/link-finish', LinkFinishResult, body),
   refreshConnection: (id: string) => post(`/api/settings/connections/${enc(id)}/refresh`, Ok),
   /** Ends a bank link at the bank (a sealed budget: the server). The budget's side is `markRemoved`. */
-  removeConnection: (id: string) => post(`/api/settings/connections/${enc(id)}/remove`, Ok),
+  removeConnection: (id: string) =>
+    // The body names the bank: for a locked budget it is signed, and every parameter is in the body.
+    post(`/api/settings/connections/${enc(id)}/remove`, Ok, { connectionId: id }),
   /** Marks a removed bank in the budget: its accounts and rows stay (D-87). An edit on the device's copy. */
   markRemoved: (id: string) => post(`/api/settings/connections/${enc(id)}/mark-removed`, Ok),
   refreshAll: () =>

@@ -5,6 +5,15 @@
 import { normalizePlaidAccount, PlaidProvider, type BankDataProvider } from '@ledgerline/bank-provider';
 import { decryptToken, tokenKeyBytes } from '@ledgerline/platform';
 import {
+  ACTION,
+  type Action,
+  type BudgetKeys,
+  deriveBudgetKeys,
+  fromHex,
+  newChallenge,
+  randomBytes,
+  signRequest,
+  utf8,
   afterRun,
   checkLinkMac,
   cursorHash,
@@ -23,6 +32,7 @@ import { FILED_LINK, fileOpened, UnsupportedRun } from '../src/local/sealed-fili
 import { SEALED_FETCH, sealedFetchHandler, sealedFetchId, type FetchState } from '../src/seal/fetch-job.js';
 import { beginSealedRun, completeSealedRun, sealLinkDescription } from '../src/seal/runs.js';
 import { sealedApi } from '../src/seal/sealed-routes.js';
+import { signedActionOf, type SignedPart } from '../src/http/signed-request.js';
 import { BUDGET, T0 } from './log-writer.js';
 import { handed, LINK_A, LINK_B, ring, world, type World } from './sealed-world.js';
 import { ownerDb, storeDb } from './store-db.js';
@@ -31,6 +41,13 @@ const ORIGIN = 'https://ledgerline.test';
 const H = { origin: ORIGIN, 'content-type': 'application/json', 'x-ledgerline': '1' };
 const plaid = new PlaidProvider({ clientId: 'x', secret: 'y', env: 'sandbox' });
 const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+/** A device's signature of one request over the body `text`, with a challenge as the Directory hands it over. */
+async function signAs(keys: BudgetKeys, action: Action, text: string): Promise<SignedPart> {
+  const challenge = toHex(newChallenge());
+  const sig = await signRequest(keys, BUDGET, action, fromHex(challenge), utf8(text));
+  return { action, challenge, signature: toHex(sig) };
+}
 
 /** What Plaid says about the new link: two accounts, a checking account and a card. */
 const PLAID_ACCOUNTS = [
@@ -183,22 +200,99 @@ describe('a new bank in a sealed budget, and removing one', () => {
           FAKE_NOW: new Date(T0 + 3000).toISOString(),
         } as unknown as Env;
         let admin = false;
+        // What the Directory hands the store for a signed request (http/signed-request.ts): here the device signs
+        // each one with the budget's key, as the app does, unless a test says otherwise.
+        let signed: SignedPart | null = null;
         const app = new Hono<AppEnv>();
         app.use('*', async (c, next) => {
           c.set('budgetId', BUDGET);
           c.set('userId', 'owner');
           c.set('isAdmin', admin);
+          c.set('signed', signed);
           return next();
         });
         app.route('/api', sealedApi);
-        const call = async (method: string, path: string, body?: unknown, e: Partial<Env> = {}) => {
+        const call = async (
+          method: string,
+          path: string,
+          body?: unknown,
+          e: Partial<Env> = {},
+          o: { sign?: (action: Action, text: string) => Promise<SignedPart | null> } = {},
+        ) => {
+          const removing = /\/connections\/([^/]+)\/remove$/.exec(path);
+          const text =
+            method === 'GET'
+              ? undefined
+              : JSON.stringify(body ?? (removing ? { connectionId: removing[1] } : {}));
+          const action = signedActionOf(method, path);
+          signed = action ? await (o.sign ?? ((a, t) => signAs(x.w.keys, a, t)))(action, text!) : null;
           const r = await app.request(
             `${ORIGIN}${path}`,
-            { method, headers: H, body: method === 'GET' ? undefined : JSON.stringify(body ?? {}) },
+            { method, headers: H, body: text },
             { ...env, ...e },
           );
           return { status: r.status, json: (await r.json()) as Record<string, unknown> };
         };
+        // A stolen session with a fresh passkey check, and no budget key: every serious request is refused.
+        const unsigned = { sign: async () => null };
+        for (const [path, body] of [
+          ['/api/settings/connections/link-token', { mode: 'new', hosted: true, confirmSlot: true }],
+          ['/api/settings/connections/link-token', { mode: 'repair', connectionId: `con_${LINK_A}` }],
+          ['/api/settings/connections/link-finish', { linkToken: 'link-new-1', mode: 'new' }],
+          [`/api/settings/connections/con_${LINK_A}/remove`, { connectionId: `con_${LINK_A}` }],
+        ] as const)
+          expect(await call('POST', path, body, {}, unsigned)).toEqual({
+            status: 403,
+            json: { error: 'unsigned', message: 'Open your budget on this device, then try again.' },
+          });
+        // A key that is not the budget's, a signature of another request, or a body other than the one signed.
+        const other = await deriveBudgetKeys(randomBytes(32), BUDGET, 1);
+        expect(
+          (
+            await call(
+              'POST',
+              '/api/settings/connections/link-token',
+              { mode: 'new' },
+              {},
+              {
+                sign: (a, t) => signAs(other, a, t),
+              },
+            )
+          ).status,
+        ).toBe(403);
+        expect(
+          (
+            await call(
+              'POST',
+              '/api/settings/connections/link-token',
+              { mode: 'new' },
+              {},
+              {
+                sign: (_a, t) => signAs(x.w.keys, ACTION.linkFinish, t),
+              },
+            )
+          ).status,
+        ).toBe(403);
+        expect(
+          (
+            await call(
+              'POST',
+              '/api/settings/connections/link-token',
+              { mode: 'new' },
+              {},
+              {
+                sign: (a) => signAs(x.w.keys, a, '{"mode":"new","confirmSlot":true}'),
+              },
+            )
+          ).status,
+        ).toBe(403);
+        // Removing a bank: the signed body must name the bank of the address.
+        expect(
+          await call('POST', `/api/settings/connections/con_${LINK_A}/remove`, {
+            connectionId: `con_${LINK_B}`,
+          }),
+        ).toMatchObject({ status: 403, json: { error: 'unsigned' } });
+        expect(p.asked).toEqual([]);
 
         // ---- a link token for a new bank: the same checks as before the budget was sealed
         expect(

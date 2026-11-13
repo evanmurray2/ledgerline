@@ -203,6 +203,14 @@ describe('API client', () => {
         api.assign({ month: '2026-11', items: [{ categoryId: 'x', amount: 1 }] }),
       ).rejects.toMatchObject({ code: 'sealed' });
       expect(calls).toHaveLength(2);
+      // A serious request is signed with the budget's key on this device (docs/privacy-keys.md 11). With the
+      // copy not open there is no key here: nothing is sent, not even a challenge.
+      await expect(api.removeConnection('con_1')).rejects.toMatchObject({
+        code: 'unsigned',
+        message: 'Open your budget on this device, then try again.',
+      });
+      await expect(api.deleteAccount('Home')).rejects.toMatchObject({ code: 'unsigned' });
+      expect(calls).toHaveLength(2);
     } finally {
       resetCopyForTests();
     }

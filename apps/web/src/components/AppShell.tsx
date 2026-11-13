@@ -1,6 +1,7 @@
 // Phone: screen content above a bottom tab bar (Budget, Activity, Accounts, Reports). Desktop: a left sidebar
 // replaces the tab bar and a right-hand panel holds sheets. The offline / read-only banner sits on top.
 import { RecoveryNotice } from '../screens/Signup';
+import { SealedNotices } from '../screens/SealedNotices';
 import { useState, type ReactNode } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { PanelSlotContext, useModalOpen } from './Sheet';
@@ -323,6 +324,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex min-w-0 flex-1 flex-col">
             <StatusBanner />
             <RecoveryNotice />
+            <SealedNotices />
             <main className="flex min-h-0 flex-1 flex-col">{children}</main>
           </div>
           <div
@@ -344,6 +346,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       >
         <StatusBanner />
         <RecoveryNotice />
+        <SealedNotices />
         <main className="flex min-h-0 flex-1 flex-col">{children}</main>
         <TabBar active={active} />
       </div>

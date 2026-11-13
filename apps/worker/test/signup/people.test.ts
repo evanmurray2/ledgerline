@@ -5,6 +5,8 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 import { removeBanks } from '../../src/store/account-life.js';
 import worker from '../../src/index.js';
 import { TEST_TOKEN } from '../../src/routes/signup.js';
+import { ACTION, fromHex, signRequest, toHex, utf8 } from '@ledgerline/seal';
+import { genesisIn } from '../signed.js';
 import { SoftAuthenticator } from '../soft-authenticator.js';
 import { budgetStub, directoryDb, directoryStub, storeDb } from '../store-db.js';
 
@@ -16,8 +18,8 @@ const prodEnv = () => ({ ...env, DEV_AUTH_EMAIL: undefined, DEV_ROUTES: undefine
 
 class Browser {
   jar = new Map<string, string>();
-  async call(method: string, path: string, body?: unknown) {
-    const h: Record<string, string> = { origin: ORIGIN };
+  async call(method: string, path: string, body?: unknown, extra: Record<string, string> = {}) {
+    const h: Record<string, string> = { origin: ORIGIN, ...extra };
     if (this.jar.size) h.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (method !== 'GET') {
       h['content-type'] = 'application/json';
@@ -201,11 +203,38 @@ describe('deleting an account with banks', () => {
     }
     // The budget is locked: its name is on the device only, and the server takes what the app checked.
     await store.prepare(`INSERT INTO store_mark (key, at) VALUES ('sealed', 1)`).run();
-    expect(await budgetStub(budget).info()).toEqual({ name: '', banks: 2, sealed: true });
+    const w = await genesisIn(store, budget, Date.parse('2026-11-14T20:00:00Z'));
+    expect(await budgetStub(budget).info()).toEqual({
+      name: '',
+      banks: 2,
+      sealed: true,
+      signKey: { version: 1, pub: toHex(w.keys.sign.pub) },
+    });
     // Its links are never removed for a budget that is not being deleted.
     expect(await budgetStub(budget).removeBanks(budget)).toEqual({ removed: 0, left: 2, refused: true });
     expect(removed).toEqual([]);
-    const r = await alex.call('POST', '/api/settings/security/delete-account', { budgetName: 'As typed' });
+    // Only a device that holds the budget's key deletes a locked budget (docs/privacy-keys.md 11).
+    expect(
+      await alex.call('POST', '/api/settings/security/delete-account', { budgetName: 'As typed' }),
+    ).toMatchObject({ status: 403, json: { error: 'unsigned' } });
+    expect(await dir.prepare(`SELECT count(*) AS n FROM budget WHERE id = ?1`).bind(budget).first('n')).toBe(
+      1,
+    );
+    const ch = await alex.call('POST', '/api/settings/security/request-challenge', {
+      action: ACTION.deleteAccount,
+    });
+    const body = { budgetName: 'As typed' };
+    const sig = await signRequest(
+      w.keys,
+      budget,
+      ACTION.deleteAccount,
+      fromHex(ch.json.challenge as string),
+      utf8(JSON.stringify(body)),
+    );
+    const r = await alex.call('POST', '/api/settings/security/delete-account', body, {
+      'x-ledgerline-challenge': ch.json.token as string,
+      'x-ledgerline-signature': toHex(sig),
+    });
     expect(r.status).toBe(200);
     await runDirectoryJobs();
     expect(removed.sort()).toEqual(['access-alex-1', 'access-alex-2']);

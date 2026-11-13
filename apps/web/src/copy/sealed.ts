@@ -12,6 +12,7 @@ import {
   openWithRecoveryKey,
   type PasskeySecret,
 } from '../keys/budget';
+import { rememberWriter } from './notices';
 
 /** The Worker's public run-signing keys this app accepts, by key number (docs/privacy-keys.md 9.1). */
 export type WorkerRunKeys = [number, Uint8Array][];
@@ -160,8 +161,13 @@ export async function logDeviceId(store: {
   put(key: string, value: string | null): Promise<void>;
 }): Promise<string> {
   const kept = await store.get('log_device');
-  if (kept && /^[0-9A-HJKMNP-TV-Z]{26}$/.test(kept)) return kept;
+  // Remembered outside the copy too: this device doesn't tell itself of what it did (copy/notices.ts).
+  if (kept && /^[0-9A-HJKMNP-TV-Z]{26}$/.test(kept)) {
+    rememberWriter(kept);
+    return kept;
+  }
   const id = newUlid();
   await store.put('log_device', id);
+  rememberWriter(id);
   return id;
 }

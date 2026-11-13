@@ -7,11 +7,17 @@ import { BUDGET_STORE_MIGRATIONS } from './migrations.gen.js';
 import { migrate } from './migrate.js';
 import { ensureRecurring } from './budget-jobs.js';
 import type { Enqueue } from './budget-jobs.js';
+import { signKeyOf } from '../http/signed-request.js';
 
 /** Set while an admin has turned the account off: no daily jobs or bank syncs until it is turned on. */
 export const DISABLED_KEY = 'disabled';
 
-export function budgetInfo(storage: DurableObjectStorage): { name: string; banks: number; sealed: boolean } {
+export function budgetInfo(storage: DurableObjectStorage): {
+  name: string;
+  banks: number;
+  sealed: boolean;
+  signKey: { version: number; pub: string } | null;
+} {
   const b = storage.sql.exec(`SELECT name FROM budget LIMIT 1`).toArray()[0];
   const sealed = storage.sql.exec(`SELECT 1 FROM store_mark WHERE key = 'sealed'`).toArray().length > 0;
   const n = storage.sql
@@ -19,8 +25,18 @@ export function budgetInfo(storage: DurableObjectStorage): { name: string; banks
     // must never look as if it had none (it could be wiped).
     .exec(`SELECT count(*) AS n FROM bank_link WHERE provider = 'plaid' AND status != 'removed'`)
     .one() as { n: number };
+  // The signing key in force in the log, for the Directory's routes that want a sealed budget's request signed
+  // (http/signed-request.ts). Public by design.
+  const state = sealed
+    ? storage.sql.exec(`SELECT state FROM log_state WHERE id = 1`).toArray()[0]?.state
+    : undefined;
   // A sealed budget's name is in its devices' copies only: what the old tables still hold is not asked for.
-  return { name: !sealed && typeof b?.name === 'string' ? b.name : '', banks: Number(n.n), sealed };
+  return {
+    name: !sealed && typeof b?.name === 'string' ? b.name : '',
+    banks: Number(n.n),
+    sealed,
+    signKey: typeof state === 'string' ? signKeyOf(state) : null,
+  };
 }
 
 /**

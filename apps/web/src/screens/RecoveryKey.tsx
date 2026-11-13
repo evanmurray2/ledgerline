@@ -29,6 +29,7 @@ import {
   inputClass,
 } from '../components/ui';
 import { toast } from '../components/Toast';
+import { noteRecoveryKeyHere } from '../copy/notices';
 import {
   checkRecoveryKey,
   holdRecoveryKey,
@@ -123,6 +124,8 @@ export function RecoveryKeySignInScreen({ onBack }: { onBack: () => void }) {
               optionsJSON: options as Parameters<typeof startRegistration>[0]['optionsJSON'],
             });
             await api.registerVerify({ response, name: deviceName() });
+            // This sign-in is this device's own: its notice shows on the other devices only.
+            noteRecoveryKeyHere();
             // The budget opens next: the new passkey is no way in yet, so the key opens it once more.
             holdRecoveryKey(typed);
           })().then(

@@ -9,7 +9,13 @@
 // holdKey). Wipe: signing out, here or from another device (Settings → Sign-in), no longer a member, or 7 days
 // offline.
 import { useSyncExternalStore } from 'react';
-import { CSRF_HEADER, type SealedSession, type Session } from '@ledgerline/contracts';
+import {
+  CSRF_HEADER,
+  SIGNED_CHALLENGE_HEADER,
+  SIGNED_SIGNATURE_HEADER,
+  type SealedSession,
+  type Session,
+} from '@ledgerline/contracts';
 import {
   KEY_TYPO,
   NoSlotError,
@@ -24,8 +30,9 @@ import { dropMove, prepareMove, proveMove, recoveryKeyOpens, type PreparedMove }
 import { WORKER_RUN_KEYS } from '../keys/worker-keys';
 import { fetchPublicEntries, logDeviceId, newUlid, openSealedBudget } from './sealed';
 import { addPasskeyWay, authPubOf, openPlans, type Ways } from './sealed-ways';
-import { walkPublic, zeroize } from '@ledgerline/seal';
+import { ACTION, type Entry, type PublicState, walkPublic, zeroize } from '@ledgerline/seal';
 import { mergedSession } from './sealed-session';
+import { ownWriters } from './notices';
 import { connectivity } from '../state/connectivity';
 import {
   EngineHost,
@@ -537,6 +544,52 @@ export async function checkRecoveryKey(typed: string): Promise<string> {
   return authPub;
 }
 
+/**
+ * The two headers of a request signed with the budget's key (docs/privacy-keys.md 11), over `bodyText`, the body
+ * exactly as it is sent: a challenge from the Directory for this one request, signed in the engine, where the
+ * signing key stays. For a locked budget whose copy is open only.
+ */
+export async function signedHeaders(action: string, bodyText: string): Promise<Record<string, string>> {
+  if (!host || !sealed) throw new Error('Open your budget on this device, then try again.');
+  const h = host;
+  const ch = await server<{ challenge: string; token: string }>(
+    'POST',
+    '/api/settings/security/request-challenge',
+    { action },
+  );
+  const sig = await h.sealedSign(action, fromHex(ch.challenge), new TextEncoder().encode(bodyText));
+  return { [SIGNED_CHALLENGE_HEADER]: ch.token, [SIGNED_SIGNATURE_HEADER]: toHex(sig) };
+}
+
+/**
+ * The log's public entries as the server has them now, walked by the log's rules: they must pass through the last
+ * one this device saw. For the notices every device shows (copy/notices.ts). Null when the copy is not open.
+ */
+export async function publicLook(): Promise<{
+  entries: Entry[];
+  state: PublicState;
+  deviceIds: string[];
+  budgetId: string;
+  session: SealedSession;
+} | null> {
+  if (!host || !who || !sealed || state.status !== 'ready' || state.offline) return null;
+  const h = host;
+  const budgetId = who.budgetId;
+  const session = sealed;
+  const ways = waysOf(h, budgetId);
+  const entries = await fetchPublicEntries(ways.fetch);
+  const last = await lastPublicSeen(h, budgetId);
+  const st = await walkPublic(
+    entries,
+    budgetId,
+    last ? { mustPass: { number: last.number, hash: fromHex(last.hash) } } : undefined,
+  );
+  // The writer's id as kept with the copy: none yet, nothing to tell (it is never made here).
+  const deviceId = await h.get('log_device');
+  if (!deviceId) return null;
+  return { entries, state: st, deviceIds: [...new Set([deviceId, ...ownWriters()])], budgetId, session };
+}
+
 /** The changes planned in the log (intents) that wait, with the ways in each one removes. */
 export async function plannedChanges(): Promise<ReturnType<typeof openPlans>> {
   if (!host || !who || !sealed) return [];
@@ -640,11 +693,12 @@ export async function moveFinish(
   keysInEngine = [keys];
   // The recovery key signs in from now on (docs/privacy-keys.md 4.2): the server keeps its public half. If this
   // fails, Settings → Sign-in offers to set it.
+  // The budget is locked now, so the request is signed with its key (docs/privacy-keys.md 11).
   const authPub = await authPubOf(typed);
   if (authPub)
-    await server('POST', '/api/settings/security/recovery-key', { authPub }).catch(() =>
-      console.warn(JSON.stringify({ event: 'recovery_key_not_set' })),
-    );
+    await signedHeaders(ACTION.setRecoverySignIn, JSON.stringify({ authPub }))
+      .then((headers) => server('POST', '/api/settings/security/recovery-key', { authPub }, headers))
+      .catch(() => console.warn(JSON.stringify({ event: 'recovery_key_not_set' })));
   await keepPublicSeen(h, who.budgetId, { number: 1, hash: toHex(p.genesis.hash) });
   await h.put('publics', JSON.stringify([btoa(String.fromCharCode(...proved.genesis))]));
   await h.put('sealed_session', JSON.stringify(sealed));
