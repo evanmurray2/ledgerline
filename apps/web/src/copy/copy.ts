@@ -68,7 +68,10 @@ import {
   lastRecord,
   loadRecord,
   newKeys,
+  openBeforeUpdate,
   openCopy,
+  BACKUP_DUE_DAYS,
+  BEFORE_UPDATE_DAYS,
   randomBytes,
   recordKey,
   saveRecord,
@@ -123,6 +126,8 @@ export interface CopyState {
   forked?: boolean;
   /** Another device showed different numbers at the same log entry (the device check, D-116). */
   differs?: DevicesDiffer | null;
+  /** This device has saved no full backup for BACKUP_DUE_DAYS (`backupDue`): Budget → Needs attention says so. */
+  backupDue?: boolean;
 }
 
 const MOCK = import.meta.env.VITE_MOCK === '1';
@@ -998,7 +1003,54 @@ async function openHost(bytes: ArrayBuffer | null): Promise<void> {
     void save().catch(() => undefined);
     changed();
   };
-  await host.open(who!, bytes);
+  const opened = await host.open(who!, bytes);
+  if (bytes && opened.migrated?.length) await keepBeforeUpdate(opened.migrated);
+}
+
+/**
+ * An update ran budget migrations on the copy just opened: the saved copy from before them (still `record.blob`,
+ * not saved over yet) is kept beside it for BEFORE_UPDATE_DAYS. The server can't read the budget, so it can't undo a
+ * migration that went wrong; this copy can (Settings → Backup saves it as a full backup). A newer update replaces it.
+ */
+async function keepBeforeUpdate(migrations: string[]): Promise<void> {
+  if (!record?.blob) return;
+  record = { ...record, beforeUpdate: { blob: record.blob, at: Date.now(), migrations } };
+  await saveRecord(record).catch(() => undefined);
+  console.warn(JSON.stringify({ event: 'copy_migrated', migrations }));
+}
+
+/**
+ * Whether this device has saved no full backup for BACKUP_DUE_DAYS. The backup is the only copy that outlives the
+ * Cloudflare account or damage found after 30 days (docs/runbooks/restore.md), and nothing else reminds the person.
+ * Counted per device, on its saved copy: a copy kept in memory only asks nothing. A copy with no count yet starts it
+ * now (saved with the copy).
+ */
+export function backupDue(now: number): boolean {
+  if (!record) return false;
+  if (!record.backup) record = { ...record, backup: { at: null, since: now } };
+  const last = record.backup!.at ?? record.backup!.since;
+  return now - last > BACKUP_DUE_DAYS * 86_400_000;
+}
+
+/** A full backup was saved on this device (Settings → Backup). */
+export async function backupSaved(): Promise<void> {
+  if (!record) return;
+  const now = Date.now();
+  record = { ...record, backup: { at: now, since: record.backup?.since ?? now } };
+  await saveRecord(record).catch(() => undefined);
+  set({ backupDue: false });
+}
+
+/** When the copy from before the last update was kept, if it still is (Settings → Backup). */
+export function beforeUpdateAt(): number | null {
+  return record?.beforeUpdate?.at ?? null;
+}
+
+/** The copy from before the last update as one SQLite file, for a full backup of it (Settings → Backup). */
+export async function beforeUpdateBytes(): Promise<ArrayBuffer> {
+  const bytes = record && dataKey ? await openBeforeUpdate(record, dataKey) : null;
+  if (!bytes) throw new Error('This device has no copy from before the last update.');
+  return bytes;
 }
 
 /** The name this device's saved copy is known by on the server (Settings → Sign-in). */
@@ -1064,6 +1116,7 @@ export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
         ...(state.why ? { why: null } : {}),
         ...(state.rebuilding ? { rebuilding: false } : {}),
         ...(sameDiffer(state.differs, r.differs) ? {} : { differs: r.differs ?? null }),
+        ...(state.backupDue === backupDue(Date.now()) ? {} : { backupDue: backupDue(Date.now()) }),
       });
       if (r.lost) window.dispatchEvent(new CustomEvent('ledgerline:edits-refused', { detail: r.lost }));
       // The log moved on: the notices are read again now, not only every 5 minutes (screens/SealedNotices.tsx).
@@ -1113,7 +1166,9 @@ async function save(): Promise<void> {
   const bytes = await host.export();
   const kb = bytes.byteLength / 1024;
   const blob = await sealCopy(record, dataKey, bytes);
-  record = { ...record, blob, savedAt: Date.now() };
+  const { beforeUpdate, ...rest } = record;
+  const keep = beforeUpdate && Date.now() - beforeUpdate.at < BEFORE_UPDATE_DAYS * 86_400_000;
+  record = { ...rest, ...(keep ? { beforeUpdate } : {}), blob, savedAt: Date.now() };
   await saveRecord(record);
   // How long a whole-copy save takes, and its size, so the save can be split up only if it proves slow.
   usage.record('measure', 'copy.save.ms', performance.now() - started);

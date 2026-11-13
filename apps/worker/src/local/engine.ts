@@ -147,6 +147,26 @@ export const PHONE_TABLES = [
 ];
 
 /**
+ * The budget migrations a copy has not run yet (`migrateLocal` runs them). The app keeps the saved copy from before
+ * them when this is not empty (apps/web/src/copy/copy.ts `keepBeforeUpdate`): a migration runs on every device's copy
+ * and the server can't read the budget, so the copy from before is the one way back from a migration that went
+ * wrong. A copy with no `_migrations` table is empty: nothing to keep.
+ */
+export async function pendingMigrations(
+  db: Db,
+  migrations: readonly { name: string; sql: string }[] = BUDGET_MIGRATIONS,
+): Promise<string[]> {
+  const has = await db
+    .prepare(`SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = '_migrations'`)
+    .first<{ x: number }>();
+  if (!has) return [];
+  const done = new Set(
+    (await db.prepare(`SELECT name FROM _migrations`).all<{ name: string }>()).results.map((r) => r.name),
+  );
+  return migrations.filter((m) => !done.has(m.name) && !SERVER_ONLY.has(m.name)).map((m) => m.name);
+}
+
+/**
  * Applies migrations to the local copy (idempotent: the same _migrations table the server objects use). `migrations`
  * is for tests that build a copy as an older app version left it (test/engine-upgrade.test.ts).
  */
