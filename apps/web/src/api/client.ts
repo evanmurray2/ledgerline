@@ -1,33 +1,23 @@
 // Thin fetch wrapper for the Worker API. Same-origin session cookie (passkey sign-in), JSON in and out, every
 // response parsed with the shared Zod schema. Mutations carry the CSRF header; the Worker also checks Origin.
-import {
-  ApiError as ApiErrorBody,
-  CSRF_HEADER,
-  SEALED_HEADER,
-  SYNC_SINCE_HEADER,
-} from '@ledgerline/contracts';
+import { ApiError as ApiErrorBody, CSRF_HEADER, SEALED_HEADER } from '@ledgerline/contracts';
 import type { z } from 'zod';
 import { connectivity } from '../state/connectivity';
 import { budgetTime } from '../lib/dates';
 import { clearSavedData } from '../state/saved';
 import {
   afterChange,
-  archiveFields,
-  canEditOffline,
+  canEditHere,
   isSealed,
   sealedServerPath,
-  newEdit,
-  closeFields,
   dropSignedOut,
-  editOffline,
+  editOnDevice,
   read as readCopy,
   readsLocally,
   signedHeaders,
   syncNow,
-  syncSince,
   wipe,
 } from '../copy/copy';
-import type { SyncPage } from '../copy/host';
 import { isServerRead } from '../copy/server-reads';
 import { signedActionFor } from './signed-paths';
 
@@ -248,25 +238,13 @@ async function sendOnce<S extends z.ZodType>(
   const mutation = method !== 'GET';
   // Screens are worked out from the copy on this device (D-45, src/copy).
   if (readsLocally(method, path)) return answer(schema, await readCopy(path));
-  // Changes made with no signal go to the copy now and to the server later (a short list; copy.ts).
-  // A sealed budget's changes are always made on the device: its log takes them as entries (copy.ts).
-  if (mutation && isSealed() && !canEditOffline(method, path) && !sealedServerPath(path))
-    throw new ApiError('sealed', 'This can’t be changed here yet.', 409);
-  if (mutation && (connectivity.isOffline() || isSealed()) && canEditOffline(method, path))
+  // Every change of a locked budget is made on the device: its log takes it as an entry (copy.ts). Only what needs
+  // the server (sign-in, the banks, the records it keeps) goes to it.
+  if (mutation && isSealed() && !sealedServerPath(path)) {
+    if (!canEditHere()) throw new ApiError('sealed', 'This can’t be changed here yet.', 409);
     return schema.parse(
-      withRta(await editOffline(method, path, body), await afterChange().catch(() => null)),
+      withRta(await editOnDevice(method, path, body), await afterChange().catch(() => null)),
     );
-  // Archiving sends the amount this phone shows, with the change number it was worked out at.
-  const archive = mutation ? /^\/api\/settings\/categories\/([^/]+)\/(archive|remove)$/.exec(path) : null;
-  if (archive && (archive[2] === 'remove' || (body as { archived?: boolean } | undefined)?.archived)) {
-    const f = await archiveFields(decodeURIComponent(archive[1]!));
-    if (f) body = { ...(body as object | undefined), ...f };
-  }
-  // Closing an account sends the balances this phone shows, with the change number (D-73).
-  const close = mutation ? /^\/api\/accounts\/([^/]+)\/close$/.exec(path) : null;
-  if (close) {
-    const f = await closeFields(decodeURIComponent(close[1]!));
-    if (f) body = { ...(body as object | undefined), ...f };
   }
   // Resting (95% of a daily limit): only the session is asked, so the app knows when it's over.
   // The mock API stands in for the copy (src/mock): its screen reads are local, as on a phone.
@@ -277,16 +255,10 @@ async function sendOnce<S extends z.ZodType>(
     !(import.meta.env.VITE_MOCK === '1' && !isServerRead(path))
   )
     throw new ApiError('resting', `Paused until ${dailyResetTime()}. Nothing is lost.`, 503);
-  if (mutation && !connectivity.canWrite() && !canEditOffline(method, path)) {
+  if (mutation && !connectivity.canWrite()) {
     const code = connectivity.isOffline() ? 'offline' : 'read_only';
     throw new ApiError(code, codeText(code)!);
   }
-  // An edit's answer carries the changes since the copy's change number, so no second request syncs them.
-  const since = mutation ? await syncSince().catch(() => null) : null;
-  // A change that can wait in the queue gets its id and time now, and the server gets both. If the connection
-  // drops on the way, the queue sends the same id again, and the server, which may have taken the change before
-  // the answer was lost, applies it once (routes/sync.ts editOnce).
-  const edit = mutation && canEditOffline(method, path) ? await newEdit().catch(() => null) : null;
   // The body exactly as sent: a locked budget's serious requests are signed over these bytes.
   const bodyText = mutation ? (body !== undefined ? JSON.stringify(body) : '{}') : undefined;
   const action = mutation && isSealed() ? signedActionFor(method, path, body) : null;
@@ -301,32 +273,18 @@ async function sendOnce<S extends z.ZodType>(
       throw new ApiError(x.code ?? 'unsigned', readable(x.message) ? x.message : TRY_AGAIN, x.status ?? 0);
     }
   }
-  const headers = (): Record<string, string> => ({
-    ...MUTATION_HEADERS,
-    ...signed,
-    ...(since === null ? {} : { [SYNC_SINCE_HEADER]: String(since) }),
-    ...(edit ? { 'x-edit-id': edit.id, 'x-edit-at': String(edit.at) } : {}),
-  });
   let res: Response;
   try {
     res = await fetch(path, {
       method,
       credentials: 'same-origin',
       headers: mutation
-        ? headers()
+        ? { ...MUTATION_HEADERS, ...signed }
         : { accept: 'application/json', ...(path === '/api/session' ? { [SEALED_HEADER]: '1' } : {}) },
       body: bodyText,
     });
   } catch {
     connectivity.reportNetworkError();
-    // The connection dropped on the way: an offline-capable change is kept on the phone instead.
-    if (mutation && canEditOffline(method, path))
-      return schema.parse(
-        withRta(
-          await editOffline(method, path, body, edit ?? undefined),
-          await afterChange().catch(() => null),
-        ),
-      );
     throw new ApiError('network', OFFLINE, 0, true);
   }
   connectivity.reportOk();
@@ -341,17 +299,8 @@ async function sendOnce<S extends z.ZodType>(
     }
   }
   if (!res.ok) throw failure(res, json, path);
-  // The server no longer works out Ready to Assign: fill it from the copy once this change is synced into it.
-  // The changes the answer carried (routes/sync.ts syncInAnswer) go into the copy, not to the screen.
-  let sync: SyncPage | null = null;
-  if (mutation && json && typeof json === 'object' && 'sync' in json) {
-    ({ sync, ...json } = json as { sync: SyncPage });
-  }
-  if (mutation && isAck(json))
-    json = withRta(
-      json,
-      await afterChange(sync && since !== null ? { since, page: sync } : null).catch(() => null),
-    );
+  // A change the server made (a bank linked or removed): the copy reads the log, then Ready to Assign is added.
+  if (mutation && isAck(json)) json = withRta(json, await afterChange().catch(() => null));
   const parsed = schema.safeParse(json);
   if (!parsed.success) {
     throw new ApiError('bad_response', TRY_AGAIN, res.status);

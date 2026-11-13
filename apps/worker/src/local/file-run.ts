@@ -3,11 +3,14 @@
 // the update's number and time (D-86 A1, A2). Everything it writes carries that time, and the ids of new rows
 // come from their content, so a device and the server that file the same update end with the same rows
 // (test/file-run.test.ts).
-import type { BankDataProvider } from '@ledgerline/bank-provider';
+import { PlaidProvider, type BankDataProvider } from '@ledgerline/bank-provider';
 import type { Env } from '../env.js';
 import { acquire } from '../sync/lease.js';
 import { endOfUpdate, healPending, processPending, type BankState } from '../sync/process.js';
 import { applyPage, beginRun } from '../sync/steps.js';
+
+/** Reads a bank page (`parsePage`); it never calls the bank. */
+export const pageReader = new PlaidProvider({ clientId: 'device', secret: 'device', env: 'sandbox' });
 
 /** One bank update, as fetched: nothing here is worked out. */
 export interface RunPackage {

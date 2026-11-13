@@ -38,3 +38,26 @@ export async function connectionToken(env: Env, connectionId: string): Promise<s
     connectionId,
   );
 }
+
+/**
+ * Plaid errors only the person can fix, by signing in to the bank again (Link update mode). The connection is
+ * marked login_required, so the app asks for a repair and the 4-hour backstop stops retrying it.
+ */
+export const NEEDS_SIGN_IN = new Set([
+  'ITEM_LOGIN_REQUIRED',
+  'PENDING_EXPIRATION',
+  'PENDING_DISCONNECT',
+  'INVALID_CREDENTIALS',
+  'INSUFFICIENT_CREDENTIALS',
+  'INVALID_MFA',
+  'INVALID_UPDATED_USERNAME',
+  'ITEM_LOCKED',
+  'USER_SETUP_REQUIRED',
+  'USER_INPUT_TIMEOUT',
+  'MFA_NOT_SUPPORTED',
+  'NO_ACCOUNTS',
+  'ACCESS_NOT_GRANTED',
+]);
+
+/** Plaid Trial: 10 Production Items for the life of the team; removed Items still count. */
+export const ITEM_LIMIT = 10;

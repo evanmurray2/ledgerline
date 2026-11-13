@@ -1,5 +1,6 @@
-// Open sign-up and recovery codes with the switch on (D-75; playwright.signup.config.ts), with Chromium's virtual
-// passkey authenticator: the owner sets up, a new user creates an account, then recovers on another device.
+// Open sign-up with the switch on (D-75; playwright.signup.config.ts), with Chromium's virtual passkey
+// authenticator: the owner sets up, a new user creates an account and locks its budget, then recovers on another
+// device with the recovery key.
 import { expect, test, type Page } from '@playwright/test';
 
 async function withPasskeyDevice(page: Page) {
@@ -59,12 +60,6 @@ test('create an account, lock its budget, and recover on another device with the
   // A passkey and nothing else: no name or email is asked for (D-85).
   await expect(alex.getByLabel('Name')).toHaveCount(0);
   await alex.getByRole('button', { name: 'Create passkey' }).click();
-  await expect(alex.getByRole('heading', { name: 'Save your recovery code' })).toBeVisible();
-  const code = (await alex.getByTestId('recovery-code').textContent())!.trim();
-  expect(code).toMatch(/^([A-Z2-7]{4}-){7}[A-Z2-7]{4}$/);
-  await expect(alex.getByRole('button', { name: 'Continue' })).toBeDisabled();
-  await alex.getByLabel(/I saved my recovery code/).check();
-  await alex.getByRole('button', { name: 'Continue' }).click();
   // A new account locks its budget first, then starts at first-run setup, and can't link banks.
   const key = await lockNewBudget(alex);
   await expect(alex).toHaveURL(/\/welcome/, { timeout: 30_000 });

@@ -22,9 +22,6 @@ export function hiddenFromLists(t: Pick<TxRow, 'source' | 'status' | 'date' | 'b
   return isHistory(t) && t.status === 'posted';
 }
 
-/** hiddenFromLists as SQL, negated: rows the app lists. */
-export const NOT_HISTORY = `NOT (source = 'bank' AND status = 'posted' AND budget_from IS NOT NULL AND date < budget_from)`;
-
 /** isHistory as SQL, negated: rows in the budget, the only ones that can need you. */
 export const IN_BUDGET_ROWS = `NOT (source = 'bank' AND budget_from IS NOT NULL AND date < budget_from)`;
 

@@ -35,8 +35,6 @@ export const Session = z.object({
   canLinkBanks: z.boolean().optional(),
   /** Always true now. An app from before Plaid's script was removed reads it to pick hosted Link. */
   hostedLink: z.boolean().optional(),
-  /** When this user's recovery code was used, while the notice shows (14 days, D-75); null otherwise. */
-  recoveryNoticeAt: z.string().nullable().optional(),
 });
 export type Session = z.infer<typeof Session>;
 
@@ -66,7 +64,6 @@ export const SealedSession = z.object({
   readOnlyUntil: z.string().nullable(),
   readsPaused: z.boolean(),
   canLinkBanks: z.boolean(),
-  recoveryNoticeAt: z.string().nullable(),
   /** When the recovery key last signed in to this account, for 14 days (docs/privacy.md 5.8). */
   recoveryKeyUsedAt: z.string().nullable().optional(),
   /**
@@ -816,15 +813,15 @@ export const AuthStatus = z.object({
   hasPasskey: z.boolean(),
   /** No passkey yet and a setup code is configured: show first-time setup. */
   setupOpen: z.boolean(),
-  /** Open sign-up and recovery codes are on (D-75); the Turnstile site key the check uses. */
+  /** Open sign-up is on (D-75); the Turnstile site key the check uses. */
   signupOpen: z.boolean().optional(),
   turnstileSiteKey: z.string().optional(),
 });
 export type AuthStatus = z.infer<typeof AuthStatus>;
 
 export const SecurityView = z.object({
-  /** This user has a recovery code and can make a new one (users who aren't admins, D-75). */
-  recoveryCode: z.boolean().optional(),
+  /** This user can delete their own account (users who aren't admins, D-75). */
+  ownAccount: z.boolean().optional(),
   /** Show Settings → Users (admins, once there is anyone else or sign-up is on). */
   usersScreen: z.boolean().optional(),
   passkeys: z.array(

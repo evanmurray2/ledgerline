@@ -27,9 +27,8 @@
     "directory": "../web/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/__dev/*"],
+    "run_worker_first": ["/api/*"],
   },
   // Production runs Plaid Production. Local dev (.dev.vars) and tests set PLAID_ENV=sandbox explicitly.
-  // CUTOVER "owner": the owner may move their budget to its sealed log (Settings → Privacy; D-95).
-  "vars": { "PLAID_ENV": "production", "APP_VERSION": "0.1.0", "CUTOVER": "owner" },
+  "vars": { "PLAID_ENV": "production", "APP_VERSION": "0.1.0" },
 }

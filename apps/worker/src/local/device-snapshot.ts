@@ -27,21 +27,13 @@ import {
   type Entry,
   type PublicRef,
 } from '@ledgerline/seal';
-import type { SyncRow } from '../routes/sync.js';
+import type { SyncRow } from '../sync-tables.js';
 import { SYNC_FORMAT, type SyncTable } from '../sync-tables.js';
 import { DeviceLog } from './device-log.js';
-import { BANK_LOG_TABLES, RECORDED_TABLES, WORKED_OUT, wipeBankLog, type LocalEngine } from './engine.js';
+import { RECORDED_TABLES, WORKED_OUT, wipeBankLog, type LocalEngine } from './engine.js';
 
 /** The tables a snapshot holds: everything an entry of the log can change, the bank log included (D-103). */
 export const SNAPSHOT_TABLES: readonly SyncTable[] = RECORDED_TABLES;
-
-/**
- * The tables the move to the sealed log compares between the phone and the server (seal/cutover.ts): all but the
- * bank log, which the phone never read from the old routes.
- */
-export const MOVE_TABLES: readonly SyncTable[] = SNAPSHOT_TABLES.filter(
-  (t) => !(BANK_LOG_TABLES as readonly string[]).includes(t.name),
-);
 
 /**
  * Columns a copy writes from its own clock when it works things out (derive() stamps the budget row): they

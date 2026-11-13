@@ -1,15 +1,15 @@
-// One Durable Object per budget, holding all of that budget's data in its own SQLite database
-// (docs/multi-user.md 5.3). It migrates itself at start, runs its background work on alarms (6.1) and keeps its own
-// recurring jobs (6.2). The Worker reaches it only after the Directory has said whose budget it is.
+// One Durable Object per budget (docs/multi-user.md 5.3). Every budget is locked (D-102): the store holds its
+// sealed log, sealed bank runs and snapshots, its bank links and the job that fetches them, and never reads or
+// changes the budget itself. A new budget is made on its first device and sent here once (seal/start.ts). The
+// store migrates itself at start and runs its background work on alarms (6.1). The Worker reaches it only after
+// the Directory has said whose budget it is.
 import type { Db } from '@ledgerline/db/sql';
 import { DurableObject } from 'cloudflare:workers';
 import { Hono } from 'hono';
 import type { AppEnv } from '../http/context.js';
 import type { Caller } from './directory.js';
 import { DIRECTORY_NAME } from './directory.js';
-import { TRY_AGAIN, budgetApi, serverReadsOnly } from '../routes/api.js';
-import { afterBankUpdate } from '../http/after-update.js';
-import { marksOf, refusal, type Marks } from './marks.js';
+import { isSealed, refusal } from './marks.js';
 import { logApi } from '../seal/log-routes.js';
 import { QUEUE_STAMP_LINKS, stampLinksHandler } from './stamp-links.js';
 import {
@@ -25,50 +25,27 @@ import {
   sealedWebhook,
   type FetchDeps,
 } from '../seal/fetch-job.js';
-import { SEALED_HEADER } from '@ledgerline/contracts';
-import { cutoverApi } from '../seal/cutover-routes.js';
+import { purgeApi } from '../seal/purge-routes.js';
 import { sealedApi, sealedPath } from '../seal/sealed-routes.js';
 import { startApi } from '../seal/start-routes.js';
-import { startRefusal } from '../seal/start.js';
 import { runDeps } from '../seal/runs.js';
 import { parseKeyring } from '@ledgerline/platform';
-import { dev } from '../dev-seed.js';
-import { loadDumpPiece, verifyDump } from './restore-dump.js';
+import { SEALED_HEADER } from '@ledgerline/contracts';
 import type { Env } from '../env.js';
 import { DurableDb } from './adapter.js';
 import { appliedMigrations, migrate } from './migrate.js';
 import { BUDGET_STORE_MIGRATIONS } from './migrations.gen.js';
-import { JobRunner, type Handler, type Job } from './jobs.js';
-import { failSync, syncHandler, type SyncDeps, type SyncState } from './sync-job.js';
-import {
-  backstopHandler,
-  dailyScanHandler,
-  ensureRecurring,
-  fillPlaidNameHandler,
-  maintenanceHandler,
-  refilePayeesHandler,
-  dropTextAliasesHandler,
-  startSyncJob,
-  type Enqueue,
-} from './budget-jobs.js';
-import { connectionToken, makeProvider, pageSize } from '../sync/provider.js';
+import { JobRunner, type Enqueue, type Handler, type Job } from './jobs.js';
+import { makeProvider, pageSize } from '../sync/provider.js';
 import { writeBudgetState } from '../sync/breaker.js';
 import { answering } from './body.js';
 import { UsageCounter } from './shares.js';
 import { DISABLED_KEY, budgetInfo, removeBanks, setDisabled, wipeStore } from './account-life.js';
 import { PURGE, purgeHandler, purgeStart } from '../seal/purge.js';
-import { QUEUE_REFILE } from '../sync/refile-payees.js';
-import { QUEUE_DROP_TEXT_ALIASES } from '../sync/drop-text-aliases.js';
-import { markReads, noteHeavyRead, routeName } from './heavy-reads.js';
 
-/** Storage key: the store has checked once whether its payees need the re-file job (sync/refile-payees.ts). */
-/** Set while the budget rests (idle, no banks): its daily jobs come back on its next request (ensureJobs). */
-const RESTING_KEY = 'resting';
+const TRY_AGAIN = 'Something went wrong. Try again.';
 /** Whether this store reports its usage for fair use (store/shares.ts), as the Directory last said. */
 const COUNT_KEY = 'count_usage';
-const REFILE_CHECKED = 'payee_refile_checked';
-/** Storage key: the store has checked once whether its old cleaned-text aliases need deleting (drop-text-aliases.ts). */
-const TEXT_ALIASES_CHECKED = 'payee_text_aliases_checked';
 
 export interface StoreHealth {
   ok: boolean;
@@ -84,15 +61,12 @@ const USAGE_CACHE_MS = 30_000;
 export class BudgetStore extends DurableObject<Env> {
   protected readonly db: DurableDb;
   private startError: string | null = null;
-  private armed = false;
   private readonly runner: JobRunner;
   private cachedBudgetId: string | null = null;
-  private app: Hono<AppEnv> | null = null;
   private logApp: Hono<AppEnv> | null = null;
-  private cutoverApp: Hono<AppEnv> | null = null;
+  private purgeApp: Hono<AppEnv> | null = null;
   private sealedApp: Hono<AppEnv> | null = null;
   private startApp: Hono<AppEnv> | null = null;
-  private devApp: Hono<AppEnv> | null = null;
   private readonly usage: UsageCounter;
   /** Fair use: whether to report usage; null until read from storage or set by a request. */
   private counting: boolean | null = null;
@@ -105,15 +79,8 @@ export class BudgetStore extends DurableObject<Env> {
     void ctx.blockConcurrencyWhile(async () => {
       try {
         const { applied } = migrate(ctx.storage, BUDGET_STORE_MIGRATIONS, Date.now());
-        // Payees made by the old rules are filed again once (docs/payee-names.md 8), with no migration: checked
-        // once per store, and queued only where old payees exist and the job hasn't run.
-        const refile = await this.queueOnce(REFILE_CHECKED, QUEUE_REFILE).catch(() => false);
-        // After a re-file that finished before this release, the old cleaned-text aliases go (once).
-        const drop = await this.queueOnce(TEXT_ALIASES_CHECKED, QUEUE_DROP_TEXT_ALIASES).catch(() => false);
-        const queued = refile || drop;
-        // A migration may queue a job (0007 queues the plaid_name fill): point the alarm at it now, not at the next
-        // job already waiting (up to 4 hours away). A failure here only delays it to that alarm.
-        if (applied.length || queued) await this.runner.scheduleNext(Date.now()).catch(() => null);
+        // A migration may queue a job: point the alarm at it now. A failure here only delays it to the next alarm.
+        if (applied.length) await this.runner.scheduleNext(Date.now()).catch(() => null);
       } catch (e) {
         // Refuse to serve a half-migrated schema; health() reports why.
         this.startError = e instanceof Error ? e.message : String(e);
@@ -121,18 +88,10 @@ export class BudgetStore extends DurableObject<Env> {
     });
   }
 
-  /** Runs a one-time job's queueing SQL once per store (`flag` remembers it); true when it queued the job. */
-  private async queueOnce(flag: string, sql: string): Promise<boolean> {
-    if (await this.ctx.storage.get<boolean>(flag)) return false;
-    const n = this.ctx.storage.sql.exec(sql, Date.now()).rowsWritten;
-    await this.ctx.storage.put(flag, true);
-    return n > 0;
-  }
-
   // ---- RPC
 
-  /** The budget's name and linked banks, for deleting an account (routes/people.ts). */
-  async info(): Promise<{ name: string; banks: number; sealed: boolean }> {
+  /** The budget's linked banks, for deleting an account (routes/people.ts). */
+  async info(): Promise<ReturnType<typeof budgetInfo>> {
     this.ready();
     return budgetInfo(this.ctx.storage);
   }
@@ -147,7 +106,7 @@ export class BudgetStore extends DurableObject<Env> {
       return { removed: 0, left: budgetInfo(this.ctx.storage).banks, refused: true };
     const env = this.appEnv();
     // No fetch may start again on a link that is being removed.
-    this.ctx.storage.sql.exec(`DELETE FROM job WHERE kind IN (?, ?, 'sync')`, SEALED_FETCH, SEALED_BACKSTOP);
+    this.ctx.storage.sql.exec(`DELETE FROM job WHERE kind IN (?, ?)`, SEALED_FETCH, SEALED_BACKSTOP);
     return removeBanks(this.ctx.storage, {
       plaidEnv: env.PLAID_ENV,
       otherUsersBanks: env.OTHER_USERS_BANKS,
@@ -159,18 +118,16 @@ export class BudgetStore extends DurableObject<Env> {
   /** An admin turned the account off (`true`) or on (store/account-life.ts). */
   async setDisabled(disabled: boolean): Promise<void> {
     this.ready();
-    await setDisabled(this.ctx.storage, disabled, this.enqueue, () => this.timeZone());
+    await setDisabled(this.ctx.storage, disabled, () => this.queueBackstop(Date.now()));
     await this.runner.scheduleNext(Date.now());
   }
 
   /** Deletes everything in this store, for its user's own explicit delete (store/account-life.ts). */
   async wipe(budgetId: string): Promise<{ ok: boolean; why?: 'refused' | 'banks' }> {
     this.ready();
-    const dir = this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName(DIRECTORY_NAME));
-    const r = await wipeStore(this.ctx.storage, () => dir.isDeleting(budgetId));
+    const r = await wipeStore(this.ctx.storage, () => this.directory().isDeleting(budgetId));
     if (r.ok) {
       this.cachedBudgetId = null;
-      this.armed = false;
       this.counting = null;
     }
     return r;
@@ -182,8 +139,8 @@ export class BudgetStore extends DurableObject<Env> {
   }
 
   /**
-   * The budget's API (routes/api.ts budgetApi) for a caller the Worker has already authenticated with the
-   * Directory. The store can only be reached through its binding, so the caller it is given can be trusted.
+   * The budget's routes for a caller the Worker has already authenticated with the Directory. The store can only
+   * be reached through its binding, so the caller it is given can be trusted.
    */
   async api(request: Request, caller: Caller): Promise<Response> {
     this.ready();
@@ -194,116 +151,7 @@ export class BudgetStore extends DurableObject<Env> {
         { status: 403, headers: { 'content-type': 'application/json' } },
       );
     const path = new URL(request.url).pathname;
-    // The cutover (seal/cutover-routes.ts): in front of the marks, since a frozen budget refuses every other write.
-    if (path.startsWith('/api/cutover/')) {
-      this.cutoverApp ??= withCaller((app) => app.route('/api', cutoverApi));
-      this.usage.request();
-      try {
-        const r = await this.serve(this.cutoverApp, request, caller);
-        // After the way back, the old daily jobs run again; after the seal, the sealed budget's own.
-        if (r.ok && request.method === 'POST' && /\/cutover\/(back|seal)$/.test(path)) {
-          if (!this.marks().sealed) await ensureRecurring(this.enqueue, Date.now(), this.timeZone());
-          else
-            await this.enqueue(SEALED_BACKSTOP, {
-              id: SEALED_BACKSTOP_ID,
-              runAt: Date.now(),
-              recurring: true,
-            });
-          await this.runner.scheduleNext(Date.now());
-        }
-        return r;
-      } finally {
-        this.reportUsage(caller.budgetId);
-      }
-    }
-    // A new budget starts locked (seal/start.ts, D-102): the device sends its first entry and first snapshot.
-    if (path.startsWith('/api/start/')) {
-      this.startApp ??= withCaller((app) => app.route('/api', startApi));
-      this.usage.request();
-      try {
-        const r = await this.serve(this.startApp, request, caller);
-        if (r.ok && request.method === 'POST' && path === '/api/start/seal') {
-          await this.enqueue(SEALED_BACKSTOP, { id: SEALED_BACKSTOP_ID, runAt: Date.now(), recurring: true });
-          await this.runner.scheduleNext(Date.now());
-        }
-        return r;
-      } finally {
-        this.reportUsage(caller.budgetId);
-      }
-    }
-    // A budget with nothing in it yet tells an app that can open a locked budget to make it on the device.
-    if (
-      path === '/api/session' &&
-      request.method === 'GET' &&
-      request.headers.get(SEALED_HEADER) === '1' &&
-      !this.marks().sealed &&
-      (await startRefusal(this.adapter())) === null
-    ) {
-      this.sealedApp ??= withCaller((app) => app.route('/api', sealedApi));
-      this.usage.request();
-      try {
-        return await this.serve(this.sealedApp, request, caller);
-      } finally {
-        this.reportUsage(caller.budgetId);
-      }
-    }
-    // A sealed budget lives in its log: those routes, and no others (seal/log-routes.ts).
-    if (this.marks().sealed && (path === '/api/log' || path.startsWith('/api/log/'))) {
-      this.logApp ??= withCaller((app) => app.route('/api', logApi));
-      await this.openedSealed(caller);
-      await this.rearmSealed();
-      this.usage.request();
-      try {
-        return await this.serve(this.logApp, request, caller);
-      } finally {
-        this.reportUsage(caller.budgetId);
-      }
-    }
-    // An app that can open a sealed budget asks who is signed in (seal/sealed-routes.ts).
-    if (
-      this.marks().sealed &&
-      sealedPath(request.method, path) &&
-      (path !== '/api/session' || request.headers.get(SEALED_HEADER) === '1')
-    ) {
-      this.sealedApp ??= withCaller((app) => app.route('/api', sealedApi));
-      await this.openedSealed(caller);
-      this.usage.request();
-      try {
-        const r = await this.serve(this.sealedApp, request, caller);
-        // A fetch the person asked for starts now, one job per link asked (seal/fetch-job.ts); so does a new link's
-        // first run, which describes it. The backstop's own job is not moved: a pending job keeps its time when it
-        // is queued again.
-        if (r.ok && request.method === 'POST' && /\/connections\/(([^/]+\/)?refresh|link-finish)$/.test(path))
-          await this.queueAsked();
-        return r;
-      } finally {
-        this.reportUsage(caller.budgetId);
-      }
-    }
-    // The bank's news about a sealed budget's link starts a sealed fetch (seal/fetch-job.ts). The Worker checked
-    // the webhook before it came here; it is checked again.
-    if (this.marks().sealed && path === '/api/webhooks/plaid' && request.method === 'POST') {
-      this.usage.request();
-      const ev = await makeProvider(this.appEnv())
-        .verifyWebhook(request)
-        .catch(() => null);
-      if (!ev) return Response.json({ error: 'unauthorized' }, { status: 401 });
-      await sealedWebhook((await this.fetchDeps()).runs, this.enqueue, ev, Date.now());
-      await this.rearmSealed();
-      this.reportUsage(caller.budgetId);
-      return Response.json({ ok: true });
-    }
-    // A sealed or frozen budget (store/marks.ts): the old routes leave it alone.
-    const held = refusal(this.marks(), request.method, path);
-    if (held)
-      return new Response(JSON.stringify(held.body), {
-        status: held.status,
-        headers: { 'content-type': 'application/json' },
-      });
-    await this.rearm();
-    this.app ??= withCaller((app) =>
-      app.use('/api/*', serverReadsOnly).use('/api/*', afterBankUpdate).route('/api', budgetApi),
-    );
+    const sealed = this.sealed();
     this.usage.request();
     if (caller.countUsage !== undefined) {
       this.counting ??= (await this.ctx.storage.get<boolean>(COUNT_KEY)) ?? false;
@@ -312,25 +160,71 @@ export class BudgetStore extends DurableObject<Env> {
         await this.ctx.storage.put(COUNT_KEY, caller.countUsage);
       }
     }
-    const mark = markReads(this.db.stats);
     try {
-      return await this.serve(this.app, request, caller);
+      // Where emptying the old tables stands, and its start (seal/purge-routes.ts).
+      if (path.startsWith('/api/cutover/')) {
+        this.purgeApp ??= withCaller((app) => app.route('/api', purgeApi));
+        return await this.serve(this.purgeApp, request, caller);
+      }
+      // A new budget starts locked (seal/start.ts, D-102): the device sends its first entry and first snapshot.
+      if (path.startsWith('/api/start/')) {
+        this.startApp ??= withCaller((app) => app.route('/api', startApi));
+        const r = await this.serve(this.startApp, request, caller);
+        if (r.ok && request.method === 'POST' && path === '/api/start/seal') {
+          await this.queueBackstop(Date.now());
+          await this.runner.scheduleNext(Date.now());
+        }
+        return r;
+      }
+      // A sealed budget lives in its log (seal/log-routes.ts).
+      if (sealed && (path === '/api/log' || path.startsWith('/api/log/'))) {
+        this.logApp ??= withCaller((app) => app.route('/api', logApi));
+        await this.openedSealed(caller);
+        await this.rearm();
+        return await this.serve(this.logApp, request, caller);
+      }
+      // Who is signed in, the bank links by id, and the few account calls (seal/sealed-routes.ts). For a budget
+      // that is not sealed yet, the session tells the device to make it; what wants the budget's key is refused
+      // there. The session goes only to an app that says it can open a locked budget (`x-ledgerline-sealed`): an
+      // older app is told to update.
+      if (
+        sealedPath(request.method, path) &&
+        (path !== '/api/session' || request.headers.get(SEALED_HEADER) === '1')
+      ) {
+        this.sealedApp ??= withCaller((app) => app.route('/api', sealedApi));
+        if (sealed) await this.openedSealed(caller);
+        const r = await this.serve(this.sealedApp, request, caller);
+        // A fetch the person asked for starts now, one job per link asked (seal/fetch-job.ts); so does a new link's
+        // first run, which describes it. The backstop's own job is not moved: a pending job keeps its time when it
+        // is queued again.
+        if (
+          sealed &&
+          r.ok &&
+          request.method === 'POST' &&
+          /\/connections\/(([^/]+\/)?refresh|link-finish)$/.test(path)
+        )
+          await this.queueAsked();
+        return r;
+      }
+      // The bank's news about a sealed budget's link starts a sealed fetch (seal/fetch-job.ts). The Worker checked
+      // the webhook before it came here; it is checked again.
+      if (sealed && path === '/api/webhooks/plaid' && request.method === 'POST') {
+        const ev = await makeProvider(this.appEnv())
+          .verifyWebhook(request)
+          .catch(() => null);
+        if (!ev) return Response.json({ error: 'unauthorized' }, { status: 401 });
+        await sealedWebhook((await this.fetchDeps()).runs, this.enqueue, ev, Date.now());
+        await this.rearm();
+        return Response.json({ ok: true });
+      }
+      const no = refusal(request.method, path);
+      return new Response(JSON.stringify(no.body), {
+        status: no.status,
+        headers: { 'content-type': 'application/json' },
+      });
     } finally {
-      noteHeavyRead(this.db.stats, mark, routeName(request), caller.budgetId);
       this.reportUsage(caller.budgetId);
     }
-  }
-
-  /** Local development and e2e only: /__dev (index.ts refuses it in production). */
-  async dev(request: Request, caller: Caller): Promise<Response> {
-    this.ready();
-    if (this.env.PLAID_ENV === 'production' || this.env.SETUP_CODE)
-      return new Response('Not found', { status: 404 });
-    if (!(await this.ensureBudget(caller.budgetId))) return new Response('Not found', { status: 404 });
-    this.devApp ??= withCaller((app) => {
-      app.route('/__dev', dev);
-    });
-    return this.serve(this.devApp, request, caller);
   }
 
   private serve(app: Hono<AppEnv>, request: Request, caller: Caller): Promise<Response> {
@@ -347,101 +241,16 @@ export class BudgetStore extends DurableObject<Env> {
     );
   }
 
-  // ---- restoring a full backup (docs/multi-user.md 8.7; a runbook step, never a button)
-
-  /**
-   * Loads backup lines (header, rows, footer) into this store. Refused unless the store holds no budget yet, so a
-   * live budget can't be overwritten. Call with consecutive pieces of the file; then restoreVerify().
-   */
-  async restoreDump(lines: string): Promise<{ ok: true; rows: number } | { ok: false; reason: string }> {
-    if (this.held()) return { ok: false, reason: 'refused: this budget is sealed' };
-    const r = await loadDumpPiece(this.ctx.storage, this.adapter(), lines);
-    if (r.ok) this.cachedBudgetId = null;
-    return r;
-  }
-
-  /** Recomputes every table's row count and fingerprint and compares them with the backup's footer. */
-  async restoreVerify(): Promise<{ ok: boolean; differences: string[] }> {
-    const r = await verifyDump(this.ctx.storage, this.adapter());
-    // Phones holding a copy of this budget download it again (D-45, docs/phone-budget.md section 8).
-    if (r.ok) await this.newSyncEpoch();
-    return r;
-  }
-
-  /** A new sync epoch in the Directory for this budget: phones throw their copies away and download again. */
-  private async newSyncEpoch(): Promise<void> {
-    const id = await this.budgetId().catch(() => null);
-    if (!id || !this.env.DIRECTORY) return;
-    await this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName(DIRECTORY_NAME)).bumpSyncEpoch(id);
-  }
-
-  /**
-   * Point-in-time recovery (runbooks/restore.md): rolls this budget's database back to `at` (epoch ms, within the
-   * last 30 days). The sync epoch changes first, in the Directory, which the rollback can't reach; then the object
-   * restarts on the restored database. Returns the bookmark that undoes the restore.
-   */
-  async restoreTo(at: number): Promise<{ undo: string }> {
-    this.ready();
-    if (this.held()) throw new Error('This budget is sealed or being moved: it can’t be restored.');
-    const bookmark = await this.ctx.storage.getBookmarkForTime(at);
-    return this.restoreBookmark(bookmark, at);
-  }
-
-  /**
-   * Undoes the last restore with the bookmark the Directory kept (null: there's nothing to undo). The undo is a restore
-   * too, so it can be undone in turn.
-   */
-  async restoreUndo(): Promise<{ undo: string } | null> {
-    this.ready();
-    // The server can't restore a sealed budget (docs/privacy.md phase 5): an undo would put back the time before.
-    if (this.held()) throw new Error('This budget is sealed or being moved: it can’t be restored.');
-    const id = await this.budgetId();
-    const last = await this.directory().lastRestore(id);
-    return last ? this.restoreBookmark(last.undo, null) : null;
-  }
-
-  /** The last restore, without its bookmark. */
-  async lastRestore(): Promise<{ at: number; to: number | null } | null> {
-    this.ready();
-    const last = await this.directory().lastRestore(await this.budgetId());
-    return last ? { at: last.at, to: last.to } : null;
-  }
-
   private directory() {
     return this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName(DIRECTORY_NAME));
   }
 
   /**
-   * Restores to `bookmark` on the next start. The sync epoch changes first and the undo bookmark is kept in the
-   * Directory, which the restore can't reach, so every copy downloads again and the restore can always be undone.
+   * Daily safety net (6.2): recreate missing recurring jobs and make sure an alarm is set. The only work on the
+   * server is fetching a sealed budget's bank runs (seal/fetch-job.ts); a budget that is not sealed yet has none.
+   * `idle` is kept for the Directory's call; a budget's jobs are the same whether its users are idle or not.
    */
-  private async restoreBookmark(bookmark: string, to: number | null): Promise<{ undo: string }> {
-    const id = await this.budgetId();
-    await this.newSyncEpoch();
-    const undo = await this.ctx.storage.onNextSessionRestoreBookmark(bookmark);
-    await this.directory().noteRestore(id, { at: Date.now(), to, undo });
-    // Restart after answering, so the caller gets the undo bookmark.
-    this.ctx.waitUntil(
-      (async () => {
-        await new Promise((r) => setTimeout(r, 100));
-        this.ctx.abort('restoring');
-      })(),
-    );
-    return { undo };
-  }
-
-  /** The budget's time zone, which sets the daily jobs' local clock times. */
-  private timeZone(): string {
-    const r = this.ctx.storage.sql.exec(`SELECT time_zone FROM budget LIMIT 1`).toArray()[0];
-    return typeof r?.time_zone === 'string' ? r.time_zone : 'America/Los_Angeles';
-  }
-
-  /**
-   * Daily safety net (6.2): recreate missing recurring jobs and make sure an alarm is set. A budget whose users
-   * haven't signed in for 30 days (`idle`) and that has no banks stops its daily jobs instead, until its next request
-   * (docs/open-signup.md 9); `resting` says it did.
-   */
-  async ensureJobs(o: { idle?: boolean } = {}): Promise<{
+  async ensureJobs(_o: { idle?: boolean } = {}): Promise<{
     ok: boolean;
     jobs: ReturnType<JobRunner['list']>;
     resting?: boolean;
@@ -451,62 +260,21 @@ export class BudgetStore extends DurableObject<Env> {
     const budgetId = await this.budgetId().catch(() => null);
     if (!budgetId) return { ok: false, jobs: [] };
     if (await this.ctx.storage.get<boolean>(DISABLED_KEY)) return { ok: true, jobs: this.runner.list() };
-    // Frozen: no job is queued or run (store/marks.ts).
-    const marks = this.marks();
-    if (marks.frozenUntil !== null) return { ok: true, jobs: this.runner.list() };
-    // Sealed: the only work left on the server is fetching its bank runs (seal/fetch-job.ts).
-    if (marks.sealed) {
-      await this.enqueue(SEALED_BACKSTOP, { id: SEALED_BACKSTOP_ID, runAt: now, recurring: true });
-      // Its Items stay routed to it in the Directory, so the bank's webhooks arrive.
-      for (const c of this.ctx.storage.sql
-        .exec(
-          `SELECT connection_id AS id, provider_item_id FROM bank_link WHERE provider_item_id IS NOT NULL`,
-        )
-        .toArray())
-        await this.enqueue('register_link', {
-          id: `register_link:${String(c.id)}`,
-          state: { itemId: String(c.provider_item_id), connectionId: String(c.id) },
-          runAt: now,
-        });
-      this.ctx.storage.sql.exec(QUEUE_STAMP_LINKS, now);
-      await this.runner.scheduleNext(now);
-      return { ok: true, jobs: this.runner.list() };
-    }
-    if (o.idle) {
-      const banks = this.ctx.storage.sql
-        // From bank_link, not connection: a sealed budget's own tables are empty, and it must not look bank-less.
-        .exec(`SELECT count(*) AS n FROM bank_link WHERE status != 'removed'`)
-        .one() as { n: number };
-      if (Number(banks.n) === 0) {
-        this.ctx.storage.sql.exec(`DELETE FROM job WHERE recurring = 1`);
-        await this.ctx.storage.put(RESTING_KEY, true);
-        this.armed = false;
-        await this.runner.scheduleNext(now);
-        return { ok: true, jobs: this.runner.list(), resting: true };
-      }
-    }
-    await ensureRecurring(this.enqueue, now, this.timeZone());
-    // Every Plaid Item this budget holds is routed to it in the Directory (6.4); missing routes are re-registered.
-    const items = this.ctx.storage.sql
+    if (!this.sealed()) return { ok: true, jobs: this.runner.list() };
+    await this.queueBackstop(now);
+    // Its Items stay routed to it in the Directory, so the bank's webhooks arrive.
+    for (const c of this.ctx.storage.sql
       .exec(`SELECT connection_id AS id, provider_item_id FROM bank_link WHERE provider_item_id IS NOT NULL`)
-      .toArray();
-    for (const c of items)
+      .toArray())
       await this.enqueue('register_link', {
         id: `register_link:${String(c.id)}`,
         state: { itemId: String(c.provider_item_id), connectionId: String(c.id) },
         runAt: now,
       });
-    // A bank link with no stamp yet (copied by the migration, or made since) is checked and stamped (5.5).
+    // A bank link with no stamp yet is checked and stamped (5.5).
     this.ctx.storage.sql.exec(QUEUE_STAMP_LINKS, now);
     await this.runner.scheduleNext(now);
     return { ok: true, jobs: this.runner.list() };
-  }
-
-  /** Starts a sync for one connection (webhook, refresh, link, backstop). */
-  async startSync(connectionId: string, trigger: string): Promise<boolean> {
-    this.ready();
-    if (this.held()) return false;
-    return startSyncJob(this.adapter(), this.enqueue, connectionId, trigger, Date.now());
   }
 
   async jobs(): Promise<ReturnType<JobRunner['list']>> {
@@ -519,21 +287,10 @@ export class BudgetStore extends DurableObject<Env> {
     this.ready();
     this.usage.request();
     this.counting ??= (await this.ctx.storage.get<boolean>(COUNT_KEY)) ?? false;
-    // Frozen: no job runs until the freeze ends, then they go on. Sealed: only the jobs of a sealed budget run
-    // (handlers(), below); any other job is dropped unrun.
-    const m = this.marks();
-    if (m.frozenUntil !== null) {
-      await this.ctx.storage.setAlarm(m.frozenUntil);
-      return;
-    }
-    const mark = markReads(this.db.stats);
-    let what = 'job';
     try {
-      const r = await this.runner.runNext(Date.now());
-      if (r.ran) what = `job:${r.kind}`;
+      await this.runner.runNext(Date.now());
     } finally {
       const id = this.cachedBudgetId ?? (await this.budgetId().catch(() => null));
-      noteHeavyRead(this.db.stats, mark, what, id);
       if (id) this.reportUsage(id);
     }
   }
@@ -548,20 +305,15 @@ export class BudgetStore extends DurableObject<Env> {
 
   // ---- internals
 
-  /**
-   * Cloudflare drops an alarm that keeps failing (for example all day while writes are refused), which would leave
-   * the bank syncs and daily jobs waiting for the next daily ensureJobs. The first call after the object starts
-   * puts the alarm back if jobs are waiting and none is set.
-   */
-  /** The budget's marks now (store/marks.ts). */
-  private marks(): Marks {
-    return marksOf(this.ctx.storage.sql, Date.now());
+  /** The budget lives in its sealed log (store/marks.ts). */
+  private sealed(): boolean {
+    return isSealed(this.ctx.storage.sql);
   }
 
-  /** Sealed or frozen: nothing may be written, queued or run. */
-  private held(): boolean {
-    const m = this.marks();
-    return m.sealed || m.frozenUntil !== null;
+  /** The sealed budget's recurring check: the backstop of its fetches (seal/fetch-job.ts). */
+  private async queueBackstop(now: number): Promise<void> {
+    if (this.sealed())
+      await this.enqueue(SEALED_BACKSTOP, { id: SEALED_BACKSTOP_ID, runAt: now, recurring: true });
   }
 
   /** A fetch for each link that asked for one (seal/fetch-job.ts), now. */
@@ -591,19 +343,11 @@ export class BudgetStore extends DurableObject<Env> {
     if (await noteOpened(this.db, now)) await this.queueAsked();
   }
 
-  /** A sealed budget whose alarm was lost gets it back on its next request. */
-  private async rearmSealed(): Promise<void> {
-    if ((await this.ctx.storage.getAlarm()) === null) await this.runner.scheduleNext(Date.now());
-  }
-
+  /**
+   * Cloudflare drops an alarm that keeps failing (for example all day while writes are refused). A sealed budget
+   * whose alarm was lost gets it back on its next request.
+   */
   private async rearm(): Promise<void> {
-    if (this.armed) return;
-    this.armed = true;
-    // A resting budget (ensureJobs) gets its daily jobs back on its first request.
-    if (await this.ctx.storage.get<boolean>(RESTING_KEY)) {
-      await ensureRecurring(this.enqueue, Date.now(), this.timeZone());
-      await this.ctx.storage.delete(RESTING_KEY);
-    }
     if ((await this.ctx.storage.getAlarm()) === null) await this.runner.scheduleNext(Date.now());
   }
 
@@ -620,13 +364,13 @@ export class BudgetStore extends DurableObject<Env> {
     }
   }
 
-  /** The Directory's answer on today's usage, kept a short while for the write check (routes/api.ts). */
+  /** The Directory's answer on today's usage, kept a short while for the write checks. */
   private usageCache: { at: number; value: Awaited<ReturnType<NonNullable<Env['USAGE']>>> } | null = null;
 
   /**
-   * Today's usage for the check before each write, asked of the Directory at most every USAGE_CACHE_MS: each ask is
-   * a Durable Object request of its own. The session and background work still ask every time. The Directory works its own state out at most once a minute too (STATE_MS),
-   * so this adds at most that much to how late a limit is noticed.
+   * Today's usage, asked of the Directory at most every USAGE_CACHE_MS: each ask is a Durable Object request of its
+   * own. The Directory works its own state out at most once a minute too (STATE_MS), so this adds at most that much
+   * to how late a limit is noticed.
    */
   private async usage30(ask: () => ReturnType<NonNullable<Env['USAGE']>>) {
     const now = Date.now();
@@ -641,9 +385,8 @@ export class BudgetStore extends DurableObject<Env> {
   }
 
   /**
-   * The env every app function sees inside the store: the same bindings, with DB = this store's database, account
-   * usage from the Directory, and JOBS, so the routes that start a sync queue a job
-   * here (docs/multi-user.md 6.1).
+   * The env every route sees inside the store: the same bindings, with DB = this store's database and account
+   * usage from the Directory (docs/multi-user.md 6.1).
    */
   private appEnv(): Env {
     const now = () => Date.now();
@@ -669,21 +412,14 @@ export class BudgetStore extends DurableObject<Env> {
         const id = this.cachedBudgetId ?? (await this.budgetId().catch(() => null));
         if (dir && id) await dir.dropRoute(itemId, id);
       },
-      RESTORE_TO: (at: number) => this.restoreTo(at),
-      RESTORE_UNDO: () => this.restoreUndo(),
-      LAST_RESTORE: () => this.lastRestore(),
-      PURGE_START: (now: number) => purgeStart(this.adapter(), now, this.enqueue),
-      JOBS: {
-        // routes/settings.ts startSync() has already taken the lease with this run id.
-        sync: async (runId, connectionId, trigger) => {
-          const state: SyncState = { phase: 'begin', holder: runId, trigger };
-          await this.enqueue('sync', { id: runId, connectionId, state, runAt: now() });
-        },
-      },
+      PURGE_START: (at: number) => purgeStart(this.adapter(), at, this.enqueue),
     };
   }
 
-  /** The store fills in its own budget row on first use (sign-up and setup create it in the Directory). */
+  /**
+   * The store fills in its own budget row on first use (sign-up and setup create the budget in the Directory). The
+   * row says only which budget this is: the budget itself is made on the device (seal/start.ts).
+   */
   private async ensureBudget(budgetId: string): Promise<boolean> {
     if (this.cachedBudgetId === budgetId) return true;
     const now = Date.now();
@@ -695,14 +431,12 @@ export class BudgetStore extends DurableObject<Env> {
       this.ctx.storage.sql.exec(`SELECT 1 FROM budget WHERE id = ?`, budgetId).toArray().length === 0
     )
       if (!(await dir.budgetExists(budgetId))) return false;
-    const created = this.ctx.storage.sql.exec(
+    this.ctx.storage.sql.exec(
       `INSERT OR IGNORE INTO budget (id, name, created_at, updated_at) VALUES (?, 'My budget', ?, ?)`,
       budgetId,
       now,
       now,
-    ).rowsWritten;
-    // A new budget gets its sync backstop, daily scan and maintenance now, not at the next daily check.
-    if (created > 0) await ensureRecurring(this.enqueue, now, this.timeZone());
+    );
     this.cachedBudgetId = budgetId;
     return true;
   }
@@ -717,20 +451,6 @@ export class BudgetStore extends DurableObject<Env> {
   }
 
   private readonly enqueue: Enqueue = (kind, o) => this.runner.enqueue(kind, o, Date.now());
-
-  private async syncDeps(): Promise<SyncDeps> {
-    const env = this.appEnv();
-    return {
-      env,
-      budgetId: await this.budgetId(),
-      provider: () => makeProvider(env),
-      token: (id) => connectionToken(env, id),
-      pageSize: pageSize(env),
-      // Account usage from the Directory (env.USAGE).
-      budgetState: async () => ((await writeBudgetState(env)) === 'normal' ? 'normal' : 'pause'),
-      enqueue: this.enqueue,
-    };
-  }
 
   private async fetchDeps(): Promise<FetchDeps> {
     const env = this.appEnv();
@@ -747,45 +467,27 @@ export class BudgetStore extends DurableObject<Env> {
   }
 
   /**
-   * The job handlers. A sealed budget runs only its own kinds (the sealed fetch, and the stamping of a link);
-   * any other job found there is dropped unrun, and a sealed kind is dropped in a budget that isn't sealed.
+   * The job handlers. The sealed kinds run only in a sealed budget. Any other job found in a store (a kind from
+   * before D-102) is dropped unrun.
    */
   private handlers(): Record<string, Handler> {
-    const sealedKinds: Record<string, Handler> = {
-      [SEALED_FETCH]: async (job, now) => sealedFetchHandler(await this.fetchDeps())(job, now),
-      [SEALED_BACKSTOP]: async (job, now) =>
+    const sealedOnly =
+      (h: Handler): Handler =>
+      (job, now) =>
+        this.sealed() ? h(job, now) : Promise.resolve({ done: true });
+    const known: Record<string, Handler> = {
+      [SEALED_FETCH]: sealedOnly(async (job, now) => sealedFetchHandler(await this.fetchDeps())(job, now)),
+      [SEALED_BACKSTOP]: sealedOnly(async (job, now) =>
         sealedBackstopHandler((await this.fetchDeps()).runs, this.enqueue)(job, now),
+      ),
       // Emptying the old tables (seal/purge.ts): queued only by the person's own tap in Settings → Privacy.
-      [PURGE]: async (job, now) =>
+      [PURGE]: sealedOnly(async (job, now) =>
         purgeHandler({
           db: this.adapter(),
           budgetState: (await this.fetchDeps()).budgetState,
           directoryName: async () => this.directory().budgetName(await this.budgetId()),
         })(job, now),
-    };
-    // Both kinds of budget stamp their links and keep their Items routed to them in the Directory.
-    const both = new Set(['stamp_links', 'register_link']);
-    const out: Record<string, Handler> = {};
-    for (const [kind, h] of Object.entries(this.plainHandlers()))
-      out[kind] = (job, now) =>
-        this.marks().sealed && !both.has(kind) ? Promise.resolve({ done: true }) : h(job, now);
-    for (const [kind, h] of Object.entries(sealedKinds))
-      out[kind] = (job, now) => (this.marks().sealed ? h(job, now) : Promise.resolve({ done: true }));
-    return out;
-  }
-
-  private plainHandlers(): Record<string, Handler> {
-    const budgetId = () => this.budgetId();
-    return {
-      sync: async (job, now) => syncHandler(await this.syncDeps())(job, now),
-      // Queued by the server before D-45; there is nothing to recompute here now.
-      recompute: async () => ({ done: true }),
-      backstop: (job, now) => backstopHandler(this.adapter(), this.enqueue)(job, now),
-      daily_scan: (job, now) => dailyScanHandler(this.appEnv(), budgetId)(job, now),
-      maintenance: (job, now) => maintenanceHandler(this.appEnv(), budgetId)(job, now),
-      fill_plaid_name: (job, now) => fillPlaidNameHandler(this.adapter(), budgetId)(job, now),
-      refile_payees: (job, now) => refilePayeesHandler(this.adapter(), budgetId)(job, now),
-      drop_text_aliases: (job, now) => dropTextAliasesHandler(this.adapter())(job, now),
+      ),
       stamp_links: (job, now) => {
         const env = this.appEnv();
         return stampLinksHandler({
@@ -795,27 +497,19 @@ export class BudgetStore extends DurableObject<Env> {
         })(job, now);
       },
       register_link: async (job) => {
-        // Retried until the Directory answers; a duplicate Item is flagged on the connection (6.4).
+        // Retried until the Directory answers (6.4).
         const { itemId, connectionId } = job.state as { itemId: string; connectionId: string };
-        const dir = this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName(DIRECTORY_NAME));
-        const r = await dir.registerRoute(itemId, await budgetId(), connectionId);
-        // A sealed budget's `connection` is not written any more.
-        if (r === 'duplicate' && !this.marks().sealed)
-          this.ctx.storage.sql.exec(
-            `UPDATE connection SET error_code = 'duplicate_item', updated_at = ? WHERE id = ?`,
-            Date.now(),
-            connectionId,
-          );
+        await this.directory().registerRoute(itemId, await this.budgetId(), connectionId);
         return { done: true };
       },
     };
+    const drop: Handler = () => Promise.resolve({ done: true });
+    return new Proxy(known, { get: (t, kind: string) => t[kind] ?? drop });
   }
 
   private async onFailed(job: Job, error: string): Promise<void> {
     console.log(JSON.stringify({ event: 'job_failed', kind: job.kind, id: job.id, error }));
     if (job.kind === SEALED_FETCH) await failSealedFetch((await this.fetchDeps()).runs, job, error);
-    if (job.kind === 'sync' && job.connectionId)
-      await failSync(await this.syncDeps(), job.connectionId, job.state as SyncState, error);
   }
 }
 
@@ -829,9 +523,7 @@ function withCaller(mount: (app: Hono<AppEnv>) => void): Hono<AppEnv> {
     c.set('budgetId', who.budgetId);
     c.set('email', who.email);
     c.set('sessionId', who.sessionId);
-    c.set('syncEpoch', who.syncEpoch ?? 'e0');
     c.set('isAdmin', who.isAdmin === true);
-    c.set('recoveryNoticeAt', who.recoveryNoticeAt ?? null);
     c.set('freshWay', who.freshWay !== false);
     c.set('signed', who.signed ?? null);
     c.set('recoveryKeyUsedAt', who.recoveryKeyUsedAt ?? null);

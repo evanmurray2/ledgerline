@@ -1,8 +1,7 @@
-// Moving a budget that exists to its sealed log, on the device (docs/privacy.md section 8 step 6): the one time a
-// device makes a key for a budget that already exists. Before the server is asked for anything, the device shows
-// that both ways in open the new key: the passkey, with a fresh prompt, and the recovery key, typed back by the
-// person from what they wrote down. Only then are the keys and the first entry handed on to the engine
-// (`EngineHost.cutover`).
+// A new budget's keys on the device (D-102): the one time a device makes a budget key. Before the server is asked
+// for anything, the device shows that both ways in open the new key: the passkey, with a fresh prompt, and the
+// recovery key, typed back by the person from what they wrote down. Only then are the keys and the first entry
+// handed on to the engine (`EngineHost.startBudget`).
 import { type BudgetKeys, type Bytes, encodeEntry, type Entry, equal, zeroize } from '@ledgerline/seal';
 import {
   createBudget,
@@ -13,24 +12,24 @@ import {
   WayInError,
 } from './budget';
 
-/** A budget's new keys and first entry, made and not yet proved. */
-export interface PreparedMove {
+/** A new budget's keys and first entry, made and not yet proved. */
+export interface NewBudget {
   budgetId: string;
   deviceId: string;
   genesis: Entry;
   /** The recovery key as the person writes it down. Shown once. */
   recoveryText: string;
-  /** Held until the move is proved or given up; `dropMove` zeroes it. */
+  /** Held until the budget is proved or given up; `dropNewBudget` zeroes it. */
   secret: { bk: Bytes; keys: BudgetKeys; recoveryKey: Bytes };
 }
 
 /** Makes the keys, the recovery key and the first entry, from the passkey the person just used. */
-export async function prepareMove(o: {
+export async function newBudget(o: {
   budgetId: string;
   deviceId: string;
   passkey: PasskeySecret;
   now: number;
-}): Promise<PreparedMove> {
+}): Promise<NewBudget> {
   const made = await createBudget(o);
   return {
     budgetId: o.budgetId,
@@ -45,7 +44,7 @@ export async function prepareMove(o: {
  * Whether the recovery key as typed opens the key the first entry holds. Nothing is zeroed: a slip of the
  * finger is typed again, with the same key still in hand.
  */
-export async function recoveryKeyOpens(p: PreparedMove, typed: string): Promise<boolean> {
+export async function recoveryKeyOpens(p: NewBudget, typed: string): Promise<boolean> {
   try {
     const r = await openWithRecoveryKey([p.genesis], p.budgetId, typed);
     const same = equal(r.budget.bk, p.secret.bk);
@@ -56,18 +55,18 @@ export async function recoveryKeyOpens(p: PreparedMove, typed: string): Promise<
   }
 }
 
-/** Forgets a prepared move: the key bytes are zeroed. */
-export function dropMove(p: PreparedMove): void {
+/** Forgets a new budget's keys: the key bytes are zeroed. */
+export function dropNewBudget(p: NewBudget): void {
   zeroize(p.secret.bk, p.secret.recoveryKey);
 }
 
 /**
- * Proves both ways in before the budget is moved: the recovery key as the person typed it back, and the passkey
- * asked once more. Each must open the very key the first entry holds. Gives what the engine needs for the move;
+ * Proves both ways in before the budget is made: the recovery key as the person typed it back, and the passkey
+ * asked once more. Each must open the very key the first entry holds. Gives what the engine needs for the budget;
  * the key bytes are zeroed here, whatever happens.
  */
-export async function proveMove(
-  p: PreparedMove,
+export async function proveNewBudget(
+  p: NewBudget,
   typedRecoveryKey: string,
   passkeyAgain: PasskeySecret,
 ): Promise<{ keys: BudgetKeys; genesis: Uint8Array; deviceId: string }> {

@@ -1,6 +1,5 @@
 // Settings → Payees: the list, rename = merge (joining) with Undo, and the rename checks (docs/payees.md 5, 6).
-import { app, phone } from './phone.js';
-import { ownerDb } from './store-db.js';
+import { app, phone, phoneDb } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { MergeResult, PayeesView } from '@ledgerline/contracts';
 
@@ -76,7 +75,7 @@ describe('payees', () => {
   });
 
   it('a name you choose is yours: rename and the transaction sheet set named_by to user, on the phone too', async () => {
-    const db = ownerDb();
+    const db = phoneDb();
     const namedBy = async (id: string) => {
       const q = `SELECT named_by FROM payee WHERE id = ?1`;
       const server = await db.prepare(q).bind(id).first<{ named_by: string }>();

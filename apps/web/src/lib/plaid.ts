@@ -15,13 +15,17 @@ export function runPlaidLink(mode: 'new' | 'repair', connectionId?: string): Pro
   return import.meta.env.VITE_MOCK === '1' ? mockLink(mode, connectionId) : runHostedLink(mode, connectionId);
 }
 
-/** Mock mode has no Plaid and no server: pretend the person finished. */
+/** Mock mode has no Plaid and no server: pretend the person finished (src/mock answers the link's end). */
 async function mockLink(mode: 'new' | 'repair', connectionId?: string): Promise<LinkOutcome> {
-  await api.linkToken({ mode, connectionId, confirmSlot: mode === 'new' ? true : undefined });
+  const { linkToken } = await api.linkToken({
+    mode,
+    connectionId,
+    confirmSlot: mode === 'new' ? true : undefined,
+  });
   await new Promise((r) => setTimeout(r, 300));
   if (mode === 'repair') return { status: 'repaired' };
-  const res = await api.exchange('public-sandbox-mock');
-  return { status: 'linked', connectionId: res.connectionId };
+  const r = await api.linkFinish({ linkToken, mode });
+  return r.status === 'linked' ? { status: 'linked', connectionId: r.connectionId } : { status: 'exited' };
 }
 
 // ------------------------------------------------------------------ on Plaid's site

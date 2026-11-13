@@ -19,7 +19,6 @@ import type { AppEnv } from '../http/context.js';
 import type { Scoped } from '../db/scoped.js';
 import { HttpError, parse, scoped, GONE, FAR_DATE, FAR_MONTH, inReach, thisMonth } from './api.js';
 import { reopenForEntry, reopenStmts } from './account-close.js';
-import { liveKey } from './sync.js';
 import { monthLong } from '../views/common.js';
 import { TX_COLUMNS, chunks, type TxRow } from '../ledger/ledger.js';
 import { OVERLAY_UPSERT, commit, loadTx, refuseHistory } from './txn-common.js';
@@ -28,6 +27,26 @@ import { coverAfterAmount } from './same-purchase.js';
 import { txnSheet } from './txn-sheet.js';
 
 export const transactionRoutes = new Hono<AppEnv>();
+
+/** The key a transaction has now: an edit made to a key that has since moved lands on the new one. */
+async function liveKey(s: Scoped, key: string): Promise<string> {
+  let k = key;
+  for (let i = 0; i < 4; i++) {
+    const here = await s.first(
+      `SELECT 1 AS x FROM bank_txn WHERE budget_id = ?1 AND txn_key = ?2 AND removed_at IS NULL
+       UNION ALL SELECT 1 FROM manual_pending WHERE budget_id = ?1 AND txn_key = ?2 AND deleted_at IS NULL`,
+      k,
+    );
+    if (here) return k;
+    const m = await s.db
+      .prepare(`SELECT new_key FROM txn_key_move WHERE old_key = ?1`)
+      .bind(k)
+      .first<{ new_key: string }>();
+    if (!m) return k;
+    k = m.new_key;
+  }
+  return k;
+}
 
 transactionRoutes.get('/transactions/:key', txnSheet);
 

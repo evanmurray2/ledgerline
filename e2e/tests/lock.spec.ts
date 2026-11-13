@@ -41,7 +41,12 @@ test('a new budget is locked with the passkey and the recovery key, and lives on
   test.setTimeout(240_000);
   // The owner sets up first: until then there is no Create account.
   await withPasskeyDevice(owner);
-  await owner.goto('/budget');
+  // The app is served with its security headers: no outside host at all (docs/privacy.md 5.7).
+  const res = await owner.goto('/budget');
+  const csp = res?.headers()['content-security-policy'] ?? '';
+  expect(csp).toContain("frame-ancestors 'none'");
+  expect(csp).not.toContain('https:');
+  expect(res?.headers()['x-frame-options']).toBe('DENY');
   // On a retry the same server has its owner already.
   const setup = owner.getByLabel('Setup code');
   const fresh = await Promise.race([
@@ -64,8 +69,6 @@ test('a new budget is locked with the passkey and the recovery key, and lives on
   await page.goto('/budget');
   await page.getByRole('button', { name: 'Create account' }).click();
   await page.getByRole('button', { name: 'Create passkey' }).click();
-  await page.getByLabel(/I saved my recovery code/).check();
-  await page.getByRole('button', { name: 'Continue' }).click();
 
   // ---- the lock, before anything else: the budget's key and its recovery key are made on this device
   await page.getByRole('button', { name: 'Make my recovery key' }).click();
@@ -121,7 +124,7 @@ test('a new budget is locked with the passkey and the recovery key, and lives on
   // The banks screen opens (this budget has no bank).
   await page.goto('/settings/connections');
   await page.waitForTimeout(1500);
-  await page.screenshot({ path: 'test-results/move-6.png' });
+  await page.screenshot({ path: 'test-results/lock-6.png' });
   // Opened from the keys held for a refresh and the place kept with the copy: no snapshot was read again.
 
   // ---- a new sign-in: the passkey gives the budget's secret in the same prompt
@@ -131,7 +134,7 @@ test('a new budget is locked with the passkey and the recovery key, and lives on
   expect((await again).status()).toBe(200);
   await expect(page.getByText('Groceries')).toBeVisible({ timeout: 30_000 });
 
-  // ---- the recovery key: it signs in from now on (the move set its public half, signed with the budget's key)
+  // ---- the recovery key: it signs in from now on (the lock set its public half, signed with the budget's key)
   expect((await call(page, 'GET', '/api/settings/security/recovery-key')).json).toMatchObject({ set: true });
   // A new device with a new passkey: the recovery key signs in, opens the budget, and adds the passkey to it.
   // Its own address: sign-in checks are counted per address (AUTH_LIMITER), and the owner's device goes on below.

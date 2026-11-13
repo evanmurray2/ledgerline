@@ -7,7 +7,7 @@ import { Scoped } from '../../src/db/scoped.js';
 import { devSignIn } from '../../src/http/auth.js';
 import type { Env } from '../../src/env.js';
 import { SoftAuthenticator } from '../soft-authenticator.js';
-import { directoryDb, directoryStub, storeDb } from '../store-db.js';
+import { directoryDb } from '../store-db.js';
 
 const ORIGIN = 'https://ledgerline.test';
 const SETUP = 's'.repeat(40);
@@ -43,7 +43,7 @@ const prodEnv = () =>
 class Browser {
   jar = new Map<string, string>();
   async call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
-    const h: Record<string, string> = { origin: ORIGIN, ...headers };
+    const h: Record<string, string> = { origin: ORIGIN, 'x-ledgerline-sealed': '1', ...headers };
     if (this.jar.size) h.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (method !== 'GET') {
       h['content-type'] = 'application/json';
@@ -194,11 +194,10 @@ describe('passkey sign-in', () => {
     expect((await b.call('POST', '/api/auth/login/verify', { response: resp })).status).toBe(400);
   });
 
-  it('linking a bank and exports need a passkey check within 15 minutes', async () => {
+  it('linking a bank needs a passkey check within 15 minutes', async () => {
     await later(16 * 60 * 1000);
     const r = await b.call('POST', '/api/settings/connections/link-token', {});
     expect(r).toMatchObject({ status: 401, json: { error: 'reauth' } });
-    expect((await b.call('GET', '/api/export/dump')).json).toMatchObject({ error: 'reauth' });
     expect((await b.call('GET', '/api/session')).status).toBe(200); // everything else still works
     // Syncing banks now isn't sensitive: pull to sync and Try again work without the check.
     expect((await b.call('POST', '/api/settings/connections/refresh')).json).not.toMatchObject({
@@ -211,7 +210,7 @@ describe('passkey sign-in', () => {
       error: 'reauth',
     });
     expect((await b.signIn(phone)).status).toBe(200); // same session, fresh check
-    expect((await b.call('GET', '/api/export/dump')).status).toBe(200);
+    expect((await b.call('POST', '/api/settings/security/device-link')).status).toBe(200);
   });
 
   it('a device link adds a passkey once, then stops working', async () => {
@@ -257,15 +256,6 @@ describe('passkey sign-in', () => {
     const bearer = { authorization: `Bearer ${OPS}` };
     expect((await ops.call('GET', '/api/health', undefined, bearer)).status).toBe(200);
     expect((await ops.call('POST', '/api/ops/backup-done', {}, bearer)).status).toBe(403);
-    // Only the monitor's own checks count for the "Monitoring stopped" alert.
-    const owner = storeDb(String(await directoryStub().firstBudget()));
-    const checks = () =>
-      owner
-        .prepare(`SELECT count(*) AS n FROM health_status WHERE key = 'last_monitor_check_at'`)
-        .first<{ n: number }>();
-    expect((await checks())!.n).toBe(0);
-    await ops.call('GET', '/api/health', undefined, { ...bearer, 'x-ledgerline-monitor': '1' });
-    expect((await checks())!.n).toBe(1);
     expect((await ops.call('GET', '/api/session', undefined, bearer)).status).toBe(403);
     expect((await ops.call('GET', '/api/health', undefined, { authorization: 'Bearer nope' })).status).toBe(
       401,

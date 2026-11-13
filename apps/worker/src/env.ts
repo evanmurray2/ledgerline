@@ -10,8 +10,6 @@ export interface Env {
   /** docs/multi-user.md: the Directory (one object) and one BudgetStore per budget. */
   DIRECTORY: DurableObjectNamespace<import('./store/directory.js').Directory>;
   BUDGET: DurableObjectNamespace<import('./store/budget-store.js').BudgetStore>;
-  /** Inside a budget's Durable Object: queue background work as alarm-driven jobs (docs/multi-user.md 6.1). */
-  JOBS?: Jobs;
   ASSETS?: Fetcher;
   /** 'sandbox' | 'production'. Production keys exist only in the production Worker. */
   PLAID_ENV: string;
@@ -23,8 +21,6 @@ export interface Env {
   NOW?: number;
   /** Set only by the phone's engine, for each edit it runs: the change number its copy holds (http/through.ts). */
   THROUGH?: number;
-  /** Tests only: the longest an edit waits for a bank update, in ms (http/after-update.ts). */
-  EDIT_WAIT_MS?: string;
   PLAID_WEBHOOK_URL?: string;
   PLAID_REDIRECT_URI?: string;
   /** "1:base64key,2:base64key" and the current version. */
@@ -45,14 +41,6 @@ export interface Env {
   OWNER_EMAIL?: string;
   /** Local development and tests only: a fixed "now" (ISO time). Ignored in production. */
   FAKE_NOW?: string;
-  /**
-   * The id of the one budget whose cutover is open (seal/cutover-routes.ts); `any` in tests. Unset in production
-   * until the owner's budget is to be moved (docs/privacy.md section 8): the routes then answer nothing, but
-   * for the way back of a budget that is sealed.
-   */
-  CUTOVER?: string;
-  /** Enables /__dev routes (seed data) in local development. Ignored in production. */
-  DEV_ROUTES?: string;
   /** Account-wide usage via GraphQL Analytics (read-only token). */
   CF_ACCOUNT_ID?: string;
   CF_ANALYTICS_TOKEN?: string;
@@ -113,17 +101,6 @@ export interface Env {
   ROUTE_LINK?: (providerItemId: string, connectionId: string) => Promise<void>;
   /** Inside a budget's Durable Object: forget a removed Item's route in the Directory. */
   DROP_ROUTE?: (providerItemId: string) => Promise<void>;
-  /** Inside a budget's Durable Object: point-in-time recovery of its database (runbooks/restore.md). */
-  RESTORE_TO?: (at: number) => Promise<{ undo: string }>;
-  /** Inside a budget's Durable Object: undo the last restore, with the bookmark the Directory kept. */
-  RESTORE_UNDO?: () => Promise<{ undo: string } | null>;
-  /** Inside a budget's Durable Object: the last restore, from the Directory. */
-  LAST_RESTORE?: () => Promise<{ at: number; to: number | null } | null>;
   /** Inside a budget's Durable Object: start emptying a sealed budget's old tables (seal/purge.ts). */
   PURGE_START?: (now: number) => Promise<{ ok: true } | { ok: false; why: string }>;
-}
-
-export interface Jobs {
-  /** Runs a sync for a connection whose lease `runId` already holds (routes/settings.ts startSync). */
-  sync(runId: string, connectionId: string, trigger: string): Promise<void>;
 }

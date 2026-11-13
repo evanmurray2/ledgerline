@@ -1,7 +1,7 @@
-// The route that starts emptying a sealed budget's old tables (src/seal/cutover-routes.ts, POST /api/cutover/purge),
+// The route that starts emptying a sealed budget's old tables (src/seal/purge-routes.ts, POST /api/cutover/purge),
 // and what GET /api/cutover/state says about it. Nothing starts the job but this route; it refuses a budget that
-// is not sealed and one whose way back is still open. The job itself is tested in purge.test.ts. Also: the
-// server's full backup and restore are refused for a sealed budget.
+// is not sealed. The job itself is tested in purge.test.ts. Also: the old full backup, restore and way back are
+// gone (D-102).
 import { SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ACTION } from '@ledgerline/seal';
@@ -18,7 +18,10 @@ const NOW = Date.parse('2026-11-14T20:00:00Z');
 
 describe('Delete the readable copy: the route', () => {
   beforeAll(async () => {
-    expect((await post('/__dev/seed-november')).status).toBe(200);
+    // The store makes the budget's own row on its first request.
+    expect(
+      (await SELF.fetch(`${ORIGIN}/api/session`, { headers: { 'x-ledgerline-sealed': '1' } })).status,
+    ).toBe(200);
   });
 
   it('refuses a budget that is not locked; then starts the job once, which ends the way back', async () => {
@@ -38,7 +41,7 @@ describe('Delete the readable copy: the route', () => {
       .run();
     const state = async () =>
       ((await (await get('/api/cutover/state')).json()) as { purge: { stage: string } | null }).purge;
-    // A locked budget is never served as a full backup, and the server can't restore it (phase 5).
+    // No full backup comes from the server, and it can't restore a budget.
     expect((await get('/api/export/dump')).status).toBe(409);
     expect((await post('/api/settings/restore')).status).toBe(409);
     // While the way back is open, the readable copy may be deleted all the same (the owner's choice).
@@ -72,8 +75,8 @@ describe('Delete the readable copy: the route', () => {
     // Asked again, nothing new is queued.
     expect((await purge()).status).toBe(200);
     expect(await db.prepare(`SELECT count(*) AS n FROM job WHERE id = ?1`).bind(PURGE_ID).first('n')).toBe(1);
-    // The way back is closed for good, and the state says so.
-    expect((await post('/api/cutover/back')).status).toBe(409);
+    // There is no way back, and the state says so.
+    expect((await post('/api/cutover/back')).status).not.toBe(200);
     expect(await (await get('/api/cutover/state')).json()).toMatchObject({ backUntil: null });
     await db.prepare(`DELETE FROM job WHERE id = ?1`).bind(PURGE_ID).run();
   });

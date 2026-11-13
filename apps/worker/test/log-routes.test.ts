@@ -13,6 +13,7 @@ import { SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { logGenesis, logHead } from '../src/seal/log-store.js';
 import { PHONE, Writer } from './log-writer.js';
+import { budgetOf } from './phone.js';
 import { storeDb } from './store-db.js';
 
 const ORIGIN = 'https://ledgerline.test';
@@ -37,8 +38,7 @@ describe('the routes of the sealed log', () => {
       : storeDb(budget).prepare(`DELETE FROM store_mark`).run();
 
   beforeAll(async () => {
-    expect((await post('/__dev/seed-november', {})).status).toBe(200);
-    budget = ((await (await get('/api/session')).json()) as { budget: { id: string } }).budget.id;
+    budget = (await budgetOf()).budgetId;
     // The budget's first entry, as the cutover will store it.
     w = new Writer(budget, NOW - 60_000);
     const r = await logGenesis(
@@ -57,9 +57,9 @@ describe('the routes of the sealed log', () => {
   });
 
   it('answer nothing for a budget that is not sealed', async () => {
-    expect((await get('/api/log?after=0')).status).toBe(404);
+    expect((await get('/api/log?after=0')).status).toBe(409);
     const e = await w.edit('not yet');
-    expect((await post('/api/log/append', { base: 1, entries: [b64(encodeEntry(e))] })).status).toBe(404);
+    expect((await post('/api/log/append', { base: 1, entries: [b64(encodeEntry(e))] })).status).toBe(409);
     expect(await logHead(storeDb(budget))).toBe(1);
     // That entry was never stored: the writer goes back to where the log is.
     w = Object.assign(new Writer(budget, NOW - 50_000), { keys: w.keys, bk: w.bk, last: null, counter: 1 });
@@ -205,7 +205,7 @@ describe('the routes of the sealed log', () => {
       });
       expect(bare.status).toBe(403);
 
-      // The old routes leave a sealed budget alone.
+      // There are no old routes (D-102).
       expect((await get('/api/sync?since=0&limit=5')).status).toBe(409);
       expect(
         (await post('/api/budget/set', { month: '2026-11', categoryId: 'rent', assigned: 1 })).status,
@@ -213,6 +213,7 @@ describe('the routes of the sealed log', () => {
     } finally {
       await seal(false);
     }
-    expect((await get('/api/sync?since=0&limit=5')).status).toBe(200);
+    // Not sealed, no route of the old path answers either (D-102).
+    expect((await get('/api/sync?since=0&limit=5')).status).toBe(409);
   });
 });

@@ -1,15 +1,10 @@
-// Local development and end-to-end tests only: loads the prototype's November 2026 (the canonical fixture in
-// packages/domain/test/fixtures/november.ts) into the dev user's BudgetStore through the real tables and overlay; the
-// phone works out the rest. Served inside the store (BudgetStore.dev) only when DEV_ROUTES=1 outside production and
-// without a setup code.
+// Development and tests only: loads the prototype's November 2026 (the canonical fixture in
+// packages/domain/test/fixtures/november.ts) into a device's copy through the real tables and overlay; the engine
+// works out the rest. The web app's mock API (apps/web/src/mock) and the Worker's tests use it; never a production
+// build.
 import type { Db, Stmt } from '@ledgerline/db/sql';
-import { Hono } from 'hono';
-import type { AppEnv } from './http/context.js';
 import { Scoped } from './db/scoped.js';
-import { clock } from './http/clock.js';
 import * as F from '../../../packages/domain/test/fixtures/november.js';
-
-export const dev = new Hono<AppEnv>();
 
 const ACCOUNTS: Record<
   string,
@@ -139,17 +134,7 @@ const PAYEES: Record<string, string> = {
   'n-shakeshack': 'Shake Shack',
 };
 
-dev.post('/seed-november', async (c) => {
-  const budgetId = c.get('budgetId');
-  await seedNovember(c.env.DB, budgetId, c.get('userId'), clock(c.env));
-  // Lines, month snapshots and Ready to Assign are worked out on the phone (D-45).
-  return c.json({ ok: true, budgetId });
-});
-
-/**
- * Loads November into any budget database: the dev user's store (above) or the web app's mock copy
- * (apps/web/src/mock), which then works it out with the phone's own engine.
- */
+/** Loads November into a copy (the web app's mock, a test's device), which then works it out with the engine. */
 export async function seedNovember(db: Db, budgetId: string, userId: string, now: number): Promise<void> {
   const env = { DB: db };
   const m = { budgetId, userId };

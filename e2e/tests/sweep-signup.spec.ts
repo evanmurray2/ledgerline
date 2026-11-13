@@ -71,8 +71,6 @@ async function newAccount(page: Page) {
   await page.goto('/budget');
   await page.getByRole('button', { name: 'Create account' }).click();
   await page.getByRole('button', { name: 'Create passkey' }).click();
-  await page.getByLabel(/I saved my recovery code/).check();
-  await page.getByRole('button', { name: 'Continue' }).click();
   await lockNewBudget(page);
   await page.getByRole('link', { name: 'Get started' }).click();
   await page.getByRole('button', { name: 'Continue' }).click();

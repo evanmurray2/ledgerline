@@ -23,7 +23,7 @@ import {
   type RunTransport,
 } from '../src/local/log-session.js';
 import { FILED_KEY, FILED_LINK } from '../src/local/sealed-filing.js';
-import type { SyncPage } from '../src/routes/sync.js';
+import { copyOf } from './copy-of.js';
 import { SEALED_FETCH, sealedFetchHandler, type FetchState } from '../src/seal/fetch-job.js';
 import { logAfter, logAppend, logHead } from '../src/seal/log-store.js';
 import {
@@ -161,14 +161,7 @@ describe('a sealed budget catches up by time, and its bank log travels', () => {
             { budgetId: BUDGET, userId: 'phone', email: 'o@example.com' },
             () => clock,
           );
-          for (let n = 0; ; n++) {
-            if (n > 50) throw new Error('sync did not finish');
-            const { since, cursor } = await engine.nextRequest();
-            const q = new URLSearchParams({ since: String(since), limit: '200' });
-            if (cursor) q.set('cursor', cursor);
-            const r = await old.call('GET', `/api/sync?${q}`);
-            if ((await engine.apply(r.json as SyncPage)).caughtUp) break;
-          }
+          await copyOf(old.db, engine, clock);
           const st = await engine.state();
           // The copy now stands at the log's first entry, and filing starts after the server's own last update.
           await engine.apply({

@@ -38,7 +38,7 @@ import {
   sha256,
   toStored,
 } from '@ledgerline/seal';
-import type { SyncRow } from '../routes/sync.js';
+import type { SyncRow } from '../sync-tables.js';
 import { stateFromJson, stateToJson } from '../seal/log-store.js';
 import { LOG_PROCESSING_VERSION, LOG_SCHEMA_VERSION } from '../seal/log-versions.js';
 

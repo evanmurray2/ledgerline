@@ -25,7 +25,7 @@ const prodEnv = () =>
 class Browser {
   jar = new Map<string, string>();
   async call(method: string, path: string, body?: unknown) {
-    const h: Record<string, string> = { origin: ORIGIN };
+    const h: Record<string, string> = { origin: ORIGIN, 'x-ledgerline-sealed': '1' };
     if (this.jar.size) h.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (method !== 'GET') {
       h['content-type'] = 'application/json';
@@ -206,8 +206,9 @@ describe('more than one user', () => {
   });
 
   it('only the admin may link a new bank, and the session says so (docs/open-signup.md 5)', async () => {
+    // Refused before Plaid is asked: a new link needs the budget's key, and then an admin (seal/sealed-routes.ts).
     const b = await other.call('POST', '/api/settings/connections/link-token', { mode: 'new' });
-    expect(b).toMatchObject({ status: 403, json: { error: 'banks_off' } });
+    expect(b.status).toBe(403);
     expect((await other.call('GET', '/api/session')).json.canLinkBanks).toBe(false);
     expect((await owner.call('GET', '/api/session')).json.canLinkBanks).toBe(true);
   });

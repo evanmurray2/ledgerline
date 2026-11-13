@@ -1,12 +1,11 @@
-// A device files a bank update itself (docs/privacy.md 5.4, phase 4): given the pages the bank sent, it ends with
-// the rows the server has after filing the same update. The server here is the real pipeline (bank-sync.ts).
+// A device files a bank update itself (docs/privacy.md 5.4): given the pages the bank sent, it ends with the rows
+// the steps of the old server pipeline give for the same update (bank-sync.ts), which are the steps it runs.
 import { PlaidProvider } from '@ledgerline/bank-provider';
 import { env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { LocalEngine, migrateLocal } from '../src/local/engine.js';
 import { fileRun, type RunPackage } from '../src/local/file-run.js';
-import { alignCounter } from '../src/local/shadow.js';
-import type { BankLogBatch, SyncPage } from '../src/routes/sync.js';
+import { SYNC_FORMAT, SYNC_TABLES, type SyncRow } from '../src/sync-tables.js';
 import { endOfUpdate, type BankState } from '../src/sync/process.js';
 import { bankSync, pend, plaidTxn } from './bank-sync.js';
 import { storeDb } from './store-db.js';
@@ -23,27 +22,29 @@ async function phone(name: string): Promise<LocalEngine> {
   await migrateLocal(db, NOW);
   return new LocalEngine(db, { budgetId: B, userId: 'phone', email: 'owner@example.com' }, () => NOW);
 }
-/** The phone takes what changed on the server (the tables it syncs). */
-async function sync(e: LocalEngine): Promise<void> {
-  for (let n = 0; ; n++) {
-    if (n > 100) throw new Error('sync did not finish');
-    const { since, cursor } = await e.nextRequest();
-    const q = new URLSearchParams({ since: String(since), limit: '200' });
-    if (cursor) q.set('cursor', cursor);
-    const r = await h.call('GET', `/api/sync?${q}`);
-    expect(r.status).toBe(200);
-    if ((await e.apply(r.json as SyncPage)).caughtUp) return;
+/** A copy that holds what the pipeline's budget holds now: every row of the tables a copy keeps. */
+async function copyOf(e: LocalEngine): Promise<void> {
+  const rows: SyncRow[] = [];
+  for (const t of SYNC_TABLES) {
+    const all = (await h.db.prepare(`SELECT * FROM ${t.name}`).all<Record<string, unknown>>()).results;
+    for (const r of all) {
+      const d = Object.fromEntries(Object.entries(r).filter(([c]) => !t.omit?.includes(c)));
+      rows.push({ t: t.name, k: t.pk.map((c) => r[c]), d });
+    }
   }
+  const at = (await e.state()).through + 1;
+  await e.apply({
+    format: SYNC_FORMAT,
+    epoch: 'test',
+    serverTime: NOW,
+    through: at,
+    more: false,
+    cursor: null,
+    rows,
+  });
 }
-async function bankLog(e: LocalEngine): Promise<void> {
-  for (;;) {
-    const { after, pagesAfter } = await e.bankLogRequest();
-    const q = new URLSearchParams({ after: String(after) });
-    if (pagesAfter) q.set('pagesAfter', pagesAfter);
-    const r = await h.call('GET', `/api/sync/bank-log?${q}`);
-    if ((await e.applyBankLog(r.json as BankLogBatch)).caughtUp) return;
-  }
-}
+/** The pipeline's own budget, read as a copy is. */
+const pipeline = () => new LocalEngine(h.db, { budgetId: B, userId: 'pipeline', email: 'owner@example.com' });
 /** The newest update the server filed, as it was fetched. */
 async function lastRun(): Promise<Omit<RunPackage, 'bank'>> {
   const run = (await h.db
@@ -84,11 +85,10 @@ const log = async (db: LocalEngine['db']) => ({
 const linkTimes = /^connection .*\.(last_synced_at|last_attempt_at):/;
 
 describe('a device files a bank update', () => {
-  it('ends with the server’s rows, update after update', async () => {
+  it('ends with the pipeline’s rows, update after update', async () => {
     await h.setup();
     const device = await phone('file-run-device');
-    const reader = await phone('file-run-reader');
-    await sync(device);
+    await copyOf(device);
 
     const updates: [unknown[], { transaction_id: string; account_id: string }[]][] = [
       // New rows on two cards, with a pending one.
@@ -143,31 +143,34 @@ describe('a device files a bank update', () => {
       // The device files the same update from its pages, on the copy it had before.
       const pkg = { ...(await lastRun()), bank };
       await fileRun({ ...env, DB: device.db } as never, B, pkg, provider);
-      // A second phone only reads what the server filed.
-      await sync(reader);
-      await bankLog(reader);
       expect(
-        differences(await rowsOf(device), await rowsOf(reader)).filter((d) => !linkTimes.test(d)),
+        differences(await rowsOf(device), await rowsOf(pipeline())).filter((d) => !linkTimes.test(d)),
       ).toEqual([]);
-      expect(await log(device.db)).toEqual(await log(reader.db));
+      expect(await log(device.db)).toEqual(await log(h.db));
     }
 
-    // A phone that only synced so far, as every phone today: it has no bank log and no event counter. It files the
-    // next update once its counter continues from the budget's watermark (local/shadow.ts alignCounter), and
-    // numbers the new bank events as the server does.
+    // A copy that holds the budget but no bank log and no event counter, as a copy made before the log carried
+    // it: it files the next update once its counter continues from the budget's watermark (sealed-filing.ts), and
+    // numbers the new bank events as the pipeline does.
     const synced = await phone('file-run-synced');
-    await sync(synced);
+    await copyOf(synced);
     expect((await log(synced.db)).events.length).toBe(0);
     t += 3_600_000;
     h.setNow(t);
     await h.sync([plaidTxn('a-9', 2, 19.99, '2026-11-09', 'SHELL OIL')], [], t);
     await h.heal();
-    await alignCounter(synced.db, B);
+    await synced.db.batch([
+      synced.db.prepare(`INSERT OR IGNORE INTO apply_counter (id, seq) VALUES (1, 0)`),
+      synced.db
+        .prepare(
+          `UPDATE apply_counter SET seq = max(seq, coalesce((SELECT processed_through FROM budget WHERE id = ?1), 0)) WHERE id = 1`,
+        )
+        .bind(B),
+    ]);
     await fileRun({ ...env, DB: synced.db } as never, B, { ...(await lastRun()), bank: null }, provider);
-    await sync(reader);
-    expect(differences(await rowsOf(synced), await rowsOf(reader)).filter((d) => !linkTimes.test(d))).toEqual(
-      [],
-    );
+    expect(
+      differences(await rowsOf(synced), await rowsOf(pipeline())).filter((d) => !linkTimes.test(d)),
+    ).toEqual([]);
     const mine = (await log(synced.db)).events as { id: number }[];
     const theirs = (await log(h.db)).events as { id: number }[];
     expect(mine.map((e) => e.id)).toEqual([theirs[theirs.length - 1]!.id]);

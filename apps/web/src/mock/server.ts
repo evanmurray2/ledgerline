@@ -2,7 +2,7 @@
 // engine over a November 2026 copy (apps/worker/src/local/november-copy.ts), so the mock runs the server's own
 // routes and Money rules. Only what needs a real server is answered here: passkey sign-in, Plaid Link, the
 // sign-in list, usage events and notes, and the daily-limit scenarios.
-import { CSRF_HEADER, LinkExchange, LinkTokenRequest, NoteRequest, UsageBatch } from '@ledgerline/contracts';
+import { CSRF_HEADER, LinkFinish, LinkTokenRequest, NoteRequest, UsageBatch } from '@ledgerline/contracts';
 import type { z } from 'zod';
 import { isServerRead } from '../copy/server-reads';
 
@@ -292,12 +292,12 @@ export class MockServer {
       }
       const own = this.stub(method, path, body ?? {});
       if (own !== undefined) {
-        if (method === 'POST' && path === '/api/settings/connections/exchange') await this.linked();
+        if (method === 'POST' && path === '/api/settings/connections/link-finish') await this.linked();
+        if (method === 'POST') await this.synced(path);
         return { status: own === null ? 204 : 200, body: own };
       }
       const { engine } = await this.ready;
       const r = await engine.request(method, `${path}${u.search}`, mutation ? (body ?? {}) : undefined);
-      if (r.status === 200 && method === 'POST') await this.synced(path);
       const text = await r.text();
       let json: unknown = text ? (JSON.parse(text) as unknown) : null;
       if (path === '/api/session' && r.status === 200) json = this.session(json as Record<string, unknown>);
@@ -334,7 +334,7 @@ export class MockServer {
         .run();
   }
 
-  /** Plaid Link finished: a new connection, as the exchange would store it. */
+  /** Plaid Link finished: a new connection, as the bank's first run would bring it. */
   private async linked(): Promise<void> {
     const { db } = await this.ready;
     await db
@@ -384,9 +384,12 @@ export class MockServer {
         return { ok: true };
       case 'POST /api/settings/connections/link-token':
         return { linkToken: `link-sandbox-mock-${parse(LinkTokenRequest, body).mode}` };
-      case 'POST /api/settings/connections/exchange':
-        parse(LinkExchange, body);
-        return { ok: true, connectionId: 'con_mock', accounts: [] };
+      case 'POST /api/settings/connections/link-finish':
+        parse(LinkFinish, body);
+        return { status: 'linked', connectionId: `con_mock_${this.syncs + 1}` };
+      // A fetch the server would run in the background, done at once (synced).
+      case 'POST /api/settings/connections/refresh':
+        return { ok: true, started: 1 };
       case 'POST /api/usage':
         this.usageEvents.push(...parse(UsageBatch, body).events);
         return null;
@@ -394,6 +397,8 @@ export class MockServer {
         this.notes.push(parse(NoteRequest, body));
         return { ok: true };
       default:
+        if (method === 'POST' && /^\/api\/settings\/connections\/[^/]+\/refresh$/.test(path))
+          return { ok: true };
         return undefined;
     }
   }

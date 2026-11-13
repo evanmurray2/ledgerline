@@ -26,7 +26,7 @@ const BASE = '/api/settings/security/device-add';
 class Browser {
   jar = new Map<string, string>();
   async call(method: string, path: string, body?: unknown) {
-    const h: Record<string, string> = { origin: ORIGIN };
+    const h: Record<string, string> = { origin: ORIGIN, 'x-ledgerline-sealed': '1' };
     if (this.jar.size) h.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (method !== 'GET') {
       h['content-type'] = 'application/json';
@@ -80,7 +80,7 @@ describe('adding a device: the relay', () => {
     expect(
       (await owner.register(new SoftAuthenticator(ORIGIN, 'ledgerline.test'), { setupCode: SETUP })).status,
     ).toBe(200);
-    budgetId = ((await owner.call('GET', '/api/session')).json.budget as { id: string }).id;
+    budgetId = (await owner.call('GET', '/api/session')).json.budgetId as string;
     expect((await owner.call('GET', BASE)).json).toEqual({ role: null });
     const start = await owner.call('POST', `${BASE}/start`);
     expect(start.status).toBe(200);

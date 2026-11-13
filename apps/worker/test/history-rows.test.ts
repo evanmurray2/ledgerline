@@ -1,9 +1,8 @@
 // Rows before an account's budget start ("Before your budget", D-61) are read-only and are never listed: not in
 // Activity (searches too), the account's register, a category sheet or Settings → Payees (D-62).
-import { app } from './phone.js';
+import { app, phoneDb } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ActivityView, CategorySheet, PayeesView, RegisterView, TxnSheet } from '@ledgerline/contracts';
-import { ownerDb } from './store-db.js';
 import { historyRow } from './history.js';
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
@@ -24,7 +23,7 @@ describe('Before your budget', () => {
     expect((await send('POST', '/__dev/seed-november', {})).status).toBe(200);
     await historyRow('marcus', '2026-10-02', -1234, 'Old Bakery');
     // A payee seen only on this row.
-    const db = ownerDb();
+    const db = phoneDb();
     const now = Date.now();
     const budget = (await db.prepare(`SELECT id FROM budget`).first<{ id: string }>())!.id;
     await db.batch([
@@ -88,7 +87,7 @@ describe('Before your budget', () => {
   it('is left out of a category sheet’s recent rows and count, even with a category', async () => {
     const cats = await get<ActivityView>('/api/activity?month=2026-11');
     const categoryId = cats.categoryPicker[0]!.categories[0]!.id;
-    const db = ownerDb();
+    const db = phoneDb();
     await db
       .prepare(`UPDATE txn_overlay SET category_id = ?2 WHERE txn_key = ?1`)
       .bind(KEY, categoryId)
@@ -112,7 +111,7 @@ describe('Before your budget, on a payee with budget transactions', () => {
     const before = await get<PayeesView>('/api/settings/payees');
     const p = before.payees.find((x) => x.bankNames.length < 10)!;
     await historyRow('marcus', '2026-10-01', -500, 'OLD HISTORY TEXT');
-    const db = ownerDb();
+    const db = phoneDb();
     const now = Date.now();
     const budget = (await db.prepare(`SELECT id FROM budget`).first<{ id: string }>())!.id;
     await db

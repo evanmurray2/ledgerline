@@ -1,7 +1,7 @@
 // A bank row dated before an account's budget start ("Before your budget", D-61), stored the way CSV history import
 // stored one before it was removed: a 'csv' connection's bank row with id `csv_<account>_<date>_<n>`. Production
 // budgets may still hold such rows, so the code that reads them stays tested.
-import { ownerDb } from './store-db.js';
+import { phoneDb } from './phone.js';
 
 export async function historyRow(
   accountId: string,
@@ -10,7 +10,7 @@ export async function historyRow(
   name: string,
   n = 0,
 ): Promise<string> {
-  const db = ownerDb();
+  const db = phoneDb();
   const now = Date.now();
   const acct = (await db
     .prepare(`SELECT budget_id, provider_account_id FROM account WHERE id = ?1`)

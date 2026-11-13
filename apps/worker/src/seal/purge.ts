@@ -16,8 +16,7 @@
 // The sealed tables, the job queue and the bank links are never touched.
 import type { Db } from '@ledgerline/db/sql';
 import type { Handler, StepResult } from '../store/jobs.js';
-import { BUDGET_TABLES } from '../store/dump.js';
-import { nextUtcMidnight } from '../store/sync-job.js';
+import { nextUtcMidnight } from '../store/jobs.js';
 
 export const PURGE = 'purge_old';
 export const PURGE_ID = 'purge_old';
@@ -108,6 +107,44 @@ export async function purgeRefusal(db: Db, now: number): Promise<string | null> 
  * The old tables, children before parents: the ones the full backup doesn't list first (the change log, the undo
  * records, the inbox), then the backup's tables from the last to the first (it lists parents first).
  */
+/** The tables of the server's full backup from before D-102, parents first: the order the old tables go in. */
+const BACKUP_ORDER = [
+  'alert',
+  'apply_counter',
+  'audit_log',
+  'bank_event',
+  'bank_page',
+  'bank_txn',
+  'budget',
+  'expected_reimbursement',
+  'health_status',
+  'holding_snapshot',
+  'liability_snapshot',
+  'not_same',
+  'owed_close',
+  'payee',
+  'raw_page',
+  'rule',
+  'setting',
+  'txn_link',
+  'txn_overlay',
+  'txn_split',
+  'usage_daily',
+  'usage_event',
+  'usage_note',
+  'account',
+  'category_group',
+  'connection',
+  'payee_alias',
+  'category',
+  'manual_pending',
+  'provider_account',
+  'sync_run',
+  'assignment',
+  'sync_page',
+  'target',
+] as const;
+
 export async function oldTables(db: Db): Promise<string[]> {
   const rows = (
     await db
@@ -117,7 +154,7 @@ export async function oldTables(db: Db): Promise<string[]> {
       )
       .all<{ name: string }>()
   ).results.map((r) => r.name);
-  const order = BUDGET_TABLES as readonly string[];
+  const order = BACKUP_ORDER as readonly string[];
   const old = rows.filter((t) => !KEPT_TABLES.has(t));
   const rank = (t: string) => {
     const i = order.indexOf(t);

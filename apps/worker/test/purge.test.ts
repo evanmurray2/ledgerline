@@ -16,13 +16,12 @@ import {
   type PurgeDeps,
   type PurgeState,
 } from '../src/seal/purge.js';
-import { WAY_BACK_MS } from '../src/seal/cutover.js';
-import { cutoverBack } from '../src/seal/cutover.js';
 import { BUDGET, T0 } from './log-writer.js';
 import { world, type World } from './sealed-world.js';
 
 const CUT = T0 + 10_000;
-const CLOSED = CUT + WAY_BACK_MS + 60_000;
+/** Past the 7 days the way back stayed open after the cutover (removed with D-102). */
+const CLOSED = CUT + 7 * 86_400_000 + 60_000;
 
 /** The old tables as the old code left them: a budget, links, payees (with their change log), bank pages. */
 async function oldBudget(x: World, payees = 450) {
@@ -194,8 +193,6 @@ describe('emptying the old tables of a sealed budget', () => {
         }),
       ).toEqual({ ok: true });
       expect(queued).toEqual([{ kind: PURGE, id: PURGE_ID, state: { phase: 'triggers' }, runAt: CLOSED }]);
-      // The way back is shut for good once the purge has begun.
-      expect(await cutoverBack({ db: x.db, now: CUT + 1, markNow: CUT + 1 })).toMatchObject({ ok: false });
 
       const r = await drive(x, deps(x), CLOSED);
       expect(r.done).toBe(false);

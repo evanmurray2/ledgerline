@@ -65,7 +65,8 @@ describe('Plaid webhook', () => {
       }
       return new Response(JSON.stringify({ error_code: 'NOT_MOCKED' }), { status: 400 });
     });
-    // The dev user's budget exists after the first request; give it a bank link the Directory routes to.
+    // The dev user's budget exists after the first request; it is locked (D-102), with a stamped bank link the
+    // Directory routes to (a stand-in stamp: the webhook only asks that the link has one).
     await worker.fetch(new Request(`${ORIGIN}/api/session`), env as never, createExecutionContext());
     const budgetId = (await directoryStub().firstBudget())!;
     await db
@@ -75,11 +76,15 @@ describe('Plaid webhook', () => {
       )
       .bind(budgetId)
       .run();
+    await db.batch([
+      db.prepare(`UPDATE bank_link SET mac = 'stamp' WHERE connection_id = 'con_hook'`),
+      db.prepare(`INSERT INTO store_mark (key, at) VALUES ('sealed', 0)`),
+    ]);
     expect(await directoryStub().registerRoute('item-hook', budgetId, 'con_hook')).toBe('ok');
   });
   afterAll(() => vi.restoreAllMocks());
 
-  it('ITEM:ERROR marks the bank as needing sign-in', async () => {
+  it('ITEM:ERROR marks the bank link as needing repair', async () => {
     expect(
       await webhook({
         webhook_type: 'ITEM',
@@ -88,9 +93,9 @@ describe('Plaid webhook', () => {
         error: { error_code: 'ITEM_LOGIN_REQUIRED' },
       }),
     ).toBe(200);
-    expect(await db.prepare(`SELECT status FROM connection WHERE id = 'con_hook'`).first('status')).toBe(
-      'login_required',
-    );
+    expect(
+      await db.prepare(`SELECT status FROM bank_link WHERE connection_id = 'con_hook'`).first('status'),
+    ).toBe('needs_repair');
     // The Worker and the store share one cached key.
     expect(keyCalls).toBe(1);
   });

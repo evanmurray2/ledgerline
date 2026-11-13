@@ -9,7 +9,6 @@ import {
   setPasskeyCheck,
 } from '../src/api/client';
 import { isSealed, resetCopyForTests } from '../src/copy/copy';
-import { NOT_LOCKED } from '../src/copy/sealed-session';
 import { connectivity } from '../src/state/connectivity';
 
 type Call = { url: string; init: RequestInit };
@@ -182,7 +181,6 @@ describe('API client', () => {
         readOnlyUntil: null,
         readsPaused: false,
         canLinkBanks: true,
-        recoveryNoticeAt: null,
       });
     try {
       const s = await api.session();
@@ -194,10 +192,10 @@ describe('API client', () => {
         api.assign({ month: '2026-11', items: [{ categoryId: 'x', amount: 1 }] }),
       ).rejects.toMatchObject({ code: 'sealed', status: 409 });
       expect(calls).toHaveLength(1);
-      // The server now answers as if the budget were not sealed: the app refuses the answer, stays sealed,
-      // and still sends no change.
+      // An answer as if the budget were not sealed (which only the mock API gives; copy/sealed-session.ts refuses
+      // it otherwise): the device stays sealed, and still sends no change.
       respond = () => json(plainSession);
-      await expect(api.session()).rejects.toThrow(NOT_LOCKED);
+      await api.session();
       expect(isSealed()).toBe(true);
       await expect(
         api.assign({ month: '2026-11', items: [{ categoryId: 'x', amount: 1 }] }),
@@ -214,7 +212,7 @@ describe('API client', () => {
     } finally {
       resetCopyForTests();
     }
-    // A device that never knew the budget as sealed takes the plain answer.
+    // The mock API's plain answer, as it is.
     expect((await api.session()).budget.name).toBe('Home');
   });
 

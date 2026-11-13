@@ -1,13 +1,18 @@
 // Keeping users apart (D-75, docs/open-signup.md 11; docs/multi-user.md 11). Two users sign up through the real
-// sign-up route; user B's budget gets data with a marker name; then user A calls every route of the budget API and
-// of Settings → Sign-in, with B's ids in the path, the query and the body. No answer may show B's data, and B's
-// database must not change. The route list is read from the Hono apps, so a new route can't be left out.
+// sign-up route; user B's store gets data with a marker name; then user A calls every route the server has (the
+// locked budget's, Settings → Sign-in's) and every route of the budget's own API (which only a device answers, D-102),
+// with B's ids in the path, the query and the body. No answer may show B's data, and B's database must not change.
+// The route list is read from the Hono apps, so a new route can't be left out.
 import { createExecutionContext, env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import worker from '../../src/index.js';
 import { budgetApi } from '../../src/routes/api.js';
 import { securityRoutes } from '../../src/routes/security.js';
-import { recoveryRoutes, TEST_TOKEN } from '../../src/routes/signup.js';
+import { TEST_TOKEN } from '../../src/routes/signup.js';
+import { logApi } from '../../src/seal/log-routes.js';
+import { purgeApi } from '../../src/seal/purge-routes.js';
+import { sealedApi } from '../../src/seal/sealed-routes.js';
+import { startApi } from '../../src/seal/start-routes.js';
 import { recoveryKeySettings } from '../../src/routes/recovery-key.js';
 import { SoftAuthenticator } from '../soft-authenticator.js';
 import { directoryDb, storeDb } from '../store-db.js';
@@ -20,7 +25,7 @@ const prodEnv = () => ({ ...env, DEV_AUTH_EMAIL: undefined, DEV_ROUTES: undefine
 class Browser {
   jar = new Map<string, string>();
   async call(method: string, path: string, body?: unknown) {
-    const h: Record<string, string> = { origin: ORIGIN };
+    const h: Record<string, string> = { origin: ORIGIN, 'x-ledgerline-sealed': '1' };
     if (this.jar.size) h.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (method !== 'GET' && method !== 'HEAD') {
       h['content-type'] = 'application/json';
@@ -75,7 +80,7 @@ async function snapshot(budgetId: string): Promise<string> {
 }
 
 /** Routes this test can't call without ending A's own sign-in or store (they act only on A's anyway). */
-const SKIP = /sign-out|\/settings\/restore|\/webhooks\//;
+const SKIP = /sign-out|\/webhooks\//;
 
 describe('keeping users apart', () => {
   it('user A reaches none of user B’s data through any route', async () => {
@@ -85,10 +90,8 @@ describe('keeping users apart', () => {
     const b = new Browser();
     await a.ceremony(key(), '/api/auth/signup/options', { turnstileToken: TEST_TOKEN });
     await b.ceremony(key(), '/api/auth/signup/options', { turnstileToken: TEST_TOKEN });
-    const bBudget = (JSON.parse((await b.call('GET', '/api/session')).text) as { budget: { id: string } })
-      .budget.id;
-    const aBudget = (JSON.parse((await a.call('GET', '/api/session')).text) as { budget: { id: string } })
-      .budget.id;
+    const bBudget = (JSON.parse((await b.call('GET', '/api/session')).text) as { budgetId: string }).budgetId;
+    const aBudget = (JSON.parse((await a.call('GET', '/api/session')).text) as { budgetId: string }).budgetId;
     expect(aBudget).not.toBe(bBudget);
 
     // B's data, with the marker in every name.
@@ -145,8 +148,11 @@ describe('keeping users apart', () => {
     const routes = [
       ...budgetApi.routes,
       ...securityRoutes.routes,
-      ...recoveryRoutes.routes,
       ...recoveryKeySettings.routes,
+      ...sealedApi.routes,
+      ...logApi.routes,
+      ...startApi.routes,
+      ...purgeApi.routes,
     ]
       .filter((r) => r.method !== 'ALL' && !SKIP.test(r.path))
       .map((r) => ({ method: r.method, path: r.path }));
@@ -165,6 +171,5 @@ describe('keeping users apart', () => {
     // Nothing A did reached B's database, and B still sees their own data.
     expect(await snapshot(bBudget)).toBe(before);
     expect((await b.call('GET', '/api/session')).status).toBe(200);
-    expect((await b.call('GET', '/api/sync?since=0')).text).toContain(MARK);
   });
 });

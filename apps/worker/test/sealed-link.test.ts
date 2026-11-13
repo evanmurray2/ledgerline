@@ -22,7 +22,6 @@ import {
   toHex,
   type FiledRun,
 } from '@ledgerline/seal';
-import { SELF } from 'cloudflare:test';
 import { Hono } from 'hono';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../src/env.js';
@@ -35,7 +34,7 @@ import { sealedApi } from '../src/seal/sealed-routes.js';
 import { signedActionOf, type SignedPart } from '../src/http/signed-request.js';
 import { BUDGET, T0 } from './log-writer.js';
 import { handed, LINK_A, LINK_B, ring, world, type World } from './sealed-world.js';
-import { ownerDb, storeDb } from './store-db.js';
+import { storeDb } from './store-db.js';
 
 const ORIGIN = 'https://ledgerline.test';
 const H = { origin: ORIGIN, 'content-type': 'application/json', 'x-ledgerline': '1' };
@@ -641,41 +640,15 @@ describe('a new bank in a sealed budget, and removing one', () => {
   });
 });
 
-describe('a new link filed on a device writes the rows the server’s exchange wrote', () => {
-  let p: ReturnType<typeof fakePlaid>;
-  beforeAll(() => {
-    p = fakePlaid();
-  });
-  afterAll(() => vi.restoreAllMocks());
-
-  it('the same connection, bank accounts, accounts and card categories', async () => {
-    // ---- the server, before a budget was sealed: hosted Link, then the exchange and Setup in one go
-    expect(
-      (await SELF.fetch(`${ORIGIN}/__dev/seed-november`, { method: 'POST', headers: H, body: '{}' })).status,
-    ).toBe(200);
-    p.st.sessions = FINISHED;
-    p.st.token = 'access-twin-1';
-    p.st.item = 'item-twin-1';
-    const r = await SELF.fetch(`${ORIGIN}/api/settings/connections/link-finish`, {
-      method: 'POST',
-      headers: H,
-      body: JSON.stringify({ linkToken: 'link-twin-1', mode: 'new' }),
-    });
-    const fin = (await r.json()) as { status: string; connectionId: string };
-    expect(fin.status).toBe('linked');
-    const server = ownerDb();
-    const theirs = await linkRows(server, fin.connectionId);
-    const b = (await server
-      .prepare(`SELECT budget_start_month AS start, time_zone AS tz FROM budget LIMIT 1`)
-      .first<{ start: string | null; tz: string }>())!;
-
-    // ---- a device of a sealed budget: the link's first run says the same about the link
-    const db = await deviceCopy('sealed-link-twin', b);
+describe('a new link filed on a device writes its connection, bank accounts, accounts and card categories', () => {
+  it('as the link’s first run describes them', async () => {
+    const db = await deviceCopy('sealed-link-new', { start: '2026-11', tz: 'America/Los_Angeles' });
     const linkId = '01HNNNNNNNNNNNNNNNNNNNNNNN';
+    const linkedAt = Date.parse('2026-11-14T20:00:00Z');
     const description = {
       v: 1,
       linkId,
-      linkedAt: theirs.conn!.linked_at as number,
+      linkedAt,
       institution: 'Bank One',
       accounts: PLAID_ACCOUNTS.map(normalizePlaidAccount),
     };
@@ -684,7 +657,7 @@ describe('a new link filed on a device writes the rows the server’s exchange w
         run: 1,
         linkId,
         restart: 0,
-        runTime: (theirs.conn!.linked_at as number) + 1000,
+        runTime: linkedAt + 1000,
         inboxVersion: 1,
         cursorAfter: await cursorHash(''),
         added: 0,
@@ -697,7 +670,7 @@ describe('a new link filed on a device writes the rows the server’s exchange w
     } as unknown as FiledRun;
     await fileOpened({ DB: db } as Env, BUDGET, filed, plaid);
     const mine = await linkRows(db, `con_${linkId}`);
-    expect(mine).toEqual(theirs);
+    expect(mine.conn).toMatchObject({ provider: 'plaid', institution_name: 'Bank One', linked_at: linkedAt });
     expect(mine.accounts.length).toBe(2);
   });
 });

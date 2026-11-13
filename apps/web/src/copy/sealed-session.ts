@@ -3,9 +3,9 @@
 // from the copy on this device, which answers the same question the server used to.
 import { Session, type SealedSession } from '@ledgerline/contracts';
 
-/** Shown when the server answers for a budget this device knows as locked as if it were not. */
+/** Shown when the server answers as if the budget were not locked: every budget is (D-102). */
 export const NOT_LOCKED =
-  'Your budget is locked on this device, but the server says it isn’t. Nothing was sent. If you went back on another device, sign out here and sign in again.';
+  'The server says your budget isn’t locked. Nothing was sent. Update Ledgerline to continue.';
 
 export interface SessionDeps {
   /** The copy is open: it can answer for the budget. */
@@ -14,8 +14,8 @@ export interface SessionDeps {
   local: () => Promise<{ status: number; body: string }>;
   /** Tells the copy that the budget is sealed. */
   note: (s: SealedSession) => void;
-  /** This device knows the budget as sealed (it opened it so before). */
-  known: (budgetId: string) => boolean;
+  /** The mock API (dev and tests): it answers as the device's copy would, with a plain session. */
+  mock?: boolean;
   /** Keeps the session with the copy, for a start with no signal. */
   keep: (s: Session) => Promise<void>;
   now?: () => Date;
@@ -23,11 +23,11 @@ export interface SessionDeps {
 
 /** What the app shows as the session, from the server's answer and, for a sealed budget, from the copy. */
 export async function sessionFor(server: Session | SealedSession, d: SessionDeps): Promise<Session> {
+  // A locked budget does not become a plain one because the server says so: the app would then send the budget's
+  // changes in the clear.
   if (!('sealed' in server)) {
-    // A sealed budget does not become a plain one because the server says so: the app would then send the
-    // budget's changes in the clear. Only the way back, taken on this device, or signing out here ends it.
-    if (d.known(server.budget.id)) throw new Error(NOT_LOCKED);
-    return server;
+    if (d.mock) return server;
+    throw new Error(NOT_LOCKED);
   }
   d.note(server);
   if (d.ready()) {
@@ -62,7 +62,6 @@ const accountOf = (server: SealedSession) => ({
   readsPaused: server.readsPaused,
   canLinkBanks: server.canLinkBanks,
   hostedLink: true,
-  recoveryNoticeAt: server.recoveryNoticeAt,
 });
 
 /**

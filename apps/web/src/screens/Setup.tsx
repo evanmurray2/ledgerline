@@ -20,7 +20,7 @@ import { Problem } from '../components/Frame';
 import { toast } from '../components/Toast';
 import { errorMessage } from '../api/client';
 import { lockFinish, lockGiveUp, lockStart } from '../copy/copy';
-import type { PreparedMove } from '../keys/move';
+import type { NewBudget } from '../keys/new-budget';
 import { formatCents } from '../lib/money';
 import { monthLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
@@ -54,7 +54,7 @@ function Step({
   );
 }
 
-type LockStep = { at: 'idle' } | { at: 'key'; made: PreparedMove } | { at: 'type'; made: PreparedMove };
+type LockStep = { at: 'idle' } | { at: 'key'; made: NewBudget } | { at: 'type'; made: NewBudget };
 
 /**
  * A new budget is locked from its first moment (D-102): a passkey prompt makes the budget's key and its recovery
@@ -69,7 +69,7 @@ export function LockBudgetScreen() {
   const [saved, setSaved] = useState(false);
   const [typed, setTyped] = useState('');
   // Leaving the screen with a key in hand gives the key up.
-  const inHand = useRef<PreparedMove | null>(null);
+  const inHand = useRef<NewBudget | null>(null);
   inHand.current = step.at === 'idle' ? null : step.made;
   useEffect(
     () => () => {
@@ -90,7 +90,7 @@ export function LockBudgetScreen() {
       setTyped('');
       setStep({ at: 'key', made: await lockStart() });
     });
-  const finish = (made: PreparedMove) =>
+  const finish = (made: NewBudget) =>
     run(async () => {
       const r = await lockFinish(made, typed);
       if (r.ok) return;

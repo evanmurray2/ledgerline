@@ -6,7 +6,8 @@
 import { ProviderError, type BankDataProvider, type ProviderWebhookEvent } from '@ledgerline/bank-provider';
 import { isUlid } from '@ledgerline/seal';
 import type { Handler, Job, StepResult } from '../store/jobs.js';
-import { NEEDS_SIGN_IN, nextUtcMidnight } from '../store/sync-job.js';
+import { nextUtcMidnight } from '../store/jobs.js';
+import { NEEDS_SIGN_IN } from '../sync/provider.js';
 import type { LinkDescription } from './link-description.js';
 import { snapshotPrune } from './snapshot-store.js';
 import {

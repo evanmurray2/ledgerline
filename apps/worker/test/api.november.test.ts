@@ -238,15 +238,6 @@ describe('November through the API', () => {
       { name: 'Gifts', section: 'Overfunded', fix: { verb: 'Move', amount: -17000 } },
     ]);
   });
-
-  it('rejects mutations without the CSRF header', async () => {
-    const r = await app('/api/budget/assign', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    });
-    expect(r.status).toBe(403);
-  });
 });
 
 describe('Overfunded wording', () => {

@@ -1,8 +1,7 @@
 // Stored alerts (the `alert` table: sync, daily scan, a phone's identity check) show on Accounts and can be dismissed.
-import { app } from './phone.js';
+import { app, phoneDb } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { AccountsView, ActivityView } from '@ledgerline/contracts';
-import { ownerDb } from './store-db.js';
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 const accounts = async (): Promise<AccountsView> => {
@@ -15,7 +14,7 @@ describe('Stored alerts on Accounts', () => {
   let vanishedAccount = '';
   beforeAll(async () => {
     expect((await app('/__dev/seed-november', { method: 'POST', headers: H, body: '{}' })).status).toBe(200);
-    const db = ownerDb();
+    const db = phoneDb();
     const budget = (await db.prepare(`SELECT id FROM budget`).first<{ id: string }>())!.id;
     const now = Date.now();
     const rows: [string, string, string, string][] = [
@@ -76,7 +75,7 @@ describe('Stored alerts on Accounts', () => {
     const r = await app('/api/alerts/al-re/dismiss', { method: 'POST', headers: H, body: '{}' });
     expect(r.status).toBe(200);
     expect((await accounts()).alerts.map((x) => x.id)).not.toContain('al-re');
-    const row = await ownerDb()
+    const row = await phoneDb()
       .prepare(`SELECT acked_at FROM alert WHERE id = 'al-re'`)
       .first<{ acked_at: number | null }>();
     expect(row!.acked_at).not.toBeNull();

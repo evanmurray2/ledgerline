@@ -1,13 +1,12 @@
 // D-98: nothing is held in Waiting to match. Money from a person counts like any other money in; Match links it to
 // what it pays back, Unlink returns it to the usual rules, and Owed to you offers it for Match. Migration 0012
 // releases what was held before.
-import { app } from './phone.js';
+import { app, phoneDb } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ActivityView, BudgetView, OwedView } from '@ledgerline/contracts';
 import { BUDGET_MIGRATIONS } from '../src/store/migrations.gen.js';
-import { ownerDb } from './store-db.js';
 
-const db = ownerDb();
+const db = phoneDb();
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 const json = async <T>(path: string, init?: RequestInit) => (await (await app(path, init)).json()) as T;
 const overlay = (key: string) =>

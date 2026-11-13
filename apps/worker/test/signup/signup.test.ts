@@ -15,7 +15,7 @@ const prodEnv = () => ({ ...env, DEV_AUTH_EMAIL: undefined, DEV_ROUTES: undefine
 class Browser {
   jar = new Map<string, string>();
   async call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
-    const h: Record<string, string> = { origin: ORIGIN, ...headers };
+    const h: Record<string, string> = { origin: ORIGIN, 'x-ledgerline-sealed': '1', ...headers };
     if (this.jar.size) h.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (method !== 'GET') {
       h['content-type'] ??= 'application/json';
@@ -59,7 +59,6 @@ const owner = new Browser();
 const ownerKey = newKey();
 const alex = new Browser();
 const alexKey = newKey();
-let alexCode = '';
 
 describe('open sign-up', () => {
   it('stays closed until the instance has its admin', async () => {
@@ -100,13 +99,13 @@ describe('open sign-up', () => {
     expect(await dir.prepare(`SELECT count(*) AS n FROM user`).first('n')).toBe(1);
   });
 
-  it('makes an account with its own budget, passkey and recovery code, never an admin', async () => {
+  it('makes an account with its own budget and passkey, never an admin; its budget is made on its device', async () => {
     const r = await alex.ceremony(alexKey, '/api/auth/signup/options', {
       turnstileToken: TEST_TOKEN,
     });
     expect(r.status).toBe(200);
-    alexCode = String(r.json.recoveryCode);
-    expect(alexCode).toMatch(/^([A-Z2-7]{4}-){7}[A-Z2-7]{4}$/);
+    // No recovery code: the budget's recovery key takes its place (D-102).
+    expect(r.json).toEqual({ ok: true });
     const u = await dir
       .prepare(`SELECT id, is_admin, display_name, email FROM user WHERE is_admin = 0`)
       .first<{
@@ -119,11 +118,11 @@ describe('open sign-up', () => {
     expect(u).toMatchObject({ is_admin: 0, display_name: null, email: `u:${u!.id}` });
     const s = await alex.call('GET', '/api/session');
     expect(s.status).toBe(200);
-    expect(s.json).toMatchObject({ canLinkBanks: false, recoveryNoticeAt: null });
+    expect(s.json).toMatchObject({ canLinkBanks: false, fresh: true });
     const own = await owner.call('GET', '/api/session');
-    expect((own.json.budget as { id: string }).id).not.toBe((s.json.budget as { id: string }).id);
-    expect((await alex.call('GET', '/api/settings/security')).json.recoveryCode).toBe(true);
-    expect((await owner.call('GET', '/api/settings/security')).json.recoveryCode).toBe(false);
+    expect(own.json.budgetId).not.toBe(s.json.budgetId);
+    expect((await alex.call('GET', '/api/settings/security')).json.ownAccount).toBe(true);
+    expect((await owner.call('GET', '/api/settings/security')).json.ownAccount).toBe(false);
   });
 
   it('stops at the daily limit, and says so before the passkey', async () => {
@@ -158,76 +157,5 @@ describe('open sign-up', () => {
     });
     expect(v).toMatchObject({ status: 403, json: { error: 'full' } });
     expect(await dir.prepare(`SELECT count(*) AS n FROM user`).first('n')).toBe(3);
-  });
-});
-
-describe('recovery codes', () => {
-  it('a wrong code, or one for an admin, gets nothing', async () => {
-    const b = new Browser();
-    expect(
-      (await b.call('POST', '/api/auth/recover/options', { code: 'AAAA-BBBB', turnstileToken: TEST_TOKEN }))
-        .status,
-    ).toBe(403);
-    expect(
-      (
-        await b.call('POST', '/api/auth/recover/options', {
-          code: 'A'.repeat(32),
-          turnstileToken: TEST_TOKEN,
-        })
-      ).status,
-    ).toBe(403);
-  });
-
-  it('adds a passkey, removes nothing, swaps the code and shows a notice', async () => {
-    const phone = new Browser();
-    const lostKey = newKey();
-    const typed = alexCode.toLowerCase().replace(/-/g, ' ');
-    const r = await phone.ceremony(lostKey, '/api/auth/recover/options', {
-      code: typed,
-      turnstileToken: TEST_TOKEN,
-    });
-    expect(r.status).toBe(200);
-    const next = String(r.json.recoveryCode);
-    expect(next).not.toBe(alexCode);
-    // The new passkey is Alex's; the old one still works.
-    expect(lostKey.userHandle).toBe(alexKey.userHandle);
-    expect((await new Browser().signIn(alexKey)).status).toBe(200);
-    expect((await alex.call('GET', '/api/session')).status).toBe(200);
-    // The old code works no more.
-    expect(
-      (
-        await new Browser().call('POST', '/api/auth/recover/options', {
-          code: alexCode,
-          turnstileToken: TEST_TOKEN,
-        })
-      ).status,
-    ).toBe(403);
-    // The notice shows until dismissed.
-    expect((await phone.call('GET', '/api/session')).json.recoveryNoticeAt).toBe('2026-11-14T20:00:00.000Z');
-    expect((await phone.call('POST', '/api/settings/security/recovery-notice/dismiss')).status).toBe(200);
-    expect((await phone.call('GET', '/api/session')).json.recoveryNoticeAt).toBeNull();
-    alexCode = next;
-  });
-
-  it('a recovery started before the code was replaced fails', async () => {
-    const b = new Browser();
-    const o = await b.call('POST', '/api/auth/recover/options', {
-      code: alexCode,
-      turnstileToken: TEST_TOKEN,
-    });
-    expect(o.status).toBe(200);
-    // Alex makes a new code meanwhile (Settings → Sign-in).
-    const fresh = await alex.call('POST', '/api/settings/security/recovery-code');
-    expect(fresh.status).toBe(200);
-    const v = await b.call('POST', '/api/auth/register/verify', {
-      response: await newKey().create(o.json as never),
-      name: 'Phone',
-    });
-    expect(v.status).toBe(403);
-    alexCode = String(fresh.json.code);
-  });
-
-  it('admins have no recovery code', async () => {
-    expect((await owner.call('POST', '/api/settings/security/recovery-code')).status).toBe(404);
   });
 });

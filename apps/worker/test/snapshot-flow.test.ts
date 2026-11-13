@@ -4,7 +4,6 @@
 // is older; a snapshot of a copy that drifted is not checked.
 import { ulid } from '@ledgerline/platform';
 import { ChainError, encodeEntry, randomBytes, SnapshotError, startChain } from '@ledgerline/seal';
-import { SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { DeviceLog } from '../src/local/device-log.js';
 import {
@@ -35,19 +34,11 @@ import { syncPhone } from './phone.js';
 import { world } from './sealed-world.js';
 import { differences, newPhone, rowsOf } from './twin.js';
 
-const ORIGIN = 'https://ledgerline.test';
-const H = { origin: ORIGIN, 'content-type': 'application/json', 'x-ledgerline': '1' };
 const LAPTOP = '01CX5ZZKBKACTAV9WEVGEMMVRZ';
 const TABLET = '01DX5ZZKBKACTAV9WEVGEMMVRZ';
 
 describe('snapshots, from one device to the next', () => {
   it('written, read back, opened by a new device, checked by rebuilding, and only then is anything deleted', async () => {
-    const seeded = await SELF.fetch(`${ORIGIN}/__dev/seed-november`, {
-      method: 'POST',
-      headers: H,
-      body: '{}',
-    });
-    expect(seeded.status).toBe(200);
     await world(
       async (x) => {
         let clock = T0 + 10_000;

@@ -1,26 +1,14 @@
-// The twin check (docs/privacy.md 5.3): one edit, run on a phone's copy and on the server with the same edit id and
-// time, must leave the same rows on both sides. The rows the phone recorded for the edit, written to a third copy,
-// must give the same again. A second phone, which never runs the edit, syncs the server's rows;
-// the two copies are then compared table by table.
-import { SELF } from 'cloudflare:test';
+// The twin check (docs/privacy.md 5.3): one edit, run on two devices' copies with the same edit id and time, must
+// leave the same rows on both: ids and time are inputs. The rows the first device recorded for the edit, written to
+// a third copy as a log entry is (LocalEngine.applyRows), must give the same again. The copies are compared table
+// by table.
 import { expect } from 'vitest';
-import { LocalEngine, migrateLocal } from '../src/local/engine.js';
+import type { LocalEngine } from '../src/local/engine.js';
 import { SYNC_TABLES } from '../src/sync-tables.js';
-import { syncPhone } from './phone.js';
-import { storeDb } from './store-db.js';
-
-const ORIGIN = 'https://ledgerline.test';
-const H = { origin: ORIGIN, 'content-type': 'application/json', 'x-ledgerline': '1' };
-let copies = 0;
+import { deviceNow, newCopy } from './phone.js';
 
 /** A new, empty copy of the signed-in user's budget. */
-export async function newPhone(): Promise<LocalEngine> {
-  const r = await SELF.fetch(`${ORIGIN}/api/session`);
-  const s = (await r.json()) as { budget: { id: string }; user: { email: string } };
-  const db = storeDb(`twin-copy-${++copies}`);
-  await migrateLocal(db, Date.now());
-  return new LocalEngine(db, { budgetId: s.budget.id, userId: 'phone', email: s.user.email });
-}
+export const newPhone = (): Promise<LocalEngine> => newCopy();
 
 /** Worked out on each phone, never stored by the server (D-45, D-46): not part of what an edit writes. */
 const DERIVED: Record<string, readonly string[]> = {
@@ -51,13 +39,13 @@ export function differences(phone: Rows, server: Rows): string[] {
     const b = new Map(server[t.name]!.map((r) => [key(r), r]));
     for (const [k, r] of a) {
       const o = b.get(k);
-      if (!o) out.push(`${t.name} ${k}: only on the phone`);
+      if (!o) out.push(`${t.name} ${k}: only on the first`);
       else
         for (const c of Object.keys(r))
           if (JSON.stringify(r[c]) !== JSON.stringify(o[c]))
-            out.push(`${t.name} ${k}.${c}: phone ${JSON.stringify(r[c])}, server ${JSON.stringify(o[c])}`);
+            out.push(`${t.name} ${k}.${c}: first ${JSON.stringify(r[c])}, second ${JSON.stringify(o[c])}`);
     }
-    for (const k of b.keys()) if (!a.has(k)) out.push(`${t.name} ${k}: only on the server`);
+    for (const k of b.keys()) if (!a.has(k)) out.push(`${t.name} ${k}: only on the second`);
   }
   return out;
 }
@@ -79,25 +67,17 @@ const auditLine = (r: Record<string, unknown>) => [
   r.created_at,
 ];
 
-let budget: Promise<string> | null = null;
-function budgetId(): Promise<string> {
-  budget ??= SELF.fetch(`${ORIGIN}/api/session`)
-    .then((r) => r.json())
-    .then((s) => (s as { budget: { id: string } }).budget.id);
-  return budget;
-}
-
 export interface Twin {
+  /** The first device's answer. */
   phone: Response;
+  /** The second device's answer to the same edit. */
   server: Response;
   differences: string[];
-  /** How many rows the phone recorded for the edit. */
+  /** How many rows the first device recorded for the edit. */
   recorded: number;
 }
 
-/**
- * Runs one edit on both sides. `a` is the phone that makes the edit; `b` only syncs. Both must be synced before.
- */
+/** Runs one edit on two devices, `a` and `b`, with the same id and time. Both must hold the same budget before. */
 export async function twin(
   a: LocalEngine,
   b: LocalEngine,
@@ -105,25 +85,19 @@ export async function twin(
   path: string,
   body: unknown,
   /**
-   * A third phone, which neither runs the edit nor syncs it: it writes only the rows the first phone recorded for
-   * the edit (LocalEngine.record), as a device will apply a log entry. It must end with the same rows too.
+   * A third device, which doesn't run the edit: it writes only the rows the first device recorded for the edit
+   * (LocalEngine.record), as a device applies a log entry. It must end with the same rows too.
    */
   c?: LocalEngine,
 ): Promise<Twin> {
-  // As the app makes them (apps/web/src/copy/copy.ts editOffline): the time is this device's clock, corrected by
-  // how far it is from the server's.
-  // One minute back, as an edit that waited in the queue: the server keeps an edit's time only when it is not
-  // later than its own clock (http/clock.ts editNow), and the test server's clock stands still.
-  const edit = {
-    id: crypto.randomUUID().replace(/-/g, ''),
-    at: Date.now() + (await a.state()).offset - 60_000,
-  };
+  // As the app makes them (apps/web/src/copy/copy.ts editOnDevice): the time is this device's corrected clock.
+  const edit = { id: crypto.randomUUID().replace(/-/g, ''), at: deviceNow() - 60_000 };
   const ran = await a.record(method, path, body, edit);
   const phone = ran.response;
   const undone: string[] = [];
   if (c) {
-    // Taking an edit back out (the redo of a refused write): the third phone runs the edit itself, writes the
-    // rows as they were before it, and must be exactly as it was. Then it takes the first phone's rows.
+    // Taking an edit back out (the redo of a refused write): the third device runs the edit itself, writes the
+    // rows as they were before it, and must be exactly as it was. Then it takes the first device's rows.
     const was = await everything(c);
     const own = await c.record(method, path, body, edit);
     await c.applyRows(own.undo);
@@ -131,45 +105,27 @@ export async function twin(
     for (const d of differences(is.rows, was.rows)) undone.push(`after undo: ${d}`);
     if (is.other !== was.other) undone.push('after undo: audit_log or txn_key_move differs');
     await c.applyRows(ran.rows);
+    if (await c.needsDerive()) await c.derive();
   }
-  const server = await SELF.fetch(`${ORIGIN}${path}`, {
-    method,
-    headers: { ...H, 'x-edit-id': edit.id, 'x-edit-at': String(edit.at) },
-    body: JSON.stringify(body),
-  });
-  expect(server.status, `${method} ${path}: the server's answer`).toBe(phone.status);
-  await syncPhone(b);
+  const second = await b.record(method, path, body, edit);
+  expect(second.response.status, `${method} ${path}: the second device's answer`).toBe(phone.status);
   const diff = [...undone, ...differences(await rowsOf(a), await rowsOf(b))];
   if (c) {
-    for (const d of differences(await rowsOf(c), await rowsOf(b))) diff.push(`recorded rows: ${d}`);
-    // The two tables an edit writes that no sync carries: the copy that took the recorded rows holds what the
-    // phone that ran the edit holds, ids included.
+    for (const d of differences(await rowsOf(c), await rowsOf(a))) diff.push(`recorded rows: ${d}`);
+    // The two tables an edit writes that only a recording carries: the copy that took the recorded rows holds
+    // what the device that ran the edit holds, ids included.
     for (const t of ['audit_log', 'txn_key_move']) {
       const all = async (e: LocalEngine) =>
         JSON.stringify((await e.db.prepare(`SELECT * FROM ${t} ORDER BY 1`).all()).results);
       if ((await all(a)) !== (await all(c))) diff.push(`recorded rows: ${t} differs`);
     }
   }
-  // What the edit wrote to the record of changes, against the server's newest lines (ids and the user are each
-  // side's own).
-  const audited = ran.rows.filter((r) => r.t === 'audit_log' && r.d).map((r) => auditLine(r.d!));
-  if (audited.length) {
-    const theirs = await storeDb(await budgetId())
-      .prepare(`SELECT * FROM audit_log ORDER BY id DESC LIMIT ?1`)
-      .bind(audited.length)
-      .all<Record<string, unknown>>();
-    const server = theirs.results.map(auditLine).reverse();
-    if (JSON.stringify(audited) !== JSON.stringify(server))
-      diff.push(`audit_log: phone ${JSON.stringify(audited)}, server ${JSON.stringify(server)}`);
-  }
-  // And where a transaction's key went: the same line on the server.
-  for (const r of ran.rows.filter((x) => x.t === 'txn_key_move' && x.d)) {
-    const theirs = await storeDb(await budgetId())
-      .prepare(`SELECT * FROM txn_key_move WHERE old_key = ?1`)
-      .bind(r.k[0])
-      .first<Record<string, unknown>>();
-    if (JSON.stringify(theirs) !== JSON.stringify(r.d))
-      diff.push(`txn_key_move: phone ${JSON.stringify(r.d)}, server ${JSON.stringify(theirs)}`);
-  }
-  return { phone, server, differences: diff, recorded: ran.rows.length };
+  // What the edit wrote to the record of changes is the same on both devices (each its own user).
+  const lines = (r: typeof ran) =>
+    JSON.stringify(r.rows.filter((x) => x.t === 'audit_log' && x.d).map((x) => auditLine(x.d!)));
+  if (lines(ran) !== lines(second)) diff.push(`audit_log: first ${lines(ran)}, second ${lines(second)}`);
+  // And where a transaction's key went.
+  const moves = (r: typeof ran) => JSON.stringify(r.rows.filter((x) => x.t === 'txn_key_move'));
+  if (moves(ran) !== moves(second)) diff.push(`txn_key_move: first ${moves(ran)}, second ${moves(second)}`);
+  return { phone, server: second.response, differences: diff, recorded: ran.rows.length };
 }

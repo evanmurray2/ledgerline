@@ -8,7 +8,7 @@ import type { Db } from '@ledgerline/db/sql';
 import { decryptToken, tokenKeyBytes, type TokenKeyring } from '@ledgerline/platform';
 import { isUlid, linkMac, serverKeys } from '@ledgerline/seal';
 import type { Handler, StepResult } from './jobs.js';
-import { NEEDS_SIGN_IN } from './sync-job.js';
+import { NEEDS_SIGN_IN } from '../sync/provider.js';
 
 export const STAMP_LINKS_ID = 'stamp_links';
 

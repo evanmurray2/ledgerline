@@ -1,11 +1,10 @@
 // Owed to you on list rows: a purchase says your share (what its category counts), so a category's list adds up to
 // its Spent; money in that paid it back says which category it paid back. The money itself doesn't move.
-import { app } from './phone.js';
+import { app, phoneDb } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ActivityView, CategorySheet, TxnListRow } from '@ledgerline/contracts';
-import { ownerDb } from './store-db.js';
 
-const db = ownerDb();
+const db = phoneDb();
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 
 describe('owed labels on list rows', () => {

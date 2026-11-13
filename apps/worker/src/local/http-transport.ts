@@ -1,9 +1,7 @@
 // How a device reaches the server's sealed log over HTTP (seal/log-routes.ts): the entries, the bank runs and
 // the snapshots, as the session and the snapshot code ask for them (log-session.ts, device-snapshot.ts). Nothing
 // here is trusted because the server said it: every byte this hands on is checked by the code that asked.
-import type { FreezeStep } from '../seal/cutover.js';
 import type { AppendResult } from '../seal/log-store.js';
-import type { CutoverTransport } from './cutover-device.js';
 import type { SnapshotTransport } from './device-snapshot.js';
 import type { StartTransport } from './start-device.js';
 import type { LogTransport, RunTransport } from './log-session.js';
@@ -157,55 +155,6 @@ export function httpTransport(fetch: Fetch): LogTransport & RunTransport & Snaps
         from = page.last;
       }
     },
-  };
-}
-
-/** The cutover's routes (seal/cutover-routes.ts), for the phone's side of it (local/cutover-device.ts). */
-export function cutoverTransport(fetch: Fetch): CutoverTransport {
-  const headers = { 'content-type': 'application/json', 'x-ledgerline': '1' };
-  const call = async <T>(path: string, init: RequestInit): Promise<T> => {
-    const r = await fetch(path, init);
-    let body: unknown;
-    try {
-      body = await r.json();
-    } catch {
-      throw new TransportError(r.status, 'The server gave no answer. Try again.');
-    }
-    // The store's own answer, a yes or a no with its reason; anything else is a fault.
-    if ((r.status !== 200 && r.status !== 409) || typeof (body as { ok?: unknown }).ok !== 'boolean')
-      throw new TransportError(
-        r.status,
-        (body as { message?: string }).message ?? 'The server gave no answer. Try again.',
-      );
-    return body as T;
-  };
-  const post = <T>(path: string, body: unknown = {}): Promise<T> =>
-    call<T>(path, { method: 'POST', headers, body: JSON.stringify(body) });
-  return {
-    // The server hashes the budget a few hundred rows a call: asked again until the answer is whole.
-    freeze: async () => {
-      for (let n = 0; n < 5_000; n++) {
-        const r = await post<FreezeStep>('/api/cutover/freeze');
-        if (!r.ok || !('more' in r)) return r;
-      }
-      throw new TransportError(200, 'The server gave no answer. Try again.');
-    },
-    begin: (s) =>
-      post('/api/cutover/begin', {
-        genesis: b64(s.genesis),
-        header: b64(s.header),
-        signature: b64(s.signature),
-        manifest: b64(s.manifest),
-        chunks: s.chunks,
-        tables: s.tables,
-      }),
-    chunk: (id, k, bytes) =>
-      call(`/api/cutover/chunks/${encodeURIComponent(id)}/${k}`, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/octet-stream', 'x-ledgerline': '1' },
-        body: bytes as Uint8Array<ArrayBuffer>,
-      }),
-    seal: () => post('/api/cutover/seal'),
   };
 }
 

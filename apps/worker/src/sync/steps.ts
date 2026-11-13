@@ -1,14 +1,9 @@
 // Sync run lifecycle (Sync spec: Run lifecycle). Each exported function is the body of one sync job step, so the
 // measuring harness can time exactly what a step does. Steps return small JSON (ids, cursors, counts), never pages.
 import type { Db, Stmt } from '@ledgerline/db/sql';
-import {
-  MUTATION_DURING_PAGINATION,
-  ProviderError,
-  scanSyncTailBytes,
-  type BankDataProvider,
-} from '@ledgerline/bank-provider';
+import { MUTATION_DURING_PAGINATION, ProviderError, type BankDataProvider } from '@ledgerline/bank-provider';
 import { sha256Hex } from '@ledgerline/bank-provider';
-import { leaseFence, conditionFence, isFenceAbort, renew, MAX_FETCH_RESTARTS } from './lease.js';
+import { leaseFence, conditionFence, isFenceAbort, renew } from './lease.js';
 
 export class LeaseLost extends Error {
   constructor() {
@@ -252,28 +247,6 @@ export async function fetchPage(
         ]),
   ]);
   return { kind: 'page', hasMore: staged.hasMore, nextCursor: staged.nextCursor, bytes: staged.body.length };
-}
-
-/** On TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION: drop this run's pages and restart from run_start_cursor. */
-export async function restartFetch(
-  c: Ctx,
-  runId: string,
-): Promise<{ restartCount: number; failed: boolean }> {
-  await mustRenew(c);
-  const rows = await c.db.batch([
-    leaseFence(c.db, c.connectionId, c.holder, c.now),
-    c.db.prepare(`DELETE FROM sync_page WHERE sync_run_id = ?1`).bind(runId),
-    c.db
-      .prepare(
-        `UPDATE sync_run SET restart_count = restart_count + 1, pages_fetched = 0, updated_at = ?2,
-           phase = CASE WHEN restart_count + 1 > ?3 THEN 'failed' ELSE phase END,
-           error_code = CASE WHEN restart_count + 1 > ?3 THEN 'TOO_MANY_RESTARTS' ELSE error_code END
-         WHERE id = ?1 RETURNING restart_count, phase`,
-      )
-      .bind(runId, c.now, MAX_FETCH_RESTARTS),
-  ]);
-  const r = rows[2]?.results[0] as { restart_count: number; phase: string };
-  return { restartCount: r.restart_count, failed: r.phase === 'failed' };
 }
 
 /** Columns per bank_event row and bank_txn row; statements are chunked to stay within 100 bound parameters. */
@@ -555,11 +528,6 @@ export async function planApply(
     );
   }
   return { stmts, events: evs.length, pageDone };
-}
-
-/** The fetch step's compute on a received body: read the continuation fields from its tail. */
-export function planStage(bytes: Uint8Array): { nextCursor: string; hasMore: boolean } {
-  return scanSyncTailBytes(bytes);
 }
 
 export { type Ctx as StepContext };

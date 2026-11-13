@@ -1,16 +1,11 @@
-// Every screen route runs on the phone too (D-45): the engine answers the app's reads with the server's own routes,
-// with only the bindings it has (local/engine.ts env()). A route that reaches for a binding only the server has would
-// break on the phone alone, so each GET route the app reads from the copy is called on a synced copy here, with
-// made-up ids where the path takes one, and must answer without a server error.
-import { SELF } from 'cloudflare:test';
+// Every screen route runs on the device (D-45, D-102): the engine answers the app's reads with the budget's routes,
+// with only the bindings it has (local/engine.ts env()). A route that reaches for a binding only the Worker has would
+// break on the device, so each GET route is called on a copy here, with made-up ids where the path takes one, and
+// must answer without a server error.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { LocalEngine, migrateLocal } from '../src/local/engine.js';
-import { budgetApi, SERVER_READS } from '../src/routes/api.js';
-import { storeDb } from './store-db.js';
-import { syncPhone } from './phone.js';
-
-const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
-const api = async (path: string, init?: RequestInit) => SELF.fetch(`https://ledgerline.test${path}`, init);
+import type { LocalEngine } from '../src/local/engine.js';
+import { budgetApi } from '../src/routes/api.js';
+import { newCopy, seed } from './phone.js';
 
 /** The app's GET routes that the copy answers, with each `:param` filled in. */
 const reads = [
@@ -18,10 +13,7 @@ const reads = [
     budgetApi.routes
       .filter((r) => r.method === 'GET' && r.path.startsWith('/'))
       .map((r) => `/api${r.path}`.replace(/\/+/g, '/'))
-      .filter((p) => !p.includes('*'))
-      .filter((p) => !SERVER_READS.some((re) => re.test(p.replace(/:[^/]+/g, 'x'))))
-      // Settings → Sign-in: the Directory answers it (store/router.ts), never the copy.
-      .filter((p) => !p.startsWith('/api/settings/security')),
+      .filter((p) => !p.includes('*')),
   ),
 ];
 /** Real ids from the copy, so each route runs its full path; a made-up one for anything else. */
@@ -34,21 +26,17 @@ const filled = (path: string, month: string) =>
     .replace(/:key\b/g, encodeURIComponent(ids.key ?? ''))
     .replace(/:[A-Za-z_]+/g, 'not-an-id');
 
-describe('every screen route runs on the phone', () => {
+describe('every screen route runs on the device', () => {
   let engine: LocalEngine;
   let month: string;
 
   beforeAll(async () => {
-    expect((await api('/__dev/seed-november', { method: 'POST', headers: H, body: '{}' })).status).toBe(200);
-    const s = (await (await api('/api/session')).json()) as {
+    engine = await seed(await newCopy());
+    const s = (await (await engine.request('GET', '/api/session')).json()) as {
       budget: { id: string; currentMonth: string };
     };
     month = s.budget.currentMonth;
-    const db = storeDb('engine-routes');
-    await migrateLocal(db, Date.now());
-    engine = await syncPhone(
-      new LocalEngine(db, { budgetId: s.budget.id, userId: 'phone', email: 'owner@example.com' }),
-    );
+    const db = engine.db;
     const one = async (sql: string) => (await db.prepare(sql).first<{ v: string }>())!.v;
     ids.category = await one(`SELECT id AS v FROM category WHERE kind = 'spending' ORDER BY id LIMIT 1`);
     ids.account = await one(`SELECT id AS v FROM account ORDER BY id LIMIT 1`);

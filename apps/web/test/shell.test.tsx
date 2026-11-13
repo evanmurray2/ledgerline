@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CHECK_FAILED, CreateAccountScreen } from '../src/screens/Signup';
-import { backupFileName } from '../src/screens/settings/Data';
 import { userName, usersLine } from '../src/screens/settings/People';
 import { tellApart } from '../src/screens/settings/SignIn';
 import { passkeyName } from '../src/lib/device-name';
@@ -105,15 +104,6 @@ describe('Settings texts', () => {
     const at = new Date('2026-11-14T12:00:00Z');
     expect(passkeyName(at, 'Mozilla/5.0 (X11; Linux x86_64) Chrome/130.0')).toBe('Linux computer, Nov 14');
     expect(passkeyName(at, 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)')).toBe('iPhone, Nov 14');
-  });
-});
-
-describe('Full backup file name', () => {
-  it('uses the day in the budget’s time zone', () => {
-    // 6 PM Pacific on Nov 14 is already Nov 15 in UTC.
-    const at = new Date('2026-11-15T02:00:00Z');
-    expect(backupFileName(at, 'America/Los_Angeles')).toBe('ledgerline-backup-2026-11-14.ndjson');
-    expect(backupFileName(at, 'Europe/Paris')).toBe('ledgerline-backup-2026-11-15.ndjson');
   });
 });
 

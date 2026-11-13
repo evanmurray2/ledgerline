@@ -1,16 +1,12 @@
-// Every edit the phone may make offline, run as a twin (test/twin.ts): the phone's rows equal the server's.
-import { SELF } from 'cloudflare:test';
+// Every edit a device makes, run as a twin (test/twin.ts): the same edit, with the same id and time, gives the same
+// rows on two devices, and the rows the first recorded give them on a third, as a log entry does.
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { LocalEngine } from '../src/local/engine.js';
 import { budgetApi } from '../src/routes/api.js';
-import { syncPhone } from './phone.js';
-import { storeDb } from './store-db.js';
+import { everythingAgain, syncPhone } from './phone.js';
 import { differences, newPhone, rowsOf, twin } from './twin.js';
 
-const ORIGIN = 'https://ledgerline.test';
-const H = { origin: ORIGIN, 'content-type': 'application/json', 'x-ledgerline': '1' };
-
-describe('the same edit on the phone and on the server', () => {
+describe('the same edit on two devices', () => {
   let a: LocalEngine;
   let b: LocalEngine;
   /** Takes only the rows the first phone records for each edit (twin.ts). */
@@ -19,23 +15,23 @@ describe('the same edit on the phone and on the server', () => {
   let txn: string;
   let payee: string;
   let budget: string;
-  /** Set-up data a case needs: written on the server, as a bank update would, then synced to both phones. */
+  /** Set-up data a case needs: written on every copy, as a bank entry would, then worked out again. */
   const onServer =
     (sql: string, ...values: unknown[]) =>
     async () => {
-      await storeDb(budget)
-        .prepare(sql)
-        .bind(...values)
-        .run();
+      for (const e of [a, b, c]) {
+        await e.db
+          .prepare(sql)
+          .bind(...values)
+          .run();
+        await everythingAgain(e);
+      }
     };
   const month = '2026-11';
 
   beforeAll(async () => {
-    const r = await SELF.fetch(`${ORIGIN}/__dev/seed-november`, { method: 'POST', headers: H, body: '{}' });
-    expect(r.status).toBe(200);
-    const session = (await (await SELF.fetch(`${ORIGIN}/api/session`)).json()) as { budget: { id: string } };
-    budget = session.budget.id;
     a = await syncPhone(await newPhone());
+    budget = (await a.db.prepare(`SELECT id FROM budget`).first<{ id: string }>())!.id;
     b = await syncPhone(await newPhone());
     c = await syncPhone(await newPhone());
     const cats = (await (await a.request('GET', '/api/settings/categories')).json()) as {
@@ -53,7 +49,7 @@ describe('the same edit on the phone and on the server', () => {
     payee = (await a.db.prepare(`SELECT id FROM payee ORDER BY id LIMIT 1`).first<{ id: string }>())!.id;
   });
 
-  it('two synced copies start equal', async () => {
+  it('two copies start equal', async () => {
     expect(differences(await rowsOf(a), await rowsOf(b))).toEqual([]);
   });
 
@@ -449,7 +445,7 @@ describe('the same edit on the phone and on the server', () => {
       expect(t.phone.status, await t.phone.clone().text()).toBeLessThan(300);
       expect(t.recorded).toBeGreaterThan(0);
       expect(t.differences).toEqual([]);
-      // The phone that made the edit takes the server's rows next: nothing changes for it.
+      // Worked out again, nothing changes.
       await syncPhone(a);
       expect(differences(await rowsOf(a), await rowsOf(b))).toEqual([]);
     });
@@ -469,8 +465,6 @@ describe('the same edit on the phone and on the server', () => {
     const onPhone = (await joined.phone.json()) as { undoId: string };
     const onServer = (await joined.server.json()) as { undoId: string };
     expect(onPhone.undoId).toBe(onServer.undoId);
-    // The phone takes the server's rows before the undo: they carry the join's own time, so the undo still finds
-    // the payees as the join left them.
     await syncPhone(a);
     const undone = await twin(a, b, 'POST', `/api/settings/payees/merge/${onPhone.undoId}/undo`, {}, c);
     expect(undone.phone.status, await undone.phone.clone().text()).toBe(200);
@@ -483,7 +477,7 @@ describe('the same edit on the phone and on the server', () => {
     await syncPhone(a);
   });
 
-  it('both sides refuse a balance edit worked out before the newest change', async () => {
+  it('both devices refuse a balance edit worked out before the newest change', async () => {
     const stale = (await a.state()).through - 1;
     const t = await twin(a, b, 'POST', `/api/settings/categories/${spending[8]}/archive`, {
       archived: true,
@@ -510,50 +504,21 @@ describe('the same edit on the phone and on the server', () => {
     expect(d.join('\n')).toContain('assignment');
   });
 
-  // Every edit the API has is in one list: checked as a twin here, never run on a phone, or not checked yet.
+  // Every edit the API has is in one list: checked as a twin here, or not checked yet.
   it('no edit route is missing from the lists', () => {
     const routes = new Set<string>();
     for (const r of budgetApi.routes)
       if (!['GET', 'HEAD', 'ALL'].includes(r.method)) routes.add(`${r.method} ${r.path}`);
-    const listed = new Set([
-      ...cases.map(([, route]) => route),
-      ...OTHER_TWINS,
-      ...Object.keys(SERVER_ONLY),
-      ...Object.keys(NOT_YET),
-    ]);
+    const listed = new Set([...cases.map(([, route]) => route), ...OTHER_TWINS, ...Object.keys(NOT_YET)]);
     expect([...routes].filter((r) => !listed.has(r)).sort()).toEqual([]);
     expect([...listed].filter((r) => !routes.has(r)).sort()).toEqual([]);
     const twinned = new Set([...cases.map(([, route]) => route), ...OTHER_TWINS]);
-    expect([...Object.keys(SERVER_ONLY), ...Object.keys(NOT_YET)].filter((r) => twinned.has(r))).toEqual([]);
+    expect(Object.keys(NOT_YET).filter((r) => twinned.has(r))).toEqual([]);
   });
 });
 
 /** Twins with their own test above (more than one request). */
 const OTHER_TWINS = ['POST /settings/payees/merge', 'POST /settings/payees/merge/:undoId/undo'];
-
-/** Never run on a phone's copy: they need the server (the bank, sign-in, the server's own records). */
-const SERVER_ONLY: Record<string, string> = {
-  'POST /settings/connections/link-token': 'the bank link (Plaid)',
-  'POST /settings/connections/link-finish': 'the bank link (Plaid)',
-  'POST /settings/connections/exchange': 'the bank link (Plaid)',
-  'POST /settings/connections/refresh': 'asks the server to fetch from the banks',
-  'POST /settings/connections/:id/refresh': 'asks the server to fetch from the banks',
-  'POST /webhooks/plaid': 'Plaid calls the server',
-  'POST /settings/security/device-link': 'sign-in',
-  'POST /settings/security/devices': 'sign-in',
-  'POST /settings/security/devices/:id/share': 'sign-in',
-  'POST /settings/security/passkeys/:id/remove': 'sign-in',
-  'POST /settings/security/passkeys/:id/rename': 'sign-in',
-  'POST /settings/security/sign-out': 'sign-in',
-  'POST /settings/security/sign-out-others': 'sign-in',
-  'POST /settings/security/sign-out-session': 'sign-in',
-  'POST /settings/restore': 'point-in-time recovery of the server’s database',
-  'POST /usage': 'the usage record, kept on the server only',
-  'DELETE /usage': 'the usage record, kept on the server only',
-  'POST /notes': 'notes to the owner, kept on the server only',
-  'POST /identity-alert': 'a phone tells the server what it worked out',
-  'POST /sync/shadow': 'a phone tells the server what its shadow run found',
-};
 
 /** Not checked as a twin yet (docs/build-plan.md). This list only gets shorter. */
 const NOT_YET: Record<string, string> = {};
