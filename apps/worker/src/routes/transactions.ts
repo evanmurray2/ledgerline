@@ -20,7 +20,7 @@ import { addTxn } from './new-txn.js';
 export const transactionRoutes = new Hono<AppEnv>();
 
 /** The key a transaction has now: an edit made to a key that has since moved lands on the new one. */
-async function liveKey(s: Scoped, key: string): Promise<string> {
+export async function liveKey(s: Scoped, key: string): Promise<string> {
   let k = key;
   for (let i = 0; i < 4; i++) {
     const here = await s.first(

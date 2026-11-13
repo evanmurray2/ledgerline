@@ -237,3 +237,25 @@ describe('Owed to you: Reopen (D-80)', () => {
     );
   });
 });
+
+describe('Card refund: the purchase it gives back', () => {
+  const link = () =>
+    sql<{ n: number; to: string | null }>(
+      `SELECT count(*) AS n, max(to_key) AS "to" FROM txn_link WHERE kind = 'refund_of' AND from_key = 'n-rei-refund' AND undone_at IS NULL`,
+    );
+
+  it('Not this purchase unlinks it, and Pick it links it again', async () => {
+    show('/accounts/sapphire/txn/n-rei-refund');
+    await screen.findByText('Refund of', undefined, T);
+    fireEvent.click(screen.getByRole('button', { name: 'Not this purchase' }));
+    await screen.findByText('Refund of a purchase on this card?', undefined, T);
+    expect((await link())!.n).toBe(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pick it' }));
+    // The same payee's purchase is first, under its name.
+    await screen.findByText('From REI', undefined, T);
+    fireEvent.click(await screen.findByRole('button', { name: /^REI · Oct 11/ }, T));
+    await screen.findByRole('button', { name: 'Not this purchase' }, T);
+    expect(await link()).toEqual({ n: 1, to: 'o-rei' });
+  });
+});

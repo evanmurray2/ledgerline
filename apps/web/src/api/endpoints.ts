@@ -25,6 +25,7 @@ import {
   ReportsView,
   Session,
   TxnSheet,
+  RefundOfView,
   SealedSession,
 } from '@ledgerline/contracts';
 import type {
@@ -39,6 +40,7 @@ import type {
   NoteRequest,
   OwedAction,
   PendingCheckAction,
+  RefundLink,
   SamePurchaseAnswer,
   SetAssignedRequest,
   SettingsPatch,
@@ -203,6 +205,10 @@ export const api = {
   match: (inflowKey: string) => get(`/api/match/${enc(inflowKey)}`, MatchView),
   doMatch: (body: In<typeof MatchRequest>) => post('/api/match', MutationResult, body),
   unlink: (inflowKey: string) => post(`/api/match/${enc(inflowKey)}/unlink`, MutationResult),
+  /** A card refund: the purchases it can be linked to, and the link (`purchaseKey: null` is Not this purchase). */
+  refundOf: (key: string) => get(`/api/transactions/${enc(key)}/refund-of`, RefundOfView),
+  linkRefund: (v: { key: string } & In<typeof RefundLink>) =>
+    post(`/api/transactions/${enc(v.key)}/refund-of`, MutationResult, { purchaseKey: v.purchaseKey }),
   pickTransfer: (key: string, body: In<typeof TransferPick>) =>
     post(`/api/transfers/${enc(key)}/pick`, MutationResult, body),
   /** `otherKey`: the row it was paired with, for Undo (pick it again); absent when Undo can't pair them again. */

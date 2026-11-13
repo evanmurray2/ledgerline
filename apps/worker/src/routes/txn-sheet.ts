@@ -39,7 +39,10 @@ export async function txnSheet(c: Context<AppEnv, '/transactions/:key'>) {
       key,
     ),
     s.q(
-      `SELECT l.to_key, coalesce(${txnCol('l.to_key', 'payee')}, '') AS label, ${txnCol('l.to_key', 'date')} AS date FROM txn_link l
+      `SELECT l.to_key, coalesce(${txnCol('l.to_key', 'payee')}, '') AS label, ${txnCol('l.to_key', 'date')} AS date,
+         ${txnCol('l.to_key', 'category_id')} AS category_id,
+         EXISTS (SELECT 1 FROM txn_split x WHERE x.budget_id = l.budget_id AND x.txn_key = l.to_key) AS split
+       FROM txn_link l
        WHERE l.budget_id = ?1 AND l.kind = 'refund_of' AND l.undone_at IS NULL AND l.from_key = ?2`,
       key,
     ),
@@ -89,7 +92,12 @@ export async function txnSheet(c: Context<AppEnv, '/transactions/:key'>) {
       .map((p) => ({ inflowKey: p.from_key, itemId: p.to_key, amount: cents(p.amount) })),
     today,
   );
-  const refund = (rf!.results[0] as { to_key: string; label: string; date: string } | undefined) ?? null;
+  const refund =
+    (rf!.results[0] as
+      | { to_key: string; label: string; date: string; category_id: string | null; split: number }
+      | undefined) ?? null;
+  // The purchase's own category, which the refund can go back to (a split purchase has none).
+  const refundCat = refund && !refund.split ? refund.category_id : null;
   const kind: TxnSheet['kind'] = isHistory(t)
     ? 'history'
     : t.transfer_state === 'paired' || t.transfer_state === 'unsorted'
@@ -190,7 +198,14 @@ export async function txnSheet(c: Context<AppEnv, '/transactions/:key'>) {
       amount: cents(p.amount),
       label: p.date ? `${p.label} · ${shortDate(p.date)}` : p.label,
     })),
-    refundOf: refund ? { key: refund.to_key, label: `${refund.label} · ${shortDate(refund.date)}` } : null,
+    refundOf: refund
+      ? {
+          key: refund.to_key,
+          label: refund.date ? `${refund.label} · ${shortDate(refund.date)}` : refund.label,
+          categoryId: refundCat,
+          categoryName: refundCat ? (cats.get(refundCat) ?? null) : null,
+        }
+      : null,
     pairedWith: kind === 'history' ? null : await pairedWith(s, t),
     alerts,
   };

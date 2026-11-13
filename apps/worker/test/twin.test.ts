@@ -355,6 +355,17 @@ describe('the same edit on two devices', () => {
         },
       ],
     ],
+    // A card refund (Money rule 3): Not this purchase, then a purchase picked for it.
+    [
+      'say a card refund is not that purchase',
+      'POST /transactions/:key/refund-of',
+      () => ['POST', '/api/transactions/n-rei-refund/refund-of', { purchaseKey: null }],
+    ],
+    [
+      'link a card refund to a purchase on the card',
+      'POST /transactions/:key/refund-of',
+      () => ['POST', '/api/transactions/n-rei-refund/refund-of', { purchaseKey: 'o-wholefoods' }],
+    ],
     [
       'dismiss an alert',
       'POST /alerts/:id/dismiss',

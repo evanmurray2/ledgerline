@@ -33,6 +33,7 @@ import { toast } from '../components/Toast';
 import { Why } from '../components/Why';
 import { BankSays, TxnHeader, useParentPath } from './TxnCommon';
 import { PairedWith } from './TxnPair';
+import { RefundOf } from './TxnRefund';
 import { useHere } from '../lib/back';
 
 type OwedMode = 'none' | 'half' | 'all' | 'custom';
@@ -307,19 +308,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
             </button>
           </div>
         ))}
-      {isRefund && t.refundOf && (
-        <div className="flex flex-col gap-1.5">
-          <Label>Refund of</Label>
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-line p-3">
-            <span className="flex flex-col">
-              <span className="text-md font-semibold">{t.refundOf.label}</span>
-              <span className="text-xs text-muted">
-                {t.categoryLabel} · {t.accountName}
-              </span>
-            </span>
-          </div>
-        </div>
-      )}
+      {isRefund && <RefundOf t={t} category={cat} onCategory={setCat} />}
       <div className="flex flex-col gap-1">
         <div className="flex min-h-9 items-center justify-between">
           <label htmlFor="txn-cat" className="text-sm font-semibold text-ink-2">
