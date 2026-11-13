@@ -12,6 +12,7 @@ export default tseslint.config(
       '.claude/**',
       '**/.measure/**',
       '**/dist/**',
+      '**/coverage/**',
       '**/.wrangler/**',
       '**/node_modules/**',
       'docs/**',
