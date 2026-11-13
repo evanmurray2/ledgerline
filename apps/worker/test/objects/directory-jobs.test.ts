@@ -124,4 +124,49 @@ describe('usage refresh', () => {
       spy.mockRestore();
     }
   });
+
+  it('asks the four figures in one request', async () => {
+    const { refreshUsage } = await import('../../src/ops/usage.js');
+    const { utcDay } = await import('../../src/sync/breaker.js');
+    const now = Date.now();
+    const day = utcDay(now);
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      Response.json({
+        data: {
+          viewer: {
+            accounts: [
+              {
+                rows: [{ sum: { rowsRead: 700, rowsWritten: 30, activeTime: 2_000_000 } }],
+                calls: [{ sum: { requests: 40 } }, { sum: { requests: 2 } }],
+                workers: [{ sum: { requests: 9 } }],
+              },
+            ],
+          },
+        },
+        errors: null,
+      }),
+    );
+    try {
+      const row = await runInDurableObject(dir(), async (o, st) => {
+        const appEnv = (o as unknown as { appEnv(): Env }).appEnv();
+        await refreshUsage({ ...appEnv, CF_ACCOUNT_ID: 'acct', CF_ANALYTICS_TOKEN: 'token' }, now, true);
+        return st.storage.sql
+          .exec(
+            `SELECT rows_read, rows_written, do_requests, do_gbs, worker_requests FROM usage_day WHERE day = ?`,
+            day,
+          )
+          .one();
+      });
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(row).toEqual({
+        rows_read: 700,
+        rows_written: 30,
+        do_requests: 42,
+        do_gbs: 2 * 0.128,
+        worker_requests: 9,
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
