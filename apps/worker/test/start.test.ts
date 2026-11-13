@@ -9,7 +9,7 @@ import { openSnapshot } from '../src/local/device-snapshot.js';
 import { LocalEngine, migrateLocal } from '../src/local/engine.js';
 import { httpTransport, startTransport } from '../src/local/http-transport.js';
 import { LogSession } from '../src/local/log-session.js';
-import { startOnDevice, type StartDeps, type StartTransport } from '../src/local/start-device.js';
+import { budgetZone, startOnDevice, type StartDeps, type StartTransport } from '../src/local/start-device.js';
 import { OLD_START } from '../src/seal/start.js';
 import { PHONE, Writer } from './log-writer.js';
 import { ownerDb, copyDb } from './store-db.js';
@@ -133,11 +133,66 @@ describe('a new budget, locked from the start', () => {
     expect(await start.seal('12345')).toEqual({ ok: false, why: OLD_START });
   }, 120_000);
 
+  it('once sealed, a snapshot that does not read back leaves the budget open on this device', async () => {
+    // A server that takes every step and then gives nothing back, or no answer at all.
+    const taking: StartTransport = {
+      begin: async () => ({ ok: true, startId: 'start-1' }),
+      chunk: async () => ({ ok: true }),
+      seal: async () => ({ ok: true }),
+    };
+    let asked = 0;
+    for (const manifest of [
+      async () => (asked++, null),
+      async () => {
+        asked++;
+        throw new Error('no answer');
+      },
+    ]) {
+      asked = 0;
+      const phone = await copy();
+      const r = await startOnDevice(
+        phone,
+        await deps({ start: taking, snapshots: { manifest, chunk: async () => null } }),
+      );
+      expect(r).toMatchObject({ ok: true, snapshotRead: false });
+      // Tried more than once; the copy and its place are kept, standing at the first entry.
+      expect(asked).toBe(3);
+      expect((await phone.state()).through).toBe(1);
+      expect(await phone.noted(LogSession.PLACE)).not.toBeNull();
+      expect(await (await phone.request('GET', '/api/session')).json()).toMatchObject({
+        budget: { id: budget, name: 'My budget' },
+      });
+    }
+    // The time zone a new budget gets: the one asked for if this device knows it, else the old default.
+    expect(budgetZone('Europe/Berlin')).toBe('Europe/Berlin');
+    expect(budgetZone('Mars/Olympus_Mons')).toBe('America/Los_Angeles');
+    expect(budgetZone()).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  }, 120_000);
+
   it('starts the budget locked; a second device joins, and the first edit goes out as an entry', async () => {
     const phone = await copy();
-    const d = await deps();
+    // The read-back fails once (no answer), and is tried again.
+    let failOnce = true;
+    const d = await deps({
+      timeZone: 'America/New_York',
+      snapshots: {
+        ...t,
+        manifest: async (id) => {
+          if (failOnce) {
+            failOnce = false;
+            throw new Error('no answer');
+          }
+          return t.manifest(id);
+        },
+      },
+    });
     const r = await startOnDevice(phone, d);
-    expect(r).toMatchObject({ ok: true });
+    expect(r).toMatchObject({ ok: true, snapshotRead: true });
+    expect(failOnce).toBe(false);
+    // The budget has the device's time zone.
+    expect(await phone.db.prepare(`SELECT time_zone FROM budget`).first<{ time_zone: string }>()).toEqual({
+      time_zone: 'America/New_York',
+    });
     if (!r.ok) return;
     expect(r.log.number).toBe(1);
     expect((await phone.state()).through).toBe(1);
