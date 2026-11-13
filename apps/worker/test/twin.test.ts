@@ -208,6 +208,69 @@ describe('the same edit on two devices', () => {
         undefined,
       ],
     ],
+    [
+      'add a transfer, which adds its other side',
+      'POST /transactions',
+      async () => {
+        const [from, to] = await ids('account');
+        return [
+          'POST',
+          '/api/transactions',
+          {
+            kind: 'pending',
+            accountId: from,
+            date: '2026-11-10',
+            amount: -4321,
+            payee: 'Twin transfer',
+            categoryId: null,
+            repeats: 'never',
+            transferAccountId: to,
+          },
+        ];
+      },
+    ],
+    [
+      'add a purchase that is half owed to you',
+      'POST /transactions',
+      async () => [
+        'POST',
+        '/api/transactions',
+        {
+          kind: 'pending',
+          accountId: (await ids('account'))[0],
+          date: '2026-11-10',
+          amount: -2468,
+          payee: 'Twin dinner',
+          categoryId: spending[0],
+          repeats: 'never',
+          owed: { mode: 'half', expectBy: '2026-11-30' },
+        },
+      ],
+    ],
+    [
+      'add money in that pays back what you are owed',
+      'POST /transactions',
+      async () => {
+        const owed = (await (await a.request('GET', '/api/owed')).json()) as {
+          items: { id: string; status: string }[];
+        };
+        const item = owed.items.find((i) => i.status === 'open' || i.status === 'late')!;
+        return [
+          'POST',
+          '/api/transactions',
+          {
+            kind: 'pending',
+            accountId: (await ids('account'))[0],
+            date: '2026-11-10',
+            amount: 500,
+            payee: 'Twin payback',
+            categoryId: null,
+            repeats: 'never',
+            paysBack: [{ itemId: item.id, amount: 500 }],
+          },
+        ];
+      },
+    ],
     // Edits on what the seeded budget already holds.
     [
       'mark a row reviewed',
