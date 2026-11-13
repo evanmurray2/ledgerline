@@ -5,10 +5,10 @@ import { usage } from '../usage/tracker';
 import { useCategoriesSettings } from '../api/hooks';
 import { dayLabel } from './dates';
 
-/** Records a screen view under a fixed id, e.g. "budget.attention". */
-export function useScreen(id: string) {
+/** Records a screen view under a fixed id, e.g. "budget.attention"; none for null. */
+export function useScreen(id: string | null) {
   useEffect(() => {
-    usage.view(id);
+    if (id) usage.view(id);
   }, [id]);
 }
 

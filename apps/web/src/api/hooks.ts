@@ -1,7 +1,19 @@
 // TanStack Query hooks over the API. Reads are cached so the last loaded data stays visible offline; every
 // mutation writes the returned Ready to Assign into the cached budget and invalidates what it may change.
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import type { BudgetView, MutationResult } from '@ledgerline/contracts';
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
+import type {
+  BudgetView,
+  MutationResult,
+  RegisterCursor,
+  RegisterPage,
+  RegisterView,
+} from '@ledgerline/contracts';
 import { api, type ActivityFilter, type RegisterShow } from './endpoints';
 import { usage } from '../usage/tracker';
 import { ApiError } from './client';
@@ -25,6 +37,8 @@ export const qk = {
   owed: ['owed'] as const,
   accounts: ['accounts'] as const,
   register: (id: string, show: RegisterShow) => ['register', id, show] as const,
+  /** The account page's register: its first page, then each older page Show older read (under 'register' too). */
+  registerPages: (id: string) => ['register', id, 'all', 'pages'] as const,
   reports: (month: string) => ['reports', month] as const,
   categories: ['settings', 'categories'] as const,
   payees: ['settings', 'payees'] as const,
@@ -125,12 +139,28 @@ export function useBadgeCounts() {
 export function useAccounts() {
   return useQuery({ queryKey: qk.accounts, queryFn: api.accounts });
 }
-export function useRegister(id: string, show: RegisterShow) {
-  return useQuery({
-    queryKey: qk.register(id, show),
-    queryFn: () => api.register(id, show),
-    placeholderData: (prev) => prev,
+/**
+ * An account's register as its page shows it: the first page (balances, every row still waiting and the newest
+ * posted days), then the older pages Show older read, each from the cursor of the one before. A money change
+ * reads every page again, so a balance never goes stale on an older page.
+ */
+export function useRegisterPages(id: string) {
+  const q = useInfiniteQuery({
+    queryKey: qk.registerPages(id),
+    queryFn: ({ pageParam }): Promise<RegisterView | RegisterPage> =>
+      pageParam ? api.registerOlder(id, pageParam) : api.register(id, 'all'),
+    initialPageParam: null as RegisterCursor | null,
+    getNextPageParam: (last) => last.older ?? undefined,
   });
+  const pages = q.data?.pages ?? [];
+  return {
+    data: pages[0] as RegisterView | undefined,
+    older: pages.slice(1).flatMap((p) => p.days),
+    error: q.error,
+    hasOlder: q.hasNextPage,
+    loadingOlder: q.isFetchingNextPage,
+    loadOlder: () => q.fetchNextPage(),
+  };
 }
 export function useReports(month: string | undefined) {
   return useQuery({
