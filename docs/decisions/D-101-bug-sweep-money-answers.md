@@ -1,4 +1,4 @@
-# D-67: Bug sweep answers: later-month spending, owed split lines, undo of Remove, Fill targets, closing a card (Nov 12, 2026)
+# D-101: Bug sweep answers: later-month spending, owed split lines, undo of Remove, Fill targets, closing a card (Nov 12, 2026)
 
 **Decided by the owner** (chat, Nov 12, 2026). A bug sweep of the app found problems where the fix changes how money is
 counted. Asked each question, the owner answered "Yes to everything", then "m3: it should warn you" and, for closing a
@@ -17,3 +17,17 @@ card, chose "do 1" (a button on Close account, nothing else).
 6. **Closing a card whose payment category holds money:** Close account offers "Move $X to Ready to Assign", and the
    card can then be closed in the same sheet. Card payment categories stay out of Move money. Before, the sheet was a
    dead end.
+
+Also from the same sweep (not Money rules, recorded so the docs stay true):
+
+- Archive answers `returned` (month and amount); Undo sends it back as `giveBack`, and restoring a category brings back
+  its removed group. Category and group names lose control and direction characters, and a duplicate name is refused.
+- An assign item may carry `was`, what the device saw assigned; the server and the phone refuse with `changed` when it
+  differs, so the same fix tapped on two screens counts once.
+- Match counts the links already on the money in (`MatchView.left`); "It's income" on matched money undoes them.
+- The new-month card shows while nothing is assigned in the current month, on any day, until Hide or Fill targets.
+
+Code: `packages/domain/src/budget/compute.ts` (1), `apps/worker/src/routes/txn-sheet.ts` and
+`apps/web/src/screens/TxnSplit.tsx` (2), `apps/worker/src/routes/settings/categories.ts` (3, 5),
+`apps/web/src/screens/BudgetStates.tsx` and `BudgetAttention.tsx` (4), `apps/worker/src/routes/account-register.ts`
+and `apps/web/src/screens/AccountClose.tsx` (6).

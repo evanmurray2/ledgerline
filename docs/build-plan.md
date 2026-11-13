@@ -44,6 +44,10 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] Privacy design, phase 0 checks still to do (`docs/privacy.md` 15.4). On the owner's iPhone **(manual)**: peak memory while a real budget is filed (the device checks passed on Nov 10, 2026 in Safari, the Home Screen app and a desktop browser; remove Settings → Device check when phase 0 ends). On Plaid, in Sandbox or repair mode only: whether an old cursor is accepted again. On Cloudflare: what a wiped store and deleted rows leave behind; the sealing steps' CPU (measured locally, `docs/measurements.md`).
 
 - [ ] Remove the unused Waiting to match parts of `packages/domain` (D-98): the `waiting` use, `waitingToMatch` in the projection and the rule 10 identity, the `wait` line kind (`apps/worker/src/ledger/ledger.ts` `rowsFor`, `maintenance.ts`), and the November fixture's held Venmo row (`n-venmo`) with the tests that count it.
+- [ ] Register: page through rows older than the newest 300 (it shows a note pointing to Activity search today).
+- [ ] Turnstile on its own address (`docs/privacy.md` 5.6): until then sign-up and recovery codes can't load the check in production (the CSP allows no outside host).
+- [ ] Sheets: ask before Back drops an unsaved amount; Back from a nested picker (Move money) closes both sheets.
+- [ ] `/activity?category=<unknown>` shows "Category · All months" instead of saying the category is gone.
 
 ## Contract gaps (not blocking)
 
