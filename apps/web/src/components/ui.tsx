@@ -515,6 +515,9 @@ export function badgeClass(kind: string | null): string {
       return 'bg-info-bg text-info-fg';
     case 'owed':
       return 'bg-owed-bg text-owed-fg';
+    case 'transfer':
+      // Its own color: money that only moves between your accounts, never spent or earned.
+      return 'bg-transfer-bg text-transfer-fg';
     default:
       return 'bg-sunken text-none-fg';
   }

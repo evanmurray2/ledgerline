@@ -160,7 +160,12 @@ export function PairedTransfer({ t, close }: { t: TxnSheet; close: () => void })
       }}
       gap="auto"
       header={
-        <SheetTitle tag="Transfer" amount={formatCents(amt)} sub={`${t.payee} · ${dayLabel(t.date)}`} />
+        <SheetTitle
+          tag="Transfer"
+          tagClass="text-transfer-fg"
+          amount={formatCents(amt)}
+          sub={`${t.payee} · ${dayLabel(t.date)}`}
+        />
       }
       footer={
         <div className="flex flex-col gap-2">

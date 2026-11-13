@@ -265,7 +265,7 @@ export const TxnListRow = z.object({
   categoryLabel: z.string().nullable(),
   /** Short badge, e.g. "By rule", "Your estimate", "Card hold", "$25 owed", "Paid". */
   badge: z.string().nullable(),
-  badgeKind: z.enum(['alert', 'match', 'est', 'hold', 'mine', 'owed', 'rule']).nullable(),
+  badgeKind: z.enum(['alert', 'match', 'est', 'hold', 'mine', 'owed', 'rule', 'transfer']).nullable(),
   sub: z.string().nullable(),
   /** Which sheet opens: pending, posted, income, refund, paid back, transfer pick, match, check pending. */
   sheet: z.enum(['txn', 'transfer', 'match', 'checkPending']),

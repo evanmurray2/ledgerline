@@ -50,7 +50,13 @@ export function TxnRow({
         </span>
       )}
       {category && (
-        <span className="rounded-sm border border-line px-2 py-[1px] text-xs font-semibold text-ink-2">
+        // A transfer's chip takes the transfer color, so it reads as one even under another tag ("Added by you").
+        <span
+          className={cx(
+            'rounded-sm border px-2 py-[1px] text-xs font-semibold',
+            category === 'Transfer' ? 'border-transfer-fg text-transfer-fg' : 'border-line text-ink-2',
+          )}
+        >
           {category}
         </span>
       )}

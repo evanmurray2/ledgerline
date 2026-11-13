@@ -64,6 +64,8 @@
   --ll-info-fg: #3538cd;
   --ll-owed-bg: #e0f2fe;
   --ll-owed-fg: #026aa2;
+  --ll-transfer-bg: #ccfbef;
+  --ll-transfer-fg: #125d56;
   --ll-warn-bg: #fffaeb;
   --ll-warn-border: #fedf89;
   --ll-warn-fg: #7a2e0e;
@@ -134,6 +136,8 @@
   --ll-info-fg: #a4bcfd;
   --ll-owed-bg: #0b2a3d;
   --ll-owed-fg: #7cd4fd;
+  --ll-transfer-bg: #0a2e2b;
+  --ll-transfer-fg: #5fe9d0;
   --ll-warn-bg: #2b2108;
   --ll-warn-border: #5c4410;
   --ll-warn-fg: #fec84b;
@@ -237,6 +241,8 @@
   --color-info-fg: var(--ll-info-fg);
   --color-owed-bg: var(--ll-owed-bg);
   --color-owed-fg: var(--ll-owed-fg);
+  --color-transfer-bg: var(--ll-transfer-bg);
+  --color-transfer-fg: var(--ll-transfer-fg);
   --color-warn-bg: var(--ll-warn-bg);
   --color-warn-border: var(--ll-warn-border);
   --color-warn-fg: var(--ll-warn-fg);

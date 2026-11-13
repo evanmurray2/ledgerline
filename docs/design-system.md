@@ -13,16 +13,16 @@ One set of named colors, each with a light and a dark value (`--ll-*`, used as T
 prefix: `bg-surface`, `text-muted`, `border-line`). Any element can set `data-theme="light"` or `"dark"` to draw
 that theme's colors (the theme preview in Settings does).
 
-| Group    | Tokens                                                             | Use                                                                   |
-| -------- | ------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| Surfaces | `page`, `surface`, `surface-2`, `sunken`                           | Screen background, cards and sheets, a quieter card, wells and inputs |
-| Lines    | `divider`, `line`, `line-strong`, `track`                          | Between rows, card borders, text box borders, empty part of a bar     |
-| Text     | `ink`, `ink-2`, `muted`, `faint`, `disabled`                       | Main, secondary, notes, placeholders, unavailable                     |
-| Accent   | `accent`, `accent-strong`, `accent-soft`, `on-accent`              | Links and main buttons; `accent-strong` is their hover                |
-| Inverse  | `inverse`, `on-inverse`, `inverse-line`, `inverse-muted`           | Toasts and the selected chip                                          |
-| Status   | `funded-*`, `low-*`, `over-*`, `under-*`, `overfunded-*`, `none-*` | A category's state: `-bg`, `-fg` (text) and `-bar`, through `TONE`    |
-| Notes    | `info-*`, `warn-*`, `success-*`, `owed-*`, `danger`, `on-danger`   | `Banner` tones, Owed, removals                                        |
-| Other    | `rta-*`, `count-*`, `scrim`, `scrim-a`, `shadow`, `shadow-soft`    | Ready to Assign bar, `CountBadge`, behind a sheet, shadows            |
+| Group    | Tokens                                                                         | Use                                                                   |
+| -------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| Surfaces | `page`, `surface`, `surface-2`, `sunken`                                       | Screen background, cards and sheets, a quieter card, wells and inputs |
+| Lines    | `divider`, `line`, `line-strong`, `track`                                      | Between rows, card borders, text box borders, empty part of a bar     |
+| Text     | `ink`, `ink-2`, `muted`, `faint`, `disabled`                                   | Main, secondary, notes, placeholders, unavailable                     |
+| Accent   | `accent`, `accent-strong`, `accent-soft`, `on-accent`                          | Links and main buttons; `accent-strong` is their hover                |
+| Inverse  | `inverse`, `on-inverse`, `inverse-line`, `inverse-muted`                       | Toasts and the selected chip                                          |
+| Status   | `funded-*`, `low-*`, `over-*`, `under-*`, `overfunded-*`, `none-*`             | A category's state: `-bg`, `-fg` (text) and `-bar`, through `TONE`    |
+| Notes    | `info-*`, `warn-*`, `success-*`, `owed-*`, `transfer-*`, `danger`, `on-danger` | `Banner` tones, Owed, Transfer tags, removals                         |
+| Other    | `rta-*`, `count-*`, `scrim`, `scrim-a`, `shadow`, `shadow-soft`                | Ready to Assign bar, `CountBadge`, behind a sheet, shadows            |
 
 `index.html` repeats `surface` (light, dark) for the phone's status bar: HTML can't read CSS. Keep them equal.
 

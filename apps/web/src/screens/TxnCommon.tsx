@@ -50,7 +50,15 @@ export function TxnHeader({ t, amount = t.amount }: { t: TxnSheet; amount?: numb
   return (
     <SheetTitle
       tag={est ? 'Pending · your estimate' : t.wontClear ? 'Pending · won’t clear' : TAG[t.kind]}
-      tagClass={est ? 'text-info-fg' : t.kind === 'paidBack' ? 'text-owed-fg' : undefined}
+      tagClass={
+        est
+          ? 'text-info-fg'
+          : t.kind === 'paidBack'
+            ? 'text-owed-fg'
+            : t.kind === 'transfer'
+              ? 'text-transfer-fg'
+              : undefined
+      }
       amount={t.kind === 'transfer' ? formatCents(Math.abs(amount)) : formatCents(amount, { plus: true })}
       amountClass={amount > 0 ? 'text-funded-fg' : undefined}
       sub={`${t.payee} · ${t.accountName} · ${dayLabel(t.date)}`}
