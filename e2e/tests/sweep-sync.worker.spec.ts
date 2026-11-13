@@ -27,11 +27,9 @@ test.beforeEach(async ({ page, request }) => {
   });
 });
 
-test('A Budget link to a month thousands of years away doesn’t stop the app', async ({ page }) => {
+test('A Budget link to a month thousands of years away opens this month instead', async ({ page }) => {
   await page.goto('/budget?month=9999-12');
-  await expect(page.getByText('That month isn’t in your budget. Pick another month.').first()).toBeVisible();
-  // The app still works: this month opens.
-  await page.goto('/budget');
+  await expect(page.getByTestId('month-label')).toHaveAttribute('aria-label', 'November 2026');
   await expect(rta(page)).toHaveText('$1,999.90');
 });
 

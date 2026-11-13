@@ -295,7 +295,7 @@ test('Resting at 95%: a banner, and the screens worked out on the device still s
   // The mock stands in for the copy on the phone: Budget and Activity come from it, not from the server.
   await expect(rta(page)).toHaveText('$1,999.90');
   await page.getByRole('link', { name: 'Activity' }).first().click();
-  await expect(page.getByText('Shake Shack').first()).toBeVisible();
+  await expect(page.getByText('Uber Eats').first()).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 

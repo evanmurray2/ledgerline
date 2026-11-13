@@ -226,7 +226,8 @@ test('Activity: categorizing an uncategorized purchase persists', async ({ page 
 });
 
 test('Activity: OK on a bank row that cleared at a new amount clears it', async ({ page }) => {
-  await page.goto('/activity');
+  // Shake Shack has posted, so its check is on All, not on Not posted yet.
+  await page.goto('/activity?filter=all');
   const chip = page.getByRole('button', { name: /^Needs attention \d+$/ });
   const ok = page.getByRole('button', { name: 'OK Shake Shack' });
   await expect(ok).toBeVisible();
