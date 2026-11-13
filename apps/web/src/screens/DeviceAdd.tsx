@@ -21,6 +21,7 @@ import {
   type Relay,
 } from '../copy/device-add';
 import { fetchPublicEntries } from '../copy/sealed';
+import { passkeyProblem } from '../copy/passkey';
 import { OpenWithRecoveryKey } from './RecoveryKey';
 
 const relay: Relay = {
@@ -37,9 +38,7 @@ const serverFetch = (path: string) =>
 function problem(e: unknown): string | null {
   if (e instanceof AddError) return e.why === 'cancelled' ? null : 'This didn’t work. Start again.';
   if (e instanceof ApiError) return errorMessage(e);
-  const name = (e as { name?: string }).name;
-  if (name === 'NotAllowedError' || name === 'AbortError') return 'Cancelled. Try again when you’re ready.';
-  return e instanceof Error ? e.message : 'Something went wrong. Try again.';
+  return passkeyProblem(e) ?? (e instanceof Error ? e.message : 'Something went wrong. Try again.');
 }
 
 /** The six digits, large, to compare with the other device. */

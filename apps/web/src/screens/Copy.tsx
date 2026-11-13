@@ -7,6 +7,7 @@ import { PrimaryButton } from '../components/ui';
 import { errorMessage } from '../api/client';
 import { type CopyState, type FullWhy, openWithoutSignal, start } from '../copy/copy';
 import { JoinThisDevice } from './DeviceAdd';
+import { passkeyProblem } from '../copy/passkey';
 
 /** Why the whole budget is downloading instead of only what changed (also sent to the server's logs). */
 const WHY: Record<FullWhy, string | null> = {
@@ -23,9 +24,7 @@ const WHY: Record<FullWhy, string | null> = {
 };
 
 function cancelled(e: unknown): string {
-  const name = (e as { name?: string }).name;
-  if (name === 'NotAllowedError' || name === 'AbortError') return 'Cancelled. Try again when you’re ready.';
-  return errorMessage(e);
+  return passkeyProblem(e) ?? errorMessage(e);
 }
 
 export function CopyScreen({

@@ -17,7 +17,6 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] Offline, "Same as your {payee}?" hides, and "Use {n} suggestions" then includes those rows.
 - [ ] Remove `CategorySheet.moveOptions` (contract and `views/category.ts`): the app no longer reads it (Move money uses `BudgetView`). It stays until no app from before that change can still ask the server for a category sheet.
 - [ ] Desktop Assign button (sidebar and Ready to Assign bar): grayed out offline or in view only with no reason shown.
-- [ ] A text that never shows: the passkey's "Use your passkey to continue" (NotAllowedError is read as Cancelled).
 - [ ] Payee names: the server takes a name of only spaces (min length is checked before trim) and NUL or right-to-left override characters.
 - [ ] Activity search: "café" doesn't find "CAFÉ" on posted rows (SQLite `lower()` folds only ASCII).
 - [ ] Signing in with a different user's passkey on the same browser leaves the earlier user's session row until it expires (24 h); it lists as another device.
