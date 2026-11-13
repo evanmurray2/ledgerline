@@ -26,12 +26,18 @@ Not covered here, on purpose: how row changes are written inside a snapshot, and
 salt_v = str(budgetId) || u32(v)
 ```
 
-| Name         | Derivation                                         | Use                                                            |
-| ------------ | -------------------------------------------------- | -------------------------------------------------------------- |
-| `K_log_v`    | `HKDF(BK_v, salt_v, "ledgerline/v1/log", 32)`      | AES-256-GCM key for entry bodies (section 6)                   |
-| `K_snap_v`   | `HKDF(BK_v, salt_v, "ledgerline/v1/snapshot", 32)` | AES-256-GCM key for snapshot chunks and manifests (section 8)  |
-| `K_wrap_v`   | `HKDF(BK_v, salt_v, "ledgerline/v1/wrap", 32)`     | AES-256-GCM key for small wrapped values (section 5)           |
-| `signSeed_v` | `HKDF(BK_v, salt_v, "ledgerline/v1/sign", 32)`     | Seed of the Ed25519 signing key pair `signPriv_v`, `signPub_v` |
+| Name         | Derivation                                             | Use                                                            |
+| ------------ | ------------------------------------------------------ | -------------------------------------------------------------- |
+| `K_log_v`    | `HKDF(BK_v, salt_v, "ledgerline/v1/log", 32)`          | AES-256-GCM key for entry bodies (section 6)                   |
+| `K_snap_v`   | `HKDF(BK_v, salt_v, "ledgerline/v1/snapshot", 32)`     | AES-256-GCM key for snapshot chunks and manifests (section 8)  |
+| `K_wrap_v`   | `HKDF(BK_v, salt_v, "ledgerline/v1/wrap", 32)`         | AES-256-GCM key for small wrapped values (section 5)           |
+| `signSeed_v` | `HKDF(BK_v, salt_v, "ledgerline/v1/sign", 32)`         | Seed of the Ed25519 signing key pair `signPriv_v`, `signPub_v` |
+| `K_check_v`  | `HKDF(BK_v, salt_v, "ledgerline/v1/device-check", 32)` | HMAC-SHA-256 key of the device check (below; D-116)            |
+
+**The device check** (D-116): a device whose copy stands at entry `N` sends
+`HMAC(K_check_v, "ledgerline/v1/device-check/record" || str(budgetId) || str(deviceId) || u64(N) || str(month) || u32(v) || str(digest))`,
+where `month` is `YYYY-MM` and `digest` is the SHA-256 of what its screens show (the text is the device's own;
+`apps/worker/src/local/device-check.ts`). Another device checks it with its own digest under the first device's id.
 
 **Importing a seed.** WebCrypto can't derive an Ed25519 or X25519 key directly, and can't give the public half of a private key it won't export. So, for a 32-byte seed:
 
@@ -634,6 +640,7 @@ In `packages/seal`, each part with its tests. Outside the package so far, and us
 | Requests signed with the budget's key                                                           | 11            | The signed bytes written out by a separate program; every changed field fails; small-order keys never verify                                  |
 | The server's own rules for a write                                                              | 7.2           | Each rule broken in turn on a small budget: the clock, a write sent again, receipts, bank runs first, the breaker, the intent                 |
 | A chain that starts at a snapshot                                                               | 8             | At every place a snapshot can stand, the resumed state equals the state read from the start, field by field, and goes on the same             |
+| The device check: its key and its HMAC                                                          | 2             | The key against WebCrypto's HKDF; the HMAC input written out by hand; every changed field, another budget key and another version fail        |
 | A full backup sealed with the recovery key                                                      | 5             | The key written out by hand with WebCrypto's HKDF; a wrong key, a changed byte and a file that is not one are refused                         |
 
 Every section of this file is built.

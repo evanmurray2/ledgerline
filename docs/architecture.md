@@ -24,8 +24,9 @@ Data lives only in Durable Objects' SQLite (D-37, D-38). Cloudflare keeps 30 day
 - **Snapshots** (`seal/snapshot-store.ts`, 0008, 0009): sealed chunks, a signed header and each device's check record; the one before the newest checked one stays, with every entry and run since.
 - **Bank runs** (`seal/runs.ts`, 0006): each page sealed to the budget's inbox key the moment Plaid answers, then the run signed by the Worker. Plain: counts, sizes, times, cursors.
 - **`bank_link`** (0002, 0007): each link's id, Plaid Item id, encrypted token, state and last fetch, under the Worker's stamp (`linkMac`, written when the link is made). No bank or account name.
+- **Device checks** (`seal/device-checks.ts`, in `store_note`, D-116): each device's latest HMAC of what its screens showed at one log entry, which the server can't read or make; handed back with each page of the log.
 - **The mark** (`store/marks.ts`): "sealed". A sealed budget answers only `/api/log/*`, `seal/sealed-routes.ts` (who is signed in, its bank links by id, link, repair, remove, Fetch now; the bank routes only once the budget is sealed) and the Plaid webhook; every other path says "Update Ledgerline to continue." A budget not sealed yet has only its session (which tells the device to make it) and `/api/start/*`. The server can't restore a budget.
-- **What it can see** (`docs/privacy.md` 4.3): times, sizes and counts of entries and runs, link ids and states, passkeys and devices, and the app's own log lines for 3 days. Cloudflare's invocation logs (IP address, location, full address) are off (D-112).
+- **What it can see** (`docs/privacy.md` 4.3): times, sizes and counts of entries and runs, link ids and states, passkeys and devices, when each device checked its numbers and at which entry, and the app's own log lines for 3 days. Cloudflare's invocation logs (IP address, location, full address) are off (D-112).
 
 ## A request
 
@@ -40,6 +41,7 @@ Data lives only in Durable Objects' SQLite (D-37, D-38). Cloudflare keeps 30 day
 - **Bank filing.** The device opens up to 16 runs, files them with the steps the server once ran (`local/file-run.ts`, `local/sealed-filing.ts`: apply, process, heal and the end of the update), and sends one bank entry with their receipts; edits wait behind unfiled runs. Two devices that file the same run end equal.
 - **Snapshots.** At most every 6 hours while the app is in view, the device writes a snapshot or checks the newest one by rebuilding from the one before plus the entries since (`copy/copy.ts`).
 - **Same code.** `LocalEngine` keeps the tables the server never had (budget lines, month snapshots, month totals); `engine.test.ts` checks a copy that rebuilt only what changed shows the screens of one worked out from scratch. The copy runs the budget migrations itself (`migrateLocal`).
+- **Device check** (D-116, `local/device-check.ts`). After a round that leaves the copy settled at entry N, at most every 5 minutes and once per entry, the device hashes what its screens show for the month (Ready to Assign, each category, each card's payment category, each account's balances) and sends an HMAC of it under the budget's check key. It keeps its last 8 hashes and compares the other devices' HMACs that come with the log; one that differs shows in Budget → Needs attention with Rebuild, which makes the copy again from the newest checked snapshot. It never writes the budget's tables or blocks an edit.
 - **Saved copy.** Encrypted with a key from the passkey (PRF) and a per-device share the server keeps (`copy/vault.ts`), as one blob in IndexedDB. The app refuses a server that answers as if a budget were not locked (`copy/sealed-session.ts`).
 
 ## Background work

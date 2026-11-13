@@ -47,7 +47,8 @@ Last changed: November 13, 2026.
 | The past 30 days of what the server holds                           | Cloudflare                            | Whoever runs Ledgerline, in the form it was then |
 
 - **(owner reads)** **What the server can see about a locked budget:** that your account exists and when you use
-  it; the size and time of each change, and how many there are; for each bank link, Plaid's id for it, when it was
+  it; the size and time of each change, and how many there are; when each device checked its numbers against your
+  other devices', with a value it can't read; for each bank link, Plaid's id for it, when it was
   linked, whether it needs you to sign in again, when each bank update came, how many rows it brought, and its
   size. It can't see amounts, payees, categories, memos or the names of your accounts, or the budget's name.
   Plaid shows whoever runs Ledgerline which bank each link is with.

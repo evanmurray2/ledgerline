@@ -9,7 +9,6 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 ## Open
 
 - [ ] On the owner's iPhone after deploy: PRF in the Home Screen app with the existing passkey, first download time, Face ID unlock with no signal.
-- [ ] A check where each device sends a hash of its month, keyed with the budget key, and Needs attention says when two devices differ (`engine.test.ts` and `engine-upgrade.test.ts` cover the known causes). The owner was asked on Nov 13 whether to build it; not decided yet.
 - [ ] The sealed log, left open (`docs/privacy.md` 5.3): a rebuild's peak memory is not measured on a phone with the 2 MB bank log (the old copy is closed first and kept gzipped, `local/web-entry.ts` `rebuild`).
 - [ ] A new budget made on the device (D-102, `local/start-device.ts`): a first snapshot that still does not read back after three tries is not written again, so if the server truly lost it, a second device can't join until a later snapshot is checked (and `checkSnapshot` builds on the first one while none is checked).
 - [ ] Banks of a locked budget (`docs/privacy.md` 5.5, D-87): linking and removing are tested with a fake Plaid only, never against Plaid itself (never on a real link without the owner's yes).
