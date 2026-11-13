@@ -647,7 +647,7 @@ A third pair of reviewers, same briefs. 40 findings, 7 critical; v6 fixes them. 
 
 ### 15.4 Still unverified, to settle in phase 0
 
-**Settled on Nov 10, 2026** with Settings → Device check, on the owner's iPhone in Safari and in the Home Screen app, and on a desktop browser: Ed25519 and X25519 keys from seeds, HPKE, a signed and sealed entry, and an 8 MB snapshot sealed and opened in under 20 ms; the owner's existing passkey gives two different PRF secrets in one prompt.
+**Settled on Nov 10, 2026** with Settings → Device check (a page that tested the browser's key code, removed by D-108; not the check of numbers between devices, D-116), on the owner's iPhone in Safari and in the Home Screen app, and on a desktop browser: Ed25519 and X25519 keys from seeds, HPKE, a signed and sealed entry, and an 8 MB snapshot sealed and opened in under 20 ms; the owner's existing passkey gives two different PRF secrets in one prompt.
 
 **Settled on Nov 10, 2026, in Plaid's Sandbox** (no bank link used): `/link/token/create` with `hosted_link` gives our team a hosted Link page on `secure.plaid.com`, for the same products as today. The owner linked a made-up bank there on a desktop browser, and Plaid sent the browser back to the app's address given as `completion_redirect_uri`. The server then got the result with `/link/token/get` (the session's `item_add_results`, each with a public token), exchanged it, and removed the test Item. So a link can be finished by asking the server, with no Plaid script in the app. Plaid reads its two keys from the `PLAID-CLIENT-ID` and `PLAID-SECRET` headers as a pair. Not tested: the "session finished" webhook, which the app does not need.
 
