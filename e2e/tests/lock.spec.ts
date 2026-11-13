@@ -2,36 +2,8 @@
 // makes the keys, the recovery key is typed back, the first entry and snapshot are sent and read back; then the
 // first-run setup and every change go out as entries of the log, the app lives on the log across a reload, the
 // recovery key signs in on a new device, two devices share the log, and a device is added.
-import { expect, test, type Page } from '@playwright/test';
-
-async function withPasskeyDevice(page: Page) {
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send('WebAuthn.enable');
-  await cdp.send('WebAuthn.addVirtualAuthenticator', {
-    options: {
-      protocol: 'ctap2',
-      transport: 'internal',
-      hasResidentKey: true,
-      hasUserVerification: true,
-      isUserVerified: true,
-      automaticPresenceSimulation: true,
-      hasPrf: true,
-    },
-  });
-}
-
-const call = (page: Page, method: string, path: string) =>
-  page.evaluate(
-    async ([m, p]) => {
-      const r = await fetch(p!, {
-        method: m,
-        headers: { 'content-type': 'application/json', 'x-ledgerline': '1' },
-        ...(m === 'POST' ? { body: '{}' } : {}),
-      });
-      return { status: r.status, json: (await r.json().catch(() => null)) as Record<string, unknown> | null };
-    },
-    [method, path],
-  );
+import { expect, test } from '@playwright/test';
+import { call, withPasskeyDevice } from './lock-helpers';
 
 test('a new budget is locked with the passkey and the recovery key, and lives on the log', async ({
   page: owner,
