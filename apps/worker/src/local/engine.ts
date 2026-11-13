@@ -8,6 +8,7 @@ import { Hono } from 'hono';
 import { localDate, type Month } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
 import type { DeviceEnv, Env } from '../env.js';
+import type { EngineIdentity } from './engine-types.js';
 import { budgetApi } from '../routes/api.js';
 import { markDirty, recompute } from '../budget/recompute.js';
 import { Scoped } from '../db/scoped.js';
@@ -26,30 +27,8 @@ import { splitStatements } from '../store/adapter.js';
 import { BUDGET_MIGRATIONS } from '../store/migrations.gen.js';
 import { SYNC_FORMAT, SYNC_TABLES, triggerNames, type SyncRow, type SyncTable } from '../sync-tables.js';
 import { CSRF_HEADER } from '@ledgerline/contracts';
+import type { EngineState, QueuedEdit } from './engine-types.js';
 import { checkRows, columnsOf, noteChanges, rowStatements, type Columns } from './copy-rows.js';
-
-export interface EngineIdentity {
-  budgetId: string;
-  userId: string;
-  email: string;
-  /**
-   * The account can't link banks (the server said so). The copy answers the session's setup step with it; left
-   * out, the copy answers as the budget's owner.
-   */
-  noBanks?: boolean;
-}
-
-export interface EngineState {
-  /** Change number the copy holds (0: nothing yet). */
-  through: number;
-  epoch: string | null;
-  format: number;
-  /** Full download in progress: where it continues. */
-  cursor: string | null;
-  /** Server time of the last sync answer, and how far this device's clock is from it (ms). */
-  serverTime: number | null;
-  offset: number;
-}
 
 const EMPTY: EngineState = {
   through: 0,
@@ -286,6 +265,7 @@ export class FilingInterrupted extends Error {
 }
 
 export { RowsRefused } from './copy-rows.js';
+export type { EngineIdentity, EngineState, QueuedEdit } from './engine-types.js';
 
 /** An edit the engine ran and recorded. */
 export interface Recorded {
@@ -297,38 +277,6 @@ export interface Recorded {
    * out of the copy (the redo of a refused write, docs/privacy.md 5.3).
    */
   undo: SyncRow[];
-}
-
-/**
- * An edit kept on the device until the server takes it. The engine owns the queue (`local_state`, key `outbox`):
- * every change to it is one step of the engine, so the copy and its queue can't come apart.
- */
-export interface QueuedEdit {
-  id: string;
-  at: number;
-  method: string;
-  path: string;
-  body: unknown;
-  appVersion?: string;
-  /**
-   * What takes the edit back out of the copy, and the change number the copy held when the edit ran. The undo is
-   * good only while the copy still holds that number. An edit with neither (queued by an older app, or after the
-   * copy was downloaded again) can only be sent.
-   */
-  undo?: SyncRow[];
-  through?: number;
-  /**
-   * The rows the edit changed, as they were after it: what the edit's entry in the log holds (local/log-session.ts).
-   * Made again whenever the edit is run again.
-   */
-  rows?: SyncRow[];
-  /**
-   * Not an edit: bank runs this device filed (`LocalEngine.fileBank`), waiting to become a bank entry of the log.
-   * Always first in the queue: the edits after it ran on top of it. It is never run again by the engine (the
-   * runs are not kept here): when it must come out, it is dropped, and the device files the runs again.
-   */
-  /** Bank runs filed (or, with `scanThrough`, one day's scan): sent as a bank or scan entry (local/log-session.ts). */
-  bank?: { filedThrough: number; receipts: string[]; scanThrough?: number };
 }
 
 /** An edit whose undo is good for a copy at change number `through`. */
