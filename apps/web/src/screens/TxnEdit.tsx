@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import type { TxnSheet } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
-import { useAccounts, useMoneyMutation } from '../api/hooks';
+import { useAccounts, useMoneyMutation, useSession } from '../api/hooks';
 import { Sheet } from '../components/Sheet';
 import {
   amountInputClass,
@@ -32,7 +32,7 @@ import { toast } from '../components/Toast';
 import { Why } from '../components/Why';
 import { BankSays, TxnHeader, useParentPath } from './TxnCommon';
 import { PairedWith } from './TxnPair';
-import { CategorySelect, EntryAmount, IncomeGoesTo } from './TxnEditParts';
+import { CategorySelect, EntryAmount, entryDateWhy, IncomeGoesTo } from './TxnEditParts';
 import { useHere } from '../lib/back';
 
 type OwedMode = 'none' | 'half' | 'all' | 'custom';
@@ -57,6 +57,8 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const amtWas = centsToInput(Math.abs(t.amount));
   const [est, setEst] = useState(estWas);
   const [amt, setAmt] = useState(amtWas);
+  const [day, setDay] = useState(t.date);
+  const today = useSession().data?.budget.today;
   const [owed, setOwed] = useState<OwedMode>(t.owed[0]?.share ?? 'none');
   const [owedAmt, setOwedAmt] = useState(t.owed[0] ? centsToInput(t.owed[0].amount) : '');
   const [expectBy, setExpectBy] = useState(t.owed[0]?.expectBy ?? '');
@@ -87,7 +89,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   /** A transaction you added: its amount is yours to change. */
   const canSetAmount = t.kind === 'manual' || t.kind === 'upcoming';
   /** What's typed in the amount box isn't an amount: Save would drop it without a word. */
-  const amountBad = canSetAmount ? amountWhy(amt) : '';
+  const amountBad = canSetAmount ? amountWhy(amt) || entryDateWhy(t, day, today) : '';
   /** Your estimate: empty goes back to the bank's amount; anything else must be an amount above $0.00. */
   const estBad = canEstimate && est.trim() !== '' ? amountWhy(est) : '';
   const tips =
@@ -136,6 +138,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       if (next !== t.estimatedAmount) body.estimatedAmount = next;
     }
     if (canSetAmount && amtCents !== null && amtCents !== t.amount) body.amount = amtCents;
+    if (canSetAmount && day !== t.date) body.date = day;
     if (memo !== (t.memo ?? '')) body.memo = memo || null;
     if (wont !== t.wontClear) body.wontClear = wont;
     if (month !== t.budgetMonth) body.budgetMonth = month;
@@ -210,7 +213,9 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
         </Banner>
       ))}
       <PairedWith t={t} close={close} />
-      {canSetAmount && <EntryAmount amount={amt} onAmount={setAmt} dir={dir} onDir={turn} />}
+      {canSetAmount && (
+        <EntryAmount amount={amt} onAmount={setAmt} dir={dir} onDir={turn} date={day} onDate={setDay} />
+      )}
       {canEstimate &&
         (estOpen ? (
           <div className="flex shrink-0 flex-col gap-2 rounded-lg border border-line p-3">

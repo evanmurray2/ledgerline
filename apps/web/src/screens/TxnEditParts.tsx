@@ -1,7 +1,8 @@
 // Parts of the transaction sheet (TxnEdit.tsx): the category field, your own entry's amount and direction, and where
 // income in Ready to Assign goes (this month or the next).
 import { CategoryField } from '../components/CategoryPicker';
-import { amountInputClass, Field, Segmented } from '../components/ui';
+import type { TxnSheet } from '@ledgerline/contracts';
+import { amountInputClass, Field, inputClass, Segmented } from '../components/ui';
 import { formatCents } from '../lib/money';
 import { addMonths, monthName } from '../lib/dates';
 
@@ -35,40 +36,58 @@ export function CategorySelect({
   );
 }
 
-/** A transaction you added: its amount, typed without a sign, and Out or In. */
+/**
+ * Why your entry's date can't be saved, or '': a pending entry stays today or earlier (a later date is an upcoming
+ * transaction, as when you add one).
+ */
+export function entryDateWhy(t: Pick<TxnSheet, 'status'>, date: string, today: string | undefined): string {
+  if (!date) return 'Pick a date';
+  return t.status === 'pending' && today && date > today ? 'Pick today or an earlier date' : '';
+}
+
+/** A transaction you added: its amount, typed without a sign, Out or In, and its date. */
 export function EntryAmount({
   amount,
   onAmount,
   dir,
   onDir,
+  date,
+  onDate,
 }: {
   amount: string;
   onAmount: (v: string) => void;
   dir: 'out' | 'in';
   onDir: (d: 'out' | 'in') => void;
+  date: string;
+  onDate: (d: string) => void;
 }) {
   return (
-    <div className="flex shrink-0 items-end gap-2">
-      <Field label="Amount" className="min-w-0 flex-1">
-        <input
-          inputMode="decimal"
-          value={amount}
-          onChange={(e) => onAmount(e.target.value)}
-          className={amountInputClass}
-        />
-      </Field>
-      <div className="w-[140px]">
-        <Segmented
-          label="Direction"
-          track="txn.direction"
-          value={dir}
-          onChange={onDir}
-          options={[
-            ['out', 'Out'],
-            ['in', 'In'],
-          ]}
-        />
+    <div className="flex shrink-0 flex-col gap-2">
+      <div className="flex items-end gap-2">
+        <Field label="Amount" className="min-w-0 flex-1">
+          <input
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => onAmount(e.target.value)}
+            className={amountInputClass}
+          />
+        </Field>
+        <div className="w-[140px]">
+          <Segmented
+            label="Direction"
+            track="txn.direction"
+            value={dir}
+            onChange={onDir}
+            options={[
+              ['out', 'Out'],
+              ['in', 'In'],
+            ]}
+          />
+        </div>
       </div>
+      <Field label="Date">
+        <input type="date" className={inputClass} value={date} onChange={(e) => onDate(e.target.value)} />
+      </Field>
     </div>
   );
 }

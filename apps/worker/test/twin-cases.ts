@@ -268,6 +268,17 @@ export function twinCases(e: TwinEnv): TwinCase[] {
       'POST /transactions/:key/review',
       () => ['POST', `/api/transactions/${e.txn}/review`, {}],
     ],
+    // Accept on a row that cleared at another amount than your estimate, then Undo: it asks again.
+    [
+      'accept a changed amount',
+      'POST /transactions/:key/review',
+      () => ['POST', '/api/transactions/n-shakeshack/review', {}],
+    ],
+    [
+      'undo that accept',
+      'POST /transactions/:key/review/undo',
+      () => ['POST', '/api/transactions/n-shakeshack/review/undo', {}],
+    ],
     ['close out an owed item', 'POST /owed/:id', () => ['POST', '/api/owed/nopa', { action: 'close' }]],
     ['reopen it', 'POST /owed/:id', () => ['POST', '/api/owed/nopa', { action: 'reopen' }]],
     ['remove the mark from it', 'POST /owed/:id', () => ['POST', '/api/owed/nopa', { action: 'cancel' }]],
@@ -275,6 +286,12 @@ export function twinCases(e: TwinEnv): TwinCase[] {
       'keep waiting for a pending check',
       'POST /transactions/:key/pending',
       () => ['POST', '/api/transactions/n-check-1043/pending', { action: 'keep_waiting' }],
+    ],
+    // Check not cleared: the check was written on another day, for another amount.
+    [
+      'fix the amount and date of a check you added',
+      'PATCH /transactions/:key',
+      () => ['PATCH', '/api/transactions/n-check-1043', { amount: -12500, date: '2026-11-03' }],
     ],
     [
       'unpair a transfer',

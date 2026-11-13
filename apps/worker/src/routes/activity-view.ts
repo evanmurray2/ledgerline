@@ -455,7 +455,13 @@ activityViewRoutes.get('/activity', async (c) => {
   const checkThese = [
     ...attnRows
       .filter((t) => t.alert && !t.reviewed_at)
-      .map((t) => ({ ...row(t), action: 'dismiss' as const })),
+      .map((t) => ({
+        ...row(t),
+        // It cleared at another amount than your estimate: the bank's amount already counts, OK accepts it.
+        action: (JSON.parse(t.alert!) as string[]).some((a) => a.startsWith('amount_changed'))
+          ? ('accept' as const)
+          : ('dismiss' as const),
+      })),
     // A split that no longer adds up opens its sheet, where you fix the lines (D-82).
     ...attnRows
       .filter((t) => splitOff(t) !== 0 && !(t.alert && !t.reviewed_at))

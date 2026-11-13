@@ -4,7 +4,6 @@
 // takes every strong suggestion (docs/payees.md 2.2). Categorizing shows an Undo toast.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useNavigate, useSearch } from '@tanstack/react-router';
-import type { TxnListRow } from '@ledgerline/contracts';
 import { api, type ActivityFilter } from '../api/endpoints';
 import { ApiError, errorMessage } from '../api/client';
 import { adjustAttention, qk, useActivity, useBudget, useMoneyMutation, useSession } from '../api/hooks';
@@ -40,7 +39,7 @@ import { ActivityCategoryPicker, NeedsCategory } from './ActivityNeeds';
 import { primeKeyboard } from '../components/CategoryPicker';
 import { SamePurchase } from './ActivitySame';
 import { RemovedByBank } from './ActivityRemoved';
-import { CheckThese, TransfersToSort } from './ActivityAttention';
+import { CheckThese, TransfersToSort, type CheckRow } from './ActivityAttention';
 import { useMorePosted } from './ActivityMore';
 
 export { TxnRow } from './ActivityRows';
@@ -105,6 +104,7 @@ export function ActivityScreen() {
   // each categorize (every refetch reads the database); it refreshes on the next visit.
   const categorize = useMoneyMutation(api.categorize, { quiet: ['activity'] });
   const review = useMoneyMutation(api.reviewTxn);
+  const unreview = useMoneyMutation(api.reviewTxnUndo);
   const [selecting, setSelecting] = useState(false);
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const [picking, setPicking] = useState<Picking | null>(null);
@@ -340,13 +340,23 @@ export function ActivityScreen() {
     void assignAll([...groups.values()], true);
   };
 
-  const dismiss = async (r: TxnListRow) => {
-    try {
-      // OK is shown on bank rows with an alert; they have no expected entry, so the alert itself is marked reviewed.
-      await review.mutateAsync(r.key);
-      toast.show({ text: `${r.payee} · marked OK` });
-    } catch (e) {
+  const dismiss = async (r: CheckRow) => {
+    const failed = (e: unknown): void => {
       toast.show({ text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t save that. Try again.' });
+    };
+    try {
+      // Accept and OK are shown on bank rows with an alert; they have no expected entry, so the alert itself is
+      // marked reviewed. Accept changes no money: the bank's amount already counts.
+      await review.mutateAsync(r.key);
+      toast.show({
+        text:
+          r.action === 'accept'
+            ? `${r.payee} · ${formatCents(Math.abs(r.amount))} accepted`
+            : `${r.payee} · marked OK`,
+        undo: () => unreview.mutateAsync(r.key).then(() => {}, failed),
+      });
+    } catch (e) {
+      failed(e);
     }
   };
 

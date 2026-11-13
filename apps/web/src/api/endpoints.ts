@@ -186,6 +186,8 @@ export const api = {
     post(`/api/transactions/${enc(key)}/pending`, MutationResult, body),
   /** Clears a bank transaction's alert (e.g. it cleared at a different amount): the OK on Check these. */
   reviewTxn: (key: string) => post(`/api/transactions/${enc(key)}/review`, MutationResult),
+  /** Undo of OK (or Accept) on Check these: the row asks again. */
+  reviewTxnUndo: (key: string) => post(`/api/transactions/${enc(key)}/review/undo`, MutationResult, {}),
   deleteTxn: (key: string) => del(`/api/transactions/${enc(key)}`, MutationResult),
   /** "Same purchase?" (docs/payee-names.md 9.1): Yes or No for one candidate of a card. */
   samePurchase: (v: { id: string } & In<typeof SamePurchaseAnswer>) =>

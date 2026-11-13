@@ -10,6 +10,7 @@ import {
   Banner,
   ErrorNote,
   Field,
+  inputClass,
   Loading,
   OptionCard,
   PrimaryButton,
@@ -38,6 +39,7 @@ export function CheckPendingScreen() {
   const patch = useMoneyMutation((v: Parameters<typeof api.patchTxn>[1]) => api.patchTxn(key, v));
   const [pick, setPick] = useState<CheckPick>('wait');
   const [amount, setAmount] = useState<string | null>(null);
+  const [date, setDate] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const t = q.data;
   if (!t)
@@ -56,6 +58,7 @@ export function CheckPendingScreen() {
   const cat = t.categoryLabel;
   const back = formatCents(Math.abs(t.amount));
   const amt = amount ?? centsToInput(Math.abs(t.amount));
+  const day = date ?? t.date;
   const utcDay = (d: string) =>
     Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))) / 86_400_000;
   const days = today ? Math.round(utcDay(today) - utcDay(t.date)) : 0;
@@ -69,9 +72,9 @@ export function CheckPendingScreen() {
     },
     {
       id: 'edit',
-      name: 'Fix the amount',
-      desc: 'If you wrote it for a different amount.',
-      cta: 'Save amount',
+      name: 'Fix the amount or date',
+      desc: 'If you wrote it for a different amount or day.',
+      cta: 'Save',
       result: 'Saved. It keeps waiting for the bank.',
     },
     {
@@ -83,7 +86,11 @@ export function CheckPendingScreen() {
     },
   ];
   const cur = opts.find((o) => o.id === pick)!;
-  const amtBad = pick === 'edit' ? amountWhy(amt) : '';
+  const amtBad =
+    pick !== 'edit'
+      ? ''
+      : amountWhy(amt) ||
+        (!day ? 'Pick a date' : today && day > today ? 'Pick today or an earlier date' : '');
   const confirm = async () => {
     // A refusal shows in the sheet (keep.error, patch.error), not as an uncaught error.
     const ok = async (p: Promise<unknown>) =>
@@ -94,8 +101,13 @@ export function CheckPendingScreen() {
     if (pick === 'edit') {
       const c = parseCents(amt);
       if (c === null || c === 0) return;
-      // A check is an entry you added: its own amount changes (an estimate is only for a bank pending row).
-      if (!(await ok(patch.mutateAsync({ amount: t.amount < 0 ? -c : c })))) return;
+      // A check is an entry you added: its own amount and date change (an estimate is only for a bank pending row).
+      const signed = t.amount < 0 ? -c : c;
+      const body = {
+        ...(signed !== t.amount ? { amount: signed } : {}),
+        ...(day !== t.date ? { date: day } : {}),
+      };
+      if (Object.keys(body).length && !(await ok(patch.mutateAsync(body)))) return;
     } else if (!(await ok(keep.mutateAsync({ action: pick === 'delete' ? 'delete' : 'keep_waiting' }))))
       return;
     setDone(cur.result);
@@ -106,6 +118,7 @@ export function CheckPendingScreen() {
       track="check"
       onClose={close}
       gap="auto"
+      unsaved={pick === 'edit' && !done && !patch.isPending && amount !== null}
       header={
         <SheetTitle
           tag={days > 1 ? `Not at the bank after ${days} days` : 'Not at the bank yet'}
@@ -160,6 +173,15 @@ export function CheckPendingScreen() {
                     inputMode="decimal"
                     value={amt}
                     onChange={(e) => setAmount(e.target.value)}
+                  />
+                </Field>
+                <Field label="Date" className="min-w-0 flex-1">
+                  <input
+                    type="date"
+                    className={inputClass}
+                    value={day}
+                    max={today}
+                    onChange={(e) => setDate(e.target.value)}
                   />
                 </Field>
               </div>

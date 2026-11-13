@@ -327,7 +327,12 @@ export const ActivityView = z.object({
         .nullable(),
     }),
   ),
-  checkThese: z.array(TxnListRow.extend({ action: z.enum(['dismiss', 'review']) })),
+  /**
+   * `accept`: a bank row that cleared at another amount than your estimate (the bank's amount counts); `dismiss`: any
+   * other alert. Both are answered with POST /api/transactions/:key/review, and undone with .../review/undo.
+   * `review` opens the sheet.
+   */
+  checkThese: z.array(TxnListRow.extend({ action: z.enum(['accept', 'dismiss', 'review']) })),
   /**
    * "Same purchase?" (docs/payee-names.md 9.1): one card per bank row that could be your entry or another bank row,
    * with no exact evidence (or several rows with it). Answered with POST /api/same-purchase/:id.
@@ -473,6 +478,11 @@ export const TxnPatch = z.object({
   estimatedAmount: cents.nullable().optional(),
   /** A transaction you added (pending or upcoming): its amount, outflow negative. */
   amount: cents.optional(),
+  /**
+   * A transaction you added: its date. A pending one stays today or earlier (a later date is an upcoming one); an
+   * upcoming one counts from its new date.
+   */
+  date: calendarDate.optional(),
   wontClear: z.boolean().optional(),
   budgetMonth: month.nullable().optional(),
   payeeName: z.string().min(1).max(120).optional(),
