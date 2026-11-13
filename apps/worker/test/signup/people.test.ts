@@ -3,6 +3,7 @@ import { encryptToken, parseKeyring } from '@ledgerline/platform';
 import { createExecutionContext, env, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { removeBanks } from '../../src/store/account-life.js';
+import { startDeletionSql } from '../../src/store/idle-accounts.js';
 import worker from '../../src/index.js';
 import { TEST_TOKEN } from '../../src/routes/signup.js';
 import { ACTION, fromHex, signRequest, toHex, utf8 } from '@ledgerline/seal';
@@ -269,5 +270,67 @@ describe('deleting an account with banks', () => {
         left: 0,
       });
     });
+  });
+});
+
+// A budget with two members, each with a recovery key's sign-in half (an account nobody opened for 24 months is
+// deleted with every member of its budget: store/idle-accounts.ts). The recovery key rows go before the user rows
+// they refer to, for each member.
+describe('deleting a budget with two members who both set a recovery key', () => {
+  it('deletes both accounts, both recovery keys and the budget', async () => {
+    const first = new Browser();
+    await first.ceremony(key(), '/api/auth/signup/options', { turnstileToken: TEST_TOKEN });
+    const second = new Browser();
+    await second.ceremony(key(), '/api/auth/signup/options', { turnstileToken: TEST_TOKEN });
+    const budget = (await first.call('GET', '/api/session')).json.budgetId as string;
+    const ownBudget = (await second.call('GET', '/api/session')).json.budgetId as string;
+    const userOf = async (b: string) =>
+      (await dir
+        .prepare(`SELECT user_id FROM budget_member WHERE budget_id = ?1`)
+        .bind(b)
+        .first<string>('user_id'))!;
+    const users = [await userOf(budget), await userOf(ownBudget)];
+    // The second account is a member of the first one's budget.
+    await dir
+      .prepare(`UPDATE budget_member SET budget_id = ?1 WHERE user_id = ?2`)
+      .bind(budget, users[1])
+      .run();
+    for (const [i, u] of users.entries())
+      await dir
+        .prepare(`INSERT INTO recovery_key (user_id, auth_pub, created_at) VALUES (?1, ?2, 1)`)
+        .bind(u, String(i + 1).repeat(64))
+        .run();
+    const count = async (sql: string, ...v: unknown[]) =>
+      Number(
+        await dir
+          .prepare(sql)
+          .bind(...v)
+          .first('n'),
+      );
+    const ofUsers = (t: string, col = 'user_id') =>
+      count(`SELECT count(*) AS n FROM ${t} WHERE ${col} IN (?1, ?2)`, users[0], users[1]);
+    expect(await ofUsers('recovery_key')).toBe(2);
+    expect(await count(`SELECT count(*) AS n FROM budget_member WHERE budget_id = ?1`, budget)).toBe(2);
+
+    // As the daily expiry starts it: both members at once, then the job.
+    await runInDurableObject(directoryStub(), async (o, state) => {
+      state.storage.transactionSync(() => {
+        for (const [q, p] of startDeletionSql(budget, users, Date.now()))
+          state.storage.sql.exec(q, ...(p as SqlStorageValue[]));
+      });
+      await (
+        o as unknown as {
+          queueDelete(u: string, b: string, all: string[], now: number): Promise<void>;
+        }
+      ).queueDelete(users[0]!, budget, users, Date.now());
+    });
+    expect((await first.call('GET', '/api/session')).status).toBe(401);
+    expect((await second.call('GET', '/api/session')).status).toBe(401);
+    await runDirectoryJobs();
+    expect(await count(`SELECT count(*) AS n FROM job WHERE id = ?1`, `delete_account:${users[0]}`)).toBe(0);
+    for (const t of ['recovery_key', 'passkey', 'recovery_code', 'auth_session', 'budget_member'])
+      expect(await ofUsers(t), t).toBe(0);
+    expect(await ofUsers('user', 'id')).toBe(0);
+    expect(await count(`SELECT count(*) AS n FROM budget WHERE id = ?1`, budget)).toBe(0);
   });
 });

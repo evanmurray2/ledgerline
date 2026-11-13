@@ -6,6 +6,17 @@ import {
   ACTION,
   type Action,
   type BudgetKeys,
+  deriveBudgetKeys,
+  encodeEntry,
+  encodeKeyChange,
+  KIND,
+  newInbox,
+  publicEntry,
+  randomBytes,
+  resealSlotRecord,
+  rewrapInbox,
+  startChain,
+  wrapPrevKey,
   newRecoveryKey,
   recoverySlot,
   signRecoveryLogin,
@@ -16,6 +27,7 @@ import {
 } from '@ledgerline/seal';
 import { isFreshWay } from '../../src/store/way-in.js';
 import { genesisIn } from '../signed.js';
+import type { Writer } from '../log-writer.js';
 import worker from '../../src/index.js';
 import { SoftAuthenticator } from '../soft-authenticator.js';
 import { directoryDb, directoryStub, storeDb } from '../store-db.js';
@@ -80,6 +92,8 @@ const recovery = newRecoveryKey();
 let budgetId = '';
 /** A second session of the same person: the one the recovery key signed in. */
 let second = new Browser();
+/** The device that wrote the locked budget's first entry (its keys), once the budget is locked. */
+let logWriter: Writer | null = null;
 
 describe('the recovery key signs in', () => {
   it('a key that is not set signs in nobody', async () => {
@@ -225,6 +239,7 @@ describe('a locked budget: its serious requests are signed with the budget’s k
     const db = storeDb(budgetId);
     await db.prepare(`INSERT INTO store_mark (key, at) VALUES ('sealed', ?1)`).bind(Date.now()).run();
     const w = await genesisIn(db, budgetId, Date.parse('2026-11-14T20:00:00Z'));
+    logWriter = w;
     const next = toHex((await authOf(newRecoveryKey())).pub);
     const path = '/api/settings/security/recovery-key';
     const before = await dir.prepare(`SELECT auth_pub FROM recovery_key`).first('auth_pub');
@@ -315,5 +330,50 @@ describe('a locked budget: its serious requests are signed with the budget’s k
     expect(s.ok && typeof s.caller.recoveryKeyUsedAt).toBe('number');
     const other = await directoryStub().authenticate(owner.cookie(), 'GET', '/api/budget');
     expect(other.ok && other.caller.recoveryKeyUsedAt).toBeUndefined();
+  });
+});
+
+/** A key change by `w` that keeps every way in: the new key, its inbox, each slot sealed again. */
+async function keyChangeBy(w: Writer) {
+  const s = await startChain(w.last!, { now: w.time, schemaVersion: 1 }, w.budgetId);
+  const p = s.public;
+  const bk = randomBytes(32);
+  const keys = await deriveBudgetKeys(bk, w.budgetId, w.keys.version + 1);
+  const inbox = await newInbox(keys, w.budgetId, p.inboxVersion + 1);
+  const inboxes = [{ version: p.inboxVersion + 1, wrapped: inbox.wrapped }];
+  for (const [v, wrapped] of p.inboxes)
+    inboxes.push({ version: v, wrapped: await rewrapInbox(w.keys, keys, w.budgetId, v, wrapped) });
+  const slots = [];
+  for (const r of p.slots.values()) slots.push(await resealSlotRecord(r, w.keys, bk, keys, w.budgetId));
+  const body = encodeKeyChange({
+    prevPublic: p.lastPublic,
+    version: keys.version,
+    signPub: keys.sign.pub,
+    wrappedPrevKey: await wrapPrevKey(w.keys, keys, w.budgetId, w.bk),
+    inboxVersion: p.inboxVersion + 1,
+    inboxPub: inbox.pair.pub,
+    lastOldRun: 0,
+    inboxes,
+    slots,
+    intent: null,
+  });
+  return publicEntry(w.fields(KIND.keyChange), body, w.keys);
+}
+
+// D-89 through the log's own route: the Directory says how each session came in, the store passes it to the log's
+// rules, and a key change from a fresh way in needs an intent that has waited.
+describe('the freshness rule on the log’s routes', () => {
+  it('a key change with no intent is refused from a fresh way in and taken from an old one', async () => {
+    const w = logWriter!;
+    expect(w).not.toBeNull();
+    const entry = encodeEntry(await keyChangeBy(w));
+    const body = { base: 1, entries: [btoa(String.fromCharCode(...entry))] };
+    // The session the recovery key signed in: its passkey is days old at most.
+    const fresh = await second.call('POST', '/api/log/append', body);
+    expect(fresh).toMatchObject({ status: 409, json: { ok: false, why: 'intent needed' } });
+    expect(Number(await storeDb(budgetId).prepare(`SELECT count(*) AS n FROM log_entry`).first('n'))).toBe(1);
+    // The owner's passkey is 8 days old (above): the same entry is taken.
+    const old = await owner.call('POST', '/api/log/append', body);
+    expect(old).toMatchObject({ status: 200, json: { ok: true, number: 2 } });
   });
 });

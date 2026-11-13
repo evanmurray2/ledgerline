@@ -7,7 +7,7 @@
     "test": "playwright test",
     "screenshots": "playwright test screenshots.spec.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test:worker": "playwright test -c playwright.passkey.config.ts && playwright test -c playwright.signup.config.ts && playwright test -c playwright.lock.config.ts"
+    "test:worker": "playwright test -c playwright.passkey.config.ts && playwright test -c playwright.signup.config.ts && playwright test -c playwright.lock.config.ts && playwright test -c playwright.bank.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"

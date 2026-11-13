@@ -1,4 +1,4 @@
-# D-113: A new budget takes its first device's time zone (Nov 13, 2026)
+# D-115: A new budget takes its first device's time zone (Nov 13, 2026)
 
 **Before.** `docs/design.md` (Settings defaults) gave a budget US Pacific (America/Los_Angeles): the budget table's
 default, which the server set when it made a budget's row. Since D-102 the first device makes that row
