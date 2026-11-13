@@ -210,12 +210,12 @@ describe('API client', () => {
     expect((await api.session()).budget.name).toBe('Home');
   });
 
-  it('while resting, asks only for the session and stops after a resting answer', async () => {
+  it('while resting, asks only for the session and stops after a resting answer (reads only the server answers)', async () => {
     respond = () => json({ error: 'resting', message: 'resting' }, 503);
-    await expect(api.budget('2026-11')).rejects.toMatchObject({ code: 'resting' });
+    await expect(api.connections()).rejects.toMatchObject({ code: 'resting' });
     expect(connectivity.get().readsPaused).toBe(true);
     expect(calls).toHaveLength(1);
-    await expect(api.budget('2026-11')).rejects.toMatchObject({ code: 'resting' });
+    await expect(api.connections()).rejects.toMatchObject({ code: 'resting' });
     expect(calls).toHaveLength(1);
     await api.session().catch(() => null);
     expect(calls).toHaveLength(2);

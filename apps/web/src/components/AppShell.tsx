@@ -75,7 +75,7 @@ function TabBar({ active }: { active: Tab }) {
   return (
     <nav
       aria-label="Main"
-      className="safe-tabs grid min-h-[72px] shrink-0 grid-cols-4 border-t border-line bg-surface px-2 pt-1.5"
+      className="safe-tabs grid min-h-[72px] shrink-0 grid-cols-4 border-t border-line bg-surface px-2 pt-1.5 short:min-h-0 short:pt-0.5"
     >
       {TABS.map((t) => {
         const on = t.id === current;
@@ -95,7 +95,9 @@ function TabBar({ active }: { active: Tab }) {
           >
             <Icon name={t.icon} size={22} />
             {alert && <AlertBadge className="absolute left-1/2 top-0.5 ml-1.5" />}
-            <span aria-hidden="true">{t.name}</span>
+            <span aria-hidden="true" className="short:hidden">
+              {t.name}
+            </span>
           </Link>
         );
       })}

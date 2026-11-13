@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import {
   createRootRoute,
   createRoute,
+  createBrowserHistory,
   createRouter,
   Navigate,
   Outlet,
@@ -34,7 +35,8 @@ import { ApiError } from './api/client';
 import { checkSaved, getCopy, onCopyChanged, start as startCopy, syncNow, flush, useCopy } from './copy/copy';
 import { CopyScreen } from './screens/Copy';
 import { toast } from './components/Toast';
-import { returnSearch } from './lib/back';
+import { returnSearch, sheetAwareHistory } from './lib/back';
+import { monthParam } from './lib/month-param';
 import { lazyScreen, RouteProblem } from './lib/lazy-screen';
 import { CantConnect } from './screens/CantConnect';
 
@@ -64,9 +66,6 @@ const StartMonthScreen = lazyScreen(setup, 'StartMonthScreen');
 const WelcomeScreen = lazyScreen(setup, 'WelcomeScreen');
 
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
-/** A `?month=` as 'YYYY-MM'; a malformed one is dropped, so the screen shows this month instead of an error. */
-const monthParam = (v: unknown) =>
-  typeof v === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(v) ? v : undefined;
 
 function Root() {
   const session = useSession();
@@ -182,6 +181,9 @@ function Root() {
   // A finished setup isn't run again (Back after Go to my budget): it would add every category again and set the
   // starting balances over.
   if (s.budget.setupStep === 'done' && setupPath) return <Navigate to="/budget" replace />;
+  // Steps in order: banks and categories come after the start month (a later step would fail at its end).
+  if (s.budget.setupStep === 'start' && (path === '/setup/link' || path === '/setup/categories'))
+    return <Navigate to="/setup/start" replace />;
   if (setupPath)
     return (
       <>
@@ -323,8 +325,8 @@ const activityRoute = createRoute({
     q: str(s.q),
     // One category's transactions (Reports → a category).
     category: str(s.category),
-    // The app's month; a malformed one is dropped rather than refused by the server.
-    month: monthParam(s.month),
+    // The app's month; a malformed one, or one after this month (Activity never shows one), is dropped.
+    month: monthParam(s.month, { notAfterNow: true }),
     // Opened from another tab (lib/back.ts).
     ...returnSearch(s),
   }),
@@ -566,7 +568,8 @@ const routeTree = rootRoute.addChildren([
 export function makeRouter(history?: RouterHistory) {
   return createRouter({
     routeTree,
-    history,
+    // Closing a sheet never adds a page to the history (lib/back.ts).
+    history: sheetAwareHistory(history ?? createBrowserHistory()),
     defaultPreload: false,
     defaultNotFoundComponent: () => <Navigate to="/budget" replace />,
     defaultPendingComponent: Loading,

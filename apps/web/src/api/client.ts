@@ -27,6 +27,7 @@ import {
   wipe,
 } from '../copy/copy';
 import type { SyncPage } from '../copy/host';
+import { isServerRead } from '../copy/server-reads';
 
 export class ApiError extends Error {
   readonly code: string;
@@ -255,7 +256,13 @@ async function sendOnce<S extends z.ZodType>(
     if (f) body = { ...(body as object | undefined), ...f };
   }
   // Resting (95% of a daily limit): only the session is asked, so the app knows when it's over.
-  if (!mutation && connectivity.get().readsPaused && path !== '/api/session')
+  // The mock API stands in for the copy (src/mock): its screen reads are local, as on a phone.
+  if (
+    !mutation &&
+    connectivity.get().readsPaused &&
+    path !== '/api/session' &&
+    !(import.meta.env.VITE_MOCK === '1' && !isServerRead(path))
+  )
     throw new ApiError('resting', `Paused until ${dailyResetTime()}. Nothing is lost.`, 503);
   if (mutation && !connectivity.canWrite() && !canEditOffline(method, path)) {
     const code = connectivity.isOffline() ? 'offline' : 'read_only';
