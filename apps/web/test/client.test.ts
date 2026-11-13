@@ -210,12 +210,12 @@ describe('API client', () => {
     expect((await api.session()).budget.name).toBe('Home');
   });
 
-  it('while resting, asks only for the session and stops after a resting answer', async () => {
+  it('while resting, asks only for the session and stops after a resting answer (reads only the server answers)', async () => {
     respond = () => json({ error: 'resting', message: 'resting' }, 503);
-    await expect(api.budget('2026-11')).rejects.toMatchObject({ code: 'resting' });
+    await expect(api.connections()).rejects.toMatchObject({ code: 'resting' });
     expect(connectivity.get().readsPaused).toBe(true);
     expect(calls).toHaveLength(1);
-    await expect(api.budget('2026-11')).rejects.toMatchObject({ code: 'resting' });
+    await expect(api.connections()).rejects.toMatchObject({ code: 'resting' });
     expect(calls).toHaveLength(1);
     await api.session().catch(() => null);
     expect(calls).toHaveLength(2);
@@ -232,7 +232,7 @@ describe('error text', () => {
       'Something went wrong. Try again.',
     );
     expect(errorMessage(new ApiError('not_found', 'category'))).toBe(
-      'This was changed or removed. Pull down to refresh.',
+      'This was changed or removed. Check it and try again.',
     );
     expect(errorMessage(new ApiError('http_502', 'Bad Gateway'))).toBe('Something went wrong. Try again.');
     expect(errorMessage(new Error('Response was not JSON.'))).toBe('Something went wrong. Try again.');

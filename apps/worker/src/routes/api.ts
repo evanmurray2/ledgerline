@@ -26,9 +26,12 @@ import { activityRoutes } from './activity.js';
 import { activityViewRoutes } from './activity-view.js';
 import { samePurchaseRoutes } from './same-purchase.js';
 import { notSameUndoRoutes } from './not-same-undo.js';
+import { activityUndoRoutes } from './activity-undo.js';
 import { transactionRoutes } from './transactions.js';
 import { accountRoutes } from './accounts.js';
 import { accountCloseRoutes } from './account-close.js';
+import { registerRoutes } from './account-register.js';
+import { reportRoutes } from './reports.js';
 import { settingsRoutes } from './settings.js';
 import { opsRoutes } from './ops.js';
 import { categorySheet, assignView } from '../views/category.js';
@@ -154,9 +157,9 @@ function checkBodyAmounts(v: unknown): void {
 }
 
 /** A missing thing, said so the reader can act (docs/copy.md rule 7). */
-export const GONE = 'This was changed or removed. Pull down to refresh.';
+export const GONE = 'This was changed or removed. Check it and try again.';
 /** A change made against an older copy of the data. */
-export const CHANGED = 'This changed. Pull down to refresh.';
+export const CHANGED = 'This changed. Check it and try again.';
 export const TRY_AGAIN = 'Something went wrong. Try again.';
 export const BAD_MONTH = 'That month isn’t in your budget. Pick another month.';
 /**
@@ -302,7 +305,7 @@ budgetApi.get('/categories/:id/sheet', async (c) => {
 async function addAssignments(
   c: Context<AppEnv>,
   month: Month,
-  items: { categoryId: string; amount: number; set?: boolean }[],
+  items: { categoryId: string; amount: number; set?: boolean; was?: number | undefined }[],
 ): Promise<MutationAck> {
   checkAmounts(...items.map((i) => i.amount));
   const s = scoped(c);
@@ -319,6 +322,22 @@ async function addAssignments(
   if (!b?.budget_start_month || month < b.budget_start_month)
     throw new HttpError(422, 'before_start', 'Months before your budget starts can’t be assigned.');
   if (!inReach(month, currentMonth(now, b.time_zone))) throw new HttpError(422, 'too_far', FAR_MONTH);
+  // What each category holds now: an add sent with what the device saw (`was`) goes ahead only if that is still
+  // so, and no category may end up past MAX_AMOUNT, which an add of allowed amounts could otherwise reach.
+  const held = new Map(
+    (
+      await s.all<{ category_id: string; amount: number }>(
+        `SELECT category_id, amount FROM assignment WHERE budget_id = ?1 AND month = ?2 AND category_id IN (${ids.map((_, i) => `?${i + 3}`).join(',')})`,
+        month,
+        ...ids,
+      )
+    ).map((r) => [r.category_id, r.amount]),
+  );
+  if (items.some((i) => i.was !== undefined && i.was !== (held.get(i.categoryId) ?? 0)))
+    throw new HttpError(409, 'changed', CHANGED);
+  const after = new Map(held);
+  for (const i of items) after.set(i.categoryId, (i.set ? 0 : (after.get(i.categoryId) ?? 0)) + i.amount);
+  checkAmounts(...after.values());
   const stmts = items.map((i) =>
     s.q(
       i.set
@@ -404,9 +423,12 @@ budgetApi.route('/', activityViewRoutes);
 budgetApi.route('/', activityRoutes);
 budgetApi.route('/', samePurchaseRoutes);
 budgetApi.route('/', notSameUndoRoutes);
+budgetApi.route('/', activityUndoRoutes);
 budgetApi.route('/', transactionRoutes);
 budgetApi.route('/', accountRoutes);
 budgetApi.route('/', accountCloseRoutes);
+budgetApi.route('/', registerRoutes);
+budgetApi.route('/', reportRoutes);
 budgetApi.route('/', settingsRoutes);
 budgetApi.route('/', opsRoutes);
 budgetApi.route('/', securityRoutes);

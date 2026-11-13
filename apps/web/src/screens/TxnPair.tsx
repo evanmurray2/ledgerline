@@ -23,7 +23,14 @@ export function PairedWith({ t, close }: { t: TxnSheet; close: () => void }) {
       aria-label={`Not the same: ${t.payee} and ${other}`}
       disabled={undo.isPending}
       onClick={async () => {
-        await undo.mutateAsync(t.key);
+        // A refusal shows below (undo.error), not as an uncaught error.
+        if (
+          !(await undo.mutateAsync(t.key).then(
+            () => true,
+            () => false,
+          ))
+        )
+          return;
         const key = t.key;
         toast.show({
           text: 'Kept as two purchases',

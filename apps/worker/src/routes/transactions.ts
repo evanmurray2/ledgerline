@@ -1,15 +1,10 @@
-// The transaction sheet and every edit to one transaction's overlay: categorize, add, check pending, delete, review.
+// Every edit to one transaction's overlay: categorize, add, check pending, delete, review. The sheet is in
+// txn-sheet.ts.
 import { newId } from '../http/ids.js';
 import type { Stmt } from '@ledgerline/db/sql';
 import { editNow } from '../http/clock.js';
 import { Hono } from 'hono';
-import {
-  CategorizeRequest,
-  NewTxnRequest,
-  PendingCheckAction,
-  TxnPatch,
-  type TxnSheet,
-} from '@ledgerline/contracts';
+import { CategorizeRequest, NewTxnRequest, PendingCheckAction, TxnPatch } from '@ledgerline/contracts';
 import {
   type Month,
   addDays,
@@ -18,7 +13,6 @@ import {
   fractionOf,
   localDate,
   monthOfDate,
-  owedList,
 } from '@ledgerline/domain';
 
 import type { AppEnv } from '../http/context.js';
@@ -26,189 +20,16 @@ import type { Scoped } from '../db/scoped.js';
 import { HttpError, parse, scoped, GONE, FAR_DATE, FAR_MONTH, inReach, thisMonth } from './api.js';
 import { reopenForEntry, reopenStmts } from './account-close.js';
 import { liveKey } from './sync.js';
-import { monthLong, shortDate } from '../views/common.js';
-import { categoryLabel, isHistory } from '../views/rows.js';
-import { TX_COLUMNS, chunks, txnCol, type TxRow } from '../ledger/ledger.js';
-import { linkInfo, roleOf } from '../ledger/link.js';
-import { OVERLAY_UPSERT, commit, loadTx, names, refuseHistory } from './txn-common.js';
+import { monthLong } from '../views/common.js';
+import { TX_COLUMNS, chunks, type TxRow } from '../ledger/ledger.js';
+import { OVERLAY_UPSERT, commit, loadTx, refuseHistory } from './txn-common.js';
 import { claimName } from '../sync/payee-keys.js';
-import { coverAfterAmount, pairedWith } from './same-purchase.js';
+import { coverAfterAmount } from './same-purchase.js';
+import { txnSheet } from './txn-sheet.js';
 
 export const transactionRoutes = new Hono<AppEnv>();
 
-transactionRoutes.get('/transactions/:key', async (c) => {
-  const s = scoped(c);
-  const key = c.req.param('key');
-  const t = await loadTx(s, key);
-  const { cats, accts } = await names(s);
-  const [sp, ow, pb, rf, rule, bz] = await s.batch([
-    s.q(
-      `SELECT id, category_id, amount, memo, absorbs_remainder FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2 ORDER BY sort`,
-      key,
-    ),
-    s.q(
-      `SELECT id, amount, fraction_num, fraction_den, expect_by, closed_at, canceled_at FROM expected_reimbursement WHERE budget_id = ?1 AND txn_key = ?2`,
-      key,
-    ),
-    // Each payback is labelled by the other side: on the money in, the purchase it paid back; on the purchase,
-    // the money in that paid it.
-    s.q(
-      `SELECT l.from_key, l.to_key, l.amount,
-         coalesce(CASE WHEN l.from_key = ?2 THEN ${txnCol('e.txn_key', 'payee')} ELSE ${txnCol('l.from_key', 'payee')} END, '') AS label,
-         CASE WHEN l.from_key = ?2 THEN ${txnCol('e.txn_key', 'date')} ELSE ${txnCol('l.from_key', 'date')} END AS date
-       FROM txn_link l LEFT JOIN expected_reimbursement e ON e.budget_id = l.budget_id AND e.id = l.to_key
-       WHERE l.budget_id = ?1 AND l.kind = 'reimbursement_of' AND l.undone_at IS NULL AND (l.from_key = ?2 OR l.to_key IN (SELECT id FROM expected_reimbursement WHERE budget_id = ?1 AND txn_key = ?2))`,
-      key,
-    ),
-    s.q(
-      `SELECT l.to_key, coalesce(${txnCol('l.to_key', 'payee')}, '') AS label, ${txnCol('l.to_key', 'date')} AS date FROM txn_link l
-       WHERE l.budget_id = ?1 AND l.kind = 'refund_of' AND l.undone_at IS NULL AND l.from_key = ?2`,
-      key,
-    ),
-    s.q(`SELECT name FROM rule WHERE budget_id = ?1 AND id = ?2`, t.rule_id ?? ''),
-    s.q(`SELECT time_zone FROM budget WHERE id = ?1`),
-  ]);
-  const splits = sp!.results as {
-    id: string;
-    category_id: string | null;
-    amount: number;
-    memo: string | null;
-    absorbs_remainder: number;
-  }[];
-  const pbs = pb!.results as {
-    from_key: string;
-    to_key: string;
-    amount: number;
-    label: string;
-    date: string | null;
-  }[];
-  const owedRows = ow!.results as {
-    id: string;
-    amount: number;
-    fraction_num: number | null;
-    fraction_den: number | null;
-    expect_by: string | null;
-    closed_at: number | null;
-    canceled_at: number | null;
-  }[];
-  const zone = (bz!.results[0] as { time_zone: string } | undefined)?.time_zone ?? 'America/Los_Angeles';
-  const today = localDate(editNow(c), zone);
-  const owedView = owedList(
-    owedRows.map((o) => ({
-      id: o.id,
-      txnKey: key,
-      amount: cents(o.amount),
-      expectBy: o.expect_by,
-      closedAt: o.closed_at ? 'x' : null,
-      canceledAt: o.canceled_at ? 'x' : null,
-    })),
-    pbs
-      .filter((p) => owedRows.some((o) => o.id === p.to_key))
-      .map((p) => ({ inflowKey: p.from_key, itemId: p.to_key, amount: cents(p.amount) })),
-    today,
-  );
-  const refund = (rf!.results[0] as { to_key: string; label: string; date: string } | undefined) ?? null;
-  const kind: TxnSheet['kind'] = isHistory(t)
-    ? 'history'
-    : t.transfer_state === 'paired' || t.transfer_state === 'unsorted'
-      ? 'transfer'
-      : t.status === 'upcoming'
-        ? 'upcoming'
-        : t.source === 'manual'
-          ? 'manual'
-          : pbs.some((p) => p.from_key === key) || owedView.some((o) => o.status === 'paid_back')
-            ? 'paidBack'
-            : refund || (t.account_kind === 'credit' && t.amount > 0)
-              ? 'refund'
-              : t.amount > 0
-                ? 'income'
-                : t.status === 'pending'
-                  ? 'pending'
-                  : 'posted';
-  const alerts: string[] = [];
-  if (t.alert && !t.reviewed_at)
-    for (const a of JSON.parse(t.alert) as string[])
-      alerts.push(
-        a.startsWith('amount_changed')
-          ? 'Amount changed on clearing'
-          : a === 'cleared_despite_wont_clear'
-            ? 'Cleared despite won’t clear'
-            : a,
-      );
-  // The lines no longer add up to the amount (it changed after the split): the gap counts as uncategorized (D-82).
-  const splitTotal = splits.reduce((a, x) => a + x.amount, 0);
-  if (splits.length && splitTotal !== t.amount)
-    alerts.push(
-      `The split adds up to ${formatCents(Math.abs(splitTotal))}, not ${formatCents(Math.abs(t.amount))}. Edit the split to fix it.`,
-    );
-  const ruleName = (rule!.results[0] as { name: string } | undefined)?.name;
-  // A row before the budget start may be part of the starting balance rather than plain history (D-67).
-  const inStart = kind === 'history' && roleOf(t, await linkInfo(s)) === 'before';
-  const sheet: TxnSheet = {
-    key,
-    kind,
-    ...(inStart ? { inStartingBalance: true } : {}),
-    payee: t.payee,
-    payeeId: t.payee_id,
-    rawName: t.raw_name,
-    accountId: t.account_id,
-    accountName: accts.get(t.account_id) ?? t.account_name,
-    otherAccountName:
-      t.transfer_state === 'paired' && t.transfer_account_id
-        ? (accts.get(t.transfer_account_id) ?? null)
-        : null,
-    date: t.date,
-    postedDate: t.posted_date,
-    amount: cents(t.amount),
-    bankAmount: t.bank_amount === null ? null : cents(t.bank_amount),
-    estimatedAmount: t.estimated_amount === null ? null : cents(t.estimated_amount),
-    status: t.status,
-    wontClear: t.wont_clear === 1,
-    categoryId: t.category_id,
-    categoryLabel: categoryLabel(t, cats, splits.length > 0),
-    // 'rule' and 'payee' are only on rows categorized before D-60; they keep their label.
-    categorizedBy:
-      t.categorized_by === 'rule'
-        ? ruleName
-          ? `the rule “${ruleName}”`
-          : 'a rule'
-        : t.categorized_by === 'payee'
-          ? 'your past choice for this payee'
-          : t.categorized_by === 'user'
-            ? 'You'
-            : null,
-    split: splits.length
-      ? splits.map((x) => ({
-          id: x.id,
-          categoryId: x.category_id,
-          amount: cents(x.amount),
-          memo: x.memo,
-          absorbsRemainder: x.absorbs_remainder === 1,
-        }))
-      : null,
-    memo: t.memo,
-    budgetMonth: (t.budget_month ?? monthOfDate(t.date)) as Month,
-    budgetMonthOverridden: t.budget_month !== null,
-    owed: owedView.map((o) => ({
-      id: o.id,
-      share: owedShare(owedRows.find((r) => r.id === o.id)),
-      amount: o.amount,
-      matched: o.matched,
-      expectBy: o.expectBy,
-      status: o.status,
-    })),
-    paybacks: pbs.map((p) => ({
-      inflowKey: p.from_key,
-      itemId: p.to_key,
-      amount: cents(p.amount),
-      label: p.date ? `${p.label} · ${shortDate(p.date)}` : p.label,
-    })),
-    refundOf: refund ? { key: refund.to_key, label: `${refund.label} · ${shortDate(refund.date)}` } : null,
-    pairedWith: kind === 'history' ? null : await pairedWith(s, t),
-    alerts,
-  };
-  return c.json(sheet);
-});
+transactionRoutes.get('/transactions/:key', txnSheet);
 
 transactionRoutes.patch('/transactions/:key', async (c) => {
   const p = await parse(TxnPatch, c.req.raw);
@@ -244,10 +65,12 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
     set('categorized_by', 'user');
     set('transfer_state', null);
     w.push(s.q(`DELETE FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`, key));
+    if (p.split === undefined) w.push(dropSplitOwed(s, key, [], now));
     edits.category_id = editAt;
   }
   if (p.split !== undefined) {
     w.push(s.q(`DELETE FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`, key));
+    const owedIds: string[] = [];
     if (p.split) {
       const total = p.split.reduce((a, l) => a + l.amount, 0);
       if (total !== (p.amount ?? t.amount))
@@ -256,30 +79,54 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
           'split_total',
           `The lines must add up to ${formatCents(p.amount ?? t.amount)}.`,
         );
-      p.split.forEach((l, i) =>
+      p.split.forEach((l, i) => {
+        const lineId = `${key}:s${i}`;
+        // A line owed to you has no category: an owed item of its amount takes it out of Ready to Assign until
+        // it is paid back (rule 11, as for a whole purchase marked owed).
+        const owed = !!l.owed && l.amount < 0;
+        if (l.owed && l.amount > 0)
+          throw new HttpError(422, 'not_outflow', 'Only money going out can be owed to you.');
         w.push(
           s.q(
             `INSERT INTO txn_split (id, budget_id, txn_key, category_id, amount, memo, absorbs_remainder, sort, created_at) VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
-            `${key}:s${i}`,
+            lineId,
             key,
-            l.categoryId,
+            owed ? null : l.categoryId,
             l.amount,
             l.memo,
             l.absorbsRemainder ? 1 : 0,
             i,
             now,
           ),
-        ),
-      );
+        );
+        if (owed) {
+          owedIds.push(lineId);
+          w.push(
+            s.q(
+              `INSERT INTO expected_reimbursement (id, budget_id, txn_key, split_id, amount, created_at, updated_at)
+               VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?6)
+               ON CONFLICT (id) DO UPDATE SET split_id = excluded.split_id, amount = excluded.amount, canceled_at = NULL,
+                 updated_at = excluded.updated_at`,
+              `${key}:owed:s${i}`,
+              key,
+              lineId,
+              -l.amount,
+              now,
+            ),
+          );
+        }
+      });
       set('category_id', null);
       set('categorized_by', 'user');
     }
+    w.push(dropSplitOwed(s, key, owedIds, now));
     edits.split = editAt;
   }
   if (p.memo !== undefined) set('memo', p.memo);
   if (p.estimatedAmount !== undefined) {
     if (t.status !== 'pending' || t.source !== 'bank')
       throw new HttpError(422, 'not_pending', 'Only a pending bank charge can have an estimate.');
+    if (p.estimatedAmount === 0) throw new HttpError(422, 'zero_amount', 'Enter an estimate above $0.00.');
     set('estimated_amount', p.estimatedAmount);
     // A pending row that stayed in a closed account no longer adds up to $0 there (D-93).
     w.push(...reopenStmts(s, t.account_id, now));
@@ -440,6 +287,7 @@ transactionRoutes.post('/transactions/categorize', async (c) => {
         now,
       ),
       s.q(`DELETE FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`, key),
+      dropSplitOwed(s, key, [], now),
     );
   }
   w.push(s.audit('txn.categorize', 'transaction', null, null, r, now));
@@ -629,12 +477,17 @@ function cancelOwed(s: Scoped, key: string, now: number): Stmt {
   );
 }
 
-/** Which share the sheet shows as picked: a fraction of the amount (half, all) or a fixed amount. */
-function owedShare(
-  r: { fraction_num: number | null; fraction_den: number | null } | undefined,
-): 'half' | 'all' | 'custom' {
-  if (!r || r.fraction_num === null || !r.fraction_den) return 'custom';
-  if (r.fraction_num * 2 === r.fraction_den) return 'half';
-  if (r.fraction_num === r.fraction_den) return 'all';
-  return 'custom';
+/**
+ * Removes the mark from split lines no longer owed to you (the split changed or went away): an owed item for a line
+ * that isn't there would take its amount out of Ready to Assign a second time.
+ */
+export function dropSplitOwed(s: Scoped, key: string, keep: readonly string[], now: number): Stmt {
+  return s.q(
+    `UPDATE expected_reimbursement SET canceled_at = ?3, updated_at = ?3
+     WHERE budget_id = ?1 AND txn_key = ?2 AND split_id IS NOT NULL AND canceled_at IS NULL
+       AND split_id NOT IN (SELECT value FROM json_each(?4))`,
+    key,
+    now,
+    JSON.stringify(keep),
+  );
 }

@@ -1,16 +1,10 @@
-// Accounts (net worth, cash and cards, registers, repair and sync problems) and Reports.
+// Accounts (net worth, cash and cards, repair and sync problems), alerts and account names. An account's register is
+// in account-register.ts, Reports in reports.ts.
 import { editNow } from '../http/clock.js';
 import { Hono } from 'hono';
-import {
-  RenameAccount,
-  type AccountRow,
-  type AccountsView,
-  type RegisterView,
-  type ReportsView,
-} from '@ledgerline/contracts';
+import { RenameAccount, type AccountRow, type AccountsView } from '@ledgerline/contracts';
 import {
   type Month,
-  addMonths,
   cents,
   formatCents,
   isMonth,
@@ -22,15 +16,12 @@ import {
   statementCovered,
 } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
-import { HttpError, parse, scoped, GONE, BAD_MONTH, inReach } from './api.js';
-import { cards as loadCards, fresh, monthResult, shortDate, structure } from '../views/common.js';
-import { hiddenFromLists, listRow } from '../views/rows.js';
-import { TX_COLUMNS, needsCategory, uncovered, type TxRow } from '../ledger/ledger.js';
-import { monthTotals } from '../ledger/totals.js';
+import { HttpError, parse, scoped, GONE } from './api.js';
+import { cards as loadCards, fresh, monthResult, shortDate } from '../views/common.js';
 import { DIFF_WAIT_MS, accountLedger, bankDiff } from '../ledger/bank-diff.js';
 import type { Scoped } from '../db/scoped.js';
-import { type Adjustments, startSheet } from '../ledger/start-part.js';
-import { FINAL_ROWS_BY_MONTH, closeBlocked } from './account-close.js';
+import type { Adjustments } from '../ledger/start-part.js';
+import { FINAL_ROWS_BY_MONTH } from './account-close.js';
 
 export const accountRoutes = new Hono<AppEnv>();
 
@@ -53,8 +44,8 @@ interface AcctDb {
   unlinked_at: number | null;
 }
 
-/** Every account's row; closed ones too when `withClosed` (their own list on Accounts, and their register). */
-async function accountRows(
+/** Every account's row (the register and Reports use it too); closed ones too when `withClosed` (their own list on Accounts, and their register). */
+export async function accountRows(
   s: Scoped,
   today: string,
   timeZone: string,
@@ -125,6 +116,7 @@ async function accountRows(
               : synced
       }`,
       closed,
+      connectionId: a.connection_id,
     };
   });
   return { rows, raw, recent: startAdjust.recent };
@@ -335,207 +327,4 @@ accountRoutes.post('/accounts/:id/name', async (c) => {
     s.audit('account.rename', 'account', id, { name: a.name }, r, now),
   ]);
   return c.json({ ok: true as const });
-});
-
-accountRoutes.get('/accounts/:id/register', async (c) => {
-  const s = scoped(c);
-  const now = editNow(c);
-  const f = await fresh(s, now);
-  const id = c.req.param('id');
-  const show = c.req.query('show') ?? 'all';
-  const { rows, raw, recent } = await accountRows(s, f.today, f.budget.time_zone, now, true);
-  const account = rows.find((r) => r.id === id);
-  const rawAccount = raw.find((r) => r.id === id);
-  if (!account || !rawAccount) throw new HttpError(404, 'not_found', GONE);
-  const { categories } = await structure(s);
-  const cats = new Map(categories.map((x) => [x.id, x.name]));
-  const accts = new Map(rows.map((r) => [r.id, r.name]));
-  const txs = await s.all<TxRow>(
-    `SELECT ${TX_COLUMNS} FROM v_transaction WHERE budget_id = ?1 AND account_id = ?2 AND ${uncovered('v_transaction')}
-       ORDER BY date DESC, seq DESC LIMIT 300`,
-    id,
-  );
-  // "Before your budget" rows are never listed (D-62), but the running balance still walks through them.
-  const keep = (t: TxRow) =>
-    !hiddenFromLists(t) &&
-    (show === 'all' ||
-      (show === 'pending' && !dated(t)) ||
-      (show === 'needs' && needsCategory(t)) ||
-      (show === 'transfers' && t.transfer_state !== null));
-  const credit = account.kind === 'credit';
-  const days: RegisterView['days'] = [];
-  // In a closed account pending rows are final (D-93): listed on their day, in the running balance.
-  const dated = (t: TxRow) => t.status === 'posted' || (account.closed && t.status === 'pending');
-  const pend = txs.filter((t) => !dated(t) && keep(t));
-  if (pend.length)
-    days.push({ label: 'Pending', balance: null, rows: pend.map((t) => listRow(t, accts, cats)) });
-  // Running balance backwards from the bank balance, over posted rows.
-  let bal = account.bank;
-  const byDay = new Map<string, TxRow[]>();
-  for (const t of txs.filter(dated)) byDay.set(t.date, [...(byDay.get(t.date) ?? []), t]);
-  for (const [d, ts] of byDay) {
-    const dayBal = bal;
-    for (const t of ts.filter((x) => !x.wont_clear)) bal = credit ? bal + t.amount : bal - t.amount;
-    const shown = ts.filter(keep);
-    if (shown.length)
-      days.push({
-        // The year too when it isn't this year: two days a year apart would read (and key) the same.
-        label: d.slice(0, 4) === f.today.slice(0, 4) ? shortDate(d) : `${shortDate(d)}, ${d.slice(0, 4)}`,
-        balance: cents(dayBal),
-        rows: shown.map((t) => listRow(t, accts, cats)),
-      });
-  }
-  let note: string | null = null;
-  let cardAvailable: number | null = null;
-  if (credit) {
-    const start = (f.budget.budget_start_month ?? f.current) as Month;
-    const mr = await monthResult(s, f.current, start);
-    cardAvailable = mr?.cards[id]?.available ?? 0;
-    const over = Object.entries(mr?.categories ?? {}).filter(([, v]) => (v.creditOverspent[id] ?? 0) > 0);
-    if (over.length) {
-      const amt = over.reduce((a, [, v]) => a + (v.creditOverspent[id] ?? 0), 0);
-      const names = over.map(([k]) => cats.get(k) ?? k).join(', ');
-      note = `${names} is overspent by ${formatCents(amt)} on this card. Cover it on Budget to fix the card payment too.`;
-    }
-  }
-  const start = await startSheet(s, rawAccount, recent.get(id) ?? null, now, f.budget.time_zone);
-  const closeBlock = account.closed
-    ? null
-    : closeBlocked(
-        account,
-        {
-          pending: txs.some((t) => t.status === 'pending'),
-          upcoming: txs.some((t) => t.status === 'upcoming'),
-        },
-        cardAvailable,
-      );
-  return c.json({
-    account,
-    days,
-    note,
-    start,
-    closeBlock,
-    cardAvailable: cardAvailable === null ? null : cents(cardAvailable),
-  } satisfies RegisterView);
-});
-
-accountRoutes.get('/reports', async (c) => {
-  const s = scoped(c);
-  const now = editNow(c);
-  const f = await fresh(s, now);
-  const m = (c.req.query('month') ?? f.current) as Month;
-  if (!isMonth(m) || !inReach(m, f.current)) throw new HttpError(400, 'invalid', BAD_MONTH);
-  const start = (f.budget.budget_start_month ?? f.current) as Month;
-  const { categories } = await structure(s);
-  const kinds = new Map(categories.map((x) => [x.id, x]));
-  const months: Month[] = [];
-  for (let i = 5; i >= 0; i--) {
-    const mm = addMonths(m, -i);
-    if (mm >= start) months.push(mm);
-  }
-  const results = new Map<Month, Awaited<ReturnType<typeof monthResult>>>();
-  for (const mm of months) results.set(mm, await monthResult(s, mm, start));
-  const [inc, rew, owedI, owedL] = await s.batch([
-    s.q(
-      `SELECT l.month, sum(l.amount) AS a FROM budget_line l LEFT JOIN txn_overlay o ON o.txn_key = l.txn_key
-       WHERE l.budget_id = ?1 AND l.kind = 'rta' AND l.card = 0 AND l.txn_key NOT LIKE 'start:%' AND l.line != 'start' AND coalesce(o.income_tag, '') != 'rewards'
-         AND l.txn_key NOT IN (SELECT from_key FROM txn_link WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND undone_at IS NULL)
-         AND l.month >= ?2 AND l.month <= ?3 GROUP BY l.month`,
-      months[0] ?? m,
-      m,
-    ),
-    s.q(
-      `SELECT l.month, sum(l.amount) AS a FROM budget_line l LEFT JOIN txn_overlay o ON o.txn_key = l.txn_key
-       WHERE l.budget_id = ?1 AND l.kind = 'rta' AND (l.card = 1 OR o.income_tag = 'rewards') AND l.month >= ?2 AND l.month <= ?3 GROUP BY l.month`,
-      months[0] ?? m,
-      m,
-    ),
-    s.q(
-      `SELECT id, txn_key, amount, expect_by, closed_at, canceled_at FROM expected_reimbursement e WHERE budget_id = ?1 AND NOT EXISTS (SELECT 1 FROM manual_pending mp WHERE mp.budget_id = e.budget_id AND mp.txn_key = e.txn_key AND mp.kind = 'upcoming' AND mp.matched_txn_key IS NULL)`,
-    ),
-    s.q(
-      `SELECT from_key, to_key, amount FROM txn_link WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND undone_at IS NULL`,
-    ),
-  ]);
-  const income = new Map((inc!.results as { month: string; a: number }[]).map((r) => [r.month, r.a]));
-  const rewards = new Map((rew!.results as { month: string; a: number }[]).map((r) => [r.month, r.a]));
-  const spentOf = (mm: Month, kind: 'spending' | 'saving') =>
-    Object.entries(results.get(mm)?.categories ?? {}).reduce(
-      (a, [id, v]) => a + ((kinds.get(id)?.kind ?? 'spending') === kind ? v.spent : 0),
-      0,
-    );
-  const cur = results.get(m);
-  const byCategory = Object.entries(cur?.categories ?? {})
-    .filter(([id, v]) => (kinds.get(id)?.kind ?? 'spending') === 'spending' && v.spent > 0)
-    .map(([id, v]) => ({ categoryId: id, name: kinds.get(id)?.name ?? id, spent: v.spent }))
-    .sort((a, b) => b.spent - a.spent);
-  // Net worth at each month end: the bank's balances today minus everything posted after that month. This month's
-  // point counts pending, as Accounts does (D-76); a finished month's pending has posted since, so it's in the bank.
-  const { rows } = await accountRows(s, f.today, f.budget.time_zone, now);
-  const nwNow = rows.reduce((a, r) => a + (r.kind === 'credit' ? -r.bank : r.bank), 0);
-  const nwWorking = rows.reduce((a, r) => a + (r.kind === 'credit' ? -r.working : r.working), 0);
-  // Posted totals per month over the last 13 months (ledger/totals.ts: stored for finished months).
-  const totals = await monthTotals(s, addMonths(f.current, -12), f.current, now);
-  const posted = [...totals].map(([mm, accts]) => ({
-    m: mm,
-    a: [...accts.values()].reduce((x, v) => x + v.all, 0),
-  }));
-  // Pending rows that stayed in closed accounts are final (D-93): they count in their month, as posted rows do.
-  const finals = new Map(
-    (await s.all<{ month: string; a: number }>(FINAL_ROWS_BY_MONTH)).map((r) => [r.month, r.a]),
-  );
-  const netWorth: ReportsView['netWorth'] = [];
-  let after = 0;
-  for (let i = 0; i < 12; i++) {
-    const mm = addMonths(f.current, -i);
-    netWorth.unshift({ month: mm, value: cents(i === 0 ? nwWorking : nwNow - after) });
-    after += (posted.find((p) => p.m === mm)?.a ?? 0) + (finals.get(mm) ?? 0);
-  }
-  const stillOwed = owedOut(
-    owedList(
-      (
-        owedI!.results as {
-          id: string;
-          txn_key: string;
-          amount: number;
-          expect_by: string | null;
-          closed_at: number | null;
-          canceled_at: number | null;
-        }[]
-      ).map((o) => ({
-        id: o.id,
-        txnKey: o.txn_key,
-        amount: cents(o.amount),
-        expectBy: o.expect_by,
-        closedAt: o.closed_at ? 'x' : null,
-        canceledAt: o.canceled_at ? 'x' : null,
-      })),
-      (owedL!.results as { from_key: string; to_key: string; amount: number }[]).map((l) => ({
-        inflowKey: l.from_key,
-        itemId: l.to_key,
-        amount: cents(l.amount),
-      })),
-      f.today,
-    ),
-  );
-  const view: ReportsView = {
-    month: m,
-    monthToDate: m === f.current,
-    tiles: {
-      spent: cents(spentOf(m, 'spending')),
-      invested: cents(spentOf(m, 'saving')),
-      income: cents(income.get(m) ?? 0),
-      rewards: cents(rewards.get(m) ?? 0),
-    },
-    byCategory,
-    stillOwed,
-    trend: months.map((mm) => ({
-      month: mm,
-      spent: cents(spentOf(mm, 'spending')),
-      income: cents(income.get(mm) ?? 0),
-      invested: cents(spentOf(mm, 'saving')),
-    })),
-    netWorth,
-  };
-  return c.json(view);
 });

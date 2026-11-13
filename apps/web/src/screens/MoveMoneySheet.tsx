@@ -142,7 +142,7 @@ function MoveForm({
         <PrimaryButton
           mutates="offline"
           track="category.move"
-          onClick={save}
+          onClick={() => void save().catch(() => undefined)}
           busy={move.isPending}
           disabled={!ok}
           why={why}

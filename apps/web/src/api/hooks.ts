@@ -202,6 +202,8 @@ export function useMoneyMutation<TVars, TResult>(
     },
     onError: (err) => {
       usage.error(err instanceof ApiError ? err.code : 'unknown');
+      // Refused because the money changed since the screen was drawn: show it as it is now.
+      if (err instanceof ApiError && err.code === 'changed') invalidateMoney(qc);
     },
   });
 }

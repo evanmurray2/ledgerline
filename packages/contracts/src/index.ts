@@ -175,7 +175,18 @@ export const AssignRequest = z.object({
   month,
   /** Each item adds `amount` (may be negative) to the category's assignment for the month. */
   items: z
-    .array(z.object({ categoryId: id, amount: cents }))
+    .array(
+      z.object({
+        categoryId: id,
+        amount: cents,
+        /**
+         * What the device showed assigned to the category in the month. When sent, the server adds only if that is
+         * still so, and refuses with 409 `changed` otherwise: two devices (or tabs) tapping Assign on the same
+         * suggestions don't add them twice.
+         */
+        was: cents.optional(),
+      }),
+    )
     .min(1)
     .max(100),
 });
@@ -208,7 +219,13 @@ export const AssignSuggestion = z.object({
   /** Ticked when the sheet opens: overspending, card shortfalls and underfunded targets, not Low categories. */
   preselected: z.boolean(),
 });
-export const AssignView = z.object({ month, rta: cents, suggestions: z.array(AssignSuggestion) });
+export const AssignView = z.object({
+  month,
+  rta: cents,
+  suggestions: z.array(AssignSuggestion),
+  /** What each category has assigned in the month (none: 0), sent back as `was` with an assignment. */
+  assigned: z.record(z.string(), cents).default({}),
+});
 export type AssignView = z.infer<typeof AssignView>;
 
 export const Target = z.discriminatedUnion('type', [
@@ -257,6 +274,8 @@ export const CategorySheet = z.object({
   targetText: z.string(),
   targetHelp: z.string(),
   lastMonthAssigned: cents,
+  /** Available at the start of the month (what the month before left), which a target's monthly need counts from. */
+  carry: cents.default(0),
   rta: cents,
   recent: z.array(TxnListRow),
   recentTotal: z.number().int(),
@@ -373,6 +392,8 @@ export const TxnSheet = z.object({
         amount: cents,
         memo: z.string().nullable(),
         absorbsRemainder: z.boolean(),
+        /** The line is owed to you (an owed item open for it). */
+        owed: z.boolean().optional(),
       }),
     )
     .nullable(),
@@ -411,6 +432,8 @@ export const TxnPatch = z.object({
         amount: cents,
         memo: z.string().max(200).nullable(),
         absorbsRemainder: z.boolean(),
+        /** The line is owed to you: it has no category, and an owed item of its amount is made for it. */
+        owed: z.boolean().optional(),
       }),
     )
     .nullable()
@@ -473,10 +496,14 @@ export const TransferPick = z.object({
 });
 /** An answer to "Same purchase?" for one of the card's candidates (its key). */
 export const SamePurchaseAnswer = z.object({ answer: z.enum(['yes', 'no']), key: z.string() });
+/** Undo of No on a "Same purchase?" card: the candidate the No was about. */
+export const SamePurchaseUndo = z.object({ key: z.string() });
 export const PendingCheckAction = z.object({ action: z.enum(['keep_waiting', 'delete']) });
 
 export const MatchView = z.object({
   inflow: TxnListRow,
+  /** What this money can still pay back: the inflow less what it is already matched to. */
+  left: cents,
   open: z.array(
     z.object({
       id,
@@ -537,6 +564,13 @@ export const RegisterView = z.object({
   closeBlock: z.string().nullable(),
   /** A card's payment category available, sent with Close account; null for cash accounts. */
   cardAvailable: cents.nullable(),
+  /**
+   * A card whose only block to Close is money in its payment category: the Close sheet offers to move it to Ready to
+   * Assign first (`POST /budget/move`). Null otherwise.
+   */
+  closeMove: z.object({ categoryId: id, amount: cents.positive() }).nullable().optional(),
+  /** The register lists at most its newest rows (REGISTER_ROWS); true when there are older ones it leaves out. */
+  more: z.boolean().optional(),
 });
 export type RegisterView = z.infer<typeof RegisterView>;
 
@@ -594,12 +628,27 @@ export const GroupUpsert = z.object({
  * it with the change number it worked it out at; the server refuses with 409 `changed` if anything changed since.
  */
 export const PinRequest = z.object({ pinned: z.boolean() });
+/** Money a category's archive moved to Ready to Assign: this month's available and later months' assignments. */
+export const ReturnedMoney = z.array(z.object({ month, amount: cents })).max(130);
 export const ArchiveRequest = z.object({
   archived: z.boolean(),
   available: cents.optional(),
   through: z.number().int().nonnegative().optional(),
+  /**
+   * Undo of an archive: restoring gives back what the archive moved to Ready to Assign (its `returned`). Refused
+   * when the category isn't archived any more, so an Undo sent twice gives the money back once.
+   */
+  giveBack: ReturnedMoney.optional(),
 });
-export const RemoveCategoryRequest = ArchiveRequest.omit({ archived: true });
+export const RemoveCategoryRequest = ArchiveRequest.omit({ archived: true, giveBack: true });
+/** What archiving (or removing) a category answers: the money it moved to Ready to Assign, for Undo. */
+export const ArchiveResult = z.object({
+  ok: z.literal(true),
+  rta: cents,
+  rtaUpdating: z.boolean(),
+  outcome: z.enum(['deleted', 'archived']).optional(),
+  returned: ReturnedMoney.default([]),
+});
 export const ReorderRequest = z.object({ ids: z.array(id).max(500) });
 
 export const PayeesView = z.object({
@@ -630,7 +679,16 @@ export const MergePayees = z.object({
 });
 export const MergeResult = z.object({ ok: z.literal(true), undoId: z.string() });
 export type MergeResult = z.infer<typeof MergeResult>;
-export const RenameAccount = z.object({ name: z.string().trim().min(1).max(60) });
+/** Characters that change how text around them reads (bidi overrides and isolates) or don't show (controls). */
+export const HIDDEN_CHARS = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
+export const RenameAccount = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, 'Enter a name.')
+    .max(60)
+    .refine((n) => !HIDDEN_CHARS.test(n), 'Use letters, numbers and punctuation only.'),
+});
 /**
  * Close an account (only at $0). The app adds what this phone shows: the working balance, a card's payment category
  * available, and the change number it worked them out at; the server refuses if anything changed since.

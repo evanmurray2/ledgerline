@@ -127,7 +127,8 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
     'grid grid-cols-[minmax(130px,2fr)_repeat(2,minmax(108px,1fr))] items-center @[540px]:grid-cols-[minmax(220px,2.2fr)_repeat(3,minmax(110px,1fr))]';
   const spentCls = 'hidden @[540px]:block';
   const cell = 'tnum px-3.5 py-1 text-right text-ink-2';
-  const groupRow = (name: string, totals?: { assigned: number; spent: number; available: number }) => (
+  /** A group's bar. Card payments has only an Available total: its rows have no Assigned or Spent of their own. */
+  const groupRow = (name: string, totals?: { assigned?: number; spent?: number; available: number }) => (
     <div
       role="row"
       key={`g-${name}`}
@@ -146,13 +147,13 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
             role="cell"
             className="tnum pl-3.5 pr-[15px] text-right font-semibold tracking-normal text-ink-2"
           >
-            {formatCents(totals.assigned)}
+            {totals.assigned === undefined ? '' : formatCents(totals.assigned)}
           </span>
           <span
             role="cell"
             className={cx('tnum px-3.5 text-right font-semibold tracking-normal text-ink-2', spentCls)}
           >
-            {formatCents(totals.spent)}
+            {totals.spent === undefined ? '' : formatCents(totals.spent)}
           </span>
           <span role="cell" className="tnum px-6 text-right tracking-normal">
             {formatCents(totals.available)}
@@ -264,6 +265,12 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
   );
   const dash = <span className="px-[9px]">—</span>;
   const t = owedTone(b);
+  const totalsOf = (cats: BudgetCategoryRow[]) => ({
+    assigned: cats.reduce((s, c) => s + c.assigned, 0),
+    // Matches the column: invested money shows as "Invested", not as spending.
+    spent: cats.reduce((s, c) => s + (c.status === 'invested' ? 0 : c.spent), 0),
+    available: cats.reduce((s, c) => s + c.available, 0),
+  });
   return (
     <>
       {/* Pinned categories in a card of their own, above the budget: they're counted in their groups below, so
@@ -285,15 +292,17 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
         <div role="table" aria-label={`Budget for ${monthLabel(month)}`} className="text-md">
           {columns(<>Category</>)}
           {b.groups.flatMap((g) => [
-            groupRow(g.name, {
-              assigned: g.categories.reduce((s, c) => s + c.assigned, 0),
-              // Matches the column: invested money shows as "Invested", not as spending.
-              spent: g.categories.reduce((s, c) => s + (c.status === 'invested' ? 0 : c.spent), 0),
-              available: g.total,
-            }),
+            groupRow(g.name, { ...totalsOf(g.categories), available: g.total }),
             ...g.categories.map((c) => categoryRow(c)),
           ])}
-          {b.cards.length > 0 && groupRow('Card payments')}
+          {/* Archived categories that still hold money or had activity this month, as on a phone: their money is
+              still counted, so it stays in sight. */}
+          {b.archived.length > 0 && [
+            groupRow('Archived', totalsOf(b.archived)),
+            ...b.archived.map((c) => categoryRow(c, `archived-${c.id}`)),
+          ]}
+          {b.cards.length > 0 &&
+            groupRow('Card payments', { available: b.cards.reduce((s, c) => s + c.available, 0) })}
           {b.cards.map((c) =>
             row({
               key: c.accountId,
@@ -304,7 +313,11 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
                     <StatusWord word="Short" tone="over" icon="alert" /> · {c.detail}
                   </>
                 ) : (
-                  c.detail
+                  // Covered cards stay quiet, as on a phone; a screen reader still hears the word.
+                  <>
+                    <span className="sr-only">Covered · </span>
+                    {c.detail}
+                  </>
                 ),
               assigned: dash,
               spent: '—',

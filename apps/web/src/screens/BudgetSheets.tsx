@@ -61,7 +61,8 @@ export function AssignSheetScreen() {
       </Sheet>
     );
   }
-  const defaultOn = (s: (typeof v.suggestions)[number]) => s.preselected;
+  // With nothing in Ready to Assign, nothing is ticked: a tick would only take it below zero.
+  const defaultOn = (s: (typeof v.suggestions)[number]) => s.preselected && v.rta > 0;
   const isOn = (s: (typeof v.suggestions)[number]) =>
     off[s.categoryId] === undefined ? defaultOn(s) : !off[s.categoryId];
   const chosen = v.suggestions.filter(isOn);
@@ -73,10 +74,21 @@ export function AssignSheetScreen() {
   const left = v.rta - sum;
   const apply = async () => {
     if (items.size === 0) return;
-    await assign.mutateAsync({
-      month,
-      items: [...items].map(([categoryId, amount]) => ({ categoryId, amount })),
-    });
+    try {
+      // Each with what this device saw assigned: if another device (or tab) assigned meanwhile, the server
+      // refuses instead of adding twice, and the sheet shows the new amounts.
+      await assign.mutateAsync({
+        month,
+        items: [...items].map(([categoryId, amount]) => ({
+          categoryId,
+          amount,
+          was: v.assigned[categoryId] ?? 0,
+        })),
+      });
+    } catch {
+      // Shown in the footer (assign.error).
+      return;
+    }
     usage.endTask('assign');
     close();
   };

@@ -39,16 +39,22 @@ const SCREEN_NAMES: Record<string, string> = {
   'reports.trend': 'Reports · Trends',
   'reports.worth': 'Reports · Net worth',
   settings: 'Settings',
-  'settings.appearance': 'Settings · Appearance',
-  'settings.categories': 'Settings · Categories',
-  'settings.category.new': 'Settings · New category',
-  'settings.category.edit': 'Settings · Edit category',
-  'settings.group.new': 'Settings · New group',
-  'settings.rules': 'Settings · Rules',
+  'settings.appearance': 'Settings · Appearance and preferences',
+  // Categories moved out of Settings to their own page, opened from Budget (the screen keys stayed).
+  'settings.categories': 'Budget · Categories',
+  'settings.category.new': 'Budget · New category',
+  'settings.category.edit': 'Budget · Edit category',
+  'settings.group.new': 'Budget · New group',
   'settings.payees': 'Settings · Payees',
   'settings.payee.rename': 'Settings · Rename payee',
   'settings.connections': 'Settings · Bank connections',
   'settings.data': 'Settings · Backup and export',
+  'settings.sign-in': 'Settings · Sign-in and devices',
+  'settings.signin': 'Settings · Sign-in and devices',
+  'settings.users': 'Settings · Users',
+  'settings.privacy': 'Settings · Privacy',
+  'settings.about': 'Settings · About',
+  'settings.device-check': 'Settings · Device check',
 };
 
 /** A friendly name for a screen key: its own, else its first part's (txn.posted → Transaction), never the key. */

@@ -74,6 +74,13 @@ async function marks(db: Db, now: number): Promise<{ sealed: boolean; frozenUnti
   };
 }
 
+/** A link the background check hasn't reached yet: it clears by itself. */
+export const NOT_CHECKED =
+  'A bank link has not been checked yet. Ledgerline checks it by itself. Try again in a few minutes.';
+/** A link the check refused (its token didn't open, or the bank refused it): waiting doesn't clear it. */
+export const CHECK_FAILED =
+  'A bank link failed its check, so locking has to wait. Your budget works as before. Nothing is lost.';
+
 /**
  * What stands in the way of the cutover, in words for the person; empty when nothing does. Checked when the
  * budget is frozen and again before it is sealed.
@@ -137,15 +144,25 @@ export async function cutoverBlocks(db: Db, budgetId: string, now: number): Prom
     )
   )
     why.push('A bank link is not set up yet.');
+  // Every link must carry the Worker's stamp, but for one that never had a token: there is nothing to fetch. The
+  // check is a background job (store/stamp-links.ts): one it hasn't reached yet clears by itself, one it refused
+  // doesn't.
   if (
     await one(
-      // Every link must carry the Worker's stamp, but for one that never had a token: there is nothing to fetch.
       `SELECT count(*) AS n FROM bank_link WHERE budget_id = ?1 AND provider = 'plaid' AND mac IS NULL
-         AND coalesce(check_result, '') != 'no_token'`,
+         AND check_result IS NULL`,
       budgetId,
     )
   )
-    why.push('A bank link has not been checked yet.');
+    why.push(NOT_CHECKED);
+  if (
+    await one(
+      `SELECT count(*) AS n FROM bank_link WHERE budget_id = ?1 AND provider = 'plaid' AND mac IS NULL
+         AND check_result IS NOT NULL AND check_result != 'no_token'`,
+      budgetId,
+    )
+  )
+    why.push(CHECK_FAILED);
   return why;
 }
 

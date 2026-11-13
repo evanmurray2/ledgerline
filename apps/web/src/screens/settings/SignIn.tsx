@@ -173,12 +173,32 @@ function SignOutHere() {
   );
 }
 
+/**
+ * Devices that read the same ("Linux · Chrome") get a number in the order they signed in, "Linux · Chrome 1" first,
+ * so each Sign out names one device.
+ */
+export function tellApart(list: SignIn[]): SignIn[] {
+  const count = new Map<string, number>();
+  for (const x of list) count.set(x.name, (count.get(x.name) ?? 0) + 1);
+  const oldestFirst = [...list].sort((a, b) => a.signedInAt.localeCompare(b.signedInAt));
+  const seen = new Map<string, number>();
+  const number = new Map<string, number>();
+  for (const x of oldestFirst) {
+    if ((count.get(x.name) ?? 0) < 2) continue;
+    const n = (seen.get(x.name) ?? 0) + 1;
+    seen.set(x.name, n);
+    number.set(x.id, n);
+  }
+  return list.map((x) => (number.has(x.id) ? { ...x, name: `${x.name} ${number.get(x.id)}` } : x));
+}
+
 /** Each other device with its own Sign out, then Add a device. */
-function OtherDevices({ others, run, asking, setAsking }: { others: SignIn[]; run: Run } & Asking) {
+function OtherDevices({ others: listed, run, asking, setAsking }: { others: SignIn[]; run: Run } & Asking) {
   const [link, setLink] = useState<{ url: string; expiresAt: string } | null>(null);
+  const others = tellApart(listed);
   return (
     <Card>
-      {others.length === 0 && (
+      {others.length === 0 && !link && (
         <p className="m-0 px-3 py-3 text-sm leading-snug text-muted">
           No other devices. Add one to use Ledgerline on a computer or iPad.
         </p>

@@ -289,20 +289,14 @@ test('Daily limit: read-only banner with the reset time in Pacific', async ({ pa
   await expect(page.getByRole('button', { name: 'Cover $18.25 for Dining out' })).toBeDisabled();
 });
 
-test('Resting at 95%: a banner, and nothing but the session is asked for', async ({ page }) => {
-  const asked: string[] = [];
-  page.on('request', (r) => {
-    const u = new URL(r.url());
-    if (u.pathname.startsWith('/api/')) asked.push(u.pathname);
-  });
+test('Resting at 95%: a banner, and the screens worked out on the device still show', async ({ page }) => {
   await page.goto('/budget?mock=resting');
   await expect(page.getByTestId('resting-banner')).toContainText('Paused until 4:00 PM');
-  await expect(page.getByRole('alert')).toContainText('Paused until');
-  // After the first resting answer, moving around asks the server for nothing.
-  const before = asked.filter((p) => p !== '/api/session').length;
+  // The mock stands in for the copy on the phone: Budget and Activity come from it, not from the server.
+  await expect(rta(page)).toHaveText('$1,999.90');
   await page.getByRole('link', { name: 'Activity' }).first().click();
-  await expect(page.getByRole('alert')).toContainText('Paused until');
-  expect(asked.filter((p) => p !== '/api/session')).toHaveLength(before);
+  await expect(page.getByText('Uber Eats').first()).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
 test('Assigned more than you have offers to take it back', async ({ page }) => {

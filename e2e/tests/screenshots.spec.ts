@@ -5,7 +5,14 @@ import { test, type Page } from '@playwright/test';
 
 const PHONE_ONLY = new Set(['welcome', 'setup-start', 'setup-link', 'setup-categories']);
 
-const SCREENS: { name: string; path: string; ready?: string; prepare?: (page: Page) => Promise<void> }[] = [
+// `start` runs before `ready`: the later setup steps open only once a start month is picked.
+const SCREENS: {
+  name: string;
+  path: string;
+  start?: (page: Page) => Promise<void>;
+  ready?: string;
+  prepare?: (page: Page) => Promise<void>;
+}[] = [
   { name: 'budget', path: '/budget', ready: 'Groceries' },
   { name: 'budget-attention', path: '/budget?view=attention', ready: 'Fund all' },
   { name: 'category', path: '/budget/category/groceries', ready: 'Target' },
@@ -88,8 +95,26 @@ const SCREENS: { name: string; path: string; ready?: string; prepare?: (page: Pa
   },
   { name: 'welcome', path: '/welcome?mock=firstrun', ready: 'Get started' },
   { name: 'setup-start', path: '/setup/start?mock=firstrun', ready: 'Your budget starts' },
-  { name: 'setup-link', path: '/setup/link?mock=firstrun', ready: 'Link your banks and cards' },
-  { name: 'setup-categories', path: '/setup/categories?mock=firstrun', ready: 'Make your categories' },
+  {
+    name: 'setup-link',
+    path: '/setup/start?mock=firstrun',
+    start: (p) => p.getByRole('button', { name: 'Continue' }).click(),
+    ready: 'Link your banks and cards',
+  },
+  {
+    name: 'setup-categories',
+    path: '/setup/start?mock=firstrun',
+    start: async (p) => {
+      await p.getByRole('button', { name: 'Continue' }).click();
+      await p.getByText('Link your banks and cards').first().waitFor();
+      // Link's Continue needs a linked bank; the mock has none, so move on inside the page (a reload resets the mock).
+      await p.evaluate(() => {
+        window.history.pushState({}, '', '/setup/categories?mock=firstrun');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      });
+    },
+    ready: 'Make your categories',
+  },
 ];
 
 for (const theme of ['light', 'dark'] as const) {
@@ -99,6 +124,7 @@ for (const theme of ['light', 'dark'] as const) {
       test.skip(info.project.name === 'desktop' && PHONE_ONLY.has(s.name), 'phone only');
       await page.addInitScript((t) => window.localStorage.setItem('ledgerline-theme', t), theme);
       await page.goto(s.path);
+      if (s.start) await s.start(page);
       if (s.ready) await page.getByText(s.ready).first().waitFor();
       if (s.prepare) await s.prepare(page);
       // Sheets and banners finish moving in (looping animations, such as a spinner, are left running).

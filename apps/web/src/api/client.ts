@@ -22,10 +22,12 @@ import {
   editOffline,
   read as readCopy,
   readsLocally,
+  syncNow,
   syncSince,
   wipe,
 } from '../copy/copy';
 import type { SyncPage } from '../copy/host';
+import { isServerRead } from '../copy/server-reads';
 
 export class ApiError extends Error {
   readonly code: string;
@@ -49,7 +51,7 @@ export const MUTATION_HEADERS: Readonly<Record<string, string>> = {
 
 const TRY_AGAIN = 'Something went wrong. Try again.';
 const OFFLINE = 'You’re offline. Connect to the internet and try again.';
-const CHANGED = 'This was changed or removed. Pull down to refresh.';
+const CHANGED = 'This was changed or removed. Check it and try again.';
 
 /** The next reset of Cloudflare's daily limits (midnight UTC), as a clock time in the budget's time zone. */
 export function dailyResetTime(now = new Date()): string {
@@ -265,7 +267,13 @@ async function sendOnce<S extends z.ZodType>(
     if (f) body = { ...(body as object | undefined), ...f };
   }
   // Resting (95% of a daily limit): only the session is asked, so the app knows when it's over.
-  if (!mutation && connectivity.get().readsPaused && path !== '/api/session')
+  // The mock API stands in for the copy (src/mock): its screen reads are local, as on a phone.
+  if (
+    !mutation &&
+    connectivity.get().readsPaused &&
+    path !== '/api/session' &&
+    !(import.meta.env.VITE_MOCK === '1' && !isServerRead(path))
+  )
     throw new ApiError('resting', `Paused until ${dailyResetTime()}. Nothing is lost.`, 503);
   if (mutation && !connectivity.canWrite() && !canEditOffline(method, path)) {
     const code = connectivity.isOffline() ? 'offline' : 'read_only';
@@ -365,6 +373,9 @@ function failure(res: Response, json: unknown, path: string): ApiError {
   const message = parsed.success ? parsed.data.message : TRY_AGAIN;
   if (code === 'read_only' || code === 'readonly') onReadOnly?.();
   if (code === 'resting') connectivity.setReadsPaused(true);
+  // Changed or removed on the server: bring this device's copy up to date, so the screen shows what's there now.
+  if (code === 'not_found' || code === 'changed' || code === 'payee_changed')
+    void syncNow().catch(() => undefined);
   // The session ended (24 hours, or 10 idle minutes): sign in again. The saved copy stays, encrypted (D-45), unless this
   // device was signed out from another one: then it's deleted first. A passkey check ("reauth") is handled by
   // afterPasskeyCheck.

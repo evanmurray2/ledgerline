@@ -5,8 +5,8 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import type { AttentionItem, BudgetView } from '@ledgerline/contracts';
 import { errorMessage } from '../api/client';
 import { api } from '../api/endpoints';
-import { useMoneyMutation } from '../api/hooks';
-import { Card, cx, SoftButton, TONE, type IconName, type Tone } from '../components/ui';
+import { useAssignView, useMoneyMutation } from '../api/hooks';
+import { Card, ConfirmInline, cx, SoftButton, TONE, type IconName, type Tone } from '../components/ui';
 import { GroupHeader } from './BudgetRows';
 import { formatCents } from '../lib/money';
 import { useHere } from '../lib/back';
@@ -18,6 +18,8 @@ interface DoneFix {
   categoryId: string;
   name: string;
   delta: number;
+  /** What the category had assigned after the fix, when this device knew it. */
+  was?: number;
 }
 
 const SECTION_ORDER: AttentionItem['section'][] = [
@@ -47,20 +49,47 @@ function fixLabel(fix: NonNullable<AttentionItem['fix']>): string {
 function useFixes(month: string) {
   const [done, setDone] = useState<DoneFix[]>([]);
   const assign = useMoneyMutation(api.assign);
+  // What each category has assigned, sent with a fix: another device's fix made meanwhile makes this one refuse
+  // instead of adding twice.
+  const held = useAssignView(month).data?.assigned;
   const apply = async (items: { key: string; categoryId: string; name: string; amount: number }[]) => {
     const started = Date.now();
+    const was = (id: string) => (held ? (held[id] ?? 0) : undefined);
     await assign.mutateAsync({
       month,
-      items: items.map((i) => ({ categoryId: i.categoryId, amount: i.amount })),
+      items: items.map((i) => ({
+        categoryId: i.categoryId,
+        amount: i.amount,
+        ...(was(i.categoryId) === undefined ? {} : { was: was(i.categoryId) }),
+      })),
     });
     usage.record('task', 'fix', Date.now() - started);
     setDone((d) => [
-      ...items.map((i) => ({ key: i.key, categoryId: i.categoryId, name: i.name, delta: i.amount })),
+      ...items.map((i) => {
+        const w = was(i.categoryId);
+        return {
+          key: i.key,
+          categoryId: i.categoryId,
+          name: i.name,
+          delta: i.amount,
+          ...(w === undefined ? {} : { was: w + i.amount }),
+        };
+      }),
       ...d.filter((x) => !items.some((i) => i.key === x.key)),
     ]);
   };
   const undo = async (f: DoneFix) => {
-    await assign.mutateAsync({ month, items: [{ categoryId: f.categoryId, amount: -f.delta }] });
+    try {
+      await assign.mutateAsync({
+        month,
+        items: [
+          { categoryId: f.categoryId, amount: -f.delta, ...(f.was === undefined ? {} : { was: f.was }) },
+        ],
+      });
+    } catch (e) {
+      toast.show({ text: errorMessage(e) });
+      return;
+    }
     usage.undo('fix');
     setDone((d) => d.filter((x) => x.key !== f.key));
   };
@@ -98,7 +127,11 @@ export function AttentionList({ b, month }: { b: BudgetView; month: string }) {
     }
   };
   const underfunded = open.filter((a) => a.section === 'Underfunded' && a.fix && a.categoryId);
+  const fundAllTotal = underfunded.reduce((s, a) => s + a.fix!.amount, 0);
+  // Funding more than there is leaves Ready to Assign below zero: Fund all says so first, then lets it go ahead.
+  const [warn, setWarn] = useState(false);
   const fundAll = async () => {
+    setWarn(false);
     try {
       await fixes.apply(
         underfunded.map((a) => ({
@@ -134,13 +167,30 @@ export function AttentionList({ b, month }: { b: BudgetView; month: string }) {
                     tone="filled"
                     mutates="offline"
                     track="budget.attention.fund_all"
-                    onClick={() => void fundAll()}
+                    onClick={() => (fundAllTotal > b.rta ? setWarn(true) : void fundAll())}
+                    disabled={fixes.pending}
                   >
-                    Fund all · {formatCents(underfunded.reduce((s, a) => s + a.fix!.amount, 0))}
+                    Fund all · {formatCents(fundAllTotal)}
                   </SoftButton>
                 )
               }
             />
+            {sec.title === 'Underfunded' && warn && underfunded.length > 1 && (
+              <ConfirmInline
+                label="Fund all"
+                confirmLabel="Fund anyway"
+                cancelLabel="Not now"
+                track="budget.attention.fund_all_anyway"
+                mutates="offline"
+                busy={fixes.pending}
+                onConfirm={() => void fundAll()}
+                onCancel={() => setWarn(false)}
+                className="m-3"
+              >
+                That’s {formatCents(fundAllTotal - b.rta)} more than Ready to Assign has. It would go to{' '}
+                {formatCents(b.rta - fundAllTotal)}.
+              </ConfirmInline>
+            )}
             {sec.items.map((a) => (
               <div
                 key={a.key}

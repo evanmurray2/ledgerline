@@ -58,8 +58,12 @@ export function banksDone(before: AccountsView | undefined, now: AccountsView): 
 
 function accountSub(a: AccountRow): { text: string; warn: boolean } {
   if (a.connectionStatus !== 'ok') return { text: 'may be out of date', warn: true };
+  // A card's pending in what-you-owe terms: your entries and estimates count too, so not "at bank".
   if (a.kind === 'credit')
-    return { text: a.pending > 0 ? `${formatCents(a.pending)} pending at bank` : '', warn: false };
+    return {
+      text: a.pending === 0 ? '' : `${a.pending > 0 ? '+' : '−'} ${formatCents(Math.abs(a.pending))} pending`,
+      warn: false,
+    };
   if (a.pending !== 0) return { text: `after pending ${formatCents(a.working)}`, warn: false };
   return { text: '', warn: false };
 }
@@ -385,6 +389,14 @@ export function AccountsScreen() {
                   </Card>
                 </section>
               ))}
+              {v.groups.length > 0 && (
+                // The rows show the bank's balances; the totals count pending, as net worth does (D-76).
+                <p className="m-0 text-xs leading-snug text-muted" data-testid="group-totals-note">
+                  Group totals count pending, as net worth does.
+                  {v.groups.some((g) => g.name === 'Credit cards') &&
+                    ' The Credit cards total is what you owe.'}
+                </p>
+              )}
               {v.closed.length > 0 && (
                 <section className="flex shrink-0 flex-col gap-1.5">
                   <SectionTitle>Closed</SectionTitle>

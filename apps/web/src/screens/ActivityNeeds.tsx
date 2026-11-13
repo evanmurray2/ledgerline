@@ -106,14 +106,19 @@ export function NeedsCategory({
               <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
                 <Link
                   to={sheetPath('/activity', r)}
+                  search={true}
                   className="flex min-h-11 min-w-0 flex-col justify-center gap-[3px] text-ink no-underline"
                 >
                   <span className="flex justify-between gap-2">
-                    <span className="text-base font-semibold">{r.payee}</span>
+                    {/* A long payee wraps; the amount keeps its width and stays in view. */}
+                    <span className="min-w-0 text-base font-semibold break-words">{r.payee}</span>
                     <Money
                       cents={r.amount}
                       plus
-                      className={cx('text-base font-bold', r.amount > 0 ? 'text-funded-fg' : 'text-ink')}
+                      className={cx(
+                        'shrink-0 text-base font-bold',
+                        r.amount > 0 ? 'text-funded-fg' : 'text-ink',
+                      )}
                     />
                   </span>
                   <span className="text-xs text-muted">{rowMeta(r, 'needs')}</span>

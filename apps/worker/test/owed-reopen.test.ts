@@ -92,4 +92,27 @@ describe('reopening an owed item', () => {
     expect((await call('POST', `/api/owed/${id}`, { action: 'reopen' })).status).toBe(200);
     expect(await budget('2026-11')).toEqual(before);
   });
+
+  it('refuses to act again on an item closed out or unmarked, and a date that has gone by', async () => {
+    expect((await call('POST', `/api/owed/${id}`, { action: 'close' })).status).toBe(200);
+    const closed = await budget('2026-11');
+    for (const body of [
+      { action: 'close' },
+      { action: 'cancel' },
+      { action: 'snooze', expectBy: '2026-12-01' },
+    ])
+      expect((await call('POST', `/api/owed/${id}`, body)).status).toBe(409);
+    expect(await budget('2026-11')).toEqual(closed);
+    expect((await call('POST', `/api/owed/${id}`, { action: 'reopen' })).status).toBe(200);
+    expect((await call('POST', `/api/owed/${id}`, { action: 'cancel' })).status).toBe(200);
+    expect((await call('POST', `/api/owed/${id}`, { action: 'close' })).status).toBe(409);
+    expect((await call('POST', `/api/owed/${id}`, { action: 'reopen' })).status).toBe(200);
+    // The clock says Nov 14.
+    expect((await call('POST', `/api/owed/${id}`, { action: 'snooze', expectBy: '2026-10-01' })).status).toBe(
+      422,
+    );
+    expect((await call('POST', `/api/owed/${id}`, { action: 'snooze', expectBy: '2026-11-14' })).status).toBe(
+      200,
+    );
+  });
 });

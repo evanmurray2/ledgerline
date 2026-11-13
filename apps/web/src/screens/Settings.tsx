@@ -67,7 +67,7 @@ function useSectionMeta() {
         : problem.slice(3)
       : '',
     data: 'Full backup · usage export · recovery',
-    users: 'Accounts · turn one off',
+    users: 'Who has an account · turn one off',
     'sign-in': signInMeta(security.data),
     privacy: 'What is stored, and who can read it',
     about: 'This release, and how to check it',

@@ -17,6 +17,9 @@ import { OVERLAY_UPSERT, commit, loadTx, names, refuseHistory } from './txn-comm
 import { reopenForEntry } from './account-close.js';
 export const activityRoutes = new Hono<AppEnv>();
 
+/** An owed item already closed out or unmarked: Reopen first. */
+const OWED_DONE = 'This item is already closed out. Pull down to refresh.';
+
 // ---------------------------------------------------------------- matching money back
 
 async function openItems(s: Scoped, today: string) {
@@ -65,14 +68,29 @@ async function openItems(s: Scoped, today: string) {
   return { rows, raw };
 }
 
+const NOT_INFLOW = 'Only money coming in can be matched.';
+
+/** What an inflow already pays back: its links to owed items that are still in place. */
+async function linkedFrom(s: Scoped, key: string): Promise<number> {
+  const r = await s.first<{ n: number | null }>(
+    `SELECT sum(amount) AS n FROM txn_link WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND from_key = ?2 AND undone_at IS NULL`,
+    key,
+  );
+  return r?.n ?? 0;
+}
+
 activityRoutes.get('/match/:key', async (c) => {
   const s = scoped(c);
   const key = c.req.param('key');
   const t = await loadTx(s, key);
   const f = await fresh(s, editNow(c));
   const { cats, accts } = await names(s);
+  // Only money coming in can pay something back (an outflow opened here by its link has nothing to match).
+  if (t.amount <= 0) throw new HttpError(422, 'not_inflow', NOT_INFLOW);
   const { rows, raw } = await openItems(s, f.today);
-  let left = t.amount;
+  // What this money already pays back is spoken for: only the rest can match more (rule 12).
+  const left0 = t.amount - (await linkedFrom(s, key));
+  let left = left0;
   const open = rows
     .filter((o) => o.status === 'open' || o.status === 'late')
     .map((o) => {
@@ -92,7 +110,7 @@ activityRoutes.get('/match/:key', async (c) => {
         suggested: cents(suggested),
       };
     });
-  const view: MatchView = { inflow: listRow(t, accts, cats), open };
+  const view: MatchView = { inflow: listRow(t, accts, cats), left: cents(Math.max(0, left0)), open };
   return c.json(view);
 });
 
@@ -102,9 +120,12 @@ activityRoutes.post('/match', async (c) => {
   const now = editNow(c);
   const t = await loadTx(s, r.inflowKey);
   refuseHistory(t);
-  if (t.amount <= 0) throw new HttpError(422, 'not_inflow', 'Only money coming in can be matched.');
+  if (t.amount <= 0) throw new HttpError(422, 'not_inflow', NOT_INFLOW);
   const total = r.items.reduce((a, i) => a + i.amount, 0);
-  if (total > t.amount) throw new HttpError(422, 'too_much', 'That’s more than came in. Lower an amount.');
+  // Links this money already has count too: together they can't pay back more than came in (rule 12).
+  const already = await linkedFrom(s, r.inflowKey);
+  if (total > 0 && already + total > t.amount)
+    throw new HttpError(422, 'too_much', 'That’s more than came in. Lower an amount.');
   const today = new Date(now).toISOString().slice(0, 10);
   const { rows } = await openItems(s, today);
   for (const i of r.items) {
@@ -114,6 +135,15 @@ activityRoutes.post('/match', async (c) => {
       throw new HttpError(422, 'too_much', 'That’s more than is still owed. Lower the amount.');
   }
   const w: Stmt[] = [s.q(OVERLAY_UPSERT, r.inflowKey, now)];
+  // "It's income": the money pays back nothing, so what it was matched to before is owed again.
+  if (total === 0 && already > 0)
+    w.push(
+      s.q(
+        `UPDATE txn_link SET undone_at = ?3 WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND from_key = ?2 AND undone_at IS NULL`,
+        r.inflowKey,
+        now,
+      ),
+    );
   for (const i of r.items) {
     w.push(
       s.q(
@@ -375,7 +405,9 @@ activityRoutes.post('/transfers/:key/unpair', async (c) => {
         ),
       );
   w.push(s.audit('transfer.unpair', 'transaction', key, null, null, now));
-  return c.json(await commit(c, w));
+  // The other side, for Undo (a pick of it pairs the two again). Not an entry the pick added: it goes with the pair.
+  const undo = other && !(link && other.startsWith('m:')) ? { otherKey: other } : {};
+  return c.json({ ...(await commit(c, w)), ...undo });
 });
 
 // ---------------------------------------------------------------- Owed to you
@@ -458,6 +490,13 @@ activityRoutes.post('/owed/:id', async (c) => {
   const { rows } = await openItems(s, f.today);
   const o = rows.find((x) => x.id === id);
   if (!o) throw new HttpError(404, 'not_found', GONE);
+  // Close out, Remove the mark and a new date act on an item still owed; Remove the mark also on one paid back in
+  // part or in full. Not on one already closed out or unmarked (Reopen undoes those, D-80).
+  const open = o.status === 'open' || o.status === 'late';
+  if (r.action !== 'reopen' && !(open || (r.action === 'cancel' && o.status === 'paid_back')))
+    throw new HttpError(409, 'changed', OWED_DONE);
+  if (r.action === 'snooze' && r.expectBy && r.expectBy < f.today)
+    throw new HttpError(422, 'invalid', 'Choose today or a later date.');
   let w: Stmt[];
   if (r.action === 'reopen') w = await reopen(s, id, f.current, now, () => newId(c));
   else if (r.action === 'close') {

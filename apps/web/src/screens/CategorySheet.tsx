@@ -92,6 +92,8 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
   const close = useCloseToBudget(month, current);
   const navigate = useNavigate();
   const [assigned, setAssigned] = useState<string | null>(null);
+  /** The amount the box was filled from: a change made elsewhere (the desktop table) refills it unless you typed. */
+  const [base, setBase] = useState<number | null>(null);
   const [moving, setMoving] = useState(false);
   const set = useMoneyMutation(api.setAssigned);
   const steps = useCategorySteps(categoryId, month, current);
@@ -107,8 +109,11 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
     return () => usage.cancelTask('assign');
   }, []);
   useEffect(() => {
-    if (c && assigned === null) setAssigned(centsToInput(c.assigned));
-  }, [c, assigned]);
+    if (!c || c.assigned === base) return;
+    if (assigned === null || base === null || assigned === centsToInput(base))
+      setAssigned(centsToInput(c.assigned));
+    setBase(c.assigned);
+  }, [c, assigned, base]);
 
   if (!c || !month) {
     return (
@@ -125,7 +130,12 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
   const rtaAfter = c.rta - delta;
   const save = async () => {
     if (newAssigned === null) return;
-    await set.mutateAsync({ month, categoryId: c.id, assigned: newAssigned });
+    try {
+      await set.mutateAsync({ month, categoryId: c.id, assigned: newAssigned });
+    } catch {
+      // Shown below the buttons (set.error).
+      return;
+    }
     usage.endTask('assign');
     close();
   };
@@ -133,7 +143,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
   const onEnter = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    if (!set.isPending && changed) void save().catch(() => undefined);
+    if (!set.isPending && changed) void save();
   };
 
   // Amounts one tap away, each shown only when it would change the box: what Needs attention would do (Cover,
@@ -189,7 +199,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
         <PrimaryButton
           mutates="offline"
           track="category.save"
-          onClick={save}
+          onClick={() => void save()}
           busy={set.isPending}
           disabled={!changed}
           why={newAssigned === null ? 'Enter an amount to save' : !changed ? 'Change the amount to save' : ''}
@@ -293,7 +303,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
                   {[
                     dayLabel(r.date),
                     r.accountName,
-                    r.badge === 'By rule' ? 'by rule' : r.categoryLabel === 'split' ? 'split' : null,
+                    r.categoryLabel === 'split' ? 'split' : null,
                     paidBack ? r.sub : null,
                   ]
                     .filter(Boolean)

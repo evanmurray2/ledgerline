@@ -65,6 +65,24 @@ describe('the same edit on the phone and on the server', () => {
       'POST /budget/assign',
       () => ['POST', '/api/budget/assign', { month, items: [{ categoryId: spending[0], amount: 1234 }] }],
     ],
+    // An add sent with what the device saw assigned (the Assign sheet): checked on both sides.
+    [
+      'assign against what the device saw',
+      'POST /budget/assign',
+      async () => {
+        const was = await a.db
+          .prepare(
+            `SELECT coalesce(sum(amount), 0) AS n FROM assignment WHERE category_id = ?1 AND month = ?2`,
+          )
+          .bind(spending[0], month)
+          .first<{ n: number }>();
+        return [
+          'POST',
+          '/api/budget/assign',
+          { month, items: [{ categoryId: spending[0], amount: 55, was: was!.n }] },
+        ];
+      },
+    ],
     [
       'set',
       'POST /budget/set',
@@ -113,6 +131,16 @@ describe('the same edit on the phone and on the server', () => {
         'POST',
         `/api/settings/categories/${spending[7]}/archive`,
         { archived: true, available: 500, through: (await a.state()).through },
+      ],
+    ],
+    // Undo of that archive: the money it moved to Ready to Assign goes back.
+    [
+      'restore it with its money back',
+      'POST /settings/categories/:id/archive',
+      () => [
+        'POST',
+        `/api/settings/categories/${spending[7]}/archive`,
+        { archived: false, giveBack: [{ month, amount: 500 }] },
       ],
     ],
     // Edits that make rows: the ids come from the edit's own id (http/ids.ts).
@@ -235,6 +263,40 @@ describe('the same edit on the phone and on the server', () => {
     ],
     ['undo that match', 'POST /match/:key/unlink', () => ['POST', '/api/match/n-venmo/unlink', {}]],
     [
+      'match it again',
+      'POST /match',
+      async () => {
+        const view = (await (await a.request('GET', '/api/match/n-venmo')).json()) as {
+          open: { id: string }[];
+        };
+        return [
+          'POST',
+          '/api/match',
+          { inflowKey: 'n-venmo', items: [{ itemId: view.open[0]!.id, amount: 100 }] },
+        ];
+      },
+    ],
+    // "It's income" on matched money: the links it had are undone.
+    [
+      'call that money income',
+      'POST /match',
+      () => ['POST', '/api/match', { inflowKey: 'n-venmo', items: [] }],
+    ],
+    [
+      'split a purchase with a line owed to you',
+      'PATCH /transactions/:key',
+      () => [
+        'PATCH',
+        '/api/transactions/n-personal',
+        {
+          split: [
+            { categoryId: 'personal', amount: -5000, memo: null, absorbsRemainder: false },
+            { categoryId: null, amount: -3500, memo: null, absorbsRemainder: true, owed: true },
+          ],
+        },
+      ],
+    ],
+    [
       'dismiss an alert',
       'POST /alerts/:id/dismiss',
       () => ['POST', '/api/alerts/twin-alert/dismiss', {}],
@@ -254,6 +316,22 @@ describe('the same edit on the phone and on the server', () => {
           `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at) VALUES ('twin-ask', ?1, 'same_purchase', 'n-marriott', ?2, ?3)`,
           budget,
           JSON.stringify({ candidates: ['n-shell'] }),
+          Date.now(),
+        )(),
+    ],
+    [
+      'undo that No',
+      'POST /same-purchase/:id/undo',
+      () => ['POST', '/api/same-purchase/twin-ask/undo', { key: 'n-shell' }],
+    ],
+    [
+      'undo OK on a row removed by the bank',
+      'POST /alerts/:id/undo',
+      () => ['POST', '/api/alerts/twin-vanished/undo', {}],
+      () =>
+        onServer(
+          `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at, acked_at) VALUES ('twin-vanished', ?1, 'vanished_pending', 'n-shell', NULL, ?2, ?2)`,
+          budget,
           Date.now(),
         )(),
     ],

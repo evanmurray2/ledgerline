@@ -58,6 +58,10 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] Sign-up's robot check: Turnstile loads a script from `challenges.cloudflare.com`, which the app's CSP blocks. It needs the second address of `docs/privacy.md` 5.6 before sign-up can be turned on.
 
 - [ ] Remove the unused Waiting to match parts of `packages/domain` (D-98): the `waiting` use, `waitingToMatch` in the projection and the rule 10 identity, the `wait` line kind (`apps/worker/src/ledger/ledger.ts` `rowsFor`, `maintenance.ts`), and the November fixture's held Venmo row (`n-venmo`) with the tests that count it.
+- [ ] Register: page through rows older than the newest 300 (it shows a note pointing to Activity search today).
+- [ ] Turnstile on its own address (`docs/privacy.md` 5.6): until then sign-up and recovery codes can't load the check in production (the CSP allows no outside host).
+- [ ] Sheets: ask before Back drops an unsaved amount; Back from a nested picker (Move money) closes both sheets.
+- [ ] `/activity?category=<unknown>` shows "Category · All months" instead of saying the category is gone.
 
 ## Contract gaps (not blocking)
 

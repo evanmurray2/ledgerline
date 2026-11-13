@@ -25,6 +25,7 @@ import {
   textLinkClass,
 } from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
+import { amountWhy } from '../lib/amount-check';
 import { addMonths, dayLabel, monthName, monthShort } from '../lib/dates';
 import { useCategoryOptions } from '../lib/common';
 import { usage } from '../usage/tracker';
@@ -108,7 +109,9 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   /** A transaction you added: its amount is yours to change. */
   const canSetAmount = t.kind === 'manual' || t.kind === 'upcoming';
   /** What's typed in the amount box isn't an amount: Save would drop it without a word. */
-  const amountBad = canSetAmount && amtCents === null;
+  const amountBad = canSetAmount ? amountWhy(amt) : '';
+  /** Your estimate: empty goes back to the bank's amount; anything else must be an amount above $0.00. */
+  const estBad = canEstimate && est.trim() !== '' ? amountWhy(est) : '';
   const tips =
     canEstimate && bank < 0
       ? [15, 18, 20]
@@ -123,6 +126,8 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
     owed === 'half' ? Math.round(spendCents / 2) : owed === 'all' ? spendCents : (parseCents(owedAmt) ?? 0);
   /** More owed than the purchase: the server would save the purchase's amount instead, without a word. */
   const owedOver = sign < 0 && owed === 'custom' && owedCents > spendCents;
+  /** A custom amount owed that isn't an amount. */
+  const owedBad = sign < 0 && owed === 'custom' ? amountWhy(owedAmt) : '';
   const catName = useCategoryOptions().byId.get(cat) ?? null;
   const onCard =
     useAccounts()
@@ -174,7 +179,14 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
             : { mode: owed, expectBy: expectBy || null };
     }
     if (Object.keys(body).length === 0) return close();
-    await patch.mutateAsync({ key: t.key, body });
+    // A refusal shows above Save (patch.error), not as an uncaught error.
+    if (
+      !(await patch.mutateAsync({ key: t.key, body }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      return;
     if (body.categoryId !== undefined || body.toRta) usage.endTask('categorize');
     close();
   };
@@ -193,9 +205,17 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           <PrimaryButton
             mutates="offline"
             track="txn.save"
-            disabled={amountBad || owedOver}
+            disabled={!!amountBad || !!estBad || !!owedBad || owedOver}
             why={
-              amountBad ? 'Enter an amount' : owedOver ? `Enter at most ${formatCents(spendCents)} owed` : ''
+              amountBad
+                ? amountBad
+                : estBad
+                  ? estBad.replace('an amount', 'an estimate')
+                  : owedBad
+                    ? owedBad.replace('an amount', 'the amount owed')
+                    : owedOver
+                      ? `Enter at most ${formatCents(spendCents)} owed`
+                      : ''
             }
             onClick={() => void save()}
           >
@@ -540,21 +560,30 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       </div>
       {(t.kind === 'manual' || t.kind === 'upcoming') &&
         (confirmDelete ? (
-          <ConfirmInline
-            label={`Delete ${t.payee}`}
-            confirmLabel="Delete"
-            track="txn.delete"
-            mutates="offline"
-            busy={del.isPending}
-            onCancel={() => setConfirmDelete(false)}
-            onConfirm={async () => {
-              await del.mutateAsync(t.key);
-              toast.show({ text: `${t.payee} deleted` });
-              close();
-            }}
-          >
-            Delete {t.payee}?
-          </ConfirmInline>
+          <>
+            {del.error && <ErrorNote error={del.error} />}
+            <ConfirmInline
+              label={`Delete ${t.payee}`}
+              confirmLabel="Delete"
+              track="txn.delete"
+              mutates="offline"
+              busy={del.isPending}
+              onCancel={() => setConfirmDelete(false)}
+              onConfirm={async () => {
+                if (
+                  !(await del.mutateAsync(t.key).then(
+                    () => true,
+                    () => false,
+                  ))
+                )
+                  return;
+                toast.show({ text: `${t.payee} deleted` });
+                close();
+              }}
+            >
+              Delete {t.payee}?
+            </ConfirmInline>
+          </>
         ) : (
           <DangerLink mutates="offline" onClick={() => setConfirmDelete(true)}>
             Delete…

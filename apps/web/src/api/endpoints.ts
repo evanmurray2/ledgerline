@@ -15,6 +15,7 @@ import {
   LinkFinish,
   LinkFinishResult,
   MatchView,
+  ArchiveResult,
   MutationResult,
   OwedView,
   PayeesView,
@@ -47,6 +48,7 @@ import type {
   MergePayees,
   RenameAccount,
   RenamePayee,
+  ReturnedMoney,
   SetupStart,
 } from '@ledgerline/contracts';
 import { z } from 'zod';
@@ -209,13 +211,20 @@ export const api = {
   /** Not the same: undoes a pair (your entry and a bank row, or two bank rows), and remembers No. */
   notSame: (key: string) => post(`/api/transactions/${enc(key)}/not-same`, MutationResult),
   notSameUndo: (key: string) => post(`/api/transactions/${enc(key)}/not-same/undo`, MutationResult),
+  /** Undo of No on a "Same purchase?" card: asks again. */
+  samePurchaseUndo: (v: { id: string; key: string }) =>
+    post(`/api/same-purchase/${enc(v.id)}/undo`, MutationResult, { key: v.key }),
+  /** Undo of OK on a "Removed by the bank" row. */
+  undismissAlert: (id: string) => post(`/api/alerts/${enc(id)}/undo`, MutationResult, {}),
 
   match: (inflowKey: string) => get(`/api/match/${enc(inflowKey)}`, MatchView),
   doMatch: (body: In<typeof MatchRequest>) => post('/api/match', MutationResult, body),
   unlink: (inflowKey: string) => post(`/api/match/${enc(inflowKey)}/unlink`, MutationResult),
   pickTransfer: (key: string, body: In<typeof TransferPick>) =>
     post(`/api/transfers/${enc(key)}/pick`, MutationResult, body),
-  unpairTransfer: (key: string) => post(`/api/transfers/${enc(key)}/unpair`, MutationResult),
+  /** `otherKey`: the row it was paired with, for Undo (pick it again); absent when Undo can't pair them again. */
+  unpairTransfer: (key: string) =>
+    post(`/api/transfers/${enc(key)}/unpair`, MutationResult.extend({ otherKey: z.string().optional() })),
 
   owed: () => get('/api/owed', OwedView),
   owedAction: (id: string, body: In<typeof OwedAction>) => post(`/api/owed/${enc(id)}`, MutationResult, body),
@@ -230,16 +239,16 @@ export const api = {
   upsertGroup: (body: In<typeof GroupUpsert>) => post('/api/settings/groups', OkId, body),
   pinCategory: ({ id, pinned }: { id: string; pinned: boolean }) =>
     post(`/api/settings/categories/${enc(id)}/pin`, MutationResult, { pinned }),
-  archiveCategory: (id: string, archived: boolean) =>
-    post(`/api/settings/categories/${enc(id)}/archive`, MutationResult, { archived }),
+  /** Archive or restore. Undo of an archive passes back what it returned, to give that money back. */
+  archiveCategory: (id: string, archived: boolean, giveBack?: In<typeof ReturnedMoney>) =>
+    post(`/api/settings/categories/${enc(id)}/archive`, ArchiveResult, {
+      archived,
+      ...(giveBack?.length ? { giveBack } : {}),
+    }),
   reorderCategories: (ids: string[]) => post('/api/settings/categories/reorder', Ok, { ids }),
   reorderGroups: (ids: string[]) => post('/api/settings/groups/reorder', Ok, { ids }),
   /** Deleted when never used; otherwise archived, keeping its history. */
-  removeCategory: (id: string) =>
-    post(
-      `/api/settings/categories/${enc(id)}/remove`,
-      z.object({ ok: z.literal(true), outcome: z.enum(['deleted', 'archived']) }),
-    ),
+  removeCategory: (id: string) => post(`/api/settings/categories/${enc(id)}/remove`, ArchiveResult),
   removeGroup: (id: string) => post(`/api/settings/groups/${enc(id)}/remove`, Ok),
 
   payees: () => get('/api/settings/payees', PayeesView),

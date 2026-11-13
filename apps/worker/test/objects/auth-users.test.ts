@@ -117,6 +117,10 @@ describe('more than one user', () => {
     const mine = await other.call('GET', '/api/settings/security');
     expect((mine.json.passkeys as { id: string }[]).map((p) => p.id)).toEqual([otherKey.id]);
     expect(mine.json.sessions).toBe(1);
+    // The device link's passkey signed this browser in as it was made: it has been used, not "not used yet".
+    expect((mine.json.passkeys as { lastUsedAt: string | null }[])[0]!.lastUsedAt).toBe(
+      new Date(now).toISOString(),
+    );
     // The second user can't remove the owner's passkey (and the owner's only passkey stays).
     expect((await other.call('POST', `/api/settings/security/passkeys/${ownerKey.id}/remove`)).status).toBe(
       409,

@@ -59,19 +59,23 @@ export function MatchScreen() {
       </Sheet>
     );
   const inflow = v.inflow.amount;
-  let left = inflow;
+  // Only what this money doesn't already pay back can match more.
+  const already = inflow - v.left;
+  let left = v.left;
   const applied = v.open.map((o) => {
     const a = on[o.id] ? Math.min(o.still, Math.max(left, 0)) : 0;
     left -= a;
     return { ...o, applied: a };
   });
-  const matched = inflow - left;
+  const matched = v.left - left;
   const paidCount = applied.filter((a) => a.applied > 0 && a.applied >= a.still).length;
   const submit = async (asIncome: boolean) => {
     const items = asIncome
       ? []
       : applied.filter((a) => a.applied > 0).map((a) => ({ itemId: a.id, amount: a.applied }));
-    const r = await match.mutateAsync({ inflowKey: v.inflow.key, items });
+    // A refusal shows in the sheet (match.error), not as an uncaught error.
+    const r = await match.mutateAsync({ inflowKey: v.inflow.key, items }).catch(() => null);
+    if (!r) return;
     usage.endTask('match');
     setDone({
       text: asIncome
@@ -112,7 +116,13 @@ export function MatchScreen() {
                 track="match.apply"
                 className="min-w-0 flex-1"
                 disabled={matched === 0}
-                why={matched === 0 ? 'Pick what it pays back' : ''}
+                why={
+                  matched === 0
+                    ? v.left === 0
+                      ? 'All of this money is matched'
+                      : 'Pick what it pays back'
+                    : ''
+                }
                 onClick={() => void submit(false)}
               >
                 {matched === 0 ? 'Match' : `Match ${formatCents(matched)}`}
@@ -125,13 +135,20 @@ export function MatchScreen() {
       {done ? (
         <div className="flex flex-col gap-3">
           <Banner tone="success">{done.text}</Banner>
+          {unlink.error && <ErrorNote error={unlink.error} />}
           <div className="flex gap-2">
             <SecondaryButton
               mutates="offline"
               track="match.undo"
               className="flex-1"
               onClick={async () => {
-                await unlink.mutateAsync(v.inflow.key);
+                if (
+                  !(await unlink.mutateAsync(v.inflow.key).then(
+                    () => true,
+                    () => false,
+                  ))
+                )
+                  return;
                 usage.undo('match');
                 setDone(null);
               }}
@@ -154,6 +171,11 @@ export function MatchScreen() {
             <span className="text-sm text-muted">
               It is in Ready to Assign. Matching it doesn’t change that.
             </span>
+            {already > 0 && (
+              <span className="text-sm text-muted" data-testid="match-already">
+                It already pays back {formatCents(already)}. {formatCents(v.left)} is left to match.
+              </span>
+            )}
           </div>
           <Label>What it pays back</Label>
           <div className="shrink-0 overflow-hidden rounded-lg border border-line">

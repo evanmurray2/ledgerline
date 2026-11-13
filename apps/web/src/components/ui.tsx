@@ -183,7 +183,8 @@ export function Bar({ percent, tone }: { percent: number; tone: Tone }) {
 }
 
 export function Money({ cents, plus, className }: { cents: number; plus?: boolean; className?: string }) {
-  return <span className={cx('tnum', className)}>{formatCents(cents, { plus })}</span>;
+  // nowrap: the minus sign never wraps away from the amount on a narrow screen.
+  return <span className={cx('tnum whitespace-nowrap', className)}>{formatCents(cents, { plus })}</span>;
 }
 
 export function Chip({

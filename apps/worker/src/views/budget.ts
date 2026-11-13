@@ -38,6 +38,8 @@ export interface CategoryComputed {
   info: CategoryInfo;
   row: BudgetCategoryRow;
   isBill: boolean;
+  /** Available at the start of the month (X): what the month before left. */
+  carry: Cents;
 }
 
 /** Category rows for a month: cells, targets, need, status, detail and fix. Shared by Budget and the Assign sheet. */
@@ -135,7 +137,9 @@ export async function categoryRows(
     }));
     const tAmount = target && 'amount' in target ? target.amount : null;
     let detail: string;
-    if (status === 'overspent') detail = credit.length ? 'overspent on a card' : 'overspent';
+    // Cash overspending: the status word already says "Overspent", so the note says what to do.
+    if (status === 'overspent')
+      detail = credit.length ? 'overspent on a card' : 'cover it from another category';
     else if (status === 'invested') detail = `${fmt(spent)} invested this month`;
     else if (status === 'no_target') detail = 'No target';
     else if (target?.type === 'by_date')
@@ -171,6 +175,7 @@ export async function categoryRows(
     rows.push({
       info,
       isBill,
+      carry: X,
       row: {
         id: info.id,
         name: info.name,
@@ -361,7 +366,8 @@ export async function budgetView(s: Scoped, f: Fresh, month: Month): Promise<Bud
       section: 'Card payments',
       key: `card:${c.accountId}`,
       name: c.name,
-      amount: c.available,
+      // The amount in red is the problem itself, as for Overspent: what the card is short, not what it has.
+      amount: cents(-c.short),
       detail:
         fund > 0
           ? `Needs ${fmt(c.short)} more`

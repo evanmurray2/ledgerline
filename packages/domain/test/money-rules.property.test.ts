@@ -12,7 +12,7 @@ import { checkIdentity } from '../src/budget/identity.js';
 import { project, type LedgerAccount, type LogicalTxn, type TxnUse } from '../src/budget/project.js';
 import { projectedFronts } from '../src/budget/fronts.js';
 import { cents, type Cents } from '../src/money.js';
-import { addMonths, monthRange, type Month } from '../src/month.js';
+import { addMonths, month, monthRange, type Month } from '../src/month.js';
 
 import { START, RUNS, amt, cats, run, cell, card, tx, cat, CHK, CARD } from './ledger-helpers.js';
 
@@ -1067,5 +1067,29 @@ describe('chunked recompute (decisions.md D-22)', () => {
       }),
       { numRuns: RUNS },
     );
+  });
+
+  it('the last chunk, run up to a later month, keeps a purchase set to count in that month', () => {
+    // The recompute passes `until` = the latest month with a line, also on the last chunk. A purchase set to
+    // "Counts in" a later month must count there, not vanish from every month.
+    const p = project({
+      accounts: [CHK],
+      txns: [tx('chk', '2026-03-12', -8500, cat('c0'), { budgetMonth: month('2026-04') })],
+      startMonth: START,
+      today: '2026-03-14',
+    });
+    const base = {
+      startMonth: START,
+      currentMonth: month('2026-03'),
+      categories: cats(1, []),
+      assignments: [],
+      lines: p.lines,
+    };
+    const full = computeBudget(base);
+    const chunked = computeBudget({ ...base, until: month('2026-04') });
+    expect(chunked.months).toEqual(full.months);
+    expect(cell(chunked, month('2026-03'), 'c0').activity).toBe(0);
+    expect(cell(chunked, month('2026-04'), 'c0').activity).toBe(-8500);
+    expect(checkIdentity(p, chunked, month('2026-03')).ok).toBe(true);
   });
 });

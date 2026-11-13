@@ -196,6 +196,7 @@ export function ConfirmInline({
   label,
   children,
   confirmLabel,
+  cancelLabel = 'Keep it',
   onConfirm,
   onCancel,
   track,
@@ -207,6 +208,8 @@ export function ConfirmInline({
   label: string;
   children: ReactNode;
   confirmLabel: string;
+  /** The button that steps back: "Keep it" before a removal. */
+  cancelLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
   track?: string;
@@ -223,7 +226,7 @@ export function ConfirmInline({
       <span className="text-md leading-snug">{children}</span>
       <div className="flex gap-2">
         <SecondaryButton onClick={onCancel} className="flex-1">
-          Keep it
+          {cancelLabel}
         </SecondaryButton>
         <PrimaryButton
           danger

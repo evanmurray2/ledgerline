@@ -80,6 +80,50 @@ test('With no passkey copy, nothing is kept on the device: with no signal it say
   await expect(
     page.getByText('Connect to the internet and try again', { exact: false }).first(),
   ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
+  // The signal comes back: the app opens by itself, with no reload.
+  await context.setOffline(false);
+  await expect(rta(page)).toHaveText('$1,999.90');
+});
+
+test('A screen never opened before opens with no signal, and the edits waiting to send stay', async ({
+  page,
+  context,
+}) => {
+  await page.goto('/activity');
+  await expect(page.getByRole('link', { name: 'Add transaction' })).toBeVisible();
+  // The service worker saved every file of the release, lazy screens too (public/sw.js).
+  await page.waitForFunction(async () => {
+    const reg = await navigator.serviceWorker.ready;
+    if (!reg.active) return false;
+    const keys = await (await caches.open('ledgerline-shell-v1')).keys();
+    return keys.some((k) => /\/assets\/Reports-[^/]+\.js$/.test(k.url));
+  });
+  await context.setOffline(true);
+  await expect(page.getByTestId('offline-banner')).toBeVisible();
+  await page.getByRole('link', { name: 'Add transaction' }).click();
+  const add = page.getByRole('dialog', { name: 'Add a transaction' });
+  await add.getByPlaceholder('0.00').fill('5.00');
+  await add.getByLabel('Payee').fill('Waiting lunch');
+  await add.getByLabel('Category').click();
+  await page
+    .getByRole('dialog', { name: 'Choose a category' })
+    .getByRole('button', { name: 'Dining out' })
+    .first()
+    .click();
+  await add.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(page.getByTestId('offline-banner')).toContainText('1 waiting to send');
+  // No saved copy on this device: the banner says the change lives only while the app is open.
+  await expect(page.getByTestId('offline-banner')).toContainText('Closing it loses them.');
+  // A mark on the page: a reload would drop it.
+  await page.evaluate(() => ((window as unknown as { kept?: number }).kept = 1));
+  await page
+    .getByRole('link', { name: /Reports/ })
+    .first()
+    .click();
+  await expect(page.getByRole('heading', { name: 'Reports' }).first()).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { kept?: number }).kept)).toBe(1);
+  await expect(page.getByTestId('offline-banner')).toContainText('1 waiting to send');
   await context.setOffline(false);
 });
 
@@ -182,7 +226,8 @@ test('Activity: categorizing an uncategorized purchase persists', async ({ page 
 });
 
 test('Activity: OK on a bank row that cleared at a new amount clears it', async ({ page }) => {
-  await page.goto('/activity');
+  // Shake Shack has posted, so its check is on All, not on Not posted yet.
+  await page.goto('/activity?filter=all');
   const chip = page.getByRole('button', { name: /^Needs attention \d+$/ });
   const ok = page.getByRole('button', { name: 'OK Shake Shack' });
   await expect(ok).toBeVisible();
