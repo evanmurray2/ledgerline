@@ -14,6 +14,7 @@ import {
   utf8,
   type BudgetKeys,
   type Bytes,
+  type DhPair,
   type Entry,
   type Kind,
 } from '@ledgerline/seal';
@@ -37,7 +38,7 @@ export class Writer {
   time: number;
   counter = 0;
   /** The inbox pair of version 1, private half too: a device holds it. */
-  inbox: unknown = null;
+  inbox: DhPair | null = null;
 
   fields(kind: Kind, over: Record<string, unknown> = {}) {
     this.time += 1000;

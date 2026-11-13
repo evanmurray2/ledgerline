@@ -307,9 +307,9 @@ export async function signRun(
 
 /** What the Worker hands a device for one run, and keeps until a checked snapshot covers it. */
 export interface SealedRun {
-  manifest: Bytes;
-  signature: Bytes;
-  pages: Bytes[];
+  manifest: Uint8Array;
+  signature: Uint8Array;
+  pages: Uint8Array[];
 }
 
 /**

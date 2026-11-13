@@ -1,5 +1,6 @@
-// Keys and sealing for the privacy design (docs/privacy.md, docs/privacy-keys.md). This package is one of the
-// owner's paths (.github/CODEOWNERS): the owner merges every change to it.
+// Keys and sealing for the privacy design (docs/privacy.md, docs/privacy-keys.md). This package is one of the key
+// paths (.github/CODEOWNERS). It type-checks under both the browser's WebCrypto types and Cloudflare's, so the Worker
+// and the web app import these same types.
 export * from './bytes.js';
 export * from './hash.js';
 export * from './aead.js';
