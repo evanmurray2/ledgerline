@@ -385,6 +385,16 @@ export const OwedMark = z.object({
   expectBy: calendarDate.nullable(),
 });
 export type OwedMark = z.infer<typeof OwedMark>;
+/** Characters that change how text around them reads (bidi overrides and isolates) or don't show (controls). */
+export const HIDDEN_CHARS = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
+/** A payee's name as you type it: trimmed first, so a name of only spaces is empty, and no hidden characters. */
+export const payeeName = z
+  .string()
+  .trim()
+  .min(1, 'Enter a payee.')
+  .max(120)
+  .refine((n) => !HIDDEN_CHARS.test(n), 'Use letters, numbers and punctuation only.');
+
 export const TxnPatch = z.object({
   categoryId: id.nullable().optional(),
   toRta: z.boolean().optional(),
@@ -412,7 +422,7 @@ export const TxnPatch = z.object({
   date: calendarDate.optional(),
   wontClear: z.boolean().optional(),
   budgetMonth: month.nullable().optional(),
-  payeeName: z.string().min(1).max(120).optional(),
+  payeeName: payeeName.optional(),
   markOwed: OwedMark.nullable().optional(),
 });
 export const CategorizeRequest = z.object({
@@ -426,7 +436,7 @@ export const NewTxnRequest = z.object({
   date: calendarDate,
   /** Outflow negative. */
   amount: cents,
-  payee: z.string().min(1).max(120),
+  payee: payeeName,
   categoryId: id.nullable(),
   /** Money in that goes to Ready to Assign (no category). */
   toRta: z.boolean().optional(),
@@ -682,12 +692,10 @@ export type PayeesView = z.infer<typeof PayeesView>;
 export const MergePayees = z.object({
   keep: id.optional(),
   ids: z.array(id).min(2).max(50),
-  name: z.string().min(1).max(120).optional(),
+  name: payeeName.optional(),
 });
 export const MergeResult = z.object({ ok: z.literal(true), undoId: z.string() });
 export type MergeResult = z.infer<typeof MergeResult>;
-/** Characters that change how text around them reads (bidi overrides and isolates) or don't show (controls). */
-export const HIDDEN_CHARS = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
 export const RenameAccount = z.object({
   name: z
     .string()
@@ -705,7 +713,7 @@ export const CloseAccount = z.object({
   available: z.number().int().optional(),
   through: z.number().int().optional(),
 });
-export const RenamePayee = z.object({ name: z.string().min(1).max(120), remember: z.boolean().optional() });
+export const RenamePayee = z.object({ name: payeeName, remember: z.boolean().optional() });
 
 export const ConnectionsView = z.object({
   used: z.number().int(),
@@ -796,6 +804,11 @@ export const HealthView = z.object({
     readPct: z.number(),
     writePct: z.number(),
   }),
+  /**
+   * Accounts nobody opened for 24 months, marked and deleted 30 days later (docs/privacy.md 5.8), and deletions
+   * under way. Counts only; added by the Worker for the ops token.
+   */
+  idleAccounts: z.object({ marked: z.number().int(), deleting: z.number().int() }).optional(),
 });
 export type HealthView = z.infer<typeof HealthView>;
 

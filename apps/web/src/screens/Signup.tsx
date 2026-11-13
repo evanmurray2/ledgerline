@@ -10,6 +10,7 @@ import { qk } from '../api/hooks';
 import { Frame, Problem } from '../components/Frame';
 import { PrimaryButton, SecondaryButton } from '../components/ui';
 import { passkeyName } from '../lib/device-name';
+import { passkeyProblem } from '../copy/passkey';
 
 /** Losing both is final: said before the passkey, and again with the recovery key (docs/open-signup.md 3.1). */
 const NO_WAY_BACK =
@@ -135,10 +136,7 @@ async function register(options: unknown): Promise<void> {
 
 function problem(e: unknown): string {
   if (e instanceof ApiError) return errorMessage(e);
-  const name = (e as { name?: string }).name;
-  if (name === 'NotAllowedError' || name === 'AbortError') return 'Cancelled. Try again when you’re ready.';
-  if (name === 'InvalidStateError') return 'This device already has a Ledgerline passkey.';
-  return 'Couldn’t use your passkey. Try again.';
+  return passkeyProblem(e) ?? 'Couldn’t use your passkey. Try again.';
 }
 
 /** Create account: the check, then a passkey and nothing else (no name, no email: D-85). */

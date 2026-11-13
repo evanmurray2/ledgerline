@@ -62,9 +62,18 @@ export async function routeApi(req: Request, env: Env): Promise<Response> {
       return json({ error: 'unauthenticated', message: 'Sign in again with your passkey.' }, 401);
     if (!OPS_PATHS.has(`${req.method} ${path}`))
       return json({ error: 'forbidden', message: 'You can’t open this.' }, 403);
-    const budgetId = await dir.firstBudget();
+    const { budgetId, idle } = await dir.opsHealth();
     if (!budgetId) return json({ error: 'not_found', message: 'No budget was found. Sign in again.' }, 404);
-    return store(budgetId).api(req, { userId: 'service', budgetId, email: '', sessionId: '', verifiedAt: 0 });
+    const res = await store(budgetId).api(req, {
+      userId: 'service',
+      budgetId,
+      email: '',
+      sessionId: '',
+      verifiedAt: 0,
+    });
+    if (!res.ok) return res;
+    // The idle accounts are the Directory's: added to the store's answer (HealthView.idleAccounts).
+    return json({ ...((await res.json()) as object), idleAccounts: idle }, res.status);
   }
 
   // Everything else: who is asking, then their own budget. A request with no session cookie can't be anyone,

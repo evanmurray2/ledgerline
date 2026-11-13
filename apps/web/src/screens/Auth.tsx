@@ -9,6 +9,7 @@ import { qk } from '../api/hooks';
 import { Frame, Problem } from '../components/Frame';
 import { Field, PrimaryButton, SecondaryButton, inputClass } from '../components/ui';
 import { signIn as copySignIn } from '../copy/copy';
+import { passkeyProblem } from '../copy/passkey';
 import { CreateAccountScreen } from './Signup';
 import { passkeyName } from '../lib/device-name';
 import { RecoveryKeySignInScreen } from './RecoveryKey';
@@ -20,10 +21,7 @@ async function ceremony(fn: () => Promise<unknown>): Promise<string | null> {
     return null;
   } catch (e) {
     if (e instanceof ApiError) return errorMessage(e);
-    const name = (e as { name?: string }).name;
-    if (name === 'NotAllowedError' || name === 'AbortError') return 'Cancelled. Try again when you’re ready.';
-    if (name === 'InvalidStateError') return 'This device already has a Ledgerline passkey.';
-    return 'Couldn’t use your passkey. Try again.';
+    return passkeyProblem(e) ?? 'Couldn’t use your passkey. Try again.';
   }
 }
 

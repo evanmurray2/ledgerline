@@ -220,13 +220,28 @@ async function afterPasskeyCheck<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * A locked budget's signed request refused for its signature ("unsigned"): another device may have changed the
+ * budget's key since this device last read the log. The copy reads the log, and the request is signed and sent once
+ * more. A second refusal is thrown.
+ */
+async function afterKeySync<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (!(e instanceof ApiError && e.code === 'unsigned' && e.status === 403) || !isSealed()) throw e;
+    await syncNow().catch(() => undefined);
+    return fn();
+  }
+}
+
 function send<S extends z.ZodType>(
   method: Method,
   path: string,
   schema: S,
   body?: unknown,
 ): Promise<z.infer<S>> {
-  return afterPasskeyCheck(() => sendOnce(method, path, schema, body));
+  return afterPasskeyCheck(() => afterKeySync(() => sendOnce(method, path, schema, body)));
 }
 
 async function sendOnce<S extends z.ZodType>(
