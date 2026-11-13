@@ -39,11 +39,10 @@ import { requestChallengeRoutes } from '../routes/request-challenge.js';
 import { signedActionOf, takeChallenge, type SignedPart } from '../http/signed-request.js';
 import { ACTION } from '@ledgerline/seal';
 import { wayInOf, type WayIn } from './way-in.js';
+import { TRY_AGAIN } from '../http/errors.js';
 
 /** Budgets checked per ensure_all step (docs/multi-user.md 6.2). */
 export const ENSURE_BATCH = 25;
-
-const TRY_AGAIN = 'Something went wrong. Try again.';
 
 /** Expired sign-in state (decisions.md D-27). */
 function pruneAuthStmts(db: Db, now: number): Stmt[] {

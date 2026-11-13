@@ -8,8 +8,11 @@ import { ulid } from '@ledgerline/platform';
 import type { Env } from '../env.js';
 import { CHALLENGE_COOKIE, CHALLENGE_MS, cookie, randomToken } from '../http/auth.js';
 import { sealChallenge } from '../http/challenge.js';
+import { z } from 'zod';
+import { parseBody } from '../http/body.js';
 import { clock } from '../http/clock.js';
 import { RP_NAME, registrationOptions } from './passkey-options.js';
+import { TRY_AGAIN } from '../http/errors.js';
 
 export const SIGNUP_PATH = '/api/auth/signup/options';
 
@@ -80,9 +83,9 @@ export interface SignupDirectory {
 export async function gatedOptions(req: Request, env: Env, dir: SignupDirectory): Promise<Response> {
   if (req.method !== 'POST' || !signupSwitchOn(env))
     return json({ error: 'not_found', message: 'Not found.' }, 404);
-  if (!csrfOk(req)) return json({ error: 'csrf', message: 'Something went wrong. Try again.' }, 403);
-  const b = (await req.json().catch(() => null)) as { turnstileToken?: unknown } | null;
-  if (!b || typeof b.turnstileToken !== 'string') return json(fail('Something went wrong. Try again.'), 400);
+  if (!csrfOk(req)) return json({ error: 'csrf', message: TRY_AGAIN }, 403);
+  const b = await parseBody(req, z.object({ turnstileToken: z.string() }));
+  if (!b) return json(fail(TRY_AGAIN), 400);
   // The check ran on its own address (docs/privacy.md 5.6), so the token names that host, not the app's.
   const host = checkHost(env) ?? '';
   const ok = await verifyTurnstile(

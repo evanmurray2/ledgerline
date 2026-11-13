@@ -3,6 +3,7 @@
 // five-minute cookie (http/challenge.ts): starting a ceremony writes nothing, and a finish is single use.
 import type { Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
+import { z } from 'zod';
 import {
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
@@ -21,6 +22,7 @@ import { OWNER_HANDLE, RP_NAME, registrationOptions, rp } from './passkey-option
 import { RECOVERY_KEY_GRANT, recoveryKeyStmts } from './recovery-key.js';
 import { clock, requestNow } from '../http/clock.js';
 import { openChallenge, sealChallenge } from '../http/challenge.js';
+import { parseBody } from '../http/body.js';
 import { bodyObject, csrf } from '../http/security.js';
 import {
   CHALLENGE_COOKIE,
@@ -36,11 +38,19 @@ import {
   secretMatches,
   tokenHash,
 } from '../http/auth.js';
+import { TRY_AGAIN } from '../http/errors.js';
 
 export const authRoutes = new Hono<AppEnv>();
 authRoutes.use('*', csrf);
 
 const handleBytes = (h: string) => Uint8Array.from(new TextEncoder().encode(h));
+
+// The ceremonies' answers, checked by @simplewebauthn when they are verified; here only their envelope.
+const RegisterVerify = z.looseObject({
+  response: z.custom<RegistrationResponseJSON>(),
+  name: z.unknown(),
+});
+const LoginVerify = z.looseObject({ response: z.custom<AuthenticationResponseJSON>() });
 
 const fail = (message: string) => ({ error: 'auth', message });
 
@@ -234,8 +244,8 @@ authRoutes.post('/register/options', async (c) => {
 authRoutes.post('/register/verify', async (c) => {
   const env = c.env;
   const now = clock(env);
-  const b = await c.req.json<{ response: RegistrationResponseJSON; name?: string }>().catch(() => null);
-  if (!b || typeof b !== 'object') return c.json(fail('Something went wrong. Try again.'), 400);
+  const b = await parseBody(c.req, RegisterVerify);
+  if (!b) return c.json(fail(TRY_AGAIN), 400);
   const ch = await takeChallenge(c.req.raw, env, 'register', now);
   if (!ch) return c.json(fail('That took too long. Try again.'), 400);
   const { rpID, origin } = rp(c.req.url, env);
@@ -387,8 +397,8 @@ authRoutes.post('/login/verify', async (c) => {
       },
     );
   const now = clock(env);
-  const b = await c.req.json<{ response: AuthenticationResponseJSON }>().catch(() => null);
-  if (!b || typeof b !== 'object') return c.json(fail('Something went wrong. Try again.'), 400);
+  const b = await parseBody(c.req, LoginVerify);
+  if (!b) return c.json(fail(TRY_AGAIN), 400);
   const ch = await takeChallenge(c.req.raw, env, 'login', now);
   if (!ch) return c.json(fail('That took too long. Try again.'), 400);
   const pk = await env.DB.prepare(

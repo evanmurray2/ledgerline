@@ -23,6 +23,7 @@ import { sealedFetchId } from './fetch-job.js';
 import { finishNewLink } from './link-watch.js';
 import { abandonSealedRun } from './run-steps.js';
 import { isSealedStore } from './start.js';
+import { TRY_AGAIN } from '../http/errors.js';
 
 export const sealedApi = new Hono<AppEnv>();
 
@@ -58,7 +59,6 @@ sealedApi.get('/session', async (c) => {
 // state, never by its bank's name or its accounts, which are in the device's copy. The app asks the same paths
 // as before the budget was sealed, and puts the names beside the answer itself.
 
-const TRY_AGAIN = 'Something went wrong. Try again.';
 const no = (status: 400 | 404 | 409, error: string, message: string) =>
   Response.json({ error, message }, { status });
 

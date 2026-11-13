@@ -47,8 +47,8 @@ import { writeBudgetState } from '../sync/breaker.js';
 import { answering } from './body.js';
 import { UsageCounter } from './shares.js';
 import { DISABLED_KEY, budgetInfo, removeBanks, setDisabled, wipeStore } from './account-life.js';
+import { TRY_AGAIN } from '../http/errors.js';
 
-const TRY_AGAIN = 'Something went wrong. Try again.';
 /** Whether this store reports its usage for fair use (store/shares.ts), as the Directory last said. */
 const COUNT_KEY = 'count_usage';
 

@@ -2,6 +2,7 @@
 // apps/web/public/_headers, which Cloudflare applies to static files before the Worker runs.
 import type { MiddlewareHandler } from 'hono';
 import { CSRF_HEADER } from '@ledgerline/contracts';
+import { TRY_AGAIN } from './errors.js';
 
 export const apiHeaders: MiddlewareHandler = async (c, next) => {
   await next();
@@ -26,12 +27,11 @@ export const csrf: MiddlewareHandler = async (c, next) => {
   if (m === 'POST' && new URL(c.req.url).pathname === WEBHOOK_PATH) return next();
   const ct = c.req.header('content-type') ?? '';
   if (!ct.toLowerCase().startsWith('application/json'))
-    return c.json({ error: 'csrf', message: 'Something went wrong. Try again.' }, 415);
-  if (c.req.header(CSRF_HEADER) !== '1')
-    return c.json({ error: 'csrf', message: 'Something went wrong. Try again.' }, 403);
+    return c.json({ error: 'csrf', message: TRY_AGAIN }, 415);
+  if (c.req.header(CSRF_HEADER) !== '1') return c.json({ error: 'csrf', message: TRY_AGAIN }, 403);
   const origin = c.req.header('origin');
   if (origin && origin !== new URL(c.req.url).origin)
-    return c.json({ error: 'csrf', message: 'Something went wrong. Try again.' }, 403);
+    return c.json({ error: 'csrf', message: TRY_AGAIN }, 403);
   return next();
 };
 
