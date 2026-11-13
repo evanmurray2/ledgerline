@@ -5,7 +5,6 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
-  lazyRouteComponent,
   Navigate,
   Outlet,
   redirect,
@@ -13,7 +12,7 @@ import {
   type RouterHistory,
 } from '@tanstack/react-router';
 import { AppShell } from './components/AppShell';
-import { ErrorNote, Loading } from './components/ui';
+import { Loading } from './components/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Session } from '@ledgerline/contracts';
 import { forgetSignedOut, qk, useSession } from './api/hooks';
@@ -36,33 +35,33 @@ import { checkSaved, getCopy, onCopyChanged, start as startCopy, syncNow, flush,
 import { CopyScreen } from './screens/Copy';
 import { toast } from './components/Toast';
 import { returnSearch } from './lib/back';
+import { lazyScreen, RouteProblem } from './lib/lazy-screen';
+import { CantConnect } from './screens/CantConnect';
 
 // Screens opened now and then (Reports, Settings, Categories, first-run setup) load when first opened, so the app
-// starts with less to download and parse. After a new release, a missing piece reloads the app once.
+// starts with less to download and parse. After a new release, a missing piece reloads the app once, but never
+// with no signal or with edits waiting to send (lib/lazy-screen.tsx).
 const reports = () => import('./screens/Reports');
 const settings = () => import('./screens/Settings');
 const setup = () => import('./screens/Setup');
-const ReportsScreen = lazyRouteComponent(reports, 'ReportsScreen');
-const AppearanceSection = lazyRouteComponent(settings, 'AppearanceSection');
-const CategoriesScreen = lazyRouteComponent(settings, 'CategoriesScreen');
-const CategoryEditSheet = lazyRouteComponent(settings, 'CategoryEditSheet');
-const ConnectionsScreen = lazyRouteComponent(settings, 'ConnectionsScreen');
-const DataScreen = lazyRouteComponent(settings, 'DataScreen');
-const PrivacyScreen = lazyRouteComponent(() => import('./screens/settings/Privacy'), 'PrivacyScreen');
-const AboutScreen = lazyRouteComponent(() => import('./screens/settings/About'), 'AboutScreen');
-const DeviceCheckScreen = lazyRouteComponent(
-  () => import('./screens/settings/DeviceCheck'),
-  'DeviceCheckScreen',
-);
-const PayeesScreen = lazyRouteComponent(settings, 'PayeesScreen');
-const RenamePayeeSheet = lazyRouteComponent(settings, 'RenamePayeeSheet');
-const SettingsLayout = lazyRouteComponent(settings, 'SettingsLayout');
-const SignInSettingsScreen = lazyRouteComponent(settings, 'SignInSettingsScreen');
-const UsersScreen = lazyRouteComponent(settings, 'UsersScreen');
-const FirstSortScreen = lazyRouteComponent(setup, 'FirstSortScreen');
-const LinkBanksScreen = lazyRouteComponent(setup, 'LinkBanksScreen');
-const StartMonthScreen = lazyRouteComponent(setup, 'StartMonthScreen');
-const WelcomeScreen = lazyRouteComponent(setup, 'WelcomeScreen');
+const ReportsScreen = lazyScreen(reports, 'ReportsScreen');
+const AppearanceSection = lazyScreen(settings, 'AppearanceSection');
+const CategoriesScreen = lazyScreen(settings, 'CategoriesScreen');
+const CategoryEditSheet = lazyScreen(settings, 'CategoryEditSheet');
+const ConnectionsScreen = lazyScreen(settings, 'ConnectionsScreen');
+const DataScreen = lazyScreen(settings, 'DataScreen');
+const PrivacyScreen = lazyScreen(() => import('./screens/settings/Privacy'), 'PrivacyScreen');
+const AboutScreen = lazyScreen(() => import('./screens/settings/About'), 'AboutScreen');
+const DeviceCheckScreen = lazyScreen(() => import('./screens/settings/DeviceCheck'), 'DeviceCheckScreen');
+const PayeesScreen = lazyScreen(settings, 'PayeesScreen');
+const RenamePayeeSheet = lazyScreen(settings, 'RenamePayeeSheet');
+const SettingsLayout = lazyScreen(settings, 'SettingsLayout');
+const SignInSettingsScreen = lazyScreen(settings, 'SignInSettingsScreen');
+const UsersScreen = lazyScreen(settings, 'UsersScreen');
+const FirstSortScreen = lazyScreen(setup, 'FirstSortScreen');
+const LinkBanksScreen = lazyScreen(setup, 'LinkBanksScreen');
+const StartMonthScreen = lazyScreen(setup, 'StartMonthScreen');
+const WelcomeScreen = lazyScreen(setup, 'WelcomeScreen');
 
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
 /** A `?month=` as 'YYYY-MM'; a malformed one is dropped, so the screen shows this month instead of an error. */
@@ -167,13 +166,8 @@ function Root() {
   if (s && (copy.status === 'idle' ? confirmed : copy.status === 'signed_out')) return <Loading />;
   if (!s) {
     if (session.error instanceof ApiError && session.error.status === 401) return <SignInScreen />;
-    if (session.error)
-      return (
-        <div className="p-4">
-          {/* Cloudflare's daily limit ran out (decisions.md D-37), or no signal: errorMessage() says which. */}
-          <ErrorNote error={session.error} />
-        </div>
-      );
+    // Cloudflare's daily limit ran out (decisions.md D-37), or no signal: it says which, and tries again.
+    if (session.error) return <CantConnect error={session.error} retry={() => void session.refetch()} />;
     return <Loading />;
   }
   if (s.budget.setupStep !== 'done' && !setupPath) {
@@ -576,5 +570,6 @@ export function makeRouter(history?: RouterHistory) {
     defaultPreload: false,
     defaultNotFoundComponent: () => <Navigate to="/budget" replace />,
     defaultPendingComponent: Loading,
+    defaultErrorComponent: RouteProblem,
   });
 }

@@ -215,7 +215,12 @@ export function StatusBanner() {
         <span className="text-md font-bold">You’re offline</span>
         <span className="text-sm leading-snug">
           {copy.status === 'ready'
-            ? `Some changes still work and are sent when you’re back online.${copy.queued ? ` ${copy.queued} waiting to send.` : ''}`
+            ? `Some changes still work and are sent when you’re back online.${copy.queued ? ` ${copy.queued} waiting to send.` : ''}${
+                // With no saved copy, waiting changes live only in memory (copy/copy.ts).
+                copy.queued && !copy.saved
+                  ? ' Keep Ledgerline open until they’re sent. Closing it loses them.'
+                  : ''
+              }`
             : `${loaded ? `Showing what was loaded at ${loaded}.` : 'Showing what was last loaded.'} Changes are off.`}
         </span>
       </div>

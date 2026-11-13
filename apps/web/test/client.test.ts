@@ -232,7 +232,7 @@ describe('error text', () => {
       'Something went wrong. Try again.',
     );
     expect(errorMessage(new ApiError('not_found', 'category'))).toBe(
-      'This was changed or removed. Pull down to refresh.',
+      'This was changed or removed. Check it and try again.',
     );
     expect(errorMessage(new ApiError('http_502', 'Bad Gateway'))).toBe('Something went wrong. Try again.');
     expect(errorMessage(new Error('Response was not JSON.'))).toBe('Something went wrong. Try again.');

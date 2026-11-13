@@ -19,7 +19,7 @@ Check a new text against it, and keep the terms below the same everywhere: code,
 6. **Numbers read right.** Singular and plural (`1 category`, `2 categories`), no sentence about `$0.00`, no signed
    amount in a title. A money confirmation shows cents, not whole dollars.
 7. **Errors say what to do.** Every error is a full sentence the reader can act on. The server never sends a bare
-   noun or field name: a missing thing is `This was changed or removed. Pull down to refresh.` The client shows
+   noun or field name: a missing thing is `This was changed or removed. Check it and try again.` (the app syncs at once, so the screen shows what is there now). The client shows
    `errorMessage()` (`api/client.ts`), never a raw browser or validation message.
 8. **Punctuation.** Full sentences end with a period; titles, labels, chips and buttons don't. No semicolons; use
    two sentences.
@@ -46,4 +46,4 @@ Check a new text against it, and keep the terms below the same everywhere: code,
 | You're offline                                   | No signal, Network request failed             |
 | Something went wrong. Try again.                 | any other wording of it                       |
 | Couldn't save that. Try again.                   | Couldn't save that.                           |
-| This changed. Pull down to refresh.              | Pull to refresh, Your budget changed          |
+| This changed. Check it and try again.            | Pull to refresh, Your budget changed          |

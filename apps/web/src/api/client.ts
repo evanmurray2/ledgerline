@@ -22,6 +22,7 @@ import {
   editOffline,
   read as readCopy,
   readsLocally,
+  syncNow,
   syncSince,
   wipe,
 } from '../copy/copy';
@@ -49,7 +50,7 @@ export const MUTATION_HEADERS: Readonly<Record<string, string>> = {
 
 const TRY_AGAIN = 'Something went wrong. Try again.';
 const OFFLINE = 'You’re offline. Connect to the internet and try again.';
-const CHANGED = 'This was changed or removed. Pull down to refresh.';
+const CHANGED = 'This was changed or removed. Check it and try again.';
 
 /** The next reset of Cloudflare's daily limits (midnight UTC), as a clock time in the budget's time zone. */
 export function dailyResetTime(now = new Date()): string {
@@ -354,6 +355,9 @@ function failure(res: Response, json: unknown, path: string): ApiError {
   const message = parsed.success ? parsed.data.message : TRY_AGAIN;
   if (code === 'read_only' || code === 'readonly') onReadOnly?.();
   if (code === 'resting') connectivity.setReadsPaused(true);
+  // Changed or removed on the server: bring this device's copy up to date, so the screen shows what's there now.
+  if (code === 'not_found' || code === 'changed' || code === 'payee_changed')
+    void syncNow().catch(() => undefined);
   // The session ended (24 hours, or 10 idle minutes): sign in again. The saved copy stays, encrypted (D-45), unless this
   // device was signed out from another one: then it's deleted first. A passkey check ("reauth") is handled by
   // afterPasskeyCheck.
