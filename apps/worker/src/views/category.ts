@@ -112,6 +112,7 @@ export async function categorySheet(
     targetText: r.row.targetText,
     targetHelp: help,
     lastMonthAssigned: cents((last!.results[0] as { amount: number } | undefined)?.amount ?? 0),
+    carry: r.carry,
     rta: cents(f.budget.rta),
     // Paybacks of this category's owed purchases are listed too. Their money is in Ready to Assign, so they say so.
     recent: (recent!.results as ListSource[]).map((t) => {
@@ -193,7 +194,13 @@ export async function assignView(s: Scoped, f: Fresh, month: Month): Promise<Ass
       preselected: r.row.status !== 'low',
     });
   }
-  return { month, rta: cents(f.budget.rta), suggestions };
+  const assigned: AssignView['assigned'] = {};
+  for (const a of await s.all<{ category_id: string; amount: number }>(
+    `SELECT category_id, amount FROM assignment WHERE budget_id = ?1 AND month = ?2 AND amount != 0`,
+    month,
+  ))
+    assigned[a.category_id] = cents(a.amount);
+  return { month, rta: cents(f.budget.rta), suggestions, assigned };
 }
 
 export type { TxnListRow };

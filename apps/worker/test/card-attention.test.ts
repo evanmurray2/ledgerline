@@ -34,6 +34,8 @@ describe('Needs attention: card payments', () => {
     const item = short.attention.find((a) => a.key === `card:${sapphire.accountId}`)!;
     expect(item).toMatchObject({
       section: 'Card payments',
+      // The amount shown is what the card is short.
+      amount: -10_000,
       categoryId: sapphire.categoryId,
       accountId: sapphire.accountId,
       link: 'card',

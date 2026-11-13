@@ -302,7 +302,7 @@ budgetApi.get('/categories/:id/sheet', async (c) => {
 async function addAssignments(
   c: Context<AppEnv>,
   month: Month,
-  items: { categoryId: string; amount: number; set?: boolean }[],
+  items: { categoryId: string; amount: number; set?: boolean; was?: number | undefined }[],
 ): Promise<MutationAck> {
   checkAmounts(...items.map((i) => i.amount));
   const s = scoped(c);
@@ -319,6 +319,22 @@ async function addAssignments(
   if (!b?.budget_start_month || month < b.budget_start_month)
     throw new HttpError(422, 'before_start', 'Months before your budget starts can’t be assigned.');
   if (!inReach(month, currentMonth(now, b.time_zone))) throw new HttpError(422, 'too_far', FAR_MONTH);
+  // What each category holds now: an add sent with what the device saw (`was`) goes ahead only if that is still
+  // so, and no category may end up past MAX_AMOUNT, which an add of allowed amounts could otherwise reach.
+  const held = new Map(
+    (
+      await s.all<{ category_id: string; amount: number }>(
+        `SELECT category_id, amount FROM assignment WHERE budget_id = ?1 AND month = ?2 AND category_id IN (${ids.map((_, i) => `?${i + 3}`).join(',')})`,
+        month,
+        ...ids,
+      )
+    ).map((r) => [r.category_id, r.amount]),
+  );
+  if (items.some((i) => i.was !== undefined && i.was !== (held.get(i.categoryId) ?? 0)))
+    throw new HttpError(409, 'changed', CHANGED);
+  const after = new Map(held);
+  for (const i of items) after.set(i.categoryId, (i.set ? 0 : (after.get(i.categoryId) ?? 0)) + i.amount);
+  checkAmounts(...after.values());
   const stmts = items.map((i) =>
     s.q(
       i.set

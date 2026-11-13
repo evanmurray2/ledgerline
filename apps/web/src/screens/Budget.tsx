@@ -214,7 +214,6 @@ export function BudgetScreen() {
   const { month, current } = useBudgetMonth();
   useScreen(view === 'attention' ? 'budget.attention' : 'budget');
   const q = useBudget(month);
-  const session = useSession();
   const b = q.data;
   const scroller = useRef<HTMLDivElement>(null);
   const thin = useScrolledDown(scroller, !!b);
@@ -230,12 +229,8 @@ export function BudgetScreen() {
 
   const empty = allAssignedZero(b) && b.cards.every((c) => c.available === 0);
   const targetsSearch = { month: month === b.currentMonth ? undefined : month };
-  const today = session.data?.budget.today ?? '';
-  const newMonth =
-    month === b.currentMonth &&
-    today.endsWith('-01') &&
-    !empty &&
-    b.groups.every((g) => g.categories.every((c) => c.assigned === 0));
+  // This month's "has started" card: it decides itself whether to show (nothing assigned yet, or just filled).
+  const newMonth = month === b.currentMonth && !empty;
   // Ready to Assign below zero has its own banner (OverAssigned), so it isn't counted again here.
   const count = b.attention.filter((a) => a.section !== 'Low' && a.section !== 'Ready to Assign').length;
   const content = (
@@ -243,7 +238,7 @@ export function BudgetScreen() {
       <PastNote month={month} current={b.currentMonth} />
       <OverAssigned b={b} month={month} />
       {empty && <FirstBudget b={b} />}
-      {newMonth && <NewMonth b={b} month={month} />}
+      {newMonth && <NewMonth key={month} b={b} month={month} />}
       {view !== 'all' ? (
         <AttentionList b={b} month={month} />
       ) : desktop ? (

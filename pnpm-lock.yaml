@@ -47,6 +47,9 @@ importers:
       '@ledgerline/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@ledgerline/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@ledgerline/seal':
         specifier: workspace:*
         version: link:../../packages/seal

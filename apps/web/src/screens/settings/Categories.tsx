@@ -40,7 +40,8 @@ export function CategoriesScreen() {
   const desktop = useIsDesktop();
   const q = useCategoriesSettings();
   const archive = useMoneyMutation(
-    (v: { id: string; archived: boolean }) => api.archiveCategory(v.id, v.archived),
+    (v: { id: string; archived: boolean; giveBack?: { month: string; amount: number }[] }) =>
+      api.archiveCategory(v.id, v.archived, v.giveBack),
     { invalidate: [qk.categories] },
   );
   const [showArchived, setShowArchived] = useState(false);
@@ -78,8 +79,9 @@ export function CategoriesScreen() {
   };
   const groups = useReorder(mine.length, moveGroup);
   const doArchive = async (id: string, name: string, archived: boolean) => {
+    let returned: { month: string; amount: number }[];
     try {
-      await archive.mutateAsync({ id, archived });
+      ({ returned } = await archive.mutateAsync({ id, archived }));
     } catch (e) {
       toast.show({ text: errorMessage(e) });
       return;
@@ -87,8 +89,13 @@ export function CategoriesScreen() {
     toast.show({
       text: `${name} ${archived ? 'archived' : 'restored'}`,
       undo: async () => {
-        await archive.mutateAsync({ id, archived: !archived });
-        usage.undo(archived ? 'archive' : 'restore');
+        try {
+          // Undo of an archive gives back the money it moved to Ready to Assign.
+          await archive.mutateAsync({ id, archived: !archived, giveBack: returned });
+          usage.undo(archived ? 'archive' : 'restore');
+        } catch (e) {
+          toast.show({ text: errorMessage(e) });
+        }
       },
     });
   };
@@ -292,6 +299,21 @@ export function CategoryEditSheet() {
     groups[0]?.id ??
     '';
   const k = kind ?? (existing?.kind === 'saving' ? 'saving' : 'spending');
+  // A link to a category or group that was removed (or never was): say so, rather than open an empty form.
+  const gone = !!q.data && !isNew && (groupEditId ? !editingGroup : !existing);
+  // Nothing to save until something changed.
+  const unchanged = groupEditId
+    ? !!editingGroup && n.trim() === editingGroup.name && bills === editingGroup.isBills
+    : !isNew && !!existing && n.trim() === existing.name && g === existing.groupId && k === existing.kind;
+  // Two categories with one name can't be told apart on Budget, Activity or Reports (the server checks too).
+  const nameKey = (a: string) => a.trim().toLocaleLowerCase().replace(/[‘’]/g, "'");
+  const taken =
+    !isGroup &&
+    !!n.trim() &&
+    !(existing && nameKey(existing.name) === nameKey(n)) &&
+    [...(q.data?.groups ?? []).flatMap((x) => x.categories), ...(q.data?.archived ?? [])].some(
+      (c) => c.id !== existing?.id && nameKey(c.name) === nameKey(n),
+    );
   const save = async (thenTarget = false) => {
     setBusy(true);
     setError(null);
@@ -310,8 +332,13 @@ export function CategoryEditSheet() {
       await qc.invalidateQueries({ queryKey: qk.categories });
       void qc.invalidateQueries({ queryKey: ['budget'] });
       void qc.invalidateQueries({ queryKey: ['activity'] });
+      // The new category's sheet is done: Back from the target goes to Categories, not to an empty New category.
       if (thenTarget && newId)
-        void navigate({ to: `/budget/category/${newId}/target`, search: { from: 'categories' } });
+        void navigate({
+          to: `/budget/category/${newId}/target`,
+          search: { from: 'categories' },
+          replace: true,
+        });
       else close();
     } catch (e) {
       setError(e);
@@ -334,8 +361,13 @@ export function CategoryEditSheet() {
         toast.show({
           text: `${existing.name} archived. Reports keep its history.`,
           undo: async () => {
-            await api.archiveCategory(existing.id, false);
-            usage.undo('archive');
+            try {
+              // The money the remove moved to Ready to Assign goes back to the category.
+              await api.archiveCategory(existing.id, false, r.returned);
+              usage.undo('archive');
+            } catch (e) {
+              toast.show({ text: errorMessage(e) });
+            }
             refresh();
           },
         });
@@ -375,8 +407,18 @@ export function CategoryEditSheet() {
             mutates="offline"
             track="category_edit.save"
             busy={busy}
-            disabled={!n.trim() || busy || !canWrite}
-            why={!n.trim() ? 'Enter a name to save' : ''}
+            disabled={!n.trim() || busy || !canWrite || unchanged || taken || gone}
+            why={
+              gone
+                ? ''
+                : !n.trim()
+                  ? 'Enter a name to save'
+                  : taken
+                    ? 'You already have a category with this name'
+                    : unchanged
+                      ? 'Change something to save'
+                      : ''
+            }
             onClick={() => void save()}
           >
             {isNew ? (isGroup ? 'Add group' : 'Add category') : 'Save'}
@@ -385,7 +427,7 @@ export function CategoryEditSheet() {
             <SecondaryButton
               mutates="offline"
               track="category_edit.save_target"
-              disabled={!n.trim() || busy || !canWrite}
+              disabled={!n.trim() || busy || !canWrite || taken}
               onClick={() => void save(true)}
             >
               Add and set a target
@@ -394,116 +436,126 @@ export function CategoryEditSheet() {
         </div>
       }
     >
-      <div className="flex flex-col gap-3.5 pb-4">
-        <Field label="Name">
-          <input
-            className={inputClass}
-            value={n}
-            maxLength={60}
-            placeholder={isGroup ? 'e.g. Kids' : 'e.g. Climbing'}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </Field>
-        {isGroup ? (
-          <Toggle
-            label="Bills group"
-            help="Its categories never show as Low"
-            checked={bills}
-            onChange={setIsBills}
-          />
-        ) : (
-          <>
-            <Field label="Group">
-              <select className={inputClass} value={g} onChange={(e) => setGroupId(e.target.value)}>
-                {groups.map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-semibold text-ink-2">In reports, money out of it counts as</span>
-              <Segmented
-                label="Counts as"
-                value={k}
-                onChange={setKind}
-                options={[
-                  ['spending', 'Spending'],
-                  ['saving', 'Saving or investing'],
-                ]}
-              />
-              <span className="text-xs leading-snug text-muted">
-                {k === 'saving'
-                  ? 'For money you move out to grow, like a brokerage or an IRA. Reports show it as Invested.'
-                  : 'Most categories. Money you save to spend later, like Vacation, is Spending too.'}
-              </span>
-            </div>
-            {!isNew && existing && (
-              <Link
-                to={`/budget/category/${existing.id}/target`}
-                search={{ from: 'categories' }}
-                data-track="category_edit.target"
-                className="flex min-h-14 items-center justify-between rounded-lg border border-line px-3 text-ink no-underline"
-              >
-                <span className="flex flex-col gap-0.5">
-                  <span className="text-base font-semibold">Target</span>
-                  <span className="text-xs text-muted">{existing.meta}</span>
+      {gone ? (
+        <p className="m-0 text-md text-muted">This was changed or removed.</p>
+      ) : (
+        <div className="flex flex-col gap-3.5 pb-4">
+          <Field label="Name">
+            <input
+              className={inputClass}
+              value={n}
+              maxLength={60}
+              placeholder={isGroup ? 'e.g. Kids' : 'e.g. Climbing'}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </Field>
+          {isGroup ? (
+            <Toggle
+              label="Bills group"
+              help="Its categories never show as Low"
+              checked={bills}
+              onChange={setIsBills}
+            />
+          ) : (
+            <>
+              <Field label="Group">
+                <select className={inputClass} value={g} onChange={(e) => setGroupId(e.target.value)}>
+                  {groups.map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm font-semibold text-ink-2">
+                  In reports, money out of it counts as
                 </span>
-                <Icon name="chevR" size={18} className="text-faint" />
-              </Link>
-            )}
-          </>
-        )}
-        {editingGroup &&
-          (editingGroup.categories.length > 0 ? (
-            <span className="text-xs leading-snug text-muted">
-              To remove this group, move or remove its categories first.
-            </span>
-          ) : askingGroup ? (
-            <ConfirmInline
-              label={`Remove ${editingGroup.name}`}
-              confirmLabel="Remove"
-              track="categories.remove_group.confirm"
-              onConfirm={() => removeGroup(editingGroup)}
-              onCancel={() => setAskingGroup(false)}
-              className="mt-3"
-            >
-              Remove the group {editingGroup.name}?
-            </ConfirmInline>
-          ) : (
-            <DangerLink track="categories.remove_group" onClick={() => setAskingGroup(true)} className="mt-3">
-              Remove {editingGroup.name}…
-            </DangerLink>
-          ))}
-        {!isNew &&
-          existing &&
-          (existing.available < 0 ? (
-            // Archived, its overspending would drop out of Budget's attention while still counting.
-            <span className="mt-3 text-xs leading-snug text-muted">
-              To remove {existing.name}, cover its {formatCents(-existing.available)} overspending first.
-            </span>
-          ) : asking ? (
-            <ConfirmInline
-              label={`Remove ${existing.name}`}
-              confirmLabel="Remove"
-              track="category_edit.remove.confirm"
-              onConfirm={() => void remove()}
-              onCancel={() => setAsking(false)}
-              className="mt-3"
-            >
-              Remove {existing.name}?
-              {existing.available > 0
-                ? ` Its ${formatCents(existing.available)} goes back to Ready to Assign.`
-                : ''}{' '}
-              If it has history, it’s archived and reports keep it.
-            </ConfirmInline>
-          ) : (
-            <DangerLink track="category_edit.remove" onClick={() => setAsking(true)} className="mt-3">
-              Remove {existing.name}…
-            </DangerLink>
-          ))}
-      </div>
+                <Segmented
+                  label="Counts as"
+                  value={k}
+                  onChange={setKind}
+                  options={[
+                    ['spending', 'Spending'],
+                    ['saving', 'Saving or investing'],
+                  ]}
+                />
+                <span className="text-xs leading-snug text-muted">
+                  {k === 'saving'
+                    ? 'For money you move out to grow, like a brokerage or an IRA. Reports show it as Invested.'
+                    : 'Most categories. Money you save to spend later, like Vacation, is Spending too.'}
+                </span>
+              </div>
+              {!isNew && existing && (
+                <Link
+                  to={`/budget/category/${existing.id}/target`}
+                  search={{ from: 'categories' }}
+                  data-track="category_edit.target"
+                  className="flex min-h-14 items-center justify-between rounded-lg border border-line px-3 text-ink no-underline"
+                >
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-base font-semibold">Target</span>
+                    <span className="text-xs text-muted">{existing.meta}</span>
+                  </span>
+                  <Icon name="chevR" size={18} className="text-faint" />
+                </Link>
+              )}
+            </>
+          )}
+          {editingGroup &&
+            (editingGroup.categories.length > 0 ? (
+              <span className="text-xs leading-snug text-muted">
+                To remove this group, move or remove its categories first.
+              </span>
+            ) : askingGroup ? (
+              <ConfirmInline
+                label={`Remove ${editingGroup.name}`}
+                confirmLabel="Remove"
+                track="categories.remove_group.confirm"
+                onConfirm={() => removeGroup(editingGroup)}
+                onCancel={() => setAskingGroup(false)}
+                className="mt-3"
+              >
+                Remove the group {editingGroup.name}?
+              </ConfirmInline>
+            ) : (
+              <DangerLink
+                track="categories.remove_group"
+                onClick={() => setAskingGroup(true)}
+                className="mt-3"
+              >
+                Remove {editingGroup.name}…
+              </DangerLink>
+            ))}
+          {!isNew &&
+            existing &&
+            (existing.available < 0 ? (
+              // Archived, its overspending would drop out of Budget's attention while still counting.
+              <span className="mt-3 text-xs leading-snug text-muted">
+                To remove {existing.name}, cover its {formatCents(-existing.available)} overspending first.
+              </span>
+            ) : asking ? (
+              <ConfirmInline
+                label={`Remove ${existing.name}`}
+                confirmLabel="Remove"
+                track="category_edit.remove.confirm"
+                onConfirm={() => void remove()}
+                onCancel={() => setAsking(false)}
+                className="mt-3"
+              >
+                Remove {existing.name}?
+                {existing.available > 0
+                  ? ` Its ${formatCents(existing.available)} goes back to Ready to Assign.`
+                  : ''}{' '}
+                If it has history, it’s archived and reports keep it.
+              </ConfirmInline>
+            ) : (
+              <DangerLink track="category_edit.remove" onClick={() => setAsking(true)} className="mt-3">
+                Remove {existing.name}…
+              </DangerLink>
+            ))}
+        </div>
+      )}
     </Sheet>
   );
 }

@@ -65,6 +65,24 @@ describe('the same edit on the phone and on the server', () => {
       'POST /budget/assign',
       () => ['POST', '/api/budget/assign', { month, items: [{ categoryId: spending[0], amount: 1234 }] }],
     ],
+    // An add sent with what the device saw assigned (the Assign sheet): checked on both sides.
+    [
+      'assign against what the device saw',
+      'POST /budget/assign',
+      async () => {
+        const was = await a.db
+          .prepare(
+            `SELECT coalesce(sum(amount), 0) AS n FROM assignment WHERE category_id = ?1 AND month = ?2`,
+          )
+          .bind(spending[0], month)
+          .first<{ n: number }>();
+        return [
+          'POST',
+          '/api/budget/assign',
+          { month, items: [{ categoryId: spending[0], amount: 55, was: was!.n }] },
+        ];
+      },
+    ],
     [
       'set',
       'POST /budget/set',
@@ -113,6 +131,16 @@ describe('the same edit on the phone and on the server', () => {
         'POST',
         `/api/settings/categories/${spending[7]}/archive`,
         { archived: true, available: 500, through: (await a.state()).through },
+      ],
+    ],
+    // Undo of that archive: the money it moved to Ready to Assign goes back.
+    [
+      'restore it with its money back',
+      'POST /settings/categories/:id/archive',
+      () => [
+        'POST',
+        `/api/settings/categories/${spending[7]}/archive`,
+        { archived: false, giveBack: [{ month, amount: 500 }] },
       ],
     ],
     // Edits that make rows: the ids come from the edit's own id (http/ids.ts).
