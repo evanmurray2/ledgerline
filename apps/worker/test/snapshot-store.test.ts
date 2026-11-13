@@ -353,7 +353,17 @@ describe('the store of sealed snapshots', () => {
           s2,
         ),
       ).toEqual({ ok: true });
-      await snapshotPrune(x.db);
+      // The first has more chunks than one call removes: while its row is stored, so is the entry it stands at.
+      await x.db
+        .prepare(
+          `INSERT INTO snapshot_chunk (snapshot_id, k, bytes)
+           SELECT ?1, 100 + value, x'00' FROM json_each('[1,2,3,4,5,6,7,8,9,10]')`,
+        )
+        .bind(s1)
+        .run();
+      expect(await snapshotPrune(x.db)).toMatchObject({ more: true });
+      expect(await numbers(x)).toEqual([1, 4, 7, 8, 9]);
+      while ((await snapshotPrune(x.db)).more);
       expect((await snapshotList(x.db)).map((s) => s.id)).toEqual([s3, s2]);
       expect(await snapshotChunkOf(x.db, s1, 1)).toBeNull();
       expect(await numbers(x)).toEqual([1, 7, 8, 9]);

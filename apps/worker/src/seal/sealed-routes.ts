@@ -3,6 +3,7 @@
 // open one (the `x-ledgerline-sealed` header): an older app is told to update, as before.
 import {
   type ConnectionsView,
+  type HealthView,
   LinkFinish,
   type LinkFinishResult,
   LinkTokenRequest,
@@ -16,7 +17,7 @@ import { requestNow } from '../http/clock.js';
 import { canLinkBanks, type AppEnv } from '../http/context.js';
 import { csrf } from '../http/security.js';
 import { ITEM_LIMIT } from '../routes/settings/connections.js';
-import { classifyUsage, dailyLimits, usageToday } from '../sync/breaker.js';
+import { classifyUsage, dailyLimits, usageToday, utcDay } from '../sync/breaker.js';
 import { makeProvider } from '../sync/provider.js';
 import { sealedFetchId } from './fetch-job.js';
 import { abandonSealedRun, workerKeys } from './runs.js';
@@ -104,6 +105,45 @@ sealedApi.get('/settings/connections', async (c) => {
       linkedAt: r.linked_at,
       setupDone: true,
     })),
+  };
+  return c.json(view);
+});
+
+/**
+ * Server health for the ops token (routes/ops.ts has the same answer for a budget that is not sealed): each
+ * link's last complete fetch, from `bank_link`, and today's usage. The old tables are not read: phase 6 empties
+ * them (seal/purge.ts). A sealed budget's bank rows are filed on its devices, so the server has no lag of its own.
+ */
+sealedApi.get('/health', async (c) => {
+  const now = requestNow(c);
+  const rows = (
+    await c.env.DB.prepare(
+      `SELECT connection_id, last_fetched_at FROM bank_link
+       WHERE budget_id = ?1 AND provider = 'plaid' AND status != 'removed' ORDER BY linked_at`,
+    )
+      .bind(c.get('budgetId'))
+      .all<{ connection_id: string; last_fetched_at: number | null }>()
+  ).results;
+  const u = await usageToday(c.env, now);
+  const limits = dailyLimits(c.env);
+  const connections = rows.map((x) => ({
+    id: x.connection_id,
+    lastSyncedAt: x.last_fetched_at,
+    stale: !x.last_fetched_at || now - x.last_fetched_at > 24 * 3_600_000,
+  }));
+  const view: HealthView = {
+    ok:
+      connections.every((x) => !x.stale) &&
+      classifyUsage(u.written, u.read, u.do, u.workers, limits) === 'normal',
+    connections,
+    watermarkLag: 0,
+    usage: {
+      day: utcDay(now),
+      rowsRead: u.read,
+      rowsWritten: u.written,
+      readPct: Math.round((u.read * 1000) / limits.rowsRead) / 10,
+      writePct: Math.round((u.written * 1000) / limits.rowsWritten) / 10,
+    },
   };
   return c.json(view);
 });
@@ -329,7 +369,7 @@ sealedApi.onError((_e, c) => c.json({ error: 'internal', message: TRY_AGAIN }, 5
 /** The paths this answers for a sealed budget (store/budget-store.ts routes them here). */
 export function sealedPath(method: string, path: string): boolean {
   if (path === '/api/session') return method === 'GET';
-  if (path === '/api/settings/connections') return method === 'GET';
+  if (path === '/api/settings/connections' || path === '/api/health') return method === 'GET';
   if (/^\/api\/settings\/connections\/(refresh|link-token|link-finish|[^/]+\/(refresh|remove))$/.test(path))
     return method === 'POST';
   if (path === '/api/usage') return method === 'POST' || method === 'DELETE';

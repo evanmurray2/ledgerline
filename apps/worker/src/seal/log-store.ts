@@ -2,7 +2,12 @@
 // migration 0005). It keeps each entry as its device signed it and where the chain stands, and takes a write only
 // when the log's own rules (packages/seal, the same code every device runs) and the server's rules for a write
 // (server-append.ts) both pass: all entries of a write, or none. It reads an entry's clear header and never its
-// sealed body. Nothing calls this before the cutover.
+// sealed body.
+//
+// One lock: a write is checked against the state it read, then stored in one transaction that first checks the log
+// still ends where that state does (the fence in `store`). Two writes checked against the same state can't both be
+// stored: the second finds the log moved on and is told "behind". Everything the check read that a write changes
+// (the chain state, the device counters, the day's count of never-held entries) is written in that transaction.
 import type { Db, Stmt } from '@ledgerline/db/sql';
 import {
   AppendRefused,
@@ -12,6 +17,7 @@ import {
   fromHex,
   fromStored,
   KIND,
+  MAX_DEVICES,
   readEntry,
   toHex,
   toStored,
@@ -28,7 +34,14 @@ export { LOG_PROCESSING_VERSION, LOG_SCHEMA_VERSION };
 
 /** Entries of the kinds the breaker never holds back that one budget may store in a day (5.3 check 7). */
 export const KEY_ENTRIES_A_DAY = 32;
-const NEVER_HELD = [KIND.slotChange, KIND.keyChange, KIND.signOut, KIND.intent, KIND.cancel];
+const NEVER_HELD: readonly number[] = [
+  KIND.slotChange,
+  KIND.keyChange,
+  KIND.signOut,
+  KIND.intent,
+  KIND.cancel,
+];
+const DAY_MS = 86_400_000;
 
 export interface LogDeps {
   db: Db;
@@ -55,11 +68,13 @@ export type AppendResult =
   | { ok: false; why: 'behind'; number: number; retry: true }
   | { ok: false; why: RefusedWhy; detail: string; retry: boolean };
 
-// ---- the chain state as JSON: bytes and maps keep their kind
+// ---- bytes as text: the chain state's JSON, and entries stored before Nov 13, 2026
 
-const b64 = (b: Uint8Array): string => {
+/** Base64 of `b`, in pieces: a byte at a time cost about 2 ms for each 64 KB. */
+export const b64 = (b: Uint8Array): string => {
   let s = '';
-  for (const x of b) s += String.fromCharCode(x);
+  for (let i = 0; i < b.length; i += 0x8000)
+    s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000) as unknown as number[]);
   return btoa(s);
 };
 const unb64 = (s: string): Uint8Array<ArrayBuffer> => {
@@ -68,6 +83,22 @@ const unb64 = (s: string): Uint8Array<ArrayBuffer> => {
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 };
+
+/**
+ * An entry's stored bytes. An entry is stored as a BLOB; before Nov 13, 2026 it was base64 text, in the same
+ * column, and those rows stay as they are.
+ */
+export function entryBytes(v: unknown): Uint8Array<ArrayBuffer> {
+  if (typeof v === 'string') return unb64(v);
+  if (v instanceof Uint8Array) return new Uint8Array(v);
+  if (v instanceof ArrayBuffer) return new Uint8Array(v);
+  throw new TypeError('not stored entry bytes');
+}
+
+/** An entry's stored bytes as base64, for an answer: a row stored as text already is that. */
+export function entryText(v: unknown): string {
+  return typeof v === 'string' ? v : b64(entryBytes(v));
+}
 
 export function stateToJson(s: StoredChain): string {
   return JSON.stringify(s, (_k, v: unknown) => {
@@ -88,6 +119,63 @@ export function stateFromJson(text: string): StoredChain {
   }) as StoredChain;
 }
 
+// ---- where the chain stands
+
+/**
+ * The server keeps the chain state (packages/seal chain.ts) as one JSON value in `log_state`, without the two
+ * parts that grow with the budget's life (docs/privacy-keys.md 7.2): each device's last counter is a row of its own
+ * in `store_note` (`device:<id>`), and the list of public entries is not kept, since the server never reads it
+ * (the public entries are rows of `log_entry`, which are never deleted). So an append reads and writes the
+ * counters of its own devices only, and a JSON value that the log's own limits keep small (slots, open intents,
+ * inbox keys, key versions).
+ *
+ * A state stored before Nov 13, 2026 holds every counter in the JSON value: those count as rows until the next
+ * write moves them out. The value written keeps `counters` and `publics`, empty, so that code from before then
+ * still reads it.
+ */
+const DEVICE_NOTE = 'device:';
+/** Every key of `store_note` from `device:` up to `device;`: the device counters, read by the primary key. */
+const DEVICE_RANGE = `key >= 'device:' AND key < 'device;'`;
+
+interface Loaded {
+  state: ChainState;
+  /** Counters still in the JSON value (a state stored before Nov 13, 2026); each becomes a row at the next write. */
+  inJson: Map<string, number>;
+}
+
+async function loadState(db: Db, devices: readonly string[]): Promise<Loaded | null> {
+  const r = await db.prepare(`SELECT state FROM log_state WHERE id = 1`).first<{ state: string }>();
+  if (!r) return null;
+  const stored = stateFromJson(r.state) as StoredChain & { counters?: unknown };
+  const inJson = stored.counters instanceof Map ? (stored.counters as Map<string, number>) : new Map();
+  const counters = new Map<string, number>();
+  if (devices.length) {
+    const rows = await db
+      .prepare(
+        `SELECT key, value FROM store_note WHERE key IN (${devices.map((_, i) => `?${i + 1}`).join(', ')})`,
+      )
+      .bind(...devices.map((x) => DEVICE_NOTE + x))
+      .all<{ key: string; value: number }>();
+    for (const x of rows.results) counters.set(x.key.slice(DEVICE_NOTE.length), x.value);
+  }
+  // A counter in the JSON value is the newer one: code from before Nov 13, 2026 may have written it since.
+  for (const x of devices) {
+    const v = inJson.get(x);
+    if (v !== undefined) counters.set(x, v);
+  }
+  const state = await fromStored({ ...stored, counters, public: { ...stored.public, publics: [] } });
+  return { state, inJson };
+}
+
+/** How many devices have written to the log, rows and JSON value together. */
+async function deviceCount(db: Db, inJson: Map<string, number>): Promise<number> {
+  const rows = await db.prepare(`SELECT key FROM store_note WHERE ${DEVICE_RANGE}`).all<{ key: string }>();
+  const ids = new Set(rows.results.map((x) => x.key));
+  let n = ids.size;
+  for (const x of inJson.keys()) if (!ids.has(DEVICE_NOTE + x)) n++;
+  return n;
+}
+
 // ---- reading
 
 /** Where the log stands: the number of its last entry (0: no log yet). */
@@ -97,9 +185,17 @@ export async function logHead(db: Db): Promise<number> {
   );
 }
 
-async function loadState(db: Db): Promise<ChainState | null> {
-  const r = await db.prepare(`SELECT state FROM log_state WHERE id = 1`).first<{ state: string }>();
-  return r ? fromStored(stateFromJson(r.state)) : null;
+/** The entries after `after`, in order, as stored: a BLOB, or base64 text for one stored before Nov 13, 2026. */
+export async function logRowsAfter(
+  db: Db,
+  after: number,
+  limit: number,
+): Promise<{ number: number; bytes: unknown }[]> {
+  const rows = await db
+    .prepare(`SELECT number, bytes FROM log_entry WHERE number > ?1 ORDER BY number LIMIT ?2`)
+    .bind(after, limit)
+    .all<{ number: number; bytes: unknown }>();
+  return rows.results;
 }
 
 /** The entries after `after`, in order, as their devices encoded them. */
@@ -108,23 +204,40 @@ export async function logAfter(
   after: number,
   limit: number,
 ): Promise<{ number: number; bytes: Uint8Array }[]> {
-  const rows = await db
-    .prepare(`SELECT number, bytes FROM log_entry WHERE number > ?1 ORDER BY number LIMIT ?2`)
-    .bind(after, limit)
-    .all<{ number: number; bytes: string }>();
-  return rows.results.map((r) => ({ number: r.number, bytes: unb64(r.bytes) }));
+  return (await logRowsAfter(db, after, limit)).map((r) => ({
+    number: r.number,
+    bytes: entryBytes(r.bytes),
+  }));
 }
 
 // ---- writing
 
-async function context(d: LogDeps): Promise<AppendContext> {
-  const day = d.now - (d.now % 86_400_000);
-  const used = await d.db
+/** The never-held entries this budget stored today (5.3 check 7). */
+interface KeyCount {
+  day: number;
+  used: number;
+}
+
+/**
+ * The day's count of never-held entries: noted in `store_note` (`key_day`, `key_entries`), because the delete
+ * rule may remove a sign-out stored today, and counted from today's rows of `log_entry` too, so that a count from
+ * before the note existed still holds. The higher of the two.
+ */
+async function keyCount(db: Db, now: number): Promise<KeyCount> {
+  const day = Math.floor(now / DAY_MS);
+  const r = await db
     .prepare(
-      `SELECT count(*) AS n FROM log_entry WHERE created_at >= ?1 AND kind IN (${NEVER_HELD.join(', ')})`,
+      `SELECT (SELECT count(*) FROM log_entry WHERE created_at >= ?1 AND kind IN (${NEVER_HELD.join(', ')})) AS counted,
+              (SELECT value FROM store_note WHERE key = 'key_day') AS noted_day,
+              (SELECT value FROM store_note WHERE key = 'key_entries') AS noted`,
     )
-    .bind(day)
-    .first<{ n: number }>();
+    .bind(day * DAY_MS)
+    .first<{ counted: number; noted_day: number | null; noted: number | null }>();
+  const noted = r?.noted_day === day ? (r.noted ?? 0) : 0;
+  return { day, used: Math.max(noted, r?.counted ?? 0) };
+}
+
+function context(d: LogDeps, keys: KeyCount): AppendContext {
   return {
     now: d.now,
     freshWay: d.freshWay,
@@ -140,7 +253,7 @@ async function context(d: LogDeps): Promise<AppendContext> {
     lastCompleteRun: d.lastCompleteRun,
     receiptHashes: d.receiptHashes,
     resting: d.resting,
-    keyEntriesLeft: Math.max(0, KEY_ENTRIES_A_DAY - (used?.n ?? 0)),
+    keyEntriesLeft: Math.max(0, KEY_ENTRIES_A_DAY - keys.used),
   };
 }
 
@@ -148,8 +261,16 @@ function storeStmts(
   db: Db,
   entries: { e: Entry; bytes: Uint8Array }[],
   state: ChainState,
+  inJson: Map<string, number>,
+  keys: KeyCount,
   now: number,
 ): Stmt[] {
+  // The counters this write moved, and any still in the JSON value, as rows.
+  const counters = new Map(inJson);
+  for (const { e } of entries) counters.set(e.header.deviceId, state.counters.get(e.header.deviceId)!);
+  const stored = toStored(state);
+  const json = stateToJson({ ...stored, counters: new Map(), public: { ...stored.public, publics: [] } });
+  const keyEntries = entries.filter(({ e }) => NEVER_HELD.includes(e.header.kind)).length;
   return [
     ...entries.map(({ e, bytes }) =>
       db
@@ -162,16 +283,33 @@ function storeStmts(
           e.header.part,
           e.header.kind,
           toHex(e.hash),
-          b64(bytes),
+          bytes,
           now,
         ),
     ),
+    ...[...counters].map(([device, n]) =>
+      db
+        .prepare(
+          `INSERT INTO store_note (key, value) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+        )
+        .bind(DEVICE_NOTE + device, n),
+    ),
+    ...(keyEntries
+      ? [
+          db
+            .prepare(
+              `INSERT INTO store_note (key, value) VALUES ('key_day', ?1), ('key_entries', ?2)
+               ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+            )
+            .bind(keys.day, keys.used + keyEntries),
+        ]
+      : []),
     db
       .prepare(
         `INSERT INTO log_state (id, number, state, updated_at) VALUES (1, ?1, ?2, ?3)
          ON CONFLICT (id) DO UPDATE SET number = excluded.number, state = excluded.state, updated_at = excluded.updated_at`,
       )
-      .bind(state.number, stateToJson(toStored(state)), now),
+      .bind(state.number, json, now),
   ];
 }
 
@@ -191,6 +329,7 @@ export async function logGenesis(d: LogDeps, bytes: Uint8Array): Promise<AppendR
   const head = await logHead(d.db);
   let e: Entry;
   let state: ChainState;
+  let keys: KeyCount;
   try {
     e = await readEntry(bytes);
     if (head !== 0) {
@@ -201,11 +340,12 @@ export async function logGenesis(d: LogDeps, bytes: Uint8Array): Promise<AppendR
       // A budget starts once: another first entry can never be stored, so the device must not try again.
       return { ok: false, why: 'rules', detail: 'a log exists', retry: false };
     }
-    state = await checkGenesisWrite(e, d.budgetId, await context(d));
+    keys = await keyCount(d.db, d.now);
+    state = await checkGenesisWrite(e, d.budgetId, context(d, keys));
   } catch (x) {
     return refusal(x);
   }
-  return store(d, 0, [{ e, bytes }], state, null);
+  return store(d, 0, [{ e, bytes }], state, null, new Map(), keys);
 }
 
 /**
@@ -213,18 +353,31 @@ export async function logGenesis(d: LogDeps, bytes: Uint8Array): Promise<AppendR
  * log already holds whole answers "already" and stores nothing (check 3).
  */
 export async function logAppend(d: LogDeps, base: number, encoded: Uint8Array[]): Promise<AppendResult> {
-  const state = await loadState(d.db);
-  if (!state) return { ok: false, why: 'rules', detail: 'no log', retry: false };
-  let entries: { e: Entry; bytes: Uint8Array }[];
-  let next: ChainState | 'already stored';
+  const entries: { e: Entry; bytes: Uint8Array }[] = [];
   try {
-    entries = [];
     for (const bytes of encoded) entries.push({ e: await readEntry(bytes), bytes });
+  } catch (x) {
+    return refusal(x);
+  }
+  const devices = [...new Set(entries.map((x) => x.e.header.deviceId))];
+  const loaded = await loadState(d.db, devices);
+  if (!loaded) return { ok: false, why: 'rules', detail: 'no log', retry: false };
+  const { state, inJson } = loaded;
+  let next: ChainState | 'already stored';
+  let keys: KeyCount;
+  try {
+    keys = await keyCount(d.db, d.now);
     next = await checkWrite(
       state,
       entries.map((x) => x.e),
-      await context(d),
+      context(d, keys),
     );
+    // The chain's limit on devices (MAX_DEVICES), which it can't see in the counters of this write's devices.
+    if (next !== 'already stored') {
+      const fresh = devices.filter((x) => !state.counters.has(x)).length;
+      if (fresh && (await deviceCount(d.db, inJson)) + fresh > MAX_DEVICES)
+        throw new AppendRefused('rules', 'too many devices');
+    }
   } catch (x) {
     // A write made on an older log is refused by the chain's rules; say "behind", so the device reads and redoes.
     if (base !== state.number && x instanceof AppendRefused && x.why === 'rules')
@@ -233,7 +386,7 @@ export async function logAppend(d: LogDeps, base: number, encoded: Uint8Array[])
   }
   if (next === 'already stored') return { ok: true, number: state.number, stored: 'already' };
   if (base !== state.number) return { ok: false, why: 'behind', number: state.number, retry: true };
-  return store(d, base, entries, next, state);
+  return store(d, base, entries, next, state, inJson, keys);
 }
 
 /** All of the write and the new state in one step, only if the log still ends at `base`. */
@@ -243,6 +396,8 @@ async function store(
   entries: { e: Entry; bytes: Uint8Array }[],
   state: ChainState,
   before: ChainState | null,
+  inJson: Map<string, number>,
+  keys: KeyCount,
 ): Promise<AppendResult> {
   const stamps = d.stamps ? await d.stamps(before, state) : [];
   try {
@@ -256,7 +411,7 @@ async function store(
         base,
         d.lastCompleteRun,
       ),
-      ...storeStmts(d.db, entries, state, d.now),
+      ...storeStmts(d.db, entries, state, inJson, keys, d.now),
       ...stamps,
     ]);
   } catch (x) {
