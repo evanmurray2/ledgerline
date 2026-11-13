@@ -37,6 +37,7 @@ import {
 } from '../keys/new-budget';
 import { WORKER_RUN_KEYS } from '../keys/worker-keys';
 import { fetchPublicEntries, logDeviceId, newUlid, openSealedBudget } from './sealed';
+import { forgetSealed, keepPublicSeen, lastPublicSeen, rememberSealed, sealedBudgets } from './sealed-marks';
 import { addPasskeyWay, authPubOf, openPlans, type Ways } from './sealed-ways';
 import { ACTION, type Entry, passkeySlotId, type PublicState, walkPublic, zeroize } from '@ledgerline/seal';
 import { mergedSession, NOT_LOCKED } from './sealed-session';
@@ -189,61 +190,10 @@ export function noteSealed(s: SealedSession): void {
   // A new budget is remembered once this device has locked it (startBudget below), not before.
   if (!s.fresh) rememberSealed(s.budgetId);
 }
-/** The budgets this device knows as sealed (their ids, no more), kept outside the copy so a wipe leaves them. */
-const sealedBudgets = (): string[] => {
-  try {
-    return (localStorage.getItem(SEALED_FLAG) ?? '').split(',').filter(Boolean);
-  } catch {
-    return [];
-  }
-};
-function rememberSealed(budgetId: string): void {
-  try {
-    const all = sealedBudgets();
-    if (!all.includes(budgetId)) localStorage.setItem(SEALED_FLAG, [...all, budgetId].join(','));
-  } catch {
-    // No storage: the device knows it only while the app is open.
-  }
-}
-/** Only the person's own act on this device forgets it: signing out here. */
-function forgetSealed(budgetId: string | null): void {
-  try {
-    const rest = budgetId ? sealedBudgets().filter((b) => b !== budgetId) : [];
-    if (rest.length) localStorage.setItem(SEALED_FLAG, rest.join(','));
-    else localStorage.removeItem(SEALED_FLAG);
-    if (budgetId) localStorage.removeItem(PUBLIC_MARK + budgetId);
-  } catch {
-    // Nothing kept, nothing to forget.
-  }
-}
 /** This device knows the budget as sealed. */
 export const sealedKnown = (budgetId: string): boolean =>
   sealed?.budgetId === budgetId || sealedBudgets().includes(budgetId);
 
-// The last public entry of the log this device saw, kept in the copy and, as a second mark, outside it: a copy
-// that is made again (or lives in memory only) still refuses a log that does not pass through it.
-const PUBLIC_MARK = 'ledgerline.public.';
-type PublicMark = { number: number; hash: string };
-async function lastPublicSeen(h: EngineHost, budgetId: string): Promise<PublicMark | null> {
-  const marks: PublicMark[] = [];
-  const kept = await h.get('last_public');
-  if (kept) marks.push(JSON.parse(kept) as PublicMark);
-  try {
-    const out = localStorage.getItem(PUBLIC_MARK + budgetId);
-    if (out) marks.push(JSON.parse(out) as PublicMark);
-  } catch {
-    // The copy's own mark is all there is.
-  }
-  return marks.sort((a, b) => b.number - a.number)[0] ?? null;
-}
-async function keepPublicSeen(h: EngineHost, budgetId: string, m: PublicMark): Promise<void> {
-  await h.put('last_public', JSON.stringify(m));
-  try {
-    localStorage.setItem(PUBLIC_MARK + budgetId, JSON.stringify(m));
-  } catch {
-    // The copy's own mark stays.
-  }
-}
 export const sealedSession = (): SealedSession | null => sealed;
 /** The copy is open and can answer for the budget. */
 export const copyReady = (): boolean => state.status === 'ready' && host !== null;
@@ -256,7 +206,6 @@ export async function keepSession(s: Session): Promise<void> {
   // Saved when it changed, so that a start with no signal finds it.
   if (record) await save().catch(() => undefined);
 }
-const SEALED_FLAG = 'ledgerline.sealed';
 /** Shown, with the button that tries again, when a sealed budget needs the passkey once more. */
 export const NEEDS_PASSKEY = 'Your passkey is needed once more to open your budget. Try again.';
 
