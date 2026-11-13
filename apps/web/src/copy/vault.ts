@@ -42,7 +42,19 @@ export interface CopyRecord {
   savedAt: number;
   /** The budget is sealed: opening this copy with no signal asks the passkey for the budget's secret too. */
   sealed?: boolean;
+  /**
+   * The saved copy from before an update ran budget migrations on it, sealed as `blob` is, for `BEFORE_UPDATE_DAYS`
+   * (copy.ts `keepBeforeUpdate`). Settings → Backup can save it as a full backup.
+   */
+  beforeUpdate?: { blob: Wrapped; at: number; migrations: string[] };
+  /** When this device last saved a full backup (Settings → Backup), or since when it has kept this copy without one. */
+  backup?: { at: number | null; since: number };
 }
+
+/** How long the copy from before an update is kept. */
+export const BEFORE_UPDATE_DAYS = 14;
+/** Budget → Needs attention asks for a full backup when this device has saved none for this long. */
+export const BACKUP_DUE_DAYS = 30;
 
 // ---------------------------------------------------------------- IndexedDB
 
@@ -418,4 +430,9 @@ export async function sealCopy(r: CopyRecord, dataKey: CryptoKey, bytes: ArrayBu
 
 export async function openCopy(r: CopyRecord, dataKey: CryptoKey): Promise<ArrayBuffer | null> {
   return r.blob ? openAt('copy', dataKey, r.blob, blobAad(r)) : null;
+}
+
+/** The copy from before the last update (`CopyRecord.beforeUpdate`), or null. */
+export async function openBeforeUpdate(r: CopyRecord, dataKey: CryptoKey): Promise<ArrayBuffer | null> {
+  return r.beforeUpdate ? openAt('copy', dataKey, r.beforeUpdate.blob, blobAad(r)) : null;
 }

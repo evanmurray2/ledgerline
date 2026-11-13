@@ -15,6 +15,12 @@ survives losing every device, the Cloudflare account, or damage found later.
   (`openBackup` in `packages/seal`). The server never sees it and can't load it back. Without a lock, anyone with the
   file can read the whole budget.
 
+## After an update that went wrong
+
+When an update changes the budget's tables on a device (a budget migration), that device keeps its copy from
+before the update for 14 days. Settings → Backup and export → "Save the copy from before the update" saves it as a
+full backup. Save it before anything else changes, and keep it with your other backups.
+
 ## Losing devices
 
 - **One device lost:** sign in on another device with its passkey. A new device opens the budget's newest checked

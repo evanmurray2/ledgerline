@@ -124,7 +124,8 @@ export class EngineHost {
     });
   }
 
-  open(who: EngineIdentity, bytes: ArrayBuffer | null): Promise<EngineState> {
+  /** `migrated`: the budget migrations this open ran on the copy (none for a new copy). */
+  open(who: EngineIdentity, bytes: ArrayBuffer | null): Promise<EngineState & { migrated?: string[] }> {
     return this.call('open', { who, bytes }, bytes ? [bytes] : []);
   }
   derive(): Promise<{ rta: number } | null> {

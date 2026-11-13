@@ -4,7 +4,13 @@
 // every answer is { id, ok, value } or { id, ok: false, error }.
 import initSqlJs from 'sql.js';
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
-import { LocalEngine, migrateLocal, type EngineIdentity, type QueuedEdit } from './engine.js';
+import {
+  LocalEngine,
+  migrateLocal,
+  pendingMigrations,
+  type EngineIdentity,
+  type QueuedEdit,
+} from './engine.js';
 import { SqlJsDb } from './sqljs-db.js';
 import {
   ACTION,
@@ -272,11 +278,13 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       sqlite ??= await initSqlJs({ locateFile: () => wasmUrl });
       db?.db.close();
       db = new SqlJsDb(m.bytes ? new sqlite.Database(new Uint8Array(m.bytes)) : new sqlite.Database());
+      // The migrations this open runs: the app then keeps the saved copy from before them (copy.ts).
+      const migrated = await pendingMigrations(db);
       await migrateLocal(db, Date.now());
       who = m.who;
       sealed = null;
       engine = makeEngine(db, m.who);
-      return { value: await engine.state() };
+      return { value: { ...(await engine.state()), migrated } };
     }
     case 'derive':
       return { value: await need().engine.derive() };

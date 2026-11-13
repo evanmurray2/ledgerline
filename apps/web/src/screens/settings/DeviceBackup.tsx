@@ -1,10 +1,12 @@
 // Settings → Backup and export, for a locked budget: the full backup made on this device from its copy
 // (docs/privacy.md 5.8), after a fresh passkey prompt. Locked with the recovery key by default, which the person
 // types here and which must open the budget from its recovery slot in force; or saved without a lock, with a warning. The server never sees the file, and nothing in the app
-// loads it back.
+// loads it back. For BEFORE_UPDATE_DAYS after an update changed the copy's tables, the copy from before it can be
+// saved the same way (copy.ts keepBeforeUpdate): the one way back from a migration that went wrong.
 import { useState } from 'react';
 import { confirmItsYou, saveFile } from '../../api/client';
-import { checkRecoveryKey, copyBytes } from '../../copy/copy';
+import { backupSaved, beforeUpdateAt, beforeUpdateBytes, checkRecoveryKey, copyBytes } from '../../copy/copy';
+import { budgetDateTime } from '../../lib/dates';
 import { sealedBackupFile } from '../../keys/backup';
 import { WayInError } from '../../keys/budget';
 import { Problem } from '../../components/Frame';
@@ -18,6 +20,8 @@ export function DeviceBackup() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const keptAt = beforeUpdateAt();
+  const [before, setBefore] = useState(false);
   const run = async () => {
     setBusy(true);
     setErr(null);
@@ -37,12 +41,10 @@ export function DeviceBackup() {
           throw e;
         }
       }
-      const bytes = new Uint8Array(await copyBytes());
+      const bytes = new Uint8Array(await (before && keptAt ? beforeUpdateBytes() : copyBytes()));
+      const name = before && keptAt ? 'ledgerline-before-update' : 'ledgerline-backup';
       if (plain) {
-        saveFile(
-          new Blob([bytes], { type: 'application/vnd.sqlite3' }),
-          `ledgerline-backup-${today()}.sqlite`,
-        );
+        saveFile(new Blob([bytes], { type: 'application/vnd.sqlite3' }), `${name}-${today()}.sqlite`);
       } else {
         const file = await sealedBackupFile(typed, bytes);
         bytes.fill(0);
@@ -52,10 +54,11 @@ export function DeviceBackup() {
         }
         saveFile(
           new Blob([file as Uint8Array<ArrayBuffer>], { type: 'application/octet-stream' }),
-          `ledgerline-backup-${today()}.locked`,
+          `${name}-${today()}.locked`,
         );
         setTyped('');
       }
+      if (!before) await backupSaved();
       setDone(true);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Something went wrong. Try again.');
@@ -94,6 +97,16 @@ export function DeviceBackup() {
             <Checkbox checked={plain} onChange={(e) => setPlain(e.target.checked)} />
             <span>Save it without a lock</span>
           </label>
+          {keptAt !== null && (
+            <label className="flex items-start gap-2.5 text-base text-ink-2">
+              <Checkbox
+                data-testid="backup-before-update"
+                checked={before}
+                onChange={(e) => setBefore(e.target.checked)}
+              />
+              <span>Save the copy from before the update on {budgetDateTime(keptAt)} instead</span>
+            </label>
+          )}
           <Problem text={err} />
           <PrimaryButton
             track="data.backup"
