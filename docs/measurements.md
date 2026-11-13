@@ -2,6 +2,20 @@
 
 How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history.
 
+## Update: one whole append to the sealed log (Nov 13, 2026)
+
+`measure/log-append.measure.ts` times `logAppend` (`apps/worker/src/seal/log-store.ts`) whole on node:sqlite: reading the log's state, the rules of the log and the server's, and storing the write. Times in ms, 30 runs each, in Node (its WebCrypto adds a thread hop to each call, which workerd doesn't). Before: the state was one JSON value with every device counter and public entry, parsed and written on every append, and each entry was stored as base64 made a byte at a time. After: device counters are rows (`store_note`, `device:<id>`), the public entry list is not kept (the server never read it), entries are stored as BLOBs, and base64 is made in pieces where an answer still needs it.
+
+| Step                                                                                | before: median / p90 / max | after: median / p90 / max |
+| ----------------------------------------------------------------------------------- | -------------------------- | ------------------------- |
+| An append of 16 entries of 64 KB (about 1 MB)                                       | 30.7 / 41.5 / 61.0         | 10.5 / 14.3 / 18.8        |
+| Of that, reading the 16 entries from their bytes                                    |                            | 2.8 / 4.7 / 11.9          |
+| An append of 1 small entry, the state naming 4,000 devices and 2,000 public entries | 14.2 / 17.9 / 22.5         | 0.72 / 0.92 / 22.4        |
+
+- Base64 of 1 MB a byte at a time was about 33 ms in Node; in 32 KB pieces about 8 ms. An append now makes none.
+- The 22.4 ms after is the first append on a state in the old format: it moves all 4,000 counters out of the JSON value, once. The owner's budget has a handful of devices.
+- The largest write is still about 10 ms in Node: the rules' checks (about 5 ms, the section below), reading the entries (each body is hashed there and again by the rules) and storing 1 MB. Measure it on Cloudflare (each request's CPU time in Workers Logs) before anything else raises a write's size.
+
 ## Update: the sealing code itself on the server's hot paths (Nov 10, 2026)
 
 `measure/seal-code.measure.ts` times the real code in `packages/seal`, which the section below could only stand in for. Times in ms, 60 runs each, in Node; the steps are measured again on Cloudflare before the cutover.
@@ -22,7 +36,7 @@ How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.
 
 - An entry costs about 0.25 ms to check, whatever its size: the signature check is most of it.
 - A write of 32 entries does not fit 10 ms, before any storage. So a write holds at most 16 entries (`MAX_WRITE_ENTRIES`), which leaves about half of the 10 ms for storing them.
-- A change set therefore has at most 16 parts, about 1 MB. How a larger first bank run is filed is open work (`docs/build-plan.md`).
+- A change set therefore has at most 16 parts, about 1 MB. How a larger first bank run is filed: D-102.
 
 ## Update: sealing a bank page and checking a sealed entry (Nov 10, 2026)
 
