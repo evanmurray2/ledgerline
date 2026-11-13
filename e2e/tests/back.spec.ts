@@ -60,7 +60,7 @@ test('Back: Sign in again from Bank connections closes back to it', async ({ pag
   test.skip((await repair.count()) === 0, 'No bank needs a sign-in in this fixture');
   await repair.click();
   await expect(page).toHaveURL(/\/accounts\/repair\/.*close=/);
-  await page.getByRole('button', { name: 'Back to bank connections' }).click();
+  await page.getByRole('button', { name: 'Back to bank connections', exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/connections$/);
 });
 

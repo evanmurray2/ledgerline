@@ -122,6 +122,15 @@ activityRoutes.post('/match', async (c) => {
   refuseHistory(t);
   if (t.amount <= 0) throw new HttpError(422, 'not_inflow', NOT_INFLOW);
   const total = r.items.reduce((a, i) => a + i.amount, 0);
+  // A card refund linked to its purchase isn't money paid back (Money rule 3, D-109): unlink it first.
+  if (
+    total > 0 &&
+    (await s.first(
+      `SELECT 1 AS n FROM txn_link WHERE budget_id = ?1 AND kind = 'refund_of' AND from_key = ?2 AND undone_at IS NULL`,
+      r.inflowKey,
+    ))
+  )
+    throw new HttpError(422, 'refund_linked', 'This is a refund of a purchase. Tap Not this purchase first.');
   // Links this money already has count too: together they can't pay back more than came in (rule 12).
   const already = await linkedFrom(s, r.inflowKey);
   if (total > 0 && already + total > t.amount)

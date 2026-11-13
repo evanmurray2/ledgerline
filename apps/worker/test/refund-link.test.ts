@@ -2,7 +2,7 @@
 // payment category gives back the funded part of that purchase; "Not this purchase" unlinks it, and the payment
 // category gives back as much as it holds up to the refund. Through the phone's engine, as the app counts it.
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { BudgetView, RefundOfView, TxnSheet } from '@ledgerline/contracts';
+import type { BudgetView, MatchView, RefundOfView, TxnSheet } from '@ledgerline/contracts';
 import { app, everythingAgain, phone } from './phone.js';
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
@@ -125,5 +125,17 @@ describe('a card refund linked to its purchase', () => {
     expect((await link('n-rei-refund', 'n-rei-refund')).status).toBe(422);
     expect((await link('n-rei-refund', 'no-such-key')).status).toBe(404);
     expect((await sheet('n-rei-refund')).refundOf?.key).toBe('o-rei');
+  });
+
+  it('Match money back refuses a refund that is linked to its purchase', async () => {
+    expect((await link('n-rei-refund', 'o-rei')).status).toBe(200);
+    const v = (await call('GET', '/api/match/n-venmo')).json as MatchView;
+    const o = v.open.find((x) => x.still > 0)!;
+    const r = await call('POST', '/api/match', {
+      inflowKey: 'n-rei-refund',
+      items: [{ itemId: o.id, amount: 100 }],
+    });
+    expect(r.status).toBe(422);
+    expect(r.json).toMatchObject({ error: 'refund_linked' });
   });
 });
