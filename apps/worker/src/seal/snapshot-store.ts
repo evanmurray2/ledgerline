@@ -21,7 +21,7 @@ import {
   type SnapshotHeader,
 } from '@ledgerline/seal';
 import { conditionFence, isFenceAbort } from '../sync/lease.js';
-import { stateFromJson } from './log-store.js';
+import { entryBytes, stateFromJson } from './log-store.js';
 
 /** The most chunks one snapshot has, and the most bytes of one chunk and of a manifest, as stored. */
 export const MAX_CHUNKS = 256;
@@ -114,9 +114,9 @@ export async function snapshotBegin(
   const at = await d.db
     .prepare(`SELECT hash, bytes FROM log_entry WHERE number = ?1`)
     .bind(h.number)
-    .first<{ hash: string; bytes: string }>();
+    .first<{ hash: string; bytes: unknown }>();
   if (!at || at.hash !== toHex(h.entryHash)) return no('no such entry');
-  const entry = await readEntry(Uint8Array.from(atob(at.bytes), (c) => c.charCodeAt(0)));
+  const entry = await readEntry(entryBytes(at.bytes));
   if (entry.header.part !== entry.header.parts) return no('inside a part set');
   const pubEntry = await d.db
     .prepare(
@@ -341,10 +341,10 @@ export async function publicAfter(
       `SELECT number, bytes FROM log_entry WHERE number > ?1 AND kind IN (${PUBLIC_KIND_LIST}) ORDER BY number LIMIT ?2`,
     )
     .bind(after, limit)
-    .all<{ number: number; bytes: string }>();
+    .all<{ number: number; bytes: unknown }>();
   return rows.results.map((r) => ({
     number: r.number,
-    bytes: Uint8Array.from(atob(r.bytes), (c) => c.charCodeAt(0)),
+    bytes: entryBytes(r.bytes),
   }));
 }
 
@@ -364,8 +364,9 @@ export async function logFloor(db: Db): Promise<number> {
  * every entry and filed bank run since that older snapshot. Every other snapshot up to the checked one goes (an
  * unchecked one, or one a check refused, is never what the budget is rebuilt from), with the sealed entries
  * before the kept one and the pages of the runs it says are filed: a few hundred rows a call, and only a few of
- * the large rows; `more` says to call again. Never deleted: a public entry, the entry a kept snapshot stands at,
- * a run's manifest and receipt hash, and any snapshot newer than the checked one.
+ * the large rows; `more` says to call again. Never deleted: a public entry; the entry any stored snapshot stands
+ * at, for as long as its row is stored (one being deleted too: its chunks go a few a call); a run's manifest and
+ * receipt hash; and any snapshot newer than the checked one.
  */
 export async function snapshotPrune(db: Db): Promise<{ deleted: number; more: boolean }> {
   const checked = await db
@@ -384,10 +385,9 @@ export async function snapshotPrune(db: Db): Promise<{ deleted: number; more: bo
   const at = await db
     .prepare(`SELECT bytes FROM log_entry WHERE number = ?1`)
     .bind(kept.number)
-    .first<{ bytes: string }>();
+    .first<{ bytes: unknown }>();
   if (!at) return { deleted: 0, more: false };
-  const filed = (await readEntry(Uint8Array.from(atob(at.bytes), (c) => c.charCodeAt(0)))).header
-    .filedThrough;
+  const filed = (await readEntry(entryBytes(at.bytes))).header.filedThrough;
 
   let more = false;
   let deleted = 0;
@@ -428,7 +428,8 @@ export async function snapshotPrune(db: Db): Promise<{ deleted: number; more: bo
   await run(
     PRUNE_ROWS,
     `DELETE FROM log_entry WHERE number IN (
-       SELECT number FROM log_entry WHERE number < ?1 AND kind NOT IN (${PUBLIC_KIND_LIST}) ORDER BY number LIMIT ${PRUNE_ROWS})`,
+       SELECT number FROM log_entry WHERE number < ?1 AND kind NOT IN (${PUBLIC_KIND_LIST})
+         AND number NOT IN (SELECT number FROM snapshot) ORDER BY number LIMIT ${PRUNE_ROWS})`,
     kept.number,
   );
   await run(
