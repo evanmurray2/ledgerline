@@ -1,6 +1,6 @@
 // One toast at a time, with optional Undo and a second line offering an action.
 import { useEffect, useSyncExternalStore } from 'react';
-import { createListeners } from '../lib/store';
+import { createListeners, createStore } from '../lib/store';
 import { cx, useIsDesktop } from './ui';
 import { useCanWrite } from '../state/connectivity';
 
@@ -41,29 +41,24 @@ export const toast = {
 };
 
 // How many floating buttons sit at the phone's bottom right (Activity's Add). A toast leaves room for them.
-let fabs = 0;
-const fabListeners = createListeners();
+const fabs = createStore(0);
 
 /** A floating button at the bottom right calls this while it shows, so a toast ends to its left. */
 export function useToastRoomForFab(on: boolean) {
   useEffect(() => {
     if (!on) return;
-    fabs += 1;
-    fabListeners.emit();
+    fabs.set(fabs.get() + 1);
     return () => {
-      fabs -= 1;
-      fabListeners.emit();
+      fabs.set(fabs.get() - 1);
     };
   }, [on]);
 }
-
-const getFabs = () => fabs;
 
 export function ToastHost({ aboveTabs }: { aboveTabs: boolean }) {
   const t = useSyncExternalStore(subscribe, toast.get, toast.get);
   const desktop = useIsDesktop();
   const canWrite = useCanWrite();
-  const fab = useSyncExternalStore(fabListeners.subscribe, getFabs, getFabs) > 0;
+  const fab = fabs.use() > 0;
 
   useEffect(() => {
     if (!t) return;

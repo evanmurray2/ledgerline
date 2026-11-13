@@ -1,6 +1,7 @@
 // Linking and repairing a bank (docs/privacy.md 5.7). The person does it on Plaid's own site: no Plaid script runs in
 // the app, and the app's CSP allows no outside host.
 import { api } from '../api/endpoints';
+import { safeStorage } from './safe-storage';
 
 const LOAD_FAILED = 'The bank sign-in page didn’t open. Check your connection and try again.';
 
@@ -54,21 +55,14 @@ interface PendingLink {
 }
 
 function readPending(): PendingLink | null {
-  try {
-    const p = JSON.parse(localStorage.getItem(PENDING_KEY) ?? 'null') as PendingLink | null;
-    if (!p || typeof p.linkToken !== 'string' || Date.now() - p.at > HOSTED_MS) return null;
-    return p;
-  } catch {
-    return null;
-  }
+  const p = safeStorage.getJson<PendingLink | null>(PENDING_KEY, null);
+  if (!p || typeof p.linkToken !== 'string' || Date.now() - p.at > HOSTED_MS) return null;
+  return p;
 }
+/** Storage off (private mode): the link still finishes while this page stays open. */
 function writePending(p: PendingLink | null): void {
-  try {
-    if (p) localStorage.setItem(PENDING_KEY, JSON.stringify(p));
-    else localStorage.removeItem(PENDING_KEY);
-  } catch {
-    // Storage is off (private mode): the link still finishes while this page stays open.
-  }
+  if (p) safeStorage.set(PENDING_KEY, JSON.stringify(p));
+  else safeStorage.remove(PENDING_KEY);
 }
 function markLeft(left: boolean): void {
   try {

@@ -5,22 +5,12 @@ import type { BudgetCategoryRow, BudgetView, CardRow } from '@ledgerline/contrac
 import { Bar, Card, cx, Icon, Pill, STATUS, StatusWord, type IconName, type Tone } from '../components/ui';
 import { formatCents } from '../lib/money';
 import { useHere } from '../lib/back';
+import { safeStorage } from '../lib/safe-storage';
 
 const COLLAPSE_KEY = 'ledgerline-collapsed';
-function readCollapsed(): Record<string, boolean> {
-  try {
-    return JSON.parse(window.localStorage.getItem(COLLAPSE_KEY) ?? '{}') as Record<string, boolean>;
-  } catch {
-    return {};
-  }
-}
-function writeCollapsed(v: Record<string, boolean>) {
-  try {
-    window.localStorage.setItem(COLLAPSE_KEY, JSON.stringify(v));
-  } catch {
-    // per-device convenience only
-  }
-}
+// A per-device convenience only.
+const readCollapsed = (): Record<string, boolean> => safeStorage.getJson(COLLAPSE_KEY, {});
+const writeCollapsed = (v: Record<string, boolean>) => safeStorage.set(COLLAPSE_KEY, JSON.stringify(v));
 
 /** The pinned categories that are in this month's groups (archived and removed ones drop out), in pin order. */
 export function pinnedRows(b: BudgetView): BudgetCategoryRow[] {
