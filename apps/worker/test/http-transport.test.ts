@@ -5,6 +5,7 @@ import { ulid } from '@ledgerline/platform';
 import { encodeEntry, startChain } from '@ledgerline/seal';
 import { SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { deviceCheck } from '../src/local/device-check.js';
 import { DeviceLog } from '../src/local/device-log.js';
 import { openSnapshot, writeSnapshot } from '../src/local/device-snapshot.js';
 import type { LocalEngine } from '../src/local/engine.js';
@@ -110,6 +111,28 @@ describe('a sealed budget over HTTP', () => {
       });
       expect(log2.number).toBe(2);
       expect(differences(await rowsOf(second), await rowsOf(phone))).toEqual([]);
+
+      // The device check over HTTP (D-116): each sends its own, reads the other's with the log, and agrees.
+      expect(t.checks()).toEqual([]);
+      const phoneSays = await deviceCheck({ engine: phone, log, transport: t, now: NOW, settled: true });
+      expect(phoneSays).toBeNull();
+      await new LogSession(second, log2, t, encodeEntry).pull();
+      expect(t.checks()).toMatchObject([{ deviceId: PHONE, number: 2, month: '2026-11' }]);
+      expect(
+        await deviceCheck({ engine: second, log: log2, transport: t, now: NOW, settled: true }),
+      ).toBeNull();
+      await session.pull();
+      expect(
+        t
+          .checks()
+          ?.map((c) => c.deviceId)
+          .sort(),
+      ).toEqual([PHONE, LAPTOP].sort());
+      expect(await deviceCheck({ engine: phone, log, transport: t, now: NOW, settled: true })).toBeNull();
+      // The phone's second check at the same entry is not made (once per entry); the server would refuse it.
+      expect(await t.sendCheck({ deviceId: PHONE, number: 2, month: '2026-11', mac: '00'.repeat(32) })).toBe(
+        false,
+      );
 
       // A check record the server refuses comes back as its answer, not as a fault.
       expect(await t.check(ulid(NOW), LAPTOP, new Uint8Array(64), ulid(NOW))).toMatchObject({ ok: false });

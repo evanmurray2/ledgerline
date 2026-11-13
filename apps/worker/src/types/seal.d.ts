@@ -560,3 +560,17 @@ export function verifyRequest(
   payload: Uint8Array,
   signature: Uint8Array,
 ): Promise<boolean>;
+
+// ---- the device check (apps/worker/src/local/device-check.ts; packages/seal device-check.ts, D-116)
+export const CHECK_MAC_LEN: number;
+export interface CheckFacts {
+  budgetId: string;
+  deviceId: string;
+  number: number;
+  month: string;
+  digest: Uint8Array;
+}
+export function checkDigest(text: string): Promise<Bytes>;
+export function canCheck(keys: BudgetKeys): boolean;
+export function checkMac(keys: BudgetKeys, f: CheckFacts): Promise<Bytes>;
+export function checkMacSame(keys: BudgetKeys, f: CheckFacts, mac: Uint8Array): Promise<boolean>;

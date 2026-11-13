@@ -9,7 +9,6 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 ## Open
 
 - [ ] On the owner's iPhone after deploy: PRF in the Home Screen app with the existing passkey, first download time, Face ID unlock with no signal.
-- [ ] A check where each device sends a hash of its month, keyed with the budget key, and Needs attention says when two devices differ (`engine.test.ts` and `engine-upgrade.test.ts` cover the known causes). The owner was asked on Nov 13 whether to build it; not decided yet.
 - [ ] The sealed log, left open (`docs/privacy.md` 5.3): a rebuild's peak memory is not measured on a phone with the 2 MB bank log (the old copy is closed first and kept gzipped, `local/web-entry.ts` `rebuild`).
 - [ ] A new budget made on the device (D-102, `local/start-device.ts`): a first snapshot that still does not read back after three tries is not written again, so if the server truly lost it, a second device can't join until a later snapshot is checked (and `checkSnapshot` builds on the first one while none is checked).
 - [ ] Banks of a locked budget (`docs/privacy.md` 5.5, D-87): linking and removing are tested with a fake Plaid only, never against Plaid itself (never on a real link without the owner's yes).
@@ -21,7 +20,7 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] After D-112 (invocation logs off): no invocation log has come since its deploy (checked Nov 13, 18:54 UTC). Still to check, with a read-only Workers observability query: a line the app logs during a request holds no IP address or location; then delete this line.
 - [ ] Comparable releases, left open after phase 7 (D-96, `docs/runbooks/verify-build.md`): compare a build made on macOS with the release (only Linux was tried); run `gh attestation verify` where Sigstore's hosts can be reached (the Nov 13 check could not: this container's proxy blocks them).
 - [ ] `docs/privacy-policy.md` is a draft the owner has not read yet **(manual)**. The app shows it at `/privacy-policy`. Before other people are invited: the owner reads the **(owner reads)** lines, and a contact is set (`docs/privacy.md` 11).
-- [ ] Sign-up's robot check on its own address (D-113) is built, not deployed **(manual)**: before sign-up is turned on, the owner says yes to a second Worker (`ledgerline-check`) and makes its Turnstile widget (`docs/open-signup.md` 13); then try the trip there and back from the Home Screen app on an iPhone.
+- [ ] Sign-up's robot check on its own address (D-113) is built, not deployed **(manual)**: the owner said yes to the second Worker (`ledgerline-check`) on Nov 13, 2026, to deploy only when sign-up is turned on, and doesn't want sign-up on yet; then the owner makes its Turnstile widget (`docs/open-signup.md` 13); then try the trip there and back from the Home Screen app on an iPhone.
 
 ## Contract gaps (not blocking)
 

@@ -65,6 +65,20 @@ describe('budget key', () => {
     expect(await verify(keys.sign.pub, utf8('m'), await sign(keys.sign.privateKey, utf8('m')))).toBe(true);
   });
 
+  it('derives the device check key under its label (D-116)', async () => {
+    const keys = await deriveBudgetKeys(BK, BUDGET, 1);
+    expect(keys.check.extractable).toBe(false);
+    const theirs = await crypto.subtle.importKey(
+      'raw',
+      await expected('ledgerline/v1/device-check', 1),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    const ours = new Uint8Array(await crypto.subtle.sign('HMAC', keys.check, utf8('m')));
+    expect(toHex(ours)).toBe(toHex(new Uint8Array(await crypto.subtle.sign('HMAC', theirs, utf8('m')))));
+  });
+
   it('another version, budget or budget key gives other keys', async () => {
     const a = await deriveBudgetKeys(BK, BUDGET, 1);
     const others = await Promise.all([

@@ -124,6 +124,8 @@ For a locked budget, the server and whoever runs it still learn (`docs/privacy.m
 
 - that the account exists, its passkeys, devices and their names, and when each last signed in;
 - the size and time of each change, and how many there are;
+- when each device checked its numbers against the other devices', at which change and for which month, with a
+  value it can't read (D-116);
 - for each bank link: its Plaid Item id, its token, which bank it is (Plaid's dashboard shows it), when it was linked, its state, when each bank update came, how
   many rows it added, changed and removed, and its size;
 - the app's own log lines, for 3 days. They hold only an allowlist of fields: never amounts, names, descriptions,

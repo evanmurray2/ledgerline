@@ -15,6 +15,7 @@ import { jsonOf, storeSigned, UNSIGNED } from '../http/signed-request.js';
 import { ACTION } from '@ledgerline/seal';
 import { classifyUsage, dailyLimits, usageToday } from '../sync/breaker.js';
 import { isFreshWay } from '../store/way-in.js';
+import { deviceChecks, keepDeviceCheck } from './device-checks.js';
 import { b64, entryText, logAppend, logHead, logRowsAfter, type LogDeps } from './log-store.js';
 import {
   logFloor,
@@ -104,7 +105,33 @@ logApi.get('/log', async (c) => {
   }
   const number = await logHead(db);
   // `floor`: sealed entries below it may be gone; a device whose place is lower opens a snapshot (below).
-  return c.json({ entries, number, more: after + entries.length < number, floor: await logFloor(db) });
+  // `checks`: each device's latest device check (D-116), which a device compares with its own.
+  return c.json({
+    entries,
+    number,
+    more: after + entries.length < number,
+    floor: await logFloor(db),
+    checks: await deviceChecks(db),
+  });
+});
+
+const DeviceCheck = z.object({
+  deviceId: z.string().length(26),
+  number: z.number().int().min(1),
+  month: z.string().length(7),
+  mac: z.string().length(64),
+});
+
+/**
+ * A device's check of what it worked out at entry `number` (D-116): an HMAC the server can't read. It replaces
+ * the device's last one.
+ */
+logApi.post('/log/check', async (c) => {
+  const parsed = DeviceCheck.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
+  const d = await snapshotDeps(c);
+  const r = await keepDeviceCheck({ ...d, head: await logHead(d.db) }, parsed.data);
+  return c.json(r, r.ok ? 200 : 409);
 });
 
 /**

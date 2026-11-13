@@ -119,6 +119,7 @@ The keys live in the browser, and the browser runs the JavaScript the Worker ser
 - That an account exists, when it was made and last used, how many passkeys and devices it has, their names if the person gave any, each passkey's maker id, and each session's user agent.
 - When the app is used and from which IP address (Cloudflare sees it; the app stores none).
 - How many changes are made and when, and their rough size. Padding (5.3) blurs size, not count or timing; a bank run looks different from a typed edit.
+- For each device that checks its numbers against the others' (D-116): when, at which log entry, for which month, and an HMAC it can't read or make. The device's id is in the HMAC, so the server can't tell whether two devices agree.
 - For each bank link: the Plaid Item id, the access token, **which bank it is** (Plaid's dashboard shows the operator every Item's bank), when it was linked, when Plaid says it has news or needs repair, when each run arrived, how many rows it added, changed and removed, and its size.
 - Bank data, in the Worker's memory, between Plaid's answer and the seal. Cloudflare runs the Worker, so Cloudflare could see it there too.
 
