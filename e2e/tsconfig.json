@@ -1,5 +1,12 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": { "lib": ["ES2022", "DOM"], "types": ["node"] },
-  "include": ["tests", "playwright*.config.ts", "report.ts"]
+  "include": [
+    "tests",
+    "playwright*.config.ts",
+    "report.ts",
+    "check-server.ts",
+    "suites.ts",
+    "worker-server.ts"
+  ]
 }
