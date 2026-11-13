@@ -1,11 +1,8 @@
 // Settings → Privacy: what is stored, where, and who can read it, as it is today (docs/privacy.md section 2). The
 // page changes with each phase of the privacy design: it never says more than is true on the day.
-import { useQuery } from '@tanstack/react-query';
-import { api } from '../../api/endpoints';
 import { Card, SectionTitle } from '../../components/ui';
 import { Why } from '../../components/Why';
 import { Page, RowLink } from './common';
-import { oldCopyText, pastVersionsText, PurgeCard } from './Purge';
 
 function Fact({ name, text }: { name: string; text: string }) {
   return (
@@ -23,20 +20,18 @@ const inTwoYears = () => {
 };
 
 export function PrivacyScreen() {
-  // Every budget is locked (D-102). What this page says follows how far the old copy's deleting has come.
-  const cutover = useQuery({ queryKey: ['cutover'], queryFn: api.cutoverState, retry: false }).data;
-  const purge = cutover?.purge;
+  // Every budget is locked (D-102), and the readable copy from before the lock is deleted (D-106).
   return (
     <Page title="Privacy" back="/settings">
       <SectionTitle>Your budget</SectionTitle>
       <Card>
         <Fact name="On Ledgerline’s server" text="Locked. Only your devices have the key." />
         <Fact name="On this device" text="A copy, locked with your passkey." />
-        {/* A budget made locked has no copy from before the lock (D-102). */}
-        {purge && purge.stage !== 'none' && (
-          <Fact name="The copy from before the lock" text={oldCopyText(purge)} />
-        )}
-        <Fact name="Past versions" text={pastVersionsText(purge)} />
+        <Fact name="The copy from before the lock" text="Deleted from the server." />
+        <Fact
+          name="Past versions"
+          text="Cloudflare keeps 30 days of them. Until 30 days after the deletion, some hold the copy from before the lock."
+        />
       </Card>
       <Why label="What can the server still see?">
         The size and time of each change, how many bank updates came in, and which bank links you have. It
@@ -50,7 +45,6 @@ export function PrivacyScreen() {
           track="settings.privacy.claims"
         />
       </Card>
-      <PurgeCard purge={purge} />
       <SectionTitle>Your banks</SectionTitle>
       <Card>
         <Fact name="Your bank password" text="You type it at Plaid. Ledgerline never gets it." />

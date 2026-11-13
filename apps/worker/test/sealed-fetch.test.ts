@@ -410,7 +410,7 @@ describe('the budget store, for a budget marked sealed', () => {
       async (o, state) => {
         const sql = (q: string, ...p: unknown[]) => state.storage.sql.exec(q, ...p).toArray();
         sql(
-          `INSERT INTO budget (id, name, processed_through, created_at, updated_at) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV', 'B', 0, 0, 0)`,
+          `INSERT INTO budget (id, name, created_at, updated_at) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV', 'B', 0, 0)`,
         );
         const add = (id: string, kind: string) =>
           sql(
@@ -425,12 +425,15 @@ describe('the budget store, for a budget marked sealed', () => {
 
         sql(`INSERT INTO store_mark (key, at) VALUES ('sealed', 1)`);
         add('daily_scan', 'daily_scan');
+        // The old purge and link check (D-106) are dropped unrun too.
+        add('purge_old', 'purge_old');
+        add('stamp_links', 'stamp_links');
         add('sealed_backstop', 'sealed_backstop');
-        await o.alarm();
-        await o.alarm();
-        // The old job is gone and wrote nothing; the sealed backstop ran and comes again in 4 hours.
-        expect(sql(`SELECT id FROM job WHERE kind = 'daily_scan'`)).toEqual([]);
-        expect(sql(`SELECT count(*) AS n FROM inbox_scan`)).toEqual([{ n: 0 }]);
+        for (let i = 0; i < 4; i++) await o.alarm();
+        // The old job is gone; the sealed backstop ran and comes again in 4 hours.
+        expect(sql(`SELECT id FROM job WHERE kind IN ('daily_scan', 'purge_old', 'stamp_links')`)).toEqual(
+          [],
+        );
         const back = sql(`SELECT run_at, attempts FROM job WHERE kind = 'sealed_backstop'`) as {
           run_at: number;
           attempts: number;

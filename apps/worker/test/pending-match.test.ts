@@ -3,7 +3,7 @@
 // or not for days. Without the link they pair only on exact evidence: Plaid's merchant id or names, or the same amount
 // on the same day; the bank's own text (original_description) is never compared.
 import { env } from 'cloudflare:test';
-import { storeDb } from './store-db.js';
+import { budgetDb } from './store-db.js';
 import { phoneTables, workOut } from './work-out.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ActivityView } from '@ledgerline/contracts';
@@ -13,7 +13,7 @@ import { applyPage, beginRun, rawPageKey } from '../src/sync/steps.js';
 import { healPending, processPending } from '../src/sync/process.js';
 import { LocalEngine } from '../src/local/engine.js';
 
-const db = storeDb('pending-match');
+const db = budgetDb('pending-match');
 const NOW = Date.parse('2026-11-14T20:00:00Z');
 const provider = new PlaidProvider({ clientId: 'x', secret: 'y', env: 'sandbox' });
 const B = 'b_pm';

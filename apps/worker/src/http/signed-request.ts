@@ -38,7 +38,6 @@ export function signedActionOf(method: string, path: string): Action | null {
   if (path === '/api/settings/connections/link-token') return ACTION.linkToken;
   if (path === '/api/settings/connections/link-finish') return ACTION.linkFinish;
   if (/^\/api\/settings\/connections\/[^/]+\/remove$/.test(path)) return ACTION.removeBank;
-  if (path === '/api/cutover/purge') return ACTION.purgeOldCopy;
   if (path === '/api/settings/security/delete-account') return ACTION.deleteAccount;
   if (path === '/api/settings/security/recovery-key') return ACTION.setRecoverySignIn;
   return null;
@@ -49,7 +48,6 @@ const ASKABLE: readonly string[] = [
   ACTION.linkToken,
   ACTION.linkFinish,
   ACTION.removeBank,
-  ACTION.purgeOldCopy,
   ACTION.deleteAccount,
   ACTION.setRecoverySignIn,
 ];

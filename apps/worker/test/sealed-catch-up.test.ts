@@ -45,7 +45,7 @@ import {
 import { bankSync, plaidTxn } from './bank-sync.js';
 import { BUDGET, PHONE, T0 } from './log-writer.js';
 import { LINK_A, ring, world, type World } from './sealed-world.js';
-import { storeDb } from './store-db.js';
+import { copyDb } from './store-db.js';
 import { differences, rowsOf } from './twin.js';
 
 const LAPTOP = '01CX5ZZKBKACTAV9WEVGEMMVRZ';
@@ -154,7 +154,7 @@ describe('a sealed budget catches up by time, and its bank log travels', () => {
 
         /** A phone at the cutover: the budget as the old server had it, and where filing starts. */
         const device = async (name: string, deviceId: string): Promise<Device> => {
-          const db = storeDb(`${name}-${Math.random()}`);
+          const db = copyDb(`${name}-${Math.random()}`);
           await migrateLocal(db, T0);
           const engine = new LocalEngine(
             db,
@@ -272,7 +272,7 @@ describe('a sealed budget catches up by time, and its bank log travels', () => {
           after: transport.after,
         };
         expect(await writeSnapshot(a.engine, a.log, snapshots, ulid(clock))).toMatchObject({ written: true });
-        const cdb = storeDb(`catch-c-${Math.random()}`);
+        const cdb = copyDb(`catch-c-${Math.random()}`);
         await migrateLocal(cdb, T0);
         const c = new LocalEngine(
           cdb,

@@ -2,6 +2,7 @@
 // Durable Objects get their migrations as plain strings (no bundler rules) and tests load exactly what production
 // does. `--check` fails if the generated file is out of date (run by tools/ci/migration-check.mjs).
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { STORE_LAST_BUDGET } from './store-last-budget.mjs';
 
 const OUT = 'apps/worker/src/store/migrations.gen.ts';
 const read = (dir) =>
@@ -22,8 +23,13 @@ const body =
     null,
     2,
   )};\n\n` +
-  `/** What a BudgetStore runs: the budget's migrations, then its own. */\n` +
-  `export const BUDGET_STORE_MIGRATIONS: StoreMigration[] = [...BUDGET_MIGRATIONS, ...STORE_MIGRATIONS];\n`;
+  `/** The last budget migration a BudgetStore runs (D-106): later ones run on the devices' copies only. */\n` +
+  `export const STORE_LAST_BUDGET_MIGRATION = ${JSON.stringify(STORE_LAST_BUDGET)};\n\n` +
+  `/** What a BudgetStore runs: the budget's migrations up to STORE_LAST_BUDGET_MIGRATION, then its own. */\n` +
+  `export const BUDGET_STORE_MIGRATIONS: StoreMigration[] = [\n` +
+  `  ...BUDGET_MIGRATIONS.filter((m) => m.name <= STORE_LAST_BUDGET_MIGRATION),\n` +
+  `  ...STORE_MIGRATIONS,\n` +
+  `];\n`;
 
 if (process.argv.includes('--check')) {
   let cur = '';

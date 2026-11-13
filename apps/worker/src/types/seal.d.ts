@@ -336,6 +336,8 @@ export function startChain(genesis: Entry, c: Checker, budgetId?: string): Promi
 export function advance(s: ChainState, e: Entry, c: Checker): Promise<ChainState>;
 export function openEntryBody(e: Entry, keys: BudgetKeys): Promise<Bytes>;
 export class ChainError extends Error {}
+/** An entry written by a newer app than this one (chain.ts): update before reading on. */
+export class UpdateNeededError extends Error {}
 /** Bytes that are not what they claim to be (bytes.ts). */
 export class FormatError extends Error {}
 /** A sealed value that doesn't open: the wrong key, or changed bytes (aead.ts). */

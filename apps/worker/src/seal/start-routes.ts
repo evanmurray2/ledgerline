@@ -10,7 +10,7 @@ import type { AppEnv } from '../http/context.js';
 import { csrf } from '../http/security.js';
 import type { Caller } from '../store/directory.js';
 import { runDeps } from './runs.js';
-import { startBegin, startChunk, startSeal, type StartDeps } from './start.js';
+import { OLD_START, startBegin, startChunk, startSeal, type StartDeps } from './start.js';
 
 const TRY_AGAIN = 'Something went wrong. Try again.';
 const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
@@ -74,11 +74,15 @@ startApi.post('/start/begin', async (c) => {
   return c.json(r, r.ok ? 200 : 409);
 });
 
+// The start id `begin` answered with: a chunk names it in its query (`?start=`), the seal in its body.
+const Seal = z.object({ startId: z.string().regex(/^[0-9]{1,16}$/) });
+
 startApi.put('/start/chunks/:id/:k', async (c) => {
   const length = Number(c.req.header('content-length') ?? '0');
   if (!(length > 0) || length > 1_100_000) return c.json({ ok: false, why: 'The chunk is too large.' }, 409);
   const r = await startChunk(
     deps(c, requestNow(c)),
+    c.req.query('start') ?? '',
     c.req.param('id'),
     Number(c.req.param('k')),
     new Uint8Array(await c.req.arrayBuffer()),
@@ -87,7 +91,9 @@ startApi.put('/start/chunks/:id/:k', async (c) => {
 });
 
 startApi.post('/start/seal', async (c) => {
-  const r = await startSeal(deps(c, requestNow(c)), Date.now());
+  const parsed = Seal.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ ok: false, why: OLD_START }, 409);
+  const r = await startSeal(deps(c, requestNow(c)), parsed.data.startId, Date.now());
   return c.json(r, r.ok ? 200 : 409);
 });
 

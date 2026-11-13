@@ -8,7 +8,7 @@ import { LocalEngine, migrateLocal, type EngineIdentity, type QueuedEdit } from 
 import { SqlJsDb } from './sqljs-db.js';
 import { type Action, encodeEntry, readEntry, signRequest, type BudgetKeys } from '@ledgerline/seal';
 import { DeviceLog } from './device-log.js';
-import { checkSnapshot, emptyOldCopy, openSnapshot, writeSnapshot } from './device-snapshot.js';
+import { checkSnapshot, openSnapshot, wipe, writeSnapshot } from './device-snapshot.js';
 import { httpTransport, startTransport, type Fetch } from './http-transport.js';
 import { startOnDevice } from './start-device.js';
 import { LogSession } from './log-session.js';
@@ -288,8 +288,11 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
     case 'sealedJoin': {
       const e = need().engine;
       if (!sealed) throw new Error('Your budget isn’t open on this device yet. Try again.');
-      // No place in the log (sealedOpen said so): a copy from before the move is emptied first.
-      const dropped = await emptyOldCopy(e);
+      // No place in the log (sealedOpen said so): whatever the copy holds stands nowhere in the log (a half-opened
+      // copy, or one saved before the budget was locked), so it is emptied, with any change waiting in it, before
+      // the snapshot opens into it. An edit is never queued on a copy with no place (api/client.ts refuses it).
+      await e.dropQueue();
+      await wipe(e);
       sealed.log = await openSnapshot(e, http, {
         keys: sealed.keys,
         budgetId: who!.budgetId,
@@ -297,7 +300,7 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
         clock,
       });
       await e.note(LogSession.PLACE, sealed.log.save());
-      return { value: { number: sealed.log.number, dropped } };
+      return { value: { number: sealed.log.number } };
     }
     case 'sealedSync': {
       needSealed();

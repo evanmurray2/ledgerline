@@ -3,7 +3,12 @@
 // reading it; the other device opens the entry and writes the rows, running nothing. Both copies end equal.
 import type { Db } from '@ledgerline/db/sql';
 import {
+  advance,
   deriveBudgetKeys,
+  fromStored,
+  MAX_PLAIN,
+  MAX_WRITE_ENTRIES,
+  UpdateNeededError,
   encodeEntry,
   encodeGenesis,
   KIND,
@@ -25,10 +30,12 @@ import {
   type Entry,
 } from '@ledgerline/seal';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { decodeChangeSet, DeviceLog, LogFormatError } from '../src/local/device-log.js';
+import { deflateChangeSet, encodeChangeSet, MAX_SET_BYTES, openChangeSet } from '../src/local/change-set.js';
+import { decodeChangeSet, DeviceLog, LogFormatError, TooLarge } from '../src/local/device-log.js';
 import { RowsRefused, type LocalEngine } from '../src/local/engine.js';
 import { LogSession, type LogTransport } from '../src/local/log-session.js';
-import { logAfter, logAppend, logGenesis, type LogDeps } from '../src/seal/log-store.js';
+import { logAfter, logAppend, logGenesis, stateFromJson, type LogDeps } from '../src/seal/log-store.js';
+import { LOG_SCHEMA_PLAIN, LOG_SCHEMA_VERSION } from '../src/seal/log-versions.js';
 import { syncPhone } from './phone.js';
 import { storeDb } from './store-db.js';
 import { differences, newPhone, rowsOf } from './twin.js';
@@ -205,16 +212,17 @@ describe('two devices and the sealed log', () => {
   });
 
   it('a large change set travels as parts and arrives whole; a changed entry is refused', async () => {
-    // 300 rows of some size: more than one entry's 65,535 bytes.
+    // 600 rows of random text: more than one entry's 65,535 bytes even compressed.
     const budget = (await a.db.prepare(`SELECT id FROM budget`).first<{ id: string }>())!.id;
-    const rows = Array.from({ length: 300 }, (_, i) => ({
+    const rows = Array.from({ length: 600 }, (_, i) => ({
       t: 'setting',
       k: [budget, `bulk-${i}`],
-      d: { budget_id: budget, key: `bulk-${i}`, value: 'x'.repeat(300), updated_at: clock },
+      d: { budget_id: budget, key: `bulk-${i}`, value: toHex(randomBytes(150)), updated_at: clock },
     }));
     clock += 1000;
     const entries = await logA.build(KIND.edit, { at: clock, rows });
     expect(entries.length).toBeGreaterThan(1);
+    expect(entries[0]!.header.schemaVersion).toBe(LOG_SCHEMA_VERSION);
     expect(new Set(entries.map((e) => e.header.parts)).size).toBe(1);
     expect((await logAppend(deps(), logA.number, entries.map(encodeEntry))).ok).toBe(true);
     await a.applyRows(rows);
@@ -223,6 +231,82 @@ describe('two devices and the sealed log', () => {
     expect(differences(await rowsOf(a), await rowsOf(b))).toEqual([]);
 
     expect(() => decodeChangeSet(new Uint8Array([1, 2, 3]))).toThrow(LogFormatError);
+  });
+
+  it('a set larger than one part is compressed; one part stays plain; an app from before asks for an update', async () => {
+    const budget = await budgetOf(a);
+    const setting = (key: string, value: string) => ({
+      t: 'setting',
+      k: [budget, key],
+      d: { budget_id: budget, key, value, updated_at: clock },
+    });
+    // A small change: plain JSON, under the version an app from before reads.
+    clock += 1000;
+    const small = await logA.build(KIND.edit, { at: clock, rows: [setting('small', '1')] });
+    expect(small.map((e) => e.header.schemaVersion)).toEqual([LOG_SCHEMA_PLAIN]);
+    expect((await openEntryBody(small[0]!, keys))[0]).toBe('{'.charCodeAt(0));
+
+    // About 2.4 MB of rows that repeat, as bank rows do: 37 parts plain, a few compressed.
+    const rows = Array.from({ length: 8000 }, (_, i) =>
+      setting(
+        `many-${i}`,
+        `{"amount":${(i * 37) % 9000},"name":"BLUE BOTTLE COFFEE ${i % 40}","pending":false}`,
+      ),
+    );
+    const plain = encodeChangeSet({ v: 1, at: clock, rows, seen: {} }).length;
+    expect(Math.ceil(plain / MAX_PLAIN)).toBeGreaterThan(MAX_WRITE_ENTRIES);
+    clock += 1000;
+    const entries = await logA.build(KIND.edit, { at: clock, rows });
+    expect(entries.length).toBeLessThanOrEqual(4);
+    expect(new Set(entries.map((e) => e.header.schemaVersion))).toEqual(new Set([LOG_SCHEMA_VERSION]));
+    expect((await openEntryBody(entries[0]!, keys))[0]).toBe(1);
+
+    // An app that knows only version 2 stops at the entry before it opens the body: nothing is taken.
+    await read(b, logB);
+    const before = await fromStored(stateFromJson((JSON.parse(logB.save()) as { state: string }).state));
+    await expect(advance(before, entries[0]!, { now: clock, schemaVersion: 2 })).rejects.toThrow(
+      UpdateNeededError,
+    );
+
+    // The server stores it as it stores any entry; the other device opens it and has the same rows.
+    expect(await logAppend(deps(), logA.number, entries.map(encodeEntry))).toMatchObject({ ok: true });
+    await a.applyRows(rows);
+    await logA.take(entries);
+    await read(b, logB);
+    expect(differences(await rowsOf(a), await rowsOf(b))).toEqual([]);
+    expect(
+      await b.db.prepare(`SELECT count(*) AS n FROM setting WHERE key LIKE 'many-%'`).first<{ n: number }>(),
+    ).toEqual({ n: 8000 });
+  });
+
+  it('a set too large even compressed is refused before it is sent; a bad compressed body never opens', async () => {
+    const budget = await budgetOf(a);
+    // About 2.7 MB of random hex (1.2 MB of entropy): deflate can’t make it fit 16 parts.
+    const rows = Array.from({ length: 4000 }, (_, i) => ({
+      t: 'setting',
+      k: [budget, `random-${i}`],
+      d: { budget_id: budget, key: `random-${i}`, value: toHex(randomBytes(300)), updated_at: clock },
+    }));
+    clock += 1000;
+    const head = logA.number;
+    await expect(logA.build(KIND.edit, { at: clock, rows })).rejects.toThrow(TooLarge);
+    expect(logA.number).toBe(head);
+
+    const json = encodeChangeSet({ v: 1, at: clock, rows: rows.slice(0, 2), seen: {} });
+    const packed = await deflateChangeSet(json);
+    expect(await openChangeSet(packed, 3)).toMatchObject({ v: 1, at: clock });
+    // Compressed under a version that is always plain; changed bytes; a length that is not the body's; one too
+    // large to open.
+    await expect(openChangeSet(packed, 2)).rejects.toThrow(LogFormatError);
+    const changed = new Uint8Array(packed);
+    changed[changed.length - 3]! ^= 0xff;
+    await expect(openChangeSet(changed, 3)).rejects.toThrow(LogFormatError);
+    const wrongLength = new Uint8Array(packed);
+    new DataView(wrongLength.buffer).setUint32(1, json.length - 1);
+    await expect(openChangeSet(wrongLength, 3)).rejects.toThrow(LogFormatError);
+    const huge = new Uint8Array(packed);
+    new DataView(huge.buffer).setUint32(1, MAX_SET_BYTES + 1);
+    await expect(openChangeSet(huge, 3)).rejects.toThrow(LogFormatError);
   });
 
   it('one bad entry among good ones: the device takes none of them, and stays where it was', async () => {

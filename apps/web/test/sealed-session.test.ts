@@ -21,7 +21,6 @@ const plain: Session = {
   readsPaused: false,
   canLinkBanks: true,
   hostedLink: false,
-  recoveryNoticeAt: null,
 } as Session;
 const sealed: SealedSession = {
   sealed: true,

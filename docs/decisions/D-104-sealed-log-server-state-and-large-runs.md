@@ -57,3 +57,39 @@ halves the runs in an entry down to one, then stops with `TooLarge`, and every e
 180-day first run in that PR. A staged write is built only if a compressed first run still passes 16 parts. Neither
 is built yet: the device side of the log is other work in progress, and the change is not small. Until then, a new
 bank linked to a locked budget may stop filing at its first run with transactions.
+
+## Built: compressed change sets (Nov 13, 2026)
+
+This replaces "Neither is built yet" above: the compression is built; the staged write is not.
+
+- **Where it runs: on the device.** The change set exists only there: the device files the run and seals the rows
+  it wrote, and the server never sees them in the clear. Sealed bytes don't compress, so the server's fetch job
+  can't help, and compressing the bank's pages would not shrink the rows a filing writes. The 10 ms rule is the
+  server's, so the device's compression costs it nothing; the server's rules and CPU don't change (it stores fewer
+  entries for a large set).
+- **Format** (`apps/worker/src/local/change-set.ts`, `docs/privacy-keys.md` 6.2): a change set whose JSON needs more
+  than one part is `0x01 || u32(JSON length) || deflate-raw(JSON)`, with `CompressionStream`, which every browser
+  has had since 2023 (Safari 16.4) and Workers have: no library, nothing added to the app's bundle. Its entries
+  carry **schema version 3**, not a new processing version: an app on today's release checks only the schema
+  version when it reads (`advance`), so a new processing version would let it read the compressed bytes as JSON
+  and stop with "not a change set". With schema version 3 it stops at the header with `UpdateNeededError` and takes
+  nothing. A change set that fits one part (an edit, a daily scan or a daily bank run is a few KB) stays plain
+  under schema version 2, so a device on today's release keeps reading those; it meets version 3 only for a large
+  set, and a reload brings the new release. A new app reads both. The server takes schema versions up to 3.
+- **Measured** with a test first run of 2,000 transactions over 180 days (`apps/worker/test/sealed-large-run.test.ts`,
+  random Plaid-style ids, ten merchants): about 8,000 rows, 5.14 MB of JSON (79 parts) plain, 8 parts compressed. Each
+  transaction is about 2.6 KB plain and 250 bytes compressed (random ids are most of it), so one write holds a run
+  of about 4,000. This is test data: a real 180-day run is still to be measured.
+- **Larger than a write even compressed:** nothing is dropped. The device takes the filing back out of its copy,
+  files fewer runs to an entry, and for a single run stops with "A bank update is too large for this version of
+  Ledgerline to save. It waits on the server. Nothing is lost." The run stays on the server and edits wait behind it
+  ("bank runs first"). The staged write above is built only if a real run needs it.
+
+## Built: counters as rows only, entries as BLOBs (Nov 13, 2026)
+
+The release with items 2 and 3 still wrote every device counter into the JSON value and entries as base64 text, so
+that a rollback found the format it knew. The next release writes counters as rows only (the value keeps
+`counters` and `publics`, empty) and entries as BLOBs. It reads both forms: a row stored as text is read and sent
+as it is and never rewritten, and a value that still holds counters (stored by the release before, or after a
+rollback to it) has them moved to rows at its next write, a few rows in that write's transaction. No migration.
+A rollback of this release goes to the one before, which reads rows and BLOBs.

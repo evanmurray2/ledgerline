@@ -9,9 +9,10 @@ import { openSnapshot } from '../src/local/device-snapshot.js';
 import { LocalEngine, migrateLocal } from '../src/local/engine.js';
 import { httpTransport, startTransport } from '../src/local/http-transport.js';
 import { LogSession } from '../src/local/log-session.js';
-import { startOnDevice, type StartDeps } from '../src/local/start-device.js';
+import { startOnDevice, type StartDeps, type StartTransport } from '../src/local/start-device.js';
+import { OLD_START } from '../src/seal/start.js';
 import { PHONE, Writer } from './log-writer.js';
-import { ownerDb, storeDb } from './store-db.js';
+import { ownerDb, copyDb } from './store-db.js';
 
 const ORIGIN = 'https://ledgerline.test';
 /** The test server's clock (FAKE_NOW). */
@@ -32,7 +33,7 @@ describe('a new budget, locked from the start', () => {
   const t = httpTransport(fetcher);
   const start = startTransport(fetcher);
   const copy = async () => {
-    const db = storeDb(`start-copy-${++copies}`);
+    const db = copyDb(`start-copy-${++copies}`);
     await migrateLocal(db, NOW);
     return new LocalEngine(db, { budgetId: budget, userId: 'phone', email: 'owner@example.com' }, () => NOW);
   };
@@ -71,12 +72,21 @@ describe('a new budget, locked from the start', () => {
     // The log's routes don't answer for it.
     expect((await fetcher('/api/log?after=0')).status).not.toBe(200);
 
-    // A budget that holds a row of its own is not new.
+    // No bank route answers before the budget is locked.
+    const refresh = await fetcher('/api/settings/connections/refresh', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-ledgerline': '1', 'x-ledgerline-sealed': '1' },
+      body: '{}',
+    });
+    expect(refresh.status).toBe(409);
+    expect(await refresh.json()).toMatchObject({ error: 'not_locked' });
+
+    // A budget that holds a bank link is not new.
     const db = ownerDb();
     await db
       .prepare(
-        `INSERT INTO connection (id, budget_id, provider, institution_name, linked_at, created_at, updated_at)
-         VALUES ('con_x', ?1, 'fake', 'Bank', 1, 1, 1)`,
+        `INSERT INTO bank_link (id, connection_id, budget_id, provider, linked_at, created_at)
+         VALUES ('x', 'con_x', ?1, 'fake', 1, 1)`,
       )
       .bind(budget)
       .run();
@@ -84,7 +94,43 @@ describe('a new budget, locked from the start', () => {
       ok: false,
       why: 'This budget already holds data. It can’t start again.',
     });
-    await db.prepare(`DELETE FROM connection WHERE id = 'con_x'`).run();
+    await db.prepare(`DELETE FROM bank_link WHERE id = 'x'`).run();
+  }, 120_000);
+
+  it('a newer begin replaces the start: the older one’s chunks and seal are refused', async () => {
+    // Another device begins after this one's begin: this one's chunks are refused.
+    const beganAgain: StartTransport = {
+      ...start,
+      begin: async (s) => {
+        const mine = await start.begin(s);
+        await start.begin(s);
+        return mine;
+      },
+    };
+    expect(await startOnDevice(await copy(), await deps({ start: beganAgain }))).toEqual({
+      ok: false,
+      why: OLD_START,
+    });
+    // Another device begins after this one sent its chunks: this one's seal is refused.
+    let sent: Parameters<StartTransport['begin']>[0] | null = null;
+    const sealLate: StartTransport = {
+      ...start,
+      begin: (s) => {
+        sent = s;
+        return start.begin(s);
+      },
+      seal: async (startId) => {
+        await start.begin(sent!);
+        return start.seal(startId);
+      },
+    };
+    expect(await startOnDevice(await copy(), await deps({ start: sealLate }))).toEqual({
+      ok: false,
+      why: OLD_START,
+    });
+    expect(await session()).toMatchObject({ fresh: true });
+    // A start id that was never given is refused too.
+    expect(await start.seal('12345')).toEqual({ ok: false, why: OLD_START });
   }, 120_000);
 
   it('starts the budget locked; a second device joins, and the first edit goes out as an entry', async () => {

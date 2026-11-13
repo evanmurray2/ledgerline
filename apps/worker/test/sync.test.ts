@@ -1,7 +1,7 @@
 // The sync pipeline on a Durable Object's SQLite inside workerd: staged pages → apply (fenced, chunked) → watermark
 // processing (matcher, transfers) → budget lines → recompute.
 import { env } from 'cloudflare:test';
-import { storeDb } from './store-db.js';
+import { budgetDb } from './store-db.js';
 import { phoneTables, workOut } from './work-out.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { PlaidProvider } from '@ledgerline/bank-provider';
@@ -13,7 +13,7 @@ import { Scoped } from '../src/db/scoped.js';
 import { inBudgetByAccount, monthTotals } from '../src/ledger/totals.js';
 import type { Month } from '@ledgerline/domain';
 
-const db = storeDb('sync');
+const db = budgetDb('sync');
 const NOW = Date.parse('2026-11-14T20:00:00Z');
 const provider = new PlaidProvider({ clientId: 'x', secret: 'y', env: 'sandbox' });
 const B = 'b_sync';

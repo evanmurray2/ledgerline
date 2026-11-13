@@ -399,8 +399,13 @@ export class LogSession {
         lost += r.lost;
         if (r.bank === 'sent') filed += runs;
         else if (r.bank === 'too large') {
-          // One run alone that is too large for a write can't be filed by this version of the app.
-          if (limit === 1) throw new TooLarge('one bank run is too large for one write');
+          // One run alone that is too large for a write even compressed (over 16 parts, about 1 MB of compressed
+          // rows: D-104) can't be filed by this version of the app. Nothing is skipped: the run waits on the
+          // server, its rows came out of the copy, and edits wait behind it ("bank runs first").
+          if (limit === 1)
+            throw new TooLarge(
+              'A bank update is too large for this version of Ledgerline to save. It waits on the server. Nothing is lost.',
+            );
           limit = Math.max(1, limit >> 1);
         } else if (r.bank !== 'out') return { filed, waiting: true, lost };
         continue;

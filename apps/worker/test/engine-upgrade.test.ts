@@ -9,7 +9,7 @@ import { LocalEngine, migrateLocal } from '../src/local/engine.js';
 import { BUDGET_MIGRATIONS } from '../src/store/migrations.gen.js';
 import { SYNC_FORMAT, SYNC_TABLES, type SyncPage, type SyncRow } from '../src/sync-tables.js';
 import { newCopy, seed } from './phone.js';
-import { storeDb } from './store-db.js';
+import { budgetDb, copyDb } from './store-db.js';
 
 /** How many of the latest migrations to check: each is one older copy. */
 const RECENT = 4;
@@ -72,7 +72,7 @@ describe('a copy left by an older app version upgrades to the screens a new phon
   beforeAll(async () => {
     pages = await download();
     budgetId = String(pages[0]!.rows.find((r) => r.t === 'budget')!.d!.id);
-    const db = storeDb(`upgrade-ref-${++copies}`);
+    const db = copyDb(`upgrade-ref-${++copies}`);
     await migrateLocal(db, Date.now());
     const e = new LocalEngine(db, who(budgetId));
     for (const p of pages) await e.apply(p);
@@ -88,7 +88,9 @@ describe('a copy left by an older app version upgrades to the screens a new phon
       0,
       BUDGET_MIGRATIONS.findIndex((m) => m.name === name),
     );
-    const db = storeDb(`upgrade-${++copies}`);
+    // A store's SQLite with every budget migration recorded, as the tests had it before D-106: this code's engine
+    // fills the older copy, and it writes every table it knows.
+    const db = budgetDb(`upgrade-${++copies}`);
     await migrateLocal(db, Date.now(), before);
     // What the older copy held: the same rows, with only the columns its tables had then.
     const columns = new Map<string, Set<string>>();

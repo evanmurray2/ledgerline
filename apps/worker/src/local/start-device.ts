@@ -17,7 +17,10 @@ import { FILED_KEY } from './sealed-filing.js';
 
 type Answer = { ok: boolean; why?: string };
 
-/** How the device reaches the start's routes (seal/start-routes.ts). */
+/**
+ * How the device reaches the start's routes (seal/start-routes.ts). `begin` answers with the start's id; the chunks
+ * and the seal name it, and the server refuses them once another `begin` came after it.
+ */
 export interface StartTransport {
   begin(s: {
     genesis: Uint8Array;
@@ -25,9 +28,9 @@ export interface StartTransport {
     signature: Uint8Array;
     manifest: Uint8Array;
     chunks: number;
-  }): Promise<Answer>;
-  chunk(id: string, k: number, bytes: Uint8Array): Promise<Answer>;
-  seal(): Promise<Answer>;
+  }): Promise<Answer & { startId?: string }>;
+  chunk(startId: string, id: string, k: number, bytes: Uint8Array): Promise<Answer>;
+  seal(startId: string): Promise<Answer>;
 }
 
 export interface StartDeps {
@@ -97,11 +100,13 @@ export async function startOnDevice(engine: LocalEngine, d: StartDeps): Promise<
       chunks: sealed.chunks.length,
     });
     if (!begun.ok) return await fail(begun.why ?? 'The server did not take the first entry.');
+    const startId = begun.startId;
+    if (!startId) return await fail('The server did not take the first entry.');
     for (const [i, c] of sealed.chunks.entries()) {
-      const put = await d.start.chunk(d.snapshotId, i + 1, c);
+      const put = await d.start.chunk(startId, d.snapshotId, i + 1, c);
       if (!put.ok) return await fail(put.why ?? 'The server did not take the snapshot.');
     }
-    const done = await d.start.seal();
+    const done = await d.start.seal(startId);
     if (!done.ok) return await fail(done.why ?? 'The server did not lock the budget.');
 
     // ---- sealed. The device's place is kept, and the snapshot is read back.

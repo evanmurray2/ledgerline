@@ -11,7 +11,6 @@ import type { Caller } from './directory.js';
 import { DIRECTORY_NAME } from './directory.js';
 import { isSealed, refusal } from './marks.js';
 import { logApi } from '../seal/log-routes.js';
-import { QUEUE_STAMP_LINKS, stampLinksHandler } from './stamp-links.js';
 import {
   failSealedFetch,
   noteOpened,
@@ -25,7 +24,6 @@ import {
   sealedWebhook,
   type FetchDeps,
 } from '../seal/fetch-job.js';
-import { purgeApi } from '../seal/purge-routes.js';
 import { sealedApi, sealedPath } from '../seal/sealed-routes.js';
 import { startApi } from '../seal/start-routes.js';
 import { runDeps } from '../seal/runs.js';
@@ -41,7 +39,6 @@ import { writeBudgetState } from '../sync/breaker.js';
 import { answering } from './body.js';
 import { UsageCounter } from './shares.js';
 import { DISABLED_KEY, budgetInfo, removeBanks, setDisabled, wipeStore } from './account-life.js';
-import { PURGE, purgeHandler, purgeStart } from '../seal/purge.js';
 
 const TRY_AGAIN = 'Something went wrong. Try again.';
 /** Whether this store reports its usage for fair use (store/shares.ts), as the Directory last said. */
@@ -64,7 +61,6 @@ export class BudgetStore extends DurableObject<Env> {
   private readonly runner: JobRunner;
   private cachedBudgetId: string | null = null;
   private logApp: Hono<AppEnv> | null = null;
-  private purgeApp: Hono<AppEnv> | null = null;
   private sealedApp: Hono<AppEnv> | null = null;
   private startApp: Hono<AppEnv> | null = null;
   private readonly usage: UsageCounter;
@@ -161,11 +157,6 @@ export class BudgetStore extends DurableObject<Env> {
       }
     }
     try {
-      // Where emptying the old tables stands, and its start (seal/purge-routes.ts).
-      if (path.startsWith('/api/cutover/')) {
-        this.purgeApp ??= withCaller((app) => app.route('/api', purgeApi));
-        return await this.serve(this.purgeApp, request, caller);
-      }
       // A new budget starts locked (seal/start.ts, D-102): the device sends its first entry and first snapshot.
       if (path.startsWith('/api/start/')) {
         this.startApp ??= withCaller((app) => app.route('/api', startApi));
@@ -271,8 +262,6 @@ export class BudgetStore extends DurableObject<Env> {
         state: { itemId: String(c.provider_item_id), connectionId: String(c.id) },
         runAt: now,
       });
-    // A bank link with no stamp yet is checked and stamped (5.5).
-    this.ctx.storage.sql.exec(QUEUE_STAMP_LINKS, now);
     await this.runner.scheduleNext(now);
     return { ok: true, jobs: this.runner.list() };
   }
@@ -412,7 +401,6 @@ export class BudgetStore extends DurableObject<Env> {
         const id = this.cachedBudgetId ?? (await this.budgetId().catch(() => null));
         if (dir && id) await dir.dropRoute(itemId, id);
       },
-      PURGE_START: (at: number) => purgeStart(this.adapter(), at, this.enqueue),
     };
   }
 
@@ -468,7 +456,7 @@ export class BudgetStore extends DurableObject<Env> {
 
   /**
    * The job handlers. The sealed kinds run only in a sealed budget. Any other job found in a store (a kind from
-   * before D-102) is dropped unrun.
+   * before D-102, or the old purge and link check, D-106) is dropped unrun.
    */
   private handlers(): Record<string, Handler> {
     const sealedOnly =
@@ -480,22 +468,6 @@ export class BudgetStore extends DurableObject<Env> {
       [SEALED_BACKSTOP]: sealedOnly(async (job, now) =>
         sealedBackstopHandler((await this.fetchDeps()).runs, this.enqueue)(job, now),
       ),
-      // Emptying the old tables (seal/purge.ts): queued only by the person's own tap in Settings → Privacy.
-      [PURGE]: sealedOnly(async (job, now) =>
-        purgeHandler({
-          db: this.adapter(),
-          budgetState: (await this.fetchDeps()).budgetState,
-          directoryName: async () => this.directory().budgetName(await this.budgetId()),
-        })(job, now),
-      ),
-      stamp_links: (job, now) => {
-        const env = this.appEnv();
-        return stampLinksHandler({
-          db: this.adapter(),
-          keyring: () => parseKeyring(env.TOKEN_KEYS, env.TOKEN_KEY_CURRENT),
-          provider: () => makeProvider(env),
-        })(job, now);
-      },
       register_link: async (job) => {
         // Retried until the Directory answers (6.4).
         const { itemId, connectionId } = job.state as { itemId: string; connectionId: string };

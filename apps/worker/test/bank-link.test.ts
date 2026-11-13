@@ -1,5 +1,5 @@
 // bank_link (docs/privacy.md 5.5, section 8 step 4): the server's own list of a budget's bank links, with a copy of
-// each token. Until the cutover it follows `connection` by itself, whatever code writes there.
+// each token. It was first copied from `connection`; the old tables are dropped since (D-106), and the links stay.
 import type { Db } from '@ledgerline/db/sql';
 import { env, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
@@ -7,7 +7,7 @@ import { DurableDb } from '../src/store/adapter.js';
 import { budgetInfo } from '../src/store/account-life.js';
 import type { BudgetStore } from '../src/store/budget-store.js';
 import { migrate } from '../src/store/migrate.js';
-import { BUDGET_MIGRATIONS, STORE_MIGRATIONS } from '../src/store/migrations.gen.js';
+import { BUDGET_MIGRATIONS, BUDGET_STORE_MIGRATIONS, STORE_MIGRATIONS } from '../src/store/migrations.gen.js';
 
 const e = env as unknown as { BUDGET: DurableObjectNamespace<BudgetStore> };
 let n = 0;
@@ -35,56 +35,103 @@ const budget = (db: Db) =>
     )
     .run();
 
+/** A store's tables after the drop (D-106). */
+const KEPT = [
+  'bank_link',
+  'budget',
+  'job',
+  'key_stamp',
+  'lease_guard',
+  'link_cursor',
+  'log_entry',
+  'log_state',
+  'run_stage',
+  'run_state',
+  'sealed_page',
+  'sealed_run',
+  'snapshot',
+  'snapshot_chunk',
+  'store_mark',
+  'store_note',
+];
+
 describe('bank_link', () => {
-  it('follows connection: a link made, its token changed, removed, put back, deleted', async () => {
+  it('dropping the old tables (store migration 0010) keeps every bank link, the jobs and the log', async () => {
     await runInDurableObject(fresh(), async (_obj, state) => {
+      // A store as the owner's was before the drop: its budget tables, links copied from `connection` by the
+      // triggers, a queued purge, its notes, and a sealed mark.
+      await state.storage.deleteAll();
+      const at = BUDGET_STORE_MIGRATIONS.findIndex((m) => m.name === 'store/0010_drop_old_tables.sql');
+      migrate(state.storage, BUDGET_STORE_MIGRATIONS.slice(0, at), 1);
       const db = new DurableDb(state.storage);
       await budget(db);
       await connect(db, 'con_01HZZZZZZZZZZZZZZZZZZZZZZZ');
-      await connect(db, 'old-style-id', { provider: 'fake' });
+      await connect(db, 'con_01HYYYYYYYYYYYYYYYYYYYYYYY');
       await connect(db, 'con_GONE', { removed: 9 });
-      expect(await links(db)).toEqual([
-        {
-          id: '01HZZZZZZZZZZZZZZZZZZZZZZZ',
-          connection_id: 'con_01HZZZZZZZZZZZZZZZZZZZZZZZ',
-          provider: 'plaid',
-          provider_item_id: 'item-con_01HZZZZZZZZZZZZZZZZZZZZZZZ',
-          access_token_enc: 'enc-con_01HZZZZZZZZZZZZZZZZZZZZZZZ',
-          key_version: 1,
-          mac: null,
-          check_result: null,
-        },
-        expect.objectContaining({ id: 'old-style-id', connection_id: 'old-style-id', provider: 'fake' }),
+      await db.batch([
+        db.prepare(`UPDATE bank_link SET mac = 'stamp', check_result = 'ok'`),
+        db.prepare(`INSERT INTO store_mark (key, at) VALUES ('sealed', 1)`),
+        db.prepare(
+          `INSERT INTO store_note (key, value) VALUES ('cutover_at', 1), ('purge_rows', 40), ('opened_at', 2)`,
+        ),
+        db.prepare(
+          `INSERT INTO job (id, kind, state, run_at, created_at, updated_at) VALUES
+             ('purge_old', 'purge_old', '{}', 1, 1, 1), ('stamp_links', 'stamp_links', '{}', 1, 1, 1),
+             ('sealed_backstop', 'sealed_backstop', '{}', 1, 1, 1)`,
+        ),
       ]);
-      // The bank count the wipe check and delete account read.
-      expect(budgetInfo(state.storage).banks).toBe(1);
+      const before = await links(db);
+      expect(before).toHaveLength(2);
 
-      // A stamped and checked link whose token changes loses both: they were for the old token.
-      await db.prepare(`UPDATE bank_link SET mac = 'stamp', checked_at = 1, check_result = 'ok'`).run();
-      await db
-        .prepare(`UPDATE connection SET status = 'login_required', updated_at = 7 WHERE id = 'old-style-id'`)
-        .run();
-      expect((await links(db))[1]!.mac).toBe('stamp');
-      await db
-        .prepare(
-          `UPDATE connection SET access_token_enc = 'enc-new', key_version = 2 WHERE id = 'old-style-id'`,
-        )
-        .run();
-      expect((await links(db))[1]).toMatchObject({
-        access_token_enc: 'enc-new',
-        key_version: 2,
-        mac: null,
-        check_result: null,
-      });
-      expect((await links(db))[0]!.mac).toBe('stamp');
+      expect(migrate(state.storage, BUDGET_STORE_MIGRATIONS, 2).applied).toEqual([
+        'store/0010_drop_old_tables.sql',
+      ]);
+      // Every link as it was: the drop of `connection` deleted none of them.
+      expect(await links(db)).toEqual(before);
+      expect(budgetInfo(state.storage).banks).toBe(2);
+      const names = async (type: string) =>
+        (
+          await db
+            .prepare(
+              `SELECT name FROM sqlite_master WHERE type = ?1 AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'
+                 AND name NOT LIKE '\\_%' ESCAPE '\\' ORDER BY name`,
+            )
+            .bind(type)
+            .all<{ name: string }>()
+        ).results.map((r) => r.name);
+      expect(await names('table')).toEqual(KEPT);
+      expect(await names('view')).toEqual([]);
+      expect(await names('trigger')).toEqual([]);
+      // The budget row says only which budget this is.
+      expect((await db.prepare(`SELECT * FROM budget`).all()).results).toEqual([
+        { id: 'b1', name: '', created_at: 0, updated_at: 0 },
+      ]);
+      expect((await db.prepare(`SELECT id FROM job ORDER BY id`).all()).results).toEqual([
+        { id: 'sealed_backstop' },
+      ]);
+      expect((await db.prepare(`SELECT key FROM store_note ORDER BY key`).all()).results).toEqual([
+        { key: 'cutover_at' },
+        { key: 'opened_at' },
+      ]);
+    });
+  });
 
-      await db.prepare(`UPDATE connection SET removed_at = 8 WHERE id = 'old-style-id'`).run();
-      expect((await links(db)).map((l) => l.id)).toEqual(['01HZZZZZZZZZZZZZZZZZZZZZZZ']);
-      await db.prepare(`UPDATE connection SET removed_at = NULL WHERE id = 'old-style-id'`).run();
-      expect((await links(db)).length).toBe(2);
-      await db.prepare(`DELETE FROM connection WHERE id = 'con_01HZZZZZZZZZZZZZZZZZZZZZZZ'`).run();
-      expect((await links(db)).map((l) => l.id)).toEqual(['old-style-id']);
-      expect(budgetInfo(state.storage).banks).toBe(0);
+  it('a new store ends with the same tables, and starts a budget', async () => {
+    await runInDurableObject(fresh(), async (_obj, state) => {
+      const db = new DurableDb(state.storage);
+      const tables = (
+        await db
+          .prepare(
+            `SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'
+               AND name NOT LIKE '\\_%' ESCAPE '\\' ORDER BY name`,
+          )
+          .all<{ name: string }>()
+      ).results.map((r) => r.name);
+      expect(tables).toEqual(KEPT);
+      await db
+        .prepare(`INSERT INTO budget (id, name, created_at, updated_at) VALUES ('b2', 'My budget', 1, 1)`)
+        .run();
+      expect(budgetInfo(state.storage)).toMatchObject({ name: 'My budget', banks: 0, sealed: false });
     });
   });
 
