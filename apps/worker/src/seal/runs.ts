@@ -32,7 +32,7 @@ import {
   type ServerKeys,
 } from '@ledgerline/seal';
 import { conditionFence } from '../sync/lease.js';
-import { stateFromJson } from './log-store.js';
+import { publicOf, type LogPublic } from './log-store.js';
 
 /** A value the Worker must have stamped has no good stamp: the database was changed from outside, or lost a row. */
 export class BadStamp extends Error {
@@ -98,12 +98,6 @@ export const runDeps = (
 export const ZERO_HASH = '0'.repeat(64);
 export const bytesOf = (v: unknown): Uint8Array<ArrayBuffer> =>
   v instanceof Uint8Array ? new Uint8Array(v) : new Uint8Array(v as ArrayBuffer);
-export const unb64 = (s: string): Uint8Array<ArrayBuffer> => {
-  const bin = atob(s);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-};
 /** Hex from the database: text that is no hex is no bytes, and fails whatever check comes next. */
 export const hexOr = (s: unknown): Uint8Array<ArrayBuffer> => {
   try {
@@ -215,16 +209,14 @@ export async function inForce(
     .prepare(`SELECT number, state FROM log_state WHERE id = 1`)
     .first<{ number: number; state: string }>();
   if (!r) throw new BadStamp('inbox key');
-  let p: { inboxVersion?: unknown; retiredAt?: unknown } | undefined;
+  let p: LogPublic | null;
   try {
-    p = (stateFromJson(r.state) as unknown as { public?: typeof p }).public;
+    p = publicOf(r.state);
   } catch {
-    p = undefined;
+    p = null;
   }
-  const v = p?.inboxVersion;
-  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || !(p?.retiredAt instanceof Map))
-    throw new BadStamp('inbox key');
-  return { number: r.number, inboxVersion: v, retiredAt: p.retiredAt as Map<number, number> };
+  if (p?.inboxVersion === undefined || !p.retiredAt) throw new BadStamp('inbox key');
+  return { number: r.number, inboxVersion: p.inboxVersion, retiredAt: p.retiredAt };
 }
 
 // ---- the run state

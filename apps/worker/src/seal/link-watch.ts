@@ -8,7 +8,7 @@
 // The job holds the link token encrypted under TOKEN_KEYS. The Directory routes the webhook by a hash of the link
 // token (`connection_route`, key `link:<hash>`), dropped once the watch ends.
 import type { LinkFinishResult } from '@ledgerline/contracts';
-import { decryptToken, encryptToken, parseKeyring, ulid } from '@ledgerline/platform';
+import { decryptToken, encryptToken, fromBase64, parseKeyring, toBase64, ulid } from '@ledgerline/platform';
 import { linkMac, toHex } from '@ledgerline/seal';
 import type { Env } from '../env.js';
 import type { Enqueue, Handler, StepResult } from '../store/jobs.js';
@@ -33,12 +33,6 @@ export interface WatchState {
   connectionId?: string;
 }
 
-const b64 = (bytes: Uint8Array): string => {
-  let s = '';
-  for (const b of bytes) s += String.fromCharCode(b);
-  return btoa(s);
-};
-const unb64 = (s: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(s), (ch) => ch.charCodeAt(0));
 const keyring = (env: Env) => parseKeyring(env.TOKEN_KEYS, env.TOKEN_KEY_CURRENT);
 
 /** The hash a link token is known by in the job's id and in the Directory's route: never the token itself. */
@@ -94,13 +88,13 @@ export async function saveLink(
   const ring = keyring(env);
   const enc = await encryptToken(ring, done.accessToken, connectionId);
   const keys = await workerKeys(ring).keysFor(enc.keyVersion);
-  const mac = await linkMac(keys, budgetId, linkId, done.providerItemId, unb64(enc.enc));
+  const mac = await linkMac(keys, budgetId, linkId, done.providerItemId, fromBase64(enc.enc));
   await env.DB.prepare(
     `INSERT INTO bank_link (id, connection_id, budget_id, provider, provider_item_id, access_token_enc, key_version,
        linked_at, mac, checked_at, check_result, status, fetch_requested, created_at)
      VALUES (?1, ?2, ?3, 'plaid', ?4, ?5, ?6, ?7, ?8, ?7, 'ok', 'ok', 1, ?7)`,
   )
-    .bind(linkId, connectionId, budgetId, done.providerItemId, enc.enc, enc.keyVersion, now, b64(mac))
+    .bind(linkId, connectionId, budgetId, done.providerItemId, enc.enc, enc.keyVersion, now, toBase64(mac))
     .run();
   // Which budget owns the Item, for the bank's webhooks (docs/multi-user.md 6.4).
   if (env.ROUTE_LINK) await env.ROUTE_LINK(done.providerItemId, connectionId);

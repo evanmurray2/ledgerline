@@ -21,7 +21,7 @@ import {
   type SnapshotHeader,
 } from '@ledgerline/seal';
 import { conditionFence, isFenceAbort } from '../sync/lease.js';
-import { entryBytes, stateFromJson } from './log-store.js';
+import { entryBytes, publicOf } from './log-store.js';
 
 /** The most chunks one snapshot has, and the most bytes of one chunk and of a manifest, as stored. */
 export const MAX_CHUNKS = 256;
@@ -71,10 +71,9 @@ const bytesOf = (v: unknown): Uint8Array<ArrayBuffer> =>
 async function signKeys(db: Db): Promise<{ keyVersion: number; signPubs: Map<number, Uint8Array> } | null> {
   const r = await db.prepare(`SELECT state FROM log_state WHERE id = 1`).first<{ state: string }>();
   if (!r) return null;
-  const p = (stateFromJson(r.state) as unknown as { public?: { keyVersion?: unknown; signPubs?: unknown } })
-    .public;
-  if (typeof p?.keyVersion !== 'number' || !(p.signPubs instanceof Map)) return null;
-  return { keyVersion: p.keyVersion, signPubs: p.signPubs as Map<number, Uint8Array> };
+  const p = publicOf(r.state);
+  if (p?.keyVersion === undefined || !p.signPubs) return null;
+  return { keyVersion: p.keyVersion, signPubs: p.signPubs };
 }
 
 /**

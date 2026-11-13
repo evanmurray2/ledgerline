@@ -3,7 +3,7 @@
 // HttpOnly cookie and the database stores only its SHA-256. The GitHub monitor and deploy smoke test use a bearer
 // token that can reach two endpoints. Local development may trust a fixed email instead, never in production.
 import { sha256Hex } from '@ledgerline/bank-provider';
-import { ulid } from '@ledgerline/platform';
+import { toBase64url, ulid } from '@ledgerline/platform';
 import type { Env } from '../env.js';
 import { resolveMembership } from '../db/scoped.js';
 
@@ -50,10 +50,7 @@ export function cookie(name: string, value: string, maxAgeMs: number): string {
 }
 
 export function randomToken(bytes = 32): string {
-  const b = crypto.getRandomValues(new Uint8Array(bytes));
-  let s = '';
-  for (const x of b) s += String.fromCharCode(x);
-  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return toBase64url(crypto.getRandomValues(new Uint8Array(bytes)));
 }
 
 export const tokenHash = (token: string): Promise<string> => sha256Hex(token);

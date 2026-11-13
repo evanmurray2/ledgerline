@@ -9,20 +9,24 @@
 // admin, who has no recovery code) needs it too.
 import type { Stmt } from '@ledgerline/db/sql';
 import { ACTION, fromHex, toHex, verifyRecoveryLogin } from '@ledgerline/seal';
-import { generateRegistrationOptions } from '@simplewebauthn/server';
 import { Hono } from 'hono';
 import type { Env } from '../env.js';
 import type { AppEnv } from '../http/context.js';
 import { CHALLENGE_COOKIE, CHALLENGE_MS, cookie, readCookie } from '../http/auth.js';
 import { openChallenge, sealChallenge } from '../http/challenge.js';
 import { clock, requestNow } from '../http/clock.js';
-import { bodyObject, csrf } from '../http/security.js';
+import { z } from 'zod';
+import { parseBody } from '../http/body.js';
+import { csrf } from '../http/security.js';
 import { directorySigned } from '../http/signed-request.js';
+import { OWNER_HANDLE, RP_NAME, registrationOptions } from './passkey-options.js';
 import { NOTICE_MS } from './signup.js';
+import { TRY_AGAIN } from '../http/errors.js';
 
-const RP_NAME = 'Ledgerline';
 const HEX32 = /^[0-9a-f]{64}$/;
 const HEX64 = /^[0-9a-f]{128}$/;
+/** The recovery key's public half (`authPub`), hex. */
+const AuthPub = z.object({ authPub: z.string().regex(HEX32) });
 const fail = (message: string) => ({ error: 'auth', message });
 const NOT_SET = 'This recovery key can’t sign in. Check it, or sign in with a passkey.';
 const TOO_LONG = 'That took too long. Try again.';
@@ -52,9 +56,9 @@ recoveryKeyAuth.use('*', csrf);
 recoveryKeyAuth.post('/recover-key/options', async (c) => {
   const env = c.env;
   const now = clock(env);
-  const b = (await bodyObject(c.req)) as { authPub?: unknown };
-  const authPub = typeof b.authPub === 'string' ? b.authPub : '';
-  if (!HEX32.test(authPub)) return c.json(fail(NOT_SET), 403);
+  const b = await parseBody(c.req, AuthPub);
+  if (!b) return c.json(fail(NOT_SET), 403);
+  const { authPub } = b;
   const u = await owner(env, authPub);
   if (!u) return c.json(fail(NOT_SET), 403);
   const challenge = toHex(crypto.getRandomValues(new Uint8Array(32)));
@@ -70,14 +74,14 @@ recoveryKeyAuth.post('/recover-key/options', async (c) => {
 recoveryKeyAuth.post('/recover-key/verify', async (c) => {
   const env = c.env;
   const now = clock(env);
-  const b = (await bodyObject(c.req)) as { signature?: unknown };
+  const b = await parseBody(c.req, z.object({ signature: z.string().regex(HEX64) }));
   const ch = await openChallenge(env, readCookie(c.req.raw, CHALLENGE_COOKIE), 'recovery', now);
   if (!ch || ch.grant_kind !== RECOVERY_KEY_GRANT || !ch.grant_ref) return c.json(fail(TOO_LONG), 400);
   if (await env.DB.prepare(`SELECT 1 AS u FROM used_challenge WHERE id = ?1`).bind(ch.id).first())
     return c.json(fail(TOO_LONG), 400);
-  const signature = typeof b.signature === 'string' ? b.signature : '';
   const u = await owner(env, ch.grant_ref);
-  if (!u || !HEX64.test(signature)) return c.json(fail(NOT_SET), 403);
+  if (!u || !b) return c.json(fail(NOT_SET), 403);
+  const { signature } = b;
   const good = await verifyRecoveryLogin(
     fromHex(ch.grant_ref),
     u.budget_id,
@@ -93,20 +97,12 @@ recoveryKeyAuth.post('/recover-key/verify', async (c) => {
   const existing = await env.DB.prepare(`SELECT id, transports FROM passkey WHERE user_id = ?1`)
     .bind(u.user_id)
     .all<{ id: string; transports: string | null }>();
-  const label = u.display_name ?? 'Ledgerline';
-  const options = await generateRegistrationOptions({
-    rpName: RP_NAME,
-    rpID: env.RP_ID ?? new URL(c.req.url).hostname,
-    userID: Uint8Array.from(new TextEncoder().encode(u.webauthn_handle ?? 'ledgerline-owner')),
-    userName: label,
-    userDisplayName: label,
-    attestationType: 'none',
-    excludeCredentials: existing.results.map((p) => ({
-      id: p.id,
-      ...(p.transports ? { transports: JSON.parse(p.transports) as never } : {}),
-    })),
-    authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
-    extensions: { prf: {} } as never,
+  const options = await registrationOptions({
+    url: c.req.url,
+    env,
+    handle: u.webauthn_handle ?? OWNER_HANDLE,
+    label: u.display_name ?? RP_NAME,
+    existing: existing.results,
   });
   const id = await sealChallenge(env, now, options.challenge, 'register', {
     kind: RECOVERY_KEY_GRANT,
@@ -175,10 +171,9 @@ recoveryKeySettings.post('/settings/security/recovery-key', async (c) => {
   const store = c.env.BUDGET_INFO ? await c.env.BUDGET_INFO(c.get('budgetId')) : null;
   const refused = await directorySigned(c, ACTION.setRecoverySignIn, requestNow(c), store);
   if (refused) return refused;
-  const b = (await bodyObject(c.req)) as { authPub?: unknown };
-  const authPub = typeof b.authPub === 'string' ? b.authPub : '';
-  if (!HEX32.test(authPub))
-    return c.json({ error: 'invalid', message: 'Something went wrong. Try again.' }, 400);
+  const b = await parseBody(c.req, AuthPub);
+  if (!b) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
+  const { authPub } = b;
   try {
     await c.env.DB.prepare(
       `INSERT INTO recovery_key (user_id, auth_pub, created_at) VALUES (?1, ?2, ?3)
@@ -188,8 +183,7 @@ recoveryKeySettings.post('/settings/security/recovery-key', async (c) => {
       .run();
   } catch (e) {
     // Another account has it: never the case for a key made at random.
-    if (/UNIQUE/i.test(String(e)))
-      return c.json({ error: 'invalid', message: 'Something went wrong. Try again.' }, 409);
+    if (/UNIQUE/i.test(String(e))) return c.json({ error: 'invalid', message: TRY_AGAIN }, 409);
     throw e;
   }
   return c.json({ ok: true });

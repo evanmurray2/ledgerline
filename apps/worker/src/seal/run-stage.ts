@@ -1,7 +1,7 @@
 // The run being fetched, under its own stamp (docs/privacy-keys.md 9), and the bank link as the fetch may use it.
 // Split from runs.ts; the steps that move a run are in run-steps.ts.
 import type { Stmt } from '@ledgerline/db/sql';
-import { decryptToken } from '@ledgerline/platform';
+import { decryptToken, fromBase64 } from '@ledgerline/platform';
 import {
   checkLinkMac,
   concat,
@@ -18,7 +18,7 @@ import {
   u8,
 } from '@ledgerline/seal';
 import { conditionFence, isFenceAbort } from '../sync/lease.js';
-import { BadStamp, hexOr, RunStopped, unb64, type RunDeps } from './runs.js';
+import { BadStamp, hexOr, RunStopped, type RunDeps } from './runs.js';
 
 export interface Stage {
   linkId: string;
@@ -213,8 +213,8 @@ export async function stampedLink(
       d.budgetId,
       linkId,
       l.provider_item_id,
-      unb64(l.access_token_enc),
-      unb64(l.mac),
+      fromBase64(l.access_token_enc),
+      fromBase64(l.mac),
     );
   } catch {
     ok = false;

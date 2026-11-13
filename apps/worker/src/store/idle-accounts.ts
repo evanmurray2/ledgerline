@@ -1,6 +1,6 @@
 // Accounts nobody opens for 24 months are deleted (D-85; docs/privacy.md 5.8), with their banks at Plaid. The
-// Directory's daily job works in two stages: it marks an account idle at 24 months (`expire:<budget>`; `idle:`
-// already means the 30-day rest of a budget with no banks), and 30 days later starts the same deletion that Delete
+// Directory's daily job works in two stages: it marks an account idle at 24 months (`expire:<budget>`), and 30
+// days later starts the same deletion that Delete
 // account starts (routes/people.ts), so there is one way to delete. A request by any member in between clears the
 // mark. It never touches an admin's account or one an admin turned off, and starts at most a few deletions a day.
 // A deletion that can't finish (Plaid is down) is queued again every day.

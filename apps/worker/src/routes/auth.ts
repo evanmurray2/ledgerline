@@ -3,9 +3,9 @@
 // five-minute cookie (http/challenge.ts): starting a ceremony writes nothing, and a finish is single use.
 import type { Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
+import { z } from 'zod';
 import {
   generateAuthenticationOptions,
-  generateRegistrationOptions,
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
   type AuthenticationResponseJSON,
@@ -18,9 +18,11 @@ import { ulid } from '@ledgerline/platform';
 import { resolveMembership } from '../db/scoped.js';
 import { isFence, signupStmts, signupSwitchOn } from './signup.js';
 import { checkOrigin } from './signup-switch.js';
+import { OWNER_HANDLE, RP_NAME, registrationOptions, rp } from './passkey-options.js';
 import { RECOVERY_KEY_GRANT, recoveryKeyStmts } from './recovery-key.js';
 import { clock, requestNow } from '../http/clock.js';
 import { openChallenge, sealChallenge } from '../http/challenge.js';
+import { parseBody } from '../http/body.js';
 import { bodyObject, csrf } from '../http/security.js';
 import {
   CHALLENGE_COOKIE,
@@ -36,22 +38,19 @@ import {
   secretMatches,
   tokenHash,
 } from '../http/auth.js';
+import { TRY_AGAIN } from '../http/errors.js';
 
 export const authRoutes = new Hono<AppEnv>();
 authRoutes.use('*', csrf);
 
-const RP_NAME = 'Ledgerline';
-/**
- * Each user has their own WebAuthn user handle (docs/multi-user.md 7.2), so two accounts' passkeys on one device
- * never replace each other. The first user keeps the handle every passkey used before multi-user.
- */
-const OWNER_HANDLE = 'ledgerline-owner';
 const handleBytes = (h: string) => Uint8Array.from(new TextEncoder().encode(h));
 
-function rp(req: Request, env: Env): { rpID: string; origin: string } {
-  const u = new URL(req.url);
-  return { rpID: env.RP_ID ?? u.hostname, origin: u.origin };
-}
+// The ceremonies' answers, checked by @simplewebauthn when they are verified; here only their envelope.
+const RegisterVerify = z.looseObject({
+  response: z.custom<RegistrationResponseJSON>(),
+  name: z.unknown(),
+});
+const LoginVerify = z.looseObject({ response: z.custom<AuthenticationResponseJSON>() });
 
 const fail = (message: string) => ({ error: 'auth', message });
 
@@ -230,23 +229,12 @@ authRoutes.post('/register/options', async (c) => {
         .bind(userId)
         .all<{ id: string; transports: string | null }>()
     : { results: [] as { id: string; transports: string | null }[] };
-  const { rpID } = rp(c.req.raw, env);
-  const label = user?.display_name ?? 'Ledgerline';
-  const options = await generateRegistrationOptions({
-    rpName: RP_NAME,
-    rpID,
-    userID: handleBytes(handle ?? OWNER_HANDLE),
-    userName: label,
-    userDisplayName: label,
-    attestationType: 'none',
-    excludeCredentials: existing.results.map((p) => ({
-      id: p.id,
-      ...(p.transports ? { transports: JSON.parse(p.transports) as never } : {}),
-    })),
-    authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
-    // PRF unlocks the encrypted copy on the phone (D-45). iCloud Keychain passkeys support it anyway; security keys
-    // only when asked for it at creation.
-    extensions: { prf: {} } as never,
+  const options = await registrationOptions({
+    url: c.req.url,
+    env,
+    handle: handle ?? OWNER_HANDLE,
+    label: user?.display_name ?? RP_NAME,
+    existing: existing.results,
   });
   const id = await putChallenge(env, now, options.challenge, 'register', grant);
   c.header('set-cookie', cookie(CHALLENGE_COOKIE, id, CHALLENGE_MS));
@@ -256,11 +244,11 @@ authRoutes.post('/register/options', async (c) => {
 authRoutes.post('/register/verify', async (c) => {
   const env = c.env;
   const now = clock(env);
-  const b = await c.req.json<{ response: RegistrationResponseJSON; name?: string }>().catch(() => null);
-  if (!b || typeof b !== 'object') return c.json(fail('Something went wrong. Try again.'), 400);
+  const b = await parseBody(c.req, RegisterVerify);
+  if (!b) return c.json(fail(TRY_AGAIN), 400);
   const ch = await takeChallenge(c.req.raw, env, 'register', now);
   if (!ch) return c.json(fail('That took too long. Try again.'), 400);
-  const { rpID, origin } = rp(c.req.raw, env);
+  const { rpID, origin } = rp(c.req.url, env);
   let info;
   try {
     const v = await verifyRegistrationResponse({
@@ -390,7 +378,7 @@ authRoutes.post('/register/verify', async (c) => {
 authRoutes.post('/login/options', async (c) => {
   const env = c.env;
   const now = clock(env);
-  const { rpID } = rp(c.req.raw, env);
+  const { rpID } = rp(c.req.url, env);
   const options = await generateAuthenticationOptions({ rpID, userVerification: 'required' });
   const id = await putChallenge(env, now, options.challenge, 'login', null);
   c.header('set-cookie', cookie(CHALLENGE_COOKIE, id, CHALLENGE_MS));
@@ -409,8 +397,8 @@ authRoutes.post('/login/verify', async (c) => {
       },
     );
   const now = clock(env);
-  const b = await c.req.json<{ response: AuthenticationResponseJSON }>().catch(() => null);
-  if (!b || typeof b !== 'object') return c.json(fail('Something went wrong. Try again.'), 400);
+  const b = await parseBody(c.req, LoginVerify);
+  if (!b) return c.json(fail(TRY_AGAIN), 400);
   const ch = await takeChallenge(c.req.raw, env, 'login', now);
   if (!ch) return c.json(fail('That took too long. Try again.'), 400);
   const pk = await env.DB.prepare(
@@ -434,7 +422,7 @@ authRoutes.post('/login/verify', async (c) => {
   const sent = b.response?.response?.userHandle;
   if (pk.webauthn_handle && sent !== isoBase64URL.fromBuffer(handleBytes(pk.webauthn_handle)))
     return c.json(fail('The passkey couldn’t be verified.'), 403);
-  const { rpID, origin } = rp(c.req.raw, env);
+  const { rpID, origin } = rp(c.req.url, env);
   let newCounter: number;
   try {
     const v = await verifyAuthenticationResponse({

@@ -1,3 +1,4 @@
+import { bytesToHex, fromBase64url } from '@ledgerline/platform';
 import {
   type BankDataProvider,
   type CompletedLink,
@@ -549,12 +550,9 @@ function plaidError(status: number, text: string): ProviderError {
   return new ProviderError(code, message, retryable);
 }
 
+/** A JWT segment: base64url without padding, padded here before it is read. */
 function b64urlDecode(s: string): Uint8Array<ArrayBuffer> {
-  const b = s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4);
-  const bin = atob(b);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
+  return fromBase64url(s + '='.repeat((4 - (s.length % 4)) % 4));
 }
 
 function b64urlDecodeText(s: string): string {
@@ -563,22 +561,10 @@ function b64urlDecodeText(s: string): string {
 
 export async function sha256Hex(s: string): Promise<string> {
   const d = await crypto.subtle.digest('SHA-256', ENC.encode(s));
-  return hex(new Uint8Array(d));
-}
-
-const HEX = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
-
-export function hex(b: Uint8Array): string {
-  let out = '';
-  for (let i = 0; i < b.length; i++) out += HEX[b[i] as number];
-  return out;
+  return bytesToHex(new Uint8Array(d));
 }
 
 const ENC = new TextEncoder();
-
-export async function sha256HexBytes(bytes: BufferSource): Promise<string> {
-  return hex(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)));
-}
 
 function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
