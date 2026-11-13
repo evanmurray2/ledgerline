@@ -9,6 +9,7 @@ import { useAssignView, useMoneyMutation } from '../api/hooks';
 import { Card, ConfirmInline, cx, SoftButton, TONE, type IconName, type Tone } from '../components/ui';
 import { GroupHeader } from './BudgetRows';
 import { formatCents } from '../lib/money';
+import { sentence } from '../lib/text';
 import { useHere } from '../lib/back';
 import { toast } from '../components/Toast';
 import { usage } from '../usage/tracker';
@@ -159,7 +160,12 @@ export function AttentionList({ b, month }: { b: BudgetView; month: string }) {
         </p>
       )}
       {sections.map((sec) => {
-        const t = SECTION_TONE[sec.title];
+        // A short card that the Overspent fix above covers too is a consequence, not a second problem: it stays
+        // neutral unless one of its rows has a fix of its own.
+        const t =
+          sec.title === 'Card payments' && !sec.items.some((a) => a.fix)
+            ? { tone: 'none' as const, icon: 'dash' as const }
+            : SECTION_TONE[sec.title];
         return (
           <Card key={sec.title}>
             <GroupHeader
@@ -170,7 +176,7 @@ export function AttentionList({ b, month }: { b: BudgetView; month: string }) {
                 sec.title === 'Underfunded' &&
                 underfunded.length > 1 && (
                   <SoftButton
-                    tone="filled"
+                    tone="outline"
                     mutates="offline"
                     track="budget.attention.fund_all"
                     onClick={() => (fundAllTotal > b.rta ? setWarn(true) : void fundAll())}
@@ -198,9 +204,11 @@ export function AttentionList({ b, month }: { b: BudgetView; month: string }) {
               </ConfirmInline>
             )}
             {sec.items.map((a) => (
+              // The amount keeps the card's right edge on every row; the detail and the fix share the line below,
+              // so amounts line up whatever the button says.
               <div
                 key={a.key}
-                className="flex items-center gap-3 border-t border-divider px-3 py-2.5 first:border-t-0"
+                className="flex flex-col gap-1 border-t border-divider px-3 py-2.5 first:border-t-0"
               >
                 <Link
                   to={
@@ -219,37 +227,38 @@ export function AttentionList({ b, month }: { b: BudgetView; month: string }) {
                         ? { month }
                         : undefined
                   }
-                  className="flex min-h-11 min-w-0 flex-1 flex-col justify-center gap-[3px] text-ink no-underline"
+                  className="flex min-h-11 items-center justify-between gap-2 text-ink no-underline"
                 >
-                  <span className="flex justify-between gap-2">
-                    <span className="min-w-0 text-base font-semibold wrap-anywhere">{a.name}</span>
-                    {/* Overspent, Short card and Owed amounts are the problem itself; for the rest the balance is
-                        just context, and the button says what it needs. */}
-                    <span
-                      className={cx(
-                        'tnum text-md font-bold',
-                        sec.title === 'Overspent' || sec.title === 'Card payments' || a.link === 'owed'
-                          ? TONE[t.tone].fg
-                          : 'text-ink-2',
-                      )}
-                    >
-                      {formatCents(a.amount)}
-                    </span>
-                  </span>
-                  <span className="text-xs text-muted">{a.detail}</span>
-                </Link>
-                {a.fix && (
-                  <SoftButton
-                    mutates={a.link !== 'owed' && 'offline'}
-                    track={`budget.attention.${a.fix.verb.toLowerCase().replace(' ', '_')}`}
-                    aria-label={`${fixLabel(a.fix)} for ${a.name}`}
-                    onClick={() => void run(a)}
-                    disabled={fixes.pending}
-                    className="min-w-[92px]"
+                  <span className="min-w-0 text-base font-semibold wrap-anywhere">{a.name}</span>
+                  {/* Overspent, Short card and Owed amounts are the problem itself; for the rest the balance is
+                      just context, and the button says what it needs. */}
+                  <span
+                    className={cx(
+                      'tnum shrink-0 text-md font-bold',
+                      sec.title === 'Overspent' ||
+                        (sec.title === 'Card payments' && t.tone === 'over') ||
+                        a.link === 'owed'
+                        ? TONE[t.tone].fg
+                        : 'text-ink-2',
+                    )}
                   >
-                    {fixLabel(a.fix)}
-                  </SoftButton>
-                )}
+                    {formatCents(a.amount)}
+                  </span>
+                </Link>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="min-w-0 text-xs text-muted">{sentence(a.detail)}</span>
+                  {a.fix && (
+                    <SoftButton
+                      mutates={a.link !== 'owed' && 'offline'}
+                      track={`budget.attention.${a.fix.verb.toLowerCase().replace(' ', '_')}`}
+                      aria-label={`${fixLabel(a.fix)} for ${a.name}`}
+                      onClick={() => void run(a)}
+                      disabled={fixes.pending}
+                    >
+                      {fixLabel(a.fix)}
+                    </SoftButton>
+                  )}
+                </div>
               </div>
             ))}
           </Card>

@@ -28,6 +28,7 @@ import { useCanWrite } from '../state/connectivity';
 import { toast } from '../components/Toast';
 import { TabHeader } from '../components/MonthBar';
 import { PULL_HOLD, usePullToRefresh } from '../lib/pull';
+import { keepTimes } from '../lib/text';
 import { errorMessage } from '../api/client';
 import { getCopy, syncNow } from '../copy/copy';
 
@@ -360,7 +361,7 @@ export function AccountsScreen({ panel }: { panel?: ReactNode } = {}) {
                           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                             <span className="text-base font-semibold">{a.name}</span>
                             {/* Stays gray when a bank needs you: "may be out of date" on the right says it once. */}
-                            <span className="text-xs text-muted">{a.meta}</span>
+                            <span className="text-xs text-muted">{keepTimes(a.meta)}</span>
                           </span>
                           <span className="flex shrink-0 flex-col items-end gap-0.5">
                             <span
@@ -415,7 +416,7 @@ export function AccountsScreen({ panel }: { panel?: ReactNode } = {}) {
                       >
                         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                           <span className="text-base text-muted">{a.name}</span>
-                          <span className="text-xs text-muted">{a.meta}</span>
+                          <span className="text-xs text-muted">{keepTimes(a.meta)}</span>
                         </span>
                         <Icon name="chevR" size={18} className="-ml-1 shrink-0 text-faint" />
                       </Link>
