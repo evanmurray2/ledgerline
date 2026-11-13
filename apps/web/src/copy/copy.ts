@@ -856,7 +856,14 @@ export async function start(session: Session): Promise<void> {
     // Reloaded while the copy was open and in use (within 10 minutes): it opens again without Face ID.
     const kept = rec && !p?.prf ? await heldKey(key, IDLE_MS) : null;
     if (rec && kept) {
-      const st = await server<{ off: boolean }>('POST', '/api/auth/copy-status', { device: rec.deviceId });
+      // Too many checks from this address just now (several quick reloads): the copy opens all the same, and the
+      // next start asks again. Only the server's "signed out" answer turns it off.
+      const st = await server<{ off: boolean }>('POST', '/api/auth/copy-status', {
+        device: rec.deviceId,
+      }).catch((e: unknown) => {
+        if (e instanceof Error && /Too many tries/.test(e.message)) return { off: false };
+        throw e;
+      });
       if (st.off) {
         await dropHeld(key);
         await deleteRecord(key);
