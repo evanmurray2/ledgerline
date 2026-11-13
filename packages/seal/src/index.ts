@@ -19,3 +19,4 @@ export * from './run.js';
 export * from './device-add.js';
 export * from './request.js';
 export * from './server-append.js';
+export * from './device-check.js';

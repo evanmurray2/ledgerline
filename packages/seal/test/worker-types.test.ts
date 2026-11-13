@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type * as W from '../../../apps/worker/src/types/seal.js';
 import type { ChainState, PublicState } from '../src/chain.js';
+import type { CheckFacts } from '../src/device-check.js';
 import { KIND, type Entry, type EntryFields, type EntryHeader, type Kind } from '../src/entry.js';
 import type { RunManifest } from '../src/run.js';
 import type { SlotRecord } from '../src/slots.js';
@@ -27,6 +28,7 @@ describe("the Worker's copy of the package's types", () => {
     same<Same<W.SnapshotManifest, Manifest>>();
     same<Same<W.SealedSnapshot, SealedSnapshot>>();
     same<Same<W.SnapshotBounds, SnapshotBounds>>();
+    same<Same<W.CheckFacts, CheckFacts>>();
     // The kinds' values too.
     const kinds: Record<keyof typeof KIND, W.Kind> = KIND;
     expect(Object.keys(kinds)).toHaveLength(10);

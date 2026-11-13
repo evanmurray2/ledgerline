@@ -1,9 +1,9 @@
 // What comes from a budget key (docs/privacy-keys.md section 2): for key version v, the AES-256-GCM keys for entry
-// bodies, snapshots and small wrapped values, and the Ed25519 signing pair.
+// bodies, snapshots and small wrapped values, the Ed25519 signing pair, and the HMAC key of the device check.
 import { type Bytes, concat, isUlid, label, str, u32, zeroize } from './bytes.js';
 import { aeadKey } from './aead.js';
 import { signPairFromSeed, type SignPair } from './curve.js';
-import { hkdf } from './hash.js';
+import { hkdf, hmacKey } from './hash.js';
 
 export const BUDGET_KEY_LEN = 32;
 
@@ -16,6 +16,11 @@ export interface BudgetKeys {
   /** Small wrapped values: slot public halves, inbox private keys, the budget key before this one. */
   wrap: CryptoKey;
   sign: SignPair;
+  /**
+   * HMAC-SHA-256 key of the device check (device-check.ts, D-116): each device's fingerprint of what it worked out,
+   * which the server keeps but can't read or make. Keys held from a release before it don't have it.
+   */
+  check: CryptoKey;
 }
 
 /** salt_v = str(budgetId) || u32(v) */
@@ -43,6 +48,7 @@ export async function deriveBudgetKeys(
       'ledgerline/v1/snapshot',
       'ledgerline/v1/wrap',
       'ledgerline/v1/sign',
+      'ledgerline/v1/device-check',
     ])
       raw.push(await hkdf(bk, salt, label(name), 32));
     return {
@@ -51,6 +57,7 @@ export async function deriveBudgetKeys(
       snapshot: await aeadKey(raw[1]!),
       wrap: await aeadKey(raw[2]!),
       sign: await signPairFromSeed(raw[3]!),
+      check: await hmacKey(raw[4]!),
     };
   } finally {
     zeroize(...raw);
