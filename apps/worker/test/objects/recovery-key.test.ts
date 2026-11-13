@@ -369,11 +369,13 @@ describe('the freshness rule on the log’s routes', () => {
     const entry = encodeEntry(await keyChangeBy(w));
     const body = { base: 1, entries: [btoa(String.fromCharCode(...entry))] };
     // The session the recovery key signed in: its passkey is days old at most.
-    const fresh = await second.call('POST', '/api/log/append', body);
+    // A key change is a signed request (D-114), so both tries are signed with the key in force.
+    const sign = { keys: w.keys, action: ACTION.storeSignKey };
+    const fresh = await signedCall(second, '/api/log/append', body, sign);
     expect(fresh).toMatchObject({ status: 409, json: { ok: false, why: 'intent needed' } });
     expect(Number(await storeDb(budgetId).prepare(`SELECT count(*) AS n FROM log_entry`).first('n'))).toBe(1);
     // The owner's passkey is 8 days old (above): the same entry is taken.
-    const old = await owner.call('POST', '/api/log/append', body);
+    const old = await signedCall(owner, '/api/log/append', body, sign);
     expect(old).toMatchObject({ status: 200, json: { ok: true, number: 2 } });
   });
 });

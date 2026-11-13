@@ -338,28 +338,6 @@ export function encodeGenesis(g: {
   slots: SlotRecord[];
 }): Bytes;
 export function publicEntry(fields: EntryFields, body: Uint8Array, keys: BudgetKeys): Promise<Entry>;
-// A key change (the tests that make one: test/log-signed-keys.test.ts).
-export function encodeKeyChange(k: Record<string, unknown>): Bytes;
-export function resealSlotRecord(
-  old: unknown,
-  oldKeys: BudgetKeys,
-  newBk: Uint8Array,
-  newKeys: BudgetKeys,
-  budgetId: string,
-): Promise<unknown>;
-export function rewrapInbox(
-  oldKeys: BudgetKeys,
-  newKeys: BudgetKeys,
-  budgetId: string,
-  i: number,
-  wrapped: Uint8Array,
-): Promise<Bytes>;
-export function wrapPrevKey(
-  oldKeys: BudgetKeys,
-  newKeys: BudgetKeys,
-  budgetId: string,
-  prevBk: Uint8Array,
-): Promise<Bytes>;
 export function sealedEntry(fields: EntryFields, plain: Uint8Array, keys: BudgetKeys): Promise<Entry>;
 
 // ---- a device's side of the log (apps/worker/src/local/device-log.ts)
