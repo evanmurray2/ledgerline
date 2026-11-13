@@ -22,7 +22,7 @@ const json = (body: unknown, status: number, headers: Record<string, string> = {
 const fail = (message: string) => ({ error: 'auth', message });
 
 export { maxUsers, signupSwitchOn, signupsPerDay } from './signup-switch.js';
-import { maxUsers, signupSwitchOn, signupsPerDay } from './signup-switch.js';
+import { checkHost, maxUsers, signupSwitchOn, signupsPerDay } from './signup-switch.js';
 
 // ---- Turnstile
 
@@ -83,7 +83,8 @@ export async function gatedOptions(req: Request, env: Env, dir: SignupDirectory)
   if (!csrfOk(req)) return json({ error: 'csrf', message: 'Something went wrong. Try again.' }, 403);
   const b = (await req.json().catch(() => null)) as { turnstileToken?: unknown } | null;
   if (!b || typeof b.turnstileToken !== 'string') return json(fail('Something went wrong. Try again.'), 400);
-  const host = env.RP_ID ?? new URL(req.url).hostname;
+  // The check ran on its own address (docs/privacy.md 5.6), so the token names that host, not the app's.
+  const host = checkHost(env) ?? '';
   const ok = await verifyTurnstile(
     env,
     b.turnstileToken,

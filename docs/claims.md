@@ -1,9 +1,11 @@
 # What we claim
 
 Status: Nov 13, 2026. Phase 8 of `docs/privacy.md`: each claim of section 1.1, whether it is true today for a
-locked budget, its limit, and what backs it. The app no longer shows it (D-108). Change it in the same pull request as
-the code that changes what is true. No outside review has been made; one comes first only if the
-owner ever funds one.
+locked budget, its limit, and what backs it. The app no longer shows it (D-108). No outside review has been made;
+one comes first only if the owner ever funds one.
+
+**The rule:** this page says what is true today. A pull request that changes who can read what (`docs/privacy.md`
+7), or makes a claim true or false, changes this page too, and `docs/privacy-policy.md` with it.
 
 The owner's budget has been locked (sealed) since Nov 12, 2026, 22:24:55 UTC. Sign-up is closed, so it is the only
 locked budget.
@@ -64,8 +66,9 @@ public. Code sent to one person once leaves no trace anyone else can see_ (`docs
   `apps/web/test/headers.test.ts` fails if it loosens. Banks are linked and repaired on Plaid's hosted page.
 - **Limit:** "Record how I use the app" is the app's own recorder, on unless turned off. For a locked budget the
   server answers its calls and keeps nothing (`seal/sealed-routes.ts`). Sign-up is closed. Its robot check
-  (Turnstile) loads a script from `challenges.cloudflare.com`, which this policy blocks: it needs the second address
-  of `docs/privacy.md` 5.6, which is not built. Sign-up stays closed until it is.
+  (Turnstile) runs on its own address, a second Worker that holds nothing (`docs/privacy.md` 5.6, D-113,
+  `apps/worker/src/check/`); the app's policy names no outside host for it. That Worker is built but not deployed
+  yet.
 - **Backed by:** checkable. Anyone can read the header the app sends (`curl -I` on the app's address).
 
 ### 6. "Sign-up asks for a passkey and nothing else: no name, no email address, no phone number."
@@ -97,9 +100,12 @@ public. Code sent to one person once leaves no trace anyone else can see_ (`docs
 
 - **True now** (D-96). The repository is public. `ci` builds twice and fails on any changed byte. Each build writes
   `/release.json`; the `deploy` run keeps the file list and attests it.
+- **Checked on Nov 13, 2026**, for the release of commit `4cd9d1b`: a Linux build of that commit gave the build
+  hash in `/release.json`; each of the 39 files the site serves had the hash in the list; the `deploy` run attested
+  the list (its attestation names that digest, `deploy.yml` on `main` and the commit).
 - **Limit:** it covers the app's files, not the code the Worker runs, and it can't catch files sent to one person
-  once. Nobody has yet checked a live release's attestation with `gh attestation verify`, or compared a build made
-  on macOS.
+  once. `gh attestation verify` was not run against Sigstore's trust root (that check's network was blocked), and
+  no build made on macOS was compared.
 - **Build plan:** "Comparable releases, left open after phase 7".
 - **Backed by:** checkable: the repository, the build log, the attestation (`docs/runbooks/verify-build.md`).
 

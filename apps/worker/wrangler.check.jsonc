@@ -1,0 +1,19 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  // The robot check's own address (docs/privacy.md 5.6, D-113): a second free Worker with no bindings, no storage
+  // and no secrets. It serves one page that runs Cloudflare Turnstile and sends the browser back to APP_URL with a
+  // one-use token. Not deployed yet: deploy.yml deploys only wrangler.jsonc (docs/open-signup.md 13 lists the steps
+  // to turn sign-up on). Local runs and e2e: wrangler dev -c wrangler.check.jsonc with --var.
+  "name": "ledgerline-check",
+  "main": "src/check/index.ts",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  // It holds nothing, so it keeps no request logs either (no IP addresses).
+  "observability": { "enabled": false },
+  "vars": {
+    "APP_URL": "https://ledgerline.ledger-line.workers.dev",
+    // Set when the owner makes the Turnstile widget for this address (docs/open-signup.md 13).
+    "TURNSTILE_SITE_KEY": "",
+  },
+}
