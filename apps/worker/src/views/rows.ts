@@ -25,6 +25,26 @@ export function hiddenFromLists(t: Pick<TxRow, 'source' | 'status' | 'date' | 'b
 /** isHistory as SQL, negated: rows in the budget, the only ones that can need you. */
 export const IN_BUDGET_ROWS = `NOT (source = 'bank' AND budget_from IS NOT NULL AND date < budget_from)`;
 
+/** Transfer states that make a row a transfer between accounts: it has no payee (D-106). */
+export const TRANSFER_STATES = `('paired', 'manual')`;
+
+/**
+ * A transfer's name in place of a payee (D-106): "Transfer to Savings" or "Transfer from Checking" when paired, or
+ * "Transfer out" / "Transfer in" for an account that isn't linked. Null when the row isn't a transfer.
+ */
+export function transferName(
+  t: Pick<TxRow, 'transfer_state' | 'transfer_account_id' | 'amount'>,
+  accountNames: ReadonlyMap<string, string>,
+): string | null {
+  const out = t.amount < 0;
+  if (t.transfer_state === 'paired' && t.transfer_account_id) {
+    const other = accountNames.get(t.transfer_account_id);
+    return other ? `Transfer ${out ? 'to' : 'from'} ${other}` : `Transfer ${out ? 'out' : 'in'}`;
+  }
+  if (t.transfer_state === 'manual') return `Transfer ${out ? 'out' : 'in'}`;
+  return null;
+}
+
 export function categoryLabel(
   t: TxRow,
   categoryNames: ReadonlyMap<string, string>,

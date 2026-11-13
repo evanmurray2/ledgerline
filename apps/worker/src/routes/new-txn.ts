@@ -51,6 +51,10 @@ export async function addTxn(c: Context<AppEnv>) {
   const toRta = (r.toRta === true && r.amount > 0) || !!r.paysBack;
   const categoryId = toRta || r.transferAccountId ? null : r.categoryId;
   const key = `m:${newId(c)}`;
+  // A transfer has no payee (D-106): it is named by the other account, whatever name came with it.
+  const xfer = r.transferAccountId
+    ? await transferSide(c, key, r.accountId, r.transferAccountId, r, now)
+    : null;
   const w: Stmt[] = [
     // An entry for a closed account opens it again (D-73).
     ...reopenStmts(s, r.accountId, now),
@@ -63,7 +67,7 @@ export async function addTxn(c: Context<AppEnv>) {
       r.kind,
       r.date,
       r.amount,
-      r.payee,
+      xfer?.name ?? r.payee,
       r.repeats,
       now,
     ),
@@ -75,7 +79,7 @@ export async function addTxn(c: Context<AppEnv>) {
       now,
     ),
   ];
-  if (r.transferAccountId) w.push(...(await transferSide(c, key, r.accountId, r.transferAccountId, r, now)));
+  if (xfer) w.push(...xfer.stmts);
   if (r.owed) w.push(owedStmt(s, key, r.amount, r.owed, now));
   if (r.paysBack) w.push(...(await paysBack(c, key, r.amount, r.paysBack, now)));
   w.push(s.audit('txn.add', 'transaction', key, null, r, now));
@@ -93,7 +97,7 @@ async function transferSide(
   otherId: string,
   r: { date: string; amount: number },
   now: number,
-): Promise<Stmt[]> {
+): Promise<{ stmts: Stmt[]; name: string }> {
   const s = scoped(c);
   // The account this entry is in may be closed (the entry opens it again, D-73); the other side's can't be.
   const me = await s.first<{ name: string }>(
@@ -113,7 +117,7 @@ async function transferSide(
       `${other.name}’s budget starts after this date. Pick another date.`,
     );
   const entry = `m:${newId(c)}`;
-  return [
+  const stmts = [
     s.q(
       `INSERT INTO manual_pending (id, budget_id, txn_key, account_id, kind, date, amount, payee_name, repeats, created_at, updated_at)
        VALUES (?2, ?1, ?3, ?4, 'pending', ?5, ?6, ?7, 'never', ?8, ?8)`,
@@ -145,6 +149,7 @@ async function transferSide(
       now,
     ),
   ];
+  return { stmts, name: `Transfer ${r.amount < 0 ? 'to' : 'from'} ${other.name}` };
 }
 
 /** Money in that pays back owed items, checked as Match money back checks it (rule 12). */

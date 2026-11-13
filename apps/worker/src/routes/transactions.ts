@@ -188,6 +188,9 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
     set('budget_month', p.budgetMonth);
   }
   if (p.payeeName !== undefined) {
+    // A transfer has no payee (D-106).
+    if (t.transfer_state === 'paired' || t.transfer_state === 'manual')
+      throw new HttpError(422, 'invalid', 'A transfer has no payee.');
     // A name you typed is yours: sync never renames it, and the payee gets the key of that name
     // (docs/payee-names.md 4, 6).
     if (t.payee_id)

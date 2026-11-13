@@ -2,7 +2,7 @@
 // The transfer adds the other side as its own pending entry, paired (as D-83 does for a bank row), and each bank row
 // takes its own side over. Through the real pipeline and the routes the phone runs.
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { BudgetView, OwedView } from '@ledgerline/contracts';
+import type { BudgetView, OwedView, PayeesView, TxnSheet } from '@ledgerline/contracts';
 import { bankSync, plaidTxn } from './bank-sync.js';
 
 const NOW = Date.parse('2026-11-14T20:00:00Z');
@@ -53,6 +53,35 @@ describe('Add a pending transaction that is more than a purchase', () => {
     expect(await entries(2)).toEqual([]);
     expect(await overlay(mine!.key)).toMatchObject({ transfer_state: 'paired', transfer_account_id: 'a_2' });
     expect(await rta()).toBe(before);
+  });
+
+  it('a transfer has no payee: named by the other account, left out of Payees, and no rename (D-106)', async () => {
+    // The payee typed with a transfer is not kept.
+    const r = await add({ amount: -2500, payee: 'Landlord', transferAccountId: 'a_2' });
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
+    const [mine] = await entries(1);
+    const [other] = await entries(2);
+    const sheet = async (key: string) => (await call('GET', `/api/transactions/${key}`)).json as TxnSheet;
+    expect(await sheet(mine!.key)).toMatchObject({
+      transfer: true,
+      payee: 'Transfer to Card 2',
+      payeeId: null,
+      rawName: '',
+    });
+    expect(await sheet(other!.key)).toMatchObject({
+      transfer: true,
+      payee: 'Transfer from Card 1',
+      payeeId: null,
+    });
+
+    // The bank rows of the first transfer took their entries over: their bank names make no payee in the list.
+    const p = (await call('GET', '/api/settings/payees')).json as PayeesView;
+    const listed = [...p.payees, ...p.others].map((x) => x.name.toUpperCase());
+    expect(listed).toContain('PAYROLL');
+    expect(listed.filter((n) => n.includes('TRANSFER') || n.includes('THANK YOU'))).toEqual([]);
+    const taken = await keyOf('t_out');
+    expect(await sheet(taken)).toMatchObject({ transfer: true, payee: 'Transfer to Card 2', payeeId: null });
+    expect((await call('PATCH', `/api/transactions/${taken}`, { payeeName: 'Rent' })).status).toBe(422);
   });
 
   it('refuses a transfer to the same account', async () => {
