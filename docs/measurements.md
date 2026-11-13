@@ -1,6 +1,6 @@
 # Phase 1 measurements (go/no-go)
 
-How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history. The measures of the old server path (`phone`, `refile-payees` and `fill-plaid-name`) were removed with that path (D-102); their sections are history too.
+How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history. The measures of the old server path (`phone`, `refile-payees` and `fill-plaid-name`) were removed with that path (D-102); their sections are history too. So was `sync.measure.ts` (Nov 13, 2026): its fetch step was the server's old Plaid fetch, which the sealed fetch job (`fetch-job.measure.ts`) replaced, and its apply and processing steps now run on the device. `entry-covers.measure.ts` now stages its history's pages directly instead of through that fetch step.
 
 ## Update: the last CPU times read from Cloudflare, and how CPU is judged from now on (Nov 13, 2026)
 

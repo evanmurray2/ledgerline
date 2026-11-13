@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.measure.json && tsc -p tsconfig.json",
     "test": "vitest run && vitest run -c vitest.objects.config.ts && vitest run -c vitest.signup.config.ts"
   },
   "dependencies": {
