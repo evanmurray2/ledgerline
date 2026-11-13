@@ -15,15 +15,15 @@
     "@ledgerline/domain": "workspace:*",
     "@ledgerline/platform": "workspace:*",
     "@ledgerline/seal": "workspace:*",
-    "@simplewebauthn/server": "14.0.3",
-    "hono": "4.13.14",
-    "wrangler": "4.156.0",
+    "@simplewebauthn/server": "14.1.0",
+    "hono": "4.13.17",
+    "wrangler": "4.160.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "1.4.11",
+    "@cloudflare/vitest-plugin": "1.7.0",
     "@types/sql.js": "1.4.11",
-    "sql.js": "1.14.2",
-    "vitest": "4.1.12"
+    "sql.js": "1.16.0",
+    "vitest": "5.1.0"
   }
 }
