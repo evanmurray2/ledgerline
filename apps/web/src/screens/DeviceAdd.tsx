@@ -252,9 +252,13 @@ export function JoinThisDevice({ session }: { session: Session }) {
     setStep({ at: 'opening' });
     void (async () => {
       const { bk, confirm } = await t.open();
-      await openWithAddedKey(bk as Bytes, session);
-      await confirm();
-    })().catch((e: unknown) => setStep({ at: 'failed', why: problem(e) ?? NOT_SAME }));
+      const slotId = await openWithAddedKey(bk as Bytes, session);
+      await confirm(slotId);
+    })().catch((e: unknown) => {
+      // The signed-in device stops waiting for a confirmation that won't come.
+      void api.deviceAddEnd().catch(() => undefined);
+      setStep({ at: 'failed', why: problem(e) ?? NOT_SAME });
+    });
   };
 
   if (withKey) return <OpenWithRecoveryKey session={session} />;

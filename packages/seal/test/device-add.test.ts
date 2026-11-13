@@ -16,6 +16,8 @@ import {
   hkdf,
   hmac,
   hpke,
+  str,
+  utf8,
   label,
   NewDevice,
   randomBytes,
@@ -30,6 +32,8 @@ const BUDGET = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
 const OTHER = '01BX5ZZKBKACTAV9WEVGEMMVRZ';
 const HEAD = { number: 1234, hash: fromHex('55'.repeat(32)) };
 const NOW = 1_800_000_000_000;
+/** The new device's way in, as it names it in the confirmation. */
+const SLOT = 'p:AQID';
 
 async function budget(version = 2): Promise<{ bk: Bytes; keys: BudgetKeys; log: WalkedLog }> {
   const bk = randomBytes(32);
@@ -70,7 +74,7 @@ describe('adding a device', () => {
     expect(toHex(got.bk)).toBe(toHex(bk));
     expect(got.keys.version).toBe(2);
     expect(toHex(got.keys.sign.pub)).toBe(toHex(keys.sign.pub));
-    expect(await o.confirmed(bk, got.confirm)).toBe(true);
+    expect(await o.confirmed(bk, await n.confirm(SLOT))).toBe(SLOT);
   });
 
   it('gives the pinned commitment, transcript and code for fixed messages', async () => {
@@ -88,10 +92,10 @@ describe('adding a device', () => {
     const t = await addTranscriptOf(BUDGET, commit, offer, reveal);
     expect(toHex(t.transcript)).toBe('adf6e70fb4781501a938c15e5fd206d12d2151c38e83f1436431ed92e8ac20bd');
     expect(t.code).toBe('680859');
-    // The confirmation for the budget key 66...66, by the same separate program.
-    const k = await hkdf(fromHex('66'.repeat(32)), t.transcript, label('ledgerline/v1/add/confirm'), 32);
-    expect(toHex(await hmac(k, t.transcript))).toBe(
-      'e3676c0a27cb144b6d1b2efc7e0cef0d026bc817e0a5fe80848afcfb89eb8ffd',
+    // The confirmation for the budget key 66...66 and the way in p:AQID, by the same separate program (node:crypto).
+    const k = await hkdf(fromHex('66'.repeat(32)), t.transcript, label('ledgerline/v1/add/confirm-slot'), 32);
+    expect(toHex(await hmac(k, concat(t.transcript, str(SLOT))))).toBe(
+      'b24b3c3dadd453c7501afe99b7f7c3ac56a0464fa66df51f445f3b175c7ba451',
     );
   });
 
@@ -297,17 +301,28 @@ describe('adding a device', () => {
   it('does not show "added" for a wrong confirmation, or before the key is sealed', async () => {
     const { bk, keys, log } = await budget();
     const { o, n } = await crossed(keys);
-    expect(await o.confirmed(bk, randomBytes(32))).toBe(false);
-    const got = await n.open(await o.seal(bk, NOW), log);
-    const bad = got.confirm.slice();
+    expect(await o.confirmed(bk, randomBytes(40))).toBe(null);
+    // No confirmation before the key is opened.
+    await expect(n.confirm(SLOT)).rejects.toBeInstanceOf(AddError);
+    await n.open(await o.seal(bk, NOW), log);
+    await expect(n.confirm('r:1')).rejects.toBeInstanceOf(RangeError);
+    await expect(n.confirm('p:AQID=')).rejects.toBeInstanceOf(RangeError);
+    const msg = await n.confirm(SLOT);
+    // Once only.
+    await expect(n.confirm(SLOT)).rejects.toBeInstanceOf(AddError);
+    expect(msg.length).toBe(32 + SLOT.length);
+    const bad = msg.slice();
     bad[0]! ^= 1;
-    expect(await o.confirmed(bk, bad)).toBe(false);
-    expect(await o.confirmed(bk, got.confirm.slice(1))).toBe(false);
-    expect(await o.confirmed(randomBytes(32), got.confirm)).toBe(false);
+    expect(await o.confirmed(bk, bad)).toBe(null);
+    expect(await o.confirmed(bk, msg.slice(1))).toBe(null);
+    expect(await o.confirmed(bk, msg.slice(0, 32))).toBe(null);
+    expect(await o.confirmed(randomBytes(32), msg)).toBe(null);
+    // The MAC of this add, with another way in named: the server can't change which way in it names.
+    expect(await o.confirmed(bk, concat(msg.slice(0, 32), utf8('p:AQIE')))).toBe(null);
     const again = await crossed(keys);
     await again.o.seal(bk, NOW);
-    expect(await again.o.confirmed(bk, got.confirm)).toBe(false);
-    expect(await o.confirmed(bk, got.confirm)).toBe(true);
+    expect(await again.o.confirmed(bk, msg)).toBe(null);
+    expect(await o.confirmed(bk, msg)).toBe(SLOT);
   });
 
   it('reads an offer strictly', async () => {

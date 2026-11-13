@@ -17,6 +17,7 @@ import {
   str,
   u32,
   u64,
+  utf8,
   zeroize,
 } from './bytes.js';
 import { OpenError } from './aead.js';
@@ -25,7 +26,7 @@ import { dh, type DhPair, dhPairFromSeed, WeakKeyError } from './curve.js';
 import type { PublicRef } from './entry.js';
 import { hkdf, hmac, hmacVerify, sha256 } from './hash.js';
 import * as hpke from './hpke.js';
-import { assertBudgetKey } from './slots.js';
+import { assertBudgetKey, isSlotId, MAX_SLOT_ID } from './slots.js';
 
 /** O makes at most this many offers per start; then the person starts again. */
 export const ADD_ATTEMPTS = 3;
@@ -35,7 +36,10 @@ export const ADD_COMMIT_LEN = 32;
 export const ADD_OFFER_LEN = 32 + 32 + 4 + 8 + 32;
 export const ADD_REVEAL_LEN = 64;
 export const ADD_SEALED_LEN = hpke.sealedLength(BUDGET_KEY_LEN);
+/** The confirmation's MAC; the message is the MAC and then the new device's slot id (UTF-8). */
 export const ADD_CONFIRM_LEN = 32;
+/** The longest confirmation message: the MAC and the longest slot id. */
+export const ADD_CONFIRM_MAX = ADD_CONFIRM_LEN + MAX_SLOT_ID;
 
 const ZERO32 = new Uint8Array(32);
 
@@ -118,7 +122,13 @@ async function transcriptOf(
 const addInfo = (transcript: Uint8Array): Bytes => concat(label('ledgerline/v1/hpke/device-add'), transcript);
 
 const confirmKey = (bk: Uint8Array, transcript: Uint8Array): Promise<Bytes> =>
-  hkdf(bk, transcript, label('ledgerline/v1/add/confirm'), 32);
+  hkdf(bk, transcript, label('ledgerline/v1/add/confirm-slot'), 32);
+
+/** What the confirmation's MAC covers: the transcript and the way in the new device added. */
+const confirmed = (transcript: Uint8Array, slotId: string): Bytes => concat(transcript, str(slotId));
+
+/** A passkey's slot id the new device can name: the one spelling of a "p:" id (4.1). */
+const isPasskeySlot = (id: string): boolean => id.startsWith('p:') && isSlotId(id);
 
 /** What N has checked on the public chain it walked (4.4) and in the log it was given. */
 export interface WalkedLog {
@@ -141,6 +151,8 @@ export class NewDevice {
   readonly commit: Bytes;
   #t: Transcript | null = null;
   #step: 'start' | 'revealed' | 'over' = 'start';
+  /** The confirmation's key, from the opened budget key; kept until the confirmation is made, once. */
+  #confirmKey: Bytes | null = null;
 
   private constructor(budgetId: string, pair: DhPair, reveal: Bytes, commit: Bytes) {
     this.#budgetId = budgetId;
@@ -186,8 +198,9 @@ export class NewDevice {
    * refused unless it is the key of the signing key the offer named, and the offer agrees with the log this device
    * was given: the signing key and version in force at the end of the public chain it walked, and the entry at the
    * offer's head. Without that, a removed device or a server could hand over an old key or an older log. Once only.
+   * The confirmation comes after, with `confirm`, once this device's way in is in the log.
    */
-  async open(sealed: Uint8Array, log: WalkedLog): Promise<{ bk: Bytes; keys: BudgetKeys; confirm: Bytes }> {
+  async open(sealed: Uint8Array, log: WalkedLog): Promise<{ bk: Bytes; keys: BudgetKeys }> {
     const t = this.#t;
     if (this.#step !== 'revealed' || !t) throw new AddError('this try is over');
     this.#step = 'over';
@@ -211,16 +224,29 @@ export class NewDevice {
       const keys = await deriveBudgetKeys(bk, this.#budgetId, t.offer.version);
       if (!equal(keys.sign.pub, t.offer.signPub))
         throw new AddError('not the key of the signing key it named');
-      const k = await confirmKey(bk, t.transcript);
-      try {
-        const confirm = await hmac(k, t.transcript);
-        ok = true;
-        return { bk, keys, confirm };
-      } finally {
-        zeroize(k);
-      }
+      this.#confirmKey = await confirmKey(bk, t.transcript);
+      ok = true;
+      return { bk, keys };
     } finally {
       if (!ok) zeroize(bk);
+    }
+  }
+
+  /**
+   * Step 6, after this device added its passkey's way in (`slotId`, step 4 of section 10): the confirmation, the MAC
+   * of the transcript and that slot id, then the slot id. It ties the way in to this add, so the signed-in device
+   * says "added" only for this one. Once only.
+   */
+  async confirm(slotId: string): Promise<Bytes> {
+    const k = this.#confirmKey;
+    const t = this.#t;
+    if (!k || !t) throw new AddError('no key has been opened, or the confirmation is already made');
+    if (!isPasskeySlot(slotId)) throw new RangeError('slot id');
+    this.#confirmKey = null;
+    try {
+      return concat(await hmac(k, confirmed(t.transcript, slotId)), utf8(slotId));
+    } finally {
+      zeroize(k);
     }
   }
 }
@@ -320,17 +346,33 @@ export class SignedInDevice {
   }
 
   /**
-   * Last step: whether N opened the key. It proves that the other end holds the budget key and this transcript. The
-   * app shows "added" when this is true and the new device's slot change is in the log.
+   * Last step: whether N opened the key, and the way in it says it added. It proves that the other end holds the
+   * budget key and this transcript, and names that end's slot id. The app shows "added" only when this gives a slot
+   * id and that slot is new in the log. `null`: not confirmed.
    */
-  async confirmed(bk: Uint8Array, confirm: Uint8Array): Promise<boolean> {
+  async confirmed(bk: Uint8Array, message: Uint8Array): Promise<string | null> {
     const t = this.#t;
-    if (!t || !this.#sealed) return false;
+    if (!t || !this.#sealed) return null;
     if (bk.length !== BUDGET_KEY_LEN) throw new RangeError('budget key');
-    if (!(confirm instanceof Uint8Array) || confirm.length !== ADD_CONFIRM_LEN) return false;
+    if (
+      !(message instanceof Uint8Array) ||
+      message.length <= ADD_CONFIRM_LEN ||
+      message.length > ADD_CONFIRM_MAX
+    )
+      return null;
+    let slotId: string;
+    try {
+      slotId = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
+        message.subarray(ADD_CONFIRM_LEN),
+      );
+    } catch {
+      return null;
+    }
+    if (!isPasskeySlot(slotId)) return null;
     const k = await confirmKey(bk, t.transcript);
     try {
-      return await hmacVerify(k, t.transcript, confirm);
+      const mac = message.slice(0, ADD_CONFIRM_LEN);
+      return (await hmacVerify(k, confirmed(t.transcript, slotId), mac)) ? slotId : null;
     } finally {
       zeroize(k);
     }

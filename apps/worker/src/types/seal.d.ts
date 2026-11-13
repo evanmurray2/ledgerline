@@ -322,6 +322,28 @@ export function encodeGenesis(g: {
   slots: unknown[];
 }): Bytes;
 export function publicEntry(fields: EntryFields, body: Uint8Array, keys: BudgetKeys): Promise<Entry>;
+// A key change (the tests that make one: test/log-signed-keys.test.ts).
+export function encodeKeyChange(k: Record<string, unknown>): Bytes;
+export function resealSlotRecord(
+  old: unknown,
+  oldKeys: BudgetKeys,
+  newBk: Uint8Array,
+  newKeys: BudgetKeys,
+  budgetId: string,
+): Promise<unknown>;
+export function rewrapInbox(
+  oldKeys: BudgetKeys,
+  newKeys: BudgetKeys,
+  budgetId: string,
+  i: number,
+  wrapped: Uint8Array,
+): Promise<Bytes>;
+export function wrapPrevKey(
+  oldKeys: BudgetKeys,
+  newKeys: BudgetKeys,
+  budgetId: string,
+  prevBk: Uint8Array,
+): Promise<Bytes>;
 export function sealedEntry(fields: EntryFields, plain: Uint8Array, keys: BudgetKeys): Promise<Entry>;
 
 // ---- a device's side of the log (apps/worker/src/local/device-log.ts)
@@ -462,12 +484,14 @@ export const ADD_OFFER_LEN: number;
 export const ADD_REVEAL_LEN: number;
 export const ADD_SEALED_LEN: number;
 export const ADD_CONFIRM_LEN: number;
+export const ADD_CONFIRM_MAX: number;
 /** The new device's side of an add (test use only in the Worker; the app runs it). */
 export class NewDevice {
   static start(budgetId: string): Promise<NewDevice>;
   readonly commit: Bytes;
   reveal(offer: Uint8Array): Promise<{ reveal: Bytes; code: string; head: PublicRef }>;
-  open(sealed: Uint8Array, log: unknown): Promise<{ bk: Bytes; keys: unknown; confirm: Bytes }>;
+  open(sealed: Uint8Array, log: unknown): Promise<{ bk: Bytes; keys: unknown }>;
+  confirm(slotId: string): Promise<Bytes>;
 }
 /** The signed-in device's side of an add (test use only in the Worker; the app runs it). */
 export class SignedInDevice {
@@ -475,7 +499,7 @@ export class SignedInDevice {
   offer(commit: Uint8Array, now: number): Bytes;
   code(reveal: Uint8Array, now: number): Promise<string>;
   seal(bk: Uint8Array, now: number): Promise<Bytes>;
-  confirmed(bk: Uint8Array, confirm: Uint8Array): Promise<boolean>;
+  confirmed(bk: Uint8Array, message: Uint8Array): Promise<string | null>;
 }
 
 // ---- requests signed with the budget's key (apps/worker/src/http/signed-request.ts; packages/seal request.ts)

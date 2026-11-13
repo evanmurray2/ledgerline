@@ -146,9 +146,14 @@ describe('adding a device: the relay', () => {
       headHash: head.hash,
     });
     expect(toHex(opened.bk)).toBe(toHex(bk));
-    expect((await n.call('POST', `${BASE}/confirm`, { confirm: toHex(opened.confirm) })).status).toBe(200);
+    // Only the MAC, with no way in named, is refused.
+    const confirm = await nd.confirm('p:AQID');
+    expect((await n.call('POST', `${BASE}/confirm`, { confirm: toHex(confirm.slice(0, 32)) })).status).toBe(
+      400,
+    );
+    expect((await n.call('POST', `${BASE}/confirm`, { confirm: toHex(confirm) })).status).toBe(200);
     const c = (await owner.call('GET', BASE)).json.confirm as string;
-    expect(await o.confirmed(bk, fromHex(c))).toBe(true);
+    expect(await o.confirmed(bk, fromHex(c))).toBe('p:AQID');
 
     // The server held only public values and the sealed key: never the budget key.
     const row = await dir.prepare(`SELECT * FROM device_add`).first<Record<string, unknown>>();

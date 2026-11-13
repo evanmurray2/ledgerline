@@ -1,12 +1,12 @@
 // The notices every device of a locked budget shows (docs/privacy.md 5.8; copy/notices.ts): a way in added or
 // removed on another device, a change planned on another device, the recovery key signing in, and a planned change on its
 // day, with Finish now. Each device dismisses a notice for itself.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Banner, SoftButton, TextButton } from '../components/ui';
 import { toast } from '../components/Toast';
 import { useSession } from '../api/hooks';
-import { isSealed, publicLook, sealedSession, useCopy, withBudgetKey } from '../copy/copy';
+import { isSealed, publicLook, sealedSession, SYNCED_ENTRIES, useCopy, withBudgetKey } from '../copy/copy';
 import {
   dismissedNotices,
   dismissNotice,
@@ -58,6 +58,13 @@ export function SealedNotices() {
     enabled: ready,
     staleTime: 5 * 60_000,
   });
+  // Read again right after each sync that brought entries: a way in or a plan another device added shows then.
+  // (No push service exists on the free plan, so a closed app learns of it when it opens.)
+  useEffect(() => {
+    const again = () => void qc.invalidateQueries({ queryKey: KEY });
+    window.addEventListener(SYNCED_ENTRIES, again);
+    return () => window.removeEventListener(SYNCED_ENTRIES, again);
+  }, [qc]);
   const [busy, setBusy] = useState(false);
   if (!ready || !q.data?.notices.length) return null;
   const { budgetId } = q.data;

@@ -8,6 +8,7 @@ import { makeProvider } from '../sync/provider.js';
 import { RESTING, restsDuring } from '../sync/breaker.js';
 import { SIGNUP_PATH, gatedOptions } from '../routes/signup.js';
 import { signedHeaders } from '../http/signed-request.js';
+import { linkRouteKey, linkTokenHash } from '../seal/link-watch.js';
 
 /**
  * After the Directory says the app is resting (95% of a daily limit), this isolate refuses the same requests itself
@@ -49,8 +50,10 @@ export async function routeApi(req: Request, env: Env): Promise<Response> {
       .verifyWebhook(mk())
       .catch(() => null);
     if (!ev) return json({ error: 'unauthorized' }, 401);
-    if (!ev.providerItemId) return json({ ok: true }, 200);
-    const budgetId = await dir.routeFor(ev.providerItemId);
+    // A new bank's Link session: routed by its link token's hash (seal/link-watch.ts), else by its Item.
+    const key = ev.linkToken ? linkRouteKey(await linkTokenHash(ev.linkToken)) : ev.providerItemId;
+    if (!key) return json({ ok: true }, 200);
+    const budgetId = await dir.routeFor(key);
     if (!budgetId) return json({ ok: true }, 200); // unknown Item: ensureJobs reconciles routes daily
     return store(budgetId).api(mk(), { userId: 'system', budgetId, email: '', sessionId: '', verifiedAt: 0 });
   }

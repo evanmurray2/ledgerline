@@ -27,6 +27,14 @@ import {
 import { sealedApi, sealedPath } from '../seal/sealed-routes.js';
 import { startApi } from '../seal/start-routes.js';
 import { runDeps } from '../seal/runs.js';
+import {
+  LINK_WATCH,
+  linkRouteKey,
+  linkTokenHash,
+  linkWatchHandler,
+  linkWatchId,
+  watchLink,
+} from '../seal/link-watch.js';
 import { parseKeyring } from '@ledgerline/platform';
 import { SEALED_HEADER } from '@ledgerline/contracts';
 import type { Env } from '../env.js';
@@ -204,6 +212,16 @@ export class BudgetStore extends DurableObject<Env> {
           .verifyWebhook(request)
           .catch(() => null);
         if (!ev) return Response.json({ error: 'unauthorized' }, { status: 401 });
+        // A new bank's Link session finished: its watch runs now (seal/link-watch.ts).
+        if (ev.linkToken) {
+          this.ctx.storage.sql.exec(
+            `UPDATE job SET run_at = ? WHERE id = ? AND failed_at IS NULL`,
+            Date.now(),
+            linkWatchId(await linkTokenHash(ev.linkToken)),
+          );
+          await this.runner.scheduleNext(Date.now());
+          return Response.json({ ok: true });
+        }
         await sealedWebhook((await this.fetchDeps()).runs, this.enqueue, ev, Date.now());
         await this.rearm();
         return Response.json({ ok: true });
@@ -398,8 +416,24 @@ export class BudgetStore extends DurableObject<Env> {
         });
       },
       DROP_ROUTE: async (itemId: string) => {
+        // Now, or by a job until the Directory answers.
         const id = this.cachedBudgetId ?? (await this.budgetId().catch(() => null));
-        if (dir && id) await dir.dropRoute(itemId, id);
+        const dropped =
+          dir && id
+            ? await dir.dropRoute(itemId, id).then(
+                () => true,
+                () => false,
+              )
+            : false;
+        if (!dropped)
+          await this.enqueue('drop_route', { id: `drop_route:${itemId}`, state: { itemId }, runAt: now() });
+      },
+      WATCH_LINK: async (linkToken: string) => {
+        const hash = await watchLink(this.appEnv(), this.enqueue, linkToken, now());
+        // Plaid's "session finished" webhook names the link token, not an Item: routed by the token's hash. Best
+        // effort: the job asks Plaid every few minutes anyway.
+        const id = this.cachedBudgetId ?? (await this.budgetId().catch(() => null));
+        if (dir && id) await dir.registerRoute(linkRouteKey(hash), id, 'link-token').catch(() => undefined);
       },
     };
   }
@@ -469,11 +503,30 @@ export class BudgetStore extends DurableObject<Env> {
         sealedBackstopHandler((await this.fetchDeps()).runs, this.enqueue)(job, now),
       ),
       register_link: async (job) => {
-        // Retried until the Directory answers (6.4).
+        // Retried until the Directory answers (6.4). Only for an Item the budget still holds: a bank removed before
+        // this ran leaves no route.
         const { itemId, connectionId } = job.state as { itemId: string; connectionId: string };
-        await this.directory().registerRoute(itemId, await this.budgetId(), connectionId);
+        const held = this.ctx.storage.sql
+          .exec(
+            `SELECT 1 FROM bank_link WHERE connection_id = ? AND provider_item_id = ? AND status != 'removed'`,
+            connectionId,
+            itemId,
+          )
+          .toArray().length;
+        if (held) await this.directory().registerRoute(itemId, await this.budgetId(), connectionId);
         return { done: true };
       },
+      drop_route: async (job) => {
+        await this.directory().dropRoute((job.state as { itemId: string }).itemId, await this.budgetId());
+        return { done: true };
+      },
+      [LINK_WATCH]: sealedOnly(async (job, now) =>
+        linkWatchHandler({
+          env: this.appEnv(),
+          budgetId: () => this.budgetId(),
+          queueFetch: () => this.queueAsked(),
+        })(job, now),
+      ),
     };
     const drop: Handler = () => Promise.resolve({ done: true });
     return new Proxy(known, { get: (t, kind: string) => t[kind] ?? drop });

@@ -276,9 +276,28 @@ describe('a locked budget: its serious requests are signed with the budget’s k
     expect((await owner.call('POST', path, { authPub: next }, h)).status).toBe(403);
     // A challenge is asked only for a request that is signed.
     expect(
-      (await owner.call('POST', '/api/settings/security/request-challenge', { action: 'store-sign-key' }))
+      (await owner.call('POST', '/api/settings/security/request-challenge', { action: 'store-inbox-key' }))
         .status,
     ).toBe(400);
+  });
+
+  it('a write to the log signed to store new keys needs a recent passkey check too', async () => {
+    const ch = await owner.call('POST', '/api/settings/security/request-challenge', {
+      action: ACTION.storeSignKey,
+    });
+    expect(ch.status).toBe(200);
+    const signed = { token: ch.json.token as string, signature: '00'.repeat(64) };
+    // The challenge is taken for a signed append; an unsigned append asks for no passkey check.
+    const fresh = await directoryStub().authenticate(owner.cookie(), 'POST', '/api/log/append', signed);
+    expect(fresh.ok && fresh.caller.signed?.action).toBe(ACTION.storeSignKey);
+    await dir.prepare(`UPDATE auth_session SET verified_at = verified_at - 3600000`).run();
+    try {
+      const stale = await directoryStub().authenticate(owner.cookie(), 'POST', '/api/log/append', signed);
+      expect(stale).toMatchObject({ ok: false, status: 401, body: { error: 'reauth' } });
+      expect((await directoryStub().authenticate(owner.cookie(), 'POST', '/api/log/append')).ok).toBe(true);
+    } finally {
+      await dir.prepare(`UPDATE auth_session SET verified_at = verified_at + 3600000`).run();
+    }
   });
 
   it('the Directory says when the recovery key last signed in, on the session only', async () => {
