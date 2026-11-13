@@ -7,9 +7,9 @@ import { join } from 'node:path';
 const WORKER_BUDGET = 1024 * 1024;
 // 420: the sealed budget's code in the app (keys, the move, the log) and Settings → About (Nov 12, 2026).
 // 430: the bug sweep's fixes (Nov 13, 2026): the target sheet uses the domain's own target math, and new sheets and messages.
-// 450 (Nov 13, 2026): adding a device, signed requests, notices and the rebuild. The removal of the old server
-// path (D-102) is to bring it down again.
-const WEB_BUDGET = 450 * 1024;
+// 450 (Nov 13, 2026): adding a device, signed requests, notices and the rebuild.
+// 425 (Nov 13, 2026): the old server path removed (D-102) brought it to 418.
+const WEB_BUDGET = 425 * 1024;
 execFileSync('pnpm', ['exec', 'wrangler', 'deploy', '--dry-run', '--outdir', '.bundle'], {
   cwd: 'apps/worker',
   stdio: 'inherit',

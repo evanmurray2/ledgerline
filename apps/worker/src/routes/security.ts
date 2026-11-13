@@ -1,14 +1,59 @@
 // Settings → Sign-in: your passkeys, links for adding a device, and signing out (decisions.md D-27). Changes here
 // need a passkey check within the last 15 minutes (http/auth.ts needsRecentPasskey).
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import type { AppEnv } from '../http/context.js';
 import { requestNow } from '../http/clock.js';
-import { DEVICE_LINK_MS, SESSION_COOKIE, cookie, randomToken, tokenHash } from '../http/auth.js';
+import {
+  DEVICE_LINK_MS,
+  OPS_PATHS,
+  REAUTH_MS,
+  SESSION_COOKIE,
+  cookie,
+  identify,
+  needsRecentPasskey,
+  randomToken,
+  tokenHash,
+} from '../http/auth.js';
+import { membership } from '../db/scoped.js';
 import { describeAgent } from '../http/agent.js';
 import { bodyObject } from '../http/security.js';
 import { signupSwitchOn } from './signup-switch.js';
 
 export const securityRoutes = new Hono<AppEnv>();
+
+/** Settings → Sign-in in the Directory: a signed-in session (or the ops token), then membership in a budget. */
+export const identity: MiddlewareHandler<AppEnv> = async (c, next) => {
+  c.set('requestId', crypto.randomUUID());
+  const path = new URL(c.req.url).pathname;
+  if (path === '/api/webhooks/plaid' || path.startsWith('/api/auth/')) return next();
+  // The server's clock, never an edit's own time: a session's age is not for the phone to say.
+  const now = requestNow(c);
+  const who = await identify(c.req.raw, c.env, now);
+  if (!who) return c.json({ error: 'unauthenticated', message: 'Sign in again with your passkey.' }, 401);
+  if (who.kind === 'ops') {
+    // The ops token reaches only the health endpoint.
+    if (!OPS_PATHS.has(`${c.req.method} ${path}`))
+      return c.json({ error: 'forbidden', message: 'You can’t open this.' }, 403);
+    c.set('userId', 'service');
+    c.set('email', '');
+    c.set('sessionId', '');
+    const b = await c.env.DB.prepare(`SELECT id FROM budget ORDER BY created_at LIMIT 1`).first<{
+      id: string;
+    }>();
+    c.set('budgetId', b?.id ?? '');
+    return next();
+  }
+  if (needsRecentPasskey(c.req.method, path) && now - who.verifiedAt > REAUTH_MS)
+    return c.json({ error: 'reauth', message: 'Confirm it’s you with your passkey, then try again.' }, 401);
+  const m = await membership(c.env.DB, who.userId);
+  if (!m) return c.json({ error: 'forbidden', message: 'You don’t have access to this budget.' }, 403);
+  c.set('sessionId', who.sessionId ?? '');
+  c.set('userId', m.userId);
+  c.set('email', m.email);
+  c.set('budgetId', m.budgetId);
+  c.set('isAdmin', m.isAdmin);
+  return next();
+};
 
 /** The id Settings shows for a sign-in: a hash of the stored hash, so the stored id (the cookie's hash) never leaves. */
 const signInId = async (sessionId: string) => (await tokenHash(`sign-in:${sessionId}`)).slice(0, 24);
@@ -115,8 +160,8 @@ securityRoutes.get('/settings/security', async (c) => {
     .bind(c.get('userId'))
     .first<number>('is_admin');
   return c.json({
-    // Users who aren't admins have a recovery code (D-75); admins recover with a device link or the runbook.
-    recoveryCode: admin === 0,
+    // Users who aren't admins can delete their own account (D-75).
+    ownAccount: admin === 0,
     // Settings → Users, for admins once there is anyone else or sign-up is on (routes/people.ts).
     usersScreen:
       admin === 1 &&

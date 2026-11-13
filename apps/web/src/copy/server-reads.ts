@@ -2,11 +2,9 @@
 // mock API (src/mock) uses the same list, so its "resting" scenario pauses what a real phone would have paused.
 const SERVER_READS = [
   /^\/api\/session$/,
-  /^\/api\/sync(\/|\?|$)/,
   /^\/api\/auth\//,
   /^\/api\/settings\/connections$/,
   /^\/api\/settings\/security/,
-  /^\/api\/export\//,
   /^\/api\/cutover\//,
 ];
 

@@ -46,10 +46,3 @@ export function rowMeta(r: TxnListRow, style: 'list' | 'posted' | 'needs' | 'reg
           : [r.accountName, date];
   return parts.filter((p): p is string => !!p).join(' · ');
 }
-
-export function useDebounced<T>(value: T, ms: number, set: (v: T) => void) {
-  useEffect(() => {
-    const id = setTimeout(() => set(value), ms);
-    return () => clearTimeout(id);
-  }, [value, ms, set]);
-}

@@ -13,6 +13,7 @@ let jar = '';
 async function call(method: string, path: string, body: string | undefined, cookie = jar) {
   const h: Record<string, string> = {
     origin: ORIGIN,
+    'x-ledgerline-sealed': '1',
     'content-type': 'application/json',
     'x-ledgerline': '1',
   };

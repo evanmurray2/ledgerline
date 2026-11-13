@@ -24,7 +24,6 @@ import {
   type Bytes,
   type Entry,
 } from '@ledgerline/seal';
-import { SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { decodeChangeSet, DeviceLog, LogFormatError } from '../src/local/device-log.js';
 import { RowsRefused, type LocalEngine } from '../src/local/engine.js';
@@ -34,8 +33,6 @@ import { syncPhone } from './phone.js';
 import { storeDb } from './store-db.js';
 import { differences, newPhone, rowsOf } from './twin.js';
 
-const ORIGIN = 'https://ledgerline.test';
-const H = { origin: ORIGIN, 'content-type': 'application/json', 'x-ledgerline': '1' };
 const BUDGET = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
 const PHONE = '01BX5ZZKBKACTAV9WEVGEMMVRZ';
 const LAPTOP = '01CX5ZZKBKACTAV9WEVGEMMVRZ';
@@ -87,8 +84,6 @@ describe('two devices and the sealed log', () => {
   };
 
   beforeAll(async () => {
-    const r = await SELF.fetch(`${ORIGIN}/__dev/seed-november`, { method: 'POST', headers: H, body: '{}' });
-    expect(r.status).toBe(200);
     // Both devices start from the same budget (at the cutover: the first snapshot).
     a = await syncPhone(await newPhone());
     b = await syncPhone(await newPhone());

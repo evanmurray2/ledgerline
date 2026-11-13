@@ -1,11 +1,10 @@
 // Pending transactions: money you add can go to Ready to Assign, amounts you added can change, and a bank pending
 // row takes your estimate even if it never had one. On the seeded November budget.
-import { app } from './phone.js';
+import { app, phoneDb } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { BudgetView, TxnSheet } from '@ledgerline/contracts';
-import { ownerDb } from './store-db.js';
 
-const db = ownerDb();
+const db = phoneDb();
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 const call = async (method: string, p: string, body?: unknown) => {

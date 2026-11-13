@@ -1,5 +1,5 @@
-// The daily maintenance job's pieces (Sync spec: Daily maintenance job): the rule 10 identity assertion, usage
-// roll-up and pruning, and the watchdog. store/budget-jobs.ts runs them as alarm steps, each sized for 10 ms of CPU.
+// The rule 10 identity assertion (Sync spec: Daily maintenance job), run by the engine on the device after each
+// derive, and the watchdog step a device files with a nightly scan entry (local/log-session.ts).
 import type { Db, Stmt } from '@ledgerline/db/sql';
 import {
   type Month,
@@ -119,24 +119,6 @@ export async function checkIdentityDb(
   return { ok: working === right, difference: working - right, literal: working === right && k === 0 };
 }
 
-export async function rollUpUsage(env: Env, budgetId: string, now: number): Promise<void> {
-  const today = new Date(now).toISOString().slice(0, 10);
-  const dayStart = Date.parse(`${today}T00:00:00Z`);
-  // Roll up earlier days not yet rolled up (raw rows stay 90 days for the export).
-  await env.DB.batch([
-    env.DB.prepare(
-      `INSERT OR REPLACE INTO usage_daily (budget_id, date, app_version, screen, event, target, count, median_value)
-       SELECT budget_id, date(at / 1000, 'unixepoch'), app_version, screen, event, coalesce(target, ''), count(*), CAST(avg(value) AS INTEGER)
-       FROM usage_event WHERE budget_id = ?1 AND at < ?2 AND at >= ?2 - 8 * 86400000
-       GROUP BY budget_id, date(at / 1000, 'unixepoch'), app_version, screen, event, coalesce(target, '')`,
-    ).bind(budgetId, dayStart),
-    env.DB.prepare(`DELETE FROM usage_event WHERE budget_id = ?1 AND at < ?2`).bind(
-      budgetId,
-      now - 90 * 86_400_000,
-    ),
-  ]);
-}
-
 /** The budget's half of the watchdog (docs/multi-user.md 5.6: the auth prune runs in the Directory). */
 export function watchdogBudgetStmts(db: Db, budgetId: string, now: number): Stmt[] {
   // The watchdog records that it ran; the Accounts alerts compare it with the monitor's last check.
@@ -152,18 +134,6 @@ export function watchdogBudgetStmts(db: Db, budgetId: string, now: number): Stmt
         `DELETE FROM liability_snapshot WHERE budget_id = ?1 AND as_of < date(?2 / 1000, 'unixepoch', '-120 days')`,
       )
       .bind(budgetId, now),
-  ];
-}
-
-/** Expired sign-in state (decisions.md D-27). */
-export function pruneAuthStmts(db: Db, now: number): Stmt[] {
-  return [
-    db.prepare(`DELETE FROM auth_session WHERE expires_at <= ?1`).bind(now),
-    db.prepare(`DELETE FROM auth_challenge WHERE expires_at <= ?1`).bind(now),
-    db.prepare(`DELETE FROM device_link WHERE expires_at <= ?1`).bind(now),
-    db.prepare(`DELETE FROM device_add WHERE expires_at <= ?1`).bind(now),
-    // A challenge lives 5 minutes, so a day is plenty to keep its id (docs/open-signup.md 3.3).
-    db.prepare(`DELETE FROM used_challenge WHERE used_at <= ?1`).bind(now - 86_400_000),
   ];
 }
 

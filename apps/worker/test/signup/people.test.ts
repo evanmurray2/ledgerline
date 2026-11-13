@@ -19,7 +19,7 @@ const prodEnv = () => ({ ...env, DEV_AUTH_EMAIL: undefined, DEV_ROUTES: undefine
 class Browser {
   jar = new Map<string, string>();
   async call(method: string, path: string, body?: unknown, extra: Record<string, string> = {}) {
-    const h: Record<string, string> = { origin: ORIGIN, ...extra };
+    const h: Record<string, string> = { origin: ORIGIN, 'x-ledgerline-sealed': '1', ...extra };
     if (this.jar.size) h.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (method !== 'GET') {
       h['content-type'] = 'application/json';
@@ -75,7 +75,7 @@ describe('Settings → Users', () => {
   it('is for admins only, and shows the accounts', async () => {
     await owner.ceremony(key(), '/api/auth/register/options', { setupCode: SETUP });
     await sam.ceremony(samKey, '/api/auth/signup/options', { turnstileToken: TEST_TOKEN });
-    samBudget = ((await sam.call('GET', '/api/session')).json.budget as { id: string }).id;
+    samBudget = (await sam.call('GET', '/api/session')).json.budgetId as string;
     samId = (await dir
       .prepare(`SELECT user_id FROM budget_member WHERE budget_id = ?1`)
       .bind(samBudget)
@@ -94,7 +94,10 @@ describe('Settings → Users', () => {
       Number(
         await storeDb(samBudget).prepare(`SELECT count(*) AS n FROM job WHERE recurring = 1`).first('n'),
       );
-    expect(await recurring()).toBe(3);
+    // A locked budget keeps one recurring job: the backstop of its bank fetches.
+    await storeDb(samBudget).prepare(`INSERT INTO store_mark (key, at) VALUES ('sealed', 1)`).run();
+    await budgetStub(samBudget).ensureJobs();
+    expect(await recurring()).toBe(1);
     expect((await sam.call('POST', `/api/settings/security/users/${samId}/turn-off`)).status).toBe(404);
     expect((await owner.call('POST', `/api/settings/security/users/${samId}/turn-off`)).status).toBe(200);
     expect((await sam.call('GET', '/api/session')).status).toBe(401);
@@ -104,7 +107,10 @@ describe('Settings → Users', () => {
     await budgetStub(samBudget).ensureJobs();
     expect(await recurring()).toBe(0);
     expect((await owner.call('POST', `/api/settings/security/users/${samId}/turn-on`)).status).toBe(200);
-    expect(await recurring()).toBe(3);
+    expect(await recurring()).toBe(1);
+    // Back to a budget not made yet, for the tests below.
+    await storeDb(samBudget).prepare(`DELETE FROM store_mark`).run();
+    await storeDb(samBudget).prepare(`DELETE FROM job`).run();
     expect((await sam.signIn(samKey)).status).toBe(200);
     // An admin can't be turned off.
     const adminId = await dir.prepare(`SELECT id FROM user WHERE is_admin = 1`).first<string>('id');
@@ -122,14 +128,14 @@ describe('deleting an account', () => {
     expect(
       (await sam.call('POST', '/api/settings/security/delete-account', { budgetName: 'nope' })).status,
     ).toBe(400);
-    const name = ((await owner.call('GET', '/api/session')).json.budget as { name: string }).name;
+    const name = 'My budget';
     expect(
       (await owner.call('POST', '/api/settings/security/delete-account', { budgetName: name })).status,
     ).toBe(409);
   });
 
   it('signs the user out at once, then wipes the budget and every row of the user', async () => {
-    const name = ((await sam.call('GET', '/api/session')).json.budget as { name: string }).name;
+    const name = 'My budget';
     const r = await sam.call('POST', '/api/settings/security/delete-account', { budgetName: name });
     expect(r.status).toBe(200);
     expect((await sam.call('GET', '/api/session')).status).toBe(401);
@@ -187,7 +193,7 @@ describe('deleting an account with banks', () => {
     });
     const alex = new Browser();
     await alex.ceremony(key(), '/api/auth/signup/options', { turnstileToken: TEST_TOKEN });
-    const budget = ((await alex.call('GET', '/api/session')).json.budget as { id: string }).id;
+    const budget = (await alex.call('GET', '/api/session')).json.budgetId as string;
     const ring = parseKeyring(keys.TOKEN_KEYS, keys.TOKEN_KEY_CURRENT);
     const store = storeDb(budget);
     for (const n of [1, 2]) {

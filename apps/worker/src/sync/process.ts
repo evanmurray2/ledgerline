@@ -15,15 +15,13 @@ import {
   ENTRY_DAYS_BEFORE,
 } from '@ledgerline/domain';
 import { seededUlid } from '@ledgerline/platform';
-import type { BankDataProvider, ProviderAccount, ProviderLiability } from '@ledgerline/bank-provider';
+import type { ProviderAccount, ProviderLiability } from '@ledgerline/bank-provider';
 import type { Env } from '../env.js';
 import { Scoped } from '../db/scoped.js';
 import { accountLedger, bankDiff } from '../ledger/bank-diff.js';
 import { conditionFence, isFenceAbort } from './lease.js';
-import type { StepContext } from './steps.js';
 import { CHUNK } from './steps.js';
 import { budgetMeta, chunks } from '../ledger/ledger.js';
-import { makeProvider, connectionToken } from './provider.js';
 import { planFresh } from './file-fresh.js';
 import { loadBankRows } from './bank-rows.js';
 import { alert, channel, merchantOf, planMatches } from './pending-match.js';
@@ -345,69 +343,6 @@ export async function endOfUpdate(
   } catch {
     // The next sync sets it; until then a difference waits a little longer to show.
   }
-}
-
-/** Asks the bank for the balances and card statements of a connection; null when it can't be asked now. */
-export async function askBank(
-  provider: BankDataProvider,
-  token: () => Promise<string>,
-  connectionId: string,
-): Promise<BankState | null> {
-  try {
-    const conn = { id: connectionId, accessToken: await token(), providerItemId: null };
-    const accounts = await provider.getAccounts(conn);
-    const liabilities = provider.getLiabilities ? await provider.getLiabilities(conn).catch(() => []) : [];
-    return {
-      accounts: accounts.map((a) => ({
-        providerAccountId: a.providerAccountId,
-        currentBalance: a.currentBalance,
-        availableBalance: a.availableBalance,
-        creditLimit: a.creditLimit,
-      })),
-      liabilities,
-    };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * After the watermark catches up: asks the bank for balances and card liabilities, writes the end of the update,
- * and marks the sync done. Gives what the bank said, for the device that files this update too.
- */
-export async function finalizeConnection(
-  env: Env,
-  c: StepContext,
-  runId: string,
-  /** How the bank is asked (the sync job gives its own provider and token). */
-  ask: () => Promise<BankState | null> = () =>
-    askBank(makeProvider(env), () => connectionToken(env, c.connectionId), c.connectionId),
-): Promise<BankState | null> {
-  const now = Date.now();
-  // What the update says about the bank carries the update's time (D-86 A1): the balance time, the day of a card's
-  // liability snapshot, and the start of a bank difference. When the run ended is still this step's clock.
-  const at = (await runFetchedAt(env.DB, runId)) ?? now;
-  const bank = await ask();
-  await endOfUpdate(env.DB, c, at, bank);
-  await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE sync_run SET phase = 'done', finished_at = ?2, updated_at = ?2 WHERE id = ?1`,
-    ).bind(runId, now),
-    env.DB.prepare(`DELETE FROM sync_page WHERE sync_run_id = ?1`).bind(runId),
-    env.DB.prepare(
-      `UPDATE connection SET last_synced_at = ?2, last_attempt_at = ?2, error_code = NULL, status = 'ok' WHERE id = ?1`,
-    ).bind(c.connectionId, now),
-  ]);
-  return bank;
-}
-
-/** When a bank update finished fetching (sync_run.fetched_at); null for a run from before that was recorded. */
-export async function runFetchedAt(db: Db, runId: string): Promise<number | null> {
-  const r = await db
-    .prepare(`SELECT fetched_at FROM sync_run WHERE id = ?1`)
-    .bind(runId)
-    .first<{ fetched_at: number | null }>();
-  return r?.fetched_at ?? null;
 }
 
 /**

@@ -1,10 +1,9 @@
 // An account's register, on the seeded November budget: a card's statement says Covered as Accounts does, upcoming
 // bills are listed apart with their dates, rows with no category say so, and the overspent note reads well.
-import { app } from './phone.js';
+import { app, phoneDb } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { AccountsView, RegisterView } from '@ledgerline/contracts';
 import { nameList } from '../src/routes/account-register.js';
-import { ownerDb } from './store-db.js';
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 const get = async <T>(p: string): Promise<T> => {
@@ -20,7 +19,7 @@ describe('register view', () => {
 
   it('a card’s statement is covered (or not) as on Accounts', async () => {
     // Take $300 out of Sapphire's payment category: it no longer covers the $611.40 statement.
-    const pay = (await ownerDb()
+    const pay = (await phoneDb()
       .prepare(
         `SELECT c.id FROM category c JOIN account a ON a.id = c.card_account_id WHERE c.kind = 'cc_payment' AND a.name = 'Sapphire Preferred'`,
       )

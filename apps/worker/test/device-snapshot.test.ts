@@ -1,6 +1,5 @@
 // A copy as a snapshot's chunks, and the hash of every table (src/local/device-snapshot.ts): a copy rebuilt from
 // the chunks has the same hashes, and a copy that differs in one row says which table.
-import { SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   differingTables,
@@ -16,16 +15,11 @@ import type { LocalEngine } from '../src/local/engine.js';
 import { syncPhone } from './phone.js';
 import { newPhone } from './twin.js';
 
-const ORIGIN = 'https://ledgerline.test';
-const H = { origin: ORIGIN, 'content-type': 'application/json', 'x-ledgerline': '1' };
-
 const toHex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
 
 describe('a copy as a snapshot', () => {
   let a: LocalEngine;
   beforeAll(async () => {
-    const r = await SELF.fetch(`${ORIGIN}/__dev/seed-november`, { method: 'POST', headers: H, body: '{}' });
-    expect(r.status).toBe(200);
     a = await syncPhone(await newPhone());
   });
 

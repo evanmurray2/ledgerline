@@ -17,11 +17,11 @@ import { requestNow } from '../http/clock.js';
 import { canLinkBanks, type AppEnv } from '../http/context.js';
 import { csrf } from '../http/security.js';
 import { jsonOf, storeSigned, UNSIGNED } from '../http/signed-request.js';
-import { ITEM_LIMIT } from '../routes/settings/connections.js';
 import { classifyUsage, dailyLimits, usageToday, utcDay } from '../sync/breaker.js';
-import { makeProvider } from '../sync/provider.js';
+import { ITEM_LIMIT, makeProvider } from '../sync/provider.js';
 import { sealedFetchId } from './fetch-job.js';
 import { abandonSealedRun, workerKeys } from './runs.js';
+import { isSealedStore } from './start.js';
 
 const b64 = (bytes: Uint8Array): string => {
   let s = '';
@@ -39,7 +39,6 @@ sealedApi.get('/session', async (c) => {
   const ws = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(c.env));
   const tomorrow = new Date(now);
   tomorrow.setUTCHours(24, 0, 0, 0);
-  const notice = c.get('recoveryNoticeAt');
   const keyUsed = c.get('recoveryKeyUsedAt');
   const body: SealedSession = {
     sealed: true,
@@ -50,9 +49,14 @@ sealedApi.get('/session', async (c) => {
     readOnlyUntil: ws === 'readonly' || ws === 'rest' ? tomorrow.toISOString() : null,
     readsPaused: ws === 'rest',
     canLinkBanks: canLinkBanks(c),
-    recoveryNoticeAt: notice ? new Date(notice).toISOString() : null,
     recoveryKeyUsedAt: keyUsed ? new Date(keyUsed).toISOString() : null,
+    // An app from before D-102 needs this field to read the answer, see the new version and reload. Remove later.
+    recoveryNoticeAt: null,
+    // A new budget the device has not made yet (seal/start.ts).
+    ...(!(await isSealedStore(c.env.DB)) ? { fresh: true } : {}),
   };
+  // The server's clock: a new budget's first entry is dated by it.
+  c.header('x-ledgerline-time', String(now));
   return c.json(body);
 });
 
@@ -379,11 +383,7 @@ sealedApi.post('/settings/connections/:id/remove', async (c) => {
 sealedApi.post('/usage', (c) => c.body(null, 204));
 sealedApi.delete('/usage', (c) => c.json({ ok: true }));
 sealedApi.post('/identity-alert', (c) => c.json({ ok: true }));
-sealedApi.post('/sync/shadow', (c) => c.json({ ok: true }));
-// The server can't read a locked budget, so it can't restore one, and it keeps no notes about it.
-sealedApi.post('/settings/restore', () =>
-  no(409, 'sealed', 'A locked budget can’t be restored by the server. Your devices hold it.'),
-);
+// The server keeps no notes about a locked budget.
 sealedApi.post('/notes', () => no(409, 'sealed', 'Notes can’t be sent from a locked budget yet.'));
 
 sealedApi.onError((_e, c) => c.json({ error: 'internal', message: TRY_AGAIN }, 500));
@@ -395,8 +395,5 @@ export function sealedPath(method: string, path: string): boolean {
   if (/^\/api\/settings\/connections\/(refresh|link-token|link-finish|[^/]+\/(refresh|remove))$/.test(path))
     return method === 'POST';
   if (path === '/api/usage') return method === 'POST' || method === 'DELETE';
-  return (
-    method === 'POST' &&
-    ['/api/identity-alert', '/api/sync/shadow', '/api/settings/restore', '/api/notes'].includes(path)
-  );
+  return method === 'POST' && ['/api/identity-alert', '/api/notes'].includes(path);
 }

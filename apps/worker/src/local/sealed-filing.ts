@@ -29,7 +29,21 @@ import type { Env } from '../env.js';
 import { connectionStmts, linkedAccountStmts } from '../routes/settings/link-rows.js';
 import { readLinkDescription } from '../seal/link-description.js';
 import { fileRun, type RunPackage } from './file-run.js';
-import { alignCounter } from './shadow.js';
+
+/**
+ * Filing numbers each new bank event from the counter and processes the events past the budget's watermark. The
+ * counter continues from the watermark, as on a server that has filed everything so far.
+ */
+async function alignCounter(db: Db, budgetId: string): Promise<void> {
+  await db.batch([
+    db.prepare(`INSERT OR IGNORE INTO apply_counter (id, seq) VALUES (1, 0)`),
+    db
+      .prepare(
+        `UPDATE apply_counter SET seq = max(seq, coalesce((SELECT processed_through FROM budget WHERE id = ?1), 0)) WHERE id = 1`,
+      )
+      .bind(budgetId),
+  ]);
+}
 
 export const FILED_KEY = 'filed';
 export const FILED_LINK = 'filed_link:';

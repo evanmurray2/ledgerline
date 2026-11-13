@@ -3,10 +3,9 @@
 // category this month and takes it from Ready to Assign. Through the phone's engine, as the app counts it.
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { BudgetView, OwedView } from '@ledgerline/contracts';
-import { app } from './phone.js';
-import { ownerDb } from './store-db.js';
+import { app, phoneDb } from './phone.js';
 
-const db = ownerDb();
+const db = phoneDb();
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 const call = async (method: string, p: string, body?: unknown) => {
   const r = await app(p, {

@@ -2,7 +2,6 @@
 // GraphQL Analytics API (refreshed into usage_day at most every 10 minutes) plus this app's own estimates since.
 import type { Db, Stmt } from '@ledgerline/db/sql';
 import type { Env } from '../env.js';
-import { extendForSleep } from './lease.js';
 
 /**
  * The account's daily limits. Today's figures are Cloudflare's Free plan (docs/multi-user.md 9.3); each can be set
@@ -174,10 +173,4 @@ export function noteUsage(db: Db, written: number, read: number, now = Date.now(
        ON CONFLICT (day) DO UPDATE SET est_written = est_written + ?2, est_read = est_read + ?3`,
     )
     .bind(utcDay(now), written, read);
-}
-
-export async function sleepUntilUtcMidnight(env: Env, connectionId: string, holder: string): Promise<void> {
-  const d = new Date();
-  const wake = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1, 0, 0, 30);
-  await extendForSleep(env.DB, connectionId, holder, wake);
 }

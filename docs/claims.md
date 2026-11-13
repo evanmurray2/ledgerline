@@ -20,8 +20,9 @@ public. Code sent to one person once leaves no trace anyone else can see_ (`docs
 
 ### 1. "Your budget is encrypted on your devices with a key we never hold."
 
-- **True now.** The move made the budget key on the owner's device; the server stores the sealed log, the
-  snapshots and the key slots, never the key (`apps/web/src/keys/move.ts`, `apps/worker/src/local/cutover-device.ts`,
+- **True now.** The budget key is made on the first device (the owner's by the move, a new budget's at its start,
+  D-102); the server stores the sealed log, the snapshots and the key slots, never the key
+  (`apps/web/src/keys/budget.ts`, `apps/web/src/keys/new-budget.ts`, `apps/worker/src/local/start-device.ts`,
   `apps/worker/src/seal/log-store.ts`).
 - **Limit:** 4.2 above. A copy from before the lock is still readable on the server (claim 2).
 - **Backed by:** checkable. The app's code is public, the build is reproducible, and Settings → About shows the
@@ -29,10 +30,11 @@ public. Code sent to one person once leaves no trace anyone else can see_ (`docs
 
 ### 2. "We keep no readable copy of your budget."
 
-- **Not true yet.** The old tables are untouched until the way back closes (7 days after the move), then emptied
-  over days (`docs/privacy.md` section 8, steps 8–9). Point-in-time recovery reaches them for 30 days after that.
+- **Not true yet.** The owner's old tables are being emptied by "Delete the readable copy" (`seal/purge.ts`,
+  Settings → Privacy); no server code reads them since D-102. Point-in-time recovery reaches them for 30 days after
+  that.
   The Directory still holds the budget's name. Usage events and notes from before the move stay in the old tables.
-- **Build plan:** "Phase 6".
+- **Build plan:** "Delete the readable copy".
 - **Backed by:** our word.
 
 ### 3. "We fetch your bank data from Plaid for you and seal it at once to a key that only your devices hold. We keep no readable copy of it."

@@ -20,7 +20,7 @@ import {
 import { dailyScan, scanTime } from '../daily-scan.js';
 import { bumpVersion } from '../http/version.js';
 import { watchdogBudgetStmts } from '../maintenance.js';
-import type { SyncPage, SyncRow } from '../routes/sync.js';
+import type { SyncPage, SyncRow } from '../sync-tables.js';
 import type { AppendResult } from '../seal/log-store.js';
 import { entryIdOf, TooLarge, type DeviceLog } from './device-log.js';
 import { FilingInterrupted, RECORDED_TABLES, type LocalEngine } from './engine.js';

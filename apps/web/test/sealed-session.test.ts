@@ -32,7 +32,6 @@ const sealed: SealedSession = {
   readOnlyUntil: '2026-11-13T00:00:00.000Z',
   readsPaused: false,
   canLinkBanks: false,
-  recoveryNoticeAt: null,
 };
 
 const deps = (over: Partial<SessionDeps> = {}) => {
@@ -42,7 +41,6 @@ const deps = (over: Partial<SessionDeps> = {}) => {
     ready: () => true,
     local: async () => ({ status: 200, body: JSON.stringify(plain) }),
     note: (s) => void noted.push(s),
-    known: () => false,
     keep: async (s) => void kept.push(s),
     now: () => new Date('2026-11-12T10:00:00Z'),
     ...over,
@@ -51,17 +49,17 @@ const deps = (over: Partial<SessionDeps> = {}) => {
 };
 
 describe('the session of a sealed budget', () => {
-  it('leaves the session of a budget that is not sealed as the server gave it', async () => {
-    const { d, noted, kept } = deps();
+  it('refuses an answer that says the budget is not locked: every budget is (D-102)', async () => {
+    const { d, noted } = deps();
+    await expect(sessionFor(plain, d)).rejects.toThrow(NOT_LOCKED);
+    expect(noted).toEqual([]);
+  });
+
+  it('takes the mock API’s plain session as it is (dev and tests)', async () => {
+    const { d, noted, kept } = deps({ mock: true });
     expect(await sessionFor(plain, d)).toBe(plain);
     expect(noted).toEqual([]);
     expect(kept).toEqual([]);
-  });
-
-  it('refuses an answer that says a budget this device knows as sealed is not', async () => {
-    const { d, noted } = deps({ known: (id) => id === BUDGET });
-    await expect(sessionFor(plain, d)).rejects.toThrow(NOT_LOCKED);
-    expect(noted).toEqual([]);
   });
 
   it('takes the budget from the copy and the account from the server, and keeps the result', async () => {

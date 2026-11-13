@@ -9,7 +9,7 @@ import { qk } from '../api/hooks';
 import { Frame, Problem } from '../components/Frame';
 import { Field, PrimaryButton, SecondaryButton, inputClass } from '../components/ui';
 import { signIn as copySignIn } from '../copy/copy';
-import { CreateAccountScreen, RecoverScreen } from './Signup';
+import { CreateAccountScreen } from './Signup';
 import { passkeyName } from '../lib/device-name';
 import { RecoveryKeySignInScreen } from './RecoveryKey';
 
@@ -71,8 +71,8 @@ export function SignInScreen() {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  /** Open sign-up (D-75): Create account and Use a recovery code, only once the server turns them on. */
-  const [mode, setMode] = useState<'signin' | 'create' | 'recover' | 'recovery-key'>('signin');
+  /** Open sign-up (D-75): Create account, only once the server turns it on. */
+  const [mode, setMode] = useState<'signin' | 'create' | 'recovery-key'>('signin');
   const done = () => void qc.invalidateQueries({ queryKey: qk.session });
   const supported = browserSupportsWebAuthn();
   const siteKey = status.data?.signupOpen ? (status.data.turnstileSiteKey ?? null) : null;
@@ -142,8 +142,6 @@ export function SignInScreen() {
   if (mode === 'recovery-key') return <RecoveryKeySignInScreen onBack={() => setMode('signin')} />;
   if (siteKey && mode === 'create')
     return <CreateAccountScreen siteKey={siteKey} onBack={() => setMode('signin')} />;
-  if (siteKey && mode === 'recover')
-    return <RecoverScreen siteKey={siteKey} onBack={() => setMode('signin')} />;
   return (
     <Frame title="Sign in">
       <p className="m-0 text-base leading-relaxed text-ink-2">Use the passkey on this device.</p>
@@ -163,14 +161,9 @@ export function SignInScreen() {
         New device? On a signed-in device, go to Settings → Sign-in and devices → Add a device.
       </p>
       {siteKey && (
-        <>
-          <SecondaryButton disabled={!supported} onClick={() => setMode('create')}>
-            Create account
-          </SecondaryButton>
-          <SecondaryButton disabled={!supported} onClick={() => setMode('recover')}>
-            Use a recovery code
-          </SecondaryButton>
-        </>
+        <SecondaryButton disabled={!supported} onClick={() => setMode('create')}>
+          Create account
+        </SecondaryButton>
       )}
       {status.data?.hasPasskey && (
         <SecondaryButton disabled={!supported} onClick={() => setMode('recovery-key')}>

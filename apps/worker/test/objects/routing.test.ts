@@ -30,7 +30,7 @@ const directory = () => e.DIRECTORY.get(e.DIRECTORY.idFromName(DIRECTORY_NAME));
 class Browser {
   jar = new Map<string, string>();
   async call(method: string, path: string, body?: unknown) {
-    const h: Record<string, string> = { origin: ORIGIN };
+    const h: Record<string, string> = { origin: ORIGIN, 'x-ledgerline-sealed': '1' };
     if (this.jar.size) h.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (method !== 'GET') {
       h['content-type'] = 'application/json';
@@ -96,16 +96,17 @@ describe('routing', () => {
     const s = await owner.call('GET', '/api/session');
     expect(s.status).toBe(200);
     expect(s.headers.get('x-content-type-options')).toBe('nosniff');
-    ownerBudget = String((s.json.budget as { id: string }).id);
-    const w = await owner.call('POST', '/api/settings/groups', { name: 'Bills', isBills: true });
+    ownerBudget = String(s.json.budgetId as string);
+    const w = await owner.call('GET', '/api/settings/connections');
     expect(w.status).toBe(200);
+    // The store made its own row of the budget on its first request: which budget it is, and no more.
     const inStore = await runInDurableObject(e.BUDGET.get(e.BUDGET.idFromName(ownerBudget)), async (_o, st) =>
       st.storage.sql
-        .exec(`SELECT name FROM category_group`)
+        .exec(`SELECT id FROM budget`)
         .toArray()
-        .map((r) => r.name),
+        .map((r) => r.id),
     );
-    expect(inStore).toEqual(['Bills']);
+    expect(inStore).toEqual([ownerBudget]);
   });
 
   it('Settings → Sign-in is served by the Directory for the signed-in user', async () => {
@@ -205,10 +206,10 @@ describe('routing', () => {
       });
     await setWorkerRequests(96_000);
     try {
-      const b = await owner.call('GET', '/api/sync?since=0');
+      const b = await owner.call('GET', '/api/settings/connections');
       expect(b.status).toBe(503);
       expect(b.json).toMatchObject({ error: 'resting' });
-      const w = await owner.call('POST', '/api/settings/groups', { name: 'Fun', isBills: false });
+      const w = await owner.call('POST', '/api/settings/connections/refresh');
       expect(w.status).toBe(503);
       const s = await owner.call('GET', '/api/session');
       expect(s.status).toBe(200);
@@ -216,9 +217,9 @@ describe('routing', () => {
       expect((await owner.call('GET', '/api/auth/status')).status).toBe(200);
       // The Worker now refuses by itself for a few minutes, without asking the Directory.
       await setWorkerRequests(0);
-      expect((await owner.call('GET', '/api/sync?since=0')).status).toBe(503);
+      expect((await owner.call('GET', '/api/settings/connections')).status).toBe(503);
       resetRoutingCache();
-      expect((await owner.call('GET', '/api/sync?since=0')).status).toBe(200);
+      expect((await owner.call('GET', '/api/settings/connections')).status).toBe(200);
     } finally {
       await setWorkerRequests(0);
       resetRoutingCache();
@@ -244,7 +245,7 @@ describe('routing', () => {
     });
     expect((await other.register(otherKey, { deviceToken: token })).status).toBe(200);
     const s = await other.call('GET', '/api/session');
-    expect((s.json.budget as { id: string }).id).toBe('b_b');
+    expect(s.json.budgetId as string).toBe('b_b');
     const cats = await other.call('GET', '/api/settings/categories');
     expect(JSON.stringify(cats.json)).not.toContain('Bills');
   });

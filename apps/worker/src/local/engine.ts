@@ -24,15 +24,14 @@ import { clearTotals } from '../ledger/totals.js';
 import { checkIdentityDb } from '../maintenance.js';
 import { splitStatements } from '../store/adapter.js';
 import { BUDGET_MIGRATIONS } from '../store/migrations.gen.js';
-import { SYNC_FORMAT, SYNC_TABLES, triggerNames, type SyncTable } from '../sync-tables.js';
 import {
-  REST_TABLES,
-  type BankLogBatch,
-  type RestBatch,
+  SYNC_FORMAT,
+  SYNC_TABLES,
+  triggerNames,
   type SyncPage,
   type SyncRow,
-} from '../routes/sync.js';
-import { Shadow, type Fork, type ShadowEvent, type ShadowReport } from './shadow.js';
+  type SyncTable,
+} from '../sync-tables.js';
 import { CSRF_HEADER } from '@ledgerline/contracts';
 
 export interface EngineIdentity {
@@ -366,8 +365,6 @@ export class LocalEngine {
     private readonly deviceNow: () => number = () => Date.now(),
     /** Called when Ready to Assign doesn't satisfy rule 10 (the identity check). */
     private readonly onIdentity?: (r: { difference: number; month: string }) => Promise<void>,
-    /** Makes a scratch copy of this database, for the shadow run (local/shadow.ts). */
-    private readonly fork?: () => Promise<Fork>,
   ) {
     const app = new Hono<AppEnv>();
     app.use('*', async (c, next) => {
@@ -377,7 +374,6 @@ export class LocalEngine {
       c.set('email', who.email);
       if (who.noBanks) c.set('isAdmin', false);
       c.set('sessionId', '');
-      c.set('syncEpoch', 'local');
       return next();
     });
     // The engine's own (local/log-session.ts shareBankLog): the bank log of sealed runs `from` to `to`, written
@@ -431,12 +427,6 @@ export class LocalEngine {
   /** The server's clock as this device sees it (the phone's own clock is never used for money, section 9). */
   async now(): Promise<number> {
     return this.deviceNow() + (await this.state()).offset;
-  }
-
-  /** Where the next sync request starts: `since` and, during a full download, `cursor`. */
-  async nextRequest(): Promise<{ since: number; cursor: string | null }> {
-    const s = await this.state();
-    return { since: s.cursor ? 0 : s.through, cursor: s.cursor };
   }
 
   /**
@@ -771,16 +761,15 @@ export class LocalEngine {
       this.db.prepare(`PRAGMA defer_foreign_keys = ON`),
       ...[...SYNC_TABLES].reverse().map((t) => this.db.prepare(`DELETE FROM ${t.name}`)),
       ...derivedTables.map((t) => this.db.prepare(`DELETE FROM ${t}`)),
-      // The rest of the budget (the undo record, the moved keys) is read anew with the download.
-      ...REST_TABLES.map((t) => this.db.prepare(`DELETE FROM ${t.name}`)),
+      // The undo record and the moved keys go too: they come again with the copy.
+      ...['audit_log', 'txn_key_move'].map((t) => this.db.prepare(`DELETE FROM ${t}`)),
       this.setState({ ...EMPTY }),
     ]);
     // The rows kept for taking a queued edit out were this copy's: they mean nothing to the next download, even
     // one that ends on the same change number.
     const q = await this.queue();
     if (q.length) await this.putQueue(q.map(({ undo: _undo, through: _through, rows: _rows, ...e }) => e));
-    // The next download already holds every bank update so far: the shadow run starts over from there. A queue
-    // that was out of the copy between two pages is simply the queue again.
+    // A queue that was out of the copy between two pages is simply the queue again.
     await this.db
       .prepare(
         `DELETE FROM local_state WHERE key IN ('shadow_seq', 'shadow_scan', 'held_queue', 'filing', 'rest')`,
@@ -904,7 +893,6 @@ export class LocalEngine {
         workers: 0,
         refreshedAt: null,
       }),
-      JOBS: { sync: async () => undefined },
     } as unknown as Env;
   }
 
@@ -967,16 +955,6 @@ export class LocalEngine {
     return { response: r.response, queued: q.length };
   }
 
-  /** The app is about to send this edit: from now on the server may hold it. */
-  async queueSending(id: string): Promise<void> {
-    const q = await this.queue();
-    const e = q.find((x) => x.id === id);
-    if (!e || e.sending) return;
-    e.sending = true;
-    await this.putQueue(q);
-  }
-
-  /** The server took this edit: it leaves the queue. Gives how many are left. */
   /**
    * Drops every change waiting to be sent. Only for a copy of a budget that was moved to its sealed log on
    * another device: those changes were made for the old routes, which take nothing any more.
@@ -987,6 +965,7 @@ export class LocalEngine {
     return n;
   }
 
+  /** The log holds this edit already: it leaves the queue. Gives how many are left. */
   async queueDone(id: string): Promise<number> {
     const q = (await this.queue()).filter((x) => x.id !== id);
     await this.putQueue(q);
@@ -1136,153 +1115,6 @@ export class LocalEngine {
   /** The app was closed while this copy was filing bank runs: the copy holds half of it and must be made again. */
   async filingInterrupted(): Promise<boolean> {
     return !!(await this.db.prepare(`SELECT 1 AS x FROM local_state WHERE key = 'filing'`).first());
-  }
-
-  // ---- the shadow run (local/shadow.ts): the device files the inbox's bank updates on a scratch copy
-
-  private shadow: { run: Shadow; token: number } | null = null;
-  private shadowTokens = 0;
-
-  /**
-   * Makes the scratch copy for a shadow run, before the server's rows for newer bank updates are written into
-   * this copy. Gives a token for the later steps (a newer run replaces an unfinished one, whose steps then do
-   * nothing), or null when this engine can't make a scratch copy.
-   */
-  async shadowFork(): Promise<number | null> {
-    this.shadow?.run.discard();
-    this.shadow = null;
-    if (!this.fork) return null;
-    const run = await Shadow.fork(this.db, this.who.budgetId, this.fork);
-    this.shadow = { run, token: ++this.shadowTokens };
-    return this.shadow.token;
-  }
-
-  private shadowOf(token: number): Shadow | null {
-    return this.shadow?.token === token ? this.shadow.run : null;
-  }
-
-  /** The updates to file. Null: ready to step. A report: a comparison would say nothing, and why. */
-  async shadowBegin(token: number, runs: ShadowEvent[]): Promise<ShadowReport | null> {
-    const s = this.shadowOf(token);
-    return s ? s.begin(runs) : { runs: 0, compared: false, why: 'incomplete', differences: [] };
-  }
-
-  /** Files the next update on the scratch copy; false when none is left. */
-  async shadowStep(token: number): Promise<boolean> {
-    return (await this.shadowOf(token)?.step()) ?? false;
-  }
-
-  /** Compares the scratch copy with this one (which holds the server's rows by now) and frees it. */
-  async shadowEnd(token: number): Promise<ShadowReport | null> {
-    const s = this.shadowOf(token);
-    if (!s) return null;
-    this.shadow = null;
-    return s.end(this.db);
-  }
-
-  /** What to ask the server's bank log for next (routes/sync.ts `/sync/bank-log`). */
-  async bankLogRequest(): Promise<{ after: number; pagesAfter: string | null }> {
-    const r = await this.db
-      .prepare(`SELECT value FROM local_state WHERE key = 'bank_log'`)
-      .first<{ value: string }>();
-    return r
-      ? (JSON.parse(r.value) as { after: number; pagesAfter: string | null })
-      : { after: 0, pagesAfter: null };
-  }
-
-  /**
-   * Adds a batch of the server's bank log to the copy's own (docs/privacy.md 5.4). Rows are only ever added: the
-   * copy has the same append-only triggers as the server, and a row it already holds is left as it is.
-   */
-  async applyBankLog(batch: BankLogBatch): Promise<{ rows: number; caughtUp: boolean }> {
-    const insert = (table: string, row: Record<string, unknown>): Stmt => {
-      const cols = Object.keys(row);
-      return this.db
-        .prepare(
-          `INSERT OR IGNORE INTO ${table} (${cols.join(', ')}) VALUES (${cols.map((_, i) => `?${i + 1}`).join(', ')})`,
-        )
-        .bind(...cols.map((c) => row[c]));
-    };
-    const stmts: Stmt[] = [
-      ...batch.pages.map((r) => insert('bank_page', r)),
-      ...batch.events.map((r) => insert('bank_event', r)),
-      this.db
-        .prepare(
-          `INSERT INTO local_state (key, value) VALUES ('bank_log', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
-        )
-        .bind(JSON.stringify({ after: batch.after, pagesAfter: batch.pagesAfter })),
-    ];
-    for (const part of chunks(stmts, 500)) await this.db.batch(part);
-    return { rows: batch.pages.length + batch.events.length, caughtUp: !batch.more };
-  }
-
-  /**
-   * What to ask the server for next of the rest of the budget (routes/sync.ts `GET /sync/rest`): a table and the
-   * key of the last row this copy took of it. Null: every table was read to its end. Edits made later add rows,
-   * so the copy asks again before the cutover (`restAgain`).
-   */
-  async restRequest(): Promise<{ table: string; after: string | number | null } | null> {
-    const st = await this.restState();
-    for (const t of REST_TABLES) {
-      const s = st[t.name];
-      if (!s?.done) return { table: t.name, after: s?.after ?? null };
-    }
-    return null;
-  }
-
-  /** Writes one batch of the rest of the budget into the copy. */
-  async applyRest(batch: RestBatch): Promise<{ rows: number; caughtUp: boolean }> {
-    if (!REST_TABLES.some((t) => t.name === batch.table)) throw new RowsRefused('not a table of the rest');
-    if (batch.rows.some((r) => r.t !== batch.table || r.d === null))
-      throw new RowsRefused('not a row of the table');
-    await this.checkRows(batch.rows, RECORDED_TABLES, true);
-    const st = await this.restState();
-    // A batch that says "more" and brings nothing would be asked for again for ever.
-    if (batch.more && !batch.rows.length) throw new RowsRefused('an empty batch that says more');
-    st[batch.table] = { after: batch.after ?? st[batch.table]?.after ?? null, done: !batch.more };
-    const stmts: Stmt[] = [];
-    for (const r of batch.rows) stmts.push(...this.rowStatements(r, RECORDED_TABLES));
-    stmts.push(
-      this.db
-        .prepare(
-          `INSERT INTO local_state (key, value) VALUES ('rest', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
-        )
-        .bind(JSON.stringify(st)),
-    );
-    for (const part of chunks(stmts, 500)) await this.db.batch(part);
-    return { rows: batch.rows.length, caughtUp: (await this.restRequest()) === null };
-  }
-
-  /** Reads the rest of the budget on from where each table ended: new rows came since. */
-  async restAgain(): Promise<void> {
-    const st = await this.restState();
-    const stmts: Stmt[] = [];
-    for (const t of REST_TABLES) {
-      const s = st[t.name];
-      if (!s) continue;
-      s.done = false;
-      // A table whose key is a growing number only gains rows past the last one read. Any other is read whole
-      // again: on the server its rows are also replaced and deleted, in no order of key.
-      if (!t.number) {
-        s.after = null;
-        stmts.push(this.db.prepare(`DELETE FROM ${t.name}`));
-      }
-    }
-    stmts.push(
-      this.db
-        .prepare(
-          `INSERT INTO local_state (key, value) VALUES ('rest', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
-        )
-        .bind(JSON.stringify(st)),
-    );
-    await this.db.batch(stmts);
-  }
-
-  private async restState(): Promise<Record<string, { after: string | number | null; done: boolean }>> {
-    const r = await this.db
-      .prepare(`SELECT value FROM local_state WHERE key = 'rest'`)
-      .first<{ value: string }>();
-    return r ? (JSON.parse(r.value) as Record<string, { after: string | number | null; done: boolean }>) : {};
   }
 
   /** Writes rows another copy recorded, and marks what derive() must work out again. */

@@ -14,11 +14,8 @@ const day = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
 
 /** What the Privacy screen says about the copy from before the lock, at each stage. */
-export function oldCopyText(p: PurgeView | null | undefined, backUntil: string | null): string {
+export function oldCopyText(p: PurgeView | null | undefined): string {
   switch (p?.stage) {
-    case 'ready':
-    case 'stopped':
-      return 'Still readable on the server. You can delete it below.';
     case 'running':
       return 'Being deleted now.';
     case 'done':
@@ -28,9 +25,7 @@ export function oldCopyText(p: PurgeView | null | undefined, backUntil: string |
         ? `Deleted. A check on ${day(p.checkAt!)} found nothing readable left.`
         : `Deleted, but a check on ${day(p.checkAt!)} found some still there.`;
     default:
-      return backUntil
-        ? `Still readable on the server, for the way back until ${day(backUntil)}. You can delete it after that.`
-        : 'Still readable on the server, for the way back. You can delete it after that.';
+      return 'Still readable on the server. You can delete it below.';
   }
 }
 

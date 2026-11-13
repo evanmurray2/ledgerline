@@ -1,5 +1,5 @@
 // One function per endpoint in docs/api.md. Types come from @ledgerline/contracts.
-import { copyReady, isSealed, keepSession, noteSealed, read as readCopy, sealedKnown } from '../copy/copy';
+import { copyReady, isSealed, keepSession, noteSealed, read as readCopy } from '../copy/copy';
 import { sessionFor } from '../copy/sealed-session';
 import {
   AuthStatus,
@@ -57,7 +57,6 @@ import { del, get, patch, post, put, qs } from './client';
 type In<T extends z.ZodType> = z.input<T>;
 
 const Ok = z.object({ ok: z.literal(true) });
-/** A new account or a recovery also returns the recovery code, shown once (D-75). */
 const UsersView = z.object({
   users: z.number().int(),
   maxUsers: z.number().int(),
@@ -78,7 +77,7 @@ const UsersView = z.object({
   next: z.string().nullable(),
 });
 export type UsersView = z.infer<typeof UsersView>;
-const RegisterResult = z.object({ ok: z.literal(true), recoveryCode: z.string().optional() });
+const RegisterResult = z.object({ ok: z.literal(true) });
 const OkId = z.object({ ok: z.literal(true), id: z.string() });
 const hexOrNull = z.string().nullable().optional();
 const DeviceAddState = z.object({
@@ -92,7 +91,6 @@ const DeviceAddState = z.object({
   sealed: hexOrNull,
 });
 const LinkToken = z.object({ linkToken: z.string(), hostedUrl: z.string().optional() });
-const Exchange = z.object({ ok: z.literal(true), connectionId: z.string(), accounts: z.unknown() });
 
 export type ActivityFilter = 'all' | 'attention' | 'pending';
 export type RegisterShow = 'all' | 'pending' | 'needs' | 'transfers';
@@ -122,7 +120,7 @@ export const api = {
       ready: copyReady,
       local: () => readCopy('/api/session'),
       note: noteSealed,
-      known: sealedKnown,
+      mock: import.meta.env.VITE_MOCK === '1',
       keep: keepSession,
     }),
   /** Tab badge counts, cheaply: shown on every screen. */
@@ -143,11 +141,9 @@ export const api = {
     post('/api/auth/register/options', z.unknown(), body),
   registerVerify: (body: { response: unknown; name: string }) =>
     post('/api/auth/register/verify', RegisterResult, body),
-  // Open sign-up and recovery codes (D-75): only while the switch is on.
+  // Open sign-up (D-75): only while the switch is on.
   signupOptions: (body: { turnstileToken: string }) => post('/api/auth/signup/options', z.unknown(), body),
-  recoverOptions: (body: { code: string; turnstileToken: string }) =>
-    post('/api/auth/recover/options', z.unknown(), body),
-  // Moving the budget to its locked form (Settings → Privacy; the Worker's seal/cutover-routes.ts).
+  // Where the budget stands, and emptying its old copy (Settings → Privacy; the Worker's seal/purge-routes.ts).
   cutoverState: () =>
     get(
       '/api/cutover/state',
@@ -160,10 +156,6 @@ export const api = {
       }),
     ),
   cutoverPurge: () => post('/api/cutover/purge', z.object({ ok: z.literal(true) })),
-  cutoverReady: (fresh = false) =>
-    post('/api/cutover/ready', z.object({ ok: z.literal(true), blocks: z.array(z.string()) }), { fresh }),
-  cutoverBack: () => post('/api/cutover/back', z.object({ ok: z.boolean() })),
-  newRecoveryCode: () => post('/api/settings/security/recovery-code', z.object({ code: z.string() })),
   // The recovery key of a locked budget (docs/privacy-keys.md 4.2): its sign-in, and its public half.
   recoverKeyOptions: (authPub: string) =>
     post('/api/auth/recover-key/options', z.object({ budgetId: z.string(), challenge: z.string() }), {
@@ -173,7 +165,6 @@ export const api = {
   recoveryKey: () =>
     get('/api/settings/security/recovery-key', z.object({ set: z.boolean(), setAt: z.string().nullable() })),
   setRecoveryKey: (authPub: string) => post('/api/settings/security/recovery-key', Ok, { authPub }),
-  dismissRecoveryNotice: () => post('/api/settings/security/recovery-notice/dismiss', Ok),
   // Deleting your own account, and Settings → Users for admins (D-75).
   deleteAccount: (budgetName: string) => post('/api/settings/security/delete-account', Ok, { budgetName }),
   users: (q: { before?: string; status?: string } = {}) =>
@@ -309,7 +300,6 @@ export const api = {
   },
   linkToken: (body: In<typeof LinkTokenRequest>) =>
     post('/api/settings/connections/link-token', LinkToken, body),
-  exchange: (publicToken: string) => post('/api/settings/connections/exchange', Exchange, { publicToken }),
   linkFinish: (body: In<typeof LinkFinish>) =>
     post('/api/settings/connections/link-finish', LinkFinishResult, body),
   refreshConnection: (id: string) => post(`/api/settings/connections/${enc(id)}/refresh`, Ok),
@@ -328,8 +318,3 @@ export const api = {
   patchSettings: (body: In<typeof SettingsPatch>) => patch('/api/settings', Ok, body),
   note: (body: In<typeof NoteRequest>) => post('/api/notes', Ok, body),
 };
-
-/** File downloads go straight to the Worker (same origin, Access cookie). */
-export const exportUrls = {
-  usage: '/api/export/usage',
-} as const;

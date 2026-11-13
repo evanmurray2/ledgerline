@@ -107,11 +107,9 @@ export async function identify(req: Request, env: Env, now: number): Promise<Ide
 /** Syncing banks now (pull to sync, Try again, Finish setup): fetches what Plaid already has, so no passkey check. */
 const SYNC_NOW = /^\/api\/settings\/connections\/(?:[^/]+\/)?refresh$/;
 
-/** Linking or repairing a bank, removing a connection, exports, and managing passkeys need a recent passkey check. */
+/** Linking or repairing a bank, removing a connection, and managing passkeys need a recent passkey check. */
 export function needsRecentPasskey(method: string, path: string): boolean {
-  if (path.startsWith('/api/export/') || path === '/api/settings/restore') return true;
   if (method === 'GET' || path === '/api/settings/security/sign-out') return false;
-  if (path === '/api/settings/security/recovery-notice/dismiss') return false;
   // The challenge for a signed request writes nothing; the request it is for asks for the check.
   if (path === '/api/settings/security/request-challenge') return false;
   if (SYNC_NOW.test(path)) return false;

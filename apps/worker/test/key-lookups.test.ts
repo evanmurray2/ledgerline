@@ -2,9 +2,11 @@
 // Without table statistics SQLite takes such an index for a selective one and, for "budget_id = ? AND key IN (…)",
 // reads every bank row instead of looking up the keys (Nov 9, 2026: about 3,000 rows read for 25 keys, several times a
 // processing step). The hot lookups write +budget_id so the key's index is used; this test fails if one goes back.
+// Filing runs on the device now (D-102); the store's SQLite stands in for the device's here.
 import { createExecutionContext, env, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import worker from '../src/index.js';
+import { seedNovember } from '../src/dev-seed.js';
 import type { DurableDb } from '../src/store/adapter.js';
 import { Scoped } from '../src/db/scoped.js';
 import { loadBankRows } from '../src/sync/bank-rows.js';
@@ -14,15 +16,13 @@ const db = ownerDb();
 
 describe('key lookups in a store', () => {
   it('read the keys asked for, not every bank row', async () => {
+    // The store makes its budget's own row on its first request; November goes in as a copy holds it.
     await worker.fetch(
-      new Request('https://ledgerline.test/__dev/seed-november', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-ledgerline': '1' },
-        body: '{}',
-      }),
+      new Request('https://ledgerline.test/api/session', { headers: { 'x-ledgerline-sealed': '1' } }),
       env as never,
       createExecutionContext(),
     );
+    await seedNovember(db, (await directoryStub().firstBudget())!, 'owner', Date.now());
     // About 2,000 more bank rows, as after a few months of syncs.
     const cols = (await db.prepare(`PRAGMA table_info(bank_txn)`).all<{ name: string }>()).results.map(
       (c) => c.name,

@@ -5,7 +5,7 @@ import type { Env } from './env.js';
 import type { AppEnv } from './http/context.js';
 import { apiHeaders } from './http/security.js';
 import { DIRECTORY_NAME } from './store/directory.js';
-import { routeApi, routeDev } from './store/router.js';
+import { routeApi } from './store/router.js';
 export { BudgetStore } from './store/budget-store.js';
 export { Directory } from './store/directory.js';
 
@@ -66,11 +66,6 @@ app.all('/api/*', async (c) => {
   }
   // Responses from another object have immutable headers; copy so apiHeaders can add its own.
   return new Response(r.body, r);
-});
-// Local seed routes, served in the dev user's store: never in production, and only when enabled.
-app.all('/__dev/*', async (c) => {
-  if (c.env.DEV_ROUTES !== '1' || c.env.PLAID_ENV === 'production' || c.env.SETUP_CODE) return c.notFound();
-  return routeDev(c.req.raw, c.env);
 });
 // Everything else is the SPA (static assets with SPA fallback).
 app.all('*', async (c) => (c.env.ASSETS ? c.env.ASSETS.fetch(c.req.raw) : c.text('Not found', 404)));

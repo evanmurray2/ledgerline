@@ -6,7 +6,6 @@
 // another entry are each refused as another history, and the copy is left as it was.
 import { ulid } from '@ledgerline/platform';
 import { encodeEntry, KIND, startChain } from '@ledgerline/seal';
-import { SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { BelowFloor, DeviceLog, LogFork } from '../src/local/device-log.js';
 import {
@@ -36,18 +35,10 @@ import { syncPhone } from './phone.js';
 import { world } from './sealed-world.js';
 import { differences, newPhone, rowsOf } from './twin.js';
 
-const ORIGIN = 'https://ledgerline.test';
-const H = { origin: ORIGIN, 'content-type': 'application/json', 'x-ledgerline': '1' };
 const LAPTOP = '01CX5ZZKBKACTAV9WEVGEMMVRZ';
 
 describe('a copy made again from a snapshot, by itself', () => {
   it('below the floor, after a stopped filing, and never from another history', async () => {
-    const seeded = await SELF.fetch(`${ORIGIN}/__dev/seed-november`, {
-      method: 'POST',
-      headers: H,
-      body: '{}',
-    });
-    expect(seeded.status).toBe(200);
     await world(
       async (x) => {
         let clock = T0 + 10_000;

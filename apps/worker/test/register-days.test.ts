@@ -1,15 +1,14 @@
 // An account's register lists its days by date: two days a year apart get their own labels (and keys on screen).
-import { app } from './phone.js';
+import { app, phoneDb } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { RegisterView } from '@ledgerline/contracts';
-import { ownerDb } from './store-db.js';
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 
 describe('register days', () => {
   beforeAll(async () => {
     expect((await app('/__dev/seed-november', { method: 'POST', headers: H, body: '{}' })).status).toBe(200);
-    const db = ownerDb();
+    const db = phoneDb();
     const a = (await db
       .prepare(`SELECT budget_id, provider_account_id FROM account WHERE id = 'marcus'`)
       .first<{ budget_id: string; provider_account_id: string }>())!;

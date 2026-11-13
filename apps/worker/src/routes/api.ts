@@ -1,7 +1,7 @@
 import { newId } from '../http/ids.js';
 import type { Result } from '@ledgerline/db/sql';
-import { type Context, Hono, type MiddlewareHandler } from 'hono';
-import { editNow, requestNow } from '../http/clock.js';
+import { type Context, Hono } from 'hono';
+import { editNow } from '../http/clock.js';
 import { z } from 'zod';
 import {
   AssignRequest,
@@ -14,11 +14,9 @@ import {
 import { type Month, addMonths, currentMonth, isMonth, monthsBetween } from '@ledgerline/domain';
 
 import type { AppEnv } from '../http/context.js';
-import { OPS_PATHS, REAUTH_MS, identify, needsRecentPasskey } from '../http/auth.js';
-import { securityRoutes } from './security.js';
 import { csrf } from '../http/security.js';
 import { bumpOnChange } from '../http/version.js';
-import { Scoped, membership } from '../db/scoped.js';
+import { Scoped } from '../db/scoped.js';
 import { budgetView } from '../views/budget.js';
 import { fresh, monthLong } from '../views/common.js';
 import { usageToday, classifyUsage, dailyLimits } from '../sync/breaker.js';
@@ -33,76 +31,17 @@ import { accountCloseRoutes } from './account-close.js';
 import { registerRoutes } from './account-register.js';
 import { reportRoutes } from './reports.js';
 import { settingsRoutes } from './settings.js';
-import { opsRoutes } from './ops.js';
 import { categorySheet, assignView } from '../views/category.js';
-import { syncRoutes, editOnce, syncInAnswer } from './sync.js';
 import { canLinkBanks } from '../http/context.js';
 
 /**
- * One budget's API (docs/multi-user.md 5.1). It runs inside the budget's own Durable Object, which trusts the caller
- * the Worker passes it after the Directory has checked who is asking (store/router.ts).
+ * One budget's API: every screen and every change of the budget. Every budget is locked (D-102), so these routes
+ * run only on the device, in the engine (local/engine.ts), over the device's own copy.
  */
 export const budgetApi = new Hono<AppEnv>();
 
-/** Settings → Sign-in in the Directory: a signed-in session (or the ops token), then membership in a budget. */
-export const identity: MiddlewareHandler<AppEnv> = async (c, next) => {
-  c.set('requestId', crypto.randomUUID());
-  const path = new URL(c.req.url).pathname;
-  if (path === '/api/webhooks/plaid' || path.startsWith('/api/auth/')) return next();
-  // The server's clock, never an edit's own time: a session's age is not for the phone to say.
-  const now = requestNow(c);
-  const who = await identify(c.req.raw, c.env, now);
-  if (!who) return c.json({ error: 'unauthenticated', message: 'Sign in again with your passkey.' }, 401);
-  if (who.kind === 'ops') {
-    // The ops token reaches only the health endpoint.
-    if (!OPS_PATHS.has(`${c.req.method} ${path}`))
-      return c.json({ error: 'forbidden', message: 'You can’t open this.' }, 403);
-    c.set('userId', 'service');
-    c.set('email', '');
-    c.set('sessionId', '');
-    const b = await c.env.DB.prepare(`SELECT id FROM budget ORDER BY created_at LIMIT 1`).first<{
-      id: string;
-    }>();
-    c.set('budgetId', b?.id ?? '');
-    return next();
-  }
-  if (needsRecentPasskey(c.req.method, path) && now - who.verifiedAt > REAUTH_MS)
-    return c.json({ error: 'reauth', message: 'Confirm it’s you with your passkey, then try again.' }, 401);
-  const m = await membership(c.env.DB, who.userId);
-  if (!m) return c.json({ error: 'forbidden', message: 'You don’t have access to this budget.' }, 403);
-  c.set('sessionId', who.sessionId ?? '');
-  c.set('userId', m.userId);
-  c.set('email', m.email);
-  c.set('budgetId', m.budgetId);
-  c.set('isAdmin', m.isAdmin);
-  return next();
-};
 budgetApi.use('*', csrf);
 
-/**
- * Screens are built on the phone from its own copy (D-45). On the server only these reads remain: the session, the
- * sync itself, bank connections (they need the Directory's link slots), exports and the ops health check.
- */
-export const SERVER_READS = [
-  /^\/api\/session$/,
-  /^\/api\/sync(\/|$)/,
-  /^\/api\/health$/,
-  /^\/api\/settings\/connections$/,
-  /^\/api\/export\//,
-  /^\/api\/settings\/restore\/last$/,
-];
-/** Mounted in front of budgetApi by the store (not by the phone's engine, which answers every screen). */
-export const serverReadsOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
-  if (c.req.method !== 'GET' && c.req.method !== 'HEAD') return next();
-  const path = new URL(c.req.url).pathname;
-  if (SERVER_READS.some((r) => r.test(path))) return next();
-  return c.json({ error: 'on_device', message: 'This screen is worked out on your device.' }, 404);
-};
-/** An online edit's answer carries the changes since the phone's copy (routes/sync.ts). Outside bumpOnChange, so the
- * changes include the budget row it bumps. */
-budgetApi.use('*', syncInAnswer);
-/** A change made offline and sent again after a dropped answer is applied once (routes/sync.ts). */
-budgetApi.use('*', editOnce);
 /** Every change bumps the budget's data version (http/version.ts). */
 budgetApi.use('*', bumpOnChange);
 
@@ -269,7 +208,6 @@ budgetApi.get('/session', async (c) => {
     canLinkBanks: canLinkBanks(c),
     // Always: banks are linked on Plaid's own site. An app from before the script was removed still reads this.
     hostedLink: true,
-    recoveryNoticeAt: c.get('recoveryNoticeAt') ? new Date(c.get('recoveryNoticeAt')!).toISOString() : null,
   };
   return c.json(body);
 });
@@ -418,7 +356,6 @@ budgetApi.put('/categories/:id/target', async (c) => {
   return c.json(ACK);
 });
 
-budgetApi.route('/', syncRoutes);
 budgetApi.route('/', activityViewRoutes);
 budgetApi.route('/', activityRoutes);
 budgetApi.route('/', samePurchaseRoutes);
@@ -430,7 +367,5 @@ budgetApi.route('/', accountCloseRoutes);
 budgetApi.route('/', registerRoutes);
 budgetApi.route('/', reportRoutes);
 budgetApi.route('/', settingsRoutes);
-budgetApi.route('/', opsRoutes);
-budgetApi.route('/', securityRoutes);
 
 export { addMonths };

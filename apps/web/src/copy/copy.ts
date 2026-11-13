@@ -1,7 +1,8 @@
 // The budget's copy on this device (docs/phone-budget.md, decisions.md D-45): every screen is worked out from it by
-// the engine in a Web Worker; changes go to the server and come back through the sync. On any device whose passkey
-// supports PRF (D-53), the copy is saved encrypted (vault.ts), reopens downloading only what changed, and opens with
-// no signal; without PRF it's kept in memory for the visit only.
+// the engine in a Web Worker. Every budget is locked (D-102): the copy lives on the budget's sealed log, every change
+// is made here and goes out as an entry, and the server can't read it. On any device whose passkey supports PRF
+// (D-53), the copy is saved encrypted (vault.ts), reopens reading only the entries since, and opens with no signal;
+// without PRF it's kept in memory for the visit only.
 //
 // Idle sign-out (D-57): after 10 idle minutes, or 10 minutes in the background, the keys, the copy in memory and the
 // server session are dropped and the app shows Sign in; that one Face ID also opens the saved copy. A refresh or the
@@ -11,6 +12,7 @@
 import { useSyncExternalStore } from 'react';
 import {
   CSRF_HEADER,
+  SEALED_HEADER,
   SIGNED_CHALLENGE_HEADER,
   SIGNED_SIGNATURE_HEADER,
   type SealedSession,
@@ -26,23 +28,21 @@ import {
   slotPrfInput,
   WayInError,
 } from '../keys/budget';
-import { dropMove, prepareMove, proveMove, recoveryKeyOpens, type PreparedMove } from '../keys/move';
+import {
+  dropNewBudget,
+  newBudget,
+  proveNewBudget,
+  recoveryKeyOpens,
+  type NewBudget,
+} from '../keys/new-budget';
 import { WORKER_RUN_KEYS } from '../keys/worker-keys';
 import { fetchPublicEntries, logDeviceId, newUlid, openSealedBudget } from './sealed';
 import { addPasskeyWay, authPubOf, openPlans, type Ways } from './sealed-ways';
 import { ACTION, type Entry, type PublicState, walkPublic, zeroize } from '@ledgerline/seal';
-import { mergedSession } from './sealed-session';
+import { mergedSession, NOT_LOCKED } from './sealed-session';
 import { ownWriters } from './notices';
 import { connectivity } from '../state/connectivity';
-import {
-  EngineHost,
-  syncAll,
-  type EngineIdentity,
-  type QueuedEdit,
-  type SealedKeys,
-  type SyncPage,
-} from './host';
-import { shadowBefore, shadowFinish, type Started } from './shadow';
+import { EngineHost, type EngineIdentity, type QueuedEdit, type SealedKeys } from './host';
 import { usage } from '../usage/tracker';
 import { isServerRead } from './server-reads';
 import { assert, canUsePasskeys, keepsCopy, type RequestOptionsJSON } from './passkey';
@@ -83,6 +83,7 @@ export type CopyStatus =
   | 'signed_out' // a saved copy waits: Sign in opens it online, or Face ID with no signal
   | 'opening'
   | 'ready'
+  | 'fresh' // a new budget with no first entry yet: this device makes it (lockStart, lockFinish)
   | 'failed';
 
 export interface CopyState {
@@ -183,16 +184,9 @@ export const isSealed = (): boolean => sealed !== null;
  * refused (sealed-session.ts). Nothing the server says later takes this back.
  */
 export function noteSealed(s: SealedSession): void {
-  const first = sealed === null;
   sealed = s;
-  rememberSealed(s.budgetId);
-  // A copy that was open as a plain budget (another device moved the budget meanwhile) holds no place in the
-  // log, and its queue was made for the old routes: the app starts again and opens the budget from the log.
-  if (first && state.status === 'ready' && who && !MOCK) {
-    void host?.close();
-    host = null;
-    window.location.reload();
-  }
+  // A new budget is remembered once this device has locked it (startBudget below), not before.
+  if (!s.fresh) rememberSealed(s.budgetId);
 }
 /** The budgets this device knows as sealed (their ids, no more), kept outside the copy so a wipe leaves them. */
 const sealedBudgets = (): string[] => {
@@ -210,7 +204,7 @@ function rememberSealed(budgetId: string): void {
     // No storage: the device knows it only while the app is open.
   }
 }
-/** Only the person's own act on this device forgets it: the way back, or signing out here. */
+/** Only the person's own act on this device forgets it: signing out here. */
 function forgetSealed(budgetId: string | null): void {
   try {
     const rest = budgetId ? sealedBudgets().filter((b) => b !== budgetId) : [];
@@ -597,103 +591,93 @@ export async function plannedChanges(): Promise<ReturnType<typeof openPlans>> {
   return openPlans(await walkPublic(await fetchPublicEntries(ways.fetch), who.budgetId));
 }
 
-// ---------------------------------------------------------------- moving a budget to its sealed log
+// ---------------------------------------------------------------- a new budget, locked from the start (D-102)
 
-export type MoveInHand = PreparedMove;
-const NOT_NOW = 'Something went wrong. Try again.';
+/** The server's clock as this device sees it, from its answer to the session: a first entry is dated by it. */
+async function serverNow(): Promise<number> {
+  const asked = Date.now();
+  const r = await fetch('/api/session', {
+    credentials: 'same-origin',
+    headers: { accept: 'application/json', [SEALED_HEADER]: '1' },
+  }).catch(() => null);
+  const t = Number(r?.headers.get('x-ledgerline-time'));
+  return Number.isFinite(t) && t > 0 ? Math.round(t + (Date.now() - asked) / 2) : Date.now();
+}
 
 /**
- * The first step of the move (docs/privacy.md section 8 step 6): the passkey is asked, and this device makes
- * the budget's key, its recovery key and the log's first entry. Nothing is sent.
+ * The first step of a new budget: the passkey is asked, and this device makes the budget's key, its recovery
+ * key and the log's first entry. Nothing is sent.
  */
-export async function moveStart(): Promise<MoveInHand> {
-  if (!host || !who || state.status !== 'ready' || sealed) throw new Error(NOT_NOW);
-  if (state.offline) throw new Error('Connect to the internet to lock your budget.');
-  // Asked of the server, not of this device's memory: an earlier try may have sealed the budget.
-  if ((await server<{ sealed: boolean }>('GET', '/api/cutover/state')).sealed)
-    throw new Error('This budget is locked already.');
-  // Every change made here must be on the server first: the move takes the budget as the server holds it.
-  await flush();
-  if ((await queued()).length)
-    throw new Error('Some changes are not sent yet. Wait a moment, then try again.');
-  const w = await askSlot();
-  return prepareMove({
+export async function lockStart(): Promise<NewBudget> {
+  if (!host || !who || state.status !== 'fresh') throw new Error(NOT_NOW);
+  const p = pending;
+  pending = null;
+  const w = p?.slotPrf ? { credentialId: p.credentialId, slotPrf: p.slotPrf } : await askSlot();
+  return newBudget({
     budgetId: who.budgetId,
     deviceId: await logDeviceId(host),
     passkey: { credentialId: new Uint8Array(fromB64url(w.credentialId)), prf: new Uint8Array(w.slotPrf) },
-    // The server's clock as this device measured it: the log refuses a first entry dated by another clock.
-    now: Date.now() + (await host.state()).offset,
+    now: await serverNow(),
   });
 }
 
-/** The move is given up: the keys made for it are zeroed. */
-export function moveGiveUp(p: MoveInHand): void {
-  dropMove(p);
+/** A new budget's keys are given up: they are zeroed. */
+export function lockGiveUp(p: NewBudget): void {
+  dropNewBudget(p);
 }
 
 /**
- * The rest of the move: the recovery key typed back and a fresh passkey prompt must both open the new key; then
- * the engine freezes the budget, sends the first entry and the first snapshot, and reads the snapshot back.
- * `retype`: the typed key was wrong, or the prompt was not answered; the same key is still in hand.
+ * The rest of a new budget's start: the recovery key typed back and a fresh passkey sign-in must both open the
+ * new key; then the engine makes the copy, sends the first entry and the first snapshot, and the budget is
+ * locked. `retype`: the typed key was wrong, or the passkey was not used; the same key is still in hand.
  */
-export async function moveFinish(
-  p: MoveInHand,
+export async function lockFinish(
+  p: NewBudget,
   typed: string,
-): Promise<{ ok: true } | { ok: false; why: string; retype?: boolean; again?: boolean }> {
-  if (!host || !who || state.status !== 'ready' || sealed) throw new Error(NOT_NOW);
+): Promise<{ ok: true } | { ok: false; why: string; retype?: boolean }> {
+  if (!host || !who || state.status !== 'fresh' || !sealed) throw new Error(NOT_NOW);
   const h = host;
-  // The first entry is dated when the key was made; the server takes it for an hour (seal/cutover.ts).
-  if (Date.now() + (await h.state()).offset - p.genesis.header.time > 50 * 60_000) {
-    dropMove(p);
+  // The first entry is dated when the key was made; the server takes it for an hour (seal/start.ts).
+  if ((await serverNow()) - p.genesis.header.time > 50 * 60_000) {
+    dropNewBudget(p);
     return { ok: false, why: 'This took too long. Start again: a new recovery key is made.' };
   }
   if (!(await recoveryKeyOpens(p, typed)))
     return { ok: false, why: 'That is not the recovery key shown. Check it and try again.', retype: true };
+  // A fresh sign-in: the server asks for a recent passkey check, and the same prompt gives the budget's secret.
   let w: { credentialId: string; slotPrf: ArrayBuffer };
   try {
-    w = await askSlot();
+    await signIn();
+    const q = pending;
+    pending = null;
+    w = q?.slotPrf ? { credentialId: q.credentialId, slotPrf: q.slotPrf } : await askSlot();
   } catch (e) {
     return { ok: false, why: e instanceof Error ? e.message : NOT_NOW, retype: true };
   }
-  let proved: Awaited<ReturnType<typeof proveMove>>;
+  let proved: Awaited<ReturnType<typeof proveNewBudget>>;
   try {
-    proved = await proveMove(p, typed, {
+    proved = await proveNewBudget(p, typed, {
       credentialId: new Uint8Array(fromB64url(w.credentialId)),
       prf: new Uint8Array(w.slotPrf),
     });
   } catch (e) {
-    dropMove(p);
     if (e instanceof WayInError) return { ok: false, why: e.message };
     throw e;
   } finally {
-    dropMove(p);
+    dropNewBudget(p);
   }
   const keys = proved.keys as unknown as SealedKeys;
-  let r: Awaited<ReturnType<EngineHost['cutover']>>;
-  try {
-    r = await h.cutover(keys, proved.genesis, proved.deviceId, newUlid());
-  } catch (e) {
-    r = { ok: false, why: e instanceof Error ? e.message : NOT_NOW };
-  }
-  if (!r.ok) return { ok: false, why: await moveFailed(r.why), again: true };
-  // The budget is sealed. From here this device treats it so, whatever the server says later.
+  const r = await h
+    .startBudget(keys, proved.genesis, proved.deviceId, newUlid())
+    .catch((e: unknown) => ({ ok: false as const, why: e instanceof Error ? e.message : NOT_NOW }));
+  if (!r.ok) return { ok: false, why: `${r.why} Nothing was changed. Try again.` };
+  // The budget is locked. From here this device treats it so, whatever the server says later.
   rememberSealed(who.budgetId);
-  sealed = {
-    sealed: true,
-    user: { email: who.email },
-    budgetId: who.budgetId,
-    appVersion: '',
-    writeState: 'ok',
-    readOnlyUntil: null,
-    readsPaused: false,
-    canLinkBanks: false,
-    recoveryNoticeAt: null,
-  };
+  sealed = { ...sealed, fresh: false };
   await h.sealedOpen([keys], proved.deviceId, WORKER_RUN_KEYS);
   keysInEngine = [keys];
-  // The recovery key signs in from now on (docs/privacy-keys.md 4.2): the server keeps its public half. If this
-  // fails, Settings → Sign-in offers to set it.
-  // The budget is locked now, so the request is signed with its key (docs/privacy-keys.md 11).
+  // The recovery key signs in from now on (docs/privacy-keys.md 4.2): the server keeps its public half, in a
+  // request signed with the budget's key (11). If this fails, Settings → Sign-in offers to set it.
   const authPub = await authPubOf(typed);
   if (authPub)
     await signedHeaders(ACTION.setRecoverySignIn, JSON.stringify({ authPub }))
@@ -708,59 +692,15 @@ export async function moveFinish(
     await save();
   }
   const made = await sealedSessionNow();
-  if (made) window.dispatchEvent(new CustomEvent('ledgerline:session', { detail: made }));
-  // The server's own answer for a sealed budget replaces the account facts made up above.
-  window.dispatchEvent(new Event('ledgerline:readonly'));
+  if (!made) throw new Error(NOT_NOW);
+  window.dispatchEvent(new CustomEvent('ledgerline:session', { detail: made }));
+  set({ status: 'ready' });
+  watch();
   changed();
   return { ok: true };
 }
 
-/**
- * The move stopped after the engine began it. The copy on this device may be empty now, and the server may hold
- * a freeze or even a sealed budget whose first snapshot this device never read back. The server is asked where
- * it stands: a freeze is ended; a sealed budget is taken back at once (nothing was changed since). Gives what
- * to tell the person. The caller then deletes the copy and starts the app again (`moveAgain`).
- */
-async function moveFailed(why: string): Promise<string> {
-  const st = await server<{ sealed: boolean }>('GET', '/api/cutover/state').catch(() => null);
-  if (!st) return `${why} Check Settings → Privacy when you are online again.`;
-  if (!st.sealed) {
-    await server('POST', '/api/cutover/unfreeze').catch(() => undefined);
-    return `${why} Nothing was changed.`;
-  }
-  const back = await server('POST', '/api/cutover/back').then(
-    () => true,
-    () => false,
-  );
-  if (back) return `${why} The move was undone. Nothing was lost.`;
-  // The budget is sealed and stays so: this device treats it so, and opens it from the log.
-  if (who) rememberSealed(who.budgetId);
-  return `${why} Your budget is locked. To undo it, open Settings → Privacy and go back.`;
-}
-
-/** After a move that failed: the copy (which the engine may have emptied) is deleted and the app starts again. */
-export async function moveAgain(): Promise<void> {
-  await wipe();
-  window.location.reload();
-}
-
-/**
- * Before the way back is asked of the server: this device forgets that the budget was sealed, so that it takes
- * the plain budget even if the app is closed before `moveBack` runs. The person's own act, on this device.
- */
-export function moveBackStart(): void {
-  forgetSealed(who?.budgetId ?? sealed?.budgetId ?? null);
-}
-
-/**
- * After the way back was taken on the server (`POST /api/cutover/back`): this device forgets that the budget was
- * sealed, deletes its copy and starts again, from the budget as it was.
- */
-export async function moveBack(): Promise<void> {
-  forgetSealed(who?.budgetId ?? sealed?.budgetId ?? null);
-  await wipe();
-  window.location.reload();
-}
+const NOT_NOW = 'Something went wrong. Try again.';
 
 // ---------------------------------------------------------------- server calls (plain fetch: no import cycle)
 
@@ -790,14 +730,6 @@ async function server<T>(
     });
   return json;
 }
-
-const fetchPage = (since: number, cursor: string | null) =>
-  server<SyncPage>(
-    'GET',
-    `/api/sync?since=${since}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}${
-      since === 0 && !cursor ? `&why=${state.why ?? 'reset'}` : ''
-    }`,
-  );
 
 // ---------------------------------------------------------------- sign-in and opening the copy
 
@@ -960,42 +892,39 @@ export async function start(session: Session): Promise<void> {
       if (memoryOnly) why = unreadableStorage ? 'storage' : 'no_prf';
       await openHost(null);
     }
-    // A sealed budget's facts are in the copy itself: the session saved for an offline start is made from it
-    // once the copy is open (client.ts), not from the server's answer.
-    // A copy from a sealed budget, on a device that was told (by the person, with the way back) that the
-    // budget is not sealed any more: it is deleted, and the app starts again with the budget as the server has it.
-    if (!sealed && (await host!.get('sealed_session'))) {
-      await wipe();
-      window.location.reload();
+    // The budget's facts are in the copy itself: the session saved for an offline start is made from it once the
+    // copy is open, not from the server's answer. A server that answers as if the budget were not locked gets
+    // nothing (sealed-session.ts).
+    if (!sealed) throw new Error(NOT_LOCKED);
+    // Read before the data key is held anew, which would make old keys look fresh.
+    const heldKeys = record ? await heldSealed(record.key, IDLE_MS) : null;
+    if (record && dataKey) await holdKey(record.key, dataKey, Date.now(), undefined, IDLE_MS);
+    // A new budget (D-102): nothing to open yet. The lock screen makes its key and its first entry.
+    // A budget this device has known as locked is never made new: that would empty the copy (start-device.ts).
+    if (sealed?.fresh && sealedBudgets().includes(sealed.budgetId)) throw new Error(NOT_LOCKED);
+    if (sealed?.fresh) {
+      if (p && !pending) pending = p;
+      set({ saved: record !== null, hasSaved: record !== null, why: null, status: 'fresh' });
       return;
     }
-    if (!sealed) await host!.put('session', JSON.stringify(session));
-    // Read before the data key is held anew, which would make old keys look fresh.
-    const heldKeys = sealed && record ? await heldSealed(record.key, IDLE_MS) : null;
-    if (record && dataKey) await holdKey(record.key, dataKey, Date.now(), undefined, IDLE_MS);
-    if (sealed) {
-      try {
-        await enterSealed(p, heldKeys);
-      } catch (e) {
-        // The sign-in's secrets are kept for the button that tries again: the copy made above is opened with
-        // them, not made a second time in memory.
-        if (p && !pending) pending = p;
-        throw e;
-      }
+    try {
+      await enterSealed(p, heldKeys);
+    } catch (e) {
+      // The sign-in's secrets are kept for the button that tries again: the copy made above is opened with
+      // them, not made a second time in memory.
+      if (p && !pending) pending = p;
+      throw e;
     }
     set({ saved: record !== null, hasSaved: record !== null, why });
     await syncNow();
-    if (sealed) {
-      // The session the screens read is made from the copy, before the copy says it is ready: no screen shows
-      // a budget with no name, in another time zone.
-      const made = await sealedSessionNow();
-      if (!made) throw new Error('Something went wrong. Try again.');
-      if (record) await save();
-      window.dispatchEvent(new CustomEvent('ledgerline:session', { detail: made }));
-    }
+    // The session the screens read is made from the copy, before the copy says it is ready: no screen shows a
+    // budget with no name, in another time zone.
+    const made = await sealedSessionNow();
+    if (!made) throw new Error('Something went wrong. Try again.');
+    if (record) await save();
+    window.dispatchEvent(new CustomEvent('ledgerline:session', { detail: made }));
     set({ status: 'ready' });
     watch();
-    void flush();
   } catch (e) {
     await host?.close();
     host = null;
@@ -1052,12 +981,10 @@ export async function openWithoutSignal(onSession?: (s: Session) => void): Promi
     if (!s) throw new Error(UNREADABLE);
     const session = JSON.parse(s) as Session;
     const wasSealed = await host!.get('sealed_session');
-    if (wasSealed) {
-      sealed = JSON.parse(wasSealed) as SealedSession;
-      await enterSealed({ credentialId: a.credentialId, slotPrf: a.slotPrf }, null, false);
-    } else if (sealedKnown(rec.who.budgetId))
-      // The copy saved here is from before the budget was sealed: it is not opened as the budget.
-      throw new Error('Connect to the internet to open your budget.');
+    // A copy saved here before the budget was locked is not opened as the budget.
+    if (!wasSealed) throw new Error('Connect to the internet to open your budget.');
+    sealed = JSON.parse(wasSealed) as SealedSession;
+    await enterSealed({ credentialId: a.credentialId, slotPrf: a.slotPrf }, null, false);
     // The saved session goes to the app first (onSession), then the copy says it's ready, so the app never shows a
     // moment with an open copy and no session ("Couldn't reach Ledgerline").
     onSession?.(session);
@@ -1102,108 +1029,56 @@ let syncing: Promise<void> | null = null;
 let lastSync = 0;
 
 /**
- * Brings the copy up to date with the server, works out the budget again and saves it. Screens are told to read it
- * again, except after the app's own change (`quiet`): its mutation refreshes what it changed itself.
+ * Brings the copy up to date with the budget's log: reads the entries since, files the bank runs that wait, and
+ * sends the changes made here, in one call to the engine; then saves the copy. Screens are told to read it again,
+ * except after the app's own change (`quiet`): its mutation refreshes what it changed itself.
  */
-export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}): Promise<void> {
-  if (!host) return Promise.resolve();
+export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
+  if (!host || !sealed) return Promise.resolve();
   if (syncing) return syncing.then(() => syncNow(opts));
   syncing = (async () => {
     try {
       lastSync = Date.now();
-      if (sealed) {
-        // A sealed budget: the engine reads the log, files the bank runs that wait, and sends the changes made
-        // here, in one call. Nothing of it passes through this thread in the clear but counts.
-        let r: Awaited<ReturnType<EngineHost['sealedSync']>>;
-        try {
-          r = await host!.sealedSync();
-        } catch (e) {
-          if (state.rebuilding) set({ rebuilding: false });
-          // The server showed this device another history: the device stops, and the copy is left as it was.
-          if (e instanceof Error && FORK_TEXT.test(e.message)) {
-            if (record) await save().catch(() => undefined);
-            await host?.close();
-            host = null;
-            set({ status: 'failed', forked: true, error: FORK_MESSAGE });
-          }
-          // The log's routes said the sign-in ended: the same as any other request that says so (client.ts).
-          if (e instanceof Error && e.message === SIGNED_OUT_TEXT) {
-            void dropSignedOut(true).finally(() => window.dispatchEvent(new Event('ledgerline:signedout')));
-          }
-          // Another device changed the budget key (a way in was removed): this device's passkey opens the new
-          // key from the log. The copy is saved and closed; Try again signs in, which opens it.
-          if (e instanceof Error && /does not hold key version/.test(e.message)) {
-            if (record) await save().catch(() => undefined);
-            await host?.close();
-            host = null;
-            set({ status: 'failed', error: NEEDS_PASSKEY });
-          }
-          throw e;
+      // Nothing of it passes through this thread in the clear but counts.
+      let r: Awaited<ReturnType<EngineHost['sealedSync']>>;
+      try {
+        r = await host!.sealedSync();
+      } catch (e) {
+        if (state.rebuilding) set({ rebuilding: false });
+        // The server showed this device another history: the device stops, and the copy is left as it was.
+        if (e instanceof Error && FORK_TEXT.test(e.message)) {
+          if (record) await save().catch(() => undefined);
+          await host?.close();
+          host = null;
+          set({ status: 'failed', forked: true, error: FORK_MESSAGE });
         }
-        set({
-          queued: (await queued()).length,
-          ...(state.why ? { why: null } : {}),
-          ...(state.rebuilding ? { rebuilding: false } : {}),
-        });
-        if (r.lost) window.dispatchEvent(new CustomEvent('ledgerline:edits-refused', { detail: r.lost }));
-        const moved = r.entries > 0 || r.filed > 0 || r.sent > 0 || !!r.rebuilt;
-        if (record && (moved || Date.now() - record.lastServerTime >= KEEP_ALIVE_MS)) {
-          record = { ...record, lastServerTime: Date.now() };
-          await save();
+        // The log's routes said the sign-in ended: the same as any other request that says so (client.ts).
+        if (e instanceof Error && e.message === SIGNED_OUT_TEXT) {
+          void dropSignedOut(true).finally(() => window.dispatchEvent(new Event('ledgerline:signedout')));
         }
-        if ((r.entries > 0 || r.filed > 0 || r.rebuilt) && !opts.quiet) changed();
-        upkeep();
-        return;
+        // Another device changed the budget key (a way in was removed): this device's passkey opens the new
+        // key from the log. The copy is saved and closed; Try again signs in, which opens it.
+        if (e instanceof Error && /does not hold key version/.test(e.message)) {
+          if (record) await save().catch(() => undefined);
+          await host?.close();
+          host = null;
+          set({ status: 'failed', error: NEEDS_PASSKEY });
+        }
+        throw e;
       }
-      // An edit's answer carries the changes since the copy's change number: use them as the first page, but only if
-      // the copy is still there (another sync may have moved it on meanwhile).
-      let first = opts.first;
-      let shadowing: Started | null = null;
-      let pages = 0;
-      const r = await syncAll(
-        host!,
-        async (since, cursor) => {
-          const given = first && !cursor && since === first.since ? first.page : null;
-          first = undefined;
-          if (given) return given;
-          const p = await fetchPage(since, cursor);
-          set({ progress: state.progress + p.rows.length });
-          return p;
-        },
-        () => set({ why: 'reset', progress: 0 }),
-        // The shadow run (shadow.ts): when the server filed bank updates this device hasn't seen, the device files
-        // them too, on a scratch copy made now, before the server's rows arrive. Nothing here uses the network.
-        async (page) => {
-          pages++;
-          const started = await shadowBefore(host!, page, pages === 1, (path, body) =>
-            server('POST', path, body),
-          );
-          if (started) shadowing = started;
-        },
-      );
-      if (r.lost) {
-        // The engine ran the queue again on the server's newer rows, and some edits no longer pass.
-        set({ queued: (await queued()).length });
-        window.dispatchEvent(new CustomEvent('ledgerline:edits-refused', { detail: r.lost }));
-      }
-      if (state.why) set({ why: null });
-      const derived = r.rows > 0 || !(await host!.state()).through;
-      if (derived) await host!.derive();
-      // The saved copy is the whole database, encrypted: write it again only when it changed, or once an hour to
-      // move the 7-day offline limit along (lastServerTime). A sync that brings nothing costs no save.
-      if (record && (derived || Date.now() - record.lastServerTime >= KEEP_ALIVE_MS)) {
+      set({
+        queued: (await queued()).length,
+        ...(state.why ? { why: null } : {}),
+        ...(state.rebuilding ? { rebuilding: false } : {}),
+      });
+      if (r.lost) window.dispatchEvent(new CustomEvent('ledgerline:edits-refused', { detail: r.lost }));
+      const moved = r.entries > 0 || r.filed > 0 || r.sent > 0 || !!r.rebuilt;
+      if (record && (moved || Date.now() - record.lastServerTime >= KEEP_ALIVE_MS)) {
         record = { ...record, lastServerTime: Date.now() };
         await save();
       }
-      if (r.rows > 0 && !opts.quiet) changed();
-      // In the background: it files and compares after the screens have what the server sent.
-      if (shadowing)
-        void shadowFinish(
-          host!,
-          shadowing,
-          (path) => server('GET', path),
-          (path, body) => server('POST', path, body),
-        );
+      if ((r.entries > 0 || r.filed > 0 || r.rebuilt) && !opts.quiet) changed();
+      upkeep();
     } finally {
       syncing = null;
     }
@@ -1247,94 +1122,13 @@ export async function read(path: string): Promise<{ status: number; body: string
   return host!.request('GET', path);
 }
 
-/** The changes an edit's answer carried (`sync`), and the change number they start after. */
-export interface EditAnswerSync {
-  since: number;
-  page: SyncPage;
-}
-
-/**
- * The change number to send with an online edit (`x-sync-since`), so its answer carries what changed: null while
- * the copy isn't open or is still downloading.
- */
-export async function syncSince(): Promise<number | null> {
+/** After a change: the log is read and the change sent (syncNow), then Ready to Assign. */
+export async function afterChange(): Promise<{ rta: number; rtaUpdating: boolean } | null> {
   if (!host || state.status !== 'ready') return null;
-  const st = await host.state();
-  return st.cursor || !st.through ? null : st.through;
-}
-
-/** After a change on the server: sync it into the copy (from the answer when it carried the changes), then RTA. */
-export async function afterChange(
-  answer?: EditAnswerSync | null,
-): Promise<{ rta: number; rtaUpdating: boolean } | null> {
-  if (!host || state.status !== 'ready') return null;
-  await syncNow({ quiet: true, first: answer ?? undefined });
+  await syncNow({ quiet: true });
   const r = await host.rta();
   return { rta: r.rta, rtaUpdating: r.updating };
 }
-
-/** Archiving a category: the amount the phone shows and the change number it was worked out at (D-45). */
-export async function archiveFields(
-  categoryId: string,
-): Promise<{ available: number; through: number } | null> {
-  if (!host || state.status !== 'ready') return null;
-  await syncNow();
-  const r = await host.request('GET', `/api/categories/${encodeURIComponent(categoryId)}/sheet`);
-  if (r.status !== 200) return null;
-  const available = (JSON.parse(r.body) as { available: number }).available;
-  return { available, through: (await host.state()).through };
-}
-
-/** Close account (D-73): the working balance and card payment category available this phone shows, and `through`. */
-export async function closeFields(
-  accountId: string,
-): Promise<{ working: number; available: number; through: number } | null> {
-  if (!host || state.status !== 'ready') return null;
-  await syncNow();
-  const r = await host.request('GET', `/api/accounts/${encodeURIComponent(accountId)}/register`);
-  if (r.status !== 200) return null;
-  const v = JSON.parse(r.body) as { account: { working: number }; cardAvailable: number | null };
-  return {
-    working: v.account.working,
-    available: v.cardAvailable ?? 0,
-    through: (await host.state()).through,
-  };
-}
-
-// ---- offline edits (docs/phone-budget.md section 12)
-
-// Every route here has a twin case (apps/worker/test/twin.test.ts): the copy and the server write the same rows for
-// it. Left out on purpose: archiving or removing a category and closing an account (the server takes them only when
-// nothing changed since the phone worked out a balance, which a queue can't promise), joining payees, setup, and
-// everything that needs the server (bank links, sign-in).
-const OFFLINE_EDITS: [string, RegExp][] = [
-  ['PATCH', /^\/api\/transactions\/[^/]+$/],
-  // An entry added by hand, and its removal. The entry's id comes from the edit's id, so a later queued edit of
-  // the entry finds it on the server.
-  ['POST', /^\/api\/transactions$/],
-  ['DELETE', /^\/api\/transactions\/[^/]+$/],
-  ['POST', /^\/api\/transactions\/[^/]+\/(review|pending|not-same|not-same\/undo)$/],
-  // What you're owed, matching money in, transfers, "Same purchase?" and alerts: each acts on rows the copy holds.
-  ['POST', /^\/api\/owed\/[^/]+$/],
-  ['POST', /^\/api\/match$/],
-  ['POST', /^\/api\/match\/[^/]+\/unlink$/],
-  ['POST', /^\/api\/transfers\/[^/]+\/(pick|unpair)$/],
-  ['POST', /^\/api\/same-purchase\/[^/]+$/],
-  ['POST', /^\/api\/alerts\/[^/]+\/dismiss$/],
-  // Names and order: an account's name, a category or group (new or renamed), their order. (Not PATCH /settings:
-  // the app reads those settings from the session, which only the server answers.)
-  ['POST', /^\/api\/accounts\/[^/]+\/name$/],
-  ['POST', /^\/api\/settings\/(categories|groups)$/],
-  ['POST', /^\/api\/settings\/(categories|groups)\/reorder$/],
-  ['POST', /^\/api\/transactions\/categorize$/],
-  ['POST', /^\/api\/budget\/(assign|set|move)$/],
-  ['PUT', /^\/api\/categories\/[^/]+\/target$/],
-  // Pinning a category to the top of Budget (D-74): one category and its new state, so a late one undoes nothing else.
-  ['POST', /^\/api\/settings\/categories\/[^/]+\/pin$/],
-  // Renaming a payee (not joining: that needs a connection). Its id is in the path, so a rename that arrives after
-  // the payee was joined into another is refused instead of renaming the other one (docs/payees.md 5.3).
-  ['POST', /^\/api\/settings\/payees\/(?!merge(?:\/|$))[^/]+$/],
-];
 
 export interface EditStamp {
   id: string;
@@ -1346,45 +1140,31 @@ export async function newEdit(): Promise<EditStamp> {
   return { id: crypto.randomUUID().replace(/-/g, ''), at: Date.now() + (await host!.state()).offset };
 }
 
-export function canEditOffline(method: string, path: string): boolean {
-  if (state.status !== 'ready' || !host) return false;
-  // A sealed budget: every change of the budget is made on the device (each has a twin check against the
-  // server's own route, apps/worker/test/twin.test.ts). Only what needs the server goes to it.
-  if (sealed) return !sealedServerPath(path);
-  return OFFLINE_EDITS.some(([m, r]) => m === method && r.test(path));
+/** The copy is open, so a change can be made on it now. */
+export function canEditHere(): boolean {
+  return state.status === 'ready' && host !== null;
 }
 
 /**
- * What the server still does for a sealed budget: sign-in, the banks, the move itself, and the records it keeps
- * about the app's use. The list is the twin test's "never run on a phone's copy" (SERVER_ONLY).
+ * What the server still does for a locked budget: sign-in, the banks, emptying the old copy, and the records it
+ * keeps about the app's use. Every other change is made on the device.
  */
 const SEALED_SERVER = [
   /^\/api\/auth\//,
   /^\/api\/settings\/security(\/|$)/,
   /^\/api\/cutover\//,
-  /^\/api\/settings\/connections\/(link-token|link-finish|exchange|refresh)$/,
+  /^\/api\/settings\/connections\/(link-token|link-finish|refresh)$/,
   /^\/api\/settings\/connections\/[^/]+\/(refresh|remove)$/,
-  /^\/api\/settings\/restore$/,
   /^\/api\/(usage|notes|identity-alert)$/,
-  /^\/api\/sync\/shadow$/,
 ];
 export const sealedServerPath = (path: string): boolean =>
   SEALED_SERVER.some((r) => r.test(path.split('?')[0]!));
 
-/** A change made with no signal: applied to the copy now, sent to the server when there's a connection. */
-export async function editOffline(
-  method: string,
-  path: string,
-  body: unknown,
-  /** The id and time this edit already went to the server with, when its connection dropped on the way. */
-  edit?: EditStamp,
-): Promise<unknown> {
-  // The edit's own id and time, made before it runs: the copy runs it at that time and names its new rows from that
-  // id, and the queue sends both to the server, which then makes the same rows.
-  // An edit that was given its id went to the server once already, and the answer was lost: the server may hold
-  // it. The queue sends it again under the same id, and the copy never runs it again by itself.
-  const resend = !!edit;
-  edit ??= await newEdit();
+/** A change of the budget: applied to the copy now, and sent as an entry of the log with the next sync. */
+export async function editOnDevice(method: string, path: string, body: unknown): Promise<unknown> {
+  // The edit's own id and time, made before it runs: the copy runs it at that time and names its new rows from
+  // that id.
+  const edit = await newEdit();
   // One step in the engine: the edit runs on the copy and joins the queue, or neither.
   const r = await host!.enqueue({
     id: edit.id,
@@ -1393,7 +1173,6 @@ export async function editOffline(
     path,
     body,
     appVersion: typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev',
-    ...(resend ? { sending: true } : {}),
   });
   const json = r.body ? (JSON.parse(r.body) as unknown) : null;
   if (r.status >= 300)
@@ -1416,56 +1195,14 @@ async function queued(): Promise<QueuedEdit[]> {
   return host ? host.queue() : [];
 }
 
-let flushing = false;
-/** Sends changes made offline, in order. One the server refuses is dropped and the copy is downloaded again. */
-export async function flush(): Promise<{ sent: number; refused: number }> {
-  if (!host || flushing || state.offline) return { sent: 0, refused: 0 };
-  if (sealed) {
-    // A sealed budget's changes go out as entries of its log, with the sync. A sync that fails is tried again
-    // by the next one; nothing is dropped.
-    const before = (await queued()).length;
-    if (!before) return { sent: 0, refused: 0 };
-    await syncNow().catch(() => undefined);
-    return { sent: Math.max(0, before - (await queued()).length), refused: 0 };
-  }
-  flushing = true;
-  let sent = 0;
-  let refused = 0;
-  let redownload = false;
-  try {
-    // The queue is read again each round: the engine may have changed it meanwhile (a new edit, or a sync that ran
-    // it again), and every change to it is one step of the engine.
-    for (;;) {
-      const e = (await queued())[0];
-      if (!e) break;
-      // From here the server may hold this edit: the copy must never run it again by itself (engine.ts apply).
-      await host.queueSending(e.id);
-      try {
-        await server(e.method, e.path, e.body, { 'x-edit-id': e.id, 'x-edit-at': String(e.at) });
-        sent++;
-        set({ queued: await host.queueDone(e.id) });
-      } catch (err) {
-        if (!(err as { status?: number }).status) break; // no connection: try again later
-        refused++;
-        // The engine takes the refused edit out of the copy and runs the later ones again, when that can be done
-        // exactly. Otherwise the copy is downloaded again below.
-        const out = await host.queueRefused(e.id);
-        refused += out.lost;
-        set({ queued: out.left });
-        if (out.redownload) redownload = true;
-        else await save();
-      }
-    }
-    if (refused) {
-      // The copy may hold edits the server didn't take: download it again so it shows what the server has.
-      if (redownload) await host.clear();
-      window.dispatchEvent(new CustomEvent('ledgerline:edits-refused', { detail: refused }));
-    }
-    if (sent || refused) await syncNow();
-  } finally {
-    flushing = false;
-  }
-  return { sent, refused };
+/** Sends the changes made here: they go out as entries of the log, with the sync. A sync that fails is tried again by
+ * the next one; nothing is dropped. */
+export async function flush(): Promise<{ sent: number }> {
+  if (!host || state.offline) return { sent: 0 };
+  const before = (await queued()).length;
+  if (!before) return { sent: 0 };
+  await syncNow().catch(() => undefined);
+  return { sent: Math.max(0, before - (await queued()).length) };
 }
 
 // ---------------------------------------------------------------- idle sign-out, wipe, timers

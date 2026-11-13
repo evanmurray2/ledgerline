@@ -12,7 +12,7 @@
 //   commitment (the person asked for a new try on the new device) clears the offer and the reveal, and the
 //   signed-in device makes at most 3 offers per start, as it keeps itself.
 // - It lasts 10 minutes from the start, and the row goes once either device ends it, or with the expired sign-in
-//   state (maintenance.ts pruneAuthStmts).
+//   state (store/directory.ts pruneAuthStmts).
 import {
   ADD_ATTEMPTS,
   ADD_COMMIT_LEN,

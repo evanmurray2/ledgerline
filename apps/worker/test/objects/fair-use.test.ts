@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import worker from '../../src/index.js';
 import { tokenHash } from '../../src/http/auth.js';
 import { SoftAuthenticator } from '../soft-authenticator.js';
-import { budgetStub, directoryDb, storeDb } from '../store-db.js';
+import { directoryDb } from '../store-db.js';
 
 const dir = directoryDb();
 const ORIGIN = 'https://ledgerline.test';
@@ -18,7 +18,7 @@ const prodEnv = () =>
 class Browser {
   jar = new Map<string, string>();
   async call(method: string, path: string, body?: unknown) {
-    const h: Record<string, string> = { origin: ORIGIN };
+    const h: Record<string, string> = { origin: ORIGIN, 'x-ledgerline-sealed': '1' };
     if (this.jar.size) h.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (method !== 'GET') {
       h['content-type'] = 'application/json';
@@ -141,21 +141,5 @@ describe('fair use', () => {
       json: { error: 'readonly', message: 'Paused until tomorrow. Nothing is lost.' },
     });
     expect((await owner.call('POST', '/api/settings/connections/refresh')).status).not.toBe(503);
-  });
-});
-
-describe('idle budgets', () => {
-  const recurring = async (budget: string) =>
-    Number(await storeDb(budget).prepare(`SELECT count(*) AS n FROM job WHERE recurring = 1`).first('n'));
-
-  it('a budget with no banks whose user is idle rests, and its next request brings its daily jobs back', async () => {
-    expect(await recurring('b_b')).toBe(3);
-    // A budget that isn't idle keeps its jobs.
-    expect((await budgetStub('b_b').ensureJobs({ idle: false })).resting).toBeUndefined();
-    const r = await budgetStub('b_b').ensureJobs({ idle: true });
-    expect(r.resting).toBe(true);
-    expect(await recurring('b_b')).toBe(0);
-    expect((await b.call('GET', '/api/session')).status).toBe(200);
-    expect(await recurring('b_b')).toBe(3);
   });
 });

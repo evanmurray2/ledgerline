@@ -2,7 +2,6 @@
 // device-log.ts): a change whose answer was lost is in the log once and in the copy once, and an app that was
 // closed goes on from where it stood.
 import { encodeEntry, startChain } from '@ledgerline/seal';
-import { SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { DeviceLog, entryIdOf } from '../src/local/device-log.js';
 import type { LocalEngine } from '../src/local/engine.js';
@@ -13,18 +12,10 @@ import { syncPhone } from './phone.js';
 import { world } from './sealed-world.js';
 import { differences, newPhone, rowsOf } from './twin.js';
 
-const ORIGIN = 'https://ledgerline.test';
-const H = { origin: ORIGIN, 'content-type': 'application/json', 'x-ledgerline': '1' };
 const LAPTOP = '01CX5ZZKBKACTAV9WEVGEMMVRZ';
 
 describe('a change sent twice, and an app that was closed', () => {
   it('is in the log once and in the copy once; the device goes on from its kept place', async () => {
-    const seeded = await SELF.fetch(`${ORIGIN}/__dev/seed-november`, {
-      method: 'POST',
-      headers: H,
-      body: '{}',
-    });
-    expect(seeded.status).toBe(200);
     await world(
       async (x) => {
         let clock = T0 + 10_000;

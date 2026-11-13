@@ -1,10 +1,9 @@
 // The sheet says which share of a transaction is owed to you (half, all or a typed amount), so it shows that one picked.
-import { app } from './phone.js';
+import { app, phoneDb } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { OwedView, TxnSheet } from '@ledgerline/contracts';
-import { ownerDb } from './store-db.js';
 
-const db = ownerDb();
+const db = phoneDb();
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 const call = async (method: string, p: string, body?: unknown) => {
   const r = await app(p, {

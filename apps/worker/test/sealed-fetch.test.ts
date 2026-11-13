@@ -16,7 +16,7 @@ import {
 } from '../src/seal/fetch-job.js';
 import { lastCompleteRun, STAGE_MAX_MS, stageOf } from '../src/seal/runs.js';
 import type { BudgetStore } from '../src/store/budget-store.js';
-import { nextUtcMidnight } from '../src/store/sync-job.js';
+import { nextUtcMidnight } from '../src/store/jobs.js';
 import { T0 } from './log-writer.js';
 import { bank, handed, LINK_A, LINK_B, text, TWO_PAGES, world, type World } from './sealed-world.js';
 

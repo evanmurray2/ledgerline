@@ -46,7 +46,7 @@ export const CLAIMS: Claim[] = [
     state: 'not_yet',
     check: null,
     limit:
-      'The copy from before the lock is still on the server, for the way back. It is deleted after that, and Cloudflare’s past versions keep it 30 days more. The server also still has your budget’s name.',
+      'The copy from before the lock is still on the server until you delete it in Settings → Privacy, and Cloudflare’s past versions keep it 30 days more. The server also still has your budget’s name.',
   },
   {
     id: 'bank-data',

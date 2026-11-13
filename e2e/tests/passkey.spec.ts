@@ -25,6 +25,17 @@ async function signsInByItself(page: Page, open: () => Promise<unknown>) {
   expect((await verified).status()).toBe(200);
 }
 
+/** A new budget is locked before anything else (D-102): the recovery key is made, typed back, and the budget sent. */
+async function lockNewBudget(page: Page): Promise<string> {
+  await page.getByRole('button', { name: 'Make my recovery key' }).click();
+  const key = (await page.getByTestId('recovery-key').textContent())!;
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('recovery-key-typed').fill(key);
+  await page.getByRole('button', { name: 'Lock my budget' }).click();
+  return key;
+}
+
 const post = (page: Page, path: string) =>
   page.evaluate(async (p) => {
     const r = await fetch(p, {
@@ -50,8 +61,9 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
 
   await page.getByLabel('Setup code').fill('e2e-setup-code-0123456789abcdefghijklmnop');
   await page.getByRole('button', { name: 'Create passkey' }).click();
-  // Signed in: a new budget starts at first-run setup.
-  await expect(page).toHaveURL(/\/welcome/);
+  // Signed in: a new budget is locked on this device, then starts at first-run setup.
+  await lockNewBudget(page);
+  await expect(page).toHaveURL(/\/welcome/, { timeout: 30_000 });
 
   // Right after setup the passkey hasn't given the app a key yet, so nothing is saved until the next sign-in.
   await page.goto('/budget');
@@ -79,9 +91,10 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   await again.getByRole('button', { name: 'Create passkey' }).click();
   await expect(again.getByRole('alert')).toContainText('isn’t valid');
   await again.close();
-  // Clearing that page's cookies signed the second device out too: it signs in again.
+  // Clearing that page's cookies signed the second device out too: it signs in again. Its passkey is no way in to
+  // the locked budget yet: it offers the ways to open it here.
   await signsInByItself(phone, () => phone.goto('/budget'));
-  await expect(phone).toHaveURL(/\/welcome/);
+  await expect(phone.getByText('Open your budget on this device')).toBeVisible({ timeout: 30_000 });
 
   // A computer keeps an encrypted copy too, like a phone (D-53). Signing in gets the passkey's PRF output in the same
   // prompt.
@@ -129,22 +142,23 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
   await expect(page.getByText('Connect to the internet and try again')).toBeHidden();
   await context.setOffline(false);
 
-  // Locking ends the sign-in and keeps the copy: opening again downloads only what changed, not everything.
+  // Locking ends the sign-in and keeps the copy: opening again reads the log on from its place, and no snapshot.
   await page.reload();
   await expect(page).toHaveURL(/\/welcome/);
   await post(page, '/api/settings/security/sign-out');
   const since: number[] = [];
-  const why: string[] = [];
+  let snapshots = 0;
   page.on('request', (r) => {
     const u = new URL(r.url());
-    if (u.pathname !== '/api/sync') return;
-    since.push(Number(u.searchParams.get('since')));
-    if (u.searchParams.get('why')) why.push(u.searchParams.get('why')!);
+    if (u.pathname === '/api/log/snapshots') snapshots++;
+    if (u.pathname !== '/api/log') return;
+    since.push(Number(u.searchParams.get('after')));
   });
   await signsInByItself(page, () => page.reload());
   await expect(page).toHaveURL(/\/welcome/);
   await expect.poll(() => since.length, { timeout: 15_000 }).toBeGreaterThan(0);
   expect(since[0]).toBeGreaterThan(0);
+  expect(snapshots).toBe(0);
   expect((await copy())?.deviceId).toBe(first.deviceId);
 
   // A refresh while it's open and in use doesn't lock it: no passkey prompt, no new sign-in.
@@ -220,7 +234,6 @@ test('set up a passkey, sign out, sign in, add a second device, and keep an encr
       timeout: 15_000,
     })
     .toBe(true);
-  // Only that fresh start downloaded everything, and it said why (the server logs it): the copy was deleted when the
-  // app opened because it was signed out from the other device, not "no copy yet".
-  expect(why).toEqual(['turned_off']);
+  // Only that fresh start opened the budget from its snapshot again.
+  await expect.poll(() => snapshots, { timeout: 15_000 }).toBeGreaterThan(0);
 });

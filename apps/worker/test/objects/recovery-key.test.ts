@@ -28,7 +28,7 @@ const prodEnv = () =>
 class Browser {
   jar = new Map<string, string>();
   async call(method: string, path: string, body?: unknown, extra: Record<string, string> = {}) {
-    const h: Record<string, string> = { origin: ORIGIN, ...extra };
+    const h: Record<string, string> = { origin: ORIGIN, 'x-ledgerline-sealed': '1', ...extra };
     if (this.jar.size) h.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (method !== 'GET') {
       h['content-type'] = 'application/json';
@@ -89,7 +89,7 @@ describe('the recovery key signs in', () => {
       name: 'Phone',
     });
     expect(v.status).toBe(200);
-    budgetId = ((await owner.call('GET', '/api/session')).json.budget as { id: string }).id;
+    budgetId = (await owner.call('GET', '/api/session')).json.budgetId as string;
     expect((await prove(new Browser(), await authOf(recovery))).status).toBe(403);
     expect(
       (await new Browser().call('POST', '/api/auth/recover-key/options', { authPub: 'zz' })).status,
@@ -159,7 +159,7 @@ describe('the recovery key signs in', () => {
     expect(Number(await dir.prepare(`SELECT count(*) AS n FROM passkey`).first('n'))).toBe(before + 1);
     const s = await b.call('GET', '/api/session');
     expect(s.status).toBe(200);
-    expect((s.json.budget as { id: string }).id).toBe(budgetId);
+    expect(s.json.budgetId as string).toBe(budgetId);
     // Nothing was removed: the owner's own passkey still signs in.
     expect((await owner.call('GET', '/api/session')).status).toBe(200);
 

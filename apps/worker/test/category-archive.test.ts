@@ -1,10 +1,9 @@
 // Archive, remove and restore with money; names; assigning past the largest amount or against a stale view.
-import { app, syncPhone } from './phone.js';
+import { app, syncPhone, phoneDb } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { CategoriesView } from '@ledgerline/contracts';
-import { ownerDb } from './store-db.js';
 
-const db = ownerDb();
+const db = phoneDb();
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 const call = async (method: string, p: string, body?: unknown) => {
   const r = await app(p, {

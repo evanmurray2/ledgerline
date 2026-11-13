@@ -75,7 +75,6 @@ routes.use('*', async (c, next) => {
   c.set('budgetId', B);
   c.set('email', 'owner@example.com');
   c.set('sessionId', '');
-  c.set('syncEpoch', 'test');
   return next();
 });
 routes.route('/api', budgetApi);

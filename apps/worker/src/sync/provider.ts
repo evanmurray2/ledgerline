@@ -1,5 +1,4 @@
 import { PlaidProvider, type BankDataProvider } from '@ledgerline/bank-provider';
-import { decryptToken, parseKeyring } from '@ledgerline/platform';
 import type { Env } from '../env.js';
 
 export function makeProvider(env: Env): BankDataProvider & PlaidProvider {
@@ -26,15 +25,25 @@ export function pageSize(env: Env): number {
   return [50, 100, 250, 500].includes(n) ? n : 100;
 }
 
-export async function connectionToken(env: Env, connectionId: string): Promise<string> {
-  const row = await env.DB.prepare(`SELECT access_token_enc, key_version FROM connection WHERE id = ?1`)
-    .bind(connectionId)
-    .first<{ access_token_enc: string | null; key_version: number | null }>();
-  if (!row?.access_token_enc || row.key_version === null) throw new Error('connection has no credential');
-  return decryptToken(
-    parseKeyring(env.TOKEN_KEYS, env.TOKEN_KEY_CURRENT),
-    row.access_token_enc,
-    row.key_version,
-    connectionId,
-  );
-}
+/**
+ * Plaid errors only the person can fix, by signing in to the bank again (Link update mode). The connection is
+ * marked login_required, so the app asks for a repair and the 4-hour backstop stops retrying it.
+ */
+export const NEEDS_SIGN_IN = new Set([
+  'ITEM_LOGIN_REQUIRED',
+  'PENDING_EXPIRATION',
+  'PENDING_DISCONNECT',
+  'INVALID_CREDENTIALS',
+  'INSUFFICIENT_CREDENTIALS',
+  'INVALID_MFA',
+  'INVALID_UPDATED_USERNAME',
+  'ITEM_LOCKED',
+  'USER_SETUP_REQUIRED',
+  'USER_INPUT_TIMEOUT',
+  'MFA_NOT_SUPPORTED',
+  'NO_ACCOUNTS',
+  'ACCESS_NOT_GRANTED',
+]);
+
+/** Plaid Trial: 10 Production Items for the life of the team; removed Items still count. */
+export const ITEM_LIMIT = 10;

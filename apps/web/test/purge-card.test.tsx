@@ -66,11 +66,10 @@ describe('deleting the readable copy', () => {
   });
 
   it('the Privacy screen says what is true at each stage', () => {
-    expect(oldCopyText(null, '2026-11-19T22:24:00Z')).toContain('for the way back until');
-    expect(oldCopyText(view({ stage: 'ready' }), null)).toContain('You can delete it below');
-    expect(oldCopyText(view({ stage: 'running' }), null)).toBe('Being deleted now.');
+    expect(oldCopyText(view({ stage: 'ready' }))).toContain('You can delete it below');
+    expect(oldCopyText(view({ stage: 'running' }))).toBe('Being deleted now.');
     const done = view({ stage: 'done', doneAt: '2026-11-25T00:00:00Z', checkAt: '2026-12-26T00:00:00Z' });
-    expect(oldCopyText(done, null)).toMatch(/^Deleted on /);
+    expect(oldCopyText(done)).toMatch(/^Deleted on /);
     expect(pastVersionsText(done)).toContain('some hold the readable copy');
     expect(pastVersionsText(view({ stage: 'checked', clean: true, checkAt: done.checkAt }))).toContain(
       'None holds the readable copy',

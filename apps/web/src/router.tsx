@@ -65,6 +65,7 @@ const FirstSortScreen = lazyScreen(setup, 'FirstSortScreen');
 const LinkBanksScreen = lazyScreen(setup, 'LinkBanksScreen');
 const StartMonthScreen = lazyScreen(setup, 'StartMonthScreen');
 const WelcomeScreen = lazyScreen(setup, 'WelcomeScreen');
+const LockBudgetScreen = lazyScreen(setup, 'LockBudgetScreen');
 
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
 
@@ -161,6 +162,14 @@ function Root() {
         session={confirmed ?? null}
         onOffline={(saved) => qc.setQueryData(qk.savedSession, saved)}
       />
+    );
+  // A new budget is made on this device, locked, before anything else (D-102).
+  if (s && copy.status === 'fresh')
+    return (
+      <>
+        <LockBudgetScreen />
+        <ReauthDialog />
+      </>
     );
   // Starting the copy, or ending a sign-in after 10 idle minutes (Sign in follows).
   if (s && (copy.status === 'idle' ? confirmed : copy.status === 'signed_out')) return <Loading />;

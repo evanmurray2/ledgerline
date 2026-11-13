@@ -1,6 +1,7 @@
 // The one Durable Object for users, passkeys, sessions, invites, Plaid slots and routing (docs/multi-user.md 5.2).
 // It serves sign-in (/api/auth/*) and Settings → Sign-in (/api/settings/security/*), and answers authenticate() for
 // every other request so the Worker knows whose budget to open.
+import type { Db, Stmt } from '@ledgerline/db/sql';
 import { DurableObject } from 'cloudflare:workers';
 import { Hono } from 'hono';
 import type { Env } from '../env.js';
@@ -12,7 +13,7 @@ import { DIRECTORY_MIGRATIONS } from './migrations.gen.js';
 import { storeHealth, type StoreHealth } from './budget-store.js';
 import { authRoutes } from '../routes/auth.js';
 import { securityRoutes } from '../routes/security.js';
-import { TRY_AGAIN, identity } from '../routes/api.js';
+import { identity } from '../routes/security.js';
 import { csrf } from '../http/security.js';
 import { REAUTH_MS, identify, needsRecentPasskey } from '../http/auth.js';
 import { membership } from '../db/scoped.js';
@@ -28,11 +29,9 @@ import {
   type BudgetState,
 } from '../sync/breaker.js';
 import { refreshUsage } from '../ops/usage.js';
-import { pruneAuthStmts } from '../maintenance.js';
-import { JobRunner, type Handler } from './jobs.js';
-import { nextUtc } from './budget-jobs.js';
+import { JobRunner, nextUtc, type Handler } from './jobs.js';
 import { SHARE_PAUSED, Shares, type ShareState } from './shares.js';
-import { recoverOptions, recoveryNotice, recoveryRoutes, signupOptions } from '../routes/signup.js';
+import { signupOptions } from '../routes/signup.js';
 import { deletingKey, peopleRoutes } from '../routes/people.js';
 import { expireIdle, startDeletionSql } from './idle-accounts.js';
 import { deviceAddRoutes } from '../routes/device-add.js';
@@ -47,19 +46,22 @@ export const ENSURE_BATCH = 25;
 /** A budget whose users haven't signed in for this long, and that has no banks, stops its daily jobs. */
 export const IDLE_MS = 30 * 86_400_000;
 
+const TRY_AGAIN = 'Something went wrong. Try again.';
+
+/** Expired sign-in state (decisions.md D-27). */
+function pruneAuthStmts(db: Db, now: number): Stmt[] {
+  return [
+    db.prepare(`DELETE FROM auth_session WHERE expires_at <= ?1`).bind(now),
+    db.prepare(`DELETE FROM auth_challenge WHERE expires_at <= ?1`).bind(now),
+    db.prepare(`DELETE FROM device_link WHERE expires_at <= ?1`).bind(now),
+    db.prepare(`DELETE FROM device_add WHERE expires_at <= ?1`).bind(now),
+    // A challenge lives 5 minutes, so a day is plenty to keep its id (docs/open-signup.md 3.3).
+    db.prepare(`DELETE FROM used_challenge WHERE used_at <= ?1`).bind(now - 86_400_000),
+  ];
+}
+
 /** The Directory is a single object; this is its name. */
 export const DIRECTORY_NAME = 'directory';
-
-/** A budget's last restore (noteRestore). */
-export interface RestoreRecord {
-  /** When the restore ran (epoch ms). */
-  at: number;
-  /** The time it went back to (epoch ms), or null when it undid the restore before it. */
-  to: number | null;
-  /** The bookmark that puts the budget back as it was just before this restore. */
-  undo: string;
-}
-const restoreKey = (budgetId: string) => `restore:${budgetId}`;
 
 /** Who is asking, as the Worker hands it to a budget's store. */
 export interface Caller {
@@ -73,10 +75,6 @@ export interface Caller {
   /** Fair use (store/shares.ts): whether the store reports its usage, and the budget's share. */
   countUsage?: boolean;
   share?: ShareState;
-  /** When a recovery code was last used for this user, while its notice shows (docs/open-signup.md 4). */
-  recoveryNoticeAt?: number | null;
-  /** The budget's sync epoch (migration 0006): changes when its database is restored. */
-  syncEpoch?: string;
   /**
    * The session signed in with a passkey added less than 7 days ago, or with none (a recovery-key sign-in always
    * adds one): a key change of a locked budget from it waits (D-89). True when not given.
@@ -320,7 +318,6 @@ export class Directory extends DurableObject<Env> {
       app.use('/api/settings/security/*', csrf);
       app.use('/api/settings/security', identity);
       app.route('/api', securityRoutes);
-      app.route('/api', recoveryRoutes);
       app.route('/api', recoveryKeySettings);
       app.route('/api', deviceAddRoutes);
       app.route('/api', peopleRoutes);
@@ -396,8 +393,6 @@ export class Directory extends DurableObject<Env> {
         isAdmin: m.isAdmin,
         countUsage: share.count,
         share: share.state,
-        recoveryNoticeAt: m.isAdmin ? null : await recoveryNotice(env, m.userId, now),
-        syncEpoch: this.syncEpoch(m.budgetId),
         freshWay: this.freshWay(who.sessionId, now),
         ...(action && challenge ? { signed: { action, challenge, signature: signedIn!.signature } } : {}),
         ...(path === '/api/session' ? { recoveryKeyUsedAt: await recoveryKeyUsed(env, m.userId, now) } : {}),
@@ -409,15 +404,6 @@ export class Directory extends DurableObject<Env> {
   async signupOptions(url: string): Promise<{ status: number; body: unknown; cookie?: string }> {
     this.ready();
     return signupOptions(this.appEnv(), url, (await this.state(Date.now())) === 'normal');
-  }
-
-  /** A recovery code's passkey options (routes/signup.ts); the Worker has checked the switch and Turnstile. */
-  async recoverOptions(
-    url: string,
-    code: string,
-  ): Promise<{ status: number; body: unknown; cookie?: string }> {
-    this.ready();
-    return recoverOptions(this.appEnv(), url, code, (await this.state(Date.now())) === 'normal');
   }
 
   /**
@@ -478,53 +464,6 @@ export class Directory extends DurableObject<Env> {
       )
       .toArray()[0];
     return !r || now - Number(r.created_at) < FRESH_WAY_MS;
-  }
-
-  /** The budget's sync epoch (D-45, migration 0006). */
-  syncEpoch(budgetId: string): string {
-    const r = this.ctx.storage.sql.exec(`SELECT sync_epoch FROM budget WHERE id = ?`, budgetId).toArray()[0];
-    return r ? String(r.sync_epoch) : 'e0';
-  }
-
-  /**
-   * A new sync epoch for a budget whose database was restored, so every phone throws its copy away and downloads
-   * again. It lives here, not in the budget's own database, because a restore rolls that database back too.
-   */
-  async bumpSyncEpoch(budgetId: string): Promise<string> {
-    this.ready();
-    const bytes = crypto.getRandomValues(new Uint8Array(12));
-    const epoch = 'e' + [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
-    this.ctx.storage.sql.exec(
-      `UPDATE budget SET sync_epoch = ?, updated_at = ? WHERE id = ?`,
-      epoch,
-      Date.now(),
-      budgetId,
-    );
-    return epoch;
-  }
-
-  /**
-   * The last restore of a budget (runbooks/restore.md), kept here because the restore can't reach the
-   * Directory: when it ran, the time it went back to (null: it undid the restore before it), and the bookmark that
-   * undoes it.
-   */
-  async noteRestore(budgetId: string, rec: RestoreRecord): Promise<void> {
-    this.ready();
-    this.ctx.storage.sql.exec(
-      `INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)
-       ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      restoreKey(budgetId),
-      JSON.stringify(rec),
-      Date.now(),
-    );
-  }
-
-  async lastRestore(budgetId: string): Promise<RestoreRecord | null> {
-    this.ready();
-    const r = this.ctx.storage.sql
-      .exec(`SELECT value FROM app_state WHERE key = ?`, restoreKey(budgetId))
-      .toArray()[0];
-    return typeof r?.value === 'string' ? (JSON.parse(r.value) as RestoreRecord) : null;
   }
 
   /** The budget the ops token's health check reports on: the first one (the owner's). */

@@ -1,8 +1,7 @@
 // Suggested categories in Activity's Needs category (docs/payees.md 2.1) and the categorize route's checks.
-import { app } from './phone.js';
+import { app, phoneDb } from './phone.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ActivityView, MergeResult } from '@ledgerline/contracts';
-import { ownerDb } from './store-db.js';
 
 const H = { 'content-type': 'application/json', 'x-ledgerline': '1' };
 const get = async <T>(p: string): Promise<T> => {
@@ -44,7 +43,7 @@ describe('suggested categories', () => {
     expect(cvs.sameAs).toBeNull();
     expect(v.needsCategory.find((r) => r.payee === 'Amazon')!.newPayee).toBe(false);
     // The bank names CVS's payee like your Amazon (any case, spaces).
-    await ownerDb().prepare(`UPDATE payee SET name = ' amazon' WHERE id = ?1`).bind(cvs.payeeId!).run();
+    await phoneDb().prepare(`UPDATE payee SET name = ' amazon' WHERE id = ?1`).bind(cvs.payeeId!).run();
     v = await get<ActivityView>('/api/activity');
     const row = v.needsCategory.find((r) => r.key === cvs.key)!;
     const amazon = v.needsCategory.find((r) => r.payee === 'Amazon' && r.key !== cvs.key)!;

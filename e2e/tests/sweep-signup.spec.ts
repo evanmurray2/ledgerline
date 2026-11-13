@@ -18,6 +18,17 @@ async function withPasskeyDevice(page: Page) {
   });
 }
 
+/** A new budget is locked before anything else (D-102): the recovery key is made, typed back, and the budget sent. */
+async function lockNewBudget(page: Page): Promise<string> {
+  await page.getByRole('button', { name: 'Make my recovery key' }).click();
+  const key = (await page.getByTestId('recovery-key').textContent())!;
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('recovery-key-typed').fill(key);
+  await page.getByRole('button', { name: 'Lock my budget' }).click();
+  return key;
+}
+
 const api = (page: Page, method: string, path: string, body?: unknown) =>
   page.evaluate(
     async ([m, p, b]) => {
@@ -41,23 +52,37 @@ async function ownerSetUp(page: Page) {
   await owner.goto('/budget');
   await owner.getByLabel('Setup code').fill('e2e-setup-code-0123456789abcdefghijklmnop');
   await owner.getByRole('button', { name: 'Create passkey' }).click();
-  await expect(owner).toHaveURL(/\/welcome/);
+  await lockNewBudget(owner);
+  await expect(owner).toHaveURL(/\/welcome/, { timeout: 30_000 });
   await ctx.close();
 }
+
+let addresses = 0;
 
 /** A new account on this page, through first-run setup to Budget. */
 async function newAccount(page: Page) {
   await ownerSetUp(page);
+  // Its own address: sign-in checks are counted per address (AUTH_LIMITER), and a locked budget's start signs in
+  // more than once.
+  await page
+    .context()
+    .setExtraHTTPHeaders({ 'cf-connecting-ip': `198.51.100.${20 + addresses++ + test.info().retry * 10}` });
   await withPasskeyDevice(page);
   await page.goto('/budget');
   await page.getByRole('button', { name: 'Create account' }).click();
   await page.getByRole('button', { name: 'Create passkey' }).click();
-  await page.getByLabel(/I saved my recovery code/).check();
-  await page.getByRole('button', { name: 'Continue' }).click();
+  await lockNewBudget(page);
   await page.getByRole('link', { name: 'Get started' }).click();
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByRole('button', { name: 'Go to my budget' }).click();
   await expect(page).toHaveURL(/\/budget/);
+  // A sign-in gives the app the passkey's key for the copy on this device: it is saved, and its keys are held, so
+  // another tab opens the locked budget with no passkey prompt of its own.
+  expect((await api(page, 'POST', '/api/settings/security/sign-out')).status).toBe(200);
+  const verified = page.waitForResponse((r) => r.url().includes('/api/auth/login/verify'));
+  await page.goto('/activity');
+  expect((await verified).status()).toBe(200);
+  await expect(page.getByText(/^No transactions in \w+\.$/)).toBeVisible({ timeout: 30_000 });
 }
 
 test('Signed out in one tab: the other tab shows Sign in at once, not the budget', async ({
@@ -67,7 +92,7 @@ test('Signed out in one tab: the other tab shows Sign in at once, not the budget
   await newAccount(page);
   const other = await context.newPage();
   await other.goto('/activity');
-  await expect(other.getByText('No transactions in November.')).toBeVisible();
+  await expect(other.getByText(/^No transactions in \w+\.$/)).toBeVisible();
   // Sign out of this device, in the first tab.
   await page.goto('/settings/sign-in');
   await page.getByRole('button', { name: 'Sign out…', exact: true }).click();
@@ -75,7 +100,7 @@ test('Signed out in one tab: the other tab shows Sign in at once, not the budget
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
   // The other tab, untouched, shows Sign in too, and nothing from the budget.
   await expect(other.getByRole('heading', { name: 'Sign in' })).toBeVisible();
-  await expect(other.getByText('No transactions in November.')).toBeHidden();
+  await expect(other.getByText(/^No transactions in \w+\.$/)).toBeHidden();
   // Its copy is gone, not saved again: nothing is kept on this device.
   const copies = await other.evaluate(
     () =>
@@ -99,10 +124,10 @@ test('Using one tab keeps the other from ending the sign-in after 10 idle minute
   await newAccount(page);
   await context.clock.install();
   await page.goto('/activity');
-  await expect(page.getByText('No transactions in November.')).toBeVisible();
+  await expect(page.getByText(/^No transactions in \w+\.$/)).toBeVisible();
   const other = await context.newPage();
   await other.goto('/activity');
-  await expect(other.getByText('No transactions in November.')).toBeVisible();
+  await expect(other.getByText(/^No transactions in \w+\.$/)).toBeVisible();
   let signOuts = 0;
   for (const p of [page, other])
     p.on('request', (r) => {
@@ -113,9 +138,9 @@ test('Using one tab keeps the other from ending the sign-in after 10 idle minute
     await context.clock.runFor(3 * 60_000);
     await other.keyboard.press('Shift');
   }
-  await expect(other.getByText('No transactions in November.')).toBeVisible();
+  await expect(other.getByText(/^No transactions in \w+\.$/)).toBeVisible();
   await expect(other.getByRole('heading', { name: 'Sign in' })).toBeHidden();
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeHidden();
   expect(signOuts).toBe(0);
-  expect((await api(other, 'GET', '/api/session')).status).toBe(200);
+  expect((await api(other, 'GET', '/api/settings/security')).status).toBe(200);
 });

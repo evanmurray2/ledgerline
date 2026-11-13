@@ -1,10 +1,26 @@
-// First run: Welcome, 1 · Budget start, 2 · Link banks, 3 · Make your categories.
-import { useState, type ReactNode } from 'react';
+// First run: the lock (a new budget's key and recovery key, D-102), then Welcome, 1 · Budget start,
+// 2 · Link banks, 3 · Make your categories.
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, Navigate, useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
 import { qk, useAccounts, useConnections, useSession } from '../api/hooks';
-import { Banner, cx, ErrorNote, Icon, inputClass, PrimaryButton, SoftButton } from '../components/ui';
+import {
+  Banner,
+  Checkbox,
+  cx,
+  ErrorNote,
+  Icon,
+  inputClass,
+  PrimaryButton,
+  SecondaryButton,
+  SoftButton,
+} from '../components/ui';
+import { Problem } from '../components/Frame';
+import { toast } from '../components/Toast';
+import { errorMessage } from '../api/client';
+import { lockFinish, lockGiveUp, lockStart } from '../copy/copy';
+import type { NewBudget } from '../keys/new-budget';
 import { formatCents } from '../lib/money';
 import { monthLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
@@ -34,6 +50,143 @@ function Step({
       </header>
       <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pb-4 pt-2">{children}</main>
       <div className="flex shrink-0 flex-col gap-2 border-t border-line px-5 pb-6 pt-3">{footer}</div>
+    </div>
+  );
+}
+
+type LockStep = { at: 'idle' } | { at: 'key'; made: NewBudget } | { at: 'type'; made: NewBudget };
+
+/**
+ * A new budget is locked from its first moment (D-102): a passkey prompt makes the budget's key and its recovery
+ * key on this device; the person writes the recovery key down and types it back; a second passkey prompt proves
+ * the passkey opens the key; then the budget is made and sent, locked.
+ */
+export function LockBudgetScreen() {
+  useScreen('setup.lock');
+  const [step, setStep] = useState<LockStep>({ at: 'idle' });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [typed, setTyped] = useState('');
+  // Leaving the screen with a key in hand gives the key up.
+  const inHand = useRef<NewBudget | null>(null);
+  inHand.current = step.at === 'idle' ? null : step.made;
+  useEffect(
+    () => () => {
+      if (inHand.current) lockGiveUp(inHand.current);
+    },
+    [],
+  );
+  const run = (fn: () => Promise<void>) => {
+    setErr(null);
+    setBusy(true);
+    fn()
+      .catch((e: unknown) => setErr(errorMessage(e)))
+      .finally(() => setBusy(false));
+  };
+  const make = () =>
+    run(async () => {
+      setSaved(false);
+      setTyped('');
+      setStep({ at: 'key', made: await lockStart() });
+    });
+  const finish = (made: NewBudget) =>
+    run(async () => {
+      const r = await lockFinish(made, typed);
+      if (r.ok) return;
+      setErr(r.why);
+      if (r.retype) setStep({ at: 'type', made });
+      else setStep({ at: 'idle' });
+    });
+  return (
+    <div className="mx-auto flex h-full max-w-[560px] flex-col bg-surface">
+      <StatusBanner />
+      <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pb-4 pt-6">
+        <h1 className="m-0 text-4xl font-bold">Lock your budget</h1>
+        {step.at === 'idle' && (
+          <>
+            <p className="m-0 text-base leading-snug text-ink-2">
+              Only your devices can read your budget. The server keeps it locked.
+            </p>
+            <Why label="What happens?">
+              This device makes a key and a recovery key. You write the recovery key down and type it back.
+              Then your budget is made, locked.
+            </Why>
+            <Problem text={err} />
+            <PrimaryButton busy={busy} disabled={busy} track="setup.lock.start" onClick={make}>
+              Make my recovery key
+            </PrimaryButton>
+          </>
+        )}
+        {step.at === 'key' && (
+          <>
+            <span className="text-base leading-relaxed text-ink-2">
+              This is your recovery key. It opens your budget if you lose every passkey. It’s shown only now.
+            </span>
+            <div className="flex items-start justify-between gap-2 rounded-md bg-sunken px-3 py-3">
+              <span data-testid="recovery-key" className="text-base font-bold tracking-wide break-all">
+                {step.made.recoveryText}
+              </span>
+              <SoftButton
+                onClick={() =>
+                  void navigator.clipboard?.writeText(step.made.recoveryText).then(
+                    () => toast.show({ text: 'Copied' }),
+                    () => undefined,
+                  )
+                }
+              >
+                Copy
+              </SoftButton>
+            </div>
+            <Banner tone="warn">
+              Nobody can make this key again. Without it and your passkeys, your budget is lost.
+            </Banner>
+            <label className="flex items-start gap-2.5 text-base text-ink-2">
+              <Checkbox checked={saved} onChange={(e) => setSaved(e.target.checked)} />
+              <span>I saved my recovery key outside this device.</span>
+            </label>
+            <PrimaryButton
+              disabled={!saved}
+              why={saved ? '' : 'Save your key first'}
+              onClick={() => setStep({ at: 'type', made: step.made })}
+            >
+              Continue
+            </PrimaryButton>
+          </>
+        )}
+        {step.at === 'type' && (
+          <>
+            <label className="flex flex-col gap-1.5 text-base text-ink-2">
+              <span>Type your recovery key from where you saved it.</span>
+              <textarea
+                data-testid="recovery-key-typed"
+                className={inputClass}
+                rows={3}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+              />
+            </label>
+            <span className="text-sm text-muted">
+              Next, your passkey is asked once more. Then your budget is made, locked.
+            </span>
+            <Problem text={err} />
+            <PrimaryButton
+              busy={busy}
+              disabled={busy || typed.trim().length === 0}
+              track="setup.lock.finish"
+              onClick={() => finish(step.made)}
+            >
+              Lock my budget
+            </PrimaryButton>
+            <SecondaryButton disabled={busy} onClick={() => setStep({ at: 'key', made: step.made })}>
+              Show the key again
+            </SecondaryButton>
+          </>
+        )}
+      </main>
     </div>
   );
 }

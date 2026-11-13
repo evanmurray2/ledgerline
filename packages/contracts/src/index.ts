@@ -8,8 +8,6 @@ import { AccountRow, StartBalance } from './accounts.js';
 export * from './accounts.js';
 
 export const CSRF_HEADER = 'x-ledgerline';
-/** On an online edit: the change number the phone's copy holds; the answer then carries the changes since it. */
-export const SYNC_SINCE_HEADER = 'x-sync-since';
 
 // ---------------------------------------------------------------- session
 
@@ -35,8 +33,6 @@ export const Session = z.object({
   canLinkBanks: z.boolean().optional(),
   /** Always true now. An app from before Plaid's script was removed reads it to pick hosted Link. */
   hostedLink: z.boolean().optional(),
-  /** When this user's recovery code was used, while the notice shows (14 days, D-75); null otherwise. */
-  recoveryNoticeAt: z.string().nullable().optional(),
 });
 export type Session = z.infer<typeof Session>;
 
@@ -66,9 +62,15 @@ export const SealedSession = z.object({
   readOnlyUntil: z.string().nullable(),
   readsPaused: z.boolean(),
   canLinkBanks: z.boolean(),
-  recoveryNoticeAt: z.string().nullable(),
   /** When the recovery key last signed in to this account, for 14 days (docs/privacy.md 5.8). */
   recoveryKeyUsedAt: z.string().nullable().optional(),
+  /** Always null: kept for one release so an app from before D-102 can read this answer and reload. */
+  recoveryNoticeAt: z.null().optional(),
+  /**
+   * The budget has no first entry yet (D-102): this device makes its key, its recovery key and its first entry
+   * (apps/web/src/keys/budget.ts createBudget), and the budget is locked from then on.
+   */
+  fresh: z.boolean().optional(),
 });
 export type SealedSession = z.infer<typeof SealedSession>;
 
@@ -734,7 +736,6 @@ export const LinkTokenRequest = z.object({
   /** Link on Plaid's own site (docs/privacy.md 5.7): the answer then holds the page's address. */
   hosted: z.boolean().optional(),
 });
-export const LinkExchange = z.object({ publicToken: z.string().min(1).max(400) });
 /** Asks the server what a hosted Link session came to, and finishes the link if the person did. */
 export const LinkFinish = z.object({
   linkToken: z.string().min(1).max(400),
@@ -811,15 +812,15 @@ export const AuthStatus = z.object({
   hasPasskey: z.boolean(),
   /** No passkey yet and a setup code is configured: show first-time setup. */
   setupOpen: z.boolean(),
-  /** Open sign-up and recovery codes are on (D-75); the Turnstile site key the check uses. */
+  /** Open sign-up is on (D-75); the Turnstile site key the check uses. */
   signupOpen: z.boolean().optional(),
   turnstileSiteKey: z.string().optional(),
 });
 export type AuthStatus = z.infer<typeof AuthStatus>;
 
 export const SecurityView = z.object({
-  /** This user has a recovery code and can make a new one (users who aren't admins, D-75). */
-  recoveryCode: z.boolean().optional(),
+  /** This user can delete their own account (users who aren't admins, D-75). */
+  ownAccount: z.boolean().optional(),
   /** Show Settings → Users (admins, once there is anyone else or sign-up is on). */
   usersScreen: z.boolean().optional(),
   passkeys: z.array(
@@ -852,16 +853,4 @@ export const SecurityView = z.object({
 export type SecurityView = z.infer<typeof SecurityView>;
 
 export const DeviceLink = z.object({ url: z.string(), expiresAt: z.string() });
-/** A phone's share of its copy's key (docs/phone-budget.md 13.2); never stored by the app outside its copy. */
-export const DeviceShare = z.object({ id: z.string(), share: z.string() });
-export type DeviceShare = z.infer<typeof DeviceShare>;
 export type DeviceLink = z.infer<typeof DeviceLink>;
-
-// ---------------------------------------------------------------- full backup (docs/multi-user.md 8.7)
-
-/**
- * One piece of the full backup: NDJSON lines (a header, then {"t": table, "r": row} lines, then a footer with each
- * table's row count and fingerprint). The app asks for pieces until `cursor` is null and saves them as one file.
- */
-export const DumpChunk = z.object({ data: z.string(), cursor: z.string().nullable() });
-export type DumpChunk = z.infer<typeof DumpChunk>;

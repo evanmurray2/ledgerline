@@ -1,6 +1,6 @@
 # Phase 1 measurements (go/no-go)
 
-How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history.
+How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history. The measures of the old server path (`phone`, `refile-payees` and `fill-plaid-name`) were removed with that path (D-102); their sections are history too.
 
 ## Update: one whole append to the sealed log (Nov 13, 2026)
 

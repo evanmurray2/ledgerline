@@ -1,6 +1,7 @@
-// Moving a budget to its sealed log, in a real browser against the real Worker (docs/privacy.md section 8): the
-// passkey makes the keys, the recovery key is typed back, the budget is frozen, sealed and read back; then the
-// app lives on the log across a reload, and the way back returns the budget as it was.
+// A new budget, locked from its first moment (D-102), in a real browser against the real Worker: the passkey
+// makes the keys, the recovery key is typed back, the first entry and snapshot are sent and read back; then the
+// first-run setup and every change go out as entries of the log, the app lives on the log across a reload, the
+// recovery key signs in on a new device, two devices share the log, and a device is added.
 import { expect, test, type Page } from '@playwright/test';
 
 async function withPasskeyDevice(page: Page) {
@@ -32,7 +33,7 @@ const call = (page: Page, method: string, path: string) =>
     [method, path],
   );
 
-test('lock a budget with the passkey and the recovery key, live on the log, and go back', async ({
+test('a new budget is locked with the passkey and the recovery key, and lives on the log', async ({
   page: owner,
   browser,
 }) => {
@@ -40,7 +41,12 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   test.setTimeout(240_000);
   // The owner sets up first: until then there is no Create account.
   await withPasskeyDevice(owner);
-  await owner.goto('/budget');
+  // The app is served with its security headers: no outside host at all (docs/privacy.md 5.7).
+  const res = await owner.goto('/budget');
+  const csp = res?.headers()['content-security-policy'] ?? '';
+  expect(csp).toContain("frame-ancestors 'none'");
+  expect(csp).not.toContain('https:');
+  expect(res?.headers()['x-frame-options']).toBe('DENY');
   // On a retry the same server has its owner already.
   const setup = owner.getByLabel('Setup code');
   const fresh = await Promise.race([
@@ -53,7 +59,8 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   if (fresh) {
     await setup.fill('e2e-setup-code-0123456789abcdefghijklmnop');
     await owner.getByRole('button', { name: 'Create passkey' }).click();
-    await expect(owner).toHaveURL(/\/welcome/);
+    // A new budget: it is locked before anything else.
+    await expect(owner.getByRole('button', { name: 'Make my recovery key' })).toBeVisible();
   }
 
   // A new account: its first-run setup has no bank step, so its budget is ready in three taps.
@@ -62,25 +69,9 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   await page.goto('/budget');
   await page.getByRole('button', { name: 'Create account' }).click();
   await page.getByRole('button', { name: 'Create passkey' }).click();
-  await page.getByLabel(/I saved my recovery code/).check();
-  await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(page).toHaveURL(/\/welcome/);
-  await page.getByRole('link', { name: 'Get started' }).click();
-  await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(page.getByRole('heading', { name: 'Make your categories' })).toBeVisible();
-  await page.getByRole('button', { name: 'Go to my budget' }).click();
-  await expect(page).toHaveURL(/\/budget/);
-  // A sign-in gives the app the passkey's key for the copy on this device.
-  expect((await call(page, 'POST', '/api/settings/security/sign-out')).status).toBe(200);
-  const verified = page.waitForResponse((r) => r.url().includes('/api/auth/login/verify'));
-  await page.goto('/budget');
-  expect((await verified).status()).toBe(200);
-  // The copy is made and saved before the test goes on (a reload in the middle would leave it in memory only).
-  await expect(page.getByText('Groceries')).toBeVisible();
 
-  // ---- Settings → Privacy: the move
-  await page.goto('/settings/privacy');
-  await page.getByRole('button', { name: 'Lock my budget' }).click();
+  // ---- the lock, before anything else: the budget's key and its recovery key are made on this device
+  await page.getByRole('button', { name: 'Make my recovery key' }).click();
   const key = (await page.getByTestId('recovery-key').textContent())!;
   expect(key.length).toBeGreaterThan(20);
   await page.getByRole('checkbox').check();
@@ -89,12 +80,30 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   await page.getByRole('button', { name: 'Lock my budget' }).click();
   await expect(page.getByText('That is not the recovery key shown.')).toBeVisible();
   await page.getByTestId('recovery-key-typed').fill(key);
+  const started = page.waitForResponse((r) => r.url().includes('/api/start/seal'));
   await page.getByRole('button', { name: 'Lock my budget' }).click();
-  await expect(page.getByText('Your budget is locked.')).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByText(/you can go back to how it was/)).toBeVisible();
-  // The server holds the log now, and the old routes are closed.
+  expect((await started).status()).toBe(200);
+  // The server holds the log now, and the budget is locked: no old route reads it.
   expect((await call(page, 'GET', '/api/log?after=0')).status).toBe(200);
   expect((await call(page, 'GET', '/api/sync?since=0&limit=5')).status).not.toBe(200);
+
+  // ---- the first-run setup is made on the device: its first-run setup has no bank step, so three taps
+  await expect(page).toHaveURL(/\/welcome/, { timeout: 30_000 });
+  await page.getByRole('link', { name: 'Get started' }).click();
+  const setupSent = page.waitForResponse((r) => r.url().includes('/api/log/append'));
+  await page.getByRole('button', { name: 'Continue' }).click();
+  expect((await setupSent).status()).toBe(200);
+  await expect(page.getByRole('heading', { name: 'Make your categories' })).toBeVisible();
+  await page.getByRole('button', { name: 'Go to my budget' }).click();
+  await expect(page).toHaveURL(/\/budget/);
+  await expect(page.getByText('Groceries')).toBeVisible();
+  // A sign-in gives the app the passkey's key for the copy on this device.
+  expect((await call(page, 'POST', '/api/settings/security/sign-out')).status).toBe(200);
+  const verified = page.waitForResponse((r) => r.url().includes('/api/auth/login/verify'));
+  await page.goto('/budget');
+  expect((await verified).status()).toBe(200);
+  // The copy is made and saved before the test goes on (a reload in the middle would leave it in memory only).
+  await expect(page.getByText('Groceries')).toBeVisible({ timeout: 30_000 });
 
   // ---- the app lives on the log: the budget shows, and after a reload it opens again from the copy
   await page.goto('/budget');
@@ -115,7 +124,7 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   // The banks screen opens (this budget has no bank).
   await page.goto('/settings/connections');
   await page.waitForTimeout(1500);
-  await page.screenshot({ path: 'test-results/move-6.png' });
+  await page.screenshot({ path: 'test-results/lock-6.png' });
   // Opened from the keys held for a refresh and the place kept with the copy: no snapshot was read again.
 
   // ---- a new sign-in: the passkey gives the budget's secret in the same prompt
@@ -125,7 +134,7 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   expect((await again).status()).toBe(200);
   await expect(page.getByText('Groceries')).toBeVisible({ timeout: 30_000 });
 
-  // ---- the recovery key: it signs in from now on (the move set its public half, signed with the budget's key)
+  // ---- the recovery key: it signs in from now on (the lock set its public half, signed with the budget's key)
   expect((await call(page, 'GET', '/api/settings/security/recovery-key')).json).toMatchObject({ set: true });
   // A new device with a new passkey: the recovery key signs in, opens the budget, and adds the passkey to it.
   // Its own address: sign-in checks are counted per address (AUTH_LIMITER), and the owner's device goes on below.
@@ -219,13 +228,4 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   await expect(addedPage.getByText('Groceries')).toBeVisible({ timeout: 60_000 });
   await expect(addedPage.getByRole('button', { name: 'Type your recovery key instead' })).toHaveCount(0);
   await addedPage.close();
-
-  // ---- the way back (in the app: one more reload so soon would run into the sign-in checks' limit per minute)
-  await page.getByRole('link', { name: /^Privacy/ }).click();
-  await page.getByRole('button', { name: 'Go back to how it was…' }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Go back' }).click();
-  await expect(page.getByRole('button', { name: 'Lock my budget' })).toBeVisible({ timeout: 30_000 });
-  expect((await call(page, 'GET', '/api/log?after=0')).status).toBe(404);
-  await page.goto('/budget');
-  await expect(page.getByText('Groceries')).toBeVisible();
 });

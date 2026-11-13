@@ -2,7 +2,6 @@
 import type { Db, Stmt } from '@ledgerline/db/sql';
 
 export const LEASE_TTL_MS = 90 * 60 * 1000;
-export const MAX_HANDOFFS = 3;
 export const MAX_FETCH_RESTARTS = 3;
 
 /** A fence statement: the whole batch aborts unless `ok` evaluates to 1. */
@@ -25,15 +24,6 @@ export function conditionFence(db: Db, sqlScalar: string, ...params: unknown[]):
 export function isFenceAbort(e: unknown): boolean {
   const m = e instanceof Error ? e.message : String(e);
   return /CHECK constraint failed/i.test(m) && /ok = 1|lease_guard/i.test(m);
-}
-
-export async function requestSync(db: Db, connectionId: string, now: number): Promise<void> {
-  await db
-    .prepare(
-      `UPDATE connection SET resync_requested = 1, updated_at = ?2 WHERE id = ?1 AND removed_at IS NULL`,
-    )
-    .bind(connectionId, now)
-    .run();
 }
 
 /** Returns true when this run now holds the lease. Acquiring clears the request flag. */
@@ -66,20 +56,6 @@ export async function renew(
   return r.changes === 1;
 }
 
-/** Before sleeping for the write budget: keep the lease past the wake time. */
-export async function extendForSleep(
-  db: Db,
-  connectionId: string,
-  holder: string,
-  wakeAt: number,
-): Promise<boolean> {
-  const r = await db
-    .prepare(`UPDATE connection SET lock_expires = ?1 WHERE id = ?2 AND sync_lock = ?3`)
-    .bind(wakeAt + LEASE_TTL_MS, connectionId, holder)
-    .run();
-  return r.changes === 1;
-}
-
 /** Successful release: only when no request arrived mid-run. Returns false when a hand-off is needed. */
 export async function releaseSuccess(db: Db, connectionId: string, holder: string): Promise<boolean> {
   const r = await db
@@ -100,22 +76,4 @@ export async function releaseFailed(db: Db, connectionId: string, holder: string
     )
     .bind(connectionId, holder)
     .run();
-}
-
-/** Hand-off step 2: move the lease to the next instance. */
-export async function moveLease(
-  db: Db,
-  connectionId: string,
-  from: string,
-  to: string,
-  now: number,
-): Promise<boolean> {
-  const r = await db
-    .prepare(
-      `UPDATE connection SET sync_lock = ?1, lock_expires = ?2, resync_requested = 0
-       WHERE id = ?3 AND sync_lock = ?4`,
-    )
-    .bind(to, now + LEASE_TTL_MS, connectionId, from)
-    .run();
-  return r.changes === 1;
 }

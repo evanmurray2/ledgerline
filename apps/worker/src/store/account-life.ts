@@ -5,11 +5,9 @@ import { ProviderError, type BankDataProvider } from '@ledgerline/bank-provider'
 import { decryptToken, type TokenKeyring } from '@ledgerline/platform';
 import { BUDGET_STORE_MIGRATIONS } from './migrations.gen.js';
 import { migrate } from './migrate.js';
-import { ensureRecurring } from './budget-jobs.js';
-import type { Enqueue } from './budget-jobs.js';
 import { signKeyOf } from '../http/signed-request.js';
 
-/** Set while an admin has turned the account off: no daily jobs or bank syncs until it is turned on. */
+/** Set while an admin has turned the account off: no bank fetches until it is turned on. */
 export const DISABLED_KEY = 'disabled';
 
 export function budgetInfo(storage: DurableObjectStorage): {
@@ -40,23 +38,21 @@ export function budgetInfo(storage: DurableObjectStorage): {
 }
 
 /**
- * Off: the daily jobs and bank syncs stop (the account's sessions are already gone, so nothing else reaches the
- * store). On: the daily jobs come back.
+ * Off: the recurring jobs and bank fetches stop (the account's sessions are already gone, so nothing else reaches
+ * the store). On: `rearm` queues the recurring job again.
  */
 export async function setDisabled(
   storage: DurableObjectStorage,
   disabled: boolean,
-  enqueue: Enqueue,
-  timeZone: () => string,
+  rearm: () => Promise<void>,
 ): Promise<void> {
   if (disabled) {
-    storage.sql.exec(`DELETE FROM job WHERE recurring = 1 OR kind = 'sync'`);
+    storage.sql.exec(`DELETE FROM job WHERE recurring = 1 OR kind = 'sealed_fetch'`);
     await storage.put(DISABLED_KEY, true);
     return;
   }
   await storage.delete(DISABLED_KEY);
-  if (storage.sql.exec(`SELECT 1 FROM budget`).toArray().length)
-    await ensureRecurring(enqueue, Date.now(), timeZone());
+  if (storage.sql.exec(`SELECT 1 FROM budget`).toArray().length) await rearm();
 }
 
 /** Plaid's answers that say the Item is gone already: nothing is left to remove there. */

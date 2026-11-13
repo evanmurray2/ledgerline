@@ -23,7 +23,6 @@ import { useScreen } from '../../lib/common';
 import { clearSavedData } from '../../state/saved';
 import { isSealed, signOutHere } from '../../copy/copy';
 import { SIGNED_OUT_HERE } from '../Auth';
-import { RecoveryCodeCard } from '../Signup';
 import { PlannedChanges, RecoveryKeyCard, removeLockedPasskey } from '../RecoveryKey';
 import { DeviceLinkShown, SealedAddDevice } from '../DeviceAdd';
 import { DeleteAccountCard } from './People';
@@ -120,11 +119,9 @@ export function SignInSettingsScreen() {
           <RecoveryKeyCard />
         </>
       )}
-      {sec.data?.recoveryCode && (
+      {sec.data?.ownAccount && (
         <>
           <SectionTitle>Account</SectionTitle>
-          {/* A locked budget's recovery key takes the code's place (docs/privacy-keys.md 4.2). */}
-          {!locked && <RecoveryCodeCard />}
           <DeleteAccountCard />
         </>
       )}

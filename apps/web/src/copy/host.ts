@@ -29,51 +29,7 @@ export interface QueuedEdit {
   path: string;
   body: unknown;
   appVersion?: string;
-  /** The server may hold it already: it went out once and the answer was lost, or it is being sent. */
-  sending?: boolean;
 }
-export interface ApplyResult {
-  reset: boolean;
-  rows: number;
-  caughtUp: boolean;
-  /** Queued edits the engine took out, because they no longer pass on the server's newer rows (engine.ts apply). */
-  lost?: number;
-}
-export interface SyncPage {
-  format: number;
-  epoch: string;
-  serverTime: number;
-  through: number;
-  more: boolean;
-  cursor: string | null;
-  rows: { t: string; k: unknown[]; d: Record<string, unknown> | null }[];
-  /** The place of the newest bank update the server has finished filing (routes/sync.ts). */
-  inbox?: number;
-  /** The newest daily scan the server noted (routes/sync.ts). */
-  inboxScan?: number;
-  /** The server is filing a bank update right now (routes/sync.ts). */
-  filing?: boolean;
-}
-/** One bank update from the server's inbox (store/inbox.ts): the engine files it; the app only passes it on. */
-export interface InboxRun {
-  fetchSeq: number;
-  [more: string]: unknown;
-}
-/** A daily scan the server ran (store/inbox.ts): the engine runs the same one. */
-export interface InboxScan {
-  n: number;
-  [more: string]: unknown;
-}
-/** What the device does beside the server in a shadow run (local/shadow.ts ShadowEvent). */
-export type ShadowEvent = { run: InboxRun } | { scan: InboxScan };
-/** What a shadow run found (local/shadow.ts): names and counts, never a row's content. */
-export interface ShadowReport {
-  runs: number;
-  compared: boolean;
-  why?: string;
-  differences: { table: string; column: string; rows: number }[];
-}
-
 /** A budget's derived keys of one version (`BudgetKeys` in @ledgerline/seal): passed on, never read. */
 export type SealedKeys = { version: number } & Record<string, unknown>;
 /** Where a public entry the app makes goes (local/device-log.ts `writePlace`). */
@@ -138,12 +94,6 @@ export class EngineHost {
   open(who: EngineIdentity, bytes: ArrayBuffer | null): Promise<EngineState> {
     return this.call('open', { who, bytes }, bytes ? [bytes] : []);
   }
-  apply(page: SyncPage, receivedAt: number): Promise<ApplyResult> {
-    return this.call('apply', { page, receivedAt });
-  }
-  nextRequest(): Promise<{ since: number; cursor: string | null }> {
-    return this.call('next');
-  }
   derive(): Promise<{ rta: number } | null> {
     return this.call('derive');
   }
@@ -156,41 +106,13 @@ export class EngineHost {
   ): Promise<{ status: number; body: string }> {
     return this.call('request', { method, path, body, edit });
   }
-  /** Makes the scratch copy for a shadow run (engine.ts shadowFork); gives its token, or null when it can't. */
-  shadowFork(): Promise<number | null> {
-    return this.call('shadowFork');
-  }
-  /** The bank updates to file on the scratch copy: null when ready, or why a comparison would say nothing. */
-  shadowBegin(token: number, runs: ShadowEvent[]): Promise<ShadowReport | null> {
-    return this.call('shadowBegin', { token, runs });
-  }
-  /** Files the next update on the scratch copy; false when none is left. */
-  shadowStep(token: number): Promise<boolean> {
-    return this.call('shadowStep', { token });
-  }
-  /** Compares and frees the scratch copy. */
-  shadowEnd(token: number): Promise<ShadowReport | null> {
-    return this.call('shadowEnd', { token });
-  }
-  /** Runs an edit made with no connection and puts it in the queue, in one step (engine.ts enqueue). */
+  /** Runs an edit made on this device and puts it in the queue, in one step (engine.ts enqueue). */
   enqueue(edit: QueuedEdit): Promise<{ status: number; body: string; queued: number }> {
     return this.call('enqueue', { edit });
   }
-  /** The edits waiting for the server, oldest first. */
+  /** The edits waiting to go out as entries of the log, oldest first. */
   queue(): Promise<QueuedEdit[]> {
     return this.call('queue');
-  }
-  /** The app is about to send this edit (engine.ts queueSending). */
-  queueSending(editId: string): Promise<void> {
-    return this.call('queueSending', { editId });
-  }
-  /** The server took this edit; gives how many are left. */
-  queueDone(editId: string): Promise<number> {
-    return this.call('queueDone', { editId });
-  }
-  /** The server refused this edit (engine.ts queueRefused). */
-  queueRefused(editId: string): Promise<{ redownload: boolean; lost: number; left: number }> {
-    return this.call('queueRefused', { editId });
   }
   export(): Promise<ArrayBuffer> {
     return this.call('export');
@@ -258,17 +180,16 @@ export class EngineHost {
     return this.call('sealedSign', { action, challenge, payload });
   }
   /**
-   * Moves a budget that exists to its sealed log (docs/privacy.md section 8 step 6): the keys and the first
-   * entry were made by keys/budget.ts. `sealed` with `ok: false` means the budget is sealed and its first
-   * snapshot did not read back: take the way back.
+   * Starts a new budget locked (D-102): the keys and the first entry were made by keys/new-budget.ts. The copy is
+   * made empty, holds the budget's own row, and stands at the first entry.
    */
-  cutover(
+  startBudget(
     keys: SealedKeys,
     genesis: Uint8Array,
     deviceId: string,
     snapshotId: string,
-  ): Promise<{ ok: true; number: number } | { ok: false; why: string; tables?: string[]; sealed?: boolean }> {
-    return this.call('cutover', { keys, genesis, deviceId, snapshotId });
+  ): Promise<{ ok: true; number: number } | { ok: false; why: string }> {
+    return this.call('start', { keys, genesis, deviceId, snapshotId });
   }
   state(): Promise<EngineState> {
     return this.call('state');
@@ -291,30 +212,4 @@ export class EngineHost {
     for (const p of this.pending.values()) p.reject(new Error('Something went wrong. Try again.'));
     this.pending.clear();
   }
-}
-
-/** Sync pages are read until the copy holds everything; a new epoch starts the download again (section 8). */
-export async function syncAll(
-  host: EngineHost,
-  fetchPage: (since: number, cursor: string | null) => Promise<SyncPage>,
-  /** Called when the server's copy changed (a new epoch or format) and the whole budget downloads again. */
-  onReset?: () => void,
-  /** Called with each page before the copy takes it. */
-  beforeApply?: (page: SyncPage) => Promise<void>,
-): Promise<{ pages: number; rows: number; lost: number }> {
-  let pages = 0;
-  let rows = 0;
-  let lost = 0;
-  for (let guard = 0; guard < 2000; guard++) {
-    const { since, cursor } = await host.nextRequest();
-    const page = await fetchPage(since, cursor);
-    await beforeApply?.(page);
-    const r = await host.apply(page, Date.now());
-    pages++;
-    if (r.reset) onReset?.();
-    rows += r.rows;
-    lost += r.lost ?? 0;
-    if (r.caughtUp) return { pages, rows, lost };
-  }
-  throw new Error('Your budget didn’t finish downloading. Try again.');
 }

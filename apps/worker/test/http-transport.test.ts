@@ -12,12 +12,11 @@ import { httpTransport, TransportError } from '../src/local/http-transport.js';
 import { LogSession } from '../src/local/log-session.js';
 import { logGenesis } from '../src/seal/log-store.js';
 import { PHONE, Writer } from './log-writer.js';
-import { syncPhone } from './phone.js';
+import { syncPhone, budgetOf } from './phone.js';
 import { storeDb } from './store-db.js';
 import { differences, newPhone, rowsOf } from './twin.js';
 
 const ORIGIN = 'https://ledgerline.test';
-const H = { origin: ORIGIN, 'content-type': 'application/json', 'x-ledgerline': '1' };
 /** The test server's clock (FAKE_NOW). */
 const NOW = Date.parse('2026-11-14T20:00:00Z');
 const LAPTOP = '01CX5ZZKBKACTAV9WEVGEMMVRZ';
@@ -32,10 +31,7 @@ describe('a sealed budget over HTTP', () => {
   );
 
   beforeAll(async () => {
-    const r = await SELF.fetch(`${ORIGIN}/__dev/seed-november`, { method: 'POST', headers: H, body: '{}' });
-    expect(r.status).toBe(200);
-    budget = ((await (await SELF.fetch(`${ORIGIN}/api/session`)).json()) as { budget: { id: string } }).budget
-      .id;
+    budget = (await budgetOf()).budgetId;
     // The phone has the budget before it is sealed (at the cutover: the first snapshot).
     phone = await syncPhone(await newPhone());
     // A second device's empty copy (made now: the old routes that say who it is close when the budget is sealed).

@@ -20,6 +20,23 @@ export interface Job<S = unknown> {
 
 export type Handler = (job: Job, now: number) => Promise<StepResult>;
 
+/** Adds a job to the store's queue (JobRunner.enqueue, at the store's clock). */
+export type Enqueue = (kind: string, o: EnqueueOptions) => Promise<string>;
+
+/** The next time it is hour:minute UTC, after `now`. */
+export function nextUtc(now: number, hour: number, minute: number): number {
+  const d = new Date(now);
+  let t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hour, minute);
+  if (t <= now) t += 86_400_000;
+  return t;
+}
+
+/** Just after the next UTC midnight, when Cloudflare's daily limits reset. */
+export function nextUtcMidnight(now: number): number {
+  const d = new Date(now);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1, 0, 0, 30);
+}
+
 export const BACKOFF_MS = [10_000, 30_000, 120_000, 600_000, 3_600_000];
 export const MAX_ATTEMPTS = 6;
 export const WATCHDOG_MS = 5 * 60_000;
