@@ -24,7 +24,7 @@ import { SEALED_FETCH, sealedFetchHandler, sealedFetchId, type FetchState } from
 import { beginSealedRun, completeSealedRun, sealLinkDescription } from '../src/seal/runs.js';
 import { sealedApi } from '../src/seal/sealed-routes.js';
 import { BUDGET, T0 } from './log-writer.js';
-import { handed, LINK_A, ring, world, type World } from './sealed-world.js';
+import { handed, LINK_A, LINK_B, ring, world, type World } from './sealed-world.js';
 import { ownerDb, storeDb } from './store-db.js';
 
 const ORIGIN = 'https://ledgerline.test';
@@ -57,7 +57,12 @@ const PLAID_ACCOUNTS = [
 /** Plaid, at the fetch level: what it was asked, and what its newest Link session says. */
 function fakePlaid() {
   const asked: { path: string; body: Record<string, unknown> }[] = [];
-  const st = { sessions: [] as unknown[], token: 'access-new-1', item: 'item-new-1' };
+  const st = {
+    sessions: [] as unknown[],
+    token: 'access-new-1',
+    item: 'item-new-1',
+    removeError: null as string | null,
+  };
   const real = globalThis.fetch;
   const json = (body: unknown) =>
     new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
@@ -85,6 +90,11 @@ function fakePlaid() {
       case '/accounts/get':
         return json({ accounts: PLAID_ACCOUNTS });
       case '/item/remove':
+        if (st.removeError)
+          return new Response(
+            JSON.stringify({ error_code: st.removeError, error_type: 'ITEM_ERROR', error_message: 'x' }),
+            { status: 400, headers: { 'content-type': 'application/json' } },
+          );
         return json({ request_id: 'r' });
       default:
         return json({});
@@ -441,6 +451,22 @@ describe('a new bank in a sealed budget, and removing one', () => {
         expect((await call('POST', '/api/settings/connections/con_nothing/remove')).status).toBe(404);
         // A refresh of a removed link asks nothing of the bank.
         expect((await call('POST', `/api/settings/connections/${connectionId}/refresh`)).status).toBe(404);
+        // A link whose token Plaid no longer takes (its Item was ended some other way) is removed all the same.
+        p.st.removeError = 'INVALID_ACCESS_TOKEN';
+        expect(await call('POST', `/api/settings/connections/con_${LINK_B}/remove`)).toEqual({
+          status: 200,
+          json: { ok: true },
+        });
+        expect(await x.db.prepare(`SELECT status FROM bank_link WHERE id = ?1`).bind(LINK_B).first()).toEqual(
+          { status: 'removed' },
+        );
+        // Any other refusal is not taken as removed.
+        p.st.removeError = 'INTERNAL_SERVER_ERROR';
+        expect((await call('POST', `/api/settings/connections/con_${LINK_A}/remove`)).status).toBe(500);
+        expect(await x.db.prepare(`SELECT status FROM bank_link WHERE id = ?1`).bind(LINK_A).first()).toEqual(
+          { status: 'ok' },
+        );
+        p.st.removeError = null;
 
         // ---- the device marks it removed: its accounts and rows stay, counted, not linked (D-87)
         const marked = await engine.request(
