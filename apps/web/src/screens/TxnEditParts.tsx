@@ -56,24 +56,28 @@ export function IncomeGoesTo({
   month: string;
   onMonth: (m: string) => void;
 }) {
+  const dated = date.slice(0, 7);
+  // One test for the toggle and its help line: a month after the one it's dated in is saved for later. Income moved
+  // further on (or back) says so on both: the toggle names that month.
+  const later = month > dated;
+  const saveFor = later ? month : addMonths(dated, 1);
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-line p-3">
       <span className="text-base font-semibold">Goes to</span>
       <Segmented
         label="Goes to"
         track="txn.income.month"
-        // The same test as the help line below: the month the income is dated in, or a later one.
-        value={month === date.slice(0, 7) ? 'now' : 'next'}
-        onChange={(v) => onMonth(v === 'now' ? date.slice(0, 7) : addMonths(date.slice(0, 7), 1))}
+        value={later ? 'next' : 'now'}
+        onChange={(v) => onMonth(v === 'now' ? dated : saveFor)}
         options={[
           ['now', 'Ready to Assign now'],
-          ['next', `Save for ${monthName(addMonths(date.slice(0, 7), 1))}`],
+          ['next', `Save for ${monthName(saveFor)}`],
         ]}
       />
       <span className="text-xs text-muted">
-        {month === date.slice(0, 7)
-          ? `Adds ${formatCents(amount)} to Ready to Assign in ${monthName(month)}.`
-          : `Adds ${formatCents(amount)} to Ready to Assign on ${monthName(month)} 1.`}
+        {later
+          ? `Adds ${formatCents(amount)} to Ready to Assign on ${monthName(month)} 1.`
+          : `Adds ${formatCents(amount)} to Ready to Assign in ${monthName(month)}.`}
       </span>
     </div>
   );

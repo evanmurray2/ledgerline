@@ -114,6 +114,30 @@ describe('Transaction sheet', () => {
     await screen.findByText(/to Ready to Assign in November\./);
   });
 
+  it('income moved two months on, or back a month: the toggle and its help line still agree', async () => {
+    const move = (budgetMonth: string) =>
+      server.handle(
+        'PATCH',
+        '/api/transactions/n-payroll',
+        { 'content-type': 'application/json', 'x-ledgerline': '1' },
+        { budgetMonth },
+      );
+    expect((await move('2027-01')).status).toBe(200);
+    const first = show('/activity/txn/n-payroll');
+    const later = await screen.findByRole('button', { name: 'Save for January' }, T);
+    expect(later.getAttribute('aria-pressed')).toBe('true');
+    await screen.findByText(/to Ready to Assign on January 1\./);
+    first.unmount();
+    expect((await move('2026-10')).status).toBe(200);
+    show('/activity/txn/n-payroll');
+    const now = await screen.findByRole('button', { name: 'Ready to Assign now' }, T);
+    expect(now.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Save for December' }).getAttribute('aria-pressed')).toBe(
+      'false',
+    );
+    await screen.findByText(/to Ready to Assign in October\./);
+  });
+
   it('a deposit with no category is in Ready to Assign: the sheet says so and nothing asks for a category', async () => {
     const before = (await sql<{ rta: number }>(`SELECT rta FROM budget`))!.rta;
     const r = await server.handle(
