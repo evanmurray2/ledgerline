@@ -4,6 +4,7 @@
 // takes every strong suggestion (docs/payees.md 2.2). Categorizing shows an Undo toast.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useNavigate, useSearch } from '@tanstack/react-router';
+import type { TxnListRow } from '@ledgerline/contracts';
 import { api, type ActivityFilter } from '../api/endpoints';
 import { ApiError, errorMessage } from '../api/client';
 import { adjustAttention, qk, useActivity, useBudget, useMoneyMutation, useSession } from '../api/hooks';
