@@ -1,6 +1,6 @@
 // From logical transactions (bank rows + manual pending + overlay, one row per transaction as v_transaction
 // exposes them) to the budget lines computeBudget() reads, plus the terms of the rule 10 identity that are not
-// budget lines: Waiting to match, unsorted transfer sides, uncategorized amounts and ledger working balances.
+// budget lines: unsorted transfer sides, uncategorized amounts and ledger working balances.
 import { type Cents, cents } from '../money.js';
 import { type IsoDate, type Month, monthOfDate } from '../month.js';
 import type { BudgetLine } from './lines.js';
@@ -30,12 +30,7 @@ export type TxnUse =
   /** An unclear transfer side held aside until you pick (Transfer detection). */
   | { type: 'unsorted' }
   /** Marked by hand as a transfer to or from an account that isn't linked (decisions.md D-20). */
-  | { type: 'offbudget' }
-  /**
-   * A person-to-person inflow held for matching (rule 9). `matched` is the part already matched to owed items
-   * (it goes to RTA); the rest waits.
-   */
-  | { type: 'waiting'; matched?: Cents };
+  | { type: 'offbudget' };
 
 export interface OwedMark {
   itemId: string;
@@ -81,7 +76,6 @@ export interface LogicalTxn {
 
 export interface Projection {
   lines: BudgetLine[];
-  waitingToMatch: Cents;
   unsortedNet: Cents;
   uncategorizedNet: Cents;
   /** Ledger working balance per account: starting balance + budgeted transactions (pending in, won't-clear out). */
@@ -161,7 +155,6 @@ export interface TxnEffect {
   /** False when the transaction doesn't count (history, won't clear, upcoming not yet due). */
   counts: boolean;
   lines: BudgetLine[];
-  waiting: number;
   unsorted: number;
   uncategorized: number;
   /**
@@ -182,7 +175,6 @@ export function linesForTxn(
   const none: TxnEffect = {
     counts: false,
     lines: [],
-    waiting: 0,
     unsorted: 0,
     uncategorized: 0,
     startShift: 0,
@@ -194,7 +186,6 @@ export function linesForTxn(
   if (t.date < acct.budgetFrom)
     return { ...none, counts: true, lines: startShiftLine(t.key, acct, startMonth, t.amount) };
   const lines: BudgetLine[] = [];
-  let waiting = 0;
   let unsorted = 0;
   let uncategorized = 0;
   const card = acct.kind === 'credit';
@@ -315,19 +306,12 @@ export function linesForTxn(
     case 'unsorted':
       unsorted += t.amount;
       break;
-    case 'waiting': {
-      const m = Math.min(u.matched ?? 0, t.amount);
-      if (m > 0)
-        lines.push({ kind: 'rta', id: `${t.key}:0`, ...base, accountId: acct.id, card, amount: cents(m) });
-      waiting += t.amount - m;
-      break;
-    }
   }
   if (t.startRole === 'linkDay') {
     lines.push(...startShiftLine(t.key, acct, startMonth, -t.amount));
-    return { counts: true, lines, waiting, unsorted, uncategorized, startShift: -t.amount };
+    return { counts: true, lines, unsorted, uncategorized, startShift: -t.amount };
   }
-  return { counts: true, lines, waiting, unsorted, uncategorized, startShift: 0 };
+  return { counts: true, lines, unsorted, uncategorized, startShift: 0 };
 }
 
 export function project(o: ProjectOptions): Projection {
@@ -335,7 +319,6 @@ export function project(o: ProjectOptions): Projection {
   const kinds = new Map(o.accounts.map((a) => [a.id, a.kind]));
   const lines: BudgetLine[] = [];
   const working: Record<string, number> = {};
-  let waiting = 0;
   let unsorted = 0;
   let uncategorized = 0;
   let counted = 0;
@@ -351,7 +334,6 @@ export function project(o: ProjectOptions): Projection {
     counted++;
     working[acct.id] = (working[acct.id] ?? 0) + t.amount + e.startShift;
     lines.push(...e.lines);
-    waiting += e.waiting;
     unsorted += e.unsorted;
     uncategorized += e.uncategorized;
   }
@@ -359,7 +341,6 @@ export function project(o: ProjectOptions): Projection {
   for (const [k, v] of Object.entries(working)) w[k] = cents(v);
   return {
     lines,
-    waitingToMatch: cents(waiting),
     unsortedNet: cents(unsorted),
     uncategorizedNet: cents(uncategorized),
     working: w,

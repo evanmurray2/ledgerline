@@ -24,6 +24,7 @@ import type { NewBudget } from '../keys/new-budget';
 import { formatCents } from '../lib/money';
 import { monthLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
+import { useResumeLink } from '../lib/resume-link';
 import { LinkBankFlow } from './Settings';
 import { StatusBanner } from '../components/AppShell';
 import { Why } from '../components/Why';
@@ -292,6 +293,8 @@ export function StartMonthScreen() {
 
 export function LinkBanksScreen() {
   useScreen('setup.link');
+  // A bank linked from here on Plaid's site comes back to this step (lib/plaid.ts): it finishes here.
+  useResumeLink();
   const session = useSession();
   const conns = useConnections();
   const accounts = useAccounts();

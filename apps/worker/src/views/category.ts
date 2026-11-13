@@ -66,22 +66,6 @@ export async function categorySheet(
   if (r.row.status === 'low') statusText += ` · ${spentPct}% spent, ${gone}% of the month gone`;
   if (r.row.status === 'underfunded') statusText += ` · needs ${fmt(r.row.need)}`;
   if (r.row.status === 'overspent') statusText += ` · ${fmt(-r.row.available)} over`;
-  const others = rows.filter((x) => x.row.id !== id && !x.info.archived_at);
-  const moveOptions = [
-    ...others
-      .filter((x) => x.row.status === 'overspent' || x.row.status === 'underfunded')
-      .map((x) => ({
-        id: x.row.id,
-        label:
-          x.row.status === 'overspent'
-            ? `${x.row.name} (overspent by ${fmt(-x.row.available)})`
-            : `${x.row.name} (needs ${fmt(x.row.need)})`,
-      })),
-    { id: 'rta' as const, label: 'Ready to Assign' },
-    ...others
-      .filter((x) => x.row.status !== 'overspent' && x.row.status !== 'underfunded')
-      .map((x) => ({ id: x.row.id, label: x.row.name })),
-  ];
   const help =
     target?.type === 'refill'
       ? 'What’s left lowers next month’s need.'
@@ -126,7 +110,6 @@ export async function categorySheet(
       return labels.paidFor.has(t.key) ? { ...row, badge: 'Paid back', sub: 'to Ready to Assign' } : row;
     }),
     recentTotal: (count!.results[0] as { n: number }).n,
-    moveOptions,
   };
 }
 

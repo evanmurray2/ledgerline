@@ -12,14 +12,10 @@ import {
   beginSealedRun,
   completeSealedRun,
   fetchSealedPage,
-  keyStampStmts,
-  runDeps,
-  runsAfter,
   sealBankAnswer,
-  sealedPageOf,
   sealLinkDescription,
-  type RunDeps,
-} from '../src/seal/runs.js';
+} from '../src/seal/run-steps.js';
+import { keyStampStmts, runDeps, runsAfter, sealedPageOf, type RunDeps } from '../src/seal/runs.js';
 import { DurableDb } from '../src/store/adapter.js';
 import type { BudgetStore } from '../src/store/budget-store.js';
 import { BUDGET, T0, Writer } from './log-writer.js';

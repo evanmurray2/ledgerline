@@ -36,7 +36,7 @@ import {
   type NewBudget,
 } from '../keys/new-budget';
 import { WORKER_RUN_KEYS } from '../keys/worker-keys';
-import { fetchPublicEntries, logDeviceId, newUlid, openSealedBudget } from './sealed';
+import { fetchPublicEntries, logDeviceId, newUlid, openSealedBudget, openSealedHeld } from './sealed';
 import { forgetSealed, keepPublicSeen, lastPublicSeen, rememberSealed, sealedBudgets } from './sealed-marks';
 import { addPasskeyWay, authPubOf, openPlans, type Ways } from './sealed-ways';
 import { ACTION, type Entry, passkeySlotId, type PublicState, walkPublic, zeroize } from '@ledgerline/seal';
@@ -282,10 +282,35 @@ async function enterSealed(
   const h = host!;
   const deviceId = await logDeviceId(h);
   let keys: unknown[];
-  if (!way?.slotPrf && heldKeys) {
-    const o = await h.sealedOpen(heldKeys as never, deviceId, WORKER_RUN_KEYS);
-    if (!o.ready) await h.sealedJoin();
-    keys = heldKeys;
+  // A refresh with the keys held: the public entries are read again on the way, as with the passkey. Keys that
+  // a key change on another device has replaced open nothing, and the passkey is asked below.
+  const lastHeld = !way?.slotPrf && heldKeys ? await lastPublicSeen(h, who!.budgetId) : null;
+  const held =
+    !way?.slotPrf && heldKeys
+      ? await openSealedHeld({
+          host: h,
+          ...(online
+            ? {
+                fetch: (path: string) =>
+                  fetch(path, { credentials: 'same-origin', headers: { accept: 'application/json' } }),
+              }
+            : {}),
+          budgetId: who!.budgetId,
+          deviceId,
+          keys: heldKeys as never,
+          workerKeys: WORKER_RUN_KEYS,
+          ...(lastHeld ? { remembered: { number: lastHeld.number, hash: fromHex(lastHeld.hash) } } : {}),
+        })
+      : null;
+  if (held) {
+    if (held.publics && held.lastPublic) {
+      await keepPublicSeen(h, who!.budgetId, {
+        number: held.lastPublic.number,
+        hash: toHex(held.lastPublic.hash),
+      });
+      await h.put('publics', JSON.stringify(held.publics));
+    }
+    keys = held.keys;
   } else {
     // No secret from the sign-in (this device opens a sealed budget for the first time, or the keys held are too
     // old): the passkey is asked once more, for the budget's secret alone. Nothing of this goes to the server.
@@ -959,6 +984,12 @@ async function openHost(bytes: ArrayBuffer | null): Promise<void> {
   host = new EngineHost();
   host.onIdentity = (r) => void server('POST', '/api/identity-alert', r).catch(() => undefined);
   host.onRebuilding = () => set({ rebuilding: true });
+  // Made again outside a sync (a way in added or removed): saved, and the screens read it again.
+  host.onRebuilt = () => {
+    set({ rebuilding: false });
+    void save().catch(() => undefined);
+    changed();
+  };
   await host.open(who!, bytes);
 }
 

@@ -29,7 +29,7 @@ import type { AppEnv } from '../src/http/context.js';
 import { LocalEngine, migrateLocal } from '../src/local/engine.js';
 import { FILED_LINK, fileOpened, UnsupportedRun } from '../src/local/sealed-filing.js';
 import { SEALED_FETCH, sealedFetchHandler, sealedFetchId, type FetchState } from '../src/seal/fetch-job.js';
-import { beginSealedRun, completeSealedRun, sealLinkDescription } from '../src/seal/runs.js';
+import { beginSealedRun, completeSealedRun, sealLinkDescription } from '../src/seal/run-steps.js';
 import { sealedApi } from '../src/seal/sealed-routes.js';
 import { signedActionOf, type SignedPart } from '../src/http/signed-request.js';
 import { BUDGET, T0 } from './log-writer.js';

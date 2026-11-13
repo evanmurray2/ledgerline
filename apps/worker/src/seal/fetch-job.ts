@@ -10,18 +10,18 @@ import { nextUtcMidnight } from '../store/jobs.js';
 import { NEEDS_SIGN_IN } from '../sync/provider.js';
 import type { LinkDescription } from './link-description.js';
 import { snapshotPrune } from './snapshot-store.js';
+import { linkForBank } from './run-stage.js';
 import {
   abandonSealedRun,
-  BadStamp,
   beginSealedRun,
   completeSealedRun,
   fetchSealedPage,
-  linkForBank,
-  RunStopped,
-  sealBankAnswer,
+  sealBankAnswers,
   sealLinkDescription,
-  type RunDeps,
-} from './runs.js';
+  type AskBank,
+  type BankAnswer,
+} from './run-steps.js';
+import { BadStamp, RunStopped, type RunDeps } from './runs.js';
 
 export const SEALED_FETCH = 'sealed_fetch';
 export const SEALED_BACKSTOP = 'sealed_backstop';
@@ -301,12 +301,14 @@ async function step(deps: FetchDeps, s: FetchState, now: number): Promise<StepRe
       return next({ ...s, phase: 'complete' });
     }
     case 'fetch': {
-      const r = await fetchSealedPage(d, deps.provider(), deps.pageSize, only);
-      if (r === 'restarted') return next({ ...s, pages: 0 });
+      const provider = deps.provider();
       // The last page: the bank's balances and card statements are asked in the same step, with the update
-      // (docs/privacy.md 5.5), not a step or more later.
+      // (docs/privacy.md 5.5), not a step or more later, and stored with the page in one transaction.
+      const r = await fetchSealedPage(d, provider, deps.pageSize, only, askAnswers(provider));
+      if (r === 'restarted') return next({ ...s, pages: 0 });
       if (!r.more) {
-        await sealAnswers(deps, s.linkId, only);
+        // A page stored by a step whose answers were not (a release before D-110): they are asked now.
+        if (!r.answered) await sealAnswers(deps, only);
         return next({ ...s, phase: 'complete' });
       }
       const pages = (s.pages ?? 0) + 1;
@@ -315,11 +317,11 @@ async function step(deps: FetchDeps, s: FetchState, now: number): Promise<StepRe
     }
     case 'balances':
       // A run with no new page (or a job saved in these steps): the bank's answers, then sign.
-      await sealAnswers(deps, s.linkId, only);
+      await sealAnswers(deps, only);
       return next({ ...s, phase: 'complete' });
     case 'liabilities':
       // A job saved here by a release before the answers moved into one step: its balances are sealed already.
-      await sealLiabilities(deps, s.linkId, only);
+      await sealAnswers(deps, only, true);
       return next({ ...s, phase: 'complete' });
     case 'complete': {
       const r = await completeSealedRun(d, now, s.run, only);
@@ -339,35 +341,42 @@ async function step(deps: FetchDeps, s: FetchState, now: number): Promise<StepRe
 type Only = { linkId: string; startedAt: number };
 
 /**
- * The bank's balances (part kind 1) and card statements (kind 2), sealed into the run after its pages. A bank that
- * can't say them now leaves the run without them, and its manifest says so (docs/privacy.md 5.5).
+ * Asks the bank its balances (part kind 1) and card statements (kind 2), which are sealed into the run after its
+ * pages. A bank that can't say them now leaves the run without them, and its manifest says so (docs/privacy.md
+ * 5.5). `liabilitiesOnly`: a job saved by a release that sealed the balances in a step of their own.
  */
-async function sealAnswers(deps: FetchDeps, linkId: string, only: Only): Promise<void> {
-  const d = deps.runs;
-  const conn = await linkForBank(d, linkId);
-  const accounts = await deps
-    .provider()
-    .getAccounts(conn)
-    .catch(() => null);
-  if (accounts)
-    await sealBankAnswer(
-      d,
-      1,
-      accounts.map((a) => ({
-        providerAccountId: a.providerAccountId,
-        currentBalance: a.currentBalance,
-        availableBalance: a.availableBalance,
-        creditLimit: a.creditLimit,
-      })),
-      only,
-    );
-  await sealLiabilities(deps, linkId, only);
+function askAnswers(provider: BankDataProvider, liabilitiesOnly = false): AskBank {
+  return async (link) => {
+    const conn = await link();
+    const out: BankAnswer[] = [];
+    if (!liabilitiesOnly) {
+      const accounts = await provider.getAccounts(conn).catch(() => null);
+      if (accounts)
+        out.push({
+          what: 1,
+          answer: accounts.map((a) => ({
+            providerAccountId: a.providerAccountId,
+            currentBalance: a.currentBalance,
+            availableBalance: a.availableBalance,
+            creditLimit: a.creditLimit,
+          })),
+        });
+    }
+    if (provider.getLiabilities) {
+      const liabilities = await provider.getLiabilities(conn).catch(() => null);
+      if (liabilities?.length) out.push({ what: 2, answer: liabilities });
+    }
+    return out;
+  };
 }
 
-async function sealLiabilities(deps: FetchDeps, linkId: string, only: Only): Promise<void> {
+/** The bank's answers in a step of their own: one check of the run and the link, one transaction. */
+async function sealAnswers(deps: FetchDeps, only: Only, liabilitiesOnly = false): Promise<void> {
   const provider = deps.provider();
-  if (!provider.getLiabilities) return;
-  const conn = await linkForBank(deps.runs, linkId);
-  const liabilities = await provider.getLiabilities(conn).catch(() => null);
-  if (liabilities?.length) await sealBankAnswer(deps.runs, 2, liabilities, only);
+  const whats: { what: 1 | 2 }[] = [
+    ...(liabilitiesOnly ? [] : [{ what: 1 as const }]),
+    ...(provider.getLiabilities ? [{ what: 2 as const }] : []),
+  ];
+  if (!whats.length) return;
+  await sealBankAnswers(deps.runs, whats, askAnswers(provider, liabilitiesOnly), only);
 }

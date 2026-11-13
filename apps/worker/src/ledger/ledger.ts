@@ -366,7 +366,7 @@ type LineRow = [
 function rowsFor(
   key: string,
   lines: BudgetLine[],
-  extra: { waiting: number; unsorted: number; uncategorized: number },
+  extra: { unsorted: number; uncategorized: number },
   t: LogicalTxn,
 ): LineRow[] {
   const out: LineRow[] = [];
@@ -442,8 +442,6 @@ function rowsFor(
     }
   }
   const m = lines[0]?.month ?? monthOfDate(t.date);
-  if (extra.waiting)
-    out.push([key, 'wait', m, t.date, t.seq, 'wait', t.accountId, 0, null, extra.waiting, null]);
   if (extra.unsorted)
     out.push([key, 'unsorted', m, t.date, t.seq, 'unsorted', t.accountId, 0, null, extra.unsorted, null]);
   if (extra.uncategorized)

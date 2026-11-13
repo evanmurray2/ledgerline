@@ -8,7 +8,7 @@ const PORT = Number(process.env.E2E_PORT ?? 5179);
 
 export default defineConfig({
   testDir: './tests',
-  testIgnore: /(passkey|signup|lock)\.spec\.ts/,
+  testIgnore: /(passkey|signup|lock|banks)\.spec\.ts/,
   fullyParallel: true,
   workers: 4,
   timeout: 30_000,

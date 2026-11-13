@@ -99,7 +99,8 @@ export async function newLockedBudget(
   expect((await setupSent).status()).toBe(200);
   await expect(page.getByRole('heading', { name: 'Make your categories' })).toBeVisible();
   await page.getByRole('button', { name: 'Go to my budget' }).click();
-  await expect(page).toHaveURL(/\/budget/);
+  // Each category is an entry of the log: on a busy machine the step takes more than the usual 10 seconds.
+  await expect(page).toHaveURL(/\/budget/, { timeout: 30_000 });
   await expect(page.getByText('Groceries').first()).toBeVisible();
   expect((await call(page, 'POST', '/api/settings/security/sign-out')).status).toBe(200);
   const verified = page.waitForResponse((r) => r.url().includes('/api/auth/login/verify'));

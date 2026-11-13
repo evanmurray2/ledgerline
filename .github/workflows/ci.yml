@@ -141,13 +141,14 @@ jobs:
         run: pnpm exec playwright test --shard="$SHARD"
         env:
           SHARD: ${{ matrix.shard }}
+      # An e2e build: it also accepts the e2e Worker's bank runs (apps/web/src/keys/worker-keys.ts). Never deployed.
       - name: Build the SPA
         if: matrix.suite != 'mock'
-        run: pnpm --filter @ledgerline/web build
-      - name: Playwright against local wrangler dev, passkey sign-in, sign-up, then a new locked budget and its screens
+        run: pnpm --filter @ledgerline/web build:e2e
+      - name: Playwright against local wrangler dev, passkey sign-in, sign-up, a new locked budget and its screens, then a linked bank on a fake Plaid
         if: matrix.suite == 'sign-in'
         working-directory: e2e
-        run: pnpm exec playwright test -c playwright.passkey.config.ts && pnpm exec playwright test -c playwright.signup.config.ts && pnpm exec playwright test -c playwright.lock.config.ts
+        run: pnpm exec playwright test -c playwright.passkey.config.ts && pnpm exec playwright test -c playwright.signup.config.ts && pnpm exec playwright test -c playwright.lock.config.ts && pnpm exec playwright test -c playwright.bank.config.ts
       # Also when a test only passed on its retry (e2e/retry-log.ts writes flaky-<suite>.md): the failed try's trace.
       - if: ${{ !cancelled() && (failure() || hashFiles('e2e/test-results/flaky-*.md') != '') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

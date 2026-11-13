@@ -14,7 +14,9 @@ import {
   type FetchDeps,
   type FetchState,
 } from '../src/seal/fetch-job.js';
-import { lastCompleteRun, STAGE_MAX_MS, stageOf } from '../src/seal/runs.js';
+import { stageOf } from '../src/seal/run-stage.js';
+import { STAGE_MAX_MS } from '../src/seal/run-steps.js';
+import { lastCompleteRun } from '../src/seal/runs.js';
 import type { BudgetStore } from '../src/store/budget-store.js';
 import { nextUtcMidnight } from '../src/store/jobs.js';
 import { T0 } from './log-writer.js';
@@ -388,7 +390,8 @@ describe('the fetch job of a sealed budget', () => {
       const rb = await ha(job(LINK_A, { ...sa, phase: 'balances' }), late + 1);
       expect(rb).toMatchObject({ state: { phase: 'begin', linkId: LINK_A } });
       expect(await stageOf(x.d)).toMatchObject({ linkId: LINK_B, pages: 0 });
-      expect(a.asked.accounts).toBe(1);
+      // The run is checked before the bank is asked: link A's bank isn't asked for a run that isn't its own.
+      expect(a.asked.accounts).toBe(0);
       // Nor complete it, nor mark link A as fetched.
       const c = await ha(job(LINK_A, { ...sa, phase: 'complete' }), late + 2);
       expect(c).toMatchObject({ state: { phase: 'begin' } });

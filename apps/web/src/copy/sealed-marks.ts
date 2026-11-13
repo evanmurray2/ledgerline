@@ -34,7 +34,7 @@ export function forgetSealed(budgetId: string | null): void {
 }
 // The last public entry of the log this device saw, kept in the copy and, as a second mark, outside it: a copy
 // that is made again (or lives in memory only) still refuses a log that does not pass through it.
-const PUBLIC_MARK = 'ledgerline.public.';
+export const PUBLIC_MARK = 'ledgerline.public.';
 export type PublicMark = { number: number; hash: string };
 export async function lastPublicSeen(h: EngineHost, budgetId: string): Promise<PublicMark | null> {
   const marks: PublicMark[] = [];

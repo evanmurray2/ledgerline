@@ -38,7 +38,8 @@ import { deviceAddRoutes } from '../routes/device-add.js';
 import { recoveryKeyAuth, recoveryKeySettings, recoveryKeyUsed } from '../routes/recovery-key.js';
 import { requestChallengeRoutes } from '../routes/request-challenge.js';
 import { signedActionOf, takeChallenge, type SignedPart } from '../http/signed-request.js';
-import { ACTION, FRESH_WAY_MS } from '@ledgerline/seal';
+import { ACTION } from '@ledgerline/seal';
+import { wayInOf, type WayIn } from './way-in.js';
 
 /** Budgets checked per ensure_all step (docs/multi-user.md 6.2). */
 export const ENSURE_BATCH = 25;
@@ -76,10 +77,11 @@ export interface Caller {
   countUsage?: boolean;
   share?: ShareState;
   /**
-   * The session signed in with a passkey added less than 7 days ago, or with none (a recovery-key sign-in always
-   * adds one): a key change of a locked budget from it waits (D-89). True when not given.
+   * How the session came in (store/way-in.ts): its passkey and when it was added, or the recovery key and when it
+   * signed in; null when the Directory can't tell. The store judges from it whether a key change of a locked budget
+   * from this session waits (D-89); one with none given counts as fresh.
    */
-  freshWay?: boolean;
+  wayIn?: WayIn | null;
   /**
    * A signed request's challenge (http/signed-request.ts): one the Directory gave this session for the request
    * the path stands for, marked used now. The store checks the signature against its log. Absent when none came.
@@ -364,7 +366,7 @@ export class Directory extends DurableObject<Env> {
         isAdmin: m.isAdmin,
         countUsage: share.count,
         share: share.state,
-        freshWay: this.freshWay(who.sessionId, now),
+        wayIn: wayInOf(this.ctx.storage.sql, who.sessionId),
         ...(action && challenge ? { signed: { action, challenge, signature: signedIn!.signature } } : {}),
         ...(path === '/api/session' ? { recoveryKeyUsedAt: await recoveryKeyUsed(env, m.userId, now) } : {}),
       },
@@ -413,21 +415,6 @@ export class Directory extends DurableObject<Env> {
       this.ctx.storage.sql.exec(`SELECT 1 FROM app_state WHERE key = ?`, deletingKey(budgetId)).toArray()
         .length > 0
     );
-  }
-
-  /**
-   * Whether a session came in by a fresh way (D-89): its passkey was added less than 7 days ago, or it has none
-   * this can find. A recovery-key sign-in always makes a new passkey, so it is fresh for its first 7 days.
-   */
-  private freshWay(sessionId: string | null, now: number): boolean {
-    if (!sessionId) return true;
-    const r = this.ctx.storage.sql
-      .exec(
-        `SELECT p.created_at FROM auth_session s JOIN passkey p ON p.id = s.passkey_id WHERE s.id = ?`,
-        sessionId,
-      )
-      .toArray()[0];
-    return !r || now - Number(r.created_at) < FRESH_WAY_MS;
   }
 
   /** The budget the ops token's health check reports on: the first one (the owner's). */

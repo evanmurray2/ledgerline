@@ -5,7 +5,10 @@
 //   2. seals its first snapshot, and sends the first entry and the snapshot;
 //   3. asks the server to seal the budget, and reads the snapshot back.
 // If a step before the seal fails, the copy is emptied again and nothing the server stored is in use: the next
-// start begins again from the top.
+// start begins again from the top. Once sealed, the budget is locked whatever comes after: the copy and its place
+// in the log are kept, and a read-back that fails (no answer, or not the bytes sent) is tried again; if it still
+// fails, the start ends well all the same and says so (`snapshotRead: false`): this device opens the budget from its
+// kept place, and writes its next snapshot when one is due.
 import { startChain, toHex, type BudgetKeys, type Bytes, type Entry } from '@ledgerline/seal';
 import { LOG_SCHEMA_VERSION } from '../seal/log-versions.js';
 import { SYNC_FORMAT } from '../sync-tables.js';
@@ -42,13 +45,43 @@ export interface StartDeps {
   clock: () => number;
   /** A new id for the first snapshot (a ULID). */
   snapshotId: string;
+  /**
+   * The budget's time zone (IANA): the device's own, from Intl, when not given. One the device can't use (not a
+   * zone Intl knows) falls back to America/Los_Angeles, the server's default before D-102.
+   */
+  timeZone?: string;
   encode: (e: Entry) => Uint8Array;
   start: StartTransport;
   /** The sealed budget's snapshot routes, for the read-back after the seal. */
   snapshots: Pick<SnapshotTransport, 'manifest' | 'chunk'>;
 }
 
-export type StartResult = { ok: true; log: DeviceLog } | { ok: false; why: string };
+export type StartResult = { ok: true; log: DeviceLog; snapshotRead: boolean } | { ok: false; why: string };
+
+/** How many times the first snapshot is read back after the seal. */
+const READ_BACK_TRIES = 3;
+
+/** The zone a new budget gets: the one asked for, else the device's, if Intl knows it; else the old default. */
+export function budgetZone(asked?: string): string {
+  const zone = asked ?? deviceZone();
+  try {
+    if (zone) {
+      new Intl.DateTimeFormat('en-US', { timeZone: zone });
+      return zone;
+    }
+  } catch {
+    // Not a zone this device knows.
+  }
+  return 'America/Los_Angeles';
+}
+
+function deviceZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return undefined;
+  }
+}
 
 const same = (a: Uint8Array, b: Uint8Array): boolean =>
   a.length === b.length && a.every((x, i) => x === b[i]);
@@ -60,6 +93,7 @@ export async function startOnDevice(engine: LocalEngine, d: StartDeps): Promise<
     await engine.clear();
     return { ok: false, why };
   };
+  let sealedNow = false;
   try {
     await engine.clear();
     const now = d.clock();
@@ -75,10 +109,12 @@ export async function startOnDevice(engine: LocalEngine, d: StartDeps): Promise<
       now,
     );
     await engine.db.batch([
-      // The budget's own row, as the server made it on first use before D-102.
+      // The budget's own row, as the server made it on first use before D-102, in this device's time zone.
       engine.db
-        .prepare(`INSERT INTO budget (id, name, created_at, updated_at) VALUES (?1, 'My budget', ?2, ?2)`)
-        .bind(d.budgetId, now),
+        .prepare(
+          `INSERT INTO budget (id, name, time_zone, created_at, updated_at) VALUES (?1, 'My budget', ?2, ?3, ?3)`,
+        )
+        .bind(d.budgetId, budgetZone(d.timeZone), now),
       // No bank update was filed yet.
       engine.db
         .prepare(`INSERT INTO setting (budget_id, key, value, updated_at) VALUES (?1, ?2, ?3, ?4)`)
@@ -108,22 +144,35 @@ export async function startOnDevice(engine: LocalEngine, d: StartDeps): Promise<
     }
     const done = await d.start.seal(startId);
     if (!done.ok) return await fail(done.why ?? 'The server did not lock the budget.');
+    sealedNow = true;
 
     // ---- sealed. The device's place is kept, and the snapshot is read back.
     await engine.note(LogSession.PLACE, log.save());
-    const manifest = await d.snapshots.manifest(d.snapshotId);
-    if (!manifest) return { ok: false, why: 'The server did not keep the first snapshot.' };
-    const opened = await log.openManifest({ ...sealed, manifest: manifest as Bytes }, 1);
-    if (toHex(opened.header.entryHash) !== toHex(d.genesis.hash))
-      return { ok: false, why: 'The server did not keep the first snapshot.' };
-    for (const [i, p] of plain.entries()) {
-      const stored = await d.snapshots.chunk(d.snapshotId, i + 1);
-      if (!stored || !same(await log.openChunk(opened.manifest, i + 1, stored), p))
-        return { ok: false, why: 'The server did not keep the first snapshot.' };
-    }
-    return { ok: true, log };
+    let read = false;
+    for (let i = 0; i < READ_BACK_TRIES && !read; i++)
+      read = await readBack(log, d, sealed, plain).catch(() => false);
+    return { ok: true, log, snapshotRead: read };
   } catch (x) {
-    await engine.clear();
+    // Before the seal nothing is in use; after it, the copy is the budget's and stays.
+    if (!sealedNow) await engine.clear();
     throw x;
   }
+}
+
+/** Whether the server holds the first snapshot whole: its manifest and every chunk open to what was sealed. */
+async function readBack(
+  log: DeviceLog,
+  d: StartDeps,
+  sealed: { header: Bytes; signature: Bytes },
+  plain: Uint8Array[],
+): Promise<boolean> {
+  const manifest = await d.snapshots.manifest(d.snapshotId);
+  if (!manifest) return false;
+  const opened = await log.openManifest({ ...sealed, manifest: manifest as Bytes }, 1);
+  if (toHex(opened.header.entryHash) !== toHex(d.genesis.hash)) return false;
+  for (const [i, p] of plain.entries()) {
+    const stored = await d.snapshots.chunk(d.snapshotId, i + 1);
+    if (!stored || !same(await log.openChunk(opened.manifest, i + 1, stored), p)) return false;
+  }
+  return true;
 }

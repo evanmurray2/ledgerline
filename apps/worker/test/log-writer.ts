@@ -15,6 +15,7 @@ import {
   type BudgetKeys,
   type Bytes,
   type Entry,
+  type Kind,
 } from '@ledgerline/seal';
 
 export const BUDGET = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
@@ -38,7 +39,7 @@ export class Writer {
   /** The inbox pair of version 1, private half too: a device holds it. */
   inbox: unknown = null;
 
-  fields(kind: number, over: Record<string, unknown> = {}) {
+  fields(kind: Kind, over: Record<string, unknown> = {}) {
     this.time += 1000;
     return {
       kind,
@@ -85,7 +86,7 @@ export class Writer {
   }
 
   /** A sealed entry of any kind with a change set's place (a bank entry, a scan). */
-  async entry(kind: number, text: string, over: Record<string, unknown> = {}): Promise<Entry> {
+  async entry(kind: Kind, text: string, over: Record<string, unknown> = {}): Promise<Entry> {
     return (this.last = await sealedEntry(this.fields(kind, over), utf8(text), this.keys));
   }
 

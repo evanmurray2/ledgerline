@@ -10,6 +10,12 @@ const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 
 
 // The Worker serves dist/ as static assets with an SPA fallback. In dev, /api is proxied to `wrangler dev`
 // unless VITE_MOCK=1, which serves every endpoint from src/mock (that code never reaches a production build).
+// The e2e Worker's run-signing keys (src/keys/worker-keys.ts), for an e2e build only (build:e2e). Never in a release:
+// the deploy builds with APP_VERSION set.
+const e2eRunKeys = process.env.E2E_RUN_KEYS ?? '';
+if (e2eRunKeys && process.env.APP_VERSION)
+  throw new Error('E2E_RUN_KEYS is for e2e builds only, never with APP_VERSION (a release)');
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   // The mock API's November copy (src/mock): the phone's real engine, in the browser or in Node for the tests. Kept
@@ -29,6 +35,7 @@ export default defineConfig({
     __BUILD_ID__: JSON.stringify(process.env.APP_VERSION ?? 'dev'),
     __APP_VERSION__: JSON.stringify(process.env.APP_VERSION ?? 'dev'),
     __WEB_VERSION__: JSON.stringify(pkg.version),
+    __E2E_RUN_KEYS__: JSON.stringify(e2eRunKeys),
   },
   build: { outDir: 'dist', sourcemap: false, chunkSizeWarningLimit: 800 },
   // The phone's engine (D-45) runs in a module Web Worker with code split from the app.

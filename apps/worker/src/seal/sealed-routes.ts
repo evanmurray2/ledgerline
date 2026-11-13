@@ -21,7 +21,7 @@ import { classifyUsage, dailyLimits, usageToday, utcDay } from '../sync/breaker.
 import { ITEM_LIMIT, makeProvider } from '../sync/provider.js';
 import { sealedFetchId } from './fetch-job.js';
 import { finishNewLink } from './link-watch.js';
-import { abandonSealedRun } from './runs.js';
+import { abandonSealedRun } from './run-steps.js';
 import { isSealedStore } from './start.js';
 
 export const sealedApi = new Hono<AppEnv>();
