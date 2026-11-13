@@ -1,6 +1,6 @@
 # Phase 1 measurements (go/no-go)
 
-How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history. The measures of the old server path (`phone`, `refile-payees` and `fill-plaid-name`) were removed with that path (D-102); their sections are history too.
+How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history. The measures of the old server path (`phone`, `refile-payees` and `fill-plaid-name`) were removed with that path (D-102); their sections are history too, and name other files since removed with them (`routes/sync.ts`, `sync/*.ts`, `measure/*.measure.ts`, `.github/workflows/phase0.yml`, `test/read-cost.test.ts`, `http/etag.ts`).
 
 ## Update: the last CPU times read from Cloudflare, and how CPU is judged from now on (Nov 13, 2026)
 
@@ -113,7 +113,7 @@ Phase 0 of `docs/privacy.md`: what its section 5.5 adds to the fetch step for ea
 
 **What the harness counts.** `measure/harness.ts` used `process.cpuUsage()`, which also counts Node's compiler and garbage-collector threads: about twice the step's own time (51 against 23 ms, 22 against 14). `process.threadCpuUsage()` is counted in 4 ms ticks on Linux (many readings exactly 0, 4 or 8), too coarse for these steps. The harness now uses wall time on the test's thread: a step is synchronous SQLite and JavaScript with no I/O, and wall time matched thread CPU within 0.5 ms. Run measures alone. Numbers above this section are `process.cpuUsage()`: read them as roughly half.
 
-**Key lookups scanned the table.** Every row of a store has the same `budget_id`, but with no table statistics SQLite takes `budget_id = ?1` on an index such as `bank_txn_connection_created` for a selective one and, for `budget_id = ?1 AND provider_txn_id IN (…)` or `txn_key IN (…)`, reads every row instead of looking up the keys: 1,751 rows for 25 keys in `test/key-lookups.test.ts`, about 3,000 in the measure, several times a processing step. The hot lookups now write `+budget_id`, so the key's index is used: `loadBankRows`, four in `sync/pending-match.ts`, one each in `sync/process.ts`, `sync/refile-payees.ts` and `routes/transactions.ts` (PR #108), and the overlay and payee lookups in `sync/file-fresh.ts`. Those whose row order is used keep the old order with `ORDER BY connection_id, created_at, provider_txn_id`. Same results: 12 covered, 12 matched, 24 asked, every run. `ANALYZE` works in workerd but would change the plan, and so the row order, of every other query too, so it wasn't used.
+**Key lookups scanned the table.** Every row of a store has the same `budget_id`, but with no table statistics SQLite takes `budget_id = ?1` on an index such as `bank_txn_connection_created` for a selective one and, for `budget_id = ?1 AND provider_txn_id IN (…)` or `txn_key IN (…)`, reads every row instead of looking up the keys: 1,751 rows for 25 keys in `test/key-lookups.test.ts`, about 3,000 in the measure, several times a processing step. The hot lookups now write `+budget_id`, so the key's index is used: `loadBankRows`, four in `sync/pending-match.ts`, one each in `sync/process.ts`, `sync/refile-payees.ts` (since removed) and `routes/transactions.ts` (PR #108), and the overlay and payee lookups in `sync/file-fresh.ts`. Those whose row order is used keep the old order with `ORDER BY connection_id, created_at, provider_txn_id`. Same results: 12 covered, 12 matched, 24 asked, every run. `ANALYZE` works in workerd but would change the plan, and so the row order, of every other query too, so it wasn't used.
 
 A plan audit over every measure (each distinct SELECT's `EXPLAIN QUERY PLAN`, flagging an index used on `budget_id` alone) leaves whole-table reads of small tables (payees, aliases, entries) and the finished `plaid_name` fill job.
 
@@ -129,7 +129,7 @@ SQL time in the two steps (timed per statement): 10 and 17 ms before, 7 and 5 no
 
 ## Update: changes in an edit's answer (Nov 9, 2026)
 
-`measure/phone.measure.ts` (`editAnswer`): the change page an online edit's answer carries (`routes/sync.ts` `syncInAnswer`, at most 50 changes), on the same 3,000-transaction budget, 20 edits each.
+`measure/phone.measure.ts` (since removed) (`editAnswer`): the change page an online edit's answer carries (`routes/sync.ts` (since removed) `syncInAnswer`, at most 50 changes), on the same 3,000-transaction budget, 20 edits each.
 
 | Answer                    | ms median / p90 / max |
 | ------------------------- | --------------------- |
@@ -140,7 +140,7 @@ It adds well under 1 ms to the edit, and saves the phone's separate sync request
 
 ## Update: the pending matcher without text (Nov 5, 2026)
 
-`docs/payee-names.md` 9.3, PR 4: a posted row and a bank pending row pair only on exact evidence (merchant keys compared as sets, worked out once per row), and the rest is asked about. Same files as below, five runs each of `measure/entry-covers.measure.ts` and three of `measure/refile-payees.measure.ts`, against `main` before this change. ms:
+`docs/payee-names.md` 9.3, PR 4: a posted row and a bank pending row pair only on exact evidence (merchant keys compared as sets, worked out once per row), and the rest is asked about. Same files as below, five runs each of `measure/entry-covers.measure.ts` and three of `measure/refile-payees.measure.ts` (since removed), against `main` before this change. ms:
 
 | Step                                            | Before (main)                | Now                          |
 | ----------------------------------------------- | ---------------------------- | ---------------------------- |
@@ -167,7 +167,7 @@ The new steps add one indexed read of the batch's accounts' entries per step, an
 
 ## Update: payees from Plaid, and the one-time re-file (Nov 5, 2026)
 
-`measure/refile-payees.measure.ts`: a 3,000-transaction history at 100 per page (`tools/plaid-mock`), processed to the end, then every payee turned back into one the old rules made and the re-file job of `docs/payee-names.md` 8 (`src/sync/refile-payees.ts`) run to the end. Three runs, ms (median / p90 / max):
+`measure/refile-payees.measure.ts` (since removed): a 3,000-transaction history at 100 per page (`tools/plaid-mock`), processed to the end, then every payee turned back into one the old rules made and the re-file job of `docs/payee-names.md` 8 (`src/sync/refile-payees.ts` (since removed)) run to the end. Three runs, ms (median / p90 / max):
 
 | Step                                                  | Steps | ms median / p90 / max      |
 | ----------------------------------------------------- | ----- | -------------------------- |
@@ -179,7 +179,7 @@ The max of processing is the first, cold step of each run, as before. The mock g
 
 ## Update: the one-time plaid_name fill (Nov 5, 2026)
 
-`measure/fill-plaid-name.measure.ts`: the job step of `docs/payee-names.md` 8.1 (`src/sync/fill-plaid-name.ts`) on a 3,000-transaction history, every `plaid_name` cleared, run to the end. One raw page is parsed per step and at most 100 rows are written. Two runs, ms (median / p90 / max):
+`measure/fill-plaid-name.measure.ts` (since removed): the job step of `docs/payee-names.md` 8.1 (`src/sync/fill-plaid-name.ts` (since removed)) on a 3,000-transaction history, every `plaid_name` cleared, run to the end. One raw page is parsed per step and at most 100 rows are written. Two runs, ms (median / p90 / max):
 
 | Page size (transactions, bytes) | Steps | ms median / p90 / max   |
 | ------------------------------- | ----- | ----------------------- |
@@ -190,7 +190,7 @@ Production pages hold 100 transactions (D-6; the owner's largest page is about 2
 
 ## Update: sync pages for the phone's copy (Nov 3, 2026)
 
-`measure/phone.measure.ts`: `GET /api/sync` on a 3,000-transaction budget (node:sqlite, SQLite included, as a Durable Object pays it), 200 rows a page.
+`measure/phone.measure.ts` (since removed): `GET /api/sync` on a 3,000-transaction budget (node:sqlite, SQLite included, as a Durable Object pays it), 200 rows a page.
 
 | Request                                | Count | ms median / p90 / max |
 | -------------------------------------- | ----- | --------------------- |
@@ -220,7 +220,7 @@ A first-month edit now takes 18 small invocations instead of 6, and a 3,000-tran
 
 ## Update: phase 0 on Cloudflare, a Durable Object per budget (Nov 2, 2026)
 
-`.github/workflows/phase0.yml` deployed a throwaway Worker (`ledgerline-phase0`, not the live app) and ran the real code inside a SQLite Durable Object through the D1-shaped adapter (`apps/worker/src/store/adapter.ts`). Each operation ran 30 times or more as its own alarm invocation, one group of operations at a time with a quiet minute between groups. CPU per invocation comes from GraphQL Analytics (`durableObjectsInvocationsAdaptiveGroups`, run 41395183161). The Worker was deleted afterwards.
+`.github/workflows/phase0.yml` (since removed) deployed a throwaway Worker (`ledgerline-phase0`, not the live app) and ran the real code inside a SQLite Durable Object through the D1-shaped adapter (`apps/worker/src/store/adapter.ts`). Each operation ran 30 times or more as its own alarm invocation, one group of operations at a time with a quiet minute between groups. CPU per invocation comes from GraphQL Analytics (`durableObjectsInvocationsAdaptiveGroups`, run 41395183161). The Worker was deleted afterwards.
 
 Data: the November budget plus 3,296 bank rows over three years; a 3,000-transaction backfill at 100 per page; the 36-month, 60-category budget. Step sizes: apply 25 events, processing 25 events, recompute 2 months.
 
@@ -258,7 +258,7 @@ What changes in the design (`docs/multi-user.md`):
 
 ## Update: SQLite in-process, for a database per budget (Nov 2, 2026)
 
-Phase 0 of `docs/multi-user.md` v2 asked whether the hot paths would still fit 10 ms of CPU if each budget's SQLite ran inside a Durable Object, on the same thread as the code, instead of inside D1. `apps/worker/measure/store.measure.ts` runs the real code against `node:sqlite` and reports two numbers for each path. The first is today's Worker CPU, with SQLite excluded as in production. The second is the CPU spent executing SQLite and building result rows (`NodeD1.stats.execMicros`), which a Durable Object would add. Data: the November budget plus 3,296 bank rows over three years; a 3,000-transaction backfill at 100 per page; and the 36-month, 60-category budget.
+Phase 0 of `docs/multi-user.md` v2 asked whether the hot paths would still fit 10 ms of CPU if each budget's SQLite ran inside a Durable Object, on the same thread as the code, instead of inside D1. `apps/worker/measure/store.measure.ts` (since removed) runs the real code against `node:sqlite` and reports two numbers for each path. The first is today's Worker CPU, with SQLite excluded as in production. The second is the CPU spent executing SQLite and building result rows (`NodeD1.stats.execMicros`), which a Durable Object would add. Data: the November budget plus 3,296 bank rows over three years; a 3,000-transaction backfill at 100 per page; and the 36-month, 60-category budget.
 
 Median ms over three runs of 7 (one run's p90 in brackets). This is a shared, noisy container, so read the ranges, not single values:
 
@@ -305,7 +305,7 @@ Sign-in (D-27) adds one D1 read per API request (the session row) and, at sign-i
 
 ## Update: database reads per screen (Nov 1, 2026)
 
-On the first day with 7 banks (578 transactions) the account passed D1's free 5 million rows read per day. Each screen reads every transaction (about 4 rows per transaction through `v_transaction`), and the tab badges loaded the full Activity and Accounts views on every screen, so each visit or edit cost about 16,000 reads. Measured on about 600 transactions (`apps/worker/test/read-cost.test.ts`, which now fails if these grow):
+On the first day with 7 banks (578 transactions) the account passed D1's free 5 million rows read per day. Each screen reads every transaction (about 4 rows per transaction through `v_transaction`), and the tab badges loaded the full Activity and Accounts views on every screen, so each visit or edit cost about 16,000 reads. Measured on about 600 transactions (`apps/worker/test/read-cost.test.ts` (since removed), which now fails if these grow):
 
 | Request                                                                                                       | Before                                   | After                                                      |
 | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------- |
@@ -332,7 +332,7 @@ A day of active use (a few hundred screen visits and edits) is now in the hundre
 
 Then (migration 0007): every screen response carries an ETag built from `budget.data_version` (bumped by every
 successful change through the API and by the daily jobs), the sync and recompute counters, connection updates, the
-date and the deployed commit (`apps/worker/src/http/etag.ts`). A screen that hasn't changed answers 304 for a few
+date and the deployed commit (`apps/worker/src/http/etag.ts` (since removed)). A screen that hasn't changed answers 304 for a few
 rows read. The app saves its data on the device and shows it at once after confirming the session (`state/saved.ts`;
 cleared on sign-out and when a session ends), and categorizing no longer refetches Activity: the screen already
 shows the change and the counts are adjusted locally. Estimates for a very heavy day (about 3,000 screen visits and
@@ -359,7 +359,7 @@ Measured on local `wrangler dev` (workerd, wrangler 4.156.0), against a Plaid-sh
 
 ## How CPU was measured
 
-workerd freezes `Date.now()` and `performance.now()` while code runs, so in-Worker timers can't measure CPU. The harness (`tools/measure/`) takes V8 CPU profiles through workerd's inspector and counts every non-idle sample. A calibration loop measures 14.2 ms in Node and 15.7–16.9 ms under the profiler, so the profiler is accurate.
+workerd freezes `Date.now()` and `performance.now()` while code runs, so in-Worker timers can't measure CPU. The harness (`tools/measure/` (since removed)) takes V8 CPU profiles through workerd's inspector and counts every non-idle sample. A calibration loop measures 14.2 ms in Node and 15.7–16.9 ms under the profiler, so the profiler is accurate.
 
 Whole-request profiles of a step on local dev are not usable on their own. Locally, D1 and R2 are simulators in the same workerd process, and their work shows up in the profile as native `fetch`, `get` and `put` frames, garbage collection and "(program)". Identical pages measured anywhere from 15 ms to 140 ms, and a request that does nothing measured 0.3–8.7 ms. So the go/no-go numbers come from two parts:
 
@@ -411,9 +411,9 @@ All pass:
 
 ## Budget edit (36 months, 60 categories)
 
-Dataset (`apps/worker/src/measure/budget-seed.ts`): 36 months, 60 categories (58 spending or saving plus 2 card payment categories), 5,402 budget lines (about 150 a month on 4 cash and 2 card accounts), and 2,124 assignments. The edit changes one category's assignment in the first budget month.
+Dataset (`apps/worker/src/measure/budget-seed.ts` (since removed)): 36 months, 60 categories (58 spending or saving plus 2 card payment categories), 5,402 budget lines (about 150 a month on 4 cash and 2 card accounts), and 2,124 assignments. The edit changes one category's assignment in the first budget month.
 
-Per-edit compute in workerd (`/__measure/kernel-budget`, `tools/measure/budget-kernel.mjs`) covers parsing D1's response, mapping rows, `computeBudget()`, encoding and hashing every month, and serializing the write batch:
+Per-edit compute in workerd (`/__measure/kernel-budget`, `tools/measure/budget-kernel.mjs` (since removed)) covers parsing D1's response, mapping rows, `computeBudget()`, encoding and hashing every month, and serializing the write batch:
 
 | Months recomputed in one invocation  | CPU, ms (median, best) | D1 response size |
 | ------------------------------------ | ---------------------- | ---------------- |
@@ -425,7 +425,7 @@ Per-edit compute in workerd (`/__measure/kernel-budget`, `tools/measure/budget-k
 
 Half the 36-month cost is parsing the 1 MB of activity rows. SQL grouping doesn't shrink it much at about 2.5 transactions per category per month, and funding card purchases needs date order inside each month. So the recompute is chunked (decisions.md D-22).
 
-The whole first-month edit on SQLite (`apps/worker/measure/budget.measure.ts`, the same code path through `node:sqlite`):
+The whole first-month edit on SQLite (`apps/worker/measure/budget.measure.ts` (since removed), the same code path through `node:sqlite`):
 
 |                              | Value                                                                                                                                    |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
