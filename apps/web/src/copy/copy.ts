@@ -45,6 +45,7 @@ import { connectivity } from '../state/connectivity';
 import { EngineHost, type EngineIdentity, type QueuedEdit, type SealedKeys } from './host';
 import { usage } from '../usage/tracker';
 import { isServerRead } from './server-reads';
+import { shownFields } from './shown';
 import { assert, canUsePasskeys, keepsCopy, type RequestOptionsJSON } from './passkey';
 import {
   type CopyRecord,
@@ -1159,13 +1160,14 @@ export async function editOnDevice(method: string, path: string, body: unknown):
   // The edit's own id and time, made before it runs: the copy runs it at that time and names its new rows from
   // that id.
   const edit = await newEdit();
+  const shown = await shownFields(host!, method, path, body, () => syncNow({ quiet: true }));
   // One step in the engine: the edit runs on the copy and joins the queue, or neither.
   const r = await host!.enqueue({
     id: edit.id,
     at: edit.at,
     method,
     path,
-    body,
+    body: shown ? { ...(body as object | undefined), ...shown } : body,
     appVersion: typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev',
   });
   const json = r.body ? (JSON.parse(r.body) as unknown) : null;
