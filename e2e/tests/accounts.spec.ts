@@ -101,3 +101,11 @@ test('Desktop: an account opens in the side panel, its transactions over it, and
   await expect(page).toHaveURL(/\/accounts$/);
   await expect(panel.getByRole('dialog')).toHaveCount(0);
 });
+
+test('Owed to you opened from Accounts goes back to Accounts', async ({ page }) => {
+  await page.goto('/accounts');
+  await page.getByRole('link', { name: /Owed to you · not in this total/ }).click();
+  await expect(page).toHaveURL(/\/owed\?from=accounts/);
+  await page.getByRole('button', { name: 'Back to accounts' }).click();
+  await expect(page).toHaveURL(/\/accounts$/);
+});
