@@ -70,6 +70,23 @@ export function expireIdle(sql: SqlStorage, now: number): ExpireOutcome {
   return out;
 }
 
+/** Accounts marked idle (deleted 30 days later) and deletions under way: counts only, for logs and health. */
+export interface IdleCounts {
+  marked: number;
+  deleting: number;
+}
+
+export function idleCounts(sql: SqlStorage): IdleCounts {
+  const r = sql
+    .exec(
+      `SELECT count(*) FILTER (WHERE key LIKE 'expire:%') AS marked,
+         count(*) FILTER (WHERE key LIKE 'deleting:%') AS deleting
+       FROM app_state WHERE key LIKE 'expire:%' OR key LIKE 'deleting:%'`,
+    )
+    .one();
+  return { marked: Number(r.marked), deleting: Number(r.deleting) };
+}
+
 /**
  * The first step of deleting an account, shared by Delete account and the idle deletion: its members are marked
  * deleting, their sessions and devices go, the budget's routes and members go, and the budget is marked deleting,
@@ -122,12 +139,11 @@ export async function expireIdleStep(
     const userIds = prev ? (JSON.parse(String(prev.state)) as { userIds?: string[] }).userIds : undefined;
     await queueDelete(d.userId, d.budgetId, userIds);
   }
-  const marked = storage.sql.exec(`SELECT count(*) AS n FROM app_state WHERE key LIKE 'expire:%'`).one();
-  // Counts only: a bug shows here before it deletes much.
+  // Counts only: a bug shows here (and in GET /api/health) before it deletes much.
   console.log(
     JSON.stringify({
       event: 'idle_accounts',
-      marked: Number(marked.n),
+      marked: idleCounts(storage.sql).marked,
       newly: out.marked,
       cleared: out.cleared,
       started: out.start.length,

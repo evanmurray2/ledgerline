@@ -33,7 +33,7 @@ import { JobRunner, nextUtc, type Handler } from './jobs.js';
 import { SHARE_PAUSED, Shares, type ShareState } from './shares.js';
 import { signupOptions } from '../routes/signup.js';
 import { deletingKey, peopleRoutes } from '../routes/people.js';
-import { expireIdleStep } from './idle-accounts.js';
+import { type IdleCounts, expireIdleStep, idleCounts } from './idle-accounts.js';
 import { deviceAddRoutes } from '../routes/device-add.js';
 import { recoveryKeyAuth, recoveryKeySettings, recoveryKeyUsed } from '../routes/recovery-key.js';
 import { requestChallengeRoutes } from '../routes/request-challenge.js';
@@ -432,6 +432,11 @@ export class Directory extends DurableObject<Env> {
   async firstBudget(): Promise<string | null> {
     const r = this.ctx.storage.sql.exec(`SELECT id FROM budget ORDER BY created_at, id LIMIT 1`).toArray()[0];
     return r ? String(r.id) : null;
+  }
+
+  /** The ops token's health check: its budget, and the idle accounts' counts (store/idle-accounts.ts). */
+  async opsHealth(): Promise<{ budgetId: string | null; idle: IdleCounts }> {
+    return { budgetId: await this.firstBudget(), idle: idleCounts(this.ctx.storage.sql) };
   }
 
   /**

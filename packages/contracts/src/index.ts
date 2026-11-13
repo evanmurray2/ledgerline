@@ -822,6 +822,11 @@ export const HealthView = z.object({
     readPct: z.number(),
     writePct: z.number(),
   }),
+  /**
+   * Accounts nobody opened for 24 months, marked and deleted 30 days later (docs/privacy.md 5.8), and deletions
+   * under way. Counts only; added by the Worker for the ops token.
+   */
+  idleAccounts: z.object({ marked: z.number().int(), deleting: z.number().int() }).optional(),
 });
 export type HealthView = z.infer<typeof HealthView>;
 
