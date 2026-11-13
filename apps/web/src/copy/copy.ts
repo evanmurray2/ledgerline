@@ -26,6 +26,7 @@ import {
 } from './host';
 import { shadowBefore, shadowFinish, type Started } from './shadow';
 import { usage } from '../usage/tracker';
+import { isServerRead } from './server-reads';
 import { assert, canUsePasskeys, keepsCopy, type RequestOptionsJSON } from './passkey';
 import {
   type CopyRecord,
@@ -948,22 +949,11 @@ async function save(): Promise<void> {
 
 // ---------------------------------------------------------------- reads and changes from the app
 
-/** Reads the server still answers itself (everything else is worked out from the copy). */
-const SERVER_READS = [
-  /^\/api\/session$/,
-  /^\/api\/sync(\/|\?|$)/,
-  /^\/api\/auth\//,
-  /^\/api\/settings\/connections$/,
-  /^\/api\/settings\/security/,
-  /^\/api\/export\//,
-  /^\/api\/cutover\//,
-];
-
+/** A read worked out from the copy: everything but what the server still answers itself (server-reads.ts). */
 export function readsLocally(method: string, path: string): boolean {
   if (state.status !== 'ready' || !host) return false;
   if (method !== 'GET') return false;
-  const p = path.split('?')[0]!;
-  return !SERVER_READS.some((r) => r.test(p));
+  return !isServerRead(path);
 }
 
 export async function read(path: string): Promise<{ status: number; body: string }> {

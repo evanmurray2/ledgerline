@@ -157,9 +157,9 @@ function checkBodyAmounts(v: unknown): void {
 }
 
 /** A missing thing, said so the reader can act (docs/copy.md rule 7). */
-export const GONE = 'This was changed or removed. Pull down to refresh.';
+export const GONE = 'This was changed or removed. Check it and try again.';
 /** A change made against an older copy of the data. */
-export const CHANGED = 'This changed. Pull down to refresh.';
+export const CHANGED = 'This changed. Check it and try again.';
 export const TRY_AGAIN = 'Something went wrong. Try again.';
 export const BAD_MONTH = 'That month isn’t in your budget. Pick another month.';
 /**

@@ -330,7 +330,8 @@ export function FirstSortScreen() {
                       : setOn({ ...on, [n]: !on[n] })
                   }
                   className={cx(
-                    'hit h-9 rounded-full border px-3.5 text-md font-semibold',
+                    // A long name of your own wraps inside the chip instead of spilling out of it.
+                    'hit min-h-9 max-w-full rounded-full border px-3.5 py-1 text-left text-md font-semibold wrap-anywhere',
                     sel
                       ? 'border-accent bg-accent-soft text-accent'
                       : 'border-line-strong bg-surface text-ink-2',

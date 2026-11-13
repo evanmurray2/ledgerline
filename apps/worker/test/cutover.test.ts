@@ -23,7 +23,7 @@ import { httpTransport } from '../src/local/http-transport.js';
 import { LogSession } from '../src/local/log-session.js';
 import { FILED_KEY, FILED_LINK } from '../src/local/sealed-filing.js';
 import type { RestBatch } from '../src/routes/sync.js';
-import type { FreezeAnswer } from '../src/seal/cutover.js';
+import { CHECK_FAILED, NOT_CHECKED, type FreezeAnswer } from '../src/seal/cutover.js';
 import { PHONE, Writer } from './log-writer.js';
 import { syncPhone } from './phone.js';
 import { ownerDb } from './store-db.js';
@@ -136,12 +136,21 @@ describe('the cutover, rehearsed', () => {
     });
     expect(await (await post('/api/cutover/ready')).json()).toEqual({
       ok: true,
-      blocks: ['A bank link has not been checked yet.'],
+      blocks: [NOT_CHECKED],
     });
     expect(await freeze()).toEqual({
       ok: false,
-      why: ['A bank link has not been checked yet.'],
+      why: [NOT_CHECKED],
     });
+    // A link the check refused doesn't clear by waiting: the screen says so, not "try again in a few minutes".
+    const setCheck = (v: string | null) =>
+      ownerDb().prepare(`UPDATE bank_link SET check_result = ?2 WHERE id = ?1`).bind(LINK, v).run();
+    await setCheck('token_unreadable');
+    expect(await (await post('/api/cutover/ready')).json()).toEqual({
+      ok: true,
+      blocks: [NOT_CHECKED, CHECK_FAILED],
+    });
+    await setCheck(null);
     expect((await assign(40)).status).toBe(200);
     await stamp();
     phone = await everything(phone);

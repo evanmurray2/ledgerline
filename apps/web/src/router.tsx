@@ -4,8 +4,8 @@ import { useEffect } from 'react';
 import {
   createRootRoute,
   createRoute,
+  createBrowserHistory,
   createRouter,
-  lazyRouteComponent,
   Navigate,
   Outlet,
   redirect,
@@ -13,7 +13,7 @@ import {
   type RouterHistory,
 } from '@tanstack/react-router';
 import { AppShell } from './components/AppShell';
-import { ErrorNote, Loading } from './components/ui';
+import { Loading } from './components/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Session } from '@ledgerline/contracts';
 import { forgetSignedOut, qk, useSession } from './api/hooks';
@@ -35,39 +35,37 @@ import { ApiError } from './api/client';
 import { checkSaved, getCopy, onCopyChanged, start as startCopy, syncNow, flush, useCopy } from './copy/copy';
 import { CopyScreen } from './screens/Copy';
 import { toast } from './components/Toast';
-import { returnSearch } from './lib/back';
+import { returnSearch, sheetAwareHistory } from './lib/back';
+import { monthParam } from './lib/month-param';
+import { lazyScreen, RouteProblem } from './lib/lazy-screen';
+import { CantConnect } from './screens/CantConnect';
 
 // Screens opened now and then (Reports, Settings, Categories, first-run setup) load when first opened, so the app
-// starts with less to download and parse. After a new release, a missing piece reloads the app once.
+// starts with less to download and parse. After a new release, a missing piece reloads the app once, but never
+// with no signal or with edits waiting to send (lib/lazy-screen.tsx).
 const reports = () => import('./screens/Reports');
 const settings = () => import('./screens/Settings');
 const setup = () => import('./screens/Setup');
-const ReportsScreen = lazyRouteComponent(reports, 'ReportsScreen');
-const AppearanceSection = lazyRouteComponent(settings, 'AppearanceSection');
-const CategoriesScreen = lazyRouteComponent(settings, 'CategoriesScreen');
-const CategoryEditSheet = lazyRouteComponent(settings, 'CategoryEditSheet');
-const ConnectionsScreen = lazyRouteComponent(settings, 'ConnectionsScreen');
-const DataScreen = lazyRouteComponent(settings, 'DataScreen');
-const PrivacyScreen = lazyRouteComponent(() => import('./screens/settings/Privacy'), 'PrivacyScreen');
-const AboutScreen = lazyRouteComponent(() => import('./screens/settings/About'), 'AboutScreen');
-const DeviceCheckScreen = lazyRouteComponent(
-  () => import('./screens/settings/DeviceCheck'),
-  'DeviceCheckScreen',
-);
-const PayeesScreen = lazyRouteComponent(settings, 'PayeesScreen');
-const RenamePayeeSheet = lazyRouteComponent(settings, 'RenamePayeeSheet');
-const SettingsLayout = lazyRouteComponent(settings, 'SettingsLayout');
-const SignInSettingsScreen = lazyRouteComponent(settings, 'SignInSettingsScreen');
-const UsersScreen = lazyRouteComponent(settings, 'UsersScreen');
-const FirstSortScreen = lazyRouteComponent(setup, 'FirstSortScreen');
-const LinkBanksScreen = lazyRouteComponent(setup, 'LinkBanksScreen');
-const StartMonthScreen = lazyRouteComponent(setup, 'StartMonthScreen');
-const WelcomeScreen = lazyRouteComponent(setup, 'WelcomeScreen');
+const ReportsScreen = lazyScreen(reports, 'ReportsScreen');
+const AppearanceSection = lazyScreen(settings, 'AppearanceSection');
+const CategoriesScreen = lazyScreen(settings, 'CategoriesScreen');
+const CategoryEditSheet = lazyScreen(settings, 'CategoryEditSheet');
+const ConnectionsScreen = lazyScreen(settings, 'ConnectionsScreen');
+const DataScreen = lazyScreen(settings, 'DataScreen');
+const PrivacyScreen = lazyScreen(() => import('./screens/settings/Privacy'), 'PrivacyScreen');
+const AboutScreen = lazyScreen(() => import('./screens/settings/About'), 'AboutScreen');
+const DeviceCheckScreen = lazyScreen(() => import('./screens/settings/DeviceCheck'), 'DeviceCheckScreen');
+const PayeesScreen = lazyScreen(settings, 'PayeesScreen');
+const RenamePayeeSheet = lazyScreen(settings, 'RenamePayeeSheet');
+const SettingsLayout = lazyScreen(settings, 'SettingsLayout');
+const SignInSettingsScreen = lazyScreen(settings, 'SignInSettingsScreen');
+const UsersScreen = lazyScreen(settings, 'UsersScreen');
+const FirstSortScreen = lazyScreen(setup, 'FirstSortScreen');
+const LinkBanksScreen = lazyScreen(setup, 'LinkBanksScreen');
+const StartMonthScreen = lazyScreen(setup, 'StartMonthScreen');
+const WelcomeScreen = lazyScreen(setup, 'WelcomeScreen');
 
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
-/** A `?month=` as 'YYYY-MM'; a malformed one is dropped, so the screen shows this month instead of an error. */
-const monthParam = (v: unknown) =>
-  typeof v === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(v) ? v : undefined;
 
 function Root() {
   const session = useSession();
@@ -167,13 +165,8 @@ function Root() {
   if (s && (copy.status === 'idle' ? confirmed : copy.status === 'signed_out')) return <Loading />;
   if (!s) {
     if (session.error instanceof ApiError && session.error.status === 401) return <SignInScreen />;
-    if (session.error)
-      return (
-        <div className="p-4">
-          {/* Cloudflare's daily limit ran out (decisions.md D-37), or no signal: errorMessage() says which. */}
-          <ErrorNote error={session.error} />
-        </div>
-      );
+    // Cloudflare's daily limit ran out (decisions.md D-37), or no signal: it says which, and tries again.
+    if (session.error) return <CantConnect error={session.error} retry={() => void session.refetch()} />;
     return <Loading />;
   }
   if (s.budget.setupStep !== 'done' && !setupPath) {
@@ -188,6 +181,9 @@ function Root() {
   // A finished setup isn't run again (Back after Go to my budget): it would add every category again and set the
   // starting balances over.
   if (s.budget.setupStep === 'done' && setupPath) return <Navigate to="/budget" replace />;
+  // Steps in order: banks and categories come after the start month (a later step would fail at its end).
+  if (s.budget.setupStep === 'start' && (path === '/setup/link' || path === '/setup/categories'))
+    return <Navigate to="/setup/start" replace />;
   if (setupPath)
     return (
       <>
@@ -330,8 +326,8 @@ const activityRoute = createRoute({
     q: typeof s.q === 'number' ? String(s.q) : str(s.q),
     // One category's transactions (Reports → a category).
     category: str(s.category),
-    // The app's month; a malformed one is dropped rather than refused by the server.
-    month: monthParam(s.month),
+    // The app's month; a malformed one, or one after this month (Activity never shows one), is dropped.
+    month: monthParam(s.month, { notAfterNow: true }),
     // Opened from another tab (lib/back.ts).
     ...returnSearch(s),
   }),
@@ -573,9 +569,11 @@ const routeTree = rootRoute.addChildren([
 export function makeRouter(history?: RouterHistory) {
   return createRouter({
     routeTree,
-    history,
+    // Closing a sheet never adds a page to the history (lib/back.ts).
+    history: sheetAwareHistory(history ?? createBrowserHistory()),
     defaultPreload: false,
     defaultNotFoundComponent: () => <Navigate to="/budget" replace />,
     defaultPendingComponent: Loading,
+    defaultErrorComponent: RouteProblem,
   });
 }

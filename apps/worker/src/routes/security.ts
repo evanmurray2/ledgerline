@@ -100,8 +100,13 @@ const turnOff = (db: DB, userId: string, ids: string[], now: number) =>
 
 securityRoutes.get('/settings/security', async (c) => {
   const now = requestNow(c);
+  // A passkey made on a new device also signs that device in (add a device, sign-up, recovery) with no separate
+  // sign-in, so its last use is the later of its own sign-ins and the sessions it started.
   const pk = await c.env.DB.prepare(
-    `SELECT id, name, created_at, last_used_at FROM passkey WHERE user_id = ?1 ORDER BY created_at`,
+    `SELECT p.id, p.name, p.created_at,
+            max(coalesce(p.last_used_at, 0),
+                coalesce((SELECT max(s.created_at) FROM auth_session s WHERE s.passkey_id = p.id), 0)) AS last_used_at
+     FROM passkey p WHERE p.user_id = ?1 ORDER BY p.created_at`,
   )
     .bind(c.get('userId'))
     .all<{ id: string; name: string; created_at: number; last_used_at: number | null }>();

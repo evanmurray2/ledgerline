@@ -7,8 +7,20 @@ import { Card, ErrorNote, SectionTitle, SoftButton } from '../../components/ui';
 import { useScreen } from '../../lib/common';
 import { Page } from './common';
 import { Why } from '../../components/Why';
+import { useSession } from '../../api/hooks';
 
 // ------------------------------------------------------------------ backup and export
+
+/** The full backup's file name: today's date in the budget's time zone, not UTC (evening in the US is tomorrow there). */
+export function backupFileName(now: Date, timeZone: string | undefined): string {
+  let day: string;
+  try {
+    day = new Intl.DateTimeFormat('en-CA', { timeZone: timeZone ?? 'America/Los_Angeles' }).format(now);
+  } catch {
+    day = now.toISOString().slice(0, 10);
+  }
+  return `ledgerline-backup-${day}.ndjson`;
+}
 
 export function DataScreen() {
   useScreen('settings.data');
@@ -110,6 +122,7 @@ function ExportRow({
 function FullBackup() {
   const [state, setState] = useState<'idle' | 'working' | 'done'>('idle');
   const [error, setError] = useState<unknown>(null);
+  const zone = useSession().data?.budget.timeZone;
   const run = async () => {
     setState('working');
     setError(null);
@@ -123,7 +136,7 @@ function FullBackup() {
       } while (cursor);
       saveFile(
         new Blob([parts.join('\n') + '\n'], { type: 'application/x-ndjson' }),
-        `ledgerline-backup-${new Date().toISOString().slice(0, 10)}.ndjson`,
+        backupFileName(new Date(), zone),
       );
       setState('done');
     } catch (e) {

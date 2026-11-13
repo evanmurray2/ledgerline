@@ -15,6 +15,7 @@ import {
 import { createPortal } from 'react-dom';
 import { cx, Icon, useIsDesktop } from './ui';
 import { usage } from '../usage/tracker';
+import { closingSheet } from '../lib/back';
 
 export const PanelSlotContext = createContext<HTMLElement | null>(null);
 
@@ -72,6 +73,10 @@ function useVisibleArea(active: boolean): { top: number; height: number } | null
   return area;
 }
 
+/** What Tab can reach inside a sheet. */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 /** Drag distance (px) past which letting go closes the sheet. */
 const SWIPE_CLOSE = 90;
 
@@ -113,7 +118,8 @@ export function Sheet({
   const dragFrom = useRef<number | null>(null);
   const close = () => {
     usage.backOut(track);
-    onClose();
+    // Back to the screen under it, with no new page in the history (lib/back.ts).
+    closingSheet(onClose);
   };
   const closeRef = useRef(close);
   closeRef.current = close;
@@ -124,9 +130,30 @@ export function Sheet({
       emitModal();
     }
     const onKey = (e: KeyboardEvent) => {
+      const top = stack[stack.length - 1];
+      // Tab stays inside a sheet that covers the screen: it goes round from the last control to the first.
+      if (e.key === 'Tab' && covers && top === id && ref.current) {
+        const all = [...ref.current.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+          (el) => el.getClientRects().length > 0,
+        );
+        const first = all[0];
+        const last = all[all.length - 1];
+        const at = document.activeElement;
+        if (!first || !last) return;
+        if (!ref.current.contains(at)) {
+          e.preventDefault();
+          first.focus();
+        } else if (e.shiftKey && (at === first || at === ref.current)) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && at === last) {
+          e.preventDefault();
+          first.focus();
+        }
+        return;
+      }
       // Only the newest sheet answers, so Escape in a picker doesn't also close the sheet under it.
       if (e.key !== 'Escape') return;
-      const top = stack[stack.length - 1];
       if (covers ? top === id : top === undefined) closeRef.current();
     };
     window.addEventListener('keydown', onKey);
@@ -160,9 +187,20 @@ export function Sheet({
 
   // Focus the sheet so Escape and screen readers start here, unless a field in it took focus first (the
   // category search does, to open the keyboard).
+  // On close, focus goes back to what opened the sheet (a row, a button), once the page under it is no longer
+  // inert, unless something else took focus meanwhile.
   useEffect(() => {
     const el = ref.current;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (el && !el.contains(document.activeElement)) el.focus();
+    return () => {
+      if (!opener || opener === document.body || el?.contains(opener)) return;
+      requestAnimationFrame(() => {
+        const now = document.activeElement;
+        const free = !now || now === document.body || !now.isConnected || (el?.contains(now) ?? false);
+        if (free && opener.isConnected && !opener.closest('[inert]')) opener.focus({ preventScroll: true });
+      });
+    };
   }, []);
   const visible = useVisibleArea(covers && !isDesktop);
 
@@ -176,6 +214,8 @@ export function Sheet({
       style={drag ? { transform: `translateY(${drag}px)` } : undefined}
       className={cx(
         'flex min-h-0 flex-col bg-surface text-ink outline-none',
+        // A phone on its side: the sheet scrolls as one, so its footer can't cover the field being typed in.
+        !desktop && 'short:overflow-y-auto',
         desktop || isDesktop ? 'h-full' : 'll-sheet max-h-full rounded-t-xl shadow-overlay',
         !desktop && (gap === 'auto' ? 'flex-none' : 'flex-1'),
         !desktop && !drag && 'transition-transform duration-150',
@@ -206,6 +246,7 @@ export function Sheet({
       <div
         className={cx(
           'flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto overflow-x-hidden px-4 pt-2',
+          !desktop && 'short:flex-none short:overflow-visible',
           footer || desktop ? 'pb-3' : 'safe-pad',
         )}
       >
@@ -225,10 +266,10 @@ export function Sheet({
   }
 
   const top = {
-    small: 'h-8 shrink-0',
-    medium: 'h-14 shrink-0',
-    large: 'h-[120px] shrink-0',
-    auto: 'min-h-14 flex-1',
+    small: 'h-8 shrink-0 short:h-2',
+    medium: 'h-14 shrink-0 short:h-2',
+    large: 'h-[120px] shrink-0 short:h-2',
+    auto: 'min-h-14 flex-1 short:min-h-2',
   }[gap];
   return createPortal(
     <div

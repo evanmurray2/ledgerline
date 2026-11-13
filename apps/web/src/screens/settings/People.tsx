@@ -113,10 +113,31 @@ function when(iso: string | null): string {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/** "Admin" for the admin with no name of its own (the server's stand-in), not "Admin · Admin". */
+export function userName(u: { name: string; admin: boolean }): string {
+  if (!u.admin || u.name === 'Admin') return u.name;
+  return `${u.name} · Admin`;
+}
+
+/** "1 of 50 users", and the day's sign-ups only while sign-up is on. */
+export function usersLine(v: {
+  users: number;
+  maxUsers: number;
+  signupsToday: number;
+  signupsPerDay: number;
+  signupsOpen: boolean;
+}): string {
+  const users = `${v.users} of ${v.maxUsers} ${v.maxUsers === 1 ? 'user' : 'users'}`;
+  if (!v.signupsOpen) return `${users} · Sign-up is off`;
+  return `${users} · ${v.signupsToday} of ${v.signupsPerDay} sign-ups today · Sign-up is on`;
+}
+
 /** Settings → Users: who has an account, and turning one off or on (admins only). */
 export function UsersScreen() {
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
+  /** The account whose Turn off waits for a yes. */
+  const [askOff, setAskOff] = useState<string | null>(null);
   const first = useQuery({ queryKey: ['users'], queryFn: () => api.users() });
   /** Pages after the first, and where the next one starts (undefined: from the first page). */
   const [extra, setExtra] = useState<UsersView['list']>([]);
@@ -124,6 +145,7 @@ export function UsersScreen() {
   const v = first.data;
   const act = (id: string, action: 'turn-off' | 'turn-on' | 'retry-delete') => {
     setErr(null);
+    setAskOff(null);
     api.userAction(id, action).then(
       () => {
         setExtra([]);
@@ -142,35 +164,40 @@ export function UsersScreen() {
       {!v && (first.error ? <ErrorNote error={first.error} /> : <Loading />)}
       {v && (
         <>
-          <span className="text-sm text-muted">
-            {v.users} of {v.maxUsers} accounts · {v.signupsToday} of {v.signupsPerDay} sign-ups today ·{' '}
-            {v.signupsOpen ? 'Sign-up is on' : 'Sign-up is off'}
-          </span>
+          <span className="text-sm text-muted">{usersLine(v)}</span>
           <Problem text={err} />
           <Card>
-            {list.length === 0 && <EmptyNote inCard>No accounts yet.</EmptyNote>}
+            {list.length === 0 && <EmptyNote inCard>No users yet.</EmptyNote>}
             {list.map((u) => (
-              <div
-                key={u.id}
-                className="flex min-h-14 items-center justify-between gap-2 border-t border-divider px-3 py-2 first:border-t-0"
-              >
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="text-base font-semibold">
-                    {u.name}
-                    {u.admin ? ' · Admin' : ''}
+              <div key={u.id} className="flex flex-col border-t border-divider first:border-t-0">
+                <div className="flex min-h-14 items-center justify-between gap-2 px-3 py-2">
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-base font-semibold">{userName(u)}</span>
+                    <span className="text-xs text-muted">
+                      {STATUS[u.status] ?? u.status} · joined {when(u.joinedAt)} · last seen{' '}
+                      {when(u.lastSeenAt)}
+                    </span>
                   </span>
-                  <span className="text-xs text-muted">
-                    {STATUS[u.status] ?? u.status} · joined {when(u.joinedAt)} · last seen{' '}
-                    {when(u.lastSeenAt)}
-                  </span>
-                </span>
-                {!u.admin && u.status === 'active' && (
-                  <SoftButton onClick={() => act(u.id, 'turn-off')}>Turn off</SoftButton>
+                  {!u.admin && u.status === 'active' && askOff !== u.id && (
+                    <SoftButton onClick={() => setAskOff(u.id)}>Turn off</SoftButton>
+                  )}
+                  {!u.admin && u.status === 'disabled' && (
+                    <SoftButton onClick={() => act(u.id, 'turn-on')}>Turn on</SoftButton>
+                  )}
+                  {u.stuck && <SoftButton onClick={() => act(u.id, 'retry-delete')}>Try again</SoftButton>}
+                </div>
+                {askOff === u.id && (
+                  <ConfirmInline
+                    className="mx-3 mb-3"
+                    label={`Turn off ${userName(u)}`}
+                    confirmLabel="Turn off"
+                    track="users.turn-off"
+                    onCancel={() => setAskOff(null)}
+                    onConfirm={() => act(u.id, 'turn-off')}
+                  >
+                    Turn off this account? It can’t sign in until you turn it on again.
+                  </ConfirmInline>
                 )}
-                {!u.admin && u.status === 'disabled' && (
-                  <SoftButton onClick={() => act(u.id, 'turn-on')}>Turn on</SoftButton>
-                )}
-                {u.stuck && <SoftButton onClick={() => act(u.id, 'retry-delete')}>Try again</SoftButton>}
               </div>
             ))}
           </Card>

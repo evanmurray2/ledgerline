@@ -3,6 +3,8 @@
 @import '@fontsource/public-sans/500.css';
 @import '@fontsource/public-sans/600.css';
 @import '@fontsource/public-sans/700.css';
+/* `short:` a phone on its side (little height): bars and sheets give the content more room. */
+@custom-variant short (@media (max-height: 500px));
 
 /*
  * One token set for the whole app (docs/design-system.md). Light values first; the dark block swaps them.
@@ -410,6 +412,15 @@
 }
 .safe-pad {
   padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+}
+/* A phone on its side: little height, so the bars at the bottom keep only what they need. */
+@media (max-height: 500px) {
+  .safe-tabs {
+    padding-bottom: max(4px, env(safe-area-inset-bottom, 0px));
+  }
+  .safe-foot {
+    padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  }
 }
 
 @keyframes ll-sheet-up {

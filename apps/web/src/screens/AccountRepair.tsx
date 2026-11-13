@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
-import { useAccounts, qk } from '../api/hooks';
+import { useAccounts, useConnections, qk } from '../api/hooks';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import { Banner, ErrorNote, PrimaryButton } from '../components/ui';
 import { budgetDateTime } from '../lib/dates';
@@ -36,6 +36,12 @@ export function RepairScreen() {
   const accts = (q.data?.groups ?? []).flatMap((g) => g.accounts).filter((a) => a.institution === inst);
   // A link that no longer needs signing in (or no longer exists): nothing to do here.
   const nothingToDo = step === 'before' && !!q.data && !repair;
+  // A link that isn't there at all (removed, or a bad address) says so, not "doesn't need you to sign in again".
+  const conns = useConnections();
+  const missing =
+    nothingToDo &&
+    !!conns.data &&
+    !conns.data.items.some((i) => i.id === connectionId && i.status !== 'removed');
   const start = async () => {
     setError(null);
     let signedIn = false;
@@ -99,6 +105,8 @@ export function RepairScreen() {
           <span className="text-base font-bold">Syncing {inst}</span>
           <span className="text-sm text-muted">You can leave this screen. It keeps going.</span>
         </div>
+      ) : missing ? (
+        <Banner tone="neutral">This bank link wasn’t found. It may have been removed.</Banner>
       ) : nothingToDo ? (
         <Banner tone="neutral">This bank doesn’t need you to sign in again.</Banner>
       ) : (

@@ -4,6 +4,7 @@
 // sign-in list, usage events and notes, and the daily-limit scenarios.
 import { CSRF_HEADER, LinkExchange, LinkTokenRequest, NoteRequest, UsageBatch } from '@ledgerline/contracts';
 import type { z } from 'zod';
+import { isServerRead } from '../copy/server-reads';
 
 type LocalEngine = MockCopy['engine'];
 type SqlJsDb = MockCopy['db'];
@@ -274,7 +275,13 @@ export class MockServer {
       const u = new URL(url, 'http://mock.local');
       const path = u.pathname.replace(/\/+$/, '');
       const mutation = method !== 'GET' && method !== 'HEAD';
-      if (this.scenario === 'resting' && !/^\/api\/(session|auth)(\/|$)/.test(path))
+      // Resting pauses what the server answers itself; a phone works every screen out from its copy (which this
+      // mock stands in for), so those still show.
+      if (
+        this.scenario === 'resting' &&
+        !/^\/api\/(session|auth)(\/|$)/.test(path) &&
+        (mutation || isServerRead(path))
+      )
         throw new MockHttpError(503, 'resting', 'Resting until the daily limit resets');
       if (mutation) {
         this.lastMutationHeaders = headers;
