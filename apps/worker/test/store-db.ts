@@ -94,10 +94,11 @@ export const storeDb = (name: string): Db => new TestDb(() => budgetStub(name));
 
 /**
  * Takes a store's own schema out, so its SQLite can stand for a device's copy. A store keeps no budget tables
- * (D-105), and a test's copy needs a SQLite that workerd runs. The store's own migrations stay recorded, so a
- * store that starts again runs none of them.
+ * (D-105), and a test's copy needs a SQLite that workerd runs. The store's own migrations stay recorded, and so do
+ * the budget migrations named in `keep`, so a store that starts again (workerd may restart an idle object) runs
+ * none of them.
  */
-function emptySchema(storage: DurableObjectStorage): void {
+function emptySchema(storage: DurableObjectStorage, keep: readonly string[] = []): void {
   const sql = storage.sql;
   storage.transactionSync(() => {
     sql.exec(`PRAGMA defer_foreign_keys = ON`);
@@ -110,7 +111,10 @@ function emptySchema(storage: DurableObjectStorage): void {
         )
         .toArray())
         sql.exec(`DROP ${type.toUpperCase()} IF EXISTS "${String(r.name)}"`);
-    sql.exec(`DELETE FROM _migrations WHERE name NOT LIKE 'store/%'`);
+    sql.exec(
+      `DELETE FROM _migrations WHERE name NOT LIKE 'store/%' AND name NOT IN (SELECT value FROM json_each(?))`,
+      JSON.stringify(keep),
+    );
   });
 }
 
@@ -122,8 +126,16 @@ const FILE = Math.random().toString(36).slice(2);
 /** The Durable Object that holds the copy or budget database named `name` (copyDb, budgetDb). */
 export const copyStub = (name: string): DurableObjectStub<BudgetStore> => budgetStub(`${name}#${FILE}`);
 
-/** An empty SQLite in a Durable Object, for a device's copy: `migrateLocal` makes its schema, as on a phone. */
-export const copyDb = (name: string): Db => new TestDb(() => copyStub(name), emptySchema);
+/**
+ * An empty SQLite in a Durable Object, for a device's copy: `migrateLocal` makes its schema, as on a phone. The
+ * budget migration a copy skips stays recorded: the store would run it if it started again, and drop the copy's
+ * own tables.
+ */
+export const copyDb = (name: string): Db =>
+  new TestDb(
+    () => copyStub(name),
+    (storage) => emptySchema(storage, ['0006_drop_phone_tables_on_server.sql']),
+  );
 
 /**
  * A SQLite with the budget's schema as its migrations leave it (change-log triggers and all), for tests of the
