@@ -631,6 +631,10 @@ export class BudgetStore extends DurableObject<Env> {
           runAt: now(),
         });
       },
+      DROP_ROUTE: async (itemId: string) => {
+        const id = this.cachedBudgetId ?? (await this.budgetId().catch(() => null));
+        if (dir && id) await dir.dropRoute(itemId, id);
+      },
       RESTORE_TO: (at: number) => this.restoreTo(at),
       RESTORE_UNDO: () => this.restoreUndo(),
       LAST_RESTORE: () => this.lastRestore(),

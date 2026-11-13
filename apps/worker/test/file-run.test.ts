@@ -77,6 +77,12 @@ const log = async (db: LocalEngine['db']) => ({
   pages: (await db.prepare(`SELECT * FROM bank_page ORDER BY sync_run_id, page`).all()).results,
 });
 
+/**
+ * The link's "updated" time is the one place a device and the server differ: the server's own end of an update
+ * writes its step clock (in this test it never runs), the device the update's time (a sealed budget's only writer).
+ */
+const linkTimes = /^connection .*\.(last_synced_at|last_attempt_at):/;
+
 describe('a device files a bank update', () => {
   it('ends with the server’s rows, update after update', async () => {
     await h.setup();
@@ -140,7 +146,9 @@ describe('a device files a bank update', () => {
       // A second phone only reads what the server filed.
       await sync(reader);
       await bankLog(reader);
-      expect(differences(await rowsOf(device), await rowsOf(reader))).toEqual([]);
+      expect(
+        differences(await rowsOf(device), await rowsOf(reader)).filter((d) => !linkTimes.test(d)),
+      ).toEqual([]);
       expect(await log(device.db)).toEqual(await log(reader.db));
     }
 
@@ -157,7 +165,9 @@ describe('a device files a bank update', () => {
     await alignCounter(synced.db, B);
     await fileRun({ ...env, DB: synced.db } as never, B, { ...(await lastRun()), bank: null }, provider);
     await sync(reader);
-    expect(differences(await rowsOf(synced), await rowsOf(reader))).toEqual([]);
+    expect(differences(await rowsOf(synced), await rowsOf(reader)).filter((d) => !linkTimes.test(d))).toEqual(
+      [],
+    );
     const mine = (await log(synced.db)).events as { id: number }[];
     const theirs = (await log(h.db)).events as { id: number }[];
     expect(mine.map((e) => e.id)).toEqual([theirs[theirs.length - 1]!.id]);

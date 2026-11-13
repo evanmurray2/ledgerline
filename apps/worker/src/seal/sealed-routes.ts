@@ -268,7 +268,7 @@ async function saveLink(c: Context<AppEnv>, publicToken: string): Promise<string
 sealedApi.post('/settings/connections/:id/remove', async (c) => {
   const budgetId = c.get('budgetId');
   const link = await c.env.DB.prepare(
-    `SELECT id, connection_id, status, access_token_enc, key_version FROM bank_link
+    `SELECT id, connection_id, status, access_token_enc, key_version, provider_item_id FROM bank_link
      WHERE budget_id = ?1 AND connection_id = ?2 AND provider = 'plaid'`,
   )
     .bind(budgetId, c.req.param('id'))
@@ -278,6 +278,7 @@ sealedApi.post('/settings/connections/:id/remove', async (c) => {
       status: string;
       access_token_enc: string | null;
       key_version: number | null;
+      provider_item_id: string | null;
     }>();
   if (!link) return no(404, 'not_found', 'This is gone. Go back and try again.');
   if (link.status === 'removed') return c.json({ ok: true });
@@ -304,6 +305,8 @@ sealedApi.post('/settings/connections/:id/remove', async (c) => {
     ).bind(link.id),
     c.env.DB.prepare(`DELETE FROM job WHERE id = ?1`).bind(sealedFetchId(link.id)),
   ]);
+  // The bank's later news about this Item reaches no budget (best effort: a webhook for it is ignored anyway).
+  if (link.provider_item_id) await c.env.DROP_ROUTE?.(link.provider_item_id).catch(() => undefined);
   // A run of this link being fetched goes too: nothing of it was shown to a device.
   await abandonSealedRun(c.env.DB, link.id);
   return c.json({ ok: true });
