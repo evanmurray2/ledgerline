@@ -50,12 +50,17 @@ export interface WritePlace {
 export type AppendAnswer =
   { ok: true; number: number } | { ok: false; why: string; detail?: string; number?: number; retry: boolean };
 
+/** Shown when the engine's thread can't run in this browser. */
+export const ENGINE_FAILED = 'Your budget couldn’t start in this browser. Reload the page to try again.';
+
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 
 export class EngineHost {
   private worker: Worker;
   private next = 1;
   private pending = new Map<number, Pending>();
+  /** Set once the engine's thread fails to start or stops: every call then fails at once instead of waiting. */
+  private broken: Error | null = null;
   /** Ready to Assign failed rule 10 on this phone: reported to the server as an alert. */
   onIdentity: ((r: { difference: number; month: string }) => void) | null = null;
   /** The engine is making the copy again from a snapshot (local/rebuild.ts); `sealedSync` answers when it is done. */
@@ -81,9 +86,25 @@ export class EngineHost {
       if (m.ok) p.resolve(m.value);
       else p.reject(new Error(m.error ?? 'Something went wrong. Try again.'));
     };
+    // A thread that can't load (a blocked or broken script, sql.js's WebAssembly refused) or a message it can't
+    // read never answers: without these, the app waits on "One moment…" forever.
+    this.worker.onerror = (e: ErrorEvent | Event) => {
+      e.preventDefault();
+      const detail = 'message' in e && e.message ? e.message : 'the engine did not start';
+      this.fail(detail);
+    };
+    this.worker.onmessageerror = () => this.fail('a message could not be read');
+  }
+
+  private fail(detail: string): void {
+    console.warn(JSON.stringify({ event: 'engine_failed', detail }));
+    this.broken = new Error(ENGINE_FAILED);
+    for (const p of this.pending.values()) p.reject(this.broken);
+    this.pending.clear();
   }
 
   private call<T>(op: string, args: Record<string, unknown> = {}, transfer: Transferable[] = []): Promise<T> {
+    if (this.broken) return Promise.reject(this.broken);
     const id = this.next++;
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
