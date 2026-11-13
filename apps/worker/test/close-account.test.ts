@@ -15,8 +15,8 @@ const B = 'b_close';
 const NOW = Date.UTC(2026, 10, 8, 18, 0);
 const h = bankSync('close-account', B, 'c_close', 5, NOW);
 
-const through = async () =>
-  (await h.db.prepare(`SELECT coalesce(max(seq), 0) AS n FROM change_log`).first<{ n: number }>())!.n;
+// The change number the phone's copy holds, as the engine gives it to the routes (http/through.ts).
+const through = async () => (await h.engine.state()).through;
 const register = async (n: number) =>
   (await h.call('GET', `/api/accounts/a_${n}/register`)).json as RegisterView;
 const accounts = async () => (await h.call('GET', '/api/accounts')).json as AccountsView;
