@@ -9,6 +9,7 @@
 // stored: the second finds the log moved on and is told "behind". Everything the check read that a write changes
 // (the chain state, the device counters, the day's count of never-held entries) is written in that transaction.
 import type { Db, Stmt } from '@ledgerline/db/sql';
+import { fromBase64, toBase64 } from '@ledgerline/platform';
 import {
   AppendRefused,
   checkGenesisWrite,
@@ -78,26 +79,15 @@ export type AppendResult =
 
 // ---- bytes as text: the chain state's JSON, the log's answers, and entries an earlier release stored
 
-/** Base64 of `b`, in pieces: a byte at a time cost about 2 ms for each 64 KB. */
-export const b64 = (b: Uint8Array): string => {
-  let s = '';
-  for (let i = 0; i < b.length; i += 0x8000)
-    s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000) as unknown as number[]);
-  return btoa(s);
-};
-const unb64 = (s: string): Uint8Array<ArrayBuffer> => {
-  const bin = atob(s);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-};
+/** Base64 of `b` (packages/platform: in one pass, at any size). */
+export const b64 = toBase64;
 
 /**
  * An entry's stored bytes. An entry is stored as a BLOB; the releases up to Nov 13, 2026 stored base64 text, in
  * the same column, and those rows stay as they are (read as they are, never rewritten).
  */
 export function entryBytes(v: unknown): Uint8Array<ArrayBuffer> {
-  if (typeof v === 'string') return unb64(v);
+  if (typeof v === 'string') return fromBase64(v);
   if (v instanceof Uint8Array) return new Uint8Array(v);
   if (v instanceof ArrayBuffer) return new Uint8Array(v);
   throw new TypeError('not stored entry bytes');
@@ -120,7 +110,7 @@ export function stateFromJson(text: string): StoredChain {
   return JSON.parse(text, (_k, v: unknown) => {
     if (v && typeof v === 'object') {
       const o = v as { $bytes?: unknown; $map?: unknown };
-      if (typeof o.$bytes === 'string') return unb64(o.$bytes);
+      if (typeof o.$bytes === 'string') return fromBase64(o.$bytes);
       if (Array.isArray(o.$map)) return new Map(o.$map as [unknown, unknown][]);
     }
     return v;

@@ -164,7 +164,11 @@ importers:
         specifier: 1.63.0
         version: 1.63.0
 
-  packages/bank-provider: {}
+  packages/bank-provider:
+    dependencies:
+      '@ledgerline/platform':
+        specifier: workspace:*
+        version: link:../platform
 
   packages/contracts:
     dependencies:

@@ -1,3 +1,5 @@
+import { fromBase64, toBase64 } from './base64.js';
+
 /**
  * AES-256-GCM encryption for provider access tokens. The key-encryption key is a Worker secret: 32 random bytes in
  * base64, or a random passphrase of 32+ characters (for example two iPhone-generated passwords joined), from which
@@ -6,19 +8,6 @@
 export interface TokenKeyring {
   current: number;
   keys: Record<number, string>;
-}
-
-function b64(bytes: Uint8Array): string {
-  let s = '';
-  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i] as number);
-  return btoa(s);
-}
-
-function unb64(s: string): Uint8Array<ArrayBuffer> {
-  const bin = atob(s);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
 }
 
 const BASE64_32 = /^[A-Za-z0-9+/]{43}=$/;
@@ -30,7 +19,7 @@ export const MIN_PASSPHRASE = 32;
  * keys from (docs/privacy-keys.md 9.1), under labels of their own.
  */
 export async function tokenKeyBytes(secret: string): Promise<Uint8Array<ArrayBuffer>> {
-  if (BASE64_32.test(secret)) return unb64(secret);
+  if (BASE64_32.test(secret)) return fromBase64(secret);
   if (secret.length >= MIN_PASSPHRASE)
     // A high-entropy random passphrase, not a memorable one: a fast hash is enough to make it a key.
     return new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret)));
@@ -65,7 +54,7 @@ export async function encryptToken(
   const out = new Uint8Array(iv.length + ct.length);
   out.set(iv);
   out.set(ct, iv.length);
-  return { enc: b64(out), keyVersion: ring.current };
+  return { enc: toBase64(out), keyVersion: ring.current };
 }
 
 export async function decryptToken(
@@ -77,7 +66,7 @@ export async function decryptToken(
   const secret = ring.keys[keyVersion];
   if (!secret) throw new Error(`missing token key version ${keyVersion}`);
   const key = await importKey(secret);
-  const all = unb64(enc);
+  const all = fromBase64(enc);
   const pt = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: all.slice(0, 12), additionalData: new TextEncoder().encode(aad) },
     key,

@@ -98,12 +98,6 @@ export const runDeps = (
 export const ZERO_HASH = '0'.repeat(64);
 export const bytesOf = (v: unknown): Uint8Array<ArrayBuffer> =>
   v instanceof Uint8Array ? new Uint8Array(v) : new Uint8Array(v as ArrayBuffer);
-export const unb64 = (s: string): Uint8Array<ArrayBuffer> => {
-  const bin = atob(s);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-};
 /** Hex from the database: text that is no hex is no bytes, and fails whatever check comes next. */
 export const hexOr = (s: unknown): Uint8Array<ArrayBuffer> => {
   try {

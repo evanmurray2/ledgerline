@@ -2,6 +2,7 @@
 // need a passkey check within the last 15 minutes (http/auth.ts needsRecentPasskey).
 import { Hono, type MiddlewareHandler } from 'hono';
 import type { AppEnv } from '../http/context.js';
+import { toBase64url } from '@ledgerline/platform';
 import { requestNow } from '../http/clock.js';
 import {
   DEVICE_LINK_MS,
@@ -193,12 +194,6 @@ securityRoutes.get('/settings/security', async (c) => {
 // the copy the next time it connects. These routes need a passkey check within 15 minutes (opening the copy online
 // is always a fresh sign-in).
 
-const b64url = (b: Uint8Array) =>
-  btoa(String.fromCharCode(...b))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-
 securityRoutes.post('/settings/security/devices', async (c) => {
   const body = (await bodyObject(c.req)) as { name?: unknown };
   const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 60) : 'Phone';
@@ -207,8 +202,8 @@ securityRoutes.post('/settings/security/devices', async (c) => {
     .bind(c.get('userId'))
     .first<{ budget_id: string }>();
   if (!m) return c.json({ error: 'not_member', message: 'You don’t have access to this budget.' }, 403);
-  const id = b64url(crypto.getRandomValues(new Uint8Array(16)));
-  const share = b64url(crypto.getRandomValues(new Uint8Array(32)));
+  const id = toBase64url(crypto.getRandomValues(new Uint8Array(16)));
+  const share = toBase64url(crypto.getRandomValues(new Uint8Array(32)));
   await c.env.DB.batch([
     // A copy this sign-in opened before (one the phone couldn't read) is replaced by this one.
     c.env.DB.prepare(
