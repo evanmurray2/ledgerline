@@ -176,7 +176,7 @@ export function PairedTransfer({ t, close }: { t: TxnSheet; close: () => void })
               <div className="flex items-center justify-between gap-2 px-3 py-2.5">
                 <span className="flex flex-col">
                   <span className="text-md font-semibold">From {from}</span>
-                  {out && <span className="text-xs text-muted">{t.rawName}</span>}
+                  {out && t.rawName && <span className="text-xs text-muted">{t.rawName}</span>}
                 </span>
                 <span className="tnum font-bold">{formatCents(-amt)}</span>
               </div>
@@ -185,7 +185,7 @@ export function PairedTransfer({ t, close }: { t: TxnSheet; close: () => void })
                   <span className="text-md font-semibold">
                     To {to} · {dayLabel(t.date)}
                   </span>
-                  <span className="text-xs text-muted">{out ? 'Deposit' : t.rawName}</span>
+                  <span className="text-xs text-muted">{out ? 'Deposit' : t.rawName || 'Deposit'}</span>
                 </span>
                 <span className="tnum font-bold text-funded-fg">{formatCents(amt, { plus: true })}</span>
               </div>

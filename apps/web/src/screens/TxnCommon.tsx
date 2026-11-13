@@ -65,16 +65,19 @@ export function BankSays({ t, extra }: { t: TxnSheet; extra?: string }) {
       {/* Your own entry has no bank name: its raw name is the one you typed. */}
       {t.kind !== 'manual' && t.kind !== 'upcoming' && <span>Bank name: {t.rawName}</span>}
       {extra && <span>{extra}</span>}
-      <div className="flex gap-4">
-        <Link
-          to={`${parent}/txn/${encodeURIComponent(t.key)}/rename`}
-          search
-          data-track="txn.rename"
-          className={textLinkClass}
-        >
-          Rename payee
-        </Link>
-      </div>
+      {/* A transfer has no payee to rename (D-106). */}
+      {!t.transfer && (
+        <div className="flex gap-4">
+          <Link
+            to={`${parent}/txn/${encodeURIComponent(t.key)}/rename`}
+            search
+            data-track="txn.rename"
+            className={textLinkClass}
+          >
+            Rename payee
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

@@ -793,6 +793,8 @@ test('Add a transaction: a transfer adds the other side and leaves Ready to Assi
   await add.getByLabel('Amount', { exact: true }).fill('50');
   await add.getByRole('button', { name: 'Transfer' }).click();
   await expect(add.getByLabel('Category')).toHaveCount(0);
+  // A transfer has no payee (D-106).
+  await expect(add.getByLabel('Payee')).toHaveCount(0);
   await expect(add.getByRole('button', { name: 'Add', exact: true })).toBeDisabled();
   await add.getByLabel('To account').click();
   await page
