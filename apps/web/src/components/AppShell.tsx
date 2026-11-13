@@ -220,6 +220,18 @@ export function StatusBanner() {
   const c = useConnectivity();
   const copy = useCopy();
   const offline = !c.online || c.networkFailed;
+  // A locked budget's copy is being made again from its newest snapshot (copy/copy.ts): a few seconds.
+  if (copy.rebuilding && !offline)
+    return (
+      <div
+        role="status"
+        data-testid="rebuilding-banner"
+        className="flex shrink-0 flex-col gap-1 border-b border-line bg-sunken px-4 py-2.5 text-none-fg"
+      >
+        <span className="text-md font-bold">Bringing your budget up to date</span>
+        <span className="text-sm leading-snug">This takes a few seconds. Nothing is lost.</span>
+      </div>
+    );
   if (!offline && !c.readOnly && !c.readsPaused) return null;
   const loaded = c.loadedAt ? budgetTime(c.loadedAt) : null;
   if (offline)

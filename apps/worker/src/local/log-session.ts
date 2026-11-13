@@ -52,6 +52,19 @@ export interface FilingDeps {
   now: number;
 }
 
+/** A run's time as its manifest names it; 0 for one that doesn't read (its own checks then refuse it). */
+function runTimeOf(manifest: Uint8Array): number {
+  try {
+    return readRunManifest(manifest).runTime;
+  } catch {
+    return 0;
+  }
+}
+
+/** The engine's own route that writes a copy's bank log of some sealed runs again, recorded (local/engine.ts). */
+export const SHARE_PATH = '/api/device/bank-log';
+const SHARE_BYTES = 300_000;
+
 /** The most daily scans one sync runs (a return after weeks away catches up over a few syncs). */
 const MAX_SCANS = 14;
 const DAY = 86_400_000;
@@ -224,49 +237,130 @@ export class LogSession {
     return bank ? { sent, lost, bank } : { sent, lost };
   }
 
+  /** The note a copy keeps once its own bank log is in the log (`shareBankLog`). */
+  static readonly BANK_LOG_SHARED = 'bank_log_shared';
+
   /**
-   * The daily scan, which the server ran at 5:00 in the budget's time zone before the budget was sealed
-   * (docs/privacy.md 5.4): repeating entries that came due get their next one, vanished pending rows an alert,
-   * and the nightly watchdog's mark. Each day missed since the log's last scan is run in order, at 5:00 that day,
-   * each as its own scan entry; at most `MAX_SCANS` a call. Rows are named from the scan's time, so two devices
-   * that scan the same day make the same rows; the log takes one scan a day (its scan date only moves forward).
-   * Gives the number of scans sent.
+   * Once per copy (D-102): the bank log of runs this copy filed before bank entries carried it is sent as edits,
+   * so every copy holds the same log and the snapshots of two devices compare equal. A copy made from a snapshot,
+   * or that holds nothing of its own, sends nothing. Gives the number of edits queued (`flush` sends them).
    */
-  async scan(now: number): Promise<number> {
+  async shareBankLog(at: number): Promise<number> {
+    if (await this.engine.noted(LogSession.BANK_LOG_SHARED)) return 0;
+    const runs = (
+      await this.engine.db
+        .prepare(
+          `SELECT CAST(substr(sync_run_id, 8) AS INTEGER) AS run, sum(length(payload)) + count(*) * 300 AS bytes
+           FROM bank_event WHERE sync_run_id LIKE 'sealed:%' GROUP BY run ORDER BY run`,
+        )
+        .all<{ run: number; bytes: number }>()
+    ).results;
+    // A few hundred kilobytes an edit: one write holds about 1 MB.
+    const ranges: { from: number; to: number }[] = [];
+    let size = Infinity;
+    for (const r of runs) {
+      if (size + r.bytes > SHARE_BYTES) {
+        ranges.push({ from: r.run, to: r.run });
+        size = 0;
+      }
+      ranges[ranges.length - 1]!.to = r.run;
+      size += r.bytes;
+    }
+    for (const r of ranges)
+      await this.engine.enqueue({
+        id: `bank-log-${r.from}-${r.to}-${this.log.deviceId}`,
+        at,
+        method: 'POST',
+        path: SHARE_PATH,
+        body: r,
+      });
+    await this.engine.note(LogSession.BANK_LOG_SHARED, '1');
+    return ranges.length;
+  }
+
+  /**
+   * The daily scans due, oldest first: each day missed since the log's last scan, at 5:00 that day in the budget's
+   * time zone (docs/privacy.md 5.4); at most `MAX_SCANS`. A budget whose log has none yet (just moved) starts with
+   * today's.
+   */
+  private async dueScans(now: number): Promise<number[]> {
     const b = await this.engine.db
       .prepare(`SELECT time_zone FROM budget WHERE id = ?1`)
       .bind(this.log.budgetId)
       .first<{ time_zone: string }>();
-    if (!b) return 0;
+    if (!b) return [];
     const due: number[] = [];
-    // Back from today's scan, one day at a time, to the last the log holds. A budget whose log has none yet (just
-    // moved) starts with today's.
+    // Back from today's scan, one day at a time, to the last the log holds.
     for (let t = scanTime(now, b.time_zone); due.length < MAX_SCANS; t = scanTime(t - 1, b.time_zone)) {
       if (Math.floor(t / DAY) <= this.log.scanThrough) break;
       due.unshift(t);
       if (this.log.scanThrough === 0) break;
     }
+    return due;
+  }
+
+  /**
+   * One day's scan, run on the copy and sent as its own scan entry: repeating entries that came due get their next
+   * one, vanished pending rows an alert, and the nightly watchdog's mark. Rows are named from the scan's time, so
+   * two devices that scan the same day make the same rows; the log takes one scan a day (its scan date only moves
+   * forward). Gives whether the log took it.
+   */
+  private async scanOne(at: number): Promise<boolean> {
+    const day = Math.floor(at / DAY);
+    if (day <= this.log.scanThrough) return true;
+    const budgetId = this.log.budgetId;
+    const done = await this.engine.fileBank(
+      `scan-${day}-${crypto.randomUUID().slice(0, 8)}`,
+      at,
+      { filedThrough: this.log.filedThrough, receipts: [], scanThrough: day },
+      async (env) => {
+        await dailyScan(env, budgetId, at);
+        await env.DB.batch(watchdogBudgetStmts(env.DB, budgetId, at));
+        await bumpVersion(env.DB, budgetId);
+      },
+    );
+    if (!done) return false;
+    return (await this.flush({ onlyBank: true })).bank === 'sent';
+  }
+
+  /**
+   * The daily scan, which the server ran at 5:00 in the budget's time zone before the budget was sealed: each day
+   * missed since the log's last scan, in order, each as its own scan entry; at most `MAX_SCANS` a call. Gives the
+   * number of scans sent. `catchUp` runs scans among the bank runs, by time; this runs them alone.
+   */
+  async scan(now: number): Promise<number> {
     let sent = 0;
-    for (const at of due) {
-      const day = Math.floor(at / DAY);
-      if (day <= this.log.scanThrough) continue;
-      const budgetId = this.log.budgetId;
-      const done = await this.engine.fileBank(
-        `scan-${day}-${crypto.randomUUID().slice(0, 8)}`,
-        at,
-        { filedThrough: this.log.filedThrough, receipts: [], scanThrough: day },
-        async (env) => {
-          await dailyScan(env, budgetId, at);
-          await env.DB.batch(watchdogBudgetStmts(env.DB, budgetId, at));
-          await bumpVersion(env.DB, budgetId);
-        },
-      );
-      if (!done) break;
-      const r = await this.flush({ onlyBank: true });
-      if (r.bank !== 'sent') break;
+    for (const at of await this.dueScans(now)) {
+      if (!(await this.scanOne(at))) break;
       sent++;
     }
     return sent;
+  }
+
+  /**
+   * The time since this device's last entry, worked through strictly by time (docs/privacy.md 5.4, "One order for
+   * everything"): each bank run at its run time and each missed day's scan at 5:00 that day, merged into one
+   * sequence. The runs before the next scan are filed (`fileRuns`, up to `RUNS_PER_ENTRY` an entry), then the
+   * scan, then the runs before the scan after it, and so on. A scan never goes ahead of a run that is dated before
+   * it and can't be filed yet. At most `MAX_SCANS` scans a call, as `scan`. The waiting edits go after (`flush`).
+   */
+  async catchUp(
+    src: RunTransport,
+    deps: FilingDeps,
+    now: number,
+  ): Promise<{ filed: number; scans: number; waiting: boolean; lost: number }> {
+    let filed = 0;
+    let scans = 0;
+    let lost = 0;
+    for (const at of [...(await this.dueScans(now)), Infinity]) {
+      const r = await this.fileRuns(src, deps, at === Infinity ? {} : { before: at });
+      filed += r.filed;
+      lost += r.lost;
+      if (r.waiting || at === Infinity) return { filed, scans, waiting: r.waiting, lost };
+      if (!(await this.scanOne(at))) return { filed, scans, waiting: true, lost };
+      scans++;
+    }
+    return { filed, scans, waiting: false, lost };
   }
 
   /**
@@ -281,6 +375,8 @@ export class LogSession {
   async fileRuns(
     src: RunTransport,
     deps: FilingDeps,
+    /** Only the runs dated before this time (a scan's, `catchUp`): `waiting` is then about those alone. */
+    o: { before?: number } = {},
   ): Promise<{ filed: number; waiting: boolean; lost: number }> {
     let filed = 0;
     let lost = 0;
@@ -310,7 +406,12 @@ export class LogSession {
       if (copy < from) return { filed, waiting: true, lost };
       // An edit that can't be taken out exactly (it is on its way, or has nothing kept for it) must go first.
       if (!(await this.engine.canFileBank())) return { filed, waiting: true, lost };
-      const next = (await src.runs(from)).slice(0, limit);
+      // Ordered by the time the manifest names, which the checks below confirm before anything is filed.
+      const before = o.before ?? Infinity;
+      const next = (await src.runs(from)).slice(0, limit).filter((r, i, all) => {
+        for (const x of all.slice(0, i + 1)) if (!(runTimeOf(x.manifest) < before)) return false;
+        return true;
+      });
       if (!next.length) return { filed, waiting: false, lost };
       const sealed: SealedRun[] = [];
       for (const r of next) {
@@ -339,6 +440,10 @@ export class LogSession {
         if (x instanceof RunError && x.retry) return { filed, waiting: true, lost };
         throw x;
       }
+      // A run that is not before the bound after all (the server named another time beside it) waits.
+      const cut = opened.findIndex((f) => !(f.manifest.runTime < before));
+      if (cut === 0) return { filed, waiting: false, lost };
+      if (cut > 0) opened.length = cut;
       const last = opened[opened.length - 1]!;
       const done = await this.engine.fileBank(
         `bank-${from + 1}-${last.manifest.run}-${crypto.randomUUID().slice(0, 8)}`,

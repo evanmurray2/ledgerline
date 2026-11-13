@@ -16,6 +16,11 @@ export interface SyncTable {
    * stop syncing (local/engine.ts rowStatements).
    */
   unique?: readonly (readonly string[])[];
+  /**
+   * Rows are only ever added, never changed (the bank log): a row the copy holds already is left as it is, since
+   * its append-only triggers refuse any update (local/engine.ts rowStatements).
+   */
+  appendOnly?: boolean;
 }
 
 export const SYNC_TABLES: readonly SyncTable[] = [

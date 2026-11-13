@@ -13,6 +13,7 @@ import { DeviceLog } from './device-log.js';
 import { checkSnapshot, emptyOldCopy, openSnapshot, writeSnapshot } from './device-snapshot.js';
 import { cutoverTransport, httpTransport, type Fetch } from './http-transport.js';
 import { LogSession } from './log-session.js';
+import { needsRebuild, rebuildCopy } from './rebuild.js';
 import { reader, type ShadowEvent } from './shadow.js';
 
 interface Ctx {
@@ -150,6 +151,103 @@ async function plainOnly(): Promise<void> {
     throw new Error('Your budget is locked on this device. Nothing was sent.');
 }
 
+/** The engine over a copy, with the app's hooks: the identity alert, and a scratch copy for the shadow run. */
+function makeEngine(d: SqlJsDb, w: EngineIdentity): LocalEngine {
+  return new LocalEngine(
+    d,
+    w,
+    () => Date.now(),
+    async (r) => ctx.postMessage({ event: 'identity', ...r }),
+    // A scratch copy for the shadow run: the same bytes in a second database, closed when the run ends.
+    async () => {
+      const copy = new sqlite!.Database(d.db.export());
+      return { db: new SqlJsDb(copy), close: () => copy.close() };
+    },
+  );
+}
+
+/** What the engine itself keeps in `local_state`; everything else there is the app's (`put`). */
+const ENGINE_KEYS = [
+  'sync',
+  'outbox',
+  'held_queue',
+  'filing',
+  'rest',
+  'derive',
+  'derived_today',
+  'recording',
+  'bank_log',
+  'shadow_seq',
+  'shadow_scan',
+];
+
+/** One round with the log: read it, catch up on bank runs and scans by time, and send what waits. */
+async function sealedRound(): Promise<{
+  entries: number;
+  filed: number;
+  waiting: boolean;
+  sent: number;
+  lost: number;
+}> {
+  const { engine: e, s, log } = needSealed();
+  const session = new LogSession(e, log, http, encodeEntry);
+  await session.shareBankLog(clock());
+  const pulled = await session.pull();
+  const runs = await session.catchUp(
+    http,
+    { workerKeys: s.workerKeys, provider: reader, now: await e.now() },
+    clock(),
+  );
+  const sent = await session.flush();
+  return {
+    entries: pulled.entries,
+    filed: runs.filed + runs.scans,
+    waiting: runs.waiting,
+    sent: sent.sent,
+    lost: pulled.lost + runs.lost + sent.lost,
+  };
+}
+
+/**
+ * Makes the copy again from the newest trusted snapshot (local/rebuild.ts), in a new database beside this one,
+ * and puts it in this one's place only once it is whole. The app's own values in the copy go with it.
+ */
+async function rebuild(): Promise<{ kept: number; lost: number }> {
+  const { db: old, engine: stale, s, log } = { ...need(), ...needSealed() };
+  const fresh = new SqlJsDb(new sqlite!.Database());
+  await migrateLocal(fresh, Date.now());
+  const e = makeEngine(fresh, who!);
+  let r: Awaited<ReturnType<typeof rebuildCopy>>;
+  try {
+    r = await rebuildCopy(e, stale, http, log, { clock, encode: encodeEntry });
+  } catch (x) {
+    fresh.db.close();
+    throw x;
+  }
+  const app = (
+    await old
+      .prepare(
+        `SELECT key, value FROM local_state WHERE key NOT LIKE 'note:%' AND key NOT IN (${ENGINE_KEYS.map((k) => `'${k}'`).join(', ')})`,
+      )
+      .all<{ key: string; value: string }>()
+  ).results;
+  if (app.length)
+    await fresh.batch(
+      app.map((x) =>
+        fresh
+          .prepare(
+            `INSERT INTO local_state (key, value) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+          )
+          .bind(x.key, x.value),
+      ),
+    );
+  old.db.close();
+  db = fresh;
+  engine = e;
+  s.log = r.log;
+  return { kept: r.kept, lost: r.lost };
+}
+
 function need(): { db: SqlJsDb; engine: LocalEngine } {
   if (!db || !engine) throw new Error('Your budget isn’t open on this device yet. Try again.');
   return { db, engine };
@@ -164,17 +262,7 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       await migrateLocal(db, Date.now());
       who = m.who;
       sealed = null;
-      engine = new LocalEngine(
-        db,
-        m.who,
-        () => Date.now(),
-        async (r) => ctx.postMessage({ event: 'identity', ...r }),
-        // A scratch copy for the shadow run: the same bytes in a second database, closed when the run ends.
-        async () => {
-          const copy = new sqlite!.Database(db!.db.export());
-          return { db: new SqlJsDb(copy), close: () => copy.close() };
-        },
-      );
+      engine = makeEngine(db, m.who);
       return { value: await engine.state() };
     }
     case 'apply':
@@ -277,26 +365,19 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       return { value: { number: sealed.log.number, dropped } };
     }
     case 'sealedSync': {
-      const { engine: e, s, log } = needSealed();
-      const session = new LogSession(e, log, http, encodeEntry);
-      const pulled = await session.pull();
-      const runs = await session.fileRuns(http, {
-        workerKeys: s.workerKeys,
-        provider: reader,
-        now: await e.now(),
-      });
-      // The daily scan once the bank runs are in (the device's clock as the server's).
-      const scans = runs.waiting ? 0 : await session.scan(clock());
-      const sent = await session.flush();
-      return {
-        value: {
-          entries: pulled.entries,
-          filed: runs.filed + scans,
-          waiting: runs.waiting,
-          sent: sent.sent,
-          lost: pulled.lost + runs.lost + sent.lost,
-        },
-      };
+      needSealed();
+      try {
+        return { value: await sealedRound() };
+      } catch (x) {
+        // The entries this device needs are gone (a checked snapshot covers them), or the copy can't be used as
+        // it is: it is made again from the newest trusted snapshot, then the round runs once more. The app shows
+        // "Bringing your budget up to date" meanwhile.
+        if (!needsRebuild(x)) throw x;
+        ctx.postMessage({ event: 'rebuilding' });
+        const made = await rebuild();
+        const v = await sealedRound();
+        return { value: { ...v, lost: v.lost + made.lost, rebuilt: made } };
+      }
     }
     case 'sealedSnapshot': {
       const { engine: e, log } = needSealed();

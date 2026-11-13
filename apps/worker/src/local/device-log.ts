@@ -128,10 +128,45 @@ export async function entryIdOf(changeId: string): Promise<Bytes> {
 /** A change set too large for one write of the log (16 parts, about 1 MB). */
 export class TooLarge extends Error {}
 
+/**
+ * The server showed this device a history that is not the one it saw (docs/privacy.md 5.3, "A lying server";
+ * privacy-keys.md 7.2): an entry that does not continue its place, a log that does not pass through an entry it
+ * remembers, or an entry whose writer says it saw another entry at a number this device knows. `older`: the log
+ * ends before the place this device had reached. Nothing of it was written; the device stops.
+ */
+export class LogFork extends Error {
+  constructor(
+    readonly why: string,
+    readonly older = false,
+  ) {
+    super(`The server showed this device a different history (${why}). Nothing was changed.`);
+  }
+}
+
+/** The entries this device needs next are gone from the server (a checked snapshot covers them): it opens one. */
+export class BelowFloor extends Error {
+  constructor(readonly number: number) {
+    super('the entries after this device’s place are gone from the server');
+  }
+}
+
+/** This device's own entries it remembers, newest last: enough to tell a writer that saw another one. */
+const OWN_KEPT = 64;
+
+const hexEq = (a: Uint8Array, b: Uint8Array): boolean =>
+  a.length === b.length && a.every((x, i) => x === b[i]);
+
 /** A device writing to, and reading from, one budget's log. */
 export class DeviceLog {
   /** The last entry taken from each other device. */
   private seen = new Map<string, [number, string]>();
+  /** This device's own last entries, number to hash (hex), at most `OWN_KEPT`. */
+  private own = new Map<number, string>();
+  /**
+   * Entries the log must pass through, number to hash (hex): what this device saw before it was made again from a
+   * snapshot (`remember`). Each is checked as the device reads past it, then dropped.
+   */
+  private pass = new Map<number, string>();
   /** The parts of a change set that is not whole yet. */
   private parts: Bytes[] = [];
   /** The budget's keys by key version: an entry is opened with the keys of its own version. */
@@ -247,7 +282,52 @@ export class DeviceLog {
       parts: this.parts.map((p) => toHex(p)),
       seen: [...this.seen.entries()],
       checkpoints: this.checkpoints.map((c) => [c.number, toHex(c.hash)]),
+      own: [...this.own.entries()],
+      pass: [...this.pass.entries()],
     });
+  }
+
+  /**
+   * What this device saw of the log, for a copy made again from a snapshot: its place, its own last entries and
+   * the last entry of each other device. `remember` makes them entries the new place's log must pass through.
+   */
+  saw(): {
+    place: PublicRef;
+    counters: Map<string, number>;
+    points: [number, string][];
+    seen: [string, [number, string]][];
+  } {
+    const s = this.state as FullChainState;
+    const points = new Map<number, string>([...this.pass, ...this.own]);
+    for (const [n, h] of this.seen.values()) points.set(n, h);
+    points.set(s.number, toHex(s.hash));
+    return {
+      place: { number: s.number, hash: s.hash },
+      counters: new Map(s.counters),
+      points: [...points.entries()].sort((a, b) => a[0] - b[0]),
+      seen: [...this.seen.entries()],
+    };
+  }
+
+  /**
+   * Takes what a device saw before (`saw`) into this log: the points past this place become entries the log must
+   * pass through, and the last entry seen of each other device is kept. Throws `LogFork` for a point at or before
+   * this place that this log knows otherwise (its place, a checkpoint).
+   */
+  remember(before: ReturnType<DeviceLog['saw']>): void {
+    const known = new Map<number, string>(this.checkpoints.map((c) => [c.number, toHex(c.hash)]));
+    known.set(this.state.number, toHex(this.state.hash));
+    for (const [n, h] of before.points) {
+      if (n > this.state.number) this.pass.set(n, h);
+      else if (known.has(n) && known.get(n) !== h) throw new LogFork(`entry ${n} is not the one it was`);
+    }
+    for (const [d, v] of before.seen)
+      if (!this.seen.has(d) || this.seen.get(d)![0] < v[0]) this.seen.set(d, v);
+  }
+
+  /** The highest entry this log must still pass through (0: none). */
+  get mustReach(): number {
+    return Math.max(0, ...this.pass.keys());
   }
 
   /** A device's place in the log as `save` wrote it, with the keys the device holds now. */
@@ -257,7 +337,15 @@ export class DeviceLog {
     deviceId: string,
     clock: () => number,
   ): Promise<DeviceLog> {
-    let v: { v?: unknown; state?: unknown; parts?: unknown; seen?: unknown; checkpoints?: unknown };
+    let v: {
+      v?: unknown;
+      state?: unknown;
+      parts?: unknown;
+      seen?: unknown;
+      checkpoints?: unknown;
+      own?: unknown;
+      pass?: unknown;
+    };
     try {
       v = JSON.parse(saved) as typeof v;
     } catch {
@@ -280,6 +368,9 @@ export class DeviceLog {
     );
     log.parts = (v.parts as string[]).map((p) => fromHex(p));
     log.seen = new Map(v.seen as [string, [number, string]][]);
+    // Kept since Nov 13, 2026: a place saved before has none.
+    if (Array.isArray(v.own)) log.own = new Map(v.own as [number, string][]);
+    if (Array.isArray(v.pass)) log.pass = new Map(v.pass as [number, string][]);
     return log;
   }
 
@@ -442,11 +533,36 @@ export class DeviceLog {
     let state = this.state;
     let parts = [...this.parts];
     const seen = new Map(this.seen);
+    const own = new Map(this.own);
+    const pass = new Map(this.pass);
     const checkpoints = [...this.checkpoints];
     const sets: Taken[] = [];
+    // What this device knows of the log by number: a writer that says it saw something else there saw another log.
+    const knownAt = (n: number): string | undefined => {
+      if (n === state.number) return toHex(state.hash);
+      const c = checkpoints.find((x) => x.number === n);
+      if (c) return toHex(c.hash);
+      if (own.has(n)) return own.get(n);
+      for (const [num, h] of seen.values()) if (num === n) return h;
+      return undefined;
+    };
     for (const e of entries) {
-      state = await advance(state, e, { now: this.clock(), schemaVersion: LOG_SCHEMA_VERSION });
       const h = e.header;
+      // Before the log's own rules: an entry past a gap means the entries between are gone (a snapshot covers
+      // them), and one that does not continue this place is another history.
+      if (h.number > state.number + 1) throw new BelowFloor(state.number);
+      if (h.number === state.number + 1 && !hexEq(h.prevHash, state.hash))
+        throw new LogFork(`entry ${h.number} does not follow entry ${state.number}`);
+      state = await advance(state, e, { now: this.clock(), schemaVersion: LOG_SCHEMA_VERSION });
+      const remembered = pass.get(h.number);
+      if (remembered !== undefined) {
+        if (remembered !== toHex(e.hash)) throw new LogFork(`entry ${h.number} is not the one it was`);
+        pass.delete(h.number);
+      }
+      if (h.deviceId === this.deviceId) {
+        own.set(h.number, toHex(e.hash));
+        if (own.size > OWN_KEPT) own.delete(own.keys().next().value!);
+      }
       if (h.number % CHECKPOINT_EVERY === 0) checkpoints.push({ number: h.number, hash: e.hash });
       if (!CHANGE_KINDS.includes(h.kind)) continue;
       const keys = this.keys.get(h.keyVersion);
@@ -461,13 +577,15 @@ export class DeviceLog {
         at += p.length;
       }
       parts = [];
-      sets.push({
-        number: h.number,
-        entryId: toHex(h.entryId),
-        kind: h.kind,
-        deviceId: h.deviceId,
-        set: decodeChangeSet(whole),
-      });
+      const set = decodeChangeSet(whole);
+      // What its writer last saw from each device (5.3, "a fork"): at a number this device knows, the same entry.
+      if (h.deviceId !== this.deviceId)
+        for (const [d, [n, hash]] of Object.entries(set.seen)) {
+          const mine = knownAt(n);
+          if (mine !== undefined && mine !== hash)
+            throw new LogFork(`entry ${h.number} says it saw another entry ${n} from ${d}`);
+        }
+      sets.push({ number: h.number, entryId: toHex(h.entryId), kind: h.kind, deviceId: h.deviceId, set });
     }
     return {
       sets,
@@ -476,6 +594,8 @@ export class DeviceLog {
         this.state = state;
         this.parts = parts;
         this.seen = seen;
+        this.own = own;
+        this.pass = pass;
         this.checkpoints = checkpoints;
       },
     };

@@ -98,6 +98,13 @@ export interface CopyState {
    * recovery key opens it (`openWithRecovery`).
    */
   needsRecovery?: boolean;
+  /** The copy is being made again from the budget's newest snapshot (a sealed budget): "Bringing your budget up to date". */
+  rebuilding?: boolean;
+  /**
+   * The server showed this device a history that is not the one it saw (docs/privacy.md 5.3, a fork or a rollback).
+   * The device stops; nothing was changed.
+   */
+  forked?: boolean;
 }
 
 const MOCK = import.meta.env.VITE_MOCK === '1';
@@ -372,6 +379,11 @@ async function enterSealed(
     await save();
   }
 }
+
+/** The engine's message when the server showed another history (local/device-log.ts LogFork). */
+const FORK_TEXT = /showed this device a different history/;
+/** What the person reads then (docs/copy.md). */
+export const FORK_MESSAGE = 'The server showed this device a different history. Nothing was changed.';
 
 /** The engine's message for a log request refused because the sign-in ended (local/http-transport.ts). */
 const SIGNED_OUT_TEXT = 'Your sign-in ended. Sign in again.';
@@ -747,7 +759,7 @@ function identityOf(s: Session): EngineIdentity {
 export async function start(session: Session): Promise<void> {
   if (MOCK || state.status === 'opening' || state.status === 'ready') return;
   who = identityOf(session);
-  set({ status: 'opening', error: null, progress: 0, offline: false, why: null });
+  set({ status: 'opening', error: null, progress: 0, offline: false, why: null, forked: false });
   let why: FullWhy | null = keepsCopy() ? 'first' : 'memory';
   let memoryOnly = false;
   try {
@@ -937,7 +949,7 @@ export async function openWithoutSignal(onSession?: (s: Session) => void): Promi
   );
   if (!a.prf)
     throw new Error('This passkey can’t open the budget saved here. Connect to the internet to open it.');
-  set({ status: 'opening', error: null, offline: true });
+  set({ status: 'opening', error: null, offline: true, forked: false });
   try {
     const unreadable = (e: unknown): never => {
       if (e instanceof CopyUnreadable) throw new Error(UNREADABLE);
@@ -985,6 +997,7 @@ async function openHost(bytes: ArrayBuffer | null): Promise<void> {
   await host?.close();
   host = new EngineHost();
   host.onIdentity = (r) => void server('POST', '/api/identity-alert', r).catch(() => undefined);
+  host.onRebuilding = () => set({ rebuilding: true });
   await host.open(who!, bytes);
 }
 
@@ -1023,6 +1036,14 @@ export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}):
         try {
           r = await host!.sealedSync();
         } catch (e) {
+          if (state.rebuilding) set({ rebuilding: false });
+          // The server showed this device another history: the device stops, and the copy is left as it was.
+          if (e instanceof Error && FORK_TEXT.test(e.message)) {
+            if (record) await save().catch(() => undefined);
+            await host?.close();
+            host = null;
+            set({ status: 'failed', forked: true, error: FORK_MESSAGE });
+          }
           // The log's routes said the sign-in ended: the same as any other request that says so (client.ts).
           if (e instanceof Error && e.message === SIGNED_OUT_TEXT) {
             void dropSignedOut(true).finally(() => window.dispatchEvent(new Event('ledgerline:signedout')));
@@ -1037,14 +1058,18 @@ export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}):
           }
           throw e;
         }
-        set({ queued: (await queued()).length, ...(state.why ? { why: null } : {}) });
+        set({
+          queued: (await queued()).length,
+          ...(state.why ? { why: null } : {}),
+          ...(state.rebuilding ? { rebuilding: false } : {}),
+        });
         if (r.lost) window.dispatchEvent(new CustomEvent('ledgerline:edits-refused', { detail: r.lost }));
-        const moved = r.entries > 0 || r.filed > 0 || r.sent > 0;
+        const moved = r.entries > 0 || r.filed > 0 || r.sent > 0 || !!r.rebuilt;
         if (record && (moved || Date.now() - record.lastServerTime >= KEEP_ALIVE_MS)) {
           record = { ...record, lastServerTime: Date.now() };
           await save();
         }
-        if ((r.entries > 0 || r.filed > 0) && !opts.quiet) changed();
+        if ((r.entries > 0 || r.filed > 0 || r.rebuilt) && !opts.quiet) changed();
         upkeep();
         return;
       }

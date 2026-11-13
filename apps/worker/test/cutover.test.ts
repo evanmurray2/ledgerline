@@ -15,6 +15,7 @@ import {
   differingTables,
   dumpChunks,
   emptyOldCopy,
+  MOVE_TABLES,
   openSnapshot,
   tableHashes,
 } from '../src/local/device-snapshot.js';
@@ -165,7 +166,7 @@ describe('the cutover, rehearsed', () => {
     // The freeze ends by the store's own clock, the one every old route reads the mark by.
     expect(Math.abs(frozen.until - (Date.now() + 15 * 60_000))).toBeLessThan(60_000);
     const before = await rowsOf(phone);
-    const mine = await tableHashes(phone.db);
+    const mine = await tableHashes(phone.db, undefined, MOVE_TABLES);
     const shown = mine.map((x) => ({ name: x.name, hash: toHex(x.hash) }));
     expect(
       differingTables(

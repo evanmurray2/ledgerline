@@ -59,6 +59,21 @@ export function CopyScreen({
         {copy.why && WHY[copy.why] && <p className="m-0 text-sm leading-snug text-muted">{WHY[copy.why]}</p>}
       </Frame>
     );
+  // The server showed this device a different history (a fork or a rollback): the device stops here, and its copy
+  // is left as it was (docs/privacy.md 5.3).
+  if (copy.status === 'failed' && copy.forked)
+    return (
+      <Frame title="Your budget stopped on this device">
+        <p className="m-0 text-base leading-relaxed text-ink-2" data-testid="forked">
+          The server showed this device a different history. Nothing was changed.
+        </p>
+        <p className="m-0 text-sm leading-snug text-muted">
+          Your budget is still saved on this device. Don’t make changes on another device until this is
+          solved.
+        </p>
+        <PrimaryButton onClick={() => window.location.reload()}>Try again</PrimaryButton>
+      </Frame>
+    );
   // A locked budget this passkey can't open yet: the recovery key opens it, and the passkey is added.
   if (copy.status === 'failed' && copy.needsRecovery && session)
     return <OpenWithRecoveryKey session={session} />;
