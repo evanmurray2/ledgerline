@@ -94,7 +94,8 @@ export function PurgeCard({ purge }: { purge: PurgeView | null | undefined }) {
                   onConfirm={start}
                   onCancel={() => setAsking(false)}
                 >
-                  Delete the readable copy? This can’t be undone, and the way back ends. Your passkey is asked next.
+                  Delete the readable copy? This can’t be undone, and the way back ends. Your passkey is asked
+                  next.
                 </ConfirmInline>
               ) : (
                 <DangerLink className="self-start" onClick={() => setAsking(true)}>
