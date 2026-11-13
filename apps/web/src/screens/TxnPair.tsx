@@ -8,6 +8,7 @@ import { api } from '../api/endpoints';
 import { invalidateMoney, useMoneyMutation } from '../api/hooks';
 import { toast } from '../components/Toast';
 import { usage } from '../usage/tracker';
+import { pairNoun } from '../lib/common';
 import { ErrorNote, Icon, Label, SoftButton } from '../components/ui';
 
 export function PairedWith({ t, close }: { t: TxnSheet; close: () => void }) {
@@ -15,6 +16,7 @@ export function PairedWith({ t, close }: { t: TxnSheet; close: () => void }) {
   const qc = useQueryClient();
   if (!t.pairedWith) return null;
   const other = t.pairedWith.label;
+  const n = pairNoun(t.amount);
   const notSame = (
     <SoftButton
       mutates="offline"
@@ -33,13 +35,13 @@ export function PairedWith({ t, close }: { t: TxnSheet; close: () => void }) {
           return;
         const key = t.key;
         toast.show({
-          text: 'Kept as two purchases',
+          text: `Kept as two ${n.many}`,
           // The sheet is closed by then, so this runs outside it.
           undo: async () => {
             try {
               await api.notSameUndo(key);
               usage.undo('not_same');
-              toast.show({ text: 'Paired as one purchase' });
+              toast.show({ text: `Paired as one ${n.one}` });
             } catch (e) {
               toast.show({
                 text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t undo that. Try again.',
@@ -71,7 +73,7 @@ export function PairedWith({ t, close }: { t: TxnSheet; close: () => void }) {
         </div>
       ) : (
         <>
-          <Label>Same purchase as</Label>
+          <Label>{`Same ${n.one} as`}</Label>
           <div className="flex items-center justify-between gap-2 rounded-lg border border-line p-3">
             <span className="min-w-0 text-md font-semibold">{other}</span>
             {notSame}

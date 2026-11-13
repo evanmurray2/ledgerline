@@ -337,11 +337,7 @@ async function undoBankPair(s: Scoped, key: string, now: number): Promise<boolea
   const b = await bankPair(s, key);
   if (!b) return false;
   if (b.byProvider)
-    throw new HttpError(
-      409,
-      'provider_link',
-      'Your bank paired these two itself, so they stay one purchase.',
-    );
+    throw new HttpError(409, 'provider_link', 'Your bank paired these two itself, so they stay paired.');
   const own = `p:${b.postedId}`;
   const fresh = await planFresh(
     s,

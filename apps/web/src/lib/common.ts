@@ -26,6 +26,14 @@ export function useCategoryOptions() {
   return { groups, byId, loading: q.isLoading };
 }
 
+/**
+ * What a pair of rows is called on "Same purchase?" and Not the same: money out is a purchase; money in (a refund, a
+ * paycheck) is only a transaction.
+ */
+export function pairNoun(amount: number): { one: string; many: string } {
+  return amount < 0 ? { one: 'purchase', many: 'purchases' } : { one: 'transaction', many: 'transactions' };
+}
+
 /** The second line of a transaction row: account, date and category in the prototype's order. */
 /**
  * A row's grey line: where and when, two facts at most. The category and any status show as tags under it

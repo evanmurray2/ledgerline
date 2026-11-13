@@ -6,6 +6,7 @@ import { ApiError, errorMessage } from '../api/client';
 import { useMoneyMutation } from '../api/hooks';
 import { toast } from '../components/Toast';
 import { SectionTitle, SoftButton } from '../components/ui';
+import { pairNoun } from '../lib/common';
 import { formatCents } from '../lib/money';
 import { TxnRow } from './ActivityRows';
 
@@ -22,8 +23,9 @@ export function SamePurchase({ cards }: { cards: Card[] }) {
   const say = async (card: Card, c: TxnListRow, yes: boolean) => {
     try {
       await answer.mutateAsync({ id: card.id, answer: yes ? 'yes' : 'no', key: c.key });
+      const n = pairNoun(card.row.amount);
       toast.show({
-        text: yes ? 'Paired as one purchase' : 'Kept as two purchases',
+        text: yes ? `Paired as one ${n.one}` : `Kept as two ${n.many}`,
         // No asks again on Undo. Yes has its own: Not the same, on the transaction.
         ...(yes
           ? {}
@@ -35,45 +37,48 @@ export function SamePurchase({ cards }: { cards: Card[] }) {
   };
   return (
     <>
-      {cards.map((card) => (
-        <section key={card.id} className="flex shrink-0 flex-col gap-1.5" data-testid="same-purchase">
-          <SectionTitle note="both count until you answer">Same purchase?</SectionTitle>
-          <div className="overflow-hidden rounded-lg border border-line bg-surface">
-            <TxnRow r={card.row} base="/activity" />
-            {card.candidates.map((c) => (
-              <TxnRow
-                key={c.key}
-                r={c}
-                base="/activity"
-                action={
-                  <span className="flex shrink-0 gap-1.5">
-                    <SoftButton
-                      mutates="offline"
-                      tone="filled"
-                      track="activity.same_purchase.yes"
-                      aria-label={`Yes, ${named(c)} and ${named(card.row)} are the same purchase`}
-                      disabled={answer.isPending}
-                      onClick={() => void say(card, c, true)}
-                    >
-                      Yes
-                    </SoftButton>
-                    <SoftButton
-                      mutates="offline"
-                      tone="outline"
-                      track="activity.same_purchase.no"
-                      aria-label={`No, ${named(c)} and ${named(card.row)} are not the same purchase`}
-                      disabled={answer.isPending}
-                      onClick={() => void say(card, c, false)}
-                    >
-                      No
-                    </SoftButton>
-                  </span>
-                }
-              />
-            ))}
-          </div>
-        </section>
-      ))}
+      {cards.map((card) => {
+        const n = pairNoun(card.row.amount);
+        return (
+          <section key={card.id} className="flex shrink-0 flex-col gap-1.5" data-testid="same-purchase">
+            <SectionTitle note="both count until you answer">{`Same ${n.one}?`}</SectionTitle>
+            <div className="overflow-hidden rounded-lg border border-line bg-surface">
+              <TxnRow r={card.row} base="/activity" />
+              {card.candidates.map((c) => (
+                <TxnRow
+                  key={c.key}
+                  r={c}
+                  base="/activity"
+                  action={
+                    <span className="flex shrink-0 gap-1.5">
+                      <SoftButton
+                        mutates="offline"
+                        tone="filled"
+                        track="activity.same_purchase.yes"
+                        aria-label={`Yes, ${named(c)} and ${named(card.row)} are the same ${n.one}`}
+                        disabled={answer.isPending}
+                        onClick={() => void say(card, c, true)}
+                      >
+                        Yes
+                      </SoftButton>
+                      <SoftButton
+                        mutates="offline"
+                        tone="outline"
+                        track="activity.same_purchase.no"
+                        aria-label={`No, ${named(c)} and ${named(card.row)} are not the same ${n.one}`}
+                        disabled={answer.isPending}
+                        onClick={() => void say(card, c, false)}
+                      >
+                        No
+                      </SoftButton>
+                    </span>
+                  }
+                />
+              ))}
+            </div>
+          </section>
+        );
+      })}
     </>
   );
 }
