@@ -37,7 +37,16 @@ import { WORKER_RUN_KEYS } from '../keys/worker-keys';
 import { fetchPublicEntries, logDeviceId, newUlid, openSealedBudget, openSealedHeld } from './sealed';
 import { forgetSealed, keepPublicSeen, lastPublicSeen, rememberSealed, sealedBudgets } from './sealed-marks';
 import { addPasskeyWay, authPubOf, openPlans, type Ways } from './sealed-ways';
-import { ACTION, type Entry, passkeySlotId, type PublicState, walkPublic, zeroize } from '@ledgerline/seal';
+import {
+  ACTION,
+  type Entry,
+  fromHex,
+  passkeySlotId,
+  type PublicState,
+  toHex,
+  walkPublic,
+  zeroize,
+} from '@ledgerline/seal';
 import { mergedSession, NOT_LOCKED } from './sealed-session';
 import { ownWriters } from './notices';
 import { EngineHost, type DevicesDiffer, type EngineIdentity, type QueuedEdit } from './host';
@@ -132,10 +141,6 @@ export async function keepSession(s: Session): Promise<void> {
 }
 /** Shown, with the button that tries again, when a sealed budget needs the passkey once more. */
 export const NEEDS_PASSKEY = 'Your passkey is needed once more to open your budget. Try again.';
-
-const toHex = (b: Uint8Array): string => [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
-const fromHex = (s: string): Uint8Array<ArrayBuffer> =>
-  Uint8Array.from(s.match(/../g) ?? [], (x) => parseInt(x, 16));
 
 /** The recovery key as typed, held only until the next open uses it (`openWithRecovery`, a recovery sign-in). */
 let recoveryTyped: string | null = null;
