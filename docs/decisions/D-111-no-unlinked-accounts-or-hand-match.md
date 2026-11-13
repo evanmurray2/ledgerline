@@ -1,4 +1,4 @@
-# D-67: No accounts without a bank link, and no matching by hand (Nov 13, 2026)
+# D-111: No accounts without a bank link, and no matching by hand (Nov 13, 2026)
 
 **Decided by the owner** (chat, Nov 13, 2026), reading the build plan.
 

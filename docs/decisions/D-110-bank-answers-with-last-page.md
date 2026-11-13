@@ -1,4 +1,4 @@
-# D-109: The bank's balances come in the step of a run's last page (Nov 13, 2026)
+# D-110: The bank's balances come in the step of a run's last page (Nov 13, 2026)
 
 **Before.** `docs/privacy.md` 5.5 gave the sealed fetch "at the end of a run, one step each for Plaid's balances and
 liabilities", after the last page of transactions. Each step is its own alarm, so the balances and card statements
