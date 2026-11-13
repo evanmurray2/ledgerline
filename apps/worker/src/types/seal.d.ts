@@ -453,6 +453,40 @@ export const FRESH_WAY_MS: number;
 export const INTENT_WAIT_MS: number;
 export function encodeSlotChange(s: { prevPublic: PublicRef; slots: unknown[] }): Bytes;
 export function encodeIntent(i: { prevPublic: PublicRef; notBefore: number; slotIds: string[] }): Bytes;
+/** A key change (entry.ts KeyChange), for the Worker's tests of the log's routes. */
+export interface KeyChange {
+  prevPublic: PublicRef;
+  version: number;
+  signPub: Bytes;
+  wrappedPrevKey: Bytes;
+  inboxVersion: number;
+  inboxPub: Bytes;
+  lastOldRun: number;
+  inboxes: { version: number; wrapped: Bytes }[];
+  slots: unknown[];
+  intent: PublicRef | null;
+}
+export function encodeKeyChange(k: KeyChange): Bytes;
+export function resealSlotRecord(
+  old: unknown,
+  oldKeys: BudgetKeys,
+  newBk: Uint8Array,
+  newKeys: BudgetKeys,
+  budgetId: string,
+): Promise<unknown>;
+export function rewrapInbox(
+  oldKeys: BudgetKeys,
+  newKeys: BudgetKeys,
+  budgetId: string,
+  i: number,
+  wrapped: Uint8Array,
+): Promise<Bytes>;
+export function wrapPrevKey(
+  oldKeys: BudgetKeys,
+  newKeys: BudgetKeys,
+  budgetId: string,
+  prevBk: Uint8Array,
+): Promise<Bytes>;
 
 // Adding a device with its own passkey (docs/privacy-keys.md 10): the sizes the relay checks.
 export const ADD_ATTEMPTS: number;
