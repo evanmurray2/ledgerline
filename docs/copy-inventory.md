@@ -113,7 +113,7 @@ The rules and terms are in `docs/copy.md`. A snapshot, not kept up to date: the 
   Assign came about, each part left out at $0: "Left from {Month}" · "Overspent in {Month}" · "Money in during
   {Month}" · "Paid back to you" · "Closed out" · "Owed to you" · "Assigned"
 - "Targets for {Month} · {total}" + "Fill targets · {total}" → "Each target got what it needs this month." + Undo
-- Sync problem strip: "{bank} didn't finish syncing · see Accounts"
+- Sync problem strip: "{bank} didn’t finish syncing" with a chevron (opens Accounts)
 
 **Pinned:** group "Pinned" · sheet button "Pin {category} to the top" · "{category} pinned to the top" / "{category}
 unpinned"

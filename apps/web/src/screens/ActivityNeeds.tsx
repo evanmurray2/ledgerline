@@ -136,11 +136,11 @@ export function NeedsCategory({
                         Join
                       </TextButton>
                     </span>
-                    {r.rawName && <span className="font-mono text-muted break-words">{r.rawName}</span>}
+                    {r.rawName && <span className="font-mono text-faint break-words">{r.rawName}</span>}
                   </span>
                 ) : !label && r.newPayee && r.rawName ? (
                   <span className="text-xs text-muted break-words">
-                    New payee · <span className="font-mono">{r.rawName}</span>
+                    New payee · <span className="font-mono text-faint">{r.rawName}</span>
                   </span>
                 ) : null}
                 {!selecting && sug && (
@@ -168,19 +168,22 @@ export function NeedsCategory({
                     </SoftButton>
                   </span>
                 )}
+                {!selecting && !sug && (
+                  // On its own line, as with a suggestion, so the amount keeps the row's right edge.
+                  <span className="flex justify-end">
+                    <SoftButton
+                      mutates="offline"
+                      tone={label ? 'outline' : 'soft'}
+                      track="activity.category.choose"
+                      aria-label={`${label ? 'Change category for' : 'Choose category for'} ${r.payee} ${formatCents(r.amount)}`}
+                      onClick={() => openPicker({ keys: [r.key], row: r })}
+                      className="max-w-[60%]"
+                    >
+                      <span className="truncate">{label ?? 'Choose'}</span>
+                    </SoftButton>
+                  </span>
+                )}
               </span>
-              {!selecting && !sug && (
-                <SoftButton
-                  mutates="offline"
-                  tone={label ? 'outline' : 'soft'}
-                  track="activity.category.choose"
-                  aria-label={`${label ? 'Change category for' : 'Choose category for'} ${r.payee} ${formatCents(r.amount)}`}
-                  onClick={() => openPicker({ keys: [r.key], row: r })}
-                  className="max-w-[112px]"
-                >
-                  <span className="truncate">{label ?? 'Choose'}</span>
-                </SoftButton>
-              )}
             </div>
           );
         })}

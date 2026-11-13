@@ -21,6 +21,7 @@ import { formatCents, parseCents } from '../lib/money';
 import { monthName } from '../lib/dates';
 import { useCategoryOptions, useScreen } from '../lib/common';
 import { useCloseTo } from '../lib/back';
+import { sentence } from '../lib/text';
 import { useBudgetMonth } from './Budget';
 import { usage } from '../usage/tracker';
 import { useCanWrite } from '../state/connectivity';
@@ -171,7 +172,7 @@ export function AssignSheetScreen() {
                 />
                 <span className="flex flex-1 flex-col gap-0.5">
                   <span className="text-base font-semibold">{s.name}</span>
-                  <span className="text-xs text-muted">{s.detail}</span>
+                  <span className="text-xs text-muted">{sentence(s.detail)}</span>
                 </span>
                 <span className="tnum text-base font-bold">{formatCents(s.amount)}</span>
               </label>

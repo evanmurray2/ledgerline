@@ -179,7 +179,7 @@ export function DangerLink({ className, ...p }: BtnProps) {
   return (
     <Button
       className={cx(
-        'min-h-10 self-start text-md font-bold text-over-fg disabled:text-disabled not-disabled:hover:underline',
+        'hit min-h-10 self-start text-md font-bold text-over-fg disabled:text-disabled not-disabled:hover:underline',
         PRESS,
         className,
       )}

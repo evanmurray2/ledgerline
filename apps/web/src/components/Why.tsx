@@ -1,6 +1,6 @@
 // "Why?": one short line on screen, the rest of the explanation behind a tap (design critique, Nov 4).
 import { useState, type ReactNode } from 'react';
-import { cx } from './ui';
+import { cx, Icon } from './ui';
 
 export function Why({
   children,
@@ -51,9 +51,11 @@ export function OneBanner({ items }: { items: ReactNode[] }) {
         type="button"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="hit self-start px-0.5 text-sm font-bold text-accent"
+        // A verb and a chevron, so it reads as "open the rest of these notes", not as a stray count.
+        className="hit inline-flex items-center gap-1 self-start px-0.5 text-sm font-bold text-accent"
       >
-        {open ? 'Show less' : `${shown.length - 1} more`}
+        {open ? 'Show less' : `Show ${shown.length - 1} more`}
+        <Icon name="chevD" size={16} className={open ? 'rotate-180' : undefined} />
       </button>
     </div>
   );

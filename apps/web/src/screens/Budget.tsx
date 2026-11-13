@@ -200,10 +200,12 @@ function SyncProblem({ text }: { text: string }) {
     <Link
       to="/accounts"
       search={{ back: here }}
-      className="flex items-center gap-2 bg-warn-bg px-4 py-2 text-sm font-semibold text-warn-fg no-underline"
+      className="flex min-h-11 items-center gap-2 bg-warn-bg px-4 py-2 text-sm font-semibold text-warn-fg no-underline"
     >
       <Icon name="alert" size={16} stroke={2.6} />
-      {text} · see Accounts
+      {/* The chevron says it opens Accounts, as the same problem's card on Accounts does. */}
+      <span className="min-w-0 flex-1">{text}</span>
+      <Icon name="chevR" size={16} />
     </Link>
   );
 }

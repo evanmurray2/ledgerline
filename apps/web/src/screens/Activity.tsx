@@ -366,10 +366,28 @@ export function ActivityScreen() {
     }
   };
 
+  // A row already under Check these, with its Review button, isn't listed again under Pending; Pending's total is
+  // then what its own rows add up to.
+  const checking = new Set(toCheck.map((r) => r.key));
+  const pendingRows = (v?.pending ?? []).filter((r) => !checking.has(r.key));
+  const pendingShownTotal =
+    (v?.pendingTotal ?? 0) +
+    (v?.pending ?? []).filter((r) => checking.has(r.key)).reduce((sum, r) => sum + r.amount, 0);
+
   const selKeys = openNeeds.filter((r) => sel[r.key]).map((r) => r.key);
   // Under All it sets the groups that need you apart from Pending and Posted; the Needs attention filter's chip
   // already says it.
-  const showAttnHead = filter === 'all' && !allMonths && (v?.attentionCount ?? 0) > 0;
+  // With only one group under it, that group's own heading says it, so the two labels don't stack.
+  const attnGroups = v
+    ? [
+        toSort.length,
+        sameCards.length,
+        v.needsCategory?.length ?? 0,
+        toCheck.length,
+        v.removedByBank.length,
+      ].filter((n) => n > 0).length
+    : 0;
+  const showAttnHead = filter === 'all' && !allMonths && (v?.attentionCount ?? 0) > 0 && attnGroups > 1;
   const attentionCount = counts.data?.attentionCount ?? v?.attentionCount ?? 0;
   const notPostedCount = counts.data?.notPostedCount ?? v?.notPostedCount ?? 0;
   // A filter with nothing in it is hidden, unless it's the one showing; with neither, the chip row goes too.
@@ -484,9 +502,9 @@ export function ActivityScreen() {
             </EmptyNote>
           )}
           {v && showAttnHead && (
-            // The count is already on the filter chip above.
-            // Same look as every other section heading (small capitals).
-            <SectionTitle>Needs attention</SectionTitle>
+            // The count is already on the filter chip above. Larger than the section headings under it, so the two
+            // don't stack as equals.
+            <SectionTitle outer>Needs attention</SectionTitle>
           )}
           {v &&
             filter === 'attention' &&
@@ -517,9 +535,9 @@ export function ActivityScreen() {
           )}
           {v && toCheck.length > 0 && <CheckThese rows={toCheck} onDismiss={(r) => void dismiss(r)} />}
           {v && v.removedByBank.length > 0 && <RemovedByBank rows={v.removedByBank} />}
-          {v && v.pending.length > 0 && (
-            <Section title="Pending" note={`counts now · ${formatCents(v.pendingTotal)}`}>
-              {v.pending.map((r) => (
+          {v && pendingRows.length > 0 && (
+            <Section title="Pending" note={`counts now · ${formatCents(pendingShownTotal)}`}>
+              {pendingRows.map((r) => (
                 <TxnRow key={r.key} r={r} base="/activity" {...picked(r)} />
               ))}
             </Section>
