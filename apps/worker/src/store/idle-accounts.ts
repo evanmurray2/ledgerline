@@ -85,6 +85,7 @@ export function startDeletionSql(budgetId: string, userIds: string[], now: numbe
     ...each(`DELETE FROM auth_session WHERE user_id = ?`),
     ...each(`DELETE FROM device WHERE user_id = ?`),
     ...each(`DELETE FROM device_link WHERE user_id = ?`),
+    ...each(`DELETE FROM device_add WHERE user_id = ?`),
     [`DELETE FROM connection_route WHERE budget_id = ?`, [budgetId]],
     [`DELETE FROM budget_member WHERE budget_id = ?`, [budgetId]],
     [
