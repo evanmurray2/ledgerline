@@ -218,18 +218,26 @@ describe('the sealed log on the server', () => {
       (await db.prepare(`SELECT value FROM store_note WHERE key = ?1`).bind(key).first<{ value: number }>())
         ?.value;
     expect(await note(`device:${PHONE}`)).toBe(2);
-    // For one release the JSON value also keeps every counter, so a rollback to older code still reads them
-    // (D-104); the public entries it never read are gone.
+    // The counters are rows only, and the public entries the server never read are not kept (D-104). Entries
+    // are BLOBs.
     const now = await db.prepare(`SELECT state FROM log_state WHERE id = 1`).first<{ state: string }>();
     const parsed = stateFromJson(now!.state) as unknown as {
       counters: Map<string, number>;
       public: { publics: unknown[] };
     };
-    expect([...parsed.counters]).toEqual([[PHONE, 2]]);
+    expect([...parsed.counters]).toEqual([]);
     expect(parsed.public.publics).toEqual([]);
+    expect(
+      await db.prepare(`SELECT number, typeof(bytes) AS t FROM log_entry ORDER BY number`).all(),
+    ).toMatchObject({
+      results: [
+        { number: 1, t: 'blob' },
+        { number: 2, t: 'blob' },
+      ],
+    });
 
-    // Today's format: every counter in the JSON value and no rows (the owner's store on Nov 13, 2026), with an
-    // entry stored as base64 text.
+    // The format of the releases up to Nov 13, 2026 (the owner's store then): every counter in the JSON value,
+    // a phone's counter in a row as well, and an entry stored as base64 text.
     const old = stateFromJson(now!.state) as unknown as Record<string, unknown> & {
       public: Record<string, unknown>;
     };
@@ -239,7 +247,7 @@ describe('the sealed log on the server', () => {
     ]);
     old.public.publics = [{ number: 1, hash: new Uint8Array(32), keyVersion: 1 }];
     await db.batch([
-      db.prepare(`DELETE FROM store_note WHERE key LIKE 'device:%'`),
+      db.prepare(`DELETE FROM store_note WHERE key LIKE 'device:%' AND key != ?1`).bind(`device:${PHONE}`),
       db.prepare(`UPDATE log_state SET state = ?1 WHERE id = 1`).bind(stateToJson(old as never)),
       db
         .prepare(`UPDATE log_entry SET bytes = ?1 WHERE number = 2`)
@@ -250,15 +258,24 @@ describe('the sealed log on the server', () => {
     // A device counter must follow the one in the JSON value.
     expect((await logAppend(deps(db, w.time), 2, [encodeEntry(await w.edit('two'))])).ok).toBe(true);
     expect(await note(`device:${PHONE}`)).toBe(3);
-    // Every counter of the JSON value is a row too, and (for one release, D-104) still in the value as well.
+    // Every counter of the JSON value is a row now, and the value holds none: the next write reads rows only.
     expect(await note(`device:${LAPTOP}`)).toBe(7);
     const after = await db.prepare(`SELECT state FROM log_state WHERE id = 1`).first<{ state: string }>();
     expect([
       ...(stateFromJson(after!.state) as unknown as { counters: Map<string, number> }).counters,
-    ]).toEqual([
-      [PHONE, 3],
-      [LAPTOP, 7],
-    ]);
+    ]).toEqual([]);
+    // The entry stored as text stays text and reads as it did; the new one is a BLOB.
+    expect(
+      await db
+        .prepare(`SELECT number, typeof(bytes) AS t FROM log_entry WHERE number >= 2 ORDER BY number`)
+        .all(),
+    ).toMatchObject({
+      results: [
+        { number: 2, t: 'text' },
+        { number: 3, t: 'blob' },
+      ],
+    });
+    expect((await readEntry((await logAfter(db, 1, 1))[0]!.bytes)).header.number).toBe(2);
     // The laptop goes on from its counter in the row.
     const laptop = new Writer();
     laptop.keys = w.keys;

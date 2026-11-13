@@ -68,7 +68,7 @@ export type AppendResult =
   | { ok: false; why: 'behind'; number: number; retry: true }
   | { ok: false; why: RefusedWhy; detail: string; retry: boolean };
 
-// ---- bytes as text: the chain state's JSON, and entries stored before Nov 13, 2026
+// ---- bytes as text: the chain state's JSON, the log's answers, and entries an earlier release stored
 
 /** Base64 of `b`, in pieces: a byte at a time cost about 2 ms for each 64 KB. */
 export const b64 = (b: Uint8Array): string => {
@@ -85,8 +85,8 @@ const unb64 = (s: string): Uint8Array<ArrayBuffer> => {
 };
 
 /**
- * An entry's stored bytes. An entry is stored as a BLOB; before Nov 13, 2026 it was base64 text, in the same
- * column, and those rows stay as they are.
+ * An entry's stored bytes. An entry is stored as a BLOB; the releases up to Nov 13, 2026 stored base64 text, in
+ * the same column, and those rows stay as they are (read as they are, never rewritten).
  */
 export function entryBytes(v: unknown): Uint8Array<ArrayBuffer> {
   if (typeof v === 'string') return unb64(v);
@@ -129,9 +129,9 @@ export function stateFromJson(text: string): StoredChain {
  * counters of its own devices only, and a JSON value that the log's own limits keep small (slots, open intents,
  * inbox keys, key versions).
  *
- * A state stored before Nov 13, 2026 holds every counter in the JSON value: those count as rows until the next
- * write moves them out. The value written keeps `counters` and `publics`, empty, so that code from before then
- * still reads it.
+ * A state stored by an earlier release holds every counter in the JSON value: those count as rows until the next
+ * write moves them out (a few rows, one per device, in that write's transaction). The value written keeps
+ * `counters` and `publics`, empty.
  */
 const DEVICE_NOTE = 'device:';
 /** Every key of `store_note` from `device:` up to `device;`: the device counters, read by the primary key. */
@@ -139,7 +139,7 @@ const DEVICE_RANGE = `key >= 'device:' AND key < 'device;'`;
 
 interface Loaded {
   state: ChainState;
-  /** Counters still in the JSON value (a state stored before Nov 13, 2026); each becomes a row at the next write. */
+  /** Counters still in the JSON value (a state an earlier release stored); each becomes a row at the next write. */
   inJson: Map<string, number>;
 }
 
@@ -158,7 +158,7 @@ async function loadState(db: Db, devices: readonly string[]): Promise<Loaded | n
       .all<{ key: string; value: number }>();
     for (const x of rows.results) counters.set(x.key.slice(DEVICE_NOTE.length), x.value);
   }
-  // A counter in the JSON value is the newer one: code from before Nov 13, 2026 may have written it since.
+  // A counter in the JSON value is the newer one: an earlier release (after a rollback) may have written it since.
   for (const x of devices) {
     const v = inJson.get(x);
     if (v !== undefined) counters.set(x, v);
@@ -185,7 +185,7 @@ export async function logHead(db: Db): Promise<number> {
   );
 }
 
-/** The entries after `after`, in order, as stored: a BLOB, or base64 text for one stored before Nov 13, 2026. */
+/** The entries after `after`, in order, as stored: a BLOB, or base64 text for one an earlier release stored. */
 export async function logRowsAfter(
   db: Db,
   after: number,
@@ -265,14 +265,14 @@ function storeStmts(
   keys: KeyCount,
   now: number,
 ): Stmt[] {
-  // The counters this write moved, and any still in the JSON value, as rows.
+  // The counters this write moved, and any still in the JSON value (moved out once, at this write), as rows.
   const counters = new Map(inJson);
   for (const { e } of entries) counters.set(e.header.deviceId, state.counters.get(e.header.deviceId)!);
   const stored = toStored(state);
-  // For one release the JSON value also keeps every counter, and entries stay base64 text: code from before
-  // Nov 13, 2026 reads only those, and a rollback to it (deploy.yml rolls back a failed smoke test) must not refuse
-  // every device's next write and drop its edits. A later release writes the counters as rows only (D-104).
-  const json = stateToJson({ ...stored, counters, public: { ...stored.public, publics: [] } });
+  // The counters are rows only, and entries are BLOBs (D-104). The release before this one wrote both forms and
+  // reads both, so a rollback to it (deploy.yml rolls back a failed smoke test) still finds every counter and
+  // entry. The value keeps `counters` and `publics`, empty, so that it has the shape every release has read.
+  const json = stateToJson({ ...stored, counters: new Map(), public: { ...stored.public, publics: [] } });
   const keyEntries = entries.filter(({ e }) => NEVER_HELD.includes(e.header.kind)).length;
   return [
     ...entries.map(({ e, bytes }) =>
@@ -286,7 +286,7 @@ function storeStmts(
           e.header.part,
           e.header.kind,
           toHex(e.hash),
-          b64(bytes),
+          bytes,
           now,
         ),
     ),
