@@ -120,10 +120,11 @@ For a locked budget, the server and whoever runs it still learn (`docs/privacy.m
 - the size and time of each change, and how many there are;
 - for each bank link: its Plaid Item id, its token, which bank it is (Plaid's dashboard shows it), when it was linked, its state, when each bank update came, how
   many rows it added, changed and removed, and its size;
-- in Cloudflare's invocation logs, for 3 days: each request's IP address, a location for it, the browser, and its
-  full address. The owner keeps these logs on for now (D-90); they are turned off before any claim about IP
-  addresses is made. The app's own log lines hold only an allowlist of fields: never amounts, names, descriptions
-  or tokens (`apps/worker/src/http/context.ts` `log`).
+- the app's own log lines, for 3 days. They hold only an allowlist of fields: never amounts, names, descriptions,
+  tokens or IP addresses (`apps/worker/src/http/context.ts` `log`). Cloudflare's invocation logs, which held each
+  request's IP address, a location for it, the browser and its full address, are off since Nov 13, 2026 (D-112).
+  Cloudflare still sees each request's IP address as it passes through (the sign-in rate limit counts by it), and
+  logs from before that day age out after 3 days.
 
 ## What we never say
 

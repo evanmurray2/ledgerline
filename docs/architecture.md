@@ -25,7 +25,7 @@ Data lives only in Durable Objects' SQLite (D-37, D-38). Cloudflare keeps 30 day
 - **Bank runs** (`seal/runs.ts`, 0006): each page sealed to the budget's inbox key the moment Plaid answers, then the run signed by the Worker. Plain: counts, sizes, times, cursors.
 - **`bank_link`** (0002, 0007): each link's id, Plaid Item id, encrypted token, state and last fetch, under the Worker's stamp (`linkMac`, written when the link is made). No bank or account name.
 - **The mark** (`store/marks.ts`): "sealed". A sealed budget answers only `/api/log/*`, `seal/sealed-routes.ts` (who is signed in, its bank links by id, link, repair, remove, Fetch now; the bank routes only once the budget is sealed) and the Plaid webhook; every other path says "Update Ledgerline to continue." A budget not sealed yet has only its session (which tells the device to make it) and `/api/start/*`. The server can't restore a budget.
-- **What it can see** (`docs/privacy.md` 4.3): times, sizes and counts of entries and runs, link ids and states, passkeys and devices, and Cloudflare's invocation logs (IP address, location, full address) for 3 days.
+- **What it can see** (`docs/privacy.md` 4.3): times, sizes and counts of entries and runs, link ids and states, passkeys and devices, and the app's own log lines for 3 days. Cloudflare's invocation logs (IP address, location, full address) are off (D-112).
 
 ## A request
 

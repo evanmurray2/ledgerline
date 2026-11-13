@@ -8,9 +8,9 @@
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
   "preview_urls": false,
-  // Workers Logs: one log per request and alarm (path, status, CPU time), kept 3 days. A separate free allowance
-  // (200,000 log events a day); it uses none of the request, row or CPU limits.
-  "observability": { "enabled": true, "logs": { "invocation_logs": true } },
+  // Workers Logs keeps only the app's own log lines (an allowlist of fields, http/context.ts `log`), 3 days. The
+  // invocation log Cloudflare adds per request (IP address, location, full address, CPU time) is off (D-112).
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
   // docs/multi-user.md: the Directory and one BudgetStore per budget.
   "durable_objects": {
     "bindings": [
