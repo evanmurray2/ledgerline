@@ -7,7 +7,14 @@ import { editNow } from '../http/clock.js';
 import { HttpError, scoped, GONE } from './api.js';
 import { fresh, monthResult, shortDate, structure } from '../views/common.js';
 import { hiddenFromLists, listRow } from '../views/rows.js';
-import { TX_COLUMNS, needsCategory, uncovered, type TxRow } from '../ledger/ledger.js';
+import {
+  ENTRIES_AT_BANK,
+  TX_COLUMNS,
+  atBankMap,
+  needsCategory,
+  uncovered,
+  type TxRow,
+} from '../ledger/ledger.js';
 import { startSheet } from '../ledger/start-part.js';
 import { closeBlocked } from './account-close.js';
 import { accountRows } from './accounts.js';
@@ -42,11 +49,12 @@ registerRoutes.get('/accounts/:id/register', async (c) => {
        ORDER BY date DESC, seq DESC LIMIT ${REGISTER_ROWS + 1}`,
     id,
   );
+  const atBank = atBankMap(await s.all(ENTRIES_AT_BANK));
   const more = read.length > REGISTER_ROWS;
   const txs = more ? read.slice(0, REGISTER_ROWS) : read;
   // A row with no category says so, as on Activity; the bank's tags (a hold, a transfer) come first.
   const row = (t: TxRow) => {
-    const r = listRow(t, accts, cats);
+    const r = listRow(t, accts, cats, { atBank: atBank.get(t.key) ?? null });
     return !r.badge && !r.categoryLabel && needsCategory(t)
       ? { ...r, badge: 'Needs a category', badgeKind: 'alert' as const }
       : r;
