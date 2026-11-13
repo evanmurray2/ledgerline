@@ -12,7 +12,7 @@ const { db, setup, sync, heal, keyOf, overlay, listed, counted, asks, call } = b
   'entry-covers',
   B,
   'con_ec',
-  19,
+  20,
   NOW,
 );
 
@@ -155,6 +155,24 @@ describe('your entry and the bank’s rows', () => {
     await sync([plaidTxn('rm', 5, 20, '2026-11-10', 'Shop B', { authorized_date: '2026-11-08' })]);
     expect(await keyOf('rm')).toBe('m:rm');
     expect(await counted(5)).toEqual({ spent: -2000, pending: 0 });
+  });
+
+  it('money in you added and matched: the match moves with your key to the bank’s posted row', async () => {
+    await entry('m:back', 20, 2500, '2026-11-08', 'Sam');
+    await db
+      .prepare(
+        `INSERT INTO txn_link (id, budget_id, kind, from_key, to_key, amount, created_by, created_at) VALUES ('l_back', ?1, 'reimbursement_of', 'm:back', 'owed_x', 2500, 'user', 0)`,
+      )
+      .bind(B)
+      .run();
+    await sync([pend('back-p', 20, -25, '2026-11-08', 'Sam')]);
+    expect((await mp('m:back'))!.covers_provider_txn_id).toBe('back-p');
+    await sync([plaidTxn('back', 20, -25, '2026-11-09', 'Sam', { pending_transaction_id: 'back-p' })]);
+    expect(await keyOf('back')).toBe('m:back');
+    expect(await db.prepare(`SELECT from_key, undone_at FROM txn_link WHERE id = 'l_back'`).first()).toEqual({
+      from_key: 'm:back',
+      undone_at: null,
+    });
   });
 
   it('a new pending id after an amount change: the entry covers the new one', async () => {
