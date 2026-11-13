@@ -14,7 +14,9 @@ import {
   type FetchDeps,
   type FetchState,
 } from '../src/seal/fetch-job.js';
-import { lastCompleteRun, STAGE_MAX_MS, stageOf } from '../src/seal/runs.js';
+import { stageOf } from '../src/seal/run-stage.js';
+import { STAGE_MAX_MS } from '../src/seal/run-steps.js';
+import { lastCompleteRun } from '../src/seal/runs.js';
 import type { BudgetStore } from '../src/store/budget-store.js';
 import { nextUtcMidnight } from '../src/store/jobs.js';
 import { T0 } from './log-writer.js';

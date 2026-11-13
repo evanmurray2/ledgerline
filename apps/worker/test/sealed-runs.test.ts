@@ -16,21 +16,23 @@ import {
 } from '@ledgerline/seal';
 import { describe, expect, it } from 'vitest';
 import { stateFromJson, stateToJson } from '../src/seal/log-store.js';
+import { stageOf } from '../src/seal/run-stage.js';
 import {
   abandonSealedRun,
-  BadStamp,
   beginSealedRun,
   completeSealedRun,
   fetchSealedPage,
+  sealBankAnswer,
+  sealLinkDescription,
+  STAGE_MAX_MS,
+} from '../src/seal/run-steps.js';
+import {
+  BadStamp,
   keyStampStmts,
   lastCompleteRun,
   receiptHashes,
   RunStopped,
-  sealBankAnswer,
   sealedPageOf,
-  sealLinkDescription,
-  STAGE_MAX_MS,
-  stageOf,
 } from '../src/seal/runs.js';
 import { BUDGET, T0 } from './log-writer.js';
 import { bank, handed, LINK_A, LINK_B, run, text, TWO_PAGES, world, type World } from './sealed-world.js';

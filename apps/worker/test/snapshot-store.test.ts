@@ -16,7 +16,8 @@ import {
 import { ulid } from '@ledgerline/platform';
 import { describe, expect, it } from 'vitest';
 import { logAfter, logAppend, logHead } from '../src/seal/log-store.js';
-import { beginSealedRun, lastCompleteRun, receiptHashes, sealedPageOf } from '../src/seal/runs.js';
+import { beginSealedRun } from '../src/seal/run-steps.js';
+import { lastCompleteRun, receiptHashes, sealedPageOf } from '../src/seal/runs.js';
 import {
   logFloor,
   snapshotBegin,

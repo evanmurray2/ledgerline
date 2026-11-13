@@ -10,18 +10,16 @@ import { nextUtcMidnight } from '../store/jobs.js';
 import { NEEDS_SIGN_IN } from '../sync/provider.js';
 import type { LinkDescription } from './link-description.js';
 import { snapshotPrune } from './snapshot-store.js';
+import { linkForBank } from './run-stage.js';
 import {
   abandonSealedRun,
-  BadStamp,
   beginSealedRun,
   completeSealedRun,
   fetchSealedPage,
-  linkForBank,
-  RunStopped,
   sealBankAnswer,
   sealLinkDescription,
-  type RunDeps,
-} from './runs.js';
+} from './run-steps.js';
+import { BadStamp, RunStopped, type RunDeps } from './runs.js';
 
 export const SEALED_FETCH = 'sealed_fetch';
 export const SEALED_BACKSTOP = 'sealed_backstop';

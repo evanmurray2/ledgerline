@@ -20,7 +20,8 @@ import { jsonOf, storeSigned, UNSIGNED } from '../http/signed-request.js';
 import { classifyUsage, dailyLimits, usageToday, utcDay } from '../sync/breaker.js';
 import { ITEM_LIMIT, makeProvider } from '../sync/provider.js';
 import { sealedFetchId } from './fetch-job.js';
-import { abandonSealedRun, workerKeys } from './runs.js';
+import { abandonSealedRun } from './run-steps.js';
+import { workerKeys } from './runs.js';
 import { isSealedStore } from './start.js';
 
 const b64 = (bytes: Uint8Array): string => {
