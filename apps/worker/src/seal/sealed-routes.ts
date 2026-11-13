@@ -9,10 +9,10 @@ import {
   LinkTokenRequest,
   type SealedSession,
 } from '@ledgerline/contracts';
-import { decryptToken, encryptToken, parseKeyring, ulid } from '@ledgerline/platform';
-import { ACTION, linkMac } from '@ledgerline/seal';
+import { decryptToken, parseKeyring } from '@ledgerline/platform';
+import { ACTION } from '@ledgerline/seal';
 import { ProviderError } from '@ledgerline/bank-provider';
-import { type Context, Hono } from 'hono';
+import { Hono } from 'hono';
 import { requestNow } from '../http/clock.js';
 import { canLinkBanks, type AppEnv } from '../http/context.js';
 import { csrf } from '../http/security.js';
@@ -20,15 +20,9 @@ import { jsonOf, storeSigned, UNSIGNED } from '../http/signed-request.js';
 import { classifyUsage, dailyLimits, usageToday, utcDay } from '../sync/breaker.js';
 import { ITEM_LIMIT, makeProvider } from '../sync/provider.js';
 import { sealedFetchId } from './fetch-job.js';
-import { abandonSealedRun, workerKeys } from './runs.js';
+import { finishNewLink } from './link-watch.js';
+import { abandonSealedRun } from './runs.js';
 import { isSealedStore } from './start.js';
-
-const b64 = (bytes: Uint8Array): string => {
-  let s = '';
-  for (const b of bytes) s += String.fromCharCode(b);
-  return btoa(s);
-};
-const unb64 = (s: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(s), (ch) => ch.charCodeAt(0));
 
 export const sealedApi = new Hono<AppEnv>();
 
@@ -237,6 +231,8 @@ sealedApi.post('/settings/connections/link-token', async (c) => {
     if (c.env.PLAID_ENV === 'production' && !r.data.confirmSlot)
       return no(409, 'confirm_slot', 'Confirm that you want to use one of your bank links.');
     const lt = await makeProvider(c.env).createLinkSession({ mode: 'new', userId: c.get('userId'), hosted });
+    // The server finishes the link itself if the person doesn't come back to the app (link-watch.ts).
+    await c.env.WATCH_LINK?.(lt.linkToken);
     return c.json({ linkToken: lt.linkToken, hostedUrl: lt.hostedUrl });
   }
   if (!r.data.connectionId) return no(400, 'invalid', TRY_AGAIN);
@@ -272,55 +268,15 @@ sealedApi.post('/settings/connections/link-finish', async (c) => {
     const refused = await storeSigned(c, ACTION.linkFinish, raw);
     if (refused) return refused;
   }
-  const provider = makeProvider(c.env);
-  const result = await provider.linkResult(r.data.linkToken);
-  let out: LinkFinishResult;
+  // A new link: kept by whoever asks first, the app here or the store's watch of its link token (link-watch.ts).
+  if (r.data.mode === 'new')
+    return c.json(await finishNewLink(c.env, c.get('budgetId'), r.data.linkToken, requestNow(c)));
   // A repair keeps its link, so there is nothing to exchange. The app then asks for a fetch of that link.
-  if (result.state !== 'finished') out = { status: result.state };
-  else if (r.data.mode === 'repair') out = { status: 'repaired' };
-  else {
-    const publicToken = result.publicTokens[0];
-    out = publicToken
-      ? { status: 'linked', connectionId: await saveLink(c, publicToken) }
-      : { status: 'exited' };
-  }
+  const result = await makeProvider(c.env).linkResult(r.data.linkToken);
+  const out: LinkFinishResult =
+    result.state === 'finished' ? { status: 'repaired' } : { status: result.state };
   return c.json(out);
 });
-
-/**
- * Exchanges a new link's public token and keeps the link: its token encrypted under TOKEN_KEYS, with the Worker's
- * stamp (`linkMac`), and a fetch asked for. The bank's name and accounts are not kept: the link's first run asks
- * the bank for them and seals them to the budget's inbox (seal/fetch-job.ts), and a device writes them. The store
- * starts the fetch once this answers (store/budget-store.ts). Gives the link's connection id.
- */
-async function saveLink(c: Context<AppEnv>, publicToken: string): Promise<string> {
-  const budgetId = c.get('budgetId');
-  const done = await makeProvider(c.env).completeLink(publicToken);
-  // The same Item again (update mode, or a link finished twice): the link it is, not a new one.
-  const same = await c.env.DB.prepare(
-    `SELECT connection_id FROM bank_link WHERE budget_id = ?1 AND provider_item_id = ?2`,
-  )
-    .bind(budgetId, done.providerItemId)
-    .first<{ connection_id: string }>();
-  if (same) return same.connection_id;
-  const now = requestNow(c);
-  const linkId = ulid(now);
-  const connectionId = `con_${linkId}`;
-  const ring = keyring(c.env);
-  const enc = await encryptToken(ring, done.accessToken, connectionId);
-  const keys = await workerKeys(ring).keysFor(enc.keyVersion);
-  const mac = await linkMac(keys, budgetId, linkId, done.providerItemId, unb64(enc.enc));
-  await c.env.DB.prepare(
-    `INSERT INTO bank_link (id, connection_id, budget_id, provider, provider_item_id, access_token_enc, key_version,
-       linked_at, mac, checked_at, check_result, status, fetch_requested, created_at)
-     VALUES (?1, ?2, ?3, 'plaid', ?4, ?5, ?6, ?7, ?8, ?7, 'ok', 'ok', 1, ?7)`,
-  )
-    .bind(linkId, connectionId, budgetId, done.providerItemId, enc.enc, enc.keyVersion, now, b64(mac))
-    .run();
-  // Which budget owns the Item, for the bank's webhooks (docs/multi-user.md 6.4).
-  if (c.env.ROUTE_LINK) await c.env.ROUTE_LINK(done.providerItemId, connectionId);
-  return connectionId;
-}
 
 /**
  * Removes a bank (docs/privacy.md 5.5, D-87): ends the link at Plaid, forgets its token, and stops its fetches. The
@@ -374,10 +330,14 @@ sealedApi.post('/settings/connections/:id/remove', async (c) => {
          mac = NULL, check_result = 'removed', error_code = NULL, fetch_requested = 0
        WHERE id = ?1`,
     ).bind(link.id),
-    c.env.DB.prepare(`DELETE FROM job WHERE id = ?1`).bind(sealedFetchId(link.id)),
+    c.env.DB.prepare(`DELETE FROM job WHERE id IN (?1, ?2)`).bind(
+      sealedFetchId(link.id),
+      `register_link:${link.connection_id}`,
+    ),
   ]);
-  // The bank's later news about this Item reaches no budget (best effort: a webhook for it is ignored anyway).
-  if (link.provider_item_id) await c.env.DROP_ROUTE?.(link.provider_item_id).catch(() => undefined);
+  // The bank's later news about this Item reaches no budget: its route in the Directory goes (tried again by a
+  // job until the Directory answers), and a route still waiting to be written is not written.
+  if (link.provider_item_id) await c.env.DROP_ROUTE?.(link.provider_item_id);
   // A run of this link being fetched goes too: nothing of it was shown to a device.
   await abandonSealedRun(c.env.DB, link.id);
   return c.json({ ok: true });

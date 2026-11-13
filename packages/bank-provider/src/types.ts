@@ -111,9 +111,17 @@ export interface CompletedLink {
 }
 
 export interface ProviderWebhookEvent {
-  type: 'sync_updates_available' | 'item_error' | 'login_repaired' | 'pending_expiration' | 'other';
+  type:
+    | 'sync_updates_available'
+    | 'item_error'
+    | 'login_repaired'
+    | 'pending_expiration'
+    | 'link_session_finished'
+    | 'other';
   providerItemId: string | null;
   code: string;
+  /** A Link session's news (`link_session_finished`): the link token it was opened with. */
+  linkToken?: string;
 }
 
 export class ProviderError extends Error {

@@ -71,6 +71,33 @@ describe('Directory daily work', () => {
     }
     expect(await dir().routeFor('item_shared')).toBe('dup_a');
   });
+
+  it('a removed Item gets no route from a job that waited, and a drop job removes one', async () => {
+    await addBudget('rm_a', 'item_rm_a');
+    // The bank is removed while the job that writes its route still waits (queued when it was linked).
+    await runInDurableObject(store('rm_a'), async (_o, st) => {
+      st.storage.sql.exec(`UPDATE bank_link SET status = 'removed', provider_item_id = NULL`);
+      st.storage.sql.exec(
+        `INSERT INTO job (id, kind, state, run_at, recurring, created_at, updated_at)
+         VALUES ('register_link:con_rm_a', 'register_link', '{"itemId":"item_rm_a","connectionId":"con_rm_a"}', 0, 0, 0, 0)`,
+      );
+    });
+    await drain(store('rm_a'));
+    expect(await dir().routeFor('item_rm_a')).toBe(null);
+
+    // A route the Directory didn't drop at once goes by the store's job.
+    await addBudget('rm_b');
+    await dir().registerRoute('item_rm_b', 'rm_b', 'con_rm_b');
+    expect(await dir().routeFor('item_rm_b')).toBe('rm_b');
+    await runInDurableObject(store('rm_b'), async (_o, st) => {
+      st.storage.sql.exec(
+        `INSERT INTO job (id, kind, state, run_at, recurring, created_at, updated_at)
+         VALUES ('drop_route:item_rm_b', 'drop_route', '{"itemId":"item_rm_b"}', 0, 0, 0, 0)`,
+      );
+    });
+    await drain(store('rm_b'));
+    expect(await dir().routeFor('item_rm_b')).toBe(null);
+  });
 });
 
 describe('usage refresh', () => {

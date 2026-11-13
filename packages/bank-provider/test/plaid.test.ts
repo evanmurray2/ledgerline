@@ -142,6 +142,23 @@ describe('Plaid adapter', () => {
     );
   });
 
+  it('classifies a finished Link session by its link token, with no Item', () => {
+    expect(
+      classifyWebhook({
+        webhook_type: 'LINK',
+        webhook_code: 'SESSION_FINISHED',
+        link_token: 'link-sandbox-1',
+      }),
+    ).toEqual({
+      type: 'link_session_finished',
+      providerItemId: null,
+      code: 'LINK:SESSION_FINISHED',
+      linkToken: 'link-sandbox-1',
+    });
+    // No link token: nothing to finish.
+    expect(classifyWebhook({ webhook_type: 'LINK', webhook_code: 'SESSION_FINISHED' }).type).toBe('other');
+  });
+
   it('removes an Item with its token, and an Item Plaid no longer knows is already gone', async () => {
     const asked: { path: string; body: Record<string, unknown> }[] = [];
     let answer: { status: number; body: unknown } = { status: 200, body: { request_id: 'r' } };

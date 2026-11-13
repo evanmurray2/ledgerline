@@ -99,6 +99,11 @@ export interface Env {
   NOTE_USAGE?: (written: number, read: number) => Promise<void>;
   /** Inside a budget's Durable Object: queue registering a new Plaid Item's route in the Directory. */
   ROUTE_LINK?: (providerItemId: string, connectionId: string) => Promise<void>;
-  /** Inside a budget's Durable Object: forget a removed Item's route in the Directory. */
+  /**
+   * Inside a budget's Durable Object: forget a route in the Directory (a removed Item's, or a finished link
+   * token's), tried again by a job until the Directory answers.
+   */
   DROP_ROUTE?: (providerItemId: string) => Promise<void>;
+  /** Inside a budget's Durable Object: watch a new bank's link token until the link is kept (seal/link-watch.ts). */
+  WATCH_LINK?: (linkToken: string) => Promise<void>;
 }
