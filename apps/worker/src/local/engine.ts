@@ -7,7 +7,7 @@ import type { Db, Stmt } from '@ledgerline/db/sql';
 import { Hono } from 'hono';
 import { localDate, type Month } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
-import type { Env } from '../env.js';
+import type { DeviceEnv, Env } from '../env.js';
 import { budgetApi } from '../routes/api.js';
 import { markDirty, recompute } from '../budget/recompute.js';
 import { Scoped } from '../db/scoped.js';
@@ -637,7 +637,8 @@ export class LocalEngine {
 
   /** Rule 10 on the copy; a failure is reported to the server (an `identity` alert). */
   private async identity(now: number, today: string): Promise<void> {
-    const identity = await checkIdentityDb(this.env(now), this.who.budgetId).catch(() => null);
+    // The check reads only the copy and the clock.
+    const identity = await checkIdentityDb(this.env(now) as Env, this.who.budgetId).catch(() => null);
     if (identity && !identity.ok && this.onIdentity)
       await this.onIdentity({ difference: identity.difference, month: today.slice(0, 7) }).catch(
         () => undefined,
@@ -659,21 +660,14 @@ export class LocalEngine {
     return { rta: b?.rta ?? 0, updating: (b?.summary_dirty_from ?? null) !== null };
   }
 
-  private env(now: number, through?: number): Env {
+  private env(now: number, through?: number): DeviceEnv {
     return {
       DB: this.db,
       PLAID_ENV: 'engine',
       // The time of this request, given by the engine (the device's clock plus its offset from the server's).
       NOW: now,
       ...(through === undefined ? {} : { THROUGH: through }),
-      USAGE: async () => ({
-        written: 0,
-        read: 0,
-        do: { requests: 0, gbs: 0 },
-        workers: 0,
-        refreshedAt: null,
-      }),
-    } as unknown as Env;
+    };
   }
 
   /**
@@ -808,7 +802,7 @@ export class LocalEngine {
     id: string,
     at: number,
     bank: { filedThrough: number; receipts: string[]; scanThrough?: number },
-    work: (env: Env) => Promise<void>,
+    work: (env: DeviceEnv) => Promise<void>,
   ): Promise<{ rows: SyncRow[]; lost: number } | null> {
     if (await this.filingInterrupted()) throw new FilingInterrupted();
     if (!(await this.canFileBank())) return null;

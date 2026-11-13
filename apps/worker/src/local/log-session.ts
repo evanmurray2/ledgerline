@@ -24,6 +24,7 @@ import type { AppendResult } from '../seal/log-store.js';
 import { entryIdOf, TooLarge, type DeviceLog } from './device-log.js';
 import { FilingInterrupted, type LocalEngine } from './engine.js';
 import type { PageReader } from './file-run.js';
+import type { Env } from '../env.js';
 import { CopyAhead, fileOpened, filedOf, filingState, openRuns } from './sealed-filing.js';
 
 /** How the device reaches the server's log store. */
@@ -321,7 +322,8 @@ export class LogSession {
       at,
       { filedThrough: this.log.filedThrough, receipts: [], scanThrough: day },
       async (env) => {
-        await dailyScan(env, budgetId, at);
+        // The scan reads only the copy (daily-scan.ts takes the whole Env type).
+        await dailyScan(env as Env, budgetId, at);
         await env.DB.batch(watchdogBudgetStmts(env.DB, budgetId, at));
         await bumpVersion(env.DB, budgetId);
       },

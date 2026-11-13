@@ -9,7 +9,7 @@
 // they write rows every device must write the same (the lease sets the connection's `resync_requested` and
 // `updated_at`, which travel in the bank entry).
 import { parsePlaidSyncPage, type BankDataProvider } from '@ledgerline/bank-provider';
-import type { Env } from '../env.js';
+import type { DeviceEnv } from '../env.js';
 import { acquire } from '../sync/lease.js';
 import { endOfUpdate, healPending, processPending, type BankState } from '../sync/process.js';
 import { applyPage, beginRun } from '../sync/steps.js';
@@ -40,7 +40,7 @@ export interface RunPackage {
 const MAX_STEPS = 10_000;
 
 export async function fileRun(
-  env: Env,
+  env: DeviceEnv,
   budgetId: string,
   pkg: RunPackage,
   /** Reads a page (`parsePage`): the bank's format, no network. */

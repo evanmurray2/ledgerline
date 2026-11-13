@@ -25,7 +25,7 @@ import {
 } from '@ledgerline/seal';
 import { seededUlid } from '@ledgerline/platform';
 import { Scoped } from '../db/scoped.js';
-import type { Env } from '../env.js';
+import type { DeviceEnv } from '../env.js';
 import { connectionStmts, linkedAccountStmts } from '../routes/settings/link-rows.js';
 import { readLinkDescription } from '../seal/link-description.js';
 import { fileRun, type PageReader, type RunPackage } from './file-run.js';
@@ -122,7 +122,7 @@ const text = (b: Uint8Array): string => new TextDecoder('utf-8', { fatal: true, 
  * time, and ids come from content, so every device that files this run writes the same rows.
  */
 export async function fileOpened(
-  env: Env,
+  env: DeviceEnv,
   budgetId: string,
   filed: FiledRun,
   /** Reads a page (`parsePage`): the bank's format, no network. */
@@ -169,7 +169,7 @@ export async function fileOpened(
 
 /** Files a run of transactions (and the bank's answers) for a link the copy holds, with the server's own steps. */
 async function fileUpdate(
-  env: Env,
+  env: DeviceEnv,
   budgetId: string,
   filed: FiledRun,
   connectionId: string,
