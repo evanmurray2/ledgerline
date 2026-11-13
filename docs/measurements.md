@@ -2,6 +2,23 @@
 
 How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history. The measures of the old server path (`phone`, `refile-payees` and `fill-plaid-name`) were removed with that path (D-102); their sections are history too. So was `sync.measure.ts` (Nov 13, 2026): its fetch step was the server's old Plaid fetch, which the sealed fetch job (`fetch-job.measure.ts`) replaced, and its apply and processing steps now run on the device. `entry-covers.measure.ts` now stages its history's pages directly instead of through that fetch step.
 
+## Update: the whole append route (Nov 13, 2026)
+
+`measure/log-append.measure.ts` now also sends the largest write (16 entries of 64 KB, a 1.4 MB body) through the route itself (`seal/log-routes.ts`, POST `/log/append`): reading the body, JSON, the schema's checks, base64 back to bytes and `logAppend`. Times in ms, 30 runs each, in Node. This machine was shared with other sessions (load 8 to 17 on 4 cores), so whole-route times varied about two times between runs; the parts were timed alone.
+
+| Step                                                             | before: median | after: median |
+| ---------------------------------------------------------------- | -------------- | ------------- |
+| The whole route, 16 entries of 64 KB                             | 20.5 to 35.3   | 16.9 to 25.9  |
+| Of that, `logAppend` (the section below)                         | 5.7 to 9.1     | 5.7 to 9.1    |
+| The schema's check of the 16 base64 strings, with JSON.parse     | 16.4           | 1.4           |
+| Base64 back to bytes                                             | 1.7            | 1.7           |
+| The body read as bytes, then as JSON (`jsonOf`)                  | 2.0            | 2.0           |
+| The body read from the request (Node's own; workerd's is native) | 2.9            | 2.9           |
+
+- **The cost was the schema's pattern**, `^[A-Za-z0-9+/]+={0,2}$` over 1.4 MB of text: about 1 ms for each 64 KB entry. It is now `isBase64` (`packages/platform/src/base64.ts`), which gives the same answer (a property test checks it against the pattern) by searching for a character outside the alphabet.
+- **Base64 is one implementation now** (`packages/platform/src/base64.ts`): decoding was already one native `atob` and one pass, and stays so. Encoding is one pass into bytes, about 4.5 ms for 1 MB in Node against 8 ms in 32 KB pieces.
+- **The whole route is still over 10 ms in Node** at 16 entries. `MAX_WRITE_ENTRIES` stays 16: a device never splits one change's parts over two writes (`local/device-log.ts`, privacy-keys.md 7.2), so a lower limit would refuse the largest changes. Only small appends have run on Cloudflare so far. Measure a large write there before anything raises a write's size.
+
 ## Update: the last CPU times read from Cloudflare, and how CPU is judged from now on (Nov 13, 2026)
 
 The owner turned Cloudflare's invocation logs off (they also hold each request's IP address and location, `docs/privacy.md` 15.4). Those logs were the only place that showed each alarm's and request's CPU time. Before that change merged, a read-only Workers Logs query (Nov 13, 2026, about 18:30 UTC) read the 7 days back to Nov 6, 18:50 UTC: every alarm of the Worker `ledgerline`, its CPU time, and the `sealed_step` line each fetch step logs, joined by request id. ms of CPU, whole invocation (the job runner, SQLite and WebCrypto included):
