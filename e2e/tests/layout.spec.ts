@@ -1,7 +1,11 @@
 // Page layout and motion: no page scroll on a phone, pages that slide in, Reduce Motion.
 // Against the SPA in mock mode (the real engine over the November fixture, apps/web/src/mock), on phone
 // (390 x 844) and desktop (1280 x 800). Split from app.spec.ts.
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+/** The app's first screen doesn't slide in: a page counts as one when it opens in the first 1.5 s after a load
+ * (headers.tsx useArrival). Waits until that has passed for this page. */
+const pastFirstScreen = (page: Page) => page.waitForFunction(() => performance.now() >= 1500);
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => window.localStorage.setItem('ledgerline-theme', 'light'));
@@ -45,7 +49,7 @@ test('Pages slide in when opened and back when Back returns to them; tabs and th
   // The first screen of the app doesn't slide.
   await page.goto('/settings');
   await expect(page.getByRole('heading', { name: 'Settings', exact: true }).first()).toBeVisible();
-  await page.waitForTimeout(1600);
+  await pastFirstScreen(page);
   if (info.project.name === 'phone') {
     await page.getByRole('link', { name: /^Payees/ }).click();
     await expect(page.locator('.ll-page-in')).toHaveCount(1);
@@ -55,7 +59,7 @@ test('Pages slide in when opened and back when Back returns to them; tabs and th
   }
   // From Budget, Edit categories opens a page that slides in.
   await page.goto('/budget');
-  await page.waitForTimeout(1600);
+  await pastFirstScreen(page);
   if (info.project.name === 'phone') await page.getByRole('button', { name: 'More budget actions' }).click();
   await page.getByRole('link', { name: 'Edit categories' }).first().click();
   await expect(page).toHaveURL(/\/categories$/);
@@ -69,7 +73,7 @@ test('Pages slide in when opened and back when Back returns to them; tabs and th
 test('Pages do not slide with Reduce Motion', async ({ page }, info) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/accounts');
-  await page.waitForTimeout(1600);
+  await pastFirstScreen(page);
   // On a computer an account opens in the side panel, not as a page: Owed to you is a page there.
   const link =
     info.project.name === 'desktop'

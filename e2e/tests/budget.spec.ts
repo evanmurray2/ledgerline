@@ -108,13 +108,26 @@ test('At the bottom of the list the Ready to Assign bar stays still', async ({ p
   const undo = page.getByRole('button', { name: 'Undo' });
   await undo.scrollIntoViewIfNeeded();
   await page.mouse.wheel(0, 2000);
-  await page.waitForTimeout(500);
-  const ys: number[] = [];
-  for (let i = 0; i < 8; i++) {
-    ys.push((await undo.boundingBox())!.y);
-    await page.waitForTimeout(100);
-  }
-  expect(new Set(ys).size).toBe(1);
+  // Once the scroll ends, Undo holds its place for 48 frames in a row (about 0.8 s, longer than a fold and an
+  // unfold): the loop never let it. Frames, not a fixed wait: it is done as soon as the list is still.
+  const still = await undo.evaluate(
+    (el) =>
+      new Promise<boolean>((resolve) => {
+        let last = NaN;
+        let same = 0;
+        let frames = 0;
+        const step = () => {
+          const y = el.getBoundingClientRect().y;
+          same = y === last ? same + 1 : 0;
+          last = y;
+          if (same >= 48) return resolve(true);
+          if (++frames > 600) return resolve(false);
+          requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      }),
+  );
+  expect(still).toBe(true);
 });
 
 test('Assigned more than you have offers to take it back', async ({ page }) => {
