@@ -76,6 +76,23 @@ export interface ShadowReport {
 
 /** A budget's derived keys of one version (`BudgetKeys` in @ledgerline/seal): passed on, never read. */
 export type SealedKeys = { version: number } & Record<string, unknown>;
+/** Where a public entry the app makes goes (local/device-log.ts `writePlace`). */
+export interface WritePlace {
+  number: number;
+  hash: Uint8Array;
+  deviceId: string;
+  deviceCounter: number;
+  filedThrough: number;
+  scanThrough: number;
+  /** For the entry: after the one before, by the server's clock as the engine measures it. */
+  time: number;
+  lastPublic: { number: number; hash: Uint8Array };
+  keyVersion: number;
+  whole: boolean;
+}
+/** The log's answer to a write (apps/worker/src/seal/log-store.ts AppendResult). */
+export type AppendAnswer =
+  { ok: true; number: number } | { ok: false; why: string; detail?: string; number?: number; retry: boolean };
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 
@@ -208,6 +225,14 @@ export class EngineHost {
   }
   sealedCheck(): Promise<{ checked: boolean; why?: string; tables?: string[] }> {
     return this.call('sealedCheck');
+  }
+  /** Where a public entry the app makes goes: the log is read to its end first (copy/sealed-ways.ts). */
+  sealedPlace(): Promise<WritePlace> {
+    return this.call('sealedPlace');
+  }
+  /** Sends public entries the app made; `keys`, the derived keys of the version a key change brings. */
+  sealedAppend(entries: Uint8Array[], keys?: SealedKeys[]): Promise<AppendAnswer> {
+    return this.call('sealedAppend', { entries, ...(keys ? { keys } : {}) });
   }
   /**
    * Moves a budget that exists to its sealed log (docs/privacy.md section 8 step 6): the keys and the first

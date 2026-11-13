@@ -14,6 +14,8 @@ import { logApi } from '../seal/log-routes.js';
 import { QUEUE_STAMP_LINKS, stampLinksHandler } from './stamp-links.js';
 import {
   failSealedFetch,
+  noteOpened,
+  OPENED_EVERY_MS,
   queueSealedFetch,
   SEALED_BACKSTOP,
   SEALED_BACKSTOP_ID,
@@ -29,16 +31,7 @@ import { sealedApi, sealedPath } from '../seal/sealed-routes.js';
 import { runDeps } from '../seal/runs.js';
 import { parseKeyring } from '@ledgerline/platform';
 import { dev } from '../dev-seed.js';
-import {
-  BUDGET_TABLES,
-  DROPPED_TABLES,
-  NO_FILTER,
-  chain,
-  insertStatements,
-  narrowMeta,
-  readChunk,
-  tableMeta,
-} from './dump.js';
+import { loadDumpPiece, verifyDump } from './restore-dump.js';
 import type { Env } from '../env.js';
 import { DurableDb } from './adapter.js';
 import { appliedMigrations, migrate } from './migrate.js';
@@ -60,7 +53,8 @@ import { connectionToken, makeProvider, pageSize } from '../sync/provider.js';
 import { writeBudgetState } from '../sync/breaker.js';
 import { answering } from './body.js';
 import { UsageCounter } from './shares.js';
-import { DISABLED_KEY, budgetInfo, setDisabled, wipeStore } from './account-life.js';
+import { DISABLED_KEY, budgetInfo, removeBanks, setDisabled, wipeStore } from './account-life.js';
+import { PURGE, purgeHandler, purgeStart } from '../seal/purge.js';
 import { QUEUE_REFILE } from '../sync/refile-payees.js';
 import { QUEUE_DROP_TEXT_ALIASES } from '../sync/drop-text-aliases.js';
 import { markReads, noteHeavyRead, routeName } from './heavy-reads.js';
@@ -135,9 +129,28 @@ export class BudgetStore extends DurableObject<Env> {
   // ---- RPC
 
   /** The budget's name and linked banks, for deleting an account (routes/people.ts). */
-  async info(): Promise<{ name: string; banks: number }> {
+  async info(): Promise<{ name: string; banks: number; sealed: boolean }> {
     this.ready();
     return budgetInfo(this.ctx.storage);
+  }
+
+  /**
+   * Removes every bank link at Plaid, for an account being deleted (store/account-life.ts removeBanks). Refused
+   * unless the Directory holds the deletion record for this budget; the Directory never asks for an admin's.
+   */
+  async removeBanks(budgetId: string): Promise<{ removed: number; left: number; refused?: true }> {
+    this.ready();
+    if (!(await this.directory().isDeleting(budgetId)))
+      return { removed: 0, left: budgetInfo(this.ctx.storage).banks, refused: true };
+    const env = this.appEnv();
+    // No fetch may start again on a link that is being removed.
+    this.ctx.storage.sql.exec(`DELETE FROM job WHERE kind IN (?, ?, 'sync')`, SEALED_FETCH, SEALED_BACKSTOP);
+    return removeBanks(this.ctx.storage, {
+      plaidEnv: env.PLAID_ENV,
+      otherUsersBanks: env.OTHER_USERS_BANKS,
+      keyring: () => parseKeyring(env.TOKEN_KEYS, env.TOKEN_KEY_CURRENT),
+      provider: () => makeProvider(env),
+    });
   }
 
   /** An admin turned the account off (`true`) or on (store/account-life.ts). */
@@ -203,6 +216,7 @@ export class BudgetStore extends DurableObject<Env> {
     // A sealed budget lives in its log: those routes, and no others (seal/log-routes.ts).
     if (this.marks().sealed && (path === '/api/log' || path.startsWith('/api/log/'))) {
       this.logApp ??= withCaller((app) => app.route('/api', logApi));
+      await this.openedSealed(caller);
       await this.rearmSealed();
       this.usage.request();
       try {
@@ -218,21 +232,15 @@ export class BudgetStore extends DurableObject<Env> {
       (path !== '/api/session' || request.headers.get(SEALED_HEADER) === '1')
     ) {
       this.sealedApp ??= withCaller((app) => app.route('/api', sealedApi));
+      await this.openedSealed(caller);
       this.usage.request();
       try {
         const r = await this.serve(this.sealedApp, request, caller);
-        // A fetch the person asked for starts now, one job per link asked (seal/fetch-job.ts). The backstop's own
-        // job is not moved: a pending job keeps its time when it is queued again.
-        if (r.ok && request.method === 'POST' && /\/connections\/([^/]+\/)?refresh$/.test(path)) {
-          const asked = await this.db
-            .prepare(
-              `SELECT id FROM bank_link WHERE fetch_requested = 1 AND mac IS NOT NULL AND provider = 'plaid' AND status = 'ok' ORDER BY id`,
-            )
-            .all<{ id: string }>();
-          const runs = (await this.fetchDeps()).runs;
-          for (const l of asked.results) await queueSealedFetch(runs, this.enqueue, l.id, Date.now());
-          await this.runner.scheduleNext(Date.now());
-        }
+        // A fetch the person asked for starts now, one job per link asked (seal/fetch-job.ts); so does a new link's
+        // first run, which describes it. The backstop's own job is not moved: a pending job keeps its time when it
+        // is queued again.
+        if (r.ok && request.method === 'POST' && /\/connections\/(([^/]+\/)?refresh|link-finish)$/.test(path))
+          await this.queueAsked();
         return r;
       } finally {
         this.reportUsage(caller.budgetId);
@@ -312,92 +320,18 @@ export class BudgetStore extends DurableObject<Env> {
    * live budget can't be overwritten. Call with consecutive pieces of the file; then restoreVerify().
    */
   async restoreDump(lines: string): Promise<{ ok: true; rows: number } | { ok: false; reason: string }> {
-    const db = this.adapter();
-    // Each piece is checked in full, then written in one transaction: a piece that fails anywhere adds nothing,
-    // so the same piece can simply be sent again.
-    const rows: { t: string; r: Record<string, unknown> }[] = [];
-    let header = false;
-    let footer: unknown = undefined;
-    for (const line of lines.split('\n')) {
-      if (!line.trim()) continue;
-      let o: { format?: string; t?: string; r?: Record<string, unknown>; end?: boolean; tables?: unknown };
-      try {
-        o = JSON.parse(line) as typeof o;
-      } catch {
-        return { ok: false, reason: 'unreadable line' };
-      }
-      if (o.format) {
-        if (o.format !== 'ledgerline-dump') return { ok: false, reason: 'not a Ledgerline backup' };
-        header = true;
-        continue;
-      }
-      if (o.end) {
-        footer = o.tables;
-        continue;
-      }
-      // Worked out on the phone, not kept here (migration 0006): the phone works them out again.
-      if (o.t && DROPPED_TABLES.includes(o.t)) continue;
-      if (!o.t || !o.r || !(BUDGET_TABLES as readonly string[]).includes(o.t))
-        return { ok: false, reason: `unknown line` };
-      rows.push({ t: o.t, r: o.r });
-    }
-    if (header) {
-      const has = this.ctx.storage.sql.exec(`SELECT count(*) AS n FROM budget`).one().n;
-      if (Number(has) > 0) return { ok: false, reason: 'refused: this database already holds a budget' };
-    }
-    const metas = new Map<string, Awaited<ReturnType<typeof tableMeta>>>();
-    for (const { t } of rows) if (!metas.has(t)) metas.set(t, await tableMeta(db, t));
-    const stmts = [
-      ...(header ? [db.prepare(`DELETE FROM apply_counter`)] : []),
-      ...rows.flatMap(({ t, r }) => insertStatements(db, t, metas.get(t)!, [r])),
-    ];
-    try {
-      await db.batch(stmts);
-    } catch (e) {
-      return {
-        ok: false,
-        reason: `nothing from this piece was written: ${e instanceof Error ? e.message : e}`,
-      };
-    }
-    // The columns each table had in the backup: restoreVerify fingerprints only those, so a backup from before a
-    // migration added a column still verifies.
-    const cols = header ? {} : ((await this.ctx.storage.get<Record<string, string[]>>('restore_cols')) ?? {});
-    for (const { t, r } of rows) {
-      const have = new Set(cols[t] ?? []);
-      for (const c of Object.keys(r)) have.add(c);
-      cols[t] = [...have];
-    }
-    await this.ctx.storage.put('restore_cols', cols);
-    if (footer !== undefined) await this.ctx.storage.put('restore_footer', footer);
-    this.cachedBudgetId = null;
-    return { ok: true, rows: rows.length };
+    if (this.held()) return { ok: false, reason: 'refused: this budget is sealed' };
+    const r = await loadDumpPiece(this.ctx.storage, this.adapter(), lines);
+    if (r.ok) this.cachedBudgetId = null;
+    return r;
   }
 
   /** Recomputes every table's row count and fingerprint and compares them with the backup's footer. */
   async restoreVerify(): Promise<{ ok: boolean; differences: string[] }> {
-    const footer =
-      (await this.ctx.storage.get<Record<string, { count: number; hash: string }>>('restore_footer')) ?? {};
-    const backupCols = (await this.ctx.storage.get<Record<string, string[]>>('restore_cols')) ?? {};
-    const db = this.adapter();
-    const differences: string[] = [];
-    for (const t of BUDGET_TABLES) {
-      const meta = narrowMeta(await tableMeta(db, t), backupCols[t]);
-      let count = 0;
-      let hash = '';
-      let cursor: unknown[] | null = null;
-      do {
-        const c = await readChunk(db, t, meta, NO_FILTER, cursor);
-        count += c.rows.length;
-        hash = c.rows.length ? await chain(hash, c.text) : hash;
-        cursor = c.cursor;
-      } while (cursor);
-      const want = footer[t] ?? { count: 0, hash: '' };
-      if (want.count !== count || want.hash !== hash)
-        differences.push(`${t}: ${count} row(s), backup has ${want.count}`);
-    }
+    const r = await verifyDump(this.ctx.storage, this.adapter());
     // Phones holding a copy of this budget download it again (D-45, docs/phone-budget.md section 8).
-    if (differences.length === 0) await this.newSyncEpoch();
-    return { ok: differences.length === 0, differences };
+    if (r.ok) await this.newSyncEpoch();
+    return r;
   }
 
   /** A new sync epoch in the Directory for this budget: phones throw their copies away and download again. */
@@ -425,6 +359,8 @@ export class BudgetStore extends DurableObject<Env> {
    */
   async restoreUndo(): Promise<{ undo: string } | null> {
     this.ready();
+    // The server can't restore a sealed budget (docs/privacy.md phase 5): an undo would put back the time before.
+    if (this.held()) throw new Error('This budget is sealed or being moved: it can’t be restored.');
     const id = await this.budgetId();
     const last = await this.directory().lastRestore(id);
     return last ? this.restoreBookmark(last.undo, null) : null;
@@ -505,7 +441,7 @@ export class BudgetStore extends DurableObject<Env> {
     if (o.idle) {
       const banks = this.ctx.storage.sql
         // From bank_link, not connection: a sealed budget's own tables are empty, and it must not look bank-less.
-        .exec(`SELECT count(*) AS n FROM bank_link`)
+        .exec(`SELECT count(*) AS n FROM bank_link WHERE status != 'removed'`)
         .one() as { n: number };
       if (Number(banks.n) === 0) {
         this.ctx.storage.sql.exec(`DELETE FROM job WHERE recurring = 1`);
@@ -594,6 +530,33 @@ export class BudgetStore extends DurableObject<Env> {
     return m.sealed || m.frozenUntil !== null;
   }
 
+  /** A fetch for each link that asked for one (seal/fetch-job.ts), now. */
+  private async queueAsked(): Promise<void> {
+    const asked = await this.db
+      .prepare(
+        `SELECT id FROM bank_link WHERE fetch_requested = 1 AND mac IS NOT NULL AND provider = 'plaid' AND status = 'ok' ORDER BY id`,
+      )
+      .all<{ id: string }>();
+    const runs = (await this.fetchDeps()).runs;
+    for (const l of asked.results) await queueSealedFetch(runs, this.enqueue, l.id, Date.now());
+    await this.runner.scheduleNext(Date.now());
+  }
+
+  /** When this instance last noted that a person opened the sealed budget (seal/fetch-job.ts noteOpened). */
+  private openedNoted = 0;
+
+  /**
+   * A person's request reached a sealed budget: it is noted as opened (A3), and when fetching had rested for 90
+   * days, it starts again at once.
+   */
+  private async openedSealed(caller: Caller): Promise<void> {
+    if (caller.userId === 'system' || caller.userId === 'service') return;
+    const now = Date.now();
+    if (now - this.openedNoted < OPENED_EVERY_MS) return;
+    this.openedNoted = now;
+    if (await noteOpened(this.db, now)) await this.queueAsked();
+  }
+
   /** A sealed budget whose alarm was lost gets it back on its next request. */
   private async rearmSealed(): Promise<void> {
     if ((await this.ctx.storage.getAlarm()) === null) await this.runner.scheduleNext(Date.now());
@@ -671,6 +634,7 @@ export class BudgetStore extends DurableObject<Env> {
       RESTORE_TO: (at: number) => this.restoreTo(at),
       RESTORE_UNDO: () => this.restoreUndo(),
       LAST_RESTORE: () => this.lastRestore(),
+      PURGE_START: (now: number) => purgeStart(this.adapter(), now, this.enqueue),
       JOBS: {
         // routes/settings.ts startSync() has already taken the lease with this run id.
         sync: async (runId, connectionId, trigger) => {
@@ -753,6 +717,13 @@ export class BudgetStore extends DurableObject<Env> {
       [SEALED_FETCH]: async (job, now) => sealedFetchHandler(await this.fetchDeps())(job, now),
       [SEALED_BACKSTOP]: async (job, now) =>
         sealedBackstopHandler((await this.fetchDeps()).runs, this.enqueue)(job, now),
+      // Emptying the old tables (seal/purge.ts): queued only by the person's own tap in Settings → Privacy.
+      [PURGE]: async (job, now) =>
+        purgeHandler({
+          db: this.adapter(),
+          budgetState: (await this.fetchDeps()).budgetState,
+          directoryName: async () => this.directory().budgetName(await this.budgetId()),
+        })(job, now),
     };
     // Both kinds of budget stamp their links and keep their Items routed to them in the Directory.
     const both = new Set(['stamp_links', 'register_link']);
@@ -823,6 +794,7 @@ function withCaller(mount: (app: Hono<AppEnv>) => void): Hono<AppEnv> {
     c.set('syncEpoch', who.syncEpoch ?? 'e0');
     c.set('isAdmin', who.isAdmin === true);
     c.set('recoveryNoticeAt', who.recoveryNoticeAt ?? null);
+    c.set('freshWay', who.freshWay !== false);
     return next();
   });
   mount(app);

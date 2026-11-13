@@ -3,7 +3,14 @@
 // engine's thread, and the engine takes its place in the log (kept with the copy, or from a snapshot on a new
 // device). Nothing here is a screen; the pieces that touch the network and the engine are passed in.
 import { type Entry, type PublicRef, readEntry, zeroize } from '@ledgerline/seal';
-import { keysOfEveryVersion, openWithPasskey, type PasskeySecret } from '../keys/budget';
+import {
+  keysOfEveryVersion,
+  NoSlotError,
+  type OpenBudget,
+  openWithPasskey,
+  openWithRecoveryKey,
+  type PasskeySecret,
+} from '../keys/budget';
 
 /** The Worker's public run-signing keys this app accepts, by key number (docs/privacy-keys.md 9.1). */
 export type WorkerRunKeys = [number, Uint8Array][];
@@ -67,6 +74,13 @@ export async function openSealedBudget(o: {
   workerKeys: WorkerRunKeys;
   /** The last public entry this device saw before, if any. */
   remembered?: PublicRef;
+  /**
+   * The recovery key as the person typed it, for a passkey that is no way in to this budget (`NoSlotError`):
+   * the budget opens with the key, and `onRecovered` runs once the engine stands in the log, with the budget key
+   * in hand (it adds the passkey as a way in). Online only.
+   */
+  recovery?: string;
+  onRecovered?: (budget: OpenBudget) => Promise<void>;
 }): Promise<{
   number: number;
   lastPublic: PublicRef;
@@ -75,11 +89,20 @@ export async function openSealedBudget(o: {
   keys: ({ version: number } & Record<string, unknown>)[];
   /** The public entries this opened from, to keep with the copy. */
   publics: string[];
+  /** The recovery key opened it (`recovery`). */
+  recovered: boolean;
 }> {
   const raw = o.fetch ? await fetchPublics(o.fetch) : o.kept;
   if (!raw?.length) throw new Error('Connect to the internet to open your budget.');
   const publics = await readPublics(raw);
-  const { budget, state } = await openWithPasskey(publics, o.budgetId, o.passkey, o.remembered);
+  let recovered = false;
+  const { budget, state } = await openWithPasskey(publics, o.budgetId, o.passkey, o.remembered).catch(
+    (e: unknown) => {
+      if (!(e instanceof NoSlotError) || !o.recovery || !o.fetch) throw e;
+      recovered = true;
+      return openWithRecoveryKey(publics, o.budgetId, o.recovery, o.remembered);
+    },
+  );
   try {
     const keys = (await keysOfEveryVersion(state, budget)) as unknown as ({ version: number } & Record<
       string,
@@ -89,7 +112,15 @@ export async function openSealedBudget(o: {
     // No place kept with the copy: a new device, or a copy made again. It starts from a snapshot.
     if (!opened.ready && !o.fetch) throw new Error('Connect to the internet to open your budget.');
     const at = opened.ready ? opened : await o.host.sealedJoin();
-    return { number: at.number, lastPublic: state.lastPublic, joined: !opened.ready, keys, publics: raw };
+    if (recovered) await o.onRecovered?.(budget);
+    return {
+      number: at.number,
+      lastPublic: state.lastPublic,
+      joined: !opened.ready,
+      keys,
+      publics: raw,
+      recovered,
+    };
   } finally {
     zeroize(budget.bk);
   }

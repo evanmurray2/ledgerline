@@ -50,6 +50,7 @@ const ConnectionsScreen = lazyRouteComponent(settings, 'ConnectionsScreen');
 const DataScreen = lazyRouteComponent(settings, 'DataScreen');
 const PrivacyScreen = lazyRouteComponent(() => import('./screens/settings/Privacy'), 'PrivacyScreen');
 const AboutScreen = lazyRouteComponent(() => import('./screens/settings/About'), 'AboutScreen');
+const ClaimsScreen = lazyRouteComponent(() => import('./screens/settings/Claims'), 'ClaimsScreen');
 const DeviceCheckScreen = lazyRouteComponent(
   () => import('./screens/settings/DeviceCheck'),
   'DeviceCheckScreen',
@@ -443,6 +444,12 @@ const privacyRoute = createRoute({
   path: 'privacy',
   component: PrivacyScreen,
 });
+// docs/privacy.md phase 8: each claim, whether it is true now, and its limit (docs/claims.md).
+const claimsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'privacy/claims',
+  component: ClaimsScreen,
+});
 const deviceCheckRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'device-check',
@@ -556,6 +563,7 @@ const routeTree = rootRoute.addChildren([
     deviceCheckRoute,
     linkDoneRoute,
     privacyRoute,
+    claimsRoute,
     aboutRoute,
     oldCategoriesRoute,
     oldCategoryRoute,

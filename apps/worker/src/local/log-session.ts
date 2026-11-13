@@ -17,6 +17,9 @@ import {
   type Entry,
   type SealedRun,
 } from '@ledgerline/seal';
+import { dailyScan, scanTime } from '../daily-scan.js';
+import { bumpVersion } from '../http/version.js';
+import { watchdogBudgetStmts } from '../maintenance.js';
 import type { SyncPage, SyncRow } from '../routes/sync.js';
 import type { AppendResult } from '../seal/log-store.js';
 import { entryIdOf, TooLarge, type DeviceLog } from './device-log.js';
@@ -48,6 +51,10 @@ export interface FilingDeps {
   /** The device's clock, as the server's (the engine's `now`). */
   now: number;
 }
+
+/** The most daily scans one sync runs (a return after weeks away catches up over a few syncs). */
+const MAX_SCANS = 14;
+const DAY = 86_400_000;
 
 /** The most runs one bank entry files: a return after weeks away is a handful of writes (docs/privacy.md section 9). */
 export const RUNS_PER_ENTRY = 16;
@@ -152,17 +159,24 @@ export class LogSession {
       let entries: Entry[];
       try {
         const entryId = await entryIdOf(e.id);
-        entries = e.bank
-          ? await this.log.build(
-              KIND.bank,
-              { at: e.at, rows: e.rows },
-              {
-                filedThrough: e.bank.filedThrough,
-                receipts: e.bank.receipts.map((r) => fromHex(r)),
-                entryId,
-              },
-            )
-          : await this.log.build(KIND.edit, { at: e.at, rows: e.rows }, { entryId });
+        entries =
+          e.bank?.scanThrough !== undefined
+            ? await this.log.build(
+                KIND.scan,
+                { at: e.at, rows: e.rows },
+                { scanThrough: e.bank.scanThrough, entryId },
+              )
+            : e.bank
+              ? await this.log.build(
+                  KIND.bank,
+                  { at: e.at, rows: e.rows },
+                  {
+                    filedThrough: e.bank.filedThrough,
+                    receipts: e.bank.receipts.map((r) => fromHex(r)),
+                    entryId,
+                  },
+                )
+              : await this.log.build(KIND.edit, { at: e.at, rows: e.rows }, { entryId });
       } catch (x) {
         // Too many runs for one write: they come out of the copy, and the device files fewer at a time.
         if (!(x instanceof TooLarge) || !e.bank) throw x;
@@ -208,6 +222,51 @@ export class LogSession {
       lost += 1 + out.lost;
     }
     return bank ? { sent, lost, bank } : { sent, lost };
+  }
+
+  /**
+   * The daily scan, which the server ran at 5:00 in the budget's time zone before the budget was sealed
+   * (docs/privacy.md 5.4): repeating entries that came due get their next one, vanished pending rows an alert,
+   * and the nightly watchdog's mark. Each day missed since the log's last scan is run in order, at 5:00 that day,
+   * each as its own scan entry; at most `MAX_SCANS` a call. Rows are named from the scan's time, so two devices
+   * that scan the same day make the same rows; the log takes one scan a day (its scan date only moves forward).
+   * Gives the number of scans sent.
+   */
+  async scan(now: number): Promise<number> {
+    const b = await this.engine.db
+      .prepare(`SELECT time_zone FROM budget WHERE id = ?1`)
+      .bind(this.log.budgetId)
+      .first<{ time_zone: string }>();
+    if (!b) return 0;
+    const due: number[] = [];
+    // Back from today's scan, one day at a time, to the last the log holds. A budget whose log has none yet (just
+    // moved) starts with today's.
+    for (let t = scanTime(now, b.time_zone); due.length < MAX_SCANS; t = scanTime(t - 1, b.time_zone)) {
+      if (Math.floor(t / DAY) <= this.log.scanThrough) break;
+      due.unshift(t);
+      if (this.log.scanThrough === 0) break;
+    }
+    let sent = 0;
+    for (const at of due) {
+      const day = Math.floor(at / DAY);
+      if (day <= this.log.scanThrough) continue;
+      const budgetId = this.log.budgetId;
+      const done = await this.engine.fileBank(
+        `scan-${day}-${crypto.randomUUID().slice(0, 8)}`,
+        at,
+        { filedThrough: this.log.filedThrough, receipts: [], scanThrough: day },
+        async (env) => {
+          await dailyScan(env, budgetId, at);
+          await env.DB.batch(watchdogBudgetStmts(env.DB, budgetId, at));
+          await bumpVersion(env.DB, budgetId);
+        },
+      );
+      if (!done) break;
+      const r = await this.flush({ onlyBank: true });
+      if (r.bank !== 'sent') break;
+      sent++;
+    }
+    return sent;
   }
 
   /**

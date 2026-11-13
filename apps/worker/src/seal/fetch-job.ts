@@ -7,6 +7,7 @@ import { ProviderError, type BankDataProvider, type ProviderWebhookEvent } from 
 import { isUlid } from '@ledgerline/seal';
 import type { Handler, Job, StepResult } from '../store/jobs.js';
 import { NEEDS_SIGN_IN, nextUtcMidnight } from '../store/sync-job.js';
+import type { LinkDescription } from './link-description.js';
 import { snapshotPrune } from './snapshot-store.js';
 import {
   abandonSealedRun,
@@ -27,6 +28,10 @@ export const SEALED_BACKSTOP_ID = 'sealed_backstop';
 export const sealedFetchId = (linkId: string): string => `${SEALED_FETCH}:${linkId}`;
 
 const FOUR_HOURS = 4 * 3_600_000;
+/** A3 (docs/privacy.md 5.5, 14.2): nobody has opened the budget for this long, so its banks are not fetched. */
+export const IDLE_FETCH_MS = 90 * 86_400_000;
+/** How often a request notes that the budget was opened (store_note `opened_at`). */
+export const OPENED_EVERY_MS = 3_600_000;
 const PRUNE_AGAIN_MS = 60_000;
 /** How long a link waits for another link's run, and how often it asks, before it leaves it to the backstop. */
 const BUSY_WAIT_MS = 20_000;
@@ -78,6 +83,45 @@ export async function queueSealedFetch(
   await enqueue(SEALED_FETCH, { id: sealedFetchId(linkId), state, runAt: now });
 }
 
+const noteOf = async (db: RunDeps['db'], key: string): Promise<number | null> =>
+  (await db.prepare(`SELECT value FROM store_note WHERE key = ?1`).bind(key).first<{ value: number }>())
+    ?.value ?? null;
+
+/**
+ * Whether fetching rests (A3): nobody has opened the budget for 90 days. The time is the last request of a person
+ * (`opened_at`), or the cutover when none came since.
+ */
+export async function fetchResting(db: RunDeps['db'], now: number): Promise<boolean> {
+  const opened = (await noteOf(db, 'opened_at')) ?? (await noteOf(db, 'cutover_at'));
+  return opened !== null && now - opened > IDLE_FETCH_MS;
+}
+
+/**
+ * A person opened the budget (a request of theirs reached the store): noted at most once an hour. When fetching
+ * rested, it starts again: every link that may fetch is asked for, and true is given, so the store queues them.
+ */
+export async function noteOpened(db: RunDeps['db'], now: number): Promise<boolean> {
+  const [opened, resting] = [await noteOf(db, 'opened_at'), await noteOf(db, 'fetch_resting')];
+  if (resting === null && opened !== null && now - opened < OPENED_EVERY_MS) return false;
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO store_note (key, value) VALUES ('opened_at', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+      )
+      .bind(now),
+    db.prepare(`DELETE FROM store_note WHERE key = 'fetch_resting'`),
+    ...(resting === null
+      ? []
+      : [
+          db.prepare(
+            `UPDATE bank_link SET fetch_requested = 1 WHERE mac IS NOT NULL AND provider = 'plaid' AND status = 'ok'`,
+          ),
+        ]),
+  ]);
+  if (resting !== null) console.log(JSON.stringify({ event: 'sealed_fetch_resumed' }));
+  return resting !== null;
+}
+
 /**
  * News from the bank about one of a sealed budget's links (a verified webhook): new data starts a fetch, a repair
  * makes the link fetch again, and an error marks it "needs repair". An Item this budget doesn't hold is ignored.
@@ -106,8 +150,13 @@ export async function sealedWebhook(
       .prepare(`UPDATE bank_link SET status = 'ok', error_code = NULL WHERE id = ?1`)
       .bind(link.id)
       .run();
-  if (ev.type === 'sync_updates_available' || ev.type === 'login_repaired')
-    await queueSealedFetch(d, enqueue, link.id, now);
+  if (ev.type !== 'sync_updates_available' && ev.type !== 'login_repaired') return;
+  // While fetching rests (A3) the news is only noted: the link is fetched when the person comes back.
+  if (await fetchResting(d.db, now)) {
+    await d.db.prepare(`UPDATE bank_link SET fetch_requested = 1 WHERE id = ?1`).bind(link.id).run();
+    return;
+  }
+  await queueSealedFetch(d, enqueue, link.id, now);
 }
 
 /**
@@ -116,6 +165,15 @@ export async function sealedWebhook(
  */
 export function sealedBackstopHandler(d: RunDeps, enqueue: Enqueue): Handler {
   return async (_job, now): Promise<StepResult> => {
+    // Nobody has opened the budget for 90 days (A3): no fetch is queued until someone does (noteOpened).
+    const resting = await fetchResting(d.db, now);
+    if (resting)
+      await d.db
+        .prepare(
+          `INSERT INTO store_note (key, value) VALUES ('fetch_resting', ?1) ON CONFLICT (key) DO NOTHING`,
+        )
+        .bind(now)
+        .run();
     const due = await d.db
       .prepare(
         `SELECT id FROM bank_link WHERE mac IS NOT NULL AND provider = 'plaid' AND status = 'ok'
@@ -123,7 +181,7 @@ export function sealedBackstopHandler(d: RunDeps, enqueue: Enqueue): Handler {
       )
       .bind(now - FOUR_HOURS)
       .all<{ id: string }>();
-    for (const l of due.results) await queueSealedFetch(d, enqueue, l.id, now);
+    if (!resting) for (const l of due.results) await queueSealedFetch(d, enqueue, l.id, now);
     // The one delete rule (seal/snapshot-store.ts), a few hundred rows a step: it comes back soon while more is
     // left to delete.
     const pruned = await snapshotPrune(d.db);
@@ -215,13 +273,26 @@ async function step(deps: FetchDeps, s: FetchState, now: number): Promise<StepRe
       });
     }
     case 'describe': {
+      // The bank's name and its accounts are asked here, not kept from the exchange: the server stores no word of
+      // them (docs/privacy.md 5.5).
       const conn = await linkForBank(d, s.linkId);
-      const accounts = await deps.provider().getAccounts(conn);
+      const provider = deps.provider();
+      const accounts = await provider.getAccounts(conn);
+      const institution = provider.getInstitution
+        ? ((await provider.getInstitution(conn).catch(() => null))?.name ?? null)
+        : null;
       const link = await d.db
         .prepare(`SELECT linked_at FROM bank_link WHERE id = ?1`)
         .bind(s.linkId)
         .first<{ linked_at: number }>();
-      await sealLinkDescription(d, { linkId: s.linkId, linkedAt: link?.linked_at ?? null, accounts }, only);
+      const description: LinkDescription = {
+        v: 1,
+        linkId: s.linkId,
+        linkedAt: link?.linked_at ?? now,
+        institution,
+        accounts,
+      };
+      await sealLinkDescription(d, description, only);
       return next({ ...s, phase: 'complete' });
     }
     case 'fetch': {

@@ -17,6 +17,7 @@ import type { Env } from '../env.js';
 import { ulid } from '@ledgerline/platform';
 import { resolveMembership } from '../db/scoped.js';
 import { isFence, recoveryStmts, signupStmts, signupSwitchOn } from './signup.js';
+import { RECOVERY_KEY_GRANT, recoveryKeyStmts } from './recovery-key.js';
 import { clock, requestNow } from '../http/clock.js';
 import { openChallenge, sealChallenge } from '../http/challenge.js';
 import { bodyObject, csrf } from '../http/security.js';
@@ -330,6 +331,9 @@ authRoutes.post('/register/verify', async (c) => {
          WHERE token_hash = ?7 AND used_at = ?6 AND user_id IS NOT NULL`,
       ).bind(...vals, ch.grant_ref),
     ];
+  } else if (ch.grant_kind === RECOVERY_KEY_GRANT && ch.grant_ref) {
+    // A recovery-key sign-in (routes/recovery-key.ts): the key's user gets this passkey, and is signed in.
+    stmts = recoveryKeyStmts(env, ch.grant_ref, vals);
   } else if (ch.grant_kind === 'session') {
     stmts = [
       env.DB.prepare(

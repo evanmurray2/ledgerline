@@ -302,31 +302,49 @@ export class PlaidProvider implements BankDataProvider {
     const r = await this.json<{ access_token: string; item_id: string }>('/item/public_token/exchange', {
       public_token: publicToken,
     });
-    const item = await this.json<{ item: { institution_id?: string | null }; status?: unknown }>(
-      '/item/get',
-      {
-        access_token: r.access_token,
-      },
-    );
-    const instId = item.item.institution_id ?? null;
-    let instName: string | null = null;
-    if (instId) {
-      try {
-        const inst = await this.json<{ institution: { name: string } }>('/institutions/get_by_id', {
-          institution_id: instId,
-          country_codes: ['US'],
-        });
-        instName = inst.institution.name;
-      } catch {
-        instName = null;
-      }
-    }
+    const inst = await this.institutionOf(r.access_token);
     return {
       accessToken: r.access_token,
       providerItemId: r.item_id,
-      institutionId: instId,
-      institutionName: instName,
+      institutionId: inst.id,
+      institutionName: inst.name,
     };
+  }
+
+  /** The bank an Item is at (`/item/get`, then its name). The name is null when Plaid can't say it. */
+  async getInstitution(conn: Connection): Promise<{ id: string | null; name: string | null }> {
+    return this.institutionOf(conn.accessToken);
+  }
+
+  private async institutionOf(accessToken: string): Promise<{ id: string | null; name: string | null }> {
+    const item = await this.json<{ item: { institution_id?: string | null }; status?: unknown }>(
+      '/item/get',
+      { access_token: accessToken },
+    );
+    const id = item.item.institution_id ?? null;
+    if (!id) return { id, name: null };
+    try {
+      const inst = await this.json<{ institution: { name: string } }>('/institutions/get_by_id', {
+        institution_id: id,
+        country_codes: ['US'],
+      });
+      return { id, name: inst.institution.name };
+    } catch {
+      return { id, name: null };
+    }
+  }
+
+  /**
+   * Ends an Item at Plaid (`/item/remove`): its token stops working. It never gives back one of the Items an
+   * account may link (Plaid Trial counts every Item ever made). An Item Plaid no longer knows is already gone.
+   */
+  async removeItem(accessToken: string): Promise<void> {
+    try {
+      await this.json('/item/remove', { access_token: accessToken });
+    } catch (e) {
+      if (e instanceof ProviderError && e.code === 'ITEM_NOT_FOUND') return;
+      throw e;
+    }
   }
 
   async fetchSyncPage(conn: Connection, cursor: string | null, count: number): Promise<StagedPage> {

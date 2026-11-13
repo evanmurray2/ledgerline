@@ -6,7 +6,7 @@ import { Button, Card, softButtonClass } from '../../components/ui';
 import { toast } from '../../components/Toast';
 import { Why } from '../../components/Why';
 import { COMMIT, WEB_VERSION, fetchRelease, shortCommit, type Release } from '../../lib/release';
-import { Page } from './common';
+import { Page, RowLink } from './common';
 
 function Fact({ name, children, action }: { name: string; children: ReactNode; action?: ReactNode }) {
   return (
@@ -124,6 +124,15 @@ export function AboutScreen() {
         one number for all of those files. If their number is the same, this release came from the public
         code. This covers the app on your device, not the server.
       </Why>
+      {/* The claims this check backs, each with its limit (docs/claims.md, the same list). */}
+      <Card>
+        <RowLink
+          to="/settings/privacy/claims"
+          name="What Ledgerline claims"
+          meta="Each claim, if it is true now, and its limit"
+          track="settings.about.claims"
+        />
+      </Card>
     </Page>
   );
 }

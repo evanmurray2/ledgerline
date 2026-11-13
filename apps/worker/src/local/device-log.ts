@@ -283,6 +283,46 @@ export class DeviceLog {
     return log;
   }
 
+  /**
+   * Where a public entry this device writes goes (a slot change, a key change, an intent or a cancel, made by the
+   * app with the budget key in hand: apps/web/src/keys/changes.ts `LogPlace`): on top of the last entry taken,
+   * with this device's next counter, a time after the entry before, and the public entry it must name.
+   */
+  writePlace(): {
+    number: number;
+    hash: Bytes;
+    deviceId: string;
+    deviceCounter: number;
+    filedThrough: number;
+    scanThrough: number;
+    time: number;
+    lastPublic: PublicRef;
+    keyVersion: number;
+    whole: boolean;
+  } {
+    const s = this.state as FullChainState;
+    return {
+      number: s.number,
+      hash: s.hash,
+      deviceId: this.deviceId,
+      deviceCounter: s.counters.get(this.deviceId) ?? 0,
+      filedThrough: s.filedThrough,
+      scanThrough: s.scanThrough,
+      time: Math.max(this.clock(), s.time + 1),
+      lastPublic: this.publicState.lastPublic,
+      keyVersion: s.public.keyVersion,
+      whole: this.parts.length === 0 && s.pending === null,
+    };
+  }
+
+  /**
+   * Takes keys of more versions: the new version a key change made on this device brings (the app made it, and
+   * hands its derived keys over). Keys held already stay.
+   */
+  holdKeys(keys: readonly BudgetKeys[]): void {
+    for (const k of keys) if (!this.keys.has(k.version)) this.keys.set(k.version, k);
+  }
+
   /** The keys this device holds, by version: for a second log over the same budget (a snapshot's check). */
   keysHeld(): BudgetKeys[] {
     return [...this.keys.values()];
@@ -296,6 +336,11 @@ export class DeviceLog {
   /** The number of the last entry this device has taken. */
   get number(): number {
     return this.state.number;
+  }
+
+  /** The day (days since 1970, UTC) of the last daily scan the log holds; 0 for none. */
+  get scanThrough(): number {
+    return (this.state as FullChainState).scanThrough;
   }
 
   /** The last bank run the log says is filed. */

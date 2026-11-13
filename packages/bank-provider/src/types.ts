@@ -141,11 +141,16 @@ export interface BankDataProvider {
   /** What a hosted Link session came to. The app finishes a link by asking, not by trusting where the browser lands. */
   linkResult(linkToken: string): Promise<LinkResult>;
   completeLink(publicToken: string): Promise<CompletedLink>;
+  /** Removes the Item at the provider (`/item/remove`): the link ends there, and its token stops working. One already
+   * gone is not an error. */
+  removeItem(accessToken: string): Promise<void>;
   /** One raw page; the apply step parses it later with parsePage(). */
   fetchSyncPage(conn: Connection, cursor: string | null, count: number): Promise<StagedPage>;
   parsePage(body: string): SyncPage;
   getAccounts(conn: Connection): Promise<ProviderAccount[]>;
   getHoldings?(conn: Connection): Promise<ProviderHolding[]>;
   getLiabilities?(conn: Connection): Promise<ProviderLiability[]>;
+  /** The bank an Item is at; its name is null when the provider can't say it. */
+  getInstitution?(conn: Connection): Promise<{ id: string | null; name: string | null }>;
   verifyWebhook(req: Request): Promise<ProviderWebhookEvent | null>;
 }

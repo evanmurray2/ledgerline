@@ -44,6 +44,26 @@ describe('Plaid adapter', () => {
     expect(() => p.linkTokenRequest({ mode: 'repair', userId: 'u' })).toThrow();
   });
 
+  it('removes an Item with /item/remove and its token, and throws what Plaid refuses', async () => {
+    const asked: { url: string; body: Record<string, unknown> }[] = [];
+    let answer = new Response(JSON.stringify({ request_id: 'r' }), { status: 200 });
+    const p = new PlaidProvider({
+      clientId: 'id',
+      secret: 'secret',
+      env: 'sandbox',
+      fetch: async (url, init) => {
+        asked.push({ url: String(url), body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+        return answer;
+      },
+    });
+    await p.removeItem('access-sandbox-1');
+    expect(asked[0]!.url).toBe('https://sandbox.plaid.com/item/remove');
+    expect(asked[0]!.body).toMatchObject({ access_token: 'access-sandbox-1' });
+    answer = new Response(JSON.stringify({ error_code: 'ITEM_NOT_FOUND' }), { status: 400 });
+    // An Item Plaid no longer knows is already gone.
+    await expect(p.removeItem('gone')).resolves.toBeUndefined();
+  });
+
   it('parses a sync page into normalized events with raw paths', () => {
     const body = JSON.stringify({
       added: [
@@ -120,6 +140,51 @@ describe('Plaid adapter', () => {
     expect(classifyWebhook({ webhook_type: 'TRANSACTIONS', webhook_code: 'DEFAULT_UPDATE' }).type).toBe(
       'other',
     );
+  });
+
+  it('removes an Item with its token, and an Item Plaid no longer knows is already gone', async () => {
+    const asked: { path: string; body: Record<string, unknown> }[] = [];
+    let answer: { status: number; body: unknown } = { status: 200, body: { request_id: 'r' } };
+    const p = new PlaidProvider({
+      clientId: 'c',
+      secret: 's',
+      env: 'sandbox',
+      fetch: async (input, init) => {
+        asked.push({
+          path: new URL(String(input)).pathname,
+          body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+        });
+        return new Response(JSON.stringify(answer.body), { status: answer.status });
+      },
+    });
+    await p.removeItem('access-1');
+    expect(asked).toEqual([
+      { path: '/item/remove', body: { client_id: 'c', secret: 's', access_token: 'access-1' } },
+    ]);
+    answer = { status: 400, body: { error_code: 'ITEM_NOT_FOUND' } };
+    await p.removeItem('access-1');
+    answer = { status: 400, body: { error_code: 'INVALID_ACCESS_TOKEN' } };
+    await expect(p.removeItem('access-1')).rejects.toMatchObject({ code: 'INVALID_ACCESS_TOKEN' });
+  });
+
+  it('names the bank an Item is at', async () => {
+    const p = new PlaidProvider({
+      clientId: 'c',
+      secret: 's',
+      env: 'sandbox',
+      fetch: async (input) => {
+        const path = new URL(String(input)).pathname;
+        const body =
+          path === '/item/get'
+            ? { item: { institution_id: 'ins_1' } }
+            : { institution: { name: 'Bank One' } };
+        return new Response(JSON.stringify(body));
+      },
+    });
+    expect(await p.getInstitution({ id: 'con_x', accessToken: 'a', providerItemId: 'i' })).toEqual({
+      id: 'ins_1',
+      name: 'Bank One',
+    });
   });
 });
 

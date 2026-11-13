@@ -1,12 +1,15 @@
 // Deleting your own account and Settings → Users (D-75, docs/open-signup.md 10, 12), with the switch on.
-import { createExecutionContext, env, runDurableObjectAlarm } from 'cloudflare:test';
-import { describe, expect, it } from 'vitest';
+import { encryptToken, parseKeyring } from '@ledgerline/platform';
+import { createExecutionContext, env, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+import { removeBanks } from '../../src/store/account-life.js';
 import worker from '../../src/index.js';
 import { TEST_TOKEN } from '../../src/routes/signup.js';
 import { SoftAuthenticator } from '../soft-authenticator.js';
 import { budgetStub, directoryDb, directoryStub, storeDb } from '../store-db.js';
 
 const dir = directoryDb();
+const keys = env as unknown as { TOKEN_KEYS: string; TOKEN_KEY_CURRENT: string };
 const ORIGIN = 'https://ledgerline.test';
 const SETUP = 's'.repeat(40);
 const prodEnv = () => ({ ...env, DEV_AUTH_EMAIL: undefined, DEV_ROUTES: undefined }) as never;
@@ -159,5 +162,77 @@ describe('deleting an account', () => {
     expect(await storeDb(samBudget).prepare(`SELECT count(*) AS n FROM budget`).first('n')).toBe(0);
     // The account no longer counts toward MAX_USERS.
     expect((await owner.call('GET', '/api/settings/security/users')).json.users).toBe(1);
+  });
+});
+
+describe('deleting an account with banks', () => {
+  const real = globalThis.fetch;
+  const removed: string[] = [];
+  afterAll(() => vi.restoreAllMocks());
+
+  it('removes each bank link at Plaid, then wipes the locked budget; the name is checked on the device', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (url.host !== 'plaid.test') return real(input as RequestInfo, init);
+      const body = JSON.parse(String(init?.body ?? '{}')) as { access_token?: string };
+      if (url.pathname === '/item/remove') {
+        removed.push(String(body.access_token));
+        // The second link was removed at Plaid already: that is not a failure.
+        if (body.access_token === 'access-alex-2')
+          return new Response(JSON.stringify({ error_code: 'ITEM_NOT_FOUND' }), { status: 400 });
+      }
+      return new Response(JSON.stringify({ request_id: 'r' }), { status: 200 });
+    });
+    const alex = new Browser();
+    await alex.ceremony(key(), '/api/auth/signup/options', { turnstileToken: TEST_TOKEN });
+    const budget = ((await alex.call('GET', '/api/session')).json.budget as { id: string }).id;
+    const ring = parseKeyring(keys.TOKEN_KEYS, keys.TOKEN_KEY_CURRENT);
+    const store = storeDb(budget);
+    for (const n of [1, 2]) {
+      const id = `01HALEX${n}AAAAAAAAAAAAAAAAA`;
+      const enc = await encryptToken(ring, `access-alex-${n}`, `con_${id}`);
+      await store
+        .prepare(
+          `INSERT INTO bank_link (id, connection_id, budget_id, provider, provider_item_id, access_token_enc, key_version, linked_at, created_at)
+           VALUES (?1, ?2, ?3, 'plaid', ?4, ?5, ?6, 1, 1)`,
+        )
+        .bind(id, `con_${id}`, budget, `item-alex-${n}`, enc.enc, enc.keyVersion)
+        .run();
+    }
+    // The budget is locked: its name is on the device only, and the server takes what the app checked.
+    await store.prepare(`INSERT INTO store_mark (key, at) VALUES ('sealed', 1)`).run();
+    expect(await budgetStub(budget).info()).toEqual({ name: '', banks: 2, sealed: true });
+    // Its links are never removed for a budget that is not being deleted.
+    expect(await budgetStub(budget).removeBanks(budget)).toEqual({ removed: 0, left: 2, refused: true });
+    expect(removed).toEqual([]);
+    const r = await alex.call('POST', '/api/settings/security/delete-account', { budgetName: 'As typed' });
+    expect(r.status).toBe(200);
+    await runDirectoryJobs();
+    expect(removed.sort()).toEqual(['access-alex-1', 'access-alex-2']);
+    expect(await storeDb(budget).prepare(`SELECT count(*) AS n FROM bank_link`).first('n')).toBe(0);
+    expect(await storeDb(budget).prepare(`SELECT count(*) AS n FROM budget`).first('n')).toBe(0);
+    expect(await dir.prepare(`SELECT count(*) AS n FROM budget WHERE id = ?1`).bind(budget).first('n')).toBe(
+      0,
+    );
+  });
+
+  it('no job removes a link on Plaid Trial', async () => {
+    await runInDurableObject(budgetStub(`trial-${Math.random()}`), async (_o, state) => {
+      state.storage.sql.exec(
+        `INSERT INTO bank_link (id, connection_id, budget_id, provider, linked_at, created_at) VALUES ('a', 'con_a', 'b', 'plaid', 1, 1)`,
+      );
+      const asked: string[] = [];
+      const o = {
+        plaidEnv: 'production',
+        keyring: () => parseKeyring(keys.TOKEN_KEYS, keys.TOKEN_KEY_CURRENT),
+        provider: () => ({ removeItem: async (t: string) => void asked.push(t) }) as never,
+      };
+      await expect(removeBanks(state.storage, o)).rejects.toThrow('remove_refused_trial');
+      expect(asked).toEqual([]);
+      expect(await removeBanks(state.storage, { ...o, otherUsersBanks: 'on' })).toEqual({
+        removed: 1,
+        left: 0,
+      });
+    });
   });
 });

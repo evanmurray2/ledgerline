@@ -10,6 +10,7 @@ export * from './budget-key.js';
 export * from './slots.js';
 export * from './wrap.js';
 export * from './recovery.js';
+export * from './backup.js';
 export * from './entry.js';
 export * from './chain.js';
 export * from './snapshot.js';

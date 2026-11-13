@@ -42,6 +42,8 @@ What it costs:
 
 Each claim is published next to the limit that goes with it: "Like every web app, this depends on the code we send your browser. That code is public (4.2)." The third row is never left out when the second is used.
 
+**Published (phase 8, Nov 12, 2026):** `docs/claims.md` says, for each row, whether it is true today for a locked budget, its limit and what backs it; the app shows the same list at Settings → Privacy → What Ledgerline claims.
+
 ### 1.2 What must never be said
 
 - **"We can't read your data"**, **"what we store can't be read"** or **"nobody who breaks in can read it"**, flat. Someone who can change the code the server sends or runs can read it (4.2), we store readable account records (4.3), and we could fetch bank data again. Say "we hold no key to your budget" and "no readable copy".

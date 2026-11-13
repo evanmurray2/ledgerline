@@ -460,6 +460,8 @@ export async function cutoverBack(d: Pick<CutoverDeps, 'db' | 'now' | 'markNow'>
   if (!m.sealed) return { ok: false, why: 'This budget is not sealed.' };
   const at = await note(d.db, 'cutover_at');
   if (at === null || d.now - at > WAY_BACK_MS) return { ok: false, why: 'The way back is closed.' };
+  // Once the old tables are being emptied (seal/purge.ts) there is nothing to go back to.
+  if ((await note(d.db, 'purge_started_at')) !== null) return { ok: false, why: 'The way back is closed.' };
   await d.db.batch([
     d.db.prepare(`DELETE FROM job WHERE kind IN (?1, ?2)`).bind(SEALED_FETCH, SEALED_BACKSTOP),
     d.db.prepare(`DELETE FROM run_stage`),

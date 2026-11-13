@@ -49,6 +49,8 @@ interface AcctDb {
   connection_id: string | null;
   drift_since: number | null;
   closed_at: number | null;
+  /** When its bank was removed (D-87): the account stays, not linked. */
+  unlinked_at: number | null;
 }
 
 /** Every account's row; closed ones too when `withClosed` (their own list on Accounts, and their register). */
@@ -61,7 +63,8 @@ async function accountRows(
 ): Promise<{ rows: AccountRow[]; raw: AcctDb[]; recent: Adjustments['recent'] }> {
   const raw = await s.all<AcctDb>(
     `SELECT a.id, a.name, a.kind, a.budget_from, a.starting_balance, a.provider_account_id, pa.mask, pa.current_balance AS bank,
-       pa.drift_since, c.institution_name AS institution, c.status, c.last_synced_at, c.id AS connection_id, a.closed_at
+       pa.drift_since, c.institution_name AS institution, c.status, c.last_synced_at, c.id AS connection_id, a.closed_at,
+       c.removed_at AS unlinked_at
      FROM account a
      LEFT JOIN provider_account pa ON pa.budget_id = a.budget_id AND pa.provider_account_id = a.provider_account_id
      LEFT JOIN connection c ON c.id = pa.connection_id
@@ -84,7 +87,9 @@ async function accountRows(
     const working = credit ? -signedWorking : signedWorking;
     // Shown only once it has lasted a day (provider_account.drift_since, set by each sync): most are timing.
     const lasted = a.drift_since !== null && now - a.drift_since >= DIFF_WAIT_MS;
-    const drift = diff.left !== 0 && lasted ? (credit ? -diff.left : diff.left) : null;
+    // An account whose bank was removed has nothing to compare with (D-87): no difference line.
+    const unlinked = a.unlinked_at !== null;
+    const drift = diff.left !== 0 && lasted && !unlinked ? (credit ? -diff.left : diff.left) : null;
     const ci = cardInfo.get(a.id);
     const statement = ci?.statement
       ? { balance: ci.statement.balance, due: ci.statement.due, covered: true }
@@ -113,9 +118,11 @@ async function accountRows(
       meta: `${a.institution ?? 'Manual'}${a.mask ? ` · ending ${a.mask}` : ''} · ${
         a.closed_at !== null
           ? `closed ${shortDate(localDate(a.closed_at, timeZone))}`
-          : a.status === 'login_required'
-            ? 'sign in again'
-            : synced
+          : unlinked
+            ? 'not linked'
+            : a.status === 'login_required'
+              ? 'sign in again'
+              : synced
       }`,
       closed,
     };
