@@ -163,7 +163,8 @@ export function OwedScreen() {
                       {payback && (
                         <Link
                           to={`/owed/match/${payback.key}`}
-                          search
+                          // The sheet opens with this row's item picked, not the ones the money would match first.
+                          search={(p: object) => ({ ...p, item: o.id })}
                           data-track="owed.match"
                           aria-label={`Match money back for ${o.label}`}
                           className={cx(softButtonClass(), pill)}

@@ -318,6 +318,8 @@ const owedCloseRoute = createRoute({
 const owedMatchRoute = createRoute({
   getParentRoute: () => owedRoute,
   path: 'match/$key',
+  // `item`: the owed item a row's Match money back opened the sheet for, picked alone.
+  validateSearch: (s: Record<string, unknown>) => ({ item: str(s.item) }),
   component: MatchScreen,
 });
 
