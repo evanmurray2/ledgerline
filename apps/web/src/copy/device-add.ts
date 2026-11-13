@@ -40,14 +40,25 @@ export interface Relay {
   end(): Promise<unknown>;
 }
 
-/** How a side waits for the other: how often it asks, and when it stops (the person left the screen). */
+/**
+ * How a side waits for the other: how often it asks, and when it stops (the person left the screen). It asks
+ * after `everyMs` first, then half as long again each time nothing changed, up to `maxMs`: a wait of a minute
+ * costs about 14 requests, and a longer one 10 a minute (the relay is the Directory, one object for all).
+ */
 export interface Waiting {
   everyMs?: number;
+  maxMs?: number;
   signal?: AbortSignal;
 }
 
+const FIRST_MS = 1000;
+const MAX_MS = 6000;
+
 /** Shown when the add ended on the server: it expired, the other device cancelled it, or a new one started. */
 export const ADD_ENDED = 'This ended. Start again on the device that opens your budget.';
+/** Shown on the new device when the budget opened but its passkey could not be added as a way in. */
+export const NOT_ADDED =
+  'Your budget is open, but this passkey could not be added. Start again on the device that opens your budget.';
 /** Shown when the person said the codes are not the same. */
 export const NOT_SAME =
   'The codes were not the same, so nothing was added. Start again on the device that opens your budget.';
@@ -66,15 +77,17 @@ const sleep = (ms: number, signal?: AbortSignal) =>
     );
   });
 
-/** Asks the relay until `pick` finds what it waits for. The add ending on the server stops it. */
+/** Asks the relay until `pick` finds what it waits for, less often the longer it waits. The add ending stops it. */
 async function until<T>(relay: Relay, pick: (s: RelayState) => T | null, w: Waiting): Promise<T> {
+  let every = w.everyMs ?? FIRST_MS;
   for (;;) {
     if (w.signal?.aborted) throw new AddError('cancelled');
     const s = await relay.state();
     if (s.role === null) throw new Error(ADD_ENDED);
     const got = pick(s);
     if (got !== null) return got;
-    await sleep(w.everyMs ?? 1500, w.signal);
+    await sleep(every, w.signal);
+    every = Math.min(Math.ceil(every * 1.5), Math.max(w.maxMs ?? MAX_MS, w.everyMs ?? 0));
   }
 }
 
@@ -86,7 +99,8 @@ export type FromStage = 'waiting' | 'code' | 'sealing' | 'confirming';
  * The signed-in device's side. `ready` runs once the add is started on the server, so the link shown after it
  * signs in a device that may join it. `match` shows the code and resolves when the person answers: true for
  * "They match". `slotIds` reads the ways in the log lists now: the add is done when the new device's confirmation
- * verifies **and** a new passkey's way in is in the log (section 10). The budget key stays with the caller.
+ * verifies, naming the way in it added, **and** that way in is new in the log (section 10). Another passkey's way
+ * in, added meanwhile by any other device, is not this add's. The budget key stays with the caller.
  */
 export async function addFromHere(o: {
   relay: Relay;
@@ -126,14 +140,15 @@ export async function addFromHere(o: {
     await o.relay.send('sealed', { sealed: toHex(await me.seal(o.bk, Date.now())) });
     o.onStage?.('confirming');
     const confirm = await until(o.relay, (s) => s.confirm ?? null, w);
-    if (!(await me.confirmed(o.bk, fromHex(confirm))))
-      throw new Error('The new device could not open your budget. Start again.');
-    // The new device's way in, which it adds before it confirms.
+    const slot = await me.confirmed(o.bk, fromHex(confirm));
+    if (!slot || before.has(slot)) throw new Error('The new device could not open your budget. Start again.');
+    // The new device's way in, which it adds before it confirms: this one, and no other.
+    let every = w.everyMs ?? FIRST_MS;
     for (let i = 0; ; i++) {
-      const now = await o.slotIds();
-      if ([...now].some((id) => id.startsWith('p:') && !before.has(id))) break;
-      if (i >= 10) throw new Error('The new device opened your budget, but its passkey is not added yet.');
-      await sleep(w.everyMs ?? 1500, w.signal);
+      if ((await o.slotIds()).has(slot)) break;
+      if (i >= 6) throw new Error('The new device opened your budget, but its passkey is not added yet.');
+      await sleep(every, w.signal);
+      every = Math.min(every * 2, Math.max(w.maxMs ?? MAX_MS, w.everyMs ?? 0));
     }
   } finally {
     await o.relay.end().catch(() => undefined);
@@ -160,10 +175,10 @@ export interface JoinTry {
   code: string;
   /**
    * **Only after the person tapped "They match" on this device**: waits for the sealed budget key, checks the
-   * offer against the log, and opens it. Gives the budget key and the confirmation to send once the budget is
-   * open here (`confirm`).
+   * offer against the log, and opens it. Gives the budget key, and the confirmation to send once the budget is
+   * open here and this device's passkey is a way in (`confirm`, with its slot id).
    */
-  open(): Promise<{ bk: Bytes; confirm: () => Promise<void> }>;
+  open(): Promise<{ bk: Bytes; confirm: (slotId: string) => Promise<void> }>;
 }
 
 /**
@@ -197,8 +212,11 @@ export async function joinFromOther(o: {
       });
       return {
         bk: opened.bk,
-        confirm: async () => {
-          await o.relay.send('confirm', { confirm: toHex(opened.confirm) });
+        confirm: async (slotId: string) => {
+          // Only for a way in that is in the log now: the signed-in device looks for exactly this one.
+          const now = await walkPublic(await fetchPublicEntries(o.fetch), o.budgetId);
+          if (!now.slots.has(slotId)) throw new Error(NOT_ADDED);
+          await o.relay.send('confirm', { confirm: toHex(await me.confirm(slotId)) });
         },
       };
     },

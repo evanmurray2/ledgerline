@@ -38,7 +38,7 @@ import {
 import { WORKER_RUN_KEYS } from '../keys/worker-keys';
 import { fetchPublicEntries, logDeviceId, newUlid, openSealedBudget } from './sealed';
 import { addPasskeyWay, authPubOf, openPlans, type Ways } from './sealed-ways';
-import { ACTION, type Entry, type PublicState, walkPublic, zeroize } from '@ledgerline/seal';
+import { ACTION, type Entry, passkeySlotId, type PublicState, walkPublic, zeroize } from '@ledgerline/seal';
 import { mergedSession, NOT_LOCKED } from './sealed-session';
 import { ownWriters } from './notices';
 import { connectivity } from '../state/connectivity';
@@ -270,6 +270,8 @@ let recoveryTyped: string | null = null;
 let noSlotWay: { credentialId: string; slotPrf: ArrayBuffer } | null = null;
 /** The budget key another device sealed to this one (copy/device-add.ts), held only until the next open uses it. */
 let addedKey: Uint8Array | null = null;
+/** The slot id of the passkey that last opened the budget from the log, for an add's confirmation. */
+let openedWay: string | null = null;
 /** The derived keys the engine holds now, for the keys held for a refresh once a key change adds a version. */
 let keysInEngine: unknown[] | null = null;
 
@@ -291,10 +293,11 @@ export async function openWithRecovery(typed: string, session: Session): Promise
 /**
  * Opens the locked budget with its key, sealed to this device by a device that holds it (docs/privacy-keys.md
  * section 10), when the passkey just used is no way in to it. The passkey is then added as a way in, as after the
- * recovery key. The key is zeroed once used.
+ * recovery key. The key is zeroed once used. Gives that passkey's slot id.
  */
-export async function openWithAddedKey(bk: Uint8Array, session: Session): Promise<void> {
+export async function openWithAddedKey(bk: Uint8Array, session: Session): Promise<string> {
   addedKey = bk;
+  openedWay = null;
   try {
     await start(session);
   } finally {
@@ -303,6 +306,9 @@ export async function openWithAddedKey(bk: Uint8Array, session: Session): Promis
     addedKey = null;
   }
   if (state.status === 'failed') throw new Error(state.error ?? NOT_NOW);
+  // The way in this device's passkey now is (its slot change is checked in the log before the add's confirmation).
+  if (!openedWay) throw new Error(NOT_NOW);
+  return openedWay;
 }
 
 /** The engine, the server and the budget's id, for a change to the ways in (copy/sealed-ways.ts). */
@@ -386,6 +392,7 @@ async function enterSealed(
       throw e;
     }
     noSlotWay = null;
+    openedWay = passkeySlotId(passkey.credentialId);
     if (state.needsRecovery) set({ needsRecovery: false });
     await keepPublicSeen(h, who!.budgetId, { number: r.lastPublic.number, hash: toHex(r.lastPublic.hash) });
     await h.put('publics', JSON.stringify(r.publics));

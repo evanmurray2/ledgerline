@@ -17,6 +17,7 @@ import {
   ADD_ATTEMPTS,
   ADD_COMMIT_LEN,
   ADD_CONFIRM_LEN,
+  ADD_CONFIRM_MAX,
   ADD_OFFER_LEN,
   ADD_REVEAL_LEN,
   ADD_SEALED_LEN,
@@ -37,7 +38,8 @@ const COMMIT = hexOf(ADD_COMMIT_LEN);
 const OFFER = hexOf(ADD_OFFER_LEN);
 const REVEAL = hexOf(ADD_REVEAL_LEN);
 const SEALED = hexOf(ADD_SEALED_LEN);
-const CONFIRM = hexOf(ADD_CONFIRM_LEN);
+/** The confirmation: its MAC, then the new device's slot id (section 10); the devices check both. */
+const CONFIRM = new RegExp(`^(?:[0-9a-f]{2}){${ADD_CONFIRM_LEN + 1},${ADD_CONFIRM_MAX}}$`);
 
 interface Row {
   budget_id: string;
@@ -175,7 +177,7 @@ deviceAddRoutes.post(`${BASE}/sealed`, async (c) => {
   );
 });
 
-/** The new device's confirmation (step 5), once. */
+/** The new device's confirmation (step 5), once: it names the way in the new device added. */
 deviceAddRoutes.post(`${BASE}/confirm`, async (c) => {
   const confirm = await field(c, 'confirm', CONFIRM);
   if (!confirm) return bad(c);

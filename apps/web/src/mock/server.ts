@@ -5,6 +5,7 @@
 import { CSRF_HEADER, LinkFinish, LinkTokenRequest, NoteRequest, UsageBatch } from '@ledgerline/contracts';
 import type { z } from 'zod';
 import { isServerRead } from '../copy/server-reads';
+import { MockRelay, RelayGone } from './relay';
 
 type LocalEngine = MockCopy['engine'];
 type SqlJsDb = MockCopy['db'];
@@ -16,6 +17,8 @@ export interface MockResponse {
   status: number;
   body: unknown;
 }
+
+const DEVICE_ADD = '/api/settings/security/device-add';
 
 /** Opens a November copy; the browser passes one that knows where sql.js's wasm is. */
 export type OpenCopy = (now: () => number) => Promise<MockCopy>;
@@ -357,8 +360,32 @@ export class MockServer {
     };
   }
 
+  /**
+   * The relay for adding a device (docs/privacy-keys.md section 10). This page is the sign-in "this-device"; a test
+   * plays the other device with `relay.as('other-device')`.
+   */
+  readonly relay = new MockRelay(() => this.now);
+
+  private relayed(method: string, path: string, body: unknown): unknown {
+    const me = 'this-device';
+    const step = path.slice(DEVICE_ADD.length + 1);
+    try {
+      if (method === 'GET' && path === DEVICE_ADD) return this.relay.state(me);
+      if (method !== 'POST') return undefined;
+      if (step === 'start') return this.relay.start(me);
+      if (step === 'end') return this.relay.end(me);
+      if (['commit', 'offer', 'reveal', 'sealed', 'confirm'].includes(step))
+        return this.relay.send(me, step as never, (body ?? {}) as Record<string, string>);
+      return undefined;
+    } catch (e) {
+      if (e instanceof RelayGone) throw new MockHttpError(409, 'gone', e.message);
+      throw new MockHttpError(400, 'invalid', 'Something went wrong. Try again.');
+    }
+  }
+
   /** What only a real server can answer. `undefined`: the engine answers. */
   private stub(method: string, path: string, body: unknown): unknown {
+    if (path === DEVICE_ADD || path.startsWith(`${DEVICE_ADD}/`)) return this.relayed(method, path, body);
     switch (`${method} ${path}`) {
       case 'GET /api/auth/status':
         return { signedIn: true, hasPasskey: true, setupOpen: false };
