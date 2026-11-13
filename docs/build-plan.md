@@ -20,7 +20,7 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] After D-112 (invocation logs off): no invocation log has come since its deploy (checked Nov 13, 18:54 UTC). Still to check, with a read-only Workers observability query: a line the app logs during a request holds no IP address or location; then delete this line.
 - [ ] Comparable releases, left open after phase 7 (D-96, `docs/runbooks/verify-build.md`): compare a build made on macOS with the release (only Linux was tried); run `gh attestation verify` where Sigstore's hosts can be reached (the Nov 13 check could not: this container's proxy blocks them).
 - [ ] `docs/privacy-policy.md` is a draft the owner has not read yet **(manual)**. The app shows it at `/privacy-policy`. Before other people are invited: the owner reads the **(owner reads)** lines, and a contact is set (`docs/privacy.md` 11).
-- [ ] Sign-up's robot check on its own address (D-113) is built, not deployed **(manual)**: before sign-up is turned on, the owner says yes to a second Worker (`ledgerline-check`) and makes its Turnstile widget (`docs/open-signup.md` 13); then try the trip there and back from the Home Screen app on an iPhone.
+- [ ] Sign-up's robot check on its own address (D-113) is built, not deployed **(manual)**: the owner said yes to the second Worker (`ledgerline-check`) on Nov 13, 2026, to deploy only when sign-up is turned on, and doesn't want sign-up on yet; then the owner makes its Turnstile widget (`docs/open-signup.md` 13); then try the trip there and back from the Home Screen app on an iPhone.
 
 ## Contract gaps (not blocking)
 
