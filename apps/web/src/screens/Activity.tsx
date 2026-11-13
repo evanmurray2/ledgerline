@@ -103,10 +103,7 @@ export function ActivityScreen() {
   const more = useMorePosted(v, filter, q, allMonths ? undefined : month, category);
   // Desktop: each row's category menu (ActivityRowPick.tsx).
   const rowPick = useRowPicker(v?.categoryPicker);
-  const picked = (r: TxnListRow) => {
-    const action = rowPick.action(r);
-    return { action, hideCategory: !!action };
-  };
+  const picked = (r: TxnListRow) => ({ categoryMenu: rowPick.menu(r) });
   const canWrite = useCanWrite({ offline: true });
   const qc = useQueryClient();
   // The list keeps categorized rows in place and the counts are adjusted here, so Activity isn't refetched after

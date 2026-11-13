@@ -216,6 +216,13 @@ test('Desktop: a posted row’s category menu changes its category, with Undo', 
   await expect(menu).toHaveText('Household');
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(menu).toHaveText(before);
+  // The menu sits in the tag line, so the amount keeps its place at the row's right edge; the rest of the row
+  // still opens the row's sheet.
+  const row = page.getByRole('link', { name: /^Trader Joe/ }).first();
+  await row
+    .locator('xpath=ancestor::div[contains(@class,"relative")][1]')
+    .click({ position: { x: 600, y: 10 } });
+  await expect(page).toHaveURL(/\/activity\/txn\//);
 });
 
 test('Settings: the dark mode toggle switches data-theme', async ({ page }) => {
