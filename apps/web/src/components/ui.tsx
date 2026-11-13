@@ -518,6 +518,9 @@ export function badgeClass(kind: string | null): string {
     case 'transfer':
       // Its own color: money that only moves between your accounts, never spent or earned.
       return 'bg-transfer-bg text-transfer-fg';
+    case 'paired':
+      // Your entry that the bank's pending row matched: the funded color, as in "all set".
+      return 'bg-funded-bg text-funded-fg';
     default:
       return 'bg-sunken text-none-fg';
   }

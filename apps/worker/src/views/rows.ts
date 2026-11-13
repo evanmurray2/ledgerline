@@ -25,6 +25,26 @@ export function hiddenFromLists(t: Pick<TxRow, 'source' | 'status' | 'date' | 'b
 /** isHistory as SQL, negated: rows in the budget, the only ones that can need you. */
 export const IN_BUDGET_ROWS = `NOT (source = 'bank' AND budget_from IS NOT NULL AND date < budget_from)`;
 
+/** Transfer states that make a row a transfer between accounts: it has no payee (D-106). */
+export const TRANSFER_STATES = `('paired', 'manual')`;
+
+/**
+ * A transfer's name in place of a payee (D-106): "Transfer to Savings" or "Transfer from Checking" when paired, or
+ * "Transfer out" / "Transfer in" for an account that isn't linked. Null when the row isn't a transfer.
+ */
+export function transferName(
+  t: Pick<TxRow, 'transfer_state' | 'transfer_account_id' | 'amount'>,
+  accountNames: ReadonlyMap<string, string>,
+): string | null {
+  const out = t.amount < 0;
+  if (t.transfer_state === 'paired' && t.transfer_account_id) {
+    const other = accountNames.get(t.transfer_account_id);
+    return other ? `Transfer ${out ? 'to' : 'from'} ${other}` : `Transfer ${out ? 'out' : 'in'}`;
+  }
+  if (t.transfer_state === 'manual') return `Transfer ${out ? 'out' : 'in'}`;
+  return null;
+}
+
 export function categoryLabel(
   t: TxRow,
   categoryNames: ReadonlyMap<string, string>,
@@ -48,6 +68,8 @@ export function listRow(
     /** Money in that paid back owed purchases: their categories' names (owed-rows.ts). */
     paidFor?: readonly string[] | null;
     stale?: boolean;
+    /** Your pending entry covers the bank's pending row (D-64): the bank's amount. */
+    atBank?: number | null;
     split?: boolean;
     /** What the split's lines leave out of the amount (D-82). */
     splitOff?: number;
@@ -72,6 +94,12 @@ export function listRow(
     badgeKind = 'alert';
     sub = 'which one?';
     sheet = 'transfer';
+  } else if (t.source === 'manual' && t.status === 'pending' && extra.atBank != null) {
+    // Paired with the bank's pending row (D-64): the bank has it, so it's never "Not at the bank yet". The bank's
+    // amount shows only when it differs from yours (a tip); yours counts until the charge posts.
+    badge = 'Added by you · bank has it';
+    badgeKind = 'paired';
+    sub = extra.atBank !== t.amount ? `bank ${formatCents(Math.abs(extra.atBank))}` : 'added by you';
   } else if (t.source === 'manual' && t.status === 'pending') {
     badge = extra.stale ? 'Not at the bank yet' : 'Added by you';
     badgeKind = extra.stale ? 'alert' : 'mine';
@@ -82,9 +110,9 @@ export function listRow(
     badgeKind = 'est';
     sub = `bank ${formatCents(-(t.bank_amount ?? 0)).replace('−', '')}`;
   } else if (t.status === 'pending' && t.account_kind === 'credit') {
-    badge = 'Card hold';
+    badge = 'Pending';
     badgeKind = 'hold';
-    sub = 'card hold';
+    sub = 'pending';
   } else if (extra.paidFor) {
     // Which purchases it paid back: the money is in Ready to Assign (the category tag), since the owed part never
     // came out of their categories.

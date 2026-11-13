@@ -4,7 +4,7 @@ import type { Scoped } from '../db/scoped.js';
 import { categoryRows } from './budget.js';
 import { cards as loadCards, monthLong, structure, type Fresh } from './common.js';
 import { IN_BUDGET_ROWS, listRow, type ListSource } from './rows.js';
-import { TX_COLUMNS, uncovered } from '../ledger/ledger.js';
+import { ENTRIES_AT_BANK, TX_COLUMNS, atBankMap, uncovered } from '../ledger/ledger.js';
 import {
   owedLabels,
   owedStatements,
@@ -37,7 +37,7 @@ export async function categorySheet(
   if (!r) return null;
   const { targets, categories } = await structure(s);
   const target = targetFor(targets.get(id) ?? [], month);
-  const [last, recent, count, owedItems, links] = await s.batch([
+  const [last, recent, count, atBankRows, owedItems, links] = await s.batch([
     s.q(
       `SELECT amount FROM assignment WHERE budget_id = ?1 AND category_id = ?2 AND month = ?3`,
       id,
@@ -55,8 +55,10 @@ export async function categorySheet(
       id,
       month,
     ),
+    s.q(ENTRIES_AT_BANK),
     ...owedStatements(s),
   ]);
+  const atBank = atBankMap(atBankRows!.results);
   const spentPct =
     r.row.spent + r.row.available > 0 ? Math.round((r.row.spent * 100) / (r.row.spent + r.row.available)) : 0;
   const gone = Math.round(elapsedShare(month, f.today) * 100);
@@ -119,6 +121,7 @@ export async function categorySheet(
       const row = listRow(t, accts, new Map(), {
         owed: labels.owed.get(t.key) ?? null,
         paidFor: labels.paidFor.get(t.key) ?? null,
+        atBank: atBank.get(t.key) ?? null,
       });
       return labels.paidFor.has(t.key) ? { ...row, badge: 'Paid back', sub: 'to Ready to Assign' } : row;
     }),

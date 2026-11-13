@@ -263,9 +263,11 @@ export const TxnListRow = z.object({
   status: z.enum(['pending', 'posted', 'upcoming']),
   wontClear: z.boolean(),
   categoryLabel: z.string().nullable(),
-  /** Short badge, e.g. "By rule", "Your estimate", "Card hold", "$25 owed", "Paid". */
+  /** Short badge, e.g. "By rule", "Your estimate", "Pending", "$25 owed", "Paid". */
   badge: z.string().nullable(),
-  badgeKind: z.enum(['alert', 'match', 'est', 'hold', 'mine', 'owed', 'rule', 'transfer']).nullable(),
+  badgeKind: z
+    .enum(['alert', 'match', 'est', 'hold', 'mine', 'paired', 'owed', 'rule', 'transfer'])
+    .nullable(),
   sub: z.string().nullable(),
   /** Which sheet opens: pending, posted, income, refund, paid back, transfer pick, match, check pending. */
   sheet: z.enum(['txn', 'transfer', 'match', 'checkPending']),
@@ -377,8 +379,10 @@ export const TxnSheet = z.object({
   ]),
   /** A 'history' row that is part of the account's starting balance (D-67), not just before it. */
   inStartingBalance: z.boolean().optional(),
+  /** A transfer between accounts (paired, or to an account that isn't linked): no payee, `payee` names the transfer. */
+  transfer: z.boolean().optional(),
   payee: z.string(),
-  /** The payee this transaction is under; null for a manual entry (it has only a name). */
+  /** The payee this transaction is under; null for a manual entry (it has only a name) and for a transfer. */
   payeeId: id.nullable().optional(),
   rawName: z.string(),
   accountId: id,

@@ -8,7 +8,7 @@ import type { AppEnv } from '../http/context.js';
 import { editNow } from '../http/clock.js';
 import { scoped } from './api.js';
 import { shortDate } from '../views/common.js';
-import { categoryLabel, isHistory } from '../views/rows.js';
+import { categoryLabel, isHistory, transferName } from '../views/rows.js';
 import { txnCol } from '../ledger/ledger.js';
 import { linkInfo, roleOf } from '../ledger/link.js';
 import { loadTx, names } from './txn-common.js';
@@ -126,13 +126,17 @@ export async function txnSheet(c: Context<AppEnv, '/transactions/:key'>) {
   const ruleName = (rule!.results[0] as { name: string } | undefined)?.name;
   // A row before the budget start may be part of the starting balance rather than plain history (D-67).
   const inStart = kind === 'history' && roleOf(t, await linkInfo(s)) === 'before';
+  // A transfer has no payee: the sheet names it by the other account, and offers no Rename payee (D-106).
+  const xfer = transferName(t, accts);
   const sheet: TxnSheet = {
     key,
     kind,
     ...(inStart ? { inStartingBalance: true } : {}),
-    payee: t.payee,
-    payeeId: t.payee_id,
-    rawName: t.raw_name,
+    ...(xfer ? { transfer: true } : {}),
+    payee: xfer ?? t.payee,
+    payeeId: xfer ? null : t.payee_id,
+    // Your own entry's raw name is a name you typed, not the bank's: a transfer shows none.
+    rawName: xfer && t.source === 'manual' ? '' : t.raw_name,
     accountId: t.account_id,
     accountName: accts.get(t.account_id) ?? t.account_name,
     otherAccountName:

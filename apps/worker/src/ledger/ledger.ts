@@ -78,6 +78,25 @@ export const uncovered = (v: string) =>
      WHERE cv.budget_id = ${v}.budget_id AND cv.covers_provider_txn_id = ${v}.provider_txn_id
        AND cv.deleted_at IS NULL AND cv.matched_txn_key IS NULL))`;
 
+/** An entry whose cover is in force: the bank row it covers is listed, and no posted row has claimed it. */
+export const COVERING = (m: string) => `${m}.deleted_at IS NULL AND ${m}.matched_txn_key IS NULL AND EXISTS (
+  SELECT 1 FROM bank_txn b WHERE b.budget_id = ${m}.budget_id AND b.provider_txn_id = ${m}.covers_provider_txn_id
+    AND b.pending = 1 AND b.removed_at IS NULL
+    AND NOT EXISTS (SELECT 1 FROM bank_txn x WHERE x.txn_key = b.txn_key AND x.pending = 0 AND x.removed_at IS NULL))`;
+
+/**
+ * Your pending entries that cover a bank pending row, with the bank's amount: their list row says the bank has it
+ * (views/rows.ts). One read of the small manual table.
+ */
+export const ENTRIES_AT_BANK = `SELECT m.txn_key, b.amount AS bank_amount FROM manual_pending m
+  JOIN bank_txn b ON b.budget_id = m.budget_id AND b.provider_txn_id = m.covers_provider_txn_id
+  WHERE m.budget_id = ?1 AND m.kind = 'pending' AND ${COVERING('m')}`;
+
+/** ENTRIES_AT_BANK's rows by entry key: the bank's amount. */
+export function atBankMap(rows: readonly unknown[]): Map<string, number> {
+  return new Map((rows as { txn_key: string; bank_amount: number }[]).map((r) => [r.txn_key, r.bank_amount]));
+}
+
 /** The earliest account budget start: rows posted before it are history for every account. */
 const MIN_FROM = `(SELECT min(budget_from) FROM account WHERE budget_id = ?1)`;
 

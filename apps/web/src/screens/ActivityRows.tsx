@@ -64,7 +64,7 @@ export function TxnRow({
   );
   const meta = rowMeta(r, style);
   // The grey line under the amount only when it adds a number ("bank $31.40"); words such as "held" or
-  // "card hold" repeat the tag.
+  // "pending" repeat the tag.
   const sub = r.sub && /\d/.test(r.sub) ? r.sub : null;
   return (
     <div

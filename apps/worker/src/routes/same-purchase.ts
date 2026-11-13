@@ -11,7 +11,7 @@ import { newId } from '../http/ids.js';
 import type { AppEnv } from '../http/context.js';
 import type { Scoped } from '../db/scoped.js';
 import { ACK, CHANGED, HttpError, parse, scoped } from './api.js';
-import { TX_COLUMNS, chunks, uncovered, type TxRow } from '../ledger/ledger.js';
+import { COVERING, TX_COLUMNS, chunks, uncovered, type TxRow } from '../ledger/ledger.js';
 import { listRow, isHistory } from '../views/rows.js';
 import { shortDate } from '../views/common.js';
 import { conditionFence, isFenceAbort } from '../sync/lease.js';
@@ -101,12 +101,6 @@ export async function samePurchaseCards(
   }
   return out;
 }
-
-/** An entry whose cover is in force: the bank row it covers is listed, and no posted row has claimed it. */
-export const COVERING = (m: string) => `${m}.deleted_at IS NULL AND ${m}.matched_txn_key IS NULL AND EXISTS (
-  SELECT 1 FROM bank_txn b WHERE b.budget_id = ${m}.budget_id AND b.provider_txn_id = ${m}.covers_provider_txn_id
-    AND b.pending = 1 AND b.removed_at IS NULL
-    AND NOT EXISTS (SELECT 1 FROM bank_txn x WHERE x.txn_key = b.txn_key AND x.pending = 0 AND x.removed_at IS NULL))`;
 
 export interface BankDb {
   provider_txn_id: string;

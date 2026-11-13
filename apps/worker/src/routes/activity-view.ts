@@ -28,9 +28,12 @@ import {
 } from '../views/owed-rows.js';
 import { IN_BUDGET_ROWS, listRow } from '../views/rows.js';
 import {
+  COVERING,
+  ENTRIES_AT_BANK,
   NOT_RTA_BY_DEFAULT,
   RECENT_TX,
   TX_COLUMNS,
+  atBankMap,
   chunks,
   needsCategory as waitsForCategory,
   type TxRow,
@@ -76,7 +79,8 @@ activityViewRoutes.get('/badges', async (c) => {
     s.q(ATTENTION_SQL),
     s.q(
       `SELECT count(*) AS n FROM manual_pending m JOIN account a ON a.id = m.account_id WHERE m.budget_id = ?1 AND m.kind = 'pending' AND m.deleted_at IS NULL
-         AND m.matched_txn_key IS NULL AND a.closed_at IS NULL AND julianday(?2) - julianday(m.date) >= a.stale_pending_days AND (m.stale_snooze_until IS NULL OR m.stale_snooze_until <= ?2)`,
+         AND m.matched_txn_key IS NULL AND a.closed_at IS NULL AND julianday(?2) - julianday(m.date) >= a.stale_pending_days AND (m.stale_snooze_until IS NULL OR m.stale_snooze_until <= ?2)
+         AND NOT (${COVERING('m')})`,
       today,
     ),
     s.q(
@@ -264,7 +268,7 @@ activityViewRoutes.get('/activity', async (c) => {
   // Pending and upcoming rows are waiting now: they show on this month, whatever their date, and never on a past one.
   const past = !!month && month < f.current;
   const { cats, accts } = await names(s);
-  const [attn, pend, upc, posted, splits, owed, links, stale] = await s.batch([
+  const [attn, pend, upc, posted, splits, owed, links, stale, atBank] = await s.batch([
     s.q(ATTENTION_SQL),
     s.q(
       // Pending rows in a closed account stopped waiting for the bank (D-93): they aren't "not posted yet".
@@ -294,10 +298,13 @@ activityViewRoutes.get('/activity', async (c) => {
     ...owedStatements(s),
     s.q(
       `SELECT m.txn_key FROM manual_pending m JOIN account a ON a.id = m.account_id WHERE m.budget_id = ?1 AND m.kind = 'pending' AND m.deleted_at IS NULL
-         AND m.matched_txn_key IS NULL AND a.closed_at IS NULL AND julianday(?2) - julianday(m.date) >= a.stale_pending_days AND (m.stale_snooze_until IS NULL OR m.stale_snooze_until <= ?2)`,
+         AND m.matched_txn_key IS NULL AND a.closed_at IS NULL AND julianday(?2) - julianday(m.date) >= a.stale_pending_days AND (m.stale_snooze_until IS NULL OR m.stale_snooze_until <= ?2)
+         AND NOT (${COVERING('m')})`,
       f.today,
     ),
+    s.q(ENTRIES_AT_BANK),
   ]);
+  const atBankKeys = atBankMap(atBank!.results);
   const splitRows = splits!.results as { txn_key: string; category_id: string | null; amount: number }[];
   const splitKeys = new Set(splitRows.map((r) => r.txn_key));
   const splitTotals = new Map<string, number>();
@@ -331,6 +338,7 @@ activityViewRoutes.get('/activity', async (c) => {
       owed: labels.owed.get(t.key) ?? null,
       paidFor: labels.paidFor.get(t.key) ?? null,
       stale: staleKeys.has(t.key),
+      atBank: atBankKeys.get(t.key) ?? null,
       split: splitKeys.has(t.key),
       splitOff: splitOff(t),
     });

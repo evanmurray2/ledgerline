@@ -75,9 +75,12 @@ export function AddTxnScreen() {
     .map((g) => ({ ...g, accounts: g.accounts.filter((a) => a.id !== acct && !a.closed) }))
     .filter((g) => g.accounts.length > 0);
   const other = otherGroups.flatMap((g) => g.accounts).find((a) => a.id === otherId);
-  // A transfer's payee says where the money went, unless you typed one.
-  const payeeText =
-    payee.trim() || (transfer && other ? `Transfer ${dir === 'out' ? 'to' : 'from'} ${other.name}` : '');
+  // A transfer has no payee: it is named by the other account (D-106).
+  const payeeText = transfer
+    ? other
+      ? `Transfer ${dir === 'out' ? 'to' : 'from'} ${other.name}`
+      : ''
+    : payee.trim();
   // Owed to you: a share of what you paid, or a typed amount (at most what you paid).
   const owedCents =
     share === 'half'
@@ -161,7 +164,7 @@ export function AddTxnScreen() {
           why={
             amountBad
               ? amountBad
-              : !payeeText
+              : !payeeText && !transfer
                 ? 'Enter a payee'
                 : !acct
                   ? 'Choose an account'
@@ -226,21 +229,21 @@ export function AddTxnScreen() {
           }
         />
       )}
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="add-payee" className="text-sm font-semibold text-ink-2">
-          Payee
-        </label>
-        <PayeeField
-          id="add-payee"
-          track="add_txn.payee"
-          placeholder={
-            transfer && other ? `Transfer ${dir === 'out' ? 'to' : 'from'} ${other.name}` : 'e.g. Check #1044'
-          }
-          names={payeeNames}
-          value={payee}
-          onChange={setPayee}
-        />
-      </div>
+      {!transfer && (
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="add-payee" className="text-sm font-semibold text-ink-2">
+            Payee
+          </label>
+          <PayeeField
+            id="add-payee"
+            track="add_txn.payee"
+            placeholder="e.g. Check #1044"
+            names={payeeNames}
+            value={payee}
+            onChange={setPayee}
+          />
+        </div>
+      )}
       <Field label="Account">
         <AccountField
           track="add_txn.account"

@@ -10,6 +10,7 @@ import type { AppEnv } from '../../http/context.js';
 import { CHANGED, GONE, HttpError, parse, scoped } from '../api.js';
 import { chunks } from '../../ledger/ledger.js';
 import { claimName, insertKey, rowKeys } from '../../sync/payee-keys.js';
+import { TRANSFER_STATES } from '../../views/rows.js';
 
 export const payeesRoutes = new Hono<AppEnv>();
 
@@ -20,18 +21,20 @@ const places = (n: number, from: number) => Array.from({ length: n }, (_, i) => 
 
 payeesRoutes.get('/settings/payees', async (c) => {
   const s = scoped(c);
-  const [payees, counts, names, uses, cats] = await s.batch([
+  // A transfer has no payee (D-106): its rows don't count, and a payee only transfers have is left out.
+  const notTransfer = `coalesce(transfer_state, '') NOT IN ${TRANSFER_STATES}`;
+  const [payees, counts, names, uses, cats, transfersOnly] = await s.batch([
     s.q(`SELECT id, name FROM payee WHERE budget_id = ?1 AND merged_into IS NULL ORDER BY name`),
     // Budget transactions per payee: the same test as Activity's (a bank row dated before the account's budget start
     // is outside the budget, D-67).
     s.q(
       `SELECT payee_id, count(*) AS n FROM v_txn_bank WHERE budget_id = ?1 AND payee_id IS NOT NULL
-         AND date >= budget_from GROUP BY payee_id`,
+         AND date >= budget_from AND ${notTransfer} GROUP BY payee_id`,
     ),
     // Bank names behind those budget transactions only: history doesn't show on the Rename sheet.
     s.q(
       `SELECT payee_id, raw_name, count(*) AS n FROM v_txn_bank WHERE budget_id = ?1 AND payee_id IS NOT NULL
-         AND date >= budget_from
+         AND date >= budget_from AND ${notTransfer}
        GROUP BY payee_id, raw_name ORDER BY n DESC`,
     ),
     // Your categories for money out, per payee: "usually" (docs/payees.md 2.1).
@@ -42,7 +45,12 @@ payeesRoutes.get('/settings/payees', async (c) => {
        GROUP BY o.payee_id, o.category_id`,
     ),
     s.q(`SELECT id, name, kind, archived_at FROM category WHERE budget_id = ?1`),
+    s.q(
+      `SELECT payee_id FROM v_txn_bank WHERE budget_id = ?1 AND payee_id IS NOT NULL
+       GROUP BY payee_id HAVING min(coalesce(transfer_state, '') IN ${TRANSFER_STATES}) = 1`,
+    ),
   ]);
+  const onlyTransfers = new Set((transfersOnly!.results as { payee_id: string }[]).map((r) => r.payee_id));
   const n = new Map((counts!.results as { payee_id: string; n: number }[]).map((r) => [r.payee_id, r.n]));
   const bank = new Map<string, { name: string; count: number }[]>();
   for (const r of names!.results as { payee_id: string; raw_name: string; n: number }[]) {
@@ -75,7 +83,9 @@ payeesRoutes.get('/settings/payees', async (c) => {
         };
       })
       .sort((a, b) => b.transactions - a.transactions || a.name.localeCompare(b.name)),
-    others: all.filter((p) => !(n.get(p.id) ?? 0)).map((p) => ({ id: p.id, name: p.name })),
+    others: all
+      .filter((p) => !(n.get(p.id) ?? 0) && !onlyTransfers.has(p.id))
+      .map((p) => ({ id: p.id, name: p.name })),
   };
   return c.json(view);
 });
