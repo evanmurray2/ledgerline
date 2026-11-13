@@ -21,7 +21,7 @@ const places = (n: number, from: number) => Array.from({ length: n }, (_, i) => 
 
 payeesRoutes.get('/settings/payees', async (c) => {
   const s = scoped(c);
-  // A transfer has no payee (D-106): its rows don't count, and a payee only transfers have is left out.
+  // A transfer has no payee (D-107): its rows don't count, and a payee only transfers have is left out.
   const notTransfer = `coalesce(transfer_state, '') NOT IN ${TRANSFER_STATES}`;
   const [payees, counts, names, uses, cats, transfersOnly] = await s.batch([
     s.q(`SELECT id, name FROM payee WHERE budget_id = ?1 AND merged_into IS NULL ORDER BY name`),

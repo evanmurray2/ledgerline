@@ -75,7 +75,7 @@ export function AddTxnScreen() {
     .map((g) => ({ ...g, accounts: g.accounts.filter((a) => a.id !== acct && !a.closed) }))
     .filter((g) => g.accounts.length > 0);
   const other = otherGroups.flatMap((g) => g.accounts).find((a) => a.id === otherId);
-  // A transfer has no payee: it is named by the other account (D-106).
+  // A transfer has no payee: it is named by the other account (D-107).
   const payeeText = transfer
     ? other
       ? `Transfer ${dir === 'out' ? 'to' : 'from'} ${other.name}`

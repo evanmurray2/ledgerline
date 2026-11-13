@@ -1,4 +1,4 @@
-# D-106: A transfer has no payee (Nov 13, 2026)
+# D-107: A transfer has no payee (Nov 13, 2026)
 
 **Decided by the owner** (chat, Nov 13, 2026): "Keep transfers out of payees. That means don't show them in payees
 list, or anywhere on that transactions sheet when editing, or when creating a new one."
@@ -20,4 +20,9 @@ isn't linked (`transfer_state` `paired` or `manual`). It has no payee:
    "from"); the route uses that name whatever payee is sent.
 
 **What stays.** The payee rows and each row's `payee_id` are kept, so unpairing a transfer brings its payee back.
-Activity and register rows still show the row's name. Nothing about how money counts changes.
+Nothing about how money counts changes. Search still finds a transfer by the bank's text.
+
+**Lists too** (owner, Nov 13, 2026, after seeing a paired "PENDING PAYMENT" in Activity): Activity, register and
+category lists name a transfer row as its sheet does, "Transfer to {account}" or "Transfer from {account}".
+
+This decision first merged as a second D-106, in the same hour as `D-106-drop-old-tables-now.md`; it was renumbered.
