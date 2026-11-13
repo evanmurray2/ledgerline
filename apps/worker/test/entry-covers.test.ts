@@ -238,6 +238,21 @@ describe('your entry and the bank’s rows', () => {
     expect(await counted(9)).toEqual({ spent: -1800 - 1950, pending: -1800 - 1950 });
   });
 
+  it('Undo of No asks again', async () => {
+    const a = (await db
+      .prepare(`SELECT id FROM alert WHERE ref_key = 'p:no-p' AND type = 'same_purchase'`)
+      .first<{ id: string }>())!;
+    expect((await call('POST', `/api/same-purchase/${a.id}/undo`, { key: 'm:no' })).status).toBe(200);
+    expect(JSON.parse((await asks()).find((x) => x.ref_key === 'p:no-p')!.data)).toEqual({
+      candidates: ['m:no'],
+    });
+    expect(
+      await db.prepare(`SELECT 1 FROM not_same WHERE a_key = 'm:no' OR b_key = 'm:no'`).first(),
+    ).toBeNull();
+    // Both still count until you answer.
+    expect(await counted(9)).toEqual({ spent: -1800 - 1950, pending: -1800 - 1950 });
+  });
+
   it('Yes covers the pending row; Not the same on your entry ends the cover and remembers No', async () => {
     await entry('m:yes', 10, -2500, '2026-11-11', 'Groceries run');
     await sync([pend('yes-p', 10, 27.1, '2026-11-11', 'WHOLEFDS MKT')]);

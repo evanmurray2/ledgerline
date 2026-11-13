@@ -25,7 +25,7 @@ export async function txnSheet(c: Context<AppEnv, '/transactions/:key'>) {
       key,
     ),
     s.q(
-      `SELECT id, amount, fraction_num, fraction_den, expect_by, closed_at, canceled_at FROM expected_reimbursement WHERE budget_id = ?1 AND txn_key = ?2`,
+      `SELECT id, split_id, amount, fraction_num, fraction_den, expect_by, closed_at, canceled_at FROM expected_reimbursement WHERE budget_id = ?1 AND txn_key = ?2`,
       key,
     ),
     // Each payback is labelled by the other side: on the money in, the purchase it paid back; on the purchase,
@@ -60,8 +60,9 @@ export async function txnSheet(c: Context<AppEnv, '/transactions/:key'>) {
     label: string;
     date: string | null;
   }[];
-  const owedRows = ow!.results as {
+  const allOwed = ow!.results as {
     id: string;
+    split_id: string | null;
     amount: number;
     fraction_num: number | null;
     fraction_den: number | null;
@@ -69,6 +70,9 @@ export async function txnSheet(c: Context<AppEnv, '/transactions/:key'>) {
     closed_at: number | null;
     canceled_at: number | null;
   }[];
+  // A split line owed to you shows on its line; Owed to you on the sheet is the whole purchase's mark.
+  const owedRows = allOwed.filter((o) => !o.split_id);
+  const owedLines = new Set(allOwed.filter((o) => o.split_id && !o.canceled_at).map((o) => o.split_id!));
   const zone = (bz!.results[0] as { time_zone: string } | undefined)?.time_zone ?? 'America/Los_Angeles';
   const today = localDate(editNow(c), zone);
   const owedView = owedList(
@@ -162,6 +166,7 @@ export async function txnSheet(c: Context<AppEnv, '/transactions/:key'>) {
           amount: cents(x.amount),
           memo: x.memo,
           absorbsRemainder: x.absorbs_remainder === 1,
+          ...(owedLines.has(x.id) ? { owed: true } : {}),
         }))
       : null,
     memo: t.memo,

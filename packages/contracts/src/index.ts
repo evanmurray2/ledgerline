@@ -373,6 +373,8 @@ export const TxnSheet = z.object({
         amount: cents,
         memo: z.string().nullable(),
         absorbsRemainder: z.boolean(),
+        /** The line is owed to you (an owed item open for it). */
+        owed: z.boolean().optional(),
       }),
     )
     .nullable(),
@@ -411,6 +413,8 @@ export const TxnPatch = z.object({
         amount: cents,
         memo: z.string().max(200).nullable(),
         absorbsRemainder: z.boolean(),
+        /** The line is owed to you: it has no category, and an owed item of its amount is made for it. */
+        owed: z.boolean().optional(),
       }),
     )
     .nullable()
@@ -473,10 +477,14 @@ export const TransferPick = z.object({
 });
 /** An answer to "Same purchase?" for one of the card's candidates (its key). */
 export const SamePurchaseAnswer = z.object({ answer: z.enum(['yes', 'no']), key: z.string() });
+/** Undo of No on a "Same purchase?" card: the candidate the No was about. */
+export const SamePurchaseUndo = z.object({ key: z.string() });
 export const PendingCheckAction = z.object({ action: z.enum(['keep_waiting', 'delete']) });
 
 export const MatchView = z.object({
   inflow: TxnListRow,
+  /** What this money can still pay back: the inflow less what it is already matched to. */
+  left: cents,
   open: z.array(
     z.object({
       id,

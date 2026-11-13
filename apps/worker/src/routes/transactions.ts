@@ -65,10 +65,12 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
     set('categorized_by', 'user');
     set('transfer_state', null);
     w.push(s.q(`DELETE FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`, key));
+    if (p.split === undefined) w.push(dropSplitOwed(s, key, [], now));
     edits.category_id = editAt;
   }
   if (p.split !== undefined) {
     w.push(s.q(`DELETE FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`, key));
+    const owedIds: string[] = [];
     if (p.split) {
       const total = p.split.reduce((a, l) => a + l.amount, 0);
       if (total !== (p.amount ?? t.amount))
@@ -77,30 +79,54 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
           'split_total',
           `The lines must add up to ${formatCents(p.amount ?? t.amount)}.`,
         );
-      p.split.forEach((l, i) =>
+      p.split.forEach((l, i) => {
+        const lineId = `${key}:s${i}`;
+        // A line owed to you has no category: an owed item of its amount takes it out of Ready to Assign until
+        // it is paid back (rule 11, as for a whole purchase marked owed).
+        const owed = !!l.owed && l.amount < 0;
+        if (l.owed && l.amount > 0)
+          throw new HttpError(422, 'not_outflow', 'Only money going out can be owed to you.');
         w.push(
           s.q(
             `INSERT INTO txn_split (id, budget_id, txn_key, category_id, amount, memo, absorbs_remainder, sort, created_at) VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
-            `${key}:s${i}`,
+            lineId,
             key,
-            l.categoryId,
+            owed ? null : l.categoryId,
             l.amount,
             l.memo,
             l.absorbsRemainder ? 1 : 0,
             i,
             now,
           ),
-        ),
-      );
+        );
+        if (owed) {
+          owedIds.push(lineId);
+          w.push(
+            s.q(
+              `INSERT INTO expected_reimbursement (id, budget_id, txn_key, split_id, amount, created_at, updated_at)
+               VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?6)
+               ON CONFLICT (id) DO UPDATE SET split_id = excluded.split_id, amount = excluded.amount, canceled_at = NULL,
+                 updated_at = excluded.updated_at`,
+              `${key}:owed:s${i}`,
+              key,
+              lineId,
+              -l.amount,
+              now,
+            ),
+          );
+        }
+      });
       set('category_id', null);
       set('categorized_by', 'user');
     }
+    w.push(dropSplitOwed(s, key, owedIds, now));
     edits.split = editAt;
   }
   if (p.memo !== undefined) set('memo', p.memo);
   if (p.estimatedAmount !== undefined) {
     if (t.status !== 'pending' || t.source !== 'bank')
       throw new HttpError(422, 'not_pending', 'Only a pending bank charge can have an estimate.');
+    if (p.estimatedAmount === 0) throw new HttpError(422, 'zero_amount', 'Enter an estimate above $0.00.');
     set('estimated_amount', p.estimatedAmount);
     // A pending row that stayed in a closed account no longer adds up to $0 there (D-93).
     w.push(...reopenStmts(s, t.account_id, now));
@@ -261,6 +287,7 @@ transactionRoutes.post('/transactions/categorize', async (c) => {
         now,
       ),
       s.q(`DELETE FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`, key),
+      dropSplitOwed(s, key, [], now),
     );
   }
   w.push(s.audit('txn.categorize', 'transaction', null, null, r, now));
@@ -447,5 +474,20 @@ function cancelOwed(s: Scoped, key: string, now: number): Stmt {
     `UPDATE expected_reimbursement SET canceled_at = ?3, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2 AND canceled_at IS NULL AND closed_at IS NULL`,
     key,
     now,
+  );
+}
+
+/**
+ * Removes the mark from split lines no longer owed to you (the split changed or went away): an owed item for a line
+ * that isn't there would take its amount out of Ready to Assign a second time.
+ */
+export function dropSplitOwed(s: Scoped, key: string, keep: readonly string[], now: number): Stmt {
+  return s.q(
+    `UPDATE expected_reimbursement SET canceled_at = ?3, updated_at = ?3
+     WHERE budget_id = ?1 AND txn_key = ?2 AND split_id IS NOT NULL AND canceled_at IS NULL
+       AND split_id NOT IN (SELECT value FROM json_each(?4))`,
+    key,
+    now,
+    JSON.stringify(keep),
   );
 }

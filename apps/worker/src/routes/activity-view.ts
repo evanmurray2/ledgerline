@@ -121,10 +121,13 @@ function shiftDate(d: string, n: number): string {
  * A search matches a row's category name too: split lines included, and money in that paid back an owed purchase
  * in a category with that name.
  */
-const CATEGORY_MATCH = `category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND lower(name) LIKE ?3 ESCAPE '\\')
+/** A name as a search compares it: lower case, curly apostrophes as straight ones (`searchText` folds the search). */
+const fold = (col: string) => `replace(replace(lower(${col}), '’', ''''), '‘', '''')`;
+
+const CATEGORY_MATCH = `category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND ${fold('name')} LIKE ?3 ESCAPE '\\')
          OR key IN (SELECT sp.txn_key FROM txn_split sp JOIN category c ON c.id = sp.category_id
-                    WHERE sp.budget_id = ?1 AND lower(c.name) LIKE ?3 ESCAPE '\\')
-         OR key IN (${paybacksWhere(`e.category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND lower(name) LIKE ?3 ESCAPE '\\')`)})`;
+                    WHERE sp.budget_id = ?1 AND ${fold('c.name')} LIKE ?3 ESCAPE '\\')
+         OR key IN (${paybacksWhere(`e.category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND ${fold('name')} LIKE ?3 ESCAPE '\\')`)})`;
 
 /**
  * One category's rows (Reports and the category sheet open Activity on a category, by id): the row's own category,
@@ -139,7 +142,12 @@ const inCategory = (p: string) =>
  * the parameter holding the amount pattern (`amountPattern`), NULL when the search isn't an amount.
  */
 const searchMatch = (amt: string) =>
-  `AND (lower(payee) LIKE ?3 ESCAPE '\\' OR (${amt} IS NOT NULL AND printf('%.2f', abs(amount) / 100.0) LIKE ${amt}) OR ${CATEGORY_MATCH})`;
+  `AND (${fold('payee')} LIKE ?3 ESCAPE '\\' OR (${amt} IS NOT NULL AND printf('%.2f', abs(amount) / 100.0) LIKE ${amt}) OR ${CATEGORY_MATCH})`;
+
+/** Text as a search compares it, as `fold` does in SQL. */
+function foldText(t: string): string {
+  return t.toLowerCase().replace(/[’‘]/g, "'");
+}
 
 /** The search as a LIKE pattern for the text: % and _ match only themselves. */
 function textPattern(q: string): string {
@@ -229,7 +237,8 @@ function postedQuery(
  * (the search goes between two `%`). A longer search looks for its start.
  */
 function searchText(raw: string): string {
-  const chars = [...raw.trim().toLowerCase()];
+  // Curly and straight apostrophes match each other, and a double space is one space.
+  const chars = [...foldText(raw).replace(/\s+/g, ' ').trim()];
   const enc = new TextEncoder();
   while (enc.encode(chars.join('')).length > 48) chars.pop();
   return chars.join('').trim();
@@ -296,7 +305,7 @@ activityViewRoutes.get('/activity', async (c) => {
   /** What a split's lines leave out of its amount (D-82): 0 when they add up, or for a row with no split. */
   const splitOff = (t: TxRow) => (splitTotals.has(t.key) ? t.amount - splitTotals.get(t.key)! : 0);
   // Categories whose name matches the search, and the split transactions with a line in one of them.
-  const qCats = new Set(q ? [...cats].filter(([, n]) => n.toLowerCase().includes(q)).map(([id]) => id) : []);
+  const qCats = new Set(q ? [...cats].filter(([, n]) => foldText(n).includes(q)).map(([id]) => id) : []);
   const qSplits = new Set(
     splitRows.filter((r) => r.category_id && qCats.has(r.category_id)).map((r) => r.txn_key),
   );
@@ -341,7 +350,7 @@ activityViewRoutes.get('/activity', async (c) => {
   const match = (t: TxRow) =>
     (!category || t.category_id === category || catSplits.has(t.key) || catPaybacks.has(t.key)) &&
     (!q ||
-      t.payee.toLowerCase().includes(q) ||
+      foldText(t.payee).includes(q) ||
       (qAmount !== null && plainAmount(t.amount).includes(qAmount)) ||
       (!!t.category_id && qCats.has(t.category_id)) ||
       qSplits.has(t.key) ||
