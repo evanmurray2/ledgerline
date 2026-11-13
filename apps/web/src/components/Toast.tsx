@@ -1,5 +1,6 @@
 // One toast at a time, with optional Undo and a second line offering an action.
 import { useEffect, useSyncExternalStore } from 'react';
+import { createListeners } from '../lib/store';
 import { cx, useIsDesktop } from './ui';
 import { useCanWrite } from '../state/connectivity';
 
@@ -16,8 +17,7 @@ interface Live extends ToastSpec {
 
 let current: Live | null = null;
 let seq = 0;
-const listeners = new Set<() => void>();
-const emit = () => listeners.forEach((l) => l());
+const { subscribe, emit } = createListeners();
 
 export const toast = {
   show(spec: ToastSpec) {
@@ -42,41 +42,28 @@ export const toast = {
 
 // How many floating buttons sit at the phone's bottom right (Activity's Add). A toast leaves room for them.
 let fabs = 0;
-const fabListeners = new Set<() => void>();
+const fabListeners = createListeners();
 
 /** A floating button at the bottom right calls this while it shows, so a toast ends to its left. */
 export function useToastRoomForFab(on: boolean) {
   useEffect(() => {
     if (!on) return;
     fabs += 1;
-    fabListeners.forEach((l) => l());
+    fabListeners.emit();
     return () => {
       fabs -= 1;
-      fabListeners.forEach((l) => l());
+      fabListeners.emit();
     };
   }, [on]);
 }
 
-function subscribeFabs(cb: () => void) {
-  fabListeners.add(cb);
-  return () => {
-    fabListeners.delete(cb);
-  };
-}
 const getFabs = () => fabs;
-
-function subscribe(cb: () => void) {
-  listeners.add(cb);
-  return () => {
-    listeners.delete(cb);
-  };
-}
 
 export function ToastHost({ aboveTabs }: { aboveTabs: boolean }) {
   const t = useSyncExternalStore(subscribe, toast.get, toast.get);
   const desktop = useIsDesktop();
   const canWrite = useCanWrite();
-  const fab = useSyncExternalStore(subscribeFabs, getFabs, getFabs) > 0;
+  const fab = useSyncExternalStore(fabListeners.subscribe, getFabs, getFabs) > 0;
 
   useEffect(() => {
     if (!t) return;

@@ -1,6 +1,7 @@
 // Appearance: Light, Dark or Match device (default), saved per device. The resolved theme is set as
 // data-theme on <html>; every color is a token with a light and a dark value (src/styles.css).
 import { useSyncExternalStore } from 'react';
+import { createListeners } from './store';
 
 export type ThemePref = 'light' | 'dark' | 'device';
 export type ResolvedTheme = 'light' | 'dark';
@@ -59,10 +60,7 @@ export function applyTheme(): ResolvedTheme {
   return resolved;
 }
 
-const listeners = new Set<() => void>();
-function emit() {
-  for (const l of listeners) l();
-}
+const { subscribe, emit } = createListeners();
 
 let watching = false;
 /** Keeps data-theme in step with the device setting and with other tabs. */
@@ -81,13 +79,6 @@ export function watchTheme(): void {
   window.addEventListener('storage', (e) => {
     if (e.key === THEME_KEY) onChange();
   });
-}
-
-function subscribe(cb: () => void) {
-  listeners.add(cb);
-  return () => {
-    listeners.delete(cb);
-  };
 }
 
 export function useThemePref(): ThemePref {

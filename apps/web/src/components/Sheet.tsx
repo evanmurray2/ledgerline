@@ -16,6 +16,7 @@ import { createPortal } from 'react-dom';
 import { ConfirmInline, cx, Icon, useIsDesktop } from './ui';
 import { usage } from '../usage/tracker';
 import { closingSheet, sheetOpened, sheetsChanged } from '../lib/back';
+import { createListeners } from '../lib/store';
 
 export const PanelSlotContext = createContext<HTMLElement | null>(null);
 
@@ -24,16 +25,7 @@ export const PanelSlotContext = createContext<HTMLElement | null>(null);
 /** Sheets covering the screen, newest last. Escape closes only the newest; AppShell makes the rest inert. */
 const stack: number[] = [];
 let nextId = 1;
-const modalListeners = new Set<() => void>();
-function emitModal() {
-  for (const l of modalListeners) l();
-}
-function subscribeModal(cb: () => void) {
-  modalListeners.add(cb);
-  return () => {
-    modalListeners.delete(cb);
-  };
-}
+const { subscribe: subscribeModal, emit: emitModal } = createListeners();
 /** True while a sheet covers the screen (phone, or a modal sheet on desktop). */
 export function useModalOpen(): boolean {
   return useSyncExternalStore(
