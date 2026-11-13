@@ -515,6 +515,9 @@ export function badgeClass(kind: string | null): string {
       return 'bg-info-bg text-info-fg';
     case 'owed':
       return 'bg-owed-bg text-owed-fg';
+    case 'paired':
+      // Your entry that the bank's pending row matched: the funded color, as in "all set".
+      return 'bg-funded-bg text-funded-fg';
     default:
       return 'bg-sunken text-none-fg';
   }

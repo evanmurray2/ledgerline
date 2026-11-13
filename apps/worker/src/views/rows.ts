@@ -48,6 +48,8 @@ export function listRow(
     /** Money in that paid back owed purchases: their categories' names (owed-rows.ts). */
     paidFor?: readonly string[] | null;
     stale?: boolean;
+    /** Your pending entry covers the bank's pending row (D-64): the bank's amount. */
+    atBank?: number | null;
     split?: boolean;
     /** What the split's lines leave out of the amount (D-82). */
     splitOff?: number;
@@ -72,6 +74,12 @@ export function listRow(
     badgeKind = 'alert';
     sub = 'which one?';
     sheet = 'transfer';
+  } else if (t.source === 'manual' && t.status === 'pending' && extra.atBank != null) {
+    // Paired with the bank's pending row (D-64): the bank has it, so it's never "Not at the bank yet". The bank's
+    // amount shows only when it differs from yours (a tip); yours counts until the charge posts.
+    badge = 'Added by you · bank has it';
+    badgeKind = 'paired';
+    sub = extra.atBank !== t.amount ? `bank ${formatCents(Math.abs(extra.atBank))}` : 'added by you';
   } else if (t.source === 'manual' && t.status === 'pending') {
     badge = extra.stale ? 'Not at the bank yet' : 'Added by you';
     badgeKind = extra.stale ? 'alert' : 'mine';
@@ -82,9 +90,9 @@ export function listRow(
     badgeKind = 'est';
     sub = `bank ${formatCents(-(t.bank_amount ?? 0)).replace('−', '')}`;
   } else if (t.status === 'pending' && t.account_kind === 'credit') {
-    badge = 'Card hold';
+    badge = 'Pending';
     badgeKind = 'hold';
-    sub = 'card hold';
+    sub = 'pending';
   } else if (extra.paidFor) {
     // Which purchases it paid back: the money is in Ready to Assign (the category tag), since the owed part never
     // came out of their categories.

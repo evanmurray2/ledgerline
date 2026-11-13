@@ -35,6 +35,8 @@ Check a new text against it, and keep the terms below the same everywhere: code,
 | Owed to you                                      | fronted, not a category                       |
 | Needs a category                                 | Choose later, Don't set a category            |
 | Memo                                             | Note (on a transaction)                       |
+| Pending (a bank row not posted yet)              | Card hold, hold                               |
+| Added by you · bank has it (entry paired)        | Matched, linked (for this pairing)            |
 | join (payees)                                    | merge                                         |
 | Up to date                                       | Already up to date                            |
 | passkey                                          | Face ID (except on the Face ID button itself) |

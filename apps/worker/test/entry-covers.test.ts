@@ -51,6 +51,15 @@ describe('your entry and the bank’s rows', () => {
     expect((await mp('m:jb'))!.covers_provider_txn_id).toBe('jb-p');
     expect(await listed(1)).toEqual([{ key: 'm:jb', source: 'manual', status: 'pending', amount: -4000 }]);
     expect(await counted(1)).toEqual({ spent: -4000, pending: -4000 });
+    // Its row says the bank has it, with the bank's amount when it differs from yours.
+    const row = ((await call('GET', '/api/activity?filter=pending')).json as ActivityView).pending.find(
+      (r) => r.key === 'm:jb',
+    );
+    expect(row).toMatchObject({
+      badge: 'Added by you · bank has it',
+      badgeKind: 'paired',
+      sub: 'bank $35.75',
+    });
     // The covered row's overlay is untouched (no key moved, no estimate, nothing inherited).
     expect((await overlay('p:jb-p'))?.estimated_amount ?? null).toBeNull();
     await sync([plaidTxn('jb', 1, 42.75, '2026-11-10', 'TST*JUNEBUG', { pending_transaction_id: 'jb-p' })]);
