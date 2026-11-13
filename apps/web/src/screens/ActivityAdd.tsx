@@ -1,0 +1,209 @@
+// Add pending or upcoming: money the bank doesn't show yet, or a future date.
+import { useMemo, useState } from 'react';
+import { api } from '../api/endpoints';
+import { useAccounts, useMoneyMutation, usePayees, useSession } from '../api/hooks';
+import { AccountField } from '../components/AccountField';
+import { CategoryField } from '../components/CategoryPicker';
+import { PayeeField } from '../components/PayeeField';
+import { sameName } from '../components/RenamePayee';
+import { Sheet, SheetTitle } from '../components/Sheet';
+import { amountInputClass, ErrorNote, Field, inputClass, PrimaryButton, Segmented } from '../components/ui';
+import { parseCents } from '../lib/money';
+import { monthName } from '../lib/dates';
+import { useScreen } from '../lib/common';
+import { amountWhy, dateWhy } from '../lib/amount-check';
+import { useClose } from './TxnCommon';
+import { Why } from '../components/Why';
+
+export function AddTxnScreen() {
+  useScreen('add_txn');
+  const close = useClose();
+  const session = useSession();
+  const accounts = useAccounts();
+  const add = useMoneyMutation(api.newTxn);
+  const today = session.data?.budget.today ?? '';
+  const [dir, setDir] = useState<'out' | 'in'>('out');
+  const [amount, setAmount] = useState('');
+  const [payee, setPayee] = useState('');
+  const [accountId, setAccountId] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [date, setDate] = useState('');
+  const [repeats, setRepeats] = useState<'never' | 'monthly' | 'yearly'>('never');
+  const accts = (accounts.data?.groups ?? []).flatMap((g) => g.accounts);
+  // Payees the bank's transactions already have, most used first, to offer as you type.
+  const known = usePayees().data;
+  const payeeNames = useMemo(
+    () => [...(known?.payees ?? []), ...(known?.others ?? [])].map((p) => p.name),
+    [known],
+  );
+  // The category you've used most for money out to the payee typed: the picker offers it first, and you pick.
+  const usualFor =
+    dir === 'out' && payee.trim()
+      ? known?.payees.find((p) => p.usualId && sameName(p.name, payee))
+      : undefined;
+  const acct = accountId || accts[0]?.id || '';
+  const cents = parseCents(amount);
+  const on = date || today;
+  // The date picks the kind: a future date is upcoming (counts from that date), any other is pending (counts now).
+  const upcoming = !!today && on > today;
+  // Before the budget start is history, which never counts: entries there are refused (D-79).
+  const start = session.data?.budget.startMonth;
+  const first = start ? `${start}-01` : '';
+  const early = !!first && !!on && on < first;
+  const amountBad = amountWhy(amount);
+  const far = dateWhy(on, today);
+  const ok = !amountBad && cents !== null && payee.trim() && acct && on && !early && !far;
+  const toRta = dir === 'in' && categoryId === 'rta';
+  const submit = async () => {
+    if (!ok || cents === null) return;
+    const added = await add
+      .mutateAsync({
+        kind: upcoming ? 'upcoming' : 'pending',
+        accountId: acct,
+        date: on,
+        amount: dir === 'out' ? -cents : cents,
+        payee: payee.trim(),
+        categoryId: toRta || categoryId === 'rta' ? null : categoryId || null,
+        toRta,
+        repeats: upcoming ? repeats : 'never',
+      })
+      // A refusal shows above Add (add.error), not as an uncaught error.
+      .then(
+        () => true,
+        () => false,
+      );
+    if (added) close();
+  };
+  return (
+    <Sheet
+      label="Add a transaction"
+      track="add_txn"
+      onClose={close}
+      gap="small"
+      closeLabel="Cancel"
+      header={<SheetTitle title="Add a transaction" />}
+      footer={
+        <PrimaryButton
+          mutates="offline"
+          track="add_txn.add"
+          disabled={!ok}
+          why={
+            amountBad
+              ? amountBad
+              : !payee.trim()
+                ? 'Enter a payee'
+                : !acct
+                  ? 'Choose an account'
+                  : early && start
+                    ? `Pick a date from ${monthName(start)} 1, ${start.slice(0, 4)} on`
+                    : far
+          }
+          onClick={() => void submit()}
+        >
+          Add
+        </PrimaryButton>
+      }
+    >
+      <div className="flex items-end gap-2">
+        <Field label="Amount" className="min-w-0 flex-1">
+          <input
+            className={amountInputClass}
+            inputMode="decimal"
+            placeholder="0.00"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
+        </Field>
+        <div className="w-[140px]">
+          <Segmented
+            label="Direction"
+            value={dir}
+            onChange={(d) => {
+              setDir(d);
+              // Money in starts in Ready to Assign. Only money in can go there: going back to Out asks for a
+              // category again.
+              if (d === 'in' && !categoryId) setCategoryId('rta');
+              if (d === 'out' && categoryId === 'rta') setCategoryId('');
+            }}
+            options={[
+              ['out', 'Out'],
+              ['in', 'In'],
+            ]}
+          />
+        </div>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="add-payee" className="text-sm font-semibold text-ink-2">
+          Payee
+        </label>
+        <PayeeField
+          id="add-payee"
+          track="add_txn.payee"
+          placeholder="e.g. Check #1044"
+          names={payeeNames}
+          value={payee}
+          onChange={setPayee}
+        />
+      </div>
+      <Field label="Account">
+        <AccountField
+          track="add_txn.account"
+          groups={accounts.data?.groups ?? []}
+          value={acct}
+          onChange={setAccountId}
+        />
+      </Field>
+      <Field label="Category">
+        <CategoryField
+          track="add.category"
+          value={categoryId}
+          onChange={setCategoryId}
+          suggested={usualFor?.usualId ? [usualFor.usualId] : undefined}
+          suggestedTitle={usualFor ? `Usually for ${usualFor.name}` : undefined}
+          specials={
+            dir === 'in'
+              ? [
+                  { id: '', name: 'Needs a category' },
+                  { id: 'rta', name: 'Ready to Assign' },
+                ]
+              : [{ id: '', name: 'Needs a category' }]
+          }
+        />
+      </Field>
+      <Field label="Date">
+        <input
+          type="date"
+          className={inputClass}
+          value={on}
+          min={first || undefined}
+          onChange={(e) => setDate(e.target.value)}
+        />
+      </Field>
+      <p className="m-0 text-sm leading-snug text-muted">
+        {upcoming
+          ? 'A future date. It counts from that date.'
+          : 'For money the bank doesn’t show yet, like a check. It counts now.'}
+      </p>
+      {upcoming && (
+        <Field label="Repeats">
+          <select
+            className={inputClass}
+            value={repeats}
+            onChange={(e) => setRepeats(e.target.value as typeof repeats)}
+          >
+            <option value="never">Never</option>
+            <option value="monthly">Every month</option>
+            <option value="yearly">Every year</option>
+          </select>
+        </Field>
+      )}
+      <div className="flex flex-col gap-1 text-xs leading-snug text-muted">
+        <span>When the bank shows it, the bank’s amount wins.</span>
+        <Why>
+          The two become one transaction. If the bank doesn’t show it after a few days, you’ll see an alert.
+        </Why>
+      </div>
+      {add.error && <ErrorNote error={add.error} />}
+    </Sheet>
+  );
+}
