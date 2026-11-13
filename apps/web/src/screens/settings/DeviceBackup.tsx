@@ -1,11 +1,12 @@
 // Settings → Backup and export, for a locked budget: the full backup made on this device from its copy
 // (docs/privacy.md 5.8), after a fresh passkey prompt. Locked with the recovery key by default, which the person
-// types here; or saved without a lock, with a warning. The server never sees the file, and nothing in the app
+// types here and which must open the budget from its recovery slot in force; or saved without a lock, with a warning. The server never sees the file, and nothing in the app
 // loads it back.
 import { useState } from 'react';
 import { confirmItsYou, saveFile } from '../../api/client';
-import { copyBytes } from '../../copy/copy';
+import { checkRecoveryKey, copyBytes } from '../../copy/copy';
 import { sealedBackupFile } from '../../keys/backup';
+import { WayInError } from '../../keys/budget';
 import { Problem } from '../../components/Frame';
 import { Banner, Card, Checkbox, PrimaryButton, SectionTitle, inputClass } from '../../components/ui';
 
@@ -23,6 +24,19 @@ export function DeviceBackup() {
     setDone(false);
     try {
       if (!(await confirmItsYou())) return;
+      // The typed key must open this budget from its recovery slot in force now (the log's public entries), not
+      // only pass its check bytes: a key replaced since, or another budget's, would make a file nothing opens.
+      if (!plain) {
+        try {
+          await checkRecoveryKey(typed);
+        } catch (e) {
+          if (e instanceof WayInError) {
+            setErr(e.message);
+            return;
+          }
+          throw e;
+        }
+      }
       const bytes = new Uint8Array(await copyBytes());
       if (plain) {
         saveFile(

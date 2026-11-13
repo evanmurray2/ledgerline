@@ -462,12 +462,14 @@ export const ADD_OFFER_LEN: number;
 export const ADD_REVEAL_LEN: number;
 export const ADD_SEALED_LEN: number;
 export const ADD_CONFIRM_LEN: number;
+export const ADD_CONFIRM_MAX: number;
 /** The new device's side of an add (test use only in the Worker; the app runs it). */
 export class NewDevice {
   static start(budgetId: string): Promise<NewDevice>;
   readonly commit: Bytes;
   reveal(offer: Uint8Array): Promise<{ reveal: Bytes; code: string; head: PublicRef }>;
-  open(sealed: Uint8Array, log: unknown): Promise<{ bk: Bytes; keys: unknown; confirm: Bytes }>;
+  open(sealed: Uint8Array, log: unknown): Promise<{ bk: Bytes; keys: unknown }>;
+  confirm(slotId: string): Promise<Bytes>;
 }
 /** The signed-in device's side of an add (test use only in the Worker; the app runs it). */
 export class SignedInDevice {
@@ -475,7 +477,7 @@ export class SignedInDevice {
   offer(commit: Uint8Array, now: number): Bytes;
   code(reveal: Uint8Array, now: number): Promise<string>;
   seal(bk: Uint8Array, now: number): Promise<Bytes>;
-  confirmed(bk: Uint8Array, confirm: Uint8Array): Promise<boolean>;
+  confirmed(bk: Uint8Array, message: Uint8Array): Promise<string | null>;
 }
 
 // ---- requests signed with the budget's key (apps/worker/src/http/signed-request.ts; packages/seal request.ts)

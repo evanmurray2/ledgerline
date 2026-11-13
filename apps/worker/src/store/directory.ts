@@ -38,7 +38,7 @@ import { deviceAddRoutes } from '../routes/device-add.js';
 import { recoveryKeyAuth, recoveryKeySettings, recoveryKeyUsed } from '../routes/recovery-key.js';
 import { requestChallengeRoutes } from '../routes/request-challenge.js';
 import { signedActionOf, takeChallenge, type SignedPart } from '../http/signed-request.js';
-import { FRESH_WAY_MS } from '@ledgerline/seal';
+import { ACTION, FRESH_WAY_MS } from '@ledgerline/seal';
 
 /** Budgets checked per ensure_all step (docs/multi-user.md 6.2). */
 export const ENSURE_BATCH = 25;
@@ -326,7 +326,9 @@ export class Directory extends DurableObject<Env> {
         status: 401,
         body: { error: 'unauthenticated', message: 'Sign in again with your passkey.' },
       };
-    if (needsRecentPasskey(method, path) && now - who.verifiedAt > REAUTH_MS)
+    // A signed write to the log stores new keys (a key change, docs/privacy-keys.md 11): a recent passkey check too.
+    const signedKeys = !!signedIn && signedActionOf(method, path) === ACTION.storeSignKey;
+    if ((needsRecentPasskey(method, path) || signedKeys) && now - who.verifiedAt > REAUTH_MS)
       return {
         ok: false,
         status: 401,

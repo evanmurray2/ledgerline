@@ -8,6 +8,7 @@ import {
   type Entry,
   encodeEntry,
   KIND,
+  passkeySlotId,
   randomBytes,
   readEntry,
   startChain,
@@ -17,7 +18,8 @@ import { describe, expect, it } from 'vitest';
 import { createBudget, NoSlotError, openWithPasskey } from '../src/keys/budget';
 import { openSealedBudget } from '../src/copy/sealed';
 import { addPasskeyWay, type Ways } from '../src/copy/sealed-ways';
-import { addFromHere, joinFromOther, NOT_SAME, type Relay, type RelayState } from '../src/copy/device-add';
+import { addFromHere, joinFromOther, NOT_ADDED, NOT_SAME } from '../src/copy/device-add';
+import { MockRelay } from '../src/mock/relay';
 import type { AppendAnswer, WritePlace } from '../src/copy/host';
 
 const BUDGET = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
@@ -97,46 +99,33 @@ async function world() {
   return { w, ways, opened };
 }
 
-/** The server's relay, in memory, with its rules: each message once, in order. */
+/** The server's relay, in memory, with its rules (the mock API's): each message once, in order. */
 function relays() {
-  let r: Record<string, string | null> | null = null;
-  const pick = (keys: string[]): Partial<RelayState> =>
-    Object.fromEntries(keys.map((k) => [k, r?.[k] ?? null])) as Partial<RelayState>;
-  const gone = () => {
-    throw new Error('gone');
-  };
-  const from: Relay = {
-    state: async () => (r ? { ...pick(['commit', 'reveal', 'confirm']), role: 'from' } : { role: null }),
-    start: async () => {
-      r = {};
-    },
-    send: async (step, body) => {
-      if (!r) return gone();
-      if (step === 'offer' && body.commit === r.commit && !r.offer) r.offer = body.offer!;
-      else if (step === 'sealed' && r.reveal && !r.sealed) r.sealed = body.sealed!;
-      else gone();
-    },
-    end: async () => {
-      r = null;
-    },
-  };
-  const to: Relay = {
-    state: async () => (r ? { ...pick(['offer', 'sealed']), role: 'to' } : { role: null }),
-    start: async () => gone(),
-    send: async (step, body) => {
-      if (!r) return gone();
-      if (step === 'commit' && !r.sealed)
-        Object.assign(r, { commit: body.commit, offer: null, reveal: null });
-      else if (step === 'reveal' && r.offer && !r.reveal) r.reveal = body.reveal!;
-      else if (step === 'confirm' && r.sealed && !r.confirm) r.confirm = body.confirm!;
-      else gone();
-    },
-    end: from.end,
-  };
-  return { from, to };
+  const relay = new MockRelay();
+  return { relay, from: relay.as('signed-in'), to: relay.as('new') };
 }
 
 const quick = { everyMs: 1 };
+
+/** The new device opens the budget with the key it was handed, and adds its passkey as a way in. */
+async function openHere(ways: Ways, bk: Uint8Array, mine: ReturnType<typeof passkey>) {
+  const r = await openSealedBudget({
+    host: {
+      sealedOpen: async () => ({ ready: false, number: 0 }),
+      sealedJoin: async () => ({ number: 1 }),
+    },
+    fetch: ways.fetch,
+    budgetId: BUDGET,
+    deviceId: PHONE,
+    passkey: mine,
+    workerKeys: [],
+    added: bk as never,
+    onRecovered: async (budget) => {
+      expect(await addPasskeyWay(ways, budget, mine)).toEqual({ ok: true });
+    },
+  });
+  expect(r.recovered).toBe(true);
+}
 
 describe('adding a device with its own passkey', () => {
   it('both devices show the same code; the new one opens the budget, adds its passkey, and confirms', async () => {
@@ -186,7 +175,7 @@ describe('adding a device with its own passkey', () => {
     expect(calls).toEqual(['open', 'join', 'added']);
     // The key was zeroed once used.
     expect(bk.every((b) => b === 0)).toBe(true);
-    await confirm();
+    await confirm(passkeySlotId(fresh.credentialId));
     await atO;
     expect(shownOnO).toBe(t.code);
     // From now on its passkey alone opens the budget.
@@ -240,5 +229,115 @@ describe('adding a device with its own passkey', () => {
     w.lie = true;
     await expect(t.open()).rejects.toThrow(/does not agree with the log/);
     await from.end();
+  });
+
+  it('says "added" only for the way in this add made, not one another device added meanwhile', async () => {
+    const { w, ways, opened } = await world();
+    const { from, to } = relays();
+    const fresh = passkey();
+    let joined: () => void = () => undefined;
+    const ready = new Promise<void>((resolve) => (joined = resolve));
+    const place = await ways.host.sealedPlace();
+    let done = false;
+    const atO = addFromHere({
+      relay: from,
+      budgetId: BUDGET,
+      keys: opened.budget.keys,
+      bk: opened.budget.bk,
+      head: { number: place.number, hash: place.hash as never },
+      slotIds: async () => new Set((await walkPublic(w.publics, BUDGET)).slots.keys()),
+      ready: async () => joined(),
+      match: async () => true,
+      wait: quick,
+    }).then(() => (done = true));
+    await ready;
+    const t = await joinFromOther({ relay: to, budgetId: BUDGET, fetch: ways.fetch, wait: quick });
+    const { bk, confirm } = await t.open();
+    // Another device adds some other passkey as a way in, with the budget key it holds.
+    expect(await addPasskeyWay(ways, opened.budget, passkey())).toEqual({ ok: true });
+    // This device's own way in is not in the log: it does not confirm, and the signed-in device says nothing.
+    await expect(confirm(passkeySlotId(fresh.credentialId))).rejects.toThrow(NOT_ADDED);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(done).toBe(false);
+    // Its way in is added; the confirmation names it, and only then is the add done.
+    await openHere(ways, bk, fresh);
+    await confirm(passkeySlotId(fresh.credentialId));
+    await atO;
+    expect(done).toBe(true);
+  });
+
+  it('a confirmation that names a way in the log had before the add is not "added"', async () => {
+    const { w, ways, opened } = await world();
+    const { from, to } = relays();
+    let joined: () => void = () => undefined;
+    const ready = new Promise<void>((resolve) => (joined = resolve));
+    const place = await ways.host.sealedPlace();
+    const atO = addFromHere({
+      relay: from,
+      budgetId: BUDGET,
+      keys: opened.budget.keys,
+      bk: opened.budget.bk,
+      head: { number: place.number, hash: place.hash as never },
+      slotIds: async () => new Set((await walkPublic(w.publics, BUDGET)).slots.keys()),
+      ready: async () => joined(),
+      match: async () => true,
+      wait: quick,
+    }).catch((e: unknown) => e);
+    await ready;
+    const t = await joinFromOther({ relay: to, budgetId: BUDGET, fetch: ways.fetch, wait: quick });
+    const { confirm } = await t.open();
+    // The new device names the signed-in device's own way in, which was in the log before.
+    const old = [...(await walkPublic(w.publics, BUDGET)).slots.keys()].find((id) => id.startsWith('p:'))!;
+    await confirm(old);
+    expect(((await atO) as Error).message).toMatch(/could not open your budget/);
+  });
+
+  it('waits less often the longer it waits', async () => {
+    const { ways, opened } = await world();
+    const { from, relay } = relays();
+    const place = await ways.host.sealedPlace();
+    const ctl = new AbortController();
+    const atO = addFromHere({
+      relay: from,
+      budgetId: BUDGET,
+      keys: opened.budget.keys,
+      bk: opened.budget.bk,
+      head: { number: place.number, hash: place.hash as never },
+      slotIds: async () => new Set(),
+      match: async () => true,
+      wait: { everyMs: 10, maxMs: 60, signal: ctl.signal },
+    }).catch((e: unknown) => e);
+    await new Promise((r) => setTimeout(r, 600));
+    ctl.abort();
+    await atO;
+    // 10, 15, 23, 35, 53, then 60 ms: about 13 asks in 600 ms, not the 60 a fixed 10 ms would make.
+    const n = relay.asked.get('signed-in') ?? 0;
+    expect(n).toBeGreaterThan(5);
+    expect(n).toBeLessThan(20);
+  });
+});
+
+describe('the relay in the mock API', () => {
+  it('answers the relay routes with the server’s rules; a test plays the other device', async () => {
+    const { MockServer } = await import('../src/mock/server');
+    const server = new MockServer('default', () => new Promise(() => undefined));
+    const h = { 'x-ledgerline': '1', 'content-type': 'application/json' };
+    const call = (method: string, step: string, body?: unknown) =>
+      server.handle(method, `/api/settings/security/device-add${step}`, h, body);
+    expect(await call('GET', '')).toEqual({ status: 200, body: { role: null } });
+    expect((await call('POST', '/start', {})).status).toBe(200);
+    expect(await call('GET', '')).toMatchObject({ status: 200, body: { role: 'from', commit: null } });
+    // The other device joins with its commitment; this page offers once.
+    const other = server.relay.as('other-device');
+    await other.send('commit', { commit: '11'.repeat(32) });
+    expect(await call('GET', '')).toMatchObject({ body: { commit: '11'.repeat(32) } });
+    const offer = { commit: '11'.repeat(32), offer: '22'.repeat(108) };
+    expect((await call('POST', '/offer', offer)).status).toBe(200);
+    expect(await call('POST', '/offer', offer)).toMatchObject({ status: 409, body: { error: 'gone' } });
+    // This page can’t send the other device’s messages.
+    expect((await call('POST', '/reveal', { reveal: '33'.repeat(64) })).status).toBe(409);
+    expect((await call('POST', '/commit', { commit: 'zz' })).status).toBe(400);
+    expect((await call('POST', '/end', {})).status).toBe(200);
+    expect(await other.state()).toEqual({ role: null });
   });
 });

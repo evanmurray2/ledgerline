@@ -434,7 +434,7 @@ export class PlaidProvider implements BankDataProvider {
     if (typeof claims.iat !== 'number' || this.now() / 1000 - claims.iat > 5 * 60) return null;
     const digest = await sha256Hex(raw);
     if (!claims.request_body_sha256 || !timingSafeEqual(digest, claims.request_body_sha256)) return null;
-    let body: { webhook_type?: string; webhook_code?: string; item_id?: string };
+    let body: { webhook_type?: string; webhook_code?: string; item_id?: string; link_token?: string };
     try {
       body = JSON.parse(raw) as typeof body;
     } catch {
@@ -479,9 +479,13 @@ export function classifyWebhook(body: {
   webhook_type?: string;
   webhook_code?: string;
   item_id?: string;
+  link_token?: string;
 }): ProviderWebhookEvent {
   const code = `${body.webhook_type ?? ''}:${body.webhook_code ?? ''}`;
   const itemId = body.item_id ?? null;
+  // A Link session ended: it names its link token, not an Item (the Item, if any, has no token on the server yet).
+  if (code === 'LINK:SESSION_FINISHED' && typeof body.link_token === 'string' && body.link_token)
+    return { type: 'link_session_finished', providerItemId: null, code, linkToken: body.link_token };
   if (code === 'TRANSACTIONS:SYNC_UPDATES_AVAILABLE')
     return { type: 'sync_updates_available', providerItemId: itemId, code };
   if (code === 'ITEM:ERROR') return { type: 'item_error', providerItemId: itemId, code };
