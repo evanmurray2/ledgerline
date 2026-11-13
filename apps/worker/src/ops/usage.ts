@@ -14,36 +14,90 @@ export async function refreshUsage(
     .bind(day)
     .first<{ refreshed_at: number }>();
   if (!force && cur && now - cur.refreshed_at < 10 * 60_000) return null;
-  const query = `query ($accountTag: string!, $date: Date!) { viewer { accounts(filter: { accountTag: $accountTag }) {
-    durableObjectsPeriodicGroups(limit: 10000, filter: { date: $date }) { sum { rowsRead rowsWritten } } } } }`;
-  const res = await fetch('https://api.cloudflare.com/client/v4/graphql', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${env.CF_ANALYTICS_TOKEN}` },
-    body: JSON.stringify({ query, variables: { accountTag: env.CF_ACCOUNT_ID, date: day } }),
-  });
-  if (!res.ok) return null;
-  const j = (await res.json().catch(() => null)) as {
-    errors?: unknown[] | null;
-    data?: {
-      viewer?: {
-        accounts?: {
-          durableObjectsPeriodicGroups?: { sum: { rowsRead: number; rowsWritten: number } }[];
-        }[];
-      };
+  // One request for the four figures (the Directory's half-hourly alarm was 9 to 15 ms of CPU with three,
+  // docs/measurements.md). A field the API refuses fails the whole query: then each is asked on its own, as before,
+  // so the rows figure never waits on the others.
+  const all = await graphql<{
+    rows?: { sum: { rowsRead: number; rowsWritten: number; activeTime: number } }[];
+    calls?: { sum: { requests: number } }[];
+    workers?: { sum: { requests: number } }[];
+  }>(
+    env,
+    `
+      query ($accountTag: string!, $date: Date!) {
+        viewer {
+          accounts(filter: { accountTag: $accountTag }) {
+            rows: durableObjectsPeriodicGroups(limit: 10000, filter: { date: $date }) {
+              sum {
+                rowsRead
+                rowsWritten
+                activeTime
+              }
+            }
+            calls: durableObjectsInvocationsAdaptiveGroups(limit: 10000, filter: { date: $date }) {
+              sum {
+                requests
+              }
+            }
+            workers: workersInvocationsAdaptive(limit: 10000, filter: { date: $date }) {
+              sum {
+                requests
+              }
+            }
+          }
+        }
+      }
+    `,
+    day,
+  );
+  let rowsRead: number;
+  let rowsWritten: number;
+  let d: { requests: number; gbs: number } | null;
+  let w: number | null;
+  // The API didn't answer (a used-up rate limit, for one): asking again now would fare no better.
+  if (all.ok === null) return null;
+  if (all.ok) {
+    const groups = all.acct.rows ?? [];
+    rowsRead = groups.reduce((a, g) => a + g.sum.rowsRead, 0);
+    rowsWritten = groups.reduce((a, g) => a + g.sum.rowsWritten, 0);
+    const activeUs = groups.reduce((a, g) => a + g.sum.activeTime, 0);
+    d = {
+      requests: (all.acct.calls ?? []).reduce((a, g) => a + g.sum.requests, 0),
+      gbs: (activeUs / 1e6) * DO_GB,
     };
-  } | null;
-  // GraphQL reports errors (a used-up rate limit, for one) with HTTP 200 and no data. Keep the last count then:
-  // writing zeros would tell the breaker nothing was used today (seen Nov 5, 2026).
-  const acct = j?.data?.viewer?.accounts?.[0];
-  if (!acct || j?.errors?.length) {
-    console.log(JSON.stringify({ event: 'rows_usage_unavailable', errors: j?.errors ?? null }));
-    return null;
+    w = (all.acct.workers ?? []).reduce((a, g) => a + g.sum.requests, 0);
+  } else {
+    const query = `query ($accountTag: string!, $date: Date!) { viewer { accounts(filter: { accountTag: $accountTag }) {
+    durableObjectsPeriodicGroups(limit: 10000, filter: { date: $date }) { sum { rowsRead rowsWritten } } } } }`;
+    const res = await fetch('https://api.cloudflare.com/client/v4/graphql', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${env.CF_ANALYTICS_TOKEN}` },
+      body: JSON.stringify({ query, variables: { accountTag: env.CF_ACCOUNT_ID, date: day } }),
+    });
+    if (!res.ok) return null;
+    const j = (await res.json().catch(() => null)) as {
+      errors?: unknown[] | null;
+      data?: {
+        viewer?: {
+          accounts?: {
+            durableObjectsPeriodicGroups?: { sum: { rowsRead: number; rowsWritten: number } }[];
+          }[];
+        };
+      };
+    } | null;
+    // GraphQL reports errors (a used-up rate limit, for one) with HTTP 200 and no data. Keep the last count then:
+    // writing zeros would tell the breaker nothing was used today (seen Nov 5, 2026).
+    const acct = j?.data?.viewer?.accounts?.[0];
+    if (!acct || j?.errors?.length) {
+      console.log(JSON.stringify({ event: 'rows_usage_unavailable', errors: j?.errors ?? null }));
+      return null;
+    }
+    const groups = acct.durableObjectsPeriodicGroups ?? [];
+    rowsRead = groups.reduce((a, g) => a + g.sum.rowsRead, 0);
+    rowsWritten = groups.reduce((a, g) => a + g.sum.rowsWritten, 0);
+    d = await doUsage(env, day);
+    w = await workerRequests(env, day);
   }
-  const groups = acct.durableObjectsPeriodicGroups ?? [];
-  const rowsRead = groups.reduce((a, g) => a + g.sum.rowsRead, 0);
-  const rowsWritten = groups.reduce((a, g) => a + g.sum.rowsWritten, 0);
-  const d = await doUsage(env, day);
-  const w = await workerRequests(env, day);
   // The analytics figure replaces this app's own estimates since the last refresh.
   await env.DB.prepare(
     `INSERT INTO usage_day (day, rows_read, rows_written, est_read, est_written, refreshed_at, do_requests, do_gbs,
@@ -57,6 +111,30 @@ export async function refreshUsage(
     .bind(day, rowsRead, rowsWritten, now, d?.requests ?? null, d?.gbs ?? null, w)
     .run();
   return { rowsRead, rowsWritten };
+}
+
+/**
+ * One GraphQL query for today; `ok: false` when it reports an error or no data (then nothing of it is used), and
+ * `ok: null` when the API didn't answer it.
+ */
+async function graphql<T>(
+  env: Env,
+  query: string,
+  day: string,
+): Promise<{ ok: true; acct: T } | { ok: false | null }> {
+  const res = await fetch('https://api.cloudflare.com/client/v4/graphql', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${env.CF_ANALYTICS_TOKEN}` },
+    body: JSON.stringify({ query, variables: { accountTag: env.CF_ACCOUNT_ID, date: day } }),
+  }).catch(() => null);
+  if (!res?.ok) return { ok: null };
+  const j = (await res.json().catch(() => null)) as {
+    errors?: unknown[] | null;
+    data?: { viewer?: { accounts?: T[] } };
+  } | null;
+  const acct = j?.data?.viewer?.accounts?.[0];
+  if (!acct || j?.errors?.length) return { ok: false };
+  return { ok: true, acct };
 }
 
 /** Each Durable Object is billed for 128 MB while active, so GB-s = active seconds × 0.128. */

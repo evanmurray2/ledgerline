@@ -2,6 +2,57 @@
 
 How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.measure.config.ts` runs `apps/worker/measure` on node:sqlite, SQLite included, as a Durable Object pays it. The workerd tools some older sections name (`tools/measure`, the `/__measure` routes) were removed on Nov 3, 2026; those sections are kept as history. The measures of the old server path (`phone`, `refile-payees` and `fill-plaid-name`) were removed with that path (D-102); their sections are history too.
 
+## Update: the last CPU times read from Cloudflare, and how CPU is judged from now on (Nov 13, 2026)
+
+The owner turned Cloudflare's invocation logs off (they also hold each request's IP address and location, `docs/privacy.md` 15.4). Those logs were the only place that showed each alarm's and request's CPU time. Before that change merged, a read-only Workers Logs query (Nov 13, 2026, about 18:30 UTC) read the 7 days back to Nov 6, 18:50 UTC: every alarm of the Worker `ledgerline`, its CPU time, and the `sealed_step` line each fetch step logs, joined by request id. ms of CPU, whole invocation (the job runner, SQLite and WebCrypto included):
+
+| Alarm                                                       | runs | median | p90 | max |
+| ----------------------------------------------------------- | ---- | ------ | --- | --- |
+| Sealed fetch: begin                                         | 261  | 3      | 7   | 27  |
+| Sealed fetch: a page of transactions                        | 69   | 7      | 11  | 19  |
+| Sealed fetch: the last page with the bank's answers (D-110) | 1    | 30     | 30  | 30  |
+| Sealed fetch: balances (release before D-110)               | 72   | 6      | 9   | 18  |
+| Sealed fetch: card statements (release before D-110)        | 70   | 5      | 8   | 10  |
+| Sealed fetch: sign and store                                | 77   | 6      | 10  | 16  |
+| Directory (the half-hourly usage refresh, mostly)           | 351  | 10     | 16  | 27  |
+| Any other alarm of a budget's store                         | 2572 | 3      | 13  | 50  |
+
+- The one D-110 last page ran at 18:26 UTC, minutes after a deploy, so its isolate was likely new; the three steps it replaced were 7, 6 and 5 ms by median. One sample says little.
+- The Directory's alarm was 8 to 10 ms from Nov 6 to Nov 8, 13 to 18 from Nov 8 to Nov 11, and 9 to 12 since.
+- The highest values are mostly the first alarm in a new isolate (a deploy, or after the object was idle).
+- Requests to the sealed log, the same 7 days (Workers Logs search, so a sample: the Worker's own CPU, and the budget store's where its call was found): `GET /api/log` 1 ms median, 7 max (66); `POST /api/log/append` 1 ms, the store 2 ms (6 appends, each a small edit: no write of 16 entries has reached the server yet); a device's read of a sealed page, `GET /api/log/runs/:run/:page`, 1 to 2 ms (19); `GET /api/log/public` up to 5 ms (6).
+
+**From now on**, CPU on Cloudflare can't be read per request. It is judged from local measures (`apps/worker/measure`, node:sqlite and Node's WebCrypto, which read low against Cloudflare: the fetch steps below measure 1 to 6 ms locally against 3 to 7 on Cloudflare) and from errors: a request over the limit ends with status `exceededResources`. GraphQL Analytics, which is not the invocation logs, still counts invocations by status and gives CPU quantiles per day for the whole Worker and for its Durable Objects together (`workersInvocationsAdaptive` and `durableObjectsInvocationsAdaptiveGroups`, `quantiles { cpuTimeP50 cpuTimeP99 }`, by `status`), but not per step. On Nov 12 and 13 it showed no `exceededResources`; the Durable Objects' p50 was 1.1 to 1.4 ms and p99 16 to 24 ms (3,094 and 5,034 invocations, of which 638 and 1,309 ended `clientDisconnected`, which Cloudflare counts as errors; why so many is not checked). Treat a local median over about 5 ms as at risk.
+
+## Update: the sealed fetch job's steps, and the Directory's usage refresh (Nov 13, 2026)
+
+`measure/fetch-job.measure.ts` runs the fetch job's alarms whole (`seal/fetch-job.ts`) on node:sqlite, a run of two pages of 100 transactions (the first about 220 KB, the owner's largest page) and the bank's answers about 3 accounts and a card, 30 runs. It counts each step's WebCrypto calls, SQL statements and database calls as well as its time: this machine was shared with other sessions (load about 22 on 4 cores) and times varied 2 to 5 times between runs, while the counts are exact.
+
+| Step                                  | WebCrypto calls, before → after | statements / database calls, before → after | ms median, before → after (middle of 3 runs; the 3 runs' range) |
+| ------------------------------------- | ------------------------------- | ------------------------------------------- | --------------------------------------------------------------- |
+| Begin                                 | 20 → 6                          | 11 / 9 (no change)                          | 1.3 (1.3–1.9) → 0.9 (0.7–1.4)                                   |
+| A page of transactions                | 45 → 31                         | 6 / 4 (no change)                           | 5.2 (3.9–6.0) → 4.4 (3.5–6.9)                                   |
+| The last page with the bank's answers | 107 → 79                        | 20 / 14 → 8 / 4                             | 8.0 (7.0–11.9) → 6.1 (4.6–14.9)                                 |
+| Sign and store                        | 37 → 20                         | 13 / 9 (no change)                          | 2.1 (1.9–3.3) → 1.8 (1.2–4.4)                                   |
+
+- **The Worker's keys are kept** while the store stays in memory (`BudgetStore.fetchDeps`): every alarm derived them again, 14 WebCrypto calls (two HKDFs, an HMAC key, and an Ed25519 key imported twice and exported once).
+- **The last page's step checks once and stores once.** It opened the run's stamp, checked the inbox key's and the link's stamps and opened the token three times (the page, the balances, the card statements), and stored three transactions. Now the bank's answers are asked with the token already open and stored with the page in one transaction (`run-steps.ts` `addPages`, `fetchSealedPage`'s `ask`); a run checked as no longer the job's own is not sent to the bank at all. The sealed run is the same: the page, then the balances (part kind 1), then the card statements (kind 2), as D-110 says.
+- **Sign and store hashes each cursor once** (the run state's check, the manifest and the new state hashed each link's cursor again).
+- **A run's steps ask the Directory for usage once per 30 seconds** (`USAGE_FOR_WRITE`, as writes do), not once per step.
+- **The Directory's usage refresh is one request.** It asked GraphQL Analytics three times every 30 minutes (rows, Durable Object requests and active time, Worker requests), 9 to 15 ms of CPU an alarm on Cloudflare (table above), most of it in the requests. Now one query asks all four figures (`ops/usage.ts`; checked against the API on Nov 13). When that query reports an error it asks the three as before, so the rows figure never waits on the others; when the API doesn't answer, it keeps the last count. Not measured on Cloudflare: invocation logs are off.
+- **Expected on Cloudflare** from these counts (not measured): the last page's step near a page's 7 ms, the sign and store step and the Directory's alarm a few ms lower than before. A first alarm in a new isolate still costs more.
+
+## Update: the sealed log's limits (Nov 13, 2026)
+
+- **A sealed page is one BLOB row.** Durable Object SQLite allows a string, BLOB or row of up to 8 MB (Cloudflare's limits page, read again Nov 13, 2026). The largest sealed page is about 220 KB, a snapshot chunk at most 1.1 MB, a log entry about 64 KB (D-104 item 6): none comes near it.
+- **A 16-entry write and one append**: the section below (`log-append.measure.ts`), 10.5 ms median in Node for 16 entries of 64 KB, 0.7 ms for one small entry. On Cloudflare only small appends have run so far (2 ms in the store, table above), so `MAX_WRITE_ENTRIES` stays 16.
+- **A 180-day first run.** `apps/worker/test/sealed-large-run.test.ts` files 2,000 transactions with Plaid-style random ids: about 2.6 KB of change set each as JSON, 250 bytes compressed, so one write (16 parts of 64 KB) holds a run of about 4,000. The bank log row a filing writes holds the normalized event, not Plaid's whole answer, so a real transaction's extra fields (location, counterparties, logos) don't reach the change set; what differs in real data is more distinct names and merchant ids, which compress less. The owner's budget had about 5,400 transactions over 36 months across all banks (the section on D1 exports below), about 900 per 180 days: a busy card's 180 days would have to be 4 times the whole budget's to pass one write. **D-104's staged write is not needed**, and is not built.
+- **The queue's memory.** A filed run waits in the device's queue as one JSON value with its rows and its undo. For the owner's size (about 900 transactions) that is about 2.3 MB of rows; the undo of a first run is mostly deletes of new rows (a key and no data). A few MB in a Web Worker is well within an iPhone's; peak memory on the owner's iPhone is still the phase 0 check in `docs/build-plan.md`.
+
+## Update: processing when one sync brings many pending rows (Nov 13, 2026)
+
+Processing (`sync/process.ts`, `sync/pending-match.ts`) no longer runs on the server: every budget is locked (D-102) and the device files every bank update in its copy (`local/file-run.ts`, the only caller of `processPending`). The 10 ms rule is the server's (D-104: "the device's compression costs it nothing"), so this step is no longer held to it. Measured again with `measure/entry-covers.measure.ts` (the 25 pending rows on a busy card): 11.4 to 14.3 ms in a fresh process, 5.8 to 5.9 ms when the same steps ran once before in the process. Of the first run's time, SQL is about 3.3 ms (164 statements); the rest is JavaScript run for the first time. Same results: 12 covered, 15 matched, 25 asked. The matching code is unchanged.
+
 ## Update: one whole append to the sealed log (Nov 13, 2026)
 
 `measure/log-append.measure.ts` times `logAppend` (`apps/worker/src/seal/log-store.ts`) whole on node:sqlite: reading the log's state, the rules of the log and the server's, and storing the write. Times in ms, 30 runs each, in Node (its WebCrypto adds a thread hop to each call, which workerd doesn't). Before: the state was one JSON value with every device counter and public entry, parsed and written on every append, and each entry was stored as base64 made a byte at a time. After: device counters are rows (`store_note`, `device:<id>`), the public entry list is not kept (the server never read it), entries are stored as BLOBs, and base64 is made in pieces where an answer still needs it.

@@ -93,3 +93,8 @@ that a rollback found the format it knew. The next release writes counters as ro
 as it is and never rewritten, and a value that still holds counters (stored by the release before, or after a
 rollback to it) has them moved to rows at its next write, a few rows in that write's transaction. No migration.
 A rollback of this release goes to the one before, which reads rows and BLOBs.
+
+## Checked: no staged write (Nov 13, 2026)
+
+A compressed first run fits one write up to about 4,000 transactions; the owner's whole budget brings about 900 in
+180 days (`docs/measurements.md`, "the sealed log's limits"). The staged write stays unbuilt.
