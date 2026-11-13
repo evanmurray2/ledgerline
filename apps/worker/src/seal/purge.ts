@@ -338,7 +338,8 @@ export async function purgeStatus(db: Db, now: number): Promise<PurgeStatus> {
     checkAt: null as number | null,
     clean: null as boolean | null,
   };
-  if (!(await sealed(db))) return { stage: 'none', ...base };
+  // A budget that started locked (D-102) never had a readable copy: nothing to delete.
+  if (!(await sealed(db)) || (await n('cutover_at')) === null) return { stage: 'none', ...base };
   const checked = await n('purge_checked_at');
   if (checked !== null)
     return { stage: 'checked', ...base, checkAt: checked, clean: (await n('purge_left')) === 0 };

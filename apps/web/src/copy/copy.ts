@@ -185,7 +185,8 @@ export const isSealed = (): boolean => sealed !== null;
  */
 export function noteSealed(s: SealedSession): void {
   sealed = s;
-  rememberSealed(s.budgetId);
+  // A new budget is remembered once this device has locked it (startBudget below), not before.
+  if (!s.fresh) rememberSealed(s.budgetId);
 }
 /** The budgets this device knows as sealed (their ids, no more), kept outside the copy so a wipe leaves them. */
 const sealedBudgets = (): string[] => {
@@ -899,6 +900,8 @@ export async function start(session: Session): Promise<void> {
     const heldKeys = record ? await heldSealed(record.key, IDLE_MS) : null;
     if (record && dataKey) await holdKey(record.key, dataKey, Date.now(), undefined, IDLE_MS);
     // A new budget (D-102): nothing to open yet. The lock screen makes its key and its first entry.
+    // A budget this device has known as locked is never made new: that would empty the copy (start-device.ts).
+    if (sealed?.fresh && sealedBudgets().includes(sealed.budgetId)) throw new Error(NOT_LOCKED);
     if (sealed?.fresh) {
       if (p && !pending) pending = p;
       set({ saved: record !== null, hasSaved: record !== null, why: null, status: 'fresh' });

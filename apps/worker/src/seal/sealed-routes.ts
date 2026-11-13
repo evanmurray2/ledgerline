@@ -50,6 +50,8 @@ sealedApi.get('/session', async (c) => {
     readsPaused: ws === 'rest',
     canLinkBanks: canLinkBanks(c),
     recoveryKeyUsedAt: keyUsed ? new Date(keyUsed).toISOString() : null,
+    // An app from before D-102 needs this field to read the answer, see the new version and reload. Remove later.
+    recoveryNoticeAt: null,
     // A new budget the device has not made yet (seal/start.ts).
     ...(!(await isSealedStore(c.env.DB)) ? { fresh: true } : {}),
   };

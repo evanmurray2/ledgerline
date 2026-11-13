@@ -64,6 +64,8 @@ export const SealedSession = z.object({
   canLinkBanks: z.boolean(),
   /** When the recovery key last signed in to this account, for 14 days (docs/privacy.md 5.8). */
   recoveryKeyUsedAt: z.string().nullable().optional(),
+  /** Always null: kept for one release so an app from before D-102 can read this answer and reload. */
+  recoveryNoticeAt: z.null().optional(),
   /**
    * The budget has no first entry yet (D-102): this device makes its key, its recovery key and its first entry
    * (apps/web/src/keys/budget.ts createBudget), and the budget is locked from then on.
