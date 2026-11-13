@@ -41,8 +41,8 @@ export function DeleteAccountCard() {
       <div className="flex flex-col gap-3 px-3 py-3">
         <span className="text-base font-semibold">Delete account</span>
         <span className="text-sm leading-snug text-ink-2">
-          Your budget and everything in it is deleted, and can’t be brought back. Download the full backup
-          first if you want a copy.
+          Your budget and everything in it is deleted, and can’t be brought back. Your bank links are removed
+          at Plaid. Download the full backup first if you want a copy.
         </span>
         <RowLink
           to="/settings/data"

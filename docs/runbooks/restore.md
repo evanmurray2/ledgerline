@@ -2,6 +2,8 @@
 
 There is no off-site backup (decisions.md D-29). Recovery uses Cloudflare's 30-day point-in-time recovery for each budget's Durable Object. Restoring is a runbook step, never a button in the app (`docs/multi-user.md` 8.8), so a stolen sign-in can't wipe a budget.
 
+**A locked budget can't be restored by the server** (`docs/privacy.md` 5.8, phase 5; D-99). The server holds it sealed and can't read it, and rolling its store back would undo the log the devices hold. `POST /api/settings/restore` answers 409 for it, and so do the undo and loading a full backup (`BudgetStore.restoreTo`, `restoreUndo`, `restoreDump`). Its devices hold the budget; its full backup is made on a device (below), and nothing loads it back.
+
 ## Undo recent damage (last 30 days)
 
 Each budget lives in its own Durable Object (`BudgetStore`). Restoring goes through the app, so every device's copy is downloaded again (D-45): the restore changes the budget's sync epoch first, and each device then shows "Your budget was restored, so it downloads again."
@@ -42,4 +44,6 @@ Answers that refuse: `confirm` (the name doesn't match), `invalid` (the time isn
 
 Settings → Backup and export has the full backup. Save it to Files or iCloud now and then: it is the only copy that survives losing the Cloudflare account or damage found after 30 days.
 
-- **Full backup** (`.ndjson`): every row of the budget, with a fingerprint of each table (`docs/multi-user.md` 8.7). The store can load one into an empty budget and prove nothing changed (`BudgetStore.restoreDump`, then `restoreVerify`; `apps/worker/test/backup.test.ts`), but **no route or tool reaches it**, and none is planned: `docs/privacy.md` 5.8 closes restoring a backup as not wanted, and the server can't restore a locked budget. Keep the file: it is the copy a future restore path will read. Bank tokens in it stay encrypted with the Worker's `TOKEN_KEYS`, so it restores only where those keys are the same.
+- **Full backup of a locked budget** (`.locked`, or `.sqlite` without a lock): made on the device from its copy, after a passkey prompt (D-99). By default it is sealed with your recovery key, which the screen asks you to type; only that key opens it (`openBackup` in `packages/seal`). The server never sees it and can't load it back. Without a lock, anyone with the file can read the whole budget.
+
+- **Full backup** (`.ndjson`): every row of the budget, with a fingerprint of each table (`docs/multi-user.md` 8.7). The store can load one into an empty budget and prove nothing changed (`BudgetStore.restoreDump`, then `restoreVerify`; `apps/worker/test/backup.test.ts`), but **no route or tool reaches that, and none is planned**: a full backup takes data out, and nothing loads it back (`docs/privacy.md` 5.8, D-99). Keep the file as your own copy. Bank tokens in it stay encrypted with the Worker's `TOKEN_KEYS`, so it restores only where those keys are the same.

@@ -86,6 +86,19 @@ export type RegisterShow = 'all' | 'pending' | 'needs' | 'transfers';
 
 const enc = encodeURIComponent;
 
+/** Where emptying a locked budget's old copy on the server stands (Settings → Privacy). */
+const PurgeView = z.object({
+  stage: z.enum(['none', 'waiting', 'ready', 'running', 'stopped', 'done', 'checked']),
+  tables: z.number(),
+  done: z.number(),
+  rows: z.number(),
+  startedAt: z.string().nullable(),
+  doneAt: z.string().nullable(),
+  checkAt: z.string().nullable(),
+  clean: z.boolean().nullable(),
+});
+export type PurgeView = z.infer<typeof PurgeView>;
+
 export const api = {
   /**
    * The session. For a sealed budget the server's answer holds nothing of the budget: its facts come from the
@@ -125,8 +138,15 @@ export const api = {
   cutoverState: () =>
     get(
       '/api/cutover/state',
-      z.object({ open: z.boolean(), sealed: z.boolean(), backUntil: z.string().nullable() }),
+      z.object({
+        open: z.boolean(),
+        sealed: z.boolean(),
+        backUntil: z.string().nullable(),
+        // Emptying the old copy (the Worker's seal/purge.ts); absent from a server before it.
+        purge: PurgeView.nullable().optional(),
+      }),
     ),
+  cutoverPurge: () => post('/api/cutover/purge', z.object({ ok: z.literal(true) })),
   cutoverReady: (fresh = false) =>
     post('/api/cutover/ready', z.object({ ok: z.literal(true), blocks: z.array(z.string()) }), { fresh }),
   cutoverBack: () => post('/api/cutover/back', z.object({ ok: z.boolean() })),

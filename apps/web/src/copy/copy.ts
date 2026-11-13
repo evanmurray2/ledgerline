@@ -933,6 +933,16 @@ export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}):
   return syncing;
 }
 
+/**
+ * The copy on this device as one SQLite file, for the full backup of a locked budget (Settings → Backup, made on
+ * the device: docs/privacy.md 5.8).
+ */
+export async function copyBytes(): Promise<ArrayBuffer> {
+  if (!host || state.status !== 'ready')
+    throw new Error('Your budget isn’t open on this device yet. Try again in a moment.');
+  return host.export();
+}
+
 async function save(): Promise<void> {
   if (!record || !dataKey || !host) return;
   const started = performance.now();

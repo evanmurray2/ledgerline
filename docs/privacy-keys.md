@@ -151,6 +151,7 @@ the budget key before this one, BK_v-1  aad = "ledgerline/v1/wrap/prev-key" || s
 
 - The inbox key pair is a random X25519 pair. Its private half, wrapped, travels in the genesis entry and in each key change.
 - **Each key change carries the budget key it replaces**, wrapped under the new one. Without it, a device that joins after a key change (a recovery sign-in is always one) could not read the snapshot and entries sealed before the change, and if the device that made the change were lost first, the budget would be gone. It gives a removed way in nothing: that way in already held the older key.
+- **A full backup made on the device** (`docs/privacy.md` 5.8) is sealed with the recovery key alone: `"LEDGERLINE-BACKUP\n1\n" || AEAD(K, aad = that magic, plain)`, where `K = HKDF(R, zero, "ledgerline/v1/backup", 32)` and `plain` is the copy's SQLite file. It needs no budget key, so it opens where only the recovery key is left (`sealBackup`, `openBackup`; D-99).
 
 ## 6. Log entries
 
@@ -615,6 +616,7 @@ In `packages/seal`, each part with its tests. Outside the package so far, and us
 | Requests signed with the budget's key                                                           | 11            | The signed bytes written out by a separate program; every changed field fails; small-order keys never verify                                  |
 | The server's own rules for a write                                                              | 7.2           | Each rule broken in turn on a small budget: the clock, a write sent again, receipts, bank runs first, the breaker, the intent                 |
 | A chain that starts at a snapshot                                                               | 8             | At every place a snapshot can stand, the resumed state equals the state read from the start, field by field, and goes on the same             |
+| A full backup sealed with the recovery key                                                      | 5             | The key written out by hand with WebCrypto's HKDF; a wrong key, a changed byte and a file that is not one are refused                         |
 
 Every section of this file is built.
 
