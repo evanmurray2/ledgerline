@@ -76,14 +76,16 @@ export function TxnRow({
         className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2.5 text-ink no-underline"
       >
         <span className="flex min-w-0 flex-col gap-[3px]">
-          <span className={cx('text-base font-semibold', r.wontClear && 'text-faint line-through')}>
+          <span
+            className={cx('text-base font-semibold break-words', r.wontClear && 'text-faint line-through')}
+          >
             {r.payee}
           </span>
           {meta && <span className={cx('text-muted', desktop ? 'text-sm' : 'text-xs')}>{meta}</span>}
           {!stacked && badge}
         </span>
         <span className="flex shrink-0 flex-col items-end gap-0.5">
-          <span className={cx('tnum text-base font-bold', amountClass(r))}>
+          <span className={cx('tnum text-base font-bold whitespace-nowrap', amountClass(r))}>
             {r.sheet === 'txn' && r.badge === 'Transfer'
               ? formatCents(Math.abs(r.amount))
               : formatCents(r.amount, { plus: true })}

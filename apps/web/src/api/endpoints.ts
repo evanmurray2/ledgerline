@@ -180,6 +180,11 @@ export const api = {
   /** Not the same: undoes a pair (your entry and a bank row, or two bank rows), and remembers No. */
   notSame: (key: string) => post(`/api/transactions/${enc(key)}/not-same`, MutationResult),
   notSameUndo: (key: string) => post(`/api/transactions/${enc(key)}/not-same/undo`, MutationResult),
+  /** Undo of No on a "Same purchase?" card: asks again. */
+  samePurchaseUndo: (v: { id: string; key: string }) =>
+    post(`/api/same-purchase/${enc(v.id)}/undo`, MutationResult, { key: v.key }),
+  /** Undo of OK on a "Removed by the bank" row. */
+  undismissAlert: (id: string) => post(`/api/alerts/${enc(id)}/undo`, MutationResult, {}),
 
   match: (inflowKey: string) => get(`/api/match/${enc(inflowKey)}`, MatchView),
   doMatch: (body: In<typeof MatchRequest>) => post('/api/match', MutationResult, body),

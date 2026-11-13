@@ -1,5 +1,6 @@
 // Pieces every transaction sheet shares: the path of the screen under a sheet, closing back to it, the
 // amount-led header and the bank's name with Rename payee.
+import { useEffect } from 'react';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import type { TxnSheet } from '@ledgerline/contracts';
 import { SheetTitle } from '../components/Sheet';
@@ -76,4 +77,21 @@ export function BankSays({ t, extra }: { t: TxnSheet; extra?: string }) {
       </div>
     </div>
   );
+}
+
+/**
+ * A transaction opened over another account's register (a link with the wrong account): it moves to its own
+ * account's register, so the list under the sheet is the one it belongs to. True while it moves.
+ */
+export function useOwnRegister(t: TxnSheet | undefined): boolean {
+  const parent = useParentPath();
+  const navigate = useNavigate();
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  const acct = /^\/accounts\/([^/]+)$/.exec(parent)?.[1];
+  const own = t ? `/accounts/${encodeURIComponent(t.accountId)}` : '';
+  const wrong = !!t && !!acct && parent !== own;
+  useEffect(() => {
+    if (wrong) void navigate({ to: own + path.slice(parent.length), search: true, replace: true });
+  }, [wrong, navigate, own, path, parent]);
+  return wrong;
 }

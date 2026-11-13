@@ -15,12 +15,22 @@ const named = (r: TxnListRow) => `${r.payee} ${formatCents(Math.abs(r.amount))}`
 
 export function SamePurchase({ cards }: { cards: Card[] }) {
   const answer = useMoneyMutation(api.samePurchase);
+  const undoNo = useMoneyMutation(api.samePurchaseUndo);
+  const failed = (e: unknown): void => {
+    toast.show({ text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t save that. Try again.' });
+  };
   const say = async (card: Card, c: TxnListRow, yes: boolean) => {
     try {
       await answer.mutateAsync({ id: card.id, answer: yes ? 'yes' : 'no', key: c.key });
-      toast.show({ text: yes ? 'Paired as one purchase' : 'Kept as two purchases' });
+      toast.show({
+        text: yes ? 'Paired as one purchase' : 'Kept as two purchases',
+        // No asks again on Undo. Yes has its own: Not the same, on the transaction.
+        ...(yes
+          ? {}
+          : { undo: () => undoNo.mutateAsync({ id: card.id, key: c.key }).then(() => {}, failed) }),
+      });
     } catch (e) {
-      toast.show({ text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t save that. Try again.' });
+      failed(e);
     }
   };
   return (

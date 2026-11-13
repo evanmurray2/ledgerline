@@ -84,6 +84,48 @@ export function TransferScreen() {
   // Accounts whose side hasn't arrived yet (D-83): picking one adds a pending entry there, paired with this row.
   const listed = new Set(candidates.map((c) => c.account.id));
   const notYet = others.filter((a) => !listed.has(a.id));
+  // A refusal shows in the sheet (pick.error, unpair.error), not as an uncaught error.
+  const tried = (p: Promise<unknown>) =>
+    p.then(
+      () => true,
+      () => false,
+    );
+  // Already paired: picking again would be refused. Unpair first; the sheet then asks again.
+  const paired = t.kind === 'transfer' && !!t.otherAccountName;
+  if (paired && !result)
+    return (
+      <Sheet
+        label="Transfer"
+        track="transfer"
+        onClose={close}
+        gap="auto"
+        header={
+          <SheetTitle
+            tag="Transfer"
+            amount={formatCents(Math.abs(t.amount))}
+            sub={`${t.accountName} · ${dayLabel(t.date)} · “${t.rawName}”`}
+          />
+        }
+      >
+        <div className="flex flex-col gap-3 pb-4">
+          <Banner tone="neutral">Paired with {t.otherAccountName}.</Banner>
+          {unpair.error && <ErrorNote error={unpair.error} />}
+          <div className="flex gap-2">
+            <SecondaryButton
+              mutates="offline"
+              track="transfer.unpair"
+              className="flex-1"
+              onClick={() => void tried(unpair.mutateAsync(key))}
+            >
+              Unpair
+            </SecondaryButton>
+            <PrimaryButton className="flex-[2]" onClick={close}>
+              Done
+            </PrimaryButton>
+          </div>
+        </div>
+      </Sheet>
+    );
   return (
     <Sheet
       label={question}
@@ -102,13 +144,14 @@ export function TransferScreen() {
         {result ? (
           <>
             <Banner tone="success">{result}</Banner>
+            {unpair.error && <ErrorNote error={unpair.error} />}
             <div className="flex gap-2">
               <SecondaryButton
                 mutates="offline"
                 track="transfer.undo"
                 className="flex-1"
                 onClick={async () => {
-                  await unpair.mutateAsync(key);
+                  if (!(await tried(unpair.mutateAsync(key)))) return;
                   usage.undo('transfer_pick');
                   setResult(null);
                 }}
@@ -137,7 +180,7 @@ export function TransferScreen() {
                   mutates="offline"
                   track="transfer.pick"
                   onClick={async () => {
-                    await pick.mutateAsync({ otherKey: row.key });
+                    if (!(await tried(pick.mutateAsync({ otherKey: row.key })))) return;
                     usage.suggestion('transfer_pick', 'paired');
                     setResult(lines(account.name, row));
                   }}
@@ -166,7 +209,7 @@ export function TransferScreen() {
                     mutates="offline"
                     track="transfer.pick_pending"
                     onClick={async () => {
-                      await pick.mutateAsync({ otherKey: null, accountId: a.id });
+                      if (!(await tried(pick.mutateAsync({ otherKey: null, accountId: a.id })))) return;
                       usage.suggestion('transfer_pick', 'pending');
                       setResult(
                         `Paired with ${a.name}. It’s pending there until the bank sends it.${income(waiting)}`,
@@ -182,7 +225,7 @@ export function TransferScreen() {
                 mutates="offline"
                 track="transfer.unlinked"
                 onClick={async () => {
-                  await pick.mutateAsync({ otherKey: null, unlinked: true });
+                  if (!(await tried(pick.mutateAsync({ otherKey: null, unlinked: true })))) return;
                   usage.suggestion('transfer_pick', 'unlinked');
                   setResult(
                     sent
@@ -202,7 +245,7 @@ export function TransferScreen() {
                   mutates="offline"
                   track="transfer.none"
                   onClick={async () => {
-                    await pick.mutateAsync({ otherKey: null });
+                    if (!(await tried(pick.mutateAsync({ otherKey: null })))) return;
                     setResult(lines(null));
                   }}
                   className="flex min-h-14 w-full flex-col items-start justify-center rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"

@@ -16,6 +16,7 @@ export function TransfersToSort({ rows }: { rows: ActivityView['transfersToSort'
           action={
             <Link
               to={sheetPath('/activity', r)}
+              search={true}
               data-track="activity.transfer.pick"
               aria-label={`Pick ${r.payee}`}
               className={softButtonClass()}
@@ -52,6 +53,7 @@ export function CheckThese({ rows, onDismiss }: { rows: CheckRow[]; onDismiss: (
             ) : (
               <Link
                 to={sheetPath('/activity', r)}
+                search={true}
                 data-track="activity.check.review"
                 aria-label={`Review ${r.payee}`}
                 className={softButtonClass()}

@@ -23,6 +23,7 @@ import {
 import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { dayLabel, monthName } from '../lib/dates';
 import { useScreen } from '../lib/common';
+import { amountWhy, dateWhy } from '../lib/amount-check';
 import { useClose } from './TxnCommon';
 import { Why } from '../components/Why';
 
@@ -49,6 +50,13 @@ export function CheckPendingScreen() {
     return (
       <Sheet label="Check" track="check" onClose={close} gap="auto">
         {q.error ? <ErrorNote error={q.error} /> : <Loading />}
+      </Sheet>
+    );
+  // Only an entry you added waits here (a check); a bank row has nothing to keep waiting for or delete.
+  if (t.kind !== 'manual')
+    return (
+      <Sheet label="Check" track="check" onClose={close} gap="auto">
+        <Banner tone="neutral">Only an entry you added can be checked here.</Banner>
       </Sheet>
     );
   const cat = t.categoryLabel;
@@ -81,13 +89,21 @@ export function CheckPendingScreen() {
     },
   ];
   const cur = opts.find((o) => o.id === pick)!;
+  const amtBad = pick === 'edit' ? amountWhy(amt) : '';
   const confirm = async () => {
+    // A refusal shows in the sheet (keep.error, patch.error), not as an uncaught error.
+    const ok = async (p: Promise<unknown>) =>
+      p.then(
+        () => true,
+        () => false,
+      );
     if (pick === 'edit') {
       const c = parseCents(amt);
       if (c === null || c === 0) return;
       // A check is an entry you added: its own amount changes (an estimate is only for a bank pending row).
-      await patch.mutateAsync({ amount: t.amount < 0 ? -c : c });
-    } else await keep.mutateAsync({ action: pick === 'delete' ? 'delete' : 'keep_waiting' });
+      if (!(await ok(patch.mutateAsync({ amount: t.amount < 0 ? -c : c })))) return;
+    } else if (!(await ok(keep.mutateAsync({ action: pick === 'delete' ? 'delete' : 'keep_waiting' }))))
+      return;
     setDone(cur.result);
   };
   return (
@@ -114,6 +130,8 @@ export function CheckPendingScreen() {
               mutates="offline"
               track={`check.confirm.${pick}`}
               danger={pick === 'delete'}
+              disabled={!!amtBad}
+              why={amtBad}
               onClick={() => void confirm()}
             >
               {cur.cta}
@@ -196,21 +214,29 @@ export function AddTxnScreen() {
   const start = session.data?.budget.startMonth;
   const first = start ? `${start}-01` : '';
   const early = !!first && !!on && on < first;
-  const ok = cents !== null && cents > 0 && payee.trim() && acct && on && !early;
+  const amountBad = amountWhy(amount);
+  const far = dateWhy(on, today);
+  const ok = !amountBad && cents !== null && payee.trim() && acct && on && !early && !far;
   const toRta = dir === 'in' && categoryId === 'rta';
   const submit = async () => {
     if (!ok || cents === null) return;
-    await add.mutateAsync({
-      kind: upcoming ? 'upcoming' : 'pending',
-      accountId: acct,
-      date: on,
-      amount: dir === 'out' ? -cents : cents,
-      payee: payee.trim(),
-      categoryId: toRta || categoryId === 'rta' ? null : categoryId || null,
-      toRta,
-      repeats: upcoming ? repeats : 'never',
-    });
-    close();
+    const added = await add
+      .mutateAsync({
+        kind: upcoming ? 'upcoming' : 'pending',
+        accountId: acct,
+        date: on,
+        amount: dir === 'out' ? -cents : cents,
+        payee: payee.trim(),
+        categoryId: toRta || categoryId === 'rta' ? null : categoryId || null,
+        toRta,
+        repeats: upcoming ? repeats : 'never',
+      })
+      // A refusal shows above Add (add.error), not as an uncaught error.
+      .then(
+        () => true,
+        () => false,
+      );
+    if (added) close();
   };
   return (
     <Sheet
@@ -226,15 +252,15 @@ export function AddTxnScreen() {
           track="add_txn.add"
           disabled={!ok}
           why={
-            !cents || cents <= 0
-              ? 'Enter an amount'
+            amountBad
+              ? amountBad
               : !payee.trim()
                 ? 'Enter a payee'
                 : !acct
                   ? 'Choose an account'
                   : early && start
                     ? `Pick a date from ${monthName(start)} 1, ${start.slice(0, 4)} on`
-                    : ''
+                    : far
           }
           onClick={() => void submit()}
         >
