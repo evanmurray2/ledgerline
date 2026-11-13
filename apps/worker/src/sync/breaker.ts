@@ -168,6 +168,15 @@ export async function writeUsageState(env: Env): Promise<BudgetState> {
 }
 
 /** Background paths call this before each unit of work. Usage events are dropped from the 70% tier. */
+/**
+ * Today's usage state for the check before a write: the store's 30-second cached ask (USAGE_FOR_WRITE) when it has
+ * one, else today's usage as usageToday reads it.
+ */
+export async function writeCheckState(env: Env): Promise<BudgetState> {
+  const u = await usageToday(env.USAGE_FOR_WRITE ? { ...env, USAGE: env.USAGE_FOR_WRITE } : env);
+  return classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(env));
+}
+
 export async function writeBudgetState(env: Env): Promise<BudgetState> {
   const u = await usageToday(env);
   const s = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(env));

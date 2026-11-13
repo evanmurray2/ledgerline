@@ -1,6 +1,6 @@
 // Authentication without Cloudflare Access (decisions.md D-27: Zero Trust needs a payment card on file). The Worker
 // verifies passkeys itself (routes/auth.ts) and keeps sessions server-side: the browser holds a random token in an
-// HttpOnly cookie and the database stores only its SHA-256. The GitHub monitor and deploy smoke test use a bearer
+// HttpOnly cookie and the database stores only its SHA-256. The deploy smoke test uses a bearer
 // token that can reach two endpoints. Local development may trust a fixed email instead, never in production.
 import { sha256Hex } from '@ledgerline/bank-provider';
 import { toBase64url, ulid } from '@ledgerline/platform';

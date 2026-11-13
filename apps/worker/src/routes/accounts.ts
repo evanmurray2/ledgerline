@@ -149,7 +149,7 @@ accountRoutes.get('/accounts', async (c) => {
   // Net worth counts pending, like the Cash and Credit cards totals below (D-76), so the three numbers add up.
   const netWorth = cash.reduce((a, r) => a + r.working, 0) - credit.reduce((a, r) => a + r.working, 0);
   const netWorthAtBank = cash.reduce((a, r) => a + r.bank, 0) - credit.reduce((a, r) => a + r.bank, 0);
-  const [monthPosted, conns, health, hist, owedI, owedL, finals] = await s.batch([
+  const [monthPosted, conns, hist, owedI, owedL, finals] = await s.batch([
     s.q(
       `SELECT sum(amount) AS p FROM v_txn_bank WHERE budget_id = ?1 AND status = 'posted'
          AND posted_date >= date(?2 || '-01', '-1 month') AND substr(date, 1, 7) = ?2`,
@@ -158,7 +158,6 @@ accountRoutes.get('/accounts', async (c) => {
     s.q(
       `SELECT id, institution_name, status, last_synced_at, last_attempt_at FROM connection WHERE budget_id = ?1 AND removed_at IS NULL`,
     ),
-    s.q(`SELECT key, value, at FROM health_status WHERE budget_id = ?1`),
     s.q(
       `SELECT id, type, ref_key, data FROM alert WHERE budget_id = ?1 AND acked_at IS NULL
          AND type IN ('history_changed', 'possible_reissue', 'identity')
@@ -210,17 +209,6 @@ accountRoutes.get('/accounts', async (c) => {
     last_attempt_at: number | null;
   }[];
   const alerts: AccountsView['alerts'] = [];
-  const h = new Map(
-    (health!.results as { key: string; value: string | null; at: number }[]).map((r) => [r.key, r]),
-  );
-  const hours = (k: string) => {
-    const v = h.get(k)?.value;
-    return v ? (now - Number(v)) / 3_600_000 : null;
-  };
-  // Only once the GitHub monitor has checked in at least once: it is optional (decisions.md D-29).
-  const monitorAge = hours('last_monitor_check_at');
-  if (h.has('watchdog_ran_at') && monitorAge !== null && monitorAge > 24)
-    alerts.push({ kind: 'monitor', text: 'Ledgerline hasn’t checked your banks in over a day.' });
   for (const cn of connRows)
     if (cn.status === 'ok' && cn.last_synced_at && now - cn.last_synced_at > 24 * 3_600_000)
       alerts.push({ kind: 'sync', text: `${cn.institution_name} hasn’t synced in over a day.` });

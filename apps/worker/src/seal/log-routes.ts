@@ -15,7 +15,7 @@ import type { AppEnv } from '../http/context.js';
 import { csrf } from '../http/security.js';
 import { jsonOf, storeSigned, UNSIGNED } from '../http/signed-request.js';
 import { ACTION } from '@ledgerline/seal';
-import { classifyUsage, dailyLimits, usageToday } from '../sync/breaker.js';
+import { writeCheckState } from '../sync/breaker.js';
 import { isFreshWay } from '../store/way-in.js';
 import { deviceChecks, keepDeviceCheck } from './device-checks.js';
 import { b64, entryText, logAppend, logHead, logRowsAfter, type LogDeps } from './log-store.js';
@@ -130,9 +130,7 @@ logApi.post('/log/append', async (c) => {
   const parsed = Append.safeParse(jsonOf(body));
   if (!parsed.success) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
   const now = requestNow(c);
-  const ask = c.env.USAGE_FOR_WRITE ?? c.env.USAGE;
-  const u = ask ? await ask() : await usageToday(c.env);
-  const state = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(c.env));
+  const state = await writeCheckState(c.env);
   const runs: RunDeps = runDeps(
     c.env.DB,
     c.get('budgetId'),
@@ -246,9 +244,7 @@ const bytes = (b: Uint8Array) =>
   });
 
 async function snapshotDeps(c: Context<AppEnv>): Promise<SnapshotDeps> {
-  const ask = c.env.USAGE_FOR_WRITE ?? c.env.USAGE;
-  const u = ask ? await ask() : await usageToday(c.env);
-  const state = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(c.env));
+  const state = await writeCheckState(c.env);
   return {
     db: c.env.DB,
     budgetId: c.get('budgetId'),
