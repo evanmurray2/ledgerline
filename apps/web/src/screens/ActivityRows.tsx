@@ -86,7 +86,8 @@ export function TxnRow({
         </span>
         <span className="flex shrink-0 flex-col items-end gap-0.5">
           <span className={cx('tnum text-base font-bold whitespace-nowrap', amountClass(r))}>
-            {r.sheet === 'txn' && r.badge === 'Transfer'
+            {/* A register's running balance needs the sign: money in or out of this account. */}
+            {r.sheet === 'txn' && r.badge === 'Transfer' && style !== 'register'
               ? formatCents(Math.abs(r.amount))
               : formatCents(r.amount, { plus: true })}
           </span>

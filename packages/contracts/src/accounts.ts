@@ -24,6 +24,8 @@ export const AccountRow = z.object({
   meta: z.string(),
   /** Closed in Ledgerline: off Accounts and the Add list, its rows kept. A new bank row opens it again. */
   closed: z.boolean(),
+  /** Its bank link, for the repair sheet when the bank needs you to sign in again; null for a manual account. */
+  connectionId: id.nullable().optional(),
 });
 export type AccountRow = z.infer<typeof AccountRow>;
 

@@ -209,7 +209,9 @@ export function ConnectionsScreen() {
                           {it.institution}
                         </span>
                         <span className="text-xs text-muted">
-                          {it.accounts} · linked {syncedLabel(it.linkedAt, '')}
+                          {[it.accounts, `linked ${syncedLabel(it.linkedAt, '')}`]
+                            .filter(Boolean)
+                            .join(' · ')}
                         </span>
                       </span>
                       <span className={cx('shrink-0 rounded-sm px-2 py-0.5 text-xs font-bold', st.cls)}>

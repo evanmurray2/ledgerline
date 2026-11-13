@@ -1,5 +1,5 @@
 // Reports: month to date by default. Spending (tiles, by category net of paybacks), Trends (last 6 months),
-// Net worth. Desktop shows all three at once.
+// Net worth. Desktop shows all three at once; a phone shows the same parts, one view at a time.
 import { useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { ReportsView } from '@ledgerline/contracts';
@@ -25,9 +25,11 @@ import { useScreen } from '../lib/common';
 type View = 'spend' | 'trend' | 'worth';
 
 /** "$840", "$2.7k"; a month with more refunds than spending reads "−$18.7k" (a true minus, as formatCents). */
-function kShort(cents: number) {
+export function kShort(cents: number) {
   const sign = cents < 0 ? '−' : '';
   const dollars = Math.round(Math.abs(cents) / 100);
+  // "$999.9k" rounds up to "$1.0M", not "$1000.0k".
+  if (dollars >= 999_950) return `${sign}$${(dollars / 1_000_000).toFixed(1)}M`;
   return dollars >= 1000 ? `${sign}$${(dollars / 1000).toFixed(1)}k` : `${sign}$${dollars}`;
 }
 
@@ -36,14 +38,15 @@ function Tiles({ r, desktop }: { r: ReportsView; desktop: boolean }) {
     ['Spent', r.tiles.spent, r.monthToDate ? 'month to date' : 'whole month'],
     ['Invested', r.tiles.invested, 'saving or investing'],
     ['Income', r.tiles.income, 'to Ready to Assign'],
+    ['Rewards', r.tiles.rewards, 'card points'],
   ];
-  if (desktop) tiles.push(['Rewards', r.tiles.rewards, 'card points']);
+  // A phone has two tiles a row, so an amount of up to $99,999,999.99 fits at 320 px; a longer one wraps, never cut.
   return (
-    <section className={cx('grid shrink-0 gap-2', desktop ? 'grid-cols-4' : 'grid-cols-3')}>
+    <section className={cx('grid shrink-0 gap-2', desktop ? 'grid-cols-4' : 'grid-cols-2')}>
       {tiles.map(([k, v, note]) => (
-        <Card key={k} className="flex flex-col gap-0.5 p-2.5">
+        <Card key={k} className="flex min-w-0 flex-col gap-0.5 p-2.5">
           <span className="text-xs text-muted">{k}</span>
-          <span className="tnum text-lg font-bold">{formatCents(v)}</span>
+          <span className="tnum text-lg font-bold break-all">{formatCents(v)}</span>
           {desktop && <span className="text-xs text-muted">{note}</span>}
         </Card>
       ))}
@@ -56,7 +59,10 @@ function ByCategory({ r }: { r: ReportsView }) {
   const desktop = useIsDesktop();
   const current = useSession().data?.budget.currentMonth;
   const sorted = [...r.byCategory].sort((a, b) => b.spent - a.spent);
-  const max = sorted[0]?.spent ?? 1;
+  // A category with more refunds than spending is listed below $0, with an empty bar.
+  const max = Math.max(1, sorted[0]?.spent ?? 1);
+  // Activity lists one category over every month (Activity.tsx): say so on a past month's report.
+  const past = !!current && r.month !== current;
   return (
     <Card className="flex flex-col">
       {sorted.length === 0 && <EmptyNote inCard>No spending in {monthName(r.month)}.</EmptyNote>}
@@ -71,15 +77,15 @@ function ByCategory({ r }: { r: ReportsView }) {
               search: { category: c.categoryId, month: r.month === current ? undefined : r.month },
             })
           }
-          aria-label={`${c.name}, ${formatCents(c.spent)}: see its transactions`}
+          aria-label={`${c.name}, ${formatCents(c.spent)}: see its transactions${past ? ' in every month' : ''}`}
           className={cx(
             'flex min-h-12 flex-col justify-center gap-1.5 border-t border-divider px-3 py-2 text-left first:border-t-0',
             desktop && 'hover:bg-surface-2',
           )}
         >
           <span className="flex items-center justify-between gap-2 text-md">
-            <span className="font-semibold">{c.name}</span>
-            <span className="flex items-center gap-1">
+            <span className="min-w-0 font-semibold">{c.name}</span>
+            <span className="flex shrink-0 items-center gap-1">
               <span className="tnum font-bold">{formatCents(c.spent)}</span>
               <Icon name="chevR" size={18} className="text-faint" />
             </span>
@@ -87,11 +93,16 @@ function ByCategory({ r }: { r: ReportsView }) {
           <span aria-hidden="true" className="h-1.5 overflow-hidden rounded-sm bg-track">
             <span
               className="block h-1.5 rounded-sm bg-accent"
-              style={{ width: `${percentOf(c.spent, max)}%` }}
+              style={{ width: `${percentOf(Math.max(0, c.spent), max)}%` }}
             />
           </span>
         </button>
       ))}
+      {past && sorted.length > 0 && (
+        <p className="m-0 border-t border-divider px-3 py-2 text-xs leading-snug text-muted">
+          A category opens its transactions from every month, not only {monthName(r.month)}.
+        </p>
+      )}
     </Card>
   );
 }
@@ -199,6 +210,16 @@ function NetWorth({ r }: { r: ReportsView }) {
   );
 }
 
+function WorthNote({ r }: { r: ReportsView }) {
+  return (
+    <p className="m-0 text-xs leading-snug text-muted">
+      {r.stillOwed > 0
+        ? 'Bank and card accounts, counting pending. Money owed to you isn’t counted.'
+        : 'Bank and card accounts, counting pending.'}
+    </p>
+  );
+}
+
 function WorthTable() {
   const a = useAccounts().data;
   if (!a) return null;
@@ -266,7 +287,10 @@ export function ReportsScreen() {
               </div>
               <div className="flex flex-col gap-3">
                 <Trend r={r} />
+                <IncomeTable r={r} />
                 <NetWorth r={r} />
+                <WorthTable />
+                <WorthNote r={r} />
               </div>
             </div>
           </>
@@ -300,11 +324,7 @@ export function ReportsScreen() {
               <>
                 <NetWorth r={r} />
                 <WorthTable />
-                <p className="m-0 text-xs leading-snug text-muted">
-                  {r.stillOwed > 0
-                    ? 'Bank and card accounts, counting pending. Money owed to you isn’t counted.'
-                    : 'Bank and card accounts, counting pending.'}
-                </p>
+                <WorthNote r={r} />
               </>
             )}
           </>

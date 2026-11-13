@@ -564,6 +564,13 @@ export const RegisterView = z.object({
   closeBlock: z.string().nullable(),
   /** A card's payment category available, sent with Close account; null for cash accounts. */
   cardAvailable: cents.nullable(),
+  /**
+   * A card whose only block to Close is money in its payment category: the Close sheet offers to move it to Ready to
+   * Assign first (`POST /budget/move`). Null otherwise.
+   */
+  closeMove: z.object({ categoryId: id, amount: cents.positive() }).nullable().optional(),
+  /** The register lists at most its newest rows (REGISTER_ROWS); true when there are older ones it leaves out. */
+  more: z.boolean().optional(),
 });
 export type RegisterView = z.infer<typeof RegisterView>;
 
@@ -672,7 +679,16 @@ export const MergePayees = z.object({
 });
 export const MergeResult = z.object({ ok: z.literal(true), undoId: z.string() });
 export type MergeResult = z.infer<typeof MergeResult>;
-export const RenameAccount = z.object({ name: z.string().trim().min(1).max(60) });
+/** Characters that change how text around them reads (bidi overrides and isolates) or don't show (controls). */
+export const HIDDEN_CHARS = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
+export const RenameAccount = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, 'Enter a name.')
+    .max(60)
+    .refine((n) => !HIDDEN_CHARS.test(n), 'Use letters, numbers and punctuation only.'),
+});
 /**
  * Close an account (only at $0). The app adds what this phone shows: the working balance, a card's payment category
  * available, and the change number it worked them out at; the server refuses if anything changed since.

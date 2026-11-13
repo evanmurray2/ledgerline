@@ -193,7 +193,9 @@ export const api = {
   unlink: (inflowKey: string) => post(`/api/match/${enc(inflowKey)}/unlink`, MutationResult),
   pickTransfer: (key: string, body: In<typeof TransferPick>) =>
     post(`/api/transfers/${enc(key)}/pick`, MutationResult, body),
-  unpairTransfer: (key: string) => post(`/api/transfers/${enc(key)}/unpair`, MutationResult),
+  /** `otherKey`: the row it was paired with, for Undo (pick it again); absent when Undo can't pair them again. */
+  unpairTransfer: (key: string) =>
+    post(`/api/transfers/${enc(key)}/unpair`, MutationResult.extend({ otherKey: z.string().optional() })),
 
   owed: () => get('/api/owed', OwedView),
   owedAction: (id: string, body: In<typeof OwedAction>) => post(`/api/owed/${enc(id)}`, MutationResult, body),
