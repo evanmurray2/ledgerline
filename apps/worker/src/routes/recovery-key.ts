@@ -9,7 +9,6 @@
 // admin, who has no recovery code) needs it too.
 import type { Stmt } from '@ledgerline/db/sql';
 import { ACTION, fromHex, toHex, verifyRecoveryLogin } from '@ledgerline/seal';
-import { generateRegistrationOptions } from '@simplewebauthn/server';
 import { Hono } from 'hono';
 import type { Env } from '../env.js';
 import type { AppEnv } from '../http/context.js';
@@ -18,9 +17,9 @@ import { openChallenge, sealChallenge } from '../http/challenge.js';
 import { clock, requestNow } from '../http/clock.js';
 import { bodyObject, csrf } from '../http/security.js';
 import { directorySigned } from '../http/signed-request.js';
+import { OWNER_HANDLE, RP_NAME, registrationOptions } from './passkey-options.js';
 import { NOTICE_MS } from './signup.js';
 
-const RP_NAME = 'Ledgerline';
 const HEX32 = /^[0-9a-f]{64}$/;
 const HEX64 = /^[0-9a-f]{128}$/;
 const fail = (message: string) => ({ error: 'auth', message });
@@ -93,20 +92,12 @@ recoveryKeyAuth.post('/recover-key/verify', async (c) => {
   const existing = await env.DB.prepare(`SELECT id, transports FROM passkey WHERE user_id = ?1`)
     .bind(u.user_id)
     .all<{ id: string; transports: string | null }>();
-  const label = u.display_name ?? 'Ledgerline';
-  const options = await generateRegistrationOptions({
-    rpName: RP_NAME,
-    rpID: env.RP_ID ?? new URL(c.req.url).hostname,
-    userID: Uint8Array.from(new TextEncoder().encode(u.webauthn_handle ?? 'ledgerline-owner')),
-    userName: label,
-    userDisplayName: label,
-    attestationType: 'none',
-    excludeCredentials: existing.results.map((p) => ({
-      id: p.id,
-      ...(p.transports ? { transports: JSON.parse(p.transports) as never } : {}),
-    })),
-    authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
-    extensions: { prf: {} } as never,
+  const options = await registrationOptions({
+    url: c.req.url,
+    env,
+    handle: u.webauthn_handle ?? OWNER_HANDLE,
+    label: u.display_name ?? RP_NAME,
+    existing: existing.results,
   });
   const id = await sealChallenge(env, now, options.challenge, 'register', {
     kind: RECOVERY_KEY_GRANT,
