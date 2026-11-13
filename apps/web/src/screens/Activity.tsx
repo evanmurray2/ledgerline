@@ -368,6 +368,8 @@ export function ActivityScreen() {
   );
   const showNeeds = filter !== 'pending' && shownNeeds.length > 0;
   const empty = v && total === 0 && !showNeeds && !(filter === 'attention' && !q);
+  // One category's list, opened on a category that no longer exists.
+  const gone = !!category && v?.categoryName === null;
 
   // The sheet keeps the list's month, filter and search, so the list under it doesn't change.
   const addSearch = { month: search.month, filter: search.filter, q: search.q, category, back: search.back };
@@ -434,7 +436,8 @@ export function ActivityScreen() {
           // Reports → a category: a page of its own, with Back to the report's month.
           <BackHeader
             title={v ? (v.categoryName ?? 'Category') : ''}
-            sub="All months"
+            // A link to a category that was removed: no months to show.
+            sub={gone ? undefined : 'All months'}
             backLabel={back?.label ?? 'Back to Reports'}
             onBack={back ? back.go : () => void navigate({ to: '/reports', search: { month: search.month } })}
             below={searchBox}
@@ -457,7 +460,8 @@ export function ActivityScreen() {
             </p>
           )}
           {!v && (query.error ? <ErrorNote error={query.error} /> : <Loading />)}
-          {empty && (
+          {gone && <EmptyNote>This category was removed.</EmptyNote>}
+          {empty && !gone && (
             <EmptyNote>
               {allMonths || filter !== 'all' || !month
                 ? 'No transactions match.'

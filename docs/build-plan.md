@@ -50,7 +50,6 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] Remove the unused Waiting to match parts of `packages/domain` (D-98): the `waiting` use, `waitingToMatch` in the projection and the rule 10 identity, the `wait` line kind (`apps/worker/src/ledger/ledger.ts` `rowsFor`, `maintenance.ts`), and the November fixture's held Venmo row (`n-venmo`) with the tests that count it.
 - [ ] Register: page through rows older than the newest 300 (it shows a note pointing to Activity search today).
 - [ ] Sheets: ask before Back drops an unsaved amount; Back from a nested picker (Move money) closes both sheets.
-- [ ] `/activity?category=<unknown>` shows "Category · All months" instead of saying the category is gone.
 
 ## Contract gaps (not blocking)
 
