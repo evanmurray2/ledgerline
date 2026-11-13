@@ -1,6 +1,6 @@
 // OwedView.paidBack: money in that paid back what is owed to you, for Owed to you · Paid back recently. Each entry is
 // one inflow with what Match linked it to (txn_link reimbursement_of). It shows the links only: all of the money is
-// in Ready to Assign either way (D-98).
+// in Ready to Assign either way (D-98). Items are listed largest first, so every device lists them alike.
 import type { OwedView } from '@ledgerline/contracts';
 import { cents } from '@ledgerline/domain';
 import type { Scoped } from '../db/scoped.js';
@@ -29,7 +29,7 @@ export async function recentPaybacks(
                  WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND undone_at IS NULL)) d ON d.from_key = l.from_key
      WHERE l.budget_id = ?1 AND l.kind = 'reimbursement_of' AND l.undone_at IS NULL
        AND d.date >= date(?2, '-${PAID_BACK_DAYS} days')
-     ORDER BY d.date DESC, l.from_key, l.created_at, l.id`,
+     ORDER BY d.date DESC, l.from_key, l.amount DESC, l.to_key`,
     today,
   );
   const out: OwedView['paidBack'] = [];

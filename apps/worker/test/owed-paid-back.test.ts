@@ -33,7 +33,9 @@ describe('Owed to you · Paid back recently', () => {
     expect(p.date).toBe(v.inflow.date);
     expect(p.payee).toBe(v.inflow.payee);
     expect(p.matched).toBe(items[0]!.amount + 100);
-    expect(p.items.map((i) => [i.id, i.amount])).toEqual(items.map((i) => [i.itemId, i.amount]));
+    // Largest first, the same on every device.
+    const largest = [...items].sort((x, y) => y.amount - x.amount || x.itemId.localeCompare(y.itemId));
+    expect(p.items.map((i) => [i.id, i.amount])).toEqual(largest.map((i) => [i.itemId, i.amount]));
     // Each item by the name Still owed gives it.
     for (const i of p.items) expect(i.label).toBe(after.items.find((x) => x.id === i.id)!.label);
     // Newest first.
