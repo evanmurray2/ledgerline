@@ -65,7 +65,19 @@ export const TxnSheet = z.object({
     }),
   ),
   paybacks: z.array(z.object({ inflowKey: z.string(), itemId: id, amount: cents, label: z.string() })),
-  refundOf: z.object({ key: z.string(), label: z.string() }).nullable(),
+  /**
+   * A card refund's purchase (txn_link refund_of): the payment category gives back what it set aside for it (Money
+   * rule 3). Linked and unlinked with POST /api/transactions/:key/refund-of.
+   */
+  refundOf: z
+    .object({
+      key: z.string(),
+      label: z.string(),
+      /** The purchase's category, which the refund can go back to; null for a split or uncategorized purchase. */
+      categoryId: id.nullable().optional(),
+      categoryName: z.string().nullable().optional(),
+    })
+    .nullable(),
   /**
    * The other row of a pair made by your entry and a bank row (a cover, or the posted charge that took your entry):
    * "Not the same" (POST /api/transactions/:key/not-same) undoes it.
@@ -74,3 +86,27 @@ export const TxnSheet = z.object({
   alerts: z.array(z.string()),
 });
 export type TxnSheet = z.infer<typeof TxnSheet>;
+
+/** A purchase a card refund can be linked to. */
+export const RefundCandidate = z.object({
+  key: z.string(),
+  payee: z.string(),
+  date,
+  /** Money out: negative. */
+  amount: cents,
+  categoryLabel: z.string().nullable(),
+});
+export type RefundCandidate = z.infer<typeof RefundCandidate>;
+
+/**
+ * GET /api/transactions/:key/refund-of: the purchases on the same card in the 90 days up to the refund, newest first.
+ * `suggested` has the ones from the refund's payee (docs/design.md, Credit card refunds); `others` the rest.
+ */
+export const RefundOfView = z.object({
+  suggested: z.array(RefundCandidate),
+  others: z.array(RefundCandidate),
+});
+export type RefundOfView = z.infer<typeof RefundOfView>;
+
+/** Links a card refund to a purchase on the same card, or with `purchaseKey: null` unlinks it ("Not this purchase"). */
+export const RefundLink = z.object({ purchaseKey: z.string().min(1).nullable() });

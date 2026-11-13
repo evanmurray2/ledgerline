@@ -308,7 +308,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
             </button>
           </div>
         ))}
-      {isRefund && <RefundOf t={t} />}
+      {isRefund && <RefundOf t={t} category={cat} onCategory={setCat} />}
       <div className="flex flex-col gap-1">
         <div className="flex min-h-9 items-center justify-between">
           <label htmlFor="txn-cat" className="text-sm font-semibold text-ink-2">
