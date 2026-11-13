@@ -392,7 +392,7 @@ export async function seedNovember(db: Db, budgetId: string, userId: string, now
         t.key,
         pid,
         u.type === 'category' ? u.categoryId : null,
-        // The Venmo row is plain money in: no choice made, so the usual rules put it in Ready to Assign (D-85, D-98).
+        // The Venmo row is plain money in: no choice made, so the usual rules put it in Ready to Assign (D-117, D-98).
         u.type === 'rta' && t.key !== 'n-venmo' ? 1 : 0,
         t.key === 'n-points' ? 'rewards' : null,
         t.budgetMonth ?? null,

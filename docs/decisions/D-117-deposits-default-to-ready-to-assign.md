@@ -1,7 +1,10 @@
-# D-85: Money into checking or savings goes to Ready to Assign with nothing chosen (Nov 10, 2026)
+# D-117: Money into checking or savings goes to Ready to Assign with nothing chosen (Nov 10, 2026)
 
 **Decided by the owner** (chat, Nov 10, 2026): "I want to default to ready to assign on inflows. The problem is
 that I still have to choose a category."
+
+Numbered D-85 at first, a number `docs/decisions/D-85-privacy-design-answers.md` also had; renumbered on Nov 13, 2026.
+Older pull requests and commits call it D-85.
 
 **Before.** A deposit the bank sent had no category and was not in Ready to Assign: it counted as uncategorized and
 waited in Activity's Needs category. Its sheet still showed "Goes to: Ready to Assign now" (the sheet is the income
