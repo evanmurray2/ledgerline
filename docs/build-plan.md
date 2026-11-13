@@ -40,4 +40,3 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 ## Contract gaps (not blocking)
 
 The UI works around these (details in `apps/web/CONTRACT_NOTES.md`):
-
