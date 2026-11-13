@@ -76,7 +76,9 @@ describe('the lock screen of a new budget', () => {
     fireEvent.click(button('Continue'));
     fireEvent.change(screen.getByTestId('recovery-key-typed'), { target: { value: 'not the key' } });
     fireEvent.click(button('Lock my budget'));
-    expect(await screen.findByText('That is not the recovery key shown. Check it and try again.')).toBeTruthy();
+    expect(
+      await screen.findByText('That is not the recovery key shown. Check it and try again.'),
+    ).toBeTruthy();
     expect(screen.getByTestId('recovery-key-typed')).toBeTruthy();
     fireEvent.click(button('Show the key again'));
     expect(screen.getByTestId('recovery-key').textContent).toBe(KEY);
@@ -96,7 +98,9 @@ describe('the lock screen of a new budget', () => {
     fireEvent.click(button('Continue'));
     fireEvent.change(screen.getByTestId('recovery-key-typed'), { target: { value: KEY } });
     fireEvent.click(button('Lock my budget'));
-    expect(await screen.findByText('This took too long. Start again: a new recovery key is made.')).toBeTruthy();
+    expect(
+      await screen.findByText('This took too long. Start again: a new recovery key is made.'),
+    ).toBeTruthy();
     expect(button('Make my recovery key')).toBeTruthy();
   });
 
@@ -168,7 +172,9 @@ describe('Settings → Sign-in → Recovery key', () => {
     fireEvent.click(button('Continue'));
     fireEvent.change(screen.getByTestId('recovery-key-typed'), { target: { value: KEY } });
     fireEvent.click(button('Use the new key'));
-    expect(await screen.findByText('That is not the recovery key shown. Check it and try again.')).toBeTruthy();
+    expect(
+      await screen.findByText('That is not the recovery key shown. Check it and try again.'),
+    ).toBeTruthy();
     fireEvent.click(button('Show the key again'));
     expect(screen.getByTestId('recovery-key').textContent).toBe(shown);
     fireEvent.click(button('Cancel'));
