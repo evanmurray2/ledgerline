@@ -76,7 +76,13 @@ export interface Env {
   /** Inside the Directory: create a new budget's store and run its migrations (sign-up). */
   NEW_STORE?: (budgetId: string) => Promise<void>;
   /** Inside the Directory: a budget's name and its linked banks, from its store (deleting an account). */
-  BUDGET_INFO?: (budgetId: string) => Promise<{ name: string; banks: number; sealed?: boolean }>;
+  BUDGET_INFO?: (budgetId: string) => Promise<{
+    name: string;
+    banks: number;
+    sealed?: boolean;
+    /** A sealed budget's signing key in force (http/signed-request.ts). */
+    signKey?: { version: number; pub: string } | null;
+  }>;
   /** Inside the Directory: turn a budget's background work off or on (an account turned off, D-75). */
   SET_DISABLED?: (budgetId: string, disabled: boolean) => Promise<void>;
   /** Inside the Directory: queue deleting an account (routes/people.ts). */

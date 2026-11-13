@@ -422,3 +422,34 @@ export const FRESH_WAY_MS: number;
 export const INTENT_WAIT_MS: number;
 export function encodeSlotChange(s: { prevPublic: PublicRef; slots: unknown[] }): Bytes;
 export function encodeIntent(i: { prevPublic: PublicRef; notBefore: number; slotIds: string[] }): Bytes;
+
+// ---- requests signed with the budget's key (apps/worker/src/http/signed-request.ts; packages/seal request.ts)
+export const ACTION: {
+  readonly storeSignKey: 'store-sign-key';
+  readonly storeInboxKey: 'store-inbox-key';
+  readonly linkToken: 'link-token';
+  readonly removeBank: 'remove-bank';
+  readonly deleteAccount: 'delete-account';
+  readonly linkFinish: 'link-finish';
+  readonly purgeOldCopy: 'purge-old-copy';
+  readonly setRecoverySignIn: 'set-recovery-sign-in';
+};
+export type Action = (typeof ACTION)[keyof typeof ACTION];
+export const CHALLENGE_LEN: number;
+export function newChallenge(): Bytes;
+export function signRequest(
+  keys: BudgetKeys,
+  budgetId: string,
+  action: Action,
+  challenge: Uint8Array,
+  payload: Uint8Array,
+): Promise<Bytes>;
+export function verifyRequest(
+  signPub: Uint8Array,
+  version: number,
+  budgetId: string,
+  action: string,
+  challenge: Uint8Array,
+  payload: Uint8Array,
+  signature: Uint8Array,
+): Promise<boolean>;

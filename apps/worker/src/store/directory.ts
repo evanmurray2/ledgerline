@@ -35,7 +35,9 @@ import { SHARE_PAUSED, Shares, type ShareState } from './shares.js';
 import { recoverOptions, recoveryNotice, recoveryRoutes, signupOptions } from '../routes/signup.js';
 import { deletingKey, peopleRoutes } from '../routes/people.js';
 import { expireIdle, startDeletionSql } from './idle-accounts.js';
-import { recoveryKeyAuth, recoveryKeySettings } from '../routes/recovery-key.js';
+import { recoveryKeyAuth, recoveryKeySettings, recoveryKeyUsed } from '../routes/recovery-key.js';
+import { requestChallengeRoutes } from '../routes/request-challenge.js';
+import { signedActionOf, takeChallenge, type SignedPart } from '../http/signed-request.js';
 import { FRESH_WAY_MS } from '@ledgerline/seal';
 
 /** Budgets checked per ensure_all step (docs/multi-user.md 6.2). */
@@ -79,6 +81,13 @@ export interface Caller {
    * adds one): a key change of a locked budget from it waits (D-89). True when not given.
    */
   freshWay?: boolean;
+  /**
+   * A signed request's challenge (http/signed-request.ts): one the Directory gave this session for the request
+   * the path stands for, marked used now. The store checks the signature against its log. Absent when none came.
+   */
+  signed?: SignedPart | null;
+  /** When the recovery key last signed in to this account, while its notice shows (GET /api/session only). */
+  recoveryKeyUsedAt?: number | null;
 }
 
 export type AuthResult =
@@ -312,6 +321,7 @@ export class Directory extends DurableObject<Env> {
       app.route('/api', recoveryRoutes);
       app.route('/api', recoveryKeySettings);
       app.route('/api', peopleRoutes);
+      app.route('/api', requestChallengeRoutes);
       // Every answer is JSON, so the app can read it: a route that doesn't exist, and anything unexpected.
       app.notFound((c) => c.json({ error: 'not_found', message: TRY_AGAIN }, 404));
       app.onError((e, c) => {
@@ -330,7 +340,12 @@ export class Directory extends DurableObject<Env> {
   }
 
   /** For every other API request: the signed-in user's budget, or why not. */
-  async authenticate(cookie: string | null, method: string, path: string): Promise<AuthResult> {
+  async authenticate(
+    cookie: string | null,
+    method: string,
+    path: string,
+    signedIn?: { token: string; signature: string } | null,
+  ): Promise<AuthResult> {
     this.ready();
     const env = this.appEnv();
     const now = clock(env);
@@ -362,6 +377,11 @@ export class Directory extends DurableObject<Env> {
     const share = await this.shareTracker().shareFor(m.budgetId, m.isAdmin, now);
     if (share.state === 'readonly' && method !== 'GET' && method !== 'HEAD')
       return { ok: false, status: 503, body: { ...SHARE_PAUSED } };
+    // A signed request: its challenge is used now, before the store checks the signature.
+    const action = signedIn ? signedActionOf(method, path) : null;
+    const challenge = action
+      ? await takeChallenge(env, env.DB, signedIn!.token, who.sessionId ?? '', action, now)
+      : null;
     return {
       ok: true,
       caller: {
@@ -376,6 +396,8 @@ export class Directory extends DurableObject<Env> {
         recoveryNoticeAt: m.isAdmin ? null : await recoveryNotice(env, m.userId, now),
         syncEpoch: this.syncEpoch(m.budgetId),
         freshWay: this.freshWay(who.sessionId, now),
+        ...(action && challenge ? { signed: { action, challenge, signature: signedIn!.signature } } : {}),
+        ...(path === '/api/session' ? { recoveryKeyUsedAt: await recoveryKeyUsed(env, m.userId, now) } : {}),
       },
     };
   }

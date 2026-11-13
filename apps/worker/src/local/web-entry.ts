@@ -6,7 +6,7 @@ import initSqlJs from 'sql.js';
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { LocalEngine, migrateLocal, type EngineIdentity, type QueuedEdit } from './engine.js';
 import { SqlJsDb } from './sqljs-db.js';
-import { encodeEntry, readEntry, type BudgetKeys } from '@ledgerline/seal';
+import { type Action, encodeEntry, readEntry, signRequest, type BudgetKeys } from '@ledgerline/seal';
 import type { RestBatch, SyncPage } from '../routes/sync.js';
 import { cutoverOnDevice } from './cutover-device.js';
 import { DeviceLog } from './device-log.js';
@@ -59,6 +59,7 @@ type Msg =
   | { id: number; op: 'sealedUpkeep'; snapshotId: string }
   | { id: number; op: 'sealedPlace' }
   | { id: number; op: 'sealedAppend'; entries: Uint8Array[]; keys?: BudgetKeys[] }
+  | { id: number; op: 'sealedSign'; action: Action; challenge: Uint8Array; payload: Uint8Array }
   | {
       id: number;
       op: 'cutover';
@@ -343,6 +344,16 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       }
       await new LogSession(e, log, http, encodeEntry).pull();
       return { value: { ok: true, number: log.number } };
+    }
+    case 'sealedSign': {
+      // A request signed with the budget's key (docs/privacy-keys.md 11): the signing key stays here. It is the
+      // key in force where this device stands in the log; after a key change it has not read yet, the server
+      // refuses the signature, and the next sync brings the device level.
+      const { log } = needSealed();
+      const v = log.publicState.keyVersion;
+      const keys = log.keysHeld().find((k) => k.version === v);
+      if (!keys) throw new Error('Your passkey is needed once more to open your budget. Try again.');
+      return { value: await signRequest(keys, log.budgetId, m.action, m.challenge, m.payload) };
     }
     case 'sealedCheck': {
       const { log } = needSealed();
