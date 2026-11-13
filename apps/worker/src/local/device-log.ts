@@ -103,7 +103,7 @@ export class TooLarge extends Error {}
 export class NeedsUpdate extends Error {
   constructor() {
     super(
-      'Another device saved changes with a newer version of Ledgerline. Close Ledgerline and open it again.',
+      'Another device saved changes with a newer version of Ledgerline. Update Ledgerline to continue: close it and open it again.',
     );
   }
 }
