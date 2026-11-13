@@ -129,7 +129,7 @@ export function recoveryKeyStmts(env: Env, authPub: string, passkey: unknown[]):
       `INSERT OR REPLACE INTO app_state (key, value, updated_at)
        SELECT ?1 || k.user_id, ?2, ?2 FROM recovery_key k JOIN user u ON u.id = k.user_id
        WHERE k.auth_pub = ?3 AND u.status = 'active'`,
-    ).bind(USED_PREFIX, passkey[5], authPub),
+    ).bind(RECOVERY_USED_PREFIX, passkey[5], authPub),
     env.DB.prepare(
       `INSERT INTO passkey (id, public_key, counter, transports, name, created_at, user_id)
        SELECT ?1, ?2, ?3, ?4, ?5, ?6, k.user_id FROM recovery_key k JOIN user u ON u.id = k.user_id
@@ -138,7 +138,8 @@ export function recoveryKeyStmts(env: Env, authPub: string, passkey: unknown[]):
   ];
 }
 
-const USED_PREFIX = 'recovery_key_used:';
+/** The Directory's `app_state` key, with the user's id, for when the recovery key last signed in (store/way-in.ts). */
+export const RECOVERY_USED_PREFIX = 'recovery_key_used:';
 
 /**
  * When the recovery key last signed in to this account, for 14 days after (the notice on every device). The
@@ -146,7 +147,7 @@ const USED_PREFIX = 'recovery_key_used:';
  */
 export async function recoveryKeyUsed(env: Env, userId: string, now: number): Promise<number | null> {
   const v = await env.DB.prepare(`SELECT value FROM app_state WHERE key = ?1`)
-    .bind(USED_PREFIX + userId)
+    .bind(RECOVERY_USED_PREFIX + userId)
     .first<string>('value');
   const at = Number(v);
   return v != null && Number.isFinite(at) && at > now - NOTICE_MS ? at : null;

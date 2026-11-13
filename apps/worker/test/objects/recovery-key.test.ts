@@ -14,6 +14,7 @@ import {
   fromHex,
   utf8,
 } from '@ledgerline/seal';
+import { isFreshWay } from '../../src/store/way-in.js';
 import { genesisIn } from '../signed.js';
 import worker from '../../src/index.js';
 import { SoftAuthenticator } from '../soft-authenticator.js';
@@ -163,15 +164,24 @@ describe('the recovery key signs in', () => {
     // Nothing was removed: the owner's own passkey still signs in.
     expect((await owner.call('GET', '/api/session')).status).toBe(200);
 
-    // The new passkey's session is a fresh way in (D-89); the old passkey's is not.
+    // The Directory tells the store how each session came in (D-89): this one by the recovery key, the owner's by
+    // its passkey. The recovery key's session is a fresh way in for as long as it lasts; the old passkey's is not.
     const fresh = await directoryStub().authenticate(b.cookie(), 'GET', '/api/session');
-    expect(fresh.ok && fresh.caller.freshWay).toBe(true);
+    expect(fresh.ok && fresh.caller.wayIn).toMatchObject({ by: 'recovery_key' });
+    const at = fresh.ok ? fresh.caller.wayIn!.at : 0;
+    expect(isFreshWay(fresh.ok ? fresh.caller.wayIn : null, at + 30 * 86_400_000)).toBe(true);
     await dir
       .prepare(`UPDATE passkey SET created_at = created_at - ?1 WHERE name = 'Phone'`)
       .bind(8 * 86_400_000)
       .run();
     const old = await directoryStub().authenticate(owner.cookie(), 'GET', '/api/session');
-    expect(old.ok && old.caller.freshWay).toBe(false);
+    expect(old.ok && old.caller.wayIn).toMatchObject({ by: 'passkey' });
+    // Judged by the store's clock (the test server's): 8 days after the passkey was added.
+    expect(isFreshWay(old.ok ? old.caller.wayIn : null, Date.parse('2026-11-14T20:00:00Z'))).toBe(false);
+    // A passkey added less than 7 days ago is fresh; a session the Directory can't place is fresh too.
+    expect(isFreshWay({ by: 'passkey', at: 1_000 }, 1_000 + 6 * 86_400_000)).toBe(true);
+    expect(isFreshWay({ by: 'passkey', at: 1_000 }, 1_000 + 7 * 86_400_000)).toBe(false);
+    expect(isFreshWay(null, Date.now())).toBe(true);
   });
 
   it('a new key replaces the old one, which signs in no more', async () => {
