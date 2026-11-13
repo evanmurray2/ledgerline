@@ -158,6 +158,26 @@ describe('more than one user', () => {
     expect((await other.call('GET', '/api/settings/security')).json.otherSessions).toBe(0);
   });
 
+  it('signing in as another user on the same browser ends the earlier user’s session there', async () => {
+    const shared = new Browser();
+    expect((await shared.signIn(ownerKey)).status).toBe(200);
+    const ownerSessions = async () =>
+      await dir
+        .prepare(
+          `SELECT count(*) AS n FROM auth_session WHERE user_id = (SELECT user_id FROM passkey WHERE id = ?1)`,
+        )
+        .bind(ownerKey.id)
+        .first<number>('n');
+    const withShared = await ownerSessions();
+    // The second user signs in on that browser: the owner's session there goes, so it doesn't list as another device.
+    expect((await shared.signIn(otherKey)).status).toBe(200);
+    expect(await ownerSessions()).toBe(withShared! - 1);
+    expect(JSON.stringify((await shared.call('GET', '/api/session')).json)).toContain('b_b');
+    // The owner's own browser is still signed in.
+    expect((await owner.call('GET', '/api/session')).status).toBe(200);
+    await shared.call('POST', '/api/auth/logout');
+  });
+
   it('lists each sign-in and ends one at a time, only the user’s own and never this one', async () => {
     const laptop = new Browser();
     expect((await laptop.signIn(otherKey)).status).toBe(200);

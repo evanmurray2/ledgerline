@@ -115,10 +115,11 @@ async function newSession(
     throw e;
   }
   // Signing in again on this browser ends its earlier session (unlocking the phone's copy signs in each time), so
-  // the leftovers never count as other devices in Settings → Sign-in.
+  // the leftovers never count as other devices in Settings → Sign-in. That holds when the earlier session was another
+  // user's too: the browser held its cookie, and it would sit in that user's list until it expired.
   if (replaces)
-    await env.DB.prepare(`DELETE FROM auth_session WHERE id = ?1 AND user_id = ?2`)
-      .bind(await tokenHash(replaces), userId)
+    await env.DB.prepare(`DELETE FROM auth_session WHERE id = ?1`)
+      .bind(await tokenHash(replaces))
       .run();
   return token;
 }
