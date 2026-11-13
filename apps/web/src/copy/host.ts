@@ -1,43 +1,18 @@
 // Talks to the phone's engine, which runs in a Web Worker (apps/worker/src/local/web-entry.ts; docs/phone-budget.md,
 // D-45): opens the copy, feeds it sync pages from the server, and asks it for screens.
-// The shapes below mirror apps/worker/src/local/engine.ts and routes/sync.ts (the web app's type check doesn't read
-// the Worker's sources, which need Cloudflare's types).
+// The engine's own shapes come from apps/worker/src/local/engine-types.ts, which imports none of the Worker's code;
+// the ones below mirror other Worker files (the web app's type check can't read those: they need Cloudflare's types).
+import type {
+  DevicesDiffer,
+  EngineIdentity,
+  EngineState,
+  QueuedEdit,
+} from '../../../worker/src/local/engine-types';
 
-export interface EngineIdentity {
-  budgetId: string;
-  userId: string;
-  email: string;
-  /**
-   * The account can't link banks (the server said so). The copy answers the session's setup step with it; left
-   * out, the copy answers as the budget's owner.
-   */
-  noBanks?: boolean;
-}
-export interface EngineState {
-  through: number;
-  epoch: string | null;
-  format: number;
-  cursor: string | null;
-  serverTime: number | null;
-  offset: number;
-}
-/** An edit kept on the device until the server takes it (engine.ts QueuedEdit, without its undo rows). */
-export interface QueuedEdit {
-  id: string;
-  at: number;
-  method: string;
-  path: string;
-  body: unknown;
-  appVersion?: string;
-}
+export type { DevicesDiffer, EngineIdentity, EngineState, QueuedEdit };
+
 /** A budget's derived keys of one version (`BudgetKeys` in @ledgerline/seal): passed on, never read. */
 export type SealedKeys = { version: number } & Record<string, unknown>;
-/** Another device that showed different numbers at the same log entry (local/device-check.ts). */
-export interface DevicesDiffer {
-  deviceId: string;
-  number: number;
-  month: string;
-}
 /** Where a public entry the app makes goes (local/device-log.ts `writePlace`). */
 export interface WritePlace {
   number: number;

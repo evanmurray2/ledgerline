@@ -16,6 +16,9 @@ import { canCheck, checkDigest, checkMac, checkMacSame, fromHex, toHex } from '@
 import { isCheckRecord, type DeviceCheckRecord } from '../seal/device-checks.js';
 import type { DeviceLog } from './device-log.js';
 import type { LocalEngine } from './engine.js';
+import type { DevicesDiffer } from './engine-types.js';
+
+export type { DevicesDiffer } from './engine-types.js';
 
 export type { DeviceCheckRecord };
 
@@ -25,13 +28,6 @@ export interface CheckTransport {
   checks(): readonly DeviceCheckRecord[] | null;
   /** Sends this device's check; false when the server didn't keep it (it rests, or one came a moment ago). */
   sendCheck(r: DeviceCheckRecord): Promise<boolean>;
-}
-
-/** Another device that showed different numbers at the same entry and month. */
-export interface DevicesDiffer {
-  deviceId: string;
-  number: number;
-  month: string;
 }
 
 /** A device makes a check at most this often. */

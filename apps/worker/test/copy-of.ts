@@ -3,7 +3,7 @@
 // log starts from, and to build a reference copy that works everything out from scratch.
 import type { Db } from '@ledgerline/db/sql';
 import type { LocalEngine } from '../src/local/engine.js';
-import { SYNC_FORMAT, SYNC_TABLES, type SyncRow, type SyncTable } from '../src/sync-tables.js';
+import { SYNC_TABLES, type SyncRow, type SyncTable } from '../src/sync-tables.js';
 
 export async function copyOf(
   src: Db,
@@ -19,18 +19,5 @@ export async function copyOf(
       rows.push({ t: t.name, k: t.pk.map((c) => r[c]), d });
     }
   }
-  const st = await e.state();
-  await e.apply(
-    {
-      format: SYNC_FORMAT,
-      epoch: st.epoch ?? 'copy',
-      serverTime: now,
-      through: st.through + 1,
-      more: false,
-      cursor: null,
-      rows,
-    },
-    now,
-    tables,
-  );
+  await e.applyLogRows(rows, (await e.state()).through + 1, tables);
 }

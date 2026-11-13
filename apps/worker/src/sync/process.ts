@@ -16,7 +16,7 @@ import {
 } from '@ledgerline/domain';
 import { seededUlid } from '@ledgerline/platform';
 import type { ProviderAccount, ProviderLiability } from '@ledgerline/bank-provider';
-import type { Env } from '../env.js';
+import type { DeviceEnv } from '../env.js';
 import { Scoped } from '../db/scoped.js';
 import { accountLedger, bankDiff } from '../ledger/bank-diff.js';
 import { conditionFence, isFenceAbort } from './lease.js';
@@ -26,6 +26,8 @@ import { planFresh } from './file-fresh.js';
 import { loadBankRows } from './bank-rows.js';
 import { alert, channel, merchantOf, planMatches } from './pending-match.js';
 
+// Another processor moving the watermark first can't happen on the device, which runs one step at a time; the
+// fence stays as a check, and the retries cost nothing.
 const MAX_WATERMARK_RETRIES = 3;
 
 export interface ProcessResult {
@@ -61,7 +63,11 @@ export interface BankRow {
   linked_at: number | null;
 }
 
-export async function processPending(env: Env, budgetId: string, now = Date.now()): Promise<ProcessResult> {
+export async function processPending(
+  env: DeviceEnv,
+  budgetId: string,
+  now = Date.now(),
+): Promise<ProcessResult> {
   const s = new Scoped(env.DB, budgetId, 'system');
   for (let attempt = 0; attempt < MAX_WATERMARK_RETRIES; attempt++) {
     const b = await s.first<{
@@ -121,7 +127,7 @@ export async function processPending(env: Env, budgetId: string, now = Date.now(
  * processing, so the two never claim a row twice; on a lost race it simply waits for the next sync.
  */
 export async function healPending(
-  env: Env,
+  env: DeviceEnv,
   budgetId: string,
   connectionId: string,
   now = Date.now(),

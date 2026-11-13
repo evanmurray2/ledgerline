@@ -12,7 +12,7 @@
 //                           (`sync_run.fetch_seq`, D-86 A2) of the last update the server itself filed
 //   `filed_link:<link id>`  the hash of that link's cursor after its last filed run (hex)
 // The cutover writes both for a budget that already exists (section 8 step 6).
-import type { BankDataProvider, ProviderAccount, ProviderLiability } from '@ledgerline/bank-provider';
+import type { ProviderAccount, ProviderLiability } from '@ledgerline/bank-provider';
 import type { Db, Stmt } from '@ledgerline/db/sql';
 import {
   afterRun,
@@ -25,10 +25,10 @@ import {
 } from '@ledgerline/seal';
 import { seededUlid } from '@ledgerline/platform';
 import { Scoped } from '../db/scoped.js';
-import type { Env } from '../env.js';
+import type { DeviceEnv } from '../env.js';
 import { connectionStmts, linkedAccountStmts } from '../routes/settings/link-rows.js';
 import { readLinkDescription } from '../seal/link-description.js';
-import { fileRun, type RunPackage } from './file-run.js';
+import { fileRun, type PageReader, type RunPackage } from './file-run.js';
 
 /**
  * Filing numbers each new bank event from the counter and processes the events past the budget's watermark. The
@@ -122,11 +122,11 @@ const text = (b: Uint8Array): string => new TextDecoder('utf-8', { fatal: true, 
  * time, and ids come from content, so every device that files this run writes the same rows.
  */
 export async function fileOpened(
-  env: Env,
+  env: DeviceEnv,
   budgetId: string,
   filed: FiledRun,
   /** Reads a page (`parsePage`): the bank's format, no network. */
-  provider: BankDataProvider,
+  provider: PageReader,
 ): Promise<void> {
   const db = env.DB;
   const m = filed.manifest;
@@ -169,13 +169,13 @@ export async function fileOpened(
 
 /** Files a run of transactions (and the bank's answers) for a link the copy holds, with the server's own steps. */
 async function fileUpdate(
-  env: Env,
+  env: DeviceEnv,
   budgetId: string,
   filed: FiledRun,
   connectionId: string,
   runId: string,
   before: Filed,
-  provider: BankDataProvider,
+  provider: PageReader,
 ): Promise<void> {
   const db = env.DB;
   const m = filed.manifest;

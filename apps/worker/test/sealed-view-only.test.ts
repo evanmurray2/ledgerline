@@ -45,19 +45,7 @@ describe('the queue while the server is view only', () => {
         };
         const device = async (id: string) => {
           const engine = await syncPhone(await newPhone());
-          const st = await engine.state();
-          await engine.apply(
-            {
-              format: st.format,
-              epoch: st.epoch!,
-              serverTime: clock,
-              through: 1,
-              more: false,
-              cursor: null,
-              rows: [],
-            },
-            clock,
-          );
+          await engine.applyLogRows([], 1);
           const dl = new DeviceLog(
             x.w.keys,
             await startChain(x.w.last!, { now: clock, schemaVersion: 1 }, BUDGET),

@@ -5,7 +5,7 @@ import { env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { LocalEngine, migrateLocal } from '../src/local/engine.js';
 import { fileRun, type RunPackage } from '../src/local/file-run.js';
-import { SYNC_FORMAT, SYNC_TABLES, type SyncRow } from '../src/sync-tables.js';
+import { SYNC_TABLES, type SyncRow } from '../src/sync-tables.js';
 import { endOfUpdate, type BankState } from '../src/sync/process.js';
 import { bankSync, pend, plaidTxn } from './bank-sync.js';
 import { copyDb } from './store-db.js';
@@ -32,16 +32,7 @@ async function copyOf(e: LocalEngine): Promise<void> {
       rows.push({ t: t.name, k: t.pk.map((c) => r[c]), d });
     }
   }
-  const at = (await e.state()).through + 1;
-  await e.apply({
-    format: SYNC_FORMAT,
-    epoch: 'test',
-    serverTime: NOW,
-    through: at,
-    more: false,
-    cursor: null,
-    rows,
-  });
+  await e.applyLogRows(rows, (await e.state()).through + 1);
 }
 /** The pipeline's own budget, read as a copy is. */
 const pipeline = () => new LocalEngine(h.db, { budgetId: B, userId: 'pipeline', email: 'owner@example.com' });

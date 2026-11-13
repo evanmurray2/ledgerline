@@ -10,7 +10,6 @@ import { toValue, type Db, type Result, type SqlValue, type Stmt } from '@ledger
 import { expect } from 'vitest';
 import { seedNovember } from '../src/dev-seed.js';
 import { LocalEngine, migrateLocal } from '../src/local/engine.js';
-import { SYNC_FORMAT } from '../src/sync-tables.js';
 import { copyDb } from './store-db.js';
 
 const ORIGIN = 'https://ledgerline.test';
@@ -51,16 +50,7 @@ export async function seed(e?: LocalEngine): Promise<LocalEngine> {
   const engine = e ?? (await phone());
   const { budgetId } = await budgetOf();
   // The copy stands at the log's first entry, as a device's copy of a locked budget does.
-  if ((await engine.state()).epoch === null)
-    await engine.apply({
-      format: SYNC_FORMAT,
-      epoch: 'log',
-      serverTime: deviceNow(),
-      through: 1,
-      more: false,
-      cursor: null,
-      rows: [],
-    });
+  if ((await engine.state()).through === 0) await engine.applyLogRows([], 1);
   await engine.db
     .prepare(
       `INSERT OR IGNORE INTO budget (id, name, created_at, updated_at) VALUES (?1, 'My budget', ?2, ?2)`,

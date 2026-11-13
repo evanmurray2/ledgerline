@@ -5,15 +5,11 @@ import type { Context } from 'hono';
 import type { AppEnv } from './context.js';
 
 /**
- * True when something changed after `through`, or when the phone sent no number. The newest change is the end of
- * `change_log` on the server. The phone's copy keeps no change log (its table stays empty): there the newest change
- * is the change number of the copy itself, which the engine gives like the clock. A sync that arrived after the
- * screen was drawn is what can change it. The larger of the two is right on both sides.
+ * True when something changed after `through`, or when the phone sent no number. These routes run only on the
+ * device (D-102): the newest change is the change number of the copy itself, which the engine gives like the clock.
+ * Log entries read after the screen was drawn are what can change it.
  */
 export async function changedSince(c: Context<AppEnv>, through: number | undefined): Promise<boolean> {
   if (through === undefined) return true;
-  const latest = await c.env.DB.prepare(`SELECT coalesce(max(seq), 0) AS n FROM change_log`).first<{
-    n: number;
-  }>();
-  return Math.max(latest?.n ?? 0, c.env.THROUGH ?? 0) > through;
+  return (c.env.THROUGH ?? 0) > through;
 }

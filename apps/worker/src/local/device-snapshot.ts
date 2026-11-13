@@ -15,7 +15,6 @@ import {
   type Entry,
   type PublicRef,
 } from '@ledgerline/seal';
-import { SYNC_FORMAT } from '../sync-tables.js';
 import { DeviceLog } from './device-log.js';
 import { wipeBankLog, type LocalEngine } from './engine.js';
 import {
@@ -263,19 +262,7 @@ export async function openSnapshot(
     throw x;
   }
   // The copy stands at the snapshot's entry.
-  const now = d.clock();
-  await engine.apply(
-    {
-      format: SYNC_FORMAT,
-      epoch: 'log',
-      serverTime: now,
-      through: manifest.number,
-      more: false,
-      cursor: null,
-      rows: [],
-    },
-    now,
-  );
+  await engine.applyLogRows([], manifest.number);
   if (await engine.needsDerive()) await engine.derive();
   // The checkpoints before this place: every multiple of 1,000 up to it (the manifest lists its own entry last,
   // which is one of them only when its number is).

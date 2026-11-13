@@ -19,7 +19,6 @@ import { bumpOnChange } from '../http/version.js';
 import { Scoped } from '../db/scoped.js';
 import { budgetView } from '../views/budget.js';
 import { fresh, monthLong } from '../views/common.js';
-import { usageToday, classifyUsage, dailyLimits } from '../sync/breaker.js';
 import { activityRoutes } from './activity.js';
 import { transferRoutes } from './transfers.js';
 import { activityViewRoutes } from './activity-view.js';
@@ -47,21 +46,8 @@ budgetApi.use('*', csrf);
 /** Every change bumps the budget's data version (http/version.ts). */
 budgetApi.use('*', bumpOnChange);
 
-/** Writes are refused when the account is at 90% of a daily limit (Sync spec F8). */
-budgetApi.use('*', async (c, next) => {
-  const m = c.req.method;
-  if (m === 'GET' || m === 'HEAD') return next();
-  // Inside a budget's Durable Object, account usage comes from the Directory (USAGE); elsewhere, from usage_day.
-  const ask = c.env.USAGE_FOR_WRITE ?? c.env.USAGE;
-  const u = ask ? await ask() : await usageToday(c.env);
-  const st = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(c.env));
-  if (st === 'readonly' || st === 'rest')
-    return c.json(
-      { error: 'readonly', message: 'View only until the daily limit resets. Nothing is lost.' },
-      503,
-    );
-  return next();
-});
+// No daily-limit check here: the device's copy uses none of the account's daily limits. The server refuses the
+// log's writes at 90% (seal/log-routes.ts), and the app reads the limits' state from the server's session.
 
 export function scoped(c: { env: AppEnv['Bindings']; get: (k: 'budgetId' | 'userId') => string }): Scoped {
   return new Scoped(c.env.DB, c.get('budgetId'), c.get('userId'));
@@ -185,10 +171,6 @@ budgetApi.get('/session', async (c) => {
       : n(cats) === 0
         ? 'categories'
         : 'done';
-  const u = await usageToday(c.env, now);
-  const ws = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(c.env));
-  const tomorrow = new Date(now);
-  tomorrow.setUTCHours(24, 0, 0, 0);
   const body: Session = {
     // `login` was the GitHub name from before passkeys (D-27); nothing sets it any more. Users live in the
     // Directory, so the budget's routes don't read the user table.
@@ -203,9 +185,11 @@ budgetApi.get('/session', async (c) => {
       setupStep,
     },
     appVersion: c.env.APP_VERSION ?? '0.1.0',
-    writeState: ws === 'normal' ? 'ok' : ws === 'pause' ? 'paused' : 'readonly',
-    readOnlyUntil: ws === 'readonly' || ws === 'rest' ? tomorrow.toISOString() : null,
-    readsPaused: ws === 'rest',
+    // The account's daily limits are the server's: the app takes these three from the server's own session
+    // (apps/web/src/copy/sealed-session.ts). The copy uses none of them.
+    writeState: 'ok',
+    readOnlyUntil: null,
+    readsPaused: false,
     settings: { tracking: setting.get('tracking') !== false, noteButton: setting.get('noteButton') === true },
     canLinkBanks: canLinkBanks(c),
     // Always: banks are linked on Plaid's own site. An app from before the script was removed still reads this.

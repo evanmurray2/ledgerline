@@ -29,7 +29,6 @@ import {
   type SnapshotHeader,
   type SnapshotManifest,
   type Entry,
-  type FullChainState,
   sha256,
   toStored,
 } from '@ledgerline/seal';
@@ -183,11 +182,11 @@ export class DeviceLog {
     checkpoints: PublicRef[];
     whole: boolean;
   } {
-    const s = this.state as FullChainState;
+    const s = this.state;
     const here = { number: s.number, hash: s.hash };
     return {
       ...here,
-      lastPublic: (s.public as unknown as PublicState).lastPublic,
+      lastPublic: s.public.lastPublic,
       counters: [...s.counters.entries()]
         .map(([deviceId, counter]) => ({ deviceId, counter }))
         .sort((a, b) => (a.deviceId < b.deviceId ? -1 : 1)),
@@ -233,7 +232,7 @@ export class DeviceLog {
     if (!keys) throw new LogFormatError(`this device does not hold key version ${version}`);
     const last = this.checkpoints[this.checkpoints.length - 1];
     return openSnapshotManifest(keys, s, this.budgetId, {
-      publics: (this.state.public as unknown as PublicState).publics,
+      publics: this.state.public.publics,
       ...(o.notOlder ? { minNumber: this.state.number, ...(last ? { checkpoint: last } : {}) } : {}),
     });
   }
@@ -277,7 +276,7 @@ export class DeviceLog {
     points: [number, string][];
     seen: [string, [number, string]][];
   } {
-    const s = this.state as FullChainState;
+    const s = this.state;
     const points = new Map<number, string>([...this.pass, ...this.own]);
     for (const [n, h] of this.seen.values()) points.set(n, h);
     points.set(s.number, toHex(s.hash));
@@ -371,7 +370,7 @@ export class DeviceLog {
     keyVersion: number;
     whole: boolean;
   } {
-    const s = this.state as FullChainState;
+    const s = this.state;
     return {
       number: s.number,
       hash: s.hash,
@@ -401,7 +400,7 @@ export class DeviceLog {
 
   /** What the public entries say, as this device has walked them. */
   get publicState(): PublicState {
-    return this.state.public as unknown as PublicState;
+    return this.state.public;
   }
 
   /** The number of the last entry this device has taken. */
@@ -411,12 +410,12 @@ export class DeviceLog {
 
   /** The day (days since 1970, UTC) of the last daily scan the log holds; 0 for none. */
   get scanThrough(): number {
-    return (this.state as FullChainState).scanThrough;
+    return this.state.scanThrough;
   }
 
   /** The last bank run the log says is filed. */
   get filedThrough(): number {
-    return (this.state as FullChainState).filedThrough;
+    return this.state.filedThrough;
   }
 
   get budgetId(): string {
@@ -445,7 +444,7 @@ export class DeviceLog {
 
   /** The keys of the log's current key version. */
   private current(): BudgetKeys {
-    const v = (this.state as FullChainState).public.keyVersion;
+    const v = this.state.public.keyVersion;
     const k = this.keys.get(v);
     if (!k) throw new LogFormatError(`this device does not hold key version ${v}`);
     return k;
@@ -460,7 +459,7 @@ export class DeviceLog {
     set: { at: number; rows: SyncRow[] },
     over: { filedThrough?: number; receipts?: Bytes[]; scanThrough?: number; entryId?: Bytes } = {},
   ): Promise<Entry[]> {
-    const s = this.state as FullChainState;
+    const s = this.state;
     const keys = this.current();
     const plain = encodeChangeSet({ v: 1, at: set.at, rows: set.rows, seen: Object.fromEntries(this.seen) });
     // A set larger than one part is compressed (change-set.ts): fewer parts, and a long bank history fits a write.
