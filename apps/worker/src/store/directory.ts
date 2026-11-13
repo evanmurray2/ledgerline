@@ -36,6 +36,7 @@ import { recoverOptions, recoveryNotice, recoveryRoutes, signupOptions } from '.
 import { deletingKey, peopleRoutes } from '../routes/people.js';
 import { expireIdle, startDeletionSql } from './idle-accounts.js';
 import { recoveryKeyAuth, recoveryKeySettings } from '../routes/recovery-key.js';
+import { deviceAddRoutes } from '../routes/device-add.js';
 import { FRESH_WAY_MS } from '@ledgerline/seal';
 
 /** Budgets checked per ensure_all step (docs/multi-user.md 6.2). */
@@ -203,6 +204,7 @@ export class Directory extends DurableObject<Env> {
           this.db.prepare(`DELETE FROM recovery_key WHERE user_id = ?1`).bind(userId),
           this.db.prepare(`DELETE FROM device WHERE user_id = ?1`).bind(userId),
           this.db.prepare(`DELETE FROM device_link WHERE user_id = ?1`).bind(userId),
+          this.db.prepare(`DELETE FROM device_add WHERE user_id = ?1`).bind(userId),
           this.db.prepare(`DELETE FROM auth_session WHERE user_id = ?1`).bind(userId),
           this.db.prepare(`DELETE FROM budget_member WHERE user_id = ?1`).bind(userId),
           this.db.prepare(`DELETE FROM budget_usage_day WHERE budget_id = ?1`).bind(budgetId),
@@ -311,6 +313,8 @@ export class Directory extends DurableObject<Env> {
       app.route('/api', securityRoutes);
       app.route('/api', recoveryRoutes);
       app.route('/api', recoveryKeySettings);
+      app.route('/api', deviceAddRoutes);
+      app.route('/api', deviceAddRoutes);
       app.route('/api', peopleRoutes);
       // Every answer is JSON, so the app can read it: a route that doesn't exist, and anything unexpected.
       app.notFound((c) => c.json({ error: 'not_found', message: TRY_AGAIN }, 404));

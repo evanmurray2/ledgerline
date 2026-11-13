@@ -423,3 +423,27 @@ export const FRESH_WAY_MS: number;
 export const INTENT_WAIT_MS: number;
 export function encodeSlotChange(s: { prevPublic: PublicRef; slots: unknown[] }): Bytes;
 export function encodeIntent(i: { prevPublic: PublicRef; notBefore: number; slotIds: string[] }): Bytes;
+
+// Adding a device with its own passkey (docs/privacy-keys.md 10): the sizes the relay checks.
+export const ADD_ATTEMPTS: number;
+export const ADD_WINDOW_MS: number;
+export const ADD_COMMIT_LEN: number;
+export const ADD_OFFER_LEN: number;
+export const ADD_REVEAL_LEN: number;
+export const ADD_SEALED_LEN: number;
+export const ADD_CONFIRM_LEN: number;
+/** The new device's side of an add (test use only in the Worker; the app runs it). */
+export class NewDevice {
+  static start(budgetId: string): Promise<NewDevice>;
+  readonly commit: Bytes;
+  reveal(offer: Uint8Array): Promise<{ reveal: Bytes; code: string; head: PublicRef }>;
+  open(sealed: Uint8Array, log: unknown): Promise<{ bk: Bytes; keys: unknown; confirm: Bytes }>;
+}
+/** The signed-in device's side of an add (test use only in the Worker; the app runs it). */
+export class SignedInDevice {
+  constructor(budgetId: string, keys: unknown, head: PublicRef);
+  offer(commit: Uint8Array, now: number): Bytes;
+  code(reveal: Uint8Array, now: number): Promise<string>;
+  seal(bk: Uint8Array, now: number): Promise<Bytes>;
+  confirmed(bk: Uint8Array, confirm: Uint8Array): Promise<boolean>;
+}

@@ -40,6 +40,10 @@ export const DIRECTORY_MIGRATIONS: StoreMigration[] = [
   {
     "name": "0009_recovery_key.sql",
     "sql": "-- The recovery key of a locked budget, for sign-in (docs/privacy-keys.md 4.2 \"Proving it to the server\"): the\n-- public half of the Ed25519 pair that comes from the recovery key. Never a secret. One per user: a new recovery\n-- key replaces it. A table only; no rows are copied or changed. Expand-only.\nCREATE TABLE recovery_key (\n  user_id TEXT PRIMARY KEY REFERENCES user(id),\n  auth_pub TEXT NOT NULL UNIQUE,\n  created_at INTEGER NOT NULL\n);\n"
+  },
+  {
+    "name": "0010_device_add.sql",
+    "sql": "-- Adding a device with its own passkey to a locked budget (docs/privacy-keys.md section 10): the relay for the\n-- messages between the signed-in device (`from_session`) and the new one (`to_session`, set when the new device\n-- sends its commitment). The server holds only what section 10 lets it see: the commitment, the offer and the\n-- reveal (public values), the budget key sealed to the new device's one-time key, and the confirmation. Never a\n-- secret. One row per user, for 10 minutes; a new start replaces it, and it is deleted once confirmed or\n-- expired. A table only; no rows are copied or changed. Expand-only.\nCREATE TABLE device_add (\n  user_id TEXT PRIMARY KEY,\n  budget_id TEXT NOT NULL,\n  from_session TEXT NOT NULL,\n  to_session TEXT,\n  created_at INTEGER NOT NULL,\n  expires_at INTEGER NOT NULL,\n  -- How many offers the signed-in device made in this start (at most 3, as the device itself keeps).\n  offers INTEGER NOT NULL DEFAULT 0,\n  commit_hex TEXT,\n  offer_hex TEXT,\n  reveal_hex TEXT,\n  sealed_hex TEXT,\n  confirm_hex TEXT\n);\n"
   }
 ];
 

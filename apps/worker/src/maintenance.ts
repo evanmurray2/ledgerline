@@ -161,6 +161,7 @@ export function pruneAuthStmts(db: Db, now: number): Stmt[] {
     db.prepare(`DELETE FROM auth_session WHERE expires_at <= ?1`).bind(now),
     db.prepare(`DELETE FROM auth_challenge WHERE expires_at <= ?1`).bind(now),
     db.prepare(`DELETE FROM device_link WHERE expires_at <= ?1`).bind(now),
+    db.prepare(`DELETE FROM device_add WHERE expires_at <= ?1`).bind(now),
     // A challenge lives 5 minutes, so a day is plenty to keep its id (docs/open-signup.md 3.3).
     db.prepare(`DELETE FROM used_challenge WHERE used_at <= ?1`).bind(now - 86_400_000),
   ];

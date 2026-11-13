@@ -36,6 +36,8 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   page: owner,
   browser,
 }) => {
+  // Three devices and two sign-ins with the recovery key or a device link: more than the usual 2 minutes.
+  test.setTimeout(240_000);
   // The owner sets up first: until then there is no Create account.
   await withPasskeyDevice(owner);
   await owner.goto('/budget');
@@ -164,8 +166,39 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   expect((await onTop).status()).toBe(200);
   await expect(page.getByText('Sailing')).toBeVisible();
 
-  // ---- the way back
-  await page.goto('/settings/privacy');
+  // ---- add a device with its own passkey (docs/privacy-keys.md section 10): the link signs it in, then both
+  // devices show six digits, the person taps They match on both, and the budget key crosses, sealed to it.
+  await page.goto('/settings/sign-in');
+  await page.getByRole('button', { name: 'Add a device' }).click();
+  const link = await page.getByLabel('Device link').inputValue();
+  const added = await (
+    await browser.newContext({ extraHTTPHeaders: { 'cf-connecting-ip': '198.51.100.8' } })
+  ).newPage();
+  await withPasskeyDevice(added);
+  await added.goto(link.replace(/^https?:\/\/[^/]+/, ''));
+  await added.getByRole('button', { name: 'Create passkey' }).click();
+  await added.getByRole('button', { name: 'Open Ledgerline' }).click();
+  // Its passkey is no way in yet: the screen offers the add, and the recovery key instead.
+  await expect(added.getByRole('button', { name: 'Type your recovery key instead' })).toBeVisible({
+    timeout: 60_000,
+  });
+  const codeHere = added.getByTestId('add-code');
+  await expect(codeHere).toHaveText(/^\d{6}$/, { timeout: 30_000 });
+  await expect(page.getByTestId('add-code')).toHaveText((await codeHere.textContent())!, { timeout: 30_000 });
+  await page.getByRole('button', { name: 'They match' }).click();
+  const joinedSlot = added.waitForResponse((r) => r.url().includes('/api/log/append'), { timeout: 60_000 });
+  await added.getByRole('button', { name: 'They match' }).click();
+  expect((await joinedSlot).status()).toBe(200);
+  await expect(added.getByText('Groceries')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText('The new device can open your budget')).toBeVisible({ timeout: 30_000 });
+  // After a reload its own passkey alone opens the budget.
+  await added.reload();
+  await expect(added.getByText('Groceries')).toBeVisible({ timeout: 60_000 });
+  await expect(added.getByRole('button', { name: 'Type your recovery key instead' })).toHaveCount(0);
+  await added.close();
+
+  // ---- the way back (in the app: one more reload so soon would run into the sign-in checks' limit per minute)
+  await page.getByRole('link', { name: /^Privacy/ }).click();
   await page.getByRole('button', { name: 'Go back to how it was…' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Go back' }).click();
   await expect(page.getByRole('button', { name: 'Lock my budget' })).toBeVisible({ timeout: 30_000 });
