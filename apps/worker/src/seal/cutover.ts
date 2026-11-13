@@ -447,6 +447,8 @@ export async function cutoverState(
   const m = await marks(d.db, d.markNow);
   if (!m.sealed) return { sealed: false, backUntil: null };
   const at = await note(d.db, 'cutover_at');
+  // Deleting the readable copy ends the way back early (seal/purge.ts).
+  if ((await note(d.db, 'purge_started_at')) !== null) return { sealed: true, backUntil: null };
   return { sealed: true, backUntil: at !== null && d.now - at <= WAY_BACK_MS ? at + WAY_BACK_MS : null };
 }
 
