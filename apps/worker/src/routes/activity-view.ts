@@ -135,6 +135,12 @@ type PostedScope = string | 'all' | 'none' | { month: Month; start: Month };
  */
 const ROW_MONTH = `max(coalesce(budget_month, substr(date, 1, 7)), ?5)`;
 
+/** ROW_MONTH for a row already read: `start` is the budget's first month. */
+function rowMonth(t: TxRow, start: Month): Month {
+  const m = (t.budget_month ?? t.date.slice(0, 7)) as Month;
+  return m < start ? start : m;
+}
+
 /**
  * Posted rows the budget counts: dated from the account's budget start. Activity leaves out the rest ("Before your
  * budget", D-61, and the starting balance's own rows, D-67), searches included (D-62).
@@ -226,7 +232,7 @@ activityViewRoutes.get('/activity', async (c) => {
   // Categories whose name matches the search, and payee names SQL can't fold (activity-search.ts).
   const qCats = new Set(q ? [...cats].filter(([, n]) => foldSearch(n).includes(q)).map(([id]) => id) : []);
   const found: SearchFound = q ? { names: await foldedNames(s, q), cats: [...qCats] } : NOTHING_FOUND;
-  const [attn, pend, upc, posted, splits, owed, links, stale, atBank] = await s.batch([
+  const [attn, pend, upc, posted, splits, owed, links, stale, atBank, finalQ] = await s.batch([
     s.q(ATTENTION_SQL),
     s.q(
       // Pending rows in a closed account stopped waiting for the bank (D-93): they aren't "not posted yet".
@@ -262,6 +268,11 @@ activityViewRoutes.get('/activity', async (c) => {
       f.today,
     ),
     s.q(ENTRIES_AT_BANK),
+    // Pending rows that stayed in a closed account are final (D-93): listed with the posted rows, by their date.
+    s.q(
+      `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1 AND ${filter === 'all' ? '' : '0 AND '}status = 'pending'
+         AND ${IN_CLOSED_ACCOUNT} AND ${IN_BUDGET} ORDER BY date DESC, seq DESC LIMIT 200`,
+    ),
   ]);
   const atBankKeys = atBankMap(atBank!.results);
   const splitRows = splits!.results as { txn_key: string; category_id: string | null; amount: number }[];
@@ -435,7 +446,20 @@ activityViewRoutes.get('/activity', async (c) => {
     const wider = await run(shiftDate(windowStart(cursor, f.today), -180));
     postedTx = wider.length < 50 ? await run('all') : wider;
   }
-  const postedRows = postedTx.map(row);
+  // Final rows go on the page whose posted rows they fall among (by date and order): after the cursor, and not
+  // past this page's last row when there are more pages.
+  const order = (t: TxRow) => `${t.date}|${String(t.seq).padStart(15, '0')}`;
+  const lastKey = postedTx.length >= 50 ? order(postedTx[postedTx.length - 1]!) : null;
+  const finals = (finalQ!.results as TxRow[]).filter(
+    (t) =>
+      (!cursor || order(t) < cursor) &&
+      (!lastKey || order(t) >= lastKey) &&
+      (!month || rowMonth(t, start) === month) &&
+      match(t),
+  );
+  const postedRows = [...postedTx, ...finals]
+    .sort((a, b) => (order(a) < order(b) ? 1 : order(a) > order(b) ? -1 : 0))
+    .map(row);
   const last = postedTx[49];
   const mr = await monthResult(s, f.current, start);
   const picker = groups
