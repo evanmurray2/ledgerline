@@ -21,6 +21,7 @@ import { wipeBankLog, type LocalEngine } from './engine.js';
 import {
   differingTables,
   dumpChunks,
+  hashVersionOfChunk,
   rowsOfChunk,
   schemaOfChunk,
   SNAPSHOT_TABLES,
@@ -239,18 +240,23 @@ export async function openSnapshot(
   if (!(await isEmpty(engine))) throw new SnapshotMismatch('the copy is not empty');
   try {
     let schema: SnapshotSchema | null = null;
+    let version: number | undefined;
     for (let k = 1; k <= manifest.chunkHashes.length; k++) {
       const stored = await t.chunk(s.id, k);
       if (!stored) throw new SnapshotMismatch('not stored whole');
       const plain = await openSnapshotChunk(keys, d.budgetId, manifest, k, stored);
       if (k === 1) {
         schema = schemaOfChunk(plain);
-        // Before a row is written: every column the snapshot has, this copy has.
-        await tableHashes(engine.db, schema);
+        version = hashVersionOfChunk(plain);
+        // Before a row is written: every column the snapshot has, this copy has, and it knows the hash rules.
+        await tableHashes(engine.db, schema, undefined, version);
       }
       await engine.applyRows(rowsOfChunk(plain));
     }
-    const differ = differingTables(manifest.tables, await tableHashes(engine.db, schema ?? {}));
+    const differ = differingTables(
+      manifest.tables,
+      await tableHashes(engine.db, schema ?? {}, undefined, version),
+    );
     if (differ.length) throw new SnapshotMismatch('its rows are not what its manifest says', differ);
   } catch (x) {
     await wipe(engine);
@@ -364,13 +370,20 @@ export async function checkSnapshot(
     throw new SnapshotMismatch('it does not stand on this log');
   // Every chunk the server holds is the one the manifest names, and opens.
   let schema: SnapshotSchema | null = null;
+  let hashVersion: number | undefined;
   for (let k = 1; k <= manifest.chunkHashes.length; k++) {
     const stored = await t.chunk(target.id, k);
     if (!stored) throw new SnapshotMismatch('not stored whole');
     const plain = await rebuilt.openChunk(manifest, k, stored);
-    if (k === 1) schema = schemaOfChunk(plain);
+    if (k === 1) {
+      schema = schemaOfChunk(plain);
+      hashVersion = hashVersionOfChunk(plain);
+    }
   }
-  const differ = differingTables(manifest.tables, await tableHashes(scratch.db, schema ?? {}));
+  const differ = differingTables(
+    manifest.tables,
+    await tableHashes(scratch.db, schema ?? {}, undefined, hashVersion),
+  );
   if (differ.length) return { checked: false, why: 'differs', tables: differ };
   let signature: Bytes;
   try {

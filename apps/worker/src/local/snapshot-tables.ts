@@ -1,9 +1,11 @@
 // What a snapshot holds (docs/privacy.md 5.3; docs/privacy-keys.md 8; re-exported by local/device-snapshot.ts): the
-// base of a copy as sealed chunks, and a hash of every table, so that another device (or this one, in a fresh database) can rebuild the
-// budget and compare.
+// base of a copy as sealed chunks, and a hash of every table, so that another device (or this one, in a fresh
+// database) can rebuild the budget and compare.
 //
 // A chunk's plain text is UTF-8 JSON lines. The first line of the first chunk says which columns each table
-// has, as the writer had them: {"schema": {table: [columns]}}. Then one row a line, in the log's own row shape:
+// has, as the writer had them, and the rules its table hashes follow: {"schema": {table: [columns]}, "hash": 1}
+// (a snapshot from before the rules had a number has no "hash": it is version 1). Then one row a line, in the
+// log's own row shape:
 //   {"t": table, "k": [key values], "d": row}
 // in the order of `SNAPSHOT_TABLES`, each table in key order. A row is never cut between chunks. A table's hash
 // is a running SHA-256 over its lines in that order (zeros, then H(hash so far || line) for each row), so the hash
@@ -20,10 +22,24 @@ import { RECORDED_TABLES, WORKED_OUT } from './engine.js';
 export const SNAPSHOT_TABLES: readonly SyncTable[] = RECORDED_TABLES;
 
 /**
- * Columns a copy writes from its own clock when it works things out (derive() stamps the budget row): they
- * differ between two honest copies, so a snapshot leaves them out like the worked-out columns themselves.
+ * The rules a table's hash follows, by version. A snapshot names the version it was written with, and a device
+ * opens and checks it by those rules: a later release that hashes differently still opens every older snapshot it
+ * knows the rules of. `ownClock`: columns a copy writes from its own clock when it works things out (derive()
+ * stamps the budget row); they differ between two honest copies, so the hash leaves them out like the worked-out
+ * columns themselves.
  */
-const OWN_CLOCK: Record<string, readonly string[]> = { budget: ['updated_at'] };
+const HASH_RULES: Record<number, { ownClock: Record<string, readonly string[]> }> = {
+  1: { ownClock: { budget: ['updated_at'] } },
+};
+
+/** The version of the hash rules this release writes snapshots with. */
+export const TABLE_HASH_VERSION = 1;
+
+const ownClockOf = (version: number): Record<string, readonly string[]> => {
+  const rules = HASH_RULES[version];
+  if (!rules) throw new SnapshotNewer();
+  return rules.ownClock;
+};
 
 /** The most plain bytes of one chunk. Sealed, it stays under the server's limit for a chunk. */
 export const CHUNK_BYTES = 900_000;
@@ -99,13 +115,16 @@ async function* lines(db: Db, t: SyncTable, cols: readonly string[]): AsyncGener
 /**
  * The hash of every snapshot table of this copy, as a manifest names them. `schema`: the columns of the snapshot
  * to compare with (its writer's); a table it doesn't list (a snapshot from before the bank log was in snapshots)
- * is left out. Without it, this copy's own. `tables`: which tables (the move compares fewer).
+ * is left out. Without it, this copy's own. `tables`: which tables (the move compares fewer). `version`: the hash
+ * rules (`hashVersionOfChunk`); this release's without it. One this release doesn't know throws `SnapshotNewer`.
  */
 export async function tableHashes(
   db: Db,
   schema?: SnapshotSchema,
   tables: readonly SyncTable[] = SNAPSHOT_TABLES,
+  version = TABLE_HASH_VERSION,
 ): Promise<{ name: string; hash: Uint8Array<ArrayBuffer> }[]> {
+  const ownClock = ownClockOf(version);
   const with_ = schema ?? (await ownSchema(db));
   for (const name of Object.keys(with_))
     if (!SNAPSHOT_TABLES.some((t) => t.name === name)) throw new SnapshotNewer();
@@ -113,7 +132,7 @@ export async function tableHashes(
   const enc = new TextEncoder();
   for (const t of tables) {
     if (!with_[t.name]) continue;
-    const cols = (await columnsFor(db, t, with_)).filter((c) => !OWN_CLOCK[t.name]?.includes(c));
+    const cols = (await columnsFor(db, t, with_)).filter((c) => !ownClock[t.name]?.includes(c));
     // A running hash, row by row: zeros, then H(hash so far || the row's line).
     let h: Uint8Array<ArrayBuffer> = new Uint8Array(32);
     for await (const line of lines(db, t, cols)) {
@@ -162,7 +181,9 @@ export async function hashStep(
   let leftBytes = bytes;
   while (done.length < tables.length) {
     const t = tables[done.length]!;
-    const cols = (await ownColumns(db, t)).filter((c) => !OWN_CLOCK[t.name]?.includes(c));
+    const cols = (await ownColumns(db, t)).filter(
+      (c) => !ownClockOf(TABLE_HASH_VERSION)[t.name]?.includes(c),
+    );
     let ended = cols.length === 0;
     while (!ended && leftRows > 0 && leftBytes > 0) {
       const after = `(${t.pk.join(', ')}) > (${t.pk.map((_, i) => `?${i + 1}`).join(', ')})`;
@@ -222,7 +243,7 @@ export async function dumpChunks(db: Db, chunkBytes = CHUNK_BYTES): Promise<Uint
     size += bytes.length;
   };
   const schema = await ownSchema(db);
-  add(JSON.stringify({ schema }));
+  add(JSON.stringify({ schema, hash: TABLE_HASH_VERSION }));
   for (const t of SNAPSHOT_TABLES) for await (const line of lines(db, t, schema[t.name]!)) add(line);
   cut();
   return chunks;
@@ -261,6 +282,18 @@ export function schemaOfChunk(first: Uint8Array): SnapshotSchema {
     if (!Array.isArray(cols) || !cols.every((c) => typeof c === 'string' && /^[a-z_][a-z0-9_]*$/.test(c)))
       throw new SnapshotFormatError('no schema');
   return schema as SnapshotSchema;
+}
+
+/**
+ * The version of the hash rules a snapshot was written with, from its first chunk: 1 when it names none (written
+ * before the rules had a number). One this release doesn't know throws `SnapshotNewer`.
+ */
+export function hashVersionOfChunk(first: Uint8Array): number {
+  const v = parsed(first)[0]?.hash;
+  if (v === undefined) return 1;
+  if (!Number.isSafeInteger(v) || (v as number) < 1) throw new SnapshotFormatError('no hash version');
+  if (!HASH_RULES[v as number]) throw new SnapshotNewer();
+  return v as number;
 }
 
 /** The rows of one plain chunk. */
