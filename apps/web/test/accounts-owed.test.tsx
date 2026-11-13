@@ -60,6 +60,8 @@ describe('Register', () => {
     show('/accounts/checking');
     await screen.findByText('Upcoming', undefined, T);
     expect(screen.getByText('counts on its date')).toBeTruthy();
+    // Each says how often it comes.
+    expect(screen.getAllByText(/ · Monthly$/).length).toBeGreaterThan(0);
   });
 
   it('shows older days a page at a time', async () => {

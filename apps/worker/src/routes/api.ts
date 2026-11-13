@@ -21,6 +21,7 @@ import { budgetView } from '../views/budget.js';
 import { fresh, monthLong } from '../views/common.js';
 import { usageToday, classifyUsage, dailyLimits } from '../sync/breaker.js';
 import { activityRoutes } from './activity.js';
+import { transferRoutes } from './transfers.js';
 import { activityViewRoutes } from './activity-view.js';
 import { samePurchaseRoutes } from './same-purchase.js';
 import { notSameUndoRoutes } from './not-same-undo.js';
@@ -359,6 +360,7 @@ budgetApi.put('/categories/:id/target', async (c) => {
 
 budgetApi.route('/', activityViewRoutes);
 budgetApi.route('/', activityRoutes);
+budgetApi.route('/', transferRoutes);
 budgetApi.route('/', samePurchaseRoutes);
 budgetApi.route('/', notSameUndoRoutes);
 budgetApi.route('/', activityUndoRoutes);

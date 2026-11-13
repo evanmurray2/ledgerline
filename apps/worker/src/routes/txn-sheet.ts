@@ -8,11 +8,12 @@ import type { AppEnv } from '../http/context.js';
 import { editNow } from '../http/clock.js';
 import { scoped } from './api.js';
 import { shortDate } from '../views/common.js';
-import { categoryLabel, isHistory, transferName } from '../views/rows.js';
+import { categoryLabel, isHistory, listRow, transferName } from '../views/rows.js';
 import { txnCol } from '../ledger/ledger.js';
 import { linkInfo, roleOf } from '../ledger/link.js';
 import { loadTx, names } from './txn-common.js';
 import { pairedWith } from './same-purchase.js';
+import { canPick, transferCandidates } from './transfers.js';
 
 export async function txnSheet(c: Context<AppEnv, '/transactions/:key'>) {
   const s = scoped(c);
@@ -208,6 +209,10 @@ export async function txnSheet(c: Context<AppEnv, '/transactions/:key'>) {
       : null,
     pairedWith: kind === 'history' ? null : await pairedWith(s, t),
     alerts,
+    // What "Which account got this money?" offers: only for a row that can still be called a transfer.
+    ...(canPick(t)
+      ? { candidates: (await transferCandidates(s, t)).map((x) => listRow(x, accts, cats)) }
+      : {}),
   };
   return c.json(sheet);
 }

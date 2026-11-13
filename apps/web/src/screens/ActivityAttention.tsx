@@ -1,8 +1,9 @@
 // Activity's Needs attention sections with a button on each row: Transfers to sort out (Pick) and Check these
-// (OK or Review). Split from Activity.tsx.
+// (Accept, OK or Review). Split from Activity.tsx.
 import { Link } from '@tanstack/react-router';
 import type { ActivityView } from '@ledgerline/contracts';
 import { SoftButton, softButtonClass } from '../components/ui';
+import { formatCents } from '../lib/money';
 import { sheetPath, Section, TxnRow } from './ActivityRows';
 
 export function TransfersToSort({ rows }: { rows: ActivityView['transfersToSort'] }) {
@@ -30,7 +31,7 @@ export function TransfersToSort({ rows }: { rows: ActivityView['transfersToSort'
   );
 }
 
-type CheckRow = ActivityView['checkThese'][number];
+export type CheckRow = ActivityView['checkThese'][number];
 
 export function CheckThese({ rows, onDismiss }: { rows: CheckRow[]; onDismiss: (r: CheckRow) => void }) {
   return (
@@ -41,7 +42,17 @@ export function CheckThese({ rows, onDismiss }: { rows: CheckRow[]; onDismiss: (
           r={r}
           base="/activity"
           action={
-            r.action === 'dismiss' ? (
+            r.action === 'accept' ? (
+              // It cleared at another amount than your estimate: the bank's amount already counts.
+              <SoftButton
+                mutates="offline"
+                track="activity.check.accept"
+                aria-label={`Accept ${r.payee} at ${formatCents(Math.abs(r.amount))}`}
+                onClick={() => onDismiss(r)}
+              >
+                Accept
+              </SoftButton>
+            ) : r.action === 'dismiss' ? (
               <SoftButton
                 mutates="offline"
                 track="activity.check.ok"

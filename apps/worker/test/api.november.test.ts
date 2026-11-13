@@ -135,6 +135,9 @@ describe('November through the API', () => {
     ]);
     expect(v.pendingTotal).toBe(20100);
     expect(v.upcoming.map((r) => r.payee)).toEqual(['Comcast', 'Rent']);
+    // Both repeat each month; a row that isn't upcoming says nothing about repeating.
+    expect(v.upcoming.map((r) => r.repeats)).toEqual(['monthly', 'monthly']);
+    expect(v.pending.every((r) => r.repeats === undefined)).toBe(true);
   });
 
   it('Owed to you: $1,430.60 out, Nopa late, the Nov 30 rent front projected short', async () => {
@@ -305,7 +308,8 @@ describe('Overfunded wording', () => {
   it('Check these: OK on a bank row that cleared at a new amount clears it from Needs attention', async () => {
     const before = await get<ActivityView>('/api/activity?filter=attention');
     const shake = before.checkThese.find((r) => r.payee === 'Shake Shack')!;
-    expect(shake.action).toBe('dismiss');
+    // It cleared at another amount than the estimate: the bank's amount counts, and Accept says so.
+    expect(shake.action).toBe('accept');
     // The bank row has no expected entry, so "keep waiting" can't be what OK sends.
     const wrong = await app(`/api/transactions/${encodeURIComponent(shake.key)}/pending`, {
       method: 'POST',

@@ -155,6 +155,7 @@ export function AddTxnScreen() {
       onClose={close}
       gap="small"
       closeLabel="Cancel"
+      unsaved={amount.trim() !== ''}
       header={<SheetTitle title="Add a transaction" />}
       footer={
         <PrimaryButton

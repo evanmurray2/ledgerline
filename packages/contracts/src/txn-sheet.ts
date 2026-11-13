@@ -1,6 +1,7 @@
 // The transaction sheet's contract (GET /api/transactions/:key). Split from index.ts, which re-exports it.
 import { z } from 'zod';
 import { cents, date, id, month } from './scalars.js';
+import { TxnListRow } from './txn-list-row.js';
 
 export const TxnSheet = z.object({
   key: z.string(),
@@ -84,6 +85,12 @@ export const TxnSheet = z.object({
    */
   pairedWith: z.object({ label: z.string() }).nullable(),
   alerts: z.array(z.string()),
+  /**
+   * A row that can still be called a transfer (not one yet, or one to sort out): the other sides
+   * POST /api/transfers/:key/pick takes as `otherKey`, nearest date first. Rows of the opposite amount in another
+   * account within 5 days that aren't a transfer yet; a row with `sheet: 'transfer'` waits for this answer too.
+   */
+  candidates: z.array(TxnListRow).optional(),
 });
 export type TxnSheet = z.infer<typeof TxnSheet>;
 
