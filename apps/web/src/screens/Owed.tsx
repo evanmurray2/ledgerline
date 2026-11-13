@@ -33,6 +33,7 @@ import { addMonths, dayLabel, monthName } from '../lib/dates';
 import { toast } from '../components/Toast';
 import { useScreen } from '../lib/common';
 import { usage } from '../usage/tracker';
+import { errorMessage } from '../api/client';
 
 type Item = OwedView['items'][number];
 
@@ -78,7 +79,7 @@ export function OwedScreen() {
               <span className="text-xs text-muted">Out with others</span>
               <span className="tnum text-4xl font-bold">{formatCents(v.out)}</span>
               <span className="text-sm leading-normal text-ink-2">
-                It goes back to Ready to Assign when you’re paid back.
+                Money paid back counts in Ready to Assign as soon as it comes in.
               </span>
             </Card>
             {/* One banner at a time: a shortfall first, then money that may be a payback, then what's covered. */}
@@ -247,10 +248,39 @@ export function CloseSheet() {
   // After Remove the mark the list no longer has the item, so the done step keeps the one it acted on.
   const it = q.data?.items.find((x) => x.id === sel) ?? (done?.item.id === sel ? done.item : undefined);
   const month = monthName(session.data?.budget.currentMonth ?? '2026-11');
-  if (!it) {
+  const today = session.data?.budget.today ?? '';
+  if (!it || (!done && !isOpen(it))) {
+    // An item that isn't on the list (a link to one removed, or a wrong id), or one with nothing left to close: say
+    // so, with nothing to act on. The server refuses those actions too.
+    const gone = !!q.data && !it;
+    const note = !it
+      ? 'This item isn’t on your Owed to you list any more.'
+      : it.status === 'paid_back'
+        ? `${it.label.split(' · ')[0]} is paid back in full. There’s nothing to close out.`
+        : it.status === 'closed'
+          ? `${it.label.split(' · ')[0]} is already closed out. Reopen it on Owed to you to change it.`
+          : `${it.label.split(' · ')[0]} isn’t marked as owed any more.`;
     return (
-      <Sheet label="Close out" track="owed.close" onClose={back} gap="auto">
-        {q.error ? <ErrorNote error={q.error} /> : <Loading />}
+      <Sheet
+        label="Close out"
+        track="owed.close"
+        onClose={back}
+        gap="auto"
+        footer={
+          gone || it ? (
+            <PrimaryButton track="owed.close.done" onClick={back}>
+              Done
+            </PrimaryButton>
+          ) : undefined
+        }
+      >
+        {gone || it ? (
+          <Banner tone="info">{note}</Banner>
+        ) : q.error ? (
+          <ErrorNote error={q.error} />
+        ) : (
+          <Loading />
+        )}
       </Sheet>
     );
   }
@@ -261,14 +291,17 @@ export function CloseSheet() {
     {
       id: 'close',
       name: 'They won’t pay it',
-      desc: `${cat} is charged ${amt} in ${month}. Ready to Assign gets ${amt} back.`,
+      desc: `${cat} is charged ${amt} in ${month}, and Ready to Assign gets ${amt} back. If ${cat} hasn’t got the money, it’s overspent.`,
       cta: `Close out ${amt}`,
       result: `Closed. ${cat} was charged ${amt} in ${month}.`,
     },
     {
       id: 'cancel',
       name: 'I marked it by mistake',
-      desc: `${cat} is charged the ${full} too, in the purchase’s month. Ready to Assign gets ${full} back${it.matched > 0 ? ` and keeps the ${formatCents(it.matched)} paid back` : ''}.`,
+      // Rule 11: the owed part comes back to Ready to Assign and the category is charged it in the purchase's month.
+      // In a past month the category often hasn't got it: that overspending comes out of Ready to Assign again at the
+      // month's end (rule 6), so Ready to Assign may not move at all.
+      desc: `${cat} is charged the ${full} too, in the purchase’s month, instead of Ready to Assign. Any overspending that makes comes out of Ready to Assign at the end of that month.${it.matched > 0 ? ` The ${formatCents(it.matched)} paid back stays in Ready to Assign.` : ''}`,
       cta: 'Remove the mark',
       result: `Removed. ${cat} is charged the ${full} too.`,
     },
@@ -281,11 +314,18 @@ export function CloseSheet() {
     },
   ];
   const cur = opts.find((o) => o.id === pick)!;
+  // A date that has gone by would leave it late at once.
+  const pastDate = pick === 'snooze' && !!date && !!today && date < today;
+  // A refusal shows under the choices (act.error); nothing is left uncaught.
   const confirm = async () => {
-    await act.mutateAsync({
-      id: it.id,
-      body: pick === 'snooze' ? { action: 'snooze', expectBy: date || undefined } : { action: pick },
-    });
+    try {
+      await act.mutateAsync({
+        id: it.id,
+        body: pick === 'snooze' ? { action: 'snooze', expectBy: date || undefined } : { action: pick },
+      });
+    } catch {
+      return;
+    }
     setDone({ pick, text: cur.result, prevDate: it.expectBy, item: it });
   };
   const label = it.still > 0 ? `${it.label.split(' · ')[0]} · ${amt} still owed` : it.label;
@@ -301,8 +341,14 @@ export function CloseSheet() {
           <PrimaryButton
             mutates="offline"
             track="owed.close.confirm"
-            disabled={pick === 'snooze' && !date}
-            why={pick === 'snooze' && !date ? 'Choose a new date' : ''}
+            disabled={(pick === 'snooze' && !date) || pastDate}
+            why={
+              pick === 'snooze' && !date
+                ? 'Choose a new date'
+                : pastDate
+                  ? 'Choose today or a later date'
+                  : ''
+            }
             onClick={() => void confirm()}
           >
             {cur.cta}
@@ -324,13 +370,18 @@ export function CloseSheet() {
                 onClick={async () => {
                   // Close out and Remove the mark are undone by reopening the item (D-80): in the same month, as
                   // if neither happened.
-                  await act.mutateAsync({
-                    id: it.id,
-                    body:
-                      done.pick === 'snooze'
-                        ? { action: 'snooze', expectBy: done.prevDate! }
-                        : { action: 'reopen' },
-                  });
+                  try {
+                    await act.mutateAsync({
+                      id: it.id,
+                      body:
+                        done.pick === 'snooze'
+                          ? { action: 'snooze', expectBy: done.prevDate! }
+                          : { action: 'reopen' },
+                    });
+                  } catch (e) {
+                    toast.show({ text: errorMessage(e) });
+                    return;
+                  }
                   usage.undo(done.pick);
                   setDone(null);
                 }}
@@ -361,6 +412,7 @@ export function CloseSheet() {
               <input
                 type="date"
                 className={inputClass}
+                min={today || undefined}
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
               />
@@ -455,7 +507,12 @@ function ClosedOut({ items, current }: { items: Item[]; current: string | null }
                 aria-label={`Reopen ${o.label}`}
                 disabled={act.isPending}
                 onClick={async () => {
-                  await act.mutateAsync(o.id);
+                  try {
+                    await act.mutateAsync(o.id);
+                  } catch (e) {
+                    toast.show({ text: errorMessage(e) });
+                    return;
+                  }
                   usage.undo('close');
                   toast.show({
                     text:

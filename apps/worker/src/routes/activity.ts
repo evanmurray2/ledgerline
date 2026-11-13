@@ -17,6 +17,9 @@ import { OVERLAY_UPSERT, commit, loadTx, names, refuseHistory } from './txn-comm
 import { reopenForEntry } from './account-close.js';
 export const activityRoutes = new Hono<AppEnv>();
 
+/** An owed item already closed out or unmarked: Reopen first. */
+const OWED_DONE = 'This item is already closed out. Pull down to refresh.';
+
 // ---------------------------------------------------------------- matching money back
 
 async function openItems(s: Scoped, today: string) {
@@ -375,7 +378,9 @@ activityRoutes.post('/transfers/:key/unpair', async (c) => {
         ),
       );
   w.push(s.audit('transfer.unpair', 'transaction', key, null, null, now));
-  return c.json(await commit(c, w));
+  // The other side, for Undo (a pick of it pairs the two again). Not an entry the pick added: it goes with the pair.
+  const undo = other && !(link && other.startsWith('m:')) ? { otherKey: other } : {};
+  return c.json({ ...(await commit(c, w)), ...undo });
 });
 
 // ---------------------------------------------------------------- Owed to you
@@ -458,6 +463,13 @@ activityRoutes.post('/owed/:id', async (c) => {
   const { rows } = await openItems(s, f.today);
   const o = rows.find((x) => x.id === id);
   if (!o) throw new HttpError(404, 'not_found', GONE);
+  // Close out, Remove the mark and a new date act on an item still owed; Remove the mark also on one paid back in
+  // part or in full. Not on one already closed out or unmarked (Reopen undoes those, D-80).
+  const open = o.status === 'open' || o.status === 'late';
+  if (r.action !== 'reopen' && !(open || (r.action === 'cancel' && o.status === 'paid_back')))
+    throw new HttpError(409, 'changed', OWED_DONE);
+  if (r.action === 'snooze' && r.expectBy && r.expectBy < f.today)
+    throw new HttpError(422, 'invalid', 'Choose today or a later date.');
   let w: Stmt[];
   if (r.action === 'reopen') w = await reopen(s, id, f.current, now, () => newId(c));
   else if (r.action === 'close') {

@@ -59,7 +59,8 @@ reportRoutes.get('/reports', async (c) => {
     );
   const cur = results.get(m);
   const byCategory = Object.entries(cur?.categories ?? {})
-    .filter(([id, v]) => (kinds.get(id)?.kind ?? 'spending') === 'spending' && v.spent > 0)
+    // A category with more refunds than spending is listed too (below $0), so the list adds up to the Spent tile.
+    .filter(([id, v]) => (kinds.get(id)?.kind ?? 'spending') === 'spending' && v.spent !== 0)
     .map(([id, v]) => ({ categoryId: id, name: kinds.get(id)?.name ?? id, spent: v.spent }))
     .sort((a, b) => b.spent - a.spent);
   // Net worth at each month end: the bank's balances today minus everything posted after that month. This month's
@@ -67,8 +68,12 @@ reportRoutes.get('/reports', async (c) => {
   const { rows } = await accountRows(s, f.today, f.budget.time_zone, now);
   const nwNow = rows.reduce((a, r) => a + (r.kind === 'credit' ? -r.bank : r.bank), 0);
   const nwWorking = rows.reduce((a, r) => a + (r.kind === 'credit' ? -r.working : r.working), 0);
-  // Posted totals per month over the last 13 months (ledger/totals.ts: stored for finished months).
-  const totals = await monthTotals(s, addMonths(f.current, -12), f.current, now);
+  // The chart ends at the month picked and goes back up to a year, never before the budget starts: there is no
+  // history to draw before it.
+  const end = m < f.current ? m : f.current;
+  const first = addMonths(end, -11) < start ? start : addMonths(end, -11);
+  // Posted totals per month from the chart's first month to now (ledger/totals.ts: stored for finished months).
+  const totals = await monthTotals(s, first < f.current ? first : f.current, f.current, now);
   const posted = [...totals].map(([mm, accts]) => ({
     m: mm,
     a: [...accts.values()].reduce((x, v) => x + v.all, 0),
@@ -79,9 +84,9 @@ reportRoutes.get('/reports', async (c) => {
   );
   const netWorth: ReportsView['netWorth'] = [];
   let after = 0;
-  for (let i = 0; i < 12; i++) {
-    const mm = addMonths(f.current, -i);
-    netWorth.unshift({ month: mm, value: cents(i === 0 ? nwWorking : nwNow - after) });
+  for (let mm = f.current; mm >= first; mm = addMonths(mm, -1)) {
+    if (mm <= end)
+      netWorth.unshift({ month: mm, value: cents(mm === f.current ? nwWorking : nwNow - after) });
     after += (posted.find((p) => p.m === mm)?.a ?? 0) + (finals.get(mm) ?? 0);
   }
   const stillOwed = owedOut(

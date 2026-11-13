@@ -11,6 +11,8 @@ import { dayLabel } from '../lib/dates';
 import { usage } from '../usage/tracker';
 import { BankSays, useParentPath } from './TxnCommon';
 import { useHere } from '../lib/back';
+import { toast } from '../components/Toast';
+import { errorMessage } from '../api/client';
 
 export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
   const parent = useParentPath();
@@ -131,7 +133,10 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
 
 export function PairedTransfer({ t, close }: { t: TxnSheet; close: () => void }) {
   const unpair = useMoneyMutation(api.unpairTransfer);
+  // Undo pairs the two again, as Undo after a pick unpairs them.
+  const repair = useMoneyMutation((otherKey: string) => api.pickTransfer(t.key, { otherKey }));
   const [unpaired, setUnpaired] = useState(false);
+  const [otherKey, setOtherKey] = useState<string | null>(null);
   const other = t.otherAccountName ?? 'the other account';
   const amt = Math.abs(t.amount);
   // This row is the money leaving its account, or (on the other side) the deposit arriving in it.
@@ -182,7 +187,13 @@ export function PairedTransfer({ t, close }: { t: TxnSheet; close: () => void })
               tone="outline"
               track="txn.transfer.unpair"
               onClick={async () => {
-                await unpair.mutateAsync(t.key);
+                try {
+                  const r = await unpair.mutateAsync(t.key);
+                  setOtherKey(r.otherKey ?? null);
+                } catch (e) {
+                  toast.show({ text: errorMessage(e) });
+                  return;
+                }
                 usage.suggestion('transfer_pair', 'unpaired');
                 setUnpaired(true);
               }}
@@ -192,7 +203,33 @@ export function PairedTransfer({ t, close }: { t: TxnSheet; close: () => void })
             </SoftButton>
           </>
         ) : (
-          <Banner tone="warn" title="Unpaired">
+          <Banner
+            tone="warn"
+            title="Unpaired"
+            action={
+              otherKey ? (
+                <SoftButton
+                  mutates="offline"
+                  tone="outline"
+                  track="txn.transfer.unpair.undo"
+                  disabled={repair.isPending}
+                  onClick={async () => {
+                    try {
+                      await repair.mutateAsync(otherKey);
+                    } catch (e) {
+                      toast.show({ text: errorMessage(e) });
+                      return;
+                    }
+                    usage.undo('transfer_unpair');
+                    setUnpaired(false);
+                    setOtherKey(null);
+                  }}
+                >
+                  Undo
+                </SoftButton>
+              ) : undefined
+            }
+          >
             Both halves now need a category.
           </Banner>
         )}
