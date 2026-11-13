@@ -31,6 +31,7 @@ import { makeQueryClient } from '../src/App';
 import { SealedNotices } from '../src/screens/SealedNotices';
 import { dismissedNotices } from '../src/copy/notices';
 import { toast } from '../src/components/Toast';
+import { SYNCED_ENTRIES } from '../src/copy/copy';
 
 const DAY = 86_400_000;
 const ME = '01BX5ZZKBKACTAV9WEVGEMMVRZ';
@@ -71,6 +72,18 @@ describe('the notices card', () => {
     show();
     await waitFor(() => expect(m.publicLook).toHaveBeenCalled());
     expect(screen.queryByTestId('sealed-notices')).toBeNull();
+  });
+
+  it('reads the log again right after a sync that brought entries', async () => {
+    m.publicLook.mockResolvedValue(look([entry(3, KIND.slotChange, ME, Date.now() - DAY)]));
+    show();
+    await waitFor(() => expect(m.publicLook).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('sealed-notices')).toBeNull();
+    // Another device added a way in; this device's next sync reads it.
+    m.publicLook.mockResolvedValue(look([entry(4, KIND.slotChange, OTHER, Date.now() - 1000)]));
+    window.dispatchEvent(new Event(SYNCED_ENTRIES));
+    await waitFor(() => expect(m.publicLook).toHaveBeenCalledTimes(2));
+    expect(await screen.findByTestId('sealed-notices')).toBeTruthy();
   });
 
   it('tells of a way in added and one removed on another device; This was me hides one here', async () => {

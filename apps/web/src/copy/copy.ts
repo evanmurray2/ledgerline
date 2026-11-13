@@ -1030,6 +1030,8 @@ function deviceName(): string {
 
 let syncing: Promise<void> | null = null;
 let lastSync = 0;
+/** Sent on `window` after a sync that read new entries of the log (another device's change among them). */
+export const SYNCED_ENTRIES = 'ledgerline:synced-entries';
 
 /**
  * Brings the copy up to date with the budget's log: reads the entries since, files the bank runs that wait, and
@@ -1075,6 +1077,8 @@ export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
         ...(state.rebuilding ? { rebuilding: false } : {}),
       });
       if (r.lost) window.dispatchEvent(new CustomEvent('ledgerline:edits-refused', { detail: r.lost }));
+      // The log moved on: the notices are read again now, not only every 5 minutes (screens/SealedNotices.tsx).
+      if (r.entries > 0 || r.rebuilt) window.dispatchEvent(new Event(SYNCED_ENTRIES));
       const moved = r.entries > 0 || r.filed > 0 || r.sent > 0 || !!r.rebuilt;
       if (record && (moved || Date.now() - record.lastServerTime >= KEEP_ALIVE_MS)) {
         record = { ...record, lastServerTime: Date.now() };
