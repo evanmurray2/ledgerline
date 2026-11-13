@@ -156,10 +156,26 @@ export function openInbox(
 export function afterRun(s: FilingState, filed: FiledRun): FilingState;
 
 // ---- the log (apps/worker/src/seal/log-store.ts). The entry and the chain state, as packages/seal entry.ts and
-// chain.ts declare them (a slot record stays opaque: the Worker never reads one).
+// chain.ts declare them, field for field (test/seal-types.test.ts checks these against the package's own).
 export type Bytes = Uint8Array<ArrayBuffer>;
+/** An entry's kind (entry.ts Kind): one of `KIND`'s values. */
+export type Kind = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 8 | 9 | 10;
+/** One way in, as the log's public entries carry it (slots.ts SlotRecord). The Worker never opens one. */
+export interface SlotRecord {
+  slotId: string;
+  anchor: Bytes;
+  sealedKey: Bytes;
+  wrappedPub: Bytes;
+}
+/** An intent neither cancelled nor carried out (chain.ts IntentState). */
+export interface IntentState {
+  hash: Bytes;
+  time: number;
+  notBefore: number;
+  slotIds: string[];
+}
 export interface EntryHeader {
-  kind: number;
+  kind: Kind;
   budgetId: string;
   number: number;
   prevHash: Bytes;
@@ -198,11 +214,11 @@ export interface PublicState {
   inboxVersion: number;
   inboxPub: Bytes;
   lastOldRun: number;
-  slots: Map<string, unknown>;
+  slots: Map<string, SlotRecord>;
   inboxes: Map<number, Bytes>;
   retiredAt: Map<number, number>;
   prevKeys: Map<number, Bytes>;
-  intents: Map<number, { hash: Bytes; time: number; notBefore: number; slotIds: string[] }>;
+  intents: Map<number, IntentState>;
   lastPublic: PublicRef;
   publics: { number: number; hash: Bytes; keyVersion: number }[];
   time: number;
@@ -314,12 +330,12 @@ export function newSlotRecord(
   keys: BudgetKeys,
   budgetId: string,
   signPub: Uint8Array,
-): Promise<unknown>;
+): Promise<SlotRecord>;
 export function encodeGenesis(g: {
   signPub: Bytes;
   inboxPub: Bytes;
   wrappedInbox: Bytes;
-  slots: unknown[];
+  slots: SlotRecord[];
 }): Bytes;
 export function publicEntry(fields: EntryFields, body: Uint8Array, keys: BudgetKeys): Promise<Entry>;
 export function sealedEntry(fields: EntryFields, plain: Uint8Array, keys: BudgetKeys): Promise<Entry>;
@@ -451,7 +467,7 @@ export function newRecoveryKey(): Bytes;
 /** A passkey added less than this long ago is a fresh way in (D-89). */
 export const FRESH_WAY_MS: number;
 export const INTENT_WAIT_MS: number;
-export function encodeSlotChange(s: { prevPublic: PublicRef; slots: unknown[] }): Bytes;
+export function encodeSlotChange(s: { prevPublic: PublicRef; slots: SlotRecord[] }): Bytes;
 export function encodeIntent(i: { prevPublic: PublicRef; notBefore: number; slotIds: string[] }): Bytes;
 
 // Adding a device with its own passkey (docs/privacy-keys.md 10): the sizes the relay checks.
