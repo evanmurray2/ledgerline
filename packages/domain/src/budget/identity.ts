@@ -65,16 +65,3 @@ export function checkIdentity(p: Projection, r: ComputeResult, currentMonth: Mon
     literal: difference === 0 && k === 0,
   };
 }
-
-export class IdentityError extends Error {
-  constructor(readonly report: IdentityReport) {
-    super(`budget identity off by ${report.difference} cents`);
-    this.name = 'IdentityError';
-  }
-}
-
-export function assertIdentity(p: Projection, r: ComputeResult, currentMonth: Month): IdentityReport {
-  const rep = checkIdentity(p, r, currentMonth);
-  if (!rep.ok) throw new IdentityError(rep);
-  return rep;
-}
