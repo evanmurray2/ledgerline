@@ -1,9 +1,8 @@
 # What we claim
 
 Status: Nov 13, 2026. Phase 8 of `docs/privacy.md`: each claim of section 1.1, whether it is true today for a
-locked budget, its limit, and what backs it. The app shows the same list at Settings → Privacy → What Ledgerline
-claims (`apps/web/src/screens/settings/Claims.tsx`; `apps/web/test/claims.test.tsx`). Change both in the same pull
-request, and only when the code changes what is true. No outside review has been made; one comes first only if the
+locked budget, its limit, and what backs it. The app no longer shows it (D-108). Change it in the same pull request as
+the code that changes what is true. No outside review has been made; one comes first only if the
 owner ever funds one.
 
 The owner's budget has been locked (sealed) since Nov 12, 2026, 22:24:55 UTC. Sign-up is closed, so it is the only
@@ -25,7 +24,7 @@ public. Code sent to one person once leaves no trace anyone else can see_ (`docs
   (`apps/web/src/keys/budget.ts`, `apps/web/src/keys/new-budget.ts`, `apps/worker/src/local/start-device.ts`,
   `apps/worker/src/seal/log-store.ts`).
 - **Limit:** 4.2 above. Cloudflare's 30-day history still holds the copy from before the lock (claim 2).
-- **Backed by:** checkable. The app's code is public, the build is reproducible, and Settings → About shows the
+- **Backed by:** checkable. The app's code is public, the build is reproducible, and `/release.json` gives the
   release's build hash.
 
 ### 2. "We keep no readable copy of your budget."
@@ -97,8 +96,7 @@ public. Code sent to one person once leaves no trace anyone else can see_ (`docs
 ### 9. "The app's code is public, and every release is built from it in public."
 
 - **True now** (D-96). The repository is public. `ci` builds twice and fails on any changed byte. Each build writes
-  `/release.json`; the `deploy` run keeps the file list and attests it; Settings → About shows the commit and the
-  build hash.
+  `/release.json`; the `deploy` run keeps the file list and attests it.
 - **Limit:** it covers the app's files, not the code the Worker runs, and it can't catch files sent to one person
   once. Nobody has yet checked a live release's attestation with `gh attestation verify`, or compared a build made
   on macOS.

@@ -52,10 +52,6 @@ const CategoriesScreen = lazyScreen(settings, 'CategoriesScreen');
 const CategoryEditSheet = lazyScreen(settings, 'CategoryEditSheet');
 const ConnectionsScreen = lazyScreen(settings, 'ConnectionsScreen');
 const DataScreen = lazyScreen(settings, 'DataScreen');
-const PrivacyScreen = lazyScreen(() => import('./screens/settings/Privacy'), 'PrivacyScreen');
-const AboutScreen = lazyScreen(() => import('./screens/settings/About'), 'AboutScreen');
-const ClaimsScreen = lazyScreen(() => import('./screens/settings/Claims'), 'ClaimsScreen');
-const DeviceCheckScreen = lazyScreen(() => import('./screens/settings/DeviceCheck'), 'DeviceCheckScreen');
 const PayeesScreen = lazyScreen(settings, 'PayeesScreen');
 const RenamePayeeSheet = lazyScreen(settings, 'RenamePayeeSheet');
 const SettingsLayout = lazyScreen(settings, 'SettingsLayout');
@@ -439,28 +435,6 @@ const usersRoute = createRoute({
   path: 'users',
   component: UsersScreen,
 });
-// The phase 0 checks of the privacy design (docs/privacy.md 15.4).
-const aboutRoute = createRoute({
-  getParentRoute: () => settingsRoute,
-  path: 'about',
-  component: AboutScreen,
-});
-const privacyRoute = createRoute({
-  getParentRoute: () => settingsRoute,
-  path: 'privacy',
-  component: PrivacyScreen,
-});
-// docs/privacy.md phase 8: each claim, whether it is true now, and its limit (docs/claims.md).
-const claimsRoute = createRoute({
-  getParentRoute: () => settingsRoute,
-  path: 'privacy/claims',
-  component: ClaimsScreen,
-});
-const deviceCheckRoute = createRoute({
-  getParentRoute: () => settingsRoute,
-  path: 'device-check',
-  component: DeviceCheckScreen,
-});
 const appearanceRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'appearance',
@@ -566,11 +540,7 @@ const routeTree = rootRoute.addChildren([
   categoriesRoute.addChildren([categoryEditRoute]),
   settingsRoute.addChildren([
     appearanceRoute,
-    deviceCheckRoute,
     linkDoneRoute,
-    privacyRoute,
-    claimsRoute,
-    aboutRoute,
     oldCategoriesRoute,
     oldCategoryRoute,
     rulesRoute,
