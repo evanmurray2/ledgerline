@@ -177,6 +177,32 @@ export const BudgetView = z.object({
   syncProblem: z.string().nullable(),
   /** Categories pinned to the top of Budget, oldest pin first (D-74). May name archived or removed ones. */
   pinned: z.array(id).default([]),
+  /**
+   * How this month's Ready to Assign came about, for the "has started" card: the current month only, after the
+   * budget's first month; else null. Each part is a total computeBudget() already keeps, and
+   * `rta = left − overspent + income + paidBack + closedOut − owed − assigned`.
+   */
+  carryOver: z
+    .object({
+      /** The month before. */
+      from: month,
+      /** Ready to Assign at the end of `from`, before its cash overspending (rule 6) came out. */
+      left: cents,
+      /** Cash overspending `from` left uncovered, which came out of Ready to Assign (rule 6), positive. */
+      overspent: cents,
+      /** Money into Ready to Assign this month that pays back nothing. */
+      income: cents,
+      /** The part of this month's money in that paid back what is owed to you. */
+      paidBack: cents,
+      /** What Close out gave back to Ready to Assign this month (rule 11; negative for a close undone). */
+      closedOut: cents,
+      /** The owed parts of this month's purchases, out of Ready to Assign until paid back, positive. */
+      owed: cents,
+      /** Assigned in this month and later months. */
+      assigned: cents,
+    })
+    .nullable()
+    .default(null),
 });
 export type BudgetView = z.infer<typeof BudgetView>;
 
@@ -569,6 +595,22 @@ export const OwedView = z.object({
    * Match money back opens (D-98). Null when there is none.
    */
   payback: z.object({ key: z.string(), payee: z.string(), amount: cents, date }).nullable().default(null),
+  /**
+   * Money in from the last 60 days that paid back what is owed to you, newest first (at most 10): each with how much
+   * of it was matched and the items it paid back.
+   */
+  paidBack: z
+    .array(
+      z.object({
+        key: z.string(),
+        payee: z.string(),
+        date,
+        /** How much of it paid back owed items. All of it is in Ready to Assign (D-98). */
+        matched: cents,
+        items: z.array(z.object({ id, label: z.string(), amount: cents })),
+      }),
+    )
+    .default([]),
 });
 export type OwedView = z.infer<typeof OwedView>;
 export const OwedAction = z.object({

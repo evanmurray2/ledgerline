@@ -15,6 +15,7 @@ import { RECENT_TX, TX_COLUMNS, txnCol, type TxRow } from '../ledger/ledger.js';
 import type { Scoped } from '../db/scoped.js';
 import { OVERLAY_UPSERT, commit, loadTx, names, refuseHistory } from './txn-common.js';
 import { reopenForEntry } from './account-close.js';
+import { recentPaybacks } from '../views/owed-paybacks.js';
 export const activityRoutes = new Hono<AppEnv>();
 
 /** An owed item already closed out or unmarked: Reopen first. */
@@ -477,6 +478,7 @@ activityRoutes.get('/owed', async (c) => {
       label: fr.find((x) => x.txn_key === p.key)!.payee_name,
     })),
     payback: open ? await possiblePayback(s, f.today) : null,
+    paidBack: await recentPaybacks(s, f.today, new Map(raw.map((r) => [r.id, r.payee]))),
   };
   return c.json(view);
 });
