@@ -94,7 +94,7 @@ export const storeDb = (name: string): Db => new TestDb(() => budgetStub(name));
 
 /**
  * Takes a store's own schema out, so its SQLite can stand for a device's copy. A store keeps no budget tables
- * (D-105), and a test's copy needs a SQLite that workerd runs. The store's own migrations stay recorded, and so do
+ * (D-106), and a test's copy needs a SQLite that workerd runs. The store's own migrations stay recorded, and so do
  * the budget migrations named in `keep`, so a store that starts again (workerd may restart an idle object) runs
  * none of them.
  */

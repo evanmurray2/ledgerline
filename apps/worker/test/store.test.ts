@@ -67,7 +67,7 @@ describe('object migrations', () => {
         'store/0010_drop_old_tables.sql',
       ],
     });
-    // Only the store's own tables, the budget's row, the job queue and the fence's table (D-105).
+    // Only the store's own tables, the budget's row, the job queue and the fence's table (D-106).
     expect(h.tables).toBe(16);
     const d = await e.DIRECTORY.get(e.DIRECTORY.idFromName('directory-test')).health();
     expect(d).toMatchObject({
@@ -96,7 +96,7 @@ describe('object migrations', () => {
   });
 });
 
-// The device's filing steps (sync/lease.ts) run on a SQLite with the budget's schema: a store keeps none (D-105).
+// The device's filing steps (sync/lease.ts) run on a SQLite with the budget's schema: a store keeps none (D-106).
 async function inBudget<T>(fn: (db: Db) => Promise<T>): Promise<T> {
   return fn(budgetDb(`t-budget-${++n}-${Math.random()}`));
 }

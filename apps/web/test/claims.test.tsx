@@ -27,7 +27,7 @@ describe('the claims', () => {
   });
 
   it('claims only what the code does today', () => {
-    // The readable copy from before the lock is dropped (D-105), but Cloudflare's 30-day history still holds it.
+    // The readable copy from before the lock is dropped (D-106), but Cloudflare's 30-day history still holds it.
     expect(byId('no-copy').state).toBe('partly');
     // Bank data since the lock is sealed at once; what came before was in that copy.
     expect(byId('bank-data').state).toBe('partly');

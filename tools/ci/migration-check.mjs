@@ -21,7 +21,7 @@ for (const dir of [
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys = ON');
   // A BudgetStore's own tables sit beside the budget's: its migrations run after the budget's it runs, the ones up
-  // to STORE_LAST_BUDGET (migrations.gen.ts, D-105).
+  // to STORE_LAST_BUDGET (migrations.gen.ts, D-106).
   if (dir.endsWith('store-migrations'))
     for (const f of readdirSync('packages/db/budget-migrations')
       .filter((x) => x.endsWith('.sql') && x <= STORE_LAST_BUDGET)

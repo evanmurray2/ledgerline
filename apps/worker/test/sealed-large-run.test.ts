@@ -43,7 +43,7 @@ import { bankSync, plaidTxn } from './bank-sync.js';
 import { copyOf } from './copy-of.js';
 import { BUDGET, PHONE, T0 } from './log-writer.js';
 import { LINK_A, ring, world, type World } from './sealed-world.js';
-import { storeDb } from './store-db.js';
+import { copyDb } from './store-db.js';
 import { differences, rowsOf } from './twin.js';
 
 const LAPTOP = '01CX5ZZKBKACTAV9WEVGEMMVRZ';
@@ -191,7 +191,7 @@ describe('a first run of 180 days', () => {
         });
         const genesis = x.w.last!;
         const device = async (name: string, deviceId: string) => {
-          const db = storeDb(`${name}-${Math.random()}`);
+          const db = copyDb(`${name}-${Math.random()}`);
           await migrateLocal(db, T0);
           const engine = new LocalEngine(
             db,

@@ -456,7 +456,7 @@ export class BudgetStore extends DurableObject<Env> {
 
   /**
    * The job handlers. The sealed kinds run only in a sealed budget. Any other job found in a store (a kind from
-   * before D-102, or the old purge and link check, D-105) is dropped unrun.
+   * before D-102, or the old purge and link check, D-106) is dropped unrun.
    */
   private handlers(): Record<string, Handler> {
     const sealedOnly =

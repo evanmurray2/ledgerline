@@ -31,7 +31,7 @@ public. Code sent to one person once leaves no trace anyone else can see_ (`docs
 ### 2. "We keep no readable copy of your budget."
 
 - **Partly true now.** For the live store, true: store migration 0010 drops every old table, the usage events and
-  notes from before the move with them, and empties the budget row but for its id (D-105). The Directory holds only
+  notes from before the move with them, and empties the budget row but for its id (D-106). The Directory holds only
   the default name "My budget". Cloudflare's point-in-time recovery still holds the store's past states for 30 days,
   whatever is dropped: a restore to a time before the migration would bring the old tables back. So for that
   history the claim becomes true 30 days after the migration runs. Whether SQLite keeps freed pages readable inside

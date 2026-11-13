@@ -1,4 +1,4 @@
-# D-105: Drop the old tables now, without the 31-day check (Nov 13, 2026)
+# D-106: Drop the old tables now, without the 31-day check (Nov 13, 2026)
 
 **Decided by the owner** (chat, Nov 13, 2026): "Let's fix all that now, and delete the old tables and code".
 Replaces D-99 items 1 to 4 (the stepped job that empties the old tables from the owner's tap, and its check 31 days

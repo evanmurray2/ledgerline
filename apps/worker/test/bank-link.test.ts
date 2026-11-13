@@ -1,5 +1,5 @@
 // bank_link (docs/privacy.md 5.5, section 8 step 4): the server's own list of a budget's bank links, with a copy of
-// each token. It was first copied from `connection`; the old tables are dropped since (D-105), and the links stay.
+// each token. It was first copied from `connection`; the old tables are dropped since (D-106), and the links stay.
 import type { Db } from '@ledgerline/db/sql';
 import { env, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
@@ -35,7 +35,7 @@ const budget = (db: Db) =>
     )
     .run();
 
-/** A store's tables after the drop (D-105). */
+/** A store's tables after the drop (D-106). */
 const KEPT = [
   'bank_link',
   'budget',

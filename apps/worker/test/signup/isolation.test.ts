@@ -93,7 +93,7 @@ describe('keeping users apart', () => {
     const aBudget = (JSON.parse((await a.call('GET', '/api/session')).text) as { budgetId: string }).budgetId;
     expect(aBudget).not.toBe(bBudget);
 
-    // B's data, with the marker in every name: what a store holds for a locked budget (D-105), its row and a bank
+    // B's data, with the marker in every name: what a store holds for a locked budget (D-106), its row and a bank
     // link.
     const bs = storeDb(bBudget);
     const t = Date.parse('2026-11-14T20:00:00Z');

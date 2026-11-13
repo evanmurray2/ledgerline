@@ -23,7 +23,7 @@ const body =
     null,
     2,
   )};\n\n` +
-  `/** The last budget migration a BudgetStore runs (D-105): later ones run on the devices' copies only. */\n` +
+  `/** The last budget migration a BudgetStore runs (D-106): later ones run on the devices' copies only. */\n` +
   `export const STORE_LAST_BUDGET_MIGRATION = ${JSON.stringify(STORE_LAST_BUDGET)};\n\n` +
   `/** What a BudgetStore runs: the budget's migrations up to STORE_LAST_BUDGET_MIGRATION, then its own. */\n` +
   `export const BUDGET_STORE_MIGRATIONS: StoreMigration[] = [\n` +

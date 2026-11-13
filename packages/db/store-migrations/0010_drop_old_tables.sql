@@ -1,7 +1,7 @@
--- expand-only: removal of the tables, views, indexes and triggers only the old server path used, unused since ae1e37a (D-102 removed the last reader; D-105)
+-- expand-only: removal of the tables, views, indexes and triggers only the old server path used, unused since ae1e37a (D-102 removed the last reader; D-106)
 --
 -- Every budget is locked (D-102): the store keeps its budget only as the sealed log, sealed bank runs and
--- snapshots. The readable tables from before the lock go now, at once (D-105), with no job and no wait. Every
+-- snapshots. The readable tables from before the lock go now, at once (D-106), with no job and no wait. Every
 -- statement is IF EXISTS: a fresh store, a store the old purge job had partly emptied, and the owner's store all
 -- end the same. Dropping a table drops its indexes and its triggers with it.
 --

@@ -75,7 +75,7 @@ export async function isSealedStore(db: Db): Promise<boolean> {
 
 /**
  * Why this budget can't start locked, or null when it can: it is sealed already, or it holds a bank link. Its
- * own row, made by the store on first use, is not data. (The old budget tables are gone: D-105.)
+ * own row, made by the store on first use, is not data. (The old budget tables are gone: D-106.)
  */
 export async function startRefusal(db: Db): Promise<string | null> {
   if (await isSealedStore(db)) return 'This budget is locked already.';
@@ -95,6 +95,8 @@ export async function startBegin(
   const startId = newStartId();
   await d.db.batch([
     ...SEALED_TABLES.map((t) => d.db.prepare(`DELETE FROM ${t}`)),
+    // A start before this one may have left its devices' counters (log-store.ts `device:<id>` notes).
+    d.db.prepare(`DELETE FROM store_note WHERE key LIKE 'device:%'`),
     d.db
       .prepare(
         `INSERT INTO store_note (key, value) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,

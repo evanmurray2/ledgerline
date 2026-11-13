@@ -88,7 +88,7 @@ describe('a copy left by an older app version upgrades to the screens a new phon
       0,
       BUDGET_MIGRATIONS.findIndex((m) => m.name === name),
     );
-    // A store's SQLite with every budget migration recorded, as the tests had it before D-105: this code's engine
+    // A store's SQLite with every budget migration recorded, as the tests had it before D-106: this code's engine
     // fills the older copy, and it writes every table it knows.
     const db = budgetDb(`upgrade-${++copies}`);
     await migrateLocal(db, Date.now(), before);

@@ -425,7 +425,7 @@ describe('the budget store, for a budget marked sealed', () => {
 
         sql(`INSERT INTO store_mark (key, at) VALUES ('sealed', 1)`);
         add('daily_scan', 'daily_scan');
-        // The old purge and link check (D-105) are dropped unrun too.
+        // The old purge and link check (D-106) are dropped unrun too.
         add('purge_old', 'purge_old');
         add('stamp_links', 'stamp_links');
         add('sealed_backstop', 'sealed_backstop');

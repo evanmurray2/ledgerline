@@ -20,7 +20,7 @@ const inTwoYears = () => {
 };
 
 export function PrivacyScreen() {
-  // Every budget is locked (D-102), and the readable copy from before the lock is deleted (D-105).
+  // Every budget is locked (D-102), and the readable copy from before the lock is deleted (D-106).
   return (
     <Page title="Privacy" back="/settings">
       <SectionTitle>Your budget</SectionTitle>
