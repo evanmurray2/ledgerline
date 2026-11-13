@@ -190,6 +190,24 @@ export async function openWithRecoveryKey(
 }
 
 /**
+ * Opens a budget with its key itself, sealed to this device by a device that holds it (docs/privacy-keys.md
+ * section 10), which checked the offer against the log already. The key must be the key of the signing key in
+ * force at the end of the public chain.
+ */
+export async function openWithBudgetKey(
+  publics: Entry[],
+  budgetId: string,
+  bk: Bytes,
+  remembered?: PublicRef,
+): Promise<{ budget: OpenBudget; state: PublicState }> {
+  const state = await walkPublic(publics, budgetId, remembered ? { mustPass: remembered } : {});
+  const keys = await deriveBudgetKeys(bk, budgetId, state.keyVersion);
+  if (!equal(keys.sign.pub, state.signPub))
+    throw new WayInError('Your budget changed meanwhile. Start again on the device that opens it.');
+  return { budget: { bk, keys }, state };
+}
+
+/**
  * The budget's keys of every version from 1 to the one in force: what a device needs to read a snapshot or
  * entries sealed before a key change. The older budget keys themselves are zeroed here; their derived keys stay.
  */

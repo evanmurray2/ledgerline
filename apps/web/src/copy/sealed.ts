@@ -2,12 +2,13 @@
 // secret for the budget's way in opens the budget key from the log's public entries, the derived keys go to the
 // engine's thread, and the engine takes its place in the log (kept with the copy, or from a snapshot on a new
 // device). Nothing here is a screen; the pieces that touch the network and the engine are passed in.
-import { type Entry, type PublicRef, readEntry, zeroize } from '@ledgerline/seal';
+import { type Bytes, type Entry, type PublicRef, readEntry, zeroize } from '@ledgerline/seal';
 import {
   keysOfEveryVersion,
   NoSlotError,
   type OpenBudget,
   openWithPasskey,
+  openWithBudgetKey,
   openWithRecoveryKey,
   type PasskeySecret,
 } from '../keys/budget';
@@ -80,6 +81,11 @@ export async function openSealedBudget(o: {
    * in hand (it adds the passkey as a way in). Online only.
    */
   recovery?: string;
+  /**
+   * Or the budget key itself, sealed to this device by one that holds it (copy/device-add.ts), in place of the
+   * recovery key; `onRecovered` runs the same way. It is zeroed here.
+   */
+  added?: Bytes;
   onRecovered?: (budget: OpenBudget) => Promise<void>;
 }): Promise<{
   number: number;
@@ -98,9 +104,11 @@ export async function openSealedBudget(o: {
   let recovered = false;
   const { budget, state } = await openWithPasskey(publics, o.budgetId, o.passkey, o.remembered).catch(
     (e: unknown) => {
-      if (!(e instanceof NoSlotError) || !o.recovery || !o.fetch) throw e;
+      if (!(e instanceof NoSlotError) || !(o.recovery || o.added) || !o.fetch) throw e;
       recovered = true;
-      return openWithRecoveryKey(publics, o.budgetId, o.recovery, o.remembered);
+      return o.added
+        ? openWithBudgetKey(publics, o.budgetId, o.added, o.remembered)
+        : openWithRecoveryKey(publics, o.budgetId, o.recovery!, o.remembered);
     },
   );
   try {

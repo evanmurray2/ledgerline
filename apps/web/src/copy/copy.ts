@@ -260,6 +260,8 @@ const fromHex = (s: string): Uint8Array<ArrayBuffer> =>
 let recoveryTyped: string | null = null;
 /** The passkey that was no way in, kept for the open with the recovery key that follows (it becomes one). */
 let noSlotWay: { credentialId: string; slotPrf: ArrayBuffer } | null = null;
+/** The budget key another device sealed to this one (copy/device-add.ts), held only until the next open uses it. */
+let addedKey: Uint8Array | null = null;
 /** The derived keys the engine holds now, for the keys held for a refresh once a key change adds a version. */
 let keysInEngine: unknown[] | null = null;
 
@@ -275,6 +277,23 @@ export function holdRecoveryKey(typed: string): void {
 export async function openWithRecovery(typed: string, session: Session): Promise<void> {
   recoveryTyped = typed;
   await start(session);
+  if (state.status === 'failed') throw new Error(state.error ?? NOT_NOW);
+}
+
+/**
+ * Opens the locked budget with its key, sealed to this device by a device that holds it (docs/privacy-keys.md
+ * section 10), when the passkey just used is no way in to it. The passkey is then added as a way in, as after the
+ * recovery key. The key is zeroed once used.
+ */
+export async function openWithAddedKey(bk: Uint8Array, session: Session): Promise<void> {
+  addedKey = bk;
+  try {
+    await start(session);
+  } finally {
+    // Zeroed whether the open used it or not.
+    zeroize(bk as never);
+    addedKey = null;
+  }
   if (state.status === 'failed') throw new Error(state.error ?? NOT_NOW);
 }
 
@@ -316,6 +335,8 @@ async function enterSealed(
     };
     const typed = online ? recoveryTyped : null;
     recoveryTyped = null;
+    const added = online ? addedKey : null;
+    addedKey = null;
     let r: Awaited<ReturnType<typeof openSealedBudget>>;
     try {
       r = await openSealedBudget({
@@ -332,9 +353,9 @@ async function enterSealed(
         passkey,
         workerKeys: WORKER_RUN_KEYS,
         ...(last ? { remembered: { number: last.number, hash: fromHex(last.hash) } } : {}),
-        ...(typed
+        ...(typed || added
           ? {
-              recovery: typed,
+              ...(added ? { added: added as never } : { recovery: typed! }),
               // The passkey becomes a way in, so it alone opens the budget the next time. A slot change is never
               // held back; if it doesn't go through now, the recovery key is asked again the next time.
               onRecovered: async (budget: OpenBudget) => {
@@ -350,7 +371,7 @@ async function enterSealed(
     } catch (e) {
       // No way in for this passkey: the recovery key opens the budget (Copy.tsx asks for it). A typing mistake
       // in the key keeps the question open.
-      if (e instanceof NoSlotError || (typed && e instanceof WayInError)) {
+      if (e instanceof NoSlotError || ((typed || added) && e instanceof WayInError)) {
         noSlotWay = { credentialId: w.credentialId, slotPrf: w.slotPrf! };
         set({ needsRecovery: true });
       }
