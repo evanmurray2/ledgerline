@@ -146,6 +146,19 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
     if (t.source !== 'manual')
       throw new HttpError(422, 'not_manual', 'You can change the amount only on a transaction you added.');
     if (p.amount === 0) throw new HttpError(422, 'zero_amount', 'Enter an amount.');
+    // Money in you added can pay back what's owed to you: it can't come to less than it pays back (rule 12).
+    if (p.amount > 0 && t.amount > 0) {
+      const paid = await s.first<{ n: number }>(
+        `SELECT coalesce(sum(amount), 0) AS n FROM txn_link WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND from_key = ?2 AND undone_at IS NULL`,
+        key,
+      );
+      if (paid && paid.n > p.amount)
+        throw new HttpError(
+          422,
+          'too_little',
+          `This pays back ${formatCents(cents(paid.n))}. Undo the match first, then lower the amount.`,
+        );
+    }
     // Out to In or back: what only fits the old direction goes with it.
     if (p.amount < 0 !== t.amount < 0) w.push(...(await flipStmts(s, t, p, now)));
     w.push(
@@ -299,6 +312,7 @@ transactionRoutes.post('/transactions/:key/pending', async (c) => {
           ),
         ]
       : [
+          undoPaybacks(s, key, now),
           s.q(
             `UPDATE manual_pending SET deleted_at = ?3, covers_provider_txn_id = NULL, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
             key,
@@ -323,6 +337,7 @@ transactionRoutes.delete('/transactions/:key', async (c) => {
     throw new HttpError(422, 'bank_row', 'Bank transactions can’t be deleted. Mark it won’t clear instead.');
   return c.json(
     await commit(c, [
+      undoPaybacks(s, key, now),
       s.q(
         `UPDATE manual_pending SET deleted_at = ?3, covers_provider_txn_id = NULL, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
         key,
@@ -398,6 +413,19 @@ async function flipStmts(
 function cancelOwed(s: Scoped, key: string, now: number): Stmt {
   return s.q(
     `UPDATE expected_reimbursement SET canceled_at = ?3, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2 AND canceled_at IS NULL AND closed_at IS NULL`,
+    key,
+    now,
+  );
+}
+
+/**
+ * A deleted entry pays back nothing: what it was matched to is owed again (rule 12). Run before the entry is marked
+ * deleted. A bank row that took the entry's key keeps its matches: only an entry still on its own is touched.
+ */
+function undoPaybacks(s: Scoped, key: string, now: number): Stmt {
+  return s.q(
+    `UPDATE txn_link SET undone_at = ?3 WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND from_key = ?2 AND undone_at IS NULL
+       AND EXISTS (SELECT 1 FROM manual_pending WHERE budget_id = ?1 AND txn_key = ?2 AND deleted_at IS NULL AND matched_txn_key IS NULL)`,
     key,
     now,
   );

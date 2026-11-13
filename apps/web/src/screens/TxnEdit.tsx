@@ -390,8 +390,10 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
           {onCard ? `The card payment needs ${formatCents(t.amount)} less.` : ''}
         </p>
       )}
-      {/* Any money in can pay back what's owed to you: a card credit too, unless it's linked as a refund. */}
-      {(isIncome || (isRefund && !t.refundOf)) && (
+      {/* Any money in can pay back what's owed to you: a card credit too, unless it's linked as a refund, and money in
+          you added, pending or not (not a scheduled one: it hasn't come yet). A match moves with your entry's key to the
+          bank's row when it posts (D-64). */}
+      {(isIncome || (isRefund && !t.refundOf) || (t.kind === 'manual' && t.amount > 0 && !outflow)) && (
         <Link
           to={`${parent}/match/${encodeURIComponent(t.key)}`}
           search
