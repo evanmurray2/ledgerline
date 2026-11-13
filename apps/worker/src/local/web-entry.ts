@@ -57,6 +57,8 @@ type Msg =
   | { id: number; op: 'sealedSnapshot'; snapshotId: string }
   | { id: number; op: 'sealedCheck' }
   | { id: number; op: 'sealedUpkeep'; snapshotId: string }
+  | { id: number; op: 'sealedPlace' }
+  | { id: number; op: 'sealedAppend'; entries: Uint8Array[]; keys?: BudgetKeys[] }
   | {
       id: number;
       op: 'cutover';
@@ -315,6 +317,30 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       if (!newest || log.number - newest.number >= SNAPSHOT_EVERY)
         return { value: { did: 'write', ...(await writeSnapshot(e, log, http, m.snapshotId)) } };
       return { value: { did: 'nothing' } };
+    }
+    case 'sealedPlace': {
+      // Where a public entry the app makes goes (a way in added or removed): the log is read up to its end
+      // first, so the entry goes on top of the newest one.
+      const { engine: e, log } = needSealed();
+      await new LogSession(e, log, http, encodeEntry).pull();
+      return { value: log.writePlace() };
+    }
+    case 'sealedAppend': {
+      // Public entries the app made with the budget key in hand (apps/web/src/copy/sealed-ways.ts), sent as one
+      // write on top of this device's place. Taken as any other entry: read back from the log, by its rules.
+      // `keys`: the derived keys of the version a key change here brings.
+      const { engine: e, s, log } = needSealed();
+      const first = (await readEntry(m.entries[0]!)).header;
+      if (first.number !== log.number + 1 || first.deviceId !== s.deviceId)
+        return { value: { ok: false, why: 'behind', number: log.number, retry: true } };
+      const r = await http.append(log.number, m.entries);
+      if (!r.ok) return { value: r };
+      if (m.keys?.length) {
+        log.holdKeys(m.keys);
+        for (const k of m.keys) if (!s.keys.some((x) => x.version === k.version)) s.keys.push(k);
+      }
+      await new LogSession(e, log, http, encodeEntry).pull();
+      return { value: { ok: true, number: log.number } };
     }
     case 'sealedCheck': {
       const { log } = needSealed();
