@@ -1,7 +1,8 @@
 import { defineConfig } from '@playwright/test';
 import { failureReport } from './report';
 
-// A new budget, locked from its first moment, through the real Worker and a real browser (D-102). Passkeys as in
+// A new budget, locked from its first moment, through the real Worker and a real browser (D-102): lock.spec.ts,
+// then a locked budget's screens (screens-lock.spec.ts), each on its own new account. Passkeys as in
 // playwright.passkey.config.ts:
 // Chromium's virtual authenticator stands in for Face ID, and WebAuthn needs a host name, so this uses localhost.
 // Build apps/web first.
@@ -29,7 +30,7 @@ export default defineConfig({
       `cd ../apps/worker && rm -rf .wrangler/e2e-lock && ` +
       `pnpm exec wrangler dev --port ${PORT} --persist-to .wrangler/e2e-lock --var PLAID_ENV:sandbox ` +
       `--var SETUP_CODE:e2e-setup-code-0123456789abcdefghijklmnop --var DEV_AUTH_EMAIL: ` +
-      `--var FAKE_NOW:${NOW} --var TOKEN_KEYS:1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8= --var TOKEN_KEY_CURRENT:1 --var SIGNUPS:open --var MAX_USERS:5 ` +
+      `--var FAKE_NOW:${NOW} --var TOKEN_KEYS:1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8= --var TOKEN_KEY_CURRENT:1 --var SIGNUPS:open --var MAX_USERS:10 ` +
       `--var TURNSTILE_SITE_KEY:1x00000000000000000000AA --var TURNSTILE_SECRET:1x0000000000000000000000000000000AA`,
     url: `http://localhost:${PORT}/api/auth/status`,
     stdout: 'pipe',
