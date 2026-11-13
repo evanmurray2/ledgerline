@@ -11,12 +11,10 @@ the UI; none of them edits the contract.
 
 ## Missing actions
 
-| Screen                                                      | Gap                                                                                                 | Workaround                                                                                     |
-| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Transfer pick · Undo                                        | No action that returns a picked transfer to "unsorted".                                             | Undo calls `POST /api/transfers/:key/unpair`.                                                  |
-| Transaction · It's a transfer to an unlinked account (D-20) | `TxnPatch` has no transfer target.                                                                  | "Transfer to account…" options are listed but disabled.                                        |
-| Settings · stop tracking                                    | The design offers to delete the stored log when tracking is turned off; there's no delete endpoint. | Shows that collection stopped and that raw events age out after 90 days.                       |
-| Repair                                                      | `LinkExchange` is for new Items; Plaid update mode returns no new public token to exchange.         | After Link succeeds in repair mode the app calls `POST /api/settings/connections/:id/refresh`. |
+| Screen                   | Gap                                                                                                 | Workaround                                                                                     |
+| ------------------------ | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Settings · stop tracking | The design offers to delete the stored log when tracking is turned off; there's no delete endpoint. | Shows that collection stopped and that raw events age out after 90 days.                       |
+| Repair                   | `LinkExchange` is for new Items; Plaid update mode returns no new public token to exchange.         | After Link succeeds in repair mode the app calls `POST /api/settings/connections/:id/refresh`. |
 
 ## Assumptions
 
