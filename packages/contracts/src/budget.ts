@@ -224,7 +224,6 @@ export const CategorySheet = z.object({
   rta: cents,
   recent: z.array(TxnListRow),
   recentTotal: z.number().int(),
-  moveOptions: z.array(z.object({ id: id.or(z.literal('rta')), label: z.string() })),
 });
 export type CategorySheet = z.infer<typeof CategorySheet>;
 
