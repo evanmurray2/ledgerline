@@ -2,6 +2,7 @@
 // the snapshots, as the session and the snapshot code ask for them (log-session.ts, device-snapshot.ts). Nothing
 // here is trusted because the server said it: every byte this hands on is checked by the code that asked.
 import type { AppendResult } from '../seal/log-store.js';
+import type { CheckTransport, DeviceCheckRecord } from './device-check.js';
 import type { SnapshotTransport } from './device-snapshot.js';
 import type { StartTransport } from './start-device.js';
 import type { LogTransport, RunTransport } from './log-session.js';
@@ -49,7 +50,9 @@ export interface SignedAppend {
 }
 
 /** The transports of one sealed budget. `fetch` is given a path under the app's own origin. */
-export function httpTransport(fetch: Fetch): LogTransport & RunTransport & SnapshotTransport & SignedAppend {
+export function httpTransport(
+  fetch: Fetch,
+): LogTransport & RunTransport & SnapshotTransport & SignedAppend & CheckTransport {
   const headers = { 'content-type': 'application/json', 'x-ledgerline': '1' };
   const json = async <T>(path: string, init?: RequestInit): Promise<{ status: number; body: T }> => {
     const r = await fetch(path, init);
@@ -83,14 +86,19 @@ export function httpTransport(fetch: Fetch): LogTransport & RunTransport & Snaps
   const post = <T>(path: string, body: unknown): Promise<T> =>
     answer<T>(path, { method: 'POST', headers, body: JSON.stringify(body) });
 
+  /** The device checks the server sent with its last page of the log (D-116); null: none yet. */
+  let checks: DeviceCheckRecord[] | null = null;
   /** The entries after `number`: one page (the session asks again from its new place). */
   const after = async (number: number): Promise<Uint8Array[]> => {
-    const page = await get<{ entries: string[] }>(`/api/log?after=${number}`);
+    const page = await get<{ entries: string[]; checks?: unknown }>(`/api/log?after=${number}`);
+    if (Array.isArray(page.checks)) checks = page.checks as DeviceCheckRecord[];
     return page.entries.map(unb64);
   };
 
   return {
     after,
+    checks: () => checks,
+    sendCheck: async (r) => (await post<{ ok: boolean }>('/api/log/check', r)).ok === true,
     append: async (base: number, entries: Uint8Array[], sign?: SignBody) => {
       const text = JSON.stringify({ base, entries: entries.map((e) => b64(e)) });
       const signed = sign ? await sign(text) : {};

@@ -19,6 +19,7 @@ import {
 } from '@ledgerline/seal';
 import { SIGNED_CHALLENGE_HEADER, SIGNED_SIGNATURE_HEADER } from '@ledgerline/contracts';
 import { DeviceLog } from './device-log.js';
+import { deviceCheck, type DevicesDiffer } from './device-check.js';
 import { checkSnapshot, openSnapshot, wipe, writeSnapshot } from './device-snapshot.js';
 import { httpTransport, startTransport, type Fetch } from './http-transport.js';
 import { startOnDevice } from './start-device.js';
@@ -55,7 +56,8 @@ type Msg =
   // ---- a sealed budget (docs/privacy.md 5.3): the copy lives on the log
   | { id: number; op: 'sealedOpen'; keys: BudgetKeys[]; deviceId: string; workerKeys: [number, Uint8Array][] }
   | { id: number; op: 'sealedJoin' }
-  | { id: number; op: 'sealedSync' }
+  | { id: number; op: 'sealedSync'; own?: string[] }
+  | { id: number; op: 'sealedRebuild' }
   | { id: number; op: 'sealedSnapshot'; snapshotId: string }
   | { id: number; op: 'sealedCheck' }
   | { id: number; op: 'sealedUpkeep'; snapshotId: string }
@@ -148,13 +150,18 @@ const ENGINE_KEYS = [
   'shadow_scan',
 ];
 
-/** One round with the log: read it, catch up on bank runs and scans by time, and send what waits. */
-async function sealedRound(): Promise<{
+/**
+ * One round with the log: read it, catch up on bank runs and scans by time, and send what waits. Then the device
+ * check (local/device-check.ts, D-116), whose failure never fails the round. `own`: the other ids this device
+ * has written the log as.
+ */
+async function sealedRound(own: readonly string[] = []): Promise<{
   entries: number;
   filed: number;
   waiting: boolean;
   sent: number;
   lost: number;
+  differs: DevicesDiffer | null;
 }> {
   const { engine: e, s, log } = needSealed();
   const session = new LogSession(e, log, http, encodeEntry);
@@ -166,7 +173,12 @@ async function sealedRound(): Promise<{
     clock(),
   );
   const sent = await session.flush();
+  const settled = !runs.waiting && (await e.queue()).length === 0;
+  const differs = await deviceCheck({ engine: e, log, transport: http, now: Date.now(), settled, own }).catch(
+    () => null,
+  );
   return {
+    differs,
     entries: pulled.entries,
     filed: runs.filed + runs.scans,
     waiting: runs.waiting,
@@ -349,7 +361,7 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
     case 'sealedSync': {
       needSealed();
       try {
-        return { value: await sealedRound() };
+        return { value: await sealedRound(m.own) };
       } catch (x) {
         // The entries this device needs are gone (a checked snapshot covers them), or the copy can't be used as
         // it is: it is made again from the newest trusted snapshot, then the round runs once more. The app shows
@@ -357,8 +369,20 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
         if (!needsRebuild(x)) throw x;
         ctx.postMessage({ event: 'rebuilding' });
         const made = await rebuild();
-        const v = await sealedRound();
+        const v = await sealedRound(m.own);
         return { value: { ...v, lost: v.lost + made.lost, rebuilt: made } };
+      }
+    }
+    case 'sealedRebuild': {
+      // The person asked for it (Budget → Needs attention, when two devices showed different numbers): the copy
+      // is made again from the newest trusted snapshot, as when its entries are gone, and the app is told.
+      needSealed();
+      // A rebuild that fails leaves the old copy as it was; the app is told it is over either way.
+      ctx.postMessage({ event: 'rebuilding' });
+      try {
+        return { value: await rebuild() };
+      } finally {
+        ctx.postMessage({ event: 'rebuilt' });
       }
     }
     case 'sealedSnapshot': {
