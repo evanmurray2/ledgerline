@@ -76,7 +76,7 @@ export interface Env {
   /** Inside the Directory: create a new budget's store and run its migrations (sign-up). */
   NEW_STORE?: (budgetId: string) => Promise<void>;
   /** Inside the Directory: a budget's name and its linked banks, from its store (deleting an account). */
-  BUDGET_INFO?: (budgetId: string) => Promise<{ name: string; banks: number }>;
+  BUDGET_INFO?: (budgetId: string) => Promise<{ name: string; banks: number; sealed?: boolean }>;
   /** Inside the Directory: turn a budget's background work off or on (an account turned off, D-75). */
   SET_DISABLED?: (budgetId: string, disabled: boolean) => Promise<void>;
   /** Inside the Directory: queue deleting an account (routes/people.ts). */
@@ -111,6 +111,8 @@ export interface Env {
   RESTORE_UNDO?: () => Promise<{ undo: string } | null>;
   /** Inside a budget's Durable Object: the last restore, from the Directory. */
   LAST_RESTORE?: () => Promise<{ at: number; to: number | null } | null>;
+  /** Inside a budget's Durable Object: start emptying a sealed budget's old tables (seal/purge.ts). */
+  PURGE_START?: (now: number) => Promise<{ ok: true } | { ok: false; why: string }>;
 }
 
 export interface Jobs {

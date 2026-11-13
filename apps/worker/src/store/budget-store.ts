@@ -14,6 +14,8 @@ import { logApi } from '../seal/log-routes.js';
 import { QUEUE_STAMP_LINKS, stampLinksHandler } from './stamp-links.js';
 import {
   failSealedFetch,
+  noteOpened,
+  OPENED_EVERY_MS,
   queueSealedFetch,
   SEALED_BACKSTOP,
   SEALED_BACKSTOP_ID,
@@ -51,7 +53,8 @@ import { connectionToken, makeProvider, pageSize } from '../sync/provider.js';
 import { writeBudgetState } from '../sync/breaker.js';
 import { answering } from './body.js';
 import { UsageCounter } from './shares.js';
-import { DISABLED_KEY, budgetInfo, setDisabled, wipeStore } from './account-life.js';
+import { DISABLED_KEY, budgetInfo, removeBanks, setDisabled, wipeStore } from './account-life.js';
+import { PURGE, purgeHandler, purgeStart } from '../seal/purge.js';
 import { QUEUE_REFILE } from '../sync/refile-payees.js';
 import { QUEUE_DROP_TEXT_ALIASES } from '../sync/drop-text-aliases.js';
 import { markReads, noteHeavyRead, routeName } from './heavy-reads.js';
@@ -126,9 +129,28 @@ export class BudgetStore extends DurableObject<Env> {
   // ---- RPC
 
   /** The budget's name and linked banks, for deleting an account (routes/people.ts). */
-  async info(): Promise<{ name: string; banks: number }> {
+  async info(): Promise<{ name: string; banks: number; sealed: boolean }> {
     this.ready();
     return budgetInfo(this.ctx.storage);
+  }
+
+  /**
+   * Removes every bank link at Plaid, for an account being deleted (store/account-life.ts removeBanks). Refused
+   * unless the Directory holds the deletion record for this budget; the Directory never asks for an admin's.
+   */
+  async removeBanks(budgetId: string): Promise<{ removed: number; left: number; refused?: true }> {
+    this.ready();
+    if (!(await this.directory().isDeleting(budgetId)))
+      return { removed: 0, left: budgetInfo(this.ctx.storage).banks, refused: true };
+    const env = this.appEnv();
+    // No fetch may start again on a link that is being removed.
+    this.ctx.storage.sql.exec(`DELETE FROM job WHERE kind IN (?, ?, 'sync')`, SEALED_FETCH, SEALED_BACKSTOP);
+    return removeBanks(this.ctx.storage, {
+      plaidEnv: env.PLAID_ENV,
+      otherUsersBanks: env.OTHER_USERS_BANKS,
+      keyring: () => parseKeyring(env.TOKEN_KEYS, env.TOKEN_KEY_CURRENT),
+      provider: () => makeProvider(env),
+    });
   }
 
   /** An admin turned the account off (`true`) or on (store/account-life.ts). */
@@ -194,6 +216,7 @@ export class BudgetStore extends DurableObject<Env> {
     // A sealed budget lives in its log: those routes, and no others (seal/log-routes.ts).
     if (this.marks().sealed && (path === '/api/log' || path.startsWith('/api/log/'))) {
       this.logApp ??= withCaller((app) => app.route('/api', logApi));
+      await this.openedSealed(caller);
       await this.rearmSealed();
       this.usage.request();
       try {
@@ -209,21 +232,14 @@ export class BudgetStore extends DurableObject<Env> {
       (path !== '/api/session' || request.headers.get(SEALED_HEADER) === '1')
     ) {
       this.sealedApp ??= withCaller((app) => app.route('/api', sealedApi));
+      await this.openedSealed(caller);
       this.usage.request();
       try {
         const r = await this.serve(this.sealedApp, request, caller);
         // A fetch the person asked for starts now, one job per link asked (seal/fetch-job.ts). The backstop's own
         // job is not moved: a pending job keeps its time when it is queued again.
-        if (r.ok && request.method === 'POST' && /\/connections\/([^/]+\/)?refresh$/.test(path)) {
-          const asked = await this.db
-            .prepare(
-              `SELECT id FROM bank_link WHERE fetch_requested = 1 AND mac IS NOT NULL AND provider = 'plaid' AND status = 'ok' ORDER BY id`,
-            )
-            .all<{ id: string }>();
-          const runs = (await this.fetchDeps()).runs;
-          for (const l of asked.results) await queueSealedFetch(runs, this.enqueue, l.id, Date.now());
-          await this.runner.scheduleNext(Date.now());
-        }
+        if (r.ok && request.method === 'POST' && /\/connections\/([^/]+\/)?refresh$/.test(path))
+          await this.queueAsked();
         return r;
       } finally {
         this.reportUsage(caller.budgetId);
@@ -303,6 +319,7 @@ export class BudgetStore extends DurableObject<Env> {
    * live budget can't be overwritten. Call with consecutive pieces of the file; then restoreVerify().
    */
   async restoreDump(lines: string): Promise<{ ok: true; rows: number } | { ok: false; reason: string }> {
+    if (this.held()) return { ok: false, reason: 'refused: this budget is sealed' };
     const r = await loadDumpPiece(this.ctx.storage, this.adapter(), lines);
     if (r.ok) this.cachedBudgetId = null;
     return r;
@@ -341,6 +358,8 @@ export class BudgetStore extends DurableObject<Env> {
    */
   async restoreUndo(): Promise<{ undo: string } | null> {
     this.ready();
+    // The server can't restore a sealed budget (docs/privacy.md phase 5): an undo would put back the time before.
+    if (this.held()) throw new Error('This budget is sealed or being moved: it can’t be restored.');
     const id = await this.budgetId();
     const last = await this.directory().lastRestore(id);
     return last ? this.restoreBookmark(last.undo, null) : null;
@@ -510,6 +529,33 @@ export class BudgetStore extends DurableObject<Env> {
     return m.sealed || m.frozenUntil !== null;
   }
 
+  /** A fetch for each link that asked for one (seal/fetch-job.ts), now. */
+  private async queueAsked(): Promise<void> {
+    const asked = await this.db
+      .prepare(
+        `SELECT id FROM bank_link WHERE fetch_requested = 1 AND mac IS NOT NULL AND provider = 'plaid' AND status = 'ok' ORDER BY id`,
+      )
+      .all<{ id: string }>();
+    const runs = (await this.fetchDeps()).runs;
+    for (const l of asked.results) await queueSealedFetch(runs, this.enqueue, l.id, Date.now());
+    await this.runner.scheduleNext(Date.now());
+  }
+
+  /** When this instance last noted that a person opened the sealed budget (seal/fetch-job.ts noteOpened). */
+  private openedNoted = 0;
+
+  /**
+   * A person's request reached a sealed budget: it is noted as opened (A3), and when fetching had rested for 90
+   * days, it starts again at once.
+   */
+  private async openedSealed(caller: Caller): Promise<void> {
+    if (caller.userId === 'system' || caller.userId === 'service') return;
+    const now = Date.now();
+    if (now - this.openedNoted < OPENED_EVERY_MS) return;
+    this.openedNoted = now;
+    if (await noteOpened(this.db, now)) await this.queueAsked();
+  }
+
   /** A sealed budget whose alarm was lost gets it back on its next request. */
   private async rearmSealed(): Promise<void> {
     if ((await this.ctx.storage.getAlarm()) === null) await this.runner.scheduleNext(Date.now());
@@ -587,6 +633,7 @@ export class BudgetStore extends DurableObject<Env> {
       RESTORE_TO: (at: number) => this.restoreTo(at),
       RESTORE_UNDO: () => this.restoreUndo(),
       LAST_RESTORE: () => this.lastRestore(),
+      PURGE_START: (now: number) => purgeStart(this.adapter(), now, this.enqueue),
       JOBS: {
         // routes/settings.ts startSync() has already taken the lease with this run id.
         sync: async (runId, connectionId, trigger) => {
@@ -669,6 +716,13 @@ export class BudgetStore extends DurableObject<Env> {
       [SEALED_FETCH]: async (job, now) => sealedFetchHandler(await this.fetchDeps())(job, now),
       [SEALED_BACKSTOP]: async (job, now) =>
         sealedBackstopHandler((await this.fetchDeps()).runs, this.enqueue)(job, now),
+      // Emptying the old tables (seal/purge.ts): queued only by the person's own tap in Settings → Privacy.
+      [PURGE]: async (job, now) =>
+        purgeHandler({
+          db: this.adapter(),
+          budgetState: (await this.fetchDeps()).budgetState,
+          directoryName: async () => this.directory().budgetName(await this.budgetId()),
+        })(job, now),
     };
     // Both kinds of budget stamp their links and keep their Items routed to them in the Directory.
     const both = new Set(['stamp_links', 'register_link']);

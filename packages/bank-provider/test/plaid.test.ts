@@ -44,6 +44,25 @@ describe('Plaid adapter', () => {
     expect(() => p.linkTokenRequest({ mode: 'repair', userId: 'u' })).toThrow();
   });
 
+  it('removes an Item with /item/remove and its token, and throws what Plaid refuses', async () => {
+    const asked: { url: string; body: Record<string, unknown> }[] = [];
+    let answer = new Response(JSON.stringify({ request_id: 'r' }), { status: 200 });
+    const p = new PlaidProvider({
+      clientId: 'id',
+      secret: 'secret',
+      env: 'sandbox',
+      fetch: async (url, init) => {
+        asked.push({ url: String(url), body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+        return answer;
+      },
+    });
+    await p.removeItem('access-sandbox-1');
+    expect(asked[0]!.url).toBe('https://sandbox.plaid.com/item/remove');
+    expect(asked[0]!.body).toMatchObject({ access_token: 'access-sandbox-1' });
+    answer = new Response(JSON.stringify({ error_code: 'ITEM_NOT_FOUND' }), { status: 400 });
+    await expect(p.removeItem('gone')).rejects.toMatchObject({ code: 'ITEM_NOT_FOUND' });
+  });
+
   it('parses a sync page into normalized events with raw paths', () => {
     const body = JSON.stringify({
       added: [

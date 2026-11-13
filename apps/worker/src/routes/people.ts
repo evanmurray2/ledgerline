@@ -7,6 +7,7 @@ import { cookie, SESSION_COOKIE } from '../http/auth.js';
 import { clock } from '../http/clock.js';
 import { bodyObject } from '../http/security.js';
 import { maxUsers, signupsPerDay, signupSwitchOn } from './signup-switch.js';
+import { startDeletionSql } from '../store/idle-accounts.js';
 
 export const peopleRoutes = new Hono<AppEnv>();
 
@@ -40,24 +41,20 @@ peopleRoutes.post('/settings/security/delete-account', async (c) => {
   if (u.is_admin === 1)
     return c.json({ error: 'admin', message: 'The admin’s account can’t be deleted.' }, 409);
   const store = env.BUDGET_INFO ? await env.BUDGET_INFO(u.budget_id) : null;
-  if (!store || typeof b.budgetName !== 'string' || b.budgetName.trim() !== store.name.trim())
+  // A sealed budget's name is on its devices only: the app checks what was typed (docs/privacy.md 5.8).
+  if (
+    !store ||
+    typeof b.budgetName !== 'string' ||
+    (!store.sealed && b.budgetName.trim() !== store.name.trim())
+  )
     return c.json({ error: 'name', message: 'Type your budget’s name as it’s shown.' }, 400);
-  if (store.banks > 0)
+  // Its banks are removed at Plaid first (the delete job). On Plaid Trial only the admin links banks, and no job
+  // removes a link there (store/account-life.ts removeBanks).
+  if (store.banks > 0 && env.PLAID_ENV === 'production' && env.OTHER_USERS_BANKS !== 'on')
     return c.json({ error: 'banks', message: 'An account with linked banks can’t be deleted yet.' }, 409);
   const id = u.id;
   const budgetId = u.budget_id;
-  await env.DB.batch([
-    env.DB.prepare(`UPDATE user SET status = 'deleting', updated_at = ?2 WHERE id = ?1`).bind(id, now),
-    env.DB.prepare(`DELETE FROM auth_session WHERE user_id = ?1`).bind(id),
-    env.DB.prepare(`DELETE FROM device WHERE user_id = ?1`).bind(id),
-    env.DB.prepare(`DELETE FROM device_link WHERE user_id = ?1`).bind(id),
-    env.DB.prepare(`DELETE FROM connection_route WHERE budget_id = ?1`).bind(budgetId),
-    env.DB.prepare(`DELETE FROM budget_member WHERE budget_id = ?1`).bind(budgetId),
-    env.DB.prepare(
-      `INSERT INTO app_state (key, value, updated_at) VALUES (?1, ?2, ?3)
-       ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-    ).bind(deletingKey(budgetId), id, now),
-  ]);
+  await env.DB.batch(startDeletionSql(budgetId, [id], now).map(([q, p]) => env.DB.prepare(q).bind(...p)));
   await env.DELETE_ACCOUNT?.(id, budgetId);
   c.header('set-cookie', cookie(SESSION_COOKIE, '', 0));
   return c.json({ ok: true });

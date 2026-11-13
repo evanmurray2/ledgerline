@@ -202,6 +202,17 @@ let asking: Promise<boolean> | null = null;
 export function setPasskeyCheck(fn: (() => Promise<boolean>) | null): void {
   askForPasskey = fn;
 }
+/**
+ * Asks for the passkey now, with the same dialog, for something the device does by itself (the full backup of a
+ * locked budget). True once the passkey check succeeded; false when there is no dialog or the person said Not now.
+ */
+export function confirmItsYou(): Promise<boolean> {
+  if (!askForPasskey) return Promise.resolve(false);
+  asking ??= askForPasskey().finally(() => {
+    asking = null;
+  });
+  return asking;
+}
 async function afterPasskeyCheck<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();

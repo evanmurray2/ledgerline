@@ -22,6 +22,7 @@ import {
   cutoverSeal,
   type CutoverDeps,
 } from './cutover.js';
+import { purgeStatus } from './purge.js';
 import { runDeps } from './runs.js';
 
 const TRY_AGAIN = 'Something went wrong. Try again.';
@@ -59,6 +60,8 @@ cutoverApi.use('*', async (c, next) => {
  */
 const open = (c: { env: AppEnv['Bindings']; req: { path: string } }, who: Caller): boolean =>
   c.req.path.endsWith('/cutover/back') ||
+  // Emptying the old tables after the way back closed (seal/purge.ts) needs no variable either.
+  c.req.path.endsWith('/cutover/purge') ||
   c.env.CUTOVER === who.budgetId ||
   c.env.CUTOVER === 'any' ||
   // `owner`: the budget of the Directory's admin, with no id written in the Worker's settings.
@@ -79,11 +82,26 @@ cutoverApi.get('/cutover/state', async (c) => {
     return c.json({ error: 'not_found', message: TRY_AGAIN }, 404);
   const now = requestNow(c);
   const s = await cutoverState({ db: c.env.DB, now, markNow: Date.now() });
+  const p = s.sealed && !notAdmin(c, who) ? await purgeStatus(c.env.DB, now) : null;
+  const iso = (t: number | null) => (t === null ? null : new Date(t).toISOString());
   return c.json({
     // The move is offered to the budget's admin only, and only while the Worker names this budget.
     open: !s.sealed && !notAdmin(c, who) && open(c, who),
     sealed: s.sealed,
     backUntil: s.backUntil !== null && !notAdmin(c, who) ? new Date(s.backUntil).toISOString() : null,
+    // Where emptying the old tables stands (seal/purge.ts), for the admin of a sealed budget.
+    ...(p && {
+      purge: {
+        stage: p.stage,
+        tables: p.tables,
+        done: p.done,
+        rows: p.rows,
+        startedAt: iso(p.startedAt),
+        doneAt: iso(p.doneAt),
+        checkAt: iso(p.checkAt),
+        clean: p.clean,
+      },
+    }),
   });
 });
 
@@ -174,6 +192,17 @@ cutoverApi.post('/cutover/unfreeze', async (c) => {
 cutoverApi.post('/cutover/seal', async (c) => {
   const r = await cutoverSeal(deps(c, requestNow(c)));
   return c.json(r, r.ok ? 200 : 409);
+});
+
+// Empties the old tables, once the way back has closed (seal/purge.ts). It can't be undone, so the passkey check
+// must be moments old, and the job starts only from here.
+cutoverApi.post('/cutover/purge', async (c) => {
+  const now = requestNow(c);
+  const who = (c.env as typeof c.env & { CALLER?: Caller }).CALLER!;
+  if (now - who.verifiedAt > FRESH_MS)
+    return c.json({ error: 'reauth', message: 'Confirm it’s you with your passkey, then try again.' }, 401);
+  const r = (await c.env.PURGE_START?.(now)) ?? { ok: false as const, why: TRY_AGAIN };
+  return r.ok ? c.json({ ok: true }) : c.json({ error: 'refused', message: r.why }, 409);
 });
 
 cutoverApi.post('/cutover/back', async (c) => {

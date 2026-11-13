@@ -298,6 +298,11 @@ export class PlaidProvider implements BankDataProvider {
     return { state: last.exit ? 'exited' : 'finished', publicTokens: [] };
   }
 
+  /** Removes the Item at Plaid (`/item/remove`). Its token stops working; the lifetime link count is not given back. */
+  async removeItem(accessToken: string): Promise<void> {
+    await this.json<{ request_id?: string }>('/item/remove', { access_token: accessToken });
+  }
+
   async completeLink(publicToken: string): Promise<CompletedLink> {
     const r = await this.json<{ access_token: string; item_id: string }>('/item/public_token/exchange', {
       public_token: publicToken,
