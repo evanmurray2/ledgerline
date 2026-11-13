@@ -72,6 +72,14 @@ const no = (status: 400 | 404 | 409, error: string, message: string) =>
 
 sealedApi.use('*', async (c, next) => (c.req.method === 'GET' ? next() : csrf(c, next)));
 
+// A bank is linked, repaired, fetched or removed only for a budget that is locked: before its start has sealed it
+// (seal/start.ts), the store has no log to check a signature with and no run state to fetch into.
+sealedApi.use('/settings/connections/*', async (c, next) =>
+  c.req.method !== 'POST' || (await isSealedStore(c.env.DB))
+    ? next()
+    : no(409, 'not_locked', 'Your budget isn’t locked yet. Lock it first.'),
+);
+
 interface LinkRow {
   id: string;
   connection_id: string;

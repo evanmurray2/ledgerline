@@ -188,6 +188,8 @@ describe('a new bank in a sealed budget, and removing one', () => {
   it('links, describes, files on a device, then removes', async () => {
     await world(
       async (x: World) => {
+        // The bank routes answer only for a budget marked locked (seal/sealed-routes.ts).
+        x.sql(`INSERT INTO store_mark (key, at) VALUES ('sealed', 1)`);
         const env = {
           DB: x.db,
           TOKEN_KEYS: '1:a passphrase of at least thirty-two characters!',
