@@ -33,6 +33,7 @@ import {
   type SyncTable,
 } from '../sync-tables.js';
 import { CSRF_HEADER } from '@ledgerline/contracts';
+import { checkRows, columnsOf, noteChanges, rowStatements, type Columns } from './copy-rows.js';
 
 export interface EngineIdentity {
   budgetId: string;
@@ -295,8 +296,7 @@ export class FilingInterrupted extends Error {
   }
 }
 
-/** Rows that no honest writer makes (LocalEngine checkRows): nothing of them was written. */
-export class RowsRefused extends Error {}
+export { RowsRefused } from './copy-rows.js';
 
 /** An edit the engine ran and recorded. */
 export interface Recorded {
@@ -352,6 +352,7 @@ const OUTBOX = 'outbox';
 
 export class LocalEngine {
   private readonly app: Hono<AppEnv>;
+  private readonly columns: Columns;
 
   constructor(
     readonly db: Db,
@@ -361,6 +362,7 @@ export class LocalEngine {
     /** Called when Ready to Assign doesn't satisfy rule 10 (the identity check). */
     private readonly onIdentity?: (r: { difference: number; month: string }) => Promise<void>,
   ) {
+    this.columns = columnsOf(db);
     const app = new Hono<AppEnv>();
     app.use('*', async (c, next) => {
       c.set('requestId', 'local');
@@ -444,7 +446,7 @@ export class LocalEngine {
     // (which is then the server's rows as of `st.through`), the page is written, and the queue is run again on
     // top (docs/privacy.md 5.3). Only when that can be done exactly. A sync of several pages takes the queue out
     // before its first page and runs it again after its last: `held` is the queue while it is out.
-    await this.checkRows(page.rows, tables, tables !== SYNC_TABLES);
+    await checkRows(this.columns, page.rows, tables, tables !== SYNC_TABLES);
     let held = fresh ? null : await this.heldQueue();
     if (!held && !fresh) {
       const queue = await this.exactQueue(st, page);
@@ -458,8 +460,8 @@ export class LocalEngine {
     // What the next derive() must redo (read before the rows change: a moved or deleted row's old key counts too).
     const todo = await this.pendingDerive();
     if (st.cursor || page.cursor || st.through === 0) todo.full = true;
-    if (!todo.full) await this.noteChanges(page.rows, todo);
-    for (const r of page.rows) stmts.push(...this.rowStatements(r, tables));
+    if (!todo.full) await noteChanges(this.db, page.rows, todo);
+    for (const r of page.rows) stmts.push(...rowStatements(this.db, r, tables));
     stmts.push(this.setPendingDerive(todo));
     const next: EngineState = {
       ...st,
@@ -598,155 +600,6 @@ export class LocalEngine {
         `INSERT INTO local_state (key, value) VALUES ('derive', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
       )
       .bind(JSON.stringify({ ...p, keys: [...new Set(p.keys)] }));
-  }
-
-  /**
-   * Which transactions' lines and which months a sync page changes. Rows that only change what screens read
-   * directly (payees, rules, alerts, balances, targets, settings) need no derive at all.
-   */
-  private async noteChanges(rows: readonly SyncRow[], todo: PendingDerive): Promise<void> {
-    const keyCols: Record<string, string[]> = {
-      bank_txn: ['txn_key'],
-      manual_pending: ['txn_key'],
-      txn_split: ['txn_key'],
-      expected_reimbursement: ['txn_key'],
-      owed_close: ['txn_key'],
-      txn_link: ['from_key', 'to_key'],
-      txn_overlay: ['txn_key'],
-    };
-    const month = (m: unknown) => {
-      if (typeof m === 'string' && (!todo.fromMonth || m < todo.fromMonth)) todo.fromMonth = m;
-    };
-    for (const r of rows) {
-      const t = SYNC_TABLES.find((x) => x.name === r.t);
-      if (!t) continue;
-      const cols = keyCols[r.t];
-      if (cols) {
-        const where = t.pk.map((c, i) => `${c} = ?${i + 1}`).join(' AND ');
-        const old = await this.db
-          .prepare(
-            `SELECT ${[...cols, ...(r.t === 'manual_pending' ? ['covers_provider_txn_id'] : [])].join(', ')} FROM ${r.t} WHERE ${where}`,
-          )
-          .bind(...r.k)
-          .first<Record<string, unknown>>();
-        for (const c of cols) {
-          if (old?.[c]) todo.keys.push(String(old[c]));
-          if (r.d?.[c]) todo.keys.push(String(r.d[c]));
-        }
-        // A posted bank row removed can change another row's place: a reissue of it keeps its arrival, so that row
-        // moves out of the starting balance (ledger/link.ts, D-67). Rare, so everything is rebuilt.
-        if (r.t === 'bank_txn' && r.d?.removed_at && r.d.pending === 0) todo.full = true;
-        // An entry's cover hides the bank pending row it covers (docs/payee-names.md 9.2): any change to the entry
-        // (the cover, deleted, matched) can show or hide that row, before or after.
-        if (r.t === 'manual_pending')
-          for (const id of [old?.covers_provider_txn_id, r.d?.covers_provider_txn_id]) {
-            if (typeof id !== 'string') continue;
-            const b = await this.db
-              .prepare(`SELECT txn_key FROM bank_txn WHERE provider_txn_id = ?1`)
-              .bind(id)
-              .first<{ txn_key: string }>();
-            if (b) todo.keys.push(b.txn_key);
-          }
-      } else if (r.t === 'assignment') month(r.k[1]);
-      else if (r.t === 'category') todo.fromStart = true;
-      else if (r.t === 'account') todo.full = true;
-      else if (r.t === 'budget') {
-        const b = await this.db
-          .prepare(`SELECT budget_start_month, time_zone FROM budget WHERE id = ?1`)
-          .bind(r.k[0])
-          .first<{ budget_start_month: string | null; time_zone: string }>();
-        if (!b || !r.d || b.budget_start_month !== r.d.budget_start_month || b.time_zone !== r.d.time_zone)
-          todo.full = true;
-      }
-    }
-  }
-
-  private readonly columnsOf = new Map<string, Set<string>>();
-
-  private async columns(table: string): Promise<Set<string>> {
-    let c = this.columnsOf.get(table);
-    if (!c) {
-      const info = await this.db
-        .prepare(`SELECT name FROM pragma_table_info('${table}')`)
-        .all<{ name: string }>();
-      c = new Set(info.results.map((x) => x.name));
-      this.columnsOf.set(table, c);
-    }
-    return c;
-  }
-
-  /**
-   * Refuses rows no honest writer makes, before any of them is written: a table that is not one of `tables`
-   * (`strict`: the rows of a log entry; a sync skips a table it doesn't know, as a newer server may have one), a
-   * key of the wrong length, a column the table doesn't have, a value that is not text, a number or null, or a
-   * row whose key columns differ from its key. A row's table and column names go into SQL, so they must be the
-   * copy's own names and nothing else: rows come from the server, or from another device through the log.
-   */
-  private async checkRows(
-    rows: readonly SyncRow[],
-    tables: readonly SyncTable[],
-    strict: boolean,
-  ): Promise<void> {
-    const scalar = (v: unknown) =>
-      v === null || typeof v === 'string' || (typeof v === 'number' && Number.isFinite(v));
-    const refuse = (why: string): never => {
-      throw new RowsRefused(why);
-    };
-    for (const r of rows) {
-      if (!r || typeof r.t !== 'string') return refuse('not a row');
-      const t = tables.find((x) => x.name === r.t);
-      if (!t) {
-        if (strict) refuse('a table this copy does not keep');
-        continue;
-      }
-      if (!Array.isArray(r.k) || r.k.length !== t.pk.length || !r.k.every(scalar))
-        refuse(`${t.name}: its key`);
-      if (r.d === null) continue;
-      if (typeof r.d !== 'object' || Array.isArray(r.d)) refuse(`${t.name}: not a row`);
-      const cols = await this.columns(t.name);
-      for (const [c, v] of Object.entries(r.d)) {
-        if (!cols.has(c)) refuse(`${t.name}: a column this copy does not have`);
-        if (!scalar(v)) refuse(`${t.name}: a value that is not text, a number or null`);
-      }
-      t.pk.forEach((c, i) => {
-        if (r.d![c] !== r.k[i]) refuse(`${t.name}: the row is not the one its key names`);
-      });
-    }
-  }
-
-  private rowStatements(r: SyncRow, tables: readonly SyncTable[] = SYNC_TABLES): Stmt[] {
-    const t = tables.find((x) => x.name === r.t);
-    if (!t) return [];
-    const where = t.pk.map((c, i) => `${c} = ?${i + 1}`).join(' AND ');
-    if (!r.d) return [this.db.prepare(`DELETE FROM ${t.name} WHERE ${where}`).bind(...r.k)];
-    const cols = Object.keys(r.d);
-    const vals = cols.map((c) => r.d![c]);
-    const update = cols
-      .filter((c) => !t.pk.includes(c))
-      .map((c) => `${c} = excluded.${c}`)
-      .join(', ');
-    // The server's row replaces a row of the copy that is the same thing under another primary key (an edit made
-    // offline gave it an id of its own): without this the row's other unique key refuses the write, and every later
-    // page with it.
-    const displaced = (t.unique ?? [])
-      .filter((key) => key.every((c) => r.d![c] !== undefined && r.d![c] !== null))
-      .map((key) =>
-        this.db
-          .prepare(
-            `DELETE FROM ${t.name} WHERE ${key.map((c, i) => `${c} = ?${i + 1}`).join(' AND ')}
-               AND NOT (${t.pk.map((c, i) => `${c} = ?${key.length + i + 1}`).join(' AND ')})`,
-          )
-          .bind(...key.map((c) => r.d![c]), ...r.k),
-      );
-    return [
-      ...displaced,
-      this.db
-        .prepare(
-          `INSERT INTO ${t.name} (${cols.join(', ')}) VALUES (${cols.map((_, i) => `?${i + 1}`).join(', ')})
-           ON CONFLICT ${t.appendOnly ? '' : `(${t.pk.join(', ')}) `}DO ${update && !t.appendOnly ? `UPDATE SET ${update}` : 'NOTHING'}`,
-        )
-        .bind(...vals),
-    ];
   }
 
   /** Empties the copy (a new epoch, or a failed offline edit): everything is downloaded again. */
@@ -1059,7 +912,7 @@ export class LocalEngine {
     }
     // What derive() must work out again: the rows as they were name the old keys, the copy holds the new ones.
     const todo = await this.pendingDerive();
-    await this.noteChanges(rec.undo, todo);
+    await noteChanges(this.db, rec.undo, todo);
     await this.db.batch([this.setPendingDerive(todo)]);
     const filed: QueuedEdit = {
       id,
@@ -1112,11 +965,11 @@ export class LocalEngine {
 
   /** Writes rows another copy recorded, and marks what derive() must work out again. */
   async applyRows(rows: SyncRow[]): Promise<void> {
-    await this.checkRows(rows, RECORDED_TABLES, true);
+    await checkRows(this.columns, rows, RECORDED_TABLES, true);
     const todo = await this.pendingDerive();
-    await this.noteChanges(rows, todo);
+    await noteChanges(this.db, rows, todo);
     const stmts: Stmt[] = [this.db.prepare(`PRAGMA defer_foreign_keys = ON`)];
-    for (const r of rows) stmts.push(...this.rowStatements(r, RECORDED_TABLES));
+    for (const r of rows) stmts.push(...rowStatements(this.db, r, RECORDED_TABLES));
     stmts.push(this.setPendingDerive(todo));
     for (const part of chunks(stmts, 500)) await this.db.batch(part);
   }
