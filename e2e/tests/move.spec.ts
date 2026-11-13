@@ -123,7 +123,7 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   expect((await again).status()).toBe(200);
   await expect(page.getByText('Groceries')).toBeVisible({ timeout: 30_000 });
 
-  // ---- the recovery key: it signs in from now on (the move set its public half)
+  // ---- the recovery key: it signs in from now on (the move set its public half, signed with the budget's key)
   expect((await call(page, 'GET', '/api/settings/security/recovery-key')).json).toMatchObject({ set: true });
   // A new device with a new passkey: the recovery key signs in, opens the budget, and adds the passkey to it.
   // Its own address: sign-in checks are counted per address (AUTH_LIMITER), and the owner's device goes on below.
@@ -143,7 +143,27 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   await other.reload();
   await expect(other.getByText('Groceries')).toBeVisible({ timeout: 60_000 });
   await expect(other.getByText('Open your budget with your recovery key')).toHaveCount(0);
+  // The recovery key signed in here, and this device added its passkey itself: it tells itself of neither.
+  await other.waitForTimeout(3000);
+  await expect(other.getByText(/Your recovery key signed in on/)).toHaveCount(0);
+  await expect(other.getByText(/A way in was added on/)).toHaveCount(0);
   await other.close();
+
+  // ---- the owner's device tells of both when it opens (docs/privacy.md 5.8), and each is dismissed here only.
+  // Its own address from here: the checks each start makes are counted per address (AUTH_LIMITER).
+  await page.setExtraHTTPHeaders({ 'cf-connecting-ip': '198.51.100.8' });
+  await page.goto('/budget');
+  const notices = page.getByTestId('sealed-notices');
+  const added = notices.getByRole('alert').filter({ hasText: 'A way in was added on' });
+  await expect(added).toBeVisible({ timeout: 30_000 });
+  await expect(notices.getByText(/Your recovery key signed in on/)).toBeVisible();
+  await added.getByRole('button', { name: 'This was me' }).click();
+  await expect(added).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId('sealed-notices').getByText(/Your recovery key signed in on/)).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByText(/A way in was added on/)).toHaveCount(0);
 
   // ---- the way back
   await page.goto('/settings/privacy');

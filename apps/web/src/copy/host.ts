@@ -235,6 +235,13 @@ export class EngineHost {
     return this.call('sealedAppend', { entries, ...(keys ? { keys } : {}) });
   }
   /**
+   * Signs one request with the budget's signing key in force (docs/privacy-keys.md 11). The key never leaves
+   * the engine: it gives the 64-byte signature over the request's name, the server's challenge and the body.
+   */
+  sealedSign(action: string, challenge: Uint8Array, payload: Uint8Array): Promise<Uint8Array> {
+    return this.call('sealedSign', { action, challenge, payload });
+  }
+  /**
    * Moves a budget that exists to its sealed log (docs/privacy.md section 8 step 6): the keys and the first
    * entry were made by keys/budget.ts. `sealed` with `ok: false` means the budget is sealed and its first
    * snapshot did not read back: take the way back.

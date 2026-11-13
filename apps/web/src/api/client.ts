@@ -22,12 +22,14 @@ import {
   editOffline,
   read as readCopy,
   readsLocally,
+  signedHeaders,
   syncNow,
   syncSince,
   wipe,
 } from '../copy/copy';
 import type { SyncPage } from '../copy/host';
 import { isServerRead } from '../copy/server-reads';
+import { signedActionFor } from './signed-paths';
 
 export class ApiError extends Error {
   readonly code: string;
@@ -285,8 +287,23 @@ async function sendOnce<S extends z.ZodType>(
   // drops on the way, the queue sends the same id again, and the server, which may have taken the change before
   // the answer was lost, applies it once (routes/sync.ts editOnce).
   const edit = mutation && canEditOffline(method, path) ? await newEdit().catch(() => null) : null;
+  // The body exactly as sent: a locked budget's serious requests are signed over these bytes.
+  const bodyText = mutation ? (body !== undefined ? JSON.stringify(body) : '{}') : undefined;
+  const action = mutation && isSealed() ? signedActionFor(method, path, body) : null;
+  let signed: Record<string, string> = {};
+  if (action) {
+    try {
+      signed = await signedHeaders(action, bodyText!);
+    } catch (e) {
+      const x = e as { code?: string; status?: number; message?: string };
+      if (x.code === 'reauth' || x.code === 'unauthenticated')
+        throw new ApiError(x.code, codeText(x.code)!, x.status ?? 401);
+      throw new ApiError(x.code ?? 'unsigned', readable(x.message) ? x.message : TRY_AGAIN, x.status ?? 0);
+    }
+  }
   const headers = (): Record<string, string> => ({
     ...MUTATION_HEADERS,
+    ...signed,
     ...(since === null ? {} : { [SYNC_SINCE_HEADER]: String(since) }),
     ...(edit ? { 'x-edit-id': edit.id, 'x-edit-at': String(edit.at) } : {}),
   });
@@ -298,7 +315,7 @@ async function sendOnce<S extends z.ZodType>(
       headers: mutation
         ? headers()
         : { accept: 'application/json', ...(path === '/api/session' ? { [SEALED_HEADER]: '1' } : {}) },
-      body: mutation && body !== undefined ? JSON.stringify(body) : mutation ? '{}' : undefined,
+      body: bodyText,
     });
   } catch {
     connectivity.reportNetworkError();
