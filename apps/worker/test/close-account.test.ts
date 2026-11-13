@@ -83,6 +83,36 @@ describe('close account (D-73)', () => {
     expect((await accounts()).closed).toEqual([]);
   });
 
+  // M14: the only way to empty a card's payment category is the Close sheet's "Move $X to Ready to Assign".
+  it('money in the payment category: offered to move to Ready to Assign, then Close works', async () => {
+    const month = (await h.call('GET', '/api/session')).json as { budget: { currentMonth: string } };
+    const m = month.budget.currentMonth;
+    expect(
+      (
+        await h.call('POST', '/api/budget/assign', {
+          month: m,
+          items: [{ categoryId: 'pay_1', amount: 2500 }],
+        })
+      ).status,
+    ).toBe(200);
+    const r = await register(1);
+    expect(r.cardAvailable).toBe(2500);
+    expect(r.closeBlock).toBe('Its payment category has $25.00 available. Move it to Ready to Assign first.');
+    expect(r.closeMove).toEqual({ categoryId: 'pay_1', amount: 2500 });
+    expect((await close(1, { ...(await atZero()), available: 2500 })).status).toBe(422);
+    const moved = await h.call('POST', '/api/budget/move', {
+      month: m,
+      from: 'pay_1',
+      to: 'rta',
+      amount: 2500,
+    });
+    expect(moved.status).toBe(200);
+    const after = await register(1);
+    expect(after.cardAvailable).toBe(0);
+    expect(after.closeBlock).toBeNull();
+    expect(after.closeMove).toBeNull();
+  });
+
   it('a new bank row opens a closed account again', async () => {
     expect((await close(1, await atZero())).status).toBe(200);
     expect(await closedAt(1)).not.toBeNull();

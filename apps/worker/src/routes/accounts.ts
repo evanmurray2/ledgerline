@@ -109,6 +109,7 @@ export async function accountRows(
             : synced
       }`,
       closed,
+      connectionId: a.connection_id,
     };
   });
   return { rows, raw, recent: startAdjust.recent };

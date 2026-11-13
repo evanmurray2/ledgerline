@@ -35,14 +35,23 @@ export function closeBlocked(a: AccountRow, open: OpenRows, cardAvailable: numbe
   const credit = a.kind === 'credit';
   // With a pending row, the bank's balance may never reach $0 (D-93): the working balance decides. When that isn't
   // $0 either, the bank balance is what to deal with first.
-  if (a.bank !== 0 && (!open.pending || a.working !== 0))
-    return credit
-      ? `You still owe ${formatCents(Math.abs(a.bank))} on this card. Pay it off first.`
-      : `It still has ${formatCents(a.bank)} at the bank. Move the money out first.`;
+  // A card's bank figure is what you owe: below $0 the bank owes you. Cash below $0 is overdrawn.
+  if (a.bank !== 0 && (!open.pending || a.working !== 0)) {
+    const amt = formatCents(Math.abs(a.bank));
+    if (credit)
+      return a.bank > 0
+        ? `You still owe ${amt} on this card. Pay it off first.`
+        : `The card has a credit of ${amt}. Spend it or ask the bank for it first.`;
+    return a.bank > 0
+      ? `It still has ${amt} at the bank. Move the money out first.`
+      : `It’s overdrawn by ${amt} at the bank. Bring it to $0 first.`;
+  }
   if (open.upcoming) return UPCOMING;
   if (a.working !== 0) return `Its balance after pending is ${formatCents(a.working)}, not $0.`;
   if (credit && cardAvailable !== null && cardAvailable !== 0)
-    return `Its payment category has ${formatCents(cardAvailable)} available. Move it to another category first.`;
+    return cardAvailable > 0
+      ? `Its payment category has ${formatCents(cardAvailable)} available. Move it to Ready to Assign first.`
+      : `Its payment category is ${formatCents(-cardAvailable)} short. Cover it on Budget first.`;
   return null;
 }
 

@@ -35,7 +35,10 @@ export function rowMeta(r: TxnListRow, style: 'list' | 'posted' | 'needs' | 'reg
   const date = dayLabel(r.date);
   const parts =
     style === 'register'
-      ? []
+      ? // A register's days head its rows; an upcoming bill sits under Upcoming, so it needs its own date.
+        r.status === 'upcoming'
+        ? [date]
+        : []
       : style === 'posted'
         ? [date, r.accountName]
         : r.status === 'upcoming' && style === 'list'

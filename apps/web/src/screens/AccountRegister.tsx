@@ -1,7 +1,8 @@
 // An account's register: balances and its transactions by day; Rename, Close and Reopen from the ⋯
 // menu (Close and Reopen in AccountClose.tsx).
-import { useState } from 'react';
-import { Outlet, useNavigate, useParams } from '@tanstack/react-router';
+import { useRef, useState } from 'react';
+import { Link, Outlet, useNavigate, useParams } from '@tanstack/react-router';
+import { HIDDEN_CHARS, type AccountRow } from '@ledgerline/contracts';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
 import { useRegister, useSession } from '../api/hooks';
@@ -24,6 +25,7 @@ import {
   PrimaryButton,
   ScreenBody,
   SectionTitle,
+  textLinkClass,
 } from '../components/ui';
 import { formatCents } from '../lib/money';
 import { dayLabel, syncedLabel } from '../lib/dates';
@@ -35,6 +37,16 @@ import { StartBalanceSheet, shownBalance } from './StartBalanceSheet';
 import { CloseAccountSheet } from './AccountClose';
 import { errorMessage } from '../api/client';
 import { toast } from '../components/Toast';
+
+/**
+ * What is pending, in the sign the balance above it uses (a card: what you owe). Your own entries and estimates
+ * count too, so it doesn't say "at the bank"; a payment pending on a card makes it smaller.
+ */
+export function pendingLine(a: AccountRow, listed: boolean): string {
+  if (a.pending > 0) return `+ ${formatCents(a.pending)} pending`;
+  if (a.pending < 0) return `− ${formatCents(-a.pending)} pending`;
+  return listed ? 'pending adds up to $0' : 'nothing pending';
+}
 
 export function RegisterScreen() {
   const { accountId } = useParams({ strict: false }) as { accountId: string };
@@ -77,9 +89,13 @@ export function RegisterScreen() {
   };
   if (canWrite && a?.closed)
     menu.push({ name: 'Reopen account', track: 'account.reopen', onClick: () => void reopen() });
-  const sub = a
-    ? `${a.institution}${a.mask ? ` · ending ${a.mask}` : ''} · ${a.syncedAt ? `${a.connectionStatus === 'ok' ? 'synced' : 'last synced'} ${syncedLabel(a.syncedAt, today)}` : 'not synced yet'}${a.connectionStatus === 'login_required' ? ' · sign in again on Accounts' : a.connectionStatus !== 'ok' ? ' · see Accounts' : ''}`
-    : '';
+  // A closed account gets nothing more from the bank: its line says when it closed, not when it synced.
+  const sub = !a
+    ? ''
+    : a.closed
+      ? a.meta
+      : `${a.institution}${a.mask ? ` · ending ${a.mask}` : ''} · ${a.syncedAt ? `${a.connectionStatus === 'ok' ? 'synced' : 'last synced'} ${syncedLabel(a.syncedAt, today)}` : 'not synced yet'}${a.connectionStatus === 'error' ? ' · see Accounts' : ''}`;
+  const pendingListed = !!v?.days.some((d) => d.label === 'Pending');
   return (
     <PageFrame>
       <BackHeader
@@ -95,7 +111,12 @@ export function RegisterScreen() {
       />
       {renaming && a && <RenameAccountSheet id={a.id} name={a.name} close={() => setRenaming(false)} />}
       {closing && a && (
-        <CloseAccountSheet account={a} block={all.data?.closeBlock ?? null} close={() => setClosing(false)} />
+        <CloseAccountSheet
+          account={a}
+          block={all.data?.closeBlock ?? null}
+          move={all.data?.closeMove ?? null}
+          close={() => setClosing(false)}
+        />
       )}
       {showStart && a && start && (
         <StartBalanceSheet start={start} credit={a.kind === 'credit'} close={() => setShowStart(false)} />
@@ -114,6 +135,24 @@ export function RegisterScreen() {
                 This account is closed. It’s off Accounts and the Add list. Reopen it from the ⋯ menu.
               </Banner>
             )}
+            {!a.closed && a.connectionStatus === 'login_required' && a.connectionId && (
+              <Banner
+                tone="warn"
+                icon="alert"
+                title={`${a.institution} needs you to sign in again`}
+                action={
+                  <Link
+                    to="/accounts/repair/$connectionId"
+                    params={{ connectionId: a.connectionId }}
+                    search={{ close: base }}
+                    data-track="register.repair"
+                    className={cx(textLinkClass, 'self-center')}
+                  >
+                    Sign in
+                  </Link>
+                }
+              />
+            )}
             <section className="flex shrink-0 flex-col gap-2.5 rounded-lg border border-line bg-surface p-3">
               {a.kind === 'credit' ? (
                 <>
@@ -121,11 +160,7 @@ export function RegisterScreen() {
                     <div className="flex flex-col gap-0.5">
                       <span className="text-xs text-muted">You owe the bank</span>
                       <span className="tnum text-2xl font-bold">{formatCents(a.bank)}</span>
-                      <span className="text-xs text-muted">
-                        {a.pending > 0
-                          ? `+ ${formatCents(a.pending)} pending at the bank`
-                          : 'nothing pending'}
-                      </span>
+                      <span className="text-xs text-muted">{pendingLine(a, pendingListed)}</span>
                     </div>
                     {a.statement && (
                       <div className="flex flex-col gap-0.5">
@@ -209,7 +244,9 @@ export function RegisterScreen() {
                 <SectionTitle
                   note={
                     d.balance === null ? (
-                      a.kind === 'credit' ? (
+                      d.label === 'Upcoming' ? (
+                        'counts on its date'
+                      ) : a.kind === 'credit' ? (
                         'counts now'
                       ) : undefined
                     ) : (
@@ -221,7 +258,7 @@ export function RegisterScreen() {
                     )
                   }
                 >
-                  {d.label === 'Pending' ? 'Pending' : /^\d{4}-/.test(d.label) ? dayLabel(d.label) : d.label}
+                  {/^\d{4}-/.test(d.label) ? dayLabel(d.label) : d.label}
                 </SectionTitle>
                 <Card>
                   {d.rows.map((r) => (
@@ -230,6 +267,15 @@ export function RegisterScreen() {
                 </Card>
               </section>
             ))}
+            {v.more && (
+              <p className="m-0 text-xs leading-snug text-muted" data-testid="register-more">
+                This list shows the newest 300 transactions. To find an older one, search on{' '}
+                <Link to="/activity" className={textLinkClass}>
+                  Activity
+                </Link>
+                .
+              </p>
+            )}
           </>
         )}
       </ScreenBody>
@@ -243,9 +289,20 @@ function RenameAccountSheet({ id, name, close }: { id: string; name: string; clo
   const [value, setValue] = useState(name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  // Enter while a save runs must not send it again: state is a render late, the ref isn't.
+  const saving = useRef(false);
   const next = value.trim();
+  const problem = !next
+    ? 'Enter a name.'
+    : HIDDEN_CHARS.test(next)
+      ? 'Use letters, numbers and punctuation only.'
+      : null;
   const save = async () => {
-    if (!next || next === name) return close();
+    if (saving.current) return;
+    // Disabled with its reason above it ("Enter a name."): Enter does nothing either.
+    if (problem) return;
+    if (next === name) return close();
+    saving.current = true;
     setBusy(true);
     try {
       await api.renameAccount(id, { name: next });
@@ -255,6 +312,7 @@ function RenameAccountSheet({ id, name, close }: { id: string; name: string; clo
     } catch (e) {
       setError(e);
       setBusy(false);
+      saving.current = false;
     }
   };
   return (
@@ -272,7 +330,8 @@ function RenameAccountSheet({ id, name, close }: { id: string; name: string; clo
             mutates="offline"
             track="account.rename.save"
             busy={busy}
-            disabled={!next || busy}
+            disabled={!!problem || busy}
+            why={problem ?? ''}
             onClick={() => void save()}
           >
             Save
@@ -286,7 +345,10 @@ function RenameAccountSheet({ id, name, close }: { id: string; name: string; clo
           value={value}
           maxLength={60}
           autoFocus
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setError(null);
+          }}
           onKeyDown={(e) => e.key === 'Enter' && void save()}
         />
       </Field>
