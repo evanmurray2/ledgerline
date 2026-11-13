@@ -53,7 +53,10 @@ You need git, Node 22 and pnpm (the version in `package.json`, `packageManager`)
    ```
 
    It passes only if a workflow run of this repository attested a file with these exact bytes. The output names
-   the run and its commit: the commit must be the one you built.
+   the run and its commit: the commit must be the one you built. It first fetches Sigstore's trust root
+   (`tuf-repo-cdn.sigstore.dev`); behind a proxy that blocks it, it fails with "no valid Sigstore verifiers". Then
+   `gh api repos/evanmurray2/ledgerline/attestations/sha256:<hash>` still shows the attestation, with its commit
+   and workflow, but without the signature check.
 
 6. Optional: check the files the site serves. For each line of the list, download the path and compare its hash:
 
