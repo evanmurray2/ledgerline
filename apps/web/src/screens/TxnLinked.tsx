@@ -25,9 +25,13 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
   const [paybacks] = useState(t.paybacks);
   const moneyIn = t.amount > 0;
   const pb = paybacks[0];
-  /** Unlink undoes every payback of one money in: this one, or (on a purchase) the one that paid it. */
-  const inflowKey = moneyIn ? t.key : pb?.inflowKey;
-  const undone = paybacks.filter((p) => p.inflowKey === inflowKey);
+  /**
+   * Unlink undoes every payback of the money in it touches: this one, or (on a purchase) each one that paid it, so a
+   * purchase paid back by two transactions lists and unlinks both.
+   */
+  const inflows = moneyIn ? [t.key] : [...new Set(paybacks.map((p) => p.inflowKey))];
+  const inflowKey = inflows[0];
+  const undone = paybacks.filter((p) => inflows.includes(p.inflowKey));
   const total = undone.reduce((a, p) => a + p.amount, 0);
   return (
     <Sheet
@@ -75,7 +79,7 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
             track="txn.paid.unlink"
             disabled={unlink.isPending}
             onClick={async () => {
-              if (!(await tried(unlink.mutateAsync(inflowKey)))) return;
+              for (const k of inflows) if (!(await tried(unlink.mutateAsync(k)))) return;
               usage.suggestion('payback', 'unlinked');
               setUnlinked(moneyIn && undone.length === 1 ? (pb.label.split(' · ')[0] ?? '') : '');
             }}
@@ -104,13 +108,16 @@ export function PaidBack({ t, close }: { t: TxnSheet; close: () => void }) {
                 track="txn.paid.undo"
                 disabled={match.isPending}
                 onClick={async () => {
-                  const ok = await tried(
-                    match.mutateAsync({
-                      inflowKey,
-                      items: undone.map((p) => ({ itemId: p.itemId, amount: p.amount })),
-                    }),
-                  );
-                  if (!ok) return;
+                  for (const k of inflows) {
+                    const items = undone.filter((p) => p.inflowKey === k);
+                    const ok = await tried(
+                      match.mutateAsync({
+                        inflowKey: k,
+                        items: items.map((p) => ({ itemId: p.itemId, amount: p.amount })),
+                      }),
+                    );
+                    if (!ok) return;
+                  }
                   usage.undo('unlink');
                   setUnlinked(null);
                 }}

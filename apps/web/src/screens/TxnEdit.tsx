@@ -33,6 +33,7 @@ import { toast } from '../components/Toast';
 import { Why } from '../components/Why';
 import { BankSays, TxnHeader, useParentPath } from './TxnCommon';
 import { PairedWith } from './TxnPair';
+import { useHere } from '../lib/back';
 
 type OwedMode = 'none' | 'half' | 'all' | 'custom';
 
@@ -68,6 +69,11 @@ function CategorySelect({
 
 export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const parent = useParentPath();
+  const here = useHere();
+  const unlink = useMoneyMutation(api.unlink);
+  /** What this money in already pays back (its own matches, not a purchase's paybacks). */
+  const pays = t.paybacks.filter((p) => p.inflowKey === t.key);
+  const paysTotal = pays.reduce((a, p) => a + p.amount, 0);
   const patch = useMoneyMutation((v: { key: string; body: Parameters<typeof api.patchTxn>[1] }) =>
     api.patchTxn(v.key, v.body),
   );
@@ -393,7 +399,38 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       {/* Any money in can pay back what's owed to you: a card credit too, unless it's linked as a refund, and money in
           you added, pending or not (not a scheduled one: it hasn't come yet). A match moves with your entry's key to the
           bank's row when it posts (D-64). */}
-      {(isIncome || (isRefund && !t.refundOf) || (t.kind === 'manual' && t.amount > 0 && !outflow)) && (
+      {/* Money in you added that already pays back something says what (D-105), as the bank's money in does on its
+          Paid back sheet. Unlink makes it owed again; Match stays while some of the money is left. */}
+      {pays.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <Label>Pays back</Label>
+          {pays.map((p) => (
+            <Link
+              key={p.itemId}
+              to="/owed"
+              search={{ back: here }}
+              className="flex items-center justify-between gap-2 rounded-lg border border-line p-3 text-ink no-underline"
+            >
+              <span className="text-md font-semibold">{p.label}</span>
+              <span className="tnum font-bold">{formatCents(p.amount)}</span>
+            </Link>
+          ))}
+          <SoftButton
+            mutates="offline"
+            tone="outline"
+            track="txn.manual.unlink"
+            disabled={unlink.isPending}
+            onClick={() => unlink.mutate(t.key)}
+            className="self-start"
+          >
+            Unlink
+          </SoftButton>
+          {unlink.error && <ErrorNote error={unlink.error} />}
+        </div>
+      )}
+      {(isIncome ||
+        (isRefund && !t.refundOf) ||
+        (t.kind === 'manual' && t.amount > 0 && !outflow && paysTotal < t.amount)) && (
         <Link
           to={`${parent}/match/${encodeURIComponent(t.key)}`}
           search

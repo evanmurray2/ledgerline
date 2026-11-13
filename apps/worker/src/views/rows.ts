@@ -94,6 +94,11 @@ export function listRow(
     badgeKind = 'alert';
     sub = 'which one?';
     sheet = 'transfer';
+  } else if (t.source === 'manual' && t.status === 'pending' && extra.paidFor && !extra.stale) {
+    // Money in you added that pays back what's owed to you (D-105): it says so, as the bank's money in does.
+    badge = extra.paidFor.length === 1 ? `Paid back · ${extra.paidFor[0]}` : 'Paid back';
+    badgeKind = 'match';
+    sub = 'added by you';
   } else if (t.source === 'manual' && t.status === 'pending' && extra.atBank != null) {
     // Paired with the bank's pending row (D-64): the bank has it, so it's never "Not at the bank yet". The bank's
     // amount shows only when it differs from yours (a tip); yours counts until the charge posts.
