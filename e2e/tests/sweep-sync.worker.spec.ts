@@ -64,21 +64,22 @@ test('A change made between the pages of a full download arrives with the next s
   expect((await syncPage(request, `since=${next.through}`)).rows).toEqual([]);
 });
 
-test('Two tabs assigning at once both count', async ({ page, context }) => {
+test('Two tabs tapping the same fix at once: it counts once', async ({ page, context }) => {
   const other = await context.newPage();
   await page.goto('/budget?view=attention');
   await other.goto('/budget?view=attention');
   await expect(rta(page)).toHaveText('$1,999.90');
   await expect(rta(other)).toHaveText('$1,999.90');
-  // The same fix on both tabs at the same moment: each tab's tap is its own change.
+  // The same fix on both tabs at the same moment: each sends what it saw assigned, so the second is refused
+  // instead of covering Dining out twice.
   await Promise.all([
     page.getByRole('button', { name: 'Cover $18.25 for Dining out' }).click(),
     other.getByRole('button', { name: 'Cover $18.25 for Dining out' }).click(),
   ]);
   await page.reload();
   await other.reload();
-  await expect(rta(page)).toHaveText('$1,963.40');
-  await expect(rta(other)).toHaveText('$1,963.40');
+  await expect(rta(page)).toHaveText('$1,981.65');
+  await expect(rta(other)).toHaveText('$1,981.65');
 });
 
 test('The API answers bad input plainly, never with a server error', async ({ request }) => {
