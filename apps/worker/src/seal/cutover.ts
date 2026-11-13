@@ -18,7 +18,7 @@
 // never reads, and the next freeze clears it. Nothing here runs unless the Worker's `CUTOVER` variable is `on`.
 import type { Db } from '@ledgerline/db/sql';
 import { cursorHash, toHex } from '@ledgerline/seal';
-import { HASH_START, type HashProgress, hashStep } from '../local/device-snapshot.js';
+import { HASH_START, type HashProgress, hashStep, MOVE_TABLES } from '../local/device-snapshot.js';
 import { MAX_FREEZE_MS } from '../store/marks.js';
 import { SEALED_BACKSTOP, SEALED_FETCH } from './fetch-job.js';
 import { readEntry } from '@ledgerline/seal';
@@ -276,7 +276,7 @@ export async function cutoverFreeze(d: CutoverDeps): Promise<FreezeStep> {
   const until = m.frozenUntil;
   if (note.quick !== (await fingerprint(d.db, d.budgetId, true)))
     return thaw(['The budget changed just now. Try again.']);
-  const step = await hashStep(d.db, note.hashing, HASH_ROWS, HASH_BYTES);
+  const step = await hashStep(d.db, note.hashing, HASH_ROWS, HASH_BYTES, MOVE_TABLES);
   if (!step.finished) {
     await setNote({ ...note, hashing: step.progress });
     return { ok: true, more: true, until };

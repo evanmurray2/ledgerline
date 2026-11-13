@@ -133,12 +133,41 @@ describe('a signed request', () => {
   it('a request that names a key or a bank has a payload', async () => {
     const keys = await deriveBudgetKeys(randomBytes(32), BUDGET, 1);
     const empty = new Uint8Array();
-    for (const action of [ACTION.removeBank, ACTION.storeSignKey, ACTION.storeInboxKey])
+    for (const action of [
+      ACTION.removeBank,
+      ACTION.storeSignKey,
+      ACTION.storeInboxKey,
+      ACTION.linkFinish,
+      ACTION.setRecoverySignIn,
+    ])
       await expect(signRequest(keys, BUDGET, action, newChallenge(), empty)).rejects.toThrow(RangeError);
     const c = newChallenge();
     const sig = await signRequest(keys, BUDGET, ACTION.deleteAccount, c, empty);
     expect(await verifyRequest(keys.sign.pub, 1, BUDGET, ACTION.deleteAccount, c, empty, sig)).toBe(true);
     expect(await verifyRequest(keys.sign.pub, 1, BUDGET, ACTION.removeBank, c, empty, sig)).toBe(false);
+  });
+
+  it('names every request apart, and never reuses a name', async () => {
+    const keys = await deriveBudgetKeys(randomBytes(32), BUDGET, 1);
+    const names = Object.values(ACTION);
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toEqual([
+      'store-sign-key',
+      'store-inbox-key',
+      'link-token',
+      'remove-bank',
+      'delete-account',
+      'link-finish',
+      'purge-old-copy',
+      'set-recovery-sign-in',
+    ]);
+    const c = newChallenge();
+    const payload = utf8('{}');
+    const sig = await signRequest(keys, BUDGET, ACTION.purgeOldCopy, c, payload);
+    for (const other of names)
+      expect(await verifyRequest(keys.sign.pub, 1, BUDGET, other, c, payload, sig)).toBe(
+        other === 'purge-old-copy',
+      );
   });
 
   it('is not an entry, snapshot or recovery signature', async () => {

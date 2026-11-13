@@ -102,6 +102,8 @@ export class EngineHost {
   private pending = new Map<number, Pending>();
   /** Ready to Assign failed rule 10 on this phone: reported to the server as an alert. */
   onIdentity: ((r: { difference: number; month: string }) => void) | null = null;
+  /** The engine is making the copy again from a snapshot (local/rebuild.ts); `sealedSync` answers when it is done. */
+  onRebuilding: (() => void) | null = null;
 
   constructor() {
     this.worker = new Worker(new URL('../../../worker/src/local/web-entry.ts', import.meta.url), {
@@ -111,6 +113,10 @@ export class EngineHost {
       const m = e.data as { id?: number; ok?: boolean; value?: unknown; error?: string; event?: string };
       if (m.event === 'identity') {
         this.onIdentity?.(m as unknown as { difference: number; month: string });
+        return;
+      }
+      if (m.event === 'rebuilding') {
+        this.onRebuilding?.();
         return;
       }
       const p = m.id ? this.pending.get(m.id) : undefined;
@@ -208,8 +214,18 @@ export class EngineHost {
   sealedJoin(): Promise<{ number: number }> {
     return this.call('sealedJoin');
   }
-  /** Reads the log, files the bank runs that wait, and sends the changes made here. */
-  sealedSync(): Promise<{ entries: number; filed: number; waiting: boolean; sent: number; lost: number }> {
+  /**
+   * Reads the log, files the bank runs and the daily scans that wait (in time order), and sends the changes made
+   * here. `rebuilt`: the copy was made again from a snapshot first; `kept` waiting changes went with it.
+   */
+  sealedSync(): Promise<{
+    entries: number;
+    filed: number;
+    waiting: boolean;
+    sent: number;
+    lost: number;
+    rebuilt?: { kept: number; lost: number };
+  }> {
     return this.call('sealedSync');
   }
   /** Writes a snapshot of the copy and reads it back. */
@@ -233,6 +249,13 @@ export class EngineHost {
   /** Sends public entries the app made; `keys`, the derived keys of the version a key change brings. */
   sealedAppend(entries: Uint8Array[], keys?: SealedKeys[]): Promise<AppendAnswer> {
     return this.call('sealedAppend', { entries, ...(keys ? { keys } : {}) });
+  }
+  /**
+   * Signs one request with the budget's signing key in force (docs/privacy-keys.md 11). The key never leaves
+   * the engine: it gives the 64-byte signature over the request's name, the server's challenge and the body.
+   */
+  sealedSign(action: string, challenge: Uint8Array, payload: Uint8Array): Promise<Uint8Array> {
+    return this.call('sealedSign', { action, challenge, payload });
   }
   /**
    * Moves a budget that exists to its sealed log (docs/privacy.md section 8 step 6): the keys and the first

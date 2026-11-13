@@ -4,7 +4,9 @@
 // server's full backup and restore are refused for a sealed budget.
 import { SELF } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { ACTION } from '@ledgerline/seal';
 import { PURGE_ID } from '../src/seal/purge.js';
+import { askChallenge, genesisIn, signedHeaders, signedPost } from './signed.js';
 import { ownerDb } from './store-db.js';
 
 const ORIGIN = 'https://ledgerline.test';
@@ -26,6 +28,10 @@ describe('Delete the readable copy: the route', () => {
     expect(await r1.json()).toMatchObject({ message: 'This budget is not locked.' });
 
     await db.prepare(`INSERT INTO store_mark (key, at) VALUES ('sealed', ?1)`).bind(NOW).run();
+    const budgetId = (await db.prepare(`SELECT id FROM budget LIMIT 1`).first<string>('id'))!;
+    const w = await genesisIn(db, budgetId, NOW);
+    const purge = () =>
+      signedPost('/api/cutover/purge', '{}', { keys: w.keys, budgetId, action: ACTION.purgeOldCopy });
     await db
       .prepare(`INSERT INTO store_note (key, value) VALUES ('cutover_at', ?1)`)
       .bind(NOW - 86_400_000)
@@ -43,8 +49,20 @@ describe('Delete the readable copy: the route', () => {
       .bind(Date.parse('2026-01-01'))
       .run();
     expect(await state()).toMatchObject({ stage: 'ready' });
+    // Only a device that holds the budget's key starts it: a session alone, another request's signature, or a
+    // challenge used once already are refused (docs/privacy-keys.md 11).
+    const unsigned = await post('/api/cutover/purge');
+    expect(unsigned.status).toBe(403);
+    expect(await unsigned.json()).toMatchObject({ error: 'unsigned' });
+    const wrong = await signedHeaders(w.keys, budgetId, ACTION.deleteAccount, '{}');
+    expect((await signedPost('/api/cutover/purge', '{}', null, wrong)).status).toBe(403);
+    const ch = await askChallenge(ACTION.purgeOldCopy);
+    const once = await signedHeaders(w.keys, budgetId, ACTION.purgeOldCopy, '{}', ch);
+    expect((await signedPost('/api/cutover/purge', '{"x":1}', null, once)).status).toBe(403);
+    expect((await signedPost('/api/cutover/purge', '{}', null, once)).status).toBe(403);
+    expect(await db.prepare(`SELECT count(*) AS n FROM job WHERE id = ?1`).bind(PURGE_ID).first('n')).toBe(0);
     // The job's first step must not run while this test looks: it is queued for later.
-    expect((await post('/api/cutover/purge')).status).toBe(200);
+    expect((await purge()).status).toBe(200);
     expect(await db.prepare(`SELECT count(*) AS n FROM job WHERE id = ?1`).bind(PURGE_ID).first('n')).toBe(1);
     await db
       .prepare(`UPDATE job SET run_at = ?1 WHERE id = ?2`)
@@ -52,7 +70,7 @@ describe('Delete the readable copy: the route', () => {
       .run();
     expect(await state()).toMatchObject({ stage: 'running' });
     // Asked again, nothing new is queued.
-    expect((await post('/api/cutover/purge')).status).toBe(200);
+    expect((await purge()).status).toBe(200);
     expect(await db.prepare(`SELECT count(*) AS n FROM job WHERE id = ?1`).bind(PURGE_ID).first('n')).toBe(1);
     // The way back is closed for good, and the state says so.
     expect((await post('/api/cutover/back')).status).toBe(409);

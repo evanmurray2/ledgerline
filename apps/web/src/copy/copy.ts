@@ -9,7 +9,13 @@
 // holdKey). Wipe: signing out, here or from another device (Settings → Sign-in), no longer a member, or 7 days
 // offline.
 import { useSyncExternalStore } from 'react';
-import { CSRF_HEADER, type SealedSession, type Session } from '@ledgerline/contracts';
+import {
+  CSRF_HEADER,
+  SIGNED_CHALLENGE_HEADER,
+  SIGNED_SIGNATURE_HEADER,
+  type SealedSession,
+  type Session,
+} from '@ledgerline/contracts';
 import {
   KEY_TYPO,
   NoSlotError,
@@ -24,8 +30,9 @@ import { dropMove, prepareMove, proveMove, recoveryKeyOpens, type PreparedMove }
 import { WORKER_RUN_KEYS } from '../keys/worker-keys';
 import { fetchPublicEntries, logDeviceId, newUlid, openSealedBudget } from './sealed';
 import { addPasskeyWay, authPubOf, openPlans, type Ways } from './sealed-ways';
-import { walkPublic, zeroize } from '@ledgerline/seal';
+import { ACTION, type Entry, type PublicState, walkPublic, zeroize } from '@ledgerline/seal';
 import { mergedSession } from './sealed-session';
+import { ownWriters } from './notices';
 import { connectivity } from '../state/connectivity';
 import {
   EngineHost,
@@ -98,6 +105,13 @@ export interface CopyState {
    * recovery key opens it (`openWithRecovery`).
    */
   needsRecovery?: boolean;
+  /** The copy is being made again from the budget's newest snapshot (a sealed budget): "Bringing your budget up to date". */
+  rebuilding?: boolean;
+  /**
+   * The server showed this device a history that is not the one it saw (docs/privacy.md 5.3, a fork or a rollback).
+   * The device stops; nothing was changed.
+   */
+  forked?: boolean;
 }
 
 const MOCK = import.meta.env.VITE_MOCK === '1';
@@ -260,6 +274,8 @@ const fromHex = (s: string): Uint8Array<ArrayBuffer> =>
 let recoveryTyped: string | null = null;
 /** The passkey that was no way in, kept for the open with the recovery key that follows (it becomes one). */
 let noSlotWay: { credentialId: string; slotPrf: ArrayBuffer } | null = null;
+/** The budget key another device sealed to this one (copy/device-add.ts), held only until the next open uses it. */
+let addedKey: Uint8Array | null = null;
 /** The derived keys the engine holds now, for the keys held for a refresh once a key change adds a version. */
 let keysInEngine: unknown[] | null = null;
 
@@ -275,6 +291,23 @@ export function holdRecoveryKey(typed: string): void {
 export async function openWithRecovery(typed: string, session: Session): Promise<void> {
   recoveryTyped = typed;
   await start(session);
+  if (state.status === 'failed') throw new Error(state.error ?? NOT_NOW);
+}
+
+/**
+ * Opens the locked budget with its key, sealed to this device by a device that holds it (docs/privacy-keys.md
+ * section 10), when the passkey just used is no way in to it. The passkey is then added as a way in, as after the
+ * recovery key. The key is zeroed once used.
+ */
+export async function openWithAddedKey(bk: Uint8Array, session: Session): Promise<void> {
+  addedKey = bk;
+  try {
+    await start(session);
+  } finally {
+    // Zeroed whether the open used it or not.
+    zeroize(bk as never);
+    addedKey = null;
+  }
   if (state.status === 'failed') throw new Error(state.error ?? NOT_NOW);
 }
 
@@ -316,6 +349,8 @@ async function enterSealed(
     };
     const typed = online ? recoveryTyped : null;
     recoveryTyped = null;
+    const added = online ? addedKey : null;
+    addedKey = null;
     let r: Awaited<ReturnType<typeof openSealedBudget>>;
     try {
       r = await openSealedBudget({
@@ -332,9 +367,9 @@ async function enterSealed(
         passkey,
         workerKeys: WORKER_RUN_KEYS,
         ...(last ? { remembered: { number: last.number, hash: fromHex(last.hash) } } : {}),
-        ...(typed
+        ...(typed || added
           ? {
-              recovery: typed,
+              ...(added ? { added: added as never } : { recovery: typed! }),
               // The passkey becomes a way in, so it alone opens the budget the next time. A slot change is never
               // held back; if it doesn't go through now, the recovery key is asked again the next time.
               onRecovered: async (budget: OpenBudget) => {
@@ -350,7 +385,7 @@ async function enterSealed(
     } catch (e) {
       // No way in for this passkey: the recovery key opens the budget (Copy.tsx asks for it). A typing mistake
       // in the key keeps the question open.
-      if (e instanceof NoSlotError || (typed && e instanceof WayInError)) {
+      if (e instanceof NoSlotError || ((typed || added) && e instanceof WayInError)) {
         noSlotWay = { credentialId: w.credentialId, slotPrf: w.slotPrf! };
         set({ needsRecovery: true });
       }
@@ -372,6 +407,11 @@ async function enterSealed(
     await save();
   }
 }
+
+/** The engine's message when the server showed another history (local/device-log.ts LogFork). */
+const FORK_TEXT = /showed this device a different history/;
+/** What the person reads then (docs/copy.md). */
+export const FORK_MESSAGE = 'The server showed this device a different history. Nothing was changed.';
 
 /** The engine's message for a log request refused because the sign-in ended (local/http-transport.ts). */
 const SIGNED_OUT_TEXT = 'Your sign-in ended. Sign in again.';
@@ -504,6 +544,52 @@ export async function checkRecoveryKey(typed: string): Promise<string> {
   return authPub;
 }
 
+/**
+ * The two headers of a request signed with the budget's key (docs/privacy-keys.md 11), over `bodyText`, the body
+ * exactly as it is sent: a challenge from the Directory for this one request, signed in the engine, where the
+ * signing key stays. For a locked budget whose copy is open only.
+ */
+export async function signedHeaders(action: string, bodyText: string): Promise<Record<string, string>> {
+  if (!host || !sealed) throw new Error('Open your budget on this device, then try again.');
+  const h = host;
+  const ch = await server<{ challenge: string; token: string }>(
+    'POST',
+    '/api/settings/security/request-challenge',
+    { action },
+  );
+  const sig = await h.sealedSign(action, fromHex(ch.challenge), new TextEncoder().encode(bodyText));
+  return { [SIGNED_CHALLENGE_HEADER]: ch.token, [SIGNED_SIGNATURE_HEADER]: toHex(sig) };
+}
+
+/**
+ * The log's public entries as the server has them now, walked by the log's rules: they must pass through the last
+ * one this device saw. For the notices every device shows (copy/notices.ts). Null when the copy is not open.
+ */
+export async function publicLook(): Promise<{
+  entries: Entry[];
+  state: PublicState;
+  deviceIds: string[];
+  budgetId: string;
+  session: SealedSession;
+} | null> {
+  if (!host || !who || !sealed || state.status !== 'ready' || state.offline) return null;
+  const h = host;
+  const budgetId = who.budgetId;
+  const session = sealed;
+  const ways = waysOf(h, budgetId);
+  const entries = await fetchPublicEntries(ways.fetch);
+  const last = await lastPublicSeen(h, budgetId);
+  const st = await walkPublic(
+    entries,
+    budgetId,
+    last ? { mustPass: { number: last.number, hash: fromHex(last.hash) } } : undefined,
+  );
+  // The writer's id as kept with the copy: none yet, nothing to tell (it is never made here).
+  const deviceId = await h.get('log_device');
+  if (!deviceId) return null;
+  return { entries, state: st, deviceIds: [...new Set([deviceId, ...ownWriters()])], budgetId, session };
+}
+
 /** The changes planned in the log (intents) that wait, with the ways in each one removes. */
 export async function plannedChanges(): Promise<ReturnType<typeof openPlans>> {
   if (!host || !who || !sealed) return [];
@@ -607,11 +693,12 @@ export async function moveFinish(
   keysInEngine = [keys];
   // The recovery key signs in from now on (docs/privacy-keys.md 4.2): the server keeps its public half. If this
   // fails, Settings → Sign-in offers to set it.
+  // The budget is locked now, so the request is signed with its key (docs/privacy-keys.md 11).
   const authPub = await authPubOf(typed);
   if (authPub)
-    await server('POST', '/api/settings/security/recovery-key', { authPub }).catch(() =>
-      console.warn(JSON.stringify({ event: 'recovery_key_not_set' })),
-    );
+    await signedHeaders(ACTION.setRecoverySignIn, JSON.stringify({ authPub }))
+      .then((headers) => server('POST', '/api/settings/security/recovery-key', { authPub }, headers))
+      .catch(() => console.warn(JSON.stringify({ event: 'recovery_key_not_set' })));
   await keepPublicSeen(h, who.budgetId, { number: 1, hash: toHex(p.genesis.hash) });
   await h.put('publics', JSON.stringify([btoa(String.fromCharCode(...proved.genesis))]));
   await h.put('sealed_session', JSON.stringify(sealed));
@@ -747,7 +834,7 @@ function identityOf(s: Session): EngineIdentity {
 export async function start(session: Session): Promise<void> {
   if (MOCK || state.status === 'opening' || state.status === 'ready') return;
   who = identityOf(session);
-  set({ status: 'opening', error: null, progress: 0, offline: false, why: null });
+  set({ status: 'opening', error: null, progress: 0, offline: false, why: null, forked: false });
   let why: FullWhy | null = keepsCopy() ? 'first' : 'memory';
   let memoryOnly = false;
   try {
@@ -769,7 +856,14 @@ export async function start(session: Session): Promise<void> {
     // Reloaded while the copy was open and in use (within 10 minutes): it opens again without Face ID.
     const kept = rec && !p?.prf ? await heldKey(key, IDLE_MS) : null;
     if (rec && kept) {
-      const st = await server<{ off: boolean }>('POST', '/api/auth/copy-status', { device: rec.deviceId });
+      // Too many checks from this address just now (several quick reloads): the copy opens all the same, and the
+      // next start asks again. Only the server's "signed out" answer turns it off.
+      const st = await server<{ off: boolean }>('POST', '/api/auth/copy-status', {
+        device: rec.deviceId,
+      }).catch((e: unknown) => {
+        if (e instanceof Error && /Too many tries/.test(e.message)) return { off: false };
+        throw e;
+      });
       if (st.off) {
         await dropHeld(key);
         await deleteRecord(key);
@@ -937,7 +1031,7 @@ export async function openWithoutSignal(onSession?: (s: Session) => void): Promi
   );
   if (!a.prf)
     throw new Error('This passkey can’t open the budget saved here. Connect to the internet to open it.');
-  set({ status: 'opening', error: null, offline: true });
+  set({ status: 'opening', error: null, offline: true, forked: false });
   try {
     const unreadable = (e: unknown): never => {
       if (e instanceof CopyUnreadable) throw new Error(UNREADABLE);
@@ -985,6 +1079,7 @@ async function openHost(bytes: ArrayBuffer | null): Promise<void> {
   await host?.close();
   host = new EngineHost();
   host.onIdentity = (r) => void server('POST', '/api/identity-alert', r).catch(() => undefined);
+  host.onRebuilding = () => set({ rebuilding: true });
   await host.open(who!, bytes);
 }
 
@@ -1023,6 +1118,14 @@ export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}):
         try {
           r = await host!.sealedSync();
         } catch (e) {
+          if (state.rebuilding) set({ rebuilding: false });
+          // The server showed this device another history: the device stops, and the copy is left as it was.
+          if (e instanceof Error && FORK_TEXT.test(e.message)) {
+            if (record) await save().catch(() => undefined);
+            await host?.close();
+            host = null;
+            set({ status: 'failed', forked: true, error: FORK_MESSAGE });
+          }
           // The log's routes said the sign-in ended: the same as any other request that says so (client.ts).
           if (e instanceof Error && e.message === SIGNED_OUT_TEXT) {
             void dropSignedOut(true).finally(() => window.dispatchEvent(new Event('ledgerline:signedout')));
@@ -1037,14 +1140,18 @@ export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}):
           }
           throw e;
         }
-        set({ queued: (await queued()).length, ...(state.why ? { why: null } : {}) });
+        set({
+          queued: (await queued()).length,
+          ...(state.why ? { why: null } : {}),
+          ...(state.rebuilding ? { rebuilding: false } : {}),
+        });
         if (r.lost) window.dispatchEvent(new CustomEvent('ledgerline:edits-refused', { detail: r.lost }));
-        const moved = r.entries > 0 || r.filed > 0 || r.sent > 0;
+        const moved = r.entries > 0 || r.filed > 0 || r.sent > 0 || !!r.rebuilt;
         if (record && (moved || Date.now() - record.lastServerTime >= KEEP_ALIVE_MS)) {
           record = { ...record, lastServerTime: Date.now() };
           await save();
         }
-        if ((r.entries > 0 || r.filed > 0) && !opts.quiet) changed();
+        if ((r.entries > 0 || r.filed > 0 || r.rebuilt) && !opts.quiet) changed();
         upkeep();
         return;
       }

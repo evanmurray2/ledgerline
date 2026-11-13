@@ -10,8 +10,11 @@ import { CHALLENGE_MS, randomToken } from './auth.js';
 export interface Challenge {
   id: string;
   challenge: string;
-  /** `recovery`: a recovery key's sign-in, before its passkey ceremony (routes/recovery-key.ts). */
-  purpose: 'register' | 'login' | 'recovery';
+  /**
+   * `recovery`: a recovery key's sign-in, before its passkey ceremony (routes/recovery-key.ts). `request`: a
+   * request signed with the budget's key (http/signed-request.ts); its grant names the request and the session.
+   */
+  purpose: 'register' | 'login' | 'recovery' | 'request';
   grant_kind: string | null;
   grant_ref: string | null;
   exp: number;

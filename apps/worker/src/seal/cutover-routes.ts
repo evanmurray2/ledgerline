@@ -24,6 +24,8 @@ import {
 } from './cutover.js';
 import { purgeStatus } from './purge.js';
 import { runDeps } from './runs.js';
+import { ACTION } from '@ledgerline/seal';
+import { storeSigned } from '../http/signed-request.js';
 
 const TRY_AGAIN = 'Something went wrong. Try again.';
 /** How recent the passkey check is when the move itself starts. */
@@ -201,6 +203,12 @@ cutoverApi.post('/cutover/purge', async (c) => {
   const who = (c.env as typeof c.env & { CALLER?: Caller }).CALLER!;
   if (now - who.verifiedAt > FRESH_MS)
     return c.json({ error: 'reauth', message: 'Confirm it’s you with your passkey, then try again.' }, 401);
+  // Only a device that holds the budget's key starts it (docs/privacy-keys.md 11). A budget that is not sealed
+  // has no readable copy to empty: the purge refuses it.
+  if ((await cutoverState({ db: c.env.DB, now, markNow: Date.now() })).sealed) {
+    const refused = await storeSigned(c, ACTION.purgeOldCopy, new Uint8Array(await c.req.arrayBuffer()));
+    if (refused) return refused;
+  }
   const r = (await c.env.PURGE_START?.(now)) ?? { ok: false as const, why: TRY_AGAIN };
   return r.ok ? c.json({ ok: true }) : c.json({ error: 'refused', message: r.why }, 409);
 });

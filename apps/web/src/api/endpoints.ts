@@ -80,6 +80,17 @@ const UsersView = z.object({
 export type UsersView = z.infer<typeof UsersView>;
 const RegisterResult = z.object({ ok: z.literal(true), recoveryCode: z.string().optional() });
 const OkId = z.object({ ok: z.literal(true), id: z.string() });
+const hexOrNull = z.string().nullable().optional();
+const DeviceAddState = z.object({
+  role: z.enum(['from', 'to', 'waiting']).nullable(),
+  expiresAt: z.string().optional(),
+  offers: z.number().optional(),
+  commit: hexOrNull,
+  reveal: hexOrNull,
+  confirm: hexOrNull,
+  offer: hexOrNull,
+  sealed: hexOrNull,
+});
 const LinkToken = z.object({ linkToken: z.string(), hostedUrl: z.string().optional() });
 const Exchange = z.object({ ok: z.literal(true), connectionId: z.string(), accounts: z.unknown() });
 
@@ -176,6 +187,12 @@ export const api = {
   loginVerify: (body: { response: unknown }) => post('/api/auth/login/verify', Ok, body),
   security: () => get('/api/settings/security', SecurityView),
   deviceLink: () => post('/api/settings/security/device-link', DeviceLink),
+  // Adding a device with its own passkey to a locked budget: the server's relay (docs/privacy-keys.md section 10).
+  deviceAddState: () => get('/api/settings/security/device-add', DeviceAddState),
+  deviceAddStart: () => post('/api/settings/security/device-add/start', z.object({ expiresAt: z.string() })),
+  deviceAddSend: (step: 'commit' | 'offer' | 'reveal' | 'sealed' | 'confirm', body: Record<string, string>) =>
+    post(`/api/settings/security/device-add/${step}`, Ok, body),
+  deviceAddEnd: () => post('/api/settings/security/device-add/end', Ok),
   removePasskey: (id: string) => post(`/api/settings/security/passkeys/${enc(id)}/remove`, Ok),
   renamePasskey: (id: string, name: string) =>
     post(`/api/settings/security/passkeys/${enc(id)}/rename`, Ok, { name }),
@@ -297,7 +314,9 @@ export const api = {
     post('/api/settings/connections/link-finish', LinkFinishResult, body),
   refreshConnection: (id: string) => post(`/api/settings/connections/${enc(id)}/refresh`, Ok),
   /** Ends a bank link at the bank (a sealed budget: the server). The budget's side is `markRemoved`. */
-  removeConnection: (id: string) => post(`/api/settings/connections/${enc(id)}/remove`, Ok),
+  removeConnection: (id: string) =>
+    // The body names the bank: for a locked budget it is signed, and every parameter is in the body.
+    post(`/api/settings/connections/${enc(id)}/remove`, Ok, { connectionId: id }),
   /** Marks a removed bank in the budget: its accounts and rows stay (D-87). An edit on the device's copy. */
   markRemoved: (id: string) => post(`/api/settings/connections/${enc(id)}/mark-removed`, Ok),
   refreshAll: () =>

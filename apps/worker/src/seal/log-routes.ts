@@ -12,7 +12,7 @@ import { requestNow } from '../http/clock.js';
 import type { AppEnv } from '../http/context.js';
 import { csrf } from '../http/security.js';
 import { classifyUsage, dailyLimits, usageToday } from '../sync/breaker.js';
-import { logAfter, logAppend, logHead, type LogDeps } from './log-store.js';
+import { b64, entryText, logAppend, logHead, logRowsAfter, type LogDeps } from './log-store.js';
 import {
   logFloor,
   publicAfter,
@@ -40,11 +40,6 @@ const PAGE_ENTRIES = 32;
 const PAGE_CHARS = 700_000;
 const TRY_AGAIN = 'Something went wrong. Try again.';
 
-const b64 = (b: Uint8Array): string => {
-  let s = '';
-  for (const x of b) s += String.fromCharCode(x);
-  return btoa(s);
-};
 const unb64 = (s: string): Uint8Array<ArrayBuffer> => {
   const bin = atob(s);
   const out = new Uint8Array(bin.length);
@@ -97,8 +92,8 @@ logApi.get('/log', async (c) => {
   const db = c.env.DB;
   const entries: string[] = [];
   let chars = 0;
-  for (const e of await logAfter(db, after, PAGE_ENTRIES)) {
-    const text = b64(e.bytes);
+  for (const e of await logRowsAfter(db, after, PAGE_ENTRIES)) {
+    const text = entryText(e.bytes);
     // Always at least one entry, then as many as fit one answer.
     if (entries.length && chars + text.length > PAGE_CHARS) break;
     entries.push(text);

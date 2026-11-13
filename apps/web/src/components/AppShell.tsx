@@ -1,6 +1,7 @@
 // Phone: screen content above a bottom tab bar (Budget, Activity, Accounts, Reports). Desktop: a left sidebar
 // replaces the tab bar and a right-hand panel holds sheets. The offline / read-only banner sits on top.
 import { RecoveryNotice } from '../screens/Signup';
+import { SealedNotices } from '../screens/SealedNotices';
 import { useState, type ReactNode } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { PanelSlotContext, useModalOpen } from './Sheet';
@@ -220,6 +221,18 @@ export function StatusBanner() {
   const c = useConnectivity();
   const copy = useCopy();
   const offline = !c.online || c.networkFailed;
+  // A locked budget's copy is being made again from its newest snapshot (copy/copy.ts): a few seconds.
+  if (copy.rebuilding && !offline)
+    return (
+      <div
+        role="status"
+        data-testid="rebuilding-banner"
+        className="flex shrink-0 flex-col gap-1 border-b border-line bg-sunken px-4 py-2.5 text-none-fg"
+      >
+        <span className="text-md font-bold">Bringing your budget up to date</span>
+        <span className="text-sm leading-snug">This takes a few seconds. Nothing is lost.</span>
+      </div>
+    );
   if (!offline && !c.readOnly && !c.readsPaused) return null;
   const loaded = c.loadedAt ? budgetTime(c.loadedAt) : null;
   if (offline)
@@ -311,6 +324,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex min-w-0 flex-1 flex-col">
             <StatusBanner />
             <RecoveryNotice />
+            <SealedNotices />
             <main className="flex min-h-0 flex-1 flex-col">{children}</main>
           </div>
           <div
@@ -332,6 +346,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       >
         <StatusBanner />
         <RecoveryNotice />
+        <SealedNotices />
         <main className="flex min-h-0 flex-1 flex-col">{children}</main>
         <TabBar active={active} />
       </div>

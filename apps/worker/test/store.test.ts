@@ -82,8 +82,9 @@ describe('object migrations', () => {
         '0007_device_session.sql',
         '0008_signup.sql',
         '0009_recovery_key.sql',
+        '0010_device_add.sql',
       ],
-      tables: 20,
+      tables: 21,
     });
   });
 

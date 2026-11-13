@@ -155,22 +155,27 @@ export function openInbox(
 ): Promise<DhPair>;
 export function afterRun(s: FilingState, filed: FiledRun): FilingState;
 
-// ---- the log (apps/worker/src/seal/log-store.ts). The entry and the chain state are the package's own shapes;
-// the Worker reads a few header fields and otherwise only passes them between the package's functions.
+// ---- the log (apps/worker/src/seal/log-store.ts). The entry and the chain state, as packages/seal entry.ts and
+// chain.ts declare them (a slot record stays opaque: the Worker never reads one).
 export type Bytes = Uint8Array<ArrayBuffer>;
 export interface EntryHeader {
   kind: number;
   budgetId: string;
   number: number;
+  prevHash: Bytes;
   entryId: Bytes;
   time: number;
   deviceId: string;
   deviceCounter: number;
   keyVersion: number;
+  schemaVersion: number;
+  processingVersion: number;
   part: number;
   parts: number;
   filedThrough: number;
+  receipts: Bytes[];
   scanThrough: number;
+  bodyHash: Bytes;
 }
 export interface Entry {
   header: EntryHeader;
@@ -178,19 +183,56 @@ export interface Entry {
   signature: Bytes;
   hash: Bytes;
 }
-export interface ChainState {
+export interface PublicRef {
   number: number;
   hash: Bytes;
-  pending: unknown;
-  public: {
-    budgetId: string;
-    keyVersion: number;
-    signPub: Bytes;
-    inboxVersion: number;
-    inboxPub: Bytes;
-  } & Record<string, unknown>;
 }
-export type StoredChain = Record<string, unknown> & { number: number };
+/** What the public entries say (chain.ts PublicState). */
+export interface PublicState {
+  budgetId: string;
+  genesisSignPub: Bytes;
+  keyVersion: number;
+  signPub: Bytes;
+  signKey: CryptoKey;
+  signPubs: Map<number, Bytes>;
+  inboxVersion: number;
+  inboxPub: Bytes;
+  lastOldRun: number;
+  slots: Map<string, unknown>;
+  inboxes: Map<number, Bytes>;
+  retiredAt: Map<number, number>;
+  prevKeys: Map<number, Bytes>;
+  intents: Map<number, { hash: Bytes; time: number; notBefore: number; slotIds: string[] }>;
+  lastPublic: PublicRef;
+  publics: { number: number; hash: Bytes; keyVersion: number }[];
+  time: number;
+  filedThrough: number;
+}
+/** A part set that has started and not finished (chain.ts Pending). */
+export interface PendingParts {
+  entryId: Bytes;
+  kind: number;
+  deviceId: string;
+  keyVersion: number;
+  time: number;
+  filedThrough: number;
+  scanThrough: number;
+  parts: number;
+  next: number;
+}
+export interface ChainState {
+  public: PublicState;
+  number: number;
+  hash: Bytes;
+  time: number;
+  entryId: Bytes;
+  filedThrough: number;
+  scanThrough: number;
+  counters: Map<string, number>;
+  pending: PendingParts | null;
+}
+export type StoredChain = Omit<ChainState, 'public'> & { public: Omit<PublicState, 'signKey'> };
+export const MAX_DEVICES: number;
 export const KIND: {
   readonly genesis: 0;
   readonly edit: 1;
@@ -221,6 +263,7 @@ export type RefusedWhy =
   | 'bank runs first'
   | 'limit';
 export class AppendRefused extends Error {
+  constructor(why: RefusedWhy, detail?: string);
   readonly retry: boolean;
   readonly why: RefusedWhy;
   readonly detail: string;
@@ -253,7 +296,8 @@ export function fromHex(s: string): Bytes;
 // shapes are loose on purpose: the tests pass these values between the package's own functions.
 export type BudgetKeys = { version: number; sign: { pub: Bytes } } & Record<string, unknown>;
 export type SlotSecrets = Record<string, unknown>;
-export type EntryFields = Record<string, unknown>;
+/** An entry's header before its body is hashed (entry.ts EntryFields). */
+export type EntryFields = Omit<EntryHeader, 'bodyHash'>;
 export function randomBytes(n: number): Bytes;
 export function utf8(s: string): Bytes;
 export function deriveBudgetKeys(bk: Uint8Array, budgetId: string, version: number): Promise<BudgetKeys>;
@@ -285,13 +329,8 @@ export interface Checker {
   now: number;
   schemaVersion?: number;
 }
-export interface FullChainState extends ChainState {
-  time: number;
-  entryId: Bytes;
-  filedThrough: number;
-  scanThrough: number;
-  counters: Map<string, number>;
-}
+/** The chain state; once a narrower type of it, kept so device-log.ts reads as before. */
+export type FullChainState = ChainState;
 export const MAX_PLAIN: number;
 export function startChain(genesis: Entry, c: Checker, budgetId?: string): Promise<ChainState>;
 export function advance(s: ChainState, e: Entry, c: Checker): Promise<ChainState>;
@@ -303,10 +342,6 @@ export class FormatError extends Error {}
 export class OpenError extends Error {}
 
 // ---- snapshots (apps/worker/src/seal/snapshot-store.ts; packages/seal snapshot.ts)
-export interface PublicRef {
-  number: number;
-  hash: Bytes;
-}
 export interface SnapshotHeader {
   budgetId: string;
   snapshotId: string;
@@ -317,12 +352,6 @@ export interface SnapshotHeader {
   manifestHash: Bytes;
 }
 export function isPublicKind(kind: number): boolean;
-/** What the public entries say (chain.ts PublicState); the Worker and a device pass it between the package's functions. */
-export type PublicState = ChainState['public'] & {
-  lastPublic: PublicRef;
-  publics: { number: number; hash: Bytes; keyVersion: number }[];
-  signPubs: Map<number, Bytes>;
-};
 export function walkPublic(
   entries: Entry[],
   budgetId: string,
@@ -422,3 +451,58 @@ export const FRESH_WAY_MS: number;
 export const INTENT_WAIT_MS: number;
 export function encodeSlotChange(s: { prevPublic: PublicRef; slots: unknown[] }): Bytes;
 export function encodeIntent(i: { prevPublic: PublicRef; notBefore: number; slotIds: string[] }): Bytes;
+
+// Adding a device with its own passkey (docs/privacy-keys.md 10): the sizes the relay checks.
+export const ADD_ATTEMPTS: number;
+export const ADD_WINDOW_MS: number;
+export const ADD_COMMIT_LEN: number;
+export const ADD_OFFER_LEN: number;
+export const ADD_REVEAL_LEN: number;
+export const ADD_SEALED_LEN: number;
+export const ADD_CONFIRM_LEN: number;
+/** The new device's side of an add (test use only in the Worker; the app runs it). */
+export class NewDevice {
+  static start(budgetId: string): Promise<NewDevice>;
+  readonly commit: Bytes;
+  reveal(offer: Uint8Array): Promise<{ reveal: Bytes; code: string; head: PublicRef }>;
+  open(sealed: Uint8Array, log: unknown): Promise<{ bk: Bytes; keys: unknown; confirm: Bytes }>;
+}
+/** The signed-in device's side of an add (test use only in the Worker; the app runs it). */
+export class SignedInDevice {
+  constructor(budgetId: string, keys: unknown, head: PublicRef);
+  offer(commit: Uint8Array, now: number): Bytes;
+  code(reveal: Uint8Array, now: number): Promise<string>;
+  seal(bk: Uint8Array, now: number): Promise<Bytes>;
+  confirmed(bk: Uint8Array, confirm: Uint8Array): Promise<boolean>;
+}
+
+// ---- requests signed with the budget's key (apps/worker/src/http/signed-request.ts; packages/seal request.ts)
+export const ACTION: {
+  readonly storeSignKey: 'store-sign-key';
+  readonly storeInboxKey: 'store-inbox-key';
+  readonly linkToken: 'link-token';
+  readonly removeBank: 'remove-bank';
+  readonly deleteAccount: 'delete-account';
+  readonly linkFinish: 'link-finish';
+  readonly purgeOldCopy: 'purge-old-copy';
+  readonly setRecoverySignIn: 'set-recovery-sign-in';
+};
+export type Action = (typeof ACTION)[keyof typeof ACTION];
+export const CHALLENGE_LEN: number;
+export function newChallenge(): Bytes;
+export function signRequest(
+  keys: BudgetKeys,
+  budgetId: string,
+  action: Action,
+  challenge: Uint8Array,
+  payload: Uint8Array,
+): Promise<Bytes>;
+export function verifyRequest(
+  signPub: Uint8Array,
+  version: number,
+  budgetId: string,
+  action: string,
+  challenge: Uint8Array,
+  payload: Uint8Array,
+  signature: Uint8Array,
+): Promise<boolean>;

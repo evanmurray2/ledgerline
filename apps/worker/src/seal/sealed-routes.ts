@@ -3,20 +3,22 @@
 // open one (the `x-ledgerline-sealed` header): an older app is told to update, as before.
 import {
   type ConnectionsView,
+  type HealthView,
   LinkFinish,
   type LinkFinishResult,
   LinkTokenRequest,
   type SealedSession,
 } from '@ledgerline/contracts';
 import { decryptToken, encryptToken, parseKeyring, ulid } from '@ledgerline/platform';
-import { linkMac } from '@ledgerline/seal';
+import { ACTION, linkMac } from '@ledgerline/seal';
 import { ProviderError } from '@ledgerline/bank-provider';
 import { type Context, Hono } from 'hono';
 import { requestNow } from '../http/clock.js';
 import { canLinkBanks, type AppEnv } from '../http/context.js';
 import { csrf } from '../http/security.js';
+import { jsonOf, storeSigned, UNSIGNED } from '../http/signed-request.js';
 import { ITEM_LIMIT } from '../routes/settings/connections.js';
-import { classifyUsage, dailyLimits, usageToday } from '../sync/breaker.js';
+import { classifyUsage, dailyLimits, usageToday, utcDay } from '../sync/breaker.js';
 import { makeProvider } from '../sync/provider.js';
 import { sealedFetchId } from './fetch-job.js';
 import { abandonSealedRun, workerKeys } from './runs.js';
@@ -38,6 +40,7 @@ sealedApi.get('/session', async (c) => {
   const tomorrow = new Date(now);
   tomorrow.setUTCHours(24, 0, 0, 0);
   const notice = c.get('recoveryNoticeAt');
+  const keyUsed = c.get('recoveryKeyUsedAt');
   const body: SealedSession = {
     sealed: true,
     user: { email: c.get('email') },
@@ -48,6 +51,7 @@ sealedApi.get('/session', async (c) => {
     readsPaused: ws === 'rest',
     canLinkBanks: canLinkBanks(c),
     recoveryNoticeAt: notice ? new Date(notice).toISOString() : null,
+    recoveryKeyUsedAt: keyUsed ? new Date(keyUsed).toISOString() : null,
   };
   return c.json(body);
 });
@@ -109,6 +113,45 @@ sealedApi.get('/settings/connections', async (c) => {
 });
 
 /**
+ * Server health for the ops token (routes/ops.ts has the same answer for a budget that is not sealed): each
+ * link's last complete fetch, from `bank_link`, and today's usage. The old tables are not read: phase 6 empties
+ * them (seal/purge.ts). A sealed budget's bank rows are filed on its devices, so the server has no lag of its own.
+ */
+sealedApi.get('/health', async (c) => {
+  const now = requestNow(c);
+  const rows = (
+    await c.env.DB.prepare(
+      `SELECT connection_id, last_fetched_at FROM bank_link
+       WHERE budget_id = ?1 AND provider = 'plaid' AND status != 'removed' ORDER BY linked_at`,
+    )
+      .bind(c.get('budgetId'))
+      .all<{ connection_id: string; last_fetched_at: number | null }>()
+  ).results;
+  const u = await usageToday(c.env, now);
+  const limits = dailyLimits(c.env);
+  const connections = rows.map((x) => ({
+    id: x.connection_id,
+    lastSyncedAt: x.last_fetched_at,
+    stale: !x.last_fetched_at || now - x.last_fetched_at > 24 * 3_600_000,
+  }));
+  const view: HealthView = {
+    ok:
+      connections.every((x) => !x.stale) &&
+      classifyUsage(u.written, u.read, u.do, u.workers, limits) === 'normal',
+    connections,
+    watermarkLag: 0,
+    usage: {
+      day: utcDay(now),
+      rowsRead: u.read,
+      rowsWritten: u.written,
+      readPct: Math.round((u.read * 1000) / limits.rowsRead) / 10,
+      writePct: Math.round((u.written * 1000) / limits.rowsWritten) / 10,
+    },
+  };
+  return c.json(view);
+});
+
+/**
  * Asks for a fetch: the link notes it, and the store runs the backstop at once (store/budget-store.ts). Gives the
  * number of links asked.
  */
@@ -163,8 +206,14 @@ async function linksMade(db: AppEnv['Bindings']['DB'], budgetId: string): Promis
 const keyring = (env: AppEnv['Bindings']) => parseKeyring(env.TOKEN_KEYS, env.TOKEN_KEY_CURRENT);
 
 sealedApi.post('/settings/connections/link-token', async (c) => {
-  const r = LinkTokenRequest.safeParse(await c.req.json().catch(() => null));
+  // The body's bytes as they came, before anything parses them: a signature covers exactly them.
+  const raw = new Uint8Array(await c.req.arrayBuffer());
+  const r = LinkTokenRequest.safeParse(jsonOf(raw));
   if (!r.success) return no(400, 'invalid', TRY_AGAIN);
+  // Only a device that holds the budget's key asks for a link token, to add or to repair a bank
+  // (docs/privacy-keys.md 11): a new link uses one of Plaid's links for good.
+  const refused = await storeSigned(c, ACTION.linkToken, raw);
+  if (refused) return refused;
   const hosted = r.data.hosted ? { completionUrl: `${new URL(c.req.url).origin}/link-done` } : undefined;
   if (r.data.mode === 'new') {
     // The same checks as before the budget was sealed (routes/settings/connections.ts). The Directory has already
@@ -206,8 +255,14 @@ sealedApi.post('/settings/connections/link-token', async (c) => {
 });
 
 sealedApi.post('/settings/connections/link-finish', async (c) => {
-  const r = LinkFinish.safeParse(await c.req.json().catch(() => null));
+  const raw = new Uint8Array(await c.req.arrayBuffer());
+  const r = LinkFinish.safeParse(jsonOf(raw));
   if (!r.success) return no(400, 'invalid', TRY_AGAIN);
+  // Finishing a new link keeps it (a token the server holds from then on): signed, as its link token was.
+  if (r.data.mode === 'new') {
+    const refused = await storeSigned(c, ACTION.linkFinish, raw);
+    if (refused) return refused;
+  }
   const provider = makeProvider(c.env);
   const result = await provider.linkResult(r.data.linkToken);
   let out: LinkFinishResult;
@@ -267,6 +322,13 @@ async function saveLink(c: Context<AppEnv>, publicToken: string): Promise<string
  */
 sealedApi.post('/settings/connections/:id/remove', async (c) => {
   const budgetId = c.get('budgetId');
+  // Signed by a device that holds the budget's key, and the signed body names this bank (docs/privacy-keys.md 11:
+  // every parameter is in the body).
+  const raw = new Uint8Array(await c.req.arrayBuffer());
+  const refused = await storeSigned(c, ACTION.removeBank, raw);
+  if (refused) return refused;
+  const named = jsonOf(raw) as { connectionId?: unknown } | null;
+  if (named?.connectionId !== c.req.param('id')) return Response.json(UNSIGNED, { status: 403 });
   const link = await c.env.DB.prepare(
     `SELECT id, connection_id, status, access_token_enc, key_version, provider_item_id FROM bank_link
      WHERE budget_id = ?1 AND connection_id = ?2 AND provider = 'plaid'`,
@@ -329,7 +391,7 @@ sealedApi.onError((_e, c) => c.json({ error: 'internal', message: TRY_AGAIN }, 5
 /** The paths this answers for a sealed budget (store/budget-store.ts routes them here). */
 export function sealedPath(method: string, path: string): boolean {
   if (path === '/api/session') return method === 'GET';
-  if (path === '/api/settings/connections') return method === 'GET';
+  if (path === '/api/settings/connections' || path === '/api/health') return method === 'GET';
   if (/^\/api\/settings\/connections\/(refresh|link-token|link-finish|[^/]+\/(refresh|remove))$/.test(path))
     return method === 'POST';
   if (path === '/api/usage') return method === 'POST' || method === 'DELETE';

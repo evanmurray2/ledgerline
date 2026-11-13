@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 import type { Env } from '../env.js';
+import type { SignedPart } from './signed-request.js';
 
 export interface Vars {
   userId: string;
@@ -23,6 +24,10 @@ export interface Vars {
   recoveryNoticeAt?: number | null;
   /** The session came in by a fresh way (D-89; store/directory.ts): a key change from it waits. True when not set. */
   freshWay?: boolean;
+  /** A signed request's challenge, which the Directory gave this session and marked used (http/signed-request.ts). */
+  signed?: SignedPart | null;
+  /** When the recovery key last signed in to this account, while its notice shows (routes/recovery-key.ts). */
+  recoveryKeyUsedAt?: number | null;
 }
 
 export type AppEnv = { Bindings: Env; Variables: Vars };

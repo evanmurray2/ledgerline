@@ -25,6 +25,7 @@ import { isSealed, signOutHere } from '../../copy/copy';
 import { SIGNED_OUT_HERE } from '../Auth';
 import { RecoveryCodeCard } from '../Signup';
 import { PlannedChanges, RecoveryKeyCard, removeLockedPasskey } from '../RecoveryKey';
+import { DeviceLinkShown, SealedAddDevice } from '../DeviceAdd';
 import { DeleteAccountCard } from './People';
 import { Page } from './common';
 
@@ -97,6 +98,8 @@ export function SignInSettingsScreen() {
         run={run}
         asking={asking}
         setAsking={setAsking}
+        locked={locked}
+        onAdded={() => void qc.invalidateQueries({ queryKey: ['security'] })}
       />
       <SectionTitle>Passkeys</SectionTitle>
       <Passkeys
@@ -193,7 +196,14 @@ export function tellApart(list: SignIn[]): SignIn[] {
 }
 
 /** Each other device with its own Sign out, then Add a device. */
-function OtherDevices({ others: listed, run, asking, setAsking }: { others: SignIn[]; run: Run } & Asking) {
+function OtherDevices({
+  others: listed,
+  run,
+  asking,
+  setAsking,
+  locked,
+  onAdded,
+}: { others: SignIn[]; run: Run; locked: boolean; onAdded: () => void } & Asking) {
   const [link, setLink] = useState<{ url: string; expiresAt: string } | null>(null);
   const others = tellApart(listed);
   return (
@@ -244,25 +254,12 @@ function OtherDevices({ others: listed, run, asking, setAsking }: { others: Sign
           )}
         </div>
       ))}
-      {link ? (
+      {locked ? (
+        // A locked budget: the new device's passkey can't open it until this device hands it the key.
+        <SealedAddDevice onDone={onAdded} />
+      ) : link ? (
         <div className="flex flex-col gap-2 border-t border-divider p-3 first:border-t-0">
-          <span className="text-base font-semibold">Open this link on the new device</span>
-          <input readOnly className={inputClass} value={link.url} aria-label="Device link" />
-          <span className="text-xs text-muted">
-            It works once, until{' '}
-            {new Date(link.expiresAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}.
-            Send it only to yourself.
-          </span>
-          <SecondaryButton
-            onClick={() =>
-              void navigator.clipboard?.writeText(link.url).then(
-                () => toast.show({ text: 'Link copied' }),
-                () => undefined,
-              )
-            }
-          >
-            Copy link
-          </SecondaryButton>
+          <DeviceLinkShown link={link} />
         </div>
       ) : (
         <Button

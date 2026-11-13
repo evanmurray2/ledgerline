@@ -8,6 +8,8 @@ import { clock } from '../http/clock.js';
 import { bodyObject } from '../http/security.js';
 import { maxUsers, signupsPerDay, signupSwitchOn } from './signup-switch.js';
 import { startDeletionSql } from '../store/idle-accounts.js';
+import { directorySigned } from '../http/signed-request.js';
+import { ACTION } from '@ledgerline/seal';
 
 export const peopleRoutes = new Hono<AppEnv>();
 
@@ -35,12 +37,15 @@ const log = (action: string, target: string) =>
 peopleRoutes.post('/settings/security/delete-account', async (c) => {
   const env = c.env;
   const now = clock(env);
-  const b = (await bodyObject(c.req)) as { budgetName?: unknown };
   const u = await me(c);
   if (!u?.budget_id) return c.json(notFound, 404);
   if (u.is_admin === 1)
     return c.json({ error: 'admin', message: 'The admin’s account can’t be deleted.' }, 409);
   const store = env.BUDGET_INFO ? await env.BUDGET_INFO(u.budget_id) : null;
+  // A sealed budget is deleted only by a device that holds its key (docs/privacy-keys.md 11).
+  const refused = await directorySigned(c, ACTION.deleteAccount, now, store);
+  if (refused) return refused;
+  const b = (await bodyObject(c.req)) as { budgetName?: unknown };
   // A sealed budget's name is on its devices only: the app checks what was typed (docs/privacy.md 5.8).
   if (
     !store ||

@@ -7,6 +7,7 @@ import { OPS_PATHS, SESSION_COOKIE, devSignIn, readCookie, secretMatches } from 
 import { makeProvider } from '../sync/provider.js';
 import { RESTING, restsDuring } from '../sync/breaker.js';
 import { RECOVER_PATH, SIGNUP_PATH, gatedOptions } from '../routes/signup.js';
+import { signedHeaders } from '../http/signed-request.js';
 
 /**
  * After the Directory says the app is resting (95% of a daily limit), this isolate refuses the same requests itself
@@ -72,7 +73,7 @@ export async function routeApi(req: Request, env: Env): Promise<Response> {
     return json({ error: 'unauthenticated', message: 'Sign in again with your passkey.' }, 401);
   const now = Date.now();
   if (now < restingUntil && restsDuring(req.method, path)) return json(RESTING, 503);
-  const a = await dir.authenticate(req.headers.get('cookie'), req.method, path);
+  const a = await dir.authenticate(req.headers.get('cookie'), req.method, path, signedHeaders(req.headers));
   if (!a.ok) {
     if (a.body.error === RESTING.error) {
       const midnight = new Date(now).setUTCHours(24, 0, 0, 0);

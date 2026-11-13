@@ -47,6 +47,13 @@ export type Session = z.infer<typeof Session>;
 export const SEALED_HEADER = 'x-ledgerline-sealed';
 
 /**
+ * A request signed with the budget's key (docs/privacy-keys.md 11): the Directory's challenge token, and the
+ * signature (hex) over the request.
+ */
+export const SIGNED_CHALLENGE_HEADER = 'x-ledgerline-challenge';
+export const SIGNED_SIGNATURE_HEADER = 'x-ledgerline-signature';
+
+/**
  * What the server says about a signed-in person whose budget is sealed: who they are and what the account may
  * do now. It holds nothing of the budget: the name, the time zone and the months come from the device's copy.
  */
@@ -60,6 +67,8 @@ export const SealedSession = z.object({
   readsPaused: z.boolean(),
   canLinkBanks: z.boolean(),
   recoveryNoticeAt: z.string().nullable(),
+  /** When the recovery key last signed in to this account, for 14 days (docs/privacy.md 5.8). */
+  recoveryKeyUsedAt: z.string().nullable().optional(),
 });
 export type SealedSession = z.infer<typeof SealedSession>;
 

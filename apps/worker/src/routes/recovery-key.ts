@@ -8,7 +8,7 @@
 // Not behind the sign-up switch: the key is 32 random bytes, so there is nothing to guess, and the owner (an
 // admin, who has no recovery code) needs it too.
 import type { Stmt } from '@ledgerline/db/sql';
-import { fromHex, toHex, verifyRecoveryLogin } from '@ledgerline/seal';
+import { ACTION, fromHex, toHex, verifyRecoveryLogin } from '@ledgerline/seal';
 import { generateRegistrationOptions } from '@simplewebauthn/server';
 import { Hono } from 'hono';
 import type { Env } from '../env.js';
@@ -17,6 +17,8 @@ import { CHALLENGE_COOKIE, CHALLENGE_MS, cookie, readCookie } from '../http/auth
 import { openChallenge, sealChallenge } from '../http/challenge.js';
 import { clock, requestNow } from '../http/clock.js';
 import { bodyObject, csrf } from '../http/security.js';
+import { directorySigned } from '../http/signed-request.js';
+import { NOTICE_MS } from './signup.js';
 
 const RP_NAME = 'Ledgerline';
 const HEX32 = /^[0-9a-f]{64}$/;
@@ -121,12 +123,33 @@ recoveryKeyAuth.post('/recover-key/verify', async (c) => {
  */
 export function recoveryKeyStmts(env: Env, authPub: string, passkey: unknown[]): Stmt[] {
   return [
+    // When the key signed in, for the notice every other device shows (docs/privacy.md 5.8): kept on the same
+    // terms as the passkey below. `passkey[5]` is its created_at, the time of this sign-in.
+    env.DB.prepare(
+      `INSERT OR REPLACE INTO app_state (key, value, updated_at)
+       SELECT ?1 || k.user_id, ?2, ?2 FROM recovery_key k JOIN user u ON u.id = k.user_id
+       WHERE k.auth_pub = ?3 AND u.status = 'active'`,
+    ).bind(USED_PREFIX, passkey[5], authPub),
     env.DB.prepare(
       `INSERT INTO passkey (id, public_key, counter, transports, name, created_at, user_id)
        SELECT ?1, ?2, ?3, ?4, ?5, ?6, k.user_id FROM recovery_key k JOIN user u ON u.id = k.user_id
        WHERE k.auth_pub = ?7 AND u.status = 'active'`,
     ).bind(...passkey, authPub),
   ];
+}
+
+const USED_PREFIX = 'recovery_key_used:';
+
+/**
+ * When the recovery key last signed in to this account, for 14 days after (the notice on every device). The
+ * notice is dismissed on each device by itself, so the server keeps no dismissal.
+ */
+export async function recoveryKeyUsed(env: Env, userId: string, now: number): Promise<number | null> {
+  const v = await env.DB.prepare(`SELECT value FROM app_state WHERE key = ?1`)
+    .bind(USED_PREFIX + userId)
+    .first<string>('value');
+  const at = Number(v);
+  return v != null && Number.isFinite(at) && at > now - NOTICE_MS ? at : null;
 }
 
 // ---- Settings → Sign-in: the key's public half, set from a device that holds the key
@@ -147,6 +170,10 @@ recoveryKeySettings.get('/settings/security/recovery-key', async (c) => {
  * made; the server can't check it against the budget, so a wrong one only stops this account's own recovery.
  */
 recoveryKeySettings.post('/settings/security/recovery-key', async (c) => {
+  // A sealed budget's key half is set only by a device that holds the budget's key (docs/privacy-keys.md 11).
+  const store = c.env.BUDGET_INFO ? await c.env.BUDGET_INFO(c.get('budgetId')) : null;
+  const refused = await directorySigned(c, ACTION.setRecoverySignIn, requestNow(c), store);
+  if (refused) return refused;
   const b = (await bodyObject(c.req)) as { authPub?: unknown };
   const authPub = typeof b.authPub === 'string' ? b.authPub : '';
   if (!HEX32.test(authPub))

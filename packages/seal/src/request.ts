@@ -13,11 +13,23 @@ export const ACTION = {
   linkToken: 'link-token',
   removeBank: 'remove-bank',
   deleteAccount: 'delete-account',
+  /** Finishing a new bank's link: the server exchanges its token and keeps the link. */
+  linkFinish: 'link-finish',
+  /** Starting to empty the server's readable copy of a sealed budget (docs/privacy.md section 8, step 8). */
+  purgeOldCopy: 'purge-old-copy',
+  /** Setting the recovery key's sign-in half (`authPub`, 4.2) in the Directory. */
+  setRecoverySignIn: 'set-recovery-sign-in',
 } as const;
 export type Action = (typeof ACTION)[keyof typeof ACTION];
 const ACTIONS: readonly string[] = Object.values(ACTION);
 /** Requests that name a key or a bank: an empty payload would let one signature stand for any of them. */
-const NEEDS_PAYLOAD: readonly string[] = [ACTION.storeSignKey, ACTION.storeInboxKey, ACTION.removeBank];
+const NEEDS_PAYLOAD: readonly string[] = [
+  ACTION.storeSignKey,
+  ACTION.storeInboxKey,
+  ACTION.removeBank,
+  ACTION.linkFinish,
+  ACTION.setRecoverySignIn,
+];
 
 export const CHALLENGE_LEN = 32;
 /** A challenge is good for this long, and for one request. The server keeps that rule. */
