@@ -98,7 +98,9 @@ this way.
 Delete account, in Settings → Sign-in and devices, deletes your budget and everything in it. It can't be brought
 back. Two limits today:
 
-- An account with a linked bank can't be deleted yet, because Ledgerline can't yet remove a bank at Plaid.
+- **(owner reads)** An account with a linked bank can't be deleted while Ledgerline uses Plaid's free plan. On
+  that plan only the owner links banks, and the owner's account can't be deleted. When other people can link
+  banks, Delete account removes their banks at Plaid first.
 - For up to 30 days after you delete, Cloudflare's past versions may still hold the budget. Whether a deleted
   store stays there has not been checked yet (`docs/privacy.md` 15.4). **(owner reads)** What is locked there opens
   only with your own keys.

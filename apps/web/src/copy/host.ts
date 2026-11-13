@@ -229,8 +229,9 @@ export class EngineHost {
     genesis: Uint8Array,
     deviceId: string,
     snapshotId: string,
+    rewriteId: string,
   ): Promise<{ ok: true; number: number } | { ok: false; why: string }> {
-    return this.call('start', { keys, genesis, deviceId, snapshotId });
+    return this.call('start', { keys, genesis, deviceId, snapshotId, rewriteId });
   }
   state(): Promise<EngineState> {
     return this.call('state');

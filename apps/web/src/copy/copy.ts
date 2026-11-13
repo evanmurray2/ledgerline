@@ -662,7 +662,7 @@ export async function lockFinish(
   }
   const keys = proved.keys as unknown as SealedKeys;
   const r = await h
-    .startBudget(keys, proved.genesis, proved.deviceId, newUlid())
+    .startBudget(keys, proved.genesis, proved.deviceId, newUlid(), newUlid())
     .catch((e: unknown) => ({ ok: false as const, why: e instanceof Error ? e.message : NOT_NOW }));
   if (!r.ok) return { ok: false, why: `${r.why} Nothing was changed. Try again.` };
   // The budget is locked. From here this device treats it so, whatever the server says later.

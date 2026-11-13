@@ -1,6 +1,6 @@
 # What we claim
 
-Status: Nov 13, 2026. Phase 8 of `docs/privacy.md`: each claim of section 1.1, whether it is true today for a
+Status: Nov 13, 2026 (claims 4, 7 and 8 brought up to date with the code the same day). Phase 8 of `docs/privacy.md`: each claim of section 1.1, whether it is true today for a
 locked budget, its limit, and what backs it. The app no longer shows it (D-108). No outside review has been made;
 one comes first only if the owner ever funds one.
 
@@ -53,10 +53,10 @@ public. Code sent to one person once leaves no trace anyone else can see_ (`docs
 ### 4. "We do keep the key to your bank link. We use it only to fetch your bank data and to repair or remove the link. It means we could fetch your bank data again."
 
 - **True now.** The token is in `bank_link`, encrypted under `TOKEN_KEYS`. A locked budget's server uses it to fetch
-  (`seal/fetch-job.ts`) and for repair, Plaid's update mode (`seal/sealed-routes.ts`). Removing a bank is not built,
-  so nothing uses it for that yet.
-- **Limit:** a new bank can't be linked to a locked budget, and a bank can't be removed from one, yet.
-- **Build plan:** "Linking and removing a bank in a locked budget".
+  (`seal/fetch-job.ts`), for repair (Plaid's update mode) and to remove the link at Plaid (`/item/remove`,
+  `seal/sealed-routes.ts`; the delete job, `store/account-life.ts`). Removing a bank forgets the token.
+- **Limit:** linking and removing in a locked budget are tested with a fake Plaid only, never against Plaid itself.
+- **Build plan:** "Banks of a locked budget".
 - **Backed by:** our word.
 
 ### 5. "The app has no ads, no trackers and no analytics. No outside script runs on any page that holds your budget or your keys. Sign-up has a robot check from Cloudflare, and you link a bank on Plaid's own page."
@@ -81,19 +81,23 @@ public. Code sent to one person once leaves no trace anyone else can see_ (`docs
 
 ### 7. "When you delete your account we delete what we hold and remove your bank links at Plaid. Copies last up to 30 days in Cloudflare's recovery; the sealed parts open only with your own keys."
 
-- **Not true yet.** Delete account is refused while an account has a bank link, because nothing removes an Item at
-  Plaid yet (`apps/worker/src/routes/people.ts`), and the admin's account can't be deleted. Without a bank, the store
-  wipes itself.
+- **Partly true now.** The delete job removes each bank at Plaid first, then wipes the store
+  (`apps/worker/src/store/account-life.ts`). On Plaid Trial (Production with no `OTHER_USERS_BANKS`) only the admin
+  links banks, and the admin's account can't be deleted, so Delete account is refused while an account has a bank
+  link (`apps/worker/src/routes/people.ts`). Without a bank, the store wipes itself.
 - **Limit:** whether a wiped store stays in point-in-time recovery, and whether deleted rows stay in freed pages, is
   not checked (`docs/privacy.md` 15.4).
-- **Build plan:** "Linking and removing a bank in a locked budget"; "Privacy design, phase 0 checks".
+- **Build plan:** "Privacy design, phase 0 checks".
 - **Backed by:** our word.
 
 ### 8. "An account nobody opens for 24 months is deleted the same way. We stop fetching its bank data after 90 days."
 
-- **Not true yet.** Neither the idle job nor A3 (no fetch after 90 idle days) is built. Today nothing is deleted for
-  being idle; a budget with no bank rests after 30 idle days.
-- **Build plan:** "The idle job".
+- **True now.** The Directory's daily job marks an account nobody opened for 24 months and starts its deletion 30
+  days later, as Delete account does; a request in between clears the mark. It never touches an admin's account, and
+  starts at most 3 deletions a day (`apps/worker/src/store/idle-accounts.ts`). A budget nobody opened for 90 days
+  queues no bank fetch until someone does (A3, `apps/worker/src/seal/fetch-job.ts`).
+- **Limit:** an account with a bank link on Plaid Trial can't be deleted (claim 7), so the 24-month rule stops there
+  too.
 - **Backed by:** our word.
 
 ### 9. "The app's code is public, and every release is built from it in public."
@@ -109,14 +113,14 @@ public. Code sent to one person once leaves no trace anyone else can see_ (`docs
 - **Build plan:** "Comparable releases, left open after phase 7".
 - **Backed by:** checkable: the repository, the build log, the attestation (`docs/runbooks/verify-build.md`).
 
-## Not built yet for a locked budget
+## Built for a locked budget since the move
 
-Each has a line in `docs/build-plan.md`.
-
-- **Signing in with the recovery key.** The key opens the budget's slot, but it can't yet give back a sign-in.
-- **Linking a new bank, and removing a bank** (claims 4 and 7).
+- **Signing in with the recovery key** (`apps/worker/src/routes/recovery-key.ts`). The owner's budget was locked
+  before this was set, so the owner turns it on once in Settings → Sign-in → Recovery key.
+- **Linking a new bank, and removing a bank** (claim 4), tested with a fake Plaid only.
 - **The idle job** (claim 8).
-- **A full backup made on the device.** The server's dump is refused for a locked budget.
+- **A full backup made on the device**, sealed with the recovery key (`apps/web/src/keys/backup.ts`). The server's
+  dump is still refused for a locked budget.
 
 ## What the server still sees
 
