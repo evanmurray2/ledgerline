@@ -66,8 +66,9 @@ public. Code sent to one person once leaves no trace anyone else can see_ (`docs
   `apps/web/test/headers.test.ts` fails if it loosens. Banks are linked and repaired on Plaid's hosted page.
 - **Limit:** "Record how I use the app" is the app's own recorder, on unless turned off. For a locked budget the
   server answers its calls and keeps nothing (`seal/sealed-routes.ts`). Sign-up is closed. Its robot check
-  (Turnstile) loads a script from `challenges.cloudflare.com`, which this policy blocks: it needs the second address
-  of `docs/privacy.md` 5.6, which is not built. Sign-up stays closed until it is.
+  (Turnstile) runs on its own address, a second Worker that holds nothing (`docs/privacy.md` 5.6, D-113,
+  `apps/worker/src/check/`); the app's policy names no outside host for it. That Worker is built but not deployed
+  yet.
 - **Backed by:** checkable. Anyone can read the header the app sends (`curl -I` on the app's address).
 
 ### 6. "Sign-up asks for a passkey and nothing else: no name, no email address, no phone number."

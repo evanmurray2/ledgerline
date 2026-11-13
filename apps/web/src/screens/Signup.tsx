@@ -1,7 +1,8 @@
-// Open sign-up (D-75, docs/open-signup.md 3): Create account from the Sign in screen. The new account's budget is
-// then made on this device, locked, with its recovery key (the lock screen, Setup.tsx; D-102). The server shows
-// none of this until the SIGNUPS switch is on.
-import { useEffect, useRef, useState } from 'react';
+// Open sign-up (D-75, docs/open-signup.md 3): Create account from the Sign in screen. The robot check runs on its
+// own address (docs/privacy.md 5.6, D-113), then a passkey makes the account. The new account's budget is then made
+// on this device, locked, with its recovery key (the lock screen, Setup.tsx; D-102). The server shows none of this
+// until the SIGNUPS switch is on.
+import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { startRegistration } from '@simplewebauthn/browser';
 import { ApiError, errorMessage } from '../api/client';
@@ -11,120 +12,28 @@ import { Frame, Problem } from '../components/Frame';
 import { PrimaryButton, SecondaryButton } from '../components/ui';
 import { passkeyName } from '../lib/device-name';
 import { passkeyProblem } from '../copy/passkey';
+import { PolicyLink } from './PolicyLink';
 
 /** Losing both is final: said before the passkey, and again with the recovery key (docs/open-signup.md 3.1). */
 const NO_WAY_BACK =
   'If you lose every passkey and your recovery key, you can’t get back into your budget. No one can recover it for you.';
 
-/** Cloudflare's Turnstile test site keys pass or fail without loading anything (local runs and e2e). */
-const TEST_KEY = /^[123]x0{20}AA$/;
-const TEST_TOKEN = 'XXXX.DUMMY.TOKEN.XXXX';
-
-interface TurnstileApi {
-  render(
-    el: HTMLElement,
-    o: {
-      sitekey: string;
-      action: string;
-      callback: (t: string) => void;
-      'error-callback': () => void;
-      'expired-callback': () => void;
-    },
-  ): string;
-  remove(id: string): void;
+/**
+ * The robot check runs on its own address (docs/privacy.md 5.6): this app never loads an outside script. Create
+ * account goes there, and the check sends the browser back to sign-in with a one-use token in the address's
+ * fragment (`#check=…`), which no server sees. Read once, then taken out of the address.
+ */
+export function takeCheckToken(): string | null {
+  const hash = window.location.hash;
+  if (!hash.startsWith('#check=')) return null;
+  history.replaceState(history.state, '', window.location.pathname + window.location.search);
+  const t = new URLSearchParams(hash.slice(1)).get('check');
+  return t && t.length <= 2048 ? t : null;
 }
 
-/** Said when the check can't load or fails: otherwise the button stays gray with no reason. */
-export const CHECK_FAILED = 'The robot check couldn’t load. Check your connection, then try the check again.';
-/** How long the check may take to show before the screen says it couldn't load. */
-const CHECK_WAIT_MS = 20_000;
-
-/**
- * Cloudflare Turnstile: a token for `action`, or null until the check passes. When its script is blocked or
- * offline, or the check fails, it says so and offers to try again.
- */
-function Turnstile({
-  siteKey,
-  action,
-  onToken,
-}: {
-  siteKey: string;
-  action: string;
-  onToken: (t: string | null) => void;
-}) {
-  const [tries, setTries] = useState(0);
-  const [failed, setFailed] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (TEST_KEY.test(siteKey)) {
-      onToken(siteKey.startsWith('1x') ? TEST_TOKEN : 'fails');
-      return;
-    }
-    let id: string | null = null;
-    let over = false;
-    const fail = () => {
-      if (over) return;
-      over = true;
-      onToken(null);
-      setFailed(true);
-    };
-    const w = window as unknown as { turnstile?: TurnstileApi };
-    const draw = () => {
-      if (!box.current || !w.turnstile) return fail();
-      try {
-        id = w.turnstile.render(box.current, {
-          sitekey: siteKey,
-          action,
-          callback: (t) => {
-            over = true;
-            onToken(t);
-          },
-          'error-callback': fail,
-          'expired-callback': () => onToken(null),
-        });
-      } catch {
-        fail();
-      }
-    };
-    // Blocked or slow: the check never shows, so say so instead of waiting for ever.
-    const timer = setTimeout(() => {
-      if (!id) fail();
-    }, CHECK_WAIT_MS);
-    if (w.turnstile) draw();
-    else {
-      const s = document.createElement('script');
-      s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-      s.async = true;
-      s.onload = draw;
-      s.onerror = () => {
-        s.remove();
-        fail();
-      };
-      document.head.appendChild(s);
-    }
-    return () => {
-      over = true;
-      clearTimeout(timer);
-      if (id && w.turnstile) w.turnstile.remove(id);
-    };
-  }, [siteKey, action, tries]);
-  if (failed)
-    return (
-      <div className="flex flex-col gap-3">
-        <Problem text={CHECK_FAILED} />
-        <SecondaryButton
-          type="button"
-          data-track="signup.check.retry"
-          onClick={() => {
-            setFailed(false);
-            setTries((n) => n + 1);
-          }}
-        >
-          Try the check again
-        </SecondaryButton>
-      </div>
-    );
-  return <div ref={box} />;
+/** Go to the robot check's address. */
+export function goToCheck(checkUrl: string): void {
+  window.location.assign(checkUrl);
 }
 
 async function register(options: unknown): Promise<void> {
@@ -139,10 +48,21 @@ function problem(e: unknown): string {
   return passkeyProblem(e) ?? 'Couldn’t use your passkey. Try again.';
 }
 
-/** Create account: the check, then a passkey and nothing else (no name, no email: D-85). */
-export function CreateAccountScreen({ siteKey, onBack }: { siteKey: string; onBack: () => void }) {
+/**
+ * Create account, back from the robot check with its token: a passkey and nothing else (no name, no email: D-85).
+ * Cloudflare takes a token once, so after a try that fails the check is done again.
+ */
+export function CreateAccountScreen({
+  checkUrl,
+  token: first,
+  onBack,
+}: {
+  checkUrl: string;
+  token: string | null;
+  onBack: () => void;
+}) {
   const qc = useQueryClient();
-  const [token, setToken] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(first);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   return (
@@ -157,6 +77,7 @@ export function CreateAccountScreen({ siteKey, onBack }: { siteKey: string; onBa
           if (!token) return;
           setBusy(true);
           setErr(null);
+          setToken(null);
           api
             .signupOptions({ turnstileToken: token })
             .then(register)
@@ -172,15 +93,21 @@ export function CreateAccountScreen({ siteKey, onBack }: { siteKey: string; onBa
             );
         }}
       >
-        <Turnstile siteKey={siteKey} action="signup" onToken={setToken} />
         <Problem text={err} />
-        <PrimaryButton type="submit" busy={busy} disabled={busy || !token}>
-          {busy ? 'Waiting for your passkey…' : 'Create passkey'}
-        </PrimaryButton>
+        {token || busy ? (
+          <PrimaryButton type="submit" busy={busy} disabled={busy}>
+            {busy ? 'Waiting for your passkey…' : 'Create passkey'}
+          </PrimaryButton>
+        ) : (
+          <PrimaryButton type="button" data-track="signup.check.again" onClick={() => goToCheck(checkUrl)}>
+            Do the robot check again
+          </PrimaryButton>
+        )}
         <SecondaryButton type="button" onClick={onBack}>
           Back
         </SecondaryButton>
       </form>
+      <PolicyLink from="/budget" />
     </Frame>
   );
 }

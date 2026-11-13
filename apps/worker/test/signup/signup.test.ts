@@ -75,7 +75,7 @@ describe('open sign-up', () => {
     );
     expect((await new Browser().call('GET', '/api/auth/status')).json).toMatchObject({
       signupOpen: true,
-      turnstileSiteKey: '1x00000000000000000000AA',
+      checkUrl: 'http://check.ledgerline.test',
     });
   });
 

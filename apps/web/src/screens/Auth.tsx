@@ -10,7 +10,8 @@ import { Frame, Problem } from '../components/Frame';
 import { Field, PrimaryButton, SecondaryButton, inputClass } from '../components/ui';
 import { signIn as copySignIn } from '../copy/copy';
 import { passkeyProblem } from '../copy/passkey';
-import { CreateAccountScreen } from './Signup';
+import { CreateAccountScreen, goToCheck, takeCheckToken } from './Signup';
+import { PolicyLink } from './PolicyLink';
 import { passkeyName } from '../lib/device-name';
 import { RecoveryKeySignInScreen } from './RecoveryKey';
 
@@ -69,11 +70,13 @@ export function SignInScreen() {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Back from the robot check's own address with its token (docs/privacy.md 5.6): Create account opens.
+  const [checkToken] = useState(takeCheckToken);
   /** Open sign-up (D-75): Create account, only once the server turns it on. */
-  const [mode, setMode] = useState<'signin' | 'create' | 'recovery-key'>('signin');
+  const [mode, setMode] = useState<'signin' | 'create' | 'recovery-key'>(checkToken ? 'create' : 'signin');
   const done = () => void qc.invalidateQueries({ queryKey: qk.session });
   const supported = browserSupportsWebAuthn();
-  const siteKey = status.data?.signupOpen ? (status.data.turnstileSiteKey ?? null) : null;
+  const checkUrl = status.data?.signupOpen ? (status.data.checkUrl ?? null) : null;
   const signIn = (auto: boolean) => {
     setBusy(true);
     void ceremony(signInWithPasskey).then((m) => {
@@ -86,7 +89,7 @@ export function SignInScreen() {
   // The passkey prompt opens by itself once per visit to this screen, as soon as the page is in front (Safari lets a
   // page start it without a tap since iOS 17.4). Not after signing out here: that would ask again at once.
   const asked = useRef(false);
-  const ready = supported && status.data?.hasPasskey === true && !status.data.setupOpen;
+  const ready = supported && status.data?.hasPasskey === true && !status.data.setupOpen && mode === 'signin';
   useEffect(() => {
     if (!ready || asked.current) return;
     const go = () => {
@@ -133,13 +136,14 @@ export function SignInScreen() {
             {busy ? 'Waiting for your passkey…' : 'Create passkey'}
           </PrimaryButton>
         </form>
+        <PolicyLink from="/budget" />
       </Frame>
     );
   }
   // A locked budget's recovery key (docs/privacy-keys.md 4.2): open to every account, with or without sign-up.
   if (mode === 'recovery-key') return <RecoveryKeySignInScreen onBack={() => setMode('signin')} />;
-  if (siteKey && mode === 'create')
-    return <CreateAccountScreen siteKey={siteKey} onBack={() => setMode('signin')} />;
+  if (checkUrl && mode === 'create')
+    return <CreateAccountScreen checkUrl={checkUrl} token={checkToken} onBack={() => setMode('signin')} />;
   return (
     <Frame title="Sign in">
       <p className="m-0 text-base leading-relaxed text-ink-2">Use the passkey on this device.</p>
@@ -158,8 +162,8 @@ export function SignInScreen() {
       <p className="m-0 text-sm leading-snug text-muted">
         New device? On a signed-in device, go to Settings → Sign-in and devices → Add a device.
       </p>
-      {siteKey && (
-        <SecondaryButton disabled={!supported} onClick={() => setMode('create')}>
+      {checkUrl && (
+        <SecondaryButton disabled={!supported} onClick={() => goToCheck(checkUrl)}>
           Create account
         </SecondaryButton>
       )}
@@ -168,6 +172,7 @@ export function SignInScreen() {
           Use your recovery key
         </SecondaryButton>
       )}
+      <PolicyLink from="/budget" />
     </Frame>
   );
 }
