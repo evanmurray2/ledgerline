@@ -269,6 +269,8 @@ export const TxnListRow = z.object({
   sub: z.string().nullable(),
   /** Which sheet opens: pending, posted, income, refund, paid back, transfer pick, match, check pending. */
   sheet: z.enum(['txn', 'transfer', 'match', 'checkPending']),
+  /** An upcoming transaction you added that repeats: how often. Left out when it doesn't. */
+  repeats: z.enum(['monthly', 'yearly']).optional(),
 });
 export type TxnListRow = z.infer<typeof TxnListRow>;
 

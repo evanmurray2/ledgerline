@@ -181,5 +181,9 @@ export function listRow(
     badgeKind,
     sub,
     sheet,
+    // An upcoming bill you added that comes again: the list says how often ("Monthly").
+    ...(t.status === 'upcoming' && (t.repeats === 'monthly' || t.repeats === 'yearly')
+      ? { repeats: t.repeats }
+      : {}),
   };
 }

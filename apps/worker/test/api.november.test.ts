@@ -135,6 +135,9 @@ describe('November through the API', () => {
     ]);
     expect(v.pendingTotal).toBe(20100);
     expect(v.upcoming.map((r) => r.payee)).toEqual(['Comcast', 'Rent']);
+    // Both repeat each month; a row that isn't upcoming says nothing about repeating.
+    expect(v.upcoming.map((r) => r.repeats)).toEqual(['monthly', 'monthly']);
+    expect(v.pending.every((r) => r.repeats === undefined)).toBe(true);
   });
 
   it('Owed to you: $1,430.60 out, Nopa late, the Nov 30 rent front projected short', async () => {

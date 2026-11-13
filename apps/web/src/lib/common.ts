@@ -39,8 +39,11 @@ export function pairNoun(amount: number): { one: string; many: string } {
  * A row's grey line: where and when, two facts at most. The category and any status show as tags under it
  * (TxnRow), and a register's rows already sit under their account and date, so theirs is empty.
  */
+const REPEATS: Record<NonNullable<TxnListRow['repeats']>, string> = { monthly: 'Monthly', yearly: 'Yearly' };
+
 export function rowMeta(r: TxnListRow, style: 'list' | 'posted' | 'needs' | 'register' = 'list'): string {
-  const date = dayLabel(r.date);
+  // An upcoming bill that comes again says how often: "Dec 1 · Monthly".
+  const date = r.repeats ? `${dayLabel(r.date)} · ${REPEATS[r.repeats]}` : dayLabel(r.date);
   const parts =
     style === 'register'
       ? // A register's days head its rows; an upcoming bill sits under Upcoming, so it needs its own date.
