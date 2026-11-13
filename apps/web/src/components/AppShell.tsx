@@ -1,6 +1,7 @@
 // Phone: screen content above a bottom tab bar (Budget, Activity, Accounts, Reports). Desktop: a left sidebar
 // replaces the tab bar and a right-hand panel holds sheets. The offline / read-only banner sits on top.
 import { SealedNotices } from '../screens/SealedNotices';
+import { useDevicesDiffer } from '../screens/DevicesDiffer';
 import { useState, type ReactNode } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { PanelSlotContext, useModalOpen } from './Sheet';
@@ -37,14 +38,16 @@ export function tabFor(path: string, search?: Record<string, unknown>): Tab {
 /**
  * Which tabs need you, each shown as a red "!". Activity and Accounts come from a cheap endpoint (the full views read
  * every transaction). Budget's comes from this month's budget, worked out on the device (D-45) and shared with the
- * Budget screen's own query: anything in its Needs attention list, or Ready to Assign below zero.
+ * Budget screen's own query: anything in its Needs attention list, or Ready to Assign below zero. Two devices that
+ * showed different numbers (D-116) count too.
  */
 function useBadges() {
   const b = useBadgeCounts();
   const session = useSession();
   const budget = useBudget(session.data?.budget.currentMonth);
+  const differs = useDevicesDiffer();
   return {
-    budget: !!budget.data && budget.data.attention.some((a) => a.section !== 'Low'),
+    budget: differs || (!!budget.data && budget.data.attention.some((a) => a.section !== 'Low')),
     activity: (b.data?.activity ?? 0) > 0,
     accounts: (b.data?.accounts ?? 0) > 0,
     reports: false,

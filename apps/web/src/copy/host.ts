@@ -32,6 +32,12 @@ export interface QueuedEdit {
 }
 /** A budget's derived keys of one version (`BudgetKeys` in @ledgerline/seal): passed on, never read. */
 export type SealedKeys = { version: number } & Record<string, unknown>;
+/** Another device that showed different numbers at the same log entry (local/device-check.ts). */
+export interface DevicesDiffer {
+  deviceId: string;
+  number: number;
+  month: string;
+}
 /** Where a public entry the app makes goes (local/device-log.ts `writePlace`). */
 export interface WritePlace {
   number: number;
@@ -166,16 +172,23 @@ export class EngineHost {
   /**
    * Reads the log, files the bank runs and the daily scans that wait (in time order), and sends the changes made
    * here. `rebuilt`: the copy was made again from a snapshot first; `kept` waiting changes went with it.
+   * `differs`: another device showed different numbers at the same entry (the device check, D-116); `own`, the
+   * other ids this device wrote the log as, are not another device.
    */
-  sealedSync(): Promise<{
+  sealedSync(own: string[] = []): Promise<{
     entries: number;
     filed: number;
     waiting: boolean;
     sent: number;
     lost: number;
     rebuilt?: { kept: number; lost: number };
+    differs?: DevicesDiffer | null;
   }> {
-    return this.call('sealedSync');
+    return this.call('sealedSync', { own });
+  }
+  /** Makes the copy again from the budget's newest trusted snapshot, when the person asks (D-116). */
+  sealedRebuild(): Promise<{ kept: number; lost: number }> {
+    return this.call('sealedRebuild');
   }
   /** Writes a snapshot of the copy and reads it back. */
   sealedSnapshot(

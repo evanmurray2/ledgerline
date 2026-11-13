@@ -43,7 +43,13 @@ import { ACTION, type Entry, passkeySlotId, type PublicState, walkPublic, zeroiz
 import { mergedSession, NOT_LOCKED } from './sealed-session';
 import { ownWriters } from './notices';
 import { connectivity } from '../state/connectivity';
-import { EngineHost, type EngineIdentity, type QueuedEdit, type SealedKeys } from './host';
+import {
+  EngineHost,
+  type DevicesDiffer,
+  type EngineIdentity,
+  type QueuedEdit,
+  type SealedKeys,
+} from './host';
 import { usage } from '../usage/tracker';
 import { isServerRead } from './server-reads';
 import { shownFields } from './shown';
@@ -115,6 +121,8 @@ export interface CopyState {
    * The device stops; nothing was changed.
    */
   forked?: boolean;
+  /** Another device showed different numbers at the same log entry (the device check, D-116). */
+  differs?: DevicesDiffer | null;
 }
 
 const MOCK = import.meta.env.VITE_MOCK === '1';
@@ -1027,7 +1035,7 @@ export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
       // Nothing of it passes through this thread in the clear but counts.
       let r: Awaited<ReturnType<EngineHost['sealedSync']>>;
       try {
-        r = await host!.sealedSync();
+        r = await host!.sealedSync(ownWriters());
       } catch (e) {
         if (state.rebuilding) set({ rebuilding: false });
         // The server showed this device another history: the device stops, and the copy is left as it was.
@@ -1055,6 +1063,7 @@ export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
         queued: (await queued()).length,
         ...(state.why ? { why: null } : {}),
         ...(state.rebuilding ? { rebuilding: false } : {}),
+        ...(sameDiffer(state.differs, r.differs) ? {} : { differs: r.differs ?? null }),
       });
       if (r.lost) window.dispatchEvent(new CustomEvent('ledgerline:edits-refused', { detail: r.lost }));
       // The log moved on: the notices are read again now, not only every 5 minutes (screens/SealedNotices.tsx).
@@ -1071,6 +1080,21 @@ export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
     }
   })();
   return syncing;
+}
+
+const sameDiffer = (a: DevicesDiffer | null | undefined, b: DevicesDiffer | null | undefined) =>
+  (a ?? null) === (b ?? null) ||
+  (!!a && !!b && a.deviceId === b.deviceId && a.number === b.number && a.month === b.month);
+
+/**
+ * Makes the copy on this device again from the budget's newest trusted snapshot (Budget → Needs attention, when
+ * two devices showed different numbers: D-116), then syncs. The waiting changes go with it.
+ */
+export async function rebuildHere(): Promise<void> {
+  if (!host || !sealed) throw new Error('Your budget isn’t open on this device yet. Try again.');
+  await host.sealedRebuild();
+  set({ differs: null });
+  await syncNow();
 }
 
 /**

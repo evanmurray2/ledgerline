@@ -12,6 +12,7 @@ import { formatCents } from '../lib/money';
 import { useHere } from '../lib/back';
 import { toast } from '../components/Toast';
 import { usage } from '../usage/tracker';
+import { DevicesDiffer, useDevicesDiffer } from './DevicesDiffer';
 
 interface DoneFix {
   key: string;
@@ -101,6 +102,7 @@ function useFixes(month: string) {
 /** Needs attention: everything but Low. */
 export function AttentionList({ b, month }: { b: BudgetView; month: string }) {
   const fixes = useFixes(month);
+  const differs = useDevicesDiffer();
   const navigate = useNavigate();
   // An account or Owed to you opened from this list comes back to it (lib/back.ts).
   const here = useHere();
@@ -147,7 +149,8 @@ export function AttentionList({ b, month }: { b: BudgetView; month: string }) {
   };
   return (
     <>
-      {open.length === 0 && (
+      <DevicesDiffer />
+      {open.length === 0 && !differs && (
         <p className="m-0 shrink-0 rounded-lg bg-funded-bg p-4 text-center text-base font-semibold text-funded-fg">
           Nothing needs attention.
         </p>

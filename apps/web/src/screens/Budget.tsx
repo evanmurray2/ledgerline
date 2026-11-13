@@ -27,6 +27,7 @@ import { clampMonth } from '../state/month';
 import { BlockedAction } from '../components/BlockedAction';
 import { AllGroups, allAssignedZero } from './BudgetRows';
 import { AttentionList } from './BudgetAttention';
+import { useDevicesDiffer } from './DevicesDiffer';
 import { FirstBudget, NewMonth, OverAssigned, PastNote } from './BudgetStates';
 import { DesktopTable } from './BudgetTable';
 
@@ -215,6 +216,7 @@ export function BudgetScreen() {
   useScreen(view === 'attention' ? 'budget.attention' : 'budget');
   const q = useBudget(month);
   const b = q.data;
+  const differs = useDevicesDiffer();
   const scroller = useRef<HTMLDivElement>(null);
   const thin = useScrolledDown(scroller, !!b);
 
@@ -232,7 +234,10 @@ export function BudgetScreen() {
   // This month's "has started" card: it decides itself whether to show (nothing assigned yet, or just filled).
   const newMonth = month === b.currentMonth && !empty;
   // Ready to Assign below zero has its own banner (OverAssigned), so it isn't counted again here.
-  const count = b.attention.filter((a) => a.section !== 'Low' && a.section !== 'Ready to Assign').length;
+  // Two devices that showed different numbers (D-116) count as one more.
+  const count =
+    b.attention.filter((a) => a.section !== 'Low' && a.section !== 'Ready to Assign').length +
+    (differs ? 1 : 0);
   const content = (
     <>
       <PastNote month={month} current={b.currentMonth} />
