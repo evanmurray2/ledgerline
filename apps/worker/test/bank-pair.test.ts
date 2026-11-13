@@ -120,7 +120,7 @@ describe('Not the same on two bank rows', () => {
     const r = await notSame('p:ln-p');
     expect(r.status).toBe(409);
     expect(r.json).toMatchObject({
-      message: 'Your bank paired these two itself, so they stay one purchase.',
+      message: 'Your bank paired these two itself, so they stay paired.',
     });
     expect(await keyOf('ln')).toBe('p:ln-p');
     // A row on its own key isn't paired.

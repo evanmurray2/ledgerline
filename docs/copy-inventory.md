@@ -191,8 +191,8 @@ that. Try again." · "Couldn't load more. Try again."
 **Needs category:** "Everything has a category." · "Same as your {payee}?" + Join · "New payee · {bank name}" · "Use
 {name}" · "Use {n} suggestions" · "Past categories for {payee}" · "No category called "{q}"."
 
-**Same purchase?:** "both count until you answer" · "Paired as one purchase" / "Kept as two purchases" · Server: "Your
-bank paired these two itself, so they stay one purchase." · "This isn't paired with another transaction."
+**Same purchase?:** "both count until you answer" · "Paired as one purchase" / "Kept as two purchases" · money in says
+"transaction" instead ("Same transaction?") · Server: "Your bank paired these two itself, so they stay paired." · "This isn't paired with another transaction."
 
 **Removed by the bank:** "likely released holds · not counted" · OK → "{payee} · marked OK" (a bank pending row removed
 with nothing posted after 5 days)
@@ -250,7 +250,7 @@ with nothing posted after 5 days)
 - Won't clear: "Turning this on removes what's owed" / "Stop counting this hold"
 - Memo: "Add a memo"
 - Same purchase: your entry: "Matched to the bank" + "Bank pending: {payee} · {date} · {amount}"; a posted row:
-  "Same purchase as" + "{other}"; both + "Not the same" → "Kept as two purchases" with Undo → "Paired as one purchase"
+  "Same purchase as" ("Same transaction as" for money in) + "{other}"; both + "Not the same" → "Kept as two purchases" with Undo → "Paired as one purchase"
 - Paid back: "It went to Ready to Assign and paid back {amount}." · "Unlinked": "{name} is owed again. This {amount} no
   longer pays it back."
 - Transfer: "It moves money between your accounts. No category changes." · "Unpair" → "Unpaired": "Both halves now
