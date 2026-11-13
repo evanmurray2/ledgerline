@@ -26,6 +26,8 @@ export const AccountRow = z.object({
   closed: z.boolean(),
   /** Its bank link, for the repair sheet when the bank needs you to sign in again; null for a manual account. */
   connectionId: id.nullable().optional(),
+  /** Its bank was removed (D-87): the bank sends nothing more, so it isn't "synced". */
+  unlinked: z.boolean().optional(),
 });
 export type AccountRow = z.infer<typeof AccountRow>;
 
