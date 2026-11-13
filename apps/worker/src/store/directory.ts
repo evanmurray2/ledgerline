@@ -22,7 +22,6 @@ import {
   RESTING,
   classifyUsage,
   dailyLimits,
-  noteUsage,
   restsDuring,
   usageToday,
   utcDay,
@@ -43,9 +42,6 @@ import { wayInOf, type WayIn } from './way-in.js';
 
 /** Budgets checked per ensure_all step (docs/multi-user.md 6.2). */
 export const ENSURE_BATCH = 25;
-
-/** A budget whose users haven't signed in for this long, and that has no banks, stops its daily jobs. */
-export const IDLE_MS = 30 * 86_400_000;
 
 const TRY_AGAIN = 'Something went wrong. Try again.';
 
@@ -222,6 +218,7 @@ export class Directory extends DurableObject<Env> {
           this.db
             .prepare(`DELETE FROM user WHERE id = ?1 AND status = 'deleting' AND is_admin = 0`)
             .bind(userId),
+          // `idle:<budget>`: a mark an earlier release kept for a resting budget; none is written now.
           this.db
             .prepare(`DELETE FROM app_state WHERE key IN (?1, ?2)`)
             .bind(deletingKey(budgetId), `idle:${budgetId}`),
@@ -238,40 +235,19 @@ export class Directory extends DurableObject<Env> {
         const cursor = (job.state as { cursor: string }).cursor ?? '';
         const rows = this.ctx.storage.sql
           .exec(
-            `SELECT b.id, (SELECT max(u.last_seen_at) FROM budget_member m JOIN user u ON u.id = m.user_id
-               WHERE m.budget_id = b.id) AS seen,
-               (SELECT value FROM app_state WHERE key = 'idle:' || b.id) AS idle_at
-             FROM budget b WHERE b.id > ?
+            `SELECT b.id FROM budget b WHERE b.id > ?
                AND NOT EXISTS (SELECT 1 FROM app_state WHERE key = 'deleting:' || b.id) ORDER BY b.id LIMIT ?`,
             cursor,
             ENSURE_BATCH,
           )
           .toArray();
         const ids = rows.map((r) => String(r.id));
-        for (const r of rows) {
-          const id = String(r.id);
-          // A budget nobody has opened for 30 days rests (docs/open-signup.md 9): once its store has stopped its
-          // daily jobs, it isn't called again until its user comes back.
-          const seen = r.seen === null ? null : Number(r.seen);
-          const idle = seen !== null && now - seen > IDLE_MS;
-          if (idle && r.idle_at !== null && seen! <= Number(r.idle_at)) continue;
-          const res = await this.env.BUDGET.get(this.env.BUDGET.idFromName(id))
-            .ensureJobs({ idle })
+        for (const id of ids)
+          await this.env.BUDGET.get(this.env.BUDGET.idFromName(id))
+            .ensureJobs()
             .catch((e: unknown) => {
               console.log(JSON.stringify({ event: 'ensure_failed', budget: id, error: String(e) }));
-              return null;
             });
-          if (res?.resting)
-            this.ctx.storage.sql.exec(
-              `INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)
-               ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-              `idle:${id}`,
-              String(now),
-              now,
-            );
-          else if (res && r.idle_at !== null)
-            this.ctx.storage.sql.exec(`DELETE FROM app_state WHERE key = ?`, `idle:${id}`);
-        }
         if (ids.length < ENSURE_BATCH) return { done: true };
         return { state: { cursor: ids[ids.length - 1] }, runAt: now };
       },
@@ -483,11 +459,6 @@ export class Directory extends DurableObject<Env> {
     const state = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(this.env));
     this.usageState = { state, at: now };
     return state;
-  }
-
-  /** Adds a store's own row counts to today's account usage (between analytics refreshes). */
-  async noteUsage(written: number, read: number): Promise<void> {
-    await noteUsage(this.db, written, read).run();
   }
 
   /**
