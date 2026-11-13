@@ -1,10 +1,9 @@
 // The steps of a bank run (docs/privacy.md 5.5; docs/privacy-keys.md 9), one job step each, safe to run again:
 // begin, each page fetched and sealed, the bank's answers, and sign and store. Split from runs.ts.
 import { MUTATION_DURING_PAGINATION, ProviderError, type BankDataProvider } from '@ledgerline/bank-provider';
-import type { Db } from '@ledgerline/db/sql';
+import type { Db, Stmt } from '@ledgerline/db/sql';
 import {
   concat,
-  cursorHash,
   fromHex,
   KEY_KIND,
   readRunManifest,
@@ -34,6 +33,7 @@ import {
 } from './run-stage.js';
 import {
   BadStamp,
+  cursorHashOf,
   hexOr,
   inForce,
   runStateOf,
@@ -41,6 +41,7 @@ import {
   stampedKey,
   standing,
   ZERO_HASH,
+  type CursorHashes,
   type RunDeps,
 } from './runs.js';
 
@@ -162,70 +163,90 @@ async function sealKeys(d: RunDeps, st: Stage): Promise<{ k: ServerKeys; pub: Ui
 const nextPagesHash = async (before: string, what: number, pageHash: Uint8Array): Promise<string> =>
   toHex(await sha256(concat(fromHex(before), u8(what), pageHash)));
 
-/** Seals one page of the run and stores it, only if the run still stands where this step found it. */
-async function addPage(
+/** What a page moves the run on by: its cursor and its counts. Pages that hold the bank's answers move nothing. */
+type Move = { cursor: string; hasMore: boolean; added: number; modified: number; removed: number };
+
+/**
+ * Seals pages of the run and stores them, in one transaction, only if the run still stands where this step found it:
+ * one fence, one stamp of the stage, however many pages the step adds (a last page and the bank's answers).
+ */
+async function addPages(
   d: RunDeps,
   o: { st: Stage; mac: string },
   keys: { k: ServerKeys; pub: Uint8Array },
-  what: What,
-  payload: Uint8Array,
-  move: { cursor: string; hasMore: boolean; added: number; modified: number; removed: number } | null,
+  parts: { what: What; payload: Uint8Array; move: Move | null }[],
 ): Promise<void> {
-  const { st } = o;
-  const { sealed, page } = await sealPage(
-    keys.k,
-    keys.pub,
-    {
-      budgetId: d.budgetId,
-      linkId: st.linkId,
-      inboxVersion: st.inboxVersion,
-      run: st.run,
-      restart: st.restart,
-      page: st.pages,
-    },
-    what,
-    payload,
-  );
-  const next: Stage = {
-    ...st,
-    pages: st.pages + 1,
-    pagesHash: await nextPagesHash(st.pagesHash, what, page.hash),
-    ...(move
-      ? {
-          cursor: move.cursor,
-          hasMore: move.hasMore,
-          added: st.added + move.added,
-          modified: st.modified + move.modified,
-          removed: st.removed + move.removed,
-        }
-      : {}),
-  };
-  try {
-    await d.db.batch([
-      stageFence(d, o.mac),
+  let st = o.st;
+  const stmts: Stmt[] = [stageFence(d, o.mac)];
+  for (const p of parts) {
+    const { sealed, page } = await sealPage(
+      keys.k,
+      keys.pub,
+      {
+        budgetId: d.budgetId,
+        linkId: st.linkId,
+        inboxVersion: st.inboxVersion,
+        run: st.run,
+        restart: st.restart,
+        page: st.pages,
+      },
+      p.what,
+      p.payload,
+    );
+    stmts.push(
       d.db
         .prepare(
           `INSERT OR REPLACE INTO sealed_page (run, page, what, hash, bytes) VALUES (?1, ?2, ?3, ?4, ?5)`,
         )
-        .bind(st.run, st.pages, what, toHex(page.hash), sealed),
-      await stageStmt(d, next),
-    ]);
+        .bind(st.run, st.pages, p.what, toHex(page.hash), sealed),
+    );
+    const m = p.move;
+    st = {
+      ...st,
+      pages: st.pages + 1,
+      pagesHash: await nextPagesHash(st.pagesHash, p.what, page.hash),
+      ...(m
+        ? {
+            cursor: m.cursor,
+            hasMore: m.hasMore,
+            added: st.added + m.added,
+            modified: st.modified + m.modified,
+            removed: st.removed + m.removed,
+          }
+        : {}),
+    };
+  }
+  stmts.push(await stageStmt(d, st));
+  try {
+    await d.db.batch(stmts);
   } catch (x) {
     stopped(x);
   }
 }
 
+/** What the bank says about a link besides its transactions (`WHAT.balances` or `WHAT.liabilities`), as JSON. */
+export interface BankAnswer {
+  what: 1 | 2;
+  answer: unknown;
+}
+
+/** Asks the bank its answers; `conn` gives the link with its token opened, checked against its stamp. */
+export type AskBank = (conn: () => Promise<Awaited<ReturnType<typeof linkForBank>>>) => Promise<BankAnswer[]>;
+
 /**
  * One step: fetches the next page of transactions, checks that it reads, counts its rows, seals it and stores
  * it. The page's plain text lives only in this step's memory. Gives whether the bank has more pages. When the
- * bank says its data changed while the run was read, the run starts again (`restarted`).
+ * bank says its data changed while the run was read, the run starts again (`restarted`). With `ask`, the last
+ * page's step also asks the bank's answers and seals them after the page, in the same transaction (D-110):
+ * `answered` says it did.
  */
 export async function fetchSealedPage(
   d: RunDeps,
   provider: BankDataProvider,
   pageSize: number,
   only?: OwnRun,
-): Promise<{ more: boolean } | 'restarted'> {
+  ask?: AskBank,
+): Promise<{ more: boolean; answered?: boolean } | 'restarted'> {
   const o = await openStage(d, only);
   const { st } = o;
   if (!st.hasMore) return { more: false };
@@ -251,14 +272,20 @@ export async function fetchSealedPage(
     if (e.kind === 'added') added++;
     else if (e.kind === 'modified') modified++;
     else removed++;
-  await addPage(d, o, keys, WHAT.transactions, staged.body, {
-    cursor: staged.nextCursor,
-    hasMore: staged.hasMore,
-    added,
-    modified,
-    removed,
-  });
-  return { more: staged.hasMore };
+  const parts = [
+    {
+      what: WHAT.transactions as What,
+      payload: staged.body as Uint8Array,
+      move: { cursor: staged.nextCursor, hasMore: staged.hasMore, added, modified, removed } as Move | null,
+    },
+  ];
+  // The run's last page: nothing of the bank's answers is held yet, since they come only after it.
+  const answered = !staged.hasMore && !!ask;
+  if (answered)
+    for (const a of await ask(async () => conn))
+      parts.push({ what: a.what, payload: jsonBytes(a.answer), move: null });
+  await addPages(d, o, keys, parts);
+  return answered ? { more: false, answered } : { more: staged.hasMore };
 }
 
 const jsonBytes = (v: unknown): Uint8Array => {
@@ -273,16 +300,37 @@ const jsonBytes = (v: unknown): Uint8Array => {
  * its manifest says so: this step is then left out.
  */
 export async function sealBankAnswer(d: RunDeps, what: 1 | 2, answer: unknown, only?: OwnRun): Promise<void> {
+  await sealBankAnswers(d, [{ what }], async () => [{ what, answer }], only);
+}
+
+/**
+ * The bank's answers after the last page, in one step and one transaction: `ask` is called with the link's token
+ * only when one of `whats` is not held yet. An answer held already (the step ran before and its answer was lost)
+ * is not sealed again.
+ */
+export async function sealBankAnswers(
+  d: RunDeps,
+  whats: { what: 1 | 2 }[],
+  ask: AskBank,
+  only?: OwnRun,
+): Promise<void> {
   const o = await openStage(d, only);
   const { st } = o;
   if (st.hasMore || st.pages === 0 || st.describes) throw new RunStopped('the run has no page yet');
-  const held = await d.db
-    .prepare(`SELECT 1 AS x FROM sealed_page WHERE run = ?1 AND what = ?2`)
-    .bind(st.run, what)
-    .first();
-  // The step ran before and its answer was lost: the page is there.
-  if (held) return;
-  await addPage(d, o, await sealKeys(d, st), what, jsonBytes(answer), null);
+  const held = new Set(
+    (
+      await d.db
+        .prepare(`SELECT what FROM sealed_page WHERE run = ?1 AND what IN (1, 2)`)
+        .bind(st.run)
+        .all<{ what: number }>()
+    ).results.map((r) => r.what),
+  );
+  if (whats.every((w) => held.has(w.what))) return;
+  const keys = await sealKeys(d, st);
+  const parts = (await ask(() => linkForBank(d, st.linkId)))
+    .filter((a) => !held.has(a.what))
+    .map((a) => ({ what: a.what as What, payload: jsonBytes(a.answer), move: null }));
+  if (parts.length) await addPages(d, o, keys, parts);
 }
 
 /**
@@ -296,7 +344,9 @@ export async function sealLinkDescription(d: RunDeps, description: unknown, only
   if (!st.describes) throw new RunStopped('not a first run');
   // The step ran before and its answer was lost: the page is there.
   if (st.pages > 0) return;
-  await addPage(d, o, await sealKeys(d, st), WHAT.link, jsonBytes(description), null);
+  await addPages(d, o, await sealKeys(d, st), [
+    { what: WHAT.link, payload: jsonBytes(description), move: null },
+  ]);
 }
 
 /**
@@ -325,7 +375,9 @@ export async function completeSealedRun(
   if (!o.good) throw new BadStamp('run stage');
   const { st } = o;
   if (st.hasMore || st.pages === 0) throw new RunStopped('the run is not whole');
-  const { s, cursors, lastInbox } = await standing(d);
+  // The run state's cursors are hashed once, for its check, the manifest and the new state.
+  const known: CursorHashes = new Map();
+  const { s, cursors, lastInbox } = await standing(d, known);
   if (s.run !== st.run - 1) throw new RunStopped('not the next run');
 
   // The pages are the ones the steps stored, in order: their hashes chain to the stage's stamped hash.
@@ -362,8 +414,8 @@ export async function completeSealedRun(
         inboxVersion: st.inboxVersion,
         runTime,
         prevRunTime: s.time,
-        cursorBefore: await cursorHash(st.startCursor),
-        cursorAfter: await cursorHash(st.cursor),
+        cursorBefore: await cursorHashOf(st.startCursor, known),
+        cursorAfter: await cursorHashOf(st.cursor, known),
         added: st.added,
         modified: st.modified,
         removed: st.removed,
@@ -381,7 +433,7 @@ export async function completeSealedRun(
   const hash = toHex(await sha256(signed.manifest));
   const after = [...cursors.filter((c) => c.linkId !== st.linkId), { linkId: st.linkId, cursor: st.cursor }];
   const mac = toHex(
-    await runsMac(k, d.budgetId, await runStateOf({ run: st.run, hash, time: runTime }, after)),
+    await runsMac(k, d.budgetId, await runStateOf({ run: st.run, hash, time: runTime }, after, known)),
   );
   try {
     await d.db.batch([

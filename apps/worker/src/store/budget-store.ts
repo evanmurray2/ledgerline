@@ -26,7 +26,7 @@ import {
 } from '../seal/fetch-job.js';
 import { sealedApi, sealedPath } from '../seal/sealed-routes.js';
 import { startApi } from '../seal/start-routes.js';
-import { runDeps } from '../seal/runs.js';
+import { runDeps, workerKeys, type WorkerKeys } from '../seal/runs.js';
 import { parseKeyring } from '@ledgerline/platform';
 import { SEALED_HEADER } from '@ledgerline/contracts';
 import type { Env } from '../env.js';
@@ -440,17 +440,30 @@ export class BudgetStore extends DurableObject<Env> {
 
   private readonly enqueue: Enqueue = (kind, o) => this.runner.enqueue(kind, o, Date.now());
 
+  /**
+   * The Worker's keys, derived once while this object stays in memory, and again when the keyring changes: each
+   * alarm of a run made them again (two HKDFs and three key imports, docs/measurements.md).
+   */
+  private kept: { ring: string; keys: WorkerKeys } | null = null;
+
   private async fetchDeps(): Promise<FetchDeps> {
     const env = this.appEnv();
+    const ring = parseKeyring(env.TOKEN_KEYS, env.TOKEN_KEY_CURRENT);
+    const id = `${env.TOKEN_KEY_CURRENT ?? ''}|${env.TOKEN_KEYS ?? ''}`;
+    if (this.kept?.ring !== id) this.kept = { ring: id, keys: workerKeys(ring) };
     return {
-      runs: runDeps(
-        this.adapter(),
-        await this.budgetId(),
-        parseKeyring(env.TOKEN_KEYS, env.TOKEN_KEY_CURRENT),
-      ),
+      runs: runDeps(this.adapter(), await this.budgetId(), ring, this.kept.keys),
       provider: () => makeProvider(env),
       pageSize: pageSize(env),
-      budgetState: async () => ((await writeBudgetState(env)) === 'normal' ? 'normal' : 'pause'),
+      // The Directory's usage answer as a write reads it, kept 30 seconds (usage30): a run's steps come seconds
+      // apart, and each asked the Directory again.
+      budgetState: async () =>
+        (await writeBudgetState({
+          ...env,
+          ...(env.USAGE_FOR_WRITE ? { USAGE: env.USAGE_FOR_WRITE } : {}),
+        })) === 'normal'
+          ? 'normal'
+          : 'pause',
     };
   }
 

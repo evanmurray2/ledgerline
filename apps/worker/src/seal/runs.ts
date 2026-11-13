@@ -82,11 +82,17 @@ export interface RunDeps {
   keys: WorkerKeys;
 }
 
-export const runDeps = (db: Db, budgetId: string, ring: TokenKeyring): RunDeps => ({
+/** `keys`: the Worker's keys from this keyring, kept by the caller so a step doesn't derive them again. */
+export const runDeps = (
+  db: Db,
+  budgetId: string,
+  ring: TokenKeyring,
+  keys: WorkerKeys = workerKeys(ring),
+): RunDeps => ({
   db,
   budgetId,
   ring,
-  keys: workerKeys(ring),
+  keys,
 });
 
 export const ZERO_HASH = '0'.repeat(64);
@@ -231,9 +237,22 @@ export interface Standing {
 }
 export type Cursors = { linkId: string; cursor: string }[];
 
-export async function runStateOf(s: Standing, cursors: Cursors): Promise<RunState> {
+/** Cursor hashes worked out in this step, by cursor: a step that hashes a cursor twice hashes it once. */
+export type CursorHashes = Map<string, Uint8Array<ArrayBuffer>>;
+
+/** H(cursor), from `known` when this step worked it out before. */
+export async function cursorHashOf(cursor: string, known?: CursorHashes): Promise<Uint8Array<ArrayBuffer>> {
+  let h = known?.get(cursor);
+  if (!h) {
+    h = await cursorHash(cursor);
+    known?.set(cursor, h);
+  }
+  return h;
+}
+
+export async function runStateOf(s: Standing, cursors: Cursors, known?: CursorHashes): Promise<RunState> {
   const links = [];
-  for (const c of cursors) links.push({ linkId: c.linkId, cursorHash: await cursorHash(c.cursor) });
+  for (const c of cursors) links.push({ linkId: c.linkId, cursorHash: await cursorHashOf(c.cursor, known) });
   return { run: s.run, lastManifestHash: hexOr(s.hash), lastRunTime: s.time, links };
 }
 
@@ -241,7 +260,10 @@ export async function runStateOf(s: Standing, cursors: Cursors): Promise<RunStat
  * The budget's run state, checked against its stamp, with the inbox version of the last run: its manifest is the
  * one the stamped state names by hash. No run goes back to an older inbox key than the run before.
  */
-export async function standing(d: RunDeps): Promise<{ s: Standing; cursors: Cursors; lastInbox: number }> {
+export async function standing(
+  d: RunDeps,
+  known?: CursorHashes,
+): Promise<{ s: Standing; cursors: Cursors; lastInbox: number }> {
   const r = await d.db
     .prepare(`SELECT run, last_manifest_hash, last_run_time, mac, n FROM run_state WHERE id = 1`)
     .first<{ run: number; last_manifest_hash: string; last_run_time: number; mac: string; n: number }>();
@@ -252,7 +274,7 @@ export async function standing(d: RunDeps): Promise<{ s: Standing; cursors: Curs
   const cursors = rows.results.map((x) => ({ linkId: x.link_id, cursor: x.cursor }));
   const s = { run: r.run, hash: r.last_manifest_hash, time: r.last_run_time };
   const k = await d.keys.keysFor(r.n).catch(() => null);
-  if (!k || !(await checkRunsMac(k, d.budgetId, await runStateOf(s, cursors), hexOr(r.mac))))
+  if (!k || !(await checkRunsMac(k, d.budgetId, await runStateOf(s, cursors, known), hexOr(r.mac))))
     throw new BadStamp('run state');
   if (s.run === 0) return { s, cursors, lastInbox: 0 };
   const last = await d.db
