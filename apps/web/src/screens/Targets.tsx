@@ -2,6 +2,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Outlet, useNavigate, useParams, useRouterState, useSearch } from '@tanstack/react-router';
 import type { Target } from '@ledgerline/contracts';
+import {
+  type Month,
+  type Target as RuleTarget,
+  cents as asCents,
+  neededThisMonth,
+  refillPeriod,
+} from '@ledgerline/domain';
 import { api } from '../api/endpoints';
 import { useCategoriesSettings, useCategorySheet, useMoneyMutation } from '../api/hooks';
 import { Sheet, SheetTitle } from '../components/Sheet';
@@ -41,12 +48,6 @@ const KINDS: { id: Kind; name: string; desc: string }[] = [
   { id: 'by_date', name: 'Balance by a date', desc: 'Reach a total by a month' },
   { id: 'no_date', name: 'Balance, no date', desc: 'Grow toward a total' },
 ];
-
-function monthsBetween(from: string, to: string) {
-  const [fy, fm] = from.split('-').map(Number) as [number, number];
-  const [ty, tm] = to.split('-').map(Number) as [number, number];
-  return Math.max(1, (ty - fy) * 12 + (tm - fm) + 1);
-}
 
 /** The last month of the refill period that contains `month` (periods start at `anchor`, every `n` months). */
 function refillDue(anchor: string, n: number, month: string) {
@@ -89,8 +90,10 @@ export function TargetScreen() {
   const [monthly, setMonthly] = useState('');
   const [asking, setAsking] = useState(false);
   const [init, setInit] = useState(false);
-  /** The saved target's kind and amount, so switching kinds and back restores it. */
-  const [orig, setOrig] = useState<{ kind: Kind; amount: string } | null>(null);
+  /** The saved target's kind and amount (and Refill's period and Due), so switching away and back restores it. */
+  const [orig, setOrig] = useState<{ kind: Kind; amount: string; period?: string; due?: string } | null>(
+    null,
+  );
   // An amount means something different for each kind ($3,000 by June is not $3,000 every month), so a new
   // kind starts empty instead of carrying the old number across.
   const chooseKind = (k: Kind) => {
@@ -111,8 +114,12 @@ export function TargetScreen() {
     setAmount(centsToInput(t.amount));
     setOrig({ kind: t.type, amount: centsToInput(t.amount) });
     if (t.type === 'refill') {
-      setPeriod(t.periodMonths === 1 ? '1' : t.periodMonths === 12 ? '12' : '3');
-      setDue(refillDue(t.anchor, t.periodMonths, month));
+      const p = t.periodMonths === 1 ? '1' : t.periodMonths === 12 ? '12' : '3';
+      setPeriod(p);
+      // A monthly refill has no Due month: a period chosen later starts from its own default.
+      const d = t.periodMonths === 1 ? '' : refillDue(t.anchor, t.periodMonths, month);
+      setDue(d);
+      setOrig({ kind: t.type, amount: centsToInput(t.amount), period: p, due: d });
     }
     if (t.type === 'by_date') setByMonth(t.targetMonth);
     if (t.type === 'no_date' && t.monthly !== null) setMonthly(centsToInput(t.monthly));
@@ -151,39 +158,52 @@ export function TargetScreen() {
     if (!target)
       return [kind === 'by_date' && cents !== null && cents > 0 ? 'Choose a month' : 'Enter an amount', ''];
     const f = (x: number) => formatCents(x, { whole: true });
+    // The month's need as Budget works it out once this target is saved (it takes effect this month), before
+    // anything is assigned: the same rule and numbers as the category's row.
+    const m = month as Month;
+    // The same shape with the domain's own types for cents and months.
+    const need = neededThisMonth(target as unknown as RuleTarget, {
+      month: m,
+      assignedThisMonth: asCents(0),
+      availableAtMonthStart: asCents(c.carry),
+      availableAtPeriodStart: asCents(c.carry),
+      assignedEarlierInPeriod: asCents(0),
+      periodFrom: m,
+    });
+    const needs = (when: string) => (need > 0 ? `Needs ${f(need)} ${when}` : `Needs nothing ${when}`);
     switch (target.type) {
       case 'refill': {
         if (target.periodMonths === 1) {
-          const nextNeed = Math.max(0, target.amount - c.available);
+          // Funded this month and nothing more spent, it has the target; next month refills what is spent.
+          const funded = c.available + Math.max(0, need - c.assigned);
+          const next = Math.max(0, target.amount - funded);
           return [
-            `Needs ${f(target.amount)} this month`,
-            nextNeed > 0
-              ? `You have ${formatCents(c.available)} left. Next month needs ${formatCents(nextNeed)}.`
-              : `You have ${formatCents(c.available)} left. Next month needs nothing more.`,
+            needs('this month'),
+            next > 0
+              ? `Next month refills what you spend: ${formatCents(next)} so far.`
+              : 'Next month refills what you spend.',
           ];
         }
-        // Months left run through the Due month; months of the period before now aren't asked for.
-        const end = refillDue(target.anchor, target.periodMonths, month);
-        const left = monthsBetween(month, end);
-        const per = Math.floor(Math.max(0, target.amount - c.available) / left);
+        // Steps run through the Due month; months of the period before now aren't asked for.
+        const p = refillPeriod({ periodMonths: target.periodMonths, anchor: target.anchor as Month }, m);
         const word = target.periodMonths === 12 ? 'year' : 'quarter';
         return [
-          `Needs ${f(per)} a month`,
-          `${f(target.amount)} by ${monthLabel(end)}, in ${left === 1 ? '1 step' : `${left} steps`}. After that, ${f(Math.floor(target.amount / target.periodMonths))} a month each ${word}.`,
+          needs('this month'),
+          `${f(target.amount)} by ${monthLabel(p.end)}, in ${p.monthsLeft === 1 ? '1 step' : `${p.monthsLeft} steps`}. After that, ${f(Math.floor(target.amount / target.periodMonths))} a month each ${word}.`,
         ];
       }
       case 'set_aside':
         return [`Needs ${f(target.amount)} every month`, 'Spending doesn’t change it.'];
-      case 'by_date': {
-        const n = monthsBetween(month, target.targetMonth);
-        const per = Math.floor(Math.max(0, target.amount - c.available) / n);
-        return [`Needs ${f(per)} a month`, `${f(target.amount)} by ${monthLabel(target.targetMonth)}.`];
-      }
+      case 'by_date':
+        return [
+          needs('this month'),
+          `${f(target.amount)} by the start of ${monthLabel(target.targetMonth)}.`,
+        ];
       case 'no_date':
         return [
-          target.monthly ? `Needs ${f(target.monthly)} a month` : `Toward ${f(target.amount)}`,
+          target.monthly ? needs('this month') : `Toward ${f(target.amount)}`,
           target.monthly
-            ? `Until it reaches ${f(target.amount)}.`
+            ? `${f(target.monthly)} a month until it reaches ${f(target.amount)}.`
             : 'Shows progress only. It asks for nothing each month.',
         ];
       default:
@@ -191,7 +211,12 @@ export function TargetScreen() {
     }
   })();
   const submit = async (t: Target) => {
-    await save.mutateAsync({ id: c.id, body: { categoryId: c.id, month, target: t } });
+    try {
+      await save.mutateAsync({ id: c.id, body: { categoryId: c.id, month, target: t } });
+    } catch {
+      // Shown under the summary (save.error).
+      return;
+    }
     done();
   };
   return (
@@ -258,7 +283,11 @@ export function TargetScreen() {
             label="Every"
             track="target.period"
             value={period}
-            onChange={setPeriod}
+            onChange={(p) => {
+              setPeriod(p);
+              // Each period has its own Due month: the saved one, or the default for the new period.
+              setDue(orig?.period === p ? (orig.due ?? '') : '');
+            }}
             options={[
               ['1', 'Month'],
               ['3', 'Quarter'],
@@ -308,6 +337,10 @@ export function TargetScreen() {
           </>
         )}
       </p>
+      {/* Targets are kept per month: a change starts in the month shown, and earlier months keep theirs. */}
+      <p className="m-0 text-sm text-muted">
+        Starts in {monthLabel(month)}. Earlier months keep their target.
+      </p>
       {save.error && <ErrorNote error={save.error} />}
       {c.target.type !== 'none' &&
         (asking ? (
@@ -349,6 +382,7 @@ export function TargetsScreen() {
             : none.length <= 3
               ? `No target yet: ${none.map((c) => c.name).join(', ')}.`
               : `${none.length} categories have no target yet.`}
+          {month && ` A change starts in ${monthLabel(month)}.`}
         </p>
       )}
       {groups.map((g) => (

@@ -154,6 +154,23 @@ describe('Targets', () => {
       expect(t?.amount).toBe(15000);
     }, T);
   });
+
+  it('the sheet asks for what the Budget row asks for, and says when a change starts', async () => {
+    // Budget's rows: Vacation needs $250.00 this month, Car insurance $90.00.
+    show('/budget/category/vacation/target');
+    await screen.findByText('Needs $250 this month', undefined, T);
+    expect(screen.getByText('Starts in November 2026. Earlier months keep their target.')).toBeTruthy();
+    cleanup();
+    show('/budget/category/car/target');
+    await screen.findByText('Needs $90 this month', undefined, T);
+  });
+
+  it('a monthly Refill changed to Quarter is due at the end of the quarter, not this month', async () => {
+    show('/budget/category/groceries/target');
+    await screen.findByLabelText('Have this much available', undefined, T);
+    fireEvent.click(screen.getByRole('button', { name: 'Quarter' }));
+    expect((screen.getByLabelText('Due') as HTMLInputElement).value).toBe('2027-01');
+  });
 });
 
 describe('Owed to you', () => {

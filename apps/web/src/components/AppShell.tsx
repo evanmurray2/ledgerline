@@ -167,7 +167,12 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
         <span
           className={cx(
             'tnum whitespace-nowrap font-bold',
-            rta !== undefined && formatCents(rta).length > 12 ? 'text-2xl' : 'text-3xl',
+            // The card is 172 px inside: the longest amounts ("-$100,001,999.89") step down twice.
+            rta === undefined || formatCents(rta).length <= 12
+              ? 'text-3xl'
+              : formatCents(rta).length <= 14
+                ? 'text-2xl'
+                : 'text-lg',
           )}
           data-testid="nav-rta"
         >
@@ -175,7 +180,17 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
         </span>
         {/* The one Assign button on desktop, on every screen, so the amount isn't repeated in a header. */}
         {!done &&
-          (canWrite ? (
+          (canWrite && negative ? (
+            // Below zero the job is to take money back, which Budget offers at the top (as on a phone).
+            <Link
+              to="/budget"
+              search={tabSearch('budget', month)}
+              data-track="nav.take_back"
+              className="hit mt-1.5 flex h-9 items-center justify-center rounded-full bg-on-danger text-md font-bold text-danger no-underline"
+            >
+              Take back
+            </Link>
+          ) : canWrite ? (
             <Link
               to="/budget/assign"
               // From another tab, closing Assign comes back to it (lib/back.ts).

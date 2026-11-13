@@ -15,6 +15,7 @@ import {
   LinkFinish,
   LinkFinishResult,
   MatchView,
+  ArchiveResult,
   MutationResult,
   OwedView,
   PayeesView,
@@ -47,6 +48,7 @@ import type {
   MergePayees,
   RenameAccount,
   RenamePayee,
+  ReturnedMoney,
   SetupStart,
 } from '@ledgerline/contracts';
 import { z } from 'zod';
@@ -201,16 +203,16 @@ export const api = {
   upsertGroup: (body: In<typeof GroupUpsert>) => post('/api/settings/groups', OkId, body),
   pinCategory: ({ id, pinned }: { id: string; pinned: boolean }) =>
     post(`/api/settings/categories/${enc(id)}/pin`, MutationResult, { pinned }),
-  archiveCategory: (id: string, archived: boolean) =>
-    post(`/api/settings/categories/${enc(id)}/archive`, MutationResult, { archived }),
+  /** Archive or restore. Undo of an archive passes back what it returned, to give that money back. */
+  archiveCategory: (id: string, archived: boolean, giveBack?: In<typeof ReturnedMoney>) =>
+    post(`/api/settings/categories/${enc(id)}/archive`, ArchiveResult, {
+      archived,
+      ...(giveBack?.length ? { giveBack } : {}),
+    }),
   reorderCategories: (ids: string[]) => post('/api/settings/categories/reorder', Ok, { ids }),
   reorderGroups: (ids: string[]) => post('/api/settings/groups/reorder', Ok, { ids }),
   /** Deleted when never used; otherwise archived, keeping its history. */
-  removeCategory: (id: string) =>
-    post(
-      `/api/settings/categories/${enc(id)}/remove`,
-      z.object({ ok: z.literal(true), outcome: z.enum(['deleted', 'archived']) }),
-    ),
+  removeCategory: (id: string) => post(`/api/settings/categories/${enc(id)}/remove`, ArchiveResult),
   removeGroup: (id: string) => post(`/api/settings/groups/${enc(id)}/remove`, Ok),
 
   payees: () => get('/api/settings/payees', PayeesView),
