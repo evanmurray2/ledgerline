@@ -18,6 +18,14 @@ Every budget is **locked** (sealed) (D-102): the server holds it only as a signe
 
 Data lives only in Durable Objects' SQLite (D-37, D-38). Cloudflare keeps 30 days of point-in-time recovery for each object; there is no other backup (D-29). Free plan only, no payment card (D-26).
 
+## Where code runs
+
+The engine on the device and the server both live in `apps/worker/src`, so a folder name doesn't say where its code runs. `tools/ci/engine-boundary.mjs` (in `ci`) follows each side's runtime imports and keeps them apart:
+
+- **The Worker** (`src/index.ts`): `store/`, `seal/`, `ops/`, the sign-in and account routes (`routes/auth.ts`, `signup.ts`, `people.ts`, `security.ts`, `device-add.ts`, `recovery-key.ts`, `request-challenge.ts`, `signup-switch.ts`), and `sync/lease.ts`, `breaker.ts`, `provider.ts` (shared).
+- **The device** (`src/local/web-entry.ts`): `local/`, `views/`, `ledger/`, `budget/`, the budget's routes (`routes/api.ts` and what it mounts), filing (`sync/process.ts` and the rest of `sync/`). The 10 ms rule doesn't bind this code; memory on an iPhone does.
+- **Both**: twelve small files (the SQL interface, the clock, the log's formats, the migrations), listed in the check's `SHARED`. A new shared file is added there in the same pull request.
+
 ## What the server stores for a locked budget
 
 - **The log** (`seal/log-store.ts`, store migration 0005): a genesis entry, then signed entries in order, each sealed with the budget key, padded. A write is whole or not at all, checked by the log's rules and the server's own (`packages/seal`). Public entries (key changes, ways in) stay readable as signed facts with no budget data.
