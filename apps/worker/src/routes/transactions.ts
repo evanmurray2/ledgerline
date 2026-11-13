@@ -4,7 +4,7 @@ import type { Stmt } from '@ledgerline/db/sql';
 import { editNow } from '../http/clock.js';
 import { Hono } from 'hono';
 import { CategorizeRequest, PendingCheckAction, TxnPatch } from '@ledgerline/contracts';
-import { addDays, formatCents, localDate } from '@ledgerline/domain';
+import { addDays, cents, formatCents, localDate } from '@ledgerline/domain';
 
 import type { AppEnv } from '../http/context.js';
 import type { Scoped } from '../db/scoped.js';
