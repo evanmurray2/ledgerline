@@ -1,4 +1,4 @@
-# D-113: New keys come in a signed write to the log; `store-inbox-key` is never asked (Nov 13, 2026)
+# D-114: New keys come in a signed write to the log; `store-inbox-key` is never asked (Nov 13, 2026)
 
 **Before.** `docs/privacy-keys.md` 11 listed `store-sign-key` and `store-inbox-key` as two signed requests, and
 `docs/privacy.md` 5.2 said the server takes a signing or inbox public key "only in a request with a recent passkey
