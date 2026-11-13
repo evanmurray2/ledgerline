@@ -13,9 +13,9 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { cx, Icon, useIsDesktop } from './ui';
+import { ConfirmInline, cx, Icon, useIsDesktop } from './ui';
 import { usage } from '../usage/tracker';
-import { closingSheet } from '../lib/back';
+import { closingSheet, sheetOpened } from '../lib/back';
 
 export const PanelSlotContext = createContext<HTMLElement | null>(null);
 
@@ -92,8 +92,10 @@ export interface SheetProps {
   children: ReactNode;
   /** Close link label for screen readers. */
   closeLabel?: string;
-  /** Open over everything, also on desktop (for a picker opened from inside another sheet). */
+  /** Open over everything, also on desktop (for a picker opened from inside another sheet). Back closes only it. */
   modal?: boolean;
+  /** An amount is typed and not saved: Back asks before it drops it. */
+  unsaved?: boolean;
 }
 
 export function Sheet({
@@ -106,6 +108,7 @@ export function Sheet({
   children,
   closeLabel = 'Close',
   modal = false,
+  unsaved = false,
 }: SheetProps) {
   const isDesktop = useIsDesktop();
   // A modal sheet is drawn the phone way (over everything) on every screen size.
@@ -123,6 +126,29 @@ export function Sheet({
   };
   const closeRef = useRef(close);
   closeRef.current = close;
+  // Back asks before it drops an amount you typed (lib/back.ts): the ask shows at the top of the sheet.
+  const [asking, setAsking] = useState(false);
+  const unsavedRef = useRef(unsaved);
+  unsavedRef.current = unsaved;
+  const askRef = useRef<HTMLDivElement>(null);
+  useEffect(
+    () =>
+      sheetOpened({
+        nested: modal,
+        unsaved: () => unsavedRef.current,
+        ask: () => setAsking(true),
+        close: () => closeRef.current(),
+      }),
+    [modal],
+  );
+  useEffect(() => {
+    if (!unsaved) setAsking(false);
+  }, [unsaved]);
+  useEffect(() => {
+    if (!asking) return;
+    askRef.current?.scrollIntoView({ block: 'nearest' });
+    askRef.current?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true });
+  }, [asking]);
 
   useEffect(() => {
     if (covers) {
@@ -250,6 +276,21 @@ export function Sheet({
           footer || desktop ? 'pb-3' : 'safe-pad',
         )}
       >
+        {asking && (
+          <div ref={askRef} className="flex shrink-0 flex-col">
+            <ConfirmInline
+              label="Leave without saving"
+              confirmLabel="Leave"
+              cancelLabel="Keep editing"
+              mutates={false}
+              track={`${track}.leave`}
+              onCancel={() => setAsking(false)}
+              onConfirm={close}
+            >
+              The amount you typed isn’t saved.
+            </ConfirmInline>
+          </div>
+        )}
         {children}
       </div>
       {footer && (

@@ -176,6 +176,8 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
       label={c.name}
       track="category"
       onClose={close}
+      // Back asks before it drops the amount typed (Save or ✕ don't ask).
+      unsaved={changed && !set.isPending}
       header={
         <div className="flex items-start justify-between gap-1">
           <div className="min-w-0">

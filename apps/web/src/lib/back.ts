@@ -87,6 +87,48 @@ export function closingSheet(fn: () => void): void {
   }
 }
 
+// Back (the browser's, or a swipe from the edge) while a sheet is open. A picker opened from inside another sheet (a
+// `modal` sheet: Move money, a category picker) has no page of its own, so Back would close the sheet under it too:
+// Back closes only the picker. A sheet holding an amount typed but not saved asks first (Sheet.tsx shows the ask).
+// The router puts the page back when Back is refused (its history's blockers), so nothing changes but the sheet.
+
+/** An open sheet, as Back sees it. */
+export interface OpenSheet {
+  /** A picker opened from inside another sheet: it has no page of its own. */
+  nested: boolean;
+  /** An amount typed and not saved: Back asks before it drops it. */
+  unsaved: () => boolean;
+  /** Shows the ask (Sheet.tsx). */
+  ask: () => void;
+  /** Closes the sheet as its ✕ does. */
+  close: () => void;
+}
+
+/** Open sheets, newest last. */
+const openSheets: OpenSheet[] = [];
+
+/** Puts an open sheet where Back sees it; the function returned takes it away. */
+export function sheetOpened(sheet: OpenSheet): () => void {
+  openSheets.push(sheet);
+  return () => {
+    const i = openSheets.indexOf(sheet);
+    if (i >= 0) openSheets.splice(i, 1);
+  };
+}
+
+/** What Back does with the newest open sheet: true when it handled Back (the page stays). */
+export function backHandled(): boolean {
+  const top = openSheets[openSheets.length - 1];
+  if (!top) return false;
+  if (top.unsaved()) {
+    top.ask();
+    return true;
+  }
+  if (!top.nested) return false;
+  top.close();
+  return true;
+}
+
 /** The router's history, with pages a sheet's closing pushes turned into Back or a replace (closingSheet). */
 export function sheetAwareHistory(h: RouterHistory): RouterHistory {
   const hrefAt = new Map<number, string>();
@@ -100,8 +142,14 @@ export function sheetAwareHistory(h: RouterHistory): RouterHistory {
   h.push = (path, state, opts) => {
     if (!closing) return push(path, state, opts);
     const i = h.location.state.__TSR_index;
-    if (typeof i === 'number' && i > 0 && hrefAt.get(i - 1) === path) return h.back();
-    return h.replace(path, state, opts);
+    // A sheet closing goes back on purpose: Back's ask doesn't stop it.
+    if (typeof i === 'number' && i > 0 && hrefAt.get(i - 1) === path) return h.back({ ignoreBlocker: true });
+    return h.replace(path, state, { ...opts, ignoreBlocker: true });
   };
+  // Only a step through the history (Back, Forward): a link or a sheet's own Save goes where it goes.
+  h.block({
+    blockerFn: ({ action }) => action !== 'PUSH' && action !== 'REPLACE' && backHandled(),
+    enableBeforeUnload: false,
+  });
   return h;
 }

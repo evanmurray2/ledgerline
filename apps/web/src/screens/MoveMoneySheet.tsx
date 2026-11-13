@@ -137,6 +137,7 @@ function MoveForm({
       track="move"
       onClose={onClose}
       modal
+      unsaved={typed && amount.trim() !== '' && !move.isPending}
       header={<SheetTitle title="Move money" />}
       footer={
         <PrimaryButton
