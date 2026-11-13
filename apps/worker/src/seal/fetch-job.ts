@@ -1,6 +1,6 @@
 // The fetch job of a sealed budget (docs/privacy.md 5.5): the steps of seal/runs.ts, one per alarm, for one bank
-// link. Begin; for a link's first run, its description; else each page of transactions, then the bank's balances
-// and card statements; then sign and complete. One link fetches at a time, so a job whose link must wait asks
+// link. Begin; for a link's first run, its description; else each page of transactions, the last one with the
+// bank's balances and card statements in the same step; then sign and complete. One link fetches at a time, so a job whose link must wait asks
 // again shortly. A bad stamp ends the job and is logged: the database was changed from outside, and the Worker
 // seals nothing on its word. Nothing queues this job before the cutover.
 import { ProviderError, type BankDataProvider, type ProviderWebhookEvent } from '@ledgerline/bank-provider';
@@ -303,41 +303,24 @@ async function step(deps: FetchDeps, s: FetchState, now: number): Promise<StepRe
     case 'fetch': {
       const r = await fetchSealedPage(d, deps.provider(), deps.pageSize, only);
       if (r === 'restarted') return next({ ...s, pages: 0 });
-      if (!r.more) return next({ ...s, phase: 'balances' });
+      // The last page: the bank's balances and card statements are asked in the same step, with the update
+      // (docs/privacy.md 5.5), not a step or more later.
+      if (!r.more) {
+        await sealAnswers(deps, s.linkId, only);
+        return next({ ...s, phase: 'complete' });
+      }
       const pages = (s.pages ?? 0) + 1;
       if (pages >= MAX_PAGES) throw new ProviderError('TOO_MANY_PAGES', 'too many pages', false);
       return next({ ...s, pages });
     }
-    case 'balances': {
-      // A run whose bank can't be asked now is stored without its balances, and its manifest says so (5.5).
-      const conn = await linkForBank(d, s.linkId);
-      const accounts = await deps
-        .provider()
-        .getAccounts(conn)
-        .catch(() => null);
-      if (accounts)
-        await sealBankAnswer(
-          d,
-          1,
-          accounts.map((a) => ({
-            providerAccountId: a.providerAccountId,
-            currentBalance: a.currentBalance,
-            availableBalance: a.availableBalance,
-            creditLimit: a.creditLimit,
-          })),
-          only,
-        );
-      return next({ ...s, phase: 'liabilities' });
-    }
-    case 'liabilities': {
-      const provider = deps.provider();
-      if (provider.getLiabilities) {
-        const conn = await linkForBank(d, s.linkId);
-        const liabilities = await provider.getLiabilities(conn).catch(() => null);
-        if (liabilities?.length) await sealBankAnswer(d, 2, liabilities, only);
-      }
+    case 'balances':
+      // A run with no new page (or a job saved in these steps): the bank's answers, then sign.
+      await sealAnswers(deps, s.linkId, only);
       return next({ ...s, phase: 'complete' });
-    }
+    case 'liabilities':
+      // A job saved here by a release before the answers moved into one step: its balances are sealed already.
+      await sealLiabilities(deps, s.linkId, only);
+      return next({ ...s, phase: 'complete' });
     case 'complete': {
       const r = await completeSealedRun(d, now, s.run, only);
       // A key change replaced the inbox key: the same run, fetched again and sealed to the key in force.
@@ -351,4 +334,40 @@ async function step(deps: FetchDeps, s: FetchState, now: number): Promise<StepRe
       return s.first ? next({ phase: 'begin', linkId: s.linkId }) : { done: true };
     }
   }
+}
+
+type Only = { linkId: string; startedAt: number };
+
+/**
+ * The bank's balances (part kind 1) and card statements (kind 2), sealed into the run after its pages. A bank that
+ * can't say them now leaves the run without them, and its manifest says so (docs/privacy.md 5.5).
+ */
+async function sealAnswers(deps: FetchDeps, linkId: string, only: Only): Promise<void> {
+  const d = deps.runs;
+  const conn = await linkForBank(d, linkId);
+  const accounts = await deps
+    .provider()
+    .getAccounts(conn)
+    .catch(() => null);
+  if (accounts)
+    await sealBankAnswer(
+      d,
+      1,
+      accounts.map((a) => ({
+        providerAccountId: a.providerAccountId,
+        currentBalance: a.currentBalance,
+        availableBalance: a.availableBalance,
+        creditLimit: a.creditLimit,
+      })),
+      only,
+    );
+  await sealLiabilities(deps, linkId, only);
+}
+
+async function sealLiabilities(deps: FetchDeps, linkId: string, only: Only): Promise<void> {
+  const provider = deps.provider();
+  if (!provider.getLiabilities) return;
+  const conn = await linkForBank(deps.runs, linkId);
+  const liabilities = await provider.getLiabilities(conn).catch(() => null);
+  if (liabilities?.length) await sealBankAnswer(deps.runs, 2, liabilities, only);
 }
