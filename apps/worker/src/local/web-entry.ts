@@ -6,7 +6,18 @@ import initSqlJs from 'sql.js';
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { LocalEngine, migrateLocal, type EngineIdentity, type QueuedEdit } from './engine.js';
 import { SqlJsDb } from './sqljs-db.js';
-import { type Action, encodeEntry, readEntry, signRequest, type BudgetKeys } from '@ledgerline/seal';
+import {
+  ACTION,
+  type Action,
+  encodeEntry,
+  fromHex,
+  KIND,
+  readEntry,
+  signRequest,
+  toHex,
+  type BudgetKeys,
+} from '@ledgerline/seal';
+import { SIGNED_CHALLENGE_HEADER, SIGNED_SIGNATURE_HEADER } from '@ledgerline/contracts';
 import { DeviceLog } from './device-log.js';
 import { checkSnapshot, openSnapshot, wipe, writeSnapshot } from './device-snapshot.js';
 import { httpTransport, startTransport, type Fetch } from './http-transport.js';
@@ -351,10 +362,31 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       // write on top of this device's place. Taken as any other entry: read back from the log, by its rules.
       // `keys`: the derived keys of the version a key change here brings.
       const { engine: e, s, log } = needSealed();
-      const first = (await readEntry(m.entries[0]!)).header;
+      const headers = await Promise.all(m.entries.map(async (b) => (await readEntry(b)).header));
+      const first = headers[0]!;
       if (first.number !== log.number + 1 || first.deviceId !== s.deviceId)
         return { value: { ok: false, why: 'behind', number: log.number, retry: true } };
-      const r = await http.append(log.number, m.entries);
+      // A key change stores a new signing key and new inbox keys: the request is signed with the key in force
+      // where this device stands, the one that signs the key change too (docs/privacy-keys.md 11).
+      const keyChange = headers.some((h) => h.kind === KIND.keyChange);
+      const inForce = log.keysHeld().find((k) => k.version === log.publicState.keyVersion);
+      const r = await http.append(
+        log.number,
+        m.entries,
+        keyChange && inForce
+          ? async (text) => {
+              const ch = await http.challenge(ACTION.storeSignKey);
+              const sig = await signRequest(
+                inForce,
+                log.budgetId,
+                ACTION.storeSignKey,
+                fromHex(ch.challenge),
+                new TextEncoder().encode(text),
+              );
+              return { [SIGNED_CHALLENGE_HEADER]: ch.token, [SIGNED_SIGNATURE_HEADER]: toHex(sig) };
+            }
+          : undefined,
+      );
       if (!r.ok) return { value: r };
       if (m.keys?.length) {
         log.holdKeys(m.keys);

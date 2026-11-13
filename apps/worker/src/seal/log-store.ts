@@ -60,13 +60,21 @@ export interface LogDeps {
    * write. `before` is null for the first entry.
    */
   stamps?: (before: ChainState | null, after: ChainState) => Promise<Stmt[]>;
+  /**
+   * Whether this request is signed with the budget's key as `store-sign-key` (docs/privacy-keys.md 11): a write
+   * with a key change stores a new signing key and new inbox keys, so it needs one. Asked only for such a write.
+   * Left out: no request signature is asked (tests of the log's own rules).
+   */
+  keysSigned?: () => Promise<boolean>;
 }
 
 export type AppendResult =
   | { ok: true; number: number; stored: 'now' | 'already' }
   /** The log has moved on: the device reads the entries after `number` and makes its write again. */
   | { ok: false; why: 'behind'; number: number; retry: true }
-  | { ok: false; why: RefusedWhy; detail: string; retry: boolean };
+  | { ok: false; why: RefusedWhy; detail: string; retry: boolean }
+  /** A key change sent without a good request signature (`keysSigned`). */
+  | { ok: false; why: 'unsigned'; detail: string; retry: false };
 
 // ---- bytes as text: the chain state's JSON, the log's answers, and entries an earlier release stored
 
@@ -389,6 +397,9 @@ export async function logAppend(d: LogDeps, base: number, encoded: Uint8Array[])
   }
   if (next === 'already stored') return { ok: true, number: state.number, stored: 'already' };
   if (base !== state.number) return { ok: false, why: 'behind', number: state.number, retry: true };
+  // New keys come only with a request signed by the key in force (a stolen session can't send one).
+  if (d.keysSigned && entries.some(({ e }) => e.header.kind === KIND.keyChange) && !(await d.keysSigned()))
+    return { ok: false, why: 'unsigned', detail: 'a key change needs a signed request', retry: false };
   return store(d, base, entries, next, state, inJson, keys);
 }
 

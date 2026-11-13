@@ -1,7 +1,8 @@
 // Requests signed with the budget's key (docs/privacy-keys.md 11; docs/privacy.md 5.2, 5.5). For a sealed budget,
 // the serious requests need more than a session with a fresh passkey check: a signature by the budget's signing
 // key, which only a device that opened the budget holds. A stolen session alone can't link or remove a bank,
-// delete the account, empty the readable copy or set the recovery key's sign-in half.
+// delete the account, empty the readable copy, set the recovery key's sign-in half or store new keys (a write to
+// the log with a key change).
 //
 // The steps: the device asks the Directory for a challenge for one named request
 // (POST /api/settings/security/request-challenge). The challenge travels in a token signed with HMAC under a key
@@ -40,11 +41,19 @@ export function signedActionOf(method: string, path: string): Action | null {
   if (/^\/api\/settings\/connections\/[^/]+\/remove$/.test(path)) return ACTION.removeBank;
   if (path === '/api/settings/security/delete-account') return ACTION.deleteAccount;
   if (path === '/api/settings/security/recovery-key') return ACTION.setRecoverySignIn;
+  // A write to the log: signed when it holds a key change, which stores a new signing key and new inbox keys
+  // (seal/log-routes.ts asks for it then). One signature over the body covers both, so `store-inbox-key` is
+  // never asked: no request stores an inbox key alone.
+  if (path === '/api/log/append') return ACTION.storeSignKey;
   return null;
 }
 
-/** The requests a device may ask a challenge for. The keys for the log are stored by other means (7.2). */
+/**
+ * The requests a device may ask a challenge for. `store-inbox-key` is not one: an inbox key comes only in a key
+ * change, whose write is signed as `store-sign-key`.
+ */
 const ASKABLE: readonly string[] = [
+  ACTION.storeSignKey,
   ACTION.linkToken,
   ACTION.linkFinish,
   ACTION.removeBank,

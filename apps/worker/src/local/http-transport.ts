@@ -38,8 +38,18 @@ const MAX_PAGES = 10_000;
 
 export type Fetch = (path: string, init?: RequestInit) => Promise<Response>;
 
+/** The headers of a request signed with the budget's key, made over the body's text exactly as it is sent. */
+export type SignBody = (bodyText: string) => Promise<Record<string, string>>;
+
+/** A write to the log that may be signed (a key change: docs/privacy-keys.md 11). */
+export interface SignedAppend {
+  append(base: number, entries: Uint8Array[], sign?: SignBody): Promise<AppendResult>;
+  /** A challenge from the Directory for one signed request (`action`), with the token that carries it. */
+  challenge(action: string): Promise<{ challenge: string; token: string }>;
+}
+
 /** The transports of one sealed budget. `fetch` is given a path under the app's own origin. */
-export function httpTransport(fetch: Fetch): LogTransport & RunTransport & SnapshotTransport {
+export function httpTransport(fetch: Fetch): LogTransport & RunTransport & SnapshotTransport & SignedAppend {
   const headers = { 'content-type': 'application/json', 'x-ledgerline': '1' };
   const json = async <T>(path: string, init?: RequestInit): Promise<{ status: number; body: T }> => {
     const r = await fetch(path, init);
@@ -81,8 +91,47 @@ export function httpTransport(fetch: Fetch): LogTransport & RunTransport & Snaps
 
   return {
     after,
-    append: (base, entries) =>
-      post<AppendResult>('/api/log/append', { base, entries: entries.map((e) => b64(e)) }),
+    append: async (base: number, entries: Uint8Array[], sign?: SignBody) => {
+      const text = JSON.stringify({ base, entries: entries.map((e) => b64(e)) });
+      const signed = sign ? await sign(text) : {};
+      const r = await fetch('/api/log/append', {
+        method: 'POST',
+        headers: { ...headers, ...signed },
+        body: text,
+      });
+      if (r.status === 401) throw fault(401);
+      // A key change the server took as unsigned: the device's signing key is not the one in force (it hasn't read
+      // a key change yet), or the challenge was spent. Said as the store would say a refusal.
+      if (r.status === 403 && sign)
+        return {
+          ok: false,
+          why: 'unsigned',
+          detail: 'not signed by the key in force',
+          retry: false,
+        } as const;
+      let body: unknown;
+      try {
+        body = await r.json();
+      } catch {
+        throw fault(r.status);
+      }
+      if (r.status !== 200 && r.status !== 409)
+        throw new TransportError(r.status, 'The server gave no answer. Try again.');
+      return body as AppendResult;
+    },
+    challenge: async (action) => {
+      const r = await json<{ challenge?: string; token?: string }>(
+        '/api/settings/security/request-challenge',
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ action }),
+        },
+      );
+      if (r.status !== 200 || typeof r.body.challenge !== 'string' || typeof r.body.token !== 'string')
+        throw new TransportError(r.status, 'The server gave no answer. Try again.');
+      return { challenge: r.body.challenge, token: r.body.token };
+    },
 
     runs: async (afterRun) => {
       const page = await get<{ runs: { run: number; manifest: string; signature: string; pages: number }[] }>(

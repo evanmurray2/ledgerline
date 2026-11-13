@@ -11,6 +11,8 @@ import { z } from 'zod';
 import { requestNow } from '../http/clock.js';
 import type { AppEnv } from '../http/context.js';
 import { csrf } from '../http/security.js';
+import { jsonOf, storeSigned, UNSIGNED } from '../http/signed-request.js';
+import { ACTION } from '@ledgerline/seal';
 import { classifyUsage, dailyLimits, usageToday } from '../sync/breaker.js';
 import { b64, entryText, logAppend, logHead, logRowsAfter, type LogDeps } from './log-store.js';
 import {
@@ -109,7 +111,9 @@ logApi.get('/log', async (c) => {
  * why not and whether the device may try again after it has read the log.
  */
 logApi.post('/log/append', async (c) => {
-  const parsed = Append.safeParse(await c.req.json().catch(() => null));
+  // The body's bytes as received: a write with a key change is signed over exactly them.
+  const body = new Uint8Array(await c.req.arrayBuffer());
+  const parsed = Append.safeParse(jsonOf(body));
   if (!parsed.success) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
   const now = requestNow(c);
   const ask = c.env.USAGE_FOR_WRITE ?? c.env.USAGE;
@@ -134,12 +138,15 @@ logApi.post('/log/append', async (c) => {
     receiptHashes: (from, to) => receiptHashes(c.env.DB, from, to),
     // A key change brings new keys: each gets the Worker's stamp in the step that stores the write.
     stamps: (before, after) => keyStampStmts(runs, before, after, now),
+    // docs/privacy-keys.md 11: the key in force signs the request that stores the next one.
+    keysSigned: async () => (await storeSigned(c, ACTION.storeSignKey, body)) === null,
   };
   const r = await logAppend(
     deps,
     parsed.data.base,
     parsed.data.entries.map((e) => unb64(e)),
   );
+  if (!r.ok && r.why === 'unsigned') return c.json(UNSIGNED, 403);
   return c.json(r, r.ok ? 200 : 409);
 });
 
