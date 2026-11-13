@@ -31,6 +31,7 @@ import {
   useShortcuts,
 } from '../components/ui';
 import { formatCents } from '../lib/money';
+import { foldSearch } from '@ledgerline/domain';
 import { useScreen } from '../lib/common';
 import { useCanWrite } from '../state/connectivity';
 import { usage } from '../usage/tracker';
@@ -564,9 +565,4 @@ export function ActivityScreen() {
       </div>
     </PageFrame>
   );
-}
-
-/** Text as a search compares it (as the server does): lower case, curly apostrophes as straight ones. */
-function foldSearch(t: string): string {
-  return t.toLowerCase().replace(/[’‘]/g, "'");
 }

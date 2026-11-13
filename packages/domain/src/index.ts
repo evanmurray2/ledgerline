@@ -15,3 +15,4 @@ export * from './same-purchase.js';
 export * from './payee.js';
 export * from './suggest.js';
 export * from './transfers.js';
+export * from './search.js';

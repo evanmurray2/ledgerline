@@ -1,17 +1,40 @@
 // Activity's search: what a search looks for, and how posted rows and one category's rows are picked in SQL.
+//
+// A search compares text without case or accents (`foldSearch`, packages/domain/src/search.ts): "cafe" finds
+// "CAFÉ". SQLite's lower() folds only A–Z, and a Durable Object's SQLite refuses an expression deep enough to fold
+// every accented letter, so SQL folds only text of plain ASCII, where lower() is the same fold. The payee names with
+// other characters, and the categories, are folded and matched here, and SQL is given the matches (`SearchFound`).
+import { foldSearch } from '@ledgerline/domain';
+import type { Scoped } from '../db/scoped.js';
 import { paybacksIn, paybacksWhere } from '../views/owed-rows.js';
 
-/**
- * A search matches a row's category name too: split lines included, and money in that paid back an owed purchase
- * in a category with that name.
- */
-/** A name as a search compares it: lower case, curly apostrophes as straight ones (`searchText` folds the search). */
-const fold = (col: string) => `replace(replace(lower(${col}), '’', ''''), '‘', '''')`;
+/** What a search matched outside SQL: payee names that aren't plain ASCII, and categories by name (ids). */
+export interface SearchFound {
+  names: string[];
+  cats: string[];
+}
 
-const CATEGORY_MATCH = `category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND ${fold('name')} LIKE ?3 ESCAPE '\\')
-         OR key IN (SELECT sp.txn_key FROM txn_split sp JOIN category c ON c.id = sp.category_id
-                    WHERE sp.budget_id = ?1 AND ${fold('c.name')} LIKE ?3 ESCAPE '\\')
-         OR key IN (${paybacksWhere(`e.category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND ${fold('name')} LIKE ?3 ESCAPE '\\')`)})`;
+export const NOTHING_FOUND: SearchFound = { names: [], cats: [] };
+
+/** Text with a character outside printable ASCII: SQL's lower() doesn't fold it as a search does. */
+const NOT_ASCII = (col: string) => `${col} GLOB '*[^ -~]*'`;
+
+/**
+ * Every name a row's payee can be (a payee's name, or the bank's merchant name or text) that isn't plain ASCII,
+ * kept when it matches the search `q` (already folded). Few names have such characters, so the list stays short.
+ */
+export async function foldedNames(s: Scoped, q: string): Promise<string[]> {
+  if (!q) return [];
+  const rows = await s.all<{ n: string }>(
+    `SELECT name AS n FROM payee WHERE budget_id = ?1 AND ${NOT_ASCII('name')}
+     UNION SELECT merchant_name FROM bank_txn WHERE budget_id = ?1 AND ${NOT_ASCII('merchant_name')}
+     UNION SELECT raw_name FROM bank_txn WHERE budget_id = ?1 AND ${NOT_ASCII('raw_name')}`,
+  );
+  return rows.map((r) => r.n).filter((n) => foldSearch(n).includes(q));
+}
+
+/** `col` is one of the values in the JSON array parameter `p`. */
+const inList = (col: string, p: string) => `${col} IN (SELECT value FROM json_each(${p}))`;
 
 /**
  * One category's rows (Reports and the category sheet open Activity on a category, by id): the row's own category,
@@ -22,16 +45,17 @@ export const inCategory = (p: string) =>
     OR key IN (${paybacksIn(p)}))`;
 
 /**
- * A search's posted-row filter: ?3 is the text as a LIKE pattern (its % and _ are letters, not wildcards), `amt`
- * the parameter holding the amount pattern (`amountPattern`), NULL when the search isn't an amount.
+ * A search's posted-row filter. ?3 is the text as a LIKE pattern (its % and _ are letters, not wildcards), matched
+ * against a payee of plain ASCII; `names` the parameter holding the other matching payee names (JSON), `cats` the
+ * matching categories' ids (JSON): a row's category, a split line's, or that of an owed purchase it paid back.
+ * `amt` holds the amount pattern, NULL when the search isn't an amount.
  */
-export const searchMatch = (amt: string) =>
-  `AND (${fold('payee')} LIKE ?3 ESCAPE '\\' OR (${amt} IS NOT NULL AND printf('%.2f', abs(amount) / 100.0) LIKE ${amt}) OR ${CATEGORY_MATCH})`;
-
-/** Text as a search compares it, as `fold` does in SQL. */
-export function foldText(t: string): string {
-  return t.toLowerCase().replace(/[’‘]/g, "'");
-}
+export const searchMatch = (amt: string, names: string, cats: string) =>
+  `AND ((NOT ${NOT_ASCII('payee')} AND lower(payee) LIKE ?3 ESCAPE '\\') OR ${inList('payee', names)}
+    OR (${amt} IS NOT NULL AND printf('%.2f', abs(amount) / 100.0) LIKE ${amt})
+    OR ${inList('category_id', cats)}
+    OR key IN (SELECT sp.txn_key FROM txn_split sp WHERE sp.budget_id = ?1 AND ${inList('sp.category_id', cats)})
+    OR key IN (${paybacksWhere(inList('e.category_id', cats))}))`;
 
 /** The search as a LIKE pattern for the text: % and _ match only themselves. */
 export function textPattern(q: string): string {
@@ -51,12 +75,12 @@ export function plainAmount(c: number): string {
 }
 
 /**
- * What a search looks for: at most 48 bytes, since a Durable Object's SQLite refuses a LIKE pattern over 50 bytes
- * (the search goes between two `%`). A longer search looks for its start.
+ * What a search looks for, folded (`foldSearch`): at most 48 bytes, since a Durable Object's SQLite refuses a LIKE
+ * pattern over 50 bytes (the search goes between two `%`). A longer search looks for its start.
  */
 export function searchText(raw: string): string {
-  // Curly and straight apostrophes match each other, and a double space is one space.
-  const chars = [...foldText(raw).replace(/\s+/g, ' ').trim()];
+  // A double space is one space.
+  const chars = [...foldSearch(raw).replace(/\s+/g, ' ').trim()];
   const enc = new TextEncoder();
   while (enc.encode(chars.join('')).length > 48) chars.pop();
   return chars.join('').trim();

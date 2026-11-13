@@ -14,6 +14,7 @@ import {
   rankPastUses,
   suggestCategory,
   type PastUse,
+  foldSearch,
 } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
 import { BAD_MONTH, HttpError, TRY_AGAIN, scoped } from './api.js';
@@ -37,9 +38,11 @@ import { samePurchaseCards } from './same-purchase.js';
 import { removedByBank } from './removed-by-bank.js';
 import { IN_CLOSED_ACCOUNT } from './account-close.js';
 import {
-  foldText,
+  NOTHING_FOUND,
+  foldedNames,
   inCategory,
   plainAmount,
+  type SearchFound,
   searchAmount,
   searchMatch,
   searchText,
@@ -151,7 +154,14 @@ function postedQuery(
   cursor: string | null,
   q: string,
   category: string | null = null,
+  found: SearchFound = NOTHING_FOUND,
 ): Stmt {
+  const amount = searchAmount(q);
+  // A search's parameters, bound only with a search; each is read in either case, so the numbers stay put.
+  const pattern = q ? textPattern(q) : null;
+  const amt = q && amount !== null ? `%${amount}%` : null;
+  const names = q ? JSON.stringify(found.names) : null;
+  const cats = q ? JSON.stringify(found.cats) : null;
   if (typeof from === 'object') {
     const first = from.month === from.start;
     return s.q(
@@ -159,33 +169,37 @@ function postedQuery(
          ${first ? 'AND ?4 IS NOT NULL' : 'AND posted_date >= ?4'}
          AND posted_date < date(?6, '+4 months') AND ${IN_BUDGET} AND ${ROW_MONTH} = ?7
          AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
-         ${q ? searchMatch('?8') : 'AND ?3 IS NULL AND ?8 IS NULL'}
-         ${category ? inCategory('?9') : ''}
+         ${q ? searchMatch('?8', '?10', '?11') : 'AND ?3 IS NULL AND ?8 IS NULL AND ?10 IS NULL AND ?11 IS NULL'}
+         ${category ? inCategory('?9') : 'AND ?9 IS NULL'}
        ORDER BY date DESC, seq DESC LIMIT 50`,
       cursor,
-      q ? textPattern(q) : null,
+      pattern,
       `${addMonths(from.month, -1)}-01`,
       from.start,
       `${addMonths(from.month, 2)}-01`,
       from.month,
-      q && searchAmount(q) !== null ? `%${searchAmount(q)}%` : null,
-      ...(category ? [category] : []),
+      amt,
+      category,
+      names,
+      cats,
     );
   }
   const window = from !== 'all' && from !== 'none';
   return s.q(
     `SELECT ${TX_COLUMNS} FROM v_txn_bank WHERE budget_id = ?1 AND ${from === 'none' ? '0 AND ' : ''}status = 'posted'
-       ${window ? 'AND posted_date >= ?5 AND date >= ?5' : ''}
+       ${window ? 'AND posted_date >= ?5 AND date >= ?5' : 'AND ?5 IS NULL'}
        AND ${IN_BUDGET}
        AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
-       ${q ? searchMatch('?4') : 'AND ?3 IS NULL AND ?4 IS NULL'}
-       ${category ? inCategory(window ? '?6' : '?5') : ''}
+       ${q ? searchMatch('?4', '?7', '?8') : 'AND ?3 IS NULL AND ?4 IS NULL AND ?7 IS NULL AND ?8 IS NULL'}
+       ${category ? inCategory('?6') : 'AND ?6 IS NULL'}
      ORDER BY date DESC, seq DESC LIMIT 50`,
     cursor,
-    q ? textPattern(q) : null,
-    q && searchAmount(q) !== null ? `%${searchAmount(q)}%` : null,
-    ...(window ? [from] : []),
-    ...(category ? [category] : []),
+    pattern,
+    amt,
+    window ? from : null,
+    category,
+    names,
+    cats,
   );
 }
 
@@ -209,6 +223,9 @@ activityViewRoutes.get('/activity', async (c) => {
   // Pending and upcoming rows are waiting now: they show on this month, whatever their date, and never on a past one.
   const past = !!month && month < f.current;
   const { cats, accts } = await names(s);
+  // Categories whose name matches the search, and payee names SQL can't fold (activity-search.ts).
+  const qCats = new Set(q ? [...cats].filter(([, n]) => foldSearch(n).includes(q)).map(([id]) => id) : []);
+  const found: SearchFound = q ? { names: await foldedNames(s, q), cats: [...qCats] } : NOTHING_FOUND;
   const [attn, pend, upc, posted, splits, owed, links, stale, atBank] = await s.batch([
     s.q(ATTENTION_SQL),
     s.q(
@@ -234,6 +251,7 @@ activityViewRoutes.get('/activity', async (c) => {
       cursor ?? null,
       q,
       category,
+      found,
     ),
     s.q(`SELECT txn_key, category_id, amount FROM txn_split WHERE budget_id = ?1`),
     ...owedStatements(s),
@@ -252,8 +270,7 @@ activityViewRoutes.get('/activity', async (c) => {
   for (const r of splitRows) splitTotals.set(r.txn_key, (splitTotals.get(r.txn_key) ?? 0) + r.amount);
   /** What a split's lines leave out of its amount (D-82): 0 when they add up, or for a row with no split. */
   const splitOff = (t: TxRow) => (splitTotals.has(t.key) ? t.amount - splitTotals.get(t.key)! : 0);
-  // Categories whose name matches the search, and the split transactions with a line in one of them.
-  const qCats = new Set(q ? [...cats].filter(([, n]) => foldText(n).includes(q)).map(([id]) => id) : []);
+  // The split transactions with a line in a category the search matched.
   const qSplits = new Set(
     splitRows.filter((r) => r.category_id && qCats.has(r.category_id)).map((r) => r.txn_key),
   );
@@ -299,7 +316,7 @@ activityViewRoutes.get('/activity', async (c) => {
   const match = (t: TxRow) =>
     (!category || t.category_id === category || catSplits.has(t.key) || catPaybacks.has(t.key)) &&
     (!q ||
-      foldText(t.payee).includes(q) ||
+      foldSearch(t.payee).includes(q) ||
       (qAmount !== null && plainAmount(t.amount).includes(qAmount)) ||
       (!!t.category_id && qCats.has(t.category_id)) ||
       qSplits.has(t.key) ||
