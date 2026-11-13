@@ -175,7 +175,18 @@ export const AssignRequest = z.object({
   month,
   /** Each item adds `amount` (may be negative) to the category's assignment for the month. */
   items: z
-    .array(z.object({ categoryId: id, amount: cents }))
+    .array(
+      z.object({
+        categoryId: id,
+        amount: cents,
+        /**
+         * What the device showed assigned to the category in the month. When sent, the server adds only if that is
+         * still so, and refuses with 409 `changed` otherwise: two devices (or tabs) tapping Assign on the same
+         * suggestions don't add them twice.
+         */
+        was: cents.optional(),
+      }),
+    )
     .min(1)
     .max(100),
 });
@@ -208,7 +219,13 @@ export const AssignSuggestion = z.object({
   /** Ticked when the sheet opens: overspending, card shortfalls and underfunded targets, not Low categories. */
   preselected: z.boolean(),
 });
-export const AssignView = z.object({ month, rta: cents, suggestions: z.array(AssignSuggestion) });
+export const AssignView = z.object({
+  month,
+  rta: cents,
+  suggestions: z.array(AssignSuggestion),
+  /** What each category has assigned in the month (none: 0), sent back as `was` with an assignment. */
+  assigned: z.record(z.string(), cents).default({}),
+});
 export type AssignView = z.infer<typeof AssignView>;
 
 export const Target = z.discriminatedUnion('type', [
@@ -257,6 +274,8 @@ export const CategorySheet = z.object({
   targetText: z.string(),
   targetHelp: z.string(),
   lastMonthAssigned: cents,
+  /** Available at the start of the month (what the month before left), which a target's monthly need counts from. */
+  carry: cents.default(0),
   rta: cents,
   recent: z.array(TxnListRow),
   recentTotal: z.number().int(),
@@ -594,12 +613,27 @@ export const GroupUpsert = z.object({
  * it with the change number it worked it out at; the server refuses with 409 `changed` if anything changed since.
  */
 export const PinRequest = z.object({ pinned: z.boolean() });
+/** Money a category's archive moved to Ready to Assign: this month's available and later months' assignments. */
+export const ReturnedMoney = z.array(z.object({ month, amount: cents })).max(130);
 export const ArchiveRequest = z.object({
   archived: z.boolean(),
   available: cents.optional(),
   through: z.number().int().nonnegative().optional(),
+  /**
+   * Undo of an archive: restoring gives back what the archive moved to Ready to Assign (its `returned`). Refused
+   * when the category isn't archived any more, so an Undo sent twice gives the money back once.
+   */
+  giveBack: ReturnedMoney.optional(),
 });
-export const RemoveCategoryRequest = ArchiveRequest.omit({ archived: true });
+export const RemoveCategoryRequest = ArchiveRequest.omit({ archived: true, giveBack: true });
+/** What archiving (or removing) a category answers: the money it moved to Ready to Assign, for Undo. */
+export const ArchiveResult = z.object({
+  ok: z.literal(true),
+  rta: cents,
+  rtaUpdating: z.boolean(),
+  outcome: z.enum(['deleted', 'archived']).optional(),
+  returned: ReturnedMoney.default([]),
+});
 export const ReorderRequest = z.object({ ids: z.array(id).max(500) });
 
 export const PayeesView = z.object({
