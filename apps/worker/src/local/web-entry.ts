@@ -11,7 +11,8 @@ import type { RestBatch, SyncPage } from '../routes/sync.js';
 import { cutoverOnDevice } from './cutover-device.js';
 import { DeviceLog } from './device-log.js';
 import { checkSnapshot, emptyOldCopy, openSnapshot, writeSnapshot } from './device-snapshot.js';
-import { cutoverTransport, httpTransport, type Fetch } from './http-transport.js';
+import { cutoverTransport, httpTransport, startTransport, type Fetch } from './http-transport.js';
+import { startOnDevice } from './start-device.js';
 import { LogSession } from './log-session.js';
 import { needsRebuild, rebuildCopy } from './rebuild.js';
 import { reader, type ShadowEvent } from './shadow.js';
@@ -63,6 +64,14 @@ type Msg =
   | { id: number; op: 'sealedSign'; action: Action; challenge: Uint8Array; payload: Uint8Array }
   | {
       id: number;
+      op: 'start';
+      keys: BudgetKeys;
+      genesis: Uint8Array;
+      deviceId: string;
+      snapshotId: string;
+    }
+  | {
+      id: number;
       op: 'cutover';
       keys: BudgetKeys;
       genesis: Uint8Array;
@@ -102,7 +111,8 @@ const call: Fetch = async (path, init) => {
   // Half the round trip is the best guess of when the server read its clock.
   // A time a day off this device's own clock is no clock: it is not taken (the log would refuse such entries).
   const seen = t - (asked + Date.now()) / 2;
-  if (Number.isFinite(t) && t > 0 && Math.abs(seen) < 86_400_000) skew = seen;
+  // Whole milliseconds: an entry's time is a whole number (packages/seal entry.ts).
+  if (Number.isFinite(t) && t > 0 && Math.abs(seen) < 86_400_000) skew = Math.round(seen);
   return r;
 };
 const http = httpTransport(call);
@@ -447,6 +457,28 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       } finally {
         s.close();
       }
+    }
+    case 'start': {
+      const e = need().engine;
+      const r = await startOnDevice(e, {
+        keys: m.keys,
+        genesis: await readEntry(m.genesis),
+        budgetId: who!.budgetId,
+        deviceId: m.deviceId,
+        clock,
+        snapshotId: m.snapshotId,
+        encode: encodeEntry,
+        start: startTransport(call),
+        snapshots: http,
+      });
+      if (!r.ok) return { value: r };
+      sealed = {
+        keys: [m.keys],
+        deviceId: m.deviceId,
+        workerKeys: sealed?.workerKeys ?? new Map(),
+        log: r.log,
+      };
+      return { value: { ok: true, number: r.log.number } };
     }
     case 'cutover': {
       const e = need().engine;

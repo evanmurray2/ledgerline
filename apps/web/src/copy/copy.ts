@@ -11,6 +11,7 @@
 import { useSyncExternalStore } from 'react';
 import {
   CSRF_HEADER,
+  SEALED_HEADER,
   SIGNED_CHALLENGE_HEADER,
   SIGNED_SIGNATURE_HEADER,
   type SealedSession,
@@ -83,6 +84,7 @@ export type CopyStatus =
   | 'signed_out' // a saved copy waits: Sign in opens it online, or Face ID with no signal
   | 'opening'
   | 'ready'
+  | 'fresh' // a new budget with no first entry yet: this device makes it (lockStart, lockFinish)
   | 'failed';
 
 export interface CopyState {
@@ -597,6 +599,115 @@ export async function plannedChanges(): Promise<ReturnType<typeof openPlans>> {
   return openPlans(await walkPublic(await fetchPublicEntries(ways.fetch), who.budgetId));
 }
 
+// ---------------------------------------------------------------- a new budget, locked from the start (D-102)
+
+/** The server's clock as this device sees it, from its answer to the session: a first entry is dated by it. */
+async function serverNow(): Promise<number> {
+  const asked = Date.now();
+  const r = await fetch('/api/session', {
+    credentials: 'same-origin',
+    headers: { accept: 'application/json', [SEALED_HEADER]: '1' },
+  }).catch(() => null);
+  const t = Number(r?.headers.get('x-ledgerline-time'));
+  return Number.isFinite(t) && t > 0 ? Math.round(t + (Date.now() - asked) / 2) : Date.now();
+}
+
+/**
+ * The first step of a new budget: the passkey is asked, and this device makes the budget's key, its recovery
+ * key and the log's first entry. Nothing is sent.
+ */
+export async function lockStart(): Promise<PreparedMove> {
+  if (!host || !who || state.status !== 'fresh') throw new Error(NOT_NOW);
+  const p = pending;
+  pending = null;
+  const w = p?.slotPrf ? { credentialId: p.credentialId, slotPrf: p.slotPrf } : await askSlot();
+  return prepareMove({
+    budgetId: who.budgetId,
+    deviceId: await logDeviceId(host),
+    passkey: { credentialId: new Uint8Array(fromB64url(w.credentialId)), prf: new Uint8Array(w.slotPrf) },
+    now: await serverNow(),
+  });
+}
+
+/** A new budget's keys are given up: they are zeroed. */
+export function lockGiveUp(p: PreparedMove): void {
+  dropMove(p);
+}
+
+/**
+ * The rest of a new budget's start: the recovery key typed back and a fresh passkey sign-in must both open the
+ * new key; then the engine makes the copy, sends the first entry and the first snapshot, and the budget is
+ * locked. `retype`: the typed key was wrong, or the passkey was not used; the same key is still in hand.
+ */
+export async function lockFinish(
+  p: PreparedMove,
+  typed: string,
+): Promise<{ ok: true } | { ok: false; why: string; retype?: boolean }> {
+  if (!host || !who || state.status !== 'fresh' || !sealed) throw new Error(NOT_NOW);
+  const h = host;
+  // The first entry is dated when the key was made; the server takes it for an hour (seal/start.ts).
+  if ((await serverNow()) - p.genesis.header.time > 50 * 60_000) {
+    dropMove(p);
+    return { ok: false, why: 'This took too long. Start again: a new recovery key is made.' };
+  }
+  if (!(await recoveryKeyOpens(p, typed)))
+    return { ok: false, why: 'That is not the recovery key shown. Check it and try again.', retype: true };
+  // A fresh sign-in: the server asks for a recent passkey check, and the same prompt gives the budget's secret.
+  let w: { credentialId: string; slotPrf: ArrayBuffer };
+  try {
+    await signIn();
+    const q = pending;
+    pending = null;
+    w = q?.slotPrf ? { credentialId: q.credentialId, slotPrf: q.slotPrf } : await askSlot();
+  } catch (e) {
+    return { ok: false, why: e instanceof Error ? e.message : NOT_NOW, retype: true };
+  }
+  let proved: Awaited<ReturnType<typeof proveMove>>;
+  try {
+    proved = await proveMove(p, typed, {
+      credentialId: new Uint8Array(fromB64url(w.credentialId)),
+      prf: new Uint8Array(w.slotPrf),
+    });
+  } catch (e) {
+    if (e instanceof WayInError) return { ok: false, why: e.message };
+    throw e;
+  } finally {
+    dropMove(p);
+  }
+  const keys = proved.keys as unknown as SealedKeys;
+  const r = await h
+    .startBudget(keys, proved.genesis, proved.deviceId, newUlid())
+    .catch((e: unknown) => ({ ok: false as const, why: e instanceof Error ? e.message : NOT_NOW }));
+  if (!r.ok) return { ok: false, why: `${r.why} Nothing was changed. Try again.` };
+  // The budget is locked. From here this device treats it so, whatever the server says later.
+  rememberSealed(who.budgetId);
+  sealed = { ...sealed, fresh: false };
+  await h.sealedOpen([keys], proved.deviceId, WORKER_RUN_KEYS);
+  keysInEngine = [keys];
+  // The recovery key signs in from now on (docs/privacy-keys.md 4.2): the server keeps its public half, in a
+  // request signed with the budget's key (11). If this fails, Settings → Sign-in offers to set it.
+  const authPub = await authPubOf(typed);
+  if (authPub)
+    await signedHeaders(ACTION.setRecoverySignIn, JSON.stringify({ authPub }))
+      .then((headers) => server('POST', '/api/settings/security/recovery-key', { authPub }, headers))
+      .catch(() => console.warn(JSON.stringify({ event: 'recovery_key_not_set' })));
+  await keepPublicSeen(h, who.budgetId, { number: 1, hash: toHex(p.genesis.hash) });
+  await h.put('publics', JSON.stringify([btoa(String.fromCharCode(...proved.genesis))]));
+  await h.put('sealed_session', JSON.stringify(sealed));
+  if (record && dataKey) {
+    await holdKey(record.key, dataKey, Date.now(), [keys]);
+    record = { ...record, sealed: true };
+    await save();
+  }
+  const made = await sealedSessionNow();
+  if (!made) throw new Error(NOT_NOW);
+  window.dispatchEvent(new CustomEvent('ledgerline:session', { detail: made }));
+  set({ status: 'ready' });
+  watch();
+  changed();
+  return { ok: true };
+}
+
 // ---------------------------------------------------------------- moving a budget to its sealed log
 
 export type MoveInHand = PreparedMove;
@@ -973,6 +1084,12 @@ export async function start(session: Session): Promise<void> {
     // Read before the data key is held anew, which would make old keys look fresh.
     const heldKeys = sealed && record ? await heldSealed(record.key, IDLE_MS) : null;
     if (record && dataKey) await holdKey(record.key, dataKey, Date.now(), undefined, IDLE_MS);
+    // A new budget (D-102): nothing to open yet. The lock screen makes its key and its first entry.
+    if (sealed?.fresh) {
+      if (p && !pending) pending = p;
+      set({ saved: record !== null, hasSaved: record !== null, why: null, status: 'fresh' });
+      return;
+    }
     if (sealed) {
       try {
         await enterSealed(p, heldKeys);

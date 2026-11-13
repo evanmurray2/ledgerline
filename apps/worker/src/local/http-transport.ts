@@ -5,6 +5,7 @@ import type { FreezeStep } from '../seal/cutover.js';
 import type { AppendResult } from '../seal/log-store.js';
 import type { CutoverTransport } from './cutover-device.js';
 import type { SnapshotTransport } from './device-snapshot.js';
+import type { StartTransport } from './start-device.js';
 import type { LogTransport, RunTransport } from './log-session.js';
 
 /** The server answered in a way that is no answer (not its JSON, or a fault): try again later. */
@@ -205,5 +206,45 @@ export function cutoverTransport(fetch: Fetch): CutoverTransport {
         body: bytes as Uint8Array<ArrayBuffer>,
       }),
     seal: () => post('/api/cutover/seal'),
+  };
+}
+
+/** The routes of a new budget's start (seal/start-routes.ts), for the device's side of it (local/start-device.ts). */
+export function startTransport(fetch: Fetch): StartTransport {
+  const headers = { 'content-type': 'application/json', 'x-ledgerline': '1' };
+  const call = async (path: string, init: RequestInit): Promise<{ ok: boolean; why?: string }> => {
+    const r = await fetch(path, init);
+    let body: unknown;
+    try {
+      body = await r.json();
+    } catch {
+      throw new TransportError(r.status, 'The server gave no answer. Try again.');
+    }
+    // The store's own answer, a yes or a no with its reason; anything else is a fault.
+    if ((r.status !== 200 && r.status !== 409) || typeof (body as { ok?: unknown }).ok !== 'boolean')
+      throw new TransportError(
+        r.status,
+        (body as { message?: string }).message ?? 'The server gave no answer. Try again.',
+      );
+    return body as { ok: boolean; why?: string };
+  };
+  const post = (path: string, body: unknown = {}) =>
+    call(path, { method: 'POST', headers, body: JSON.stringify(body) });
+  return {
+    begin: (s) =>
+      post('/api/start/begin', {
+        genesis: b64(s.genesis),
+        header: b64(s.header),
+        signature: b64(s.signature),
+        manifest: b64(s.manifest),
+        chunks: s.chunks,
+      }),
+    chunk: (id, k, bytes) =>
+      call(`/api/start/chunks/${encodeURIComponent(id)}/${k}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/octet-stream', 'x-ledgerline': '1' },
+        body: bytes as Uint8Array<ArrayBuffer>,
+      }),
+    seal: () => post('/api/start/seal'),
   };
 }

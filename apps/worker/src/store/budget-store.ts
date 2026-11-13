@@ -28,6 +28,8 @@ import {
 import { SEALED_HEADER } from '@ledgerline/contracts';
 import { cutoverApi } from '../seal/cutover-routes.js';
 import { sealedApi, sealedPath } from '../seal/sealed-routes.js';
+import { startApi } from '../seal/start-routes.js';
+import { startRefusal } from '../seal/start.js';
 import { runDeps } from '../seal/runs.js';
 import { parseKeyring } from '@ledgerline/platform';
 import { dev } from '../dev-seed.js';
@@ -89,6 +91,7 @@ export class BudgetStore extends DurableObject<Env> {
   private logApp: Hono<AppEnv> | null = null;
   private cutoverApp: Hono<AppEnv> | null = null;
   private sealedApp: Hono<AppEnv> | null = null;
+  private startApp: Hono<AppEnv> | null = null;
   private devApp: Hono<AppEnv> | null = null;
   private readonly usage: UsageCounter;
   /** Fair use: whether to report usage; null until read from storage or set by a request. */
@@ -209,6 +212,37 @@ export class BudgetStore extends DurableObject<Env> {
           await this.runner.scheduleNext(Date.now());
         }
         return r;
+      } finally {
+        this.reportUsage(caller.budgetId);
+      }
+    }
+    // A new budget starts locked (seal/start.ts, D-102): the device sends its first entry and first snapshot.
+    if (path.startsWith('/api/start/')) {
+      this.startApp ??= withCaller((app) => app.route('/api', startApi));
+      this.usage.request();
+      try {
+        const r = await this.serve(this.startApp, request, caller);
+        if (r.ok && request.method === 'POST' && path === '/api/start/seal') {
+          await this.enqueue(SEALED_BACKSTOP, { id: SEALED_BACKSTOP_ID, runAt: Date.now(), recurring: true });
+          await this.runner.scheduleNext(Date.now());
+        }
+        return r;
+      } finally {
+        this.reportUsage(caller.budgetId);
+      }
+    }
+    // A budget with nothing in it yet tells an app that can open a locked budget to make it on the device.
+    if (
+      path === '/api/session' &&
+      request.method === 'GET' &&
+      request.headers.get(SEALED_HEADER) === '1' &&
+      !this.marks().sealed &&
+      (await startRefusal(this.adapter())) === null
+    ) {
+      this.sealedApp ??= withCaller((app) => app.route('/api', sealedApi));
+      this.usage.request();
+      try {
+        return await this.serve(this.sealedApp, request, caller);
       } finally {
         this.reportUsage(caller.budgetId);
       }

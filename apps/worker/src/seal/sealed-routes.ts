@@ -22,6 +22,7 @@ import { classifyUsage, dailyLimits, usageToday, utcDay } from '../sync/breaker.
 import { makeProvider } from '../sync/provider.js';
 import { sealedFetchId } from './fetch-job.js';
 import { abandonSealedRun, workerKeys } from './runs.js';
+import { isSealedStore } from './start.js';
 
 const b64 = (bytes: Uint8Array): string => {
   let s = '';
@@ -52,7 +53,11 @@ sealedApi.get('/session', async (c) => {
     canLinkBanks: canLinkBanks(c),
     recoveryNoticeAt: notice ? new Date(notice).toISOString() : null,
     recoveryKeyUsedAt: keyUsed ? new Date(keyUsed).toISOString() : null,
+    // A new budget the device has not made yet (seal/start.ts).
+    ...(!(await isSealedStore(c.env.DB)) ? { fresh: true } : {}),
   };
+  // The server's clock: a new budget's first entry is dated by it.
+  c.header('x-ledgerline-time', String(now));
   return c.json(body);
 });
 

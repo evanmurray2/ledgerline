@@ -69,6 +69,11 @@ export const SealedSession = z.object({
   recoveryNoticeAt: z.string().nullable(),
   /** When the recovery key last signed in to this account, for 14 days (docs/privacy.md 5.8). */
   recoveryKeyUsedAt: z.string().nullable().optional(),
+  /**
+   * The budget has no first entry yet (D-102): this device makes its key, its recovery key and its first entry
+   * (apps/web/src/keys/budget.ts createBudget), and the budget is locked from then on.
+   */
+  fresh: z.boolean().optional(),
 });
 export type SealedSession = z.infer<typeof SealedSession>;
 

@@ -270,6 +270,18 @@ export class EngineHost {
   ): Promise<{ ok: true; number: number } | { ok: false; why: string; tables?: string[]; sealed?: boolean }> {
     return this.call('cutover', { keys, genesis, deviceId, snapshotId });
   }
+  /**
+   * Starts a new budget locked (D-102): the keys and the first entry were made by keys/budget.ts. The copy is
+   * made empty, holds the budget's own row, and stands at the first entry.
+   */
+  startBudget(
+    keys: SealedKeys,
+    genesis: Uint8Array,
+    deviceId: string,
+    snapshotId: string,
+  ): Promise<{ ok: true; number: number } | { ok: false; why: string }> {
+    return this.call('start', { keys, genesis, deviceId, snapshotId });
+  }
   state(): Promise<EngineState> {
     return this.call('state');
   }
