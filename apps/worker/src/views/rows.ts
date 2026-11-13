@@ -25,11 +25,11 @@ export function hiddenFromLists(t: Pick<TxRow, 'source' | 'status' | 'date' | 'b
 /** isHistory as SQL, negated: rows in the budget, the only ones that can need you. */
 export const IN_BUDGET_ROWS = `NOT (source = 'bank' AND budget_from IS NOT NULL AND date < budget_from)`;
 
-/** Transfer states that make a row a transfer between accounts: it has no payee (D-106). */
+/** Transfer states that make a row a transfer between accounts: it has no payee (D-107). */
 export const TRANSFER_STATES = `('paired', 'manual')`;
 
 /**
- * A transfer's name in place of a payee (D-106): "Transfer to Savings" or "Transfer from Checking" when paired, or
+ * A transfer's name in place of a payee (D-107): "Transfer to Savings" or "Transfer from Checking" when paired, or
  * "Transfer out" / "Transfer in" for an account that isn't linked. Null when the row isn't a transfer.
  */
 export function transferName(
@@ -168,7 +168,8 @@ export function listRow(
   }
   return {
     key: t.key,
-    payee: t.payee,
+    // A transfer has no payee: named by the other account, as on its sheet (D-107).
+    payee: transferName(t, accountNames) ?? t.payee,
     accountId: t.account_id,
     accountName: accountNames.get(t.account_id) ?? t.account_name,
     date: t.date,

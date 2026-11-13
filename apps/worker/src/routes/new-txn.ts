@@ -51,7 +51,7 @@ export async function addTxn(c: Context<AppEnv>) {
   const toRta = (r.toRta === true && r.amount > 0) || !!r.paysBack;
   const categoryId = toRta || r.transferAccountId ? null : r.categoryId;
   const key = `m:${newId(c)}`;
-  // A transfer has no payee (D-106): it is named by the other account, whatever name came with it.
+  // A transfer has no payee (D-107): it is named by the other account, whatever name came with it.
   const xfer = r.transferAccountId
     ? await transferSide(c, key, r.accountId, r.transferAccountId, r, now)
     : null;

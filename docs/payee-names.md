@@ -290,7 +290,7 @@ Tests:
   The job reads one page per step and is measured.
 - **Plaid.** No new calls, links or products.
 - **Not in this change:** per-person Venmo payees; splitting a joined payee; merchant logos; Plaid's category as a
-  suggestion; payees for card payments (4, known gap). Transfers have no payee (D-106).
+  suggestion; payees for card payments (4, known gap). Transfers have no payee (D-107).
 
 ## 13. The owner's answers (Nov 4, 2026)
 

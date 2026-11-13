@@ -2,7 +2,7 @@
 // The transfer adds the other side as its own pending entry, paired (as D-83 does for a bank row), and each bank row
 // takes its own side over. Through the real pipeline and the routes the phone runs.
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { BudgetView, OwedView, PayeesView, TxnSheet } from '@ledgerline/contracts';
+import type { BudgetView, OwedView, PayeesView, RegisterView, TxnSheet } from '@ledgerline/contracts';
 import { bankSync, plaidTxn } from './bank-sync.js';
 
 const NOW = Date.parse('2026-11-14T20:00:00Z');
@@ -55,7 +55,7 @@ describe('Add a pending transaction that is more than a purchase', () => {
     expect(await rta()).toBe(before);
   });
 
-  it('a transfer has no payee: named by the other account, left out of Payees, and no rename (D-106)', async () => {
+  it('a transfer has no payee: named by the other account, left out of Payees, and no rename (D-107)', async () => {
     // The payee typed with a transfer is not kept.
     const r = await add({ amount: -2500, payee: 'Landlord', transferAccountId: 'a_2' });
     expect(r.status, JSON.stringify(r.json)).toBe(200);
@@ -81,6 +81,13 @@ describe('Add a pending transaction that is more than a purchase', () => {
     expect(listed.filter((n) => n.includes('TRANSFER') || n.includes('THANK YOU'))).toEqual([]);
     const taken = await keyOf('t_out');
     expect(await sheet(taken)).toMatchObject({ transfer: true, payee: 'Transfer to Card 2', payeeId: null });
+    // Lists name it the same way, not by the bank's text.
+    const row = async (account: number, key: string) =>
+      ((await call('GET', `/api/accounts/a_${account}/register`)).json as RegisterView).days
+        .flatMap((d) => d.rows)
+        .find((x) => x.key === key);
+    expect(await row(1, taken)).toMatchObject({ payee: 'Transfer to Card 2' });
+    expect(await row(2, await keyOf('t_in'))).toMatchObject({ payee: 'Transfer from Card 1' });
     expect((await call('PATCH', `/api/transactions/${taken}`, { payeeName: 'Rent' })).status).toBe(422);
   });
 

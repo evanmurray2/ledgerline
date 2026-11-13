@@ -126,7 +126,7 @@ export async function txnSheet(c: Context<AppEnv, '/transactions/:key'>) {
   const ruleName = (rule!.results[0] as { name: string } | undefined)?.name;
   // A row before the budget start may be part of the starting balance rather than plain history (D-67).
   const inStart = kind === 'history' && roleOf(t, await linkInfo(s)) === 'before';
-  // A transfer has no payee: the sheet names it by the other account, and offers no Rename payee (D-106).
+  // A transfer has no payee: the sheet names it by the other account, and offers no Rename payee (D-107).
   const xfer = transferName(t, accts);
   const sheet: TxnSheet = {
     key,
