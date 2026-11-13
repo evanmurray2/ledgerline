@@ -4,6 +4,7 @@
 // body of such an entry, a change set, is described in change-set.ts.
 import {
   advance,
+  UpdateNeededError,
   KIND,
   MAX_PLAIN,
   MAX_WRITE_ENTRIES,
@@ -34,14 +35,16 @@ import {
 } from '@ledgerline/seal';
 import type { SyncRow } from '../sync-tables.js';
 import {
-  decodeChangeSet,
+  canCompress,
+  deflateChangeSet,
   encodeChangeSet,
   LogFormatError,
+  openChangeSet,
   type ChangeKind,
   type ChangeSet,
 } from './change-set.js';
 import { stateFromJson, stateToJson } from '../seal/log-store.js';
-import { LOG_PROCESSING_VERSION, LOG_SCHEMA_VERSION } from '../seal/log-versions.js';
+import { LOG_PROCESSING_VERSION, LOG_SCHEMA_PLAIN, LOG_SCHEMA_VERSION } from '../seal/log-versions.js';
 
 export {
   decodeChangeSet,
@@ -90,8 +93,20 @@ export async function entryIdOf(changeId: string): Promise<Bytes> {
   ) as Bytes;
 }
 
-/** A change set too large for one write of the log (16 parts, about 1 MB). */
+/** A change set too large for one write of the log (16 parts, about 1 MB once compressed). */
 export class TooLarge extends Error {}
+
+/**
+ * The log holds an entry written by a newer version of the app (a newer schema version): this device reads no
+ * further, and takes nothing, until it is updated.
+ */
+export class NeedsUpdate extends Error {
+  constructor() {
+    super(
+      'Another device saved changes with a newer version of Ledgerline. Close Ledgerline and open it again.',
+    );
+  }
+}
 
 /**
  * The server showed this device a history that is not the one it saw (docs/privacy.md 5.3, "A lying server";
@@ -448,10 +463,24 @@ export class DeviceLog {
     const s = this.state as FullChainState;
     const keys = this.current();
     const plain = encodeChangeSet({ v: 1, at: set.at, rows: set.rows, seen: Object.fromEntries(this.seen) });
+    // A set larger than one part is compressed (change-set.ts): fewer parts, and a long bank history fits a write.
+    // One that fits a part stays plain, under the version an app from before reads.
+    let body = plain;
+    let schemaVersion = LOG_SCHEMA_PLAIN;
+    if (plain.length > MAX_PLAIN && canCompress()) {
+      const packed = await deflateChangeSet(plain);
+      if (packed.length < plain.length) {
+        body = packed;
+        schemaVersion = LOG_SCHEMA_VERSION;
+      }
+    }
     const chunks: Bytes[] = [];
-    for (let i = 0; i < plain.length; i += MAX_PLAIN) chunks.push(plain.slice(i, i + MAX_PLAIN) as Bytes);
+    for (let i = 0; i < body.length; i += MAX_PLAIN) chunks.push(body.slice(i, i + MAX_PLAIN) as Bytes);
     // One write holds at most 16 entries, and a part set is never split over two writes (privacy-keys.md 7.2).
-    if (chunks.length > MAX_WRITE_ENTRIES) throw new TooLarge('this change is too large for one write');
+    if (chunks.length > MAX_WRITE_ENTRIES)
+      throw new TooLarge(
+        `this change is too large for one write (${plain.length} bytes of rows, ${chunks.length} parts)`,
+      );
     // For ordering only: the later of this device's clock and one millisecond after the entry before (5.3 check 4).
     const time = Math.max(this.clock(), s.time + 1);
     const entryId = over.entryId ?? randomBytes(16);
@@ -470,7 +499,7 @@ export class DeviceLog {
           deviceId: this.deviceId,
           deviceCounter: counter + 1 + i,
           keyVersion: keys.version,
-          schemaVersion: LOG_SCHEMA_VERSION,
+          schemaVersion,
           processingVersion: LOG_PROCESSING_VERSION,
           part: i + 1,
           parts: chunks.length,
@@ -518,7 +547,12 @@ export class DeviceLog {
       if (h.number > state.number + 1) throw new BelowFloor(state.number);
       if (h.number === state.number + 1 && !hexEq(h.prevHash, state.hash))
         throw new LogFork(`entry ${h.number} does not follow entry ${state.number}`);
-      state = await advance(state, e, { now: this.clock(), schemaVersion: LOG_SCHEMA_VERSION });
+      try {
+        state = await advance(state, e, { now: this.clock(), schemaVersion: LOG_SCHEMA_VERSION });
+      } catch (x) {
+        if (x instanceof UpdateNeededError) throw new NeedsUpdate();
+        throw x;
+      }
       const remembered = pass.get(h.number);
       if (remembered !== undefined) {
         if (remembered !== toHex(e.hash)) throw new LogFork(`entry ${h.number} is not the one it was`);
@@ -542,7 +576,7 @@ export class DeviceLog {
         at += p.length;
       }
       parts = [];
-      const set = decodeChangeSet(whole);
+      const set = await openChangeSet(whole, h.schemaVersion);
       // What its writer last saw from each device (5.3, "a fork"): at a number this device knows, the same entry.
       if (h.deviceId !== this.deviceId)
         for (const [d, [n, hash]] of Object.entries(set.seen)) {
