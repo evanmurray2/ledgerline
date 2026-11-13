@@ -14,6 +14,7 @@ import { csrf } from '../http/security.js';
 import { jsonOf, storeSigned, UNSIGNED } from '../http/signed-request.js';
 import { ACTION } from '@ledgerline/seal';
 import { classifyUsage, dailyLimits, usageToday } from '../sync/breaker.js';
+import { isFreshWay } from '../store/way-in.js';
 import { b64, entryText, logAppend, logHead, logRowsAfter, type LogDeps } from './log-store.js';
 import {
   logFloor,
@@ -130,10 +131,10 @@ logApi.post('/log/append', async (c) => {
     now,
     // The log's own rule decides what rests: a sign-out or a key change is never held back (5.3 check 7).
     resting: state === 'readonly' || state === 'rest',
-    // How this session came in, as the Directory tells it: a passkey added in the last 7 days (a recovery-key
-    // sign-in always adds one) is a fresh way in, and a key change from it needs an intent that has waited
-    // (D-89). A caller the Directory said nothing about counts as fresh.
-    freshWay: c.get('freshWay') !== false,
+    // How this session came in, as the Directory tells it, judged by this request's clock: a recovery-key sign-in,
+    // or a passkey added in the last 7 days, is a fresh way in, and a key change from it needs an intent that has
+    // waited (D-89). A caller the Directory said nothing about counts as fresh.
+    freshWay: isFreshWay(c.get('wayIn'), now),
     lastCompleteRun: await lastCompleteRun(c.env.DB),
     receiptHashes: (from, to) => receiptHashes(c.env.DB, from, to),
     // A key change brings new keys: each gets the Worker's stamp in the step that stores the write.

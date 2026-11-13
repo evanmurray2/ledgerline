@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 import type { Env } from '../env.js';
+import type { WayIn } from '../store/way-in.js';
 import type { SignedPart } from './signed-request.js';
 
 export interface Vars {
@@ -18,8 +19,8 @@ export interface Vars {
   ids?: { seed: string; n: number; time: number } | null;
   /** The time of this request, read once when it arrives (http/clock.ts requestNow). */
   now?: number;
-  /** The session came in by a fresh way (D-89; store/directory.ts): a key change from it waits. True when not set. */
-  freshWay?: boolean;
+  /** How the session came in, as the Directory tells it (store/way-in.ts); null or not set: it can't tell. */
+  wayIn?: WayIn | null;
   /** A signed request's challenge, which the Directory gave this session and marked used (http/signed-request.ts). */
   signed?: SignedPart | null;
   /** When the recovery key last signed in to this account, while its notice shows (routes/recovery-key.ts). */

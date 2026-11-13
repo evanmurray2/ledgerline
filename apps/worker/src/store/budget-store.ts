@@ -562,7 +562,7 @@ function withCaller(mount: (app: Hono<AppEnv>) => void): Hono<AppEnv> {
     c.set('email', who.email);
     c.set('sessionId', who.sessionId);
     c.set('isAdmin', who.isAdmin === true);
-    c.set('freshWay', who.freshWay !== false);
+    c.set('wayIn', who.wayIn ?? null);
     c.set('signed', who.signed ?? null);
     c.set('recoveryKeyUsedAt', who.recoveryKeyUsedAt ?? null);
     return next();

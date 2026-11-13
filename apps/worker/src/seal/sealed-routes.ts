@@ -22,7 +22,6 @@ import { ITEM_LIMIT, makeProvider } from '../sync/provider.js';
 import { sealedFetchId } from './fetch-job.js';
 import { finishNewLink } from './link-watch.js';
 import { abandonSealedRun } from './run-steps.js';
-import { workerKeys } from './runs.js';
 import { isSealedStore } from './start.js';
 
 export const sealedApi = new Hono<AppEnv>();

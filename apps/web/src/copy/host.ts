@@ -65,6 +65,8 @@ export class EngineHost {
   onIdentity: ((r: { difference: number; month: string }) => void) | null = null;
   /** The engine is making the copy again from a snapshot (local/rebuild.ts); `sealedSync` answers when it is done. */
   onRebuilding: (() => void) | null = null;
+  /** The copy was made again outside `sealedSync` (a public entry's place or write found it below the floor). */
+  onRebuilt: (() => void) | null = null;
 
   constructor() {
     this.worker = new Worker(new URL('../../../worker/src/local/web-entry.ts', import.meta.url), {
@@ -78,6 +80,10 @@ export class EngineHost {
       }
       if (m.event === 'rebuilding') {
         this.onRebuilding?.();
+        return;
+      }
+      if (m.event === 'rebuilt') {
+        this.onRebuilt?.();
         return;
       }
       const p = m.id ? this.pending.get(m.id) : undefined;
