@@ -84,8 +84,10 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   // Amounts are typed without a sign; the direction keeps it. Only a transaction you added can change direction.
   const [dir, setDir] = useState<'out' | 'in'>((t.bankAmount ?? t.amount) < 0 ? 'out' : 'in');
   const sign = dir === 'out' ? -1 : 1;
-  const [est, setEst] = useState(t.estimatedAmount !== null ? centsToInput(Math.abs(t.estimatedAmount)) : '');
-  const [amt, setAmt] = useState(centsToInput(Math.abs(t.amount)));
+  const estWas = t.estimatedAmount !== null ? centsToInput(Math.abs(t.estimatedAmount)) : '';
+  const amtWas = centsToInput(Math.abs(t.amount));
+  const [est, setEst] = useState(estWas);
+  const [amt, setAmt] = useState(amtWas);
   const [owed, setOwed] = useState<OwedMode>(t.owed[0]?.share ?? 'none');
   const [owedAmt, setOwedAmt] = useState(t.owed[0] ? centsToInput(t.owed[0].amount) : '');
   const [expectBy, setExpectBy] = useState(t.owed[0]?.expectBy ?? '');
@@ -204,6 +206,8 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       track="txn"
       onClose={close}
       gap="auto"
+      // Back asks before it drops an amount or estimate typed and not saved.
+      unsaved={!patch.isPending && ((canSetAmount && amt !== amtWas) || (canEstimate && est !== estWas))}
       // Your own entry: the header follows the amount and Out / In as you change them.
       header={<TxnHeader t={t} amount={canSetAmount ? (amtCents ?? sign * Math.abs(t.amount)) : t.amount} />}
       footer={
