@@ -1,4 +1,4 @@
-# D-117: A category's bar fills as its money is spent (Nov 13, 2026)
+# D-118: A category's bar fills as its money is spent (Nov 13, 2026)
 
 **Asked by the owner** (chat, Nov 13, 2026): "fix everything in one PR", after a design critique of every screen.
 Changes the Budget row of the screens table in `docs/design.md` ("bars mean only 'money left this month'") and the bar

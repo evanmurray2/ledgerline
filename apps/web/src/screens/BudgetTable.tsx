@@ -210,7 +210,7 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
           {r.name}
           <span className="text-sm font-normal text-muted">{r.detail}</span>
         </button>
-        {/* The phone's bar: how much of the month's money is spent, readable without the numbers (D-117). */}
+        {/* The phone's bar: how much of the month's money is spent, readable without the numbers (D-118). */}
         {r.bar && (
           <div className="mb-1.5 max-w-[320px]">
             <Bar percent={r.bar.percent} tone={r.bar.tone} />

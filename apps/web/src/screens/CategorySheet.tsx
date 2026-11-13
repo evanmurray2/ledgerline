@@ -166,7 +166,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
     );
 
   // The bar follows the Budget row's rule (no bar where the row has none) and moves as you type. It fills as the
-  // month's money is spent (D-117).
+  // month's money is spent (D-118).
   const total = c.spent + available;
   const usedPercent = total > 0 ? Math.max(0, Math.min(100, Math.round((c.spent * 100) / total))) : 0;
   const tone = available < 0 ? 'over' : st.tone;
