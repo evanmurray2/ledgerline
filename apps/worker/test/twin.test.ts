@@ -263,6 +263,40 @@ describe('the same edit on the phone and on the server', () => {
     ],
     ['undo that match', 'POST /match/:key/unlink', () => ['POST', '/api/match/n-venmo/unlink', {}]],
     [
+      'match it again',
+      'POST /match',
+      async () => {
+        const view = (await (await a.request('GET', '/api/match/n-venmo')).json()) as {
+          open: { id: string }[];
+        };
+        return [
+          'POST',
+          '/api/match',
+          { inflowKey: 'n-venmo', items: [{ itemId: view.open[0]!.id, amount: 100 }] },
+        ];
+      },
+    ],
+    // "It's income" on matched money: the links it had are undone.
+    [
+      'call that money income',
+      'POST /match',
+      () => ['POST', '/api/match', { inflowKey: 'n-venmo', items: [] }],
+    ],
+    [
+      'split a purchase with a line owed to you',
+      'PATCH /transactions/:key',
+      () => [
+        'PATCH',
+        '/api/transactions/n-personal',
+        {
+          split: [
+            { categoryId: 'personal', amount: -5000, memo: null, absorbsRemainder: false },
+            { categoryId: null, amount: -3500, memo: null, absorbsRemainder: true, owed: true },
+          ],
+        },
+      ],
+    ],
+    [
       'dismiss an alert',
       'POST /alerts/:id/dismiss',
       () => ['POST', '/api/alerts/twin-alert/dismiss', {}],
@@ -282,6 +316,22 @@ describe('the same edit on the phone and on the server', () => {
           `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at) VALUES ('twin-ask', ?1, 'same_purchase', 'n-marriott', ?2, ?3)`,
           budget,
           JSON.stringify({ candidates: ['n-shell'] }),
+          Date.now(),
+        )(),
+    ],
+    [
+      'undo that No',
+      'POST /same-purchase/:id/undo',
+      () => ['POST', '/api/same-purchase/twin-ask/undo', { key: 'n-shell' }],
+    ],
+    [
+      'undo OK on a row removed by the bank',
+      'POST /alerts/:id/undo',
+      () => ['POST', '/api/alerts/twin-vanished/undo', {}],
+      () =>
+        onServer(
+          `INSERT INTO alert (id, budget_id, type, ref_key, data, created_at, acked_at) VALUES ('twin-vanished', ?1, 'vanished_pending', 'n-shell', NULL, ?2, ?2)`,
+          budget,
           Date.now(),
         )(),
     ],

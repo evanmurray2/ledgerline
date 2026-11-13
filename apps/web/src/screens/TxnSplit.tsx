@@ -23,6 +23,8 @@ import { useCategoryOptions, useScreen } from '../lib/common';
 import { usage } from '../usage/tracker';
 import { useClose, useParentPath } from './TxnCommon';
 
+const OWED = 'Owed to you';
+
 interface Line {
   id: number;
   categoryId: string;
@@ -54,7 +56,8 @@ export function SplitScreen() {
       setLines(
         t.split.map((s, i) => ({
           id: i + 1,
-          categoryId: s.categoryId ?? '',
+          // A line owed to you; an older save marked it only by its memo (and made no owed item).
+          categoryId: s.owed || (!s.categoryId && s.memo === OWED) ? 'owed' : (s.categoryId ?? ''),
           input: centsToInput(Math.abs(s.amount)),
         })),
       );
@@ -88,23 +91,43 @@ export function SplitScreen() {
         {q.error ? <ErrorNote error={q.error} /> : <Loading />}
       </Sheet>
     );
+  // Only money going out is split here (the sheet offers Split only then); a link to a deposit says so.
+  if (t.amount >= 0 && !t.split?.length)
+    return (
+      <Sheet label="Split" track="split" onClose={back} gap="small">
+        <Banner tone="neutral">Only money going out can be split.</Banner>
+      </Sheet>
+    );
   const upd = (id: number, p: Partial<Line>) =>
     setLines(lines.map((l) => (l.id === id ? { ...l, ...p } : l)));
   const sign = t.amount < 0 ? -1 : 1;
   const save = async () => {
-    await patch.mutateAsync({
-      key: t.key,
-      body: {
-        split: lines.map((l) => ({
-          categoryId: l.categoryId === 'owed' ? null : l.categoryId,
-          amount: sign * amountOf(l),
-          memo: l.categoryId === 'owed' ? 'Owed to you' : null,
-          absorbsRemainder: l.id === rem,
-        })),
-      },
-    });
+    // A line owed to you makes an owed item of its amount on the server. A refusal shows below (patch.error).
+    const ok = await patch
+      .mutateAsync({
+        key: t.key,
+        body: {
+          split: lines.map((l) => ({
+            categoryId: l.categoryId === 'owed' ? null : l.categoryId,
+            amount: sign * amountOf(l),
+            memo: null,
+            absorbsRemainder: l.id === rem,
+            ...(l.categoryId === 'owed' ? { owed: true } : {}),
+          })),
+        },
+      })
+      .then(
+        () => true,
+        () => false,
+      );
+    if (!ok) return;
     usage.record('task', 'split');
     done();
+  };
+  /** Another line takes the difference: every line keeps the amount it shows now. */
+  const moveRem = (id: number) => {
+    setLines(lines.map((x) => ({ ...x, input: centsToInput(amountOf(x)) })));
+    setRem(id);
   };
   return (
     <Sheet
@@ -149,7 +172,7 @@ export function SplitScreen() {
                 value={l.categoryId}
                 onChange={(v) => upd(l.id, { categoryId: v })}
                 groups={opts.map((g) => ({ key: g.id, name: g.name, categories: g.categories }))}
-                specials={[{ id: 'owed', name: 'Owed to you' }]}
+                specials={t.amount < 0 ? [{ id: 'owed', name: OWED }] : []}
               />
             </Field>
             <Field label="Amount" className="flex-[2] text-xs">
@@ -174,7 +197,7 @@ export function SplitScreen() {
                 name="rem"
                 className="hit h-5 w-5 accent-accent"
                 checked={rem === l.id}
-                onChange={() => setRem(l.id)}
+                onChange={() => moveRem(l.id)}
               />
               Takes any difference
             </label>

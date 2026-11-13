@@ -8,7 +8,7 @@ import { Sheet } from '../components/Sheet';
 import { ErrorNote, Loading } from '../components/ui';
 import { useScreen } from '../lib/common';
 import { RenamePayeeSheet, txnCount, usePayeeSave } from '../components/RenamePayee';
-import { useClose, useParentPath } from './TxnCommon';
+import { useClose, useOwnRegister, useParentPath } from './TxnCommon';
 import { EditTxn } from './TxnEdit';
 import { PaidBack, PairedTransfer } from './TxnLinked';
 import { HistoryTxn } from './TxnHistory';
@@ -28,7 +28,8 @@ export function TxnSheetScreen() {
   if (t && (t.kind === 'transfer' || t.kind === 'paidBack') && linked.current?.key !== key)
     linked.current = { key, kind: t.kind };
   const stuck = linked.current?.key === key ? linked.current.kind : null;
-  if (!t)
+  const moving = useOwnRegister(t);
+  if (!t || moving)
     return (
       <Sheet label="Transaction" track="txn" onClose={close} gap="small">
         {q.error ? <ErrorNote error={q.error} /> : <Loading />}

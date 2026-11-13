@@ -128,6 +128,8 @@ describe('pending transactions', () => {
     expect(s.bankAmount).toBe(t.amount);
     expect((await call('PATCH', url, { estimatedAmount: null })).status).toBe(200);
     expect((await sheet(t.key)).amount).toBe(t.amount);
+    // A $0.00 estimate isn't one.
+    expect((await call('PATCH', url, { estimatedAmount: 0 })).status).toBe(422);
     expect((await call('PATCH', url, { amount: -1 })).status).toBe(422);
   });
 });

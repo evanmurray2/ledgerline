@@ -15,12 +15,19 @@ type Removed = ActivityView['removedByBank'][number];
 export function RemovedByBank({ rows }: { rows: Removed[] }) {
   const desktop = useIsDesktop();
   const ok = useMoneyMutation(api.dismissAlert, { money: false, invalidate: [['activity']] });
+  const undo = useMoneyMutation(api.undismissAlert, { money: false, invalidate: [['activity']] });
+  const failed = (e: unknown): void => {
+    toast.show({ text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t save that. Try again.' });
+  };
   const dismiss = async (r: Removed) => {
     try {
       await ok.mutateAsync(r.id);
-      toast.show({ text: `${r.payee} · marked OK` });
+      toast.show({
+        text: `${r.payee} · marked OK`,
+        undo: () => undo.mutateAsync(r.id).then(() => {}, failed),
+      });
     } catch (e) {
-      toast.show({ text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t save that. Try again.' });
+      failed(e);
     }
   };
   return (

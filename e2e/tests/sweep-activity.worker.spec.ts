@@ -154,10 +154,17 @@ test('Add: a payee longer than the server takes is cut at 120 letters, so Add wo
 test('Edit: an amount that is not money keeps Save off and says why', async ({ page, request }) => {
   await page.goto('/activity/txn/n-check-1043');
   const sheet = page.getByRole('dialog', { name: 'Check #1043 transaction' });
-  for (const text of ['abc', '0', '', '.']) {
-    await sheet.getByLabel('Amount', { exact: true }).fill(text);
+  for (const [text, why] of [
+    ['abc', 'Enter an amount'],
+    ['0', 'Enter an amount above $0.00'],
+    ['', 'Enter an amount'],
+    ['.', 'Enter an amount'],
+    ['12.345', 'Enter at most 2 digits for cents'],
+    ['100000000', 'Enter an amount up to $99,999,999.99'],
+  ]) {
+    await sheet.getByLabel('Amount', { exact: true }).fill(text!);
     await expect(sheet.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
-    await expect(sheet.getByTestId('disabled-why')).toHaveText('Enter an amount');
+    await expect(sheet.getByTestId('disabled-why')).toHaveText(why!);
   }
   await sheet.getByLabel('Amount', { exact: true }).fill('$1,125.5');
   await sheet.getByRole('button', { name: 'Save', exact: true }).click();
@@ -489,4 +496,71 @@ test('A split whose amount changed: Check these lists it, and saving the split a
   await expect(page.getByText('Split $380.00 off')).toHaveCount(0);
   const lines = (await rows(request, 'txn_split')).filter((r) => r.txn_key === key);
   expect(lines.map((r) => r.amount).sort()).toEqual([-44_000, -6_000]);
+});
+
+test('Split: a line Owed to you makes an owed item, and the split opens again with it', async ({ page }) => {
+  await page.goto('/activity/txn/n-personal/split?filter=all');
+  const sheet = page.getByRole('dialog', { name: 'Split' });
+  await sheet.getByLabel('Category for line 2').click();
+  await page
+    .getByRole('dialog', { name: 'Choose a category' })
+    .getByRole('button', { name: 'Owed to you' })
+    .first()
+    .click();
+  await sheet.getByLabel('Amount for line 1').fill('50');
+  await expect(sheet.getByLabel('Amount for line 2')).toHaveValue('35.00');
+  await sheet.getByRole('button', { name: 'Save split' }).click();
+  await expect(sheet).toHaveCount(0);
+  await page.goto('/owed');
+  await expect(page.getByText('Haircut').first()).toBeVisible();
+  await page.goto('/activity/txn/n-personal/split?filter=all');
+  await expect(sheet.getByLabel('Category for line 2')).toContainText('Owed to you');
+  await expect(sheet.getByRole('button', { name: 'Save split' })).toBeEnabled();
+});
+
+test('Split: moving Takes any difference keeps the amounts on the lines', async ({ page }) => {
+  await page.goto('/activity/txn/n-personal/split?filter=all');
+  const sheet = page.getByRole('dialog', { name: 'Split' });
+  await sheet.getByLabel('Amount for line 1').fill('40');
+  await expect(sheet.getByLabel('Amount for line 2')).toHaveValue('45.00');
+  await sheet.getByRole('radio').first().check();
+  await expect(sheet.getByLabel('Amount for line 1')).toHaveValue('40.00');
+  await expect(sheet.getByLabel('Amount for line 2')).toHaveValue('45.00');
+});
+
+test('Search: a straight apostrophe finds a curly one, and the search stays after a reload', async ({
+  page,
+}) => {
+  await page.goto('/activity?filter=all');
+  await search(page, "trader  joe's");
+  await expect(page).toHaveURL(/q=/);
+  await expect(page.getByText('Trader Joe’s', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Spotify', { exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole('searchbox', { name: 'Search transactions' })).toHaveValue("trader joe's");
+  await expect(page.getByText('Trader Joe’s', { exact: true }).first()).toBeVisible();
+  // A search typed in the address works too, a number included.
+  await page.goto('/activity?q=1018');
+  await expect(page.getByText('Venmo cashout', { exact: true }).first()).toBeVisible();
+});
+
+test('Transfer: the pick sheet of a row already paired says so and offers Unpair', async ({ page }) => {
+  await page.goto('/activity/transfer/n-to-marcus?filter=all');
+  const sheet = page.getByRole('dialog', { name: 'Transfer' });
+  await expect(sheet.getByText('Paired with Marcus Savings.')).toBeVisible();
+  await sheet.getByRole('button', { name: 'Unpair' }).click();
+  await expect(sheet.getByText('Paired with Marcus Savings.')).toHaveCount(0);
+});
+
+test('Match: matched money offers only what it doesn’t pay back yet', async ({ page }) => {
+  await page.goto('/activity/match/n-venmo');
+  const sheet = page.getByRole('dialog', { name: 'Match money back' });
+  await sheet.getByRole('checkbox').nth(1).uncheck();
+  await sheet.getByRole('button', { name: 'Match $18.00' }).click();
+  await expect(sheet.getByText(/^Matched \$18\.00\./)).toBeVisible();
+  await page.goto('/activity/match/n-venmo');
+  await expect(sheet.getByTestId('match-already')).toHaveText(
+    'It already pays back $18.00. $1,000.00 is left to match.',
+  );
+  await expect(sheet.getByRole('button', { name: 'Match $1,000.00' })).toBeVisible();
 });

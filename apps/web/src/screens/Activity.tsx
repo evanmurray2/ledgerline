@@ -3,8 +3,8 @@
 // groups sit on top, then Pending, Upcoming and Posted. A row can carry a suggested category with OK, and OK all
 // takes every strong suggestion (docs/payees.md 2.2). Categorizing shows an Undo toast.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, Outlet, useNavigate, useSearch } from '@tanstack/react-router';
-import type { ActivityView, TxnListRow } from '@ledgerline/contracts';
+import { Outlet, useNavigate, useSearch } from '@tanstack/react-router';
+import type { TxnListRow } from '@ledgerline/contracts';
 import { api, type ActivityFilter } from '../api/endpoints';
 import { ApiError, errorMessage } from '../api/client';
 import { adjustAttention, qk, useActivity, useBudget, useMoneyMutation, useSession } from '../api/hooks';
@@ -27,7 +27,6 @@ import {
   SearchField,
   SectionTitle,
   SoftButton,
-  softButtonClass,
   useIsDesktop,
   useShortcuts,
 } from '../components/ui';
@@ -36,11 +35,13 @@ import { useScreen } from '../lib/common';
 import { useCanWrite } from '../state/connectivity';
 import { usage } from '../usage/tracker';
 import { useQueryClient } from '@tanstack/react-query';
-import { sheetPath, Section, TxnRow, type Chosen, type NeedsRow, type Picking } from './ActivityRows';
+import { Section, TxnRow, type Chosen, type NeedsRow, type Picking } from './ActivityRows';
 import { ActivityCategoryPicker, NeedsCategory } from './ActivityNeeds';
 import { primeKeyboard } from '../components/CategoryPicker';
 import { SamePurchase } from './ActivitySame';
 import { RemovedByBank } from './ActivityRemoved';
+import { CheckThese, TransfersToSort } from './ActivityAttention';
+import { useMorePosted } from './ActivityMore';
 
 export { TxnRow } from './ActivityRows';
 
@@ -65,12 +66,24 @@ export function ActivityScreen() {
   const searchRef = useRef<HTMLInputElement>(null);
   useShortcuts({ '/': () => searchRef.current?.focus() }, desktop);
   const [q, setQ] = useState(search.q ?? '');
+  /** The search the URL holds: what was typed is written there, so a reload or Back keeps it. */
+  const inUrl = useRef(search.q ?? '');
   useEffect(() => {
-    const id = setTimeout(() => setQ(qInput.trim()), 250);
+    const id = setTimeout(() => {
+      const next = qInput.replace(/\s+/g, ' ').trim();
+      setQ(next);
+      if (next === inUrl.current) return;
+      inUrl.current = next;
+      void navigate({ to: '.', search: (p: object) => ({ ...p, q: next || undefined }), replace: true });
+    }, 250);
     return () => clearTimeout(id);
-  }, [qInput]);
+  }, [qInput, navigate]);
   useEffect(() => {
+    // A search from outside (a link, Back): only when it isn't the one this screen just wrote.
+    if ((search.q ?? '') === inUrl.current) return;
+    inUrl.current = search.q ?? '';
     setQInput(search.q ?? '');
+    setQ(search.q ?? '');
   }, [search.q]);
 
   // A search looks through every month, and so does one category's list (Reports → a category).
@@ -114,10 +127,17 @@ export function ActivityScreen() {
     (r) => !chosen[r.key] || (chosen[r.key]!.categoryId === null && !chosen[r.key]!.toRta),
   );
 
+  // Not posted yet lists only what hasn't posted: a to-do about a posted row waits under All and Needs attention.
+  const unposted = filter === 'pending';
+  const toSort = (v?.transfersToSort ?? []).filter((r) => !unposted || r.status !== 'posted');
+  const toCheck = (v?.checkThese ?? []).filter((r) => !unposted || r.status !== 'posted');
+  const sameCards = (v?.samePurchase ?? []).filter(
+    (c) => !unposted || [c.row, ...c.candidates].some((r) => r.status !== 'posted'),
+  );
   const total = v
-    ? v.transfersToSort.length +
-      v.checkThese.length +
-      v.samePurchase.length +
+    ? toSort.length +
+      toCheck.length +
+      sameCards.length +
       v.removedByBank.length +
       (v.needsCategory?.length ?? 0) +
       (v.posted.length + v.pending.length + v.upcoming.length)
@@ -237,17 +257,22 @@ export function ActivityScreen() {
     toast.show({
       text,
       undo: async () => {
-        const back = done.filter((k) => prev[k] === null);
-        if (back.length) {
-          await categorize.mutateAsync({ keys: back, categoryId: null });
-          adjustAttention(qc, back.length);
+        try {
+          const back = done.filter((k) => prev[k] === null);
+          if (back.length) {
+            await categorize.mutateAsync({ keys: back, categoryId: null });
+            adjustAttention(qc, back.length);
+          }
+          for (const k of done.filter((x) => prev[x]))
+            await categorize.mutateAsync({
+              keys: [k],
+              categoryId: prev[k]!.categoryId,
+              toRta: prev[k]!.toRta || undefined,
+            });
+        } catch (e) {
+          toast.show({ text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t undo that. Try again.' });
+          return;
         }
-        for (const k of done.filter((x) => prev[x]))
-          await categorize.mutateAsync({
-            keys: [k],
-            categoryId: prev[k]!.categoryId,
-            toRta: prev[k]!.toRta || undefined,
-          });
         usage.undo('categorize');
         setChosen((c) => {
           const drop = new Set(done);
@@ -338,7 +363,7 @@ export function ActivityScreen() {
   // them are matched by payee.
   const liveNeeds = new Set((v?.needsCategory ?? []).map((r) => r.key));
   const shownNeeds = needs.filter(
-    (r) => !q || liveNeeds.has(r.key) || r.payee.toLowerCase().includes(q.toLowerCase()),
+    (r) => !q || liveNeeds.has(r.key) || foldSearch(r.payee).includes(foldSearch(q)),
   );
   const showNeeds = filter !== 'pending' && shownNeeds.length > 0;
   const empty = v && total === 0 && !showNeeds && !(filter === 'attention' && !q);
@@ -453,28 +478,8 @@ export function ActivityScreen() {
                 Nothing needs attention.
               </p>
             )}
-          {v && v.transfersToSort.length > 0 && (
-            <Section title="Transfers to sort out">
-              {v.transfersToSort.map((r) => (
-                <TxnRow
-                  key={r.key}
-                  r={r}
-                  base="/activity"
-                  action={
-                    <Link
-                      to={sheetPath('/activity', r)}
-                      data-track="activity.transfer.pick"
-                      aria-label={`Pick ${r.payee}`}
-                      className={softButtonClass()}
-                    >
-                      Pick
-                    </Link>
-                  }
-                />
-              ))}
-            </Section>
-          )}
-          {v && v.samePurchase.length > 0 && <SamePurchase cards={v.samePurchase} />}
+          {v && toSort.length > 0 && <TransfersToSort rows={toSort} />}
+          {v && sameCards.length > 0 && <SamePurchase cards={sameCards} />}
           {v && showNeeds && (
             <NeedsCategory
               needs={shownNeeds}
@@ -490,38 +495,7 @@ export function ActivityScreen() {
               onJoin={(r) => void join(r)}
             />
           )}
-          {v && v.checkThese.length > 0 && (
-            <Section title="Check these">
-              {v.checkThese.map((r) => (
-                <TxnRow
-                  key={r.key}
-                  r={r}
-                  base="/activity"
-                  action={
-                    r.action === 'dismiss' ? (
-                      <SoftButton
-                        mutates="offline"
-                        track="activity.check.ok"
-                        aria-label={`OK ${r.payee}`}
-                        onClick={() => void dismiss(r)}
-                      >
-                        OK
-                      </SoftButton>
-                    ) : (
-                      <Link
-                        to={sheetPath('/activity', r)}
-                        data-track="activity.check.review"
-                        aria-label={`Review ${r.payee}`}
-                        className={softButtonClass()}
-                      >
-                        Review
-                      </Link>
-                    )
-                  }
-                />
-              ))}
-            </Section>
-          )}
+          {v && toCheck.length > 0 && <CheckThese rows={toCheck} onDismiss={(r) => void dismiss(r)} />}
           {v && v.removedByBank.length > 0 && <RemovedByBank rows={v.removedByBank} />}
           {v && v.pending.length > 0 && (
             <Section title="Pending" note={`counts now · ${formatCents(v.pendingTotal)}`}>
@@ -592,39 +566,7 @@ export function ActivityScreen() {
   );
 }
 
-/**
- * Posted rows after the first page of 50 ("Show more"), read with the page's cursor. Starts again whenever the
- * list itself changes (another month, filter or search).
- */
-function useMorePosted(
-  v: ActivityView | undefined,
-  filter: ActivityFilter,
-  q: string,
-  month?: string,
-  category?: string,
-) {
-  const [state, setState] = useState<{ key: string; rows: TxnListRow[]; cursor: string | null }>({
-    key: '',
-    rows: [],
-    cursor: null,
-  });
-  const [loading, setLoading] = useState(false);
-  const key = `${filter}|${q}|${month ?? ''}|${category ?? ''}|${v?.nextCursor ?? ''}`;
-  const mine = state.key === key;
-  const cursor = mine ? state.cursor : (v?.nextCursor ?? null);
-  const load = async () => {
-    if (!cursor) return;
-    setLoading(true);
-    try {
-      const page = await api.activity(filter, q || undefined, cursor, month, category);
-      setState({ key, rows: [...(mine ? state.rows : []), ...page.posted], cursor: page.nextCursor });
-    } catch (e) {
-      toast.show({ text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t load more. Try again.' });
-    } finally {
-      setLoading(false);
-    }
-  };
-  // The server gives a cursor whenever a page holds 50 rows; a shorter page is the last.
-  const hasMore = !!cursor && (mine ? true : (v?.posted.length ?? 0) >= 50);
-  return { rows: mine ? state.rows : [], cursor: hasMore ? cursor : null, loading, load };
+/** Text as a search compares it (as the server does): lower case, curly apostrophes as straight ones. */
+function foldSearch(t: string): string {
+  return t.toLowerCase().replace(/[’‘]/g, "'");
 }

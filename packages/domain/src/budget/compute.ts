@@ -193,7 +193,7 @@ export function computeBudget(input: ComputeInput): ComputeResult {
   const linesByMonth = new Map<Month, BudgetLine[]>();
   for (const l of input.lines) {
     if (l.month < from) continue;
-    if (input.until && l.month > through) continue;
+    if (input.until && l.month > input.until) continue;
     if (l.month > through) through = l.month;
     if (l.kind === 'payment' || l.kind === 'debt') cardIds.add(l.cardAccountId);
     else if ((l.kind === 'cat' || l.kind === 'owed' || l.kind === 'rta') && l.card) cardIds.add(l.accountId);

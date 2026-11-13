@@ -326,7 +326,8 @@ const activityRoute = createRoute({
   validateSearch: (s: Record<string, unknown>) => ({
     // No filter: Not posted yet on this month, else All (screens/Activity.tsx).
     filter: s.filter === 'all' || s.filter === 'attention' || s.filter === 'pending' ? s.filter : undefined,
-    q: str(s.q),
+    // A search typed in the URL that reads as a number (?q=28.10) arrives as one.
+    q: typeof s.q === 'number' ? String(s.q) : str(s.q),
     // One category's transactions (Reports → a category).
     category: str(s.category),
     // The app's month; a malformed one is dropped rather than refused by the server.
