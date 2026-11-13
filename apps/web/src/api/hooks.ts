@@ -47,6 +47,24 @@ export const qk = {
   connections: ['settings', 'connections'] as const,
 };
 
+/**
+ * Keeps the budget's time zone and year (lib/dates.ts) in step with the session, or the saved one standing in for it.
+ * The query cache tells its listeners at once, before any screen renders with the new session, so a clock time never
+ * shows in the wrong zone first. App.tsx calls it once for its query client.
+ */
+export function followBudgetClock(qc: QueryClient): () => void {
+  const apply = () => {
+    const s = qc.getQueryData<Session>(qk.session) ?? qc.getQueryData<Session | null>(qk.savedSession);
+    if (s?.budget.timeZone) setBudgetTimeZone(s.budget.timeZone);
+    if (s?.budget.today) setBudgetYear(s.budget.today);
+  };
+  apply();
+  return qc.getQueryCache().subscribe((e) => {
+    const key = e.query.queryKey[0];
+    if (key === qk.session[0] || key === qk.savedSession[0]) apply();
+  });
+}
+
 /** The session query's state; offline, the saved session stands in for its data (not a successful query). */
 export type SessionState = Omit<UseQueryResult<Session>, 'data'> & { data: Session | undefined };
 
@@ -74,11 +92,6 @@ export function useSession(): SessionState {
   useEffect(() => {
     if (q.data) qc.setQueryData(qk.savedSession, q.data);
   }, [q.data, qc]);
-  // Set during render, before any screen formats a clock time with it.
-  const zone = (q.data ?? savedQ.data)?.budget.timeZone;
-  if (zone) setBudgetTimeZone(zone);
-  const today = (q.data ?? savedQ.data)?.budget.today;
-  if (today) setBudgetYear(today);
   if (q.data) return q;
   const unreachable =
     (q.error instanceof ApiError && q.error.network) ||
