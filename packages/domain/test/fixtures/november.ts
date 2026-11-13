@@ -143,7 +143,7 @@ export const txns: LogicalTxn[] = [
   t('n-to-marcus', 'checking', '2026-11-12', '-500', xfer('marcus')),
   t('n-from-checking-m', 'marcus', '2026-11-12', '500', xfer('checking')),
   t('n-payroll', 'checking', '2026-11-13', '3100', 'rta'),
-  t('n-venmo', 'checking', '2026-11-14', '1018', { type: 'waiting' }), // Waiting to match (rule 9)
+  t('n-venmo', 'checking', '2026-11-14', '1018', 'rta'), // money in from a person: Ready to Assign (D-98)
   t('n-comcast', 'checking', '2026-11-16', '-79.99', 'internet', { status: 'upcoming' }), // counts on its date
   t('n-rent', 'checking', '2026-11-30', '-3000', 'rent', {
     status: 'upcoming',

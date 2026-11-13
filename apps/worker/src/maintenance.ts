@@ -16,7 +16,7 @@ import { lineFromRow } from './budget/recompute.js';
 import { RECENT_TX } from './ledger/ledger.js';
 import { adjustments } from './ledger/start-part.js';
 
-/** Rule 10 on the stored data: working balances vs categories + RTA + held amounts − unbudgeted card debt + later months. */
+/** Rule 10 on the stored data: working balances vs categories + RTA + unsorted and uncategorized amounts − unbudgeted card debt + later months. */
 export async function checkIdentityDb(
   env: Env,
   budgetId: string,
@@ -38,7 +38,7 @@ export async function checkIdentityDb(
       today,
     ),
     s.q(
-      `SELECT kind, sum(amount) AS a FROM budget_line WHERE budget_id = ?1 AND kind IN ('wait', 'unsorted', 'uncat') GROUP BY kind`,
+      `SELECT kind, sum(amount) AS a FROM budget_line WHERE budget_id = ?1 AND kind IN ('unsorted', 'uncat') GROUP BY kind`,
     ),
     s.q(`SELECT month, state FROM month_snapshot WHERE budget_id = ?1 AND month >= ?2 ORDER BY month`, prev),
     s.q(
@@ -114,8 +114,7 @@ export async function checkIdentityDb(
     for (const c of m.s.k) later += c[1];
     later += m.s.i - m.s.o;
   }
-  const right =
-    categories + b.rta + (h.get('wait') ?? 0) + (h.get('unsorted') ?? 0) + (h.get('uncat') ?? 0) - k + later;
+  const right = categories + b.rta + (h.get('unsorted') ?? 0) + (h.get('uncat') ?? 0) - k + later;
   return { ok: working === right, difference: working - right, literal: working === right && k === 0 };
 }
 
