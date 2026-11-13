@@ -1,6 +1,6 @@
 // Accounts: net worth, Owed to you under the total, repair banner, failed-sync banner with Sync now, cash and
 // cards (statement covered). The register is in AccountRegister.tsx and the Repair sheet in AccountRepair.tsx.
-import { useEffect, useRef, useState, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { Link, Outlet } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AccountRow, AccountsView } from '@ledgerline/contracts';
@@ -193,8 +193,13 @@ function Problems({ items, banks }: { items: ReactElement[]; banks: number }) {
   );
 }
 
-export function AccountsScreen() {
-  useScreen('accounts');
+/**
+ * Accounts. `panel`: on a computer, the account open in the side panel (AccountRegister.tsx); the list stays here,
+ * with that account marked.
+ */
+export function AccountsScreen({ panel }: { panel?: ReactNode } = {}) {
+  // With an account open, the account page counts the view.
+  useScreen(panel ? null : 'accounts');
   const q = useAccounts();
   const desktop = useIsDesktop();
   const v = q.data;
@@ -350,7 +355,7 @@ export function AccountsScreen() {
                           key={a.id}
                           to={`/accounts/${a.id}`}
                           data-track="accounts.account"
-                          className="flex min-h-14 items-center gap-2.5 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
+                          className="flex min-h-14 items-center gap-2.5 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0 data-[status=active]:bg-accent-soft"
                         >
                           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                             <span className="text-base font-semibold">{a.name}</span>
@@ -406,7 +411,7 @@ export function AccountsScreen() {
                         key={a.id}
                         to={`/accounts/${a.id}`}
                         data-track="accounts.closed"
-                        className="flex min-h-12 items-center gap-2.5 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0"
+                        className="flex min-h-12 items-center gap-2.5 border-t border-divider px-3 py-2 text-ink no-underline first:border-t-0 data-[status=active]:bg-accent-soft"
                       >
                         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                           <span className="text-base text-muted">{a.name}</span>
@@ -440,6 +445,7 @@ export function AccountsScreen() {
           </div>
         )}
       </div>
+      {panel}
       <Outlet />
     </div>
   );

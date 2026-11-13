@@ -94,6 +94,11 @@ export interface SheetProps {
   closeLabel?: string;
   /** Open over everything, also on desktop (for a picker opened from inside another sheet). */
   modal?: boolean;
+  /**
+   * Desktop panel only: kept open but out of sight, and deaf to Escape, while another sheet holds the panel (an
+   * account's register under one of its transactions), so it comes back as it was.
+   */
+  hidden?: boolean;
 }
 
 export function Sheet({
@@ -106,6 +111,7 @@ export function Sheet({
   children,
   closeLabel = 'Close',
   modal = false,
+  hidden = false,
 }: SheetProps) {
   const isDesktop = useIsDesktop();
   // A modal sheet is drawn the phone way (over everything) on every screen size.
@@ -123,6 +129,8 @@ export function Sheet({
   };
   const closeRef = useRef(close);
   closeRef.current = close;
+  const hiddenRef = useRef(hidden);
+  hiddenRef.current = hidden;
 
   useEffect(() => {
     if (covers) {
@@ -153,7 +161,7 @@ export function Sheet({
         return;
       }
       // Only the newest sheet answers, so Escape in a picker doesn't also close the sheet under it.
-      if (e.key !== 'Escape') return;
+      if (e.key !== 'Escape' || hiddenRef.current) return;
       if (covers ? top === id : top === undefined) closeRef.current();
     };
     window.addEventListener('keydown', onKey);
@@ -217,6 +225,7 @@ export function Sheet({
         // A phone on its side: the sheet scrolls as one, so its footer can't cover the field being typed in.
         !desktop && 'short:overflow-y-auto',
         desktop || isDesktop ? 'h-full' : 'll-sheet max-h-full rounded-t-xl shadow-overlay',
+        desktop && hidden && 'hidden',
         !desktop && (gap === 'auto' ? 'flex-none' : 'flex-1'),
         !desktop && !drag && 'transition-transform duration-150',
       )}

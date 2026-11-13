@@ -16,6 +16,10 @@ const reads = [
       .filter((p) => !p.includes('*')),
   ),
 ];
+/** Routes that need a query to answer: an older register page needs the cursor the page before gave. */
+const queries: Record<string, string> = {
+  '/api/accounts/:id/register/older': '?before=2026-11-01&balance=0',
+};
 /** Real ids from the copy, so each route runs its full path; a made-up one for anything else. */
 const ids: Record<string, string> = {};
 const filled = (path: string, month: string) =>
@@ -49,7 +53,7 @@ describe('every screen route runs on the device', () => {
   });
 
   it.each(reads.map((p) => [p]))('%s', async (path) => {
-    const url = filled(path, month);
+    const url = filled(path, month) + (queries[path] ?? '');
     const r = await engine.request('GET', url);
     const text = await r.text();
     expect(r.status, `${path}: ${text}`).toBeLessThan(500);

@@ -20,6 +20,7 @@ import {
   OwedView,
   PayeesView,
   MergeResult,
+  RegisterPage,
   RegisterView,
   ReportsView,
   Session,
@@ -214,6 +215,9 @@ export const api = {
   accounts: () => get('/api/accounts', AccountsView),
   register: (id: string, show: RegisterShow) =>
     get(`/api/accounts/${enc(id)}/register${qs({ show })}`, RegisterView),
+  /** An older page of a register (Show older), from the `older` cursor of the page before it. */
+  registerOlder: (id: string, cursor: { before: string; balance: number }) =>
+    get(`/api/accounts/${enc(id)}/register/older${qs({ ...cursor })}`, RegisterPage),
   reports: (month: string) => get(`/api/reports${qs({ month })}`, ReportsView),
 
   categories: () => get('/api/settings/categories', CategoriesView),

@@ -621,9 +621,24 @@ export const OwedAction = z.object({
 
 // ---------------------------------------------------------------- accounts
 
+export const RegisterDay = z.object({
+  label: z.string(),
+  balance: cents.nullable(),
+  rows: z.array(TxnListRow),
+});
+export type RegisterDay = z.infer<typeof RegisterDay>;
+
+/**
+ * Where the next older page of a register starts: its rows are dated before `before`, and `balance` is the running
+ * balance just before that day (the bank balance walked back over every newer row). Sent back as is to
+ * `GET /accounts/:id/register/older?before=&balance=`.
+ */
+export const RegisterCursor = z.object({ before: date, balance: cents });
+export type RegisterCursor = z.infer<typeof RegisterCursor>;
+
 export const RegisterView = z.object({
   account: AccountRow,
-  days: z.array(z.object({ label: z.string(), balance: cents.nullable(), rows: z.array(TxnListRow) })),
+  days: z.array(RegisterDay),
   note: z.string().nullable(),
   /** Linked accounts only. */
   start: StartBalance.nullable().optional(),
@@ -636,10 +651,16 @@ export const RegisterView = z.object({
    * Assign first (`POST /budget/move`). Null otherwise.
    */
   closeMove: z.object({ categoryId: id, amount: cents.positive() }).nullable().optional(),
-  /** The register lists at most its newest rows (REGISTER_ROWS); true when there are older ones it leaves out. */
+  /** A page lists about REGISTER_ROWS of the newest rows, in whole days; true when there are older ones it leaves out. */
   more: z.boolean().optional(),
+  /** Where the older rows start (Show older); null when this page holds the oldest. */
+  older: RegisterCursor.nullable().optional(),
 });
 export type RegisterView = z.infer<typeof RegisterView>;
+
+/** An older page of a register: posted days only (pending and upcoming rows are all on the first page). */
+export const RegisterPage = z.object({ days: z.array(RegisterDay), older: RegisterCursor.nullable() });
+export type RegisterPage = z.infer<typeof RegisterPage>;
 
 // ---------------------------------------------------------------- reports
 
