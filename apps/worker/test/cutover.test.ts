@@ -385,6 +385,18 @@ describe('the cutover, rehearsed', () => {
       now: NOW + 5000,
     });
     expect(filed).toMatchObject({ filed: 1, lost: 0 });
+    // The bank's "updated" time moves with the update, as the server's end of an update moved it.
+    expect(
+      await phone.db
+        .prepare(`SELECT last_synced_at AS t, status FROM connection WHERE id = ?1`)
+        .bind(`con_${LINK}`)
+        .first<{ t: number; status: string }>(),
+    ).toMatchObject({ t: expect.any(Number) as number, status: 'ok' });
+    const syncedAt = (await phone.db
+      .prepare(`SELECT last_synced_at AS t FROM connection WHERE id = ?1`)
+      .bind(`con_${LINK}`)
+      .first<{ t: number }>())!.t;
+    expect(syncedAt).toBeGreaterThan(NOW);
 
     // ---- the daily scan, which the server ran before: the phone runs today's, once, as a scan entry. A monthly
     // upcoming entry that came due gets its next one.

@@ -88,9 +88,14 @@ export async function fileRun(
   // The end of the update: balances, card snapshots and the bank difference, from what the bank said.
   await endOfUpdate(db, { budgetId, connectionId }, at, pkg.bank);
   await db.batch([
+    // The link's "updated" time and its health, as the server's end of an update wrote them (sync/process.ts),
+    // at the update's own time, so every device writes the same.
     db
-      .prepare(`UPDATE connection SET sync_lock = NULL, lock_expires = NULL WHERE id = ?1`)
-      .bind(connectionId),
+      .prepare(
+        `UPDATE connection SET sync_lock = NULL, lock_expires = NULL, last_synced_at = ?2, last_attempt_at = ?2,
+           error_code = NULL, status = 'ok' WHERE id = ?1`,
+      )
+      .bind(connectionId, at),
     db.prepare(`UPDATE sync_run SET phase = 'done', finished_at = ?2 WHERE id = ?1`).bind(runId, at),
   ]);
   return { events };
