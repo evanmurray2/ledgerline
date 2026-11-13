@@ -2,6 +2,7 @@
 // D-45): opens the copy, feeds it sync pages from the server, and asks it for screens.
 // The shapes below mirror apps/worker/src/local/engine.ts and routes/sync.ts (the web app's type check doesn't read
 // the Worker's sources, which need Cloudflare's types).
+import type { BudgetKeys } from '@ledgerline/seal';
 
 export interface EngineIdentity {
   budgetId: string;
@@ -30,8 +31,14 @@ export interface QueuedEdit {
   body: unknown;
   appVersion?: string;
 }
-/** A budget's derived keys of one version (`BudgetKeys` in @ledgerline/seal): passed on, never read. */
-export type SealedKeys = { version: number } & Record<string, unknown>;
+/** A budget's derived keys of one version: passed on to the engine, never read here. */
+export type SealedKeys = BudgetKeys;
+/** What the engine's thread posts: an event, or the answer to a request (its `id`). */
+type EngineMessage =
+  | { event: 'identity'; difference: number; month: string }
+  | { event: 'rebuilding' }
+  | { event: 'rebuilt' }
+  | { event?: undefined; id?: number; ok?: boolean; value?: unknown; error?: string };
 /** Another device that showed different numbers at the same log entry (local/device-check.ts). */
 export interface DevicesDiffer {
   deviceId: string;
@@ -79,9 +86,9 @@ export class EngineHost {
       type: 'module',
     });
     this.worker.onmessage = (e: MessageEvent) => {
-      const m = e.data as { id?: number; ok?: boolean; value?: unknown; error?: string; event?: string };
+      const m = e.data as EngineMessage;
       if (m.event === 'identity') {
-        this.onIdentity?.(m as unknown as { difference: number; month: string });
+        this.onIdentity?.(m);
         return;
       }
       if (m.event === 'rebuilding') {

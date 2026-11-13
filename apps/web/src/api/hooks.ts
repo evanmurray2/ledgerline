@@ -6,6 +6,7 @@ import {
   useQuery,
   useQueryClient,
   type QueryClient,
+  type UseQueryResult,
 } from '@tanstack/react-query';
 import type {
   BudgetView,
@@ -13,6 +14,7 @@ import type {
   RegisterCursor,
   RegisterPage,
   RegisterView,
+  Session,
 } from '@ledgerline/contracts';
 import { api, type ActivityFilter, type RegisterShow } from './endpoints';
 import { usage } from '../usage/tracker';
@@ -45,12 +47,15 @@ export const qk = {
   connections: ['settings', 'connections'] as const,
 };
 
+/** The session query's state; offline, the saved session stands in for its data (not a successful query). */
+export type SessionState = Omit<UseQueryResult<Session>, 'data'> & { data: Session | undefined };
+
 /**
  * The signed-in session. Saved screens are shown only after the server confirms you're signed in, except when the
  * check can't reach the server at all (offline start): then the last confirmed session, saved on this device and
  * cleared on sign-out or by any "signed out" answer, stands in, view-only. A 401 always means sign-in.
  */
-export function useSession() {
+export function useSession(): SessionState {
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: qk.session,
@@ -62,7 +67,7 @@ export function useSession() {
   // has to show it at once.
   const savedQ = useQuery({
     queryKey: qk.savedSession,
-    queryFn: () => qc.getQueryData<NonNullable<typeof q.data>>(qk.savedSession) ?? null,
+    queryFn: () => qc.getQueryData<Session>(qk.savedSession) ?? null,
     enabled: false,
     staleTime: Infinity,
   });
@@ -79,7 +84,7 @@ export function useSession() {
     (q.error instanceof ApiError && q.error.network) ||
     (!q.error && (q.fetchStatus === 'paused' || !net.online || net.networkFailed));
   const saved = unreachable ? (savedQ.data ?? undefined) : undefined;
-  return saved ? ({ ...q, data: saved } as unknown as typeof q) : q;
+  return saved ? { ...q, data: saved } : q;
 }
 export function useBudget(month: string | undefined) {
   return useQuery({ queryKey: qk.budget(month ?? ''), queryFn: () => api.budget(month!), enabled: !!month });

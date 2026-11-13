@@ -2,7 +2,15 @@
 // secret for the budget's way in opens the budget key from the log's public entries, the derived keys go to the
 // engine's thread, and the engine takes its place in the log (kept with the copy, or from a snapshot on a new
 // device). Nothing here is a screen; the pieces that touch the network and the engine are passed in.
-import { type Bytes, type Entry, type PublicRef, readEntry, walkPublic, zeroize } from '@ledgerline/seal';
+import {
+  type BudgetKeys,
+  type Bytes,
+  type Entry,
+  type PublicRef,
+  readEntry,
+  walkPublic,
+  zeroize,
+} from '@ledgerline/seal';
 import {
   keysOfEveryVersion,
   NoSlotError,
@@ -20,7 +28,7 @@ export type WorkerRunKeys = [number, Uint8Array][];
 /** The part of the engine's host this needs (copy/host.ts). */
 export interface SealedHost {
   sealedOpen(
-    keys: ({ version: number } & Record<string, unknown>)[],
+    keys: BudgetKeys[],
     deviceId: string,
     workerKeys: WorkerRunKeys,
   ): Promise<{ ready: boolean; number: number }>;
@@ -93,7 +101,7 @@ export async function openSealedBudget(o: {
   lastPublic: PublicRef;
   joined: boolean;
   /** The derived keys handed to the engine: held by the caller for a refresh, never stored in the clear. */
-  keys: ({ version: number } & Record<string, unknown>)[];
+  keys: BudgetKeys[];
   /** The public entries this opened from, to keep with the copy. */
   publics: string[];
   /** The recovery key opened it (`recovery`). */
@@ -113,10 +121,7 @@ export async function openSealedBudget(o: {
     },
   );
   try {
-    const keys = (await keysOfEveryVersion(state, budget)) as unknown as ({ version: number } & Record<
-      string,
-      unknown
-    >)[];
+    const keys = await keysOfEveryVersion(state, budget);
     const opened = await o.host.sealedOpen(keys, o.deviceId, o.workerKeys);
     // No place kept with the copy: a new device, or a copy made again. It starts from a snapshot.
     if (!opened.ready && !o.fetch) throw new Error('Connect to the internet to open your budget.');
@@ -135,7 +140,7 @@ export async function openSealedBudget(o: {
   }
 }
 
-type HeldKeys = ({ version: number } & Record<string, unknown>)[];
+type HeldKeys = BudgetKeys[];
 
 const sameBytes = (a: Uint8Array, b: Uint8Array): boolean =>
   a.length === b.length && a.every((x, i) => x === b[i]);

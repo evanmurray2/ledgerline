@@ -43,13 +43,7 @@ import { ACTION, type Entry, passkeySlotId, type PublicState, walkPublic, zeroiz
 import { mergedSession, NOT_LOCKED } from './sealed-session';
 import { ownWriters } from './notices';
 import { connectivity } from '../state/connectivity';
-import {
-  EngineHost,
-  type DevicesDiffer,
-  type EngineIdentity,
-  type QueuedEdit,
-  type SealedKeys,
-} from './host';
+import { EngineHost, type DevicesDiffer, type EngineIdentity, type QueuedEdit } from './host';
 import { usage } from '../usage/tracker';
 import { isServerRead } from './server-reads';
 import { shownFields } from './shown';
@@ -655,7 +649,7 @@ export async function lockFinish(
   } finally {
     dropNewBudget(p);
   }
-  const keys = proved.keys as unknown as SealedKeys;
+  const keys = proved.keys;
   const r = await h
     .startBudget(keys, proved.genesis, proved.deviceId, newUlid())
     .catch((e: unknown) => ({ ok: false as const, why: e instanceof Error ? e.message : NOT_NOW }));
