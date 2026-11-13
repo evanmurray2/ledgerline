@@ -15,7 +15,7 @@ import {
 import { createPortal } from 'react-dom';
 import { ConfirmInline, cx, Icon, useIsDesktop } from './ui';
 import { usage } from '../usage/tracker';
-import { closingSheet, sheetOpened } from '../lib/back';
+import { closingSheet, sheetOpened, sheetsChanged } from '../lib/back';
 
 export const PanelSlotContext = createContext<HTMLElement | null>(null);
 
@@ -143,6 +143,7 @@ export function Sheet({
   );
   useEffect(() => {
     if (!unsaved) setAsking(false);
+    sheetsChanged();
   }, [unsaved]);
   useEffect(() => {
     if (!asking) return;

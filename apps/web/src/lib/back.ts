@@ -107,12 +107,41 @@ export interface OpenSheet {
 /** Open sheets, newest last. */
 const openSheets: OpenSheet[] = [];
 
+/** Histories that watch Back (sheetAwareHistory), each with its blocker's removal while it is on. */
+const histories = new Map<RouterHistory, (() => void) | null>();
+
+/**
+ * Turns the router's blocker on only while Back has something to do (a nested picker, or an amount not saved): with
+ * a blocker on, every navigation waits for it, so it stays off the rest of the time. Sheet.tsx calls this when its
+ * amount changes from saved to not or back.
+ */
+export function sheetsChanged(): void {
+  const needed = openSheets.some((x) => x.nested || x.unsaved());
+  for (const [h, off] of histories) {
+    if (needed && !off)
+      histories.set(
+        h,
+        h.block({
+          // Only a step through the history (Back, Forward): a link or a sheet's own Save goes where it goes.
+          blockerFn: ({ action }) => action !== 'PUSH' && action !== 'REPLACE' && backHandled(),
+          enableBeforeUnload: false,
+        }),
+      );
+    else if (!needed && off) {
+      off();
+      histories.set(h, null);
+    }
+  }
+}
+
 /** Puts an open sheet where Back sees it; the function returned takes it away. */
 export function sheetOpened(sheet: OpenSheet): () => void {
   openSheets.push(sheet);
+  sheetsChanged();
   return () => {
     const i = openSheets.indexOf(sheet);
     if (i >= 0) openSheets.splice(i, 1);
+    sheetsChanged();
   };
 }
 
@@ -146,10 +175,7 @@ export function sheetAwareHistory(h: RouterHistory): RouterHistory {
     if (typeof i === 'number' && i > 0 && hrefAt.get(i - 1) === path) return h.back({ ignoreBlocker: true });
     return h.replace(path, state, { ...opts, ignoreBlocker: true });
   };
-  // Only a step through the history (Back, Forward): a link or a sheet's own Save goes where it goes.
-  h.block({
-    blockerFn: ({ action }) => action !== 'PUSH' && action !== 'REPLACE' && backHandled(),
-    enableBeforeUnload: false,
-  });
+  histories.set(h, null);
+  sheetsChanged();
   return h;
 }
