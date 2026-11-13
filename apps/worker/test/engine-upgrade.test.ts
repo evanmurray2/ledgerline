@@ -5,11 +5,13 @@
 // has (it backfills from rows a copy doesn't keep, say), this fails: bump SYNC_FORMAT or DERIVE_VERSION, so old
 // copies work everything out again.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { LocalEngine, migrateLocal } from '../src/local/engine.js';
+import { LocalEngine, migrateLocal, PHONE_TABLES } from '../src/local/engine.js';
+import { splitStatements } from '../src/store/adapter.js';
 import { BUDGET_MIGRATIONS } from '../src/store/migrations.gen.js';
-import { SYNC_FORMAT, SYNC_TABLES, type SyncPage, type SyncRow } from '../src/sync-tables.js';
+import { SYNC_FORMAT, SYNC_TABLES, triggerNames, type SyncPage, type SyncRow } from '../src/sync-tables.js';
 import { newCopy, seed } from './phone.js';
-import { budgetDb, copyDb } from './store-db.js';
+import type { Db } from '@ledgerline/db/sql';
+import { copyDb } from './store-db.js';
 
 /** How many of the latest migrations to check: each is one older copy. */
 const RECENT = 4;
@@ -60,6 +62,29 @@ async function screens(e: LocalEngine, month: string): Promise<Record<string, un
   return out;
 }
 
+/**
+ * The schema an older app version left on the device: the older budget migrations (less the one a copy skips), the
+ * tables only a copy keeps, and no change-log triggers. Not this version's `migrateLocal`, which also makes the
+ * recording triggers of every table this version knows, the newer ones too.
+ */
+async function olderSchema(db: Db, migrations: readonly { name: string; sql: string }[]): Promise<void> {
+  await db
+    .prepare(`CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`)
+    .run();
+  for (const m of migrations) {
+    if (m.name === '0006_drop_phone_tables_on_server.sql') continue;
+    await db.batch([
+      ...splitStatements(m.sql).map((s) => db.prepare(s)),
+      db.prepare(`INSERT INTO _migrations (name, applied_at) VALUES (?1, ?2)`).bind(m.name, Date.now()),
+    ]);
+  }
+  await db.batch([
+    ...SYNC_TABLES.flatMap((t) => triggerNames(t.name)).map((n) => db.prepare(`DROP TRIGGER IF EXISTS ${n}`)),
+    ...PHONE_TABLES.map((sql) => db.prepare(sql)),
+    db.prepare(`CREATE TABLE IF NOT EXISTS local_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)`),
+  ]);
+}
+
 let copies = 0;
 const who = (budgetId: string) => ({ budgetId, userId: 'phone', email: 'owner@example.com' });
 
@@ -68,13 +93,15 @@ describe('a copy left by an older app version upgrades to the screens a new phon
   let budgetId: string;
   let pages: SyncPage[];
   let reference: Record<string, unknown>;
+  /** The new device's copy: the rows an older copy holds are taken from it. */
+  let ref: Db;
 
   beforeAll(async () => {
     pages = await download();
     budgetId = String(pages[0]!.rows.find((r) => r.t === 'budget')!.d!.id);
-    const db = copyDb(`upgrade-ref-${++copies}`);
-    await migrateLocal(db, Date.now());
-    const e = new LocalEngine(db, who(budgetId));
+    ref = copyDb(`upgrade-ref-${++copies}`);
+    await migrateLocal(ref, Date.now());
+    const e = new LocalEngine(ref, who(budgetId));
     for (const p of pages) await e.apply(p);
     await e.derive();
     const s = (await (await e.request('GET', '/api/session')).json()) as { budget: { currentMonth: string } };
@@ -88,34 +115,42 @@ describe('a copy left by an older app version upgrades to the screens a new phon
       0,
       BUDGET_MIGRATIONS.findIndex((m) => m.name === name),
     );
-    // A store's SQLite with every budget migration recorded, as the tests had it before D-106: this code's engine
-    // fills the older copy, and it writes every table it knows.
-    const db = budgetDb(`upgrade-${++copies}`);
-    await migrateLocal(db, Date.now(), before);
-    // What the older copy held: the same rows, with only the columns its tables had then.
-    const columns = new Map<string, Set<string>>();
-    const has = async (t: string) => {
-      let c = columns.get(t);
-      if (!c) {
-        const r = await db.prepare(`SELECT name FROM pragma_table_info(?1)`).bind(t).all<{ name: string }>();
-        c = new Set(r.results.map((x) => x.name));
-        columns.set(t, c);
-      }
-      return c;
-    };
-    const old = new LocalEngine(db, who(budgetId));
-    for (const p of pages) {
-      const rows = [];
-      for (const r of p.rows) {
-        const cols = await has(r.t);
-        if (cols.size === 0) continue; // a table the older copy didn't have
-        rows.push(
-          r.d ? { ...r, d: Object.fromEntries(Object.entries(r.d).filter(([k]) => cols.has(k))) } : r,
-        );
-      }
-      await old.apply({ ...p, rows });
+    // An empty SQLite with only the older migrations, as the older app left it: its tables have only the columns
+    // they had then, and no later migration has run on it.
+    const db = copyDb(`upgrade-${++copies}`);
+    await olderSchema(db, before);
+    // Filled with rows, as plain inserts: every row a copy keeps (the synced tables, what it worked out, and its
+    // place in the sync), with only the columns the older tables have. This version's engine never writes to it
+    // before the upgrade, so it can't write a table or column the older copy didn't have.
+    const tables = (
+      await db
+        .prepare(
+          `SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'
+             AND name NOT IN ('_migrations', 'edit_change')`,
+        )
+        .all<{ name: string }>()
+    ).results.map((r) => r.name);
+    expect(tables).toContain('local_state');
+    for (const t of tables) {
+      const cols = (
+        await db.prepare(`SELECT name FROM pragma_table_info(?1)`).bind(t).all<{ name: string }>()
+      ).results.map((x) => x.name);
+      const rows = (await ref.prepare(`SELECT * FROM ${t}`).all<Record<string, unknown>>()).results;
+      const insert = `INSERT OR REPLACE INTO ${t} (${cols.map((c) => `"${c}"`).join(', ')}) VALUES (${cols
+        .map((_, i) => `?${i + 1}`)
+        .join(', ')})`;
+      for (let i = 0; i < rows.length; i += 200)
+        await db.batch([
+          db.prepare(`PRAGMA defer_foreign_keys = ON`),
+          ...rows.slice(i, i + 200).map((r) => db.prepare(insert).bind(...cols.map((c) => r[c] ?? null))),
+        ]);
     }
-    await old.derive();
+    // Nothing the later migrations make is there yet.
+    const later = BUDGET_MIGRATIONS.slice(before.length).map((m) => m.name);
+    const done = (await db.prepare(`SELECT name FROM _migrations`).all<{ name: string }>()).results.map(
+      (r) => r.name,
+    );
+    expect(done.filter((n) => later.includes(n) && n !== '0006_drop_phone_tables_on_server.sql')).toEqual([]);
     // This version opens it: the rest of the migrations, then a read on from where it was (nothing new).
     await migrateLocal(db, Date.now());
     const e = new LocalEngine(db, who(budgetId));
