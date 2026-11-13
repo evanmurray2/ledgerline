@@ -35,12 +35,11 @@ function cardNeed(p: ReturnType<typeof project>, card: string, uncategorized: st
 describe('November 2026 (prototype numbers)', () => {
   const base = run();
 
-  it('Ready to Assign is $981.90', () => {
-    expect(base.r.rta).toBe($('981.90'));
+  it('Ready to Assign is $1,999.90 (the Venmo $1,018 is in it, D-98)', () => {
+    expect(base.r.rta).toBe($('1999.90'));
   });
 
-  it('Waiting to match is $1,018.00 and uncategorized is $86.48', () => {
-    expect(base.p.waitingToMatch).toBe($('1018.00'));
+  it('uncategorized is $86.48', () => {
     expect(base.p.uncategorizedNet).toBe($('-86.48'));
   });
 
@@ -110,7 +109,7 @@ describe('November 2026 (prototype numbers)', () => {
     expect(F.categories.some((c) => c.id === 'owed')).toBe(false);
   });
 
-  it('identity: $22,354.35 working = non-payment categories + RTA + Waiting to match − uncategorized', () => {
+  it('identity: $22,354.35 working = non-payment categories + RTA − uncategorized', () => {
     const rep = checkIdentity(base.p, base.r, F.CURRENT);
     expect(rep.terms.working).toBe($('22354.35'));
     expect(rep.terms.categories).toBe($('20440.93'));
@@ -119,11 +118,11 @@ describe('November 2026 (prototype numbers)', () => {
     expect(rep.terms.laterMonths).toBe(0);
     expect(rep.ok).toBe(true);
     expect(rep.literal).toBe(true);
-    // Word for word: 22,354.35 = 20,440.93 + 981.90 + 1,018.00 − 86.48
-    expect($('20440.93') + $('981.90') + $('1018.00') - $('86.48')).toBe($('22354.35'));
+    // Word for word: 22,354.35 = 20,440.93 + 1,999.90 − 86.48
+    expect($('20440.93') + $('1999.90') - $('86.48')).toBe($('22354.35'));
   });
 
-  it('after covering Dining $18.25, funding Car insurance $90 and Vacation $250, adding $20 to Personal care and moving $40 back from Gifts: RTA $643.65', () => {
+  it('after covering Dining $18.25, funding Car insurance $90 and Vacation $250, adding $20 to Personal care and moving $40 back from Gifts: RTA $1,661.65', () => {
     const after = run([
       { categoryId: 'dining', amount: '18.25' },
       { categoryId: 'car', amount: '90' },
@@ -131,7 +130,7 @@ describe('November 2026 (prototype numbers)', () => {
       { categoryId: 'personal', amount: '20' },
       { categoryId: 'gifts', amount: '-40' },
     ]);
-    expect(after.r.rta).toBe($('643.65'));
+    expect(after.r.rta).toBe($('1661.65'));
     expect(avail(after, 'dining')).toBe(0);
     // Covering Dining funds Shake Shack, so Freedom's payment category is covered too (D-17).
     expect(after.nov.cards.freedom!.available).toBe($('173.25'));
@@ -180,14 +179,13 @@ describe('November 2026 (prototype numbers)', () => {
       ],
     );
     const rep = checkIdentity(withTransfer.p, withTransfer.r, F.CURRENT);
-    expect(withTransfer.r.rta).toBe($('981.90'));
+    expect(withTransfer.r.rta).toBe($('1999.90'));
     expect(rep.terms.unsortedNet).toBe($('200'));
     expect(rep.ok).toBe(true);
     // Without the unsorted term the listed identity is off by exactly $200.
-    expect(
-      rep.terms.working -
-        (rep.terms.categories + rep.terms.rta + rep.terms.waitingToMatch + rep.terms.uncategorizedNet),
-    ).toBe($('200'));
+    expect(rep.terms.working - (rep.terms.categories + rep.terms.rta + rep.terms.uncategorizedNet)).toBe(
+      $('200'),
+    );
   });
 });
 

@@ -49,7 +49,6 @@ const ledgerArb: fc.Arbitrary<Gen> = fc
           'owed_closed',
           'owed_canceled',
           'uncategorized',
-          'waiting',
           'unsorted',
           'split',
           'offbudget',
@@ -176,9 +175,6 @@ const ledgerArb: fc.Arbitrary<Gen> = fc
         case 'uncategorized':
           txns.push(t(cardId && r.card ? cardId : 'chk', -r.a, { type: 'uncategorized' }));
           break;
-        case 'waiting':
-          txns.push(t('chk', r.a, { type: 'waiting' }));
-          break;
         case 'unsorted':
           txns.push(t('chk', -r.a, { type: 'unsorted' }));
           txns.push(t('sav', r.a, { type: 'unsorted' }));
@@ -223,7 +219,7 @@ const ledgerArb: fc.Arbitrary<Gen> = fc
   });
 
 describe('rule 10: the budget identity holds on every ledger', () => {
-  it('Σ working balances = categories + RTA + Waiting to match + unsorted + uncategorized − unbudgeted card debt + later months', () => {
+  it('Σ working balances = categories + RTA + unsorted + uncategorized − unbudgeted card debt + later months', () => {
     fc.assert(
       fc.property(ledgerArb, (g) => {
         const today = `${g.current}-14`;
@@ -655,26 +651,7 @@ describe('rule 7: card coverage', () => {
   });
 });
 
-describe('rule 9: Waiting to match', () => {
-  it('a held inflow is in neither RTA nor categories until Match or Income', () => {
-    fc.assert(
-      fc.property(amt(1, 200_000), (x) => {
-        const base = {
-          accounts: [{ ...CHK, startingBalance: cents(1_000) }],
-          categories: cats(1, []),
-          assignments: [],
-          current: START,
-        };
-        const held = run({ ...base, txns: [tx('chk', '2026-01-05', x, { type: 'waiting' })] });
-        expect(held.r.rta).toBe(1_000);
-        expect(held.p.waitingToMatch).toBe(x);
-        const income = run({ ...base, txns: [tx('chk', '2026-01-05', x, { type: 'rta' })] });
-        expect(income.r.rta).toBe(1_000 + x);
-      }),
-      { numRuns: RUNS },
-    );
-  });
-
+describe('Ready to Assign: pending deposits', () => {
   it('a pending deposit counts at once; a reversal or changed amount adjusts RTA by the difference', () => {
     const base = {
       accounts: [{ ...CHK, startingBalance: cents(0) }],
@@ -789,26 +766,6 @@ describe('rule 11: Close and Cancel', () => {
         expect(cell(canceled.r, START, 'c0').activity).toBe(-x);
         const ov = (r: ComputeResult) => cell(r, START, 'c0').cashOverspent;
         expect(canceled.r.rta - marked.r.rta).toBe(o - (ov(canceled.r) - ov(marked.r)));
-      }),
-      { numRuns: RUNS },
-    );
-  });
-});
-
-describe('rule 12: Unlink', () => {
-  it('returns a matched inflow to Waiting to match; RTA drops by that amount', () => {
-    fc.assert(
-      fc.property(amt(1, 100_000), (x) => {
-        const base = {
-          accounts: [{ ...CHK, startingBalance: cents(0) }],
-          categories: cats(1, []),
-          assignments: [],
-          current: START,
-        };
-        const matched = run({ ...base, txns: [tx('chk', '2026-01-05', x, { type: 'rta' })] });
-        const unlinked = run({ ...base, txns: [tx('chk', '2026-01-05', x, { type: 'waiting' })] });
-        expect(unlinked.r.rta).toBe(matched.r.rta - x);
-        expect(unlinked.p.waitingToMatch).toBe(x);
       }),
       { numRuns: RUNS },
     );

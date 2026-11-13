@@ -35,8 +35,6 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] A linked bank of a locked budget through the real Worker has no e2e test (`e2e/tests/screens-lock.spec.ts` covers a budget with no bank: pull to refresh, Sync, Banks): it needs a fake Plaid behind `PLAID_BASE_URL` with Plaid keys for wrangler dev, and the e2e Worker's run keys in the app to file its runs.
 - [ ] One test in `apps/worker/test/objects` failed once in a local `pnpm check` (Nov 11, 2026) and passed in the 5 runs after it and in CI; its name was not caught. If it shows again, read the failing run's output before anything else.
 
-- [ ] Remove the unused Waiting to match parts of `packages/domain` (D-98): the `waiting` use, `waitingToMatch` in the projection and the rule 10 identity, the `wait` line kind (`apps/worker/src/ledger/ledger.ts` `rowsFor`, `maintenance.ts`), and the November fixture's held Venmo row (`n-venmo`) with the tests that count it.
-
 ## Contract gaps (not blocking)
 
 The UI works around these (details in `apps/web/CONTRACT_NOTES.md`):

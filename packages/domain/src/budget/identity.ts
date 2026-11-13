@@ -2,7 +2,7 @@
 //
 //   Σ cash and card working balances
 //     = Σ available in every non-payment category (current month)
-//     + Ready to Assign + Waiting to match + unsorted transfer sides (net) + uncategorized amounts (signed)
+//     + Ready to Assign + unsorted transfer sides (net) + uncategorized amounts (signed)
 //     − unbudgeted card debt (0 when every card is fully budgeted; then this is rule 10 word for word)
 //     + what already belongs to later months (their assignments, income set aside for them, their activity).
 //
@@ -22,7 +22,6 @@ export interface IdentityReport {
     working: Cents;
     categories: Cents;
     rta: Cents;
-    waitingToMatch: Cents;
     unsortedNet: Cents;
     uncategorizedNet: Cents;
     unbudgetedCardDebt: Cents;
@@ -47,7 +46,7 @@ export function checkIdentity(p: Projection, r: ComputeResult, currentMonth: Mon
     for (const c of Object.values(m.cards)) later += c.assigned;
     later += m.inflows - m.owed;
   }
-  const right = categories + r.rta + p.waitingToMatch + p.unsortedNet + p.uncategorizedNet - k + later;
+  const right = categories + r.rta + p.unsortedNet + p.uncategorizedNet - k + later;
   const difference = working - right;
   return {
     ok: difference === 0,
@@ -58,7 +57,6 @@ export function checkIdentity(p: Projection, r: ComputeResult, currentMonth: Mon
       working: cents(working),
       categories: cents(categories),
       rta: r.rta,
-      waitingToMatch: p.waitingToMatch,
       unsortedNet: p.unsortedNet,
       uncategorizedNet: p.uncategorizedNet,
       unbudgetedCardDebt: cents(k),
