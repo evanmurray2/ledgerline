@@ -1,8 +1,9 @@
-// Sync run lifecycle (Sync spec: Run lifecycle). Each exported function is the body of one sync job step, so the
-// measuring harness can time exactly what a step does. Steps return small JSON (ids, cursors, counts), never pages.
+// Sync run lifecycle (Sync spec: Run lifecycle). Since D-102 a device files each bank update with these steps on its
+// own copy (local/file-run.ts); the server only fetches and seals the pages (seal/run-steps.ts). Each exported
+// function was once the body of one job step on the server, and the rows they write still follow from that: the
+// lease, the run's phases and the chunks are part of what every device writes for the same update.
 import type { Db, Stmt } from '@ledgerline/db/sql';
-import { MUTATION_DURING_PAGINATION, ProviderError, type BankDataProvider } from '@ledgerline/bank-provider';
-import { sha256Hex } from '@ledgerline/bank-provider';
+import { sha256Hex, type BankDataProvider } from '@ledgerline/bank-provider';
 import { leaseFence, conditionFence, isFenceAbort, renew } from './lease.js';
 
 export class LeaseLost extends Error {
@@ -172,90 +173,15 @@ export function rawPageKey(
   return `raw/${budgetId}/${connectionId}/${runId}/${restart}-${String(page).padStart(4, '0')}-${attempt}`;
 }
 
-export type FetchResult =
-  { kind: 'page'; hasMore: boolean; nextCursor: string; bytes: number } | { kind: 'mutation' };
-
-/** Step "fetch-{restart}-{i}": one /transactions/sync call, staged as one sync_page row. */
-export async function fetchPage(
-  c: Ctx,
-  provider: BankDataProvider,
-  accessToken: string,
-  runId: string,
-  restart: number,
-  page: number,
-  cursor: string | null,
-  count: number,
-): Promise<FetchResult> {
-  await mustRenew(c);
-  let staged;
-  try {
-    staged = await provider.fetchSyncPage(
-      { id: c.connectionId, accessToken, providerItemId: null },
-      cursor,
-      count,
-    );
-  } catch (e) {
-    if (e instanceof ProviderError && e.code === MUTATION_DURING_PAGINATION) return { kind: 'mutation' };
-    throw e;
-  }
-  // The body is stored once in raw_page as Plaid sent it, never parsed here, and without a checksum: hashing a
-  // 200 KB page costs over 1 ms of CPU and SQLite already protects what it stores (decisions.md D-26). The page row
-  // and its body are written in the same fenced batch.
-  const bytes = staged.body;
-  const text = new TextDecoder().decode(bytes);
-  const sha = 'none';
-  const key = rawPageKey(c.budgetId, c.connectionId, runId, restart, page);
-  await c.db.batch([
-    leaseFence(c.db, c.connectionId, c.holder, c.now),
-    c.db
-      .prepare(
-        `INSERT INTO raw_page (key, budget_id, body, sha256, bytes, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
-      )
-      .bind(key, c.budgetId, text, sha, bytes.length, c.now),
-    c.db
-      .prepare(
-        `INSERT OR REPLACE INTO sync_page (sync_run_id, page, budget_id, restart, raw_key, sha256, bytes, next_cursor, has_more, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
-      )
-      .bind(
-        runId,
-        page,
-        c.budgetId,
-        restart,
-        key,
-        sha,
-        bytes.length,
-        staged.nextCursor,
-        staged.hasMore ? 1 : 0,
-        c.now,
-      ),
-    c.db
-      .prepare(`UPDATE sync_run SET pages_fetched = ?2, next_cursor = ?3, updated_at = ?4 WHERE id = ?1`)
-      .bind(runId, page + 1, staged.nextCursor, c.now),
-    // The last page: the update is fetched. Its time and its place among the budget's updates are set once (D-86 A1,
-    // A2); a step that runs again keeps them.
-    ...(staged.hasMore
-      ? []
-      : [
-          c.db
-            .prepare(
-              `UPDATE sync_run SET fetched_at = coalesce(fetched_at, ?2),
-                 fetch_seq = coalesce(fetch_seq, (SELECT coalesce(max(abs(fetch_seq)), 0) + 1 FROM sync_run WHERE budget_id = ?3))
-               WHERE id = ?1`,
-            )
-            .bind(runId, c.now, c.budgetId),
-        ]),
-  ]);
-  return { kind: 'page', hasMore: staged.hasMore, nextCursor: staged.nextCursor, bytes: staged.body.length };
-}
-
 /** Columns per bank_event row and bank_txn row; statements are chunked to stay within 100 bound parameters. */
 const EVENT_PARAMS = 10;
 const EVENTS_PER_STMT = Math.floor(100 / EVENT_PARAMS);
 
 /**
- * Events per apply and processing step (one alarm step each). A page (one Plaid call) is applied in chunks of this
- * size to stay within 10 ms of CPU with SQLite in-process (decisions.md D-37; docs/measurements.md, phase 0).
+ * Events per apply and processing step. The size came from the server's 10 ms of CPU per step (D-37), which doesn't
+ * apply on the device (docs/measurements.md). It stays: processing decides matches one chunk at a time, and the
+ * chunks name the run's phases, so a device on another size could file an update into other rows than a device on
+ * this one, and two devices would show different numbers.
  */
 export const APPLY_CHUNK = 25;
 export const CHUNK = { apply: APPLY_CHUNK, process: 25 };
@@ -283,7 +209,7 @@ interface PageRow {
 /** Step "apply-{i}-{j}": one atomic batch that writes chunk j of staged page i (events and projection). */
 export async function applyPage(
   c: Ctx,
-  provider: BankDataProvider,
+  provider: Pick<BankDataProvider, 'parsePage'>,
   runId: string,
   page: number,
   chunk: number,

@@ -1,16 +1,23 @@
-// A device files one bank update (docs/privacy.md 5.4): what the server's sync job does after the fetch, with the
-// server's own steps, on the device's copy. The update comes as a package: the pages the bank sent, whole, with
+// A device files one bank update (docs/privacy.md 5.4): what the server's sync job did after the fetch before D-102,
+// with the same steps, on the device's copy. The update comes as a package: the pages the bank sent, whole, with
 // the update's number and time (D-86 A1, A2). Everything it writes carries that time, and the ids of new rows
-// come from their content, so a device and the server that file the same update end with the same rows
-// (test/file-run.test.ts).
-import { PlaidProvider, type BankDataProvider } from '@ledgerline/bank-provider';
+// come from their content, so two devices that file the same update end with the same rows, as the old server
+// pipeline did (test/file-run.test.ts).
+//
+// The connection lease, the run's phases and the watermark fences guard nothing here: the engine runs one message
+// at a time (local/web-entry.ts), each tab has its own copy, and devices agree through the log. They stay because
+// they write rows every device must write the same (the lease sets the connection's `resync_requested` and
+// `updated_at`, which travel in the bank entry).
+import { parsePlaidSyncPage, type BankDataProvider } from '@ledgerline/bank-provider';
 import type { Env } from '../env.js';
 import { acquire } from '../sync/lease.js';
 import { endOfUpdate, healPending, processPending, type BankState } from '../sync/process.js';
 import { applyPage, beginRun } from '../sync/steps.js';
 
-/** Reads a bank page (`parsePage`); it never calls the bank. */
-export const pageReader = new PlaidProvider({ clientId: 'device', secret: 'device', env: 'sandbox' });
+/** Reads a bank page in the bank's format; nothing here calls the bank. */
+export type PageReader = Pick<BankDataProvider, 'parsePage'>;
+
+export const pageReader: PageReader = { parsePage: parsePlaidSyncPage };
 
 /** One bank update, as fetched: nothing here is worked out. */
 export interface RunPackage {
@@ -37,7 +44,7 @@ export async function fileRun(
   budgetId: string,
   pkg: RunPackage,
   /** Reads a page (`parsePage`): the bank's format, no network. */
-  provider: BankDataProvider,
+  provider: PageReader,
 ): Promise<{ events: number }> {
   const db = env.DB;
   const at = pkg.fetchedAt;

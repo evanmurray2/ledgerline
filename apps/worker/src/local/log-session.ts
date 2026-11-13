@@ -6,7 +6,6 @@
 // passes is lost, and the person is told.
 //
 // In this mode the copy's change number (`EngineState.through`) is the number of the last log entry in the base.
-import type { BankDataProvider } from '@ledgerline/bank-provider';
 import {
   fromHex,
   KIND,
@@ -24,6 +23,7 @@ import type { SyncRow } from '../sync-tables.js';
 import type { AppendResult } from '../seal/log-store.js';
 import { entryIdOf, TooLarge, type DeviceLog } from './device-log.js';
 import { FilingInterrupted, type LocalEngine } from './engine.js';
+import type { PageReader } from './file-run.js';
 import { CopyAhead, fileOpened, filedOf, filingState, openRuns } from './sealed-filing.js';
 
 /** How the device reaches the server's log store. */
@@ -47,7 +47,7 @@ export interface FilingDeps {
   /** By key number (docs/privacy-keys.md 9.1): built into the app. */
   workerKeys: Map<number, Uint8Array>;
   /** Reads a page (`parsePage`): the bank's format, no network. */
-  provider: BankDataProvider;
+  provider: PageReader;
   /** The device's clock, as the server's (the engine's `now`). */
   now: number;
 }
