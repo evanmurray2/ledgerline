@@ -144,7 +144,7 @@ jobs:
       - name: Build the SPA
         if: matrix.suite != 'mock'
         run: pnpm --filter @ledgerline/web build
-      - name: Playwright against local wrangler dev, passkey sign-in, sign-up, then a new locked budget
+      - name: Playwright against local wrangler dev, passkey sign-in, sign-up, then a new locked budget and its screens
         if: matrix.suite == 'sign-in'
         working-directory: e2e
         run: pnpm exec playwright test -c playwright.passkey.config.ts && pnpm exec playwright test -c playwright.signup.config.ts && pnpm exec playwright test -c playwright.lock.config.ts
