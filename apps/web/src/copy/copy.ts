@@ -256,7 +256,6 @@ export async function keepSession(s: Session): Promise<void> {
   if (record) await save().catch(() => undefined);
 }
 const SEALED_FLAG = 'ledgerline.sealed';
-const knowsSealed = (): boolean => sealedBudgets().length > 0;
 /** Shown, with the button that tries again, when a sealed budget needs the passkey once more. */
 export const NEEDS_PASSKEY = 'Your passkey is needed once more to open your budget. Try again.';
 
@@ -741,14 +740,10 @@ export async function signIn(): Promise<void> {
   const options = await server<RequestOptionsJSON>('POST', '/api/auth/login/options');
   const saved = keepsCopy() ? await lastRecord() : null;
   const salt = saved?.salt ?? randomBytes(32);
-  // On a device that opened a sealed budget before, the same prompt also gives the budget's secret.
-  const slot = knowsSealed() ? ((await slotPrfInput()).buffer as ArrayBuffer) : undefined;
-  const a = await assert(
-    options,
-    keepsCopy() || slot
-      ? { salt, credentialId: saved?.credentialIdHint ?? null, ...(slot ? { slot } : {}) }
-      : undefined,
-  );
+  // Every budget is locked (D-102): the same prompt also gives the budget's secret, so a device that has never
+  // opened it (a new browser, a Private window) isn't asked for the passkey a second time.
+  const slot = (await slotPrfInput()).buffer as ArrayBuffer;
+  const a = await assert(options, { salt, credentialId: saved?.credentialIdHint ?? null, slot });
   await server('POST', '/api/auth/login/verify', { response: a.json });
   pending = { credentialId: a.credentialId, prf: a.prf, salt, slotPrf: a.slotPrf };
 }
