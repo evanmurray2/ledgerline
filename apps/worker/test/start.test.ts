@@ -47,6 +47,7 @@ describe('a new budget, locked from the start', () => {
       deviceId: PHONE,
       clock: () => NOW,
       snapshotId: ulid(NOW),
+      rewriteId: ulid(NOW),
       encode: encodeEntry,
       start,
       snapshots: t,
@@ -141,6 +142,8 @@ describe('a new budget, locked from the start', () => {
       seal: async () => ({ ok: true }),
     };
     let asked = 0;
+    let rewrites = 0;
+    const refuse = async () => (rewrites++, { ok: false, why: 'refused' });
     for (const manifest of [
       async () => (asked++, null),
       async () => {
@@ -152,11 +155,17 @@ describe('a new budget, locked from the start', () => {
       const phone = await copy();
       const r = await startOnDevice(
         phone,
-        await deps({ start: taking, snapshots: { manifest, chunk: async () => null } }),
+        await deps({
+          start: taking,
+          snapshots: { manifest, chunk: async () => null, begin: refuse, put: refuse },
+        }),
       );
       expect(r).toMatchObject({ ok: true, snapshotRead: false });
-      // Tried more than once; the copy and its place are kept, standing at the first entry.
+      // Tried more than once, then written again once (refused here); the copy and its place are kept, standing at
+      // the first entry.
       expect(asked).toBe(3);
+      expect(rewrites).toBe(1);
+      rewrites = 0;
       expect((await phone.state()).through).toBe(1);
       expect(await phone.noted(LogSession.PLACE)).not.toBeNull();
       expect(await (await phone.request('GET', '/api/session')).json()).toMatchObject({
@@ -171,24 +180,32 @@ describe('a new budget, locked from the start', () => {
 
   it('starts the budget locked; a second device joins, and the first edit goes out as an entry', async () => {
     const phone = await copy();
-    // The read-back fails once (no answer), and is tried again.
-    let failOnce = true;
+    // The first snapshot never reads back (as if the server lost it): the same state is written again as a new
+    // snapshot, which reads back, and the second device below joins from it.
+    const first = ulid(NOW);
+    const again = ulid(NOW);
+    let lostReads = 0;
     const d = await deps({
       timeZone: 'America/New_York',
+      snapshotId: first,
+      rewriteId: again,
       snapshots: {
         ...t,
         manifest: async (id) => {
-          if (failOnce) {
-            failOnce = false;
+          if (id === first) {
+            lostReads++;
             throw new Error('no answer');
           }
           return t.manifest(id);
         },
       },
     });
+    // The tests above began snapshots of their own today: the daily count starts again for this one.
+    await ownerDb().prepare(`DELETE FROM store_note WHERE key IN ('snapshot_day', 'snapshots_begun')`).run();
     const r = await startOnDevice(phone, d);
     expect(r).toMatchObject({ ok: true, snapshotRead: true });
-    expect(failOnce).toBe(false);
+    expect(lostReads).toBe(3);
+    expect((await t.list()).map((x) => [x.id, x.number])).toContainEqual([again, 1]);
     // The budget has the device's time zone.
     expect(await phone.db.prepare(`SELECT time_zone FROM budget`).first<{ time_zone: string }>()).toEqual({
       time_zone: 'America/New_York',

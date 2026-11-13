@@ -71,6 +71,7 @@ type Msg =
       genesis: Uint8Array;
       deviceId: string;
       snapshotId: string;
+      rewriteId: string;
     };
 
 let sqlite: Awaited<ReturnType<typeof initSqlJs>> | null = null;
@@ -492,6 +493,7 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
         deviceId: m.deviceId,
         clock,
         snapshotId: m.snapshotId,
+        rewriteId: m.rewriteId,
         encode: encodeEntry,
         start: startTransport(call),
         snapshots: http,
