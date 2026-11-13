@@ -35,5 +35,5 @@ not $0.
 changes is that this state is now allowed to be the end: a row the bank never made final stays counted for good. If
 the money never moved, the right answer is Won't clear, not Close.
 
-**Not done.** Final rows show in the closed account's register and on the other side's Transfer sheet, not in
-Activity's list of posted rows (`docs/build-plan.md`).
+**Since Nov 13, 2026.** Final rows show in the closed account's register, on the other side's Transfer sheet, and
+on Activity with the posted rows, by their date (`apps/worker/src/routes/activity-view.ts`).

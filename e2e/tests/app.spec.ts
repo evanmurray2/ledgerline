@@ -203,6 +203,21 @@ test('Activity: Select several gives many transactions one category', async ({ p
   await expect(page.getByRole('status').filter({ hasText: '2 transactions → Household' })).toBeVisible();
 });
 
+test('Desktop: a posted row’s category menu changes its category, with Undo', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'a phone opens the row’s sheet instead');
+  await page.goto('/activity?filter=all');
+  const menu = page.getByRole('button', { name: /^Category for Trader Joe/ }).first();
+  await expect(menu).toBeVisible();
+  const before = (await menu.textContent()) ?? '';
+  await menu.click();
+  const picker = page.getByRole('dialog', { name: 'Choose a category' });
+  await picker.getByRole('button', { name: 'Household' }).first().click();
+  await expect(page.getByRole('status').filter({ hasText: '→ Household' })).toBeVisible();
+  await expect(menu).toHaveText('Household');
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(menu).toHaveText(before);
+});
+
 test('Settings: the dark mode toggle switches data-theme', async ({ page }) => {
   await page.goto('/settings');
   const html = page.locator('html');

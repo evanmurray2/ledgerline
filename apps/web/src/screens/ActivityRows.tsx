@@ -31,17 +31,20 @@ export function TxnRow({
   base,
   style = 'list',
   action,
+  hideCategory,
 }: {
   r: TxnListRow;
   base: string;
   style?: 'list' | 'posted' | 'register';
   action?: React.ReactNode;
+  /** The action shows the category (desktop Activity's category menu), so the tag doesn't repeat it. */
+  hideCategory?: boolean;
 }) {
   const desktop = useIsDesktop();
   // On a phone a row with a button stacks: the text gets the full width, and the badge and button share a line.
   const stacked = !!action && !desktop;
   // Tags: the status first (filled), then the category (outlined), so neither crowds the grey line.
-  const category = r.categoryLabel && r.categoryLabel !== r.badge ? r.categoryLabel : null;
+  const category = !hideCategory && r.categoryLabel && r.categoryLabel !== r.badge ? r.categoryLabel : null;
   const badge = (r.badge || category) && (
     <span className="flex min-w-0 flex-wrap gap-1.5">
       {r.badge && (

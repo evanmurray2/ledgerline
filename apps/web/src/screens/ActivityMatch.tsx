@@ -1,6 +1,6 @@
 // Match money back: what an inflow pays back, and what happens to the rest.
 import { useEffect, useState } from 'react';
-import { Link, useParams } from '@tanstack/react-router';
+import { Link, useParams, useSearch } from '@tanstack/react-router';
 import { api } from '../api/endpoints';
 import { useMatchView, useMoneyMutation, useSession, useBudget } from '../api/hooks';
 import { Sheet, SheetTitle } from '../components/Sheet';
@@ -30,6 +30,8 @@ function useRta() {
 
 export function MatchScreen() {
   const { key } = useParams({ strict: false }) as { key: string };
+  // Opened from an owed item's row (Owed to you): that item alone starts picked.
+  const { item } = useSearch({ strict: false }) as { item?: string };
   useScreen('match');
   const q = useMatchView(key);
   const close = useClose();
@@ -49,8 +51,11 @@ export function MatchScreen() {
     return () => usage.cancelTask('match');
   }, []);
   useEffect(() => {
-    if (v && on === null) setOn(Object.fromEntries(v.open.map((o) => [o.id, o.suggested > 0])));
-  }, [v, on]);
+    if (v && on === null) {
+      const one = !!item && v.open.some((o) => o.id === item);
+      setOn(Object.fromEntries(v.open.map((o) => [o.id, one ? o.id === item : o.suggested > 0])));
+    }
+  }, [v, on, item]);
 
   if (!v || !on)
     return (

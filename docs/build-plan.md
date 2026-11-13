@@ -10,12 +10,10 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 
 - [ ] Processing CPU when one sync brings many pending rows to a busy card: the 25-pending-row step is 11–17 ms (median 12) after the Nov 9 key-lookup fixes (`docs/measurements.md`); the posted step and the heal step are under 10 ms. What is left is cold JavaScript in the matching code and about 3 ms of writes. Smaller steps don't help: the cost is per step, and the number of "Same purchase?" questions changes (22, not 24).
 - [ ] On the owner's iPhone after deploy: PRF in the Home Screen app with the existing passkey, first download time, Face ID unlock with no signal.
-- [ ] Owed to you: each row's "Match money back" opens the first waiting deposit; open the match sheet with that row's item picked.
-- [ ] Offline, "Same as your {payee}?" hides, and "Use {n} suggestions" then includes those rows.
+- [ ] Transaction sheet, income "Goes to": the toggle and its help line use different tests and can disagree for income already moved to next month.
 - [ ] Remove `CategorySheet.moveOptions` (contract and `views/category.ts`): the app no longer reads it (Move money uses `BudgetView`). It stays until no app from before that change can still ask the server for a category sheet.
 - [ ] A text that never shows: the passkey's "Use your passkey to continue" (NotAllowedError is read as Cancelled).
 - [ ] Payee names: the server takes a name of only spaces (min length is checked before trim) and NUL or right-to-left override characters.
-- [ ] Activity search: "café" doesn't find "CAFÉ" on posted rows (SQLite `lower()` folds only ASCII).
 - [ ] Signing in with a different user's passkey on the same browser leaves the earlier user's session row until it expires (24 h); it lists as another device.
 - [ ] Only if two devices ever show different numbers for the same data: a check where each device posts a hash of its month and Needs attention says when two differ (owner, Nov 9: skipped for now; `engine.test.ts` and `engine-upgrade.test.ts` cover the known causes).
 - [ ] The sealed log's limits (`packages/seal`, `docs/privacy-keys.md` 7.2, 8, 12): measure a 16-entry write, one append and a fetch page step on Cloudflare before raising any limit; a sealed page is one BLOB row (check 220 KB against the row limit); measure the change set of a real 180-day first run (only test transactions were measured: about 250 bytes each compressed, so a run of about 4,000 fills a write); a run larger than a write even compressed stops filing with a message and every edit waits behind it (D-104's staged write, if a real run needs it); a filed run waits in the queue as one JSON value with its rows and undo (its rows alone are about 5 MB for 2,000 transactions; check the phone’s memory).
@@ -43,11 +41,12 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] One test in `apps/worker/test/objects` failed once in a local `pnpm check` (Nov 11, 2026) and passed in the 5 runs after it and in CI; its name was not caught. If it shows again, read the failing run's output before anything else.
 
 - [ ] Remove the unused Waiting to match parts of `packages/domain` (D-98): the `waiting` use, `waitingToMatch` in the projection and the rule 10 identity, the `wait` line kind (`apps/worker/src/ledger/ledger.ts` `rowsFor`, `maintenance.ts`), and the November fixture's held Venmo row (`n-venmo`) with the tests that count it.
-- [ ] `/activity?category=<unknown>` shows "Category · All months" instead of saying the category is gone.
+- [ ] Sheets: ask before Back drops an unsaved amount; Back from a nested picker (Move money) closes both sheets.
 
 ## Contract gaps (not blocking)
 
 The UI works around these (details in `apps/web/CONTRACT_NOTES.md`):
 
-- [ ] Desktop: a per-row category dropdown in Activity.
-- [ ] Pending rows that stayed in a closed account (D-93) show in its register only: list them with the posted rows on Activity too.
+- [ ] Candidate deposits for an unclear transfer in the API (the UI searches other registers today).
+- [ ] Endpoints: accept a changed amount, edit a manual entry's amount or date.
+- [ ] Extra fields: the new-month carry-over summary, recent paybacks, the repeat interval on upcoming rows, per-filter register counts, amounts on Move money options.

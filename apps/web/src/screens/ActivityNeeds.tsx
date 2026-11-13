@@ -45,11 +45,10 @@ export function NeedsCategory({
   onAcceptAll: (rows: NeedsRow[]) => void;
   onJoin: (r: NeedsRow) => void;
 }) {
-  const online = useCanWrite();
   const open = (r: NeedsRow) =>
     !chosen[r.key] || (chosen[r.key]!.categoryId === null && !chosen[r.key]!.toRta);
-  // OK all leaves out "Same as" rows: those wait for you to Join or not (docs/payees.md 4.3), offline too, where
-  // the question hides until Join can be sent.
+  // OK all leaves out "Same as" rows: those wait for you to Join or not (docs/payees.md 4.3). Offline the question
+  // still shows, with Join grayed out, so the rows OK all takes are the ones it shows without it.
   const strong = needs.filter((r) => open(r) && r.suggestion?.strong && !r.sameAs);
   const note =
     openNeeds.length === 0
@@ -123,12 +122,13 @@ export function NeedsCategory({
                   </span>
                   <span className="text-xs text-muted">{rowMeta(r, 'needs')}</span>
                 </Link>
-                {!label && r.sameAs && online ? (
+                {!label && r.sameAs ? (
                   // Outside the row's link: Join is its own action (docs/payees.md 4.3).
                   <span className="flex flex-col gap-0.5 text-xs">
                     <span className="flex flex-wrap items-center gap-x-2 text-ink-2">
                       Same as your {r.sameAs.name}?
                       <TextButton
+                        mutates
                         track="activity.payee.join"
                         aria-label={`Join ${r.payee} into your ${r.sameAs.name}`}
                         onClick={() => onJoin(r)}

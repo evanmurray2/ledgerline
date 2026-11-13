@@ -148,6 +148,13 @@ describe('close account (D-73)', () => {
     const keys = closed.days[0]!.rows.map((x) => x.key);
     const v = (await h.call('GET', '/api/activity')).json as ActivityView;
     expect(v.pending.some((x) => keys.includes(x.key))).toBe(false);
+    // Final rows are listed with the posted rows, on their date (D-93), in the month and in a search too.
+    for (const path of ['/api/activity', '/api/activity?month=2026-11', '/api/activity?q=coffee']) {
+      const posted = ((await h.call('GET', path)).json as ActivityView).posted.map((x) => x.key);
+      for (const k of keys) expect(posted, path).toContain(k);
+    }
+    const oct = ((await h.call('GET', '/api/activity?month=2026-10')).json as ActivityView).posted;
+    expect(oct.some((x) => keys.includes(x.key))).toBe(false);
     // The bank removes one of the two: the account is no longer $0, so it opens again.
     await h.sync([], [removal('p2-back', 2)]);
     expect(await closedAt(2)).toBeNull();
@@ -224,6 +231,7 @@ describe('close account (D-73)', () => {
       expect(r.days[1]!.balance).toBe(5000);
       const v = (await h.call('GET', '/api/activity')).json as ActivityView;
       expect(v.pending.some((x) => x.key === key)).toBe(false);
+      expect(v.posted.map((x) => x.key)).toContain(key);
       // Long after: it is never "not at the bank yet".
       h.setNow(NOW + 40 * 86_400_000);
       const later = (await h.call('GET', '/api/activity')).json as ActivityView;
