@@ -785,6 +785,62 @@ test('Add a transaction: typing finds a payee, an account and a category', async
   await expect(add.getByLabel('Category')).toContainText('Groceries');
 });
 
+test('Add a transaction: a transfer adds the other side and leaves Ready to Assign alone', async ({
+  page,
+}) => {
+  await page.goto('/activity/add');
+  const add = page.getByRole('dialog', { name: 'Add a transaction' });
+  await add.getByLabel('Amount', { exact: true }).fill('50');
+  await add.getByRole('button', { name: 'Transfer' }).click();
+  await expect(add.getByLabel('Category')).toHaveCount(0);
+  await expect(add.getByRole('button', { name: 'Add', exact: true })).toBeDisabled();
+  await add.getByLabel('To account').click();
+  await page
+    .getByRole('dialog', { name: 'Choose an account' })
+    .getByRole('button', { name: /Sapphire Preferred/ })
+    .click();
+  await expect(add.getByText('Sapphire Preferred gets the other side.')).toBeVisible();
+  await add.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(add).toBeHidden();
+  // Activity opens on Not posted yet, which lists both sides.
+  await expect(page.getByText('Transfer to Sapphire Preferred').first()).toBeVisible();
+  await expect(page.getByText('Transfer from Everyday Checking').first()).toBeVisible();
+  await page
+    .getByRole('link', { name: /^Budget/ })
+    .last()
+    .click();
+  await expect(rta(page)).toHaveText('$1,999.90');
+});
+
+test('Add a transaction: owed to you, then paid back', async ({ page }) => {
+  await page.goto('/activity/add');
+  const add = page.getByRole('dialog', { name: 'Add a transaction' });
+  await add.getByLabel('Amount', { exact: true }).fill('30');
+  await add.getByLabel('Payee').fill('Dinner with Sam');
+  await add.getByRole('button', { name: 'Owed to you' }).click();
+  await expect(add.getByLabel('Amount owed')).toHaveValue('15.00');
+  await add.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(add).toBeHidden();
+  await page.getByRole('link', { name: 'Add transaction' }).first().click();
+  await add.getByLabel('Amount', { exact: true }).fill('15');
+  await add.getByRole('button', { name: 'In', exact: true }).click();
+  await add.getByLabel('Payee').fill('Sam');
+  await add.getByRole('button', { name: 'Paid back' }).click();
+  await expect(add.getByRole('button', { name: 'Add', exact: true })).toBeDisabled();
+  // The new owed item is listed, at its half.
+  const item = add.locator('label', { hasText: 'Dinner with Sam' });
+  await expect(item).toContainText('of $15.00');
+  await item.getByRole('checkbox').check();
+  await add.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(add).toBeHidden();
+  // What Sam owed came out of Ready to Assign. Paid back, it is there again.
+  await page
+    .getByRole('link', { name: /^Budget/ })
+    .last()
+    .click();
+  await expect(rta(page)).toHaveText('$1,999.90');
+});
+
 test('Owed to you opened from Accounts goes back to Accounts', async ({ page }) => {
   await page.goto('/accounts');
   await page.getByRole('link', { name: /Owed to you · not in this total/ }).click();

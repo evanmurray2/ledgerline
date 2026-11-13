@@ -22,7 +22,7 @@ const OWED_DONE = 'This item is already closed out. Pull down to refresh.';
 
 // ---------------------------------------------------------------- matching money back
 
-async function openItems(s: Scoped, today: string) {
+export async function openItems(s: Scoped, today: string) {
   const [items, links] = await s.batch([
     s.q(
       `SELECT e.id, e.txn_key, e.amount, e.expect_by, e.closed_at, e.closed_month, e.closed_amount, e.canceled_at, coalesce(${txnCol('e.txn_key', 'payee')}, '') AS payee,

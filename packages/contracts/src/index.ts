@@ -433,6 +433,16 @@ export const TxnSheet = z.object({
 });
 export type TxnSheet = z.infer<typeof TxnSheet>;
 
+/** How much of money out is owed to you: a share of it, or a typed amount (at most the purchase). */
+export const OwedMark = z.object({
+  mode: z.enum(['half', 'even', 'all', 'fraction', 'fixed']),
+  n: z.number().int().positive().optional(),
+  num: z.number().int().optional(),
+  den: z.number().int().optional(),
+  amount: cents.optional(),
+  expectBy: calendarDate.nullable(),
+});
+export type OwedMark = z.infer<typeof OwedMark>;
 export const TxnPatch = z.object({
   categoryId: id.nullable().optional(),
   toRta: z.boolean().optional(),
@@ -456,17 +466,7 @@ export const TxnPatch = z.object({
   wontClear: z.boolean().optional(),
   budgetMonth: month.nullable().optional(),
   payeeName: z.string().min(1).max(120).optional(),
-  markOwed: z
-    .object({
-      mode: z.enum(['half', 'even', 'all', 'fraction', 'fixed']),
-      n: z.number().int().positive().optional(),
-      num: z.number().int().optional(),
-      den: z.number().int().optional(),
-      amount: cents.optional(),
-      expectBy: calendarDate.nullable(),
-    })
-    .nullable()
-    .optional(),
+  markOwed: OwedMark.nullable().optional(),
 });
 export const CategorizeRequest = z.object({
   keys: z.array(z.string()).min(1).max(200),
@@ -484,6 +484,18 @@ export const NewTxnRequest = z.object({
   /** Money in that goes to Ready to Assign (no category). */
   toRta: z.boolean().optional(),
   repeats: z.enum(['never', 'monthly', 'yearly']),
+  /**
+   * A pending entry only, with no category: a transfer to (money out) or from (money in) this other account. A pending
+   * entry of the opposite amount is added there, and the two are paired; each bank row takes its own side over.
+   */
+  transferAccountId: id.optional(),
+  /** Money out, pending only: the part owed to you, as on the transaction sheet. */
+  owed: OwedMark.optional(),
+  /** Money in, pending only: the owed items it pays back, as Match money back does; all of it is in Ready to Assign. */
+  paysBack: z
+    .array(z.object({ itemId: id, amount: cents.positive() }))
+    .min(1)
+    .optional(),
 });
 export const MatchRequest = z.object({
   inflowKey: z.string(),
