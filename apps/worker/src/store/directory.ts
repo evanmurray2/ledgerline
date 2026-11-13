@@ -589,6 +589,16 @@ export class Directory extends DurableObject<Env> {
     return String(r.budget_id) === budgetId ? 'ok' : 'duplicate';
   }
 
+  /** A removed Item: its route goes, so the bank's later news reaches no budget. Only the budget's own. */
+  async dropRoute(itemId: string, budgetId: string): Promise<void> {
+    this.ready();
+    this.ctx.storage.sql.exec(
+      `DELETE FROM connection_route WHERE provider_item_id = ? AND budget_id = ?`,
+      itemId,
+      budgetId,
+    );
+  }
+
   /** Which budget owns a Plaid Item (webhooks, 6.4). */
   async routeFor(itemId: string): Promise<string | null> {
     const r = this.ctx.storage.sql
