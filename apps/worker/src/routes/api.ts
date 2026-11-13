@@ -21,11 +21,13 @@ import { budgetView } from '../views/budget.js';
 import { fresh, monthLong } from '../views/common.js';
 import { usageToday, classifyUsage, dailyLimits } from '../sync/breaker.js';
 import { activityRoutes } from './activity.js';
+import { transferRoutes } from './transfers.js';
 import { activityViewRoutes } from './activity-view.js';
 import { samePurchaseRoutes } from './same-purchase.js';
 import { notSameUndoRoutes } from './not-same-undo.js';
 import { activityUndoRoutes } from './activity-undo.js';
 import { transactionRoutes } from './transactions.js';
+import { refundRoutes } from './refunds.js';
 import { accountRoutes } from './accounts.js';
 import { accountCloseRoutes } from './account-close.js';
 import { registerRoutes } from './account-register.js';
@@ -358,10 +360,12 @@ budgetApi.put('/categories/:id/target', async (c) => {
 
 budgetApi.route('/', activityViewRoutes);
 budgetApi.route('/', activityRoutes);
+budgetApi.route('/', transferRoutes);
 budgetApi.route('/', samePurchaseRoutes);
 budgetApi.route('/', notSameUndoRoutes);
 budgetApi.route('/', activityUndoRoutes);
 budgetApi.route('/', transactionRoutes);
+budgetApi.route('/', refundRoutes);
 budgetApi.route('/', accountRoutes);
 budgetApi.route('/', accountCloseRoutes);
 budgetApi.route('/', registerRoutes);

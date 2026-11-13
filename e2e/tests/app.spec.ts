@@ -203,6 +203,21 @@ test('Activity: Select several gives many transactions one category', async ({ p
   await expect(page.getByRole('status').filter({ hasText: '2 transactions → Household' })).toBeVisible();
 });
 
+test('Desktop: a posted row’s category menu changes its category, with Undo', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'a phone opens the row’s sheet instead');
+  await page.goto('/activity?filter=all');
+  const menu = page.getByRole('button', { name: /^Category for Trader Joe/ }).first();
+  await expect(menu).toBeVisible();
+  const before = (await menu.textContent()) ?? '';
+  await menu.click();
+  const picker = page.getByRole('dialog', { name: 'Choose a category' });
+  await picker.getByRole('button', { name: 'Household' }).first().click();
+  await expect(page.getByRole('status').filter({ hasText: '→ Household' })).toBeVisible();
+  await expect(menu).toHaveText('Household');
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(menu).toHaveText(before);
+});
+
 test('Settings: the dark mode toggle switches data-theme', async ({ page }) => {
   await page.goto('/settings');
   const html = page.locator('html');
@@ -687,14 +702,16 @@ test('Pages slide in when opened and back when Back returns to them; tabs and th
   await expect(page.locator('.ll-page-in, .ll-page-back')).toHaveCount(0);
 });
 
-test('Pages do not slide with Reduce Motion', async ({ page }) => {
+test('Pages do not slide with Reduce Motion', async ({ page }, info) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/accounts');
   await page.waitForTimeout(1600);
-  await page
-    .getByRole('link', { name: /Everyday Checking/ })
-    .first()
-    .click();
+  // On a computer an account opens in the side panel, not as a page: Owed to you is a page there.
+  const link =
+    info.project.name === 'desktop'
+      ? page.getByRole('link', { name: /Owed to you · not in this total/ })
+      : page.getByRole('link', { name: /Everyday Checking/ }).first();
+  await link.click();
   const frame = page.locator('.ll-page-in').first();
   await expect(frame).toHaveCount(1);
   expect(await frame.evaluate((el) => getComputedStyle(el).animationName)).toBe('none');

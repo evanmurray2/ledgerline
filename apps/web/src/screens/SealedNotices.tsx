@@ -1,5 +1,5 @@
-// The notices every device of a locked budget shows (docs/privacy.md 5.8; copy/notices.ts): a way in added on
-// another device, a change planned on another device, the recovery key signing in, and a planned change on its
+// The notices every device of a locked budget shows (docs/privacy.md 5.8; copy/notices.ts): a way in added or
+// removed on another device, a change planned on another device, the recovery key signing in, and a planned change on its
 // day, with Finish now. Each device dismisses a notice for itself.
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -12,6 +12,7 @@ import {
   dismissNotice,
   noticesOf,
   takeRecoveryKeyHere,
+  waysRemoved,
   type Notice,
 } from '../copy/notices';
 import { cancelPlan, finishPlan, WAITS_TEXT, type WayResult } from '../copy/sealed-ways';
@@ -35,6 +36,7 @@ async function load(): Promise<{ budgetId: string; notices: Notice[] }> {
     notices: noticesOf({
       entries: look.entries,
       intents: look.state.intents,
+      removed: waysRemoved(look.entries),
       deviceIds: look.deviceIds,
       recoveryKeyUsedAt: usedAt,
       now: Date.now(),
@@ -101,6 +103,19 @@ export function SealedNotices() {
               >
                 Another device added a passkey or a recovery key. If this wasn’t you, remove it in Settings →
                 Sign-in and devices.
+              </Banner>
+            );
+          case 'way-removed':
+            return (
+              <Banner
+                key={n.id}
+                tone="warn"
+                role="alert"
+                title={`A way in was removed on ${day(n.at)}`}
+                action={wasMe}
+              >
+                {what(n.slotIds)} no longer opens your budget: another device removed it. If this wasn’t you,
+                check your passkeys in Settings → Sign-in and devices.
               </Banner>
             );
           case 'recovery-sign-in':

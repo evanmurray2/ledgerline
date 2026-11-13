@@ -4,11 +4,12 @@ import type { Stmt } from '@ledgerline/db/sql';
 import { editNow } from '../http/clock.js';
 import { Hono } from 'hono';
 import { CategorizeRequest, PendingCheckAction, TxnPatch } from '@ledgerline/contracts';
-import { addDays, cents, formatCents, localDate } from '@ledgerline/domain';
+import { type Month, addDays, cents, formatCents, localDate, monthOfDate } from '@ledgerline/domain';
+import { monthLong } from '../views/common.js';
 
 import type { AppEnv } from '../http/context.js';
 import type { Scoped } from '../db/scoped.js';
-import { HttpError, parse, scoped, GONE, FAR_MONTH, inReach, thisMonth } from './api.js';
+import { HttpError, parse, scoped, CHANGED, GONE, FAR_DATE, FAR_MONTH, inReach, thisMonth } from './api.js';
 import { reopenForEntry, reopenStmts } from './account-close.js';
 import { TX_COLUMNS, chunks, type TxRow } from '../ledger/ledger.js';
 import { OVERLAY_UPSERT, commit, loadTx, owedStmt, refuseHistory } from './txn-common.js';
@@ -20,7 +21,7 @@ import { addTxn } from './new-txn.js';
 export const transactionRoutes = new Hono<AppEnv>();
 
 /** The key a transaction has now: an edit made to a key that has since moved lands on the new one. */
-async function liveKey(s: Scoped, key: string): Promise<string> {
+export async function liveKey(s: Scoped, key: string): Promise<string> {
   let k = key;
   for (let i = 0; i < 4; i++) {
     const here = await s.first(
@@ -174,6 +175,12 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
       ...reopenForEntry(s, key, now),
     );
     edits.amount = editAt;
+  }
+  if (p.date !== undefined && p.date !== t.date) {
+    if (t.source !== 'manual')
+      throw new HttpError(422, 'not_manual', 'You can change the date only on a transaction you added.');
+    w.push(...(await dateStmts(s, key, t, p.date, now)));
+    edits.date = editAt;
   }
   if (p.wontClear !== undefined) {
     // Only something not posted yet can fail to clear: a posted charge always counts.
@@ -359,9 +366,11 @@ transactionRoutes.post('/transactions/:key/review', async (c) => {
   const now = editNow(c);
   const o = await s.first(`SELECT 1 FROM txn_overlay WHERE budget_id = ?1 AND txn_key = ?2`, key);
   if (!o) throw new HttpError(404, 'not_found', GONE);
+  // The alert stays, marked seen, so Undo can show it again. Nothing about the money changes: a row that cleared at
+  // another amount than your estimate already counts the bank's amount (the posted amount wins).
   const w = [
     s.q(
-      `UPDATE txn_overlay SET reviewed_at = ?3, alert = NULL, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
+      `UPDATE txn_overlay SET reviewed_at = ?3, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
       key,
       now,
     ),
@@ -369,6 +378,61 @@ transactionRoutes.post('/transactions/:key/review', async (c) => {
   ];
   return c.json(await commit(c, w));
 });
+
+/** Undo of OK (or Accept) on Check these: the alert shows again. */
+transactionRoutes.post('/transactions/:key/review/undo', async (c) => {
+  const s = scoped(c);
+  const key = c.req.param('key');
+  const now = editNow(c);
+  // An alert marked seen before it was kept (it was cleared then) has nothing to show again.
+  const o = await s.first(
+    `SELECT 1 FROM txn_overlay WHERE budget_id = ?1 AND txn_key = ?2 AND reviewed_at IS NOT NULL AND alert IS NOT NULL`,
+    key,
+  );
+  if (!o) throw new HttpError(409, 'changed', CHANGED);
+  return c.json(
+    await commit(c, [
+      s.q(
+        `UPDATE txn_overlay SET reviewed_at = NULL, updated_at = ?3 WHERE budget_id = ?1 AND txn_key = ?2`,
+        key,
+        now,
+      ),
+      s.audit('txn.review.undo', 'transaction', key, null, null, now),
+    ]),
+  );
+});
+
+/**
+ * A new date for your entry, with the same limits as adding one: within 10 years, not before the budget starts. The
+ * date picks the kind, as when it was added: a pending entry stays today or earlier, and an upcoming one counts from
+ * its new date. The month it counts in follows the date, unless you set the month yourself.
+ */
+async function dateStmts(s: Scoped, key: string, t: TxRow, date: string, now: number): Promise<Stmt[]> {
+  if (!inReach(monthOfDate(date), await thisMonth(s, now))) throw new HttpError(422, 'too_far', FAR_DATE);
+  const b = await s.first<{ start: string | null; time_zone: string }>(
+    `SELECT budget_start_month AS start, time_zone FROM budget WHERE id = ?1`,
+  );
+  if (b?.start && monthOfDate(date) < b.start)
+    throw new HttpError(
+      422,
+      'before_start',
+      `Pick a date from ${monthLong(b.start as Month)} 1, ${b.start.slice(0, 4)} on.`,
+    );
+  if (t.status === 'pending' && date > localDate(now, b?.time_zone ?? 'America/Los_Angeles'))
+    throw new HttpError(
+      422,
+      'future',
+      'Pick today or an earlier date. For a later one, add it as an upcoming transaction.',
+    );
+  return [
+    s.q(
+      `UPDATE manual_pending SET date = ?3, updated_at = ?4 WHERE budget_id = ?1 AND txn_key = ?2`,
+      key,
+      date,
+      now,
+    ),
+  ];
+}
 
 /**
  * Your entry changes direction (Out to In, or In to Out). A split and what's owed to you were made for the old

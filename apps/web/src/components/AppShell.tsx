@@ -203,8 +203,11 @@ function DNav({ active, onNote, noteButton }: { active: Tab; onNote: () => void;
               Assign
             </Link>
           ) : (
+            // The card has room for the reason: it shows under the button, as well as on a click.
             <BlockedAction
               track="nav.assign.blocked"
+              showWhy
+              whyClassName="pt-1 text-center font-semibold"
               className="mt-1.5 flex h-9 items-center justify-center rounded-full bg-rta-fg/50 text-md font-bold text-rta-btn-fg"
             >
               Assign

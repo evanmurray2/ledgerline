@@ -110,4 +110,45 @@ describe('payees', () => {
       { pattern: 'n:typed name', payee_id: c.id },
     ]);
   });
+
+  it('refuses a payee name of only spaces or with hidden characters, and stores a name trimmed', async () => {
+    const db = phoneDb();
+    const [p, q] = (await view()).payees;
+    const key = (await db
+      .prepare(`SELECT key AS txn_key FROM v_transaction WHERE payee_id = ?1 AND date >= budget_from LIMIT 1`)
+      .bind(p!.id)
+      .first<{ txn_key: string }>())!.txn_key;
+    const patch = (payeeName: string) =>
+      app(`/api/transactions/${encodeURIComponent(key)}`, {
+        method: 'PATCH',
+        headers: H,
+        body: JSON.stringify({ payeeName }),
+      });
+    const account = (await db.prepare(`SELECT id FROM account LIMIT 1`).first<{ id: string }>())!.id;
+    const add = (payee: string) =>
+      post('/api/transactions', {
+        kind: 'pending',
+        accountId: account,
+        date: '2026-11-10',
+        amount: -500,
+        payee,
+        categoryId: null,
+        repeats: 'never',
+      });
+    // Spaces only, a NUL, a right-to-left override (it would show "gpj.exe" as "exe.jpg") and a zero-width mark.
+    for (const bad of ['   ', 'Cafe\u0000', '\u202egpj.exe', 'A\u200fB']) {
+      expect((await post(`/api/settings/payees/${p!.id}`, { name: bad })).status, bad).toBe(400);
+      expect((await patch(bad)).status, bad).toBe(400);
+      expect((await add(bad)).status, bad).toBe(400);
+      expect(
+        (await post('/api/settings/payees/merge', { keep: p!.id, ids: [p!.id, q!.id], name: bad })).status,
+      ).toBe(400);
+    }
+    expect((await post(`/api/settings/payees/${p!.id}`, { name: '  Corner Shop  ' })).status).toBe(200);
+    const name = await db
+      .prepare(`SELECT name FROM payee WHERE id = ?1`)
+      .bind(p!.id)
+      .first<{ name: string }>();
+    expect(name?.name).toBe('Corner Shop');
+  });
 });

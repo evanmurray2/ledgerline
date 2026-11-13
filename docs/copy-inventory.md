@@ -109,7 +109,9 @@ The rules and terms are in `docs/copy.md`. A snapshot, not kept up to date: the 
 - After a fix: "Took {amount} from {name}." + Undo
 - Empty budget: "Give your {rta} a job" (or "Start your budget" at $0) + "Fund card payments first, then bills,
   spending and savings." (no cards: "Fund bills first, then spending and savings.")
-- Day 1 of a month: "{Month} has started" + "Every category keeps what it had left in {Month}."
+- Day 1 of a month: "{Month} has started" + "Every category keeps what it had left in {Month}." + how Ready to
+  Assign came about, each part left out at $0: "Left from {Month}" · "Overspent in {Month}" · "Money in during
+  {Month}" · "Paid back to you" · "Closed out" · "Owed to you" · "Assigned"
 - "Targets for {Month} · {total}" + "Fill targets · {total}" → "Each target got what it needs this month." + Undo
 - Sync problem strip: "{bank} didn't finish syncing · see Accounts"
 
@@ -157,7 +159,9 @@ spending not covered yet"
   paid back. Ready to Assign has {rta} now."
 - "{payee} +{amount} came in. Is it money back?" + Match · "{name} is covered" · "{n} more" / "Show less"
 - "Nothing is owed to you." · "Late · expected by {date}" · "Expected by {date}" · "Late" · "No date" · "of {amount}
-  owed" · "Paid back in full" / "{amount} still open"
+  owed"
+- Paid back recently: one row for each money in that paid back an item: "{payee}" + "{date} · Paid back {name}" ("{a}
+  and {b}", "{a}, {b} and {n} more") · "+{amount}"
 - Close out (amounts in cents):
   - "They won't pay it": "{category} is charged {amount} in {Month}. Ready to Assign gets {amount} back." → "Closed.
     {category} was charged {amount} in {Month}."

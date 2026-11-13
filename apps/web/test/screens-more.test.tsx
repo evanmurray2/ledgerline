@@ -114,6 +114,30 @@ describe('Transaction sheet', () => {
     await screen.findByText(/to Ready to Assign in November\./);
   });
 
+  it('income moved two months on, or back a month: the toggle and its help line still agree', async () => {
+    const move = (budgetMonth: string) =>
+      server.handle(
+        'PATCH',
+        '/api/transactions/n-payroll',
+        { 'content-type': 'application/json', 'x-ledgerline': '1' },
+        { budgetMonth },
+      );
+    expect((await move('2027-01')).status).toBe(200);
+    const first = show('/activity/txn/n-payroll');
+    const later = await screen.findByRole('button', { name: 'Save for January' }, T);
+    expect(later.getAttribute('aria-pressed')).toBe('true');
+    await screen.findByText(/to Ready to Assign on January 1\./);
+    first.unmount();
+    expect((await move('2026-10')).status).toBe(200);
+    show('/activity/txn/n-payroll');
+    const now = await screen.findByRole('button', { name: 'Ready to Assign now' }, T);
+    expect(now.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Save for December' }).getAttribute('aria-pressed')).toBe(
+      'false',
+    );
+    await screen.findByText(/to Ready to Assign in October\./);
+  });
+
   it('a deposit with no category is in Ready to Assign: the sheet says so and nothing asks for a category', async () => {
     const before = (await sql<{ rta: number }>(`SELECT rta FROM budget`))!.rta;
     const r = await server.handle(
@@ -140,6 +164,33 @@ describe('Transaction sheet', () => {
     fireEvent.click(field);
     await screen.findAllByRole('button', { name: /^Ready to Assign/ }, T);
     expect(screen.queryByRole('button', { name: /^Needs a category/ })).toBeNull();
+  });
+});
+
+describe('Transfer: pick the other side', () => {
+  it('offers the deposits the sheet lists, and a pick pairs the two', async () => {
+    const db = await server.db();
+    await db
+      .prepare(
+        `UPDATE txn_overlay SET transfer_state = 'unsorted', transfer_account_id = NULL
+         WHERE txn_key IN ('n-to-marcus', 'n-from-checking-m')`,
+      )
+      .run();
+    await db.prepare(`UPDATE txn_link SET undone_at = 1 WHERE kind = 'transfer'`).run();
+    const sheet = (await server.handle('GET', '/api/transactions/n-to-marcus', {}, undefined)).body as {
+      candidates?: { key: string; accountName: string }[];
+    };
+    expect(sheet.candidates?.map((c) => c.key)).toEqual(['n-from-checking-m']);
+    show('/activity/transfer/n-to-marcus');
+    await screen.findByText('Which account got this money?', undefined, T);
+    expect(screen.getByText(/^1 account got \$500\.00/)).toBeTruthy();
+    const side = screen.getByRole('button', { name: new RegExp(`^${sheet.candidates![0]!.accountName}`) });
+    fireEvent.click(side);
+    await screen.findByText(/^Paired with /, undefined, T);
+    expect(
+      (await sql<{ s: string }>(`SELECT transfer_state AS s FROM txn_overlay WHERE txn_key = 'n-to-marcus'`))!
+        .s,
+    ).toBe('paired');
   });
 });
 
@@ -235,5 +286,27 @@ describe('Owed to you: Reopen (D-80)', () => {
         ).toBeNull(),
       T,
     );
+  });
+});
+
+describe('Card refund: the purchase it gives back', () => {
+  const link = () =>
+    sql<{ n: number; to: string | null }>(
+      `SELECT count(*) AS n, max(to_key) AS "to" FROM txn_link WHERE kind = 'refund_of' AND from_key = 'n-rei-refund' AND undone_at IS NULL`,
+    );
+
+  it('Not this purchase unlinks it, and Pick it links it again', async () => {
+    show('/accounts/sapphire/txn/n-rei-refund');
+    await screen.findByText('Refund of', undefined, T);
+    fireEvent.click(screen.getByRole('button', { name: 'Not this purchase' }));
+    await screen.findByText('Refund of a purchase on this card?', undefined, T);
+    expect((await link())!.n).toBe(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pick it' }));
+    // The same payee's purchase is first, under its name.
+    await screen.findByText('From REI', undefined, T);
+    fireEvent.click(await screen.findByRole('button', { name: /^REI · Oct 11/ }, T));
+    await screen.findByRole('button', { name: 'Not this purchase' }, T);
+    expect(await link()).toEqual({ n: 1, to: 'o-rei' });
   });
 });

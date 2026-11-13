@@ -70,6 +70,23 @@ export function expireIdle(sql: SqlStorage, now: number): ExpireOutcome {
   return out;
 }
 
+/** Accounts marked idle (deleted 30 days later) and deletions under way: counts only, for logs and health. */
+export interface IdleCounts {
+  marked: number;
+  deleting: number;
+}
+
+export function idleCounts(sql: SqlStorage): IdleCounts {
+  const r = sql
+    .exec(
+      `SELECT count(*) FILTER (WHERE key LIKE 'expire:%') AS marked,
+         count(*) FILTER (WHERE key LIKE 'deleting:%') AS deleting
+       FROM app_state WHERE key LIKE 'expire:%' OR key LIKE 'deleting:%'`,
+    )
+    .one();
+  return { marked: Number(r.marked), deleting: Number(r.deleting) };
+}
+
 /**
  * The first step of deleting an account, shared by Delete account and the idle deletion: its members are marked
  * deleting, their sessions and devices go, the budget's routes and members go, and the budget is marked deleting,
@@ -95,4 +112,42 @@ export function startDeletionSql(budgetId: string, userIds: string[], now: numbe
     ],
     [`DELETE FROM app_state WHERE key = ?`, [expireKey(budgetId)]],
   ];
+}
+
+/**
+ * The Directory's daily `expire_idle` step: marks, clears and starts deletions, queues each deletion's job again
+ * while it is under way, and logs the counts.
+ */
+export async function expireIdleStep(
+  storage: DurableObjectStorage,
+  now: number,
+  queueDelete: (userId: string, budgetId: string, userIds: string[] | undefined) => Promise<void>,
+): Promise<void> {
+  const out = storage.transactionSync(() => expireIdle(storage.sql, now));
+  for (const d of out.start) {
+    storage.transactionSync(() => {
+      for (const [q, p] of startDeletionSql(d.budgetId, d.userIds, now))
+        storage.sql.exec(q, ...(p as SqlStorageValue[]));
+    });
+    console.log(JSON.stringify({ event: 'account_expired', budget: d.budgetId }));
+    await queueDelete(d.userIds[0]!, d.budgetId, d.userIds);
+  }
+  for (const d of out.again) {
+    const prev = storage.sql
+      .exec(`SELECT state FROM job WHERE id = ?`, `delete_account:${d.userId}`)
+      .toArray()[0];
+    const userIds = prev ? (JSON.parse(String(prev.state)) as { userIds?: string[] }).userIds : undefined;
+    await queueDelete(d.userId, d.budgetId, userIds);
+  }
+  // Counts only: a bug shows here (and in GET /api/health) before it deletes much.
+  console.log(
+    JSON.stringify({
+      event: 'idle_accounts',
+      marked: idleCounts(storage.sql).marked,
+      newly: out.marked,
+      cleared: out.cleared,
+      started: out.start.length,
+      deleting: out.again.length,
+    }),
+  );
 }

@@ -16,6 +16,10 @@ const reads = [
       .filter((p) => !p.includes('*')),
   ),
 ];
+/** Routes that need a query to answer: an older register page needs the cursor the page before gave. */
+const queries: Record<string, string> = {
+  '/api/accounts/:id/register/older': '?before=2026-11-01&balance=0',
+};
 /** Real ids from the copy, so each route runs its full path; a made-up one for anything else. */
 const ids: Record<string, string> = {};
 const filled = (path: string, month: string) =>
@@ -23,6 +27,8 @@ const filled = (path: string, month: string) =>
     .replace(/:month\b/g, month)
     .replace(/\/categories\/:id/g, `/categories/${ids.category}`)
     .replace(/\/accounts\/:id/g, `/accounts/${ids.account}`)
+    // A card refund's purchases are asked only of a card refund.
+    .replace(/:key\/refund-of$/, `${encodeURIComponent(ids.refund ?? '')}/refund-of`)
     .replace(/:key\b/g, encodeURIComponent(ids.key ?? ''))
     .replace(/:[A-Za-z_]+/g, 'not-an-id');
 
@@ -41,6 +47,9 @@ describe('every screen route runs on the device', () => {
     ids.category = await one(`SELECT id AS v FROM category WHERE kind = 'spending' ORDER BY id LIMIT 1`);
     ids.account = await one(`SELECT id AS v FROM account ORDER BY id LIMIT 1`);
     ids.key = await one(`SELECT txn_key AS v FROM bank_txn WHERE pending = 0 ORDER BY txn_key LIMIT 1`);
+    ids.refund = await one(
+      `SELECT from_key AS v FROM txn_link WHERE kind = 'refund_of' AND undone_at IS NULL ORDER BY from_key LIMIT 1`,
+    );
   });
 
   it('finds the routes', () => {
@@ -49,7 +58,7 @@ describe('every screen route runs on the device', () => {
   });
 
   it.each(reads.map((p) => [p]))('%s', async (path) => {
-    const url = filled(path, month);
+    const url = filled(path, month) + (queries[path] ?? '');
     const r = await engine.request('GET', url);
     const text = await r.text();
     expect(r.status, `${path}: ${text}`).toBeLessThan(500);

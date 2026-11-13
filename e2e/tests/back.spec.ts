@@ -1,6 +1,6 @@
 // Coming back from another tab (apps/web/src/lib/back.ts): a screen opened from another tab returns there on Back,
 // and a sheet opened from another tab closes back there, instead of to its own tab's list.
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => window.localStorage.setItem('ledgerline-theme', 'light'));
@@ -60,7 +60,7 @@ test('Back: Sign in again from Bank connections closes back to it', async ({ pag
   test.skip((await repair.count()) === 0, 'No bank needs a sign-in in this fixture');
   await repair.click();
   await expect(page).toHaveURL(/\/accounts\/repair\/.*close=/);
-  await page.getByRole('button', { name: 'Back to bank connections' }).click();
+  await page.getByRole('button', { name: 'Back to bank connections', exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/connections$/);
 });
 
@@ -71,4 +71,41 @@ test('Back: Assign from the sidebar closes back to the screen it opened on', asy
   await expect(page).toHaveURL(/\/budget\/assign\?close=/);
   await page.keyboard.press('Escape');
   await expect(page).toHaveURL(/\/reports$/);
+});
+
+/** Opens Groceries from Budget, so the page before it is Budget's (Back stays in the app). */
+async function openGroceries(page: Page) {
+  await page.goto('/budget');
+  await page.locator('[data-track="budget.category"]').filter({ hasText: 'Groceries' }).first().click();
+  await expect(page).toHaveURL(GROCERIES);
+}
+const GROCERIES = /\/budget\/category\/groceries(\?|$)/;
+
+test('Back from Move money closes only Move money', async ({ page }) => {
+  await openGroceries(page);
+  await page.locator('[data-track="category.move.open"]').click();
+  await expect(page.getByRole('dialog', { name: 'Move money' })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('dialog', { name: 'Move money' })).toBeHidden();
+  await expect(page).toHaveURL(GROCERIES);
+  await expect(page.locator('[data-track="category.move.open"]')).toBeVisible();
+  // The next Back closes the category sheet.
+  await page.goBack();
+  await expect(page).toHaveURL(/\/budget(\?[^/]*)?$/);
+});
+
+test('Back asks before it drops an amount typed and not saved', async ({ page }) => {
+  await openGroceries(page);
+  const box = page.getByLabel(/^Assigned in /);
+  await box.fill('123.45');
+  await page.goBack();
+  const ask = page.getByRole('alertdialog', { name: 'Leave without saving' });
+  await expect(ask).toBeVisible();
+  await expect(page).toHaveURL(GROCERIES);
+  await ask.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(ask).toBeHidden();
+  await expect(box).toHaveValue('123.45');
+  await page.goBack();
+  await ask.getByRole('button', { name: 'Leave' }).click();
+  await expect(page).toHaveURL(/\/budget(\?[^/]*)?$/);
 });

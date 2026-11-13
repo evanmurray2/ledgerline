@@ -4,9 +4,8 @@ import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import type { TxnSheet } from '@ledgerline/contracts';
 import { api } from '../api/endpoints';
-import { useAccounts, useMoneyMutation } from '../api/hooks';
+import { useAccounts, useMoneyMutation, useSession } from '../api/hooks';
 import { Sheet } from '../components/Sheet';
-import { CategoryField } from '../components/CategoryPicker';
 import {
   amountInputClass,
   Banner,
@@ -26,46 +25,18 @@ import {
 } from '../components/ui';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { amountWhy } from '../lib/amount-check';
-import { addMonths, dayLabel, monthName, monthShort } from '../lib/dates';
+import { addMonths, dayLabel, monthShort } from '../lib/dates';
 import { useCategoryOptions } from '../lib/common';
 import { usage } from '../usage/tracker';
 import { toast } from '../components/Toast';
 import { Why } from '../components/Why';
 import { BankSays, TxnHeader, useParentPath } from './TxnCommon';
 import { PairedWith } from './TxnPair';
+import { RefundOf } from './TxnRefund';
+import { CategorySelect, EntryAmount, entryDateWhy, IncomeGoesTo } from './TxnEditParts';
 import { useHere } from '../lib/back';
 
 type OwedMode = 'none' | 'half' | 'all' | 'custom';
-
-function CategorySelect({
-  value,
-  onChange,
-  id,
-  allowRta,
-  noNeeds,
-  valueName,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  id: string;
-  allowRta?: boolean;
-  /** Money into checking or savings that is in Ready to Assign with no category: "Needs a category" isn't a choice. */
-  noNeeds?: boolean;
-  valueName?: string | null;
-}) {
-  const specials = noNeeds ? [] : [{ id: '', name: 'Needs a category' }];
-  if (allowRta) specials.push({ id: 'rta', name: 'Ready to Assign' });
-  return (
-    <CategoryField
-      id={id}
-      track="txn.category"
-      value={value}
-      onChange={onChange}
-      specials={specials}
-      valueName={valueName}
-    />
-  );
-}
 
 export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   const parent = useParentPath();
@@ -83,8 +54,12 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   // Amounts are typed without a sign; the direction keeps it. Only a transaction you added can change direction.
   const [dir, setDir] = useState<'out' | 'in'>((t.bankAmount ?? t.amount) < 0 ? 'out' : 'in');
   const sign = dir === 'out' ? -1 : 1;
-  const [est, setEst] = useState(t.estimatedAmount !== null ? centsToInput(Math.abs(t.estimatedAmount)) : '');
-  const [amt, setAmt] = useState(centsToInput(Math.abs(t.amount)));
+  const estWas = t.estimatedAmount !== null ? centsToInput(Math.abs(t.estimatedAmount)) : '';
+  const amtWas = centsToInput(Math.abs(t.amount));
+  const [est, setEst] = useState(estWas);
+  const [amt, setAmt] = useState(amtWas);
+  const [day, setDay] = useState(t.date);
+  const today = useSession().data?.budget.today;
   const [owed, setOwed] = useState<OwedMode>(t.owed[0]?.share ?? 'none');
   const [owedAmt, setOwedAmt] = useState(t.owed[0] ? centsToInput(t.owed[0].amount) : '');
   const [expectBy, setExpectBy] = useState(t.owed[0]?.expectBy ?? '');
@@ -115,7 +90,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
   /** A transaction you added: its amount is yours to change. */
   const canSetAmount = t.kind === 'manual' || t.kind === 'upcoming';
   /** What's typed in the amount box isn't an amount: Save would drop it without a word. */
-  const amountBad = canSetAmount ? amountWhy(amt) : '';
+  const amountBad = canSetAmount ? amountWhy(amt) || entryDateWhy(t, day, today) : '';
   /** Your estimate: empty goes back to the bank's amount; anything else must be an amount above $0.00. */
   const estBad = canEstimate && est.trim() !== '' ? amountWhy(est) : '';
   const tips =
@@ -164,6 +139,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       if (next !== t.estimatedAmount) body.estimatedAmount = next;
     }
     if (canSetAmount && amtCents !== null && amtCents !== t.amount) body.amount = amtCents;
+    if (canSetAmount && day !== t.date) body.date = day;
     if (memo !== (t.memo ?? '')) body.memo = memo || null;
     if (wont !== t.wontClear) body.wontClear = wont;
     if (month !== t.budgetMonth) body.budgetMonth = month;
@@ -203,6 +179,8 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       track="txn"
       onClose={close}
       gap="auto"
+      // Back asks before it drops an amount or estimate typed and not saved.
+      unsaved={!patch.isPending && ((canSetAmount && amt !== amtWas) || (canEstimate && est !== estWas))}
       // Your own entry: the header follows the amount and Out / In as you change them.
       header={<TxnHeader t={t} amount={canSetAmount ? (amtCents ?? sign * Math.abs(t.amount)) : t.amount} />}
       footer={
@@ -237,28 +215,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       ))}
       <PairedWith t={t} close={close} />
       {canSetAmount && (
-        <div className="flex shrink-0 items-end gap-2">
-          <Field label="Amount" className="min-w-0 flex-1">
-            <input
-              inputMode="decimal"
-              value={amt}
-              onChange={(e) => setAmt(e.target.value)}
-              className={amountInputClass}
-            />
-          </Field>
-          <div className="w-[140px]">
-            <Segmented
-              label="Direction"
-              track="txn.direction"
-              value={dir}
-              onChange={turn}
-              options={[
-                ['out', 'Out'],
-                ['in', 'In'],
-              ]}
-            />
-          </div>
-        </div>
+        <EntryAmount amount={amt} onAmount={setAmt} dir={dir} onDir={turn} date={day} onDate={setDay} />
       )}
       {canEstimate &&
         (estOpen ? (
@@ -307,19 +264,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
             </button>
           </div>
         ))}
-      {isRefund && t.refundOf && (
-        <div className="flex flex-col gap-1.5">
-          <Label>Refund of</Label>
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-line p-3">
-            <span className="flex flex-col">
-              <span className="text-md font-semibold">{t.refundOf.label}</span>
-              <span className="text-xs text-muted">
-                {t.categoryLabel} · {t.accountName}
-              </span>
-            </span>
-          </div>
-        </div>
-      )}
+      {isRefund && <RefundOf t={t} category={cat} onCategory={setCat} />}
       <div className="flex flex-col gap-1">
         <div className="flex min-h-9 items-center justify-between">
           <label htmlFor="txn-cat" className="text-sm font-semibold text-ink-2">
@@ -369,25 +314,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
       </div>
       {/* Only money in Ready to Assign has a month to go to: income you gave a category doesn't. */}
       {isIncome && cat === 'rta' && (
-        <div className="flex flex-col gap-2 rounded-lg border border-line p-3">
-          <span className="text-base font-semibold">Goes to</span>
-          <Segmented
-            label="Goes to"
-            track="txn.income.month"
-            // The same test as the help line below: the month the income is dated in, or a later one.
-            value={month === t.date.slice(0, 7) ? 'now' : 'next'}
-            onChange={(v) => setMonth(v === 'now' ? t.date.slice(0, 7) : addMonths(t.date.slice(0, 7), 1))}
-            options={[
-              ['now', 'Ready to Assign now'],
-              ['next', `Save for ${monthName(addMonths(t.date.slice(0, 7), 1))}`],
-            ]}
-          />
-          <span className="text-xs text-muted">
-            {month === t.date.slice(0, 7)
-              ? `Adds ${formatCents(t.amount)} to Ready to Assign in ${monthName(month)}.`
-              : `Adds ${formatCents(t.amount)} to Ready to Assign on ${monthName(month)} 1.`}
-          </span>
-        </div>
+        <IncomeGoesTo date={t.date} amount={t.amount} month={month} onMonth={setMonth} />
       )}
       {isRefund && (catName || onCard) && (
         <p className="m-0 text-sm leading-snug text-muted">

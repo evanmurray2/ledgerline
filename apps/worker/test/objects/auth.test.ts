@@ -255,6 +255,17 @@ describe('passkey sign-in', () => {
     const ops = new Browser();
     const bearer = { authorization: `Bearer ${OPS}` };
     expect((await ops.call('GET', '/api/health', undefined, bearer)).status).toBe(200);
+    // It shows how many accounts are marked idle (24 months unopened) and how many deletions are under way.
+    await dir
+      .prepare(
+        `INSERT INTO app_state (key, value, updated_at) VALUES ('expire:b_x', '0', 0), ('expire:b_y', '0', 0), ('deleting:b_z', 'u_z', 0)`,
+      )
+      .run();
+    const health = await ops.call('GET', '/api/health', undefined, bearer);
+    expect(health.json).toMatchObject({ ok: expect.any(Boolean), idleAccounts: { marked: 2, deleting: 1 } });
+    await dir
+      .prepare(`DELETE FROM app_state WHERE key IN ('expire:b_x', 'expire:b_y', 'deleting:b_z')`)
+      .run();
     expect((await ops.call('POST', '/api/ops/backup-done', {}, bearer)).status).toBe(403);
     expect((await ops.call('GET', '/api/session', undefined, bearer)).status).toBe(403);
     expect((await ops.call('GET', '/api/health', undefined, { authorization: 'Bearer nope' })).status).toBe(

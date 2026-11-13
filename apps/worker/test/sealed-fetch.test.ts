@@ -121,9 +121,8 @@ describe('the fetch job of a sealed budget', () => {
           'complete',
           'begin',
           'fetch',
+          // The last page's step also asks the bank's balances and card statements: they come with the update.
           'fetch',
-          'balances',
-          'liabilities',
           'complete',
         ]);
         expect(await stageOf(x.d)).toBeNull();
@@ -156,6 +155,39 @@ describe('the fetch job of a sealed budget', () => {
     );
   });
 
+  it('the last page and the bank’s answers in one step: a step tried again seals nothing twice', async () => {
+    await world(async (x) => {
+      const b = fullBank(TWO_PAGES);
+      const h = sealedFetchHandler(deps(x, b.provider));
+      const job = (state: FetchState) => ({
+        id: sealedFetchId(LINK_A),
+        kind: SEALED_FETCH,
+        connectionId: null,
+        state,
+        attempts: 1,
+        recurring: false,
+      });
+      let s = ((await h(job({ phase: 'begin', linkId: LINK_A }), T0 + 3000)) as { state: FetchState }).state;
+      s = ((await h(job(s), T0 + 3001)) as { state: FetchState }).state;
+      expect(b.asked).toEqual({ accounts: 0, liabilities: 0 });
+      const last = s;
+      s = ((await h(job(last), T0 + 3002)) as { state: FetchState }).state;
+      expect(s.phase).toBe('complete');
+      expect(b.asked).toEqual({ accounts: 1, liabilities: 1 });
+      // The answer of that step was lost: it runs again, fetches no page and seals no second balance.
+      const pagesAsked = b.calls.length;
+      expect(((await h(job(last), T0 + 3003)) as { state: FetchState }).state.phase).toBe('complete');
+      expect(b.calls.length).toBe(pagesAsked);
+      // A job saved in the liabilities step by an older release still finishes.
+      expect(
+        ((await h(job({ ...s, phase: 'liabilities' }), T0 + 3004)) as { state: FetchState }).state.phase,
+      ).toBe('complete');
+      expect(await h(job(s), T0 + 3005)).toEqual({ done: true });
+      const run = await openRun(x.filing, await handed(x.db, 3));
+      expect(run.pages.map((p) => p.what)).toEqual([0, 0, 1, 2]);
+    });
+  });
+
   it('one link at a time: the other waits, then fetches', async () => {
     await world(async (x) => {
       const a = fullBank(TWO_PAGES);
@@ -176,7 +208,7 @@ describe('the fetch job of a sealed budget', () => {
       expect(rb).toEqual({ state: { phase: 'begin', linkId: LINK_B, busy: 1 }, runAt: T0 + 23_000 });
       expect((await drive(deps(x, a.provider), LINK_A, T0 + 3001)).phases.at(-1)).toBe('complete');
       const r = await drive(deps(x, b.provider), LINK_B, T0 + 23_000);
-      expect(r.phases).toEqual(['fetch', 'balances', 'liabilities', 'complete']);
+      expect(r.phases).toEqual(['fetch', 'complete']);
       expect(await lastCompleteRun(x.db)).toBe(4);
       // A link that waits too long leaves it to the backstop; its request stays noted.
       await queueSealedFetch(x.d, async () => 'id', LINK_B, T0 + 30_000);
@@ -338,21 +370,23 @@ describe('the fetch job of a sealed budget', () => {
         attempts: 1,
         recurring: false,
       });
-      // Link A's job fetches all its pages, then is left alone for too long (a pause to the next day).
+      // Link A's job fetches its first page, then is left alone for too long (a pause to the next day).
       let sa = (
         (await ha(job(LINK_A, { phase: 'begin', linkId: LINK_A }), T0 + 3000)) as { state: FetchState }
       ).state;
       sa = ((await ha(job(LINK_A, sa), T0 + 3001)) as { state: FetchState }).state;
-      sa = ((await ha(job(LINK_A, sa), T0 + 3002)) as { state: FetchState }).state;
-      expect(sa).toMatchObject({ phase: 'balances', run: 3 });
+      expect(sa).toMatchObject({ phase: 'fetch', run: 3, pages: 1 });
       // Link B's job takes the place: run 3 is link B's now.
       const late = T0 + 3003 + STAGE_MAX_MS;
       const sb = ((await hb(job(LINK_B, { phase: 'begin', linkId: LINK_B }), late)) as { state: FetchState })
         .state;
       expect(sb).toMatchObject({ phase: 'fetch', run: 3 });
-      // Link A's job goes on from its saved state: it must not seal its balances into link B's run.
+      // Link A's job goes on from its saved state: it must not seal its last page or its balances into link B's
+      // run, from the last page's step or from a balances step (saved by an older release).
       const r = await ha(job(LINK_A, sa), late + 1);
       expect(r).toEqual({ state: { phase: 'begin', linkId: LINK_A, begins: 1 }, runAt: late + 1 });
+      const rb = await ha(job(LINK_A, { ...sa, phase: 'balances' }), late + 1);
+      expect(rb).toMatchObject({ state: { phase: 'begin', linkId: LINK_A } });
       expect(await stageOf(x.d)).toMatchObject({ linkId: LINK_B, pages: 0 });
       expect(a.asked.accounts).toBe(1);
       // Nor complete it, nor mark link A as fetched.

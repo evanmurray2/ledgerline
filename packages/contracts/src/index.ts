@@ -6,6 +6,9 @@ import { calendarDate, cents, date, id, month } from './scalars.js';
 import { AccountRow, StartBalance } from './accounts.js';
 
 export * from './accounts.js';
+export * from './txn-list-row.js';
+export * from './txn-sheet.js';
+import { TxnListRow } from './txn-list-row.js';
 
 export const CSRF_HEADER = 'x-ledgerline';
 
@@ -177,6 +180,32 @@ export const BudgetView = z.object({
   syncProblem: z.string().nullable(),
   /** Categories pinned to the top of Budget, oldest pin first (D-74). May name archived or removed ones. */
   pinned: z.array(id).default([]),
+  /**
+   * How this month's Ready to Assign came about, for the "has started" card: the current month only, after the
+   * budget's first month; else null. Each part is a total computeBudget() already keeps, and
+   * `rta = left − overspent + income + paidBack + closedOut − owed − assigned`.
+   */
+  carryOver: z
+    .object({
+      /** The month before. */
+      from: month,
+      /** Ready to Assign at the end of `from`, before its cash overspending (rule 6) came out. */
+      left: cents,
+      /** Cash overspending `from` left uncovered, which came out of Ready to Assign (rule 6), positive. */
+      overspent: cents,
+      /** Money into Ready to Assign this month that pays back nothing. */
+      income: cents,
+      /** The part of this month's money in that paid back what is owed to you. */
+      paidBack: cents,
+      /** What Close out gave back to Ready to Assign this month (rule 11; negative for a close undone). */
+      closedOut: cents,
+      /** The owed parts of this month's purchases, out of Ready to Assign until paid back, positive. */
+      owed: cents,
+      /** Assigned in this month and later months. */
+      assigned: cents,
+    })
+    .nullable()
+    .default(null),
 });
 export type BudgetView = z.infer<typeof BudgetView>;
 
@@ -251,27 +280,6 @@ export const Target = z.discriminatedUnion('type', [
 ]);
 export type Target = z.infer<typeof Target>;
 
-export const TxnListRow = z.object({
-  key: z.string(),
-  payee: z.string(),
-  accountId: id,
-  accountName: z.string(),
-  date,
-  amount: cents,
-  status: z.enum(['pending', 'posted', 'upcoming']),
-  wontClear: z.boolean(),
-  categoryLabel: z.string().nullable(),
-  /** Short badge, e.g. "By rule", "Your estimate", "Pending", "$25 owed", "Paid". */
-  badge: z.string().nullable(),
-  badgeKind: z
-    .enum(['alert', 'match', 'est', 'hold', 'mine', 'paired', 'owed', 'rule', 'transfer'])
-    .nullable(),
-  sub: z.string().nullable(),
-  /** Which sheet opens: pending, posted, income, refund, paid back, transfer pick, match, check pending. */
-  sheet: z.enum(['txn', 'transfer', 'match', 'checkPending']),
-});
-export type TxnListRow = z.infer<typeof TxnListRow>;
-
 export const CategorySheet = z.object({
   id,
   name: z.string(),
@@ -325,7 +333,12 @@ export const ActivityView = z.object({
         .nullable(),
     }),
   ),
-  checkThese: z.array(TxnListRow.extend({ action: z.enum(['dismiss', 'review']) })),
+  /**
+   * `accept`: a bank row that cleared at another amount than your estimate (the bank's amount counts); `dismiss`: any
+   * other alert. Both are answered with POST /api/transactions/:key/review, and undone with .../review/undo.
+   * `review` opens the sheet.
+   */
+  checkThese: z.array(TxnListRow.extend({ action: z.enum(['accept', 'dismiss', 'review']) })),
   /**
    * "Same purchase?" (docs/payee-names.md 9.1): one card per bank row that could be your entry or another bank row,
    * with no exact evidence (or several rows with it). Answered with POST /api/same-purchase/:id.
@@ -362,79 +375,6 @@ export const ActivityView = z.object({
 });
 export type ActivityView = z.infer<typeof ActivityView>;
 
-export const TxnSheet = z.object({
-  key: z.string(),
-  kind: z.enum([
-    'pending',
-    'posted',
-    'income',
-    'refund',
-    'paidBack',
-    'transfer',
-    'manual',
-    'upcoming',
-    'history',
-  ]),
-  /** A 'history' row that is part of the account's starting balance (D-67), not just before it. */
-  inStartingBalance: z.boolean().optional(),
-  /** A transfer between accounts (paired, or to an account that isn't linked): no payee, `payee` names the transfer. */
-  transfer: z.boolean().optional(),
-  payee: z.string(),
-  /** The payee this transaction is under; null for a manual entry (it has only a name) and for a transfer. */
-  payeeId: id.nullable().optional(),
-  rawName: z.string(),
-  accountId: id,
-  accountName: z.string(),
-  /** A paired transfer: the account on the other side. */
-  otherAccountName: z.string().nullable().optional(),
-  date,
-  postedDate: date.nullable(),
-  amount: cents,
-  bankAmount: cents.nullable(),
-  estimatedAmount: cents.nullable(),
-  status: z.enum(['pending', 'posted', 'upcoming']),
-  wontClear: z.boolean(),
-  categoryId: id.nullable(),
-  categoryLabel: z.string().nullable(),
-  categorizedBy: z.string().nullable(),
-  split: z
-    .array(
-      z.object({
-        id,
-        categoryId: id.nullable(),
-        amount: cents,
-        memo: z.string().nullable(),
-        absorbsRemainder: z.boolean(),
-        /** The line is owed to you (an owed item open for it). */
-        owed: z.boolean().optional(),
-      }),
-    )
-    .nullable(),
-  memo: z.string().nullable(),
-  budgetMonth: month,
-  budgetMonthOverridden: z.boolean(),
-  owed: z.array(
-    z.object({
-      id,
-      /** The share picked when it was marked: a fraction (half, all) or a fixed amount (custom). */
-      share: z.enum(['half', 'all', 'custom']),
-      amount: cents,
-      matched: cents,
-      expectBy: date.nullable(),
-      status: z.string(),
-    }),
-  ),
-  paybacks: z.array(z.object({ inflowKey: z.string(), itemId: id, amount: cents, label: z.string() })),
-  refundOf: z.object({ key: z.string(), label: z.string() }).nullable(),
-  /**
-   * The other row of a pair made by your entry and a bank row (a cover, or the posted charge that took your entry):
-   * "Not the same" (POST /api/transactions/:key/not-same) undoes it.
-   */
-  pairedWith: z.object({ label: z.string() }).nullable(),
-  alerts: z.array(z.string()),
-});
-export type TxnSheet = z.infer<typeof TxnSheet>;
-
 /** How much of money out is owed to you: a share of it, or a typed amount (at most the purchase). */
 export const OwedMark = z.object({
   mode: z.enum(['half', 'even', 'all', 'fraction', 'fixed']),
@@ -445,6 +385,16 @@ export const OwedMark = z.object({
   expectBy: calendarDate.nullable(),
 });
 export type OwedMark = z.infer<typeof OwedMark>;
+/** Characters that change how text around them reads (bidi overrides and isolates) or don't show (controls). */
+export const HIDDEN_CHARS = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
+/** A payee's name as you type it: trimmed first, so a name of only spaces is empty, and no hidden characters. */
+export const payeeName = z
+  .string()
+  .trim()
+  .min(1, 'Enter a payee.')
+  .max(120)
+  .refine((n) => !HIDDEN_CHARS.test(n), 'Use letters, numbers and punctuation only.');
+
 export const TxnPatch = z.object({
   categoryId: id.nullable().optional(),
   toRta: z.boolean().optional(),
@@ -465,9 +415,14 @@ export const TxnPatch = z.object({
   estimatedAmount: cents.nullable().optional(),
   /** A transaction you added (pending or upcoming): its amount, outflow negative. */
   amount: cents.optional(),
+  /**
+   * A transaction you added: its date. A pending one stays today or earlier (a later date is an upcoming one); an
+   * upcoming one counts from its new date.
+   */
+  date: calendarDate.optional(),
   wontClear: z.boolean().optional(),
   budgetMonth: month.nullable().optional(),
-  payeeName: z.string().min(1).max(120).optional(),
+  payeeName: payeeName.optional(),
   markOwed: OwedMark.nullable().optional(),
 });
 export const CategorizeRequest = z.object({
@@ -481,7 +436,7 @@ export const NewTxnRequest = z.object({
   date: calendarDate,
   /** Outflow negative. */
   amount: cents,
-  payee: z.string().min(1).max(120),
+  payee: payeeName,
   categoryId: id.nullable(),
   /** Money in that goes to Ready to Assign (no category). */
   toRta: z.boolean().optional(),
@@ -569,6 +524,22 @@ export const OwedView = z.object({
    * Match money back opens (D-98). Null when there is none.
    */
   payback: z.object({ key: z.string(), payee: z.string(), amount: cents, date }).nullable().default(null),
+  /**
+   * Money in from the last 60 days that paid back what is owed to you, newest first (at most 10): each with how much
+   * of it was matched and the items it paid back.
+   */
+  paidBack: z
+    .array(
+      z.object({
+        key: z.string(),
+        payee: z.string(),
+        date,
+        /** How much of it paid back owed items. All of it is in Ready to Assign (D-98). */
+        matched: cents,
+        items: z.array(z.object({ id, label: z.string(), amount: cents })),
+      }),
+    )
+    .default([]),
 });
 export type OwedView = z.infer<typeof OwedView>;
 export const OwedAction = z.object({
@@ -579,9 +550,24 @@ export const OwedAction = z.object({
 
 // ---------------------------------------------------------------- accounts
 
+export const RegisterDay = z.object({
+  label: z.string(),
+  balance: cents.nullable(),
+  rows: z.array(TxnListRow),
+});
+export type RegisterDay = z.infer<typeof RegisterDay>;
+
+/**
+ * Where the next older page of a register starts: its rows are dated before `before`, and `balance` is the running
+ * balance just before that day (the bank balance walked back over every newer row). Sent back as is to
+ * `GET /accounts/:id/register/older?before=&balance=`.
+ */
+export const RegisterCursor = z.object({ before: date, balance: cents });
+export type RegisterCursor = z.infer<typeof RegisterCursor>;
+
 export const RegisterView = z.object({
   account: AccountRow,
-  days: z.array(z.object({ label: z.string(), balance: cents.nullable(), rows: z.array(TxnListRow) })),
+  days: z.array(RegisterDay),
   note: z.string().nullable(),
   /** Linked accounts only. */
   start: StartBalance.nullable().optional(),
@@ -594,10 +580,16 @@ export const RegisterView = z.object({
    * Assign first (`POST /budget/move`). Null otherwise.
    */
   closeMove: z.object({ categoryId: id, amount: cents.positive() }).nullable().optional(),
-  /** The register lists at most its newest rows (REGISTER_ROWS); true when there are older ones it leaves out. */
+  /** A page lists about REGISTER_ROWS of the newest rows, in whole days; true when there are older ones it leaves out. */
   more: z.boolean().optional(),
+  /** Where the older rows start (Show older); null when this page holds the oldest. */
+  older: RegisterCursor.nullable().optional(),
 });
 export type RegisterView = z.infer<typeof RegisterView>;
+
+/** An older page of a register: posted days only (pending and upcoming rows are all on the first page). */
+export const RegisterPage = z.object({ days: z.array(RegisterDay), older: RegisterCursor.nullable() });
+export type RegisterPage = z.infer<typeof RegisterPage>;
 
 // ---------------------------------------------------------------- reports
 
@@ -700,12 +692,10 @@ export type PayeesView = z.infer<typeof PayeesView>;
 export const MergePayees = z.object({
   keep: id.optional(),
   ids: z.array(id).min(2).max(50),
-  name: z.string().min(1).max(120).optional(),
+  name: payeeName.optional(),
 });
 export const MergeResult = z.object({ ok: z.literal(true), undoId: z.string() });
 export type MergeResult = z.infer<typeof MergeResult>;
-/** Characters that change how text around them reads (bidi overrides and isolates) or don't show (controls). */
-export const HIDDEN_CHARS = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
 export const RenameAccount = z.object({
   name: z
     .string()
@@ -723,7 +713,7 @@ export const CloseAccount = z.object({
   available: z.number().int().optional(),
   through: z.number().int().optional(),
 });
-export const RenamePayee = z.object({ name: z.string().min(1).max(120), remember: z.boolean().optional() });
+export const RenamePayee = z.object({ name: payeeName, remember: z.boolean().optional() });
 
 export const ConnectionsView = z.object({
   used: z.number().int(),
@@ -814,6 +804,11 @@ export const HealthView = z.object({
     readPct: z.number(),
     writePct: z.number(),
   }),
+  /**
+   * Accounts nobody opened for 24 months, marked and deleted 30 days later (docs/privacy.md 5.8), and deletions
+   * under way. Counts only; added by the Worker for the ops token.
+   */
+  idleAccounts: z.object({ marked: z.number().int(), deleting: z.number().int() }).optional(),
 });
 export type HealthView = z.infer<typeof HealthView>;
 

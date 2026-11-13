@@ -44,7 +44,7 @@ Data lives only in Durable Objects' SQLite (D-37, D-38). Cloudflare keeps 30 day
 
 ## Background work
 
-- **The fetch job** (`seal/fetch-job.ts`): one job per link, one link at a time. Begin, then each page fetched and sealed in one step, then the bank's balances and card statements, then sign and complete. It starts from the bank's webhook, from Fetch now, and from a 4-hour backstop, which also runs the snapshot delete rule. It pauses at 70% of a daily limit. A bad stamp stops it and is logged. Besides it a store runs only the Item routes; a job of any other kind found there (the old purge and link check among them, D-106) is dropped unrun.
+- **The fetch job** (`seal/fetch-job.ts`): one job per link, one link at a time. Begin, then each page fetched and sealed in one step, the last one with the bank's balances and card statements (D-110), then sign and complete. It starts from the bank's webhook, from Fetch now, and from a 4-hour backstop, which also runs the snapshot delete rule. It pauses at 70% of a daily limit. A bad stamp stops it and is logged. Besides it a store runs only the Item routes; a job of any other kind found there (the old purge and link check among them, D-106) is dropped unrun.
 - **The cron** (10:20 UTC) wakes the Directory, which refreshes usage and checks every budget's jobs.
 - **No daily scan or nightly maintenance** runs on the server. For a locked budget, no device runs them yet either (a scan entry kind exists in `local/device-log.ts`, nothing sends one).
 

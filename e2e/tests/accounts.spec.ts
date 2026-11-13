@@ -74,3 +74,30 @@ test('A row from before the budget is never listed, and its sheet is read-only',
   await sheet.getByRole('button', { name: 'Done' }).click();
   await expect(page).toHaveURL(/\/accounts\/checking$/);
 });
+
+test('Desktop: an account opens in the side panel, its transactions over it, and closing goes back', async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== 'desktop', 'the side panel is desktop only');
+  await page.goto('/accounts');
+  await page.getByRole('link', { name: /Everyday Checking/ }).click();
+  await expect(page).toHaveURL(/\/accounts\/checking$/);
+  const panel = page.getByTestId('side-panel');
+  const register = panel.getByRole('dialog', { name: 'Everyday Checking' });
+  await expect(register.getByText('Balance at bank')).toBeVisible();
+  // The list stays on the page next to it.
+  await expect(page.getByTestId('net-worth')).toBeVisible();
+  // A transaction takes the panel; closing it brings the account back as it was.
+  await register.locator('a[href*="/txn/"]').first().click();
+  await expect(page).toHaveURL(/\/accounts\/checking\/txn\//);
+  await expect(register).toBeHidden();
+  const txn = panel.getByRole('dialog');
+  await expect(txn).toHaveCount(1);
+  await txn.getByRole('button', { name: 'Close' }).first().click();
+  await expect(page).toHaveURL(/\/accounts\/checking$/);
+  await expect(register.getByText('Balance at bank')).toBeVisible();
+  // Escape closes the account: back to the list alone.
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/\/accounts$/);
+  await expect(panel.getByRole('dialog')).toHaveCount(0);
+});

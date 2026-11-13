@@ -14,18 +14,12 @@ import {
   rankPastUses,
   suggestCategory,
   type PastUse,
+  foldSearch,
 } from '@ledgerline/domain';
 import type { AppEnv } from '../http/context.js';
 import { BAD_MONTH, HttpError, TRY_AGAIN, scoped } from './api.js';
 import { fresh, monthResult, structure } from '../views/common.js';
-import {
-  owedLabels,
-  owedStatements,
-  paybacksIn,
-  paybacksWhere,
-  type OwedItemRow,
-  type PaybackLinkRow,
-} from '../views/owed-rows.js';
+import { owedLabels, owedStatements, type OwedItemRow, type PaybackLinkRow } from '../views/owed-rows.js';
 import { IN_BUDGET_ROWS, listRow } from '../views/rows.js';
 import {
   COVERING,
@@ -43,6 +37,17 @@ import { names } from './txn-common.js';
 import { samePurchaseCards } from './same-purchase.js';
 import { removedByBank } from './removed-by-bank.js';
 import { IN_CLOSED_ACCOUNT } from './account-close.js';
+import {
+  NOTHING_FOUND,
+  foldedNames,
+  inCategory,
+  plainAmount,
+  type SearchFound,
+  searchAmount,
+  searchMatch,
+  searchText,
+  textPattern,
+} from './activity-search.js';
 export const activityViewRoutes = new Hono<AppEnv>();
 
 // ---------------------------------------------------------------- Activity
@@ -121,55 +126,6 @@ function shiftDate(d: string, n: number): string {
   return t.toISOString().slice(0, 10);
 }
 
-/**
- * A search matches a row's category name too: split lines included, and money in that paid back an owed purchase
- * in a category with that name.
- */
-/** A name as a search compares it: lower case, curly apostrophes as straight ones (`searchText` folds the search). */
-const fold = (col: string) => `replace(replace(lower(${col}), '’', ''''), '‘', '''')`;
-
-const CATEGORY_MATCH = `category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND ${fold('name')} LIKE ?3 ESCAPE '\\')
-         OR key IN (SELECT sp.txn_key FROM txn_split sp JOIN category c ON c.id = sp.category_id
-                    WHERE sp.budget_id = ?1 AND ${fold('c.name')} LIKE ?3 ESCAPE '\\')
-         OR key IN (${paybacksWhere(`e.category_id IN (SELECT id FROM category WHERE budget_id = ?1 AND ${fold('name')} LIKE ?3 ESCAPE '\\')`)})`;
-
-/**
- * One category's rows (Reports and the category sheet open Activity on a category, by id): the row's own category,
- * a split line in it, or money in that paid back one of its owed purchases. `p` is the parameter holding the id.
- */
-const inCategory = (p: string) =>
-  `AND (category_id = ${p} OR key IN (SELECT txn_key FROM txn_split WHERE budget_id = ?1 AND category_id = ${p})
-    OR key IN (${paybacksIn(p)}))`;
-
-/**
- * A search's posted-row filter: ?3 is the text as a LIKE pattern (its % and _ are letters, not wildcards), `amt`
- * the parameter holding the amount pattern (`amountPattern`), NULL when the search isn't an amount.
- */
-const searchMatch = (amt: string) =>
-  `AND (${fold('payee')} LIKE ?3 ESCAPE '\\' OR (${amt} IS NOT NULL AND printf('%.2f', abs(amount) / 100.0) LIKE ${amt}) OR ${CATEGORY_MATCH})`;
-
-/** Text as a search compares it, as `fold` does in SQL. */
-function foldText(t: string): string {
-  return t.toLowerCase().replace(/[’‘]/g, "'");
-}
-
-/** The search as a LIKE pattern for the text: % and _ match only themselves. */
-function textPattern(q: string): string {
-  return `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
-}
-
-/** The search as a plain amount ("$1,018" → "1018", "−38.10" → "38.10"), or null when it isn't one. */
-function searchAmount(q: string): string | null {
-  const a = q.replace(/[\s$,−-]/g, '');
-  return /\d/.test(a) && /^\d*\.?\d*$/.test(a) ? a : null;
-}
-
-/** An amount as the search compares it: 101800 → "1018.00", sign dropped. */
-function plainAmount(c: number): string {
-  const a = Math.abs(c);
-  return `${Math.floor(a / 100)}.${String(a % 100).padStart(2, '0')}`;
-}
-
 /** Which posted rows a page reads: a recent window from a date, 'all' (searches), 'none' (the attention view), or one budget month. */
 type PostedScope = string | 'all' | 'none' | { month: Month; start: Month };
 
@@ -178,6 +134,12 @@ type PostedScope = string | 'all' | 'none' | { month: Month; start: Month };
  * date's month, never before the budget's first month. Only for rows the budget counts (IN_BUDGET).
  */
 const ROW_MONTH = `max(coalesce(budget_month, substr(date, 1, 7)), ?5)`;
+
+/** ROW_MONTH for a row already read: `start` is the budget's first month. */
+function rowMonth(t: TxRow, start: Month): Month {
+  const m = (t.budget_month ?? t.date.slice(0, 7)) as Month;
+  return m < start ? start : m;
+}
 
 /**
  * Posted rows the budget counts: dated from the account's budget start. Activity leaves out the rest ("Before your
@@ -198,7 +160,14 @@ function postedQuery(
   cursor: string | null,
   q: string,
   category: string | null = null,
+  found: SearchFound = NOTHING_FOUND,
 ): Stmt {
+  const amount = searchAmount(q);
+  // A search's parameters, bound only with a search; each is read in either case, so the numbers stay put.
+  const pattern = q ? textPattern(q) : null;
+  const amt = q && amount !== null ? `%${amount}%` : null;
+  const names = q ? JSON.stringify(found.names) : null;
+  const cats = q ? JSON.stringify(found.cats) : null;
   if (typeof from === 'object') {
     const first = from.month === from.start;
     return s.q(
@@ -206,46 +175,38 @@ function postedQuery(
          ${first ? 'AND ?4 IS NOT NULL' : 'AND posted_date >= ?4'}
          AND posted_date < date(?6, '+4 months') AND ${IN_BUDGET} AND ${ROW_MONTH} = ?7
          AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
-         ${q ? searchMatch('?8') : 'AND ?3 IS NULL AND ?8 IS NULL'}
-         ${category ? inCategory('?9') : ''}
+         ${q ? searchMatch('?8', '?10', '?11') : 'AND ?3 IS NULL AND ?8 IS NULL AND ?10 IS NULL AND ?11 IS NULL'}
+         ${category ? inCategory('?9') : 'AND ?9 IS NULL'}
        ORDER BY date DESC, seq DESC LIMIT 50`,
       cursor,
-      q ? textPattern(q) : null,
+      pattern,
       `${addMonths(from.month, -1)}-01`,
       from.start,
       `${addMonths(from.month, 2)}-01`,
       from.month,
-      q && searchAmount(q) !== null ? `%${searchAmount(q)}%` : null,
-      ...(category ? [category] : []),
+      amt,
+      category,
+      names,
+      cats,
     );
   }
   const window = from !== 'all' && from !== 'none';
   return s.q(
     `SELECT ${TX_COLUMNS} FROM v_txn_bank WHERE budget_id = ?1 AND ${from === 'none' ? '0 AND ' : ''}status = 'posted'
-       ${window ? 'AND posted_date >= ?5 AND date >= ?5' : ''}
+       ${window ? 'AND posted_date >= ?5 AND date >= ?5' : 'AND ?5 IS NULL'}
        AND ${IN_BUDGET}
        AND (?2 IS NULL OR date || '|' || printf('%015d', seq) < ?2)
-       ${q ? searchMatch('?4') : 'AND ?3 IS NULL AND ?4 IS NULL'}
-       ${category ? inCategory(window ? '?6' : '?5') : ''}
+       ${q ? searchMatch('?4', '?7', '?8') : 'AND ?3 IS NULL AND ?4 IS NULL AND ?7 IS NULL AND ?8 IS NULL'}
+       ${category ? inCategory('?6') : 'AND ?6 IS NULL'}
      ORDER BY date DESC, seq DESC LIMIT 50`,
     cursor,
-    q ? textPattern(q) : null,
-    q && searchAmount(q) !== null ? `%${searchAmount(q)}%` : null,
-    ...(window ? [from] : []),
-    ...(category ? [category] : []),
+    pattern,
+    amt,
+    window ? from : null,
+    category,
+    names,
+    cats,
   );
-}
-
-/**
- * What a search looks for: at most 48 bytes, since a Durable Object's SQLite refuses a LIKE pattern over 50 bytes
- * (the search goes between two `%`). A longer search looks for its start.
- */
-function searchText(raw: string): string {
-  // Curly and straight apostrophes match each other, and a double space is one space.
-  const chars = [...foldText(raw).replace(/\s+/g, ' ').trim()];
-  const enc = new TextEncoder();
-  while (enc.encode(chars.join('')).length > 48) chars.pop();
-  return chars.join('').trim();
 }
 
 activityViewRoutes.get('/activity', async (c) => {
@@ -268,7 +229,10 @@ activityViewRoutes.get('/activity', async (c) => {
   // Pending and upcoming rows are waiting now: they show on this month, whatever their date, and never on a past one.
   const past = !!month && month < f.current;
   const { cats, accts } = await names(s);
-  const [attn, pend, upc, posted, splits, owed, links, stale, atBank] = await s.batch([
+  // Categories whose name matches the search, and payee names SQL can't fold (activity-search.ts).
+  const qCats = new Set(q ? [...cats].filter(([, n]) => foldSearch(n).includes(q)).map(([id]) => id) : []);
+  const found: SearchFound = q ? { names: await foldedNames(s, q), cats: [...qCats] } : NOTHING_FOUND;
+  const [attn, pend, upc, posted, splits, owed, links, stale, atBank, finalQ] = await s.batch([
     s.q(ATTENTION_SQL),
     s.q(
       // Pending rows in a closed account stopped waiting for the bank (D-93): they aren't "not posted yet".
@@ -293,6 +257,7 @@ activityViewRoutes.get('/activity', async (c) => {
       cursor ?? null,
       q,
       category,
+      found,
     ),
     s.q(`SELECT txn_key, category_id, amount FROM txn_split WHERE budget_id = ?1`),
     ...owedStatements(s),
@@ -303,6 +268,11 @@ activityViewRoutes.get('/activity', async (c) => {
       f.today,
     ),
     s.q(ENTRIES_AT_BANK),
+    // Pending rows that stayed in a closed account are final (D-93): listed with the posted rows, by their date.
+    s.q(
+      `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1 AND ${filter === 'all' ? '' : '0 AND '}status = 'pending'
+         AND ${IN_CLOSED_ACCOUNT} AND ${IN_BUDGET} ORDER BY date DESC, seq DESC LIMIT 200`,
+    ),
   ]);
   const atBankKeys = atBankMap(atBank!.results);
   const splitRows = splits!.results as { txn_key: string; category_id: string | null; amount: number }[];
@@ -311,8 +281,7 @@ activityViewRoutes.get('/activity', async (c) => {
   for (const r of splitRows) splitTotals.set(r.txn_key, (splitTotals.get(r.txn_key) ?? 0) + r.amount);
   /** What a split's lines leave out of its amount (D-82): 0 when they add up, or for a row with no split. */
   const splitOff = (t: TxRow) => (splitTotals.has(t.key) ? t.amount - splitTotals.get(t.key)! : 0);
-  // Categories whose name matches the search, and the split transactions with a line in one of them.
-  const qCats = new Set(q ? [...cats].filter(([, n]) => foldText(n).includes(q)).map(([id]) => id) : []);
+  // The split transactions with a line in a category the search matched.
   const qSplits = new Set(
     splitRows.filter((r) => r.category_id && qCats.has(r.category_id)).map((r) => r.txn_key),
   );
@@ -358,7 +327,7 @@ activityViewRoutes.get('/activity', async (c) => {
   const match = (t: TxRow) =>
     (!category || t.category_id === category || catSplits.has(t.key) || catPaybacks.has(t.key)) &&
     (!q ||
-      foldText(t.payee).includes(q) ||
+      foldSearch(t.payee).includes(q) ||
       (qAmount !== null && plainAmount(t.amount).includes(qAmount)) ||
       (!!t.category_id && qCats.has(t.category_id)) ||
       qSplits.has(t.key) ||
@@ -455,7 +424,13 @@ activityViewRoutes.get('/activity', async (c) => {
   const checkThese = [
     ...attnRows
       .filter((t) => t.alert && !t.reviewed_at)
-      .map((t) => ({ ...row(t), action: 'dismiss' as const })),
+      .map((t) => ({
+        ...row(t),
+        // It cleared at another amount than your estimate: the bank's amount already counts, OK accepts it.
+        action: (JSON.parse(t.alert!) as string[]).some((a) => a.startsWith('amount_changed'))
+          ? ('accept' as const)
+          : ('dismiss' as const),
+      })),
     // A split that no longer adds up opens its sheet, where you fix the lines (D-82).
     ...attnRows
       .filter((t) => splitOff(t) !== 0 && !(t.alert && !t.reviewed_at))
@@ -477,7 +452,20 @@ activityViewRoutes.get('/activity', async (c) => {
     const wider = await run(shiftDate(windowStart(cursor, f.today), -180));
     postedTx = wider.length < 50 ? await run('all') : wider;
   }
-  const postedRows = postedTx.map(row);
+  // Final rows go on the page whose posted rows they fall among (by date and order): after the cursor, and not
+  // past this page's last row when there are more pages.
+  const order = (t: TxRow) => `${t.date}|${String(t.seq).padStart(15, '0')}`;
+  const lastKey = postedTx.length >= 50 ? order(postedTx[postedTx.length - 1]!) : null;
+  const finals = (finalQ!.results as TxRow[]).filter(
+    (t) =>
+      (!cursor || order(t) < cursor) &&
+      (!lastKey || order(t) >= lastKey) &&
+      (!month || rowMonth(t, start) === month) &&
+      match(t),
+  );
+  const postedRows = [...postedTx, ...finals]
+    .sort((a, b) => (order(a) < order(b) ? 1 : order(a) > order(b) ? -1 : 0))
+    .map(row);
   const last = postedTx[49];
   const mr = await monthResult(s, f.current, start);
   const picker = groups

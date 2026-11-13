@@ -34,6 +34,7 @@ import { toast } from '../components/Toast';
 import { useScreen } from '../lib/common';
 import { usage } from '../usage/tracker';
 import { errorMessage } from '../api/client';
+import { PaidBackRecently } from './OwedPaidBack';
 
 type Item = OwedView['items'][number];
 
@@ -163,7 +164,8 @@ export function OwedScreen() {
                       {payback && (
                         <Link
                           to={`/owed/match/${payback.key}`}
-                          search
+                          // The sheet opens with this row's item picked, not the ones the money would match first.
+                          search={(p: object) => ({ ...p, item: o.id })}
                           data-track="owed.match"
                           aria-label={`Match money back for ${o.label}`}
                           className={cx(softButtonClass(), pill)}
@@ -186,35 +188,7 @@ export function OwedScreen() {
               })}
             </Card>
             <ClosedOut items={v.items} current={session.data?.budget.currentMonth ?? null} />
-            {v.items.some((o) => o.matched > 0) && (
-              <>
-                <SectionTitle>Paid back recently</SectionTitle>
-                <Card>
-                  {v.items
-                    .filter((o) => o.matched > 0)
-                    .map((o) => (
-                      <Link
-                        key={o.id}
-                        to={`/activity/txn/${o.txnKey}`}
-                        search={{ close: here }}
-                        className="flex min-h-14 items-center justify-between border-t border-divider px-3 py-1.5 text-ink no-underline first:border-t-0"
-                      >
-                        <span className="flex flex-col gap-0.5">
-                          <span className="text-base font-semibold">{o.label}</span>
-                          <span className="text-xs text-muted">
-                            {o.status === 'paid_back'
-                              ? 'Paid back in full'
-                              : `${formatCents(o.still)} still open`}
-                          </span>
-                        </span>
-                        <span className="tnum text-base font-bold text-funded-fg">
-                          {formatCents(o.matched, { plus: true })}
-                        </span>
-                      </Link>
-                    ))}
-                </Card>
-              </>
-            )}
+            <PaidBackRecently paidBack={v.paidBack} />
           </>
         )}
       </ScreenBody>

@@ -128,7 +128,8 @@ function MoveForm({
     e.preventDefault();
     if (ok && !move.isPending) void save().catch(() => undefined);
   };
-  const specials = [{ id: RTA, name: RTA_NAME }];
+  // Ready to Assign shows what it has, like every category in the list.
+  const specials = [{ id: RTA, name: RTA_NAME, available: b.rta }];
   const moved = ok ? cents : 0;
 
   return (
@@ -137,6 +138,7 @@ function MoveForm({
       track="move"
       onClose={onClose}
       modal
+      unsaved={typed && amount.trim() !== '' && !move.isPending}
       header={<SheetTitle title="Move money" />}
       footer={
         <PrimaryButton

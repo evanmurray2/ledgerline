@@ -30,6 +30,7 @@ import {
 } from '../components/ui';
 import { toast } from '../components/Toast';
 import { noteRecoveryKeyHere } from '../copy/notices';
+import { passkeyProblem } from '../copy/passkey';
 import {
   checkRecoveryKey,
   holdRecoveryKey,
@@ -53,10 +54,7 @@ const day = (ms: number) =>
 
 function problem(e: unknown): string {
   if (e instanceof ApiError) return errorMessage(e);
-  const name = (e as { name?: string }).name;
-  if (name === 'NotAllowedError' || name === 'AbortError') return 'Cancelled. Try again when you’re ready.';
-  if (name === 'InvalidStateError') return 'This device already has a Ledgerline passkey.';
-  return e instanceof Error ? e.message : 'Something went wrong. Try again.';
+  return passkeyProblem(e) ?? (e instanceof Error ? e.message : 'Something went wrong. Try again.');
 }
 
 function deviceName(): string {

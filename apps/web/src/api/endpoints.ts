@@ -20,10 +20,12 @@ import {
   OwedView,
   PayeesView,
   MergeResult,
+  RegisterPage,
   RegisterView,
   ReportsView,
   Session,
   TxnSheet,
+  RefundOfView,
   SealedSession,
 } from '@ledgerline/contracts';
 import type {
@@ -38,6 +40,7 @@ import type {
   NoteRequest,
   OwedAction,
   PendingCheckAction,
+  RefundLink,
   SamePurchaseAnswer,
   SetAssignedRequest,
   SettingsPatch,
@@ -186,6 +189,8 @@ export const api = {
     post(`/api/transactions/${enc(key)}/pending`, MutationResult, body),
   /** Clears a bank transaction's alert (e.g. it cleared at a different amount): the OK on Check these. */
   reviewTxn: (key: string) => post(`/api/transactions/${enc(key)}/review`, MutationResult),
+  /** Undo of OK (or Accept) on Check these: the row asks again. */
+  reviewTxnUndo: (key: string) => post(`/api/transactions/${enc(key)}/review/undo`, MutationResult, {}),
   deleteTxn: (key: string) => del(`/api/transactions/${enc(key)}`, MutationResult),
   /** "Same purchase?" (docs/payee-names.md 9.1): Yes or No for one candidate of a card. */
   samePurchase: (v: { id: string } & In<typeof SamePurchaseAnswer>) =>
@@ -202,6 +207,10 @@ export const api = {
   match: (inflowKey: string) => get(`/api/match/${enc(inflowKey)}`, MatchView),
   doMatch: (body: In<typeof MatchRequest>) => post('/api/match', MutationResult, body),
   unlink: (inflowKey: string) => post(`/api/match/${enc(inflowKey)}/unlink`, MutationResult),
+  /** A card refund: the purchases it can be linked to, and the link (`purchaseKey: null` is Not this purchase). */
+  refundOf: (key: string) => get(`/api/transactions/${enc(key)}/refund-of`, RefundOfView),
+  linkRefund: (v: { key: string } & In<typeof RefundLink>) =>
+    post(`/api/transactions/${enc(v.key)}/refund-of`, MutationResult, { purchaseKey: v.purchaseKey }),
   pickTransfer: (key: string, body: In<typeof TransferPick>) =>
     post(`/api/transfers/${enc(key)}/pick`, MutationResult, body),
   /** `otherKey`: the row it was paired with, for Undo (pick it again); absent when Undo can't pair them again. */
@@ -214,6 +223,9 @@ export const api = {
   accounts: () => get('/api/accounts', AccountsView),
   register: (id: string, show: RegisterShow) =>
     get(`/api/accounts/${enc(id)}/register${qs({ show })}`, RegisterView),
+  /** An older page of a register (Show older), from the `older` cursor of the page before it. */
+  registerOlder: (id: string, cursor: { before: string; balance: number }) =>
+    get(`/api/accounts/${enc(id)}/register/older${qs({ ...cursor })}`, RegisterPage),
   reports: (month: string) => get(`/api/reports${qs({ month })}`, ReportsView),
 
   categories: () => get('/api/settings/categories', CategoriesView),

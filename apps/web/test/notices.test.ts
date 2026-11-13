@@ -1,7 +1,15 @@
 // Notices on every device of a locked budget (src/copy/notices.ts; docs/privacy.md 5.8), and which requests the
 // app signs with the budget's key (src/api/signed-paths.ts; docs/privacy-keys.md 11).
 import { afterEach, describe, expect, it } from 'vitest';
-import { ACTION, type Entry, KIND } from '@ledgerline/seal';
+import {
+  ACTION,
+  advance,
+  type ChainState,
+  type Entry,
+  KIND,
+  randomBytes,
+  startChain,
+} from '@ledgerline/seal';
 import {
   ownWriters,
   rememberWriter,
@@ -11,7 +19,10 @@ import {
   noteRecoveryKeyHere,
   noticesOf,
   takeRecoveryKeyHere,
+  waysRemoved,
 } from '../src/copy/notices';
+import { addPasskeyEntry, createBudget } from '../src/keys/budget';
+import { keyChangeEntry } from '../src/keys/changes';
 import { signedActionFor } from '../src/api/signed-paths';
 
 const DAY = 86_400_000;
@@ -100,6 +111,74 @@ describe('notices on every device', () => {
     // A later sign-in elsewhere shows again.
     takeRecoveryKeyHere(BUDGET, at + 1000);
     expect(dismissedNotices(BUDGET)).toEqual([`key:${at}`]);
+  });
+
+  it('tells of a way in another device removed, not of one this device removed', () => {
+    const removed = new Map([
+      [11, ['p:a']],
+      [13, ['r:old']],
+    ]);
+    const n = noticesOf({
+      ...base,
+      removed,
+      entries: [
+        entry(11, KIND.keyChange, OTHER, NOW - DAY),
+        entry(13, KIND.keyChange, ME, NOW - DAY),
+        entry(15, KIND.keyChange, OTHER, NOW - DAY),
+      ],
+    });
+    expect(n).toEqual([{ id: 'removed:11', kind: 'way-removed', at: NOW - DAY, slotIds: ['p:a'] }]);
+    // Not after 14 days.
+    expect(
+      noticesOf({ ...base, removed, entries: [entry(11, KIND.keyChange, OTHER, NOW - NOTICE_MS - 1)] }),
+    ).toEqual([]);
+  });
+
+  it('finds the ways in a key change removed, from the log itself', async () => {
+    const T0 = NOW - 2 * DAY;
+    const first = { credentialId: randomBytes(20), prf: randomBytes(32) };
+    const made = await createBudget({ budgetId: BUDGET, deviceId: ME, passkey: first, now: T0 });
+    let chain: ChainState = await startChain(made.genesis, { now: T0 + 1000, schemaVersion: 1 }, BUDGET);
+    const entries = [made.genesis];
+    let now = T0;
+    const at = () => ({
+      number: chain.number,
+      hash: chain.hash,
+      deviceCounter: chain.counters.get(OTHER) ?? 0,
+      filedThrough: chain.filedThrough,
+      scanThrough: chain.scanThrough,
+    });
+    const take = async (e: Entry) => {
+      chain = await advance(chain, e, { now: now + 1000, schemaVersion: 1 });
+      entries.push(e);
+    };
+    const before = new Set(chain.public.slots.keys());
+    await take(
+      await addPasskeyEntry({
+        state: chain.public,
+        budget: made.budget,
+        passkey: { credentialId: randomBytes(20), prf: randomBytes(32) },
+        deviceId: OTHER,
+        at: at(),
+        now: (now += 1000),
+      }),
+    );
+    const added = [...chain.public.slots.keys()].find((id) => !before.has(id))!;
+    expect(waysRemoved(entries).size).toBe(0);
+    const change = await keyChangeEntry({
+      state: chain.public,
+      budget: made.budget,
+      deviceId: OTHER,
+      at: at(),
+      now: (now += 1000),
+      keep: [...before],
+      lastOldRun: 0,
+    });
+    await take(change.entry);
+    const removed = waysRemoved(entries);
+    expect([...removed]).toEqual([[change.entry.header.number, [added]]]);
+    const n = noticesOf({ ...base, entries, removed });
+    expect(n.find((x) => x.kind === 'way-removed')).toMatchObject({ slotIds: [added] });
   });
 
   it('each device dismisses a notice for itself, newest first', () => {

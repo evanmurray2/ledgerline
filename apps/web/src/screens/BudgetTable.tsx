@@ -1,6 +1,6 @@
 // Budget on a computer: the month as a table with Assigned (typed in place), Spent and Available columns, and
 // the pinned categories in a card of their own above it.
-import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useHere } from '../lib/back';
 import type { BudgetCategoryRow, BudgetView } from '@ledgerline/contracts';
@@ -12,6 +12,7 @@ import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { monthLabel } from '../lib/dates';
 import { useCanWrite } from '../state/connectivity';
 import { toast } from '../components/Toast';
+import { useBlockedWhy } from '../components/BlockedAction';
 import { catTone, isQuiet, OWED_DETAIL, owedTone, pinnedRows, StatusLine } from './BudgetRows';
 
 /** Moves focus to the Assigned field `step` rows away. False when there is none (Tab then leaves the table). */
@@ -41,6 +42,7 @@ function AssignedCell({
   month: string;
 }) {
   const canWrite = useCanWrite({ offline: true });
+  const blockedWhy = useBlockedWhy();
   const set = useMoneyMutation(api.setAssigned);
   const [draft, setDraft] = useState<string | null>(null);
   const draftRef = useRef<string | null>(null);
@@ -85,6 +87,8 @@ function AssignedCell({
       inputMode="decimal"
       autoComplete="off"
       disabled={!canWrite}
+      // A disabled box can't be clicked for a toast: hovering says why.
+      title={canWrite ? undefined : blockedWhy}
       value={draft ?? formatCents(shown)}
       onFocus={(e) => {
         edit(centsToInput(cents));
@@ -95,7 +99,7 @@ function AssignedCell({
       onBlur={() => void commit()}
       onKeyDown={onKeyDown}
       // Reads as a plain number; the box shows only on hover and while editing.
-      className="tnum h-9 w-full max-w-[140px] rounded-md border border-transparent bg-transparent px-2 text-right text-md font-semibold text-ink outline-none hover:border-line-strong hover:bg-surface-2 focus:border-accent focus:bg-surface disabled:hover:border-transparent disabled:hover:bg-transparent"
+      className="tnum h-9 w-full max-w-[max(140px,var(--assigned-w))] rounded-md border border-transparent bg-transparent px-2 text-right text-md font-semibold text-ink outline-none hover:border-line-strong hover:bg-surface-2 focus:border-accent focus:bg-surface disabled:hover:border-transparent disabled:hover:bg-transparent"
     />
   );
 }
@@ -116,22 +120,40 @@ function SpentCell({ row }: { row: BudgetCategoryRow }) {
   );
 }
 
+/**
+ * The Assigned box's width for the longest amount in the month (text, its padding and border), as `--assigned-w`.
+ * Digits are tabular: 8.8 text pixels a character covers the widest, up to "−$99,999,999.99" (the amount limit).
+ */
+function assignedWidth(b: BudgetView): CSSProperties {
+  let longest = 0;
+  for (const c of [...b.groups.flatMap((g) => g.categories), ...b.archived])
+    longest = Math.max(longest, formatCents(c.assigned).length);
+  return { '--assigned-w': `calc(${longest} * 8.8 * var(--ll-u) + 18px)` } as CSSProperties;
+}
+
 export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
   // An account or Owed to you opened from here comes back here (lib/back.ts).
   const here = useHere();
   const selected = /\/budget\/category\/([^/]+)/.exec(path)?.[1];
-  // Narrow (a side panel open on a small screen): Spent drops out so Assigned and Available stay in view.
+  // Narrow (a side panel open on a small screen): Spent drops out so Assigned and Available stay in view. The
+  // amount columns are never narrower than the longest Assigned amount (--assigned-w), so none is cut off.
   const head =
-    'grid grid-cols-[minmax(130px,2fr)_repeat(2,minmax(108px,1fr))] items-center @[540px]:grid-cols-[minmax(220px,2.2fr)_repeat(3,minmax(110px,1fr))]';
+    'grid grid-cols-[minmax(130px,2fr)_repeat(2,minmax(max(108px,calc(var(--assigned-w)_+_12px)),1fr))] items-center @[540px]:grid-cols-[minmax(220px,2.2fr)_repeat(3,minmax(max(110px,calc(var(--assigned-w)_+_12px)),1fr))]';
+  const widths = assignedWidth(b);
   const spentCls = 'hidden @[540px]:block';
   const cell = 'tnum px-3.5 py-1 text-right text-ink-2';
   /** A group's bar. Card payments has only an Available total: its rows have no Assigned or Spent of their own. */
-  const groupRow = (name: string, totals?: { assigned?: number; spent?: number; available: number }) => (
+  const groupRow = (
+    key: string,
+    name: string,
+    totals?: { assigned?: number; spent?: number; available: number },
+  ) => (
     <div
       role="row"
-      key={`g-${name}`}
+      // By id, not name: two groups may share a name.
+      key={key}
       className={cx(
         head,
         'border-t border-line-strong bg-sunken py-2 text-xs font-bold uppercase tracking-caps text-ink',
@@ -277,7 +299,7 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
           this card has no totals. */}
       {pinned.length > 0 && (
         <Card className="@container min-w-0 overflow-x-auto">
-          <div role="table" aria-label="Pinned categories" className="text-md">
+          <div role="table" aria-label="Pinned categories" className="text-md" style={widths}>
             {columns(
               <>
                 <Icon name="pin" size={14} stroke={2.4} />
@@ -289,20 +311,20 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
         </Card>
       )}
       <Card className="@container min-w-0 overflow-x-auto">
-        <div role="table" aria-label={`Budget for ${monthLabel(month)}`} className="text-md">
+        <div role="table" aria-label={`Budget for ${monthLabel(month)}`} className="text-md" style={widths}>
           {columns(<>Category</>)}
           {b.groups.flatMap((g) => [
-            groupRow(g.name, { ...totalsOf(g.categories), available: g.total }),
+            groupRow(`g-${g.id}`, g.name, { ...totalsOf(g.categories), available: g.total }),
             ...g.categories.map((c) => categoryRow(c)),
           ])}
           {/* Archived categories that still hold money or had activity this month, as on a phone: their money is
               still counted, so it stays in sight. */}
           {b.archived.length > 0 && [
-            groupRow('Archived', totalsOf(b.archived)),
+            groupRow('x-archived', 'Archived', totalsOf(b.archived)),
             ...b.archived.map((c) => categoryRow(c, `archived-${c.id}`)),
           ]}
           {b.cards.length > 0 &&
-            groupRow('Card payments', { available: b.cards.reduce((s, c) => s + c.available, 0) })}
+            groupRow('x-cards', 'Card payments', { available: b.cards.reduce((s, c) => s + c.available, 0) })}
           {b.cards.map((c) =>
             row({
               key: c.accountId,
@@ -327,7 +349,7 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
               track: 'budget.card',
             }),
           )}
-          {groupRow('Owed to you')}
+          {groupRow('x-owed', 'Owed to you')}
           {row({
             key: 'owed',
             name: 'Owed to you',

@@ -341,12 +341,15 @@ describe('States', () => {
     expect(screen.getByTestId('rta').textContent).toBe('$1,999.90');
   });
 
-  it('offline, OK all still leaves out the "Same as your…" row, whose question hides', async () => {
+  it('offline, the "Same as your…" question stays with Join grayed out, and OK all still leaves that row', async () => {
     renderAt('/activity?filter=attention');
     await screen.findByText('Same as your Amazon?', undefined, { timeout: 4000 });
     expect(screen.getByRole('button', { name: 'Use 2 suggestions' })).toBeTruthy();
+    const join = screen.getByRole('button', { name: 'Join Amazon into your Amazon' }) as HTMLButtonElement;
+    expect(join.disabled).toBe(false);
     connectivity.setOnline(false);
-    await waitFor(() => expect(screen.queryByText('Same as your Amazon?')).toBeNull());
+    await waitFor(() => expect(join.disabled).toBe(true));
+    expect(screen.getByText('Same as your Amazon?')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Use 2 suggestions' })).toBeTruthy();
   });
 

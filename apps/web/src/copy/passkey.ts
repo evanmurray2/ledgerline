@@ -32,6 +32,21 @@ export function keepsCopy(): boolean {
   return typeof window !== 'undefined' && typeof indexedDB !== 'undefined';
 }
 
+/** The name of the error a passkey without user verification gives (not NotAllowedError, which reads as Cancelled). */
+export const UV_REQUIRED = 'UserVerificationRequired';
+
+/**
+ * The sentence for a passkey's own error (the browser's or `assert`'s), or null when it isn't one. Every screen that
+ * runs a passkey reads its errors here, so "Use your passkey to continue." shows and isn't read as Cancelled.
+ */
+export function passkeyProblem(e: unknown): string | null {
+  const name = (e as { name?: string } | null)?.name;
+  if (name === UV_REQUIRED) return 'Use your passkey to continue.';
+  if (name === 'NotAllowedError' || name === 'AbortError') return 'Cancelled. Try again when you’re ready.';
+  if (name === 'InvalidStateError') return 'This device already has a Ledgerline passkey.';
+  return null;
+}
+
 export function canUsePasskeys(): boolean {
   return typeof window !== 'undefined' && typeof window.PublicKeyCredential !== 'undefined';
 }
@@ -77,7 +92,7 @@ export async function assert(
   const flags = new Uint8Array(r.authenticatorData)[32] ?? 0;
   if ((flags & 0x04) === 0)
     // Not NotAllowedError: the screens read that as Cancelled, and this message must show.
-    throw Object.assign(new Error('Use your passkey to continue.'), { name: 'UserVerificationRequired' });
+    throw Object.assign(new Error('Use your passkey to continue.'), { name: UV_REQUIRED });
   const ext = cred.getClientExtensionResults() as {
     prf?: { results?: { first?: ArrayBuffer; second?: ArrayBuffer } };
   };

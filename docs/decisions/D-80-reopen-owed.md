@@ -23,5 +23,5 @@ the undo. Adds to Money rule 11 (`docs/sync-spec.md`), which had Close and Cance
 month of the undo (`packages/domain` `pastCloses`; property test "Reopen in a later month (D-80)" and
 `apps/worker/test/owed-reopen.test.ts`).
 
-**Not done.** "Not this purchase" on a card refund: no code makes a `refund_of` link outside the test data, so there is
-nothing to unlink yet (`docs/build-plan.md`).
+**Since done.** "Not this purchase" on a card refund, which this left open, is built with the refund link itself
+(D-109, `docs/decisions/D-109-refund-links.md`).

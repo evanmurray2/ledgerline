@@ -31,6 +31,7 @@ import {
   useShortcuts,
 } from '../components/ui';
 import { formatCents } from '../lib/money';
+import { foldSearch } from '@ledgerline/domain';
 import { useScreen } from '../lib/common';
 import { useCanWrite } from '../state/connectivity';
 import { usage } from '../usage/tracker';
@@ -40,8 +41,9 @@ import { ActivityCategoryPicker, NeedsCategory } from './ActivityNeeds';
 import { primeKeyboard } from '../components/CategoryPicker';
 import { SamePurchase } from './ActivitySame';
 import { RemovedByBank } from './ActivityRemoved';
-import { CheckThese, TransfersToSort } from './ActivityAttention';
+import { CheckThese, TransfersToSort, type CheckRow } from './ActivityAttention';
 import { useMorePosted } from './ActivityMore';
+import { useRowPicker } from './ActivityRowPick';
 
 export { TxnRow } from './ActivityRows';
 
@@ -99,12 +101,19 @@ export function ActivityScreen() {
   const query = useActivity(filter, q, allMonths ? undefined : month, category);
   const v = query.data;
   const more = useMorePosted(v, filter, q, allMonths ? undefined : month, category);
+  // Desktop: each row's category menu (ActivityRowPick.tsx).
+  const rowPick = useRowPicker(v?.categoryPicker);
+  const picked = (r: TxnListRow) => {
+    const action = rowPick.action(r);
+    return { action, hideCategory: !!action };
+  };
   const canWrite = useCanWrite({ offline: true });
   const qc = useQueryClient();
   // The list keeps categorized rows in place and the counts are adjusted here, so Activity isn't refetched after
   // each categorize (every refetch reads the database); it refreshes on the next visit.
   const categorize = useMoneyMutation(api.categorize, { quiet: ['activity'] });
   const review = useMoneyMutation(api.reviewTxn);
+  const unreview = useMoneyMutation(api.reviewTxnUndo);
   const [selecting, setSelecting] = useState(false);
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const [picking, setPicking] = useState<Picking | null>(null);
@@ -340,13 +349,23 @@ export function ActivityScreen() {
     void assignAll([...groups.values()], true);
   };
 
-  const dismiss = async (r: TxnListRow) => {
-    try {
-      // OK is shown on bank rows with an alert; they have no expected entry, so the alert itself is marked reviewed.
-      await review.mutateAsync(r.key);
-      toast.show({ text: `${r.payee} · marked OK` });
-    } catch (e) {
+  const dismiss = async (r: CheckRow) => {
+    const failed = (e: unknown): void => {
       toast.show({ text: e instanceof ApiError ? errorMessage(e) : 'Couldn’t save that. Try again.' });
+    };
+    try {
+      // Accept and OK are shown on bank rows with an alert; they have no expected entry, so the alert itself is
+      // marked reviewed. Accept changes no money: the bank's amount already counts.
+      await review.mutateAsync(r.key);
+      toast.show({
+        text:
+          r.action === 'accept'
+            ? `${r.payee} · ${formatCents(Math.abs(r.amount))} accepted`
+            : `${r.payee} · marked OK`,
+        undo: () => unreview.mutateAsync(r.key).then(() => {}, failed),
+      });
+    } catch (e) {
+      failed(e);
     }
   };
 
@@ -367,6 +386,8 @@ export function ActivityScreen() {
   );
   const showNeeds = filter !== 'pending' && shownNeeds.length > 0;
   const empty = v && total === 0 && !showNeeds && !(filter === 'attention' && !q);
+  // One category's list, opened on a category that no longer exists.
+  const gone = !!category && v?.categoryName === null;
 
   // The sheet keeps the list's month, filter and search, so the list under it doesn't change.
   const addSearch = { month: search.month, filter: search.filter, q: search.q, category, back: search.back };
@@ -433,7 +454,8 @@ export function ActivityScreen() {
           // Reports → a category: a page of its own, with Back to the report's month.
           <BackHeader
             title={v ? (v.categoryName ?? 'Category') : ''}
-            sub="All months"
+            // A link to a category that was removed: no months to show.
+            sub={gone ? undefined : 'All months'}
             backLabel={back?.label ?? 'Back to Reports'}
             onBack={back ? back.go : () => void navigate({ to: '/reports', search: { month: search.month } })}
             below={searchBox}
@@ -456,7 +478,8 @@ export function ActivityScreen() {
             </p>
           )}
           {!v && (query.error ? <ErrorNote error={query.error} /> : <Loading />)}
-          {empty && (
+          {gone && <EmptyNote>This category was removed.</EmptyNote>}
+          {empty && !gone && (
             <EmptyNote>
               {allMonths || filter !== 'all' || !month
                 ? 'No transactions match.'
@@ -500,7 +523,7 @@ export function ActivityScreen() {
           {v && v.pending.length > 0 && (
             <Section title="Pending" note={`counts now · ${formatCents(v.pendingTotal)}`}>
               {v.pending.map((r) => (
-                <TxnRow key={r.key} r={r} base="/activity" />
+                <TxnRow key={r.key} r={r} base="/activity" {...picked(r)} />
               ))}
             </Section>
           )}
@@ -514,7 +537,7 @@ export function ActivityScreen() {
           {v && v.posted.length > 0 && (
             <Section title="Posted" note="newest first">
               {[...v.posted, ...more.rows].map((r) => (
-                <TxnRow key={r.key} r={r} base="/activity" style="posted" />
+                <TxnRow key={r.key} r={r} base="/activity" style="posted" {...picked(r)} />
               ))}
             </Section>
           )}
@@ -541,6 +564,7 @@ export function ActivityScreen() {
           </div>
         )}
         {addFab}
+        {rowPick.sheet}
         {picking && v && (
           <ActivityCategoryPicker
             picking={picking}
@@ -564,9 +588,4 @@ export function ActivityScreen() {
       </div>
     </PageFrame>
   );
-}
-
-/** Text as a search compares it (as the server does): lower case, curly apostrophes as straight ones. */
-function foldSearch(t: string): string {
-  return t.toLowerCase().replace(/[’‘]/g, "'");
 }
