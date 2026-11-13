@@ -37,6 +37,7 @@ import {
 } from '../keys/new-budget';
 import { WORKER_RUN_KEYS } from '../keys/worker-keys';
 import { fetchPublicEntries, logDeviceId, newUlid, openSealedBudget, openSealedHeld } from './sealed';
+import { keepPublicSeen, lastPublicSeen, PUBLIC_MARK } from './public-marks';
 import { addPasskeyWay, authPubOf, openPlans, type Ways } from './sealed-ways';
 import { ACTION, type Entry, type PublicState, walkPublic, zeroize } from '@ledgerline/seal';
 import { mergedSession, NOT_LOCKED } from './sealed-session';
@@ -220,30 +221,6 @@ function forgetSealed(budgetId: string | null): void {
 export const sealedKnown = (budgetId: string): boolean =>
   sealed?.budgetId === budgetId || sealedBudgets().includes(budgetId);
 
-// The last public entry of the log this device saw, kept in the copy and, as a second mark, outside it: a copy
-// that is made again (or lives in memory only) still refuses a log that does not pass through it.
-const PUBLIC_MARK = 'ledgerline.public.';
-type PublicMark = { number: number; hash: string };
-async function lastPublicSeen(h: EngineHost, budgetId: string): Promise<PublicMark | null> {
-  const marks: PublicMark[] = [];
-  const kept = await h.get('last_public');
-  if (kept) marks.push(JSON.parse(kept) as PublicMark);
-  try {
-    const out = localStorage.getItem(PUBLIC_MARK + budgetId);
-    if (out) marks.push(JSON.parse(out) as PublicMark);
-  } catch {
-    // The copy's own mark is all there is.
-  }
-  return marks.sort((a, b) => b.number - a.number)[0] ?? null;
-}
-async function keepPublicSeen(h: EngineHost, budgetId: string, m: PublicMark): Promise<void> {
-  await h.put('last_public', JSON.stringify(m));
-  try {
-    localStorage.setItem(PUBLIC_MARK + budgetId, JSON.stringify(m));
-  } catch {
-    // The copy's own mark stays.
-  }
-}
 export const sealedSession = (): SealedSession | null => sealed;
 /** The copy is open and can answer for the budget. */
 export const copyReady = (): boolean => state.status === 'ready' && host !== null;
