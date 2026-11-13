@@ -102,6 +102,7 @@ export function TransferScreen() {
         header={
           <SheetTitle
             tag="Transfer"
+            tagClass="text-transfer-fg"
             amount={formatCents(Math.abs(t.amount))}
             sub={`${t.accountName} · ${dayLabel(t.date)} · “${t.rawName}”`}
           />
