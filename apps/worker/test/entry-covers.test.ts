@@ -449,4 +449,22 @@ describe('your entry and the bank’s rows', () => {
     expect(await counted(19)).toEqual({ spent: -1200 - 1200, pending: -1200 });
     expect((await heal()).changed).toBe(false);
   });
+  it('an old entry the bank has is never "Not at the bank yet"', async () => {
+    const attention = async () => ((await call('GET', '/api/badges')).json as { activity: number }).activity;
+    const before = await attention();
+    // Dated 13 days back: past the account's 7 days, so the entry alone waits as "Not at the bank yet".
+    await entry('m:old', 20, -1500, '2026-11-01', 'Old Cafe');
+    expect(await attention()).toBe(before + 1);
+    await sync([pend('old-p', 20, 15, '2026-11-01', 'Old Cafe')]);
+    expect((await mp('m:old'))!.covers_provider_txn_id).toBe('old-p');
+    expect(await attention()).toBe(before);
+    const row = ((await call('GET', '/api/activity?filter=pending')).json as ActivityView).pending.find(
+      (r) => r.key === 'm:old',
+    );
+    expect(row).toMatchObject({
+      badge: 'Added by you · bank has it',
+      badgeKind: 'paired',
+      sub: 'added by you',
+    });
+  });
 });
