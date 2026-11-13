@@ -4,9 +4,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Minor and patch updates come as one pull request a week; each major update gets its own, since a major
+    # version is where breaking changes are.
     groups:
       npm:
         patterns: ['*']
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:
