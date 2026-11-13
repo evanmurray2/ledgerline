@@ -1,39 +1,12 @@
 // First-time setup, sign-out, sign-in and adding a second device, with Chromium's virtual passkey authenticator.
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-
-async function withPasskeyDevice(page: Page) {
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send('WebAuthn.enable');
-  await cdp.send('WebAuthn.addVirtualAuthenticator', {
-    options: {
-      protocol: 'ctap2',
-      transport: 'internal',
-      hasResidentKey: true,
-      hasUserVerification: true,
-      isUserVerified: true,
-      automaticPresenceSimulation: true,
-      hasPrf: true,
-    },
-  });
-  return cdp;
-}
+import { lockNewBudget, withPasskeyDevice } from './lock-helpers';
 
 /** The Sign in screen asks for the passkey by itself: `open` shows it, and the sign-in goes through with no tap. */
 async function signsInByItself(page: Page, open: () => Promise<unknown>) {
   const verified = page.waitForResponse((r) => r.url().includes('/api/auth/login/verify'));
   await open();
   expect((await verified).status()).toBe(200);
-}
-
-/** A new budget is locked before anything else (D-102): the recovery key is made, typed back, and the budget sent. */
-async function lockNewBudget(page: Page): Promise<string> {
-  await page.getByRole('button', { name: 'Make my recovery key' }).click();
-  const key = (await page.getByTestId('recovery-key').textContent())!;
-  await page.getByRole('checkbox').check();
-  await page.getByRole('button', { name: 'Continue' }).click();
-  await page.getByTestId('recovery-key-typed').fill(key);
-  await page.getByRole('button', { name: 'Lock my budget' }).click();
-  return key;
 }
 
 const post = (page: Page, path: string) =>
