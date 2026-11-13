@@ -60,7 +60,8 @@ describe('Plaid adapter', () => {
     expect(asked[0]!.url).toBe('https://sandbox.plaid.com/item/remove');
     expect(asked[0]!.body).toMatchObject({ access_token: 'access-sandbox-1' });
     answer = new Response(JSON.stringify({ error_code: 'ITEM_NOT_FOUND' }), { status: 400 });
-    await expect(p.removeItem('gone')).rejects.toMatchObject({ code: 'ITEM_NOT_FOUND' });
+    // An Item Plaid no longer knows is already gone.
+    await expect(p.removeItem('gone')).resolves.toBeUndefined();
   });
 
   it('parses a sync page into normalized events with raw paths', () => {

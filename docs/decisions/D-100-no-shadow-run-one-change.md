@@ -1,4 +1,4 @@
-# D-95: No two-week shadow run; the rest of the design ships together, and the move follows at once (Nov 12, 2026)
+# D-100: No two-week shadow run; the rest of the design ships together, and the move follows at once (Nov 12, 2026)
 
 **Decided by the owner** (chat, Nov 12, 2026): "I just learned tha there is supposed to be a shadow run done for
 two weeks. I absolutely do not want to do that. I want to do the rest of the design in as few PRs as possible
