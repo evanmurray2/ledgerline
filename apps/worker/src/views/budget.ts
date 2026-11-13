@@ -3,6 +3,7 @@ import type { AttentionItem, BudgetCategoryRow, BudgetView, CardRow } from '@led
 import {
   type Cents,
   type Month,
+  type MonthResult,
   type StatusInput,
   addMonths,
   cardStatus,
@@ -30,6 +31,7 @@ import {
   type Fresh,
 } from './common.js';
 import { PINNED_KEY, readPinned } from './pinned.js';
+import { carryOver } from './carry-over.js';
 import { txnCol } from '../ledger/ledger.js';
 
 const fmt = (c: number) => formatCents(c);
@@ -52,6 +54,9 @@ export async function categoryRows(
   rows: CategoryComputed[];
   cards: Map<string, { available: Cents }>;
   groups: Awaited<ReturnType<typeof structure>>['groups'];
+  /** The month's computed result, and the month before's (null before the budget start). */
+  cur: MonthResult | null;
+  prev: MonthResult | null;
 }> {
   const { categories, groups, targets } = await structure(s);
   const cur = await monthResult(s, month, start);
@@ -194,12 +199,12 @@ export async function categoryRows(
       },
     });
   }
-  return { rows, cards: cardIds, groups };
+  return { rows, cards: cardIds, groups, cur, prev };
 }
 
 export async function budgetView(s: Scoped, f: Fresh, month: Month): Promise<BudgetView> {
   const start = (f.budget.budget_start_month ?? f.current) as Month;
-  const { rows, cards: cardCells, groups } = await categoryRows(s, month, start, f.today);
+  const { rows, cards: cardCells, groups, cur, prev } = await categoryRows(s, month, start, f.today);
   const cardInfo = await loadCards(s, f.today);
   const [cardCats, owedRows, links, fronts, conns, maxRow, pinRow] = await s.batch([
     s.q(`SELECT id, card_account_id FROM category WHERE budget_id = ?1 AND kind = 'cc_payment'`),
@@ -429,5 +434,7 @@ export async function budgetView(s: Scoped, f: Fresh, month: Month): Promise<Bud
     underfundedTotal: cents(underfundedTotal),
     syncProblem: problems[0] ?? null,
     pinned: readPinned((pinRow!.results[0] as { value: string } | undefined)?.value),
+    carryOver:
+      month === f.current && !f.rtaUpdating ? await carryOver(s, month, cur, prev, f.budget.rta) : null,
   };
 }

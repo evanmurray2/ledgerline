@@ -21,6 +21,8 @@ export interface PickerGroup {
 export interface PickerSpecial {
   id: string;
   name: string;
+  /** What it holds, shown like a category's (Ready to Assign in Move money). */
+  available?: number;
 }
 
 /**
@@ -253,7 +255,7 @@ export function CategoryField({
   const [open, setOpen] = useState(false);
   const cat = groups.flatMap((g) => g.categories).find((c) => c.id === value);
   const chosen: PickerCategory | undefined = specials.find((s) => s.id === value) ?? cat;
-  const avail = cat?.available;
+  const avail = chosen?.available;
   return (
     <>
       <button

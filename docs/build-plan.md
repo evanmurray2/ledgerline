@@ -14,12 +14,10 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] Transaction sheet, income "Goes to": the toggle and its help line use different tests and can disagree for income already moved to next month.
 - [ ] Offline, "Same as your {payee}?" hides, and "Use {n} suggestions" then includes those rows.
 - [ ] Remove `CategorySheet.moveOptions` (contract and `views/category.ts`): the app no longer reads it (Move money uses `BudgetView`). It stays until no app from before that change can still ask the server for a category sheet.
-- [ ] Desktop Assign button (sidebar and Ready to Assign bar): grayed out offline or in view only with no reason shown.
 - [ ] A text that never shows: the passkey's "Use your passkey to continue" (NotAllowedError is read as Cancelled).
 - [ ] Payee names: the server takes a name of only spaces (min length is checked before trim) and NUL or right-to-left override characters.
 - [ ] Activity search: "café" doesn't find "CAFÉ" on posted rows (SQLite `lower()` folds only ASCII).
 - [ ] Signing in with a different user's passkey on the same browser leaves the earlier user's session row until it expires (24 h); it lists as another device.
-- [ ] Desktop: the Assigned cell cuts off $99,999,999.99; group rows are keyed by name, so two groups with one name share a key.
 - [ ] Only if two devices ever show different numbers for the same data: a check where each device posts a hash of its month and Needs attention says when two differ (owner, Nov 9: skipped for now; `engine.test.ts` and `engine-upgrade.test.ts` cover the known causes).
 - [ ] Card refunds can't be linked to their purchase: nothing makes a `refund_of` link outside the test data, so the payment category always gives back what it holds (Money rule 3, unlinked), and "Not this purchase" has nothing to unlink (D-80).
 - [ ] The sealed log's limits (`packages/seal`, `docs/privacy-keys.md` 7.2, 8, 12): measure a 16-entry write, one append and a fetch page step on Cloudflare before raising any limit; a sealed page is one BLOB row (check 220 KB against the row limit); measure the change set of a real 180-day first run (only test transactions were measured: about 250 bytes each compressed, so a run of about 4,000 fills a write); a run larger than a write even compressed stops filing with a message and every edit waits behind it (D-104's staged write, if a real run needs it); a filed run waits in the queue as one JSON value with its rows and undo (its rows alone are about 5 MB for 2,000 transactions; check the phone’s memory).
@@ -57,6 +55,6 @@ The UI works around these (details in `apps/web/CONTRACT_NOTES.md`):
 
 - [ ] Candidate deposits for an unclear transfer in the API (the UI searches other registers today).
 - [ ] Endpoints: accept a changed amount, edit a manual entry's amount or date.
-- [ ] Extra fields: the new-month carry-over summary, recent paybacks, the repeat interval on upcoming rows, per-filter register counts, amounts on Move money options.
+- [ ] Extra fields: the repeat interval on upcoming rows, per-filter register counts.
 - [ ] Desktop: account registers in the side panel, and a per-row category dropdown in Activity.
 - [ ] Pending rows that stayed in a closed account (D-93) show in its register only: list them with the posted rows on Activity too.

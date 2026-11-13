@@ -216,6 +216,7 @@ export function NewMonth({ b, month }: { b: BudgetView; month: string }) {
         <span className="text-sm text-muted">
           Every category keeps what it had left in {monthName(prev)}.
         </span>
+        {b.carryOver && <CarryOver c={b.carryOver} month={month} />}
         <div className="flex items-center justify-between border-t border-divider pt-2 text-md">
           <span className="font-semibold">Ready to Assign</span>
           <span className="tnum font-bold">{formatCents(b.rta)}</span>
@@ -261,6 +262,37 @@ export function NewMonth({ b, month }: { b: BudgetView; month: string }) {
         </Card>
       )}
     </>
+  );
+}
+
+/**
+ * How Ready to Assign came to this month's amount: what last month left, then each part that came in or went out
+ * since. Parts that are $0 are left out; the parts add up to Ready to Assign (BudgetView.carryOver).
+ */
+function CarryOver({ c, month }: { c: NonNullable<BudgetView['carryOver']>; month: string }) {
+  const lines: [string, number][] = [
+    [`Overspent in ${monthName(c.from)}`, -c.overspent],
+    [`Money in during ${monthName(month)}`, c.income],
+    ['Paid back to you', c.paidBack],
+    ['Closed out', c.closedOut],
+    ['Owed to you', -c.owed],
+    ['Assigned', -c.assigned],
+  ];
+  return (
+    <dl className="m-0 flex flex-col gap-1 text-md" data-testid="carry-over">
+      <div className="flex items-baseline justify-between gap-3">
+        <dt className="text-ink-2">Left from {monthName(c.from)}</dt>
+        <dd className="tnum m-0 font-semibold">{formatCents(c.left)}</dd>
+      </div>
+      {lines
+        .filter(([, v]) => v !== 0)
+        .map(([name, v]) => (
+          <div key={name} className="flex items-baseline justify-between gap-3">
+            <dt className="text-ink-2">{name}</dt>
+            <dd className="tnum m-0 font-semibold">{formatCents(v, { plus: true })}</dd>
+          </div>
+        ))}
+    </dl>
   );
 }
 
