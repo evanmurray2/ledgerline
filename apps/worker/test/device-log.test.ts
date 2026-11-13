@@ -427,8 +427,7 @@ describe('two devices and the sealed log', () => {
         [a, logA],
         [b, logB],
       ] as const) {
-        const st = await engine.state();
-        await engine.apply({ ...basePage(st), through: log.number }, Date.now());
+        await engine.applyLogRows([], log.number);
       }
       expect(differences(await rowsOf(a), await rowsOf(b))).toEqual([]);
     });
@@ -513,17 +512,4 @@ async function budgetOf(e: LocalEngine): Promise<string> {
 /** Where a device's log stands (for a second writer on the same place, in a test). */
 function stateOf(log: DeviceLog): ChainState {
   return (log as unknown as { state: ChainState }).state;
-}
-
-/** An empty page of changes for a copy, to set where it stands. */
-function basePage(st: { format: number; epoch: string | null; offset: number }) {
-  return {
-    format: st.format,
-    epoch: st.epoch ?? 'log',
-    serverTime: Date.now() + st.offset,
-    through: 0,
-    more: false,
-    cursor: null,
-    rows: [],
-  };
 }

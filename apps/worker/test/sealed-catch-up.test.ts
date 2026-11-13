@@ -162,17 +162,8 @@ describe('a sealed budget catches up by time, and its bank log travels', () => {
             () => clock,
           );
           await copyOf(old.db, engine, clock);
-          const st = await engine.state();
           // The copy now stands at the log's first entry, and filing starts after the server's own last update.
-          await engine.apply({
-            format: st.format,
-            epoch: st.epoch!,
-            serverTime: clock,
-            through: 1,
-            more: false,
-            cursor: null,
-            rows: [],
-          });
+          await engine.applyLogRows([], 1);
           const set = (key: string, value: string) =>
             db
               .prepare(`INSERT INTO setting (budget_id, key, value, updated_at) VALUES (?1, ?2, ?3, 0)`)

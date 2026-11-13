@@ -58,19 +58,7 @@ describe('a sealed budget over HTTP', () => {
     await db.prepare(`INSERT OR IGNORE INTO store_mark (key, at) VALUES ('sealed', ?1)`).bind(NOW).run();
     try {
       const clock = () => NOW;
-      const st = await phone.state();
-      await phone.apply(
-        {
-          format: st.format,
-          epoch: st.epoch!,
-          serverTime: NOW,
-          through: 1,
-          more: false,
-          cursor: null,
-          rows: [],
-        },
-        NOW,
-      );
+      await phone.applyLogRows([], 1);
       const log = new DeviceLog(
         w.keys,
         await startChain(w.last!, { now: NOW, schemaVersion: 1 }, budget),

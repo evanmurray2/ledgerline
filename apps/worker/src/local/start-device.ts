@@ -11,7 +11,6 @@
 // kept place, and writes its next snapshot when one is due.
 import { startChain, toHex, type BudgetKeys, type Bytes, type Entry } from '@ledgerline/seal';
 import { LOG_SCHEMA_VERSION } from '../seal/log-versions.js';
-import { SYNC_FORMAT } from '../sync-tables.js';
 import { DeviceLog } from './device-log.js';
 import { dumpChunks, tableHashes, type SnapshotTransport } from './device-snapshot.js';
 import type { LocalEngine } from './engine.js';
@@ -104,10 +103,7 @@ export async function startOnDevice(engine: LocalEngine, d: StartDeps): Promise<
       d.clock,
     );
     // The copy stands at the log's first entry.
-    await engine.apply(
-      { format: SYNC_FORMAT, epoch: 'log', serverTime: now, through: 1, more: false, cursor: null, rows: [] },
-      now,
-    );
+    await engine.applyLogRows([], 1);
     await engine.db.batch([
       // The budget's own row, as the server made it on first use before D-102, in this device's time zone.
       engine.db

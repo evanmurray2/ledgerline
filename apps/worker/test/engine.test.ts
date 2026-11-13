@@ -268,19 +268,4 @@ describe('a device works out the same screens as a fresh copy', () => {
     expect(after.posted.map((r) => r.key)).toContain(`p:${posted}`);
     await sameScreens(engine, month);
   });
-
-  it('a new epoch throws the copy away', async () => {
-    const st = await engine.state();
-    const r = await engine.apply({
-      format: st.format,
-      epoch: 'e-restored',
-      serverTime: Date.now(),
-      through: 1,
-      more: false,
-      cursor: null,
-      rows: [],
-    });
-    expect(r.reset).toBe(true);
-    expect(await engine.state()).toMatchObject({ through: 0, epoch: null });
-  });
 });

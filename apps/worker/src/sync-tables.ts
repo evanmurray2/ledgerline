@@ -14,18 +14,6 @@ export interface SyncRow {
   d: Record<string, unknown> | null;
 }
 
-/** Rows a copy writes in one step, and where the copy stands after them (local/engine.ts apply). */
-export interface SyncPage {
-  format: number;
-  epoch: string;
-  serverTime: number;
-  /** Where the copy stands once it has written this page: the number of the log's last entry it holds. */
-  through: number;
-  more: boolean;
-  cursor: string | null;
-  rows: SyncRow[];
-}
-
 export interface SyncTable {
   name: string;
   pk: readonly string[];

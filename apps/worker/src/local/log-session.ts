@@ -20,10 +20,10 @@ import {
 import { dailyScan, scanTime } from '../daily-scan.js';
 import { bumpVersion } from '../http/version.js';
 import { watchdogBudgetStmts } from '../maintenance.js';
-import type { SyncPage, SyncRow } from '../sync-tables.js';
+import type { SyncRow } from '../sync-tables.js';
 import type { AppendResult } from '../seal/log-store.js';
 import { entryIdOf, TooLarge, type DeviceLog } from './device-log.js';
-import { FilingInterrupted, RECORDED_TABLES, type LocalEngine } from './engine.js';
+import { FilingInterrupted, type LocalEngine } from './engine.js';
 import { CopyAhead, fileOpened, filedOf, filingState, openRuns } from './sealed-filing.js';
 
 /** How the device reaches the server's log store. */
@@ -109,26 +109,14 @@ export class LogSession {
       for (const e of await this.engine.queue())
         if (mine.has(toHex(await entryIdOf(e.id)))) await this.engine.queueDone(e.id);
     const rows: SyncRow[] = taken.sets.flatMap((s) => s.set.rows);
-    const st = await this.engine.state();
-    // Written as one page of changes that ends at the log's new last entry. The device's measured distance from
-    // the server's clock stays as it is.
-    const received = Date.now();
-    const page: SyncPage = {
-      format: st.format,
-      epoch: st.epoch ?? 'log',
-      serverTime: received + st.offset,
-      through: taken.number,
-      more: false,
-      cursor: null,
-      rows,
-    };
-    // The rows go into the copy first (the engine refuses rows no honest device writes, and then nothing is
-    // written); only then are the entries this device's place in the log.
-    const r = await this.engine.apply(page, received, RECORDED_TABLES);
+    // The rows go into the copy first, in one step that ends at the log's new last entry (the engine refuses rows
+    // no honest device writes, and then nothing is written); only then are the entries this device's place in the
+    // log.
+    const r = await this.engine.applyLogRows(rows, taken.number);
     taken.commit();
     await this.keep();
     if (await this.engine.needsDerive()) await this.engine.derive();
-    return { entries: entries.length, lost: r.lost ?? 0 };
+    return { entries: entries.length, lost: r.lost };
   }
 
   /**

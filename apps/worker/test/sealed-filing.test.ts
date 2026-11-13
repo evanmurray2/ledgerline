@@ -155,17 +155,8 @@ describe('a sealed budget: the server seals bank runs, the phones file them', ()
             () => clock,
           );
           await copyOf(old.db, engine, clock);
-          const st = await engine.state();
           // The copy now stands at the log's first entry, and filing starts after the server's own last update.
-          await engine.apply({
-            format: st.format,
-            epoch: st.epoch!,
-            serverTime: clock,
-            through: 1,
-            more: false,
-            cursor: null,
-            rows: [],
-          });
+          await engine.applyLogRows([], 1);
           const set = (key: string, value: string) =>
             db
               .prepare(`INSERT INTO setting (budget_id, key, value, updated_at) VALUES (?1, ?2, ?3, 0)`)
@@ -475,16 +466,7 @@ describe('a sealed budget: the server seals bank runs, the phones file them', ()
           () => T0,
         );
         await copyOf(old.db, engine, T0);
-        const st = await engine.state();
-        await engine.apply({
-          format: st.format,
-          epoch: st.epoch!,
-          serverTime: T0,
-          through: 1,
-          more: false,
-          cursor: null,
-          rows: [],
-        });
+        await engine.applyLogRows([], 1);
         await db
           .prepare(`INSERT INTO setting (budget_id, key, value, updated_at) VALUES (?1, ?2, ?3, 0)`)
           .bind(BUDGET, `${FILED_LINK}${LINK_A}`, toHex(await cursorHash('cur1')))
