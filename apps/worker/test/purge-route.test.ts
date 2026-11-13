@@ -19,7 +19,7 @@ describe('Delete the readable copy: the route', () => {
     expect((await post('/__dev/seed-november')).status).toBe(200);
   });
 
-  it('refuses a budget that is not locked, then one whose way back is open; then starts the job once', async () => {
+  it('refuses a budget that is not locked; then starts the job once, which ends the way back', async () => {
     const db = ownerDb();
     const r1 = await post('/api/cutover/purge');
     expect(r1.status).toBe(409);
@@ -32,15 +32,11 @@ describe('Delete the readable copy: the route', () => {
       .run();
     const state = async () =>
       ((await (await get('/api/cutover/state')).json()) as { purge: { stage: string } | null }).purge;
-    expect(await state()).toMatchObject({ stage: 'waiting' });
     // A locked budget is never served as a full backup, and the server can't restore it (phase 5).
     expect((await get('/api/export/dump')).status).toBe(409);
     expect((await post('/api/settings/restore')).status).toBe(409);
-    const r2 = await post('/api/cutover/purge');
-    expect(r2.status).toBe(409);
-    expect(await r2.json()).toMatchObject({ message: expect.stringContaining('way back') as string });
-    expect(await db.prepare(`SELECT count(*) AS n FROM job WHERE id = ?1`).bind(PURGE_ID).first('n')).toBe(0);
-
+    // While the way back is open, the readable copy may be deleted all the same (the owner's choice).
+    expect(await state()).toMatchObject({ stage: 'ready' });
     // The way back closed long ago (by every clock the store reads).
     await db
       .prepare(`UPDATE store_note SET value = ?1 WHERE key = 'cutover_at'`)
@@ -58,8 +54,9 @@ describe('Delete the readable copy: the route', () => {
     // Asked again, nothing new is queued.
     expect((await post('/api/cutover/purge')).status).toBe(200);
     expect(await db.prepare(`SELECT count(*) AS n FROM job WHERE id = ?1`).bind(PURGE_ID).first('n')).toBe(1);
-    // The way back is closed for good.
+    // The way back is closed for good, and the state says so.
     expect((await post('/api/cutover/back')).status).toBe(409);
+    expect(await (await get('/api/cutover/state')).json()).toMatchObject({ backUntil: null });
     await db.prepare(`DELETE FROM job WHERE id = ?1`).bind(PURGE_ID).run();
   });
 });

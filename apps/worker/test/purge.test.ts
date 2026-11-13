@@ -163,7 +163,7 @@ const count = async (x: World, t: string) =>
   (await x.db.prepare(`SELECT count(*) AS n FROM ${t}`).first<{ n: number }>())!.n;
 
 describe('emptying the old tables of a sealed budget', () => {
-  it('refuses a budget that is not sealed, and one whose way back is still open', async () => {
+  it('refuses a budget that is not sealed; a sealed one may be emptied while the way back is open', async () => {
     await world(async (x) => {
       await oldBudget(x, 5);
       const enqueue = async () => {
@@ -175,23 +175,9 @@ describe('emptying the old tables of a sealed budget', () => {
       });
       expect((await purgeStatus(x.db, CLOSED)).stage).toBe('none');
       seal(x);
-      expect(await purgeStart(x.db, CUT + WAY_BACK_MS - 1, enqueue)).toMatchObject({ ok: false });
-      expect((await purgeStatus(x.db, CUT + 1)).stage).toBe('waiting');
+      // The owner may delete it before the way back closes: it is offered at once.
+      expect((await purgeStatus(x.db, CUT + 1)).stage).toBe('ready');
       expect((await purgeStatus(x.db, CLOSED)).stage).toBe('ready');
-      // A job that got queued all the same deletes nothing while the way back is open, and ends.
-      const r = await purgeHandler(deps(x))(
-        {
-          id: PURGE_ID,
-          kind: PURGE,
-          connectionId: null,
-          state: { phase: 'triggers' },
-          attempts: 1,
-          recurring: false,
-        },
-        CUT + 1000,
-      );
-      expect(r).toEqual({ done: true });
-      expect(await count(x, 'payee')).toBe(5);
     });
   });
 

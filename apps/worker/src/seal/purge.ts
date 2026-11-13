@@ -18,7 +18,6 @@ import type { Db } from '@ledgerline/db/sql';
 import type { Handler, StepResult } from '../store/jobs.js';
 import { BUDGET_TABLES } from '../store/dump.js';
 import { nextUtcMidnight } from '../store/sync-job.js';
-import { WAY_BACK_MS } from './cutover.js';
 
 export const PURGE = 'purge_old';
 export const PURGE_ID = 'purge_old';
@@ -99,7 +98,9 @@ export async function purgeRefusal(db: Db, now: number): Promise<string | null> 
   if (!(await sealed(db))) return 'This budget is not locked.';
   const at = await note(db, 'cutover_at');
   if (at === null) return 'This budget is not locked.';
-  if (now - at <= WAY_BACK_MS) return 'The way back is still open. Try again after it closes.';
+  // The owner may delete it before the way back closes (Nov 13, 2026): starting ends the way back for good
+  // (cutoverBack refuses once `purge_started_at` is noted).
+  void now;
   return null;
 }
 

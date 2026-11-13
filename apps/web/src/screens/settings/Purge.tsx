@@ -78,7 +78,7 @@ export function PurgeCard({ purge }: { purge: PurgeView | null | undefined }) {
               <span className="text-sm text-muted">
                 {purge.stage === 'stopped'
                   ? 'Deleting stopped before the end. Try again.'
-                  : 'The server still holds your budget as it was before the lock, readable. The way back has closed, so nothing needs it.'}
+                  : 'The server still holds your budget as it was before the lock, readable. It is kept only for the way back.'}
               </span>
               <Why label="What happens?">
                 The server deletes it in small steps, over a few days. Your locked budget and your bank links
@@ -94,7 +94,7 @@ export function PurgeCard({ purge }: { purge: PurgeView | null | undefined }) {
                   onConfirm={start}
                   onCancel={() => setAsking(false)}
                 >
-                  Delete the readable copy? This can’t be undone. Your passkey is asked next.
+                  Delete the readable copy? This can’t be undone, and the way back ends. Your passkey is asked next.
                 </ConfirmInline>
               ) : (
                 <DangerLink className="self-start" onClick={() => setAsking(true)}>

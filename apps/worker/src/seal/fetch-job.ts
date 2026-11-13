@@ -212,7 +212,11 @@ export function sealedFetchHandler(deps: FetchDeps): Handler {
     const s = job.state as FetchState;
     const d = deps.runs;
     try {
-      return await step(deps, s, now);
+      const r = await step(deps, s, now);
+      // Which step this alarm ran: the platform's own record of the alarm holds its CPU time, so the two together
+      // show which step is heavy (the 10 ms rule, docs/measurements.md). Ids and the step's name only.
+      console.log(JSON.stringify({ event: 'sealed_step', link: s.linkId, phase: s.phase }));
+      return r;
     } catch (e) {
       if (e instanceof BadStamp) {
         // Loud, and with no secret: the link's own id and which stamp failed.

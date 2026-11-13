@@ -8,8 +8,9 @@ file says how and why.
    under the breaker empties the tables over days". It is that job (`apps/worker/src/seal/purge.ts`), but nothing
    queues it but `POST /api/cutover/purge`: Settings → Privacy → "Delete the readable copy…", after `ConfirmInline`
    and a passkey check at most 2 minutes old on the server. Deleting the owner's real data can't be undone, so no
-   deploy, migration or daily job starts it. The route and every step refuse a budget that is not sealed, and one
-   whose way back (7 days after `cutover_at`) is still open. Once it began, the way back is shut too.
+   deploy, migration or daily job starts it. The route and every step refuse a budget that is not sealed. Once it
+   began, the way back is shut too. **Changed Nov 13, 2026** by the owner ("I want to delete readable copy now"):
+   it may start while the way back is still open; the card and its confirm say that it ends the way back.
 2. **The triggers go by the job, not by a store migration.** The design says a store migration drops the triggers
    that refuse deletes (`bank_event`, `bank_page`, `raw_page`) and write `change_log` rows. A migration runs in every
    budget's store, sealed or not, and would also have broken the way back. The job's first steps drop, in this one
