@@ -62,6 +62,7 @@ const LinkBanksScreen = lazyScreen(setup, 'LinkBanksScreen');
 const StartMonthScreen = lazyScreen(setup, 'StartMonthScreen');
 const WelcomeScreen = lazyScreen(setup, 'WelcomeScreen');
 const LockBudgetScreen = lazyScreen(setup, 'LockBudgetScreen');
+const PrivacyPolicyScreen = lazyScreen(() => import('./screens/PrivacyPolicy'), 'PrivacyPolicyScreen');
 
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
 
@@ -146,6 +147,7 @@ function Root() {
   const setupPath = path.startsWith('/setup') || path.startsWith('/welcome');
   if (path === '/add-device') return <AddDeviceScreen />;
   if (path === '/link-done') return <LinkDoneScreen />;
+  if (path === '/privacy-policy') return <PrivacyPolicyScreen />;
   const unreachable = session.error instanceof ApiError && session.error.network;
   if (!s && unreachable && copy.hasSaved && copy.status !== 'ready')
     return (
@@ -227,6 +229,14 @@ const addDeviceRoute = createRoute({
 const linkDoneRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/link-done',
+  component: () => null,
+});
+
+// Root renders this one itself too: the privacy policy opens signed in or not (Sign in, Create account, Settings).
+const privacyPolicyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/privacy-policy',
+  validateSearch: (s: Record<string, unknown>) => returnSearch(s),
   component: () => null,
 });
 
@@ -513,6 +523,7 @@ const signInRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   addDeviceRoute,
+  privacyPolicyRoute,
   indexRoute,
   welcomeRoute,
   setupStartRoute,

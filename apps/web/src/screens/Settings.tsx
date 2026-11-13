@@ -35,6 +35,8 @@ const SECTIONS: { id: string; name: string; to: string }[] = [
   { id: 'data', name: 'Backup and export', to: '/settings/data' },
   { id: 'sign-in', name: 'Sign-in and devices', to: '/settings/sign-in' },
 ];
+/** The privacy policy opens as a page of its own (screens/PrivacyPolicy.tsx), signed in or not. */
+const POLICY_META = 'What Ledgerline keeps and who can read it';
 /** Admins, once there is anyone else or sign-up is on (D-75). */
 const USERS = { id: 'users', name: 'Users', to: '/settings/users' };
 
@@ -114,6 +116,15 @@ export function SettingsLayout() {
               </Link>
             );
           })}
+          <Link
+            to="/privacy-policy"
+            search={{ back: '/settings' }}
+            data-track="settings.section.policy"
+            className="flex flex-col gap-0.5 rounded-md px-3 py-2 text-ink-2 no-underline"
+          >
+            <span className="text-md font-semibold">Privacy policy</span>
+            <span className="text-xs text-muted">{POLICY_META}</span>
+          </Link>
         </nav>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
           {sub ? <Outlet /> : <AppearanceSection />}
@@ -266,6 +277,16 @@ function SettingsHome() {
         <ThemeChoice />
         <SectionTitle>Preferences</SectionTitle>
         <Preferences />
+        <SectionTitle>About</SectionTitle>
+        <Card>
+          <RowLink
+            to="/privacy-policy"
+            search={{ back: '/settings' }}
+            name="Privacy policy"
+            meta={POLICY_META}
+            track="settings.policy"
+          />
+        </Card>
       </ScreenBody>
     </PageFrame>
   );
