@@ -2,6 +2,7 @@
 // the real Worker with a software passkey.
 import { createExecutionContext, env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
+import { PasskeyCreateOptions, PasskeyGetOptions } from '@ledgerline/contracts';
 import worker from '../../src/index.js';
 import { Scoped } from '../../src/db/scoped.js';
 import { devSignIn } from '../../src/http/auth.js';
@@ -71,6 +72,8 @@ class Browser {
   async register(a: SoftAuthenticator, start: Record<string, unknown>) {
     const o = await this.call('POST', '/api/auth/register/options', start);
     if (o.status !== 200) return o;
+    // The reply parses with the app's schema (apps/web/src/api/endpoints.ts), every field kept.
+    expect(PasskeyCreateOptions.parse(o.json)).toEqual(o.json);
     return this.call('POST', '/api/auth/register/verify', {
       response: await a.create(o.json as never),
       name: 'Test',
@@ -78,6 +81,7 @@ class Browser {
   }
   async signIn(a: SoftAuthenticator, opts: Parameters<SoftAuthenticator['get']>[1] = {}) {
     const o = await this.call('POST', '/api/auth/login/options');
+    expect(PasskeyGetOptions.parse(o.json)).toEqual(o.json);
     return this.call('POST', '/api/auth/login/verify', { response: await a.get(o.json as never, opts) });
   }
 }

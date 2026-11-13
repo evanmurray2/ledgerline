@@ -49,3 +49,64 @@ export type SecurityView = z.infer<typeof SecurityView>;
 
 export const DeviceLink = z.object({ url: z.string(), expiresAt: z.string() });
 export type DeviceLink = z.infer<typeof DeviceLink>;
+
+/**
+ * The options of a passkey ceremony, as the Worker's WebAuthn library makes them (WebAuthn JSON). The app passes
+ * them to the browser as they are: these are loose objects, so a field not named here is kept, not dropped.
+ * Registration: register/options, signup/options and recover-key/verify.
+ */
+export const PasskeyCreateOptions = z.looseObject({
+  challenge: z.string(),
+  rp: z.looseObject({ name: z.string(), id: z.string().optional() }),
+  user: z.looseObject({ id: z.string(), name: z.string(), displayName: z.string() }),
+  pubKeyCredParams: z.array(z.looseObject({ type: z.literal('public-key'), alg: z.number() })),
+});
+export type PasskeyCreateOptions = z.infer<typeof PasskeyCreateOptions>;
+/** The options of a passkey sign-in (login/options): discoverable credentials, so no list of passkeys. */
+export const PasskeyGetOptions = z.looseObject({ challenge: z.string(), rpId: z.string().optional() });
+export type PasskeyGetOptions = z.infer<typeof PasskeyGetOptions>;
+
+/** The recovery key's sign-in (docs/privacy-keys.md 4.2): the budget it opens and the challenge it signs (hex). */
+export const RecoverKeyOptions = z.object({ budgetId: z.string(), challenge: z.string() });
+/** Whether the budget has a recovery key, and since when. */
+export const RecoveryKeyState = z.object({ set: z.boolean(), setAt: z.string().nullable() });
+
+/** Settings → Users, for admins (D-75): the counts, and one page of people. */
+export const UsersView = z.object({
+  users: z.number().int(),
+  maxUsers: z.number().int(),
+  signupsToday: z.number().int(),
+  signupsPerDay: z.number().int(),
+  signupsOpen: z.boolean(),
+  list: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      admin: z.boolean(),
+      status: z.string(),
+      joinedAt: z.string(),
+      lastSeenAt: z.string().nullable(),
+      stuck: z.boolean(),
+    }),
+  ),
+  next: z.string().nullable(),
+});
+export type UsersView = z.infer<typeof UsersView>;
+
+const hexOrNull = z.string().nullable().optional();
+/**
+ * Adding a device with its own passkey to a locked budget (docs/privacy-keys.md section 10): this session's part in
+ * the server's relay, and the steps sent so far (hex).
+ */
+export const DeviceAddState = z.object({
+  role: z.enum(['from', 'to', 'waiting']).nullable(),
+  expiresAt: z.string().optional(),
+  offers: z.number().optional(),
+  commit: hexOrNull,
+  reveal: hexOrNull,
+  confirm: hexOrNull,
+  offer: hexOrNull,
+  sealed: hexOrNull,
+});
+export type DeviceAddState = z.infer<typeof DeviceAddState>;
+export const DeviceAddStart = z.object({ expiresAt: z.string() });

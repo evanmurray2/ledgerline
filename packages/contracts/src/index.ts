@@ -12,6 +12,7 @@ export * from './txn-sheet.js';
 export * from './names.js';
 export * from './settings.js';
 export * from './auth.js';
+export * from './results.js';
 import { payeeName } from './names.js';
 import { TxnListRow } from './txn-list-row.js';
 

@@ -190,3 +190,8 @@ export const SettingsPatch = z.object({
   tracking: z.boolean().optional(),
   noteButton: z.boolean().optional(),
 });
+
+/** A bank link's token; with `hosted`, the address of Plaid's own page for it. */
+export const LinkToken = z.object({ linkToken: z.string(), hostedUrl: z.string().optional() });
+/** Refresh all: how many bank links it started. */
+export const RefreshAllResult = z.object({ ok: z.literal(true), started: z.number().int() });
