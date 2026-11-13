@@ -160,7 +160,8 @@ describe('Activity', () => {
     expect(screen.queryByText('Transfers to sort out')).toBeNull();
     expect(screen.getByText(/4 · −\$86\.48/)).toBeTruthy();
     expect(screen.getByText('Check these')).toBeTruthy();
-    expect(screen.getByText('counts now · $201.00')).toBeTruthy();
+    // The check is under Check these, so Pending lists and totals only its own rows.
+    expect(screen.getByText('counts now · $81.00')).toBeTruthy();
     expect(screen.getByText('Acme Corp payroll')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Needs attention 6' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Not posted yet' })).toBeTruthy();
@@ -320,7 +321,7 @@ describe('States', () => {
   it('read-only shows the banner with the reset time in Pacific and disables changes', async () => {
     renderAt('/budget', 'readonly');
     const banner = await screen.findByTestId('readonly-banner', undefined, { timeout: 4000 });
-    expect(banner.textContent).toContain('View only until 4:00 PM');
+    expect(banner.textContent).toContain('View only until 4:00\u00a0PM');
     const assign = await screen.findByText('Assign', undefined, { timeout: 4000 });
     expect(assign.getAttribute('aria-disabled')).toBe('true');
     // Grayed out, but a tap says why.

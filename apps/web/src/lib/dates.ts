@@ -75,7 +75,10 @@ function zoneDate(d: Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: budgetZone }).format(d);
 }
 
-/** An instant (ISO string or epoch ms) as a clock time in the budget's time zone, e.g. "4:00 PM". */
+/**
+ * An instant (ISO string or epoch ms) as a clock time in the budget's time zone, e.g. "4:00 PM". The space before
+ * AM or PM never breaks, so a narrow row doesn't leave "PM" alone on the next line.
+ */
 export function budgetTime(at: string | number): string {
   const d = new Date(at);
   if (Number.isNaN(d.getTime())) return '';
@@ -83,7 +86,9 @@ export function budgetTime(at: string | number): string {
     timeZone: budgetZone,
     hour: 'numeric',
     minute: '2-digit',
-  }).format(d);
+  })
+    .format(d)
+    .replace(/\s(?=[AP]M$)/, '\u00a0');
 }
 
 /** Epoch ms as "Nov 12", or "9:42 AM" when it's today in the budget's time zone. */
