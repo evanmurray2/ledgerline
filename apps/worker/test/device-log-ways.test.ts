@@ -14,6 +14,7 @@ import {
   recoverySlot,
   startChain,
   type Bytes,
+  type EntryFields,
 } from '@ledgerline/seal';
 import { describe, expect, it } from 'vitest';
 import { DeviceLog } from '../src/local/device-log.js';
@@ -22,7 +23,9 @@ const BUDGET = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
 const PHONE = '01BX5ZZKBKACTAV9WEVGEMMVRZ';
 const T0 = 1_800_000_000_000;
 
-const fields = (o: Record<string, unknown>) => ({
+const fields = (
+  o: Pick<EntryFields, 'kind' | 'number' | 'prevHash' | 'time' | 'deviceCounter'>,
+): EntryFields => ({
   budgetId: BUDGET,
   entryId: randomBytes(16),
   deviceId: PHONE,
@@ -32,7 +35,7 @@ const fields = (o: Record<string, unknown>) => ({
   part: 1,
   parts: 1,
   filedThrough: 0,
-  receipts: [],
+  receipts: [] as Bytes[],
   scanThrough: 0,
   ...o,
 });
