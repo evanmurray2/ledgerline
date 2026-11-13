@@ -21,7 +21,7 @@ export default defineConfig(() => ({
           SIGNUPS: 'open',
           MAX_USERS: '4',
           SIGNUPS_PER_DAY: '3',
-          TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
+          CHECK_URL: 'http://check.ledgerline.test',
           TURNSTILE_SECRET: '1x0000000000000000000000000000000AA',
         },
       },

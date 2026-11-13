@@ -1,8 +1,7 @@
-// The app shell and the pages around it: sign-up's robot check, screens that load later, and small texts.
+// The app shell and the pages around it: sign-up's robot check, the privacy policy, screens that load later, and small texts.
 import { afterEach, describe, expect, it } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { CHECK_FAILED, CreateAccountScreen } from '../src/screens/Signup';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { takeCheckToken } from '../src/screens/Signup';
 import { userName, usersLine } from '../src/screens/settings/People';
 import { tellApart } from '../src/screens/settings/SignIn';
 import { passkeyName } from '../src/lib/device-name';
@@ -107,26 +106,36 @@ describe('Settings texts', () => {
   });
 });
 
-afterEach(() => {
-  cleanup();
-  document.head.querySelectorAll('script[src*="challenges.cloudflare.com"]').forEach((s) => s.remove());
+afterEach(() => cleanup());
+
+describe('Create account: the robot check on its own address', () => {
+  it('takes the token from the address once, and leaves nothing of it there', () => {
+    history.replaceState(null, '', '/budget?x=1#check=abc.DEF-1');
+    expect(takeCheckToken()).toBe('abc.DEF-1');
+    expect(window.location.hash).toBe('');
+    expect(window.location.search).toBe('?x=1');
+    expect(takeCheckToken()).toBeNull();
+    history.replaceState(null, '', '/budget#other');
+    expect(takeCheckToken()).toBeNull();
+    expect(window.location.hash).toBe('#other');
+    history.replaceState(null, '', '/');
+  });
 });
 
-describe('Create account: the robot check', () => {
-  it('says so when its script can’t load, instead of a gray button for ever, and can try again', () => {
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <CreateAccountScreen siteKey="0x4AAAAAAAreal" onBack={() => undefined} />
-      </QueryClientProvider>,
+describe('The privacy policy page', () => {
+  it('opens with no sign-in and shows the policy without the owner’s review marks', async () => {
+    window.__desktop = false;
+    installMock('default', 0, (now) => novemberCopy(now));
+    const history = createMemoryHistory({ initialEntries: ['/privacy-policy?back=/settings'] });
+    render(<App history={history} queryClient={makeQueryClient()} />);
+    expect(await screen.findByRole('heading', { name: 'The short version' }, { timeout: 4000 })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Privacy policy' })).toBeTruthy();
+    expect(document.body.textContent).not.toContain('owner reads');
+    expect(document.body.textContent).not.toContain('(later)');
+    expect(screen.getByRole('link', { name: 'https://my.plaid.com' }).getAttribute('rel')).toContain(
+      'noopener',
     );
-    const script = () =>
-      document.head.querySelector<HTMLScriptElement>('script[src*="challenges.cloudflare.com"]');
-    expect(script()).not.toBeNull();
-    act(() => script()!.dispatchEvent(new Event('error')));
-    expect(screen.getByRole('alert').textContent).toBe(CHECK_FAILED);
-    expect((screen.getByRole('button', { name: 'Create passkey' }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Try the check again' }));
-    expect(screen.queryByRole('alert')).toBeNull();
-    expect(script()).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to settings' }));
+    await waitFor(() => expect(history.location.pathname).toBe('/settings'));
   });
 });

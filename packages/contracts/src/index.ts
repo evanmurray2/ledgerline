@@ -821,9 +821,9 @@ export const AuthStatus = z.object({
   hasPasskey: z.boolean(),
   /** No passkey yet and a setup code is configured: show first-time setup. */
   setupOpen: z.boolean(),
-  /** Open sign-up is on (D-75); the Turnstile site key the check uses. */
+  /** Open sign-up is on (D-75); the robot check's own address (docs/privacy.md 5.6), where Create account goes. */
   signupOpen: z.boolean().optional(),
-  turnstileSiteKey: z.string().optional(),
+  checkUrl: z.string().optional(),
 });
 export type AuthStatus = z.infer<typeof AuthStatus>;
 

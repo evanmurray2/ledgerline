@@ -1,21 +1,25 @@
 # Privacy policy (draft)
 
-Status: a draft for the owner to read, Nov 12, 2026. It is not shown in the app yet. It describes a **locked**
+Status: a draft for the owner to read, Nov 12, 2026. The app shows it at `/privacy-policy` (Sign in, Create
+account and Settings link to it), read from this file: the app drops these notes, everything above the `---` line,
+and the **(owner reads)** marks, and leaves out any paragraph marked **(later)**. It describes a **locked**
 budget, as the owner's has been since Nov 12, 2026 (`docs/privacy.md` section 8); sign-up is closed, so every
-budget is locked. It says what is true **today**, as Settings → Privacy and `docs/claims.md` do, and it changes in
+budget is locked. It says what is true **today**, as `docs/claims.md` does, and it changes in
 the same pull request as each phase of `docs/privacy.md` that changes who can read what. The facts come from
 `docs/privacy.md` sections 2, 4.3 and 15.4 and from the code named in `docs/claims.md`. Nothing here is legal
 advice; a lawyer has not read it.
 
-Lines marked **(later)** are not true yet. They show what the text becomes when the privacy design is done, so the
-two can be compared. They are removed before the policy is shown to anyone. Three **(later)** lines went on Nov 12,
-2026, because the move made them true: the budget locked with a key the server never has, what the server stores,
-and what a court could get.
+Lines marked **(later)** are not true yet; none are left. Three went on Nov 12, 2026, because the move made them
+true. On Nov 13, 2026 the rest went: two that are now built became **(owner reads)** lines (the 90-day and 24-month
+rules, and signing in with the recovery key), and three that are not built were dropped (a notice before each idle
+rule, removing banks at Plaid when you delete, a notice when this policy changes).
 
-Lines marked **(owner reads)** changed on Nov 12 or 13, 2026 and need the owner's reading before the policy is
-shown.
+Lines marked **(owner reads)** changed on Nov 12 or 13, 2026 and need the owner's reading before other people
+are invited (sign-up is closed, so only the owner sees the page now).
 
 ---
+
+Last changed: November 13, 2026.
 
 ## The short version
 
@@ -82,10 +86,11 @@ the owner's, has an email address from before sign-up stopped asking for one.
   (November 2026). Cloudflare's past versions keep it 30 days more.
 - Request logs: 3 days.
 - Past versions of what the server holds: 30 days.
-- Today, nothing is deleted because an account is idle.
 
-**(later)** An account that nobody uses for 90 days stops fetching from its banks. An account that nobody uses for
-24 months is deleted. The app shows a notice before each.
+**(owner reads)** When nobody opens a budget for 90 days, Ledgerline stops fetching from its banks. It starts again
+when you next open the app. When nobody opens an account for 24 months, it is marked, and 30 days later it is
+deleted, as Delete account does. Opening the app before then clears the mark. The owner's account is never deleted
+this way.
 
 ## Deleting your account
 
@@ -99,8 +104,6 @@ back. Two limits today:
 
 To remove what Plaid holds about you, ask Plaid: https://my.plaid.com
 
-**(later)** Deleting your account also removes your banks at Plaid.
-
 ## If you lose every way in
 
 **(owner reads)** There is no reset. Ledgerline's server can't open or restore a locked budget, because it never
@@ -110,7 +113,7 @@ not you, and not whoever runs Ledgerline. Keep the recovery key somewhere safe.
 **(owner reads)** A recovery code that you made in Settings still gets you signed in, but it doesn't open a locked
 budget. A passkey added that way opens it only after one of your devices lets it in.
 
-**(later)** Your recovery key also signs you in, with no passkey.
+**(owner reads)** Your recovery key also signs you in, with no passkey: Sign in → Use your recovery key.
 
 ## If a court asks
 
@@ -122,8 +125,6 @@ from Plaid, or to send your browser changed code.
 ## Changes to this policy
 
 The date at the top says when this policy last changed.
-
-**(later)** The app shows a notice when this policy changes.
 
 ## Contact
 

@@ -56,9 +56,13 @@ export interface Env {
   /** Accounts allowed in all (default 1), and new accounts per UTC day (default 50). */
   MAX_USERS?: string;
   SIGNUPS_PER_DAY?: string;
-  /** Cloudflare Turnstile for sign-up and recovery: the public site key and the secret (a Worker secret). */
-  TURNSTILE_SITE_KEY?: string;
+  /** Cloudflare Turnstile's secret for sign-up (a Worker secret). */
   TURNSTILE_SECRET?: string;
+  /**
+   * The robot check's own address (docs/privacy.md 5.6, D-113): the second Worker (wrangler.check.jsonc) that runs
+   * Turnstile, which holds the site key. A token's hostname must be this address's.
+   */
+  CHECK_URL?: string;
   /** Inside the Directory: whether the breaker is at normal (sign-up and recovery need it, D-75). */
   BREAKER_NORMAL?: () => Promise<boolean>;
   /** Inside the Directory: create a new budget's store and run its migrations (sign-up). */

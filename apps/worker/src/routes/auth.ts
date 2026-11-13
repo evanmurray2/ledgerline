@@ -17,6 +17,7 @@ import type { Env } from '../env.js';
 import { ulid } from '@ledgerline/platform';
 import { resolveMembership } from '../db/scoped.js';
 import { isFence, signupStmts, signupSwitchOn } from './signup.js';
+import { checkOrigin } from './signup-switch.js';
 import { RECOVERY_KEY_GRANT, recoveryKeyStmts } from './recovery-key.js';
 import { clock, requestNow } from '../http/clock.js';
 import { openChallenge, sealChallenge } from '../http/challenge.js';
@@ -177,7 +178,7 @@ authRoutes.get('/status', async (c) => {
     setupOpen: (c.env.SETUP_CODE?.length ?? 0) >= 32 && (await setupOpen(c.env)),
     // Open sign-up (D-75): only once the switch is on and the instance has its admin.
     ...(signupSwitchOn(c.env) && (await firstAdmin(c.env))
-      ? { signupOpen: true, turnstileSiteKey: c.env.TURNSTILE_SITE_KEY }
+      ? { signupOpen: true, checkUrl: checkOrigin(c.env) ?? undefined }
       : { signupOpen: false }),
   });
 });

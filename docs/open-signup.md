@@ -23,25 +23,25 @@ Non-goals: turning sign-up on, paid plans, Plaid Production, email, billing, sha
 
 Worker variables in `apps/worker/wrangler.jsonc` (`vars`). Changing one is a merge to `main` (D-49), so turning sign-up on is a reviewed PR.
 
-| Variable             | Default | Meaning                                                                                                   |
-| -------------------- | ------- | --------------------------------------------------------------------------------------------------------- |
-| `SIGNUPS`            | `off`   | `open` lets anyone make an account. Any other value is `off`.                                             |
-| `MAX_USERS`          | `1`     | Accounts allowed, counting active, turned-off and deleting users.                                         |
-| `SIGNUPS_PER_DAY`    | `50`    | New accounts per UTC day, account-wide.                                                                   |
-| `OTHER_USERS_BANKS`  | `off`   | `on` lets users who aren't admins link banks. Only for a Plaid plan with no lifetime link limit (5).      |
-| `OTHER_USERS_SHARE`  | `0.5`   | The part of each daily limit that users who aren't admins may use together (8). `off` turns fair use off. |
-| `TURNSTILE_SITE_KEY` | none    | Cloudflare Turnstile site key (public).                                                                   |
+| Variable            | Default | Meaning                                                                                                   |
+| ------------------- | ------- | --------------------------------------------------------------------------------------------------------- |
+| `SIGNUPS`           | `off`   | `open` lets anyone make an account. Any other value is `off`.                                             |
+| `MAX_USERS`         | `1`     | Accounts allowed, counting active, turned-off and deleting users.                                         |
+| `SIGNUPS_PER_DAY`   | `50`    | New accounts per UTC day, account-wide.                                                                   |
+| `OTHER_USERS_BANKS` | `off`   | `on` lets users who aren't admins link banks. Only for a Plaid plan with no lifetime link limit (5).      |
+| `OTHER_USERS_SHARE` | `0.5`   | The part of each daily limit that users who aren't admins may use together (8). `off` turns fair use off. |
+| `CHECK_URL`         | none    | The robot check's own address, the second Worker (D-113). Its `TURNSTILE_SITE_KEY` is set there.          |
 
 New secret, used only once sign-up is on: `TURNSTILE_SECRET`. It is added to `tools/ci/worker-secrets.mjs` and the `deploy.yml` env now, so adding it to the GitHub `production` environment later is enough. Until then it is absent, and sign-up stays closed.
 
-Sign-up is open only when **all** of these hold: `SIGNUPS` is `open`, both Turnstile values are set, `devSignIn()` is false, an admin exists, and the breaker state (D-40) is `normal`. The **Worker** checks the variables before it calls the Directory, so a closed or bad request costs no Durable Object request. Closed → 404, the same as an unknown route. `GET /api/auth/status` gains `signupOpen`, which is `false` while closed.
+Sign-up is open only when **all** of these hold: `SIGNUPS` is `open`, `TURNSTILE_SECRET` and `CHECK_URL` are set (D-113), `devSignIn()` is false, an admin exists, and the breaker state (D-40) is `normal`. The **Worker** checks the variables before it calls the Directory, so a closed or bad request costs no Durable Object request. Closed → 404, the same as an unknown route. `GET /api/auth/status` gains `signupOpen`, which is `false` while closed.
 
 ## 3. Making an account
 
 ### 3.1 Screens
 
 - Sign-in screen: **Create account** under **Sign in**, only when `signupOpen` is true.
-- Create account: the Turnstile check, then **Create passkey**. (**Now:** no name is asked for, D-85: sign-up takes a passkey and nothing else, the passkey's label is "Ledgerline" and the day, and Settings → Users lists an account as "Account" with the day it joined. The design said **Name**, 1–60 characters, shown on the passkey and to admins.) The screen says, before the passkey: "Your passkey is how you sign in. If you lose every passkey and your recovery code, you can't get back into your budget. No one can recover it for you."
+- Create account: the Turnstile check, then **Create passkey**. (**Now:** the check runs on its own address, D-113: Create account goes there, and comes back to this screen with the token.) (**Now:** no name is asked for, D-85: sign-up takes a passkey and nothing else, the passkey's label is "Ledgerline" and the day, and Settings → Users lists an account as "Account" with the day it joined. The design said **Name**, 1–60 characters, shown on the passkey and to admins.) The screen says, before the passkey: "Your passkey is how you sign in. If you lose every passkey and your recovery code, you can't get back into your budget. No one can recover it for you."
 - Then the recovery code screen (4), which says the same again. The user ticks "I saved my recovery code. I understand that without it and my passkeys, my budget is lost." to go on.
 - Then the existing first-run Setup (`apps/web/src/screens/Setup.tsx`) on an empty budget.
 - UI text goes into `docs/copy.md` first.
@@ -197,7 +197,7 @@ Turning on is a PR that sets `SIGNUPS` to `open`. Before it, the owner decides e
 
 - **Plaid:** Plaid Production and its costs, then `OTHER_USERS_BANKS` to `on`. Until then other users can't link banks.
 - **Cloudflare plan:** Free (about 10–15 active users) or Paid; the `LIMIT_*` values; `MAX_USERS`, `SIGNUPS_PER_DAY`; keep fair use, turn it off (`OTHER_USERS_SHARE` = `off`) or delete it (8).
-- **Turnstile:** make the widget in the Cloudflare dashboard (free, no card), add `TURNSTILE_SECRET` to the GitHub `production` environment, set `TURNSTILE_SITE_KEY`. The same PR adds `https://challenges.cloudflare.com` to `script-src` and `frame-src` in `apps/web/public/_headers` and updates `apps/web/test/headers.test.ts`. The live CSP doesn't change before then.
+- **Turnstile (D-113):** add a deploy step for the check's Worker (`wrangler deploy -c wrangler.check.jsonc` in `apps/worker`), which makes the Worker `ledgerline-check` and its address `https://ledgerline-check.ledger-line.workers.dev`. Make the widget in the Cloudflare dashboard (free, no card) for that host, set its site key as `TURNSTILE_SITE_KEY` in `wrangler.check.jsonc`, add `TURNSTILE_SECRET` to the GitHub `production` environment, and set `CHECK_URL` to that address in `wrangler.jsonc`. The app's CSP doesn't change. Then try the trip there and back from the Home Screen app on an iPhone.
 - **Decisions to look at again:** no off-site backups (D-29), no monitor (D-49), no staging (D-36), the 10 ms rule on a paid plan, a session cache and splitting sessions out of the Directory (`docs/multi-user.md` 5.1, 5.2), expiring unused accounts.
 - **Not code:** terms of service, a privacy policy, a support contact, billing if users pay.
 

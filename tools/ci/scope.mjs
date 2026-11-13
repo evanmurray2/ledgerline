@@ -13,12 +13,14 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const DOCS = /^(docs\/|[^/]+\.md$)/;
+/** Docs the web build reads (the app's privacy policy page): a change to one is built and deployed. */
+const SHIPPED = new Set(['docs/privacy-policy.md']);
 /** GitHub lists at most 300 changed files for a comparison: that many is never treated as docs only. */
 const MOST_FILES = 300;
 
-/** True when every changed file is documentation: `docs/` or a Markdown file at the top of the repository. */
+/** True when every changed file is documentation: `docs/` or a Markdown file at the top of the repository, but not one the app shows. */
 export function docsOnly(files) {
-  return files.length > 0 && files.length < MOST_FILES && files.every((f) => DOCS.test(f));
+  return files.length > 0 && files.length < MOST_FILES && files.every((f) => DOCS.test(f) && !SHIPPED.has(f));
 }
 
 /** A GitHub API reader for this repository. */
