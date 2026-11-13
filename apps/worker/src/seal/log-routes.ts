@@ -131,9 +131,10 @@ logApi.post('/log/append', async (c) => {
     now,
     // The log's own rule decides what rests: a sign-out or a key change is never held back (5.3 check 7).
     resting: state === 'readonly' || state === 'rest',
-    // Until the Directory tells the store how this session came in (a recovery key, or a passkey added in the
-    // last 7 days), every session counts as a fresh way in: a key change needs an intent that has waited (D-89).
-    freshWay: true,
+    // How this session came in, as the Directory tells it: a passkey added in the last 7 days (a recovery-key
+    // sign-in always adds one) is a fresh way in, and a key change from it needs an intent that has waited
+    // (D-89). A caller the Directory said nothing about counts as fresh.
+    freshWay: c.get('freshWay') !== false,
     lastCompleteRun: await lastCompleteRun(c.env.DB),
     receiptHashes: (from, to) => receiptHashes(c.env.DB, from, to),
     // A key change brings new keys: each gets the Worker's stamp in the step that stores the write.

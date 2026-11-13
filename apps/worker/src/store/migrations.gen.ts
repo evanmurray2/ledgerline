@@ -36,6 +36,10 @@ export const DIRECTORY_MIGRATIONS: StoreMigration[] = [
   {
     "name": "0008_signup.sql",
     "sql": "-- Open sign-up, built and switched off (D-75, docs/open-signup.md 16). Tables and indexes only; no rows are copied\n-- or changed. Expand-only.\n-- Every finished passkey ceremony records its challenge id here, in the same transaction, so a challenge works once\n-- (3.3). auth_prune deletes rows older than a day.\nCREATE TABLE used_challenge (\n  id TEXT PRIMARY KEY,\n  used_at INTEGER NOT NULL\n);\nCREATE INDEX used_challenge_at ON used_challenge (used_at);\n-- A statement that writes ok = 0 here throws, so it rolls its whole batch back: the lease_guard pattern for the\n-- Directory (INSERT OR REPLACE on id 1, so one row at most).\nCREATE TABLE fence (\n  id INTEGER PRIMARY KEY,\n  ok INTEGER NOT NULL CHECK (ok = 1)\n);\n-- A recovery code was used (4): its user sees a notice for 14 days, until they dismiss it.\nCREATE TABLE recovery_notice (\n  user_id TEXT PRIMARY KEY REFERENCES user(id),\n  used_at INTEGER NOT NULL,\n  dismissed_at INTEGER\n);\n-- Sign-ups per UTC day (3.2).\nCREATE INDEX user_created ON user (created_at);\n-- Durable Object requests per budget per day, for each user's share (8).\nALTER TABLE budget_usage_day ADD COLUMN requests INTEGER NOT NULL DEFAULT 0;\n"
+  },
+  {
+    "name": "0009_recovery_key.sql",
+    "sql": "-- The recovery key of a locked budget, for sign-in (docs/privacy-keys.md 4.2 \"Proving it to the server\"): the\n-- public half of the Ed25519 pair that comes from the recovery key. Never a secret. One per user: a new recovery\n-- key replaces it. A table only; no rows are copied or changed. Expand-only.\nCREATE TABLE recovery_key (\n  user_id TEXT PRIMARY KEY REFERENCES user(id),\n  auth_pub TEXT NOT NULL UNIQUE,\n  created_at INTEGER NOT NULL\n);\n"
   }
 ];
 

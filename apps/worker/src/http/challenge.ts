@@ -10,7 +10,8 @@ import { CHALLENGE_MS, randomToken } from './auth.js';
 export interface Challenge {
   id: string;
   challenge: string;
-  purpose: 'register' | 'login';
+  /** `recovery`: a recovery key's sign-in, before its passkey ceremony (routes/recovery-key.ts). */
+  purpose: 'register' | 'login' | 'recovery';
   grant_kind: string | null;
   grant_ref: string | null;
   exp: number;

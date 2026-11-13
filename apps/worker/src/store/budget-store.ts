@@ -823,6 +823,7 @@ function withCaller(mount: (app: Hono<AppEnv>) => void): Hono<AppEnv> {
     c.set('syncEpoch', who.syncEpoch ?? 'e0');
     c.set('isAdmin', who.isAdmin === true);
     c.set('recoveryNoticeAt', who.recoveryNoticeAt ?? null);
+    c.set('freshWay', who.freshWay !== false);
     return next();
   });
   mount(app);
