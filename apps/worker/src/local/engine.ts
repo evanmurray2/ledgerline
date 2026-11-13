@@ -177,11 +177,9 @@ export async function migrateLocal(
   // itself, when the log took another device's entry for it (local/sealed-filing.ts resetFiling). So the copy's
   // own guard lets the rows of a sealed run be deleted, and no others.
   await db.batch(
-    ['bank_event', 'bank_page'].flatMap((t) => [
+    BANK_LOG_TABLES.flatMap((t) => [
       db.prepare(`DROP TRIGGER IF EXISTS ${t}_no_delete`),
-      db.prepare(
-        `CREATE TRIGGER ${t}_no_delete BEFORE DELETE ON ${t} WHEN OLD.sync_run_id NOT LIKE 'sealed:%' BEGIN SELECT RAISE(ABORT, '${t} is append-only'); END`,
-      ),
+      db.prepare(bankLogGuard(t)),
     ]),
   );
   await db.batch([
@@ -223,7 +221,32 @@ export const RECORDED_TABLES: readonly SyncTable[] = [
   ...SYNC_TABLES,
   { name: 'audit_log', pk: ['id'] },
   { name: 'txn_key_move', pk: ['old_key'] },
+  // The bank log a device writes while it files a sealed run (D-102): it travels in the bank entry with the rest of
+  // the run's rows, so every copy holds the same log and a snapshot can carry it.
+  { name: 'bank_page', pk: ['sync_run_id', 'page'], appendOnly: true },
+  { name: 'bank_event', pk: ['id'], appendOnly: true },
 ];
+
+/** The bank log's tables: append-only, with the copy's own guard (`migrateLocal`). */
+export const BANK_LOG_TABLES = ['bank_event', 'bank_page'] as const;
+
+/** The copy's guard on the bank log: rows of a sealed run may be taken out (a filing undone), no others. */
+const bankLogGuard = (t: string): string =>
+  `CREATE TRIGGER ${t}_no_delete BEFORE DELETE ON ${t} WHEN OLD.sync_run_id NOT LIKE 'sealed:%' BEGIN SELECT RAISE(ABORT, '${t} is append-only'); END`;
+
+/**
+ * Empties the copy's bank log, every row of it, for a copy made again from a snapshot (local/device-snapshot.ts):
+ * the guard is lifted for this one step and put back in the same transaction.
+ */
+export async function wipeBankLog(db: Db): Promise<void> {
+  await db.batch(
+    BANK_LOG_TABLES.flatMap((t) => [
+      db.prepare(`DROP TRIGGER IF EXISTS ${t}_no_delete`),
+      db.prepare(`DELETE FROM ${t}`),
+      db.prepare(bankLogGuard(t)),
+    ]),
+  );
+}
 
 /**
  * Columns derive() works out, in a table an edit also writes: left out of the row kept for taking an edit back
@@ -356,6 +379,35 @@ export class LocalEngine {
       c.set('sessionId', '');
       c.set('syncEpoch', 'local');
       return next();
+    });
+    // The engine's own (local/log-session.ts shareBankLog): the bank log of sealed runs `from` to `to`, written
+    // again as it is, so that the recording carries it into an entry. Never on the server.
+    app.post('/api/device/bank-log', async (c) => {
+      const b = (await c.req.json().catch(() => null)) as { from?: unknown; to?: unknown } | null;
+      if (!b || !Number.isSafeInteger(b.from) || !Number.isSafeInteger(b.to))
+        return c.json({ error: 'invalid', message: 'Try again.' }, 400);
+      const db = c.env.DB;
+      const of = `sync_run_id LIKE 'sealed:%' AND CAST(substr(sync_run_id, 8) AS INTEGER) BETWEEN ?1 AND ?2`;
+      const stmts: Stmt[] = [];
+      for (const t of BANK_LOG_TABLES) {
+        const rows = (
+          await db.prepare(`SELECT * FROM ${t} WHERE ${of}`).bind(b.from, b.to).all<Record<string, unknown>>()
+        ).results;
+        if (!rows.length) continue;
+        stmts.push(db.prepare(`DELETE FROM ${t} WHERE ${of}`).bind(b.from, b.to));
+        for (const r of rows) {
+          const cols = Object.keys(r);
+          stmts.push(
+            db
+              .prepare(
+                `INSERT INTO ${t} (${cols.join(', ')}) VALUES (${cols.map((_, i) => `?${i + 1}`).join(', ')})`,
+              )
+              .bind(...cols.map((x) => r[x])),
+          );
+        }
+      }
+      for (const part of chunks(stmts, 500)) await db.batch(part);
+      return c.json({ ok: true });
     });
     app.route('/api', budgetApi);
     this.app = app;
@@ -706,7 +758,7 @@ export class LocalEngine {
       this.db
         .prepare(
           `INSERT INTO ${t.name} (${cols.join(', ')}) VALUES (${cols.map((_, i) => `?${i + 1}`).join(', ')})
-           ON CONFLICT (${t.pk.join(', ')}) DO ${update ? `UPDATE SET ${update}` : 'NOTHING'}`,
+           ON CONFLICT ${t.appendOnly ? '' : `(${t.pk.join(', ')}) `}DO ${update && !t.appendOnly ? `UPDATE SET ${update}` : 'NOTHING'}`,
         )
         .bind(...vals),
     ];

@@ -30,10 +30,18 @@ import {
 import type { SyncRow } from '../routes/sync.js';
 import { SYNC_FORMAT, type SyncTable } from '../sync-tables.js';
 import { DeviceLog } from './device-log.js';
-import { RECORDED_TABLES, WORKED_OUT, type LocalEngine } from './engine.js';
+import { BANK_LOG_TABLES, RECORDED_TABLES, WORKED_OUT, wipeBankLog, type LocalEngine } from './engine.js';
 
-/** The tables a snapshot holds: everything an entry of the log can change. */
+/** The tables a snapshot holds: everything an entry of the log can change, the bank log included (D-102). */
 export const SNAPSHOT_TABLES: readonly SyncTable[] = RECORDED_TABLES;
+
+/**
+ * The tables the move to the sealed log compares between the phone and the server (seal/cutover.ts): all but the
+ * bank log, which the phone never read from the old routes.
+ */
+export const MOVE_TABLES: readonly SyncTable[] = SNAPSHOT_TABLES.filter(
+  (t) => !(BANK_LOG_TABLES as readonly string[]).includes(t.name),
+);
 
 /**
  * Columns a copy writes from its own clock when it works things out (derive() stamps the budget row): they
@@ -114,18 +122,21 @@ async function* lines(db: Db, t: SyncTable, cols: readonly string[]): AsyncGener
 
 /**
  * The hash of every snapshot table of this copy, as a manifest names them. `schema`: the columns of the snapshot
- * to compare with (its writer's); without it, this copy's own.
+ * to compare with (its writer's); a table it doesn't list (a snapshot from before the bank log was in snapshots)
+ * is left out. Without it, this copy's own. `tables`: which tables (the move compares fewer).
  */
 export async function tableHashes(
   db: Db,
   schema?: SnapshotSchema,
+  tables: readonly SyncTable[] = SNAPSHOT_TABLES,
 ): Promise<{ name: string; hash: Uint8Array<ArrayBuffer> }[]> {
   const with_ = schema ?? (await ownSchema(db));
   for (const name of Object.keys(with_))
     if (!SNAPSHOT_TABLES.some((t) => t.name === name)) throw new SnapshotNewer();
   const out = [];
   const enc = new TextEncoder();
-  for (const t of SNAPSHOT_TABLES) {
+  for (const t of tables) {
+    if (!with_[t.name]) continue;
     const cols = (await columnsFor(db, t, with_)).filter((c) => !OWN_CLOCK[t.name]?.includes(c));
     // A running hash, row by row: zeros, then H(hash so far || the row's line).
     let h: Uint8Array<ArrayBuffer> = new Uint8Array(32);
@@ -165,6 +176,7 @@ export async function hashStep(
   p: HashProgress,
   rows: number,
   bytes: number,
+  tables: readonly SyncTable[] = SNAPSHOT_TABLES,
 ): Promise<{ progress: HashProgress; finished: boolean }> {
   const enc = new TextEncoder();
   const done = [...p.done];
@@ -172,8 +184,8 @@ export async function hashStep(
   let h = bytesOf(p.h);
   let leftRows = rows;
   let leftBytes = bytes;
-  while (done.length < SNAPSHOT_TABLES.length) {
-    const t = SNAPSHOT_TABLES[done.length]!;
+  while (done.length < tables.length) {
+    const t = tables[done.length]!;
     const cols = (await ownColumns(db, t)).filter((c) => !OWN_CLOCK[t.name]?.includes(c));
     let ended = cols.length === 0;
     while (!ended && leftRows > 0 && leftBytes > 0) {
@@ -569,14 +581,15 @@ export async function emptyOldCopy(engine: LocalEngine): Promise<number> {
   return dropped;
 }
 
-/** Takes every row of every snapshot table out of a copy that a failed open half filled. */
-async function wipe(engine: LocalEngine): Promise<void> {
+/** Takes every row of every snapshot table out of a copy (one a failed open half filled, or one made again). */
+export async function wipe(engine: LocalEngine): Promise<void> {
   await engine.clear();
   await engine.db.batch(
     SNAPSHOT_TABLES.filter((t) => t.name === 'audit_log' || t.name === 'txn_key_move').map((t) =>
       engine.db.prepare(`DELETE FROM ${t.name}`),
     ),
   );
+  await wipeBankLog(engine.db);
 }
 
 /** Guards the read of the entries between two snapshots. */

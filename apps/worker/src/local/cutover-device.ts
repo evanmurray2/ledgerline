@@ -15,7 +15,13 @@ import type { FreezeAnswer } from '../seal/cutover.js';
 import { LOG_SCHEMA_VERSION } from '../seal/log-versions.js';
 import { SYNC_FORMAT } from '../sync-tables.js';
 import { DeviceLog } from './device-log.js';
-import { differingTables, dumpChunks, tableHashes, type SnapshotTransport } from './device-snapshot.js';
+import {
+  differingTables,
+  dumpChunks,
+  MOVE_TABLES,
+  tableHashes,
+  type SnapshotTransport,
+} from './device-snapshot.js';
 import type { LocalEngine } from './engine.js';
 import { LogSession } from './log-session.js';
 import { FILED_KEY, FILED_LINK } from './sealed-filing.js';
@@ -82,12 +88,12 @@ export async function cutoverOnDevice(engine: LocalEngine, d: CutoverDeps): Prom
   const frozen = await d.cutover.freeze();
   if (!frozen.ok) return { ok: false, why: frozen.why[0] ?? 'The budget can’t be moved now.' };
   const theirs = frozen.tables.map((t) => ({ name: t.name, hash: fromHex(t.hash) }));
-  let mine = await tableHashes(engine.db);
+  let mine = await tableHashes(engine.db, undefined, MOVE_TABLES);
   let differ = differingTables(mine, theirs);
   if (differ.length) {
     // Something reached the server just before the freeze: read it (reads go on), and compare once more.
     await d.sync();
-    mine = await tableHashes(engine.db);
+    mine = await tableHashes(engine.db, undefined, MOVE_TABLES);
     differ = differingTables(mine, theirs);
   }
   if (differ.length || (await engine.queue()).length)

@@ -143,7 +143,26 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   await other.reload();
   await expect(other.getByText('Groceries')).toBeVisible({ timeout: 60_000 });
   await expect(other.getByText('Open your budget with your recovery key')).toHaveCount(0);
+  // ---- two devices on one log: a change made on the new device (its flush) reaches the owner's (its sync)
+  await other.goto('/settings/categories');
+  await expect(other.getByText('Climbing')).toBeVisible({ timeout: 30_000 });
+  const sent = other.waitForResponse((r) => r.url().includes('/api/log/append'));
+  await other.getByRole('link', { name: 'Add category' }).first().click();
+  await other.getByRole('dialog').getByRole('textbox').first().fill('Kayaking');
+  await other.getByRole('dialog').getByRole('button', { name: 'Add category' }).click();
+  expect((await sent).status()).toBe(200);
   await other.close();
+  // The owner's device reads the log when it opens: the other device's change is there.
+  await page.goto('/settings/categories');
+  await page.reload();
+  await expect(page.getByText('Kayaking')).toBeVisible({ timeout: 30_000 });
+  // A change made here goes on top of the other device's entry.
+  const onTop = page.waitForResponse((r) => r.url().includes('/api/log/append'));
+  await page.getByRole('link', { name: 'Add category' }).first().click();
+  await page.getByRole('dialog').getByRole('textbox').first().fill('Sailing');
+  await page.getByRole('dialog').getByRole('button', { name: 'Add category' }).click();
+  expect((await onTop).status()).toBe(200);
+  await expect(page.getByText('Sailing')).toBeVisible();
 
   // ---- the way back
   await page.goto('/settings/privacy');

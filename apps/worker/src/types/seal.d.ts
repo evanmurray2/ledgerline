@@ -162,6 +162,7 @@ export interface EntryHeader {
   kind: number;
   budgetId: string;
   number: number;
+  prevHash: Bytes;
   entryId: Bytes;
   time: number;
   deviceId: string;
