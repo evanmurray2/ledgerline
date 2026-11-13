@@ -11,7 +11,7 @@ import { expect } from 'vitest';
 import { seedNovember } from '../src/dev-seed.js';
 import { LocalEngine, migrateLocal } from '../src/local/engine.js';
 import { SYNC_FORMAT } from '../src/sync-tables.js';
-import { storeDb } from './store-db.js';
+import { copyDb } from './store-db.js';
 
 const ORIGIN = 'https://ledgerline.test';
 /** The test server's clock (FAKE_NOW), moving on from when the file started, as a device's corrected clock does. */
@@ -35,7 +35,7 @@ export async function budgetOf(): Promise<{ budgetId: string; email: string }> {
 /** A new, empty copy of the signed-in user's budget. */
 export async function newCopy(name = `phone-copy-${++copies}`): Promise<LocalEngine> {
   const { budgetId, email } = await budgetOf();
-  const db = storeDb(name);
+  const db = copyDb(name);
   await migrateLocal(db, deviceNow());
   return new LocalEngine(db, { budgetId, userId: 'phone', email }, deviceNow);
 }
@@ -103,7 +103,7 @@ const SERVER = [
   /^\/api\/settings\/security(\/|$)/,
   /^\/api\/settings\/connections\/(link-token|link-finish|refresh)$/,
   /^\/api\/settings\/connections\/[^/]+\/(refresh|remove)$/,
-  /^\/api\/(usage|notes|identity-alert|health|log|start|cutover)(\/|$)/,
+  /^\/api\/(usage|notes|identity-alert|health|log|start)(\/|$)/,
 ];
 
 /** A fetch the way the app makes it: a screen or a change from the device's copy, anything else from the Worker. */

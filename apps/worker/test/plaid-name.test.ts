@@ -3,13 +3,13 @@
 import { env } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { PlaidProvider } from '@ledgerline/bank-provider';
-import { storeDb } from './store-db.js';
+import { budgetDb } from './store-db.js';
 import { acquire } from '../src/sync/lease.js';
 import { applyPage, beginRun, rawPageKey } from '../src/sync/steps.js';
 import { processPending } from '../src/sync/process.js';
 
 const STORE = 'plaid-name';
-const db = storeDb(STORE);
+const db = budgetDb(STORE);
 const NOW = Date.parse('2026-11-14T20:00:00Z');
 const provider = new PlaidProvider({ clientId: 'x', secret: 'y', env: 'sandbox' });
 const B = 'b_plaid_name';

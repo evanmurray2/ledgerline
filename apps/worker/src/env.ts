@@ -101,6 +101,4 @@ export interface Env {
   ROUTE_LINK?: (providerItemId: string, connectionId: string) => Promise<void>;
   /** Inside a budget's Durable Object: forget a removed Item's route in the Directory. */
   DROP_ROUTE?: (providerItemId: string) => Promise<void>;
-  /** Inside a budget's Durable Object: start emptying a sealed budget's old tables (seal/purge.ts). */
-  PURGE_START?: (now: number) => Promise<{ ok: true } | { ok: false; why: string }>;
 }

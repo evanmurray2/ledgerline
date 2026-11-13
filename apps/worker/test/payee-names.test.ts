@@ -7,12 +7,12 @@ import { CSRF_HEADER, type MergeResult } from '@ledgerline/contracts';
 import { budgetApi } from '../src/routes/api.js';
 import type { AppEnv } from '../src/http/context.js';
 import { PlaidProvider } from '@ledgerline/bank-provider';
-import { storeDb } from './store-db.js';
+import { budgetDb } from './store-db.js';
 import { acquire } from '../src/sync/lease.js';
 import { applyPage, beginRun, rawPageKey } from '../src/sync/steps.js';
 import { processPending } from '../src/sync/process.js';
 
-const db = storeDb('payee-names');
+const db = budgetDb('payee-names');
 const NOW = Date.parse('2026-11-14T20:00:00Z');
 const provider = new PlaidProvider({ clientId: 'x', secret: 'y', env: 'sandbox' });
 const B = 'b_payee_names';

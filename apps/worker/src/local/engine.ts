@@ -334,11 +334,6 @@ export interface QueuedEdit {
    */
   rows?: SyncRow[];
   /**
-   * The server may hold this edit: the app is sending it, or sent it and lost the answer. The copy never runs
-   * such an edit again by itself; a sync brings its rows.
-   */
-  sending?: boolean;
-  /**
    * Not an edit: bank runs this device filed (`LocalEngine.fileBank`), waiting to become a bank entry of the log.
    * Always first in the queue: the edits after it ran on top of it. It is never run again by the engine (the
    * runs are not kept here): when it must come out, it is dropped, and the device files the runs again.
@@ -520,14 +515,14 @@ export class LocalEngine {
 
   /**
    * The queue, when the server's page can go under it: every edit in it ran on the copy as it is now (the same
-   * change number, so the rows kept for taking it out are the server's), none is on its way to the server, and
-   * the page is one of changes, not of a download.
+   * change number, so the rows kept for taking it out are the server's), and the page is one of changes, not of
+   * a download.
    */
   private async exactQueue(st: EngineState, page: SyncPage): Promise<Exact[] | null> {
     if (st.cursor || page.cursor || st.through === 0 || page.rows.length === 0) return null;
     const q = await this.queue();
     if (!q.length) return null;
-    return q.every((e) => exactAt(e, st.through) && !e.sending) ? (q as Exact[]) : null;
+    return q.every((e) => exactAt(e, st.through)) ? (q as Exact[]) : null;
   }
 
   /** The queue while it is out of the copy, between the pages of one sync; null when it is in. */
@@ -933,8 +928,7 @@ export class LocalEngine {
 
   /**
    * An edit made on this device with no connection: runs it, and puts it in the queue with what takes it back
-   * out, in one step. `sending`: the edit already went to the server once and the answer was lost, so the server
-   * may hold it.
+   * out, in one step.
    */
   async enqueue(e: {
     id: string;
@@ -943,7 +937,6 @@ export class LocalEngine {
     path: string;
     body: unknown;
     appVersion?: string;
-    sending?: boolean;
   }): Promise<{ response: Response; queued: number }> {
     const through = (await this.state()).through;
     const r = await this.record(e.method, e.path, e.body, { id: e.id, at: e.at });
@@ -956,8 +949,8 @@ export class LocalEngine {
   }
 
   /**
-   * Drops every change waiting to be sent. Only for a copy of a budget that was moved to its sealed log on
-   * another device: those changes were made for the old routes, which take nothing any more.
+   * Drops every change waiting to be sent. Only for a copy with no place in the log (local/web-entry.ts
+   * `sealedJoin`): what waits there was made for no entry of the log, and nothing can send it.
    */
   async dropQueue(): Promise<number> {
     const n = (await this.queue()).length;
@@ -1008,7 +1001,7 @@ export class LocalEngine {
     const refused = q[i]!;
     const later = q.slice(i + 1);
     const through = (await this.state()).through;
-    if (!exactAt(refused, through) || !later.every((e) => exactAt(e, through) && !e.sending)) {
+    if (!exactAt(refused, through) || !later.every((e) => exactAt(e, through))) {
       await this.putQueue([...before, ...later]);
       return { redownload: true, lost: 0, left: q.length - 1 };
     }
@@ -1023,7 +1016,7 @@ export class LocalEngine {
    * Files bank runs on the copy, under the queue (docs/privacy.md 5.4): the waiting edits come out, `work` files
    * the runs with everything it writes recorded, and the edits run again on top. What was filed waits first in
    * the queue, as `bank`, until the log takes it as a bank entry. Null when it can't be done exactly now (an edit
-   * is on its way, was queued on another base, or filed runs already wait): read the log, then try again. If
+   * was queued on another base, or filed runs already wait): read the log, then try again. If
    * `work` throws, what it wrote is taken back out and the copy is as it was.
    */
   async fileBank(
@@ -1109,7 +1102,7 @@ export class LocalEngine {
   async canFileBank(): Promise<boolean> {
     const st = await this.state();
     const q = await this.queue();
-    return !st.cursor && !q.some((e) => e.bank || !exactAt(e, st.through) || e.sending);
+    return !st.cursor && !q.some((e) => e.bank || !exactAt(e, st.through));
   }
 
   /** The app was closed while this copy was filing bank runs: the copy holds half of it and must be made again. */

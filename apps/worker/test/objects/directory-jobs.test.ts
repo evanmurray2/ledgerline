@@ -33,14 +33,12 @@ async function addBudget(id: string, item?: string): Promise<void> {
     st.storage.sql.exec(`INSERT INTO budget (id, name, created_at, updated_at) VALUES (?, 'B', 0, 0)`, id);
   });
   await runInDurableObject(store(id), async (_o, st) => {
-    st.storage.sql.exec(
-      `INSERT INTO budget (id, name, budget_start_month, time_zone, created_at, updated_at) VALUES (?, 'B', '2026-09', 'America/Los_Angeles', 0, 0)`,
-      id,
-    );
+    st.storage.sql.exec(`INSERT INTO budget (id, name, created_at, updated_at) VALUES (?, 'B', 0, 0)`, id);
     if (item)
       st.storage.sql.exec(
-        `INSERT INTO connection (id, budget_id, provider, provider_item_id, institution_name, linked_at, created_at, updated_at)
-         VALUES ('con_' || ?, ?, 'plaid', ?, 'Bank', 0, 0, 0)`,
+        `INSERT INTO bank_link (id, connection_id, budget_id, provider, provider_item_id, linked_at, created_at)
+         VALUES (?, 'con_' || ?, ?, 'plaid', ?, 0, 0)`,
+        id,
         id,
         id,
         item,

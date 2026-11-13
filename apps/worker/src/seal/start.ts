@@ -9,7 +9,7 @@
 //            From here only the log's routes answer for it.
 //
 // A start that ends without `seal` leaves nothing in use: the next `begin` clears what the first one stored.
-// Only a budget with no data of its own starts: one that holds accounts, bank links or rows is refused.
+// Only a budget with no data of its own starts: one that holds a bank link is refused.
 import type { Db } from '@ledgerline/db/sql';
 import { readEntry } from '@ledgerline/seal';
 import { SEALED_BACKSTOP, SEALED_FETCH } from './fetch-job.js';
@@ -50,24 +50,15 @@ export async function isSealedStore(db: Db): Promise<boolean> {
 }
 
 /**
- * Why this budget can't start locked, or null when it can: it is sealed already, or it holds data of its own
- * (a budget made before D-102 that was never moved). Its own row, made by the store on first use, is not data.
+ * Why this budget can't start locked, or null when it can: it is sealed already, or it holds a bank link. Its
+ * own row, made by the store on first use, is not data. (The old budget tables are gone: D-105.)
  */
 export async function startRefusal(db: Db): Promise<string | null> {
   if (await isSealedStore(db)) return 'This budget is locked already.';
-  for (const t of OWN_DATA) {
-    // A table a later store migration dropped (D-102 item 3) holds nothing.
-    const r = await db
-      .prepare(`SELECT 1 AS x FROM ${t} LIMIT 1`)
-      .first()
-      .catch(() => null);
-    if (r) return 'This budget already holds data. It can’t start again.';
-  }
+  if (await db.prepare(`SELECT 1 AS x FROM bank_link LIMIT 1`).first())
+    return 'This budget already holds data. It can’t start again.';
   return null;
 }
-
-/** Tables that hold a budget's own data on a server from before D-102. */
-const OWN_DATA = ['bank_link', 'connection', 'account', 'category', 'bank_txn'];
 
 /** Stores the device's first entry (with the Worker's stamps on its keys) and begins its first snapshot. */
 export async function startBegin(
@@ -137,7 +128,7 @@ export async function startSeal(d: StartDeps, markNow: number): Promise<StartAns
   await d.db.batch([
     // A sealed budget runs only its own jobs; they are queued by the store once this answers.
     d.db
-      .prepare(`DELETE FROM job WHERE kind NOT IN (?1, ?2, 'register_link', 'stamp_links')`)
+      .prepare(`DELETE FROM job WHERE kind NOT IN (?1, ?2, 'register_link')`)
       .bind(SEALED_FETCH, SEALED_BACKSTOP),
     d.db
       .prepare(

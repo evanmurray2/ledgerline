@@ -69,15 +69,13 @@ describe('Plaid webhook', () => {
     // Directory routes to (a stand-in stamp: the webhook only asks that the link has one).
     await worker.fetch(new Request(`${ORIGIN}/api/session`), env as never, createExecutionContext());
     const budgetId = (await directoryStub().firstBudget())!;
-    await db
-      .prepare(
-        `INSERT INTO connection (id, budget_id, provider, provider_item_id, institution_name, status, linked_at, created_at, updated_at)
-         VALUES ('con_hook', ?1, 'plaid', 'item-hook', 'Hook Bank', 'ok', 0, 0, 0)`,
-      )
-      .bind(budgetId)
-      .run();
     await db.batch([
-      db.prepare(`UPDATE bank_link SET mac = 'stamp' WHERE connection_id = 'con_hook'`),
+      db
+        .prepare(
+          `INSERT INTO bank_link (id, connection_id, budget_id, provider, provider_item_id, linked_at, mac, created_at)
+           VALUES ('hook', 'con_hook', ?1, 'plaid', 'item-hook', 0, 'stamp', 0)`,
+        )
+        .bind(budgetId),
       db.prepare(`INSERT INTO store_mark (key, at) VALUES ('sealed', 0)`),
     ]);
     expect(await directoryStub().registerRoute('item-hook', budgetId, 'con_hook')).toBe('ok');

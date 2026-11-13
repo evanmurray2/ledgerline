@@ -5,6 +5,8 @@
 import { toValue, type Db, type Result, type SqlValue } from '@ledgerline/db/sql';
 import { env, runInDurableObject } from 'cloudflare:test';
 import { DurableDb } from '../src/store/adapter.js';
+import { migrate } from '../src/store/migrate.js';
+import { BUDGET_MIGRATIONS } from '../src/store/migrations.gen.js';
 import type { BudgetStore } from '../src/store/budget-store.js';
 import { DIRECTORY_NAME, type Directory } from '../src/store/directory.js';
 
@@ -46,9 +48,23 @@ class TestStatement {
 }
 
 class TestDb {
-  constructor(readonly stub: () => Stub | Promise<Stub>) {}
+  private ready: Promise<void> | null = null;
+
+  constructor(
+    readonly stub: () => Stub | Promise<Stub>,
+    /** Run once inside the object before the first statement (a copy's fresh schema). */
+    private readonly init?: (storage: DurableObjectStorage) => void,
+  ) {}
 
   async inside<T>(fn: (d: DurableDb) => Promise<T>): Promise<T> {
+    if (this.init && !this.ready) {
+      const init = this.init;
+      this.ready = (async () =>
+        runInDurableObject((await this.stub()) as DurableObjectStub<BudgetStore>, (_o, state) =>
+          init(state.storage),
+        ))();
+    }
+    await this.ready;
     return runInDurableObject((await this.stub()) as DurableObjectStub<BudgetStore>, (_o, state) =>
       fn(new DurableDb(state.storage)),
     );
@@ -75,6 +91,52 @@ export const directoryStub = (): DurableObjectStub<Directory> =>
 
 /** The database of the BudgetStore named `name` (production names a store by its budget id). */
 export const storeDb = (name: string): Db => new TestDb(() => budgetStub(name));
+
+/**
+ * Takes a store's own schema out, so its SQLite can stand for a device's copy. A store keeps no budget tables
+ * (D-105), and a test's copy needs a SQLite that workerd runs. The store's own migrations stay recorded, so a
+ * store that starts again runs none of them.
+ */
+function emptySchema(storage: DurableObjectStorage): void {
+  const sql = storage.sql;
+  storage.transactionSync(() => {
+    sql.exec(`PRAGMA defer_foreign_keys = ON`);
+    for (const type of ['trigger', 'view', 'table'])
+      for (const r of sql
+        .exec(
+          `SELECT name FROM sqlite_master WHERE type = ? AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'
+             AND name NOT LIKE '\\_%' ESCAPE '\\'`,
+          type,
+        )
+        .toArray())
+        sql.exec(`DROP ${type.toUpperCase()} IF EXISTS "${String(r.name)}"`);
+    sql.exec(`DELETE FROM _migrations WHERE name NOT LIKE 'store/%'`);
+  });
+}
+
+/**
+ * Test files may share Durable Objects: a copy's name is made this file's own, so another file's copy of the same
+ * name is never emptied under it.
+ */
+const FILE = Math.random().toString(36).slice(2);
+/** The Durable Object that holds the copy or budget database named `name` (copyDb, budgetDb). */
+export const copyStub = (name: string): DurableObjectStub<BudgetStore> => budgetStub(`${name}#${FILE}`);
+
+/** An empty SQLite in a Durable Object, for a device's copy: `migrateLocal` makes its schema, as on a phone. */
+export const copyDb = (name: string): Db => new TestDb(() => copyStub(name), emptySchema);
+
+/**
+ * A SQLite with the budget's schema as its migrations leave it (change-log triggers and all), for tests of the
+ * filing steps a device runs (they ran on the server before D-102).
+ */
+export const budgetDb = (name: string): Db =>
+  new TestDb(
+    () => copyStub(name),
+    (storage) => {
+      emptySchema(storage);
+      migrate(storage, BUDGET_MIGRATIONS, Date.now());
+    },
+  );
 
 /** The Directory's database (users, passkeys, sessions, routes). */
 export const directoryDb = (): Db => new TestDb(directoryStub);

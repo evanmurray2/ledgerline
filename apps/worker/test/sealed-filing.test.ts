@@ -39,7 +39,7 @@ import {
 import { bankSync, pend, plaidTxn, removal } from './bank-sync.js';
 import { BUDGET, PHONE, T0 } from './log-writer.js';
 import { bank, LINK_A, ring, run, world, type World } from './sealed-world.js';
-import { storeDb } from './store-db.js';
+import { copyDb } from './store-db.js';
 import { differences, rowsOf } from './twin.js';
 
 const LAPTOP = '01CX5ZZKBKACTAV9WEVGEMMVRZ';
@@ -147,7 +147,7 @@ describe('a sealed budget: the server seals bank runs, the phones file them', ()
 
         /** A phone at the cutover: the budget as the old server had it, and where filing starts. */
         const device = async (name: string, deviceId: string): Promise<Device> => {
-          const db = storeDb(`${name}-${Math.random()}`);
+          const db = copyDb(`${name}-${Math.random()}`);
           await migrateLocal(db, T0);
           const engine = new LocalEngine(
             db,
@@ -467,7 +467,7 @@ describe('a sealed budget: the server seals bank runs, the phones file them', ()
         // The server fetches a link from a cursor this copy has noted, but the copy has no connection for it.
         await startLinks(x.d, [{ linkId: LINK_A, cursor: 'cur1' }], T0 + 3000);
         await run(x, LINK_A, bank({ cur1: { added: 1, next: 'cur2', more: false } }).provider, T0 + 4000);
-        const db = storeDb(`sealed-unknown-phone-${Math.random()}`);
+        const db = copyDb(`sealed-unknown-phone-${Math.random()}`);
         await migrateLocal(db, T0);
         const engine = new LocalEngine(
           db,

@@ -435,13 +435,6 @@ export class Directory extends DurableObject<Env> {
     );
   }
 
-  /** The budget's name as the Directory holds it (only the default is ever written here), or null. */
-  async budgetName(budgetId: string): Promise<string | null> {
-    this.ready();
-    const r = this.ctx.storage.sql.exec(`SELECT name FROM budget WHERE id = ?`, budgetId).toArray()[0];
-    return r ? String(r.name) : null;
-  }
-
   /** Whether this budget's account is being deleted: only then may its store wipe itself. */
   async isDeleting(budgetId: string): Promise<boolean> {
     this.ready();

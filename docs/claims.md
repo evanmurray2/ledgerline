@@ -1,6 +1,6 @@
 # What we claim
 
-Status: Nov 12, 2026. Phase 8 of `docs/privacy.md`: each claim of section 1.1, whether it is true today for a
+Status: Nov 13, 2026. Phase 8 of `docs/privacy.md`: each claim of section 1.1, whether it is true today for a
 locked budget, its limit, and what backs it. The app shows the same list at Settings → Privacy → What Ledgerline
 claims (`apps/web/src/screens/settings/Claims.tsx`; `apps/web/test/claims.test.tsx`). Change both in the same pull
 request, and only when the code changes what is true. No outside review has been made; one comes first only if the
@@ -24,24 +24,27 @@ public. Code sent to one person once leaves no trace anyone else can see_ (`docs
   D-102); the server stores the sealed log, the snapshots and the key slots, never the key
   (`apps/web/src/keys/budget.ts`, `apps/web/src/keys/new-budget.ts`, `apps/worker/src/local/start-device.ts`,
   `apps/worker/src/seal/log-store.ts`).
-- **Limit:** 4.2 above. A copy from before the lock is still readable on the server (claim 2).
+- **Limit:** 4.2 above. Cloudflare's 30-day history still holds the copy from before the lock (claim 2).
 - **Backed by:** checkable. The app's code is public, the build is reproducible, and Settings → About shows the
   release's build hash.
 
 ### 2. "We keep no readable copy of your budget."
 
-- **Not true yet.** The owner's old tables are being emptied by "Delete the readable copy" (`seal/purge.ts`,
-  Settings → Privacy); no server code reads them since D-102. Point-in-time recovery reaches them for 30 days after
-  that.
-  The Directory still holds the budget's name. Usage events and notes from before the move stay in the old tables.
-- **Build plan:** "Delete the readable copy".
+- **Partly true now.** For the live store, true: store migration 0010 drops every old table, the usage events and
+  notes from before the move with them, and empties the budget row but for its id (D-105). The Directory holds only
+  the default name "My budget". Cloudflare's point-in-time recovery still holds the store's past states for 30 days,
+  whatever is dropped: a restore to a time before the migration would bring the old tables back. So for that
+  history the claim becomes true 30 days after the migration runs. Whether SQLite keeps freed pages readable inside
+  a Durable Object is not checked (`docs/privacy.md` phase 0).
+- **Build plan:** "Claims 2 and 3, 30 days after the old tables are dropped".
 - **Backed by:** our word.
 
 ### 3. "We fetch your bank data from Plaid for you and seal it at once to a key that only your devices hold. We keep no readable copy of it."
 
 - **Partly true now.** Since the move, each page is fetched and sealed in one job step, and no readable page is
   kept in the database or between steps (`apps/worker/src/seal/runs.ts`, `fetch-job.ts`). Bank data from before the
-  move (`raw_page`, `bank_event`, `bank_txn`) is in the old tables (claim 2).
+  move (`raw_page`, `bank_event`, `bank_txn`) was in the old tables, now dropped; Cloudflare's 30-day history still
+  holds it until 30 days after the drop (claim 2).
 - **Limit:** Plaid sees the bank data (4.1). It is in the Worker's memory between Plaid's answer and the seal, where
   Cloudflare could see it too. A changed Worker could alter or keep it (4.4).
 - **Backed by:** our word.
@@ -109,7 +112,6 @@ Each has a line in `docs/build-plan.md`.
 - **Signing in with the recovery key.** The key opens the budget's slot, but it can't yet give back a sign-in.
 - **Linking a new bank, and removing a bank** (claims 4 and 7).
 - **The idle job** (claim 8).
-- **Deleting the old readable copy** (phase 6, claim 2).
 - **A full backup made on the device.** The server's dump is refused for a locked budget.
 
 ## What the server still sees

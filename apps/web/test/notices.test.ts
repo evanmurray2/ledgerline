@@ -130,7 +130,7 @@ describe('the requests a locked budget signs', () => {
     expect(signedActionFor('POST', `${p}/link-finish`, { mode: 'repair', linkToken: 't' })).toBeNull();
     expect(signedActionFor('POST', `${p}/con_1/remove`, { connectionId: 'con_1' })).toBe(ACTION.removeBank);
     expect(signedActionFor('POST', `${p}/con_1/refresh`, {})).toBeNull();
-    expect(signedActionFor('POST', '/api/cutover/purge', undefined)).toBe(ACTION.purgeOldCopy);
+    expect(signedActionFor('POST', '/api/cutover/purge', undefined)).toBeNull();
     expect(signedActionFor('POST', '/api/settings/security/delete-account', {})).toBe(ACTION.deleteAccount);
     expect(signedActionFor('POST', '/api/settings/security/recovery-key', {})).toBe(ACTION.setRecoverySignIn);
     expect(signedActionFor('GET', '/api/settings/security/recovery-key', undefined)).toBeNull();

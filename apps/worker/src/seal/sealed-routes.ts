@@ -117,9 +117,8 @@ sealedApi.get('/settings/connections', async (c) => {
 });
 
 /**
- * Server health for the ops token (routes/ops.ts has the same answer for a budget that is not sealed): each
- * link's last complete fetch, from `bank_link`, and today's usage. The old tables are not read: phase 6 empties
- * them (seal/purge.ts). A sealed budget's bank rows are filed on its devices, so the server has no lag of its own.
+ * Server health for the ops token: each link's last complete fetch, from `bank_link`, and today's usage. A sealed budget's bank rows are filed on its
+ * devices, so the server has no lag of its own.
  */
 sealedApi.get('/health', async (c) => {
   const now = requestNow(c);
