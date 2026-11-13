@@ -96,3 +96,42 @@ export function startDeletionSql(budgetId: string, userIds: string[], now: numbe
     [`DELETE FROM app_state WHERE key = ?`, [expireKey(budgetId)]],
   ];
 }
+
+/**
+ * The Directory's daily `expire_idle` step: marks, clears and starts deletions, queues each deletion's job again
+ * while it is under way, and logs the counts.
+ */
+export async function expireIdleStep(
+  storage: DurableObjectStorage,
+  now: number,
+  queueDelete: (userId: string, budgetId: string, userIds: string[] | undefined) => Promise<void>,
+): Promise<void> {
+  const out = storage.transactionSync(() => expireIdle(storage.sql, now));
+  for (const d of out.start) {
+    storage.transactionSync(() => {
+      for (const [q, p] of startDeletionSql(d.budgetId, d.userIds, now))
+        storage.sql.exec(q, ...(p as SqlStorageValue[]));
+    });
+    console.log(JSON.stringify({ event: 'account_expired', budget: d.budgetId }));
+    await queueDelete(d.userIds[0]!, d.budgetId, d.userIds);
+  }
+  for (const d of out.again) {
+    const prev = storage.sql
+      .exec(`SELECT state FROM job WHERE id = ?`, `delete_account:${d.userId}`)
+      .toArray()[0];
+    const userIds = prev ? (JSON.parse(String(prev.state)) as { userIds?: string[] }).userIds : undefined;
+    await queueDelete(d.userId, d.budgetId, userIds);
+  }
+  const marked = storage.sql.exec(`SELECT count(*) AS n FROM app_state WHERE key LIKE 'expire:%'`).one();
+  // Counts only: a bug shows here before it deletes much.
+  console.log(
+    JSON.stringify({
+      event: 'idle_accounts',
+      marked: Number(marked.n),
+      newly: out.marked,
+      cleared: out.cleared,
+      started: out.start.length,
+      deleting: out.again.length,
+    }),
+  );
+}

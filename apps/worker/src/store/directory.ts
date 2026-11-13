@@ -33,7 +33,7 @@ import { JobRunner, nextUtc, type Handler } from './jobs.js';
 import { SHARE_PAUSED, Shares, type ShareState } from './shares.js';
 import { signupOptions } from '../routes/signup.js';
 import { deletingKey, peopleRoutes } from '../routes/people.js';
-import { expireIdle, startDeletionSql } from './idle-accounts.js';
+import { expireIdleStep } from './idle-accounts.js';
 import { deviceAddRoutes } from '../routes/device-add.js';
 import { recoveryKeyAuth, recoveryKeySettings, recoveryKeyUsed } from '../routes/recovery-key.js';
 import { requestChallengeRoutes } from '../routes/request-challenge.js';
@@ -228,38 +228,7 @@ export class Directory extends DurableObject<Env> {
       },
       // Accounts nobody opened for 24 months (store/idle-accounts.ts), once a day.
       expire_idle: async (_job, now) => {
-        const out = this.ctx.storage.transactionSync(() => expireIdle(this.ctx.storage.sql, now));
-        for (const d of out.start) {
-          this.ctx.storage.transactionSync(() => {
-            for (const [q, p] of startDeletionSql(d.budgetId, d.userIds, now))
-              this.ctx.storage.sql.exec(q, ...(p as SqlStorageValue[]));
-          });
-          console.log(JSON.stringify({ event: 'account_expired', budget: d.budgetId }));
-          await this.queueDelete(d.userIds[0]!, d.budgetId, d.userIds, now);
-        }
-        for (const d of out.again) {
-          const prev = this.ctx.storage.sql
-            .exec(`SELECT state FROM job WHERE id = ?`, `delete_account:${d.userId}`)
-            .toArray()[0];
-          const userIds = prev
-            ? (JSON.parse(String(prev.state)) as { userIds?: string[] }).userIds
-            : undefined;
-          await this.queueDelete(d.userId, d.budgetId, userIds, now);
-        }
-        const marked = this.ctx.storage.sql
-          .exec(`SELECT count(*) AS n FROM app_state WHERE key LIKE 'expire:%'`)
-          .one();
-        // Counts only: a bug shows here before it deletes much.
-        console.log(
-          JSON.stringify({
-            event: 'idle_accounts',
-            marked: Number(marked.n),
-            newly: out.marked,
-            cleared: out.cleared,
-            started: out.start.length,
-            deleting: out.again.length,
-          }),
-        );
+        await expireIdleStep(this.ctx.storage, now, (u, b, us) => this.queueDelete(u, b, us, now));
         return { done: true };
       },
       // Every budget's ensureJobs, ENSURE_BATCH per step.
