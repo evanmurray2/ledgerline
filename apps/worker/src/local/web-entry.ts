@@ -430,7 +430,10 @@ async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[
       // A request signed with the budget's key (docs/privacy-keys.md 11): the signing key stays here. It is the
       // key in force where this device stands in the log; after a key change it has not read yet, the server
       // refuses the signature, and the next sync brings the device level.
-      const { log } = needSealed();
+      const { engine: e, log } = needSealed();
+      // The log first, so a key change made on another device is in force here too (the server checks
+      // against the key in force in its log). A failed read leaves the signature to the server's answer.
+      await new LogSession(e, log, http, encodeEntry).pull().catch(() => undefined);
       const v = log.publicState.keyVersion;
       const keys = log.keysHeld().find((k) => k.version === v);
       if (!keys) throw new Error('Your passkey is needed once more to open your budget. Try again.');

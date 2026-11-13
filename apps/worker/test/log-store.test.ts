@@ -218,13 +218,14 @@ describe('the sealed log on the server', () => {
       (await db.prepare(`SELECT value FROM store_note WHERE key = ?1`).bind(key).first<{ value: number }>())
         ?.value;
     expect(await note(`device:${PHONE}`)).toBe(2);
-    // The JSON value no longer holds the parts that grow: counters and the public entries are empty.
+    // For one release the JSON value also keeps every counter, so a rollback to older code still reads them
+    // (D-104); the public entries it never read are gone.
     const now = await db.prepare(`SELECT state FROM log_state WHERE id = 1`).first<{ state: string }>();
     const parsed = stateFromJson(now!.state) as unknown as {
       counters: Map<string, number>;
       public: { publics: unknown[] };
     };
-    expect(parsed.counters.size).toBe(0);
+    expect([...parsed.counters]).toEqual([[PHONE, 2]]);
     expect(parsed.public.publics).toEqual([]);
 
     // Today's format: every counter in the JSON value and no rows (the owner's store on Nov 13, 2026), with an
@@ -249,12 +250,15 @@ describe('the sealed log on the server', () => {
     // A device counter must follow the one in the JSON value.
     expect((await logAppend(deps(db, w.time), 2, [encodeEntry(await w.edit('two'))])).ok).toBe(true);
     expect(await note(`device:${PHONE}`)).toBe(3);
-    // Every counter of the JSON value moved to a row, and the value holds none now.
+    // Every counter of the JSON value is a row too, and (for one release, D-104) still in the value as well.
     expect(await note(`device:${LAPTOP}`)).toBe(7);
     const after = await db.prepare(`SELECT state FROM log_state WHERE id = 1`).first<{ state: string }>();
-    expect((stateFromJson(after!.state) as unknown as { counters: Map<string, number> }).counters.size).toBe(
-      0,
-    );
+    expect([
+      ...(stateFromJson(after!.state) as unknown as { counters: Map<string, number> }).counters,
+    ]).toEqual([
+      [PHONE, 3],
+      [LAPTOP, 7],
+    ]);
     // The laptop goes on from its counter in the row.
     const laptop = new Writer();
     laptop.keys = w.keys;

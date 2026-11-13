@@ -191,6 +191,13 @@ export class LogSession {
                 )
               : await this.log.build(KIND.edit, { at: e.at, rows: e.rows }, { entryId });
       } catch (x) {
+        // A share of the bank log too large for one write (one run of a long history): it is a record only, and
+        // nothing counts money from it, so it leaves the queue rather than stop every later change.
+        if (x instanceof TooLarge && e.path === SHARE_PATH) {
+          await this.engine.queueDone(e.id);
+          lost += 1;
+          continue;
+        }
         // Too many runs for one write: they come out of the copy, and the device files fewer at a time.
         if (!(x instanceof TooLarge) || !e.bank) throw x;
         await bankOut(e.id);

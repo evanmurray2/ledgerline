@@ -323,7 +323,6 @@ export class Directory extends DurableObject<Env> {
       app.route('/api', recoveryRoutes);
       app.route('/api', recoveryKeySettings);
       app.route('/api', deviceAddRoutes);
-      app.route('/api', deviceAddRoutes);
       app.route('/api', peopleRoutes);
       app.route('/api', requestChallengeRoutes);
       // Every answer is JSON, so the app can read it: a route that doesn't exist, and anything unexpected.

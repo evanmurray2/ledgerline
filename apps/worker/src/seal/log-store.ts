@@ -269,7 +269,10 @@ function storeStmts(
   const counters = new Map(inJson);
   for (const { e } of entries) counters.set(e.header.deviceId, state.counters.get(e.header.deviceId)!);
   const stored = toStored(state);
-  const json = stateToJson({ ...stored, counters: new Map(), public: { ...stored.public, publics: [] } });
+  // For one release the JSON value also keeps every counter, and entries stay base64 text: code from before
+  // Nov 13, 2026 reads only those, and a rollback to it (deploy.yml rolls back a failed smoke test) must not refuse
+  // every device's next write and drop its edits. A later release writes the counters as rows only (D-104).
+  const json = stateToJson({ ...stored, counters, public: { ...stored.public, publics: [] } });
   const keyEntries = entries.filter(({ e }) => NEVER_HELD.includes(e.header.kind)).length;
   return [
     ...entries.map(({ e, bytes }) =>
@@ -283,7 +286,7 @@ function storeStmts(
           e.header.part,
           e.header.kind,
           toHex(e.hash),
-          bytes,
+          b64(bytes),
           now,
         ),
     ),
