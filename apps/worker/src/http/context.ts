@@ -21,6 +21,8 @@ export interface Vars {
   now?: number;
   /** When this user's recovery code was used, while its notice shows (routes/signup.ts). */
   recoveryNoticeAt?: number | null;
+  /** The session came in by a fresh way (D-89; store/directory.ts): a key change from it waits. True when not set. */
+  freshWay?: boolean;
 }
 
 export type AppEnv = { Bindings: Env; Variables: Vars };

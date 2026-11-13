@@ -10,10 +10,21 @@
 // offline.
 import { useSyncExternalStore } from 'react';
 import { CSRF_HEADER, type SealedSession, type Session } from '@ledgerline/contracts';
-import { slotPrfInput, WayInError } from '../keys/budget';
+import {
+  KEY_TYPO,
+  NoSlotError,
+  type OpenBudget,
+  openWithPasskey,
+  openWithRecoveryKey,
+  type PasskeySecret,
+  slotPrfInput,
+  WayInError,
+} from '../keys/budget';
 import { dropMove, prepareMove, proveMove, recoveryKeyOpens, type PreparedMove } from '../keys/move';
 import { WORKER_RUN_KEYS } from '../keys/worker-keys';
-import { logDeviceId, newUlid, openSealedBudget } from './sealed';
+import { fetchPublicEntries, logDeviceId, newUlid, openSealedBudget } from './sealed';
+import { addPasskeyWay, authPubOf, openPlans, type Ways } from './sealed-ways';
+import { walkPublic, zeroize } from '@ledgerline/seal';
 import { mergedSession } from './sealed-session';
 import { connectivity } from '../state/connectivity';
 import {
@@ -81,6 +92,11 @@ export interface CopyState {
   queued: number;
   /** A saved copy exists for someone on this device (offline opening is possible). */
   hasSaved: boolean;
+  /**
+   * The budget is locked and the passkey just used is no way in to it (a new passkey, after a recovery): the
+   * recovery key opens it (`openWithRecovery`).
+   */
+  needsRecovery?: boolean;
 }
 
 const MOCK = import.meta.env.VITE_MOCK === '1';
@@ -239,6 +255,38 @@ const toHex = (b: Uint8Array): string => [...b].map((x) => x.toString(16).padSta
 const fromHex = (s: string): Uint8Array<ArrayBuffer> =>
   Uint8Array.from(s.match(/../g) ?? [], (x) => parseInt(x, 16));
 
+/** The recovery key as typed, held only until the next open uses it (`openWithRecovery`, a recovery sign-in). */
+let recoveryTyped: string | null = null;
+/** The passkey that was no way in, kept for the open with the recovery key that follows (it becomes one). */
+let noSlotWay: { credentialId: string; slotPrf: ArrayBuffer } | null = null;
+/** The derived keys the engine holds now, for the keys held for a refresh once a key change adds a version. */
+let keysInEngine: unknown[] | null = null;
+
+/** The next open of a locked budget uses this recovery key if the passkey can't open it (a recovery sign-in). */
+export function holdRecoveryKey(typed: string): void {
+  recoveryTyped = typed;
+}
+
+/**
+ * Opens the locked budget with the recovery key, when the passkey just used is no way in to it. The passkey is
+ * then added as a way in, so it alone opens the budget the next time.
+ */
+export async function openWithRecovery(typed: string, session: Session): Promise<void> {
+  recoveryTyped = typed;
+  await start(session);
+  if (state.status === 'failed') throw new Error(state.error ?? NOT_NOW);
+}
+
+/** The engine, the server and the budget's id, for a change to the ways in (copy/sealed-ways.ts). */
+function waysOf(h: EngineHost, budgetId: string): Ways {
+  return {
+    host: h,
+    budgetId,
+    fetch: (path: string) =>
+      fetch(path, { credentials: 'same-origin', headers: { accept: 'application/json' } }),
+  };
+}
+
 /**
  * Opens the sealed budget in the engine: with the passkey's secret from the sign-in just made, or with the keys
  * held since (a refresh). The engine then knows its place in the log, or starts from a snapshot.
@@ -258,28 +306,62 @@ async function enterSealed(
   } else {
     // No secret from the sign-in (this device opens a sealed budget for the first time, or the keys held are too
     // old): the passkey is asked once more, for the budget's secret alone. Nothing of this goes to the server.
-    const w = way?.slotPrf ? way : await askSlot();
+    const w = way?.slotPrf ? way : (noSlotWay ?? (await askSlot()));
     const last = await lastPublicSeen(h, who!.budgetId);
     const publics = await h.get('publics');
-    const r = await openSealedBudget({
-      host: h,
-      ...(online
-        ? {
-            fetch: (path: string) =>
-              fetch(path, { credentials: 'same-origin', headers: { accept: 'application/json' } }),
-          }
-        : {}),
-      ...(publics ? { kept: JSON.parse(publics) as string[] } : {}),
-      budgetId: who!.budgetId,
-      deviceId,
-      passkey: { credentialId: new Uint8Array(fromB64url(w.credentialId)), prf: new Uint8Array(w.slotPrf!) },
-      workerKeys: WORKER_RUN_KEYS,
-      ...(last ? { remembered: { number: last.number, hash: fromHex(last.hash) } } : {}),
-    });
+    const passkey: PasskeySecret = {
+      credentialId: new Uint8Array(fromB64url(w.credentialId)),
+      prf: new Uint8Array(w.slotPrf!),
+    };
+    const typed = online ? recoveryTyped : null;
+    recoveryTyped = null;
+    let r: Awaited<ReturnType<typeof openSealedBudget>>;
+    try {
+      r = await openSealedBudget({
+        host: h,
+        ...(online
+          ? {
+              fetch: (path: string) =>
+                fetch(path, { credentials: 'same-origin', headers: { accept: 'application/json' } }),
+            }
+          : {}),
+        ...(publics ? { kept: JSON.parse(publics) as string[] } : {}),
+        budgetId: who!.budgetId,
+        deviceId,
+        passkey,
+        workerKeys: WORKER_RUN_KEYS,
+        ...(last ? { remembered: { number: last.number, hash: fromHex(last.hash) } } : {}),
+        ...(typed
+          ? {
+              recovery: typed,
+              // The passkey becomes a way in, so it alone opens the budget the next time. A slot change is never
+              // held back; if it doesn't go through now, the recovery key is asked again the next time.
+              onRecovered: async (budget: OpenBudget) => {
+                const added = await addPasskeyWay(waysOf(h, who!.budgetId), budget, passkey).catch(
+                  (e: unknown) => ({ ok: false as const, why: String(e) }),
+                );
+                if (!added.ok)
+                  console.warn(JSON.stringify({ event: 'passkey_way_not_added', why: added.why }));
+              },
+            }
+          : {}),
+      });
+    } catch (e) {
+      // No way in for this passkey: the recovery key opens the budget (Copy.tsx asks for it). A typing mistake
+      // in the key keeps the question open.
+      if (e instanceof NoSlotError || (typed && e instanceof WayInError)) {
+        noSlotWay = { credentialId: w.credentialId, slotPrf: w.slotPrf! };
+        set({ needsRecovery: true });
+      }
+      throw e;
+    }
+    noSlotWay = null;
+    if (state.needsRecovery) set({ needsRecovery: false });
     await keepPublicSeen(h, who!.budgetId, { number: r.lastPublic.number, hash: toHex(r.lastPublic.hash) });
     await h.put('publics', JSON.stringify(r.publics));
     keys = r.keys;
   }
+  keysInEngine = keys;
   if (sealed) await h.put('sealed_session', JSON.stringify(sealed));
   if (record && dataKey) await holdKey(record.key, dataKey, Date.now(), keys);
   // Saved now: the place in the log, the writer's id and the marks above must outlive a closed app, or the next
@@ -354,6 +436,78 @@ async function askSlot(): Promise<{ credentialId: string; slotPrf: ArrayBuffer }
   }
   if (!a.slotPrf) throw new Error('This passkey can’t open your budget on this device.');
   return { credentialId: a.credentialId, slotPrf: a.slotPrf };
+}
+
+// ---------------------------------------------------------------- the ways in of a locked budget
+
+/**
+ * Runs a change to the ways in (copy/sealed-ways.ts) with the budget key in hand: one passkey prompt checks the
+ * person for the server and gives the budget's secret, the key is opened from the log's public entries, and
+ * zeroed once `fn` is done. `onKeys` takes the new version's keys after a key change made here.
+ */
+export async function withBudgetKey<T>(
+  fn: (
+    ways: Ways,
+    budget: OpenBudget,
+    onKeys: (k: unknown) => Promise<void>,
+    passkey: PasskeySecret,
+  ) => Promise<T>,
+): Promise<T> {
+  if (!host || !who || !sealed || state.status !== 'ready') throw new Error(NOT_NOW);
+  if (state.offline) throw new Error('Connect to the internet to change this.');
+  const h = host;
+  await signIn();
+  const p = pending;
+  pending = null;
+  const w = p?.slotPrf ? { credentialId: p.credentialId, slotPrf: p.slotPrf } : await askSlot();
+  const ways = waysOf(h, who.budgetId);
+  const passkey: PasskeySecret = {
+    credentialId: new Uint8Array(fromB64url(w.credentialId)),
+    prf: new Uint8Array(w.slotPrf),
+  };
+  const last = await lastPublicSeen(h, who.budgetId);
+  const { budget } = await openWithPasskey(
+    await fetchPublicEntries(ways.fetch),
+    who.budgetId,
+    passkey,
+    last ? { number: last.number, hash: fromHex(last.hash) } : undefined,
+  );
+  try {
+    return await fn(
+      ways,
+      budget,
+      async (k) => {
+        keysInEngine = [...(keysInEngine ?? []), k];
+        if (record && dataKey) await holdKey(record.key, dataKey, Date.now(), keysInEngine);
+      },
+      passkey,
+    );
+  } finally {
+    zeroize(budget.bk);
+    if (record) await save().catch(() => undefined);
+    changed();
+  }
+}
+
+/**
+ * Checks a typed recovery key against the log's public entries: it opens this budget. Gives its public half for
+ * sign-in (hex). Throws `WayInError` with words for the person.
+ */
+export async function checkRecoveryKey(typed: string): Promise<string> {
+  if (!host || !who || !sealed) throw new Error(NOT_NOW);
+  const ways = waysOf(host, who.budgetId);
+  const { budget } = await openWithRecoveryKey(await fetchPublicEntries(ways.fetch), who.budgetId, typed);
+  zeroize(budget.bk);
+  const authPub = await authPubOf(typed);
+  if (!authPub) throw new WayInError(KEY_TYPO);
+  return authPub;
+}
+
+/** The changes planned in the log (intents) that wait, with the ways in each one removes. */
+export async function plannedChanges(): Promise<ReturnType<typeof openPlans>> {
+  if (!host || !who || !sealed) return [];
+  const ways = waysOf(host, who.budgetId);
+  return openPlans(await walkPublic(await fetchPublicEntries(ways.fetch), who.budgetId));
 }
 
 // ---------------------------------------------------------------- moving a budget to its sealed log
@@ -449,6 +603,14 @@ export async function moveFinish(
     recoveryNoticeAt: null,
   };
   await h.sealedOpen([keys], proved.deviceId, WORKER_RUN_KEYS);
+  keysInEngine = [keys];
+  // The recovery key signs in from now on (docs/privacy-keys.md 4.2): the server keeps its public half. If this
+  // fails, Settings → Sign-in offers to set it.
+  const authPub = await authPubOf(typed);
+  if (authPub)
+    await server('POST', '/api/settings/security/recovery-key', { authPub }).catch(() =>
+      console.warn(JSON.stringify({ event: 'recovery_key_not_set' })),
+    );
   await keepPublicSeen(h, who.budgetId, { number: 1, hash: toHex(p.genesis.hash) });
   await h.put('publics', JSON.stringify([btoa(String.fromCharCode(...proved.genesis))]));
   await h.put('sealed_session', JSON.stringify(sealed));
@@ -863,6 +1025,14 @@ export function syncNow(opts: { quiet?: boolean; first?: EditAnswerSync } = {}):
           // The log's routes said the sign-in ended: the same as any other request that says so (client.ts).
           if (e instanceof Error && e.message === SIGNED_OUT_TEXT) {
             void dropSignedOut(true).finally(() => window.dispatchEvent(new Event('ledgerline:signedout')));
+          }
+          // Another device changed the budget key (a way in was removed): this device's passkey opens the new
+          // key from the log. The copy is saved and closed; Try again signs in, which opens it.
+          if (e instanceof Error && /does not hold key version/.test(e.message)) {
+            if (record) await save().catch(() => undefined);
+            await host?.close();
+            host = null;
+            set({ status: 'failed', error: NEEDS_PASSKEY });
           }
           throw e;
         }

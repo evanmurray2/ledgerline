@@ -151,6 +151,15 @@ export const api = {
     post('/api/cutover/ready', z.object({ ok: z.literal(true), blocks: z.array(z.string()) }), { fresh }),
   cutoverBack: () => post('/api/cutover/back', z.object({ ok: z.boolean() })),
   newRecoveryCode: () => post('/api/settings/security/recovery-code', z.object({ code: z.string() })),
+  // The recovery key of a locked budget (docs/privacy-keys.md 4.2): its sign-in, and its public half.
+  recoverKeyOptions: (authPub: string) =>
+    post('/api/auth/recover-key/options', z.object({ budgetId: z.string(), challenge: z.string() }), {
+      authPub,
+    }),
+  recoverKeyVerify: (signature: string) => post('/api/auth/recover-key/verify', z.unknown(), { signature }),
+  recoveryKey: () =>
+    get('/api/settings/security/recovery-key', z.object({ set: z.boolean(), setAt: z.string().nullable() })),
+  setRecoveryKey: (authPub: string) => post('/api/settings/security/recovery-key', Ok, { authPub }),
   dismissRecoveryNotice: () => post('/api/settings/security/recovery-notice/dismiss', Ok),
   // Deleting your own account, and Settings → Users for admins (D-75).
   deleteAccount: (budgetName: string) => post('/api/settings/security/delete-account', Ok, { budgetName }),

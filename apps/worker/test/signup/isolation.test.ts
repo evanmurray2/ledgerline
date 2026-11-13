@@ -8,6 +8,7 @@ import worker from '../../src/index.js';
 import { budgetApi } from '../../src/routes/api.js';
 import { securityRoutes } from '../../src/routes/security.js';
 import { recoveryRoutes, TEST_TOKEN } from '../../src/routes/signup.js';
+import { recoveryKeySettings } from '../../src/routes/recovery-key.js';
 import { SoftAuthenticator } from '../soft-authenticator.js';
 import { directoryDb, storeDb } from '../store-db.js';
 
@@ -141,7 +142,12 @@ describe('keeping users apart', () => {
     });
     const before = await snapshot(bBudget);
 
-    const routes = [...budgetApi.routes, ...securityRoutes.routes, ...recoveryRoutes.routes]
+    const routes = [
+      ...budgetApi.routes,
+      ...securityRoutes.routes,
+      ...recoveryRoutes.routes,
+      ...recoveryKeySettings.routes,
+    ]
       .filter((r) => r.method !== 'ALL' && !SKIP.test(r.path))
       .map((r) => ({ method: r.method, path: r.path }));
     const unique = [...new Map(routes.map((r) => [`${r.method} ${r.path}`, r])).values()];

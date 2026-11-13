@@ -4,7 +4,14 @@
 // person from what they wrote down. Only then are the keys and the first entry handed on to the engine
 // (`EngineHost.cutover`).
 import { type BudgetKeys, type Bytes, encodeEntry, type Entry, equal, zeroize } from '@ledgerline/seal';
-import { createBudget, openWithPasskey, openWithRecoveryKey, type PasskeySecret, WayInError } from './budget';
+import {
+  createBudget,
+  KEY_TYPO,
+  openWithPasskey,
+  openWithRecoveryKey,
+  type PasskeySecret,
+  WayInError,
+} from './budget';
 
 /** A budget's new keys and first entry, made and not yet proved. */
 export interface PreparedMove {
@@ -67,7 +74,7 @@ export async function proveMove(
   try {
     const byRecovery = await openWithRecoveryKey([p.genesis], p.budgetId, typedRecoveryKey).catch(
       (x: unknown) => {
-        if (x instanceof WayInError) throw x;
+        if (x instanceof WayInError && x.message === KEY_TYPO) throw x;
         throw new WayInError('That is not the recovery key shown. Check it and try again.');
       },
     );

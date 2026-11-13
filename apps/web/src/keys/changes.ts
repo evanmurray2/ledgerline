@@ -158,7 +158,10 @@ export async function cancelEntry(w: Writing & { intent: PublicRef }): Promise<E
  * (`keyChangeEntry` with `keep` without `replaces`). The new key is shown once, by the caller.
  */
 export async function newRecoveryKeyEntry(
-  w: Writing,
+  w: Writing & {
+    /** The new key, made (and shown) before the entry is: the person types it back first. Made here if not given. */
+    recoveryKey?: Bytes;
+  },
 ): Promise<{ entry: Entry; recoveryKey: Bytes; recoveryText: string; slotId: string; replaces: string[] }> {
   inForce(w);
   const p = w.state;
@@ -166,7 +169,7 @@ export async function newRecoveryKeyEntry(
   // The next generation after the highest this budget ever listed in force now. A generation is never used twice:
   // the log refuses a slot id that is already there.
   const generation = Math.max(0, ...old.map((id) => Number(id.slice(2)))) + 1;
-  const recoveryKey = newRecoveryKey();
+  const recoveryKey = w.recoveryKey ?? newRecoveryKey();
   const slot = await recoverySlot(recoveryKey, generation);
   const record = await newSlotRecord(slot, w.budget.bk, w.budget.keys, p.budgetId, p.genesisSignPub);
   const entry = await publicEntry(

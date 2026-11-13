@@ -403,3 +403,22 @@ export function openSnapshotChunk(
   k: number,
   sealed: Uint8Array,
 ): Promise<Bytes>;
+
+// ---- the recovery key's sign-in (apps/worker/src/routes/recovery-key.ts; packages/seal recovery.ts)
+export function verifyRecoveryLogin(
+  authPub: Uint8Array,
+  budgetId: string,
+  challenge: Uint8Array,
+  signature: Uint8Array,
+): Promise<boolean>;
+export function signRecoveryLogin(
+  authPriv: CryptoKey,
+  budgetId: string,
+  challenge: Uint8Array,
+): Promise<Bytes>;
+export function newRecoveryKey(): Bytes;
+/** A passkey added less than this long ago is a fresh way in (D-89). */
+export const FRESH_WAY_MS: number;
+export const INTENT_WAIT_MS: number;
+export function encodeSlotChange(s: { prevPublic: PublicRef; slots: unknown[] }): Bytes;
+export function encodeIntent(i: { prevPublic: PublicRef; notBefore: number; slotIds: string[] }): Bytes;

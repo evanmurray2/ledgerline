@@ -35,6 +35,8 @@ import { SHARE_PAUSED, Shares, type ShareState } from './shares.js';
 import { recoverOptions, recoveryNotice, recoveryRoutes, signupOptions } from '../routes/signup.js';
 import { deletingKey, peopleRoutes } from '../routes/people.js';
 import { expireIdle, startDeletionSql } from './idle-accounts.js';
+import { recoveryKeyAuth, recoveryKeySettings } from '../routes/recovery-key.js';
+import { FRESH_WAY_MS } from '@ledgerline/seal';
 
 /** Budgets checked per ensure_all step (docs/multi-user.md 6.2). */
 export const ENSURE_BATCH = 25;
@@ -72,6 +74,11 @@ export interface Caller {
   recoveryNoticeAt?: number | null;
   /** The budget's sync epoch (migration 0006): changes when its database is restored. */
   syncEpoch?: string;
+  /**
+   * The session signed in with a passkey added less than 7 days ago, or with none (a recovery-key sign-in always
+   * adds one): a key change of a locked budget from it waits (D-89). True when not given.
+   */
+  freshWay?: boolean;
 }
 
 export type AuthResult =
@@ -191,6 +198,7 @@ export class Directory extends DurableObject<Env> {
           this.db.prepare(`DELETE FROM passkey WHERE user_id = ?1`).bind(userId),
           this.db.prepare(`DELETE FROM recovery_code WHERE user_id = ?1`).bind(userId),
           this.db.prepare(`DELETE FROM recovery_notice WHERE user_id = ?1`).bind(userId),
+          this.db.prepare(`DELETE FROM recovery_key WHERE user_id = ?1`).bind(userId),
           this.db.prepare(`DELETE FROM device WHERE user_id = ?1`).bind(userId),
           this.db.prepare(`DELETE FROM device_link WHERE user_id = ?1`).bind(userId),
           this.db.prepare(`DELETE FROM auth_session WHERE user_id = ?1`).bind(userId),
@@ -294,11 +302,13 @@ export class Directory extends DurableObject<Env> {
     if (!this.app) {
       const app = new Hono<AppEnv>();
       app.route('/api/auth', authRoutes);
+      app.route('/api/auth', recoveryKeyAuth);
       app.use('/api/settings/security/*', identity);
       app.use('/api/settings/security/*', csrf);
       app.use('/api/settings/security', identity);
       app.route('/api', securityRoutes);
       app.route('/api', recoveryRoutes);
+      app.route('/api', recoveryKeySettings);
       app.route('/api', peopleRoutes);
       // Every answer is JSON, so the app can read it: a route that doesn't exist, and anything unexpected.
       app.notFound((c) => c.json({ error: 'not_found', message: TRY_AGAIN }, 404));
@@ -363,6 +373,7 @@ export class Directory extends DurableObject<Env> {
         share: share.state,
         recoveryNoticeAt: m.isAdmin ? null : await recoveryNotice(env, m.userId, now),
         syncEpoch: this.syncEpoch(m.budgetId),
+        freshWay: this.freshWay(who.sessionId, now),
       },
     };
   }
@@ -425,6 +436,21 @@ export class Directory extends DurableObject<Env> {
       this.ctx.storage.sql.exec(`SELECT 1 FROM app_state WHERE key = ?`, deletingKey(budgetId)).toArray()
         .length > 0
     );
+  }
+
+  /**
+   * Whether a session came in by a fresh way (D-89): its passkey was added less than 7 days ago, or it has none
+   * this can find. A recovery-key sign-in always makes a new passkey, so it is fresh for its first 7 days.
+   */
+  private freshWay(sessionId: string | null, now: number): boolean {
+    if (!sessionId) return true;
+    const r = this.ctx.storage.sql
+      .exec(
+        `SELECT p.created_at FROM auth_session s JOIN passkey p ON p.id = s.passkey_id WHERE s.id = ?`,
+        sessionId,
+      )
+      .toArray()[0];
+    return !r || now - Number(r.created_at) < FRESH_WAY_MS;
   }
 
   /** The budget's sync epoch (D-45, migration 0006). */

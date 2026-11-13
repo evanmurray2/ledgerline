@@ -123,6 +123,28 @@ test('lock a budget with the passkey and the recovery key, live on the log, and 
   expect((await again).status()).toBe(200);
   await expect(page.getByText('Groceries')).toBeVisible({ timeout: 30_000 });
 
+  // ---- the recovery key: it signs in from now on (the move set its public half)
+  expect((await call(page, 'GET', '/api/settings/security/recovery-key')).json).toMatchObject({ set: true });
+  // A new device with a new passkey: the recovery key signs in, opens the budget, and adds the passkey to it.
+  // Its own address: sign-in checks are counted per address (AUTH_LIMITER), and the owner's device goes on below.
+  const other = await (
+    await browser.newContext({ extraHTTPHeaders: { 'cf-connecting-ip': '198.51.100.7' } })
+  ).newPage();
+  await withPasskeyDevice(other);
+  await other.goto('/budget');
+  await other.getByRole('button', { name: 'Use your recovery key' }).click();
+  await other.getByTestId('recovery-key-typed').fill(key);
+  const slotAdded = other.waitForResponse((r) => r.url().includes('/api/log/append'), { timeout: 60_000 });
+  await other.getByRole('button', { name: 'Continue' }).click();
+  expect((await slotAdded).status()).toBe(200);
+  await expect(other.getByText('Groceries')).toBeVisible({ timeout: 60_000 });
+  // After a reload, the new passkey alone opens it: this device keeps no saved copy and no keys, so the passkey
+  // is asked for the budget's secret, and the recovery key is not asked again.
+  await other.reload();
+  await expect(other.getByText('Groceries')).toBeVisible({ timeout: 60_000 });
+  await expect(other.getByText('Open your budget with your recovery key')).toHaveCount(0);
+  await other.close();
+
   // ---- the way back
   await page.goto('/settings/privacy');
   await page.getByRole('button', { name: 'Go back to how it was…' }).click();
