@@ -51,7 +51,6 @@ const plainSession = {
   readsPaused: false,
   canLinkBanks: true,
   hostedLink: false,
-  recoveryNoticeAt: null,
 };
 
 describe('API client', () => {

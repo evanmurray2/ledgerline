@@ -27,9 +27,9 @@ describe('the claims', () => {
   });
 
   it('claims only what the code does today', () => {
-    // The readable copy from before the lock is still on the server (phase 6 is not done).
-    expect(byId('no-copy').state).toBe('not_yet');
-    // Bank data since the lock is sealed at once; what came before is in that copy.
+    // The readable copy from before the lock is dropped (D-105), but Cloudflare's 30-day history still holds it.
+    expect(byId('no-copy').state).toBe('partly');
+    // Bank data since the lock is sealed at once; what came before was in that copy.
     expect(byId('bank-data').state).toBe('partly');
     // Removing a bank at Plaid and the idle job are not built.
     expect(byId('delete').state).toBe('not_yet');
@@ -67,8 +67,8 @@ describe('Settings → Privacy → What Ledgerline claims', () => {
     render(<ClaimList locked />);
     for (const c of CLAIMS) expect(screen.getByText(c.text)).toBeTruthy();
     expect(screen.getAllByText(`${STATE_WORD.true}.`)).toHaveLength(5);
-    expect(screen.getAllByText(`${STATE_WORD.not_yet}.`)).toHaveLength(3);
-    expect(screen.getAllByText(`${STATE_WORD.partly}.`)).toHaveLength(1);
+    expect(screen.getAllByText(`${STATE_WORD.not_yet}.`)).toHaveLength(2);
+    expect(screen.getAllByText(`${STATE_WORD.partly}.`)).toHaveLength(2);
     expect(screen.getAllByText(/Ledgerline’s word: nobody outside can check it\./)).toHaveLength(5);
     expect(screen.queryByText(byId('no-copy').limit)).toBeNull();
     fireEvent.click(screen.getAllByRole('button', { name: 'What is the limit?' })[1]!);

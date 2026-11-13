@@ -10,7 +10,6 @@ import { budgetApi } from '../../src/routes/api.js';
 import { securityRoutes } from '../../src/routes/security.js';
 import { TEST_TOKEN } from '../../src/routes/signup.js';
 import { logApi } from '../../src/seal/log-routes.js';
-import { purgeApi } from '../../src/seal/purge-routes.js';
 import { sealedApi } from '../../src/seal/sealed-routes.js';
 import { startApi } from '../../src/seal/start-routes.js';
 import { recoveryKeySettings } from '../../src/routes/recovery-key.js';
@@ -94,30 +93,16 @@ describe('keeping users apart', () => {
     const aBudget = (JSON.parse((await a.call('GET', '/api/session')).text) as { budgetId: string }).budgetId;
     expect(aBudget).not.toBe(bBudget);
 
-    // B's data, with the marker in every name.
+    // B's data, with the marker in every name: what a store holds for a locked budget (D-105), its row and a bank
+    // link.
     const bs = storeDb(bBudget);
     const t = Date.parse('2026-11-14T20:00:00Z');
     await bs.batch([
-      bs.prepare(`UPDATE budget SET budget_start_month = '2026-11', name = ?1`).bind(MARK),
+      bs.prepare(`UPDATE budget SET name = ?1`).bind(MARK),
       bs
         .prepare(
-          `INSERT INTO account (id, budget_id, name, kind, budget_from, created_at, updated_at) VALUES ('acct_b', ?1, ?2, 'checking', '2026-11-01', ?3, ?3)`,
-        )
-        .bind(bBudget, MARK, t),
-      bs
-        .prepare(
-          `INSERT INTO category_group (id, budget_id, name, created_at, updated_at) VALUES ('grp_b', ?1, ?2, ?3, ?3)`,
-        )
-        .bind(bBudget, MARK, t),
-      bs
-        .prepare(
-          `INSERT INTO category (id, budget_id, group_id, name, kind, created_at, updated_at) VALUES ('cat_b', ?1, 'grp_b', ?2, 'spending', ?3, ?3)`,
-        )
-        .bind(bBudget, MARK, t),
-      bs
-        .prepare(
-          `INSERT INTO manual_pending (id, budget_id, txn_key, account_id, kind, date, amount, payee_name, created_at, updated_at)
-           VALUES ('mp_b', ?1, 'm:mp_b', 'acct_b', 'pending', '2026-11-10', -1234, ?2, ?3, ?3)`,
+          `INSERT INTO bank_link (id, connection_id, budget_id, provider, provider_item_id, access_token_enc, key_version, linked_at, created_at)
+           VALUES ('link_b', 'con_b', ?1, 'plaid', ?2, ?2, 1, ?3, ?3)`,
         )
         .bind(bBudget, MARK, t),
     ]);
@@ -127,7 +112,7 @@ describe('keeping users apart', () => {
       )
       .bind(bBudget)
       .first<string>('id');
-    const ids = ['acct_b', 'cat_b', 'grp_b', 'm:mp_b', 'mp_b', bBudget, bPasskey!];
+    const ids = ['link_b', 'con_b', bBudget, bPasskey!];
     const body = (id: string) => ({
       id,
       accountId: id,
@@ -152,7 +137,6 @@ describe('keeping users apart', () => {
       ...sealedApi.routes,
       ...logApi.routes,
       ...startApi.routes,
-      ...purgeApi.routes,
     ]
       .filter((r) => r.method !== 'ALL' && !SKIP.test(r.path))
       .map((r) => ({ method: r.method, path: r.path }));

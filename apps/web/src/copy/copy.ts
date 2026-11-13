@@ -1146,13 +1146,12 @@ export function canEditHere(): boolean {
 }
 
 /**
- * What the server still does for a locked budget: sign-in, the banks, emptying the old copy, and the records it
- * keeps about the app's use. Every other change is made on the device.
+ * What the server still does for a locked budget: sign-in, the banks, and the records it keeps about the app's
+ * use. Every other change is made on the device.
  */
 const SEALED_SERVER = [
   /^\/api\/auth\//,
   /^\/api\/settings\/security(\/|$)/,
-  /^\/api\/cutover\//,
   /^\/api\/settings\/connections\/(link-token|link-finish|refresh)$/,
   /^\/api\/settings\/connections\/[^/]+\/(refresh|remove)$/,
   /^\/api\/(usage|notes|identity-alert)$/,

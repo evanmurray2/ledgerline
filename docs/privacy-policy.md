@@ -12,7 +12,8 @@ two can be compared. They are removed before the policy is shown to anyone. Thre
 2026, because the move made them true: the budget locked with a key the server never has, what the server stores,
 and what a court could get.
 
-Lines marked **(owner reads)** changed on Nov 12, 2026 and need the owner's reading before the policy is shown.
+Lines marked **(owner reads)** changed on Nov 12 or 13, 2026 and need the owner's reading before the policy is
+shown.
 
 ---
 
@@ -21,8 +22,8 @@ Lines marked **(owner reads)** changed on Nov 12, 2026 and need the owner's read
 - Ledgerline is a budgeting app. It keeps your budget so that you can use it on your devices.
 - **(owner reads)** Your budget is locked on your own devices with a key that Ledgerline's server never has. The
   server stores it only in locked form.
-- **(owner reads)** For a short time, the server still has a readable copy from before your budget was locked. It
-  is deleted after that (see "How long things are kept").
+- **(owner reads)** The readable copy from before your budget was locked is deleted from the server. Cloudflare's
+  past versions keep it 30 days more (see "How long things are kept").
 - Ledgerline has no ads and no trackers. It sells nothing and shares nothing, except with the two companies
   named below, which it needs in order to work.
 - You do not give a name or an email address to sign up.
@@ -44,10 +45,10 @@ Lines marked **(owner reads)** changed on Nov 12, 2026 and need the owner's read
 - **(owner reads)** **What the server can see about a locked budget:** that your account exists and when you use
   it; the size and time of each change, and how many there are; for each bank link, Plaid's id for it, when it was
   linked, whether it needs you to sign in again, when each bank update came, how many rows it brought, and its
-  size. It can't see amounts, payees, categories, memos or the names of your accounts. The budget's name is an
-  exception for now: the server still has it. Plaid shows whoever runs Ledgerline which bank each link is with.
+  size. It can't see amounts, payees, categories, memos or the names of your accounts, or the budget's name.
+  Plaid shows whoever runs Ledgerline which bank each link is with.
 - **(owner reads)** **How you use the app:** while "Record how I use the app" is on, the app sends taps and timings.
-  For a locked budget the server keeps none of it. What it kept before the lock is in the readable copy.
+  For a locked budget the server keeps none of it. What it kept before the lock was deleted with the readable copy.
 - **The log of each request** holds the request's address, your IP address, a rough location for it, and your
   browser. It is kept 3 days. The sign-in cookie is not kept in it.
 
@@ -77,8 +78,8 @@ the owner's, has an email address from before sign-up stopped asking for one.
 ## How long things are kept
 
 - Your budget: until you delete your account.
-- **(owner reads)** The readable copy from before the lock: until 7 days after the lock, while the way back to it is
-  open; then it is deleted over a few days. Cloudflare's past versions keep it 30 days more.
+- **(owner reads)** The readable copy from before the lock: deleted on the day of the release that dropped it
+  (November 2026). Cloudflare's past versions keep it 30 days more.
 - Request logs: 3 days.
 - Past versions of what the server holds: 30 days.
 - Today, nothing is deleted because an account is idle.
@@ -114,9 +115,9 @@ budget. A passkey added that way opens it only after one of your devices lets it
 ## If a court asks
 
 **(owner reads)** Whoever runs Ledgerline could be made to hand over what the server holds: your budget in locked
-form, with no key, and the facts listed in "What Ledgerline stores". Until it is deleted, that includes the
-readable copy from before the lock. Ledgerline could also be made to fetch new bank data from Plaid, or to send
-your browser changed code.
+form, with no key, and the facts listed in "What Ledgerline stores". For 30 days after it was deleted, Cloudflare's
+past versions also hold the readable copy from before the lock. Ledgerline could also be made to fetch new bank data
+from Plaid, or to send your browser changed code.
 
 ## Changes to this policy
 

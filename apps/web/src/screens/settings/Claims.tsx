@@ -2,8 +2,6 @@
 // true today for a locked budget, its limit, and whether anyone can check it or it rests on Ledgerline's word.
 // docs/claims.md is the same list with the code behind each answer: change both together, and only when the code
 // changes what is true.
-import { useQuery } from '@tanstack/react-query';
-import { api } from '../../api/endpoints';
 import { isSealed } from '../../copy/copy';
 import { Banner, Card, SectionTitle } from '../../components/ui';
 import { Why } from '../../components/Why';
@@ -30,7 +28,7 @@ export const STATE_WORD: Record<ClaimState, string> = {
 
 const WORD = 'Ledgerline’s word: nobody outside can check it.';
 
-/** docs/privacy.md 1.1, in its order. True for a locked budget as of Nov 12, 2026. */
+/** docs/privacy.md 1.1, in its order. True for a locked budget as of Nov 13, 2026. */
 export const CLAIMS: Claim[] = [
   {
     id: 'key',
@@ -43,10 +41,10 @@ export const CLAIMS: Claim[] = [
   {
     id: 'no-copy',
     text: 'Ledgerline keeps no readable copy of your budget.',
-    state: 'not_yet',
+    state: 'partly',
     check: null,
     limit:
-      'The copy from before the lock is still on the server until you delete it in Settings → Privacy, and Cloudflare’s past versions keep it 30 days more. The server also still has your budget’s name.',
+      'The copy from before the lock is deleted from the server. Cloudflare keeps 30 days of the server’s past versions, so they hold that copy until 30 days after it was deleted.',
   },
   {
     id: 'bank-data',
@@ -54,7 +52,7 @@ export const CLAIMS: Claim[] = [
     state: 'partly',
     check: null,
     limit:
-      'True for what your banks sent since the lock. What they sent before it is in the copy from before the lock. Plaid sees your bank data, and the server could change it before it locks it.',
+      'What your banks sent before the lock was in the copy from before the lock: it is deleted, and Cloudflare’s past versions hold it 30 days more. Plaid sees your bank data, and the server could change it before it locks it.',
   },
   {
     id: 'bank-key',
@@ -163,8 +161,7 @@ export function ClaimList({ locked }: { locked: boolean }) {
 }
 
 export function ClaimsScreen() {
-  const locked =
-    useQuery({ queryKey: ['cutover'], queryFn: api.cutoverState, retry: false }).data?.sealed ?? isSealed();
+  const locked = isSealed();
   return (
     <Page title="What Ledgerline claims" back="/settings/privacy">
       <ClaimList locked={locked} />

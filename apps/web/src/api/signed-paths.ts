@@ -11,7 +11,6 @@ export function signedActionFor(method: string, path: string, body: unknown): Ac
   if (p === '/api/settings/connections/link-token') return ACTION.linkToken;
   if (p === '/api/settings/connections/link-finish') return mode === 'new' ? ACTION.linkFinish : null;
   if (/^\/api\/settings\/connections\/[^/]+\/remove$/.test(p)) return ACTION.removeBank;
-  if (p === '/api/cutover/purge') return ACTION.purgeOldCopy;
   if (p === '/api/settings/security/delete-account') return ACTION.deleteAccount;
   if (p === '/api/settings/security/recovery-key') return ACTION.setRecoverySignIn;
   return null;

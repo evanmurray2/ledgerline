@@ -3,13 +3,13 @@
 import type { Db } from '@ledgerline/db/sql';
 import { describe, expect, it } from 'vitest';
 import { dailyScan, scanTime } from '../src/daily-scan.js';
-import { storeDb } from './store-db.js';
+import { budgetDb } from './store-db.js';
 
 const LA = 'America/Los_Angeles';
 const at = (iso: string) => Date.parse(iso);
 
 async function seed(name: string): Promise<Db> {
-  const db = storeDb(name);
+  const db = budgetDb(name);
   await db.batch([
     db.prepare(
       `INSERT INTO budget (id, name, budget_start_month, time_zone, created_at, updated_at) VALUES ('b1', 'B', '2026-10', '${LA}', 0, 0)`,

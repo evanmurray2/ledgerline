@@ -175,7 +175,7 @@ export function startTransport(fetch: Fetch): StartTransport {
         r.status,
         (body as { message?: string }).message ?? 'The server gave no answer. Try again.',
       );
-    return body as { ok: boolean; why?: string };
+    return body as { ok: boolean; why?: string; startId?: string };
   };
   const post = (path: string, body: unknown = {}) =>
     call(path, { method: 'POST', headers, body: JSON.stringify(body) });
@@ -188,12 +188,12 @@ export function startTransport(fetch: Fetch): StartTransport {
         manifest: b64(s.manifest),
         chunks: s.chunks,
       }),
-    chunk: (id, k, bytes) =>
-      call(`/api/start/chunks/${encodeURIComponent(id)}/${k}`, {
+    chunk: (startId, id, k, bytes) =>
+      call(`/api/start/chunks/${encodeURIComponent(id)}/${k}?start=${encodeURIComponent(startId)}`, {
         method: 'PUT',
         headers: { 'content-type': 'application/octet-stream', 'x-ledgerline': '1' },
         body: bytes as Uint8Array<ArrayBuffer>,
       }),
-    seal: () => post('/api/start/seal'),
+    seal: (startId) => post('/api/start/seal', { startId }),
   };
 }

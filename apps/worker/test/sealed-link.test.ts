@@ -34,7 +34,7 @@ import { sealedApi } from '../src/seal/sealed-routes.js';
 import { signedActionOf, type SignedPart } from '../src/http/signed-request.js';
 import { BUDGET, T0 } from './log-writer.js';
 import { handed, LINK_A, LINK_B, ring, world, type World } from './sealed-world.js';
-import { storeDb } from './store-db.js';
+import { copyDb } from './store-db.js';
 
 const ORIGIN = 'https://ledgerline.test';
 const H = { origin: ORIGIN, 'content-type': 'application/json', 'x-ledgerline': '1' };
@@ -132,7 +132,7 @@ async function deviceCopy(
   name: string,
   budget: { start: string | null; tz: string } = { start: null, tz: 'America/Los_Angeles' },
 ) {
-  const db = storeDb(`${name}-${Math.random()}`);
+  const db = copyDb(`${name}-${Math.random()}`);
   await migrateLocal(db, T0);
   await db
     .prepare(
@@ -188,6 +188,8 @@ describe('a new bank in a sealed budget, and removing one', () => {
   it('links, describes, files on a device, then removes', async () => {
     await world(
       async (x: World) => {
+        // The bank routes answer only for a budget marked locked (seal/sealed-routes.ts).
+        x.sql(`INSERT INTO store_mark (key, at) VALUES ('sealed', 1)`);
         const env = {
           DB: x.db,
           TOKEN_KEYS: '1:a passphrase of at least thirty-two characters!',

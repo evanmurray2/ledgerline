@@ -10,6 +10,7 @@ import { BUDGET_STORE_MIGRATIONS } from '../src/store/migrations.gen.js';
 import type { BudgetStore } from '../src/store/budget-store.js';
 import type { Directory } from '../src/store/directory.js';
 import { acquire, isFenceAbort, leaseFence, renew } from '../src/sync/lease.js';
+import { budgetDb } from './store-db.js';
 
 const e = env as unknown as {
   BUDGET: DurableObjectNamespace<BudgetStore>;
@@ -63,11 +64,11 @@ describe('object migrations', () => {
         'store/0007_link_fetch_state.sql',
         'store/0008_snapshots.sql',
         'store/0009_snapshot_base.sql',
+        'store/0010_drop_old_tables.sql',
       ],
     });
-    // The four the phone keeps were dropped (migration 0006); not_same added (0007), owed_close (0010).
-    // And the store's own tables: marks, bank links, the inbox and the sealed log (store migrations).
-    expect(h.tables).toBe(54);
+    // Only the store's own tables, the budget's row, the job queue and the fence's table (D-105).
+    expect(h.tables).toBe(16);
     const d = await e.DIRECTORY.get(e.DIRECTORY.idFromName('directory-test')).health();
     expect(d).toMatchObject({
       ok: true,
@@ -95,9 +96,14 @@ describe('object migrations', () => {
   });
 });
 
+// The device's filing steps (sync/lease.ts) run on a SQLite with the budget's schema: a store keeps none (D-105).
+async function inBudget<T>(fn: (db: Db) => Promise<T>): Promise<T> {
+  return fn(budgetDb(`t-budget-${++n}-${Math.random()}`));
+}
+
 describe('the Durable Object database', () => {
   it('reports changes === 1 only for the holder, as the leases need', async () => {
-    await inStore(async (db) => {
+    await inBudget(async (db) => {
       await seed(db);
       expect(await acquire(db, 'c1', 'run-a', NOW)).toBe(true);
       expect(await acquire(db, 'c1', 'run-b', NOW)).toBe(false);
@@ -107,7 +113,7 @@ describe('the Durable Object database', () => {
   });
 
   it('rolls back the whole batch when a fence fails, with an error isFenceAbort recognizes', async () => {
-    await inStore(async (db) => {
+    await inBudget(async (db) => {
       await seed(db);
       await acquire(db, 'c1', 'run-a', NOW);
       const err = await db
@@ -129,7 +135,7 @@ describe('the Durable Object database', () => {
   });
 
   it('returns RETURNING rows, changes and rows read', async () => {
-    await inStore(async (db) => {
+    await inBudget(async (db) => {
       await seed(db);
       const [ins] = await db.batch([
         db
@@ -151,7 +157,7 @@ describe('the Durable Object database', () => {
   });
 
   it('stores booleans as 0 or 1 and refuses undefined', async () => {
-    await inStore(async (db) => {
+    await inBudget(async (db) => {
       await seed(db);
       await db.prepare(`UPDATE connection SET setup_done = ?1 WHERE id = 'c1'`).bind(true).run();
       expect(await db.prepare(`SELECT setup_done FROM connection`).first('setup_done')).toBe(1);

@@ -2,27 +2,24 @@
 // Without table statistics SQLite takes such an index for a selective one and, for "budget_id = ? AND key IN (…)",
 // reads every bank row instead of looking up the keys (Nov 9, 2026: about 3,000 rows read for 25 keys, several times a
 // processing step). The hot lookups write +budget_id so the key's index is used; this test fails if one goes back.
-// Filing runs on the device now (D-102); the store's SQLite stands in for the device's here.
-import { createExecutionContext, env, runInDurableObject } from 'cloudflare:test';
+// Filing runs on the device now (D-102); a Durable Object's SQLite with the budget's schema stands in for the
+// device's here (test/store-db.ts budgetDb).
+import { runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
-import worker from '../src/index.js';
 import { seedNovember } from '../src/dev-seed.js';
 import type { DurableDb } from '../src/store/adapter.js';
 import { Scoped } from '../src/db/scoped.js';
 import { loadBankRows } from '../src/sync/bank-rows.js';
-import { budgetStub, directoryStub, ownerDb } from './store-db.js';
+import { budgetDb, copyStub } from './store-db.js';
 
-const db = ownerDb();
+const NAME = 'key-lookups';
+const db = budgetDb(NAME);
+const budgetId = 'b_key_lookups';
 
 describe('key lookups in a store', () => {
   it('read the keys asked for, not every bank row', async () => {
-    // The store makes its budget's own row on its first request; November goes in as a copy holds it.
-    await worker.fetch(
-      new Request('https://ledgerline.test/api/session', { headers: { 'x-ledgerline-sealed': '1' } }),
-      env as never,
-      createExecutionContext(),
-    );
-    await seedNovember(db, (await directoryStub().firstBudget())!, 'owner', Date.now());
+    // November goes in as a copy holds it.
+    await seedNovember(db, budgetId, 'owner', Date.now());
     // About 2,000 more bank rows, as after a few months of syncs.
     const cols = (await db.prepare(`PRAGMA table_info(bank_txn)`).all<{ name: string }>()).results.map(
       (c) => c.name,
@@ -51,8 +48,7 @@ describe('key lookups in a store', () => {
       }>()
     ).results.map((r) => r.provider_txn_id);
 
-    const budgetId = (await directoryStub().firstBudget())!;
-    const { rows, read } = await runInDurableObject(budgetStub(budgetId), async (o) => {
+    const { rows, read } = await runInDurableObject(copyStub(NAME), async (o) => {
       const d = (o as unknown as { db: DurableDb }).db;
       const before = d.stats.rowsRead;
       const rows = await loadBankRows(new Scoped(d, budgetId, 'system'), ids);

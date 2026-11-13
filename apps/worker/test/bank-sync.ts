@@ -4,7 +4,7 @@
 import { env } from 'cloudflare:test';
 import { expect } from 'vitest';
 import { PlaidProvider } from '@ledgerline/bank-provider';
-import { storeDb } from './store-db.js';
+import { budgetDb } from './store-db.js';
 import { phoneTables, workOut } from './work-out.js';
 import { acquire } from '../src/sync/lease.js';
 import { applyPage, beginRun, rawPageKey } from '../src/sync/steps.js';
@@ -50,7 +50,7 @@ export const removal = (id: string, account: number) => ({ transaction_id: id, a
  */
 export function bankSync(name: string, B: string, C: string, accounts: number, start: number) {
   let now = start;
-  const db = storeDb(name);
+  const db = budgetDb(name);
   const engine = new LocalEngine(
     db,
     { budgetId: B, userId: `u_${B}`, email: 'owner@example.com' },

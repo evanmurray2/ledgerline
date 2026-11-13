@@ -5,7 +5,6 @@ const SERVER_READS = [
   /^\/api\/auth\//,
   /^\/api\/settings\/connections$/,
   /^\/api\/settings\/security/,
-  /^\/api\/cutover\//,
 ];
 
 /** True for a read only the server can answer (a path, with or without its query). */

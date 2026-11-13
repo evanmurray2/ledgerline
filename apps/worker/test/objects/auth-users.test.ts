@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import worker from '../../src/index.js';
 import { tokenHash } from '../../src/http/auth.js';
 import { SoftAuthenticator, b64u } from '../soft-authenticator.js';
-import { directoryDb } from '../store-db.js';
+import { directoryDb, storeDb } from '../store-db.js';
 
 const dir = directoryDb();
 
@@ -206,8 +206,15 @@ describe('more than one user', () => {
   });
 
   it('only the admin may link a new bank, and the session says so (docs/open-signup.md 5)', async () => {
-    // Refused before Plaid is asked: a new link needs the budget's key, and then an admin (seal/sealed-routes.ts).
+    // Refused before Plaid is asked: a bank route answers only for a locked budget, a new link needs the budget's
+    // key, and then an admin (seal/sealed-routes.ts).
+    expect((await other.call('POST', '/api/settings/connections/link-token', { mode: 'new' })).status).toBe(
+      409,
+    );
+    const store = storeDb('b_b');
+    await store.prepare(`INSERT INTO store_mark (key, at) VALUES ('sealed', 1)`).run();
     const b = await other.call('POST', '/api/settings/connections/link-token', { mode: 'new' });
+    await store.prepare(`DELETE FROM store_mark`).run();
     expect(b.status).toBe(403);
     expect((await other.call('GET', '/api/session')).json.canLinkBanks).toBe(false);
     expect((await owner.call('GET', '/api/session')).json.canLinkBanks).toBe(true);

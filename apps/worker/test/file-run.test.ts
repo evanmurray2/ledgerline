@@ -8,7 +8,7 @@ import { fileRun, type RunPackage } from '../src/local/file-run.js';
 import { SYNC_FORMAT, SYNC_TABLES, type SyncRow } from '../src/sync-tables.js';
 import { endOfUpdate, type BankState } from '../src/sync/process.js';
 import { bankSync, pend, plaidTxn } from './bank-sync.js';
-import { storeDb } from './store-db.js';
+import { copyDb } from './store-db.js';
 import { differences, rowsOf } from './twin.js';
 
 const B = 'b_filerun';
@@ -18,7 +18,7 @@ const h = bankSync('file-run', B, C, 2, NOW);
 const provider = new PlaidProvider({ clientId: 'x', secret: 'y', env: 'sandbox' });
 
 async function phone(name: string): Promise<LocalEngine> {
-  const db = storeDb(name);
+  const db = copyDb(name);
   await migrateLocal(db, NOW);
   return new LocalEngine(db, { budgetId: B, userId: 'phone', email: 'owner@example.com' }, () => NOW);
 }

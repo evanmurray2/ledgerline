@@ -97,19 +97,6 @@ export type RegisterShow = 'all' | 'pending' | 'needs' | 'transfers';
 
 const enc = encodeURIComponent;
 
-/** Where emptying a locked budget's old copy on the server stands (Settings → Privacy). */
-const PurgeView = z.object({
-  stage: z.enum(['none', 'waiting', 'ready', 'running', 'stopped', 'done', 'checked']),
-  tables: z.number(),
-  done: z.number(),
-  rows: z.number(),
-  startedAt: z.string().nullable(),
-  doneAt: z.string().nullable(),
-  checkAt: z.string().nullable(),
-  clean: z.boolean().nullable(),
-});
-export type PurgeView = z.infer<typeof PurgeView>;
-
 export const api = {
   /**
    * The session. For a sealed budget the server's answer holds nothing of the budget: its facts come from the
@@ -143,19 +130,6 @@ export const api = {
     post('/api/auth/register/verify', RegisterResult, body),
   // Open sign-up (D-75): only while the switch is on.
   signupOptions: (body: { turnstileToken: string }) => post('/api/auth/signup/options', z.unknown(), body),
-  // Where the budget stands, and emptying its old copy (Settings → Privacy; the Worker's seal/purge-routes.ts).
-  cutoverState: () =>
-    get(
-      '/api/cutover/state',
-      z.object({
-        open: z.boolean(),
-        sealed: z.boolean(),
-        backUntil: z.string().nullable(),
-        // Emptying the old copy (the Worker's seal/purge.ts); absent from a server before it.
-        purge: PurgeView.nullable().optional(),
-      }),
-    ),
-  cutoverPurge: () => post('/api/cutover/purge', z.object({ ok: z.literal(true) })),
   // The recovery key of a locked budget (docs/privacy-keys.md 4.2): its sign-in, and its public half.
   recoverKeyOptions: (authPub: string) =>
     post('/api/auth/recover-key/options', z.object({ budgetId: z.string(), challenge: z.string() }), {

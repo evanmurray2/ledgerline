@@ -1,5 +1,5 @@
 // Phase 1 go/no-go: the fences must roll back the whole batch in every non-holding case.
-import { storeDb } from './store-db.js';
+import { budgetDb } from './store-db.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   acquire,
@@ -11,7 +11,7 @@ import {
   releaseSuccess,
 } from '../src/sync/lease.js';
 
-const db = storeDb('fences');
+const db = budgetDb('fences');
 const NOW = 1_800_000_000_000;
 
 async function seed(): Promise<void> {
