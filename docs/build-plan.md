@@ -10,7 +10,6 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 
 - [ ] On the owner's iPhone after deploy: PRF in the Home Screen app with the existing passkey, first download time, Face ID unlock with no signal.
 - [ ] The sealed log, left open (`docs/privacy.md` 5.3): a rebuild's peak memory is not measured on a phone with the 2 MB bank log (the old copy is closed first and kept gzipped, `local/web-entry.ts` `rebuild`).
-- [ ] A new budget made on the device (D-102, `local/start-device.ts`): a first snapshot that still does not read back after three tries is not written again, so if the server truly lost it, a second device can't join until a later snapshot is checked (and `checkSnapshot` builds on the first one while none is checked).
 - [ ] Banks of a locked budget (`docs/privacy.md` 5.5, D-87): linking and removing are tested with a fake Plaid only, never against Plaid itself (never on a real link without the owner's yes).
 - [ ] Fetch steps on Cloudflare after the Nov 13 changes (D-110, fewer key derivations and one transaction for the last page): with invocation logs off (D-112), judge their CPU a few days after the deploy from the analytics (`exceededResources` counts, daily CPU quantiles; `docs/measurements.md`).
 - [ ] Ways in of a locked budget: the owner sets the recovery key's sign-in once in Settings → Sign-in → Recovery key (the owner's budget was locked before that was set at the lock).
