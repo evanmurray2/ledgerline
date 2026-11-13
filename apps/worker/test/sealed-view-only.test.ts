@@ -26,7 +26,8 @@ describe('the queue while the server is view only', () => {
         const log: LogTransport = {
           after: async (n) => (await logAfter(x.db, n, 100)).map((e) => e.bytes),
           append: async (base, entries) => {
-            if (viewOnly === 'directory') throw new TransportError(503, 'The server gave no answer. Try again.');
+            if (viewOnly === 'directory')
+              throw new TransportError(503, 'The server gave no answer. Try again.');
             return logAppend(
               {
                 db: x.db,
@@ -46,7 +47,15 @@ describe('the queue while the server is view only', () => {
           const engine = await syncPhone(await newPhone());
           const st = await engine.state();
           await engine.apply(
-            { format: st.format, epoch: st.epoch!, serverTime: clock, through: 1, more: false, cursor: null, rows: [] },
+            {
+              format: st.format,
+              epoch: st.epoch!,
+              serverTime: clock,
+              through: 1,
+              more: false,
+              cursor: null,
+              rows: [],
+            },
             clock,
           );
           const dl = new DeviceLog(
