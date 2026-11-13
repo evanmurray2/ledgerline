@@ -44,11 +44,20 @@ describe('Pick the other side of a transfer', () => {
     ]);
     const [a, b] = [await keyOf('in0a'), await keyOf('in0b')];
     for (const k of [out, a, b]) expect((await overlay(k))?.transfer_state, k).toBe('unsorted');
+    // The sheet lists both deposits as the other side, each waiting for this answer too.
+    const sheet = await call('GET', `/api/transactions/${encodeURIComponent(out)}`);
+    const offered = (sheet.json as { candidates?: { key: string; accountId: string; sheet: string }[] })
+      .candidates;
+    expect(offered?.map((x) => x.key).sort()).toEqual([a, b].sort());
+    expect(offered?.map((x) => x.sheet)).toEqual(['transfer', 'transfer']);
     const r = await pick(out, { otherKey: a });
     expect(r.status, JSON.stringify(r.json)).toBe(200);
     expect(await overlay(out)).toMatchObject({ transfer_state: 'paired', transfer_account_id: 'a_2' });
     expect(await overlay(a)).toMatchObject({ transfer_state: 'paired', transfer_account_id: 'a_1' });
     expect(await link(out)).toEqual({ from_key: out, to_key: a });
+    // A pair has no other side to pick.
+    const after = await call('GET', `/api/transactions/${encodeURIComponent(out)}`);
+    expect((after.json as { candidates?: unknown }).candidates).toBeUndefined();
   });
 
   it('pairs from the deposit’s side; the other deposit counts as income', async () => {

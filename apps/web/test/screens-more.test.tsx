@@ -167,6 +167,33 @@ describe('Transaction sheet', () => {
   });
 });
 
+describe('Transfer: pick the other side', () => {
+  it('offers the deposits the sheet lists, and a pick pairs the two', async () => {
+    const db = await server.db();
+    await db
+      .prepare(
+        `UPDATE txn_overlay SET transfer_state = 'unsorted', transfer_account_id = NULL
+         WHERE txn_key IN ('n-to-marcus', 'n-from-checking-m')`,
+      )
+      .run();
+    await db.prepare(`UPDATE txn_link SET undone_at = 1 WHERE kind = 'transfer'`).run();
+    const sheet = (await server.handle('GET', '/api/transactions/n-to-marcus', {}, undefined)).body as {
+      candidates?: { key: string; accountName: string }[];
+    };
+    expect(sheet.candidates?.map((c) => c.key)).toEqual(['n-from-checking-m']);
+    show('/activity/transfer/n-to-marcus');
+    await screen.findByText('Which account got this money?', undefined, T);
+    expect(screen.getByText(/^1 account got \$500\.00/)).toBeTruthy();
+    const side = screen.getByRole('button', { name: new RegExp(`^${sheet.candidates![0]!.accountName}`) });
+    fireEvent.click(side);
+    await screen.findByText(/^Paired with /, undefined, T);
+    expect(
+      (await sql<{ s: string }>(`SELECT transfer_state AS s FROM txn_overlay WHERE txn_key = 'n-to-marcus'`))!
+        .s,
+    ).toBe('paired');
+  });
+});
+
 describe('Targets', () => {
   it('saving a target on a category without one stores it', async () => {
     show('/budget/category/home/target');

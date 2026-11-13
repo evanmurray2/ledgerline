@@ -1,9 +1,8 @@
 // Transfer: pick the other side. Split from ActivitySheets.tsx.
 import { useState } from 'react';
 import { useParams } from '@tanstack/react-router';
-import { useQueries } from '@tanstack/react-query';
 import { api } from '../api/endpoints';
-import { useAccounts, useMoneyMutation, useTxn, qk } from '../api/hooks';
+import { useAccounts, useMoneyMutation, useTxn } from '../api/hooks';
 import { Sheet, SheetTitle } from '../components/Sheet';
 import { Banner, Button, ErrorNote, Loading, PrimaryButton, SecondaryButton } from '../components/ui';
 import { formatCents } from '../lib/money';
@@ -27,21 +26,13 @@ export function TransferScreen() {
   const others = (accounts.data?.groups ?? [])
     .flatMap((g) => g.accounts)
     .filter((a) => t && a.id !== t.accountId);
-  const registers = useQueries({
-    queries: others.map((a) => ({
-      queryKey: qk.register(a.id, 'all'),
-      queryFn: () => api.register(a.id, 'all'),
-      enabled: !!t,
-    })),
-  });
   if (!t)
     return (
       <Sheet label="Transfer" track="transfer" onClose={close} gap="auto">
         {q.error ? <ErrorNote error={q.error} /> : <Loading />}
       </Sheet>
     );
-  // The contract has no candidate list: find rows of the opposite amount within 5 days in the other accounts that
-  // aren't a transfer already (the route accepts the same ones). From a deposit, the other side is an outflow.
+  // From a deposit, the other side is an outflow.
   const sent = t.amount > 0;
   // Filing asked about this row. Any other row gets here from "It's a transfer…": it has no question to answer "no" to.
   const unclear = t.kind === 'transfer' && !t.otherAccountName;
@@ -49,23 +40,12 @@ export function TransferScreen() {
   const onCard =
     (accounts.data?.groups ?? []).flatMap((g) => g.accounts).find((a) => a.id === t.accountId)?.kind ===
     'credit';
-  const day = (d: string) =>
-    Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))) / 86_400_000;
-  const candidates = registers.flatMap((r, i) =>
-    (r.data?.days ?? [])
-      .flatMap((d) => d.rows)
-      .filter(
-        (row) =>
-          row.amount === -t.amount &&
-          Math.abs(day(row.date) - day(t.date)) <= 5 &&
-          row.categoryLabel !== 'Transfer',
-      )
-      .map((row) => ({ row, account: others[i]! })),
-  );
-  const loadingCands = registers.some((r) => r.isLoading);
+  // The other sides Pick takes: rows of the opposite amount within 5 days in the other accounts that aren't a
+  // transfer already (TxnSheet.candidates).
+  const candidates = t.candidates ?? [];
   const n = candidates.length;
   // Deposits still waiting for this answer ("Pick the account"): the ones not picked count as income.
-  const waiting = sent ? 0 : candidates.filter((c) => c.row.sheet === 'transfer').length;
+  const waiting = sent ? 0 : candidates.filter((row) => row.sheet === 'transfer').length;
   const income = (left: number) =>
     left <= 0
       ? ''
@@ -82,7 +62,7 @@ export function TransferScreen() {
       : `Paired with ${name}. It needs no category.${income(waiting - (picked?.sheet === 'transfer' ? 1 : 0))}`;
   const question = sent ? 'Which account sent this money?' : 'Which account got this money?';
   // Accounts whose side hasn't arrived yet (D-83): picking one adds a pending entry there, paired with this row.
-  const listed = new Set(candidates.map((c) => c.account.id));
+  const listed = new Set(candidates.map((row) => row.accountId));
   const notYet = others.filter((a) => !listed.has(a.id));
   // A refusal shows in the sheet (pick.error, unpair.error), not as an uncaught error.
   const tried = (p: Promise<unknown>) =>
@@ -167,15 +147,12 @@ export function TransferScreen() {
         ) : (
           <>
             <span className="text-base font-bold">{question}</span>
-            {!loadingCands && (
-              <p className="m-0 text-sm leading-snug text-muted">
-                {n === 0 ? 'No account' : n === 1 ? '1 account' : `${n} accounts`} {sent ? 'sent' : 'got'}{' '}
-                {formatCents(Math.abs(t.amount))} within a few days.
-              </p>
-            )}
-            {loadingCands && <Loading label="Looking for the other account" />}
+            <p className="m-0 text-sm leading-snug text-muted">
+              {n === 0 ? 'No account' : n === 1 ? '1 account' : `${n} accounts`} {sent ? 'sent' : 'got'}{' '}
+              {formatCents(Math.abs(t.amount))} within a few days.
+            </p>
             <div className="flex flex-col gap-2">
-              {candidates.map(({ row, account }) => (
+              {candidates.map((row) => (
                 <Button
                   key={row.key}
                   mutates="offline"
@@ -183,12 +160,12 @@ export function TransferScreen() {
                   onClick={async () => {
                     if (!(await tried(pick.mutateAsync({ otherKey: row.key })))) return;
                     usage.suggestion('transfer_pick', 'paired');
-                    setResult(lines(account.name, row));
+                    setResult(lines(row.accountName, row));
                   }}
                   className="flex min-h-14 w-full items-center justify-between gap-2 rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"
                 >
                   <span className="flex flex-col">
-                    <span className="text-base font-semibold">{account.name}</span>
+                    <span className="text-base font-semibold">{row.accountName}</span>
                     <span className="text-xs text-muted">
                       {dayLabel(row.date)} · “{row.payee}”
                     </span>
@@ -198,30 +175,29 @@ export function TransferScreen() {
                   </span>
                 </Button>
               ))}
-              {notYet.length > 0 && !loadingCands && (
+              {notYet.length > 0 && (
                 <span className="pt-2 text-sm font-semibold text-muted">
                   {n === 0 ? 'Pick the account' : 'Or another account'}
                 </span>
               )}
-              {!loadingCands &&
-                notYet.map((a) => (
-                  <Button
-                    key={a.id}
-                    mutates="offline"
-                    track="transfer.pick_pending"
-                    onClick={async () => {
-                      if (!(await tried(pick.mutateAsync({ otherKey: null, accountId: a.id })))) return;
-                      usage.suggestion('transfer_pick', 'pending');
-                      setResult(
-                        `Paired with ${a.name}. It’s pending there until the bank sends it.${income(waiting)}`,
-                      );
-                    }}
-                    className="flex min-h-14 w-full flex-col items-start justify-center rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"
-                  >
-                    <span className="text-base font-semibold">{a.name}</span>
-                    <span className="text-xs text-muted">Pending until the bank sends it</span>
-                  </Button>
-                ))}
+              {notYet.map((a) => (
+                <Button
+                  key={a.id}
+                  mutates="offline"
+                  track="transfer.pick_pending"
+                  onClick={async () => {
+                    if (!(await tried(pick.mutateAsync({ otherKey: null, accountId: a.id })))) return;
+                    usage.suggestion('transfer_pick', 'pending');
+                    setResult(
+                      `Paired with ${a.name}. It’s pending there until the bank sends it.${income(waiting)}`,
+                    );
+                  }}
+                  className="flex min-h-14 w-full flex-col items-start justify-center rounded-lg border border-line-strong bg-surface px-3 py-2 text-left"
+                >
+                  <span className="text-base font-semibold">{a.name}</span>
+                  <span className="text-xs text-muted">Pending until the bank sends it</span>
+                </Button>
+              ))}
               <Button
                 mutates="offline"
                 track="transfer.unlinked"

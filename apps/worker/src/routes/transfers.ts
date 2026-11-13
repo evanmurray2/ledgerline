@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import { TransferPick } from '@ledgerline/contracts';
 
 import type { AppEnv } from '../http/context.js';
+import type { Scoped } from '../db/scoped.js';
 import { CHANGED, GONE, HttpError, parse, scoped } from './api.js';
 import { isHistory } from '../views/rows.js';
 import { RECENT_TX, TX_COLUMNS, type TxRow } from '../ledger/ledger.js';
@@ -13,6 +14,44 @@ import { OVERLAY_UPSERT, commit, loadTx, refuseHistory } from './txn-common.js';
 import { reopenForEntry } from './account-close.js';
 
 export const transferRoutes = new Hono<AppEnv>();
+
+/**
+ * Rows of this amount in another account within 5 days that aren't already a transfer and aren't matched to what
+ * you're owed: the other side a transfer of the opposite amount can be paired with. History is never one.
+ */
+async function sides(s: Scoped, amount: number, accountId: string, date: string): Promise<TxRow[]> {
+  const rows = await s.all<TxRow>(
+    `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1 AND amount = ?2 AND account_id != ?3
+       AND abs(julianday(date) - julianday(?4)) <= 5
+       AND (transfer_state IS NULL OR transfer_state = 'unsorted') AND (wtm_state IS NULL OR wtm_state IN ('waiting', 'income'))`,
+    amount,
+    accountId,
+    date,
+  );
+  return rows.filter((x) => !isHistory(x));
+}
+
+/** Whether a row can still be called a transfer (Pick takes it): not one yet, or one filing left to sort out. */
+export function canPick(t: TxRow): boolean {
+  return (
+    t.amount !== 0 &&
+    !isHistory(t) &&
+    (t.transfer_state === null || t.transfer_state === 'unsorted') &&
+    (t.wtm_state === null || t.wtm_state === 'waiting' || t.wtm_state === 'income')
+  );
+}
+
+/**
+ * The other sides Pick accepts for this row, nearest date first: the transaction sheet lists them under "Which account
+ * got this money?" (TxnSheet.candidates).
+ */
+export async function transferCandidates(s: Scoped, t: TxRow): Promise<TxRow[]> {
+  const day = (d: string) => Date.parse(`${d}T00:00:00Z`);
+  const far = (x: TxRow) => Math.abs(day(x.date) - day(t.date));
+  return (await sides(s, -t.amount, t.account_id, t.date)).sort(
+    (a, b) => far(a) - far(b) || (a.key < b.key ? -1 : 1),
+  );
+}
 
 transferRoutes.post('/transfers/:key/pick', async (c) => {
   const r = await parse(TransferPick, c.req.raw);
@@ -32,19 +71,9 @@ transferRoutes.post('/transfers/:key/pick', async (c) => {
     !(me.wtm_state === null || me.wtm_state === 'waiting' || me.wtm_state === 'income')
   )
     throw new HttpError(422, 'not_unclear', CHANGED);
-  // The other side: a row of the opposite amount in another account within 5 days that isn't already a transfer
-  // and isn't matched to what you're owed. A deposit from another bank comes in its own sync, so it is often not
-  // marked unsorted itself; the sheet offers it all the same (it reads the other registers), so it is accepted.
-  const sides = (amount: number, accountId: string, date: string) =>
-    s.all<TxRow>(
-      `SELECT ${TX_COLUMNS} FROM ${RECENT_TX} WHERE budget_id = ?1 AND amount = ?2 AND account_id != ?3
-         AND abs(julianday(date) - julianday(?4)) <= 5
-         AND (transfer_state IS NULL OR transfer_state = 'unsorted') AND (wtm_state IS NULL OR wtm_state IN ('waiting', 'income'))`,
-      amount,
-      accountId,
-      date,
-    );
-  const cands = (await sides(-me.amount, me.account_id, me.date)).filter((x) => !isHistory(x));
+  // The other side (sides above). A deposit from another bank comes in its own sync, so it is often not marked
+  // unsorted itself; the sheet offers it all the same (TxnSheet.candidates), so it is accepted.
+  const cands = await sides(s, -me.amount, me.account_id, me.date);
   const w: Stmt[] = [];
   // The outflow of the pair: its unsorted deposits that weren't the other side become income below.
   let out: TxRow | null = me.amount < 0 ? me : null;
@@ -152,7 +181,7 @@ transferRoutes.post('/transfers/:key/pick', async (c) => {
     );
   }
   // The outflow's unsorted deposits that weren't the other side are income (Ready to Assign).
-  const deposits = out === me ? cands : out ? await sides(-out.amount, out.account_id, out.date) : [];
+  const deposits = out === me ? cands : out ? await sides(s, -out.amount, out.account_id, out.date) : [];
   for (const x of deposits) {
     if (x.key === me.key || x.key === r.otherKey || x.transfer_state !== 'unsorted' || isHistory(x)) continue;
     w.push(
