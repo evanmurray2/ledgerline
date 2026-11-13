@@ -10,6 +10,7 @@ import {
 } from '@ledgerline/contracts';
 import { decryptToken, encryptToken, parseKeyring, ulid } from '@ledgerline/platform';
 import { linkMac } from '@ledgerline/seal';
+import { ProviderError } from '@ledgerline/bank-provider';
 import { type Context, Hono } from 'hono';
 import { requestNow } from '../http/clock.js';
 import { canLinkBanks, type AppEnv } from '../http/context.js';
@@ -287,7 +288,13 @@ sealedApi.post('/settings/connections/:id/remove', async (c) => {
       link.key_version,
       link.connection_id,
     );
-    await makeProvider(c.env).removeItem(token);
+    try {
+      await makeProvider(c.env).removeItem(token);
+    } catch (e) {
+      // A token Plaid no longer takes is an Item already gone (store/account-life.ts does the same).
+      if (!(e instanceof ProviderError && (e.code === 'ITEM_NOT_FOUND' || e.code === 'INVALID_ACCESS_TOKEN')))
+        throw e;
+    }
   }
   await c.env.DB.batch([
     c.env.DB.prepare(

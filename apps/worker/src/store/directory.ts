@@ -190,6 +190,8 @@ export class Directory extends DurableObject<Env> {
             this.db.prepare(`DELETE FROM passkey WHERE user_id = ?1`).bind(u),
             this.db.prepare(`DELETE FROM recovery_code WHERE user_id = ?1`).bind(u),
             this.db.prepare(`DELETE FROM recovery_notice WHERE user_id = ?1`).bind(u),
+            // Before the user row: it refers to it.
+            this.db.prepare(`DELETE FROM recovery_key WHERE user_id = ?1`).bind(u),
             this.db.prepare(`DELETE FROM auth_session WHERE user_id = ?1`).bind(u),
             this.db
               .prepare(`DELETE FROM user WHERE id = ?1 AND status = 'deleting' AND is_admin = 0`)
