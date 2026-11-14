@@ -50,17 +50,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # pnpm, Node 22 and the install (.github/actions/setup).
+      - uses: ./.github/actions/setup
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm format:check
       - name: Unit tests (domain, provider, platform, web)
         run: pnpm test:unit
+      - name: Tool tests, decision numbers and paths named in the docs
+        run: pnpm test:tools
       - name: Build the SPA twice, and fail unless both builds are the same (docs/privacy.md 5.9)
         run: node tools/ci/reproducible-check.mjs
       - name: Migration check
@@ -84,12 +82,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # pnpm, Node 22 and the install (.github/actions/setup).
+      - uses: ./.github/actions/setup
       - name: Build the SPA
         run: pnpm --filter @ledgerline/web build
       - name: Integration tests (Worker + Durable Objects in workerd), this part
@@ -121,12 +115,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # pnpm, Node 22 and the install (.github/actions/setup).
+      - uses: ./.github/actions/setup
       # The browser download is cached per lockfile. The runner image already has the system libraries Chromium needs,
       # so a cached browser starts with no apt step.
       - id: browsers
@@ -150,7 +140,13 @@ jobs:
       - name: Playwright against local wrangler dev, passkey sign-in, sign-up, a new locked budget and its screens, then a linked bank on a fake Plaid
         if: matrix.suite == 'sign-in'
         working-directory: e2e
-        run: pnpm exec playwright test -c playwright.passkey.config.ts && pnpm exec playwright test -c playwright.signup.config.ts && pnpm exec playwright test -c playwright.lock.config.ts && pnpm exec playwright test -c playwright.bank.config.ts
+        # Every suite runs, even after one fails, so one failure doesn't hide another; the step fails if any did.
+        run: |
+          failed=0
+          for suite in passkey signup lock bank; do
+            pnpm exec playwright test -c "playwright.$suite.config.ts" || { echo "::error::e2e suite $suite failed"; failed=1; }
+          done
+          exit "$failed"
       # Also when a test only passed on its retry (e2e/retry-log.ts writes flaky-<suite>.md): the failed try's trace.
       - if: ${{ !cancelled() && (failure() || hashFiles('e2e/test-results/flaky-*.md') != '') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

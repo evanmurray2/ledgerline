@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ACTION,
+  RETIRED_ACTIONS,
   concat,
   deriveBudgetKeys,
   fromHex,
@@ -158,15 +159,15 @@ describe('a signed request', () => {
       'remove-bank',
       'delete-account',
       'link-finish',
-      'purge-old-copy',
       'set-recovery-sign-in',
     ]);
+    for (const retired of RETIRED_ACTIONS) expect(names).not.toContain(retired);
     const c = newChallenge();
     const payload = utf8('{}');
-    const sig = await signRequest(keys, BUDGET, ACTION.purgeOldCopy, c, payload);
+    const sig = await signRequest(keys, BUDGET, ACTION.linkFinish, c, payload);
     for (const other of names)
       expect(await verifyRequest(keys.sign.pub, 1, BUDGET, other, c, payload, sig)).toBe(
-        other === 'purge-old-copy',
+        other === 'link-finish',
       );
   });
 

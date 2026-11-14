@@ -1,4 +1,4 @@
-// Money into checking or savings goes to Ready to Assign with nothing chosen (D-85): it never waits in Needs category.
+// Money into checking or savings goes to Ready to Assign with nothing chosen (D-119): it never waits in Needs category.
 // A credit on a card still does, and so does a deposit that looks like a transfer with no other side yet. Through
 // the real pipeline and the routes the phone runs.
 import { beforeAll, describe, expect, it } from 'vitest';

@@ -1,5 +1,6 @@
 // Dates arrive as 'YYYY-MM-DD' and months as 'YYYY-MM'. They're formatted by hand so a browser in another
 // time zone never shifts a day.
+import { addMonths as addMonth, compareMonth, type Month } from '@ledgerline/domain';
 
 const MONTHS = [
   'January',
@@ -51,17 +52,11 @@ export function dayLabel(date: string): string {
   return budgetYear !== null && y !== budgetYear ? `${day}, ${y}` : day;
 }
 
-export function addMonths(month: string, n: number): string {
-  const [y, m] = parts(month);
-  const idx = y * 12 + (m - 1) + n;
-  const ny = Math.floor(idx / 12);
-  const nm = (idx % 12) + 1;
-  return `${ny}-${String(nm).padStart(2, '0')}`;
-}
-
-export function compareMonths(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
+// Month arithmetic is the domain's (packages/domain month.ts), on the 'YYYY-MM' text the API sends.
+/** '2026-11' plus n months: addMonths('2026-11', 2) is '2027-01'. */
+export const addMonths = (month: string, n: number): string => addMonth(month as Month, n);
+/** Months as 'YYYY-MM' compare as text: -1, 0 or 1. */
+export const compareMonths = (a: string, b: string): number => compareMonth(a as Month, b as Month);
 
 // Clock times show in the budget's time zone (Settings → Time zone), not the phone's. The session sets it
 // (api/hooks.ts useSession); US Pacific until the session has loaded.

@@ -1,31 +1,24 @@
 // The routes of a new budget's start (seal/start.ts, D-102). The store mounts them only for a budget that is not
 // sealed. They answer only to the budget's own signed-in person, minutes after a passkey check.
 import { CSRF_HEADER } from '@ledgerline/contracts';
-import { parseKeyring } from '@ledgerline/platform';
+import { fromBase64, parseKeyring } from '@ledgerline/platform';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { REAUTH_MS } from '../http/auth.js';
+import { base64Text } from '../http/body.js';
 import { requestNow } from '../http/clock.js';
+import { TRY_AGAIN } from '../http/errors.js';
 import type { AppEnv } from '../http/context.js';
 import { csrf } from '../http/security.js';
 import type { Caller } from '../store/directory.js';
 import { runDeps } from './runs.js';
 import { OLD_START, startBegin, startChunk, startSeal, type StartDeps } from './start.js';
 
-const TRY_AGAIN = 'Something went wrong. Try again.';
-const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
-const unb64 = (s: string): Uint8Array<ArrayBuffer> => {
-  const bin = atob(s);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-};
-
 const Begin = z.object({
-  genesis: z.string().regex(B64).max(200_000),
-  header: z.string().regex(B64).max(2_000),
-  signature: z.string().regex(B64).max(200),
-  manifest: z.string().regex(B64).max(600_000),
+  genesis: base64Text(200_000),
+  header: base64Text(2_000),
+  signature: base64Text(200),
+  manifest: base64Text(600_000),
   chunks: z.number().int().min(1).max(256),
 });
 
@@ -65,10 +58,10 @@ startApi.post('/start/begin', async (c) => {
   const parsed = Begin.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
   const r = await startBegin(deps(c, requestNow(c)), {
-    genesis: unb64(parsed.data.genesis),
-    header: unb64(parsed.data.header),
-    signature: unb64(parsed.data.signature),
-    manifest: unb64(parsed.data.manifest),
+    genesis: fromBase64(parsed.data.genesis),
+    header: fromBase64(parsed.data.header),
+    signature: fromBase64(parsed.data.signature),
+    manifest: fromBase64(parsed.data.manifest),
     chunks: parsed.data.chunks,
   });
   return c.json(r, r.ok ? 200 : 409);

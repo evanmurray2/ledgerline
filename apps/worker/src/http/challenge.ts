@@ -3,7 +3,7 @@
 // its purpose and what allowed it travel in a 5-minute cookie signed with HMAC-SHA-256 under a key derived from
 // TOKEN_KEYS (HKDF, label 'ledgerline-challenge', used for nothing else). Single use comes from the session row:
 // a successful finish records the challenge id under a unique index (routes/auth.ts).
-import { parseKeyring } from '@ledgerline/platform';
+import { fromBase64url, parseKeyring, toBase64url } from '@ledgerline/platform';
 import type { Env } from '../env.js';
 import { CHALLENGE_MS, randomToken } from './auth.js';
 
@@ -22,16 +22,6 @@ export interface Challenge {
 
 const enc = new TextEncoder();
 const keys = new Map<string, Promise<CryptoKey>>();
-
-function b64u(b: Uint8Array): string {
-  let s = '';
-  for (const x of b) s += String.fromCharCode(x);
-  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-function unb64u(s: string): Uint8Array {
-  const t = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
-  return Uint8Array.from(t, (c) => c.charCodeAt(0));
-}
 
 function key(env: Env): Promise<CryptoKey> {
   const ring = parseKeyring(env.TOKEN_KEYS, env.TOKEN_KEY_CURRENT);
@@ -70,9 +60,9 @@ export async function sealChallenge(
     grant_ref: grant?.ref ?? null,
     exp: now + CHALLENGE_MS,
   };
-  const body = b64u(enc.encode(JSON.stringify(c)));
+  const body = toBase64url(enc.encode(JSON.stringify(c)));
   const sig = new Uint8Array(await crypto.subtle.sign('HMAC', await key(env), enc.encode(body)));
-  return `${body}.${b64u(sig)}`;
+  return `${body}.${toBase64url(sig)}`;
 }
 
 /** The challenge in a cookie value, if its signature is ours, it's for this purpose and it hasn't expired. */
@@ -87,12 +77,12 @@ export async function openChallenge(
   if (!body || !sig) return null;
   let ok = false;
   try {
-    ok = await crypto.subtle.verify('HMAC', await key(env), unb64u(sig), enc.encode(body));
+    ok = await crypto.subtle.verify('HMAC', await key(env), fromBase64url(sig), enc.encode(body));
   } catch {
     return null;
   }
   if (!ok) return null;
-  const c = JSON.parse(new TextDecoder().decode(unb64u(body))) as Challenge;
+  const c = JSON.parse(new TextDecoder().decode(fromBase64url(body))) as Challenge;
   if (c.purpose !== purpose || c.exp <= now) return null;
   return c;
 }

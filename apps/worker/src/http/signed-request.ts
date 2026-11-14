@@ -15,7 +15,7 @@ import { SIGNED_CHALLENGE_HEADER, SIGNED_SIGNATURE_HEADER } from '@ledgerline/co
 import type { Db } from '@ledgerline/db/sql';
 import { ACTION, type Action, fromHex, toHex, verifyRequest } from '@ledgerline/seal';
 import type { Env } from '../env.js';
-import { stateFromJson } from '../seal/log-store.js';
+import { publicOf } from '../seal/log-store.js';
 import { openChallenge, sealChallenge } from './challenge.js';
 
 /** What the Directory hands a budget's store: a challenge it gave this session, now used, and the signature. */
@@ -108,10 +108,8 @@ export function signedHeaders(h: Headers): { token: string; signature: string } 
 /** The signing key in force in a sealed budget's log: its version and public half (hex). Null with no log. */
 export function signKeyOf(stateJson: string | null | undefined): { version: number; pub: string } | null {
   if (!stateJson) return null;
-  const p = (
-    stateFromJson(stateJson) as unknown as { public?: { keyVersion?: number; signPub?: Uint8Array } }
-  ).public;
-  if (!p || typeof p.keyVersion !== 'number' || !(p.signPub instanceof Uint8Array)) return null;
+  const p = publicOf(stateJson);
+  if (p?.keyVersion === undefined || !p.signPub) return null;
   return { version: p.keyVersion, pub: toHex(p.signPub) };
 }
 

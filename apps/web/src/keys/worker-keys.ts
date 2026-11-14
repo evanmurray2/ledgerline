@@ -3,7 +3,7 @@
 // server says at run time. `GET /api/run-keys` on the production Worker shows the public halves; a release copies
 // them here. A key number is added here in a release BEFORE the Worker starts to use it, and is never taken off
 // the list except after a compromise.
-const hex = (s: string): Uint8Array => Uint8Array.from(s.match(/../g) ?? [], (x) => parseInt(x, 16));
+import { fromHex } from '@ledgerline/seal';
 
 /**
  * Production's keys, read from `GET /api/run-keys` on Nov 12, 2026. They are public halves: no secret is here.
@@ -29,5 +29,5 @@ const E2E: [number, string][] = (typeof __E2E_RUN_KEYS__ === 'string' ? __E2E_RU
 /** [key number, public key]: a sealed bank run is accepted only when one of these signed it. */
 export const WORKER_RUN_KEYS: [number, Uint8Array][] = [...PRODUCTION, ...E2E].map(([n, pub]) => [
   n,
-  hex(pub),
+  fromHex(pub),
 ]);

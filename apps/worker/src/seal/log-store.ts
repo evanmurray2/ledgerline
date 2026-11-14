@@ -9,6 +9,7 @@
 // stored: the second finds the log moved on and is told "behind". Everything the check read that a write changes
 // (the chain state, the device counters, the day's count of never-held entries) is written in that transaction.
 import type { Db, Stmt } from '@ledgerline/db/sql';
+import { fromBase64, toBase64 } from '@ledgerline/platform';
 import {
   AppendRefused,
   checkGenesisWrite,
@@ -78,26 +79,15 @@ export type AppendResult =
 
 // ---- bytes as text: the chain state's JSON, the log's answers, and entries an earlier release stored
 
-/** Base64 of `b`, in pieces: a byte at a time cost about 2 ms for each 64 KB. */
-export const b64 = (b: Uint8Array): string => {
-  let s = '';
-  for (let i = 0; i < b.length; i += 0x8000)
-    s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000) as unknown as number[]);
-  return btoa(s);
-};
-const unb64 = (s: string): Uint8Array<ArrayBuffer> => {
-  const bin = atob(s);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-};
+/** Base64 of `b` (packages/platform: in one pass, at any size). */
+export const b64 = toBase64;
 
 /**
  * An entry's stored bytes. An entry is stored as a BLOB; the releases up to Nov 13, 2026 stored base64 text, in
  * the same column, and those rows stay as they are (read as they are, never rewritten).
  */
 export function entryBytes(v: unknown): Uint8Array<ArrayBuffer> {
-  if (typeof v === 'string') return unb64(v);
+  if (typeof v === 'string') return fromBase64(v);
   if (v instanceof Uint8Array) return new Uint8Array(v);
   if (v instanceof ArrayBuffer) return new Uint8Array(v);
   throw new TypeError('not stored entry bytes');
@@ -120,11 +110,49 @@ export function stateFromJson(text: string): StoredChain {
   return JSON.parse(text, (_k, v: unknown) => {
     if (v && typeof v === 'object') {
       const o = v as { $bytes?: unknown; $map?: unknown };
-      if (typeof o.$bytes === 'string') return unb64(o.$bytes);
+      if (typeof o.$bytes === 'string') return fromBase64(o.$bytes);
       if (Array.isArray(o.$map)) return new Map(o.$map as [unknown, unknown][]);
     }
     return v;
   }) as StoredChain;
+}
+
+/** The parts of the stored state's public half that the Worker reads outside the log's own rules. */
+export interface LogPublic {
+  keyVersion?: number;
+  signPub?: Uint8Array<ArrayBuffer>;
+  signPubs?: Map<number, Uint8Array<ArrayBuffer>>;
+  inboxVersion?: number;
+  retiredAt?: Map<number, number>;
+}
+
+const isVersion = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1;
+function mapOf<V>(v: unknown, isValue: (x: unknown) => x is V): Map<number, V> | undefined {
+  if (!(v instanceof Map)) return undefined;
+  for (const [k, x] of v as Map<unknown, unknown>) if (typeof k !== 'number' || !isValue(x)) return undefined;
+  return v as Map<number, V>;
+}
+const isBytes = (x: unknown): x is Uint8Array<ArrayBuffer> => x instanceof Uint8Array;
+const isNumber = (x: unknown): x is number => typeof x === 'number';
+
+/**
+ * The public half of the state in `log_state` (`stateJson`), checked field by field: a field is there only when it
+ * has its type (a version is a whole number from 1). Null when the state has no public half. JSON that doesn't
+ * parse throws, as `stateFromJson` does.
+ */
+export function publicOf(stateJson: string): LogPublic | null {
+  const p: unknown = (stateFromJson(stateJson) as { public?: unknown }).public;
+  if (!p || typeof p !== 'object') return null;
+  const o = p as Record<string, unknown>;
+  const out: LogPublic = {};
+  if (isVersion(o.keyVersion)) out.keyVersion = o.keyVersion;
+  if (isBytes(o.signPub)) out.signPub = o.signPub;
+  const signPubs = mapOf(o.signPubs, isBytes);
+  if (signPubs) out.signPubs = signPubs;
+  if (isVersion(o.inboxVersion)) out.inboxVersion = o.inboxVersion;
+  const retiredAt = mapOf(o.retiredAt, isNumber);
+  if (retiredAt) out.retiredAt = retiredAt;
+  return out;
 }
 
 // ---- where the chain stands

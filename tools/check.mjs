@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // `pnpm check`: the checks to run before pushing, side by side instead of one after another. Formats first (prettier
-// --write, so a formatting slip is fixed rather than failed), then runs lint, typecheck, unit and integration tests
-// at once, with caches (ESLint, Prettier, incremental tsc) under node_modules/.cache. Each check's output is printed
-// only if it fails.
+// --write, so a formatting slip is fixed rather than failed), then runs lint, typecheck, unit, tool (`test:tools`)
+// and integration tests at once, with caches (ESLint, Prettier, incremental tsc) under node_modules/.cache. Each
+// check's output is printed only if it fails.
 import { spawn } from 'node:child_process';
 
 const run = (name, cmd) =>
@@ -29,6 +29,7 @@ const results = [
       'pnpm -s -r --if-present typecheck --incremental --tsBuildInfoFile node_modules/.cache/tsc.tsbuildinfo',
     ),
     run('unit', 'pnpm -s test:unit'),
+    run('tools', 'pnpm -s test:tools'),
     run('integration', 'pnpm -s test:integration'),
   ])),
 ];

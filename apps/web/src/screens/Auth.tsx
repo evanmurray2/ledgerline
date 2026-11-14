@@ -32,15 +32,13 @@ async function ceremony(fn: () => Promise<unknown>): Promise<string | null> {
  */
 export async function signInWithPasskey(): Promise<void> {
   if (import.meta.env.VITE_MOCK !== '1') return copySignIn();
-  const optionsJSON = (await api.loginOptions()) as Parameters<typeof startAuthentication>[0]['optionsJSON'];
+  const optionsJSON = await api.loginOptions();
   const response = await startAuthentication({ optionsJSON });
   await api.loginVerify({ response });
 }
 
 async function addPasskey(start: { setupCode?: string; deviceToken?: string }, name: string): Promise<void> {
-  const optionsJSON = (await api.registerOptions(start)) as Parameters<
-    typeof startRegistration
-  >[0]['optionsJSON'];
+  const optionsJSON = await api.registerOptions(start);
   const response = await startRegistration({ optionsJSON });
   await api.registerVerify({ response, name });
 }

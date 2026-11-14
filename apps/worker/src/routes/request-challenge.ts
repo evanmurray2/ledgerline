@@ -4,16 +4,18 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../http/context.js';
 import { requestNow } from '../http/clock.js';
-import { bodyObject } from '../http/security.js';
+import type { Action } from '@ledgerline/seal';
+import { z } from 'zod';
+import { parseBody } from '../http/body.js';
 import { isAskable, issueChallenge } from '../http/signed-request.js';
+import { TRY_AGAIN } from '../http/errors.js';
 
 export const REQUEST_CHALLENGE_PATH = '/api/settings/security/request-challenge';
 
 export const requestChallengeRoutes = new Hono<AppEnv>();
 
 requestChallengeRoutes.post('/settings/security/request-challenge', async (c) => {
-  const b = await bodyObject(c.req);
-  if (!isAskable(b.action))
-    return c.json({ error: 'invalid', message: 'Something went wrong. Try again.' }, 400);
+  const b = await parseBody(c.req, z.object({ action: z.custom<Action>(isAskable) }));
+  if (!b) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
   return c.json(await issueChallenge(c.env, requestNow(c), c.get('sessionId') ?? '', b.action));
 });

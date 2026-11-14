@@ -9,8 +9,9 @@
 // When a watched workflow hasn't started, it also checks the commit's pull request: a PR in conflict with `main` gets
 // no CI at all, so it reports the conflict and exits 1 instead of waiting for runs that never come. It does the same
 // when no run has started after 10 minutes (WATCH_NO_RUN_MIN).
-// The repository is public, so the Actions API needs no token here.
-import { execFileSync } from 'node:child_process';
+// It sends GH_TOKEN (or GITHUB_TOKEN) when set; without one it still works, as the repository is public, but GitHub
+// allows fewer requests an hour. A failed poll (a rate limit too) is printed and retried after a back-off.
+import { githubApi, repoSlug } from './github-api.mjs';
 
 const [first, ...names] = process.argv.slice(2);
 let sha = first;
@@ -18,13 +19,18 @@ if (!first || !names.length) {
   console.error('usage: watch-runs.mjs <sha> <workflow name>...');
   process.exit(2);
 }
-const repo = process.env.GITHUB_REPOSITORY ?? 'evanmurray2/ledgerline';
+const api = githubApi(repoSlug());
 const every = Number(process.env.WATCH_INTERVAL_S ?? 30) * 1000;
 const limit = Date.now() + Number(process.env.WATCH_TIMEOUT_MIN ?? 60) * 60_000;
 const done = new Map();
 const started = Date.now();
 const noRunLimit = Number(process.env.WATCH_NO_RUN_MIN ?? 10) * 60_000;
 let lastPrCheck = 0;
+/** Workflows that have a run for the commit, from the last poll that worked. */
+const seen = new Set();
+/** The last poll's error, while polls fail; and how many failed in a row. */
+let lastError = null;
+let failures = 0;
 
 while (done.size < names.length) {
   if (Date.now() > limit) {
@@ -34,6 +40,7 @@ while (done.size < names.length) {
   }
   try {
     const { workflow_runs: runs } = api(`actions/runs?head_sha=${sha}&per_page=100`);
+    for (const r of runs) seen.add(r.name);
     for (const name of names) {
       if (done.has(name)) continue;
       // The newest attempt of this workflow for the commit.
@@ -48,6 +55,7 @@ while (done.size < names.length) {
           );
           sha = newer;
           done.clear();
+          seen.clear();
           break;
         }
       }
@@ -58,45 +66,56 @@ while (done.size < names.length) {
       done.set(name, result);
       console.log(`${name}: ${result} ${run.html_url}`);
     }
-    const missing = names.filter((n) => !done.has(n) && !runs.some((x) => x.name === n));
-    if (missing.length && Date.now() - started > 60_000 && Date.now() - lastPrCheck > 60_000) {
-      lastPrCheck = Date.now();
-      let conflict = null;
-      try {
-        conflict = conflictedPr(sha);
-      } catch {
-        // Couldn't ask about the PR this round: the no-run limit below still applies.
-      }
-      if (conflict) {
-        console.log(
-          `merge conflict: PR #${conflict.number} can't merge with ${conflict.base.ref}, so ${missing.join(', ')} won't run. ${conflict.html_url}`,
-        );
-        process.exit(1);
-      }
-      if (Date.now() - started > noRunLimit) {
-        console.log(
-          `no ${missing.join(', ')} run started for ${sha.slice(0, 12)} after ${noRunLimit / 60_000} minutes`,
-        );
-        process.exit(1);
-      }
-    }
-  } catch {
-    // A failed poll is retried on the next round.
+    lastError = null;
+    failures = 0;
+  } catch (e) {
+    // Printed, and retried after a back-off (nextWait).
+    lastError = e;
+    failures++;
+    console.log(`poll failed (${failures} in a row): ${e.message}`);
   }
-  if (done.size < names.length) await new Promise((res) => setTimeout(res, every));
+  // Outside the poll above, so a failed poll doesn't stop these checks: workflows with no run seen yet.
+  const missing = names.filter((n) => !done.has(n) && !seen.has(n));
+  if (missing.length && Date.now() - started > 60_000 && Date.now() - lastPrCheck > 60_000) {
+    lastPrCheck = Date.now();
+    let conflict = null;
+    try {
+      conflict = conflictedPr(sha);
+    } catch (e) {
+      // Couldn't ask about the PR this round: the no-run limit below still applies.
+      console.log(`couldn't check the pull request: ${e.message}`);
+    }
+    if (conflict) {
+      console.log(
+        `merge conflict: PR #${conflict.number} can't merge with ${conflict.base.ref}, so ${missing.join(', ')} won't run. ${conflict.html_url}`,
+      );
+      process.exit(1);
+    }
+    if (Date.now() - started > noRunLimit) {
+      const why = lastError ? ` (the last ${failures} polls failed: ${lastError.message})` : '';
+      console.log(
+        `no ${missing.join(', ')} run seen for ${sha.slice(0, 12)} after ${noRunLimit / 60_000} minutes${why}`,
+      );
+      process.exit(1);
+    }
+  }
+  if (done.size < names.length) await new Promise((res) => setTimeout(res, nextWait()));
 }
 const ok = [...done.values()].every((c) => c === 'success' || c === 'skipped');
 console.log(ok ? 'all passed' : 'FAILED');
 process.exit(ok ? 0 : 1);
 
-/** GET from the GitHub API with curl (Node's fetch ignores HTTPS_PROXY, which cloud sessions need). */
-function api(path) {
-  const body = execFileSync(
-    'curl',
-    ['-sSf', '-H', 'accept: application/vnd.github+json', `https://api.github.com/repos/${repo}/${path}`],
-    { encoding: 'utf8', timeout: 30_000 },
+/** The time to the next poll: the interval, or longer after failures (what a rate limit asks for, at most 15 min). */
+function nextWait() {
+  if (!lastError) return every;
+  const backOff = Math.min(every * 2 ** Math.min(failures, 5), 15 * 60_000);
+  const wait = Math.min(
+    Math.max(backOff, lastError.waitMs ?? 0),
+    15 * 60_000,
+    Math.max(limit - Date.now(), 1000),
   );
-  return JSON.parse(body);
+  console.log(`${lastError.rateLimited ? 'rate limited: ' : ''}next poll in ${Math.ceil(wait / 1000)} s`);
+  return wait;
 }
 
 /** The head of `main` when it is newer than `sha` and contains it, else null. */

@@ -1,4 +1,4 @@
-// Shared steps for the locked-budget suites through the real Worker (playwright.lock.config.ts): a device with a
+// Shared steps for the suites through the real Worker (the passkey, signup, lock and bank configs): a device with a
 // passkey, a call to the API from the page, a new account whose budget is locked and set up in the browser, a
 // second device that opens it with the recovery key, and what the device keeps of it.
 import { expect, type Browser, type BrowserContextOptions, type Page } from '@playwright/test';
@@ -18,6 +18,7 @@ export async function withPasskeyDevice(page: Page) {
       hasPrf: true,
     },
   });
+  return cdp;
 }
 
 /** One API call from the page, with its cookie and the app's header. */

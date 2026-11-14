@@ -6,7 +6,11 @@ import type { BudgetKeys } from './budget-key.js';
 import { sign, verify } from './curve.js';
 import { sha256 } from './hash.js';
 
-/** The fixed names of the requests. A name is never reused for another request. */
+/**
+ * The fixed names of the requests. A name is never reused for another request. Retired, and so never to be used
+ * again: `purge-old-copy` (emptying the server's readable copy; no budget has one since D-102).
+ */
+export const RETIRED_ACTIONS: readonly string[] = ['purge-old-copy'];
 export const ACTION = {
   storeSignKey: 'store-sign-key',
   storeInboxKey: 'store-inbox-key',
@@ -15,8 +19,6 @@ export const ACTION = {
   deleteAccount: 'delete-account',
   /** Finishing a new bank's link: the server exchanges its token and keeps the link. */
   linkFinish: 'link-finish',
-  /** Starting to empty the server's readable copy of a sealed budget (docs/privacy.md section 8, step 8). */
-  purgeOldCopy: 'purge-old-copy',
   /** Setting the recovery key's sign-in half (`authPub`, 4.2) in the Directory. */
   setRecoverySignIn: 'set-recovery-sign-in',
 } as const;

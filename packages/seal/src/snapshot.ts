@@ -52,6 +52,9 @@ export interface Manifest {
   counters: DeviceCounter[];
 }
 
+/** The manifest by the name the Worker and the device use for it. */
+export type SnapshotManifest = Manifest;
+
 const ulid = (id: string, what: string): string => {
   if (!isUlid(id)) throw new RangeError(what);
   return id;

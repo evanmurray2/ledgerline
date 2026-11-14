@@ -62,19 +62,7 @@ describe('a copy made again, and its own bank log', () => {
         const env = { clock: () => clock, encode: encodeEntry };
 
         const a = await syncPhone(await newPhone());
-        const st = await a.state();
-        await a.apply(
-          {
-            format: st.format,
-            epoch: st.epoch!,
-            serverTime: clock,
-            through: 1,
-            more: false,
-            cursor: null,
-            rows: [],
-          },
-          clock,
-        );
+        await a.applyLogRows([], 1);
         const logA = new DeviceLog(
           x.w.keys,
           await startChain(x.w.last!, { now: clock, schemaVersion: 1 }, BUDGET),

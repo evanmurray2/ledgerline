@@ -50,7 +50,9 @@ function checkPage(text: string): { added: number; modified: number; removed: nu
 /** Sealing to a public key the way HPKE base mode does: a fresh X25519 pair, a shared secret, HKDF, AES-256-GCM. */
 async function sealTo(recipient: CryptoKey, plain: Uint8Array, info: Uint8Array): Promise<Uint8Array> {
   const eph = (await subtle.generateKey({ name: 'X25519' }, true, ['deriveBits'])) as CryptoKeyPair;
-  const shared = await subtle.deriveBits({ name: 'X25519', public: recipient }, eph.privateKey, 256);
+  // The cast: Cloudflare's types name this field `$public`; every engine reads `public` (packages/seal curve.ts).
+  const x25519 = { name: 'X25519', public: recipient } as Parameters<typeof subtle.deriveBits>[0];
+  const shared = await subtle.deriveBits(x25519, eph.privateKey, 256);
   const ikm = await subtle.importKey('raw', shared, 'HKDF', false, ['deriveKey']);
   const key = await subtle.deriveKey(
     { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info },
@@ -61,7 +63,7 @@ async function sealTo(recipient: CryptoKey, plain: Uint8Array, info: Uint8Array)
   );
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = new Uint8Array(await subtle.encrypt({ name: 'AES-GCM', iv, additionalData: info }, key, plain));
-  const pub = new Uint8Array(await subtle.exportKey('raw', eph.publicKey));
+  const pub = new Uint8Array((await subtle.exportKey('raw', eph.publicKey)) as ArrayBuffer);
   const out = new Uint8Array(pub.length + iv.length + ct.length);
   out.set(pub);
   out.set(iv, pub.length);

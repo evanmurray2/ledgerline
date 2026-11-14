@@ -199,16 +199,7 @@ describe('a first run of 180 days', () => {
             () => clock,
           );
           await copyOf(old.db, engine, clock);
-          const st = await engine.state();
-          await engine.apply({
-            format: st.format,
-            epoch: st.epoch!,
-            serverTime: clock,
-            through: 1,
-            more: false,
-            cursor: null,
-            rows: [],
-          });
+          await engine.applyLogRows([], 1);
           const set = (key: string, value: string) =>
             db
               .prepare(`INSERT INTO setting (budget_id, key, value, updated_at) VALUES (?1, ?2, ?3, 0)`)

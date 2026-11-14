@@ -375,6 +375,8 @@ Category available chains forward month to month (carryover, cash overspending, 
 
 ## UI
 
+> **Now:** the tabs are Budget, Activity, Reports, Accounts, with one month bar for the first three (D-58, `docs/month-header.md`). Activity opens on Not posted yet when this month has any (D-97), and has no Money to match group (D-98). There are no rules or rule badges (D-60), no CSV import (D-81), and Settings no longer has rules or import. Most edits work offline (`docs/whats-true-now.md`), sign-in is passkeys rather than Cloudflare Access (D-27), and there is no daily D1 limit (D-37). The screens and their parts are in `docs/design-system.md` and `docs/copy.md`.
+
 A responsive web app, used in the browser first (installing it as a phone app comes later). Four tabs: **Budget, Activity, Accounts, Reports**, with Settings behind a gear in Accounts. Ready to Assign and its Assign button sit in a bar just above the tabs, in thumb reach. Mockups (v2, after an independent review): [Ledgerline mobile mockups](https://claude.ai/artifact/2h8daG7G5NgTg1QbryBZjd).
 
 | Screen | What's on it | Key actions |

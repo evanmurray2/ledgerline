@@ -19,6 +19,7 @@ import { toast } from '../components/Toast';
 import { formatCents } from '../lib/money';
 import { addMonths, compareMonths, monthLabel, monthName } from '../lib/dates';
 import { usage } from '../usage/tracker';
+import { safeStorage } from '../lib/safe-storage';
 
 // ------------------------------------------------------------------ special states
 
@@ -131,20 +132,8 @@ export function FirstBudget({ b }: { b: BudgetView }) {
 
 /** The month whose "has started" card was hidden on this device (a convenience only: lost with site data). */
 const NEW_MONTH_KEY = 'ledgerline-new-month-hidden';
-function hiddenMonth(): string | null {
-  try {
-    return window.localStorage.getItem(NEW_MONTH_KEY);
-  } catch {
-    return null;
-  }
-}
-function hideMonth(month: string) {
-  try {
-    window.localStorage.setItem(NEW_MONTH_KEY, month);
-  } catch {
-    // per-device convenience only
-  }
-}
+const hiddenMonth = (): string | null => safeStorage.get(NEW_MONTH_KEY);
+const hideMonth = (month: string) => safeStorage.set(NEW_MONTH_KEY, month);
 
 /**
  * This month, before anything is assigned in it: what carried over, and its targets filled in one tap. It stays

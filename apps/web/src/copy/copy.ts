@@ -9,9 +9,7 @@
 // app restarting within 10 minutes of the last activity reopens it with the data key held in IndexedDB (vault.ts
 // holdKey). Wipe: signing out, here or from another device (Settings → Sign-in), no longer a member, or 7 days
 // offline.
-import { useSyncExternalStore } from 'react';
 import {
-  CSRF_HEADER,
   SEALED_HEADER,
   SIGNED_CHALLENGE_HEADER,
   SIGNED_SIGNATURE_HEADER,
@@ -39,17 +37,19 @@ import { WORKER_RUN_KEYS } from '../keys/worker-keys';
 import { fetchPublicEntries, logDeviceId, newUlid, openSealedBudget, openSealedHeld } from './sealed';
 import { forgetSealed, keepPublicSeen, lastPublicSeen, rememberSealed, sealedBudgets } from './sealed-marks';
 import { addPasskeyWay, authPubOf, openPlans, type Ways } from './sealed-ways';
-import { ACTION, type Entry, passkeySlotId, type PublicState, walkPublic, zeroize } from '@ledgerline/seal';
+import {
+  ACTION,
+  type Entry,
+  fromHex,
+  passkeySlotId,
+  type PublicState,
+  toHex,
+  walkPublic,
+  zeroize,
+} from '@ledgerline/seal';
 import { mergedSession, NOT_LOCKED } from './sealed-session';
 import { ownWriters } from './notices';
-import { connectivity } from '../state/connectivity';
-import {
-  EngineHost,
-  type DevicesDiffer,
-  type EngineIdentity,
-  type QueuedEdit,
-  type SealedKeys,
-} from './host';
+import { EngineHost, type DevicesDiffer, type EngineIdentity, type QueuedEdit } from './host';
 import { usage } from '../usage/tracker';
 import { isServerRead } from './server-reads';
 import { shownFields } from './shown';
@@ -82,94 +82,17 @@ import {
   StorageUnavailable,
   sameBytes,
 } from './vault';
+import { server } from './server-call';
+import { onOtherTabs, tellActive, tellOtherTabs } from './tabs';
+import { type CopyState, type FullWhy, copyChanged, getCopy, patchCopyForTests, setCopy } from './copy-state';
+export { getCopy, onCopyChanged, useCopy, type CopyState, type CopyStatus, type FullWhy } from './copy-state';
 
 export const IDLE_MS = 10 * 60_000;
 const SYNC_EVERY_MS = 2 * 60_000;
 /** A sync that brings nothing still saves the copy this often, to keep the offline limit's server time fresh. */
 const KEEP_ALIVE_MS = 60 * 60_000;
 
-export type CopyStatus =
-  | 'off' // the mock API (development and tests)
-  | 'idle' // nobody signed in yet
-  | 'signed_out' // a saved copy waits: Sign in opens it online, or Face ID with no signal
-  | 'opening'
-  | 'ready'
-  | 'fresh' // a new budget with no first entry yet: this device makes it (lockStart, lockFinish)
-  | 'failed';
-
-export interface CopyState {
-  status: CopyStatus;
-  /** Saved encrypted on this device (vs. memory only). */
-  saved: boolean;
-  /** Opened with no signal: view and the offline edits only. */
-  offline: boolean;
-  /** Downloading: rows so far. */
-  progress: number;
-  /** Why everything is being downloaded, not just what changed (null: only changes). */
-  why: FullWhy | null;
-  error: string | null;
-  /** Changes made offline not yet on the server. */
-  queued: number;
-  /** A saved copy exists for someone on this device (offline opening is possible). */
-  hasSaved: boolean;
-  /**
-   * The budget is locked and the passkey just used is no way in to it (a new passkey, after a recovery): the
-   * recovery key opens it (`openWithRecovery`).
-   */
-  needsRecovery?: boolean;
-  /** The copy is being made again from the budget's newest snapshot (a sealed budget): "Bringing your budget up to date". */
-  rebuilding?: boolean;
-  /**
-   * The server showed this device a history that is not the one it saw (docs/privacy.md 5.3, a fork or a rollback).
-   * The device stops; nothing was changed.
-   */
-  forked?: boolean;
-  /** Another device showed different numbers at the same log entry (the device check, D-116). */
-  differs?: DevicesDiffer | null;
-  /** This device has saved no full backup for BACKUP_DUE_DAYS (`backupDue`): Budget → Needs attention says so. */
-  backupDue?: boolean;
-}
-
 const MOCK = import.meta.env.VITE_MOCK === '1';
-
-let state: CopyState = {
-  status: MOCK ? 'off' : 'idle',
-  saved: false,
-  offline: false,
-  progress: 0,
-  why: null,
-  error: null,
-  queued: 0,
-  hasSaved: false,
-};
-
-/** Why a sync starts from nothing; sent with the first request (`why`) and shown while it downloads. */
-export type FullWhy =
-  | 'memory' // this browser can't save anything (no IndexedDB)
-  | 'first' // no saved copy on this phone yet
-  | 'no_prf' // the passkey gave no key, so nothing can be saved
-  | 'turned_off' // signed out from another device
-  | 'unreadable_share'
-  | 'unreadable_key'
-  | 'unreadable_copy'
-  | 'empty' // a saved copy with nothing in it
-  | 'storage' // the saved copy couldn't be read from this device's storage (it's kept for the next time)
-  | 'reset'; // the server's copy was restored, or a change made offline was refused
-const listeners = new Set<() => void>();
-function set(patch: Partial<CopyState>) {
-  state = { ...state, ...patch };
-  for (const l of listeners) l();
-}
-
-/** Screens refetch when the copy changes (the router subscribes and invalidates queries). */
-const changeListeners = new Set<() => void>();
-export function onCopyChanged(fn: () => void): () => void {
-  changeListeners.add(fn);
-  return () => changeListeners.delete(fn);
-}
-const changed = () => {
-  for (const l of changeListeners) l();
-};
 
 let host: EngineHost | null = null;
 let record: CopyRecord | null = null;
@@ -209,7 +132,7 @@ export const sealedKnown = (budgetId: string): boolean =>
 
 export const sealedSession = (): SealedSession | null => sealed;
 /** The copy is open and can answer for the budget. */
-export const copyReady = (): boolean => state.status === 'ready' && host !== null;
+export const copyReady = (): boolean => getCopy().status === 'ready' && host !== null;
 /** Keeps the session with the copy, for a start with no signal. */
 export async function keepSession(s: Session): Promise<void> {
   if (!host) return;
@@ -221,10 +144,6 @@ export async function keepSession(s: Session): Promise<void> {
 }
 /** Shown, with the button that tries again, when a sealed budget needs the passkey once more. */
 export const NEEDS_PASSKEY = 'Your passkey is needed once more to open your budget. Try again.';
-
-const toHex = (b: Uint8Array): string => [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
-const fromHex = (s: string): Uint8Array<ArrayBuffer> =>
-  Uint8Array.from(s.match(/../g) ?? [], (x) => parseInt(x, 16));
 
 /** The recovery key as typed, held only until the next open uses it (`openWithRecovery`, a recovery sign-in). */
 let recoveryTyped: string | null = null;
@@ -249,7 +168,7 @@ export function holdRecoveryKey(typed: string): void {
 export async function openWithRecovery(typed: string, session: Session): Promise<void> {
   recoveryTyped = typed;
   await start(session);
-  if (state.status === 'failed') throw new Error(state.error ?? NOT_NOW);
+  if (getCopy().status === 'failed') throw new Error(getCopy().error ?? NOT_NOW);
 }
 
 /**
@@ -267,7 +186,7 @@ export async function openWithAddedKey(bk: Uint8Array, session: Session): Promis
     zeroize(bk as never);
     addedKey = null;
   }
-  if (state.status === 'failed') throw new Error(state.error ?? NOT_NOW);
+  if (getCopy().status === 'failed') throw new Error(getCopy().error ?? NOT_NOW);
   // The way in this device's passkey now is (its slot change is checked in the log before the add's confirmation).
   if (!openedWay) throw new Error(NOT_NOW);
   return openedWay;
@@ -374,13 +293,13 @@ async function enterSealed(
       // in the key keeps the question open.
       if (e instanceof NoSlotError || ((typed || added) && e instanceof WayInError)) {
         noSlotWay = { credentialId: w.credentialId, slotPrf: w.slotPrf! };
-        set({ needsRecovery: true });
+        setCopy({ needsRecovery: true });
       }
       throw e;
     }
     noSlotWay = null;
     openedWay = passkeySlotId(passkey.credentialId);
-    if (state.needsRecovery) set({ needsRecovery: false });
+    if (getCopy().needsRecovery) setCopy({ needsRecovery: false });
     await keepPublicSeen(h, who!.budgetId, { number: r.lastPublic.number, hash: toHex(r.lastPublic.hash) });
     await h.put('publics', JSON.stringify(r.publics));
     keys = r.keys;
@@ -482,8 +401,8 @@ export async function withBudgetKey<T>(
     passkey: PasskeySecret,
   ) => Promise<T>,
 ): Promise<T> {
-  if (!host || !who || !sealed || state.status !== 'ready') throw new Error(NOT_NOW);
-  if (state.offline) throw new Error('Connect to the internet to change this.');
+  if (!host || !who || !sealed || getCopy().status !== 'ready') throw new Error(NOT_NOW);
+  if (getCopy().offline) throw new Error('Connect to the internet to change this.');
   const h = host;
   await signIn();
   const p = pending;
@@ -514,7 +433,7 @@ export async function withBudgetKey<T>(
   } finally {
     zeroize(budget.bk);
     if (record) await save().catch(() => undefined);
-    changed();
+    copyChanged();
   }
 }
 
@@ -560,7 +479,7 @@ export async function publicLook(): Promise<{
   budgetId: string;
   session: SealedSession;
 } | null> {
-  if (!host || !who || !sealed || state.status !== 'ready' || state.offline) return null;
+  if (!host || !who || !sealed || getCopy().status !== 'ready' || getCopy().offline) return null;
   const h = host;
   const budgetId = who.budgetId;
   const session = sealed;
@@ -603,7 +522,7 @@ async function serverNow(): Promise<number> {
  * key and the log's first entry. Nothing is sent.
  */
 export async function lockStart(): Promise<NewBudget> {
-  if (!host || !who || state.status !== 'fresh') throw new Error(NOT_NOW);
+  if (!host || !who || getCopy().status !== 'fresh') throw new Error(NOT_NOW);
   const p = pending;
   pending = null;
   const w = p?.slotPrf ? { credentialId: p.credentialId, slotPrf: p.slotPrf } : await askSlot();
@@ -629,7 +548,7 @@ export async function lockFinish(
   p: NewBudget,
   typed: string,
 ): Promise<{ ok: true } | { ok: false; why: string; retype?: boolean }> {
-  if (!host || !who || state.status !== 'fresh' || !sealed) throw new Error(NOT_NOW);
+  if (!host || !who || getCopy().status !== 'fresh' || !sealed) throw new Error(NOT_NOW);
   const h = host;
   // The first entry is dated when the key was made; the server takes it for an hour (seal/start.ts).
   if ((await serverNow()) - p.genesis.header.time > 50 * 60_000) {
@@ -660,7 +579,7 @@ export async function lockFinish(
   } finally {
     dropNewBudget(p);
   }
-  const keys = proved.keys as unknown as SealedKeys;
+  const keys = proved.keys;
   const r = await h
     .startBudget(keys, proved.genesis, proved.deviceId, newUlid(), newUlid())
     .catch((e: unknown) => ({ ok: false as const, why: e instanceof Error ? e.message : NOT_NOW }));
@@ -688,42 +607,13 @@ export async function lockFinish(
   const made = await sealedSessionNow();
   if (!made) throw new Error(NOT_NOW);
   window.dispatchEvent(new CustomEvent('ledgerline:session', { detail: made }));
-  set({ status: 'ready' });
+  setCopy({ status: 'ready' });
   watch();
-  changed();
+  copyChanged();
   return { ok: true };
 }
 
 const NOT_NOW = 'Something went wrong. Try again.';
-
-// ---------------------------------------------------------------- server calls (plain fetch: no import cycle)
-
-async function server<T>(
-  method: string,
-  path: string,
-  body?: unknown,
-  headers: Record<string, string> = {},
-): Promise<T> {
-  const res = await fetch(path, {
-    method,
-    credentials: 'same-origin',
-    headers:
-      method === 'GET'
-        ? { accept: 'application/json', ...headers }
-        : { 'content-type': 'application/json', [CSRF_HEADER]: '1', ...headers },
-    body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),
-  });
-  // Any answer means the network works (the offline banner goes).
-  connectivity.reportOk();
-  const text = await res.text();
-  const json = (text ? JSON.parse(text) : null) as T & { error?: string; message?: string };
-  if (!res.ok)
-    throw Object.assign(new Error(json?.message ?? res.statusText), {
-      code: json?.error,
-      status: res.status,
-    });
-  return json;
-}
 
 // ---------------------------------------------------------------- sign-in and opening the copy
 
@@ -754,9 +644,9 @@ function identityOf(s: Session): EngineIdentity {
 
 /** Opens the copy for a confirmed session (online). Called by the router once the session is known. */
 export async function start(session: Session): Promise<void> {
-  if (MOCK || state.status === 'opening' || state.status === 'ready') return;
+  if (MOCK || getCopy().status === 'opening' || getCopy().status === 'ready') return;
   who = identityOf(session);
-  set({ status: 'opening', error: null, progress: 0, offline: false, why: null, forked: false });
+  setCopy({ status: 'opening', error: null, progress: 0, offline: false, why: null, forked: false });
   let why: FullWhy | null = keepsCopy() ? 'first' : 'memory';
   let memoryOnly = false;
   try {
@@ -894,7 +784,7 @@ export async function start(session: Session): Promise<void> {
     if (sealed?.fresh && sealedBudgets().includes(sealed.budgetId)) throw new Error(NOT_LOCKED);
     if (sealed?.fresh) {
       if (p && !pending) pending = p;
-      set({ saved: record !== null, hasSaved: record !== null, why: null, status: 'fresh' });
+      setCopy({ saved: record !== null, hasSaved: record !== null, why: null, status: 'fresh' });
       return;
     }
     try {
@@ -905,7 +795,7 @@ export async function start(session: Session): Promise<void> {
       if (p && !pending) pending = p;
       throw e;
     }
-    set({ saved: record !== null, hasSaved: record !== null, why });
+    setCopy({ saved: record !== null, hasSaved: record !== null, why });
     await syncNow();
     // The session the screens read is made from the copy, before the copy says it is ready: no screen shows a
     // budget with no name, in another time zone.
@@ -913,12 +803,12 @@ export async function start(session: Session): Promise<void> {
     if (!made) throw new Error('Something went wrong. Try again.');
     if (record) await save();
     window.dispatchEvent(new CustomEvent('ledgerline:session', { detail: made }));
-    set({ status: 'ready' });
+    setCopy({ status: 'ready' });
     watch();
   } catch (e) {
     await host?.close();
     host = null;
-    set({ status: 'failed', error: e instanceof Error ? e.message : String(e) });
+    setCopy({ status: 'failed', error: e instanceof Error ? e.message : String(e) });
   }
 }
 
@@ -950,7 +840,7 @@ export async function openWithoutSignal(onSession?: (s: Session) => void): Promi
   );
   if (!a.prf)
     throw new Error('This passkey can’t open the budget saved here. Connect to the internet to open it.');
-  set({ status: 'opening', error: null, offline: true, forked: false });
+  setCopy({ status: 'opening', error: null, offline: true, forked: false });
   try {
     const unreadable = (e: unknown): never => {
       if (e instanceof CopyUnreadable) throw new Error(UNREADABLE);
@@ -978,7 +868,7 @@ export async function openWithoutSignal(onSession?: (s: Session) => void): Promi
     // The saved session goes to the app first (onSession), then the copy says it's ready, so the app never shows a
     // moment with an open copy and no session ("Couldn't reach Ledgerline").
     onSession?.(session);
-    set({ status: 'ready', saved: true, hasSaved: true });
+    setCopy({ status: 'ready', saved: true, hasSaved: true });
     watch();
     return session;
   } catch (e) {
@@ -987,7 +877,7 @@ export async function openWithoutSignal(onSession?: (s: Session) => void): Promi
     dataKey = null;
     record = null;
     sealed = null;
-    set({ status: 'failed', error: e instanceof Error ? e.message : String(e) });
+    setCopy({ status: 'failed', error: e instanceof Error ? e.message : String(e) });
     throw e;
   }
 }
@@ -996,12 +886,12 @@ async function openHost(bytes: ArrayBuffer | null): Promise<void> {
   await host?.close();
   host = new EngineHost();
   host.onIdentity = (r) => void server('POST', '/api/identity-alert', r).catch(() => undefined);
-  host.onRebuilding = () => set({ rebuilding: true });
+  host.onRebuilding = () => setCopy({ rebuilding: true });
   // Made again outside a sync (a way in added or removed): saved, and the screens read it again.
   host.onRebuilt = () => {
-    set({ rebuilding: false });
+    setCopy({ rebuilding: false });
     void save().catch(() => undefined);
-    changed();
+    copyChanged();
   };
   const opened = await host.open(who!, bytes);
   if (bytes && opened.migrated?.length) await keepBeforeUpdate(opened.migrated);
@@ -1038,7 +928,7 @@ export async function backupSaved(): Promise<void> {
   const now = Date.now();
   record = { ...record, backup: { at: now, since: record.backup?.since ?? now } };
   await saveRecord(record).catch(() => undefined);
-  set({ backupDue: false });
+  setCopy({ backupDue: false });
 }
 
 /** When the copy from before the last update was kept, if it still is (Settings → Backup). */
@@ -1089,13 +979,13 @@ export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
       try {
         r = await host!.sealedSync(ownWriters());
       } catch (e) {
-        if (state.rebuilding) set({ rebuilding: false });
+        if (getCopy().rebuilding) setCopy({ rebuilding: false });
         // The server showed this device another history: the device stops, and the copy is left as it was.
         if (e instanceof Error && FORK_TEXT.test(e.message)) {
           if (record) await save().catch(() => undefined);
           await host?.close();
           host = null;
-          set({ status: 'failed', forked: true, error: FORK_MESSAGE });
+          setCopy({ status: 'failed', forked: true, error: FORK_MESSAGE });
         }
         // The log's routes said the sign-in ended: the same as any other request that says so (client.ts).
         if (e instanceof Error && e.message === SIGNED_OUT_TEXT) {
@@ -1107,16 +997,16 @@ export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
           if (record) await save().catch(() => undefined);
           await host?.close();
           host = null;
-          set({ status: 'failed', error: NEEDS_PASSKEY });
+          setCopy({ status: 'failed', error: NEEDS_PASSKEY });
         }
         throw e;
       }
-      set({
+      setCopy({
         queued: (await queued()).length,
-        ...(state.why ? { why: null } : {}),
-        ...(state.rebuilding ? { rebuilding: false } : {}),
-        ...(sameDiffer(state.differs, r.differs) ? {} : { differs: r.differs ?? null }),
-        ...(state.backupDue === backupDue(Date.now()) ? {} : { backupDue: backupDue(Date.now()) }),
+        ...(getCopy().why ? { why: null } : {}),
+        ...(getCopy().rebuilding ? { rebuilding: false } : {}),
+        ...(sameDiffer(getCopy().differs, r.differs) ? {} : { differs: r.differs ?? null }),
+        ...(getCopy().backupDue === backupDue(Date.now()) ? {} : { backupDue: backupDue(Date.now()) }),
       });
       if (r.lost) window.dispatchEvent(new CustomEvent('ledgerline:edits-refused', { detail: r.lost }));
       // The log moved on: the notices are read again now, not only every 5 minutes (screens/SealedNotices.tsx).
@@ -1126,7 +1016,7 @@ export function syncNow(opts: { quiet?: boolean } = {}): Promise<void> {
         record = { ...record, lastServerTime: Date.now() };
         await save();
       }
-      if ((r.entries > 0 || r.filed > 0 || r.rebuilt) && !opts.quiet) changed();
+      if ((r.entries > 0 || r.filed > 0 || r.rebuilt) && !opts.quiet) copyChanged();
       upkeep();
     } finally {
       syncing = null;
@@ -1146,7 +1036,7 @@ const sameDiffer = (a: DevicesDiffer | null | undefined, b: DevicesDiffer | null
 export async function rebuildHere(): Promise<void> {
   if (!host || !sealed) throw new Error('Your budget isn’t open on this device yet. Try again.');
   await host.sealedRebuild();
-  set({ differs: null });
+  setCopy({ differs: null });
   await syncNow();
 }
 
@@ -1155,7 +1045,7 @@ export async function rebuildHere(): Promise<void> {
  * the device: docs/privacy.md 5.8).
  */
 export async function copyBytes(): Promise<ArrayBuffer> {
-  if (!host || state.status !== 'ready')
+  if (!host || getCopy().status !== 'ready')
     throw new Error('Your budget isn’t open on this device yet. Try again in a moment.');
   return host.export();
 }
@@ -1179,7 +1069,7 @@ async function save(): Promise<void> {
 
 /** A read worked out from the copy: everything but what the server still answers itself (server-reads.ts). */
 export function readsLocally(method: string, path: string): boolean {
-  if (state.status !== 'ready' || !host) return false;
+  if (getCopy().status !== 'ready' || !host) return false;
   if (method !== 'GET') return false;
   return !isServerRead(path);
 }
@@ -1190,7 +1080,7 @@ export async function read(path: string): Promise<{ status: number; body: string
 
 /** After a change: the log is read and the change sent (syncNow), then Ready to Assign. */
 export async function afterChange(): Promise<{ rta: number; rtaUpdating: boolean } | null> {
-  if (!host || state.status !== 'ready') return null;
+  if (!host || getCopy().status !== 'ready') return null;
   await syncNow({ quiet: true });
   const r = await host.rta();
   return { rta: r.rta, rtaUpdating: r.updating };
@@ -1208,7 +1098,7 @@ export async function newEdit(): Promise<EditStamp> {
 
 /** The copy is open, so a change can be made on it now. */
 export function canEditHere(): boolean {
-  return state.status === 'ready' && host !== null;
+  return getCopy().status === 'ready' && host !== null;
 }
 
 /**
@@ -1249,7 +1139,7 @@ export async function editOnDevice(method: string, path: string, body: unknown):
         status: r.status,
       },
     );
-  set({ queued: r.queued });
+  setCopy({ queued: r.queued });
   await save();
   // The app's own mutation refreshes what it changed (as after an online change).
   return json;
@@ -1264,7 +1154,7 @@ async function queued(): Promise<QueuedEdit[]> {
 /** Sends the changes made here: they go out as entries of the log, with the sync. A sync that fails is tried again by
  * the next one; nothing is dropped. */
 export async function flush(): Promise<{ sent: number }> {
-  if (!host || state.offline) return { sent: 0 };
+  if (!host || getCopy().offline) return { sent: 0 };
   const before = (await queued()).length;
   if (!before) return { sent: 0 };
   await syncNow().catch(() => undefined);
@@ -1284,10 +1174,7 @@ function watch(): void {
   const active = () => {
     lastActive = Date.now();
     // The other tabs share this sign-in: using any tab keeps them all from ending it after 10 idle minutes.
-    if (lastActive - lastTold >= TELL_ACTIVE_MS) {
-      lastTold = lastActive;
-      tellOtherTabs('active');
-    }
+    tellActive(lastActive);
   };
   for (const ev of ['pointerdown', 'keydown', 'touchstart', 'scroll'])
     window.addEventListener(ev, active, { passive: true });
@@ -1306,23 +1193,27 @@ function watch(): void {
       else {
         delete document.documentElement.dataset.covered;
         active();
-        if (state.status === 'ready' && !state.offline) void syncNow().then(() => flush());
+        if (getCopy().status === 'ready' && !getCopy().offline) void syncNow().then(() => flush());
       }
     }
   });
   window.addEventListener('online', () => {
-    if (state.status === 'ready') void flush();
+    if (getCopy().status === 'ready') void flush();
   });
   timer = setInterval(
     () => {
-      if (state.status !== 'ready') return;
+      if (getCopy().status !== 'ready') return;
       if (Date.now() - lastActive >= IDLE_MS) void signOutIdle();
       else if (record && dataKey && lastActive !== heldActive) {
         heldActive = lastActive;
         void holdKey(record.key, dataKey, lastActive);
       }
       if (Date.now() - lastActive >= IDLE_MS) return;
-      if (document.visibilityState === 'visible' && !state.offline && Date.now() - lastSync >= SYNC_EVERY_MS)
+      if (
+        document.visibilityState === 'visible' &&
+        !getCopy().offline &&
+        Date.now() - lastSync >= SYNC_EVERY_MS
+      )
         void syncNow().catch(() => undefined);
     },
     Math.min(SYNC_EVERY_MS, 30_000),
@@ -1334,9 +1225,9 @@ function watch(): void {
  * saved copy with Face ID). In this order so the app's next session check can't find the session that's ending.
  */
 async function endSignIn(saved = true, here = true): Promise<void> {
-  set({
+  setCopy({
     status: saved ? 'signed_out' : 'idle',
-    hasSaved: saved || state.hasSaved,
+    hasSaved: saved || getCopy().hasSaved,
     offline: false,
     progress: 0,
   });
@@ -1347,48 +1238,13 @@ async function endSignIn(saved = true, here = true): Promise<void> {
   window.dispatchEvent(new Event('ledgerline:signin-ended'));
 }
 
-// ---------------------------------------------------------------- other tabs
-
-// The app's other tabs on this device share its sign-in. When one tab ends it (Sign out, or 10 idle minutes), the
-// others are told at once, so none keeps showing the budget from its copy in memory until it next asks the server.
-const SIGN_IN_CHANNEL = 'ledgerline-sign-in';
-let channel: BroadcastChannel | null | undefined;
-function otherTabs(): BroadcastChannel | null {
-  if (channel === undefined) {
-    try {
-      channel = new BroadcastChannel(SIGN_IN_CHANNEL);
-      // Node (unit tests) would otherwise wait on it forever.
-      (channel as BroadcastChannel & { unref?: () => void }).unref?.();
-    } catch {
-      channel = null;
-    }
-  }
-  return channel;
-}
-
-/**
- * `locked`: the sign-in ended and the saved copies stay. `deleted`: Sign out of this device deleted them. `active`:
- * someone is using that tab (at most once every TELL_ACTIVE_MS).
- */
-type TabNotice = 'locked' | 'deleted' | 'active';
-const TELL_ACTIVE_MS = 30_000;
-let lastTold = 0;
-
-function tellOtherTabs(notice: TabNotice): void {
-  try {
-    otherTabs()?.postMessage(notice);
-  } catch {
-    // A closed channel: the other tabs find out at their next request.
-  }
-}
-
 // When another tab ends the sign-in, this one drops its keys and its copy in memory the same way, then shows Sign in.
 // After Sign out of this device it deletes its copy instead of saving it, since that tab deleted every saved copy.
 if (!MOCK)
-  otherTabs()?.addEventListener('message', (e: MessageEvent) => {
-    if (e.data === 'deleted') void wipe().then(() => endSignIn(false, false));
-    else if (e.data === 'locked') void signOutIdle(false);
-    else if (e.data === 'active') lastActive = Math.max(lastActive, Date.now());
+  onOtherTabs((notice) => {
+    if (notice === 'deleted') void wipe().then(() => endSignIn(false, false));
+    else if (notice === 'locked') void signOutIdle(false);
+    else if (notice === 'active') lastActive = Math.max(lastActive, Date.now());
   });
 
 /**
@@ -1396,8 +1252,8 @@ if (!MOCK)
  * `here` false: another tab already ended the session, so only this tab's part is done.
  */
 export async function signOutIdle(here = true): Promise<void> {
-  if (state.status !== 'ready' && state.status !== 'opening') return;
-  if (record && dataKey && host && !state.offline) await save().catch(() => undefined);
+  if (getCopy().status !== 'ready' && getCopy().status !== 'opening') return;
+  if (record && dataKey && host && !getCopy().offline) await save().catch(() => undefined);
   if (record) await dropHeld(record.key);
   await host?.close();
   host = null;
@@ -1406,7 +1262,7 @@ export async function signOutIdle(here = true): Promise<void> {
   sealed = null;
   pending = null;
   delete document.documentElement.dataset.covered;
-  return endSignIn(state.saved, here);
+  return endSignIn(getCopy().saved, here);
 }
 
 /** Deletes this person's copy (sign-out, signed out from another device, no longer a member); `all`: every copy. */
@@ -1420,7 +1276,7 @@ export async function wipe(all = false): Promise<void> {
   if (key) await dropHeld(key);
   if (all) await deleteAll();
   else if (key) await deleteRecord(key);
-  set({ status: MOCK ? 'off' : 'idle', saved: false, hasSaved: false, queued: 0, offline: false });
+  setCopy({ status: MOCK ? 'off' : 'idle', saved: false, hasSaved: false, queued: 0, offline: false });
 }
 
 /**
@@ -1453,7 +1309,7 @@ export function dropSignedOut(signInEnded = false): Promise<void> {
 async function checkSignedOut(signInEnded: boolean): Promise<void> {
   if (MOCK) return;
   const saved = keepsCopy() ? await allRecords() : [];
-  if (!saved.length && signInEnded && host && !record && !state.offline) {
+  if (!saved.length && signInEnded && host && !record && !getCopy().offline) {
     await wipe();
     return;
   }
@@ -1475,28 +1331,13 @@ async function checkSignedOut(signInEnded: boolean): Promise<void> {
 export async function checkSaved(): Promise<boolean> {
   if (!MOCK && canUsePasskeys() && keepsCopy()) await dropSignedOut();
   const has = !MOCK && canUsePasskeys() && keepsCopy() && (await lastRecord()) !== null;
-  set({ hasSaved: has });
+  setCopy({ hasSaved: has });
   return has;
-}
-
-export function getCopy(): CopyState {
-  return state;
-}
-
-export function useCopy(): CopyState {
-  return useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => listeners.delete(l);
-    },
-    () => state,
-    () => state,
-  );
 }
 
 /** Tests only. */
 export function resetCopyForTests(patch: Partial<CopyState> = {}): void {
-  state = { ...state, ...patch };
+  patchCopyForTests(patch);
   sealed = null;
   forgetSealed(null);
 }

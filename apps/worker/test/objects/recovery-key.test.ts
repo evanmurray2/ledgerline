@@ -2,6 +2,7 @@
 // fresh way in a session counts as (D-89), through the real Worker with software passkeys.
 import { createExecutionContext, env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
+import { PasskeyCreateOptions, RecoverKeyOptions, RecoveryKeyState } from '@ledgerline/contracts';
 import {
   ACTION,
   type Action,
@@ -78,12 +79,16 @@ const authOf = async (r: Uint8Array): Promise<Auth> =>
 async function prove(b: Browser, auth: Auth, sign = auth) {
   const o = await b.call('POST', '/api/auth/recover-key/options', { authPub: toHex(auth.pub) });
   if (o.status !== 200) return o;
+  RecoverKeyOptions.parse(o.json);
   const signature = await signRecoveryLogin(
     sign.privateKey,
     o.json.budgetId as string,
     fromHex(o.json.challenge as string),
   );
-  return b.call('POST', '/api/auth/recover-key/verify', { signature: toHex(signature) });
+  const v = await b.call('POST', '/api/auth/recover-key/verify', { signature: toHex(signature) });
+  // The passkey's options, as register/options gives them (apps/web/src/api/endpoints.ts).
+  if (v.status === 200) expect(PasskeyCreateOptions.parse(v.json)).toEqual(v.json);
+  return v;
 }
 
 const owner = new Browser();
@@ -126,9 +131,8 @@ describe('the recovery key signs in', () => {
     expect(
       (await owner.call('POST', '/api/settings/security/recovery-key', { authPub: toHex(auth.pub) })).status,
     ).toBe(200);
-    expect((await owner.call('GET', '/api/settings/security/recovery-key')).json).toMatchObject({
-      set: true,
-    });
+    const state = (await owner.call('GET', '/api/settings/security/recovery-key')).json;
+    expect(RecoveryKeyState.parse(state)).toMatchObject({ set: true });
     // Only the public half is stored.
     expect(await dir.prepare(`SELECT auth_pub FROM recovery_key`).first('auth_pub')).toBe(toHex(auth.pub));
     // Without a recent passkey check, it is refused.

@@ -6,7 +6,6 @@
 // passes is lost, and the person is told.
 //
 // In this mode the copy's change number (`EngineState.through`) is the number of the last log entry in the base.
-import type { BankDataProvider } from '@ledgerline/bank-provider';
 import {
   fromHex,
   KIND,
@@ -20,10 +19,12 @@ import {
 import { dailyScan, scanTime } from '../daily-scan.js';
 import { bumpVersion } from '../http/version.js';
 import { watchdogBudgetStmts } from '../maintenance.js';
-import type { SyncPage, SyncRow } from '../sync-tables.js';
+import type { SyncRow } from '../sync-tables.js';
 import type { AppendResult } from '../seal/log-store.js';
 import { entryIdOf, TooLarge, type DeviceLog } from './device-log.js';
-import { FilingInterrupted, RECORDED_TABLES, type LocalEngine } from './engine.js';
+import { FilingInterrupted, type LocalEngine } from './engine.js';
+import type { PageReader } from './file-run.js';
+import type { Env } from '../env.js';
 import { CopyAhead, fileOpened, filedOf, filingState, openRuns } from './sealed-filing.js';
 
 /** How the device reaches the server's log store. */
@@ -47,7 +48,7 @@ export interface FilingDeps {
   /** By key number (docs/privacy-keys.md 9.1): built into the app. */
   workerKeys: Map<number, Uint8Array>;
   /** Reads a page (`parsePage`): the bank's format, no network. */
-  provider: BankDataProvider;
+  provider: PageReader;
   /** The device's clock, as the server's (the engine's `now`). */
   now: number;
 }
@@ -109,26 +110,14 @@ export class LogSession {
       for (const e of await this.engine.queue())
         if (mine.has(toHex(await entryIdOf(e.id)))) await this.engine.queueDone(e.id);
     const rows: SyncRow[] = taken.sets.flatMap((s) => s.set.rows);
-    const st = await this.engine.state();
-    // Written as one page of changes that ends at the log's new last entry. The device's measured distance from
-    // the server's clock stays as it is.
-    const received = Date.now();
-    const page: SyncPage = {
-      format: st.format,
-      epoch: st.epoch ?? 'log',
-      serverTime: received + st.offset,
-      through: taken.number,
-      more: false,
-      cursor: null,
-      rows,
-    };
-    // The rows go into the copy first (the engine refuses rows no honest device writes, and then nothing is
-    // written); only then are the entries this device's place in the log.
-    const r = await this.engine.apply(page, received, RECORDED_TABLES);
+    // The rows go into the copy first, in one step that ends at the log's new last entry (the engine refuses rows
+    // no honest device writes, and then nothing is written); only then are the entries this device's place in the
+    // log.
+    const r = await this.engine.applyLogRows(rows, taken.number);
     taken.commit();
     await this.keep();
     if (await this.engine.needsDerive()) await this.engine.derive();
-    return { entries: entries.length, lost: r.lost ?? 0 };
+    return { entries: entries.length, lost: r.lost };
   }
 
   /**
@@ -333,7 +322,8 @@ export class LogSession {
       at,
       { filedThrough: this.log.filedThrough, receipts: [], scanThrough: day },
       async (env) => {
-        await dailyScan(env, budgetId, at);
+        // The scan reads only the copy (daily-scan.ts takes the whole Env type).
+        await dailyScan(env as Env, budgetId, at);
         await env.DB.batch(watchdogBudgetStmts(env.DB, budgetId, at));
         await bumpVersion(env.DB, budgetId);
       },

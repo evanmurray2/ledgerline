@@ -1,5 +1,6 @@
 import { defineConfig } from '@playwright/test';
 import { failureReport } from './report';
+import { suiteFiles } from './suites';
 
 // Runs the SPA with Vite in mock mode (every /api request answered in memory) on phone and desktop sizes.
 const report = failureReport('mock');
@@ -8,7 +9,7 @@ const PORT = Number(process.env.E2E_PORT ?? 5179);
 
 export default defineConfig({
   testDir: './tests',
-  testIgnore: /(passkey|signup|lock|banks)\.spec\.ts/,
+  testMatch: suiteFiles('mock'),
   fullyParallel: true,
   workers: 4,
   timeout: 30_000,

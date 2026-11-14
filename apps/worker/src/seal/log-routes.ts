@@ -5,15 +5,17 @@
 // The first entry of a log is not written here: the cutover stores it with the budget's first snapshot, in one
 // step (section 8, step 6).
 import { CSRF_HEADER } from '@ledgerline/contracts';
-import { parseKeyring } from '@ledgerline/platform';
+import { fromBase64, parseKeyring } from '@ledgerline/platform';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
+import { base64Text } from '../http/body.js';
 import { requestNow } from '../http/clock.js';
+import { TRY_AGAIN } from '../http/errors.js';
 import type { AppEnv } from '../http/context.js';
 import { csrf } from '../http/security.js';
 import { jsonOf, storeSigned, UNSIGNED } from '../http/signed-request.js';
 import { ACTION } from '@ledgerline/seal';
-import { classifyUsage, dailyLimits, usageToday } from '../sync/breaker.js';
+import { writeCheckState } from '../sync/breaker.js';
 import { isFreshWay } from '../store/way-in.js';
 import { deviceChecks, keepDeviceCheck } from './device-checks.js';
 import { b64, entryText, logAppend, logHead, logRowsAfter, type LogDeps } from './log-store.js';
@@ -42,27 +44,11 @@ import {
 /** The most entries one answer carries, and the most text: an entry is up to 64 KB sealed. */
 const PAGE_ENTRIES = 32;
 const PAGE_CHARS = 700_000;
-const TRY_AGAIN = 'Something went wrong. Try again.';
-
-const unb64 = (s: string): Uint8Array<ArrayBuffer> => {
-  const bin = atob(s);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-};
 
 const Append = z.object({
   base: z.number().int().min(1),
   // 16 entries of up to 64 KB sealed each, as base64.
-  entries: z
-    .array(
-      z
-        .string()
-        .regex(/^[A-Za-z0-9+/]+={0,2}$/)
-        .max(120_000),
-    )
-    .min(1)
-    .max(16),
+  entries: z.array(base64Text(120_000)).min(1).max(16),
 });
 
 export const logApi = new Hono<AppEnv>();
@@ -144,9 +130,7 @@ logApi.post('/log/append', async (c) => {
   const parsed = Append.safeParse(jsonOf(body));
   if (!parsed.success) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
   const now = requestNow(c);
-  const ask = c.env.USAGE_FOR_WRITE ?? c.env.USAGE;
-  const u = ask ? await ask() : await usageToday(c.env);
-  const state = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(c.env));
+  const state = await writeCheckState(c.env);
   const runs: RunDeps = runDeps(
     c.env.DB,
     c.get('budgetId'),
@@ -172,7 +156,7 @@ logApi.post('/log/append', async (c) => {
   const r = await logAppend(
     deps,
     parsed.data.base,
-    parsed.data.entries.map((e) => unb64(e)),
+    parsed.data.entries.map((e) => fromBase64(e)),
   );
   if (!r.ok && r.why === 'unsigned') return c.json(UNSIGNED, 403);
   return c.json(r, r.ok ? 200 : 409);
@@ -243,17 +227,16 @@ logApi.get('/log/public', async (c) => {
   return c.json({ entries, last, more });
 });
 
-const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const Begin = z.object({
-  header: z.string().regex(B64).max(2_000),
-  signature: z.string().regex(B64).max(200),
-  manifest: z.string().regex(B64).max(600_000),
+  header: base64Text(2_000),
+  signature: base64Text(200),
+  manifest: base64Text(600_000),
   chunks: z.number().int().min(1).max(4096),
 });
 const Check = z.object({
   deviceId: z.string().length(26),
   base: z.string().length(26),
-  signature: z.string().regex(B64).max(200),
+  signature: base64Text(200),
 });
 const bytes = (b: Uint8Array) =>
   new Response(b as Uint8Array<ArrayBuffer>, {
@@ -261,9 +244,7 @@ const bytes = (b: Uint8Array) =>
   });
 
 async function snapshotDeps(c: Context<AppEnv>): Promise<SnapshotDeps> {
-  const ask = c.env.USAGE_FOR_WRITE ?? c.env.USAGE;
-  const u = ask ? await ask() : await usageToday(c.env);
-  const state = classifyUsage(u.written, u.read, u.do, u.workers, dailyLimits(c.env));
+  const state = await writeCheckState(c.env);
   return {
     db: c.env.DB,
     budgetId: c.get('budgetId'),
@@ -293,9 +274,9 @@ logApi.post('/log/snapshots', async (c) => {
   const parsed = Begin.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
   const r = await snapshotBegin(await snapshotDeps(c), {
-    header: unb64(parsed.data.header),
-    signature: unb64(parsed.data.signature),
-    manifest: unb64(parsed.data.manifest),
+    header: fromBase64(parsed.data.header),
+    signature: fromBase64(parsed.data.signature),
+    manifest: fromBase64(parsed.data.manifest),
     chunks: parsed.data.chunks,
   });
   return c.json(r, r.ok ? 200 : 409);
@@ -335,7 +316,7 @@ logApi.post('/log/snapshots/:id/check', async (c) => {
     d,
     c.req.param('id'),
     parsed.data.deviceId,
-    unb64(parsed.data.signature),
+    fromBase64(parsed.data.signature),
     parsed.data.base,
   );
   if (r.ok && !d.resting) await snapshotPrune(c.env.DB);

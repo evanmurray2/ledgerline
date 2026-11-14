@@ -47,8 +47,8 @@ import { writeBudgetState } from '../sync/breaker.js';
 import { answering } from './body.js';
 import { UsageCounter } from './shares.js';
 import { DISABLED_KEY, budgetInfo, removeBanks, setDisabled, wipeStore } from './account-life.js';
+import { TRY_AGAIN } from '../http/errors.js';
 
-const TRY_AGAIN = 'Something went wrong. Try again.';
 /** Whether this store reports its usage for fair use (store/shares.ts), as the Directory last said. */
 const COUNT_KEY = 'count_usage';
 
@@ -257,13 +257,8 @@ export class BudgetStore extends DurableObject<Env> {
   /**
    * Daily safety net (6.2): recreate missing recurring jobs and make sure an alarm is set. The only work on the
    * server is fetching a sealed budget's bank runs (seal/fetch-job.ts); a budget that is not sealed yet has none.
-   * `idle` is kept for the Directory's call; a budget's jobs are the same whether its users are idle or not.
    */
-  async ensureJobs(_o: { idle?: boolean } = {}): Promise<{
-    ok: boolean;
-    jobs: ReturnType<JobRunner['list']>;
-    resting?: boolean;
-  }> {
+  async ensureJobs(): Promise<{ ok: boolean; jobs: ReturnType<JobRunner['list']> }> {
     this.ready();
     const now = Date.now();
     const budgetId = await this.budgetId().catch(() => null);
@@ -405,7 +400,6 @@ export class BudgetStore extends DurableObject<Env> {
         ? {
             USAGE: () => dir.usageToday(this.cachedBudgetId ?? undefined),
             USAGE_FOR_WRITE: () => this.usage30(() => dir.usageToday(this.cachedBudgetId ?? undefined)),
-            NOTE_USAGE: (w: number, r: number) => dir.noteUsage(w, r),
           }
         : {}),
       ROUTE_LINK: async (itemId: string, connectionId: string) => {

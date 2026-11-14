@@ -26,7 +26,9 @@ import {
 import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../http/context.js';
 import { requestNow } from '../http/clock.js';
-import { bodyObject } from '../http/security.js';
+import { z } from 'zod';
+import { parseBody } from '../http/body.js';
+import { TRY_AGAIN } from '../http/errors.js';
 
 export const deviceAddRoutes = new Hono<AppEnv>();
 
@@ -55,13 +57,10 @@ interface Row {
   confirm_hex: string | null;
 }
 
-const field = async (c: Context<AppEnv>, name: string, re: RegExp): Promise<string | null> => {
-  const v = (await bodyObject(c.req))[name];
-  return typeof v === 'string' && re.test(v) ? v : null;
-};
+const field = async (c: Context<AppEnv>, name: string, re: RegExp): Promise<string | null> =>
+  (await parseBody(c.req, z.object({ [name]: z.string().regex(re) })))?.[name] ?? null;
 
-const bad = (c: Context<AppEnv>) =>
-  c.json({ error: 'invalid', message: 'Something went wrong. Try again.' }, 400);
+const bad = (c: Context<AppEnv>) => c.json({ error: 'invalid', message: TRY_AGAIN }, 400);
 const gone = (c: Context<AppEnv>) => c.json({ error: 'gone', message: GONE }, 409);
 
 /** Runs one guarded write; one row changed, or the add is not at that step (or not this sign-in's). */
@@ -139,10 +138,12 @@ deviceAddRoutes.post(`${BASE}/commit`, async (c) => {
 
 /** The signed-in device's offer (step 2), for the commitment it holds; at most 3 per start. */
 deviceAddRoutes.post(`${BASE}/offer`, async (c) => {
-  const b = await bodyObject(c.req);
-  const commit = typeof b.commit === 'string' && COMMIT.test(b.commit) ? b.commit : null;
-  const offer = typeof b.offer === 'string' && OFFER.test(b.offer) ? b.offer : null;
-  if (!commit || !offer) return bad(c);
+  const b = await parseBody(
+    c.req,
+    z.object({ commit: z.string().regex(COMMIT), offer: z.string().regex(OFFER) }),
+  );
+  if (!b) return bad(c);
+  const { commit, offer } = b;
   return step(
     c,
     `UPDATE device_add SET offer_hex = ?6, offers = offers + 1

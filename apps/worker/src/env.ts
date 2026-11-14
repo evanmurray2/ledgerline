@@ -31,7 +31,7 @@ export interface Env {
    * After that it does nothing; remove it if you like.
    */
   SETUP_CODE?: string;
-  /** Bearer token (32+ characters) for the GitHub monitor and deploy smoke test (GET /api/health only). */
+  /** Bearer token (32+ characters) for the deploy smoke test (GET /api/health only). */
   OPS_TOKEN?: string;
   /** WebAuthn relying party id; defaults to the request's host name. */
   RP_ID?: string;
@@ -99,8 +99,6 @@ export interface Env {
   }>;
   /** Inside a budget's Durable Object: USAGE for the check before each write, kept up to 30 seconds. */
   USAGE_FOR_WRITE?: Env['USAGE'];
-  /** Inside a budget's Durable Object: add this app's own row counts to the Directory's usage_day. */
-  NOTE_USAGE?: (written: number, read: number) => Promise<void>;
   /** Inside a budget's Durable Object: queue registering a new Plaid Item's route in the Directory. */
   ROUTE_LINK?: (providerItemId: string, connectionId: string) => Promise<void>;
   /**
@@ -111,3 +109,9 @@ export interface Env {
   /** Inside a budget's Durable Object: watch a new bank's link token until the link is kept (seal/link-watch.ts). */
   WATCH_LINK?: (linkToken: string) => Promise<void>;
 }
+
+/**
+ * What the budget routes and the bank filing steps get on the device, where they only ever run (D-102): the copy,
+ * and the time and change number of the request (local/engine.ts). Nothing of the server's is there.
+ */
+export type DeviceEnv = Pick<Env, 'DB' | 'PLAID_ENV' | 'NOW' | 'THROUGH'>;

@@ -8,7 +8,7 @@ import { expect, test } from 'vitest';
 import { PlaidProvider } from '@ledgerline/bank-provider';
 import { generate, syncBody } from '../../../tools/plaid-mock/data.mjs';
 import { acquire } from '../src/sync/lease.js';
-import { applyPage, beginRun, fetchPage } from '../src/sync/steps.js';
+import { applyPage, beginRun, rawPageKey } from '../src/sync/steps.js';
 import { healPending, processPending } from '../src/sync/process.js';
 import { cpu, freshDb, stats } from './harness.js';
 
@@ -17,20 +17,14 @@ const COUNT = 100;
 const DATA = generate(TOTAL, 1);
 const NOW = Date.parse('2026-11-02T20:00:00Z');
 
-function provider(): PlaidProvider {
-  const bodies = new Map<number, string>();
-  for (let s = 0; s < TOTAL; s += COUNT) bodies.set(s, syncBody(DATA, s, COUNT));
-  return new PlaidProvider({
+/** Applying a page only reads it: nothing here asks the bank. */
+const provider = () =>
+  new PlaidProvider({
     clientId: 'c',
     secret: 's',
     env: 'sandbox',
-    fetch: async (_url, init) => {
-      const body = JSON.parse(String(init?.body)) as { cursor?: string };
-      const start = body.cursor ? Number(Buffer.from(body.cursor, 'base64').toString()) : 0;
-      return new Response(bodies.get(start)!, { status: 200 });
-    },
+    fetch: () => Promise.reject(new Error('no bank calls in this measure')),
   });
-}
 
 const day = (n: number) => new Date(NOW - n * 86_400_000).toISOString().slice(0, 10);
 
@@ -62,15 +56,30 @@ test('processing CPU with entries, covers and "Same purchase?"', async () => {
   const ctx = () => ({ db, connectionId: 'con1', budgetId: 'b1', holder, now: NOW });
   await beginRun(ctx(), 'measure');
   const p = provider();
-  let cursor: string | null = null;
+  // The history's pages, staged as a bank update leaves them for applying (as test/bank-sync.ts does).
   let page = 0;
-  for (;;) {
-    const r = await fetchPage(ctx(), p, 'access-sandbox-x', holder, 0, page, cursor, COUNT);
-    if (r.kind !== 'page') throw new Error('mutation');
-    cursor = r.nextCursor;
-    page++;
-    if (!r.hasMore) break;
+  for (let start = 0; start < TOTAL; start += COUNT, page++) {
+    const body = syncBody(DATA, start, COUNT);
+    const key = rawPageKey('b1', 'con1', holder, 0, page);
+    const more = start + COUNT < TOTAL ? 1 : 0;
+    await db.batch([
+      db
+        .prepare(
+          `INSERT INTO raw_page (key, budget_id, body, sha256, bytes, created_at) VALUES (?1, 'b1', ?2, 'none', ?3, ?4)`,
+        )
+        .bind(key, body, body.length, NOW),
+      db
+        .prepare(
+          `INSERT INTO sync_page (sync_run_id, page, budget_id, restart, raw_key, sha256, bytes, next_cursor, has_more, created_at)
+           VALUES (?1, ?2, 'b1', 0, ?3, 'none', ?4, ?5, ?6, ?7)`,
+        )
+        .bind(holder, page, key, body.length, `cur${page}`, more, NOW),
+    ]);
   }
+  await db
+    .prepare(`UPDATE sync_run SET pages_fetched = ?2, fetched_at = ?3, fetch_seq = 1 WHERE id = ?1`)
+    .bind(holder, page, NOW)
+    .run();
   for (let i = 0; i < page; i++)
     for (let ch = 0; ; ch++) if ((await applyPage(ctx(), p, holder, i, ch)).pageDone) break;
   for (;;) if ((await processPending({ DB: db } as never, 'b1', NOW)).caughtUp) break;

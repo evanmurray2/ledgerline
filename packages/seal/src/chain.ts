@@ -330,6 +330,9 @@ export async function startChain(genesis: Entry, c: Checker, budgetId?: string):
 }
 
 /** True when the log does not end inside a part set: a log that does is a cut-off download, not a shorter log. */
+/** The chain state; once a narrower type of it, kept so apps/worker/src/local/device-log.ts reads as before. */
+export type FullChainState = ChainState;
+
 export const isWhole = (s: ChainState): boolean => s.pending === null;
 
 /**

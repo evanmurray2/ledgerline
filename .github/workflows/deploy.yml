@@ -9,6 +9,10 @@ on:
     branches: [main]
 permissions:
   contents: read
+# The production account and address, each named once: a repository variable, or the live app's own.
+env:
+  DEPLOY_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || 'f2d39c71e2c0819833de7942cdcc1222' }}
+  DEPLOY_URL: ${{ vars.PRODUCTION_URL || 'https://ledgerline.ledger-line.workers.dev' }}
 concurrency:
   group: deploy
   cancel-in-progress: false
@@ -49,12 +53,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # pnpm, Node 22 and the install (.github/actions/setup).
+      - uses: ./.github/actions/setup
       - run: pnpm --filter @ledgerline/web build
         env:
           # The same release id the Worker gets below: an open app that sees another one reloads.
@@ -72,13 +72,13 @@ jobs:
         run: pnpm exec wrangler secret list --format json > "$RUNNER_TEMP/existing-secrets.json" || echo '[]' > "$RUNNER_TEMP/existing-secrets.json"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || 'f2d39c71e2c0819833de7942cdcc1222' }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.DEPLOY_ACCOUNT_ID }}
       - name: Worker secrets
         run: node tools/ci/worker-secrets.mjs "$RUNNER_TEMP/secrets.json" "$RUNNER_TEMP/existing-secrets.json"
         env:
           ROTATE_TOKEN_KEYS: ${{ vars.ROTATE_TOKEN_KEYS }}
-          APP_URL: ${{ vars.PRODUCTION_URL || 'https://ledgerline.ledger-line.workers.dev' }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || 'f2d39c71e2c0819833de7942cdcc1222' }}
+          APP_URL: ${{ env.DEPLOY_URL }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.DEPLOY_ACCOUNT_ID }}
           PLAID_CLIENT_ID: ${{ secrets.PLAID_CLIENT_ID }}
           PLAID_SECRET: ${{ secrets.PLAID_SECRET }}
           PLAID_REDIRECT_URI: ${{ secrets.PLAID_REDIRECT_URI }}
@@ -95,7 +95,7 @@ jobs:
         env:
           APP_VERSION: ${{ github.sha }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || 'f2d39c71e2c0819833de7942cdcc1222' }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.DEPLOY_ACCOUNT_ID }}
       - name: Remove the secrets file
         if: always()
         run: rm -f "$RUNNER_TEMP/secrets.json"
@@ -103,7 +103,7 @@ jobs:
         id: smoke
         run: node tools/ci/smoke.mjs
         env:
-          BASE_URL: ${{ vars.PRODUCTION_URL || 'https://ledgerline.ledger-line.workers.dev' }}
+          BASE_URL: ${{ env.DEPLOY_URL }}
           OPS_TOKEN: ${{ secrets.OPS_TOKEN }}
       # The two steps below run after the smoke test, so they never hold back or roll back a deploy: if one fails,
       # the release is live and the run shows as failed.
@@ -126,4 +126,4 @@ jobs:
         run: pnpm exec wrangler rollback --message "smoke test failed" -y
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || 'f2d39c71e2c0819833de7942cdcc1222' }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.DEPLOY_ACCOUNT_ID }}

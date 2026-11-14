@@ -194,6 +194,8 @@
   --shadow-raised: 0 4px 12px var(--ll-shadow);
   --shadow-overlay: 0 0 24px var(--ll-shadow);
   --font-sans: 'Public Sans', system-ui, sans-serif;
+  /* The only colors: Tailwind's own palette is cleared, so a class like bg-red-500 makes nothing. */
+  --color-*: initial;
   --color-page: var(--ll-page);
   --color-surface: var(--ll-surface);
   --color-surface-2: var(--ll-surface-2);

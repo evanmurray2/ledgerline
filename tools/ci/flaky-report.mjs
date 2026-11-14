@@ -2,11 +2,12 @@
 // Lists the e2e tests that only passed on their retry, from the "Flaky e2e test" warnings that e2e/retry-log.ts
 // leaves on each CI job, newest first, then a count per test:
 //   node tools/ci/flaky-report.mjs [days]     (default 14)
-// The repository is public, so this needs no token; with GH_TOKEN set it is allowed more requests per hour.
-import { execFileSync } from 'node:child_process';
+// The repository is public, so this needs no token; with GH_TOKEN (or GITHUB_TOKEN) set it is allowed more requests
+// per hour. Any failed call (a rate limit too) stops it with GitHub's answer: a part-done count would mislead.
+import { githubApi, repoSlug } from './github-api.mjs';
 
 const days = Number(process.argv[2] ?? 14);
-const repo = process.env.GITHUB_REPOSITORY ?? 'evanmurray2/ledgerline';
+const get = githubApi(repoSlug());
 const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
 
 const runs = [];
@@ -21,7 +22,7 @@ for (let page = 1; ; page++) {
 const counts = new Map();
 for (const run of runs) {
   const { jobs } = api(`actions/runs/${run.id}/jobs?per_page=100`);
-  for (const job of jobs.filter((j) => j.name.startsWith('e2e'))) {
+  for (const job of jobs.filter(isE2ePart)) {
     for (const note of api(`check-runs/${job.id}/annotations?per_page=100`)) {
       if (note.title !== 'Flaky e2e test') continue;
       const test = note.message.replace(/: [^›]*$/, '');
@@ -35,20 +36,19 @@ for (const [test, n] of [...counts].sort((a, b) => b[1] - a[1]))
   console.log(`${String(n).padStart(4)}  ${test}`);
 if (!counts.size) console.log('   none');
 
+/** An e2e job that ran tests: not `e2e (mock)` or `e2e (worker)`, the two jobs that only report for the parts. */
+function isE2ePart(job) {
+  return job.name.startsWith('e2e') && !/^e2e \((mock|worker)\)$/.test(job.name);
+}
+
 function api(path) {
-  const auth = process.env.GH_TOKEN ? ['-H', `authorization: Bearer ${process.env.GH_TOKEN}`] : [];
-  const body = execFileSync(
-    'curl',
-    [
-      '-sSf',
-      '--retry',
-      '3',
-      '-H',
-      'accept: application/vnd.github+json',
-      ...auth,
-      `https://api.github.com/repos/${repo}/${path}`,
-    ],
-    { encoding: 'utf8', timeout: 30_000, maxBuffer: 64 * 1024 * 1024 },
-  );
-  return JSON.parse(body);
+  try {
+    return get(path);
+  } catch (e) {
+    const hint = e.rateLimited
+      ? `: rate limited${e.waitMs ? `, try again in ${Math.ceil(e.waitMs / 60_000)} min` : ''}${process.env.GH_TOKEN || process.env.GITHUB_TOKEN ? '' : ', or set GH_TOKEN for a higher limit'}`
+      : '';
+    console.error(`flaky-report: ${e.message}${hint}`);
+    process.exit(1);
+  }
 }

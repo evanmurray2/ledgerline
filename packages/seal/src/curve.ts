@@ -30,7 +30,8 @@ export async function signPairFromSeed(seed: Uint8Array): Promise<SignPair> {
   const pkcs8 = concat(PKCS8_ED25519, seed);
   try {
     const open = await crypto.subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, true, ['sign']);
-    const jwk = await crypto.subtle.exportKey('jwk', open);
+    // `as JsonWebKey`: Cloudflare's WebCrypto types give 'jwk' the same return type as the other formats.
+    const jwk = (await crypto.subtle.exportKey('jwk', open)) as JsonWebKey;
     const x = jwk.x;
     // The JWK also holds the seed, as text. JavaScript can't erase a string; dropping the reference is all there is.
     jwk.d = '';
@@ -104,10 +105,18 @@ function dhPublicKey(pub: Uint8Array): Promise<CryptoKey> {
   return crypto.subtle.importKey('raw', pub as Bytes, { name: 'X25519' }, true, []);
 }
 
+/**
+ * X25519 with WebCrypto. The browser's WebCrypto types and Cloudflare's spell the public key's field differently
+ * (`public`, `$public`); every engine takes `public`, so the algorithm is written once here, with a cast that both
+ * accept. This is what lets the package type-check under both, and the Worker import its real types.
+ */
+async function x25519Bits(privateKey: CryptoKey, publicKey: CryptoKey): Promise<Bytes> {
+  const algorithm = { name: 'X25519', public: publicKey } as Parameters<typeof crypto.subtle.deriveBits>[0];
+  return new Uint8Array(await crypto.subtle.deriveBits(algorithm, privateKey, 256));
+}
+
 async function dhRaw(privateKey: CryptoKey, pub: Uint8Array): Promise<Bytes> {
-  return new Uint8Array(
-    await crypto.subtle.deriveBits({ name: 'X25519', public: await dhPublicKey(pub) }, privateKey, 256),
-  );
+  return x25519Bits(privateKey, await dhPublicKey(pub));
 }
 
 /**
@@ -140,9 +149,7 @@ export async function dh(privateKey: CryptoKey, pub: Uint8Array): Promise<Bytes>
   const publicKey = await dhPublicKey(pub);
   let shared: Bytes;
   try {
-    shared = new Uint8Array(
-      await crypto.subtle.deriveBits({ name: 'X25519', public: publicKey }, privateKey, 256),
-    );
+    shared = await x25519Bits(privateKey, publicKey);
   } catch (e) {
     // Some engines refuse a small-order public key with OperationError; others return zeros, caught below.
     if (e instanceof Error && e.name === 'OperationError') throw new WeakKeyError();

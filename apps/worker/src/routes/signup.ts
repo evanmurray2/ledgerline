@@ -3,13 +3,16 @@
 // options, and register/verify in routes/auth.ts makes the account in one batch with the statements built here. The
 // account's budget is made on its device, locked, with its recovery key (D-102): there is no recovery code.
 import type { Stmt } from '@ledgerline/db/sql';
-import { generateRegistrationOptions } from '@simplewebauthn/server';
 import { CSRF_HEADER } from '@ledgerline/contracts';
 import { ulid } from '@ledgerline/platform';
 import type { Env } from '../env.js';
 import { CHALLENGE_COOKIE, CHALLENGE_MS, cookie, randomToken } from '../http/auth.js';
 import { sealChallenge } from '../http/challenge.js';
+import { z } from 'zod';
+import { parseBody } from '../http/body.js';
 import { clock } from '../http/clock.js';
+import { RP_NAME, registrationOptions } from './passkey-options.js';
+import { TRY_AGAIN } from '../http/errors.js';
 
 export const SIGNUP_PATH = '/api/auth/signup/options';
 
@@ -80,9 +83,9 @@ export interface SignupDirectory {
 export async function gatedOptions(req: Request, env: Env, dir: SignupDirectory): Promise<Response> {
   if (req.method !== 'POST' || !signupSwitchOn(env))
     return json({ error: 'not_found', message: 'Not found.' }, 404);
-  if (!csrfOk(req)) return json({ error: 'csrf', message: 'Something went wrong. Try again.' }, 403);
-  const b = (await req.json().catch(() => null)) as { turnstileToken?: unknown } | null;
-  if (!b || typeof b.turnstileToken !== 'string') return json(fail('Something went wrong. Try again.'), 400);
+  if (!csrfOk(req)) return json({ error: 'csrf', message: TRY_AGAIN }, 403);
+  const b = await parseBody(req, z.object({ turnstileToken: z.string() }));
+  if (!b) return json(fail(TRY_AGAIN), 400);
   // The check ran on its own address (docs/privacy.md 5.6), so the token names that host, not the app's.
   const host = checkHost(env) ?? '';
   const ok = await verifyTurnstile(
@@ -99,7 +102,6 @@ export async function gatedOptions(req: Request, env: Env, dir: SignupDirectory)
 
 // ---- The Directory's side
 
-const RP_NAME = 'Ledgerline';
 const today = (now: number) =>
   Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate());
 
@@ -116,10 +118,6 @@ async function room(env: Env, now: number): Promise<boolean> {
 
 const FULL = { error: 'full', message: 'Sign-up is full right now. Try again tomorrow.' };
 
-function rpOf(url: string, env: Env): string {
-  return env.RP_ID ?? new URL(url).hostname;
-}
-
 /**
  * The passkey options for a new account; nothing is written (the challenge is a signed cookie). Sign-up asks for a
  * passkey and nothing else (D-85): no name, no email. The passkey's own label is the app's name and the day it was
@@ -134,16 +132,7 @@ export async function signupOptions(
   const name = `${RP_NAME}, ${new Date(now).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`;
   if (!normal || !(await room(env, now))) return { status: 403, body: FULL };
   const handle = randomToken(32);
-  const options = await generateRegistrationOptions({
-    rpName: RP_NAME,
-    rpID: rpOf(url, env),
-    userID: Uint8Array.from(new TextEncoder().encode(handle)),
-    userName: name,
-    userDisplayName: name,
-    attestationType: 'none',
-    authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
-    extensions: { prf: {} } as never,
-  });
+  const options = await registrationOptions({ url, env, handle, label: name });
   const id = await sealChallenge(env, now, options.challenge, 'register', {
     kind: 'signup',
     ref: JSON.stringify({ handle }),

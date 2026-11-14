@@ -8,7 +8,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { LocalEngine, migrateLocal, pendingMigrations, PHONE_TABLES } from '../src/local/engine.js';
 import { splitStatements } from '../src/store/adapter.js';
 import { BUDGET_MIGRATIONS } from '../src/store/migrations.gen.js';
-import { SYNC_FORMAT, SYNC_TABLES, triggerNames, type SyncPage, type SyncRow } from '../src/sync-tables.js';
+import { SYNC_TABLES, triggerNames, type SyncRow } from '../src/sync-tables.js';
 import { newCopy, seed } from './phone.js';
 import type { Db } from '@ledgerline/db/sql';
 import { copyDb } from './store-db.js';
@@ -28,8 +28,8 @@ const SCREENS = (m: string) => [
   '/api/settings/payees',
 ];
 
-/** Every row of the November copy, as one page a new device takes. */
-async function download(): Promise<SyncPage[]> {
+/** Every row of the November copy, as a new device takes them in one step. */
+async function download(): Promise<SyncRow[]> {
   const src = await seed(await newCopy());
   const rows: SyncRow[] = [];
   for (const t of SYNC_TABLES)
@@ -39,17 +39,7 @@ async function download(): Promise<SyncPage[]> {
         k: t.pk.map((c) => r[c]),
         d: Object.fromEntries(Object.entries(r).filter(([c]) => !t.omit?.includes(c))),
       });
-  return [
-    {
-      format: SYNC_FORMAT,
-      epoch: 'log',
-      serverTime: Date.now(),
-      through: 1,
-      more: false,
-      cursor: null,
-      rows,
-    },
-  ];
+  return rows;
 }
 
 async function screens(e: LocalEngine, month: string): Promise<Record<string, unknown>> {
@@ -91,18 +81,18 @@ const who = (budgetId: string) => ({ budgetId, userId: 'phone', email: 'owner@ex
 describe('a copy left by an older app version upgrades to the screens a new phone shows', () => {
   let month: string;
   let budgetId: string;
-  let pages: SyncPage[];
+  let rows: SyncRow[];
   let reference: Record<string, unknown>;
   /** The new device's copy: the rows an older copy holds are taken from it. */
   let ref: Db;
 
   beforeAll(async () => {
-    pages = await download();
-    budgetId = String(pages[0]!.rows.find((r) => r.t === 'budget')!.d!.id);
+    rows = await download();
+    budgetId = String(rows.find((r) => r.t === 'budget')!.d!.id);
     ref = copyDb(`upgrade-ref-${++copies}`);
     await migrateLocal(ref, Date.now());
     const e = new LocalEngine(ref, who(budgetId));
-    for (const p of pages) await e.apply(p);
+    await e.applyLogRows(rows, 1);
     await e.derive();
     const s = (await (await e.request('GET', '/api/session')).json()) as { budget: { currentMonth: string } };
     month = s.budget.currentMonth;
@@ -155,7 +145,7 @@ describe('a copy left by an older app version upgrades to the screens a new phon
     await migrateLocal(db, Date.now());
     const e = new LocalEngine(db, who(budgetId));
     const st = await e.state();
-    await e.apply({ ...pages[0]!, through: st.through, rows: [] });
+    await e.applyLogRows([], st.through);
     if (await e.needsDerive()) await e.derive();
     const got = await screens(e, month);
     for (const path of SCREENS(month)) expect(got[path], `${path} after ${name}`).toEqual(reference[path]);

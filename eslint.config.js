@@ -1,6 +1,9 @@
-// typescript-eslint strict, plus the design's money rules: no parseFloat anywhere (money is parsed from strings
+// typescript-eslint strict, plus the design's money rules and its tokens: no parseFloat anywhere (money is parsed from strings
 // into integer cents), and packages/domain stays pure (no I/O, no Node or Cloudflare APIs).
 import tseslint from 'typescript-eslint';
+
+/** A class with a typed-in style: text-[..], rounded-[..], shadow-[..], or any color in brackets (-[#..], -[rgb(..]). */
+const TYPED_IN_STYLE = String.raw`\b(text|rounded|shadow)-\[|-\[(#|rgba?\(|hsla?\()`;
 
 export default tseslint.config(
   {
@@ -9,6 +12,7 @@ export default tseslint.config(
       '.claude/**',
       '**/.measure/**',
       '**/dist/**',
+      '**/coverage/**',
       '**/.wrangler/**',
       '**/node_modules/**',
       'docs/**',
@@ -33,6 +37,20 @@ export default tseslint.config(
       '@typescript-eslint/no-non-null-assertion': 'off',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'error',
+    },
+  },
+  {
+    // Design tokens only (docs/design-system.md): no typed-in color, text size, corner or shadow in a class name.
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...['Literal[value=', 'TemplateElement[value.raw='].map((node) => ({
+          selector: `${node}/${TYPED_IN_STYLE}/]`,
+          message:
+            'Use a design token (docs/design-system.md): no typed-in color, text size, corner or shadow.',
+        })),
+      ],
     },
   },
   {

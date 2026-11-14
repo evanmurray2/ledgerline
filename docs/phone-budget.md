@@ -25,7 +25,7 @@ The proposal, in two parts that can be decided separately:
 | Activity on Cloudflare                                | p95 10.8 ms, the only path that fails the gate                                                                                                           | `docs/measurements.md`, phase 0               |
 | Free daily limits hit in production                   | reads (D1, Nov 1); Durable Object rows written (Nov 3, the day after the move to Durable Objects and the phase 0 runs, not caused by the derived tables) | build plan; commit e10c310; `measurements.md` |
 | Offline                                               | view-only: saved screens in `localStorage` (about 5 MB, largest dropped first), ignored after 24 hours                                                   | D-42, `state/saved.ts`                        |
-| A second engine                                       | `apps/web/src/mock/db.ts`, 1,803 lines, "a plausible stand-in for the Worker, not the real budget engine"                                                | mock tests run against it                     |
+| A second engine                                       | `apps/web/src/mock/db.ts` (since removed), 1,803 lines, "a plausible stand-in for the Worker, not the real budget engine"                                | mock tests run against it                     |
 
 The size of the data: 3,296 bank rows over three years in the measurement set, 5,402 budget lines and 2,124 assignments over 36 months. All of it is a few MB.
 
@@ -166,7 +166,7 @@ Transactions are sent **without the fields copied from other tables** (`payee` n
 
 **The server keeps computing until the last stage.** `planLineRebuild`, the recompute job and month totals keep running through stages 1–4, so every stage can be turned back with a setting and the shadow comparison has something to compare with. They're removed only in stage 5.
 
-**What goes in stage 5:** `month_snapshot`, `budget_line`, `account_month_total`, `month_total_done`, the dirty-month and version-fence columns, `budget/recompute.ts` and its job, the server views and read routes (except search and history paging), ETags and `data_version`, `/api/badges`, `state/saved.ts`, and `mock/db.ts` + `server.ts` (the mock becomes a sample sync dataset fed to the real engine). Migrations follow the expand-only rule: stop reading, then drop in a later release. `store/dump.ts` keeps restoring old backups that include the dropped tables, by skipping them.
+**What goes in stage 5:** `month_snapshot`, `budget_line`, `account_month_total`, `month_total_done`, the dirty-month and version-fence columns, `budget/recompute.ts` and its job, the server views and read routes (except search and history paging), ETags and `data_version`, `/api/badges`, `state/saved.ts`, and `mock/db.ts` (since removed) + `server.ts` (the mock becomes a sample sync dataset fed to the real engine). Migrations follow the expand-only rule: stop reading, then drop in a later release. `store/dump.ts` keeps restoring old backups that include the dropped tables, by skipping them.
 
 **What moves rather than goes:** the view logic in `views/budget.ts` (`categoryRows`, the attention list, cards) and in `accounts.ts` (registers, Reports) is ported to the phone. Honest size: about 2,000–2,500 lines added (sync endpoint, triggers, IndexedDB store, Web Worker, ported views), about 4,000 removed.
 

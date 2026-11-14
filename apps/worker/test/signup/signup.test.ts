@@ -2,6 +2,7 @@
 // through the real Worker with software passkeys.
 import { createExecutionContext, env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
+import { PasskeyCreateOptions } from '@ledgerline/contracts';
 import worker from '../../src/index.js';
 import { TEST_TOKEN } from '../../src/routes/signup.js';
 import { SoftAuthenticator } from '../soft-authenticator.js';
@@ -95,6 +96,7 @@ describe('open sign-up', () => {
     // No name and no email (D-85): the check alone gives the passkey options, and a name that is sent is ignored.
     const o = await b.call('POST', '/api/auth/signup/options', { name: 'Alex', turnstileToken: TEST_TOKEN });
     expect(o.status).toBe(200);
+    expect(PasskeyCreateOptions.parse(o.json)).toEqual(o.json);
     expect((o.json.user as { name: string }).name).toMatch(/^Ledgerline, /);
     expect(await dir.prepare(`SELECT count(*) AS n FROM user`).first('n')).toBe(1);
   });
