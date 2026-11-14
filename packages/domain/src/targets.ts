@@ -92,12 +92,6 @@ export function neededThisMonth(t: Target | null, c: TargetContext): Cents {
   }
 }
 
-/** The amount the target aims to have available (used for Overfunded and Low). */
-export function targetAmount(t: Target | null): Cents | null {
-  if (!t) return null;
-  return t.amount;
-}
-
 export function describeTarget(t: Target | null, fmt: (c: Cents) => string): string {
   if (!t) return 'No target';
   switch (t.type) {

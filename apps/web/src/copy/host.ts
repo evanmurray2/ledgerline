@@ -2,6 +2,7 @@
 // D-45): opens the copy, feeds it sync pages from the server, and asks it for screens.
 // The engine's own shapes come from apps/worker/src/local/engine-types.ts, which imports none of the Worker's code;
 // the ones below mirror other Worker files (the web app's type check can't read those: they need Cloudflare's types).
+import type { BudgetKeys } from '@ledgerline/seal';
 import type {
   DevicesDiffer,
   EngineIdentity,
@@ -11,8 +12,14 @@ import type {
 
 export type { DevicesDiffer, EngineIdentity, EngineState, QueuedEdit };
 
-/** A budget's derived keys of one version (`BudgetKeys` in @ledgerline/seal): passed on, never read. */
-export type SealedKeys = { version: number } & Record<string, unknown>;
+/** A budget's derived keys of one version: passed on to the engine, never read here. */
+export type SealedKeys = BudgetKeys;
+/** What the engine's thread posts: an event, or the answer to a request (its `id`). */
+type EngineMessage =
+  | { event: 'identity'; difference: number; month: string }
+  | { event: 'rebuilding' }
+  | { event: 'rebuilt' }
+  | { event?: undefined; id?: number; ok?: boolean; value?: unknown; error?: string };
 /** Where a public entry the app makes goes (local/device-log.ts `writePlace`). */
 export interface WritePlace {
   number: number;
@@ -54,9 +61,9 @@ export class EngineHost {
       type: 'module',
     });
     this.worker.onmessage = (e: MessageEvent) => {
-      const m = e.data as { id?: number; ok?: boolean; value?: unknown; error?: string; event?: string };
+      const m = e.data as EngineMessage;
       if (m.event === 'identity') {
-        this.onIdentity?.(m as unknown as { difference: number; month: string });
+        this.onIdentity?.(m);
         return;
       }
       if (m.event === 'rebuilding') {

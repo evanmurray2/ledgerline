@@ -3,6 +3,7 @@
 // through it, and each step's guard is broken in turn.
 import { createExecutionContext, env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
+import { DeviceAddStart, DeviceAddState } from '@ledgerline/contracts';
 import {
   deriveBudgetKeys,
   fromHex,
@@ -84,7 +85,12 @@ describe('adding a device: the relay', () => {
     expect((await owner.call('GET', BASE)).json).toEqual({ role: null });
     const start = await owner.call('POST', `${BASE}/start`);
     expect(start.status).toBe(200);
-    expect((await owner.call('GET', BASE)).json).toMatchObject({ role: 'from', commit: null, offers: 0 });
+    DeviceAddStart.parse(start.json);
+    expect(DeviceAddState.parse((await owner.call('GET', BASE)).json)).toMatchObject({
+      role: 'from',
+      commit: null,
+      offers: 0,
+    });
     const n = await linked();
     expect((await n.call('GET', BASE)).json).toMatchObject({ role: 'waiting' });
 

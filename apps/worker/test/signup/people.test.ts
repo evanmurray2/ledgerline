@@ -2,6 +2,7 @@
 import { encryptToken, parseKeyring } from '@ledgerline/platform';
 import { createExecutionContext, env, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
 import { afterAll, describe, expect, it, vi } from 'vitest';
+import { UsersView } from '@ledgerline/contracts';
 import { removeBanks } from '../../src/store/account-life.js';
 import { startDeletionSql } from '../../src/store/idle-accounts.js';
 import worker from '../../src/index.js';
@@ -86,6 +87,7 @@ describe('Settings → Users', () => {
     expect((await owner.call('GET', '/api/settings/security')).json.usersScreen).toBe(true);
     const v = await owner.call('GET', '/api/settings/security/users');
     expect(v.status).toBe(200);
+    UsersView.parse(v.json);
     expect(v.json).toMatchObject({ users: 2, signupsOpen: true });
     expect((v.json.list as { name: string }[]).map((u) => u.name)).toEqual(['Account', 'Admin']);
   });

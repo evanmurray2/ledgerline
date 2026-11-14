@@ -6,6 +6,7 @@ import { RouterProvider, type RouterHistory } from '@tanstack/react-router';
 import { makeRouter } from './router';
 import { ApiError } from './api/client';
 import { connectivity } from './state/connectivity';
+import { followBudgetClock } from './api/hooks';
 
 export function makeQueryClient() {
   return new QueryClient({
@@ -28,7 +29,11 @@ export function makeQueryClient() {
 }
 
 export function App({ history, queryClient }: { history?: RouterHistory; queryClient?: QueryClient }) {
-  const [qc] = useState(() => queryClient ?? makeQueryClient());
+  const [qc] = useState(() => {
+    const c = queryClient ?? makeQueryClient();
+    followBudgetClock(c);
+    return c;
+  });
   const [router] = useState(() => makeRouter(history));
   const [persister] = useState(() => (savingEnabled() && !queryClient ? makePersister() : null));
   if (persister)

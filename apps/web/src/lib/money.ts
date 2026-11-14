@@ -39,6 +39,10 @@ const MONEY_RE = /^([−-])?\s*\$?\s*(\d{1,3}(?:,\d{3})+|\d+)?(?:\.(\d{0,2}))?$/
 /**
  * Parses what a person types into a money box: "18.25", "$1,018", "-5", "−5.5", ".75", "$-3".
  * Returns integer cents, or null when it isn't a valid amount (more than two decimals, letters, empty).
+ *
+ * This is the one that reads typed money in the app. packages/domain/src/money.ts has its own parseCents, which
+ * reads differently (it takes "(12.00)" and "+5", and throws): the two are not the same rule on purpose until the
+ * owner decides (a Money rules choice). Change neither to match the other without asking.
  */
 export function parseCents(input: string): number | null {
   // "$-3" (a pasted amount with the sign after the dollar sign) reads as "-$3".

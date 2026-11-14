@@ -28,16 +28,6 @@ export function parseRelease(text: string): Release | null {
   }
 }
 
-/** Reads /release.json from the server, never from a saved copy. Null when it can't be read: the app works without it. */
-export async function fetchRelease(): Promise<Release | null> {
-  try {
-    const res = await fetch('/release.json', { cache: 'no-store' });
-    return res.ok ? parseRelease(await res.text()) : null;
-  } catch {
-    return null;
-  }
-}
-
 /** A commit as people quote it: its first 7 characters. */
 export function shortCommit(commit: string): string {
   return /^[0-9a-f]{40}$/.test(commit) ? commit.slice(0, 7) : commit;

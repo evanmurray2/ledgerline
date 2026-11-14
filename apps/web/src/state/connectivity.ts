@@ -3,6 +3,7 @@
 // stays visible and every control that changes data is disabled. Nothing is queued.
 import { useSyncExternalStore } from 'react';
 import { useCopy } from '../copy/copy';
+import { createListeners } from '../lib/store';
 
 interface State {
   online: boolean;
@@ -26,7 +27,7 @@ let state: State = {
 };
 
 const MOCK = import.meta.env.VITE_MOCK === '1';
-const listeners = new Set<() => void>();
+const listeners = createListeners();
 function set(patch: Partial<State>) {
   const next = { ...state, ...patch };
   if (
@@ -39,17 +40,12 @@ function set(patch: Partial<State>) {
   )
     return;
   state = next;
-  for (const l of listeners) l();
+  listeners.emit();
 }
 
 export const connectivity = {
   get: () => state,
-  subscribe(cb: () => void) {
-    listeners.add(cb);
-    return () => {
-      listeners.delete(cb);
-    };
-  },
+  subscribe: listeners.subscribe,
   reportNetworkError() {
     set({ networkFailed: true });
     scheduleProbe();

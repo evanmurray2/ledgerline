@@ -44,6 +44,9 @@ export function clamp(v: Cents, lo: Cents, hi: Cents): Cents {
 /**
  * Parses "1,234.5", "-12", "$3.07", "−$18.25", "$-4" and accounting-style "(12.00)" into cents. Commas are only
  * thousands separators ("12,50" is refused, never read as 1,250). Rejects more than two decimals.
+ *
+ * Not what the app reads typed money with: apps/web/src/lib/money.ts parseCents does that, and reads differently
+ * (no "(12.00)" or "+5"; null, not a throw). Unifying them is a Money rules choice for the owner.
  */
 export function parseCents(input: string): Cents {
   let s = input.trim().replace(/[−‒–]/g, '-').replace(/\s/g, '');

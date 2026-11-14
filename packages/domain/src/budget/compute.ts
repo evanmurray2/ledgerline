@@ -3,6 +3,16 @@
 import { type Cents, cents } from '../money.js';
 import { type Month, addMonths, monthRange } from '../month.js';
 import { type BudgetLine, lineOrder } from './lines.js';
+import {
+  closeCards,
+  closeCategories,
+  debtNow,
+  indexByMonth,
+  indexCategories,
+  purchaseOf,
+  readyToAssign,
+  snapshotOf,
+} from './compute-stages.js';
 
 export type CategoryKind = 'spending' | 'saving' | 'cc_payment';
 
@@ -19,7 +29,8 @@ export interface Assignment {
   amount: Cents;
 }
 
-interface Funded {
+/** A card purchase's funding, kept for the refunds that link to it. */
+export interface Funded {
   /** Purchase amount (positive). */
   x: number;
   /** Funded part, including any credit overspending the category covered by month end. */
@@ -144,19 +155,14 @@ export function emptySnapshot(month: Month): MonthSnapshot {
   };
 }
 
-interface Chunk {
+/** An unfunded part of a card purchase this month (credit overspending until it is funded). */
+export interface Chunk {
   line: string;
   card: string;
   amount: number;
 }
 
-/**
- * The purchase a category line belongs to, as its first line id: `<txn key>:<n>` → `<txn key>:0`. A split
- * purchase has one line per split (`:0`, `:1`, …); a refund links to the whole purchase (rule 3).
- */
-export function purchaseOf(lineId: string): string {
-  return `${lineId.slice(0, lineId.lastIndexOf(':'))}:0`;
-}
+export { purchaseOf };
 
 export function computeBudget(input: ComputeInput): ComputeResult {
   const { currentMonth, startMonth } = input;
@@ -167,40 +173,8 @@ export function computeBudget(input: ComputeInput): ComputeResult {
   }
   const prev = input.snapshot ?? emptySnapshot(addMonths(startMonth, -1));
 
-  const payCatToCard = new Map<string, string>();
-  const nonPay: string[] = [];
-  const cardIds = new Set<string>();
-  for (const c of input.categories) {
-    if (c.kind === 'cc_payment') {
-      if (!c.cardAccountId) throw new Error(`cc_payment category ${c.id} has no card`);
-      payCatToCard.set(c.id, c.cardAccountId);
-      cardIds.add(c.cardAccountId);
-    } else nonPay.push(c.id);
-  }
-
-  let through = currentMonth > from ? currentMonth : from;
-  if (input.through && input.through > through) through = input.through;
-  const asgByMonth = new Map<Month, Map<string, number>>();
-  for (const a of input.assignments) {
-    if (a.month < from) continue;
-    if (input.until && a.month > input.until) continue;
-    if (a.month > through) through = a.month;
-    let m = asgByMonth.get(a.month);
-    if (!m) asgByMonth.set(a.month, (m = new Map()));
-    m.set(a.categoryId, (m.get(a.categoryId) ?? 0) + a.amount);
-  }
-  if (input.until && input.until < through) through = input.until < from ? from : input.until;
-  const linesByMonth = new Map<Month, BudgetLine[]>();
-  for (const l of input.lines) {
-    if (l.month < from) continue;
-    if (input.until && l.month > input.until) continue;
-    if (l.month > through) through = l.month;
-    if (l.kind === 'payment' || l.kind === 'debt') cardIds.add(l.cardAccountId);
-    else if ((l.kind === 'cat' || l.kind === 'owed' || l.kind === 'rta') && l.card) cardIds.add(l.accountId);
-    let arr = linesByMonth.get(l.month);
-    if (!arr) linesByMonth.set(l.month, (arr = []));
-    arr.push(l);
-  }
+  const { payCatToCard, nonPay, cardIds } = indexCategories(input.categories);
+  const { through, asgByMonth, linesByMonth } = indexByMonth(input, from, cardIds);
 
   const carry = new Map<string, number>(Object.entries(prev.carry));
   const pay = new Map<string, number>(Object.entries(prev.pay));
@@ -480,57 +454,11 @@ export function computeBudget(input: ComputeInput): ComputeResult {
     if (m === currentMonth) kAtCurrent = Object.fromEntries(K);
 
     // Month end (rule 6 and rule 2's reset).
-    const categories: Record<string, CategoryCell> = {};
-    let uncovered = 0;
-    for (const [c, a] of A) {
-      const arr = chunks.get(c) ?? [];
-      let co = 0;
-      for (const k of arr) co += k.amount;
-      let credit = 0;
-      let cash = 0;
-      if (a < 0) {
-        credit = Math.min(-a, co);
-        cash = -a - credit;
-      }
-      // The credit part is forgiven as new card debt: the latest unfunded purchases count as the overspending.
-      let creditLeft = credit;
-      const creditByCard: Record<string, Cents> = {};
-      for (let i = arr.length - 1; i >= 0 && creditLeft > 0; i--) {
-        const k = arr[i]!;
-        const take = Math.min(creditLeft, k.amount);
-        creditLeft -= take;
-        creditByCard[k.card] = cents((creditByCard[k.card] ?? 0) + take);
-        K.set(k.card, (K.get(k.card) ?? 0) + take);
-        const fd = funded.get(k.line);
-        if (fd) fd.forgiven += take;
-      }
-      uncovered += cash;
-      categories[c] = {
-        assigned: cents(assignedC.get(c) ?? 0),
-        activity: cents(act.get(c) ?? 0),
-        spent: cents(spent.get(c) ?? 0),
-        available: cents(a),
-        creditOverspent: creditByCard,
-        cashOverspent: cents(cash),
-      };
-      carry.set(c, a < 0 ? 0 : a);
-    }
-    const cards: Record<string, CardCell> = {};
-    for (const card of new Set([...cardIds, ...P.keys()])) {
-      const pv = P.get(card) ?? 0;
-      cards[card] = {
-        assigned: cents(cardAsg.get(card) ?? 0),
-        activity: cents(cardAct.get(card) ?? 0),
-        available: cents(pv),
-      };
-      // Rule 6 covers every category, card payment categories included: paying a card beyond what its payment
-      // category held is cash overspending (decisions.md D-10).
-      if (pv < 0) {
-        uncovered += -pv;
-        K.set(card, (K.get(card) ?? 0) + pv);
-        pay.set(card, 0);
-      } else pay.set(card, pv);
-    }
+    const catEnd = closeCategories({ A, chunks, assignedC, act, spent }, { K, funded, carry });
+    const cardEnd = closeCards({ cardIds, P, cardAsg, cardAct }, { K, pay });
+    const categories = catEnd.categories;
+    const cards = cardEnd.cards;
+    const uncovered = catEnd.uncovered + cardEnd.uncovered;
 
     if (m === currentMonth) uncoveredBeforeCurrent = cum.uncovered;
     cum.inflows += inflows;
@@ -542,9 +470,6 @@ export function computeBudget(input: ComputeInput): ComputeResult {
       owedAtCurrent = cum.owed;
     }
 
-    const snapFunded: Record<string, Funded> = {};
-    for (const [k, v] of funded)
-      if (!input.refundTargets || input.refundTargets.has(purchaseOf(k))) snapFunded[k] = { ...v };
     months.push({
       month: m,
       categories,
@@ -552,15 +477,7 @@ export function computeBudget(input: ComputeInput): ComputeResult {
       inflows: cents(inflows),
       owed: cents(owed),
       uncovered: cents(uncovered),
-      snapshot: {
-        month: m,
-        carry: Object.fromEntries(carry),
-        pay: Object.fromEntries(pay),
-        cum: { ...cum },
-        unbudgeted: Object.fromEntries(K),
-        credit: Object.fromEntries(Cr),
-        funded: snapFunded,
-      },
+      snapshot: snapshotOf(m, { carry, pay, cum, K, Cr, funded }, input.refundTargets),
     });
   }
 
@@ -570,9 +487,7 @@ export function computeBudget(input: ComputeInput): ComputeResult {
     assigned: cents(cum.assigned),
     uncovered: cents(uncoveredBeforeCurrent),
   };
-  const rta = cents(rtaParts.inflows - rtaParts.owed - rtaParts.assigned - rtaParts.uncovered);
-  const unbudgetedCardDebt: Record<string, Cents> = {};
-  for (const c of cardIds) unbudgetedCardDebt[c] = cents(0);
-  for (const [k, v] of Object.entries(kAtCurrent ?? Object.fromEntries(K))) unbudgetedCardDebt[k] = cents(v);
+  const rta = readyToAssign(rtaParts);
+  const unbudgetedCardDebt = debtNow(cardIds, kAtCurrent ?? Object.fromEntries(K));
   return { from, through, months, rta, rtaParts, unbudgetedCardDebt };
 }

@@ -27,6 +27,19 @@ import {
   TxnSheet,
   RefundOfView,
   SealedSession,
+  Badges,
+  DeviceAddStart,
+  DeviceAddState,
+  LinkToken,
+  OkIdResult,
+  OkResult,
+  PasskeyCreateOptions,
+  PasskeyGetOptions,
+  RecoverKeyOptions,
+  RecoveryKeyState,
+  RefreshAllResult,
+  UnpairResult,
+  UsersView,
 } from '@ledgerline/contracts';
 import type {
   AssignRequest,
@@ -59,41 +72,9 @@ import { del, get, patch, post, put, qs } from './client';
 
 type In<T extends z.ZodType> = z.input<T>;
 
-const Ok = z.object({ ok: z.literal(true) });
-const UsersView = z.object({
-  users: z.number().int(),
-  maxUsers: z.number().int(),
-  signupsToday: z.number().int(),
-  signupsPerDay: z.number().int(),
-  signupsOpen: z.boolean(),
-  list: z.array(
-    z.object({
-      id: z.string(),
-      name: z.string(),
-      admin: z.boolean(),
-      status: z.string(),
-      joinedAt: z.string(),
-      lastSeenAt: z.string().nullable(),
-      stuck: z.boolean(),
-    }),
-  ),
-  next: z.string().nullable(),
-});
-export type UsersView = z.infer<typeof UsersView>;
-const RegisterResult = z.object({ ok: z.literal(true) });
-const OkId = z.object({ ok: z.literal(true), id: z.string() });
-const hexOrNull = z.string().nullable().optional();
-const DeviceAddState = z.object({
-  role: z.enum(['from', 'to', 'waiting']).nullable(),
-  expiresAt: z.string().optional(),
-  offers: z.number().optional(),
-  commit: hexOrNull,
-  reveal: hexOrNull,
-  confirm: hexOrNull,
-  offer: hexOrNull,
-  sealed: hexOrNull,
-});
-const LinkToken = z.object({ linkToken: z.string(), hostedUrl: z.string().optional() });
+const Ok = OkResult;
+const OkId = OkIdResult;
+export type { UsersView };
 
 export type ActivityFilter = 'all' | 'attention' | 'pending';
 export type RegisterShow = 'all' | 'pending' | 'needs' | 'transfers';
@@ -114,33 +95,22 @@ export const api = {
       keep: keepSession,
     }),
   /** Tab badge counts, cheaply: shown on every screen. */
-  badges: () =>
-    get(
-      '/api/badges',
-      z.object({
-        activity: z.number().int(),
-        accounts: z.number().int(),
-        rta: z.number().int(),
-        rtaUpdating: z.boolean(),
-      }),
-    ),
+  badges: () => get('/api/badges', Badges),
 
   // Sign-in (decisions.md D-27). Ceremony options and responses are WebAuthn JSON, passed through as-is.
   authStatus: () => get('/api/auth/status', AuthStatus),
   registerOptions: (body: { setupCode?: string; deviceToken?: string }) =>
-    post('/api/auth/register/options', z.unknown(), body),
-  registerVerify: (body: { response: unknown; name: string }) =>
-    post('/api/auth/register/verify', RegisterResult, body),
+    post('/api/auth/register/options', PasskeyCreateOptions, body),
+  registerVerify: (body: { response: unknown; name: string }) => post('/api/auth/register/verify', Ok, body),
   // Open sign-up (D-75): only while the switch is on.
-  signupOptions: (body: { turnstileToken: string }) => post('/api/auth/signup/options', z.unknown(), body),
+  signupOptions: (body: { turnstileToken: string }) =>
+    post('/api/auth/signup/options', PasskeyCreateOptions, body),
   // The recovery key of a locked budget (docs/privacy-keys.md 4.2): its sign-in, and its public half.
   recoverKeyOptions: (authPub: string) =>
-    post('/api/auth/recover-key/options', z.object({ budgetId: z.string(), challenge: z.string() }), {
-      authPub,
-    }),
-  recoverKeyVerify: (signature: string) => post('/api/auth/recover-key/verify', z.unknown(), { signature }),
-  recoveryKey: () =>
-    get('/api/settings/security/recovery-key', z.object({ set: z.boolean(), setAt: z.string().nullable() })),
+    post('/api/auth/recover-key/options', RecoverKeyOptions, { authPub }),
+  recoverKeyVerify: (signature: string) =>
+    post('/api/auth/recover-key/verify', PasskeyCreateOptions, { signature }),
+  recoveryKey: () => get('/api/settings/security/recovery-key', RecoveryKeyState),
   setRecoveryKey: (authPub: string) => post('/api/settings/security/recovery-key', Ok, { authPub }),
   // Deleting your own account, and Settings → Users for admins (D-75).
   deleteAccount: (budgetName: string) => post('/api/settings/security/delete-account', Ok, { budgetName }),
@@ -151,13 +121,13 @@ export const api = {
     ),
   userAction: (id: string, action: 'turn-off' | 'turn-on' | 'retry-delete') =>
     post(`/api/settings/security/users/${enc(id)}/${action}`, Ok),
-  loginOptions: () => post('/api/auth/login/options', z.unknown()),
+  loginOptions: () => post('/api/auth/login/options', PasskeyGetOptions),
   loginVerify: (body: { response: unknown }) => post('/api/auth/login/verify', Ok, body),
   security: () => get('/api/settings/security', SecurityView),
   deviceLink: () => post('/api/settings/security/device-link', DeviceLink),
   // Adding a device with its own passkey to a locked budget: the server's relay (docs/privacy-keys.md section 10).
   deviceAddState: () => get('/api/settings/security/device-add', DeviceAddState),
-  deviceAddStart: () => post('/api/settings/security/device-add/start', z.object({ expiresAt: z.string() })),
+  deviceAddStart: () => post('/api/settings/security/device-add/start', DeviceAddStart),
   deviceAddSend: (step: 'commit' | 'offer' | 'reveal' | 'sealed' | 'confirm', body: Record<string, string>) =>
     post(`/api/settings/security/device-add/${step}`, Ok, body),
   deviceAddEnd: () => post('/api/settings/security/device-add/end', Ok),
@@ -214,8 +184,7 @@ export const api = {
   pickTransfer: (key: string, body: In<typeof TransferPick>) =>
     post(`/api/transfers/${enc(key)}/pick`, MutationResult, body),
   /** `otherKey`: the row it was paired with, for Undo (pick it again); absent when Undo can't pair them again. */
-  unpairTransfer: (key: string) =>
-    post(`/api/transfers/${enc(key)}/unpair`, MutationResult.extend({ otherKey: z.string().optional() })),
+  unpairTransfer: (key: string) => post(`/api/transfers/${enc(key)}/unpair`, UnpairResult),
 
   owed: () => get('/api/owed', OwedView),
   owedAction: (id: string, body: In<typeof OwedAction>) => post(`/api/owed/${enc(id)}`, MutationResult, body),
@@ -295,8 +264,7 @@ export const api = {
     post(`/api/settings/connections/${enc(id)}/remove`, Ok, { connectionId: id }),
   /** Marks a removed bank in the budget: its accounts and rows stay (D-87). An edit on the device's copy. */
   markRemoved: (id: string) => post(`/api/settings/connections/${enc(id)}/mark-removed`, Ok),
-  refreshAll: () =>
-    post('/api/settings/connections/refresh', z.object({ ok: z.literal(true), started: z.number().int() })),
+  refreshAll: () => post('/api/settings/connections/refresh', RefreshAllResult),
 
   setupStart: (body: In<typeof SetupStart>) => post('/api/setup/start', Ok, body),
   startingBalances: (body: In<typeof StartingBalances>) =>

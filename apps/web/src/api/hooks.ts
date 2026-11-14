@@ -6,6 +6,7 @@ import {
   useQuery,
   useQueryClient,
   type QueryClient,
+  type UseQueryResult,
 } from '@tanstack/react-query';
 import type {
   BudgetView,
@@ -13,6 +14,7 @@ import type {
   RegisterCursor,
   RegisterPage,
   RegisterView,
+  Session,
 } from '@ledgerline/contracts';
 import { api, type ActivityFilter, type RegisterShow } from './endpoints';
 import { usage } from '../usage/tracker';
@@ -46,11 +48,32 @@ export const qk = {
 };
 
 /**
+ * Keeps the budget's time zone and year (lib/dates.ts) in step with the session, or the saved one standing in for it.
+ * The query cache tells its listeners at once, before any screen renders with the new session, so a clock time never
+ * shows in the wrong zone first. App.tsx calls it once for its query client.
+ */
+export function followBudgetClock(qc: QueryClient): () => void {
+  const apply = () => {
+    const s = qc.getQueryData<Session>(qk.session) ?? qc.getQueryData<Session | null>(qk.savedSession);
+    if (s?.budget.timeZone) setBudgetTimeZone(s.budget.timeZone);
+    if (s?.budget.today) setBudgetYear(s.budget.today);
+  };
+  apply();
+  return qc.getQueryCache().subscribe((e) => {
+    const key = e.query.queryKey[0];
+    if (key === qk.session[0] || key === qk.savedSession[0]) apply();
+  });
+}
+
+/** The session query's state; offline, the saved session stands in for its data (not a successful query). */
+export type SessionState = Omit<UseQueryResult<Session>, 'data'> & { data: Session | undefined };
+
+/**
  * The signed-in session. Saved screens are shown only after the server confirms you're signed in, except when the
  * check can't reach the server at all (offline start): then the last confirmed session, saved on this device and
  * cleared on sign-out or by any "signed out" answer, stands in, view-only. A 401 always means sign-in.
  */
-export function useSession() {
+export function useSession(): SessionState {
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: qk.session,
@@ -62,24 +85,19 @@ export function useSession() {
   // has to show it at once.
   const savedQ = useQuery({
     queryKey: qk.savedSession,
-    queryFn: () => qc.getQueryData<NonNullable<typeof q.data>>(qk.savedSession) ?? null,
+    queryFn: () => qc.getQueryData<Session>(qk.savedSession) ?? null,
     enabled: false,
     staleTime: Infinity,
   });
   useEffect(() => {
     if (q.data) qc.setQueryData(qk.savedSession, q.data);
   }, [q.data, qc]);
-  // Set during render, before any screen formats a clock time with it.
-  const zone = (q.data ?? savedQ.data)?.budget.timeZone;
-  if (zone) setBudgetTimeZone(zone);
-  const today = (q.data ?? savedQ.data)?.budget.today;
-  if (today) setBudgetYear(today);
   if (q.data) return q;
   const unreachable =
     (q.error instanceof ApiError && q.error.network) ||
     (!q.error && (q.fetchStatus === 'paused' || !net.online || net.networkFailed));
   const saved = unreachable ? (savedQ.data ?? undefined) : undefined;
-  return saved ? ({ ...q, data: saved } as unknown as typeof q) : q;
+  return saved ? { ...q, data: saved } : q;
 }
 export function useBudget(month: string | undefined) {
   return useQuery({ queryKey: qk.budget(month ?? ''), queryFn: () => api.budget(month!), enabled: !!month });

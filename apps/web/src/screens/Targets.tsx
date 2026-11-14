@@ -2,13 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Outlet, useNavigate, useParams, useRouterState, useSearch } from '@tanstack/react-router';
 import type { Target } from '@ledgerline/contracts';
-import {
-  type Month,
-  type Target as RuleTarget,
-  cents as asCents,
-  neededThisMonth,
-  refillPeriod,
-} from '@ledgerline/domain';
+import { type Month, cents as asCents, neededThisMonth, refillPeriod } from '@ledgerline/domain';
 import { api } from '../api/endpoints';
 import { useCategoriesSettings, useCategorySheet, useMoneyMutation } from '../api/hooks';
 import { Sheet, SheetTitle } from '../components/Sheet';
@@ -32,6 +26,7 @@ import {
 import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { addMonths, compareMonths, monthLabel } from '../lib/dates';
 import { useScreen } from '../lib/common';
+import { toRuleTarget } from '../lib/targets';
 import { useBudgetMonth } from './Budget';
 import { Page } from './settings/common';
 
@@ -161,8 +156,7 @@ export function TargetScreen() {
     // The month's need as Budget works it out once this target is saved (it takes effect this month), before
     // anything is assigned: the same rule and numbers as the category's row.
     const m = month as Month;
-    // The same shape with the domain's own types for cents and months.
-    const need = neededThisMonth(target as unknown as RuleTarget, {
+    const need = neededThisMonth(toRuleTarget(target), {
       month: m,
       assignedThisMonth: asCents(0),
       availableAtMonthStart: asCents(c.carry),

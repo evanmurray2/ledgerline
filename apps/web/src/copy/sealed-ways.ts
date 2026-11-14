@@ -159,10 +159,10 @@ export async function removeWays(
       ...(plan && plan[1].notBefore <= x.now ? { intent: { number: plan[0], hash: plan[1].hash } } : {}),
     });
     made = k.next;
-    return { entries: [k.entry], keys: [k.next.keys as unknown as SealedKeys] };
+    return { entries: [k.entry], keys: [k.next.keys] };
   });
   try {
-    if (answer?.ok && made) await onKeys?.((made as OpenBudget).keys as unknown as SealedKeys);
+    if (answer?.ok && made) await onKeys?.((made as OpenBudget).keys);
     if (!answer || answer.ok) return { ok: true };
     if (answer.why !== 'intent needed' && answer.why !== 'intent not due') return refused(answer);
   } finally {
