@@ -17,7 +17,7 @@
     "test:unit": "pnpm --filter \"./packages/**\" --filter @ledgerline/web --if-present test",
     "coverage": "pnpm --filter \"./packages/**\" --filter @ledgerline/web exec vitest run --coverage --coverage.reporter=text-summary --coverage.reporter=html",
     "test:integration": "pnpm --filter @ledgerline/worker test",
-    "test:tools": "node --test \"tools/**/*.test.mjs\" && node tools/docs/next-decision.mjs --check && node tools/docs/missing-paths.mjs",
+    "test:tools": "node --test \"tools/**/*.test.mjs\" && node tools/docs/next-decision.mjs --check && node tools/docs/missing-paths.mjs && node tools/ci/engine-boundary.mjs",
     "test:e2e": "pnpm --filter @ledgerline/e2e test && pnpm --filter @ledgerline/e2e test:worker"
   },
   "devDependencies": {
