@@ -19,6 +19,8 @@ afterEach(() => {
   setBudgetYear('2026-11-14');
 });
 
+// Intl puts a narrow no-break space before AM in newer ICU builds (CI's Node) and a plain one in older ones.
+const plain = (t: string) => t.replace(/\s/g, ' ');
 describe('months', () => {
   it('names a month', () => {
     expect(monthLabel('2026-11')).toBe('November 2026');
@@ -53,17 +55,17 @@ describe('clock times in the budget’s time zone', () => {
 
   it('follows the zone the session sets', () => {
     setBudgetTimeZone('America/Los_Angeles');
-    expect(budgetTime(at)).toBe('9:05 AM');
+    expect(plain(budgetTime(at))).toBe('9:05 AM');
     setBudgetTimeZone('America/New_York');
-    expect(budgetTime(at)).toBe('12:05 PM');
+    expect(plain(budgetTime(at))).toBe('12:05 PM');
     expect(budgetTime('not a time')).toBe('');
   });
 
   it('shows a time for today, a day otherwise', () => {
     setBudgetTimeZone('America/Los_Angeles');
     expect(syncedLabel(null, '2026-11-14')).toBe('never');
-    expect(syncedLabel(at, '2026-11-14')).toBe('9:05 AM');
+    expect(plain(syncedLabel(at, '2026-11-14'))).toBe('9:05 AM');
     expect(syncedLabel(at, '2026-11-15')).toBe('Nov 14');
-    expect(budgetDateTime(at)).toBe('Nov 14, 9:05 AM');
+    expect(plain(budgetDateTime(at))).toBe('Nov 14, 9:05 AM');
   });
 });
