@@ -297,7 +297,7 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
             value={cat}
             onChange={setCat}
             allowRta={isRefund || !outflow}
-            // A deposit that looks like a transfer still waits for a category (D-117): it keeps the choice.
+            // A deposit that looks like a transfer still waits for a category (D-119): it keeps the choice.
             noNeeds={!outflow && !onCard && origCat !== ''}
             // A category archived since: the list no longer holds it, but this transaction still has it.
             valueName={cat === origCat && !t.split ? t.categoryLabel : null}

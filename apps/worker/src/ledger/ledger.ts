@@ -172,7 +172,7 @@ export function toLedgerAccount(a: AccountRowDb): LedgerAccount {
 }
 
 /**
- * Money into checking or savings that you haven't given a category goes to Ready to Assign (D-117). Two kinds of
+ * Money into checking or savings that you haven't given a category goes to Ready to Assign (D-119). Two kinds of
  * money in don't, and stay with "needs a category" until you say which:
  * - a credit on a card: it is a refund or rewards;
  * - a deposit that looks like a transfer (the bank marks it as one, or its name says so) with no other side yet:

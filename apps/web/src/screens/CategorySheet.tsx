@@ -165,9 +165,10 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
       'category.quick.last',
     );
 
-  // The bar follows the Budget row's rule (no bar where the row has none) and moves as you type.
+  // The bar follows the Budget row's rule (no bar where the row has none) and moves as you type. It fills as the
+  // month's money is spent (D-118).
   const total = c.spent + available;
-  const leftPercent = total > 0 ? Math.max(0, Math.min(100, Math.round((available * 100) / total))) : 0;
+  const usedPercent = total > 0 ? Math.max(0, Math.min(100, Math.round((c.spent * 100) / total))) : 0;
   const tone = available < 0 ? 'over' : st.tone;
   const spentWord = c.status === 'invested' ? 'invested' : 'spent';
 
@@ -222,7 +223,7 @@ function CategorySheet({ categoryId }: { categoryId: string }) {
           {formatCents(available)}
         </span>
         {row?.leftPercent !== null && row?.leftPercent !== undefined && (
-          <Bar percent={leftPercent} tone={tone} />
+          <Bar percent={usedPercent} tone={tone} />
         )}
         <span className="text-sm text-muted">
           {c.spent > 0

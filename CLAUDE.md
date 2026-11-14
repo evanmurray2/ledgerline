@@ -22,6 +22,7 @@ A single-user, zero-based budgeting app on Cloudflare's free plan. Start with `d
 - $0 forever: Cloudflare free plan only, no services that need a payment card (no R2, no Zero Trust: D-26, D-27), Plaid Trial.
 - 10 ms of CPU per request or job step (SQLite runs in-process, so it counts); measure hot paths (`docs/measurements.md`).
 - Never mention any other budgeting app by name anywhere: code, comments, docs, UI copy, commit messages.
+- Design freeze to Nov 30, 2026 (D-117): no new decision that changes how the system is built (storage, the log, keys, sync, server routes and jobs, deploys, new services). Bug fixes, open build-plan items, measured fixes, UI, tests, docs and behavior-free refactors go ahead.
 - Stop and ask only when a choice would change how money is counted (Money rules in `docs/sync-spec.md`; `packages/domain`).
 - No off-site backups (D-29). No monitor or nightly Plaid Sandbox job wanted for now (their workflows were removed, D-49).
 - The owner works from an iPhone: give short, plain steps with direct links.

@@ -63,6 +63,8 @@ jobs:
         run: node tools/ci/reproducible-check.mjs
       - name: Migration check
         run: node tools/ci/migration-check.mjs
+      - name: Engine boundary (what the Worker runs, what the device runs)
+        run: node tools/ci/engine-boundary.mjs
       - name: Bundle size budget
         run: node tools/ci/bundle-budget.mjs
   integration:

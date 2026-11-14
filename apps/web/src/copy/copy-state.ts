@@ -42,6 +42,8 @@ export interface CopyState {
   forked?: boolean;
   /** Another device showed different numbers at the same log entry (the device check, D-116). */
   differs?: DevicesDiffer | null;
+  /** This device has saved no full backup for BACKUP_DUE_DAYS (`backupDue`): Budget → Needs attention says so. */
+  backupDue?: boolean;
 }
 
 /** Why a sync starts from nothing; sent with the first request (`why`) and shown while it downloads. */

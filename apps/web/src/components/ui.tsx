@@ -80,7 +80,8 @@ const ICONS = {
   alert: 'M12 7v6M12 17h.01',
   down: 'M12 5v14M5 12l7 7 7-7',
   up: 'M12 19V5M5 12l7-7 7 7',
-  half: 'M12 3a9 9 0 1 0 0 18V3z',
+  // Half funded: a circle with its left half lined in, so it reads in outline, not as a half moon.
+  half: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 3v18M12 7.5H5M12 12H3.5M12 16.5H5',
   dash: 'M5 12h14',
   clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2',
   budget: 'M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 10h18M7 15h4',
@@ -372,14 +373,26 @@ export function SectionTitle({
   children,
   note,
   action,
+  outer,
 }: {
   children: ReactNode;
   note?: ReactNode;
   action?: ReactNode;
+  /** A heading over several sections (Activity's Needs attention): larger and not in capitals, so it doesn't read as
+   * one more section heading stacked on the next. */
+  outer?: boolean;
 }) {
   return (
     <div className="flex min-h-9 items-center justify-between px-0.5">
-      <h2 className="m-0 text-sm font-bold uppercase tracking-caps text-ink-2">{children}</h2>
+      <h2
+        className={
+          outer
+            ? 'm-0 text-xl font-bold text-ink'
+            : 'm-0 text-sm font-bold uppercase tracking-caps text-ink-2'
+        }
+      >
+        {children}
+      </h2>
       {note !== undefined && <span className="text-xs text-muted">{note}</span>}
       {action}
     </div>

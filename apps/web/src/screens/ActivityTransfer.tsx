@@ -36,7 +36,7 @@ export function TransferScreen() {
   const sent = t.amount > 0;
   // Filing asked about this row. Any other row gets here from "It's a transfer…": it has no question to answer "no" to.
   const unclear = t.kind === 'transfer' && !t.otherAccountName;
-  // Money into checking or savings you call income goes to Ready to Assign (D-117); a credit on a card needs a category.
+  // Money into checking or savings you call income goes to Ready to Assign (D-119); a credit on a card needs a category.
   const onCard =
     (accounts.data?.groups ?? []).flatMap((g) => g.accounts).find((a) => a.id === t.accountId)?.kind ===
     'credit';

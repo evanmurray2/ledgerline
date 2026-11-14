@@ -7,12 +7,14 @@
 // If a step before the seal fails, the copy is emptied again and nothing the server stored is in use: the next
 // start begins again from the top. Once sealed, the budget is locked whatever comes after: the copy and its place
 // in the log are kept, and a read-back that fails (no answer, or not the bytes sent) is tried again; if it still
-// fails, the start ends well all the same and says so (`snapshotRead: false`): this device opens the budget from its
-// kept place, and writes its next snapshot when one is due.
+// fails, the same state is written once more as a new snapshot (`rewriteId`) and read back, so a second device can
+// join even if the server lost the first one. If that fails too, the start ends well all the same and says so
+// (`snapshotRead: false`): this device opens the budget from its kept place, and writes its next snapshot when one
+// is due.
 import { startChain, toHex, type BudgetKeys, type Bytes, type Entry } from '@ledgerline/seal';
 import { LOG_SCHEMA_VERSION } from '../seal/log-versions.js';
 import { DeviceLog } from './device-log.js';
-import { dumpChunks, tableHashes, type SnapshotTransport } from './device-snapshot.js';
+import { dumpChunks, tableHashes, writeSnapshot, type SnapshotTransport } from './device-snapshot.js';
 import type { LocalEngine } from './engine.js';
 import { LogSession } from './log-session.js';
 import { FILED_KEY } from './sealed-filing.js';
@@ -44,6 +46,8 @@ export interface StartDeps {
   clock: () => number;
   /** A new id for the first snapshot (a ULID). */
   snapshotId: string;
+  /** A second new id, for the same state written again when the first snapshot does not read back. */
+  rewriteId: string;
   /**
    * The budget's time zone (IANA): the device's own, from Intl, when not given. One the device can't use (not a
    * zone Intl knows) falls back to America/Los_Angeles, the server's default before D-102.
@@ -51,8 +55,8 @@ export interface StartDeps {
   timeZone?: string;
   encode: (e: Entry) => Uint8Array;
   start: StartTransport;
-  /** The sealed budget's snapshot routes, for the read-back after the seal. */
-  snapshots: Pick<SnapshotTransport, 'manifest' | 'chunk'>;
+  /** The sealed budget's snapshot routes, for the read-back after the seal and the write again. */
+  snapshots: Pick<SnapshotTransport, 'manifest' | 'chunk' | 'begin' | 'put'>;
 }
 
 export type StartResult = { ok: true; log: DeviceLog; snapshotRead: boolean } | { ok: false; why: string };
@@ -147,6 +151,12 @@ export async function startOnDevice(engine: LocalEngine, d: StartDeps): Promise<
     let read = false;
     for (let i = 0; i < READ_BACK_TRIES && !read; i++)
       read = await readBack(log, d, sealed, plain).catch(() => false);
+    // The server may have lost it: the same state again, as a new snapshot that is read back as it is written.
+    if (!read)
+      read = await writeSnapshot(engine, log, d.snapshots as SnapshotTransport, d.rewriteId).then(
+        (w) => w.written,
+        () => false,
+      );
     return { ok: true, log, snapshotRead: read };
   } catch (x) {
     // Before the seal nothing is in use; after it, the copy is the budget's and stays.

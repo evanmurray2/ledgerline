@@ -84,7 +84,7 @@ function CategoryRowPhone({ row, month }: { row: BudgetCategoryRow; month: strin
           <Pill tone={catTone(row)}>{formatCents(row.available)}</Pill>
         )}
       </div>
-      {row.leftPercent !== null && <Bar percent={row.leftPercent} tone={catTone(row)} />}
+      {row.leftPercent !== null && <Bar percent={100 - row.leftPercent} tone={catTone(row)} />}
     </Link>
   );
 }

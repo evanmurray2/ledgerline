@@ -273,6 +273,11 @@
     height: 100%;
   }
 
+  /* Wrapped text doesn't leave one short word alone on its last line ("sign / in."). */
+  body {
+    text-wrap: pretty;
+  }
+
   /*
    * The app is one screen that never scrolls as a whole: lists scroll inside it. Without this, iPhone Safari
    * drags the whole page (tab bar and all) when you swipe on something that doesn't scroll, like the tab bar.

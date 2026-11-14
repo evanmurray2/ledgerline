@@ -61,7 +61,7 @@ transferRoutes.post('/transfers/:key/pick', async (c) => {
   const me = await loadTx(s, key);
   refuseHistory(me);
   // Any row that isn't a transfer yet can be called one, not only one filing left to sort out: a deposit whose name
-  // doesn't look like a transfer is in Ready to Assign (D-117) and is never asked about. Money matched to what you're
+  // doesn't look like a transfer is in Ready to Assign (D-119) and is never asked about. Money matched to what you're
   // owed is unlinked first. "It was income / a payment" answers a question, so it needs a row that asks one.
   const unclear = me.transfer_state === 'unsorted';
   const answers = !!r.otherKey || !!r.accountId || !!r.unlinked;
@@ -167,7 +167,7 @@ transferRoutes.post('/transfers/:key/pick', async (c) => {
     );
   } else {
     // Neither: a payment (or a credit on a card) needs a category. A deposit into checking or savings is income: you
-    // said so, so it goes to Ready to Assign even when its name looks like a transfer (D-117).
+    // said so, so it goes to Ready to Assign even when its name looks like a transfer (D-119).
     const income = me.amount > 0 && me.account_kind !== 'credit';
     w.push(
       s.q(

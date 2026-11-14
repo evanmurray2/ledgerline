@@ -184,7 +184,7 @@ activityRoutes.post('/match/:key/unlink', async (c) => {
   const now = editNow(c);
   await loadTx(s, key);
   // Rule 12: the owed items open again, and the inflow goes back to where the usual rules put it (D-98): Ready to Assign
-  // for money into checking or savings (D-117), Needs category for a card credit or a deposit that looks like a transfer.
+  // for money into checking or savings (D-119), Needs category for a card credit or a deposit that looks like a transfer.
   const w = [
     s.q(
       `UPDATE txn_link SET undone_at = ?3 WHERE budget_id = ?1 AND kind = 'reimbursement_of' AND from_key = ?2 AND undone_at IS NULL`,

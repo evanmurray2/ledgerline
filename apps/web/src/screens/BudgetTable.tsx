@@ -104,20 +104,10 @@ function AssignedCell({
   );
 }
 
-/**
- * Spent, in the same dark ink as every amount, with the share of the month's money it used beneath it (not for
- * overspent rows: their red pill already says it).
- */
+/** Spent, in the same dark ink as every amount. The bar under the name already shows the share used. */
 function SpentCell({ row }: { row: BudgetCategoryRow }) {
   if (row.status === 'invested') return <span className="text-ink">Invested {formatCents(row.spent)}</span>;
-  if (row.spent === 0) return <span className="font-semibold text-ink">{formatCents(0)}</span>;
-  const used = row.leftPercent === null || row.status === 'overspent' ? null : 100 - row.leftPercent;
-  return (
-    <span className="flex flex-col items-end gap-0.5">
-      <span className="font-semibold text-ink">{formatCents(row.spent)}</span>
-      {used !== null && <span className="text-xs text-muted">{used}% used</span>}
-    </span>
-  );
+  return <span className="font-semibold text-ink">{formatCents(row.spent)}</span>;
 }
 
 /**
@@ -220,7 +210,7 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
           {r.name}
           <span className="text-sm font-normal text-muted">{r.detail}</span>
         </button>
-        {/* The phone's bar: how much of the month's money is left, readable without the numbers. */}
+        {/* The phone's bar: how much of the month's money is spent, readable without the numbers (D-118). */}
         {r.bar && (
           <div className="mb-1.5 max-w-[320px]">
             <Bar percent={r.bar.percent} tone={r.bar.tone} />
@@ -263,7 +253,7 @@ export function DesktopTable({ b, month }: { b: BudgetView; month: string }) {
       spent: <SpentCell row={c} />,
       avail: formatCents(c.available),
       tone: isQuiet(c.status) ? null : STATUS[c.status].tone,
-      bar: c.leftPercent === null ? null : { percent: c.leftPercent, tone: catTone(c) },
+      bar: c.leftPercent === null ? null : { percent: 100 - c.leftPercent, tone: catTone(c) },
       open: () => void navigate({ to: `/budget/category/${c.id}`, search: { month } }),
       track: 'budget.category',
     });

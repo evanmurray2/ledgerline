@@ -111,7 +111,7 @@ your payees matching what you type under it; a tap fills the name in, and any ot
 
 | Part                                | Use                                                                           |
 | ----------------------------------- | ----------------------------------------------------------------------------- |
-| `Card`, `SectionTitle`              | A bordered group of rows, and the heading above it.                           |
+| `Card`, `SectionTitle`              | A bordered group of rows, and the heading above it; `outer` over several.     |
 | `Pill`, `StatusWord`, `Bar`         | A category's state, in its `TONE`.                                            |
 | `Money`                             | An amount, formatted, tabular digits.                                         |
 | `Chip`                              | A filter in a `chip-row`.                                                     |

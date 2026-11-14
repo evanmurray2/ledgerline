@@ -5,7 +5,7 @@
 // has (it backfills from rows a copy doesn't keep, say), this fails: bump SYNC_FORMAT or DERIVE_VERSION, so old
 // copies work everything out again.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { LocalEngine, migrateLocal, PHONE_TABLES } from '../src/local/engine.js';
+import { LocalEngine, migrateLocal, pendingMigrations, PHONE_TABLES } from '../src/local/engine.js';
 import { splitStatements } from '../src/store/adapter.js';
 import { BUDGET_MIGRATIONS } from '../src/store/migrations.gen.js';
 import { SYNC_TABLES, triggerNames, type SyncRow } from '../src/sync-tables.js';
@@ -149,5 +149,24 @@ describe('a copy left by an older app version upgrades to the screens a new phon
     if (await e.needsDerive()) await e.derive();
     const got = await screens(e, month);
     for (const path of SCREENS(month)) expect(got[path], `${path} after ${name}`).toEqual(reference[path]);
+  });
+});
+
+// The app keeps the saved copy from before an update whenever an open runs budget migrations on it
+// (apps/web/src/copy/copy.ts keepBeforeUpdate). It learns that from pendingMigrations, read before migrateLocal.
+describe('the migrations an open runs on a copy', () => {
+  it('names the migrations an older copy has not run, and none once it has', async () => {
+    const db = copyDb(`pending-${++copies}`);
+    const last = BUDGET_MIGRATIONS[BUDGET_MIGRATIONS.length - 1]!;
+    await olderSchema(db, BUDGET_MIGRATIONS.slice(0, -1));
+    expect(await pendingMigrations(db)).toEqual([last.name]);
+    await migrateLocal(db, Date.now());
+    expect(await pendingMigrations(db)).toEqual([]);
+  });
+
+  it('never names the migration a copy skips', async () => {
+    const db = copyDb(`pending-${++copies}`);
+    await migrateLocal(db, Date.now());
+    expect(await pendingMigrations(db)).not.toContain('0006_drop_phone_tables_on_server.sql');
   });
 });

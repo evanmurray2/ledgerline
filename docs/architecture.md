@@ -18,6 +18,14 @@ Every budget is **locked** (sealed) (D-102): the server holds it only as a signe
 
 Data lives only in Durable Objects' SQLite (D-37, D-38). Cloudflare keeps 30 days of point-in-time recovery for each object; there is no other backup (D-29). Free plan only, no payment card (D-26).
 
+## Where code runs
+
+The engine on the device and the server both live in `apps/worker/src`, so a folder name doesn't say where its code runs. `tools/ci/engine-boundary.mjs` (in `ci`) follows each side's runtime imports and keeps them apart:
+
+- **The Worker** (`src/index.ts`): `store/`, `seal/`, `ops/`, the sign-in and account routes (`routes/auth.ts`, `signup.ts`, `people.ts`, `security.ts`, `device-add.ts`, `recovery-key.ts`, `request-challenge.ts`, `signup-switch.ts`), and `sync/lease.ts`, `breaker.ts`, `provider.ts` (shared).
+- **The device** (`src/local/web-entry.ts`): `local/`, `views/`, `ledger/`, `budget/`, the budget's routes (`routes/api.ts` and what it mounts), filing (`sync/process.ts` and the rest of `sync/`). The 10 ms rule doesn't bind this code; memory on an iPhone does.
+- **Both**: twelve small files (the SQL interface, the clock, the log's formats, the migrations), listed in the check's `SHARED`. A new shared file is added there in the same pull request.
+
 ## What the server stores for a locked budget
 
 - **The log** (`seal/log-store.ts`, store migration 0005): a genesis entry, then signed entries in order, each sealed with the budget key, padded. A write is whole or not at all, checked by the log's rules and the server's own (`packages/seal`). Public entries (key changes, ways in) stay readable as signed facts with no budget data.
@@ -43,6 +51,8 @@ Data lives only in Durable Objects' SQLite (D-37, D-38). Cloudflare keeps 30 day
 - **Same code.** `LocalEngine` keeps the tables the server never had (budget lines, month snapshots, month totals); `engine.test.ts` checks a copy that rebuilt only what changed shows the screens of one worked out from scratch. The copy runs the budget migrations itself (`migrateLocal`).
 - **Device check** (D-116, `local/device-check.ts`; not the Settings page of that name, which D-108 removed). After a round that leaves the copy settled at entry N, at most every 5 minutes and once per entry, the device hashes what its screens show for the month (Ready to Assign, each category, each card's payment category, each account's balances) and sends an HMAC of it under the budget's check key. It keeps its last 8 hashes and compares the other devices' HMACs that come with the log; one that differs shows in Budget → Needs attention with Rebuild, which makes the copy again from the newest checked snapshot. It never writes the budget's tables or blocks an edit.
 - **Saved copy.** Encrypted with a key from the passkey (PRF) and a per-device share the server keeps (`copy/vault.ts`), as one blob in IndexedDB. The app refuses a server that answers as if a budget were not locked (`copy/sealed-session.ts`).
+- **Before an update.** When an open runs budget migrations on the saved copy (`pendingMigrations`), the app keeps the saved copy from before them beside it for 14 days (`copy.ts` `keepBeforeUpdate`); Settings → Backup can save it as a full backup. The server can't read the budget, so this is the one way back from a migration that went wrong.
+- **What only the device notices** (`screens/DeviceAttention.tsx`). Budget → Needs attention asks for a full backup when this device has saved none for 30 days, and names a bank link with no complete fetch for 24 hours (the server's `lastSynced`; one that needs a sign-in shows in Accounts). With no monitor (D-49) and invocation logs off (D-112), these are the warnings that the one off-site copy is old or that the fetch job stopped.
 
 ## Background work
 

@@ -106,7 +106,8 @@ export class EngineHost {
     });
   }
 
-  open(who: EngineIdentity, bytes: ArrayBuffer | null): Promise<EngineState> {
+  /** `migrated`: the budget migrations this open ran on the copy (none for a new copy). */
+  open(who: EngineIdentity, bytes: ArrayBuffer | null): Promise<EngineState & { migrated?: string[] }> {
     return this.call('open', { who, bytes }, bytes ? [bytes] : []);
   }
   derive(): Promise<{ rta: number } | null> {
@@ -210,8 +211,9 @@ export class EngineHost {
     genesis: Uint8Array,
     deviceId: string,
     snapshotId: string,
+    rewriteId: string,
   ): Promise<{ ok: true; number: number } | { ok: false; why: string }> {
-    return this.call('start', { keys, genesis, deviceId, snapshotId });
+    return this.call('start', { keys, genesis, deviceId, snapshotId, rewriteId });
   }
   state(): Promise<EngineState> {
     return this.call('state');

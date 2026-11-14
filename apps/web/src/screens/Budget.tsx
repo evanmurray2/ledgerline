@@ -28,6 +28,7 @@ import { BlockedAction } from '../components/BlockedAction';
 import { AllGroups, allAssignedZero } from './BudgetRows';
 import { AttentionList } from './BudgetAttention';
 import { useDevicesDiffer } from './DevicesDiffer';
+import { useDeviceAttention } from './DeviceAttention';
 import { FirstBudget, NewMonth, OverAssigned, PastNote } from './BudgetStates';
 import { DesktopTable } from './BudgetTable';
 
@@ -200,10 +201,12 @@ function SyncProblem({ text }: { text: string }) {
     <Link
       to="/accounts"
       search={{ back: here }}
-      className="flex items-center gap-2 bg-warn-bg px-4 py-2 text-sm font-semibold text-warn-fg no-underline"
+      className="flex min-h-11 items-center gap-2 bg-warn-bg px-4 py-2 text-sm font-semibold text-warn-fg no-underline"
     >
       <Icon name="alert" size={16} stroke={2.6} />
-      {text} · see Accounts
+      {/* The chevron says it opens Accounts, as the same problem's card on Accounts does. */}
+      <span className="min-w-0 flex-1">{text}</span>
+      <Icon name="chevR" size={16} />
     </Link>
   );
 }
@@ -217,6 +220,7 @@ export function BudgetScreen() {
   const q = useBudget(month);
   const b = q.data;
   const differs = useDevicesDiffer();
+  const device = useDeviceAttention();
   const scroller = useRef<HTMLDivElement>(null);
   const thin = useScrolledDown(scroller, !!b);
 
@@ -234,10 +238,12 @@ export function BudgetScreen() {
   // This month's "has started" card: it decides itself whether to show (nothing assigned yet, or just filled).
   const newMonth = month === b.currentMonth && !empty;
   // Ready to Assign below zero has its own banner (OverAssigned), so it isn't counted again here.
-  // Two devices that showed different numbers (D-116) count as one more.
+  // Two devices that showed different numbers (D-116) count as one more, and so do an overdue backup and each bank
+  // that hasn't synced for a day (DeviceAttention.tsx).
   const count =
     b.attention.filter((a) => a.section !== 'Low' && a.section !== 'Ready to Assign').length +
-    (differs ? 1 : 0);
+    (differs ? 1 : 0) +
+    device.count;
   const content = (
     <>
       <PastNote month={month} current={b.currentMonth} />

@@ -46,7 +46,8 @@ export function TxnRow({
   const desktop = useIsDesktop();
   // On a phone a row with a button stacks: the text gets the full width, and the badge and button share a line.
   const stacked = !!action && !desktop;
-  // Tags: the status first (filled), then the category (outlined), so neither crowds the grey line.
+  // Tags: the status first (filled), then the category as plain text. An outline would read as a button, and the
+  // category isn't one: the row opens the transaction.
   const category = !categoryMenu && r.categoryLabel && r.categoryLabel !== r.badge ? r.categoryLabel : null;
   const badge = (r.badge || category || categoryMenu) && (
     <span className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -58,10 +59,7 @@ export function TxnRow({
       {category && (
         // A transfer's chip takes the transfer color, so it reads as one even under another tag ("Added by you").
         <span
-          className={cx(
-            'rounded-sm border px-2 py-[1px] text-xs font-semibold',
-            category === 'Transfer' ? 'border-transfer-fg text-transfer-fg' : 'border-line text-ink-2',
-          )}
+          className={cx('text-xs font-semibold', category === 'Transfer' ? 'text-transfer-fg' : 'text-ink-2')}
         >
           {category}
         </span>

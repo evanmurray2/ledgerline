@@ -14,7 +14,7 @@ back"). Unlinking a match put the money back in Waiting to match.
 **Decision.**
 
 1. **Nothing is held.** Sync no longer marks money from a person as Waiting to match. It is placed like any other
-   money in: Ready to Assign for money into checking or savings (D-117); a card credit or a deposit that looks like a
+   money in: Ready to Assign for money into checking or savings (D-119); a card credit or a deposit that looks like a
    transfer still needs a category.
 2. **Match stays**, from the transaction's sheet ("Money back for something owed to you? Match") and from Owed to you.
    It links the money to what it pays back and settles those items; all of the money is in Ready to Assign, the
