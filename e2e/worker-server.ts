@@ -2,7 +2,7 @@
 // so the configs differ only in what they add. Each run starts from an empty store in its own folder.
 
 /** The e2e Worker's token key, as `TOKEN_KEYS` takes it after the key's number. Never a production key. */
-const TOKEN_KEY = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=';
+const TOKEN_KEY = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8='; // gitleaks:allow (the e2e test key, as in the vitest configs; never a production key)
 
 /**
  * The time the server's clock stands still at: when the run starts. Every budget is locked (D-102), and a device
