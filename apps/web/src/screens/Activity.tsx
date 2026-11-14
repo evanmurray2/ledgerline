@@ -366,14 +366,6 @@ export function ActivityScreen() {
     }
   };
 
-  // A row already under Check these, with its Review button, isn't listed again under Pending; Pending's total is
-  // then what its own rows add up to.
-  const checking = new Set(toCheck.map((r) => r.key));
-  const pendingRows = (v?.pending ?? []).filter((r) => !checking.has(r.key));
-  const pendingShownTotal =
-    (v?.pendingTotal ?? 0) +
-    (v?.pending ?? []).filter((r) => checking.has(r.key)).reduce((sum, r) => sum + r.amount, 0);
-
   const selKeys = openNeeds.filter((r) => sel[r.key]).map((r) => r.key);
   // Under All it sets the groups that need you apart from Pending and Posted; the Needs attention filter's chip
   // already says it.
@@ -535,9 +527,11 @@ export function ActivityScreen() {
           )}
           {v && toCheck.length > 0 && <CheckThese rows={toCheck} onDismiss={(r) => void dismiss(r)} />}
           {v && v.removedByBank.length > 0 && <RemovedByBank rows={v.removedByBank} />}
-          {v && pendingRows.length > 0 && (
-            <Section title="Pending" note={`counts now · ${formatCents(pendingShownTotal)}`}>
-              {pendingRows.map((r) => (
+          {v && v.pending.length > 0 && (
+            // Every pending row counts now, a check that is also under Check these included, so Pending lists them
+            // all and its total is what counts (D-118 had dropped the check here, which understated it).
+            <Section title="Pending" note={`counts now · ${formatCents(v.pendingTotal)}`}>
+              {v.pending.map((r) => (
                 <TxnRow key={r.key} r={r} base="/activity" {...picked(r)} />
               ))}
             </Section>

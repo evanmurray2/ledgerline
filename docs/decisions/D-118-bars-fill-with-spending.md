@@ -19,8 +19,11 @@ the device check (D-116) are unchanged. The desktop table drops "57% used" under
 **Other fixes in the same PR** (no decision needed, listed here so they are found together): amounts on Budget's
 Needs attention and Activity's Needs category rows keep the right edge, with the button on the line below; Fund all
 is an outlined pill, so the Assign bar stays the one solid button; a short card that the Overspent fix covers too is
-shown in a neutral color; Budget's sync strip has a chevron; Activity lists a check under Check these only, not again
-under Pending (Pending's total is its own rows); the outer "Needs attention" heading is larger than the groups under
+shown in a neutral color; Budget's sync strip has a chevron; the outer "Needs attention" heading is larger than the groups under
 it; category tags on rows are plain text, not outlined; the bank's own text is fainter; "9:00 AM" no longer breaks
 before AM; text wraps without a lone last word; "N more" under a banner reads "Show N more" with a chevron; the
 Underfunded icon is a circle half lined in.
+
+**Undone (Nov 14, 2026).** This PR also listed a check under Check these only, not again under Pending. That made
+Pending's total leave the check out, though it counts now: "counts now · $81.00" instead of $201.00. Pending lists
+every pending row and its full total again.
