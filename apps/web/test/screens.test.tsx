@@ -160,8 +160,8 @@ describe('Activity', () => {
     expect(screen.queryByText('Transfers to sort out')).toBeNull();
     expect(screen.getByText(/4 · −\$86\.48/)).toBeTruthy();
     expect(screen.getByText('Check these')).toBeTruthy();
-    // The check is under Check these, so Pending lists and totals only its own rows.
-    expect(screen.getByText('counts now · $81.00')).toBeTruthy();
+    // Every pending row counts now, the check under Check these included.
+    expect(screen.getByText('counts now · $201.00')).toBeTruthy();
     expect(screen.getByText('Acme Corp payroll')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Needs attention 6' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Not posted yet' })).toBeTruthy();
