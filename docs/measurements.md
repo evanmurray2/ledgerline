@@ -219,7 +219,7 @@ Working out the budget moved to the phone (D-45), which has no 10 ms limit; the 
 
 ## Update: bank pending matching (Nov 3, 2026, D-47)
 
-`measure/sync.measure.ts`, sync processing step, two runs each, ms (median / p90): before 1.4–1.5 / 1.6–2.4, after 1.5–1.7 / 2.2–2.5 at count 500 (cold first steps 11 vs 14–17). `pairBankPending` alone: 1.9 ms for 400 unmatched posted rows against 60 pending rows (an extreme account), with each description cleaned once per call; older posted rows are read only when the batch brings a pending row for that account.
+`measure/sync.measure.ts` (since removed), sync processing step, two runs each, ms (median / p90): before 1.4–1.5 / 1.6–2.4, after 1.5–1.7 / 2.2–2.5 at count 500 (cold first steps 11 vs 14–17). `pairBankPending` alone: 1.9 ms for 400 unmatched posted rows against 60 pending rows (an extreme account), with each description cleaned once per call; older posted rows are read only when the batch brings a pending row for that account.
 
 ## Update: step sizes in the code match D-37 (Nov 2, 2026)
 
