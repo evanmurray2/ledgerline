@@ -33,6 +33,7 @@ const SECTIONS: { id: string; name: string; to: string }[] = [
   { id: 'payees', name: 'Payees', to: '/settings/payees' },
   { id: 'connections', name: 'Bank connections', to: '/settings/connections' },
   { id: 'data', name: 'Backup and export', to: '/settings/data' },
+  { id: 'usage', name: 'Usage file', to: '/settings/usage' },
   { id: 'sign-in', name: 'Sign-in and devices', to: '/settings/sign-in' },
 ];
 /** The privacy policy opens as a page of its own (screens/PrivacyPolicy.tsx), signed in or not. */
@@ -64,7 +65,8 @@ function useSectionMeta() {
         ? `${conns.used} of ${conns.limit} bank links used${problem}`
         : problem.slice(3)
       : '',
-    data: 'Full backup · usage export · recovery',
+    data: 'Full backup',
+    usage: 'Taps and timings this device recorded',
     users: 'Who has an account · turn one off',
     'sign-in': signInMeta(security.data),
   };
@@ -168,7 +170,7 @@ function Preferences() {
     await api.patchSettings(body);
     await qc.invalidateQueries({ queryKey: qk.session });
     if (body.tracking === false)
-      setTrackNote('Recording stopped. What was recorded is deleted after 90 days.');
+      setTrackNote('Recording stopped. What this device recorded is deleted after 90 days.');
     if (body.tracking === true) setTrackNote(null);
   };
   if (!s) return <Loading />;
@@ -197,7 +199,7 @@ function Preferences() {
           mutates
           track="settings.tracking"
           label="Record how I use the app"
-          help="Taps and timings only, no amounts or names. Export it from Backup and export."
+          help="Taps and timings only, no amounts or names. Kept on this device. Save it from Usage file."
           checked={s.settings.tracking}
           onChange={(v) => void patch({ tracking: v })}
         />
@@ -249,6 +251,12 @@ function SettingsHome() {
             name="Backup and export"
             meta={meta.text.data ?? ''}
             track="settings.data"
+          />
+          <RowLink
+            to="/settings/usage"
+            name="Usage file"
+            meta={meta.text.usage ?? ''}
+            track="settings.usage"
           />
         </Card>
         <SectionTitle>Sign-in</SectionTitle>
@@ -347,4 +355,5 @@ export { PayeesScreen, RenamePayeeSheet } from './settings/Payees';
 export { ConnectionsScreen, LinkBankFlow, LinkMeter } from './settings/Connections';
 export { UsersScreen } from './settings/People';
 export { DataScreen } from './settings/Data';
+export { UsageScreen } from './settings/UsageFile';
 export { SignInSettingsScreen } from './settings/SignIn';

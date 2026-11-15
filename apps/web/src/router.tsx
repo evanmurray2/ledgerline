@@ -52,6 +52,7 @@ const CategoriesScreen = lazyScreen(settings, 'CategoriesScreen');
 const CategoryEditSheet = lazyScreen(settings, 'CategoryEditSheet');
 const ConnectionsScreen = lazyScreen(settings, 'ConnectionsScreen');
 const DataScreen = lazyScreen(settings, 'DataScreen');
+const UsageScreen = lazyScreen(settings, 'UsageScreen');
 const PayeesScreen = lazyScreen(settings, 'PayeesScreen');
 const RenamePayeeSheet = lazyScreen(settings, 'RenamePayeeSheet');
 const SettingsLayout = lazyScreen(settings, 'SettingsLayout');
@@ -515,6 +516,11 @@ const dataRoute = createRoute({
   validateSearch: returnSearch,
   component: DataScreen,
 });
+const usageRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'usage',
+  component: UsageScreen,
+});
 const signInRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'sign-in',
@@ -561,6 +567,7 @@ const routeTree = rootRoute.addChildren([
     payeesRoute.addChildren([payeeRenameRoute]),
     connectionsRoute,
     dataRoute,
+    usageRoute,
     signInRoute,
     usersRoute,
   ]),

@@ -49,6 +49,7 @@ const SCREEN_NAMES: Record<string, string> = {
   'settings.payee.rename': 'Settings · Rename payee',
   'settings.connections': 'Settings · Bank connections',
   'settings.data': 'Settings · Backup and export',
+  'settings.usage': 'Settings · Usage file',
   'settings.sign-in': 'Settings · Sign-in and devices',
   'settings.signin': 'Settings · Sign-in and devices',
   'settings.users': 'Settings · Users',
