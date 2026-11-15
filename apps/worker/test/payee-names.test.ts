@@ -39,10 +39,10 @@ function plaidTxn(id: string, amount: number, name: string, o: Record<string, un
 }
 
 let runN = 0;
-async function sync(added: unknown[], modified: unknown[] = []): Promise<void> {
+async function sync(added: unknown[], modified: unknown[] = [], now = NOW): Promise<void> {
   const run = `run_pnm_${++runN}`;
-  expect(await acquire(db, C, run, NOW)).toBe(true);
-  const ctx = { db, connectionId: C, budgetId: B, holder: run, now: NOW };
+  expect(await acquire(db, C, run, now)).toBe(true);
+  const ctx = { db, connectionId: C, budgetId: B, holder: run, now };
   await beginRun(ctx, 'test');
   const body = JSON.stringify({ added, modified, removed: [], next_cursor: `cur${runN}`, has_more: false });
   const key = rawPageKey(B, C, run, 0, 0);
@@ -51,16 +51,16 @@ async function sync(added: unknown[], modified: unknown[] = []): Promise<void> {
       .prepare(
         `INSERT INTO raw_page (key, budget_id, body, sha256, bytes, created_at) VALUES (?1, ?2, ?3, 'x', ?4, ?5)`,
       )
-      .bind(key, B, body, body.length, NOW),
+      .bind(key, B, body, body.length, now),
     db
       .prepare(
         `INSERT INTO sync_page (sync_run_id, page, budget_id, restart, raw_key, sha256, bytes, next_cursor, has_more, created_at) VALUES (?1, 0, ?2, 0, ?3, 'x', ?4, ?5, 0, ?6)`,
       )
-      .bind(run, B, key, body.length, `cur${runN}`, NOW),
+      .bind(run, B, key, body.length, `cur${runN}`, now),
     db.prepare(`UPDATE sync_run SET pages_fetched = 1 WHERE id = ?1`).bind(run),
   ]);
   for (let chunk = 0; ; chunk++) if ((await applyPage(ctx, provider, run, 0, chunk)).pageDone) break;
-  for (;;) if ((await processPending({ ...env, DB: db } as never, B, NOW)).caughtUp) break;
+  for (;;) if ((await processPending({ ...env, DB: db } as never, B, now)).caughtUp) break;
   await db.batch([
     db.prepare(`UPDATE connection SET sync_lock = NULL, lock_expires = NULL WHERE id = ?1`).bind(C),
     db.prepare(`UPDATE sync_run SET phase = 'done' WHERE id = ?1`).bind(run),
@@ -308,8 +308,14 @@ describe('payees from Plaid, live sync', () => {
     const { undoId } = (await r.json()) as MergeResult;
     expect(await payeeOf('jb1')).toMatchObject({ id: a.id, name: 'Coffee', named_by: 'user' });
     expect(await keysOf(a.id)).toEqual([...aKeys, ...bKeys, 'n:coffee'].sort());
-    // Rows that sync in after the join, by a key that was b's, and by the join's own key.
-    await sync([plaidTxn('jb2', 14, 'BLUEBOTTLE COFFEE 9'), plaidTxn('jc1', 15, 'Coffee')]);
+    // Rows that sync in after the join, by a key that was b's, and by the join's own key. The join and its Undo
+    // use the real clock, so these sync on it too: on the fixed NOW they would look older than the join once the
+    // real clock passed NOW, and Undo would leave them.
+    await sync(
+      [plaidTxn('jb2', 14, 'BLUEBOTTLE COFFEE 9'), plaidTxn('jc1', 15, 'Coffee')],
+      [],
+      Date.now() + 1000,
+    );
     expect((await payeeOf('jb2'))!.id).toBe(a.id);
     expect((await payeeOf('jc1'))!.id).toBe(a.id);
     expect((await post(`/settings/payees/merge/${undoId}/undo`, {})).status).toBe(200);

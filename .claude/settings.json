@@ -1,5 +1,15 @@
 {
   "permissions": {
     "allow": ["mcp__Cloudflare"]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/no-full-checks.mjs\"" }
+        ]
+      }
+    ]
   }
 }

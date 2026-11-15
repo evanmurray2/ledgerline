@@ -6,7 +6,8 @@
 
 ## How it was verified
 
-- [ ] `pnpm lint && pnpm typecheck && pnpm test`
-- [ ] Integration tests (Durable Objects)
-- [ ] Playwright (if UI changed)
+<!-- CI runs lint, typecheck and every test suite. Locally, run only the tests that cover the change. -->
+
+- [ ] Tests that cover the change, run locally (vitest on a file, Playwright `-g` for UI)
+- [ ] `ci` green on the latest commit
 - [ ] CPU budget unaffected, or re-measured (docs/measurements.md)

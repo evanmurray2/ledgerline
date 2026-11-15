@@ -205,6 +205,23 @@ test('two devices on one log: an edit shows on coming back, a new recovery key, 
   // The whole copy, sealed (not a part of it).
   expect(locked.length).toBeGreaterThan(plain.length * 0.9);
   await expect(backup.getByText('Saved. Keep it somewhere safe.')).toBeVisible();
+
+  // ---- Settings → Usage file, apart from the backup: what this device recorded, kept in its browser storage
+  // (D-120), never a name
+  await page.goto('/settings/usage');
+  const usageCard = page.getByTestId('usage-file');
+  await expect(usageCard.getByText(/\d+ events?\. No amounts or names\./)).toBeVisible();
+  const usageSaved = page.waitForEvent('download');
+  await usageCard.getByRole('button', { name: 'Download usage file' }).click();
+  const usageFile = await usageSaved;
+  expect(usageFile.suggestedFilename()).toMatch(/^ledgerline-usage-\d{4}-\d{2}-\d{2}\.json$/);
+  const usageText = readFileSync((await usageFile.path())!, 'utf8');
+  const usageJson = JSON.parse(usageText) as { kind: string; events: { screen: string; event: string }[] };
+  expect(usageJson.kind).toBe('ledgerline-usage');
+  expect(usageJson.events.some((e) => e.screen === 'settings.usage' && e.event === 'view')).toBe(true);
+  expect(usageText.includes('Climbing')).toBe(false);
+  await usageCard.getByRole('button', { name: 'Delete it from this device' }).click();
+  await expect(usageCard.getByText('Deleted from this device.')).toBeVisible();
   await page.goto('/settings/categories');
   await expect(page.getByText('Climbing')).toBeVisible({ timeout: 30_000 });
 
