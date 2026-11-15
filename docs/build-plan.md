@@ -37,6 +37,8 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] Code review (engine), left open: `shareRuns` builds its ranges from `bank_event` only, so a run with `bank_page` rows and no events (an empty fetch) is skipped (`local/log-session.ts`). Its copy's `bank_page` then differs from copies built from the log.
 - [ ] Code review (engine), left open: `raw_page` keeps every bank page body for good, though only that run's filing reads it (`local/file-run.ts`); the copy grows with each fetch. Also `openSnapshot` runs `noteChanges` per chunk and then a full derive anyway (`local/device-snapshot.ts`); measure before changing.
 - [ ] Code review (engine), left open: dead code, `hashStep`/`HASH_START`/`HashProgress` (`local/snapshot-tables.ts`, test-only since D-106), `DeviceLog.openManifest`'s `notOlder`, and `LogSession.scan` (one test).
+- [ ] Hunt month-sim, left open (Nov 15, 2026): `e2e/tests/month-sim.spec.ts` records Ready to Assign but can't check it, because the e2e server's clock stands still (`FAKE_NOW`), so every run lands in the link's first hour and its rows count as in the balance at link (D-67, `FIRST_SYNC_MS`). Check it once the e2e clock can move between days.
+- [ ] Hunt month-sim, left open: a locked budget's copy never learns a link's state (the server keeps it). Accounts now lays it over (`apps/web/src/api/link-states.ts`); the other readers of `connection.status` on the device still see "ok": the bank count in `apps/worker/src/routes/activity-view.ts` and an account register's status.
 
 ## Contract gaps (not blocking)
 

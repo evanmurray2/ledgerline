@@ -3,6 +3,9 @@
 // endpoints packages/bank-provider/src/plaid.ts calls, and serves a page in place of Plaid's hosted Link that
 // finishes the session at once and sends the browser back to the app.
 //   node fake-plaid.mjs <port>
+// A test can also script the bank (month-sim.spec.ts): POST /control/accounts sets the accounts a link sees, POST /control/day queues the next sync's added, modified and
+// removed rows and sets the accounts' balances; POST /control/fail makes every bank call fail with a Plaid error
+// code until it is sent again with no code. With no script, a new link gets the three rows below, as before.
 import { createServer } from 'node:http';
 
 const PORT = Number(process.argv[2] ?? 8796);
@@ -16,7 +19,12 @@ const publics = new Map();
 const items = new Map();
 let n = 0;
 
-const ACCOUNTS = [
+/** Days a test queued: each later sync gives the next one. */
+const days = [];
+/** A Plaid error code every item call fails with while it is set (the bank stops syncing). */
+let failing = null;
+
+let ACCOUNTS = [
   {
     account_id: 'e2e-checking',
     name: 'E2E Checking',
@@ -87,7 +95,22 @@ const server = createServer((req, res) => {
     } catch {
       return plaidError(res, 'INVALID_BODY');
     }
+    if (url.pathname === '/control/day') {
+      if (b.accounts) ACCOUNTS = b.accounts;
+      days.push({ added: b.added ?? [], modified: b.modified ?? [], removed: b.removed ?? [] });
+      return json(res, 200, { queued: days.length });
+    }
+    if (url.pathname === '/control/accounts') {
+      ACCOUNTS = b.accounts;
+      return json(res, 200, { ok: true });
+    }
+    if (url.pathname === '/control/fail') {
+      failing = b.code ?? null;
+      return json(res, 200, { failing });
+    }
+    if (url.pathname === '/control/state') return json(res, 200, { queued: days.length, failing });
     if (!b.client_id || !b.secret) return plaidError(res, 'INVALID_API_KEYS');
+    if (failing && b.access_token) return plaidError(res, failing);
     const item = () => items.get(b.access_token);
     switch (url.pathname) {
       case '/link/token/create': {
@@ -147,12 +170,13 @@ const server = createServer((req, res) => {
         // The first page brings the transactions; after that the cursor has nothing new.
         const first = !b.cursor;
         it.synced = true;
+        const day = first ? null : days.shift();
         return json(res, 200, {
           accounts: ACCOUNTS,
-          added: first ? added() : [],
-          modified: [],
-          removed: [],
-          next_cursor: `cursor-e2e-${today()}`,
+          added: first ? added() : (day?.added ?? []),
+          modified: day?.modified ?? [],
+          removed: day?.removed ?? [],
+          next_cursor: `cursor-e2e-${today()}-${++n}`,
           has_more: false,
           transactions_update_status: 'HISTORICAL_UPDATE_COMPLETE',
           request_id: 'e2e',

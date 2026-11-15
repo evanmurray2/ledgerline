@@ -30,7 +30,7 @@ export const SUITES = {
   /** A new locked budget and its screens through the real Worker (playwright.lock.config.ts). */
   lock: ['lock.spec.ts', 'screens-lock.spec.ts'],
   /** A linked bank on the fake Plaid through the real Worker (playwright.bank.config.ts). */
-  bank: ['banks.spec.ts'],
+  bank: ['banks.spec.ts', 'month-sim.spec.ts'],
 } as const;
 
 export type Suite = keyof typeof SUITES;

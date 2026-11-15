@@ -12,6 +12,9 @@ const report = failureReport('bank');
 // E2E_PORT: run several copies side by side (each its own wrangler dev and fake Plaid).
 const PORT = Number(process.env.E2E_PORT ?? 8797);
 const PLAID_PORT = PORT + 100;
+// month-sim.spec.ts links as the owner too, so it gets its own Worker and fake Plaid: one owner per store.
+const SIM_PORT = PORT + 50;
+const SIM_PLAID_PORT = SIM_PORT + 100;
 
 export default defineConfig({
   testDir: './tests',
@@ -23,7 +26,22 @@ export default defineConfig({
   retries: report.retries,
   outputDir: report.outputDir,
   use: { baseURL: `http://localhost:${PORT}`, colorScheme: 'light', ...report.use },
-  projects: [{ name: 'desktop', use: { browserName: 'chromium', viewport: { width: 1280, height: 800 } } }],
+  projects: [
+    {
+      name: 'desktop',
+      testIgnore: /month-sim\.spec\.ts$/,
+      use: { browserName: 'chromium', viewport: { width: 1280, height: 800 } },
+    },
+    {
+      name: 'month-sim',
+      testMatch: /month-sim\.spec\.ts$/,
+      use: {
+        browserName: 'chromium',
+        viewport: { width: 1280, height: 800 },
+        baseURL: `http://localhost:${SIM_PORT}`,
+      },
+    },
+  ],
   webServer: [
     {
       command: `node fake-plaid.mjs ${PLAID_PORT}`,
@@ -40,6 +58,23 @@ export default defineConfig({
       keyNumber: 9,
       vars: {
         PLAID_BASE_URL: `http://localhost:${PLAID_PORT}`,
+        PLAID_CLIENT_ID: 'e2e-client',
+        PLAID_SECRET: 'e2e-secret',
+      },
+    }),
+    {
+      command: `node fake-plaid.mjs ${SIM_PLAID_PORT}`,
+      url: `http://localhost:${SIM_PLAID_PORT}/health`,
+      stdout: 'pipe',
+      reuseExistingServer: false,
+      timeout: 30_000,
+    },
+    workerServer({
+      port: SIM_PORT,
+      store: 'e2e-bank-sim',
+      keyNumber: 9,
+      vars: {
+        PLAID_BASE_URL: `http://localhost:${SIM_PLAID_PORT}`,
         PLAID_CLIENT_ID: 'e2e-client',
         PLAID_SECRET: 'e2e-secret',
       },
