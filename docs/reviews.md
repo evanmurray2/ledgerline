@@ -23,19 +23,21 @@ The rules in `CLAUDE.md` hold, and those in `docs/hunts.md` ("Rules that a hunt 
 
 ## Reviews
 
-| Id            | Review                                                                                                                                                                        | Skill                                  | Last run |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | -------- |
-| code          | Correctness, one area per run, in turn: the engine (`apps/worker/src/local`), sync and the sealed log (`apps/worker/src/seal`, `src/sync`), Plaid fetch, `apps/web/src/copy`. | `/code-review max` on the area's files | never    |
-| tech-debt     | Code that is hard to change: duplication, dead code, large files, unclear boundaries.                                                                                         | `/engineering:tech-debt`               | never    |
-| architecture  | Design choices that no longer fit what the app does now (`docs/architecture.md` against the code).                                                                            | `/engineering:architecture`            | never    |
-| design        | Hierarchy, usability and consistency of each main screen, from screenshots of the e2e mock app (phone and desktop).                                                           | `/design:design-critique`              | never    |
-| accessibility | Contrast, names, focus order, touch target sizes, screen reader behavior.                                                                                                     | `/design:accessibility-review`         | never    |
-| security      | Weak points in the code against `docs/threat-model.md`. Each finding the `attack` hunt should try goes in its note.                                                           | `/security-review`                     | never    |
-| copy          | UI text against `docs/copy.md` (rules and terms): wrong terms, long sentences, unclear errors and empty states.                                                               | `/design:ux-copy`                      | never    |
-| design-system | Typed-in sizes, colors, corners and shadows; parts that should be shared (`docs/design-system.md`).                                                                           | `/design:design-system`                | never    |
-| tests         | Important behavior that no test covers, and tests that check nothing.                                                                                                         | `/engineering:testing-strategy`        | never    |
-| docs          | Places where `docs/claims.md`, `docs/whats-true-now.md`, `docs/architecture.md` and `docs/privacy.md` no longer match the code.                                               | none: read the claims, then the code   | never    |
+| Id            | Review                                                                                                                                                                        | Skill                                  | Last run   |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------- |
+| code          | Correctness, one area per run, in turn: the engine (`apps/worker/src/local`), sync and the sealed log (`apps/worker/src/seal`, `src/sync`), Plaid fetch, `apps/web/src/copy`. | `/code-review max` on the area's files | 2026-11-15 |
+| tech-debt     | Code that is hard to change: duplication, dead code, large files, unclear boundaries.                                                                                         | `/engineering:tech-debt`               | never      |
+| architecture  | Design choices that no longer fit what the app does now (`docs/architecture.md` against the code).                                                                            | `/engineering:architecture`            | never      |
+| design        | Hierarchy, usability and consistency of each main screen, from screenshots of the e2e mock app (phone and desktop).                                                           | `/design:design-critique`              | never      |
+| accessibility | Contrast, names, focus order, touch target sizes, screen reader behavior.                                                                                                     | `/design:accessibility-review`         | never      |
+| security      | Weak points in the code against `docs/threat-model.md`. Each finding the `attack` hunt should try goes in its note.                                                           | `/security-review`                     | never      |
+| copy          | UI text against `docs/copy.md` (rules and terms): wrong terms, long sentences, unclear errors and empty states.                                                               | `/design:ux-copy`                      | never      |
+| design-system | Typed-in sizes, colors, corners and shadows; parts that should be shared (`docs/design-system.md`).                                                                           | `/design:design-system`                | never      |
+| tests         | Important behavior that no test covers, and tests that check nothing.                                                                                                         | `/engineering:testing-strategy`        | never      |
+| docs          | Places where `docs/claims.md`, `docs/whats-true-now.md`, `docs/architecture.md` and `docs/privacy.md` no longer match the code.                                               | none: read the claims, then the code   | never      |
 
 ## Log
 
 Newest first, one line per review: date, review (and area for `code`), what it found, PR.
+
+- 2026-11-15, code (the engine, `apps/worker/src/local`): 15 findings kept. Fixed: an edit's recorded budget row carried a stale Ready to Assign, `edit_change` had no index on `n`, `http-transport.ts` had its own base64. 9 left in `docs/build-plan.md` (Code review (engine)). PR #256.

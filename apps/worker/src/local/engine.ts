@@ -193,6 +193,8 @@ export async function migrateLocal(
          had INTEGER NOT NULL, before TEXT, PRIMARY KEY (tbl, pk)
        ) WITHOUT ROWID`,
     ),
+    // Each recording trigger reads max(n): with this index that is one lookup, not a scan of every row recorded.
+    db.prepare(`CREATE INDEX edit_change_n ON edit_change (n)`),
     ...RECORDED_TABLES.flatMap((t) => recordTriggers(t, columns.get(t.name)!)).map((sql) => db.prepare(sql)),
     // A copy closed in the middle of a recording starts with it off.
     db.prepare(`DELETE FROM local_state WHERE key = 'recording'`),
@@ -896,6 +898,10 @@ export class LocalEngine {
           .prepare(`SELECT * FROM ${t.name} WHERE ${where}`)
           .bind(...k)
           .first<Record<string, unknown>>();
+        // What derive() works out is left out: it is read here before this edit's derive runs, so it can be stale,
+        // and a copy that takes the row works it out itself (snapshots leave it out too, local/snapshot-tables.ts).
+        const skip = WORKED_OUT[t.name];
+        if (d && skip) d = Object.fromEntries(Object.entries(d).filter(([c]) => !skip.includes(c)));
       }
       rows.push({ t: t.name, k, d });
       undo.unshift({
