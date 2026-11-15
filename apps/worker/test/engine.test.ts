@@ -269,3 +269,26 @@ describe('a device works out the same screens as a fresh copy', () => {
     await sameScreens(engine, month);
   });
 });
+
+describe('the rows an edit records', () => {
+  it('leave out what derive() works out (read before the edit derives, they can be stale)', async () => {
+    const engine = await seed(await newCopy());
+    const session = (await phoneJson(engine, '/api/session')) as { budget: { currentMonth: string } };
+    const cats = (await phoneJson(engine, '/api/settings/categories')) as {
+      groups: { categories: { id: string; kind: string }[] }[];
+    };
+    const spending = cats.groups.flatMap((g) => g.categories).find((c) => c.kind === 'spending')!;
+    const r = await engine.record(
+      'POST',
+      '/api/budget/assign',
+      { month: session.budget.currentMonth, items: [{ categoryId: spending.id, amount: 500 }] },
+      { id: 'e-worked-out', at: deviceNow() },
+    );
+    expect(r.response.status).toBeLessThan(300);
+    const budget = r.rows.find((x) => x.t === 'budget');
+    expect(budget?.d, 'the edit moves the budget row (data_version)').toBeTruthy();
+    for (const c of ['rta', 'summary_version', 'summary_month', 'summary_dirty_from'])
+      expect(budget!.d, c).not.toHaveProperty(c);
+    expect(budget!.d).toHaveProperty('data_version');
+  });
+});

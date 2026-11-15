@@ -1,6 +1,7 @@
 // How a device reaches the server's sealed log over HTTP (seal/log-routes.ts): the entries, the bank runs and
 // the snapshots, as the session and the snapshot code ask for them (log-session.ts, device-snapshot.ts). Nothing
 // here is trusted because the server said it: every byte this hands on is checked by the code that asked.
+import { fromBase64, toBase64 } from '@ledgerline/platform';
 import type { AppendResult } from '../seal/log-store.js';
 import type { CheckTransport, DeviceCheckRecord } from './device-check.js';
 import type { SnapshotTransport } from './device-snapshot.js';
@@ -17,17 +18,8 @@ export class TransportError extends Error {
   }
 }
 
-const b64 = (b: Uint8Array): string => {
-  let s = '';
-  for (const x of b) s += String.fromCharCode(x);
-  return btoa(s);
-};
-const unb64 = (s: string): Uint8Array<ArrayBuffer> => {
-  const bin = atob(s);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-};
+const b64 = toBase64;
+const unb64 = fromBase64;
 
 /** The message of a request the server refused because the sign-in ended (the app then shows sign-in). */
 export const SIGNED_OUT = 'Your sign-in ended. Sign in again.';
