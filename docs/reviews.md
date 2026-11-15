@@ -40,4 +40,4 @@ The rules in `CLAUDE.md` hold, and those in `docs/hunts.md` ("Rules that a hunt 
 
 Newest first, one line per review: date, review (and area for `code`), what it found, PR.
 
-- 2026-11-15, code (the engine, `apps/worker/src/local`): 15 findings kept. Fixed: an edit's recorded budget row carried a stale Ready to Assign, `edit_change` had no index on `n`, `http-transport.ts` had its own base64. 9 left in `docs/build-plan.md` (Code review (engine)). PR #PR.
+- 2026-11-15, code (the engine, `apps/worker/src/local`): 15 findings kept. Fixed: an edit's recorded budget row carried a stale Ready to Assign, `edit_change` had no index on `n`, `http-transport.ts` had its own base64. 9 left in `docs/build-plan.md` (Code review (engine)). PR #256.
