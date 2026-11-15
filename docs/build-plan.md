@@ -28,6 +28,8 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] Tech-debt review, left open: the rest of the `apps/web/src/copy/copy.ts` split (sync loop, sealed keys, edit queue share about 15 module-level `let`s; needs one state object first).
 - [ ] Tech-debt review, left open: the engine as a package (`packages/engine`). The web app now takes the engine's shapes from `local/engine-types.ts`, but still loads `web-entry.ts` and the `#november-*` aliases by a path into `apps/worker/src`.
 - [ ] Tech-debt review, left open: an unused-export check (knip lists about 118 exports and 22 files, mostly in `apps/worker/src`); and whether the 94 typed-in sizes in `apps/web/src` (`gap-[3px]`, `w-[140px]`…) need tokens (`docs/design-system.md`).
+- [ ] Hunt month-sim, left open (Nov 15, 2026): `e2e/tests/month-sim.spec.ts` records Ready to Assign but can't check it, because the e2e server's clock stands still (`FAKE_NOW`), so every run lands in the link's first hour and its rows count as in the balance at link (D-67, `FIRST_SYNC_MS`). Check it once the e2e clock can move between days.
+- [ ] Hunt month-sim, left open: a locked budget's copy never learns a link's state (the server keeps it). Accounts now lays it over (`apps/web/src/api/link-states.ts`); the other readers of `connection.status` on the device still see "ok": the bank count in `apps/worker/src/routes/activity-view.ts` and an account register's status.
 
 ## Contract gaps (not blocking)
 

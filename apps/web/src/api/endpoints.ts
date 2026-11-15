@@ -69,6 +69,7 @@ import type {
 } from '@ledgerline/contracts';
 import { z } from 'zod';
 import { del, get, patch, post, put, qs } from './client';
+import { withLinkStates } from './link-states';
 
 type In<T extends z.ZodType> = z.input<T>;
 
@@ -189,7 +190,14 @@ export const api = {
   owed: () => get('/api/owed', OwedView),
   owedAction: (id: string, body: In<typeof OwedAction>) => post(`/api/owed/${enc(id)}`, MutationResult, body),
 
-  accounts: () => get('/api/accounts', AccountsView),
+  /** For a locked budget, with each bank link's state from the server laid over it (link-states.ts). */
+  accounts: async (): Promise<AccountsView> => {
+    const view = await get('/api/accounts', AccountsView);
+    if (!isSealed()) return view;
+    // Offline or resting, the copy's view stands as it is.
+    const server = await get('/api/settings/connections', ConnectionsView).catch(() => null);
+    return server ? withLinkStates(view, server, Date.now()) : view;
+  },
   register: (id: string, show: RegisterShow) =>
     get(`/api/accounts/${enc(id)}/register${qs({ show })}`, RegisterView),
   /** An older page of a register (Show older), from the `older` cursor of the page before it. */
