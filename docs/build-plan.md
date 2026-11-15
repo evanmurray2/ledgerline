@@ -32,3 +32,4 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 ## Contract gaps (not blocking)
 
 The UI works around these (details in `apps/web/CONTRACT_NOTES.md`):
+- [ ] Flaky integration test (Nov 15, 2026, PR #253 ci, no Worker change): `apps/worker/test/payee-names.test.ts` "a join moves every key…": after Undo, `jb2` stayed on the joined payee (line 318). Probably rows filed in the same millisecond as the join; the `flaky` hunt (`docs/hunts.md`) should find the cause.

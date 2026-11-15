@@ -13,6 +13,7 @@ test-results/
 .measure/
 .claude/*
 !.claude/settings.json
+!.claude/hooks/
 .bundle/
 e2e/screenshots/
 e2e/test-results/
