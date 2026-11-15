@@ -42,4 +42,4 @@ hunt: it may load public pages, never sign in.
 
 Newest first, one line per hunt: date, strategy, what it found, PR.
 
-- 2026-11-15, month-sim: built `e2e/tests/month-sim.spec.ts` (10 bank days on a scriptable fake Plaid, two devices). Net worth and bank drift balanced every day. Found: in a locked budget a bank that needs sign-in never showed on Accounts (no banner, no Repair button), and Fetch now skipped it silently; fixed in the app (`apps/web/src/api/link-states.ts`). Ready to Assign can't be checked yet: the e2e server clock stands still, so every row counts as the link's first hour (D-67). Splits are not driven yet.
+- 2026-11-15, month-sim: built `e2e/tests/month-sim.spec.ts` (10 bank days on a scriptable fake Plaid, two devices). Net worth and bank drift balanced every day. Found: in a locked budget a bank that needs sign-in never showed on Accounts (no banner, no Repair button), and Fetch now skipped it silently; fixed in the app (`apps/web/src/api/link-states.ts`). Ready to Assign can't be checked yet: the e2e server clock stands still, so every row counts as the link's first hour (D-67). Splits are not driven yet. #255
