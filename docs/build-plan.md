@@ -39,6 +39,7 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 - [ ] Code review (engine), left open: dead code, `hashStep`/`HASH_START`/`HashProgress` (`local/snapshot-tables.ts`, test-only since D-106), `DeviceLog.openManifest`'s `notOlder`, and `LogSession.scan` (one test).
 - [ ] Hunt month-sim, left open (Nov 15, 2026): `e2e/tests/month-sim.spec.ts` records Ready to Assign but can't check it, because the e2e server's clock stands still (`FAKE_NOW`), so every run lands in the link's first hour and its rows count as in the balance at link (D-67, `FIRST_SYNC_MS`). Check it once the e2e clock can move between days.
 - [ ] Hunt month-sim, left open: a locked budget's copy never learns a link's state (the server keeps it). Accounts now lays it over (`apps/web/src/api/link-states.ts`); the other readers of `connection.status` on the device still see "ok": the bank count in `apps/worker/src/routes/activity-view.ts` and an account register's status.
+- [ ] Hunt two-devices, left open (Nov 16, 2026): an archived category takes new money and spending. An assign, a category or a split to it, made on a device that has not seen the archive yet, lands after it; the category then holds money or is overspent, and Budget lists no overspending for archived ones (D-79). Whether such edits are refused is the owner's choice.
 
 ## Contract gaps (not blocking)
 
