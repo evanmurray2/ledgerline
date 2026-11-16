@@ -90,6 +90,15 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
           'split_total',
           `The lines must add up to ${formatCents(p.amount ?? t.amount)}.`,
         );
+      // Each line's category is one a whole row could take (as `categoryId` above): it exists and is no card's
+      // payment category. Found by the two-devices hunt: a line took any id, and its money left every category.
+      for (const cat of new Set(p.split.filter((l) => !l.owed && l.categoryId).map((l) => l.categoryId!))) {
+        const ok = await s.first(
+          `SELECT id FROM category WHERE budget_id = ?1 AND id = ?2 AND kind != 'cc_payment'`,
+          cat,
+        );
+        if (!ok) throw new HttpError(404, 'not_found', GONE);
+      }
       p.split.forEach((l, i) => {
         const lineId = `${key}:s${i}`;
         // A line owed to you has no category: an owed item of its amount takes it out of Ready to Assign until
