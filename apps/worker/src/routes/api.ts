@@ -85,6 +85,8 @@ function checkBodyAmounts(v: unknown): void {
 
 /** A missing thing, said so the reader can act (docs/copy.md rule 7). */
 export const GONE = 'This was changed or removed. Check it and try again.';
+/** An edit that puts new money or spending in an archived category (it may come from a device that hadn't seen the archive). */
+export const ARCHIVED = 'This category is archived. Restore it in Settings, then try again.';
 /** A change made against an older copy of the data. */
 export const CHANGED = 'This changed. Check it and try again.';
 export const TRY_AGAIN = 'Something went wrong. Try again.';
@@ -235,8 +237,8 @@ async function addAssignments(
   const s = scoped(c);
   const now = editNow(c);
   const ids = items.map((i) => i.categoryId);
-  const known = await s.all<{ id: string }>(
-    `SELECT id FROM category WHERE budget_id = ?1 AND id IN (${ids.map((_, i) => `?${i + 2}`).join(',')})`,
+  const known = await s.all<{ id: string; archived_at: number | null }>(
+    `SELECT id, archived_at FROM category WHERE budget_id = ?1 AND id IN (${ids.map((_, i) => `?${i + 2}`).join(',')})`,
     ...ids,
   );
   if (known.length !== new Set(ids).size) throw new HttpError(404, 'not_found', GONE);
@@ -262,6 +264,11 @@ async function addAssignments(
   const after = new Map(held);
   for (const i of items) after.set(i.categoryId, (i.set ? 0 : (after.get(i.categoryId) ?? 0)) + i.amount);
   checkAmounts(...after.values());
+  // An archived category takes no new money (its archive moved what it had to Ready to Assign); taking money out
+  // of one is still allowed. An add from a device that hadn't seen the archive yet is refused here.
+  for (const k of known)
+    if (k.archived_at !== null && (after.get(k.id) ?? 0) > (held.get(k.id) ?? 0))
+      throw new HttpError(422, 'archived', ARCHIVED);
   const stmts = items.map((i) =>
     s.q(
       i.set

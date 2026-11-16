@@ -224,6 +224,8 @@ async function runSteps(x: World, steps: Step[]): Promise<Outcome> {
   const start = await Promise.all(cats.map((c) => assigned(first, c)));
   let edits = 0;
   let lost = 0;
+  /** A send threw: edits it lost on the way (run again on newer entries) are not counted (docs/build-plan.md). */
+  let threw = false;
   let n = 0;
   const edit = async (d: Device, method: string, path: string, body: unknown, refusable = false) => {
     const r = await d.engine.enqueue({
@@ -234,6 +236,12 @@ async function runSteps(x: World, steps: Step[]): Promise<Outcome> {
       body,
     });
     if (refusable && r.response.status >= 400 && r.response.status < 500) return;
+    // New money or spending for a category this device shows as archived is refused (routes/api.ts ARCHIVED).
+    if (
+      r.response.status === 422 &&
+      ((await r.response.clone().json()) as { error?: string }).error === 'archived'
+    )
+      return;
     expect(r.response.status, `${method} ${path}: ${await r.response.clone().text()}`).toBeLessThan(300);
     edits++;
   };
@@ -353,6 +361,7 @@ async function runSteps(x: World, steps: Step[]): Promise<Outcome> {
           lost += (await lossy.flush()).lost;
         } catch (e) {
           expect(String(e)).toContain('the connection dropped');
+          threw = true;
         }
         break;
       }
@@ -396,7 +405,11 @@ async function runSteps(x: World, steps: Step[]): Promise<Outcome> {
   expect(devices[1].log.number).toBe(devices[0].log.number);
   expect(third.log.number).toBe(devices[0].log.number);
   // Each edit is in the log once, or its device said it was lost.
-  expect(devices[0].log.number - 1, 'entries in the log').toBe(edits - lost);
+  // Each edit is in the log once, or its device said it was lost. A send that threw drops its count of lost edits,
+  // so then the log may hold fewer (never more).
+  const entries = devices[0].log.number - 1;
+  if (threw) expect(entries, 'entries in the log').toBeLessThanOrEqual(edits - lost);
+  else expect(entries, 'entries in the log').toBe(edits - lost);
   expect(differences(await rowsOf(a), await rowsOf(b)), 'phone and laptop').toEqual([]);
   expect(differences(await rowsOf(a), await rowsOf(third.engine)), 'phone and a fresh device').toEqual([]);
   expect((await b.rta()).rta).toBe((await a.rta()).rta);
@@ -443,9 +456,24 @@ describe('two devices edit one budget, with offline spells, lost answers, cut re
         await world(
           async (x) => {
             const o = await runSteps(x, steps);
-            // Every screen reads the same on all three: what each copy worked out from its rows. (An archived
-            // category may end with money or overspent: an edit made offline on the other device lands after the
-            // archive. The PR of this hunt asks the owner about it; it is not checked here.)
+            // An archived category takes no new money or spending, even from an edit made offline on the other
+            // device that lands after the archive (D-121), so it is never overspent (D-79). It may hold money:
+            // moving a purchase out of it frees what that purchase spent.
+            const a = o.devices[0].engine;
+            for (const cat of o.cats) {
+              const row = await a.db
+                .prepare(`SELECT archived_at FROM category WHERE id = ?1`)
+                .bind(cat)
+                .first<{ archived_at: number | null }>();
+              if (row?.archived_at == null) continue;
+              const sheet = await a.request('GET', `/api/categories/${cat}/sheet`);
+              expect(sheet.status).toBe(200);
+              expect(
+                ((await sheet.json()) as { available: number }).available,
+                `archived ${cat}`,
+              ).toBeGreaterThanOrEqual(0);
+            }
+            // Every screen reads the same on all three: what each copy worked out from its rows.
             for (const path of SCREENS) {
               const [a, b, c] = await Promise.all(
                 [o.devices[0].engine, o.devices[1].engine, o.third.engine].map(async (e) => {
