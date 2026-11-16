@@ -8,7 +8,8 @@ The owner said yes to refusing these edits (Nov 16, 2026).
 
 1. **New money is refused.** `POST /api/budget/assign`, `/set` and `/move` answer 422 `archived` when a category
    that is archived would hold more than before. Taking money out of one is allowed, so a category left with money
-   can still be emptied.
+   can still be emptied. Moving a purchase out of an archived category frees what it spent there, so an archived
+   category may hold money, but it is never overspent.
 2. **New spending is refused.** A row put in an archived category (`PATCH /api/transactions/:key` with
    `categoryId`), a split line in one, and a new entry in one answer 422 `archived`. A row that is already in the
    category may keep it, and a split of it may keep a line there: the split sheet sends every line again.

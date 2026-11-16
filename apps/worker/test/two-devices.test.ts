@@ -457,7 +457,8 @@ describe('two devices edit one budget, with offline spells, lost answers, cut re
           async (x) => {
             const o = await runSteps(x, steps);
             // An archived category takes no new money or spending, even from an edit made offline on the other
-            // device that lands after the archive: what it holds is what it held at the archive (none).
+            // device that lands after the archive (D-121), so it is never overspent (D-79). It may hold money:
+            // moving a purchase out of it frees what that purchase spent.
             const a = o.devices[0].engine;
             for (const cat of o.cats) {
               const row = await a.db
@@ -467,7 +468,10 @@ describe('two devices edit one budget, with offline spells, lost answers, cut re
               if (row?.archived_at == null) continue;
               const sheet = await a.request('GET', `/api/categories/${cat}/sheet`);
               expect(sheet.status).toBe(200);
-              expect(((await sheet.json()) as { available: number }).available, `archived ${cat}`).toBe(0);
+              expect(
+                ((await sheet.json()) as { available: number }).available,
+                `archived ${cat}`,
+              ).toBeGreaterThanOrEqual(0);
             }
             // Every screen reads the same on all three: what each copy worked out from its rows.
             for (const path of SCREENS) {
