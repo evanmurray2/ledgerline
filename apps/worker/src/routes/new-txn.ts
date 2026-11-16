@@ -6,7 +6,7 @@ import { type Month, monthOfDate } from '@ledgerline/domain';
 import { newId } from '../http/ids.js';
 import { editNow } from '../http/clock.js';
 import type { AppEnv } from '../http/context.js';
-import { HttpError, parse, scoped, GONE, FAR_DATE, inReach, thisMonth } from './api.js';
+import { HttpError, parse, scoped, ARCHIVED, GONE, FAR_DATE, inReach, thisMonth } from './api.js';
 import { reopenStmts } from './account-close.js';
 import { monthLong } from '../views/common.js';
 import type { Stmt } from '@ledgerline/db/sql';
@@ -32,11 +32,12 @@ export async function addTxn(c: Context<AppEnv>) {
   const acct = await s.first(`SELECT id FROM account WHERE budget_id = ?1 AND id = ?2`, r.accountId);
   if (!acct) throw new HttpError(404, 'not_found', GONE);
   if (r.categoryId) {
-    const ok = await s.first(
-      `SELECT id FROM category WHERE budget_id = ?1 AND id = ?2 AND kind != 'cc_payment'`,
+    const ok = await s.first<{ archived_at: number | null }>(
+      `SELECT archived_at FROM category WHERE budget_id = ?1 AND id = ?2 AND kind != 'cc_payment'`,
       r.categoryId,
     );
     if (!ok) throw new HttpError(404, 'not_found', GONE);
+    if (ok.archived_at !== null) throw new HttpError(422, 'archived', ARCHIVED);
   }
   const extras = [r.transferAccountId, r.owed, r.paysBack].filter((x) => x !== undefined).length;
   if (extras > 1) throw new HttpError(422, 'invalid', 'Pick one: a transfer, owed to you or paid back.');

@@ -256,8 +256,10 @@ async function archiveCategory(
     // The server doesn't work out balances (D-45): the phone sends what it showed. A category's available can
     // depend on other categories' card refunds (D-12), so it can't be checked here alone; instead nothing may have
     // changed since the phone worked it out. Anything able to send this can already assign and move money.
+    // An archive sent at 0 is checked too: an edit from another device that landed first may have given the
+    // category money, which the archive would then leave in it (found by the two-devices hunt).
     const avail = sent.available ?? 0;
-    if (avail !== 0) {
+    if (avail !== 0 || sent.through !== undefined) {
       if (await changedSince(c, sent.through)) throw new HttpError(409, 'changed', CHANGED);
     }
     // Archived, its overspending would drop out of Budget's attention while still counting (D-79).

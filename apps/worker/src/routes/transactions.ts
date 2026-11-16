@@ -9,7 +9,18 @@ import { monthLong } from '../views/common.js';
 
 import type { AppEnv } from '../http/context.js';
 import type { Scoped } from '../db/scoped.js';
-import { HttpError, parse, scoped, CHANGED, GONE, FAR_DATE, FAR_MONTH, inReach, thisMonth } from './api.js';
+import {
+  HttpError,
+  parse,
+  scoped,
+  ARCHIVED,
+  CHANGED,
+  GONE,
+  FAR_DATE,
+  FAR_MONTH,
+  inReach,
+  thisMonth,
+} from './api.js';
 import { reopenForEntry, reopenStmts } from './account-close.js';
 import { TX_COLUMNS, chunks, type TxRow } from '../ledger/ledger.js';
 import { OVERLAY_UPSERT, commit, loadTx, owedStmt, refuseHistory } from './txn-common.js';
@@ -65,11 +76,14 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
   const edits: Record<string, number> = {};
   if (p.categoryId !== undefined || p.toRta !== undefined) {
     if (p.categoryId) {
-      const ok = await s.first(
-        `SELECT id FROM category WHERE budget_id = ?1 AND id = ?2 AND kind != 'cc_payment'`,
+      const ok = await s.first<{ archived_at: number | null }>(
+        `SELECT archived_at FROM category WHERE budget_id = ?1 AND id = ?2 AND kind != 'cc_payment'`,
         p.categoryId,
       );
       if (!ok) throw new HttpError(404, 'not_found', GONE);
+      // An archived category takes no new spending; a row already in it may keep it.
+      if (ok.archived_at !== null && p.categoryId !== t.category_id)
+        throw new HttpError(422, 'archived', ARCHIVED);
     }
     set('category_id', p.categoryId ?? null);
     set('to_rta', p.toRta ? 1 : 0);
@@ -91,13 +105,25 @@ transactionRoutes.patch('/transactions/:key', async (c) => {
           `The lines must add up to ${formatCents(p.amount ?? t.amount)}.`,
         );
       // Each line's category is one a whole row could take (as `categoryId` above): it exists and is no card's
-      // payment category. Found by the two-devices hunt: a line took any id, and its money left every category.
+      // payment category, and an archived one only if the row already had it (the split sheet sends every line).
+      const had = new Set(
+        [
+          t.category_id,
+          ...(
+            await s.all<{ category_id: string | null }>(
+              `SELECT category_id FROM txn_split WHERE budget_id = ?1 AND txn_key = ?2`,
+              key,
+            )
+          ).map((r) => r.category_id),
+        ].filter((x): x is string => !!x),
+      );
       for (const cat of new Set(p.split.filter((l) => !l.owed && l.categoryId).map((l) => l.categoryId!))) {
-        const ok = await s.first(
-          `SELECT id FROM category WHERE budget_id = ?1 AND id = ?2 AND kind != 'cc_payment'`,
+        const ok = await s.first<{ archived_at: number | null }>(
+          `SELECT archived_at FROM category WHERE budget_id = ?1 AND id = ?2 AND kind != 'cc_payment'`,
           cat,
         );
         if (!ok) throw new HttpError(404, 'not_found', GONE);
+        if (ok.archived_at !== null && !had.has(cat)) throw new HttpError(422, 'archived', ARCHIVED);
       }
       p.split.forEach((l, i) => {
         const lineId = `${key}:s${i}`;
