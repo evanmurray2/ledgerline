@@ -38,11 +38,10 @@ function Tiles({ r, desktop }: { r: ReportsView; desktop: boolean }) {
     ['Spent', r.tiles.spent, r.monthToDate ? 'month to date' : 'whole month'],
     ['Invested', r.tiles.invested, 'saving or investing'],
     ['Income', r.tiles.income, 'to Ready to Assign'],
-    ['Rewards', r.tiles.rewards, 'card points'],
   ];
   // A phone has two tiles a row, so an amount of up to $99,999,999.99 fits at 320 px; a longer one wraps, never cut.
   return (
-    <section className={cx('grid shrink-0 gap-2', desktop ? 'grid-cols-4' : 'grid-cols-2')}>
+    <section className={cx('grid shrink-0 gap-2', desktop ? 'grid-cols-3' : 'grid-cols-2')}>
       {tiles.map(([k, v, note]) => (
         <Card key={k} className="flex min-w-0 flex-col gap-0.5 p-2.5">
           <span className="text-xs text-muted">{k}</span>
