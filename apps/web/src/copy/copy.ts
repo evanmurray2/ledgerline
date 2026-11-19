@@ -622,6 +622,7 @@ const NOT_NOW = 'Something went wrong. Try again.';
  * copy can be set up or opened without a second one.
  */
 export async function signIn(): Promise<void> {
+  warmEngine();
   const options = await server<RequestOptionsJSON>('POST', '/api/auth/login/options');
   const saved = keepsCopy() ? await lastRecord() : null;
   const salt = saved?.salt ?? randomBytes(32);
@@ -645,6 +646,8 @@ function identityOf(s: Session): EngineIdentity {
 /** Opens the copy for a confirmed session (online). Called by the router once the session is known. */
 export async function start(session: Session): Promise<void> {
   if (MOCK || getCopy().status === 'opening' || getCopy().status === 'ready') return;
+  const started = performance.now();
+  warmEngine();
   who = identityOf(session);
   setCopy({ status: 'opening', error: null, progress: 0, offline: false, why: null, forked: false });
   let why: FullWhy | null = keepsCopy() ? 'first' : 'memory';
@@ -796,19 +799,48 @@ export async function start(session: Session): Promise<void> {
       throw e;
     }
     setCopy({ saved: record !== null, hasSaved: record !== null, why });
-    await syncNow();
+    // A copy opened from this device's saved one shows at once, as it does with no signal; the entries since come
+    // in the background and the screens read them again (copyChanged). A copy with nothing in it yet waits for its
+    // download.
+    const atOnce = why === null;
+    if (!atOnce) await syncNow();
     // The session the screens read is made from the copy, before the copy says it is ready: no screen shows a
     // budget with no name, in another time zone.
     const made = await sealedSessionNow();
     if (!made) throw new Error('Something went wrong. Try again.');
-    if (record) await save();
+    if (!atOnce && record) await save();
     window.dispatchEvent(new CustomEvent('ledgerline:session', { detail: made }));
     setCopy({ status: 'ready' });
+    usage.record('measure', atOnce ? 'copy.open.ms' : 'copy.download.ms', performance.now() - started);
     watch();
+    if (atOnce) void catchUp(made, started);
   } catch (e) {
     await host?.close();
     host = null;
     setCopy({ status: 'failed', error: e instanceof Error ? e.message : String(e) });
+  }
+}
+
+/**
+ * The first sync after a copy opened at once (start): in the background, while the screens show the saved copy.
+ * A sync that fails with the device's own stop (another history, sign-in ended, a new budget key) has said so
+ * itself (syncNow); any other failure waits for the next sync, as it does every 2 minutes.
+ */
+async function catchUp(shown: Session, started: number): Promise<void> {
+  const h = host;
+  try {
+    await syncNow();
+    if (host !== h || getCopy().status !== 'ready') return;
+    usage.record('measure', 'copy.catchup.ms', performance.now() - started);
+    // The entries since may have renamed the budget or changed its time zone.
+    const made = await sealedSessionNow();
+    if (made && JSON.stringify(made) !== JSON.stringify(shown))
+      window.dispatchEvent(new CustomEvent('ledgerline:session', { detail: made }));
+    if (record) await save();
+  } catch (e) {
+    console.warn(
+      JSON.stringify({ event: 'catchup_failed', error: e instanceof Error ? e.message : String(e) }),
+    );
   }
 }
 
@@ -818,6 +850,7 @@ const UNREADABLE =
 
 /** Opening with no signal: the passkey opens the copy on its own for up to 7 days after the last sign-in. */
 export async function openWithoutSignal(onSession?: (s: Session) => void): Promise<Session> {
+  warmEngine();
   const rec = await lastRecord();
   if (!rec)
     throw new Error('Your budget isn’t saved on this device yet. Connect to the internet to open it.');
@@ -882,9 +915,25 @@ export async function openWithoutSignal(onSession?: (s: Session) => void): Promi
   }
 }
 
+/** An engine thread started before it is needed (warmEngine), with nothing in it yet. */
+let spare: EngineHost | null = null;
+/**
+ * Starts the engine's thread, and with it SQLite's download and compile, before the copy is opened: while the
+ * server answers and Face ID asks. It holds nothing until openHost gives it the copy.
+ */
+export function warmEngine(): void {
+  if (MOCK || spare || host || typeof Worker === 'undefined') return;
+  try {
+    spare = new EngineHost();
+  } catch {
+    // openHost tries again, and says so if it can't.
+  }
+}
+
 async function openHost(bytes: ArrayBuffer | null): Promise<void> {
   await host?.close();
-  host = new EngineHost();
+  host = spare ?? new EngineHost();
+  spare = null;
   host.onIdentity = (r) => void server('POST', '/api/identity-alert', r).catch(() => undefined);
   host.onRebuilding = () => setCopy({ rebuilding: true });
   // Made again outside a sync (a way in added or removed): saved, and the screens read it again.
@@ -1050,7 +1099,18 @@ export async function copyBytes(): Promise<ArrayBuffer> {
   return host.export();
 }
 
-async function save(): Promise<void> {
+let saving: Promise<void> = Promise.resolve();
+/**
+ * Saves the whole copy, encrypted, over the saved one. One save at a time, in the order asked: two saves at once
+ * could put an older copy over a newer one (a sync's save and one in the background, for example).
+ */
+function save(): Promise<void> {
+  const next = saving.then(saveOnce, saveOnce);
+  saving = next.catch(() => undefined);
+  return next;
+}
+
+async function saveOnce(): Promise<void> {
   if (!record || !dataKey || !host) return;
   const started = performance.now();
   const bytes = await host.export();

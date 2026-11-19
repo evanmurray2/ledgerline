@@ -81,6 +81,14 @@ type Msg =
     };
 
 let sqlite: Awaited<ReturnType<typeof initSqlJs>> | null = null;
+/**
+ * SQLite starts loading as soon as this thread does (the app starts the thread early, copy.ts), so its download and
+ * compile run while the app still waits for the server; `open` takes it from here. A failure is tried again then.
+ */
+let warm: Promise<Awaited<ReturnType<typeof initSqlJs>>> | null = initSqlJs({ locateFile: () => wasmUrl });
+warm.catch(() => {
+  warm = null;
+});
 let db: SqlJsDb | null = null;
 let who: EngineIdentity | null = null;
 let engine: LocalEngine | null = null;
@@ -275,7 +283,8 @@ function need(): { db: SqlJsDb; engine: LocalEngine } {
 async function handle(m: Msg): Promise<{ value: unknown; transfer?: ArrayBuffer[] }> {
   switch (m.op) {
     case 'open': {
-      sqlite ??= await initSqlJs({ locateFile: () => wasmUrl });
+      sqlite ??= await (warm ?? initSqlJs({ locateFile: () => wasmUrl }));
+      warm = null;
       db?.db.close();
       db = new SqlJsDb(m.bytes ? new sqlite.Database(new Uint8Array(m.bytes)) : new sqlite.Database());
       // The migrations this open runs: the app then keeps the saved copy from before them (copy.ts).

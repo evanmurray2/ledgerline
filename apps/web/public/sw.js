@@ -1,11 +1,14 @@
 // Offline start: keeps the app's own files on the phone so it opens with no signal, showing the screens saved on
 // the device (src/state/saved.ts) with changes turned off. Never caches anything under /api: money data only
 // comes from the server or from the saved copy the app manages itself.
-//   Pages: network first, so a new release shows at once; the saved shell only when offline.
+//   Pages: network first, so a new release shows at once; the saved shell when offline, or when the network takes
+//   more than SLOW_MS to answer (a weak signal).
 //   /assets/*: file names carry a content hash, so a saved copy is always right; kept from the release in use.
 //   Every file of the release under /assets is saved at once (release.json lists them), lazy screens too: a screen
 //   first opened with no signal must not fail to load and reload the app, which would lose the edits waiting to send.
 const CACHE = 'ledgerline-shell-v1';
+/** How long an open waits for the network's page before it uses the saved one. */
+const SLOW_MS = 3000;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -40,25 +43,30 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
 
   if (req.mode === 'navigate') {
+    // Copies for the cache are taken as the answer arrives, before the page reads it.
+    const fresh = fetch(req).then((res) => ({ res, keep: res.ok ? [res.clone(), res.clone()] : null }));
+    // Keep the newest shell, and only the assets it uses. This keeps going after a slow answer gave way to the
+    // saved shell, so the next open gets the new one.
+    event.waitUntil(
+      fresh
+        .then(async ({ keep }) => {
+          if (!keep) return;
+          const cache = await caches.open(CACHE);
+          await cache.put('/', keep[0]);
+          const html = await keep[1].text();
+          const release = await saveRelease(cache);
+          await prune(cache, html, release);
+        })
+        .catch(() => undefined),
+    );
     event.respondWith(
       (async () => {
-        try {
-          const res = await fetch(req);
-          // Keep the newest shell, and only the assets it uses.
-          if (res.ok) {
-            const cache = await caches.open(CACHE);
-            await cache.put('/', res.clone());
-            const html = await res.clone().text();
-            event.waitUntil(
-              saveRelease(cache)
-                .then((release) => prune(cache, html, release))
-                .catch(() => undefined),
-            );
-          }
-          return res;
-        } catch {
-          return (await caches.match('/')) ?? Response.error();
-        }
+        const saved = await caches.match('/');
+        if (!saved) return fresh.then(({ res }) => res).catch(() => Response.error());
+        // A weak signal: the saved shell after SLOW_MS. A shell from an older release is fine: the app reloads
+        // for the new one once the server says it changed (src/state/version.ts), at most once per release.
+        const slow = new Promise((resolve) => setTimeout(() => resolve(saved), SLOW_MS));
+        return Promise.race([fresh.then(({ res }) => res), slow]).catch(() => saved);
       })(),
     );
     return;
