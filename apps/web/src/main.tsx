@@ -7,6 +7,8 @@ import { installUsageListeners } from './usage/tracker';
 import { App } from './App';
 import { setReadOnlyHandler } from './api/client';
 import { clearSavedData } from './state/saved';
+import { warmEngine } from './copy/copy';
+import { sealedBudgets } from './copy/sealed-marks';
 
 // Plain saved screens from before D-45 are deleted: the copy on this phone is encrypted now.
 clearSavedData();
@@ -24,6 +26,8 @@ async function start() {
     const { installMock, scenarioFromUrl } = await import('./mock/install');
     installMock(scenarioFromUrl(window.location.search));
   }
+  // A device that has opened a budget before starts its engine now, while the app checks the sign-in.
+  if (sealedBudgets().length > 0) warmEngine();
   const root = createRoot(document.getElementById('root')!);
   root.render(
     <StrictMode>

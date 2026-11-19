@@ -8,7 +8,7 @@ Legend: **(manual)** needs the owner (Cloudflare, Plaid Production, GitHub setti
 
 ## Open
 
-- [ ] On the owner's iPhone after deploy: PRF in the Home Screen app with the existing passkey, first download time, Face ID unlock with no signal.
+- [ ] On the owner's iPhone after deploy: PRF in the Home Screen app with the existing passkey, first download time and `copy.open.ms` (docs/measurements.md, Nov 19), Face ID unlock with no signal.
 - [ ] The sealed log, left open (`docs/privacy.md` 5.3): a rebuild's peak memory is not measured on a phone with the 2 MB bank log (the old copy is closed first and kept gzipped, `local/web-entry.ts` `rebuild`).
 - [ ] Banks of a locked budget (`docs/privacy.md` 5.5, D-87): linking and removing are tested with a fake Plaid only, never against Plaid itself (never on a real link without the owner's yes).
 - [ ] Fetch steps on Cloudflare after the Nov 13 changes (D-110, fewer key derivations and one transaction for the last page): with invocation logs off (D-112), judge their CPU a few days after the deploy from the analytics (`exceededResources` counts, daily CPU quantiles; `docs/measurements.md`).
