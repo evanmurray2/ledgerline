@@ -479,25 +479,28 @@ export function EditTxn({ t, close }: { t: TxnSheet; close: () => void }) {
                     ))}
                   </div>
                 </div>
-                {t.status === 'pending' && (
-                  <label className="flex min-h-14 items-center justify-between gap-3 border-t border-divider px-3 text-base font-semibold">
-                    <span className="flex flex-col gap-px">
-                      Won’t clear
-                      <span className="text-xs font-normal text-muted">
-                        {owed !== 'none' ? 'Turning this on removes what’s owed' : 'Stop counting this hold'}
-                      </span>
-                    </span>
-                    <Checkbox
-                      checked={wont}
-                      data-track="txn.wont_clear"
-                      onChange={() => {
-                        setWont(!wont);
-                        if (!wont) setOwed('none');
-                      }}
-                    />
-                  </label>
-                )}
               </div>
+            )}
+            {/* Money in can fail to clear too: a pending deposit the bank drops. */}
+            {t.status === 'pending' && (
+              <label className="flex min-h-14 items-center justify-between gap-3 border-b border-divider px-3 text-base font-semibold">
+                <span className="flex flex-col gap-px">
+                  Won’t clear
+                  <span className="text-xs font-normal text-muted">
+                    {owed !== 'none'
+                      ? 'Turning this on removes what’s owed'
+                      : 'Stop counting this pending transaction'}
+                  </span>
+                </span>
+                <Checkbox
+                  checked={wont}
+                  data-track="txn.wont_clear"
+                  onChange={() => {
+                    setWont(!wont);
+                    if (!wont) setOwed('none');
+                  }}
+                />
+              </label>
             )}
             <div className="flex flex-col gap-2 p-3">
               {/* Any bank row can be a transfer, also one whose name didn't look like one (it never asks by itself). */}

@@ -251,7 +251,7 @@ with nothing posted after 5 days)
 - Income: "Ready to Assign now" / "Save for {Month}" + "Adds {amount} to Ready to Assign on {Month} 1."
 - "Money back for something owed to you?" + Match
 - Owed: "{category} pays only your share. The rest comes out of Ready to Assign until it's paid back."
-- Won't clear: "Turning this on removes what's owed" / "Stop counting this hold"
+- Won't clear: "Turning this on removes what's owed" / "Stop counting this pending transaction"
 - Memo: "Add a memo"
 - Same purchase: your entry: "Matched to the bank" + "Bank pending: {payee} · {date} · {amount}"; a posted row:
   "Same purchase as" ("Same transaction as" for money in) + "{other}"; both + "Not the same" → "Kept as two purchases" with Undo → "Paired as one purchase"

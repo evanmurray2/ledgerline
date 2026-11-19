@@ -138,3 +138,28 @@ test('Add a transaction: owed to you, then paid back', async ({ page }) => {
     .click();
   await expect(rta(page)).toHaveText('$1,999.90');
 });
+
+test('Money in you added can be marked Won’t clear, as money out can', async ({ page }) => {
+  await page.goto('/activity/add');
+  const add = page.getByRole('dialog', { name: 'Add a transaction' });
+  await add.getByLabel('Amount', { exact: true }).fill('40');
+  await add.getByRole('button', { name: 'In', exact: true }).click();
+  await add.getByLabel('Payee').fill('Cash from Lee');
+  await add.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(add).toBeHidden();
+  await page
+    .getByRole('link', { name: /Cash from Lee/ })
+    .first()
+    .click();
+  await page.getByRole('button', { name: 'More options' }).click();
+  const wont = page.getByRole('checkbox', { name: /Won’t clear/ });
+  await wont.check();
+  await page.getByRole('button', { name: 'Save' }).click();
+  // It stops counting: the row says so, and Ready to Assign is back where it was before the $40.
+  await expect(page.getByRole('link', { name: /Cash from Lee/ }).first()).toContainText('Won’t clear');
+  await page
+    .getByRole('link', { name: /^Budget/ })
+    .last()
+    .click();
+  await expect(rta(page)).toHaveText('$1,999.90');
+});
