@@ -4,7 +4,22 @@ How to measure now: `pnpm --filter @ledgerline/worker exec vitest run -c vitest.
 
 ## Update: opening the app on the phone (Nov 19, 2026)
 
-Opening a saved copy no longer waits for the network's sync or a whole-copy save: the budget shows from the copy, as it does with no signal, and the entries since come in the background (`apps/web/src/copy/copy.ts` `start`, `catchUp`). A copy with nothing in it yet still waits for its download. The engine's thread and SQLite's compile start before the server answers and Face ID asks (`warmEngine`; `apps/worker/src/local/web-entry.ts`), and the page waits at most 3 seconds for the network before it uses the saved shell (`apps/web/public/sw.js`). Each open now sends its time with the usage counts: `copy.open.ms` (sign-in confirmed to the first screen, from a saved copy), `copy.download.ms` (the same, for a first download) and `copy.catchup.ms` (to the end of the first sync). No figures from the owner's iPhone yet.
+Opening a saved copy no longer waits for the network's sync or a whole-copy save: the budget shows from the copy, as it does with no signal, and the entries since come in the background (`apps/web/src/copy/copy.ts` `start`, `catchUp`). A copy with nothing in it yet still waits for its download. The engine's thread and SQLite's compile start before the server answers and Face ID asks (`warmEngine`; `apps/worker/src/local/web-entry.ts`), and the page waits at most 3 seconds for the network before it uses the saved shell (`apps/web/public/sw.js`). Each open records its time in the usage log, which stays on the device (Settings → Backup and export saves it): `copy.open.ms` (sign-in confirmed to the copy ready, from a saved copy), `copy.download.ms` (the same, for a first download) and `copy.catchup.ms` (to the end of the first sync). No figures from the owner's iPhone yet.
+
+## Update: from the passkey to the Budget screen (Nov 20, 2026)
+
+That first change made no difference you could see: the engine answers one call at a time (`web-entry.ts`), and the first sync held it for its three requests to the server, so the Budget screen's reads waited behind it. Now the sync waits until the first screen has read the copy (`firstScreenRead`, at most 2 s). Two requests no longer wait for the one before: the passkey's options are asked as Sign in opens, beside `/api/auth/status` (`prepareSignIn`), and the saved copy's share right after the sign-in, beside the app's `/api/session` check (`deviceShare`).
+
+Measured with Chromium through the real Worker (`wrangler dev`) and a virtual passkey, a sign-out then a sign-in, from the page's start to "Groceries" on the Budget screen (a MutationObserver), one run each. "4G": 80 ms added to each request, CPU slowed 2 times; "weak": 300 ms and 2 times. The large budget is a fake bank with 3,000 transactions over a year (a 5.5 MB saved copy).
+
+| Budget | Network | Before (production, Nov 19) | Now      |
+| ------ | ------- | --------------------------- | -------- |
+| Small  | 4G      | about 1,400 ms              | 790 ms   |
+| Small  | Weak    | about 3,450 ms              | 1,870 ms |
+| Large  | 4G      | about 1,500 ms              | 880 ms   |
+| Large  | Weak    | not measured                | 2,050 ms |
+
+What is left on the weak network: before Face ID, `/api/session`, then `/api/auth/status` with the options (two round trips); after it, the verify, the app's `/api/session` check, opening the copy (about 100 ms) and `/api/log/public` (three round trips); then the whole-copy save in `enterSealed` (50–85 ms for the large copy here), which keeps this device's place in the log.
 
 ## Update: the whole append route (Nov 13, 2026)
 
