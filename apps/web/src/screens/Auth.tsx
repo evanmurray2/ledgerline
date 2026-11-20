@@ -8,7 +8,7 @@ import { api } from '../api/endpoints';
 import { qk } from '../api/hooks';
 import { Frame, Problem } from '../components/Frame';
 import { Field, PrimaryButton, SecondaryButton, inputClass } from '../components/ui';
-import { signIn as copySignIn } from '../copy/copy';
+import { prepareSignIn, signIn as copySignIn } from '../copy/copy';
 import { passkeyProblem } from '../copy/passkey';
 import { CreateAccountScreen, goToCheck, takeCheckToken } from './Signup';
 import { PolicyLink } from './PolicyLink';
@@ -65,6 +65,8 @@ function takeSignedOutHere(): boolean {
 export function SignInScreen() {
   const qc = useQueryClient();
   const status = useQuery({ queryKey: qk.authStatus, queryFn: api.authStatus, retry: 1 });
+  // The passkey's options come beside the status, not after it: Face ID asks one round trip sooner.
+  useEffect(() => prepareSignIn(), []);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);

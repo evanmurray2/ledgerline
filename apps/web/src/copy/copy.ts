@@ -623,15 +623,49 @@ const NOT_NOW = 'Something went wrong. Try again.';
  */
 export async function signIn(): Promise<void> {
   warmEngine();
-  const options = await server<RequestOptionsJSON>('POST', '/api/auth/login/options');
-  const saved = keepsCopy() ? await lastRecord() : null;
-  const salt = saved?.salt ?? randomBytes(32);
+  const early = earlyOptions && Date.now() - earlyOptions.at < EARLY_OPTIONS_MS ? earlyOptions.options : null;
+  earlyOptions = null;
   // Every budget is locked (D-102): the same prompt also gives the budget's secret, so a device that has never
   // opened it (a new browser, a Private window) isn't asked for the passkey a second time.
-  const slot = (await slotPrfInput()).buffer as ArrayBuffer;
+  const [fetched, saved, slotBytes] = await Promise.all([
+    early?.catch(() => null) ?? null,
+    keepsCopy() ? lastRecord() : null,
+    slotPrfInput(),
+  ]);
+  const options = fetched ?? (await server<RequestOptionsJSON>('POST', '/api/auth/login/options'));
+  const salt = saved?.salt ?? randomBytes(32);
+  const slot = slotBytes.buffer as ArrayBuffer;
   const a = await assert(options, { salt, credentialId: saved?.credentialIdHint ?? null, slot });
   await server('POST', '/api/auth/login/verify', { response: a.json });
   pending = { credentialId: a.credentialId, prf: a.prf, salt, slotPrf: a.slotPrf };
+  // The saved copy's share is asked now, beside the app's check of the new sign-in: start() takes it.
+  if (saved && a.prf) {
+    const share = server<{ share: string }>('POST', `/api/settings/security/devices/${saved.deviceId}/share`);
+    share.catch(() => undefined);
+    earlyShare = { deviceId: saved.deviceId, share };
+  }
+}
+
+/**
+ * Passkey options asked as the Sign in screen opens, beside its other request, so Face ID asks one round trip
+ * sooner. Only on a device that has opened a budget before; used once, within EARLY_OPTIONS_MS (the server's
+ * challenge lasts 5 minutes).
+ */
+let earlyOptions: { at: number; options: Promise<RequestOptionsJSON> } | null = null;
+const EARLY_OPTIONS_MS = 60_000;
+export function prepareSignIn(): void {
+  if (MOCK || earlyOptions || !canUsePasskeys() || sealedBudgets().length === 0) return;
+  const options = server<RequestOptionsJSON>('POST', '/api/auth/login/options');
+  options.catch(() => undefined);
+  earlyOptions = { at: Date.now(), options };
+}
+
+/** The saved copy's share, asked right after the sign-in (signIn); start() takes it for the same device. */
+let earlyShare: { deviceId: string; share: Promise<{ share: string }> } | null = null;
+function deviceShare(deviceId: string): Promise<{ share: string }> {
+  const early = earlyShare?.deviceId === deviceId ? earlyShare.share : null;
+  earlyShare = null;
+  return early ?? server<{ share: string }>('POST', `/api/settings/security/devices/${deviceId}/share`);
 }
 
 function identityOf(s: Session): EngineIdentity {
@@ -707,10 +741,7 @@ export async function start(session: Session): Promise<void> {
     }
     if (rec && !memoryOnly && !kept && p?.prf) {
       const prf = p.prf;
-      const share = await server<{ share: string }>(
-        'POST',
-        `/api/settings/security/devices/${rec.deviceId}/share`,
-      ).catch(async (e: { code?: string }) => {
+      const share = await deviceShare(rec.deviceId).catch(async (e: { code?: string }) => {
         if (e.code === 'revoked') {
           await dropHeld(key);
           await deleteRecord(key);
@@ -810,6 +841,7 @@ export async function start(session: Session): Promise<void> {
     if (!made) throw new Error('Something went wrong. Try again.');
     if (!atOnce && record) await save();
     window.dispatchEvent(new CustomEvent('ledgerline:session', { detail: made }));
+    reads.seen = false;
     setCopy({ status: 'ready' });
     usage.record('measure', atOnce ? 'copy.open.ms' : 'copy.download.ms', performance.now() - started);
     watch();
@@ -829,6 +861,10 @@ export async function start(session: Session): Promise<void> {
 async function catchUp(shown: Session, started: number): Promise<void> {
   const h = host;
   try {
+    // The engine answers one call at a time, and a sync holds it for its requests to the server: the first
+    // screen reads the copy first, so it shows without waiting for the network.
+    await firstScreenRead();
+    if (host !== h || getCopy().status !== 'ready') return;
     await syncNow();
     if (host !== h || getCopy().status !== 'ready') return;
     usage.record('measure', 'copy.catchup.ms', performance.now() - started);
@@ -1135,7 +1171,30 @@ export function readsLocally(method: string, path: string): boolean {
 }
 
 export async function read(path: string): Promise<{ status: number; body: string }> {
-  return host!.request('GET', path);
+  reads.inFlight++;
+  reads.seen = true;
+  try {
+    return await host!.request('GET', path);
+  } finally {
+    reads.inFlight--;
+    reads.lastEnd = performance.now();
+  }
+}
+
+/** The screens' reads of the copy: catchUp waits for the first screen's before the engine is busy with a sync. */
+const reads = { inFlight: 0, seen: false, lastEnd: 0 };
+/** How long the reads must have stopped before the first screen counts as read. */
+const READS_QUIET_MS = 100;
+/** The sync waits for the first screen at most this long (a screen that reads nothing from the copy). */
+const FIRST_SCREEN_MAX_MS = 2000;
+
+/** Waits until the screens have read the copy and stopped, or FIRST_SCREEN_MAX_MS. */
+async function firstScreenRead(): Promise<void> {
+  const until = performance.now() + FIRST_SCREEN_MAX_MS;
+  while (performance.now() < until) {
+    if (reads.seen && reads.inFlight === 0 && performance.now() - reads.lastEnd >= READS_QUIET_MS) return;
+    await new Promise((r) => setTimeout(r, 25));
+  }
 }
 
 /** After a change: the log is read and the change sent (syncNow), then Ready to Assign. */
